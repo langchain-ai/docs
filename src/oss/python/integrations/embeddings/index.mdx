@@ -62,6 +62,7 @@ The interface allows queries and documents to be embedded with different strateg
 | [`OpenAIEmbeddings`](/oss/integrations/embeddings/openai)                      | [`langchain-openai`](https://reference.langchain.com/python/langchain-openai)                              |
 | [`AzureOpenAIEmbeddings`](/oss/integrations/embeddings/azure_openai)       | [`langchain-openai`](https://reference.langchain.com/python/langchain-openai/embeddings/azure/AzureOpenAIEmbeddings)                    |
 | [`GoogleGenerativeAIEmbeddings`](/oss/integrations/embeddings/google_generative_ai) | [`langchain-google-genai`](https://reference.langchain.com/python/langchain-google-genai/embeddings/GoogleGenerativeAIEmbeddings) |
+| [`HuggingFaceEmbeddings`](/oss/integrations/embeddings/sentence_transformers)  | [`langchain-huggingface`](https://reference.langchain.com/python/langchain-huggingface)                                                 |
 | [`OllamaEmbeddings`](/oss/integrations/embeddings/ollama)                      | [`langchain-ollama`](https://reference.langchain.com/python/langchain-ollama/embeddings/OllamaEmbeddings)                               |
 | [`TogetherEmbeddings`](/oss/integrations/embeddings/together)                  | [`langchain-together`](https://reference.langchain.com/python/langchain-together/embeddings/TogetherEmbeddings)                       |
 | [`FireworksEmbeddings`](/oss/integrations/embeddings/fireworks)                | [`langchain-fireworks`](https://reference.langchain.com/python/langchain-fireworks/embeddings/FireworksEmbeddings)                   |
@@ -76,6 +77,110 @@ The interface allows queries and documents to be embedded with different strateg
 | [`AIMLAPIEmbeddings`](/oss/integrations/embeddings/aimlapi)                  | `langchain-aimlapi`                         |
 | [`PerplexityEmbeddings`](/oss/integrations/embeddings/perplexity)              | [`langchain-perplexity`](https://reference.langchain.com/python/langchain-perplexity/embeddings/PerplexityEmbeddings) |
 
+### Common deployment patterns
+
+In practice, most teams converge on one of four patterns:
+
+1. Hosted, flagship: OpenAI `text-embedding-3-large`, Cohere `embed-english-v3`, Google `gemini-embedding-001`, Voyage `voyage-3`. One API call, best-in-class quality out of the box, no local infrastructure. Per-call cost and a data-egress dependency.
+2. Local, open-source: `BAAI/bge-*`, `mixedbread-ai/mxbai-embed-*`, `Qwen/Qwen3-Embedding-*`, `nomic-ai/modernbert-embed-*`, `sentence-transformers/all-*`. Download once, run anywhere. No per-call cost, data never leaves your environment. Likely slower on CPU than a hosted API at small scale; competitive or faster with a GPU.
+3. Local, open-source, specialist: a fine-tuned model targeting your specific domain, language, or task. Starting from a strong open base (e.g. `BAAI/bge-m3`) and fine-tuning on even a few thousand in-domain query/document pairs often beats hosted flagships on retrieval accuracy for that domain.
+4. Self-hosted at production scale: the same open models (base or fine-tuned) served via [Text Embeddings Inference (TEI)](https://github.com/huggingface/text-embeddings-inference) or Ollama. Gives you the economics of local inference with the horizontal scaling and API ergonomics of a hosted provider.
+
+LangChain treats all four the same: you instantiate an `Embeddings` subclass and hand it to your vector store or retriever. Patterns (2) and (3) use `HuggingFaceEmbeddings`; pattern (4) uses `HuggingFaceEndpointEmbeddings` or `OllamaEmbeddings`.
+
+### Factors to weigh
+
+#### Quality
+
+Start from the [MTEB leaderboard](https://huggingface.co/spaces/mteb/leaderboard). MTEB benchmarks embedding models across retrieval, clustering, classification, and reranking tasks, and is the de-facto industry reference. Filter by your language(s) and by task (retrieval is the most common for RAG).
+
+Leaderboard numbers don't always transfer, so run a small evaluation on your own data before committing. LangSmith has tooling for this; see the [evaluation guides](/langsmith/evaluation-concepts).
+
+#### Cost
+
+Hosted embeddings typically price in the range of a few cents to ~$0.15 per million tokens. For a corpus embedded once and queried thousands of times a day, cost is often dominated by the query side.
+
+Local inference has zero per-call cost but requires CPU (slow) or GPU (capital or cloud cost). The crossover is workload-dependent: low-volume personal projects are essentially free on CPU; for mid-volume production, a single GPU serving a local model via TEI often beats hosted on unit economics.
+
+#### Latency
+
+Hosted embedding APIs add roughly 50-200ms of network latency per request. Local models on CPU take 10-100ms for a short query with a small model (`all-MiniLM-L6-v2`-class), and 50-500ms for larger models. On GPU, local inference is typically faster than a round-trip to a hosted API.
+
+For batch indexing, latency per request matters less than throughput. TEI and multi-process local inference batch aggressively. Consider e.g. `encode_kwargs={"batch_size": 64}` or higher on `HuggingFaceEmbeddings` when running on GPU.
+
+#### Dimensionality
+
+Embedding dimension affects vector store storage and query compute. Typical sizes:
+
+- 384 (small Sentence Transformers models, `all-MiniLM-L6-v2`)
+- 768 (mid-size ST models, `all-mpnet-base-v2`, `bge-base`)
+- 1024 (`bge-large`, Cohere v3, Voyage)
+- 1536 (OpenAI `text-embedding-3-small`, Qwen3-Embedding-0.6B)
+- 3072+ (OpenAI `text-embedding-3-large`, Qwen3-Embedding-4B/8B)
+
+Larger vectors are usually more accurate but consume more storage and query compute. Several modern models (OpenAI `text-embedding-3-*`, `mixedbread-ai/mxbai-embed-large-v1`, Matryoshka-trained ST models, Qwen3-Embedding) support **truncation**: slice the vector to a smaller dimension with graceful quality degradation. Useful for fitting more vectors into a smaller index.
+
+#### Context length
+
+Most classic embedding models cap out at 512 tokens (`all-mpnet-base-v2`, classic BGE). Newer models support longer contexts:
+
+- `nomic-ai/modernbert-embed-base`: 8192 tokens
+- `Alibaba-NLP/gte-multilingual-base`: 8192 tokens
+- `BAAI/bge-m3`: 8192 tokens
+- OpenAI `text-embedding-3-*`: 8191 tokens
+
+If your chunks are long (full-page technical docs, legal paragraphs), prefer long-context models. For short chunks the 512-token limit is rarely binding.
+
+#### Multilingual support
+
+For multilingual retrieval, pick a model trained on your languages. Strong defaults:
+
+- Open: `BAAI/bge-m3`, `intfloat/multilingual-e5-*`, `Alibaba-NLP/gte-multilingual-*`, `Qwen/Qwen3-Embedding-*` (via `HuggingFaceEmbeddings`)
+- Hosted: Cohere `embed-multilingual-v3`, OpenAI `text-embedding-3-*`
+
+#### Query and document prompts
+
+Several modern open models (E5, BGE, Qwen3-Embedding, GTE) are trained with different text prefixes for queries versus documents. Using the wrong prefix at query time is a common quality regression. When using `HuggingFaceEmbeddings`, pass prompts explicitly:
+
+```python
+from langchain_huggingface import HuggingFaceEmbeddings
+
+embeddings = HuggingFaceEmbeddings(
+    model_name="intfloat/e5-large-v2",
+    encode_kwargs={"prompt": "passage: "},
+    query_encode_kwargs={"prompt": "query: "},
+)
+```
+
+Check each model's card on Hugging Face for the recommended prompt strings.
+
+#### Licensing
+
+Most popular open embedding models are permissively licensed (Apache 2.0, MIT). A few recent specialist models require a commercial license for production use. Check each model's license before shipping.
+
+### Beyond single-vector dense embeddings
+
+A single dense vector per chunk is the default, but not the only option.
+
+#### Sparse and hybrid retrieval
+
+Dense embeddings don't handle exact-match queries (product codes, named entities, code identifiers) as well as keyword-based indexes. Hybrid retrieval combines a dense index with BM25 or a sparse neural index (SPLADE, `BAAI/bge-m3`'s sparse output) to cover both cases.
+
+#### Late-interaction and multi-vector
+
+ColBERT-style models produce a vector per token rather than per chunk, then score queries against documents via late interaction. This is typically more accurate than single-vector dense retrieval on complex queries, at the cost of higher storage and more complex indexing. Current open models in this space include `jinaai/jina-colbert-v2`, `answerdotai/answerai-colbert-small-v1`, and newer late-interaction variants such as `lightonai/LateOn`. LangChain's built-in retrievers target single-vector embeddings; late interaction typically requires a specialist index (Vespa, Qdrant's multi-vector support, or PyLate).
+
+### Starting points
+
+If you just want a working starting point:
+
+- Quick prototype, hosted: `OpenAIEmbeddings(model="text-embedding-3-small")`
+- Quick prototype, local, no API key: `HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2", encode_kwargs={"normalize_embeddings": True})`
+- Production, hosted, quality-first: `VoyageAIEmbeddings(model="voyage-3")` or `OpenAIEmbeddings(model="text-embedding-3-large")`
+- Production, open, quality-first: `HuggingFaceEmbeddings(model_name="BAAI/bge-m3", encode_kwargs={"normalize_embeddings": True})` served via TEI
+- Multilingual, open: `HuggingFaceEmbeddings(model_name="intfloat/multilingual-e5-large")` with query and document prompts configured
+
+Measure retrieval quality on your own data, then iterate.
 
 ## Caching
 

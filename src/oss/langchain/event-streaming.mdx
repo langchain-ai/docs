@@ -1,22 +1,14 @@
 ---
-title: Event Streaming
-description: Stream real-time updates from LangChain agent runs with typed projections.
+title: Event streaming
+description: Stream real-time updates from LangChain agent runs
 ---
 
-LangChain agents are built on LangGraph, so they support the same Event Streaming model with agent-focused projections for messages, tool calls, state, and custom updates.
+LangChain agents are built on LangGraph, so they support the same streaming stack with agent-focused projections for messages, tool calls, state, and custom updates.
 
-For most application and frontend use cases, use Event Streaming through `stream_events(..., version="v3")`. Event Streaming returns a run object with typed projections, so you can choose the view you need instead of parsing stream-mode tuples.
-
-<Tip>
-Check out the [streaming cookbook](https://github.com/langchain-ai/streaming-cookbook) for runnable examples and links to detailed reference documentation.
-</Tip>
-
-<Note>
-Interested in streaming Pregel modes such as `updates`, `messages`, or `custom` directly? See the [Streaming page](/oss/langchain/streaming).
-</Note>
+For most application and frontend use cases, use **Event Streaming** through `stream_events(..., version="v3")`. Event Streaming returns a run object with typed projections, so each projection can be consumed independently instead of parsing stream-mode tuples.
 
 :::python
-```python
+```py
 from langchain.agents import create_agent
 
 
@@ -30,21 +22,20 @@ agent = create_agent(
     tools=[get_weather],
 )
 
-run = agent.stream_events(
-    {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
-    version="v3",
-)
+stream = agent.stream_events({
+    "messages": [{"role": "user", "content": "What is the weather in SF?"}],
+}, version="v3")
 
-for message in run.messages:
+for message in stream.messages:
     for delta in message.text:
         print(delta, end="", flush=True)
 
-final_state = run.output
+final_state = stream.output
 ```
 :::
 
 :::js
-```typescript
+```ts
 import { createAgent, tool } from "langchain";
 import * as z from "zod";
 
@@ -62,59 +53,73 @@ const agent = createAgent({
   tools: [getWeather],
 });
 
-const run = await agent.streamEvents(
+const stream = await agent.streamEvents(
   { messages: [{ role: "user", content: "What is the weather in SF?" }] },
   { version: "v3" }
 );
 
-for await (const message of run.messages) {
+for await (const message of stream.messages) {
   for await (const delta of message.text) {
     process.stdout.write(delta);
   }
 }
 
-const finalState = await run.output;
+const finalState = await stream.output;
 ```
 :::
 
 ## What you can stream
 
+:::python
 | Projection | Use |
 | ---------- | --- |
-| `for event in run` | Raw protocol events when you need exact arrival order. |
-| `run.messages` | Model message streams, one per LLM call. |
+| `for event in stream` | Raw protocol events with full envelope and access to every channel. |
+| `stream.messages` | Model message streams, one per LLM call. |
 | `message.text` | Text deltas and final text for a message. |
 | `message.reasoning` | Reasoning deltas for models that expose reasoning content. |
 | `message.tool_calls` | Tool-call argument chunks and finalized tool calls. |
 | `message.output` | Final message object after the model call completes. |
+| `stream.values` | Agent state snapshots. |
+| `stream.output` | Final agent state. |
+| `stream.subgraphs` | Nested graph runs (sub-agents and plain subgraphs). |
+| `stream.extensions` | Custom transformer projections. |
+| `stream.tool_calls` | Tool execution lifecycle, inputs, output deltas, final output, and errors. |
+:::
+
+:::js
+| Projection | Use |
+| ---------- | --- |
+| `for event in stream` | Raw protocol events with full envelope and access to every channel. |
+| `stream.messages` | Model message streams, one per LLM call. |
+| `message.text` | Text deltas and final text for a message. |
+| `message.reasoning` | Reasoning deltas for models that expose reasoning content. |
+| `message.toolCalls` | Tool-call argument chunks and finalized tool calls. |
+| `message.output` | Final message object after the model call completes. |
 | `message.usage` | Token usage metadata when the provider returns it. |
-| `run.values` | Agent state snapshots. |
-| `run.output` | Final agent state. |
-| `run.extensions` | Custom transformer projections. |
-:::python
-| `run.tool_calls` | Tool execution lifecycle, inputs, output deltas, final output, and errors. |
-:::
-:::js
-| `run.toolCalls` | Tool execution lifecycle, inputs, output deltas, final output, and errors. |
+| `stream.values` | Agent state snapshots. |
+| `stream.output` | Final agent state. |
+| `stream.subgraphs` | Nested graph runs (sub-agents and plain subgraphs). |
+| `stream.extensions` | Custom transformer projections. |
+| `stream.toolCalls` | Tool execution lifecycle, inputs, output deltas, final output, and errors. |
 :::
 
 :::python
-`run.messages` yields `ChatModelStream` objects. Each message stream exposes `.text`, `.reasoning`, `.tool_calls`, and `.output`. Sync projections are iterable for live deltas and drainable for final values.
+`stream.messages` yields `ChatModelStream` objects. Each message stream exposes `.text`, `.reasoning`, `.tool_calls`, and `.output`. Sync projections are iterable for live deltas and drainable for final values: use `str(message.text)` for final text and `message.tool_calls.get()` for finalized tool calls.
 :::
 
 :::js
-`run.messages` yields message streams. Each message stream exposes `.text`, `.reasoning`, `.toolCalls`, `.output`, and `.usage`. Async projections can be iterated for live deltas or awaited for final values.
+`stream.messages` yields message streams. Each message stream exposes `.text`, `.reasoning`, `.toolCalls`, `.output`, and `.usage`. Async projections can be iterated for live deltas or awaited for final values.
 :::
 
-## Stream agent messages
+## Agent messages
 
-Use `run.messages` when you want model output from each LLM call.
+Use `stream.messages` when you want model output from each LLM call.
 
 :::python
-```python
-run = agent.stream_events(input, version="v3")
+```py
+stream = agent.stream_events(input, version="v3")
 
-for message in run.messages:
+for message in stream.messages:
     print(f"[{message.node}] ", end="")
     for delta in message.text:
         print(delta, end="", flush=True)
@@ -127,10 +132,10 @@ for message in run.messages:
 :::
 
 :::js
-```typescript
-const run = await agent.streamEvents(input, { version: "v3" });
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
 
-for await (const message of run.messages) {
+for await (const message of stream.messages) {
   process.stdout.write(`[${message.node}] `);
   for await (const delta of message.text) {
     process.stdout.write(delta);
@@ -147,18 +152,55 @@ for await (const message of run.messages) {
 ```
 :::
 
-## Stream tool calls
+`message.output` gives you the finalized AI message, including provider-specific content blocks. In TypeScript, use `message.usage` when you only need token counts or other usage metadata; in Python, read usage from `message.output.usage_metadata`.
+
+## Reasoning content
+
+Reasoning content uses the same shape as text content, but it is available only when the selected model emits reasoning blocks.
+
+:::python
+```py
+stream = agent.stream_events(input, version="v3")
+
+for message in stream.messages:
+    for delta in message.reasoning:
+        print(f"[thinking] {delta}", end="", flush=True)
+
+    for delta in message.text:
+        print(delta, end="", flush=True)
+```
+:::
+
+:::js
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+for await (const message of stream.messages) {
+  for await (const delta of message.reasoning) {
+    process.stdout.write(`[thinking] ${delta}`);
+  }
+
+  for await (const delta of message.text) {
+    process.stdout.write(delta);
+  }
+}
+```
+:::
+
+See the [reasoning guide](/oss/langchain/models#reasoning) and your provider's integration page for model configuration details.
+
+## Tool calls
 
 There are two useful tool-call projections:
 
 - `message.tool_calls` streams tool-call argument chunks while the model is producing the tool call.
-- `run.tool_calls` streams the lifecycle of tool execution after the tool call starts.
+- `stream.tool_calls` streams the lifecycle of tool execution after the tool call starts.
 
 :::python
-```python
-run = agent.stream_events(input, version="v3")
+```py
+stream = agent.stream_events(input, version="v3")
 
-for message in run.messages:
+for message in stream.messages:
     for chunk in message.tool_calls:
         print(f"tool call chunk: {chunk}")
 
@@ -166,7 +208,7 @@ for message in run.messages:
     if finalized:
         print(f"finalized tool calls: {finalized}")
 
-for call in run.tool_calls:
+for call in stream.tool_calls:
     print(f"{call.tool_name}({call.input})")
     for delta in call.output_deltas:
         print(delta, end="", flush=True)
@@ -175,19 +217,19 @@ for call in run.tool_calls:
 :::
 
 :::js
-```typescript
-const run = await agent.streamEvents(input, { version: "v3" });
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
 
 await Promise.all([
   (async () => {
-    for await (const message of run.messages) {
+    for await (const message of stream.messages) {
       for await (const chunk of message.toolCalls) {
         console.log("tool call chunk", chunk);
       }
     }
   })(),
   (async () => {
-    for await (const call of run.toolCalls) {
+    for await (const call of stream.toolCalls) {
       console.log(call.name, call.input);
       console.log(await call.output, await call.error);
     }
@@ -196,35 +238,227 @@ await Promise.all([
 ```
 :::
 
-## Stream state and final output
+## Streaming sub-agents
 
-Use `run.values` for state snapshots and `run.output` for the final agent state.
+When a `create_agent` call invokes another `create_agent` (via a wrapping tool, typically), the inner agent's events flow at a nested namespace and surface as a handle on `stream.subgraphs`. Each handle exposes the inner agent's own `.messages`, `.values`, `.tool_calls`, and `.output` projections. The `name=` you pass to `create_agent` becomes `subagent.graph_name` (Python) / `subagent.name` (JS), which lets you filter and label per agent.
+
+Every nested `CompiledStateGraph` shows up on `stream.subgraphs` — `create_agent` instances are one specific kind. Filter on the name to act only on the ones you care about.
 
 :::python
-```python
-run = agent.stream_events(input, version="v3")
+```py
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
 
-for snapshot in run.values:
-    print(snapshot)
 
-final_state = run.output
+def get_weather(city: str) -> str:
+    """Get weather for a given city."""
+    return f"It's always sunny in {city}!"
+
+
+weather_agent = create_agent(
+    model=init_chat_model("openai:gpt-5.4"),
+    tools=[get_weather],
+    name="weather_agent",
+)
+
+
+def call_weather(query: str) -> str:
+    """Query the weather agent."""
+    result = weather_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    return result["messages"][-1].text
+
+
+supervisor = create_agent(
+    model=init_chat_model("openai:gpt-5.4"),
+    tools=[call_weather],
+    name="supervisor",
+)
+
+stream = supervisor.stream_events(
+    {"messages": [{"role": "user", "content": "What's the weather in Boston?"}]},
+    version="v3",
+)
+
+for subagent in stream.subgraphs:
+    if subagent.graph_name != "weather_agent":
+        continue
+    print(f"{subagent.graph_name}: ", end="")
+    for message in subagent.messages:
+        for token in message.text:
+            print(token, end="", flush=True)
+    print()
 ```
 :::
 
 :::js
-```typescript
-const run = await agent.streamEvents(input, { version: "v3" });
+```ts
+import { createAgent, tool } from "langchain";
+import { z } from "zod";
 
-for await (const snapshot of run.values) {
-  console.log(snapshot);
+const getWeather = tool(
+  async ({ city }) => `It's always sunny in ${city}!`,
+  { name: "get_weather", schema: z.object({ city: z.string() }) }
+);
+
+const weatherAgent = createAgent({
+  model: "openai:gpt-5.4",
+  tools: [getWeather],
+  name: "weather_agent",
+});
+
+const callWeather = tool(
+  async ({ query }) => {
+    const result = await weatherAgent.invoke({
+      messages: [{ role: "user", content: query }],
+    });
+    return result.messages.at(-1)?.text ?? "";
+  },
+  { name: "call_weather", schema: z.object({ query: z.string() }) }
+);
+
+const supervisor = createAgent({
+  model: "openai:gpt-5.4",
+  tools: [callWeather],
+  name: "supervisor",
+});
+
+const stream = await supervisor.streamEvents(
+  { messages: [{ role: "user", content: "What's the weather in Boston?" }] },
+  { version: "v3" }
+);
+
+for await (const subagent of stream.subgraphs) {
+  if (subagent.name !== "weather_agent") continue;
+  process.stdout.write(`${subagent.name}: `);
+  for await (const message of subagent.messages) {
+    for await (const token of message.text) {
+      process.stdout.write(token);
+    }
+  }
+  process.stdout.write("\n");
 }
-
-const finalState = await run.output;
 ```
 :::
 
+The same projection covers plain `StateGraph` subgraphs invoked from a tool — set `name=` on `.compile(name=...)` to get a label in `subagent.graph_name`. There's no separate sub-agent-only projection; the filter is what you write into your loop.
+
+## State and final output
+
+Use `stream.values` for state snapshots and `stream.output` for the final agent state.
+
+:::python
+```py
+stream = agent.stream_events(input, version="v3")
+
+for snapshot in stream.values:
+    print(snapshot)
+
+final_state = stream.output
+```
+:::
+
+:::js
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
+}
+
+const finalState = await stream.output;
+```
+:::
+
+## Multiple projections
+
+:::python
+Use `stream.interleave(...)` when you want one sync loop over multiple projections:
+
+```py
+stream = agent.stream_events(input, version="v3")
+
+for name, item in stream.interleave("messages", "tool_calls", "values"):
+    if name == "messages":
+        print(item.text)
+    elif name == "tool_calls":
+        print(item.tool_name, item.input)
+    elif name == "values":
+        print(item)
+```
+:::
+
+:::js
+Use concurrent consumers when you want multiple projections in JavaScript:
+
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+await Promise.all([
+  (async () => {
+    for await (const message of stream.messages) {
+      console.log(await message.text);
+    }
+  })(),
+  (async () => {
+    for await (const call of stream.toolCalls) {
+      console.log(call.name, call.input);
+    }
+  })(),
+]);
+```
+:::
+
+To access channels that aren't exposed as typed projections, or to inspect the full event envelope, iterate raw protocol events:
+
+:::python
+```py
+for event in stream:
+    print(event["method"], event["params"]["namespace"], event["params"]["data"])
+```
+:::
+
+:::js
+```ts
+for await (const event of stream) {
+  console.log(event.method, event.params.namespace, event.params.data);
+}
+```
+:::
+
+## Custom updates
+
+Use custom stream transformers when your application needs a projection that is not built in, such as retrieval progress, artifacts, or domain-specific events.
+
+:::python
+```py
+stream = agent.stream_events(
+    input,
+    version="v3",
+    transformers=[ToolActivityTransformer],
+)
+
+for activity in stream.extensions["tool_activity"]:
+    print(activity)
+```
+:::
+
+:::js
+```ts
+const stream = await agent.streamEvents(input, {
+  version: "v3",
+  transformers: [toolActivityTransformer],
+});
+
+for await (const activity of stream.extensions.toolActivity) {
+  console.log(activity);
+}
+```
+:::
+
+See [Build your own projection](/oss/langgraph/event-streaming#build-your-own-projection) for the transformer contract.
+
 ## Related
 
-- [Streaming cookbook](https://github.com/langchain-ai/streaming-cookbook) shows runnable Event Streaming examples.
-- [LangChain Streaming](/oss/langchain/streaming) covers lower-level Pregel stream modes.
-- [LangGraph Event Streaming](/oss/langgraph/streaming/event-streaming) explains the underlying graph streaming model.
+- [Streaming](/oss/langchain/streaming) covers low-level Pregel stream modes.
+- [Build your own projection](/oss/langgraph/event-streaming#build-your-own-projection) covers writing application-specific projections.
+- [Frontend streaming patterns](/oss/langchain/frontend/overview) shows UI use cases built on streamed state.
