@@ -1,0 +1,52 @@
+// :snippet-start: streaming-agent-progress-js
+import { v4 as uuidv4 } from "uuid";
+import { createAgent } from "langchain";
+import { FakeListChatModel } from "@langchain/core/utils/testing";
+import { MemorySaver } from "@langchain/langgraph";
+
+const model = new FakeListChatModel({
+  responses: ["The weather in San Francisco is always sunny!"],
+});
+
+const agent = createAgent({
+  model,
+  tools: [],
+  checkpointer: new MemorySaver(),
+});
+
+const config = { configurable: { thread_id: uuidv4() } };
+for await (const chunk of await agent.stream(
+  { messages: [{ role: "user", content: "what is the weather in sf" }] },
+  { ...config, streamMode: "updates", version: "v2" },
+)) {
+  const entries = Object.entries(chunk as Record<string, unknown>);
+  if (entries.length === 0) {
+    continue;
+  }
+  const [step, content] = entries[0] as [string, { messages?: unknown[] }];
+  console.log(`step: ${step}`);
+  console.log(`content: ${JSON.stringify(content, null, 2)}`);
+}
+// :snippet-end:
+
+// :remove-start:
+async function main() {
+  const collected: unknown[] = [];
+  for await (const chunk of await agent.stream(
+    { messages: [{ role: "user", content: "what is the weather in sf" }] },
+    {
+      configurable: { thread_id: uuidv4() },
+      streamMode: "updates",
+      version: "v2",
+    },
+  )) {
+    collected.push(chunk);
+  }
+  if (collected.length === 0) {
+    throw new Error("expected at least one stream chunk");
+  }
+  console.log("✓ streaming agent progress (updates, v2) emits chunks");
+}
+
+main();
+// :remove-end:
