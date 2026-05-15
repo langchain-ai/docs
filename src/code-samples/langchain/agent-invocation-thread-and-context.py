@@ -2,9 +2,8 @@
 from dataclasses import dataclass
 
 from langchain.agents import create_agent
-from langchain.messages import AIMessage
-from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.utils.uuid import uuid7
+from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 
 
@@ -14,7 +13,7 @@ class Context:
 
 
 agent = create_agent(
-    model=GenericFakeChatModel(messages=iter([AIMessage(content="ok")])),
+    model="claude-sonnet-4-6",
     tools=[],
     context_schema=Context,
     checkpointer=InMemorySaver(),
@@ -29,6 +28,8 @@ result = agent.invoke(
 
 # :remove-start:
 if __name__ == "__main__":
-    assert result["messages"][-1].content_blocks[0]["text"] == "ok"
+    last = result["messages"][-1]
+    text = last.content_blocks[0]["text"] if last.content_blocks else str(last.content)
+    assert text.strip(), "expected non-empty assistant reply"
     print("✓ thread_id and context invoke together without error")
 # :remove-end:

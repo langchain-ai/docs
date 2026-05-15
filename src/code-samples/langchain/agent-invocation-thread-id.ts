@@ -1,19 +1,11 @@
 // :snippet-start: agent-invocation-thread-id-js
 import { v4 as uuidv4 } from "uuid";
-import { createAgent } from "langchain";
 import { AIMessage } from "@langchain/core/messages";
-import { FakeListChatModel } from "@langchain/core/utils/testing";
+import { createAgent } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
 
-const model = new FakeListChatModel({
-  responses: [
-    "First reply about San Francisco.",
-    "Second reply about tomorrow.",
-  ],
-});
-
 const agent = createAgent({
-  model,
+  model: "claude-sonnet-4-6",
   tools: [],
   checkpointer: new MemorySaver(),
 });
