@@ -16,7 +16,7 @@ with urlopen(skill_url) as response:
     skill_content = response.read().decode('utf-8')
 
 skills_files = {
-    "/skills/write-timestamp/SKILL.md": create_file_data(skill_content),
+    "/skills/langgraph-docs/SKILL.md": create_file_data(skill_content),
 }
 
 agent = create_deep_agent(
@@ -55,7 +55,7 @@ with urlopen(skill_url) as response:
 
 store.put(
     namespace=("filesystem",),
-    key="/skills/write-timestamp/SKILL.md",
+    key="/skills/langgraph-docs/SKILL.md",
     value=create_file_data(skill_content),
 )
 
@@ -74,6 +74,7 @@ result = agent.invoke(
 )
 # :snippet-end:
 
+from pathlib import Path
 # :snippet-start: skills-usage-filesystem-py
 from deepagents import create_deep_agent
 from deepagents.backends.filesystem import FilesystemBackend
@@ -82,7 +83,14 @@ from langgraph.checkpoint.memory import MemorySaver
 
 # Checkpointer is REQUIRED for human-in-the-loop
 checkpointer = MemorySaver()
+root_dir = "/Users/user/{project}"
+backend = FilesystemBackend(root_dir=root_dir)
+# :remove-start:
+# Test harness: make test-code-samples runs from the repo root.
+example_dir = (Path.cwd() / "src/code-samples/deepagents").resolve()
+root_dir = str(example_dir)
 backend = FilesystemBackend(root_dir=root_dir, virtual_mode=True)
+# :remove-end:
 
 # KEEP MODEL
 agent = create_deep_agent(

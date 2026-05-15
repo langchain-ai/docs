@@ -8,7 +8,7 @@ const backend = new FilesystemBackend({ rootDir: process.cwd() });
 
 // KEEP MODEL
 const agent = await createDeepAgent({
-  model: "google_genai:gemini-3.1-pro-preview",
+  model: "google-genai:gemini-3.1-pro-preview",
   backend,
   skills: ["./examples/skills/"],
   interruptOn: {

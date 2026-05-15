@@ -27,7 +27,7 @@ await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
 
 // KEEP MODEL
 const agent = await createDeepAgent({
-  model: "google_genai:gemini-3.1-pro-preview",
+  model: "google-genai:gemini-3.1-pro-preview",
   backend,
   store,
   checkpointer,
