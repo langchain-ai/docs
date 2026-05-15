@@ -1,4 +1,4 @@
-.PHONY: all dev build format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
+.PHONY: all dev build export format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
 
 # Default target
 all: help
@@ -13,6 +13,13 @@ build:
 	npm install
 	PYTHONPATH=$(CURDIR) uv run pipeline build
 
+# Offline zip via Mintlify (https://www.mintlify.com/docs/deploy/export).
+# Must run from build/: docs.json paths are oss/python/... and oss/javascript/... but sources live under src/oss/... until the pipeline emits build/oss/{python,javascript}/...
+# Example: make export MINT_EXPORT_ARGS='--output ../langchain-docs-export.zip'
+export: build
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run: npm install -g mint@latest"; exit 1; }
+	@cd build && mint export $(MINT_EXPORT_ARGS)
+
 # Define a variable for the test file path.
 TEST_FILE ?= tests/unit_tests
 
@@ -23,6 +30,7 @@ lint:
 	uv run ruff format $(PYTHON_FILES) --diff
 	uv run ruff check $(PYTHON_FILES) --diff
 	uv run ty check
+	uv run codespell src
 
 format:
 	uv run ruff format $(PYTHON_FILES)
@@ -135,11 +143,11 @@ check-openapi: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.406'"; exit 1; }
 	@cd build && output=$$(mint openapi-check langsmith/agent-server-openapi.json) && echo "$$output"
 
-# Extract code snippets from src/code-samples using Bluehawk
+# Extract code snippets from src/code-samples (line-based, Bluehawk-compatible tags)
 code-snippets:
-	@echo "Extracting code snippets with Bluehawk..."
+	@echo "Extracting code snippets..."
 	@mkdir -p src/code-samples-generated
-	@npx --yes bluehawk snip -o src/code-samples-generated/ --ignore node_modules --ignore .DS_Store src/code-samples/
+	@PYTHONPATH=$(CURDIR) python scripts/extract_code_snippets.py
 	@PYTHONPATH=$(CURDIR) python scripts/generate_code_snippet_mdx.py
 
 # Run code samples. By default runs all; pass FILES to test specific paths.
@@ -157,6 +165,7 @@ help:
 	@echo "Available commands:"
 	@echo "  make dev                - Start development mode with file watching and mint dev"
 	@echo "  make build              - Build documentation to ./build directory"
+	@echo "  make export             - Run mint export from ./build (optional: MINT_EXPORT_ARGS)"
 	@echo "  make broken-links       - Check for broken links in built documentation"
 	@echo "  make check-cross-refs   - Check for unresolved @[ref] cross-references"
 	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"
@@ -167,7 +176,7 @@ help:
 	@echo "  make lint_prose         - Lint prose with Vale (terminology, style)"
 	@echo "  make test               - Run tests"
 	@echo "  make install            - Install dependencies"
-	@echo "  make code-snippets      - Extract code snippets with Bluehawk"
+	@echo "  make code-snippets      - Extract code snippets (line-based, Bluehawk-compatible)"
 	@echo "  make test-code-samples  - Run code samples (FILES=\"path ...\" for specific)"
 	@echo "  make clean              - Clean build artifacts"
 	@echo "  make help               - Show this help message"

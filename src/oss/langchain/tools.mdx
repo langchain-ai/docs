@@ -8,13 +8,16 @@ import ToolReturnObjectPy from '/snippets/code-samples/tool-return-object-py.mdx
 import ToolReturnObjectJs from '/snippets/code-samples/tool-return-object-js.mdx';
 import ToolReturnCommandPy from '/snippets/code-samples/tool-return-command-py.mdx';
 import ToolReturnCommandJs from '/snippets/code-samples/tool-return-command-js.mdx';
+import ToolUpdateStatePy from '/snippets/code-samples/tool-update-state-py.mdx';
+import ToolErrorHandlingPy from '/snippets/code-samples/tool-error-handling-py.mdx';
+import ToolErrorHandlingJs from '/snippets/code-samples/tool-error-handling-js.mdx';
 
 Tools extend what [agents](/oss/langchain/agents) can do—letting them fetch real-time data, execute code, query external databases, and take actions in the world.
 
 Under the hood, tools are callable functions with well-defined inputs and outputs that get passed to a [chat model](/oss/langchain/models). The model decides when to invoke a tool based on the conversation context, and what input arguments to provide.
 
 <Tip>
-    For details on how models handle tool calls, see [Tool calling](/oss/langchain/models#tool-calling).
+For details on how models handle tool calls, see [Tool calling](/oss/langchain/models#tool-calling). Trace tool calls and debug errors with [LangSmith](https://smith.langchain.com)—follow the [tracing quickstart](/langsmith/trace-with-langchain) to get set up.
 </Tip>
 
 ## Create tools
@@ -220,10 +223,10 @@ graph LR
     L --> O
     F --> P
 
-    classDef trigger fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#14532D
-    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
-    classDef output fill:#F3E8FF,stroke:#9333EA,stroke-width:2px,color:#581C87
-    classDef neutral fill:#F3F4F6,stroke:#9CA3AF,stroke-width:2px,color:#374151
+    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
+    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68
 
     class A trigger
     class B,C,D,E,F process
@@ -276,17 +279,10 @@ def get_user_preference(
 
 #### Update state
 
-Use @[`Command`] to update the agent's state. This is useful for tools that need to update custom state fields:
+Use @[`Command`] to update the agent's state. This is useful for tools that need to update custom state fields.
+Include a `ToolMessage` in the update so the model can see the result of the tool call:
 
-```python
-from langgraph.types import Command
-from langchain.tools import tool
-
-@tool
-def set_user_name(new_name: str) -> Command:
-    """Set the user's name in the conversation state."""
-    return Command(update={"user_name": new_name})
-```
+<ToolUpdateStatePy />
 
 <Tip>
     When tools update state variables, consider defining a [reducer](/oss/langgraph/graph-api#reducers) for those fields. Since LLMs can call multiple tools in parallel, a reducer determines how to resolve conflicts when the same state field is updated by concurrent tool calls.
@@ -336,7 +332,7 @@ def get_account_info(runtime: ToolRuntime[UserContext]) -> str:
         return f"Account holder: {user['name']}\nType: {user['account_type']}\nBalance: ${user['balance']}"
     return "User not found"
 
-model = ChatOpenAI(model="gpt-4.1")
+model = ChatOpenAI(model="gpt-5.4")
 agent = create_agent(
     model,
     tools=[get_account_info],
@@ -376,7 +372,7 @@ const contextSchema = z.object({
 });
 
 const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-4.1" }),
+  model: new ChatOpenAI({ model: "gpt-5.4" }),
   tools: [getUserName],
   contextSchema,
 });
@@ -401,7 +397,7 @@ The @[`BaseStore`] provides persistent storage that survives across conversation
 Access the store through `runtime.store`. The store uses a namespace/key pattern to organize data:
 
 <Tip>
-    For production deployments, use a persistent store implementation like @[`PostgresStore`] instead of `InMemoryStore`. See the [memory documentation](/oss/langgraph/memory) for setup details.
+    For production deployments, use a persistent store implementation like @[`PostgresStore`] instead of `InMemoryStore`. See the [memory documentation](/oss/langgraph/add-memory) for setup details.
 </Tip>
 
 ```python expandable
@@ -427,7 +423,7 @@ def save_user_info(user_id: str, user_info: dict[str, Any], runtime: ToolRuntime
     store.put(("users",), user_id, user_info)
     return "Successfully saved user info."
 
-model = ChatOpenAI(model="gpt-4.1")
+model = ChatOpenAI(model="gpt-5.4")
 
 store = InMemoryStore()
 agent = create_agent(
@@ -500,7 +496,7 @@ const saveUserInfo = tool(
 );
 
 const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-4.1" }),
+  model: new ChatOpenAI({ model: "gpt-5.4" }),
   tools: [getUserInfo, saveUserInfo],
   store,
 });
@@ -701,74 +697,11 @@ Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`).
 </Note>
 :::
 
-## ToolNode
+## Tool execution
 
-@[`ToolNode`] is a prebuilt node that executes tools in LangGraph workflows. It handles parallel tool execution, error handling, and state injection automatically.
+In LangChain, tools are used by agents (for example via @[`create_agent`]) and tool error handling is configured through [middleware](/oss/langchain/middleware).
 
-<Info>
-    For custom workflows where you need fine-grained control over tool execution patterns, use @[`ToolNode`] instead of @[`create_agent`]. It's the building block that powers agent tool execution.
-</Info>
-
-### Basic usage
-
-:::python
-
-```python
-from langchain.tools import tool
-from langgraph.prebuilt import ToolNode
-from langgraph.graph import StateGraph, MessagesState, START, END
-
-@tool
-def search(query: str) -> str:
-    """Search for information."""
-    return f"Results for: {query}"
-
-@tool
-def calculator(expression: str) -> str:
-    """Evaluate a math expression."""
-    return str(eval(expression))
-
-# Create the ToolNode with your tools
-tool_node = ToolNode([search, calculator])
-
-# Use in a graph
-builder = StateGraph(MessagesState)
-builder.add_node("tools", tool_node)
-# ... add other nodes and edges
-```
-
-:::
-
-:::js
-
-```typescript
-import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { tool } from "@langchain/core/tools";
-import * as z from "zod";
-
-const search = tool(
-  ({ query }) => `Results for: ${query}`,
-  {
-    name: "search",
-    description: "Search for information.",
-    schema: z.object({ query: z.string() }),
-  }
-);
-
-const calculator = tool(
-  ({ expression }) => String(eval(expression)),
-  {
-    name: "calculator",
-    description: "Evaluate a math expression.",
-    schema: z.object({ expression: z.string() }),
-  }
-);
-
-// Create the ToolNode with your tools
-const toolNode = new ToolNode([search, calculator]);
-```
-
-:::
+For LangGraph workflows, tool execution is handled by @[`ToolNode`]. See [ToolNode](/oss/langgraph/workflows-agents#toolnode).
 
 ### Tool return values
 
@@ -854,91 +787,17 @@ Use this when the tool is not just returning data, but also mutating agent state
 
 ### Error handling
 
-Configure how tool errors are handled. See the @[`ToolNode`] API reference for all options.
+Handle tool errors using LangChain agent [middleware](/oss/langchain/middleware) to retry failed tool calls or return custom error messages:
 
 :::python
 
-```python
-from langgraph.prebuilt import ToolNode
-
-# Default: catch invocation errors, re-raise execution errors
-tool_node = ToolNode(tools)
-
-# Catch all errors and return error message to LLM
-tool_node = ToolNode(tools, handle_tool_errors=True)
-
-# Custom error message
-tool_node = ToolNode(tools, handle_tool_errors="Something went wrong, please try again.")
-
-# Custom error handler
-def handle_error(e: ValueError) -> str:
-    return f"Invalid input: {e}"
-
-tool_node = ToolNode(tools, handle_tool_errors=handle_error)
-
-# Only catch specific exception types
-tool_node = ToolNode(tools, handle_tool_errors=(ValueError, TypeError))
-```
+<ToolErrorHandlingPy />
 
 :::
 
 :::js
 
-```typescript
-import { ToolNode } from "@langchain/langgraph/prebuilt";
-
-// Default behavior
-const toolNode = new ToolNode(tools);
-
-// Catch all errors
-const toolNode = new ToolNode(tools, { handleToolErrors: true });
-
-// Custom error message
-const toolNode = new ToolNode(tools, {
-  handleToolErrors: "Something went wrong, please try again."
-});
-```
-
-:::
-
-### Route with tools_condition
-
-Use @[`tools_condition`] for conditional routing based on whether the LLM made tool calls:
-
-:::python
-
-```python
-from langgraph.prebuilt import ToolNode, tools_condition
-from langgraph.graph import StateGraph, MessagesState, START, END
-
-builder = StateGraph(MessagesState)
-builder.add_node("llm", call_llm)
-builder.add_node("tools", ToolNode(tools))
-
-builder.add_edge(START, "llm")
-builder.add_conditional_edges("llm", tools_condition)  # Routes to "tools" or END
-builder.add_edge("tools", "llm")
-
-graph = builder.compile()
-```
-
-:::
-
-:::js
-
-```typescript
-import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
-import { StateGraph, MessagesAnnotation } from "@langchain/langgraph";
-
-const builder = new StateGraph(MessagesAnnotation)
-  .addNode("llm", callLlm)
-  .addNode("tools", new ToolNode(tools))
-  .addEdge("__start__", "llm")
-  .addConditionalEdges("llm", toolsCondition)  // Routes to "tools" or "__end__"
-  .addEdge("tools", "llm");
-
-const graph = builder.compile();
-```
+<ToolErrorHandlingJs />
 
 :::
 
@@ -950,15 +809,12 @@ Tools can access the current graph state through @[`ToolRuntime`]:
 
 ```python
 from langchain.tools import tool, ToolRuntime
-from langgraph.prebuilt import ToolNode
 
 @tool
 def get_message_count(runtime: ToolRuntime) -> str:
     """Get the number of messages in the conversation."""
     messages = runtime.state["messages"]
     return f"There are {len(messages)} messages."
-
-tool_node = ToolNode([get_message_count])
 ```
 
 :::

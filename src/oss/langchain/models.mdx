@@ -55,9 +55,11 @@ const response = await model.invoke("Why do parrots talk?");
 See @[`initChatModel`][initChatModel] for more detail, including information on how to pass model [parameters](#parameters).
 :::
 
-### Supported models
+### Supported providers and models
 
-LangChain supports all major model providers, including OpenAI, Anthropic, Google, Azure, AWS Bedrock, and more. Each provider offers a variety of models with different capabilities. For a full list of supported models in LangChain, see the [integrations page](/oss/integrations/providers/overview).
+LangChain supports all major model providers through dedicated integration packages. Each provider package implements the same standard interface, so you can swap providers without rewriting application logic. New model names work immediately — no LangChain update required — because provider packages pass model names directly to the provider's API.
+
+Browse the [full list of supported providers](/oss/integrations/providers/overview), or see [Providers and models](/oss/concepts/providers-and-models) for a conceptual overview of how providers, packages, and model names work together in LangChain.
 
 ### Key methods
 
@@ -148,6 +150,42 @@ const model = await initChatModel(
 )
 ```
 :::
+
+### Connection resilience
+
+LangChain chat models automatically retry failed API requests with exponential backoff. By default, models retry up to **6 times** for network errors, rate limits (429), and server errors (5xx). Client errors like 401 (unauthorized) or 404 are not retried.
+
+:::python
+You can adjust `max_retries` and `timeout` when creating a model, then pass that instance to `create_agent`, `create_deep_agent`, or call it standalone:
+
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(
+    "google_genai:gemini-3.1-pro-preview",
+    max_retries=10,  # Increase for unreliable networks (default: 6)
+    timeout=120,  # Seconds; increase for slow connections
+)
+```
+:::
+
+:::js
+You can adjust `maxRetries` and `timeout` when creating a model, then pass that instance to `createAgent`, `createDeepAgent`, or call it standalone:
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+
+const model = new ChatAnthropic({
+  model: "google_genai:gemini-3.1-pro-preview",
+  maxRetries: 10, // Increase for unreliable networks (default: 6)
+  timeout: 120_000, // Milliseconds; increase for slow connections
+});
+```
+:::
+
+<Tip>
+    For long-running agent graphs on unreliable networks, consider higher `max_retries` (for example 10–15) and a [checkpointer](/oss/langgraph/persistence) so that progress is preserved across failures.
+</Tip>
 
 <Info>
     Each chat model integration may have additional params used to control provider-specific functionality.
@@ -639,7 +677,7 @@ const getWeather = tool(
   },
 );
 
-const model = new ChatOpenAI({ model: "gpt-4.1" });
+const model = new ChatOpenAI({ model: "gpt-5.4" });
 const modelWithTools = model.bindTools([getWeather]);  // [!code highlight]
 
 const response = await modelWithTools.invoke("What's the weather like in Boston?");
@@ -1479,7 +1517,7 @@ Many providers offer prompt caching features to reduce latency and cost on repea
     - @[`ChatOpenAI`] (via `prompt_cache_key`)
     - Anthropic's [`AnthropicPromptCachingMiddleware`](/oss/integrations/chat/anthropic#prompt-caching)
     - [Gemini](https://reference.langchain.com/python/integrations/langchain_google_genai/).
-    - [AWS Bedrock](/oss/integrations/chat/bedrock#prompt-caching)
+    - [AWS Bedrock](/oss/integrations/chat/bedrock)
 
 <Warning>
     Prompt caching is often only engaged above a minimum input token threshold. See [provider pages](/oss/integrations/chat) for details.
@@ -1497,7 +1535,7 @@ If a model invokes a tool server-side, the content of the response message will 
 ```python Invoke with server-side tool use
 from langchain.chat_models import init_chat_model
 
-model = init_chat_model("gpt-4.1-mini")
+model = init_chat_model("gpt-5.4-mini")
 
 tool = {"type": "web_search"}
 model_with_tools = model.bind_tools([tool])
@@ -1541,7 +1579,7 @@ print(response.content_blocks)
 ```typescript
 import { initChatModel } from "langchain";
 
-const model = await initChatModel("gpt-4.1-mini");
+const model = await initChatModel("gpt-5.4-mini");
 const modelWithTools = model.bindTools([{ type: "web_search" }])
 
 const message = await modelWithTools.invoke("What was a positive news story from today?");
@@ -1572,7 +1610,7 @@ To help manage rate limits, chat model integrations accept a `rate_limiter` para
     )
 
     model = init_chat_model(
-        model="gpt-5",
+        model="gpt-5.4",
         model_provider="openai",
         rate_limiter=rate_limiter  # [!code highlight]
     )
@@ -1638,7 +1676,7 @@ You can configure a custom base URL for providers that implement the OpenAI Chat
     from langchain_openai import ChatOpenAI
 
     model = ChatOpenAI(
-        model="gpt-4.1",
+        model="gpt-5.4",
         openai_proxy="http://proxy.example.com:8080"
     )
     ```
@@ -1658,7 +1696,7 @@ Certain models can be configured to return token-level log probabilities represe
 :::python
 ```python
 model = init_chat_model(
-    model="gpt-4.1",
+    model="gpt-5.4",
     model_provider="openai"
 ).bind(logprobs=True)
 
@@ -1670,7 +1708,7 @@ print(response.response_metadata["logprobs"])
 :::js
 ```typescript
 const model = new ChatOpenAI({
-    model: "gpt-4.1",
+    model: "gpt-5.4",
     logprobs: true,
 });
 
@@ -1684,9 +1722,11 @@ responseMessage.response_metadata.logprobs.content.slice(0, 5);
 
 A number of model providers return token usage information as part of the invocation response. When available, this information will be included on the @[`AIMessage`] objects produced by the corresponding model. For more details, see the [messages](/oss/langchain/messages) guide.
 
+:::python
 <Note>
     Some provider APIs, notably OpenAI and Azure OpenAI chat completions, require users opt-in to receiving token usage data in streaming contexts. See the [streaming usage metadata](/oss/integrations/chat/openai#streaming-usage-metadata) section of the integration guide for details.
 </Note>
+:::
 
 :::python
 You can track aggregate token counts across models in an application using either a callback or context manager, as shown below:
@@ -1697,7 +1737,7 @@ You can track aggregate token counts across models in an application using eithe
         from langchain.chat_models import init_chat_model
         from langchain_core.callbacks import UsageMetadataCallbackHandler
 
-        model_1 = init_chat_model(model="gpt-4.1-mini")
+        model_1 = init_chat_model(model="gpt-5.4-mini")
         model_2 = init_chat_model(model="claude-haiku-4-5-20251001")
 
         callback = UsageMetadataCallbackHandler()
@@ -1707,7 +1747,7 @@ You can track aggregate token counts across models in an application using eithe
         ```
         ```python
         {
-            'gpt-4.1-mini-2025-04-14': {
+            'gpt-5.4-mini': {
                 'input_tokens': 8,
                 'output_tokens': 10,
                 'total_tokens': 18,
@@ -1728,7 +1768,7 @@ You can track aggregate token counts across models in an application using eithe
         from langchain.chat_models import init_chat_model
         from langchain_core.callbacks import get_usage_metadata_callback
 
-        model_1 = init_chat_model(model="gpt-4.1-mini")
+        model_1 = init_chat_model(model="gpt-5.4-mini")
         model_2 = init_chat_model(model="claude-haiku-4-5-20251001")
 
         with get_usage_metadata_callback() as cb:
@@ -1738,7 +1778,7 @@ You can track aggregate token counts across models in an application using eithe
         ```
         ```python
         {
-            'gpt-4.1-mini-2025-04-14': {
+            'gpt-5.4-mini': {
                 'input_tokens': 8,
                 'output_tokens': 10,
                 'total_tokens': 18,
@@ -1888,7 +1928,7 @@ configurable_model.invoke(
 
     ```python
     first_model = init_chat_model(
-            model="gpt-4.1-mini",
+            model="gpt-5.4-mini",
             temperature=0,
             configurable_fields=("model", "model_provider", "temperature", "max_tokens"),
             config_prefix="first",  # Useful when you have a chain with multiple models
@@ -1936,7 +1976,7 @@ configurable_model.invoke(
     model_with_tools = model.bind_tools([GetWeather, GetPopulation])
 
     model_with_tools.invoke(
-        "what's bigger in 2024 LA or NYC", config={"configurable": {"model": "gpt-4.1-mini"}}
+        "what's bigger in 2024 LA or NYC", config={"configurable": {"model": "gpt-5.4-mini"}}
     ).tool_calls
     ```
     ```

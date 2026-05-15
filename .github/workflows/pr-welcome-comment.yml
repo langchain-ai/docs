@@ -1,0 +1,253 @@
+# Post a welcome comment on new PRs telling the author who owns
+# the docs areas they're changing (derived from .github/OWNERS).
+#
+# NOTE: This uses `pull_request_target` so it has write access to
+# comment on PRs from forks. The script only reads OWNERS from
+# the base branch and lists changed files — no untrusted code is executed.
+
+name: PR Welcome Comment
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review]
+
+jobs:
+  welcome-comment:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    # Skip draft PRs — the comment will be posted when marked ready
+    if: ${{ !github.event.pull_request.draft }}
+
+    steps:
+      - name: Post welcome comment with owners
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+
+            // --- Auto-assign reviewers for bot-generated PRs ---
+            const botPatterns = [
+              '[LangGraph Server Changelog Bot]',
+              '[Self-Hosted Changelog Bot]'
+            ];
+            if (botPatterns.some(p => pr.title.includes(p))) {
+              const reviewers = ['lnhsingh', 'katmayb'];
+              await github.rest.pulls.requestReviewers({
+                owner, repo,
+                pull_number: pr.number,
+                reviewers
+              });
+              console.log(`Auto-assigned reviewers ${reviewers.join(', ')} on bot PR #${pr.number}`);
+              return;
+            }
+
+            // --- Fetch OWNERS from the base branch ---
+            let ownersContent;
+            try {
+              const { data } = await github.rest.repos.getContent({
+                owner, repo,
+                path: '.github/OWNERS',
+                ref: pr.base.ref
+              });
+              ownersContent = Buffer.from(data.content, 'base64').toString();
+            } catch (error) {
+              console.log('Could not read .github/OWNERS:', error.message);
+              return;
+            }
+
+            // --- Parse OWNERS rules (CODEOWNERS syntax + auto-request marker) ---
+            // A trailing # auto-request[: @a @b] comment opts the matching
+            // rule into GitHub review-request auto-assignment. The bare form
+            // requests every owner on the rule; the scoped form requests only
+            // the listed subset.
+            const rules = [];
+            for (const rawLine of ownersContent.split('\n')) {
+              const trimmed = rawLine.trim();
+              if (!trimmed) continue;
+
+              const hashIdx = trimmed.indexOf('#');
+              const ruleText = (hashIdx === -1 ? trimmed : trimmed.slice(0, hashIdx)).trim();
+              const commentText = hashIdx === -1 ? '' : trimmed.slice(hashIdx + 1).trim();
+              if (!ruleText) continue;
+
+              const parts = ruleText.split(/\s+/);
+              const pattern = parts[0];
+              const owners = parts.slice(1).filter(o => o.startsWith('@'));
+              if (owners.length === 0) continue;
+
+              let autoRequest = null;
+              const autoMatch = commentText.match(/^auto-request\b\s*:?\s*(.*)$/i);
+              if (autoMatch) {
+                const listed = autoMatch[1]
+                  .split(/[\s,]+/)
+                  .filter(t => t.startsWith('@'))
+                  .map(t => t.replace(/^@/, ''));
+                const ownerNames = owners.map(o => o.replace(/^@/, ''));
+                if (listed.length === 0) {
+                  autoRequest = ownerNames;
+                } else {
+                  const ownerSet = new Set(ownerNames.map(o => o.toLowerCase()));
+                  const filtered = listed.filter(u => ownerSet.has(u.toLowerCase()));
+                  const dropped = listed.filter(u => !ownerSet.has(u.toLowerCase()));
+                  if (dropped.length > 0) {
+                    console.log(
+                      `OWNERS: ignoring auto-request ${dropped.length === 1 ? 'entry' : 'entries'} ` +
+                      `not in owner list for ${pattern}: ${dropped.map(u => '@' + u).join(', ')}`
+                    );
+                  }
+                  autoRequest = filtered;
+                }
+              }
+
+              rules.push({ pattern, owners, autoRequest });
+            }
+
+            // Last matching rule wins (same as GitHub CODEOWNERS behavior)
+            function matchRule(filepath) {
+              let matched = null;
+              for (const rule of rules) {
+                let pat = rule.pattern.startsWith('/') ? rule.pattern.slice(1) : rule.pattern;
+                let matches = false;
+                if (pat === '*') {
+                  matches = true;
+                } else if (pat.endsWith('/')) {
+                  matches = filepath.startsWith(pat);
+                } else if (pat.includes('*')) {
+                  const re = new RegExp(
+                    '^' + pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
+                  );
+                  matches = re.test(filepath);
+                } else {
+                  matches = filepath === pat;
+                }
+                if (matches) matched = rule;
+              }
+              return matched;
+            }
+
+            // --- Map file paths to human-readable product names ---
+            function getProductName(filepath) {
+              const map = [
+                ['src/langsmith/fleet/', 'LangSmith Fleet'],
+                ['src/langsmith/', 'LangSmith'],
+                ['src/oss/deepagents/', 'Deep Agents'],
+                ['src/oss/langgraph/', 'LangGraph'],
+                ['src/oss/langchain/', 'LangChain'],
+                ['src/oss/python/integrations/', 'Python integrations'],
+                ['src/oss/javascript/integrations/', 'JavaScript integrations'],
+                ['src/oss/', 'open source'],
+              ];
+              for (const [prefix, name] of map) {
+                if (filepath.startsWith(prefix)) return name;
+              }
+              return null;
+            }
+
+            // --- Get changed files ---
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number, per_page: 100
+            });
+
+            // --- Group by product, merging owners across files ---
+            const productOwners = new Map();
+            const autoRequestReviewers = new Set();
+            let authorIsOwner = false;
+            for (const file of files) {
+              const rule = matchRule(file.filename);
+              const owners = rule ? rule.owners : [];
+              const ownerNames = owners.map(o => o.replace(/^@/, ''));
+
+              if (ownerNames.some(o => o.toLowerCase() === author.toLowerCase())) {
+                authorIsOwner = true;
+              }
+
+              if (rule && rule.autoRequest) {
+                for (const u of rule.autoRequest) {
+                  if (u.toLowerCase() !== author.toLowerCase()) {
+                    autoRequestReviewers.add(u);
+                  }
+                }
+              }
+
+              const product = getProductName(file.filename);
+              if (!product || owners.length === 0) continue;
+
+              // Skip areas where the author is already an owner
+              if (ownerNames.some(o => o.toLowerCase() === author.toLowerCase())) continue;
+
+              if (!productOwners.has(product)) {
+                productOwners.set(product, new Set());
+              }
+              for (const o of ownerNames) {
+                productOwners.get(product).add(o);
+              }
+            }
+
+            // --- Auto-request opted-in reviewers (any PR author) ---
+            if (autoRequestReviewers.size > 0) {
+              const reviewers = [...autoRequestReviewers];
+              try {
+                await github.rest.pulls.requestReviewers({
+                  owner, repo,
+                  pull_number: pr.number,
+                  reviewers
+                });
+                console.log(`Auto-requested reviewers ${reviewers.join(', ')} on PR #${pr.number}`);
+              } catch (error) {
+                console.log(`Failed to auto-request reviewers ${reviewers.join(', ')}: ${error.message}`);
+              }
+            }
+
+            if (productOwners.size === 0) {
+              // Skip fallback if author owns any of the changed files
+              if (authorIsOwner || author.toLowerCase() === 'lnhsingh') return;
+              productOwners.set('General changes', new Set(['lnhsingh']));
+            }
+
+            // --- Auto-assign reviewers for bot authors ---
+            const botAuthors = ['open-swe'];
+            if (botAuthors.includes(author.toLowerCase())) {
+              const reviewers = [...new Set(
+                [...productOwners.values()].flatMap(s => [...s])
+              )];
+              if (reviewers.length > 0) {
+                await github.rest.pulls.requestReviewers({
+                  owner, repo,
+                  pull_number: pr.number,
+                  reviewers
+                });
+                console.log(`Auto-assigned reviewers ${reviewers.join(', ')} on bot PR #${pr.number}`);
+              }
+              return;
+            }
+
+            // --- Format the comment ---
+            function formatOwners(ownerSet) {
+              const mentions = [...ownerSet].map(o => `\`@${o}\``);
+              if (mentions.length === 1) return mentions[0];
+              if (mentions.length === 2) return `${mentions[0]} or ${mentions[1]}`;
+              return mentions.slice(0, -1).join(', ') + `, or ${mentions[mentions.length - 1]}`;
+            }
+
+            const areas = [...productOwners.entries()];
+            const lines = areas.map(([product, owners]) =>
+              `- ${formatOwners(owners)} (${product})`
+            );
+            const body = [
+              `Thanks for opening a docs PR, @${author}! When it's ready for review, please add the relevant reviewers:\n`,
+              lines.join('\n')
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner, repo,
+              issue_number: pr.number,
+              body
+            });
+
+            console.log(`Posted welcome comment on PR #${pr.number}`);

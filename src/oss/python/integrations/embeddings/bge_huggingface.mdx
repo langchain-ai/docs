@@ -1,39 +1,76 @@
 ---
-title: "Bge on Hugging Face integration"
-description: "Integrate with the Bge on Hugging Face embedding model using LangChain Python."
+title: "BGE on Hugging Face integration"
+description: "Integrate with BGE embedding models on Hugging Face using LangChain Python."
 ---
 
->[BGE models on the HuggingFace](https://huggingface.co/BAAI/bge-large-en-v1.5) are one of [the best open-source embedding models](https://huggingface.co/spaces/mteb/leaderboard).
->BGE model is created by the [Beijing Academy of Artificial Intelligence (BAAI)](https://en.wikipedia.org/wiki/Beijing_Academy_of_Artificial_Intelligence). `BAAI` is a private non-profit organization engaged in AI research and development.
+>[BGE models on Hugging Face](https://huggingface.co/BAAI) are a family of open-source embedding and reranking models published by the [Beijing Academy of Artificial Intelligence (BAAI)](https://en.wikipedia.org/wiki/Beijing_Academy_of_Artificial_Intelligence). BGE was one of the leading open-source embedding families in 2023 and 2024, and while newer models on the [MTEB leaderboard](https://huggingface.co/spaces/mteb/leaderboard) have since surpassed them on raw retrieval scores, BGE (and `BAAI/bge-m3` in particular) remains a widely used, well-balanced default for multilingual retrieval.
 
-This notebook shows how to use `BGE Embeddings` through `Hugging Face`
+LangChain provides two ways to use BGE models:
+
+- `HuggingFaceEmbeddings` from `langchain-huggingface`: the generic Sentence Transformers class. Covers every BGE variant and is the **recommended** choice for new projects.
+- `HuggingFaceBgeEmbeddings` from `langchain-community`: a BGE-specific wrapper that automatically prepends the query instruction used by the older English v1.5 models. Convenient when you specifically want a v1.5 model and don't want to manage the prompt yourself.
+
+## `BAAI/bge-m3` and newer
+
+```shell
+pip install -qU langchain-huggingface
+```
 
 ```python
-pip install -qU  sentence_transformers
+from langchain_huggingface import HuggingFaceEmbeddings
+
+embeddings = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-m3",
+    encode_kwargs={"normalize_embeddings": True},
+)
+```
+
+`BAAI/bge-m3` is trained without a query prompt, so no extra configuration is needed. `normalize_embeddings=True` is recommended for cosine similarity, per the model authors.
+
+## `BAAI/bge-*-en-v1.5` (quick path)
+
+The older English v1.5 models expect the query to be prefixed with an instruction. The dedicated `HuggingFaceBgeEmbeddings` class handles that automatically:
+
+```shell
+pip install -qU langchain-community sentence-transformers
 ```
 
 ```python
 from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 
-model_name = "BAAI/bge-small-en"
-model_kwargs = {"device": "cpu"}
-encode_kwargs = {"normalize_embeddings": True}
-hf = HuggingFaceBgeEmbeddings(
-    model_name=model_name, model_kwargs=model_kwargs, encode_kwargs=encode_kwargs
+embeddings = HuggingFaceBgeEmbeddings(
+    model_name="BAAI/bge-large-en-v1.5",
+    encode_kwargs={"normalize_embeddings": True},
 )
 ```
 
-Note that you need to pass `query_instruction=""` for `model_name="BAAI/bge-m3"` see [FAQ BGE M3](https://huggingface.co/BAAI/bge-m3#faq).
+For parity with the generic class (or to use the model-card-accurate prompt instead of the library default), the same thing via `HuggingFaceEmbeddings`:
 
 ```python
-embedding = hf.embed_query("hi this is harrison")
-len(embedding)
+from langchain_huggingface import HuggingFaceEmbeddings
+
+embeddings = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-large-en-v1.5",
+    encode_kwargs={"normalize_embeddings": True},
+    query_encode_kwargs={
+        "prompt": "Represent this sentence for searching relevant passages: ",
+        "normalize_embeddings": True,
+    },
+)
 ```
 
-```text
-384
-```
+Different BGE variants use different prompts; check each model card on Hugging Face for the exact string.
 
-```python
+## Picking a BGE model
 
-```
+| Model | Size | Notes |
+|---|---|---|
+| `BAAI/bge-small-en-v1.5` | 33M | Smallest English model, CPU-friendly |
+| `BAAI/bge-large-en-v1.5` | 335M | Stronger English, widely used baseline |
+| `BAAI/bge-m3` | 570M | Multilingual; dense, sparse, and multi-vector in one model |
+
+For reranking (not embedding), see [`BAAI/bge-reranker-v2-m3`](https://huggingface.co/BAAI/bge-reranker-v2-m3) via the [Cross Encoder Reranker guide](/oss/integrations/document_transformers/cross_encoder_reranker).
+
+## More
+
+See the [Sentence Transformers integration page](/oss/integrations/embeddings/sentence_transformers) for GPU configuration, batch sizes, query/document prompts, and deployment options.

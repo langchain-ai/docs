@@ -1,15 +1,18 @@
+> **Keep in sync:** `AGENTS.md` and `CLAUDE.md` contain identical guidelines. If you update one, update the other.
+
 # LangChain Documentation Guidelines
 
-Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored docs only—not `**/reference/**` directories or build artifacts.
+Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`—not Mintlify `build/` output.
 
 ## Critical rules
 
 1. **Always ask for clarification** rather than making assumptions
-2. **Never use markdown in frontmatter `description`** — breaks SEO
-3. **Never edit `reference/` directory** — auto-generated
-4. **Always update `src/docs.json`** when adding new pages
-5. **Use Tabler icons only** — not FontAwesome
-6. **Test code examples** before including them
+2. **Never fabricate** examples, JSON snippets, policy details, or use case descriptions — use only content from the user or existing source files
+3. **Never use markdown in frontmatter `description`** — breaks SEO
+4. **Never edit `build/`** — Mintlify build output (regenerate with `make build` or `make dev`)
+5. **Always update `src/docs.json`** when adding new pages
+6. **Use Tabler icons only** — not FontAwesome
+7. **Test code examples** before including them
 
 ## Quick reference
 
@@ -23,22 +26,24 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Images | `src/images/` |
 | Provider icons | `src/images/providers/` |
 | Navigation config | `src/docs.json` |
-| API reference (auto-generated) | `reference/` — do not edit |
 | Build system | `pipeline/` |
-| Icon library | Tabler — https://tabler.io/icons |
-| Mintlify components | https://mintlify.com/docs/components |
+| Icon library | Tabler — <https://tabler.io/icons> |
+| Mintlify components | <https://mintlify.com/docs/components> |
+| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report issues here](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 
-## Repository structure
+## Project structure
+
+This project uses Mintlify for documentation. Key files: `src/docs.json` (navigation + site config), MDX files with YAML frontmatter for page metadata. When making multi-file docs changes, always update `src/docs.json` navigation and any redirect mappings. Custom CSS lives in `src/style.css`.
 
 ```txt
 docs/
 ├── src/                        # All manually authored content
-│   ├── docs.json               # Mintlify config + navigation (88KB)
+│   ├── docs.json               # Mintlify config + navigation
 │   ├── index.mdx               # Home page
 │   ├── style.css               # Custom CSS
-│   ├── langsmith/              # LangSmith product docs (~324 MDX files)
-│   ├── oss/                    # Open source docs (~1800 MDX files)
+│   ├── langsmith/              # LangSmith product docs
+│   ├── oss/                    # Open source docs
 │   │   ├── langchain/          #   LangChain framework
 │   │   ├── langgraph/          #   LangGraph framework
 │   │   ├── deepagents/         #   Deep Agents
@@ -46,7 +51,8 @@ docs/
 │   │   ├── javascript/         #   TypeScript-specific (integrations, migrations, releases)
 │   │   ├── integrations/       #   Shared integration content
 │   │   ├── concepts/           #   Conceptual overviews
-│   │   └── contributing/       #   Contribution guides
+│   │   ├── contributing/       #   Contribution guides
+│   │   └── reference/          #   Reference tab entry pages (link to reference.langchain.com)
 │   ├── snippets/               # Reusable MDX snippets
 │   │   ├── langsmith/          #   LangSmith snippets
 │   │   ├── oss/                #   OSS snippets
@@ -56,7 +62,6 @@ docs/
 │   │   └── providers/          #   Provider icons (dark/ and light/ variants)
 │   └── fonts/                  # TWK Lausanne font files
 ├── pipeline/                   # Python build system & preprocessors
-├── reference/                  # Auto-generated API reference — do not edit
 ├── build/                      # Build output — do not edit
 ├── scripts/                    # Helper utilities
 └── tests/                      # Pipeline tests
@@ -64,7 +69,7 @@ docs/
 
 ## Navigation map
 
-Navigation is defined in `src/docs.json`. The site has 4 products. When adding pages, find the correct product/tab/group below, then update the matching section in `docs.json`.
+Navigation is defined in `src/docs.json`. The site has 4 products (Home, LangSmith, LangSmith Fleet, Open source). When adding pages, find the correct product/tab/group below, then update the matching section in `docs.json`.
 
 ### Home
 
@@ -74,37 +79,40 @@ Single page (`src/index.mdx`). No tabs.
 
 7 tabs, all files in `src/langsmith/`:
 
-| Tab | Groups | Key files/directories |
-|-----|--------|----------------------|
-| Get started | Account administration (Workspace setup, Users & access control, Billing & usage), Tools, Additional resources (Data & compliance, FAQ) | `home.mdx`, `create-account-api-key.mdx`, `rbac.mdx`, `abac.mdx` |
-| Observability | Tracing setup (Integrations, Manual instrumentation), Configuration & troubleshooting, Viewing & managing traces, Automations, Feedback & evaluation, Monitoring & alerting, Data type reference | `tracing/`, `observability/` |
-| Evaluation | Datasets, Set up evaluations (Run, Types, Frameworks, Techniques, Tutorials), Analyze experiment results, Annotation & human feedback | `evaluation/` |
-| Prompt engineering | Create and update prompts, Tutorials | `prompt-engineering/` |
-| Agent deployment | Configure app, Deployment guides, App development, Studio, Auth & access control, Server customization | `agent-deployment/` |
-| Platform setup | Overview, Hybrid, Self-hosted (by cloud provider, Setup guides, Enable features, Configuration, External services, Auth, Observability, Scripts) | `self-hosted/`, `self-hosted-changelog.mdx` |
-| Reference | LangSmith Deployment (Agent Server API, Control Plane API), Releases | `reference/` |
+| Tab | Groups |
+|-----|--------|
+| Get started | Account administration (Workspace setup, Users & access control, Billing & usage), Tools, Additional resources |
+| Observability | Tracing setup, Configuration & troubleshooting, Viewing & managing traces, Automations, Feedback & evaluation, Monitoring & alerting, Data type reference |
+| Evaluation | Datasets, Set up evaluations, Analyze experiment results, Annotation & human feedback, Common data types |
+| Prompt engineering | Create and update prompts, Tutorials |
+| Agent deployment | Agent server, Core capabilities, Develop agents, Deployment guides, Studio, Auth & access control, Server customization |
+| Platform setup | Overview, Hybrid, Self-hosted (by cloud provider, Setup guides, Enable features, Configuration, External services, Auth, Observability, Scripts) |
+| Reference | LangSmith Deployment (Agent Server API, Control Plane API), Releases |
 
-### Agent Builder (`src/langsmith/`)
+All LangSmith files are flat in `src/langsmith/` (no per-tab subdirectories except `fleet/` and `images/`).
 
-Flat groups (no tabs), files in `src/langsmith/agent-builder/`:
+### LangSmith Fleet (`src/langsmith/fleet/`)
+
+Flat groups (no tabs):
 
 - Get started
-- Tools and integrations
+- Configure
+- Tools and automation
 - Advanced
 - Additional resources
 
 ### Open source (`src/oss/`)
 
-2 language dropdowns (Python, TypeScript), each with 7 identical tabs:
+2 language dropdowns (Python, TypeScript), each with 7 tabs sharing the same names. Groups listed below are for the Python dropdown; TypeScript groups differ in some tabs (noted with *).
 
-| Tab | Directory | Notes |
-|-----|-----------|-------|
-| Deep Agents | `src/oss/deepagents/` | Get started, Core capabilities, Streaming, Protocols, CLI |
-| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Advanced usage, Multi-agent |
-| LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Graph API, Functional API |
-| Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Per-provider pages |
-| Learn | `src/oss/` (various) | Tutorials, Conceptual overviews |
-| Reference | `reference/` | Auto-generated — do not edit |
+| Tab | Directory | Groups |
+|-----|-----------|--------|
+| Deep Agents | `src/oss/deepagents/` | Get started, Deployment, Core capabilities, Frontend, Protocols, Command line interface |
+| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend, Advanced usage, Agent development, Deploy with LangSmith |
+| LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs |
+| Integrations* | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Popular Providers, Integrations by component (TS: "General integrations, RAG integrations") |
+| Learn* | `src/oss/` (various) | Tutorials, Conceptual overviews, Additional resources (TS adds: "LangChain Academy") |
+| Reference | `src/oss/reference/` | Reference, Errors, Releases, Policies — short entry pages linking to reference.langchain.com |
 | Contribute | `src/oss/contributing/` | Contribution guides, integration authoring |
 
 ## Local development
@@ -173,12 +181,36 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
 
+### Version-added admonitions
+
+When documenting new features, APIs, or behavior that requires a minimum package or CLI version, add a version-added admonition near the first mention of the feature. Use a `<Note>` callout with a concise requirement, for example: `Feature name requires \`package>=x.y.z\`.`
+
+For language-specific requirements, wrap the note in the relevant `:::python` or `:::js` fence. Include separate notes when Python and TypeScript packages have different minimum versions.
+
+## Mermaid diagram styling
+
+Use these `classDef` colors (from LangChain brand palette) for all mermaid diagrams. See `.github/brand-guidelines.md` for the full brand color reference.
+
+| Role | classDef value |
+|------|---------------|
+| **process** (blue) | `fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710` |
+| **trigger** (green) | `fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900` |
+| **decision** (purple) | `fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F` |
+| **output** (plum) | `fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33` |
+| **alert** (peach) | `fill:#F8E8E6,stroke:#B27D75,stroke-width:2px,color:#634643` |
+| **neutral** (muted blue) | `fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68` |
+
+When using `%%{init}%%` theme variables, use: `lineColor:'#40668D'`, `primaryColor:'#E5F4FF'`, `primaryTextColor:'#030710'`, `primaryBorderColor:'#006DDD'`.
+
+Do not use Tailwind default colors, Material Design colors, or other off-brand palettes in mermaid diagrams.
+
 ## Style guide
 
 Follow [Google Developer Documentation Style Guide](https://developers.google.com/style).
 
 **Do:**
 
+- Match existing conventions in the file you are editing — do not restructure, combine, or split pages unless explicitly asked
 - Reference existing pages for style patterns when creating new content
 - Be concise — no hyperbolic or redundant language
 - Second-person imperative present tense ("Run the following code…")
@@ -202,9 +234,17 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use H5 or H6 headings
 - Overuse em dashes — prefer commas, colons, or separate sentences instead
+- Do not add spaces around em dashes — write `word—word` not `word — word` (Vale enforces this)
 - Use excessive bold/italics in body text
 - Include "key features" lists
 - Use horizontal lines
+- Apply bold to UI element names unless existing docs already do so
+
+### Model references
+
+Always use the latest generally available (GA) models when referencing LLMs in docstrings and illustrative code snippets. Avoid preview or beta identifiers unless the model has no GA equivalent. Outdated model names signal stale code and confuse users.
+
+Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names — they go stale quickly.
 
 ## Adding pages
 
@@ -236,7 +276,11 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 1. Create `src/snippets/<product>/<name>.mdx`
 2. Reference with `<Snippet file="<product>/<name>.mdx" />`
 
-## Debugging CI broken-links failures
+## Debugging
+
+When investigating a bug or unexpected behavior, always start by reading the relevant code and logs before forming a hypothesis. Do not assume something is working or ask the user to confirm — verify it yourself first.
+
+### CI broken-links failures
 
 `make broken-links` runs `mint broken-links` then filters known false positives (OpenAPI-generated pages: `/langsmith/agent-server-api/`, `/api-reference/`, `../langchain/agents`). Output format:
 
@@ -254,6 +298,38 @@ another-file.mdx                 ← no indented lines = all its links were filt
 **Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
 
 To run locally: `make broken-links`
+
+## Helper scripts
+
+### Refresh Deep Agents eval matrix
+
+The model-by-eval-category table on `/oss/python/deepagents/models` is generated by `scripts/refresh_deepagents_category_matrix.py`. The script pulls `category_scores` from the latest successful [Evals - GHA](https://github.com/langchain-ai/deepagents/actions/workflows/evals.yml) runs in `langchain-ai/deepagents` and writes the table to `src/snippets/deepagents-eval-category-matrix.mdx` (imported by `src/oss/deepagents/models.mdx`). Run it whenever new eval results land and the published table is out of date.
+
+Setup and run:
+
+```bash
+export GITHUB_TOKEN="$(gh auth token)"  # needs Actions: Read on langchain-ai/deepagents; SSO-authorize for langchain-ai
+uv run python scripts/refresh_deepagents_category_matrix.py --write
+```
+
+Notes:
+
+- For the latest `(model, category)` value per cell, the script walks runs newest-first and keeps the first hit. Models with fewer than four of the six fixed categories filled are dropped (`MIN_FILLED_CATEGORIES`).
+- The fixed columns are defined by `FIXED_CATEGORY_COLUMNS` in the script (`unit_test` is intentionally excluded).
+- Without `--write`, the script prints the table to stdout for inspection.
+- After regenerating, commit only `src/snippets/deepagents-eval-category-matrix.mdx`. Do not edit that snippet by hand.
+
+## Pre-commit linting
+
+Always run `make lint_prose` (Vale) before handing off or committing doc changes. CI blocks on it. Common offenders: em-dashes with surrounding spaces (` — ` → `—`, enforced by `LangChain.DashesSpaces`), terminology, style.
+
+Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"` (or pass space-separated paths). Run with no `FILES` arg to lint all of `src/`.
+
+Also run `make broken-links` when adding or renaming links, pages, or nav entries.
+
+## Changelog / Release notes
+
+When extracting data from PRs or changelogs, use the "Release Note:" section in PR bodies, not PR titles. Always verify the data source format before processing.
 
 ## Pull requests
 
