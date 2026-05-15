@@ -22,7 +22,7 @@ In production, there are a few primitives that determine how information is shar
 
 This page covers:
 - **[LangSmith Deployments](#langsmith-deployments)**: managed infrastructure with auth, webhooks, and cron
-- **[Production considerations](#production-considerations)**: multi-tenancy, authentication, credentials, async, and durability
+- **[Production considerations](#production-considerations)**: invocation, multi-tenancy, authentication, credentials, async, and durability
 - **[Memory](#memory)**: persist information across conversations
 - **[Execution environment](#execution-environment)**: file storage and code execution
 - **[Guardrails](#guardrails)**: rate limiting, error handling, and data privacy
@@ -71,6 +71,118 @@ All code snippets on this page use the following `langgraph.json` unless otherwi
 For the full set of configuration options (custom Docker steps, store indexing, auth handlers, and more), see [application structure](/oss/langgraph/application-structure).
 
 ## Production considerations
+
+### Invoking the agent
+
+In production, every invocation should carry two run-level parameters:
+
+- **`thread_id`** (passed via `config={"configurable": {"thread_id": ...}}`): a stable identifier for the conversation. The [checkpointer](#durability) uses it to persist and resume message history, so follow-up turns continue the same conversation. Generate a new `thread_id` to start a fresh conversation.
+- **`context`**: per-run data your tools and middleware read at invocation time, for example `user_id`, API keys, feature flags, or session metadata. Define the shape with `context_schema` and access it via `runtime.context`. See [Runtime context](/oss/deepagents/context-engineering#runtime-context).
+
+The two are independent and almost always passed together:
+
+:::python
+```python
+from dataclasses import dataclass
+from deepagents import create_deep_agent
+from langchain_core.utils.uuid import uuid7
+
+@dataclass
+class Context:
+    user_id: str
+
+agent = create_deep_agent(
+    model="google_genai:gemini-3.1-pro-preview",
+    context_schema=Context,
+)
+
+# Start a conversation
+config = {"configurable": {"thread_id": str(uuid7())}}  # [!code highlight]
+agent.invoke(
+    {"messages": [{"role": "user", "content": "Plan a 3-day trip to Tokyo"}]},
+    config=config,  # [!code highlight]
+    context=Context(user_id="user-123"),  # [!code highlight]
+)
+
+# Follow-up on the same conversation: reuse the same thread_id
+agent.invoke(
+    {"messages": [{"role": "user", "content": "Make it 5 days instead"}]},
+    config=config,  # [!code highlight]
+    context=Context(user_id="user-123"),  # [!code highlight]
+)
+```
+
+When deploying with the LangGraph SDK, the SDK manages threads for you and you pass the returned `thread_id` to each run:
+
+```python
+from langgraph_sdk import get_client
+
+client = get_client(url="<DEPLOYMENT_URL>", api_key="<LANGSMITH_API_KEY>")
+
+thread = await client.threads.create()
+async for chunk in client.runs.stream(
+    thread["thread_id"],  # [!code highlight]
+    "agent",
+    input={"messages": [{"role": "user", "content": "Plan a 3-day trip to Tokyo"}]},
+    context={"user_id": "user-123"},  # [!code highlight]
+    stream_mode="updates",
+):
+    print(chunk.data)
+```
+:::
+
+:::js
+```typescript
+import { v4 as uuidv4 } from "uuid";
+import { createDeepAgent } from "deepagents";
+import { z } from "zod";
+
+const contextSchema = z.object({ userId: z.string() });
+
+const agent = createDeepAgent({
+  model: "google_genai:gemini-3.1-pro-preview",
+  contextSchema,
+});
+
+// Start a conversation
+const config = { configurable: { thread_id: uuidv4() } };  // [!code highlight]
+await agent.invoke(
+  { messages: [{ role: "user", content: "Plan a 3-day trip to Tokyo" }] },
+  { ...config, context: { userId: "user-123" } },  // [!code highlight]
+);
+
+// Follow-up on the same conversation: reuse the same thread_id
+await agent.invoke(
+  { messages: [{ role: "user", content: "Make it 5 days instead" }] },
+  { ...config, context: { userId: "user-123" } },  // [!code highlight]
+);
+```
+
+When deploying with the LangGraph SDK, the SDK manages threads for you and you pass the returned `thread_id` to each run:
+
+```typescript
+import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({ apiUrl: "<DEPLOYMENT_URL>", apiKey: "<LANGSMITH_API_KEY>" });
+
+const thread = await client.threads.create();
+for await (const chunk of client.runs.stream(
+  thread.thread_id,  // [!code highlight]
+  "agent",
+  {
+    input: { messages: [{ role: "user", content: "Plan a 3-day trip to Tokyo" }] },
+    context: { userId: "user-123" },  // [!code highlight]
+    streamMode: "updates",
+  },
+)) {
+  console.log(chunk.data);
+}
+```
+:::
+
+<Tip>
+`thread_id` scopes the *conversation* (message history, checkpoints). `context` carries *per-run* data your tools and middleware read. They are independent: changing one does not affect the other, and you can pass either or both.
+</Tip>
 
 ### Multi-tenancy
 
