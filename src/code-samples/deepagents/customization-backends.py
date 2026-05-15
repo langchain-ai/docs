@@ -47,7 +47,7 @@ from langgraph.store.memory import InMemoryStore
 agent = create_deep_agent(
     model="google_genai:gemini-3.1-pro-preview",
     backend=StoreBackend(
-        namespace=lambda ctx: (ctx.runtime.context.user_id,),
+        namespace=lambda rt: (rt.server_info.user.identity,),
     ),
     store=InMemoryStore(),  # Good for local dev; omit for LangSmith Deployment
 )
@@ -75,7 +75,7 @@ agent = create_deep_agent(
     backend=CompositeBackend(
         default=StateBackend(),
         routes={
-            "/memories/": StoreBackend(),
+            "/memories/": StoreBackend(namespace=lambda _rt: ("memories",)),
         },
     ),
     store=InMemoryStore(),  # Store passed to create_deep_agent, not backend

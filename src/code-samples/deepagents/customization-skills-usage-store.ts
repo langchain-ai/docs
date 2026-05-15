@@ -5,7 +5,9 @@ import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
 
 const checkpointer = new MemorySaver();
 const store = new InMemoryStore();
-const backend = new StoreBackend();
+const backend = new StoreBackend({
+  namespace: () => ["filesystem"],
+});
 
 function createFileData(content: string): FileData {
   const now = new Date().toISOString();
