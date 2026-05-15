@@ -5,15 +5,15 @@ description: Reference for the webhook events the LangSmith Engine sends when it
 tag: Beta
 ---
 
-<Note>The LangSmith Engine is in **Beta** and under active development. To provide feedback or use this feature, reach out to the [LangChain team](https://forum.langchain.com/c/help/langsmith/).</Note>
+<Note>[LangSmith Engine](/langsmith/engine) is in **Beta** and under active development. To provide feedback or use this feature, reach out to the [LangChain team](https://forum.langchain.com/c/help/langsmith/).</Note>
 
-The LangSmith Engine sends webhook events to your endpoint when it detects new issues in your tracing project or links new traces to issues it has already opened. Use webhooks to forward issues into your incident-management, paging, or chat tools.
+Forward LangSmith-detected agent issues into your incident-management, paging, or chat tools. [LangSmith Engine](/langsmith/engine) sends a webhook event to your endpoint when it opens a new issue, or when it links a new trace to an issue it has already opened.
 
 To configure webhook subscriptions, open the **Issue Settings** panel on the **Issues** tab of a tracing project. See [Configure the LangSmith Engine](/langsmith/engine#configure-the-langsmith-engine).
 
 ## Delivery
 
-LangSmith POSTs a JSON body to your webhook URL with `Content-Type: application/json` and any custom headers you attached to the subscription.
+LangSmith sends a `POST` request with a JSON body to your webhook URL. The request uses `Content-Type: application/json` and includes any custom headers you attached to the subscription.
 
 | Property | Value |
 | --- | --- |
@@ -21,8 +21,8 @@ LangSmith POSTs a JSON body to your webhook URL with `Content-Type: application/
 | Body | JSON, [common envelope](#event-envelope) below |
 | Scheme | `http://` and `https://` are accepted. `https://` is strongly recommended |
 | Timeout | 20 seconds per attempt |
-| Attempts | Up to 4 total — 1 initial attempt plus up to 3 retries with exponential backoff — on transport errors or HTTP responses `>= 400` |
-| Response | The status code is checked. Response bodies are ignored |
+| Attempts | Up to 4 attempts (1 initial plus 3 retries with exponential backoff) on transport errors or HTTP responses `>= 400` |
+| Response | Success is determined from the status code alone. Response bodies are ignored. |
 
 <Note>
 Retries deliver a byte-identical payload, including the same `id`. Dedupe on `id` so a retried delivery does not produce a duplicate downstream effect.
@@ -34,7 +34,7 @@ You can attach arbitrary headers to each subscription (for example, `Authorizati
 
 ### Severity filtering
 
-Each subscription has a `severity_threshold` in the range `0`–`3`. An event is delivered only when the issue's `severity` is **less than or equal to** the threshold — lower numbers are more urgent.
+Each subscription has a `severity_threshold` from `0` to `3`. An event is delivered only when the issue's `severity` is less than or equal to the threshold. Lower numbers are more urgent.
 
 | Severity | Meaning |
 | --- | --- |
@@ -55,11 +55,11 @@ Every event delivered to your endpoint uses the same outer JSON shape.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `id` | UUID | Unique identifier for this delivery. Stable across retries — use it to dedupe. |
+| `id` | UUID | Unique identifier for this delivery. Stable across retries. Use it to dedupe. |
 | `type` | string | Event type. One of [`issue.created`](#issue-created) or [`issue.trace.added`](#issue-trace-added). |
 | `created` | integer | Unix seconds (UTC) when the event was enqueued. |
 | `request_id` | UUID | Shared by every event fired from the same upstream action. See [Batch coalescing](#batch-coalescing). |
-| `data` | object | Event payload. Contains `data.object` (always) and `data.trace` (only on [`issue.trace.added`](#issue-trace-added)). |
+| `data` | object | Event payload. Always contains [`data.object`](#data-object). Contains [`data.trace`](#data-trace) only on [`issue.trace.added`](#issue-trace-added) events. |
 
 ### `data.object`
 
@@ -72,9 +72,9 @@ Every event delivered to your endpoint uses the same outer JSON shape.
 | `description` | string | Human-readable description. |
 | `severity` | integer | `0` (urgent) through `3` (low). See [Severity filtering](#severity-filtering). |
 | `tenant_id` | UUID | Workspace the issue belongs to. |
-| `tenant_name` | string | Workspace display name. Best-effort; empty if the workspace has been deleted. |
+| `tenant_name` | string | Workspace display name (best-effort). Empty if the workspace has been deleted. |
 | `session_id` | UUID | Tracing project the issue belongs to. |
-| `session_name` | string | Tracing project name. Best-effort; empty if the project has been deleted. |
+| `session_name` | string | Tracing project name (best-effort). Empty if the project has been deleted. |
 | `url` | string | Deep link to the issue in the LangSmith UI. |
 
 ### `data.trace`
@@ -90,13 +90,13 @@ Every event delivered to your endpoint uses the same outer JSON shape.
 
 ### Batch coalescing
 
-A single upstream action can produce multiple webhook events. For example, opening an issue that links five traces emits one [`issue.created`](#issue-created) event followed by five [`issue.trace.added`](#issue-trace-added) events. Every event from that one action shares the same `request_id`, so consumers can group them into a single notification.
+A single upstream action can produce multiple webhook events. When the Engine opens a new issue and attaches five traces to it, you receive one [`issue.created`](#issue-created) event and five [`issue.trace.added`](#issue-trace-added) events, all sharing the same `request_id`. Use `request_id` to group these into a single downstream notification.
 
 ## Event types
 
-This is the complete list of event types the LangSmith Engine sends today. The list is additive — new event types may be introduced in the future, so handlers should ignore unknown `type` values rather than failing.
+The event types below are the complete set the LangSmith Engine sends today. New types may be added in the future, so handlers should ignore unknown `type` values rather than failing.
 
-### <a id="issue-created"></a> `issue.created`
+### `issue.created`
 
 Sent when the LangSmith Engine creates a new issue. `data.trace` is omitted.
 
@@ -122,7 +122,7 @@ Sent when the LangSmith Engine creates a new issue. `data.trace` is omitted.
 }
 ```
 
-### <a id="issue-trace-added"></a> `issue.trace.added`
+### `issue.trace.added`
 
 Sent when a new trace is linked to an existing issue. `data.trace` describes the linked trace.
 
@@ -154,14 +154,31 @@ Sent when a new trace is linked to an existing issue. `data.trace` describes the
 }
 ```
 
+## Test your endpoint
+
+Before pointing a real subscription at your endpoint, send a sample payload to verify it accepts and acknowledges within the 20-second timeout:
+
+```bash
+curl -X POST https://your-endpoint.example.com/webhook \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WEBHOOK_SECRET" \
+  -d @sample-issue-created.json
+```
+
+Use the example body from [`issue.created`](#issue-created) as `sample-issue-created.json`. Verify that:
+
+- The custom `Authorization` header arrives and matches the secret you configured on the subscription.
+- The handler persists the event keyed by its `id` so retries are deduped.
+- The handler returns `2xx` before kicking off slow downstream work.
+
 ## Security
 
 - Webhook URLs are validated when the subscription is created and again at delivery time. Private and metadata IP ranges are blocked in SaaS. Both `http://` and `https://` are accepted; use `https://` so the payload and any custom headers are not sent in cleartext.
-- LangSmith does not currently sign webhook bodies. Authenticate the sender by setting a secret on the subscription as a custom header (for example, `Authorization: Bearer …`) and verifying it at your endpoint. Anyone with the webhook URL can POST to it, so treat the URL itself as confidential and rely on the header for authentication.
+- LangSmith does not sign webhook bodies. Authenticate the sender by setting a secret as a custom header on the subscription (for example, `Authorization: Bearer …`) and verifying it at your endpoint. Anyone with the webhook URL can POST to it, so treat the URL itself as confidential and rely on the header for authentication.
 - Dedupe on the event `id` so that a retried delivery does not cause a duplicate notification.
 
 ## Best practices
 
-- **Acknowledge fast.** Respond with `2xx` as soon as you have persisted the event. Move slow work — fan-out, paging, downstream API calls — onto a queue rather than blocking the webhook response, so you stay within the 20-second timeout.
-- **Be tolerant of unknown event types.** New event types may be added without notice. Ignore `type` values your handler does not recognize.
-- **Be tolerant of new fields.** New fields may be added to existing payloads without notice. Parse with a permissive schema rather than rejecting unknown keys.
+- **Acknowledge fast.** Respond with `2xx` as soon as you have persisted the event. Move slow work (fan-out, paging, downstream API calls) onto a queue so your handler stays within the 20-second timeout.
+- **Tolerate unknown event types.** Ignore `type` values your handler does not recognize. New event types may be added without notice.
+- **Tolerate new fields.** Parse payloads with a permissive schema. New fields may be added to existing event types without notice.
