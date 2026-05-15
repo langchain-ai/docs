@@ -64,7 +64,7 @@ store.put(
 
 agent = create_deep_agent(
     model="anthropic:claude-sonnet-4-6",
-    backend=StoreBackend(),
+    backend=StoreBackend(namespace=lambda _rt: ("filesystem",)),
     store=store,
     memory=["/AGENTS.md"],
 )

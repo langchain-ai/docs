@@ -18,6 +18,8 @@ LangSmith Deployments are horizontally scalable servers with 30+ endpoints inclu
 - **Open protocols**: [MCP](https://modelcontextprotocol.io/docs/getting-started/intro), [A2A](https://a2a-protocol.org/latest/), [Agent Protocol](https://github.com/langchain-ai/agent-protocol)
 - **Self-hostable**: LangSmith Deployments can be self-hosted so memory stays in your infrastructure
 
+For multi-tenancy, authentication, memory and sandbox scoping, guardrails, and frontend integration beyond this CLI walkthrough, see [Going to production](/oss/deepagents/going-to-production).
+
 ## Compare to Claude Managed Agents
 
 |  | Deep Agents Deploy | Claude Managed Agents |
@@ -144,7 +146,7 @@ model = "google_genai:gemini-3.1-pro-preview"
 
 ### `[sandbox]`
 
-Configure the isolated execution environment where the agent runs code. Sandboxes provide a container with a filesystem and shell access, so untrusted code cannot affect the host. For supported providers and advanced sandbox configuration, see [sandboxes](/oss/deepagents/sandboxes).
+Configure the isolated execution environment where the agent runs code. Sandboxes provide a container with a filesystem and shell access, so untrusted code cannot affect the host. For supported providers and advanced sandbox configuration, see [sandboxes](/oss/deepagents/sandboxes). For the production tradeoffs between thread-scoped and assistant-scoped sandboxes, file transfers, and secret management, see [Going to production: Sandboxes](/oss/deepagents/going-to-production#sandboxes).
 
 ```toml deepagents.toml
 [sandbox]
@@ -167,7 +169,7 @@ image = "python:3.12"
 
 ### `[auth]`
 
-Add an `[auth]` section to configure authentication on the deployed agent. `[auth]` is **required** when `[frontend].enabled = true`; otherwise it is optional (without it, LangSmith Deployment's default `x-api-key` requirement applies).
+Add an `[auth]` section to configure authentication on the deployed agent. `[auth]` is **required** when `[frontend].enabled = true`; otherwise it is optional (without it, LangSmith Deployment's default `x-api-key` requirement applies). For background on multi-tenant authentication patterns—including team-level RBAC and forwarding end-user credentials to external APIs—see [Going to production: Multi-tenancy](/oss/deepagents/going-to-production#multi-tenancy).
 
 ```toml deepagents.toml
 [agent]
@@ -265,7 +267,7 @@ After deploying, add your deployment URL to your auth provider's dashboard so au
 
 ## Environment variables
 
-Place a `.env` file alongside `deepagents.toml` with your API keys:
+Place a `.env` file alongside `deepagents.toml` with your API keys. For sandbox code that needs to call external APIs without leaking credentials, prefer the [sandbox auth proxy](/oss/deepagents/going-to-production#managing-secrets) over baking secrets into `.env`.
 
 ```bash
 # Required — model provider keys
@@ -345,7 +347,7 @@ The deployed server exposes:
 
 ## User Memory
 
-User memory gives each user their own writable `AGENTS.md` that persists across conversations. To enable it, create a `user/` directory at your project root:
+User memory gives each user their own writable `AGENTS.md` that persists across conversations. This is the CLI's built-in equivalent of the user-scoped memory pattern described in [Going to production: Memory](/oss/deepagents/going-to-production#memory). To enable it, create a `user/` directory at your project root:
 
 ```txt
 user/
@@ -486,6 +488,8 @@ market data to support go-to-market decisions.
 
 - **MCP: HTTP/SSE only.** Stdio transports are rejected at bundle time.
 - **No custom Python tools.** Use MCP servers to expose custom tool logic.
+
+If your agent needs custom tools, custom middleware (rate limiting, retries, PII redaction), or production patterns the CLI doesn't expose, deploy directly via [LangSmith Deployments](/langsmith/deployment) and follow [Going to production](/oss/deepagents/going-to-production) for the underlying patterns ([guardrails](/oss/deepagents/going-to-production#guardrails), [durability](/oss/deepagents/going-to-production#durability), [scoped memory](/oss/deepagents/going-to-production#scoping)).
 
 ## Examples
 
