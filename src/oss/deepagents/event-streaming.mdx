@@ -264,7 +264,26 @@ for await (const subagent of stream.subagents) {
 Coordinator and subagent output often interleave. Consume projections concurrently when you need live UI updates.
 
 :::python
-Use `stream.interleave(...)` when you want one sync loop over multiple projections:
+For concurrent consumption in async code, use `astream_events` with `asyncio.gather`:
+
+```py
+import asyncio
+
+stream = await agent.astream_events(input, version="v3")
+
+async def consume_coordinator():
+    async for message in stream.messages:
+        print("[coordinator]", await message.text)
+
+async def consume_subagents():
+    async for subagent in stream.subagents:
+        async for message in subagent.messages:
+            print(f"[{subagent.name}]", await message.text)
+
+await asyncio.gather(consume_coordinator(), consume_subagents())
+```
+
+For synchronous code, use `stream.interleave(...)` instead:
 
 ```py
 stream = agent.stream_events(input, version="v3")
@@ -313,14 +332,36 @@ for event in stream:
     if event.get("method") != "messages":
         continue
 
-    payload = event["params"]["data"]
+    payload = event["params"]["data"][0]
+    if not isinstance(payload, dict):
+        continue
     if payload.get("event") != "content-block-delta":
         continue
 
     block = payload.get("delta") or {}
-    if block.get("type") == "text":
+    if block.get("type") == "text-delta":
         source = "subagent" if event["params"]["namespace"] else "coordinator"
-        print(f"[{source}] {block['text']}", end="", flush=True)
+        print(f"[{source}] {block['text']}")
+```
+:::
+
+:::js
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+for await (const event of stream) {
+  if (event.method !== "messages") continue;
+
+  const data = event.params.data;
+  if (data.event !== "content-block-delta") continue;
+
+  const block = data.delta ?? {};
+  if (block.type === "text-delta") {
+    const isSubagent = event.params.namespace.some((seg) => seg.startsWith("tools:"));
+    const source = isSubagent ? "subagent" : "coordinator";
+    console.log(`[${source}] ${block.text}`);
+  }
+}
 ```
 :::
 
