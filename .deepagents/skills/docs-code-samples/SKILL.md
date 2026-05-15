@@ -147,9 +147,11 @@ For multiple files: `FILES="path1 path2"`. Fix any failures before proceeding—
 Java files (`.java`) under `src/code-samples/` are run using `jbang`. To keep CI green, Java samples must:
 
 - Print at least one line of output so it's obvious the sample ran
-- Exit successfully (code 0) when required API keys are not set, for example:
+- Exit successfully (code 0) when optional API keys are not set, for example:
   - `OPENAI_API_KEY` for LLM calls
-  - `LANGSMITH_API_KEY` for posting runs to LangSmith
+- Fail fast (non-zero exit) when a key is required for the sample to run, for example `manage-prompts-0-push.java` without `LANGSMITH_API_KEY`
+
+`make test-code-samples` runs every `.java` file under `src/code-samples/` in **lexical path order** (after all Python and TypeScript samples). That order is unrelated to section order in the docs. If one sample must run before another (for example creating a hub prompt before pulling it), name the source files so they sort correctly. For example, `manage-prompts-pull.java` runs before `manage-prompts-push.java` because `pull` sorts before `push`; use prefixes such as `manage-prompts-0-push.java` and `manage-prompts-1-pull.java` when you need push to run first.
 
 Check formatting with:
 

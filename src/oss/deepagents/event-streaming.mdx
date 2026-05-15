@@ -3,43 +3,34 @@ title: Event streaming
 description: Stream subagents, messages, tool calls, and final output from Deep Agents.
 ---
 
-Deep Agents build on LangGraph's [event streaming](/oss/langgraph/streaming/event-streaming) model and add a first-class `subagents` projection. Use it when you want application-facing streams for the coordinator agent, delegated subagents, nested messages, tool calls, and final state.
-
-<Tip>
-Check out the [streaming cookbook](https://github.com/langchain-ai/streaming-cookbook) for runnable examples and links to detailed reference documentation.
-</Tip>
-
-<Note>
-For information about lower-level Pregel stream modes, refer to the [Deep Agents streaming](/oss/deepagents/streaming) docs.
-</Note>
+This page covers streaming concerns specific to Deep Agents—most importantly, streaming from delegated subagents via `stream.subagents`. For general agent streaming (`stream.messages`, `stream.values`, tool calls, custom updates), see [LangChain Event Streaming](/oss/langchain/event-streaming).
 
 ## Stream subagents
 
-Deep Agents add a subagent projection on top of LangGraph streaming. Use `run.subagents` when you want one stream handle per delegated `task` call. The projection discovers subagent tasks first, then opens message, tool-call, and value streams when you access them on a subagent handle.
+Deep Agents add a subagent projection on top of LangGraph streaming. Use `stream.subagents` when you want one stream handle per delegated `task` call. The projection is lightweight: it discovers subagent tasks first, and message, tool-call, and value streams are opened only when you access them on a subagent handle.
 
 :::python
-```python
-run = agent.stream_events(
-    {"messages": [{"role": "user", "content": "Write me a haiku about the sea"}]},
-    version="v3",
-)
+```py
+stream = agent.stream_events({
+    "messages": [{"role": "user", "content": "Write me a haiku about the sea"}],
+}, version="v3")
 
-for subagent in run.subagents:
+for subagent in stream.subagents:
     print(subagent.name, subagent.path, subagent.status)
 
     for message in subagent.messages:
-        print(str(message.text))
+        print(message.text)
 ```
 :::
 
 :::js
-```typescript
-const run = await agent.streamEvents(
+```ts
+const stream = await agent.streamEvents(
   { messages: [{ role: "user", content: "Write me a haiku about the sea" }] },
   { version: "v3" }
 );
 
-for await (const subagent of run.subagents) {
+for await (const subagent of stream.subagents) {
   console.log(subagent.name);
   console.log(await subagent.taskInput);
 
@@ -69,31 +60,27 @@ TypeScript uses camelCase projection names such as `toolCalls` and `taskInput`.
 | `subagents` | Nested subagent invocations. |
 | `output` | Final subagent state, or completion signal for the delegated task. |
 :::python
-| `task_input` | Prompt or input passed to the task tool. |
-| `path` | Namespace path for the subagent run. |
-| `status` | Lifecycle status such as `started`, `running`, `completed`, `failed`, or `interrupted`. |
+| `path` | Namespace path for the subagent stream. |
+| `status` | Lifecycle status such as `started`, `completed`, `failed`, or `interrupted`. |
 | `tool_calls` | Tool calls scoped to the subagent. |
 :::
 :::js
 | `taskInput` | Promise for the prompt passed to the task tool. |
-| `callId` | Tool-call ID for the delegated task. |
-| `namespace` | Namespace path for the subagent run. |
 | `toolCalls` | Tool calls scoped to the subagent. |
 :::
-
 ## Track subagent lifecycle
 
-Use `run.subagents` when you only need to show which subagents started and finished. You do not need to subscribe to message or value streams unless you access those projections on an individual subagent.
+Use `stream.subagents` when you only need to show which subagents started and finished. You do not need to subscribe to message or value streams unless you access those projections on an individual subagent.
 
 :::python
-```python
-run = agent.stream_events(input, version="v3")
+```py
+stream = agent.stream_events(input, version="v3")
 
 running = 0
 completed = 0
 failed = 0
 
-for subagent in run.subagents:
+for subagent in stream.subagents:
     running += 1
     print(f"{subagent.name}: started")
 
@@ -110,17 +97,17 @@ for subagent in run.subagents:
 :::
 
 :::js
-```typescript
-const run = await agent.streamEvents(input, { version: "v3" });
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
 
 let running = 0;
 let completed = 0;
 let failed = 0;
 const watchers: Promise<void>[] = [];
 
-for await (const subagent of run.subagents) {
+for await (const subagent of stream.subagents) {
   running += 1;
-  console.log(`${subagent.name}: started (${subagent.callId})`);
+  console.log(`${subagent.name}: started`);
 
   watchers.push(
     subagent.output.then(
@@ -143,44 +130,130 @@ console.log({ running, completed, failed });
 ```
 :::
 
-## Stream messages and tools
 
-Deep Agents can emit messages and tool calls from the coordinator agent and from delegated subagents. Use `run.messages` or `run.tool_calls` for coordinator streams, then access the same projections on each subagent.
+## Stream messages
+
+Deep Agents can emit messages from the coordinator agent and from delegated subagents. Use `stream.messages` for top-level messages and `subagent.messages` for each delegated subagent.
 
 :::python
-```python
-run = agent.stream_events(input, version="v3")
+```py
+stream = agent.stream_events(input, version="v3")
 
-for message in run.messages:
-    print("[coordinator]", str(message.text))
+for message in stream.messages:
+    print("[coordinator]", message.text)
 
-for subagent in run.subagents:
+for subagent in stream.subagents:
     for message in subagent.messages:
-        print(f"[{subagent.name}]", str(message.text))
-
-    for call in subagent.tool_calls:
-        print(f"[{subagent.name} tool]", call.tool_name, call.input)
-        for delta in call.output_deltas:
-            print(delta, end="", flush=True)
+        print(f"[{subagent.name}]", message.text)
 ```
 :::
 
 :::js
-```typescript
-const run = await agent.streamEvents(input, { version: "v3" });
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
 
-for await (const message of run.messages) {
+for await (const message of stream.messages) {
   console.log("[coordinator]", await message.text);
 }
 
-for await (const subagent of run.subagents) {
+for await (const subagent of stream.subagents) {
   for await (const message of subagent.messages) {
     console.log(`[${subagent.name}]`, await message.text);
   }
+}
+```
+:::
 
+## Stream tool calls
+
+Deep Agents expose tool calls at each level of the agent tree. Use the top-level `stream.tool_calls` for coordinator tools and each `subagent.tool_calls` for delegated work.
+
+:::python
+```py
+stream = agent.stream_events(input, version="v3")
+
+for call in stream.tool_calls:
+    print("[coordinator tool]", call.tool_name, call.input)
+    print(call.completed, call.error)
+
+for subagent in stream.subagents:
+    for call in subagent.tool_calls:
+        print(f"[{subagent.name} tool]", call.tool_name, call.input)
+        for delta in call.output_deltas:
+            print(delta, end="", flush=True)
+
+        if call.completed and call.error is None:
+            print(call.output)
+        elif call.error is not None:
+            print(call.error)
+```
+:::
+
+:::js
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+for await (const call of stream.toolCalls) {
+  console.log("[coordinator tool]", call.name, call.input);
+  console.log(await call.status);
+}
+
+for await (const subagent of stream.subagents) {
   for await (const call of subagent.toolCalls) {
     console.log(`[${subagent.name} tool]`, call.name, call.input);
-    console.log(await call.status);
+
+    const status = await call.status;
+    if (status === "finished") {
+      console.log(await call.output);
+    } else if (status === "error") {
+      console.error(await call.error);
+    }
+  }
+}
+```
+:::
+
+## Stream nested work
+
+You can recurse into a subagent stream to observe nested subagents, messages, and tool calls.
+
+:::python
+```py
+stream = agent.stream_events(input, version="v3")
+
+for subagent in stream.subagents:
+    print(f"subagent {subagent.name}: {subagent.status}")
+
+    for tool_call in subagent.tool_calls:
+        print(f"{tool_call.tool_name}({tool_call.input})")
+        for delta in tool_call.output_deltas:
+            print(delta, end="", flush=True)
+
+    for nested in subagent.subagents:
+        print(f"nested subagent {nested.name}: {nested.status}")
+```
+:::
+
+:::js
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+for await (const subagent of stream.subagents) {
+  console.log(`subagent ${subagent.name}: started`);
+
+  for await (const toolCall of subagent.toolCalls) {
+    console.log(`${toolCall.name}(${JSON.stringify(toolCall.input)})`);
+
+    const status = await toolCall.status;
+    if (status === "finished") {
+      console.log(await toolCall.output);
+    } else if (status === "error") {
+      console.error(await toolCall.error);
+    }
+  }
+
+  for await (const nested of subagent.subagents) {
+    console.log(`nested subagent ${nested.name}: started`);
   }
 }
 ```
@@ -191,34 +264,34 @@ for await (const subagent of run.subagents) {
 Coordinator and subagent output often interleave. Consume projections concurrently when you need live UI updates.
 
 :::python
-Use `run.interleave(...)` when you want one sync loop over multiple projections:
+Use `stream.interleave(...)` when you want one sync loop over multiple projections:
 
-```python
-run = agent.stream_events(input, version="v3")
+```py
+stream = agent.stream_events(input, version="v3")
 
-for name, item in run.interleave("messages", "subagents"):
+for name, item in stream.interleave("messages", "subagents"):
     if name == "messages":
-        print("[coordinator]", str(item.text))
+        print("[coordinator]", item.text)
     else:
         for message in item.messages:
-            print(f"[{item.name}]", str(message.text))
+            print(f"[{item.name}]", message.text)
 ```
 :::
 
 :::js
 Use concurrent consumers in JavaScript:
 
-```typescript
-const run = await agent.streamEvents(input, { version: "v3" });
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
 
 await Promise.all([
   (async () => {
-    for await (const message of run.messages) {
+    for await (const message of stream.messages) {
       console.log("[coordinator]", await message.text);
     }
   })(),
   (async () => {
-    for await (const subagent of run.subagents) {
+    for await (const subagent of stream.subagents) {
       void (async () => {
         for await (const message of subagent.messages) {
           console.log(`[${subagent.name}]`, await message.text);
@@ -230,9 +303,33 @@ await Promise.all([
 ```
 :::
 
+When you need exact arrival order across the coordinator and all subagents, iterate raw protocol events and use `namespace` to identify the source:
+
+:::python
+```py
+stream = agent.stream_events(input, version="v3")
+
+for event in stream:
+    if event.get("method") != "messages":
+        continue
+
+    payload = event["params"]["data"]
+    if payload.get("event") != "content-block-delta":
+        continue
+
+    block = payload.get("delta") or {}
+    if block.get("type") == "text":
+        source = "subagent" if event["params"]["namespace"] else "coordinator"
+        print(f"[{source}] {block['text']}", end="", flush=True)
+```
+:::
+
+## Subagents versus subgraphs
+
+`stream.subgraphs` shows graph execution structure. `stream.subagents` shows product-level Deep Agents task delegations. Use `stream.subagents` for user-facing UI because it hides internal graph nodes and exposes the subagent concept directly.
+
 ## Related
 
-- [Streaming cookbook](https://github.com/langchain-ai/streaming-cookbook) shows runnable Event Streaming examples.
 - [LangChain Event Streaming](/oss/langchain/event-streaming) covers general agent message and tool-call streaming concepts.
 - [Subagent frontend streaming](/oss/deepagents/frontend/subagent-streaming) shows UI patterns that separate coordinator messages from subagent cards.
-- [LangGraph Event Streaming](/oss/langgraph/streaming/event-streaming) covers the underlying graph streaming model.
+- [LangGraph Event Streaming](/oss/langgraph/event-streaming) covers the underlying graph streaming model.
