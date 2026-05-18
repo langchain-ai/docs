@@ -1,0 +1,266 @@
+---
+title: Managed Deep Agents
+description: Create, run, and operate Managed Deep Agents with the private preview API.
+icon: "robot"
+tag: "PREVIEW"
+---
+
+Managed Deep Agents is an API-first hosted runtime for creating, running, and operating deep agents in LangSmith. This guide walks through the full flow: define the agent, configure tools, create the managed agent, create a thread, stream a run, and inspect the result in LangSmith.
+
+<Note>
+    Managed Deep Agents is in private preview. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
+</Note>
+
+Deep Agents give developers an open-source harness for building agents that can plan, use tools, delegate to subagents, write files, and work over long horizons. Managed Deep Agents packages the operational layer around that harness, so you can focus on the agent's behavior instead of running custom runtime infrastructure.
+
+For route-level details, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api).
+
+## When to use Managed Deep Agents
+
+Use Managed Deep Agents when you want to:
+
+- Create and manage deep agents programmatically.
+- Run long-running agents without standing up a custom agent server.
+- Stream runs and preserve durable thread state.
+- Use managed files and tools.
+- Inspect traces and agent behavior in LangSmith.
+
+<Tip>
+    You can also deploy Deep Agents with a standard [LangSmith Deployment](/langsmith/deployment-quickstart). Use that path when you need custom application code, custom routes, advanced authentication, full Agent Server APIs, stronger isolation controls, or maximum scalability.
+</Tip>
+
+## Prerequisites
+
+Before you start, make sure you have:
+
+- Managed Deep Agents private preview access.
+- A LangSmith API key for a workspace with private preview access.
+- A Deep Agent definition, including instructions and any tool configuration you want the managed runtime to use.
+
+Set request defaults for the examples in this guide:
+
+```bash
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+export LANGSMITH_API_URL="https://api.smith.langchain.com"
+export DEEPAGENTS_BASE_URL="$LANGSMITH_API_URL/v1/deepagents"
+```
+
+Requests require the `X-Api-Key` header:
+
+```txt
+X-Api-Key: <LANGSMITH_API_KEY>
+```
+
+## Define the agent
+
+Managed Deep Agents keeps the familiar Deep Agents project shape. Keep these files in your source repository so you can review changes and recreate the managed agent when needed:
+
+| File or directory | Purpose |
+| --- | --- |
+| `AGENTS.md` | Defines the agent instructions. |
+| `skills/` | Contains skills the agent can use. |
+| `subagents/` | Contains subagent definitions for delegated work. |
+| `tools.json` | Configures tools for the managed agent. |
+
+For the API request, pass the agent instructions and tool configuration directly in the create-agent payload. Use the same `tools.json` shape when you configure tools:
+
+```json
+{
+  "tools": [
+    {
+      "name": "tavily_web_search",
+      "mcp_server_url": "https://tools.langchain.com",
+      "mcp_server_name": "Fleet",
+      "display_name": "tavily_web_search"
+    }
+  ],
+  "interrupt_config": {
+    "https://tools.langchain.com::tavily_web_search::Fleet": true
+  }
+}
+```
+
+The `interrupt_config` map lets you require human approval for selected tools. The key combines the MCP server URL, tool name, and MCP server name.
+
+## Create a managed agent
+
+Create the agent with `POST /v1/deepagents/agents`. The payload defines the managed resource, runtime settings, instructions, and tools.
+
+```bash
+curl --request POST \
+  --url "$DEEPAGENTS_BASE_URL/agents" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "name": "research-assistant",
+    "description": "Research assistant that can search the web and summarize sources.",
+    "runtime": {
+      "model": {
+        "model_id": "anthropic:claude-sonnet-4-6"
+      }
+    },
+    "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
+    "tools": {
+      "tools": [
+        {
+          "name": "tavily_web_search",
+          "mcp_server_url": "https://tools.langchain.com",
+          "mcp_server_name": "Fleet",
+          "display_name": "tavily_web_search"
+        }
+      ],
+      "interrupt_config": {
+        "https://tools.langchain.com::tavily_web_search::Fleet": true
+      }
+    }
+  }'
+```
+
+The response includes the managed agent ID. Store it for later requests:
+
+```bash
+export AGENT_ID="<AGENT_ID>"
+```
+
+## Create a thread
+
+Create a thread before running the agent. Threads preserve the conversation and execution state for long-running work.
+
+```bash
+curl --request POST \
+  --url "$DEEPAGENTS_BASE_URL/threads" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "agent_id": "'"$AGENT_ID"'",
+    "options": {
+      "test_run": false,
+      "skip_memory_write_protection": false
+    }
+  }'
+```
+
+The response includes the thread ID:
+
+```bash
+export THREAD_ID="<THREAD_ID>"
+```
+
+## Stream a run
+
+Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stream`. Include the `agent_id` in the request body and set `Accept: text/event-stream` so your client receives progress as server-sent events.
+
+```bash
+curl --request POST \
+  --url "$DEEPAGENTS_BASE_URL/threads/$THREAD_ID/runs/stream" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY" \
+  --header 'Accept: text/event-stream' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "agent_id": "'"$AGENT_ID"'",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
+      }
+    ],
+    "stream_mode": ["values", "updates", "messages-tuple"],
+    "stream_subgraphs": true,
+    "user_timezone": "America/Los_Angeles"
+  }'
+```
+
+Use stream modes based on the experience you want to build:
+
+| Stream mode | Use for |
+| --- | --- |
+| `values` | Full state snapshots after steps. |
+| `updates` | Incremental state updates as the agent works. |
+| `messages-tuple` | Token-level message output for chat UIs. |
+
+The run is traced in LangSmith. Open the trace to inspect messages, tool calls, files, subagent activity, and runtime behavior.
+
+## Update the agent
+
+Use `PATCH /v1/deepagents/agents/{agent_id}` when you need to update instructions, runtime settings, or tool configuration.
+
+```bash
+curl --request PATCH \
+  --url "$DEEPAGENTS_BASE_URL/agents/$AGENT_ID" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "description": "Research assistant that searches the web, reads URLs, and summarizes sources.",
+    "runtime": {
+      "model": {
+        "model_id": "anthropic:claude-sonnet-4-6"
+      }
+    },
+    "instructions": "You are a careful research assistant. Search for sources, read relevant pages, keep notes, and return concise answers with citations.",
+    "tools": {
+      "tools": [
+        {
+          "name": "tavily_web_search",
+          "mcp_server_url": "https://tools.langchain.com",
+          "mcp_server_name": "Fleet",
+          "display_name": "tavily_web_search"
+        },
+        {
+          "name": "read_url_content",
+          "mcp_server_url": "https://tools.langchain.com",
+          "mcp_server_name": "Fleet",
+          "display_name": "read_url_content"
+        }
+      ],
+      "interrupt_config": {
+        "https://tools.langchain.com::tavily_web_search::Fleet": true,
+        "https://tools.langchain.com::read_url_content::Fleet": false
+      }
+    }
+  }'
+```
+
+## Manage existing agents
+
+List agents:
+
+```bash
+curl --request GET \
+  --url "$DEEPAGENTS_BASE_URL/agents" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY"
+```
+
+Get one agent:
+
+```bash
+curl --request GET \
+  --url "$DEEPAGENTS_BASE_URL/agents/$AGENT_ID" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY"
+```
+
+Delete an agent:
+
+```bash
+curl --request DELETE \
+  --url "$DEEPAGENTS_BASE_URL/agents/$AGENT_ID" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY"
+```
+
+## Inspect the result in LangSmith
+
+Managed Deep Agents runs are traced in LangSmith, so teams can debug behavior and inspect tool calls. Use traces to review:
+
+- The user's input and the agent's final response.
+- Model calls and tool calls.
+- Subagent activity.
+- Files and runtime state created during the run.
+
+## Built on open-source Deep Agents
+
+Deep Agents remains open source. Managed Deep Agents is the hosted path for teams that want the Deep Agents harness plus LangSmith-managed runtime infrastructure.
+
+You can keep the agent definition in your repository, then use the Managed Deep Agents API to create and operate managed agents in LangSmith.
+
+## Private preview scope
+
+Managed Deep Agents does not mirror every LangSmith Deployment endpoint in private preview. Endpoint groups such as integrations, auth, triggers, skills, and sandboxes are not mirrored yet.

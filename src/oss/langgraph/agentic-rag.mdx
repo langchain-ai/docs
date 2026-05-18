@@ -3,6 +3,8 @@ title: Build a custom RAG agent with LangGraph
 sidebarTitle: Custom RAG agent
 ---
 
+import AgenticRagAssembleGraphPy from '/snippets/code-samples/agentic-rag-assemble-graph-py.mdx';
+
 ## Overview
 
 In this tutorial we will build a [retrieval](/oss/langchain/retrieval) agent using LangGraph.
@@ -777,51 +779,14 @@ Now we'll assemble all the nodes and edges into a complete graph:
 
 :::python
 * Start with a `generate_query_or_respond` and determine if we need to call `retriever_tool`
-* Route to next step using `tools_condition`:
+* Route to next step based on whether the model made tool calls:
   * If `generate_query_or_respond` returned `tool_calls`, call `retriever_tool` to retrieve context
   * Otherwise, respond directly to the user
 * Grade retrieved document content for relevance to the question (`grade_documents`) and route to next step:
   * If not relevant, rewrite the question using `rewrite_question` and then call `generate_query_or_respond` again
   * If relevant, proceed to `generate_answer` and generate final response using the @[`ToolMessage`] with the retrieved document context
 
-```python
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode, tools_condition
-
-workflow = StateGraph(MessagesState)
-
-# Define the nodes we will cycle between
-workflow.add_node(generate_query_or_respond)
-workflow.add_node("retrieve", ToolNode([retriever_tool]))
-workflow.add_node(rewrite_question)
-workflow.add_node(generate_answer)
-
-workflow.add_edge(START, "generate_query_or_respond")
-
-# Decide whether to retrieve
-workflow.add_conditional_edges(
-    "generate_query_or_respond",
-    # Assess LLM decision (call `retriever_tool` tool or respond to the user)
-    tools_condition,
-    {
-        # Translate the condition outputs to nodes in our graph
-        "tools": "retrieve",
-        END: END,
-    },
-)
-
-# Edges taken after the `action` node is called.
-workflow.add_conditional_edges(
-    "retrieve",
-    # Assess agent decision
-    grade_documents,
-)
-workflow.add_edge("generate_answer", END)
-workflow.add_edge("rewrite_question", "generate_query_or_respond")
-
-# Compile
-graph = workflow.compile()
-```
+<AgenticRagAssembleGraphPy />
 
 Visualize the graph:
 

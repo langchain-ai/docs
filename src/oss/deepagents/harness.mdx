@@ -54,6 +54,25 @@ The backends support the following file system operations:
 
 </Accordion>
 
+<Accordion title="Running without the default filesystem tools" icon="ban">
+    To hide the filesystem tools listed above from the model, register a [harness profile](#harness-profiles) with `excluded_tools`:
+
+    ```python
+    from deepagents import HarnessProfile, register_harness_profile
+
+    register_harness_profile(
+        "anthropic:claude-sonnet-4-6",
+        HarnessProfile(
+            excluded_tools=frozenset(
+                {"ls", "read_file", "write_file", "edit_file", "glob", "grep"}
+            ),
+        ),
+    )
+    ```
+
+    Removing `FilesystemMiddleware` itself via `excluded_middleware` is intentionally rejected — use `excluded_tools` to hide only the model-visible tool surface and leave the middleware in place. To remove the `task` tool, see [Running without subagents](/oss/deepagents/subagents#running-without-subagents).
+</Accordion>
+
 The virtual filesystem is used by several other harness capabilities such as skills, memory, code execution, and context management.
 You can also use the file system when building custom tools and middleware for Deep Agents.
 
@@ -92,17 +111,8 @@ The harness allows the main agent to create ephemeral "subagents" for isolated m
 - When invoked, it creates a fresh agent instance with its own context
 - Subagent executes autonomously until completion
 - Returns a single final report to the main agent
+- Can use [default `general-purpose` subagent](/oss/deepagents/subagents#default-subagent) (enabled by default) or add [custom subagents](/oss/deepagents/subagents#custom-subagents)
 - Subagents are stateless (can't send multiple messages back)
-
-**Default subagent:**
-- "general-purpose" subagent automatically available
-- Has filesystem tools by default
-- Can be customized with additional tools/middleware
-
-**Custom subagents:**
-- Define specialized subagents with specific tools
-- Example: code-reviewer, web-researcher, test-runner
-- Configure via `subagents` parameter
 
 <Accordion title="Running without subagents (no `task` tool)" icon="ban">
     To run an agent without the `task` tool, see [Running without subagents](/oss/deepagents/subagents#running-without-subagents). Don't try removing `SubAgentMiddleware` via `excluded_middleware`—that's intentionally rejected. Instead, disable the auto-added subagent via the [harness profile](#harness-profiles) and pass no synchronous subagents via `subagents=`. Async subagents are unaffected.
@@ -127,19 +137,16 @@ For configuration details, see [Context engineering](/oss/deepagents/context-eng
 
 ## Code execution
 
-When you use a [sandbox backend](/oss/deepagents/sandboxes), the harness exposes an `execute` tool that lets the agent run shell commands in an isolated environment. This enables the agent to install dependencies, run scripts, and execute code as part of its task.
+Deep Agents supports code execution in two ways:
 
-**How it works:**
-- Sandbox backends implement the `SandboxBackendProtocolV2` — when detected, the harness adds the `execute` tool to the agent's available tools
-- Without a sandbox backend, the agent only has filesystem tools (`read_file`, `write_file`, etc.) and cannot run commands
-- The `execute` tool returns combined stdout/stderr, exit code, and truncates large outputs (saving to a file for the agent to read incrementally)
+- [Sandbox backends](/oss/deepagents/sandboxes) expose an `execute` tool for shell commands in an isolated environment.
+- [Interpreters](/oss/deepagents/interpreters) add an `eval` tool that runs JavaScript in a scoped QuickJS runtime.
 
-**Why it's useful:**
-- **Security** — Code runs in isolation, protecting your host system from the agent's operations
-- **Clean environments** — Use specific dependencies or OS configurations without local setup
-- **Reproducibility** — Consistent execution environments across teams
+Use sandbox backends when the agent needs to install dependencies, run tests, call CLIs, or work with an operating-system filesystem. Sandbox backends implement the `SandboxBackendProtocolV2`; when detected, the harness adds the `execute` tool to the agent's available tools.
 
-For setup, providers, and file transfer APIs, see [Sandboxes](/oss/deepagents/sandboxes).
+Use interpreters when the agent needs a lightweight programmable layer for loops, batching, deterministic data transformations, or programmatic tool calling. Interpreters do not provide shell access, package installs, or filesystem and network access.
+
+For sandbox setup, providers, and file transfer APIs, see [Sandboxes](/oss/deepagents/sandboxes). For the QuickJS runtime and programmatic tool calling, see [Interpreters](/oss/deepagents/interpreters).
 
 ## Human-in-the-loop
 
