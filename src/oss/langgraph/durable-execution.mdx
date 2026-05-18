@@ -22,6 +22,36 @@ To leverage durable execution in LangGraph, you need to:
 
 1. Wrap any non-deterministic operations (e.g., random number generation) or operations with side effects (e.g., file writes, API calls) inside @[tasks][task] to ensure that when a workflow is resumed, these operations are not repeated for the particular run, and instead their results are retrieved from the persistence layer. For more information, see [Determinism and Consistent Replay](#determinism-and-consistent-replay).
 
+## Audit final-state claims
+
+For production agents, treat the final assistant message as a claim about the workflow state, not as proof that the workflow is complete. A response like `Done. All tests passed. Ready to publish.` can combine several different claims: completion, test status, and authority to take an external action.
+
+When you need an auditable handoff, emit a small final-state receipt that separates each claim from its evidence and from the authority for the next action. Keep the receipt boring and checkable by pointing to durable execution artifacts rather than asking a reviewer to trust the final message.
+
+```yaml
+status: needs_approval
+thread_id: support-ticket-123
+checkpoint_id: 1f029ca3-1f5b-6704-8004-820c16b69a5a
+claims:
+  - claim: "Refund request was reviewed."
+    evidence:
+      - "checkpoint_id:1f029ca3-1f5b-6704-8004-820c16b69a5a"
+      - "task_result:refund_policy_check"
+    authority: "Graph state shows review completed; no external action taken."
+  - claim: "Refund is ready to issue."
+    evidence:
+      - "interrupt:manager_approval requested"
+    authority: "Human approver still owns the final approval."
+next_action_owner: "manager_approval_queue"
+```
+
+Use durable identifiers wherever possible:
+
+* Use `thread_id` and `checkpoint_id` to locate the exact persisted workflow state.
+* Use task names or task result IDs for side-effecting work such as API calls, file writes, or test runs.
+* Use [interrupts](/oss/langgraph/interrupts) for human approval boundaries, and record whether the interrupt was requested, approved, rejected, or still pending.
+* For external actions such as publishing, deploying, or issuing payments, record the event or approval that gives authority for the next step. If no such event exists, make the next owner explicit instead of claiming the action is complete.
+
 ## Determinism and consistent replay
 
 When you resume a workflow run, the code does **NOT** resume from the **same line of code** where execution stopped; instead, it will identify an appropriate [starting point](#starting-points-for-resuming-workflows) from which to pick up where it left off. This means that the workflow will replay all steps from the [starting point](#starting-points-for-resuming-workflows) until it reaches the point where it was stopped.
