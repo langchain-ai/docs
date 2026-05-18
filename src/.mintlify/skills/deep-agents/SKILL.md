@@ -20,7 +20,7 @@ Use Deep Agents when you need to:
 - **Manage context** with a built-in virtual filesystem for large inputs
 - **Delegate subtasks** to specialized subagents
 - **Run code safely** in sandboxed execution environments
-- **Use a terminal agent** via the Deep Agents CLI
+- **Use a terminal agent** via Deep Agents Code
 
 ## When NOT to use
 
@@ -61,11 +61,11 @@ result = agent.invoke(
 )
 ```
 
-### Use the CLI
+### Use Deep Agents Code
 
 ```bash
-# Install the CLI
-pip install deepagents-cli
+# Install Deep Agents Code
+pip install deepagents-code
 
 # Run an interactive terminal agent
 deepagents
@@ -90,8 +90,8 @@ deepagents
 - [Context engineering](https://docs.langchain.com/oss/deepagents/context-engineering)—Manage context for complex tasks
 - [Subagents](https://docs.langchain.com/oss/deepagents/subagents)—Delegate work to child agents
 - [Sandboxes](https://docs.langchain.com/oss/deepagents/sandboxes)—Run code in isolated environments
-- [CLI](https://docs.langchain.com/oss/deepagents/cli/overview)—Terminal agent interface
-- [Deploy](https://docs.langchain.com/oss/deepagents/deploy)—Deploy to production
+- [Code](https://docs.langchain.com/oss/deepagents/code/overview)—Deep Agents Code, the terminal agent interface
+- [Deploy](https://docs.langchain.com/oss/deepagents/deploy/overview)—Deploy to production
 
 ## API reference
 
