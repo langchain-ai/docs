@@ -176,6 +176,7 @@ dcode --startup-cmd "git diff --stat" -n "Review these changes"
         | `--startup-cmd CMD`    | Shell command to run at startup, before the first prompt. Output is rendered in the transcript for your reference but is **not** added to the agent's message history. To hand command output to the agent, pipe it in via stdin instead (e.g., `git diff \| dcode -n "Review these changes"`). Non-zero exits and timeouts warn but do not abort; non-interactive mode applies a 60s timeout. |
         | `-n`, `--non-interactive TEXT` | Run a single task non-interactively and exit. Shell is disabled unless `--shell-allow-list` is set |
         | `--max-turns N`        | Cap agentic turns in non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Cap turn count with `--max-turns`](#non-interactive-mode-and-piping) |
+        | `--timeout SECONDS`    | Hard wall-clock timeout for non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Cap wall-clock time with `--timeout`](#non-interactive-mode-and-piping) |
         | `-q`, `--quiet`        | Clean output for piping—only the agent's response goes to stdout. Requires `-n` or piped stdin |
         | `--no-stream`          | Buffer the full response and write to stdout at once instead of streaming. Requires `-n` or piped stdin |
         | `--stdin`              | Read input from stdin explicitly instead of auto-detection. Errors clearly when stdin is unavailable or is a TTY |
@@ -333,6 +334,22 @@ Shell execution is disabled by default in non-interactive mode. Use `-S`/`--shel
         ```
 
         `N` must be a positive integer, and overrides the internal safety default that otherwise caps runaway loops. Exits with code 124 (matching GNU `timeout`) when the budget is exceeded, so CI can distinguish a budget hit from a generic failure. Requires `-n` or piped stdin; otherwise exits with code 2.
+
+        For a time-based limit instead of (or in addition to) a turn-count limit, see [Cap wall-clock time with `--timeout`](#non-interactive-mode-and-piping).
+    </Accordion>
+
+    <Accordion title="Cap wall-clock time with `--timeout`" icon="clock">
+        `--timeout SECONDS` enforces a hard wall-clock limit on a non-interactive run. It complements `--max-turns` (turn count) with a time-based budget—whichever limit is hit first cancels the agent.
+
+        ```bash
+        # Fail fast in CI if the task takes more than 2 minutes
+        dcode -n "run the test suite and summarise failures" --timeout 120
+
+        # Combine with --max-turns—whichever limit is hit first stops the agent
+        dcode -n "refactor auth module" --timeout 300 --max-turns 20
+        ```
+
+        On expiry the agent is cancelled and the process exits with code 124, the same code used by `--max-turns`, so CI can treat both budget hits uniformly. Requires `-n` or piped stdin; otherwise exits with code 2.
     </Accordion>
 
     <Accordion title="Clean output and buffering" icon="buffer">
