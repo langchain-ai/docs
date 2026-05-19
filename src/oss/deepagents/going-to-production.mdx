@@ -3,7 +3,13 @@ title: Going to production
 description: Take your deep agent to production with persistent memory, sandboxes, resilience middleware, and deployment options
 ---
 
+import SandboxLifecycleFactoryAssistantPy from '/snippets/deepagents-sandbox-lifecycle-factory-assistant-py.mdx';
+import SandboxLifecycleFactoryAssistantTs from '/snippets/deepagents-sandbox-lifecycle-factory-assistant-ts.mdx';
+import SandboxLifecycleFactoryThreadPy from '/snippets/deepagents-sandbox-lifecycle-factory-thread-py.mdx';
+import SandboxLifecycleFactoryThreadTs from '/snippets/deepagents-sandbox-lifecycle-factory-thread-ts.mdx';
+
 This guide covers considerations for taking a deep agent from a local prototype to a production deployment. It walks through scoping memory, configuring execution environments, adding guardrails, and connecting a frontend.
+
 
 ## Overview
 
@@ -24,9 +30,9 @@ This page covers:
 
 ## LangSmith Deployments
 
-The fastest way to get a deep agent into production is [`deepagents deploy`](/oss/deepagents/deploy), which packages your agent configuration and deploys it as a LangSmith Deployment with one command. Alternatively, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [assistants](/langsmith/assistants), [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. It also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
+![Managed Deep Agents packages your agent configuration, tools, and runtime settings for LangSmith](/oss/images/deepagents/production/deepagents-deploy-config.png)
 
-For the CLI-based approach, see [Deploy with the CLI](/oss/deepagents/deploy). For manual setup, see the [LangSmith Deployments quickstart](/langsmith/deployment-quickstart).
+The recommended path for taking a Deep Agent to production is [Managed Deep Agents](/langsmith/deploy-managed-deep-agent), an API-first hosted runtime for creating, running, and operating deep agents in LangSmith. Managed Deep Agents is currently in private preview ([join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist)). For teams that need custom application code, custom routes, advanced authentication, or full Agent Server APIs, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. A traditional LangSmith Deployment also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
 
 All code snippets on this page use the following `langgraph.json` unless otherwise specified:
 
@@ -69,6 +75,8 @@ For the full set of configuration options (custom Docker steps, store indexing, 
 ### Multi-tenancy
 
 When your agent serves multiple users, you need to handle three concerns: verifying who each user is, controlling what they can access, and managing the credentials the agent uses to act on their behalf.
+
+![Three authentication layers compose: end-user auth, agent-acting-as-user auth, and team RBAC](/oss/images/deepagents/production/auth-layers.png)
 
 #### User identity and access control
 
@@ -159,6 +167,8 @@ When building for production:
 
 Deep Agents run on LangGraph, which provides [durable execution](/oss/langgraph/durable-execution) out of the box. The [persistence](/oss/langgraph/persistence) layer checkpoints state at each step, so a run interrupted by a failure, timeout, or [human-in-the-loop](/oss/langgraph/interrupts) pause resumes from its last recorded state without reprocessing previous steps. For long-running deep agents that spawn many subagents, this means a mid-run failure doesn't lose completed work.
 
+![Durable execution: when a worker crashes mid-run, another worker picks the run up from the latest checkpoint](/oss/images/deepagents/production/durable-execution.png)
+
 Checkpointing also enables:
 
 - **Indefinite [interrupts](/oss/langgraph/interrupts).** Human-in-the-loop workflows can pause for minutes or days and resume exactly where they left off.
@@ -172,6 +182,8 @@ Checkpointing also enables:
 ## Memory
 
 Without memory, every conversation starts from scratch. Memory lets your agent retain information across conversations (user preferences, learned instructions, past experiences) so it can personalize its behavior over time. For an overview of memory types, see the [memory concepts guide](/oss/concepts/memory).
+
+![Short-term memory is scoped to a single thread via checkpoints; long-term memory persists across threads via the store](/oss/images/deepagents/production/memory.png)
 
 ### Scoping
 
@@ -189,7 +201,8 @@ Shared memory (assistant, user, or organization scope) is a vector for prompt in
 
 ### Configuration
 
-In Deep Agents, memory is stored as files in a virtual filesystem. By default, files only last for a single conversation. To persist them, route a path like `/memories/` to a @[StoreBackend] that writes to the LangGraph [Store](/langsmith/custom-store). Use a @[CompositeBackend] to give the agent both ephemeral scratch space and persistent [long-term memory](/oss/deepagents/memory).
+In Deep Agents, memory is stored as files in a virtual filesystem. By default, files are scoped to a single thread (conversation) and not shared across threads.
+Otherwise, to share memory across threads, route a path like `/memories/` to a @[StoreBackend] that writes to the LangGraph [Store](/langsmith/custom-store). Use a @[CompositeBackend] to give the agent both thread-scoped scratch space and cross-thread [long-term memory](/oss/deepagents/memory).
 
 :::python
 <Note>
@@ -392,16 +405,20 @@ For the full namespace factory API, see [namespace factories](/oss/deepagents/ba
 
 Locally, agents can read and write files on disk and run shell commands directly. In production, you need to think about isolation and persistence. The right setup depends on whether your agent needs to execute code:
 
-- **Filesystem backends** are enough if your agent only reads and writes files. Choose a backend that matches your persistence needs: ephemeral scratch space, persistent storage, or a mix of both.
+- **Filesystem backends** are enough if your agent only reads and writes files. Choose a backend that matches your persistence needs: thread-scoped scratch space, cross-thread storage, or a mix of both.
 - **Sandboxes** add an isolated container with an `execute` tool for running shell commands. Use a sandbox if your agent needs to run code, install packages, or do anything beyond file I/O.
 
 ### Filesystem
 
 Choose a backend based on what needs to persist:
 
-- @[StateBackend] (default): ephemeral scratch space, scoped to a single conversation. Checkpointed at every step, so avoid writing large files.
-- @[StoreBackend]: persistent storage that survives across conversations. Scope with a [namespace factory](/oss/deepagents/backends#namespace-factories).
-- @[CompositeBackend]: mix both. Ephemeral scratch space by default with persistent routes for specific paths like `/memories/`.
+- @[StateBackend] (default): thread-scoped scratch space. Files persist across turns within a thread via your checkpointer but are not shared across threads. Checkpointed at every step, so avoid writing large files.
+- @[StoreBackend]: cross-thread storage that survives across conversations. Scope with a [namespace factory](/oss/deepagents/backends#namespace-factories).
+- @[CompositeBackend]: mix both. Thread-scoped scratch space by default with cross-thread routes for specific paths like `/memories/`.
+
+:::python
+- [`ContextHubBackend`](/oss/deepagents/backends#contexthubbackend): durable files in a LangSmith Hub repo (`owner/name` or `name`). Use this when you want LangSmith-native persistence without provisioning a separate LangGraph store.
+:::
 
 For the full list of backends and how to build custom ones, see [backends](/oss/deepagents/backends).
 
@@ -431,53 +448,11 @@ The examples below use an async [graph factory](/langsmith/graph-rebuild) instea
     Each conversation gets its own sandbox. The [graph factory](/langsmith/graph-rebuild) reads `thread_id` from the run config, so each [thread](/langsmith/use-threads) automatically gets its own isolated environment. The provider's label-based lookup handles deduplication across runs. Cleaned up when the sandbox [TTL](/langsmith/configure-ttl) expires.
 
 :::python
-```python agent.py
-from daytona import CreateSandboxFromSnapshotParams, Daytona
-from deepagents import create_deep_agent
-from langchain_core.runnables import RunnableConfig
-from langchain_daytona import DaytonaSandbox
-
-client = Daytona()
-
-
-async def agent(config: RunnableConfig):
-    thread_id = config["configurable"]["thread_id"]  # [!code highlight]
-    try:
-        sandbox = await client.find_one(labels={"thread_id": thread_id})
-    except Exception:
-        sandbox = await client.create(
-            CreateSandboxFromSnapshotParams(
-                labels={"thread_id": thread_id},
-                auto_delete_interval=3600,  # TTL: clean up when idle
-            )
-        )
-    return create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=DaytonaSandbox(sandbox=sandbox))
-```
+<SandboxLifecycleFactoryThreadPy />
 :::
 
 :::js
-```typescript src/agent.ts
-import { Daytona } from "@daytonaio/sdk";
-import { DaytonaSandbox } from "@langchain/daytona";
-import { createDeepAgent } from "deepagents";
-import type { LangGraphRunnableConfig } from "@langchain/langgraph";
-
-const client = new Daytona();
-
-export async function agent(config: LangGraphRunnableConfig) {
-  const threadId = config.configurable?.thread_id as string;  // [!code highlight]
-  let sandbox;
-  try {
-    sandbox = await client.findOne({ labels: { thread_id: threadId } });
-  } catch {
-    sandbox = await client.create({
-      labels: { thread_id: threadId },
-      autoDeleteInterval: 3600, // TTL: clean up when idle
-    });
-  }
-  return createDeepAgent({ backend: await DaytonaSandbox.fromId(sandbox.id) });
-}
-```
+<SandboxLifecycleFactoryThreadTs />
 :::
 
   </Tab>
@@ -485,47 +460,11 @@ export async function agent(config: LangGraphRunnableConfig) {
     All conversations share one sandbox. The [graph factory](/langsmith/graph-rebuild) reads the [assistant](/langsmith/assistants) ID from `config["configurable"]`, so every thread on the same assistant returns to the same environment. Files, installed packages, and cloned repositories persist across conversations.
 
 :::python
-```python agent.py
-from daytona import CreateSandboxFromSnapshotParams, Daytona
-from deepagents import create_deep_agent
-from langchain_core.runnables import RunnableConfig
-from langchain_daytona import DaytonaSandbox
-
-client = Daytona()
-
-
-async def agent(config: RunnableConfig):
-    assistant_id = config["configurable"]["assistant_id"]  # [!code highlight]
-    try:
-        sandbox = await client.find_one(labels={"assistant_id": assistant_id})
-    except Exception:
-        sandbox = await client.create(
-            CreateSandboxFromSnapshotParams(labels={"assistant_id": assistant_id})
-        )
-    return create_deep_agent(model="google_genai:gemini-3.1-pro-preview", backend=DaytonaSandbox(sandbox=sandbox))
-```
+<SandboxLifecycleFactoryAssistantPy />
 :::
 
 :::js
-```typescript src/agent.ts
-import { Daytona } from "@daytonaio/sdk";
-import { DaytonaSandbox } from "@langchain/daytona";
-import { createDeepAgent } from "deepagents";
-import type { LangGraphRunnableConfig } from "@langchain/langgraph";
-
-const client = new Daytona();
-
-export async function agent(config: LangGraphRunnableConfig) {
-  const assistantId = config.configurable?.assistant_id as string;  // [!code highlight]
-  let sandbox;
-  try {
-    sandbox = await client.findOne({ labels: { assistant_id: assistantId } });
-  } catch {
-    sandbox = await client.create({ labels: { assistant_id: assistantId } });
-  }
-  return createDeepAgent({ backend: await DaytonaSandbox.fromId(sandbox.id) });
-}
-```
+<SandboxLifecycleFactoryAssistantTs />
 :::
 
     <Warning>
@@ -850,6 +789,8 @@ Sandboxes are isolated containers, so environment variables from your host aren'
 
 **Auth proxy (recommended).** The [sandbox auth proxy](/langsmith/sandbox-auth-proxy) intercepts outbound requests from the sandbox and injects authentication headers automatically. Sandbox code calls external APIs normally, and the proxy adds the correct credentials based on the destination host. This means API keys never appear in sandbox code, environment variables, or logs.
 
+![The sandbox auth proxy injects credentials into outbound requests so secrets never enter the sandbox](/oss/images/deepagents/production/sandbox-auth-proxy.png)
+
 ```json
 {
   "proxy_config": {
@@ -887,6 +828,8 @@ Agents in production run autonomously, which means they can loop indefinitely, h
 
 - **[Permissions](/oss/deepagents/permissions)**: declarative allow/deny rules that control which files and directories the agent can read or write. Use permissions to isolate the agent to a working directory, protect sensitive files, or enforce read-only memory.
 - **[Middleware](/oss/langchain/middleware/built-in)**: hooks that wrap model and tool calls for rate limiting, error handling, and data privacy.
+
+![Middleware hooks—before_model, wrap_model_call, wrap_tool_call, after_model—wrap the agent loop so policies run deterministically around every relevant step](/oss/images/deepagents/production/middleware-lifecycle.png)
 
 ### Rate limiting
 

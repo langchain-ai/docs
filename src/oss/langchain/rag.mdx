@@ -46,21 +46,30 @@ We can create a simple indexing pipeline and RAG chain to do this in ~40 lines o
 :::python
 ```python
 import bs4
+import requests
 from langchain.agents import AgentState, create_agent
-from langchain_community.document_loaders import WebBaseLoader
 from langchain.messages import MessageLikeRepresentation
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+
+# Below is a minimal helper for demonstration purposes.
+def load_web_page(url: str, bs_kwargs: dict | None = None) -> list[Document]:
+    response = requests.get(url)
+    response.raise_for_status()
+    soup = bs4.BeautifulSoup(response.text, "html.parser", **(bs_kwargs or {}))
+    return [Document(page_content=soup.get_text(), metadata={"source": url})]
+
+
 # Load and chunk contents of the blog
-loader = WebBaseLoader(
-    web_paths=("https://lilianweng.github.io/posts/2023-06-23-agent/",),
-    bs_kwargs=dict(
-        parse_only=bs4.SoupStrainer(
+docs = load_web_page(
+    "https://lilianweng.github.io/posts/2023-06-23-agent/",
+    bs_kwargs={
+        "parse_only": bs4.SoupStrainer(
             class_=("post-content", "post-title", "post-header")
         )
-    ),
+    },
 )
-docs = loader.load()
 
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 all_splits = text_splitter.split_documents(docs)
@@ -125,22 +134,33 @@ Task decomposition refers to...
 :::
 :::js
 ```typescript
-import "cheerio";
+import * as cheerio from "cheerio";
+import { Document } from "@langchain/core/documents";
 import { createAgent, tool } from "langchain";
-import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import * as z from "zod";
 
-// Load and chunk contents of blog
-const pTagSelector = "p";
-const cheerioLoader = new CheerioWebBaseLoader(
-  "https://lilianweng.github.io/posts/2023-06-23-agent/",
-  {
-    selector: pTagSelector
-  }
-);
+// Below is a minimal helper for demonstration purposes.
+async function loadWebPage(
+  url: string,
+  selector: string = "body"
+): Promise<Document[]> {
+  const response = await fetch(url);
+  const html = await response.text();
+  const $ = cheerio.load(html);
+  return [
+    new Document({
+      pageContent: $(selector).text(),
+      metadata: { source: url },
+    }),
+  ];
+}
 
-const docs = await cheerioLoader.load();
+// Load and chunk contents of blog
+const docs = await loadWebPage(
+  "https://lilianweng.github.io/posts/2023-06-23-agent/",
+  "p"
+);
 
 const splitter = new RecursiveCharacterTextSplitter({
   chunkSize: 1000,
@@ -203,10 +223,10 @@ This tutorial requires these langchain dependencies:
 :::python
 <CodeGroup>
 ```bash pip
-pip install langchain langchain-text-splitters langchain-community bs4
+pip install langchain langchain-text-splitters bs4 requests
 ```
 ```bash uv
-uv add langchain langchain-text-splitters langchain-community bs4
+uv add langchain langchain-text-splitters bs4 requests
 ```
 </CodeGroup>
 :::
@@ -214,13 +234,13 @@ uv add langchain langchain-text-splitters langchain-community bs4
 
 <CodeGroup>
 ```bash npm
-npm i langchain @langchain/community @langchain/textsplitters
+npm i langchain @langchain/textsplitters cheerio
 ```
 ```bash yarn
-yarn add langchain @langchain/community @langchain/textsplitters
+yarn add langchain @langchain/textsplitters cheerio
 ```
 ```bash pnpm
-pnpm add langchain @langchain/community @langchain/textsplitters
+pnpm add langchain @langchain/textsplitters cheerio
 ```
 </CodeGroup>
 
@@ -285,13 +305,13 @@ Select a vector store:
 <Note>
 **This section is an abbreviated version of the content in the [semantic search tutorial](/oss/langchain/knowledge-base).**
 
-If your data is already indexed and available for search (i.e., you have a function to execute a search), or if you're comfortable with [document loaders](/oss/integrations/document_loaders), [embeddings](/oss/integrations/embeddings), and [vector stores](/oss/integrations/vectorstores), feel free to skip to the next section on [retrieval and generation](/oss/langchain/rag#2-retrieval-and-generation).
+If your data is already indexed and available for search (i.e., you have a function to execute a search), or if you're comfortable with [embeddings](/oss/integrations/embeddings) and [vector stores](/oss/integrations/vectorstores), feel free to skip to the next section on [retrieval and generation](/oss/langchain/rag#2-retrieval-and-generation).
 
 </Note>
 
 Indexing commonly works as follows:
 
-1. **Load**: First we need to load our data. This is done with [Document Loaders](/oss/integrations/document_loaders).
+1. **Load**: First we need to load our data into @[`Document`] objects.
 2. **Split**: [Text splitters](/oss/integrations/splitters) break large `Documents` into smaller chunks. This is useful both for indexing data and passing it into a model, as large chunks are harder to search over and won't fit in a model's finite context window.
 3. **Store**: We need somewhere to store and index our splits, so that they can be searched over later. This is often done using a [VectorStore](/oss/integrations/vectorstores) and [Embeddings](/oss/integrations/embeddings) model.
 
@@ -299,22 +319,31 @@ Indexing commonly works as follows:
 
 ### Loading documents
 
-We need to first load the blog post contents. We can use [DocumentLoaders](/oss/integrations/document_loaders) for this, which are objects that load in data from a source and return a list of @[Document] objects.
+We need to first load the blog post contents into a list of @[Document] objects.
 
 :::python
-In this case we'll use the [`WebBaseLoader`](/oss/integrations/document_loaders/web_base), which uses `urllib` to load HTML from web URLs and `BeautifulSoup` to parse it to text. We can customize the HTML -\> text parsing by passing in parameters into the `BeautifulSoup` parser via `bs_kwargs` (see [BeautifulSoup docs](https://beautiful-soup-4.readthedocs.io/en/latest/#beautifulsoup)). In this case only HTML tags with class “post-content”, “post-title”, or “post-header” are relevant, so we'll remove all others.
+We'll use `requests` to fetch the page and `BeautifulSoup` to parse it to text. We can customize the HTML -\> text parsing by passing in parameters into the `BeautifulSoup` parser via `bs_kwargs` (see [BeautifulSoup docs](https://beautiful-soup-4.readthedocs.io/en/latest/#beautifulsoup)). In this case only HTML tags with class "post-content", "post-title", or "post-header" are relevant, so we'll remove all others.
 
 ```python
 import bs4
-from langchain_community.document_loaders import WebBaseLoader
+import requests
+from langchain_core.documents import Document
+
+
+# Below is a minimal helper for demonstration purposes.
+def load_web_page(url: str, bs_kwargs: dict | None = None) -> list[Document]:
+    response = requests.get(url)
+    response.raise_for_status()
+    soup = bs4.BeautifulSoup(response.text, "html.parser", **(bs_kwargs or {}))
+    return [Document(page_content=soup.get_text(), metadata={"source": url})]
+
 
 # Only keep post title, headers, and content from the full HTML.
 bs4_strainer = bs4.SoupStrainer(class_=("post-title", "post-header", "post-content"))
-loader = WebBaseLoader(
-    web_paths=("https://lilianweng.github.io/posts/2023-06-23-agent/",),
+docs = load_web_page(
+    "https://lilianweng.github.io/posts/2023-06-23-agent/",
     bs_kwargs={"parse_only": bs4_strainer},
 )
-docs = loader.load()
 
 assert len(docs) == 1
 print(f"Total characters: {len(docs[0].page_content)}")
@@ -339,18 +368,30 @@ In
 :::
 :::js
 ```typescript
-import "cheerio";
-import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
+import * as cheerio from "cheerio";
+import { Document } from "@langchain/core/documents";
 
-const pTagSelector = "p";
-const cheerioLoader = new CheerioWebBaseLoader(
+
+// Below is a minimal helper for demonstration purposes.
+async function loadWebPage(
+  url: string,
+  selector: string = "body"
+): Promise<Document[]> {
+  const response = await fetch(url);
+  const html = await response.text();
+  const $ = cheerio.load(html);
+  return [
+    new Document({
+      pageContent: $(selector).text(),
+      metadata: { source: url },
+    }),
+  ];
+}
+
+const docs = await loadWebPage(
   "https://lilianweng.github.io/posts/2023-06-23-agent/",
-  {
-    selector: pTagSelector,
-  }
+  "p"
 );
-
-const docs = await cheerioLoader.load();
 
 console.assert(docs.length === 1);
 console.log(`Total characters: ${docs[0].pageContent.length}`);
@@ -365,12 +406,6 @@ console.log(docs[0].pageContent.slice(0, 500));
 Building agents with LLM (large language model) as its core controller is...
 ```
 :::
-**Go deeper**
-
-`DocumentLoader`: Object that loads data from a source as list of `Documents`.
-
-- [Integrations](/oss/integrations/document_loaders/): 160+ integrations to choose from.
-- @[`BaseLoader`]: API reference for the base interface.
 
 ### Splitting documents
 

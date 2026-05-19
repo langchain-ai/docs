@@ -1,37 +1,21 @@
 ---
 title: "Cross encoder reranker integration"
-description: "Integrate with the Cross encoder reranker document transformer using LangChain Python."
+description: "Rerank retrieved documents with open-source cross-encoder models using LangChain Python."
 ---
 
-This notebook shows how to implement reranker in a retriever with your own cross encoder from [Hugging Face cross encoder models](https://huggingface.co/cross-encoder) or Hugging Face models that implements cross encoder function ([example: BAAI/bge-reranker-base](https://huggingface.co/BAAI/bge-reranker-base)). `SagemakerEndpointCrossEncoder` enables you to use these HuggingFace models loaded on Sagemaker.
+A cross-encoder scores each `(query, document)` pair directly rather than comparing independent embeddings, which produces more accurate ordering at the cost of one extra inference per document. Applying a reranker on top of vector search (retrieve top-20 via embeddings, rerank down to top-5) is one of the highest-impact quality improvements for a RAG pipeline, and it runs locally on CPU for free when you use a small cross-encoder from Hugging Face.
 
-This builds on top of ideas in the ContextualCompressionRetriever. Overall structure of this document came from [Cohere Reranker documentation](/oss/integrations/retrievers/cohere-reranker).
+This guide shows how to combine `HuggingFaceCrossEncoder` with LangChain's `CrossEncoderReranker` and `ContextualCompressionRetriever`. The pattern works with any [cross-encoder model on Hugging Face](https://huggingface.co/models?pipeline_tag=text-ranking), including `BAAI/bge-reranker-*`, `mixedbread-ai/mxbai-rerank-*`, `Alibaba-NLP/gte-multilingual-reranker-*`, `Qwen/Qwen3-Reranker-*`, and the classic `cross-encoder/ms-marco-*` family.
 
-For more about why cross encoder can be used as reranking mechanism in conjunction with embeddings for better retrieval, refer to [Hugging Face Cross-Encoders documentation](https://www.sbert.net/examples/applications/cross-encoder/README.html).
+## Setup
 
-```python
-#!pip install faiss sentence_transformers
-
-# OR  (depending on Python version)
-
-#!pip install faiss-cpu sentence_transformers
+```shell
+pip install -qU langchain-huggingface langchain-community langchain-classic faiss-cpu
 ```
 
-```python
-# Helper function for printing docs
+## Build a base retriever
 
-
-def pretty_print_docs(docs):
-    print(
-        f"\n{'-' * 100}\n".join(
-            [f"Document {i + 1}:\n\n" + d.page_content for i, d in enumerate(docs)]
-        )
-    )
-```
-
-## Set up the base vector store retriever
-
-Let's start by initializing a simple vector store retriever and storing the 2023 State of the Union speech (in chunks). We can set up the retriever to retrieve a high number (20) of docs.
+Start with a standard vector store retriever. Retrieve a relatively large `k`; the reranker will narrow it down.
 
 ```python
 from langchain_community.document_loaders import TextLoader
@@ -42,88 +26,53 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 documents = TextLoader("../../how_to/state_of_the_union.txt").load()
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
 texts = text_splitter.split_documents(documents)
-embeddingsModel = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/msmarco-distilbert-dot-v5"
+
+embeddings = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-m3",
+    encode_kwargs={"normalize_embeddings": True},
 )
-retriever = FAISS.from_documents(texts, embeddingsModel).as_retriever(
+retriever = FAISS.from_documents(texts, embeddings).as_retriever(
     search_kwargs={"k": 20}
 )
-
-query = "What is the plan for the economy?"
-docs = retriever.invoke(query)
-pretty_print_docs(docs)
 ```
 
-## Doing reranking with CrossEncoderReranker
+## Rerank with a cross-encoder
 
-Now let's wrap our base retriever with a `ContextualCompressionRetriever`. `CrossEncoderReranker` uses `HuggingFaceCrossEncoder` to rerank the returned results.
+`CrossEncoderReranker` wraps any cross-encoder and plugs into `ContextualCompressionRetriever`.
 
 ```python
 from langchain_classic.retrievers.contextual_compression import ContextualCompressionRetriever
 from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 
-model = HuggingFaceCrossEncoder(model_name="BAAI/bge-reranker-base")
-compressor = CrossEncoderReranker(model=model, top_n=3)
+cross_encoder = HuggingFaceCrossEncoder(model_name="BAAI/bge-reranker-v2-m3")
+reranker = CrossEncoderReranker(model=cross_encoder, top_n=3)
+
 compression_retriever = ContextualCompressionRetriever(
-    base_compressor=compressor, base_retriever=retriever
+    base_compressor=reranker,
+    base_retriever=retriever,
 )
 
 compressed_docs = compression_retriever.invoke("What is the plan for the economy?")
-pretty_print_docs(compressed_docs)
+for i, doc in enumerate(compressed_docs, 1):
+    print(f"Document {i}:\n{doc.page_content}\n")
 ```
 
-```text
-Document 1:
+## Picking a cross-encoder
 
-More infrastructure and innovation in America.
+| Model | Size | Notes |
+|---|---|---|
+| `cross-encoder/ms-marco-MiniLM-L6-v2` | 22M | Fastest; English only, 2022-era baseline |
+| `BAAI/bge-reranker-v2-m3` | 568M | Multilingual, strong default for most workloads |
+| `mixedbread-ai/mxbai-rerank-large-v2` | 1.5B | Top-tier English quality, GPU recommended |
+| `Alibaba-NLP/gte-multilingual-reranker-base` | 306M | Multilingual, 8192-token context |
+| `Qwen/Qwen3-Reranker-0.6B` | 595M | Instruction-aware, multilingual |
 
-More goods moving faster and cheaper in America.
+`HuggingFaceCrossEncoder` auto-selects the best available device (CUDA > MPS > CPU). To pin to a specific device, pass `model_kwargs={"device": "cpu"}` or similar.
 
-More jobs where you can earn a good living in America.
+## Deploying to SageMaker
 
-And instead of relying on foreign supply chains, let’s make it in America.
-
-Economists call it “increasing the productive capacity of our economy.”
-
-I call it building a better America.
-
-My plan to fight inflation will lower your costs and lower the deficit.
-----------------------------------------------------------------------------------------------------
-Document 2:
-
-Second – cut energy costs for families an average of $500 a year by combating climate change.
-
-Let’s provide investments and tax credits to weatherize your homes and businesses to be energy efficient and you get a tax credit; double America’s clean energy production in solar, wind, and so much more;  lower the price of electric vehicles, saving you another $80 a month because you’ll never have to pay at the gas pump again.
-----------------------------------------------------------------------------------------------------
-Document 3:
-
-Look at cars.
-
-Last year, there weren’t enough semiconductors to make all the cars that people wanted to buy.
-
-And guess what, prices of automobiles went up.
-
-So—we have a choice.
-
-One way to fight inflation is to drive down wages and make Americans poorer.
-
-I have a better plan to fight inflation.
-
-Lower your costs, not your wages.
-
-Make more cars and semiconductors in America.
-
-More infrastructure and innovation in America.
-
-More goods moving faster and cheaper in America.
-```
-
-## Uploading Hugging Face model to SageMaker endpoint
-
-Here is a sample `inference.py` for creating an endpoint that works with `SagemakerEndpointCrossEncoder`. For more details with step-by-step guidance, refer to [this article](https://huggingface.co/blog/kchoe/deploy-any-huggingface-model-to-sagemaker).
-
-It downloads Hugging Face model on the fly, so you do not need to keep the model artifacts such as `pytorch_model.bin` in your `model.tar.gz`.
+You can also host a cross-encoder on a SageMaker endpoint and use `SagemakerEndpointCrossEncoder`. Here is a sample `inference.py` that loads the model on the fly (no `model.tar.gz` artifacts required). See [this walkthrough](https://huggingface.co/blog/kchoe/deploy-any-huggingface-model-to-sagemaker) for step-by-step guidance.
 
 ```python
 import json
@@ -144,7 +93,7 @@ class CrossEncoder:
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )
         logging.info(f"Using device: {self.device}")
-        model_name = "BAAI/bge-reranker-base"
+        model_name = "BAAI/bge-reranker-v2-m3"
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
         self.model = self.model.to(self.device)
