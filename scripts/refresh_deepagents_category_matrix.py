@@ -22,7 +22,9 @@ The table uses a fixed set of six eval categories (see `FIXED_CATEGORY_COLUMNS` 
 plus a **Model** column; rows are ordered by **provider** (google_genai, openai, anthropic, then
 other `provider:model` ids alphabetically by provider and model). The **highest** score in each
 category column is shown in **bold** (tied scores are all bolded). Models with **fewer than four**
-of the six category scores are **omitted** (see `MIN_FILLED_CATEGORIES` in the script).
+of the six category scores are **omitted** (see `MIN_FILLED_CATEGORIES` in the script). Only models
+explicitly listed in `INCLUDED_MODELS` appear in the table — add a `provider:model` key there to
+surface a new entry.
 """
 
 from __future__ import annotations
@@ -70,6 +72,51 @@ FIXED_HEADER_LABELS: list[str] = [b for _, b in FIXED_CATEGORY_COLUMNS]
 
 # Minimum number of the six fixed categories with a non-missing score; sparser rows are not shown.
 MIN_FILLED_CATEGORIES: int = 4
+
+# Only models in this set are shown in the table; all others are ignored.
+INCLUDED_MODELS: frozenset[str] = frozenset({
+    "anthropic:claude-opus-4-6",
+    "anthropic:claude-opus-4-7",
+    "anthropic:claude-sonnet-4-6",
+    "baseten:deepseek-ai/DeepSeek-V4-Pro",
+    "baseten:moonshotai/Kimi-K2.6",
+    "baseten:zai-org/GLM-5",
+    "fireworks:accounts/fireworks/models/deepseek-v4-pro",
+    "fireworks:accounts/fireworks/models/glm-5p1",
+    "fireworks:accounts/fireworks/models/kimi-k2p6",
+    "fireworks:accounts/fireworks/models/minimax-m2p7",
+    "fireworks:accounts/fireworks/models/qwen3p6-plus",
+    "google_genai:gemini-3-flash-preview",
+    "google_genai:gemini-3.1-pro-preview",
+    "ollama:deepseek-v4-flash:cloud",
+    "ollama:deepseek-v4-pro:cloud",
+    "ollama:glm-5.1:cloud",
+    "ollama:kimi-k2.6:cloud",
+    "ollama:minimax-m2.7:cloud",
+    "openai:gpt-5.4",
+    "openai:gpt-5.4-mini",
+    "openai:gpt-5.4-pro",
+    "openai:gpt-5.5",
+    "openai:gpt-5.5-pro",
+    "openrouter:anthropic/claude-opus-4.6",
+    "openrouter:anthropic/claude-opus-4.7",
+    "openrouter:anthropic/claude-opus-4.7-fast",
+    "openrouter:anthropic/claude-sonnet-4.6",
+    "openrouter:deepseek/deepseek-v4-flash",
+    "openrouter:deepseek/deepseek-v4-flash:free",
+    "openrouter:deepseek/deepseek-v4-pro",
+    "openrouter:google/gemini-3-flash-preview",
+    "openrouter:google/gemini-3.1-pro-preview",
+    "openrouter:minimax/minimax-m2.7",
+    "openrouter:moonshotai/kimi-k2.6",
+    "openrouter:openai/gpt-5.4",
+    "openrouter:openai/gpt-5.4-mini",
+    "openrouter:openai/gpt-5.4-pro",
+    "openrouter:openai/gpt-5.5",
+    "openrouter:openai/gpt-5.5-pro",
+    "openrouter:z-ai/glm-5",
+    "openrouter:z-ai/glm-5.1",
+})
 
 # `provider:model` keys: primary provider order, then all other provider ids A–Z, then model id.
 TIER1_PROVIDERS: tuple[str, str, str] = ("google_genai", "openai", "anthropic")
@@ -422,7 +469,7 @@ def _table_markdown(
         and n_models_unfiltered > 0
     ):
         return _table_with_status_row(
-            "_No models have scores in at least four of the six category columns._",
+            "_No models in `INCLUDED_MODELS` have scores in at least four of the six category columns. Check that model ID strings in `INCLUDED_MODELS` match the keys emitted by CI._",
             cat_keys,
             display_headers,
         )
@@ -457,12 +504,33 @@ def build_fragment(per_page: int) -> str:
     if tok:
         runs = _fetch_runs(int(per_page))
         merged, n_fetched = _merge_rows(runs, tok)
-    n_models_unfiltered = len(merged)
+    # Apply min-fill filter first; n_models_unfiltered tracks models that had enough data.
     merged = {
         k: v
         for k, v in merged.items()
         if _filled_category_count(v, FIXED_CATEGORY_KEYS) >= MIN_FILLED_CATEGORIES
     }
+    n_models_unfiltered = len(merged)
+
+    # Warn about INCLUDED_MODELS entries that were never seen in any fetched run.
+    never_seen = sorted(INCLUDED_MODELS - set(merged.keys()))
+    if never_seen:
+        print(
+            f"[refresh_deepagents_category_matrix] {len(never_seen)} INCLUDED_MODELS "
+            f"entry/entries not found in any fetched run (typo or no CI data yet): {never_seen}",
+            file=sys.stderr,
+        )
+
+    # Apply allowlist; warn about models dropped by it (passed min-fill but not in the list).
+    excluded_by_allowlist = sorted(k for k in merged if k not in INCLUDED_MODELS)
+    if excluded_by_allowlist:
+        print(
+            f"[refresh_deepagents_category_matrix] {len(excluded_by_allowlist)} model(s) "
+            f"excluded by INCLUDED_MODELS allowlist: {excluded_by_allowlist}",
+            file=sys.stderr,
+        )
+    merged = {k: v for k, v in merged.items() if k in INCLUDED_MODELS}
+
     return _table_markdown(
         token=tok,
         merged=merged,
