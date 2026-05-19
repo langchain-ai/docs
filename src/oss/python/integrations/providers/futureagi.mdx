@@ -1,0 +1,82 @@
+---
+title: "Future AGI integrations"
+description: "Integrate with Future AGI using LangChain Python."
+---
+
+> **What is Future AGI?** [Future AGI](https://futureagi.com) is an open-source AI tracing and evaluation platform built on OpenTelemetry. The `traceAI-langchain` package auto-instruments LangChain and LangGraph, exporting traces to any OTLP-compatible backend (Future AGI, Jaeger, Datadog, etc.).
+
+## Trace LangChain
+
+`traceAI-langchain` instruments LangChain via the `LangChainInstrumentor`. Once registered, every chain, tool call, and LLM invocation produces an OpenTelemetry span automatically—no callback handler wiring required.
+
+### Installation
+
+```bash
+pip install traceAI-langchain
+pip install langchain-openai
+```
+
+### Environment variables
+
+Get your `FI_API_KEY` and `FI_SECRET_KEY` from the [Future AGI dashboard](https://app.futureagi.com).
+
+```python
+import os
+
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
+os.environ["FI_API_KEY"] = "your-futureagi-api-key"
+os.environ["FI_SECRET_KEY"] = "your-futureagi-secret-key"
+```
+
+### Initialize the tracer provider
+
+```python
+from fi_instrumentation import register
+from fi_instrumentation.fi_types import ProjectType
+
+trace_provider = register(
+    project_type=ProjectType.OBSERVE,
+    project_name="langchain_project",
+)
+```
+
+### Instrument LangChain
+
+```python
+from traceai_langchain import LangChainInstrumentor
+
+LangChainInstrumentor().instrument(tracer_provider=trace_provider)
+```
+
+### Run a chain
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate.from_template("{x} {y} {z}?").partial(
+    x="why is", z="blue"
+)
+chain = prompt | ChatOpenAI(model="gpt-4o-mini")
+
+result = chain.invoke({"y": "sky"})
+print(result)
+```
+
+The chain run, the prompt, the LLM call, and token usage are captured as a single trace.
+
+## Trace LangGraph
+
+`traceAI-langchain` also instruments LangGraph. Install the optional extra:
+
+```bash
+pip install "traceAI-langchain[langgraph]"
+```
+
+The same `LangChainInstrumentor().instrument(...)` call covers LangGraph nodes—no extra setup.
+
+For full configuration options, examples, and screenshots, see the [Future AGI LangChain integration guide](https://docs.futureagi.com/docs/integrations/traceai/langchain).
+
+## JavaScript
+
+For LangChain.js, install [`@traceai/langchain`](https://www.npmjs.com/package/@traceai/langchain) from npm. See the [traceAI repository](https://github.com/future-agi/traceAI/tree/main/typescript/packages/traceai_langchain) for the TypeScript instrumentor.
