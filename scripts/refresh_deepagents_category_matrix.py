@@ -70,6 +70,10 @@ FIXED_CATEGORY_COLUMNS: list[Tuple[str, str]] = [
 FIXED_CATEGORY_KEYS: list[str] = [a for a, _ in FIXED_CATEGORY_COLUMNS]
 FIXED_HEADER_LABELS: list[str] = [b for _, b in FIXED_CATEGORY_COLUMNS]
 
+# Sentinel key used to store the top-level `correctness` field (overall score) in per-model rows.
+OVERALL_KEY: str = "__overall__"
+OVERALL_HEADER: str = "Overall"
+
 # Minimum number of the six fixed categories with a non-missing score; sparser rows are not shown.
 MIN_FILLED_CATEGORIES: int = 4
 
@@ -383,6 +387,10 @@ def _merge_rows(
             if not isinstance(sc, dict):
                 continue
             m_out = out.setdefault(mid, {})
+            if OVERALL_KEY not in m_out:
+                overall_val = rep.get("correctness")
+                if overall_val is not None:
+                    m_out[OVERALL_KEY] = (_fmt_pct(overall_val), run_url)
             for cat, val in sc.items():
                 ckey = str(cat)
                 if ckey in m_out:
@@ -534,8 +542,8 @@ def build_fragment(per_page: int) -> str:
     return _table_markdown(
         token=tok,
         merged=merged,
-        cat_keys=FIXED_CATEGORY_KEYS,
-        display_headers=FIXED_HEADER_LABELS,
+        cat_keys=[OVERALL_KEY, *FIXED_CATEGORY_KEYS],
+        display_headers=[OVERALL_HEADER, *FIXED_HEADER_LABELS],
         n_fetched=n_fetched,
         n_models_unfiltered=n_models_unfiltered,
     )
