@@ -22,7 +22,7 @@ Use Managed Deep Agents when you want to:
 - Create and manage deep agents programmatically.
 - Run long-running agents without standing up a custom agent server.
 - Stream runs and preserve durable thread state.
-- Use managed files and tools.
+- Use a managed file tree (instructions, skills, subagents, tools, and a `/memories/` workspace) without running your own storage.
 - Inspect traces and agent behavior in LangSmith.
 
 <Tip>
@@ -62,6 +62,8 @@ Managed Deep Agents keeps the familiar Deep Agents project shape. Keep these fil
 | `subagents/` | Contains subagent definitions for delegated work. |
 | `tools.json` | Configures tools for the managed agent. |
 
+When you submit these files in a create-agent or update-agent request, the platform stores them as a versioned **agent repo** in the [Context Hub](/langsmith/use-the-context-hub). Every update creates a new commit (returned as `revision` on the agent response). The runtime serves the file tree to the agent on every run, and the agent can also read and write files at run time — including a `/memories/` directory for durable cross-run state.
+
 For the API request, pass the agent instructions and tool configuration directly in the create-agent payload. Use the same `tools.json` shape when you configure tools:
 
 ```json
@@ -80,7 +82,7 @@ For the API request, pass the agent instructions and tool configuration directly
 }
 ```
 
-The `interrupt_config` map lets you require human approval for selected tools. The key combines the MCP server URL, tool name, and MCP server name.
+The `interrupt_config` map lets you require human approval for selected tools. Each key is `{mcp_server_url}::{tool_name}` (separator is two colons); trailing slashes on the URL are stripped before matching. Additional `::`-separated parts after the tool name (such as the MCP server display name shown in the example above) are accepted but ignored when matching. Set the value to `true` to require human approval before the tool runs, or `false` to allow it without interrupt.
 
 ## Create a managed agent
 
@@ -178,6 +180,45 @@ Use stream modes based on the experience you want to build:
 | `updates` | Incremental state updates as the agent works. |
 | `messages-tuple` | Token-level message output for chat UIs. |
 
+You can combine modes by passing multiple values in `stream_mode`. The runtime then interleaves events for each requested mode.
+
+### Event format
+
+Every stream starts with a `metadata` event carrying the run ID, then emits events whose names match the requested stream modes. Each event has a `data` payload of JSON.
+
+`values` mode emits a `values` event after every step, containing the full graph state:
+
+```txt
+event: metadata
+data: {"run_id":"019e2d68-6b49-7b62-9066-af25f4bb842e","attempt":1}
+
+event: values
+data: {"messages":[{"type":"human","content":"Research recent approaches to agent memory","id":"..."}],"files":{},"tools":[]}
+```
+
+`updates` mode emits an `updates` event per node, keyed by the node or middleware name that produced the delta. `null` values indicate the node ran without producing a state update:
+
+```txt
+event: metadata
+data: {"run_id":"019e2d68-e162-7e02-8848-b6d96d19b2ef","attempt":1}
+
+event: updates
+data: {"MemoryMiddleware.before_agent":null}
+
+event: updates
+data: {"model":{"messages":[{"type":"ai","content":"...","model_name":"claude-sonnet-4-6","usage_metadata":{"input_tokens":15499,"output_tokens":4}}]}}
+```
+
+`messages-tuple` mode emits a `messages` event (note the SSE event name is `messages`, not `messages-tuple`). Each payload is a `[chunk, metadata]` tuple — the chunk is a partial `AIMessageChunk`, and the metadata describes the node and run context:
+
+```txt
+event: metadata
+data: {"run_id":"019e2d68-ed9d-71d0-8aec-f8cdbd1f9f2e","attempt":1}
+
+event: messages
+data: [{"type":"AIMessageChunk","content":[{"text":"ok","type":"text","index":0}],"id":"lc_run--..."},{"langgraph_node":"model","ls_model_name":"claude-sonnet-4-6","ls_provider":"anthropic","run_id":"...","thread_id":"...","assistant_id":"..."}]
+```
+
 The run is traced in LangSmith. Open the trace to inspect messages, tool calls, files, subagent activity, and runtime behavior.
 
 ## Update the agent
@@ -246,6 +287,10 @@ curl --request DELETE \
   --header "X-Api-Key: $LANGSMITH_API_KEY"
 ```
 
+<Warning>
+    Deleting an agent does not cascade to its threads. Existing threads remain queryable, but starting new runs on them returns `502`. Track and delete threads explicitly when you want to clean them up.
+</Warning>
+
 ## Inspect the result in LangSmith
 
 Managed Deep Agents runs are traced in LangSmith, so teams can debug behavior and inspect tool calls. Use traces to review:
@@ -255,6 +300,40 @@ Managed Deep Agents runs are traced in LangSmith, so teams can debug behavior an
 - Subagent activity.
 - Files and runtime state created during the run.
 
+## Limits and notes
+
+Operational notes that apply during the private preview. Behavior may change before general availability.
+
+### Supported models
+
+Pass model identifiers in the form `{provider}:{model_id}` — for example, `anthropic:claude-sonnet-4-6` or `openai:gpt-5.4-mini`. The runtime resolves models with @[`init_chat_model`], so any provider that `init_chat_model` supports is usable from Managed Deep Agents. See [Supported providers and models](/oss/langchain/models#supported-providers-and-models) for the current list.
+
+Values without a colon are interpreted as references to a saved Playground configuration rather than as model identifiers, so always supply the full `{provider}:{model_id}` form when configuring a model directly.
+
+### Thread retention
+
+Threads have no retention window or per-workspace cap during private preview. Create as many as you need; existing threads remain accessible for the duration of the preview.
+
+### Rate limits and quotas
+
+The Managed Deep Agents endpoints do not enforce per-key, per-workspace, or per-agent rate limits during private preview.
+
+### Deleting agents
+
+`DELETE /agents/{agent_id}` does not cascade to threads. Threads created against a deleted agent remain queryable but cannot start new runs — attempts return `502`. Track and delete threads explicitly when you want to clean them up, as covered in [Manage existing agents](#manage-existing-agents).
+
+### API stability
+
+Routes live under `/v1/deepagents`, but the surface is in private preview and may change in backwards-incompatible ways before general availability. Breaking changes are communicated to preview customers directly through the contact provided when access was granted.
+
+### SDKs
+
+REST is the only supported interface during private preview. SDK wrappers (Python and JavaScript) will follow soon.
+
+### Support and feedback
+
+Preview access includes direct support. The contact for bug reports and feature requests is included in the email you receive when access is granted.
+
 ## Built on open-source Deep Agents
 
 Deep Agents remains open source. Managed Deep Agents is the hosted path for teams that want the Deep Agents harness plus LangSmith-managed runtime infrastructure.
@@ -263,4 +342,6 @@ You can keep the agent definition in your repository, then use the Managed Deep 
 
 ## Private preview scope
 
-Managed Deep Agents does not mirror every LangSmith Deployment endpoint in private preview. Endpoint groups such as integrations, auth, triggers, skills, and sandboxes are not mirrored yet.
+Managed Deep Agents is available on LangSmith Cloud in the US region only during private preview. Self-hosted and Hybrid deployments are not supported, and EU and other regions will follow general availability.
+
+The API also does not mirror every LangSmith Deployment endpoint in private preview.
