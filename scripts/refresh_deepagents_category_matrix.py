@@ -273,7 +273,7 @@ def _fmt_pct(raw: object) -> str:
         v = float(s)
     except (TypeError, ValueError):
         return "—"
-    if v < 0:
+    if v <= 0:
         return "—"
     if v > 1.0 + 1e-6:
         if v > 100.0 + 1e-6:
