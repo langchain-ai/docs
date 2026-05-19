@@ -32,7 +32,7 @@ This page covers:
 
 ![Managed Deep Agents packages your agent configuration, tools, and runtime settings for LangSmith](/oss/images/deepagents/production/deepagents-deploy-config.png)
 
-There are two hosted paths for Deep Agents. [Managed Deep Agents](/langsmith/deploy-managed-deep-agent) (private preview) provides an API-first runtime for creating, running, and operating deep agents in LangSmith. You can also configure a [LangSmith Deployment](/langsmith/deployment) directly when you need custom application code, custom routes, advanced authentication, or full Agent Server APIs. Either path provisions the infrastructure your agent needs: [assistants](/langsmith/assistants), [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. It also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
+The recommended path for taking a Deep Agent to production is [Managed Deep Agents](/langsmith/deploy-managed-deep-agent), an API-first hosted runtime for creating, running, and operating deep agents in LangSmith. Managed Deep Agents is currently in private preview ([join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist)). For teams that need custom application code, custom routes, advanced authentication, or full Agent Server APIs, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. A traditional LangSmith Deployment also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
 
 All code snippets on this page use the following `langgraph.json` unless otherwise specified:
 
@@ -86,7 +86,6 @@ When your agent serves multiple users, you need to handle three concerns: verify
 - Return filters so users only see their own resources
 - Deny access with HTTP 403 for unauthorized operations
 
-If you deploy with the CLI, the [`[auth]`](/oss/deepagents/deploy#auth) section in `deepagents.toml` wires up Clerk, Supabase, or anonymous auth for you, and the [`[frontend]`](/oss/deepagents/deploy#frontend) section reuses the same configuration to gate the bundled chat UI.
 For a step-by-step tutorial, see [Make conversations private](/langsmith/resource-auth). For a walkthrough, watch the [custom auth video](https://www.youtube.com/watch?v=DkNqgCz8cjE).
 
 How you [scope memory](#scoping) and [execution environments](#execution-environment) determines what data is shared between users. See the sections below for details.
@@ -202,8 +201,7 @@ Shared memory (assistant, user, or organization scope) is a vector for prompt in
 
 ### Configuration
 
-In Deep Agents, memory is stored as files in a virtual filesystem. By default, files are scoped to a single thread (conversation) and not shared across threads. 
-If you deploy with [`deepagents deploy`](/oss/deepagents/deploy), per-user writable memory is built in: a `user/AGENTS.md` template under your project root is automatically scoped per authenticated user. See [User Memory](/oss/deepagents/deploy#user-memory) for the CLI shortcut and [Subagents](/oss/deepagents/deploy#subagents) for per-subagent isolated namespaces.
+In Deep Agents, memory is stored as files in a virtual filesystem. By default, files are scoped to a single thread (conversation) and not shared across threads.
 Otherwise, to share memory across threads, route a path like `/memories/` to a @[StoreBackend] that writes to the LangGraph [Store](/langsmith/custom-store). Use a @[CompositeBackend] to give the agent both thread-scoped scratch space and cross-thread [long-term memory](/oss/deepagents/memory).
 
 :::python
@@ -431,10 +429,6 @@ For the full list of backends and how to build custom ones, see [backends](/oss/
 ### Sandboxes
 
 If your agent needs to run code (not just read and write files), use a [sandbox](/oss/deepagents/sandboxes). Sandboxes provide both a filesystem and an `execute` tool for running shell commands, all inside an isolated container. This isolation also protects your host: if the agent's code exhausts memory or crashes, only the sandbox is affected. Your server keeps running.
-
-<Tip>
-For CLI-based deploys, declare your sandbox provider, template, image, and scope under [`[sandbox]`](/oss/deepagents/deploy#sandbox) in `deepagents.toml`—the bundler installs the matching `langchain-*` package and wires the sandbox into the deployed agent for you.
-</Tip>
 
 #### Lifecycle
 
@@ -822,7 +816,7 @@ Sandboxes are isolated containers, so environment variables from your host aren'
 
 The `${SECRET_KEY}` references resolve against secrets stored in your LangSmith [workspace settings](/langsmith/set-up-hierarchy#configure-workspace-settings). Configure secrets there before creating a template that references them.
 
-**Workspace secrets.** For API keys that don't need proxy-based injection (e.g., keys used by the agent server itself, not sandbox code), store them as [workspace secrets](/langsmith/set-up-hierarchy#configure-workspace-settings) in LangSmith. These are available as environment variables at runtime for all agents in the workspace. If you deploy via the CLI, the [`.env` file](/oss/deepagents/deploy#environment-variables) alongside `deepagents.toml` is uploaded with your bundle for agent-server keys; reserve the auth proxy for anything sandbox code calls.
+**Workspace secrets.** For API keys that don't need proxy-based injection (e.g., keys used by the agent server itself, not sandbox code), store them as [workspace secrets](/langsmith/set-up-hierarchy#configure-workspace-settings) in LangSmith. These are available as environment variables at runtime for all agents in the workspace.
 
 <Warning>
 Avoid passing secrets into sandboxes via environment variables or file uploads. Agents can read any accessible file or environment variable inside the sandbox, including credentials. The auth proxy keeps secrets out of the sandbox entirely.
@@ -831,10 +825,6 @@ Avoid passing secrets into sandboxes via environment variables or file uploads. 
 ## Guardrails
 
 Agents in production run autonomously, which means they can loop indefinitely, hit rate limits, or process user data that contains sensitive information. Deep Agents provide two layers of protection:
-
-<Note>
-Custom middleware is not currently configurable through [`deepagents deploy`](/oss/deepagents/deploy#limitations)). To apply the middleware patterns below, deploy directly via [LangSmith Deployments](/langsmith/deployment) with your own agent module.
-</Note>
 
 - **[Permissions](/oss/deepagents/permissions)**: declarative allow/deny rules that control which files and directories the agent can read or write. Use permissions to isolate the agent to a working directory, protect sensitive files, or enforce read-only memory.
 - **[Middleware](/oss/langchain/middleware/built-in)**: hooks that wrap model and tool calls for rate limiting, error handling, and data privacy.
@@ -986,10 +976,6 @@ For the complete list of available middleware, see [prebuilt middleware](/oss/la
 ## Frontend
 
 Deep Agents use [`useStream`](/oss/langchain/frontend/overview) to connect your UI to the agent backend. `useStream` is a frontend hook (available for React, Vue, Svelte, and Angular) that streams messages, subagent progress, and custom state from your agent in real time.
-
-<Tip>
-If you don't need a custom UI, [`deepagents deploy`](/oss/deepagents/deploy) ships a prebuilt React chat UI mounted at `/app` on your deployment URL—see [`[frontend]`](/oss/deepagents/deploy#frontend) for the configuration. The bundled UI handles streaming, thread picking, live todos/files/subagent panels, and Clerk/Supabase/anonymous auth out of the box.
-</Tip>
 
 Locally, `useStream` points at `http://localhost:2024`. In production, point it at your [LangSmith Deployment](/langsmith/deployment) and configure reconnection so users don't lose progress if their connection drops.
 

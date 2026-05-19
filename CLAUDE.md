@@ -315,6 +315,7 @@ uv run python scripts/refresh_deepagents_category_matrix.py --write
 Notes:
 
 - For the latest `(model, category)` value per cell, the script walks runs newest-first and keeps the first hit. Models with fewer than four of the six fixed categories filled are dropped (`MIN_FILLED_CATEGORIES`).
+- Only models explicitly listed in `INCLUDED_MODELS` (in the script) appear in the table. To surface a new model, add its `provider:model` key there.
 - The fixed columns are defined by `FIXED_CATEGORY_COLUMNS` in the script (`unit_test` is intentionally excluded).
 - Without `--write`, the script prints the table to stdout for inspection.
 - After regenerating, commit only `src/snippets/deepagents-eval-category-matrix.mdx`. Do not edit that snippet by hand.
