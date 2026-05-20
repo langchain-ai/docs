@@ -3,16 +3,16 @@ title: "ClickHouse integration"
 description: "Integrate with the ClickHouse vector store using LangChain Python."
 ---
 
-> [ClickHouse](https://clickhouse.com/) is the fastest and most resource efficient open-source database for real-time apps and analytics with full SQL support and a wide range of functions to assist users in writing analytical queries. Lately added data structures and distance search functions (like `L2Distance`) as well as [approximate nearest neighbor search indexes](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/annindexes) enable ClickHouse to be used as a high performance and scalable vector database to store and search vectors with SQL.
+> [ClickHouse](https://clickhouse.com/) is an open-source database for real-time apps and analytics with full SQL support. ClickHouse supports exact vector search (for example, using distance functions like `L2Distance`) and approximate vector search using vector similarity indexes (available in ClickHouse 25.8+). For details, see [Exact and Approximate Vector Search](https://clickhouse.com/docs/engines/table-engines/mergetree-family/annindexes).
 
-This notebook shows how to use functionality related to the `ClickHouse` vector store.
+This page shows how to use functionality related to the `ClickHouse` vector store.
 
 ## Setup
 
 First set up a local clickhouse server with docker:
 
 ```python
-! docker run -d -p 8123:8123 -p 9000:9000 --name langchain-clickhouse-server --ulimit nofile=262144:262144 -e CLICKHOUSE_SKIP_USER_SETUP=1 clickhouse/clickhouse-server:25.7
+! docker run -d -p 8123:8123 -p 9000:9000 --name langchain-clickhouse-server --ulimit nofile=262144:262144 -e CLICKHOUSE_SKIP_USER_SETUP=1 clickhouse/clickhouse-server:26.2
 ```
 
 You'll need to install `langchain-community` and `clickhouse-connect` to use this integration
@@ -153,9 +153,8 @@ Performing a simple similarity search can be done as follows:
 results = vector_store.similarity_search(
     "LangChain provides abstractions to make working with LLMs easy", k=2
 )
-for res in results:
-    page_content, metadata = res
-    print(f"* {page_content} [{metadata}]")
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
 ```
 
 #### Similarity search with score
@@ -174,7 +173,7 @@ You can have direct access to ClickHouse SQL where statement. You can write `WHE
 
 **NOTE**: Please be aware of SQL injection, this interface must not be directly called by end-user.
 
-If you custimized your `column_map` under your setting, you search with filter like this:
+If you customized your `column_map` in your settings, you can search with a filter like this:
 
 ```python
 meta = vector_store.metadata_column
@@ -195,14 +194,14 @@ There are a variety of other search methods that are not covered in this noteboo
 
 You can also transform the vector store into a retriever for easier usage in your chains.
 
-Here is how to transform your vector store into a retriever and then invoke the retreiever with a simple query and filter.
+Here is how to transform your vector store into a retriever and then invoke the retriever with a simple query and filter.
 
 ```python
 retriever = vector_store.as_retriever(
     search_type="similarity_score_threshold",
-    search_kwargs={"k": 1, "score_threshold": 0.5},
+    search_kwargs={"k": 1, "score_threshold": 0.5, "where_str": "metadata.source = 'news'"},
 )
-retriever.invoke("Stealing from the bank is a crime", filter={"source": "news"})
+retriever.invoke("Stealing from the bank is a crime")
 ```
 
 ## Usage for retrieval-augmented generation

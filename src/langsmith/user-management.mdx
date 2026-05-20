@@ -3,6 +3,8 @@ title: User management
 sidebarTitle: User management
 ---
 
+import SaasRegionUrls from '/snippets/langsmith/saas-region-urls.mdx';
+
 This page covers user management features in LangSmith, including access control, authentication, and automated user provisioning:
 
 - [Set up access control](#set-up-access-control): Configure role-based access control (RBAC) to manage user permissions within workspaces, including creating custom roles and assigning them to users.
@@ -75,7 +77,7 @@ JIT provisioning only runs for new users, that is, users who do not already have
 
 ### Login methods and access
 
-Once you have completed your configuration of SAML SSO for your organization, users will be able to log in via SAML SSO in addition to [other login methods](/langsmith/authentication-methods#cloud), such as username/password or Google Authentication":
+Once you have completed your configuration of SAML SSO for your organization, users will be able to log in via SAML SSO in addition to [other login methods](/langsmith/authentication-methods#cloud), such as username/password or Google Authentication:
 
 - When logged in via SAML SSO, users can only access the corresponding organization with SAML SSO configured.
 - Users with SAML SSO as their only login method do not have [personal organizations](/langsmith/administration-overview#organizations).
@@ -121,17 +123,14 @@ For IdP-specific configuration steps, refer to one of the following:
 1. In your IdP: Configure a SAML application with the following details, then copy the metadata URL or XML for step 3.
 
    <Note>
-   The following URLs depend on whether your organization is on the US (GCP), EU (GCP), or US (AWS) cloud region. Ensure you select the correct link.
+   The following URLs depend on whether your organization is on the GCP US, GCP EU, GCP APAC, or AWS US cloud region. Ensure you select the correct link.
    </Note>
 
    1. Single sign-on URL (or ACS URL):
-      - US (GCP): [https://auth.langchain.com/auth/v1/sso/saml/acs](https://auth.langchain.com/auth/v1/sso/saml/acs)
-      - EU (GCP): [https://eu.auth.langchain.com/auth/v1/sso/saml/acs](https://eu.auth.langchain.com/auth/v1/sso/saml/acs)
-      - US (AWS): [https://aws.auth.langchain.com/auth/v1/sso/saml/acs](https://aws.auth.langchain.com/auth/v1/sso/saml/acs)
+      <SaasRegionUrls prefix="auth" suffix="/auth/v1/sso/saml/acs" />
+
    2. Audience URI (or SP Entity ID):
-      - US (GCP): [https://auth.langchain.com/auth/v1/sso/saml/metadata](https://auth.langchain.com/auth/v1/sso/saml/metadata)
-      - EU (GCP): [https://eu.auth.langchain.com/auth/v1/sso/saml/metadata](https://eu.auth.langchain.com/auth/v1/sso/saml/metadata)
-      - US (AWS): [https://aws.auth.langchain.com/auth/v1/sso/saml/metadata](https://aws.auth.langchain.com/auth/v1/sso/saml/metadata)
+      <SaasRegionUrls prefix="auth" suffix="/auth/v1/sso/saml/metadata" />
    3. Name ID format: email address.
    4. Application username: email address.
    5. Required claims: `sub` and `email`.
@@ -143,6 +142,33 @@ For IdP-specific configuration steps, refer to one of the following:
 
       - `Default workspace role` and `Default workspaces` are editable. The updated settings will apply to new users only, not existing users.
       - (Coming soon) `SAML metadata URL` and `SAML metadata XML` are editable. This is usually only necessary when cryptographic keys are rotated/expired or the metadata URL has changed but the same IdP is still used.
+
+### Supabase Attribute Mapping
+
+<Note>
+Supabase Attribute Mapping is a [cloud-only](/langsmith/cloud) feature. [Self-hosted](/langsmith/self-hosted) deployments configure SAML/OIDC attributes directly with the IdP—see [Set up SSO with OAuth2.0 and OIDC](/langsmith/self-host-sso).
+</Note>
+
+LangSmith cloud uses [Supabase](/langsmith/cloud) as the SAML SSO backend. Supabase passes a small set of standard SAML attributes (such as `email` and `sub`) onto the user's JWT automatically. Any additional, non-standard SAML attribute your IdP emits (for example, `groups` for [SSO Groups Sync](#sso-groups-sync-alternative)) must be explicitly forwarded through Supabase before LangSmith can read it.
+
+**Attribute flow (1:1):**
+
+1. **IdP**: emits a SAML attribute with the configured name (e.g., `groups`).
+2. **Supabase**: forwards the attribute onto the user's JWT only if the attribute name appears in the **Supabase Attribute Mapping** table on the SSO provider. Standard attributes are forwarded automatically; non-standard attributes are dropped unless explicitly listed.
+3. **LangSmith**: reads the JWT claim by name (e.g., the value of [SSO Groups Sync](#sso-groups-sync-alternative)'s **Groups claim field**).
+
+The attribute name is preserved end-to-end: the IdP attribute name, the Supabase Attribute Mapping entry, and the downstream LangSmith setting all use the same string.
+
+#### Configuration
+
+In **Settings** → **Members and roles** → **SSO Configuration**, scroll to the **Supabase Attribute Mapping** section and add one row per non-standard attribute you want to forward:
+
+| Column | Description |
+| --- | --- |
+| **Attribute name** | The SAML attribute name as emitted by your IdP. Must match the JWT claim name LangSmith expects downstream (for SSO Groups Sync, this matches the **Groups claim field** value). |
+| **Array** | Check this if the attribute is multi-valued (a list of strings). Leave unchecked for scalar (single-value) attributes. Example: check this for `groups`; leave unchecked for `full_name`. |
+
+Click **Add row** for each additional attribute, then **Save**. An empty mapping table means no non-standard attributes flow through to the JWT.
 
 ### Entra ID (Azure)
 
@@ -175,13 +201,11 @@ For additional information, see Microsoft's [documentation](https://learn.micros
 4. Update the **Basic SAML Configuration**:
 
    1. `Identifier (Entity ID)`:
-      - US (GCP): [https://auth.langchain.com/auth/v1/sso/saml/metadata](https://auth.langchain.com/auth/v1/sso/saml/metadata)
-      - EU (GCP): [https://eu.auth.langchain.com/auth/v1/sso/saml/metadata](https://eu.auth.langchain.com/auth/v1/sso/saml/metadata)
-      - US (AWS): [https://aws.auth.langchain.com/auth/v1/sso/saml/metadata](https://aws.auth.langchain.com/auth/v1/sso/saml/metadata)
+      <SaasRegionUrls prefix="auth" suffix="/auth/v1/sso/saml/metadata" />
+
    2. `Reply URL (Assertion Consumer Service URL)`:
-      - US (GCP): [https://auth.langchain.com/auth/v1/sso/saml/acs](https://auth.langchain.com/auth/v1/sso/saml/acs)
-      - EU (GCP): [https://eu.auth.langchain.com/auth/v1/sso/saml/acs](https://eu.auth.langchain.com/auth/v1/sso/saml/acs)
-      - US (AWS): [https://aws.auth.langchain.com/auth/v1/sso/saml/acs](https://aws.auth.langchain.com/auth/v1/sso/saml/acs)
+      <SaasRegionUrls prefix="auth" suffix="/auth/v1/sso/saml/acs" />
+
    3. Leave `Relay State`, `Logout Url`, and `Sign on URL` empty.
    4. Click **Save**.
 
@@ -232,13 +256,11 @@ For additional information, see Google's [documentation](https://support.google.
 6. In the `Service Provider Details` window, enter:
 
    1. `ACS URL`:
-      - US (GCP): [https://auth.langchain.com/auth/v1/sso/saml/acs](https://auth.langchain.com/auth/v1/sso/saml/acs)
-      - EU (GCP): [https://eu.auth.langchain.com/auth/v1/sso/saml/acs](https://eu.auth.langchain.com/auth/v1/sso/saml/acs)
-      - US (AWS): [https://aws.auth.langchain.com/auth/v1/sso/saml/acs](https://aws.auth.langchain.com/auth/v1/sso/saml/acs)
+      <SaasRegionUrls prefix="auth" suffix="/auth/v1/sso/saml/acs" />
+
    2. `Entity ID`:
-      - US (GCP): [https://auth.langchain.com/auth/v1/sso/saml/metadata](https://auth.langchain.com/auth/v1/sso/saml/metadata)
-      - EU (GCP): [https://eu.auth.langchain.com/auth/v1/sso/saml/metadata](https://eu.auth.langchain.com/auth/v1/sso/saml/metadata)
-      - US (AWS): [https://aws.auth.langchain.com/auth/v1/sso/saml/metadata](https://aws.auth.langchain.com/auth/v1/sso/saml/metadata)
+      <SaasRegionUrls prefix="auth" suffix="/auth/v1/sso/saml/metadata" />
+
    3. Leave `Start URL` and the `Signed response` box empty.
    4. Set `Name ID` format to `EMAIL` and leave `Name ID` as the default (`Basic Information > Primary email`).
    5. Click `Continue`.
@@ -300,13 +322,10 @@ For additional information, see Okta's [documentation](https://help.okta.com/en-
 1. On the application overview page, select Add Integration.
 1. Leave `ApiUrlBase` empty.
 1. Fill in `AuthHost`:
-    - US (GCP): `auth.langchain.com`
-    - EU (GCP): `eu.auth.langchain.com`
-    - US (AWS): `aws.auth.langchain.com`
+    <SaasRegionUrls prefix="auth" protocol={false} />
+
 1. (Optional, if planning to use [SCIM](#set-up-scim-for-your-organization) as well) Fill in `LangSmithUrl`:
-    - US (GCP): `api.smith.langchain.com`
-    - EU (GCP): `eu.api.smith.langchain.com`
-    - US (AWS): `aws.api.smith.langchain.com`
+    <SaasRegionUrls prefix="api.smith" protocol={false} />
 1. Under Application Visibility, keep the box unchecked.
 1. Select Next.
 1. Select `SAML 2.0`.
@@ -333,13 +352,11 @@ SCIM is not compatible with this method of configuration. Refer to [**Via Okta I
 5. Enter the following information in the **Configure SAML** page:
 
    1. `Single sign-on URL` (`ACS URL`). Keep `Use this for Recipient URL and Destination URL` checked:
-      - US (GCP): [https://auth.langchain.com/auth/v1/sso/saml/acs](https://auth.langchain.com/auth/v1/sso/saml/acs)
-      - EU (GCP): [https://eu.auth.langchain.com/auth/v1/sso/saml/acs](https://eu.auth.langchain.com/auth/v1/sso/saml/acs)
-      - US (AWS): [https://aws.auth.langchain.com/auth/v1/sso/saml/acs](https://aws.auth.langchain.com/auth/v1/sso/saml/acs)
+      <SaasRegionUrls prefix="auth" suffix="/auth/v1/sso/saml/acs" />
+
    2. `Audience URI (SP Entity ID)`:
-      - US (GCP): [https://auth.langchain.com/auth/v1/sso/saml/metadata](https://auth.langchain.com/auth/v1/sso/saml/metadata)
-      - EU (GCP): [https://eu.auth.langchain.com/auth/v1/sso/saml/metadata](https://eu.auth.langchain.com/auth/v1/sso/saml/metadata)
-      - US (AWS): [https://aws.auth.langchain.com/auth/v1/sso/saml/metadata](https://aws.auth.langchain.com/auth/v1/sso/saml/metadata)
+      <SaasRegionUrls prefix="auth" suffix="/auth/v1/sso/saml/metadata" />
+
    3. `Name ID format`: **Persistent**.
    4. `Application username`: `email`.
    5. Leave the rest of the fields empty or set to their default.
@@ -368,6 +385,10 @@ Have a user with access sign in via the unique login URL from the `SSO Configura
 Once service-provider–initiated SSO is configured, users can sign in using a unique login URL. You can find this in the LangSmith UI under **Organization members and roles** then **SSO configuration**.
 
 ## Set up SCIM for your organization
+
+<Note>
+Looking for a lighter-weight alternative to SCIM that doesn't require IdP admin involvement to push groups? See [SSO Groups Sync](#sso-groups-sync-alternative) below—it reads group memberships directly from the SSO token at login time and reuses the same naming convention.
+</Note>
 
 System for Cross-domain Identity Management (SCIM) is an open standard that allows for the automation of user provisioning. Using SCIM, you can automatically provision and de-provision users in your LangSmith [organization and workspaces](/langsmith/administration-overview), keeping user access synchronized with your organization's identity provider.
 
@@ -469,7 +490,7 @@ If your workspace names contain the separator character (e.g., workspace `my-tea
 
 #### Configure custom separator
 
-To change the SCIM group name separator for your organization, use the `PATCH /api/v1/orgs/current/info` [endpoint](https://api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch) (EU (GCP): [same path on `eu.api.smith.langchain.com`](https://eu.api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch); US (AWS): [same path on `aws.api.smith.langchain.com`](https://aws.api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch)):
+To change the SCIM group name separator for your organization, use the `PATCH /api/v1/orgs/current/info` [endpoint](https://api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch) (GCP EU: [same path on `eu.api.smith.langchain.com`](https://eu.api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch); GCP APAC: [same path on `apac.api.smith.langchain.com`](https://apac.api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch); AWS US: [same path on `aws.api.smith.langchain.com`](https://aws.api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch)):
 
 ```bash
 curl -X PATCH $LANGCHAIN_ENDPOINT/api/v1/orgs/current/info \
@@ -544,7 +565,7 @@ Before enabling SCIM, disable [Just-in-time (JIT) provisioning](/langsmith/jit-i
 
 #### Disabling JIT for cloud
 
-Use the `PATCH /orgs/current/info` [endpoint](https://api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch) (EU (GCP) and US (AWS): same path on [`eu.api.smith.langchain.com`](https://eu.api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch) and [`aws.api.smith.langchain.com`](https://aws.api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch)):
+Use the `PATCH /orgs/current/info` [endpoint](https://api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch) (GCP EU, GCP APAC, and AWS US: same path on [`eu.api.smith.langchain.com`](https://eu.api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch), [`apac.api.smith.langchain.com`](https://apac.api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch), and [`aws.api.smith.langchain.com`](https://aws.api.smith.langchain.com/redoc#tag/orgs/operation/update_current_organization_info_api_v1_orgs_current_info_patch)):
 
 ```bash
 curl -X PATCH $LANGCHAIN_ENDPOINT/orgs/current/info \
@@ -614,9 +635,8 @@ and [the related configuration instructions](/langsmith/self-host-sso#override-s
 
    - **Tenant URL**:
 
-     - US (GCP): `https://api.smith.langchain.com/scim/v2`
-     - EU (GCP): `https://eu.api.smith.langchain.com/scim/v2`
-     - US (AWS): `https://aws.api.smith.langchain.com/scim/v2`
+     <SaasRegionUrls prefix="api.smith" suffix="/scim/v2" />
+
      - Self-hosted: `<langsmith_url>/scim/v2`
 
    - **Secret Token**: Enter the SCIM Bearer Token generated in Step 3.
@@ -733,3 +753,136 @@ Follow Okta's [Enable Group Push](https://help.okta.com/en-us/content/topics/use
 #### Other identity providers
 
 Other identity providers have not been tested but may function depending on their SCIM implementation.
+
+### SSO Groups Sync (alternative)
+
+<Note>
+SSO Groups Sync is available for organizations on the [Enterprise plan](/langsmith/pricing-plans) with SAML SSO (cloud) or OIDC (self-hosted) configured. [Contact sales](https://www.langchain.com/contact-sales) to learn more.
+</Note>
+
+SSO Groups Sync is a simpler alternative to [SCIM](#set-up-scim-for-your-organization) for organizations that can't or prefer not to configure SCIM group push. Instead of pushing groups from your IdP to LangSmith on a separate sync interval, LangSmith reads group memberships directly from a configurable claim in the SSO token at login time and applies org-level and workspace-level role assignments using the same [naming convention](#group-naming-convention) as SCIM.
+
+This is a well-established pattern used by GitLab (SAML Group Links), Grafana (Team Sync), HashiCorp Vault (`groups_claim`), and Atlassian (JIT group assignment).
+
+#### When to use SSO Groups Sync vs. SCIM
+
+SSO Groups Sync and SCIM can technically coexist (each only manages identities tagged with its own provisioning method), but we recommend choosing **one mechanism per organization**, not both, to avoid confusing precedence behavior.
+
+| | SSO Groups Sync | SCIM |
+| --- | --- | --- |
+| **Sync trigger** | At each SSO login | Proactive push from IdP (~1 hour cadence) |
+| **IdP admin involvement** | Minimal, just include groups in the SSO token | Required, configure SCIM provisioning app |
+| **Deprovisioning** | Lags until next login | Near real-time via IdP push |
+| **Naming convention** | Reuses [SCIM convention](#group-naming-convention) | [SCIM convention](#group-naming-convention) |
+| **Custom separator** | Reuses org-level [`scim_group_name_separator`](#configure-custom-separator) | [`scim_group_name_separator`](#configure-custom-separator) |
+
+Choose **SSO Groups Sync** when IdP admin involvement is minimal and reactive (login-time) sync is acceptable. Choose **SCIM** when proactive provisioning/deprovisioning and near real-time group membership updates are required.
+
+#### Configuration
+
+1. In your IdP: add the user's group memberships to the SSO token claim (default claim name: `groups`). Group names must follow the [SCIM naming convention](#group-naming-convention).
+2. In LangSmith: go to **Settings** → **Members and roles** → **SSO Configuration** → **SSO Groups Sync** and configure the following:
+
+   | Setting | Description |
+   | --- | --- |
+   | **Enable SSO Groups Sync** | Automatically assign workspace roles based on group memberships in the SSO token. |
+   | **Groups claim field** (default `groups`) | The claim name in the SSO token that contains group memberships. |
+   | **Sync workspace/role assignments** | Update workspace memberships and roles from group names on each SSO login. |
+   | **Require matching group to sign in** | Block login if the SSO token contains no groups matching the naming convention. |
+
+You can also configure these settings via the API by sending a `PATCH` to the SSO settings endpoint:
+
+```bash
+curl -X PATCH $LANGCHAIN_ENDPOINT/api/v1/orgs/current/sso-settings/$SSO_PROVIDER_ID \
+  -H "X-Api-Key: $LANGCHAIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sso_groups_enabled": true,
+    "sso_groups_claim_field": "groups",
+    "sso_groups_role_sync_enabled": true,
+    "sso_groups_required": false
+  }'
+```
+
+<Warning>
+Disabling SSO Groups Sync does not remove existing access. Users provisioned by SSO groups will retain their current access until their next login.
+</Warning>
+
+#### Configure your IdP to emit a groups SAML attribute (cloud)
+
+<Note>
+This section applies to **enterprise cloud** only. Self-hosted customers configure groups directly in their OIDC IdP, see [SSO Groups Sync on self-hosted](/langsmith/self-host-sso#sso-groups-sync).
+</Note>
+
+To make a user's group memberships visible to LangSmith at login, you need to do two things:
+
+1. Configure your IdP's SAML application to emit a multi-valued group attribute.
+2. Add a matching entry to [Supabase Attribute Mapping](#supabase-attribute-mapping) so the attribute flows through to the JWT (with **Array** checked).
+
+**Requirements:**
+
+- The IdP attribute name (e.g., `groups`) must match both the **Supabase Attribute Mapping** entry and the **Groups claim field** value (default `groups`).
+- The attribute must be **multi-valued** (a list of strings), not a single delimited string. If your IdP only supports single-valued attributes, you'll need to emit one attribute statement per group.
+- Each value must be a group name following the [SCIM naming convention](#group-naming-convention).
+- Only groups whose names match the convention are processed. LangSmith ignores groups that don't match its naming convention, such as org-wide directory groups or app assignment groups. You don't need to filter these out on the IdP side—emit all groups and LangSmith will skip the irrelevant ones.
+
+**Per-IdP setup:**
+
+<Tabs>
+<Tab title="Okta">
+
+In the LangSmith SAML application:
+
+1. **Directory** → **Profile Editor** → select the LangSmith application's user profile.
+2. Add a custom attribute named `groups` with **Type** `string array`.
+3. **Sign On** → edit the SAML settings and add an attribute statement:
+   - **Name**: `groups`
+   - **Name format**: `Unspecified` (or `Basic`)
+   - **Filter**: `Matches regex` with `.*` to send all groups, or use a more restrictive regex (e.g., `^LS:.*`) to limit to LangSmith-prefixed groups.
+
+</Tab>
+<Tab title="Entra ID (Azure)">
+
+In the LangSmith Enterprise Application:
+
+1. **Single sign-on** → **Attributes & Claims** → **Add a group claim**.
+2. Choose which groups to emit (typically **Groups assigned to the application**).
+3. Set **Source attribute** to `Cloud-only group display names` so the group name (which must match the [naming convention](#group-naming-convention)) is sent rather than the object ID.
+4. Set the claim **Name** to `groups` (or your configured **Groups claim field** value), with no namespace.
+
+</Tab>
+<Tab title="Google Workspace">
+
+Google's SAML SSO does not natively emit Google Group memberships as a SAML attribute. To use SSO Groups Sync with Google Workspace, you must either:
+
+- Manage group membership through a directory sync tool that exposes groups as a SAML attribute, or
+- Use [SCIM](#set-up-scim-for-your-organization) instead, which supports group push from Google Workspace.
+
+</Tab>
+</Tabs>
+
+#### Group naming examples
+
+Group names follow the [SCIM naming convention](#group-naming-convention). The `<workspace_role>` segment accepts both built-in roles and [custom workspace roles](/langsmith/rbac#custom-roles) by name.
+
+| Intent | Example group name |
+| --- | --- |
+| Org admin (grants workspace admin in all workspaces) | `LS:Organization Admins` |
+| Workspace admin in `Production` | `LS:Organization User:Production:Admin` |
+| Workspace editor in `Engineering` | `LS:Organization User:Engineering:Editor` |
+| Workspace viewer in `Marketing` | `LS:Organization User:Marketing:Viewer` |
+| Custom role `Annotators` in `Production` | `LS:Organization User:Production:Annotators` |
+
+#### Behavior
+
+- **Naming convention**: Group names follow the same format as SCIM (e.g., `LS:Organization Admins` for org admins, `LS:Organization User:Production:Editor` for workspace-scoped). See [Group naming convention](#group-naming-convention) for the full format. The separator is configured per-org via [`scim_group_name_separator`](#configure-custom-separator) and is shared with SCIM.
+- **Malformed group names**: Group names that don't match the convention are skipped silently (logged) and don't block login for valid groups.
+- **Login gate**: When **Require matching group to sign in** is enabled and the SSO token contains zero matching groups, login is blocked.
+- **Precedence**: SSO Groups Sync does not modify SCIM-sourced, manually assigned, or JIT-provisioned memberships. It is fully authoritative for its own assignments and replaces them on each login based on the token's group membership.
+- **Org admin propagation**: If a user receives an org admin role from their groups, they are granted workspace admin in all workspaces (same as SCIM behavior).
+
+#### Things to note
+
+- **Deprovisioning lag**: Unlike SCIM (proactive push), SSO Groups Sync only updates on login. A user removed from a group in the IdP retains their existing workspace access until their next LangSmith login. The **Require matching group to sign in** gate mitigates this by blocking the user entirely on next login.
+- **No retroactive sync**: Changing role mappings or enabling the feature does not update existing users until they log in again.
+- **Naming convention required**: Customers must name their IdP groups following the SCIM convention. If your IdP groups follow a different naming policy, SCIM with `description`-based mapping (see [Group attributes](#group-attributes)) may be a better fit.
