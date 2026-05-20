@@ -29,7 +29,7 @@ checkpointer = MemorySaver()
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.1-pro-preview",
+    model="google_genai:gemini-3.5-flash",
     tools=[remove_file, fetch_file, notify_email],
     interrupt_on={
         "remove_file": True,  # Default: approve, edit, reject, respond
