@@ -1,5 +1,4 @@
 // :snippet-start: deepagents-production-invoke-js
-import { v4 as uuidv4 } from "uuid";
 import { createDeepAgent } from "deepagents";
 import { z } from "zod";
 
@@ -11,7 +10,7 @@ const agent = createDeepAgent({
 });
 
 // Start a conversation
-const config = { configurable: { thread_id: uuidv4() } };
+const config = { configurable: { thread_id: crypto.randomUUID() } };
 await agent.invoke(
   { messages: [{ role: "user", content: "Plan a 3-day trip to Tokyo" }] },
   { ...config, context: { userId: "user-123" } },

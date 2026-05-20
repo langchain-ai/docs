@@ -1,6 +1,5 @@
 // :snippet-start: agent-invocation-thread-and-context-js
 import * as z from "zod";
-import { v4 as uuidv4 } from "uuid";
 import { AIMessage } from "@langchain/core/messages";
 import { createAgent } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
@@ -23,7 +22,7 @@ const result = await agent.invoke(
     ],
   },
   {
-    configurable: { thread_id: uuidv4() },
+    configurable: { thread_id: crypto.randomUUID() },
     context: { user_id: "user-123" },
   },
 );

@@ -1,5 +1,4 @@
 // :snippet-start: streaming-agent-progress-js
-import { v4 as uuidv4 } from "uuid";
 import { createAgent } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
 import z from "zod";
@@ -24,7 +23,7 @@ const agent = createAgent({
   checkpointer: new MemorySaver(),
 });
 
-const config = { configurable: { thread_id: uuidv4() } };
+const config = { configurable: { thread_id: crypto.randomUUID() } };
 
 for await (const chunk of await agent.stream(
   { messages: [{ role: "user", content: "what is the weather in sf" }] },
@@ -88,7 +87,7 @@ async function main() {
   for await (const chunk of await agent.stream(
     { messages: [{ role: "user", content: "what is the weather in sf" }] },
     {
-      configurable: { thread_id: uuidv4() },
+      configurable: { thread_id: crypto.randomUUID() },
       streamMode: "updates",
       version: "v2",
     },

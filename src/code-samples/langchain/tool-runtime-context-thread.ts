@@ -1,6 +1,5 @@
 // :snippet-start: tool-runtime-context-thread-js
 import * as z from "zod";
-import { v4 as uuidv4 } from "uuid";
 import { ChatOpenAI } from "@langchain/openai";
 import { createAgent, tool } from "langchain";
 
@@ -30,7 +29,7 @@ const result = await agent.invoke(
     messages: [{ role: "user", content: "What is my name?" }],
   },
   {
-    configurable: { thread_id: uuidv4() },
+    configurable: { thread_id: crypto.randomUUID() },
     context: { user_name: "John Smith" },
   },
 );
