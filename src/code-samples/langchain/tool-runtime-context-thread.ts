@@ -39,11 +39,7 @@ const result = await agent.invoke(
 // :remove-start:
 async function main() {
   const last = result.messages[result.messages.length - 1];
-  const text =
-    typeof last.content === "string"
-      ? last.content
-      : JSON.stringify(last.content);
-  if (!text.includes("John Smith")) {
+  if (!last.text.includes("John Smith")) {
     throw new Error(`expected model to surface name, got: ${text}`);
   }
   console.log("✓ tool runtime context and thread_id invoke sample completed");
