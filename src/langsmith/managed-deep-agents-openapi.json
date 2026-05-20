@@ -167,7 +167,7 @@
                     },
                     "runtime": {
                       "model": {
-                        "model_id": "claude-sonnet-4-6"
+                        "model_id": "anthropic:claude-sonnet-4-6"
                       }
                     },
                     "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
@@ -197,6 +197,44 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Agent"
+                },
+                "examples": {
+                  "basic": {
+                    "summary": "Research assistant with one tool",
+                    "value": {
+                      "id": "dfa71115-c971-4197-8f02-20826fbc6f40",
+                      "name": "research-assistant",
+                      "description": "Research assistant that can search the web and summarize sources.",
+                      "owner_id": "33499cf9-4c02-49af-909d-b8f42e051eab",
+                      "created_at": "2026-05-15T20:50:32.708302+00:00",
+                      "updated_at": "2026-05-15T20:50:32.708302+00:00",
+                      "permissions": {
+                        "identity": "personal",
+                        "visibility": "user",
+                        "tenant_access_level": "read"
+                      },
+                      "runtime": {
+                        "model": {
+                          "model_id": "anthropic:claude-sonnet-4-6"
+                        }
+                      },
+                      "revision": "13ac11f11da376e588cb84825ed88d05298f27aaaa90c6f694abf572f34161d9",
+                      "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
+                      "tools": {
+                        "tools": [
+                          {
+                            "name": "tavily_web_search",
+                            "mcp_server_url": "https://tools.langchain.com",
+                            "mcp_server_name": "Fleet",
+                            "display_name": "tavily_web_search"
+                          }
+                        ],
+                        "interrupt_config": {
+                          "https://tools.langchain.com::tavily_web_search::Fleet": true
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -373,7 +411,7 @@
       "delete": {
         "tags": ["Agents"],
         "summary": "Delete an agent",
-        "description": "Delete the agent and its associated state. The call is idempotent: deleting a non-existent agent returns `204`.",
+        "description": "Delete the agent. The call is idempotent: deleting a non-existent agent returns `204`. Deletion does not cascade to the agent's threads — existing threads remain queryable but cannot start new runs (attempts return `502`). Delete threads explicitly when you want to clean them up.",
         "operationId": "deleteManagedDeepAgent",
         "x-mint": {
           "href": "/langsmith/managed-deep-agents-api/agents/delete-agent",
@@ -454,6 +492,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Thread"
+                },
+                "examples": {
+                  "basic": {
+                    "summary": "Thread bound to an agent",
+                    "value": {
+                      "id": "019e2d67-ff4d-7251-bce5-dfdec8e1991b",
+                      "agent_id": "",
+                      "status": "idle",
+                      "metadata": {
+                        "is_test_run": false,
+                        "ls_user_id": "33499cf9-4c02-49af-909d-b8f42e051eab",
+                        "skip_memory_write_protection": false,
+                        "tenant_id": "ebbaf2eb-769b-4505-aca2-d11de10372a4"
+                      },
+                      "created_at": "2026-05-15T20:50:50.832351+00:00",
+                      "updated_at": "2026-05-15T20:50:50.832351+00:00"
+                    }
+                  }
                 }
               }
             }
@@ -865,7 +921,7 @@
         "name": "X-User-Timezone",
         "in": "header",
         "required": false,
-        "description": "User timezone for runtime configuration stamping. Defaults to `UTC` when omitted.",
+        "description": "IANA timezone name (for example, `America/Los_Angeles`) stamped into the agent's runtime configuration when the agent is created or updated. The runtime uses this timezone to inject a localized current-date line into the agent's system prompt, so the agent reasons about dates in the user's local time. Optional. Defaults to `UTC` when omitted; invalid values fall back to `UTC`.",
         "schema": {
           "type": "string",
           "example": "America/Los_Angeles"
@@ -879,26 +935,72 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "missingRequiredField": {
+                "summary": "Required field missing",
+                "value": {
+                  "type": "https://docs.langchain.com/errors/missing_required_field",
+                  "code": "missing_required_field",
+                  "detail": "Set 'name' to a non-empty string: 'name' is required",
+                  "status": 400
+                }
+              },
+              "invalidRequestBody": {
+                "summary": "Malformed JSON body",
+                "value": {
+                  "type": "https://docs.langchain.com/errors/invalid_request_body",
+                  "code": "invalid_request_body",
+                  "detail": "Provide a valid JSON request body matching the documented schema",
+                  "status": 400
+                }
+              }
             }
           }
         }
       },
       "Unauthorized": {
-        "description": "Authentication required or invalid.",
+        "description": "Authentication required. The auth layer returns a simple `{\"error\": \"Unauthorized\"}` body that does not match the structured `ErrorResponse` shape used by other 4xx responses.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            },
+            "examples": {
+              "missingApiKey": {
+                "summary": "No `X-Api-Key` header supplied",
+                "value": {
+                  "error": "Unauthorized"
+                }
+              }
             }
           }
         }
       },
       "Forbidden": {
-        "description": "The authenticated workspace does not have access to the resource or feature.",
+        "description": "The authenticated identity does not have access to the resource or feature. The auth layer returns a simple `{\"error\": \"Forbidden\"}` body that does not match the structured `ErrorResponse` shape used by other 4xx responses.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            },
+            "examples": {
+              "invalidApiKey": {
+                "summary": "API key is invalid or lacks workspace access",
+                "value": {
+                  "error": "Forbidden"
+                }
+              }
             }
           }
         }
@@ -909,6 +1011,17 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "agentNotFound": {
+                "summary": "Unknown agent ID",
+                "value": {
+                  "type": "https://docs.langchain.com/errors/agent_not_found",
+                  "code": "agent_not_found",
+                  "detail": "Verify the agent ID and that the calling identity has access: agent not found",
+                  "status": 404
+                }
+              }
             }
           }
         }
@@ -949,6 +1062,17 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "upstreamAuthFailed": {
+                "summary": "Upstream runtime rejected the request (e.g. orphaned thread after agent deletion)",
+                "value": {
+                  "type": "https://docs.langchain.com/errors/upstream_auth_failed",
+                  "code": "upstream_auth_failed",
+                  "detail": "Verify that the calling identity is authorized for this organization: upstream agent runtime rejected the request",
+                  "status": 502
+                }
+              }
             }
           }
         }
@@ -1129,8 +1253,8 @@
         "properties": {
           "model_id": {
             "type": "string",
-            "description": "Model ID used to run the agent.",
-            "example": "claude-sonnet-4-6"
+            "description": "Model identifier used to run the agent. Use the form `{provider}:{model_name}` — for example, `anthropic:claude-sonnet-4-6` or `openai:gpt-5.4-mini`. Values without a colon are interpreted as references to a saved Playground configuration, not as direct model identifiers. See [Supported models](/langsmith/deploy-managed-deep-agent#supported-models) for the recognized provider prefixes.",
+            "example": "anthropic:claude-sonnet-4-6"
           }
         }
       },
@@ -1146,8 +1270,10 @@
           },
           "interrupt_config": {
             "type": "object",
-            "description": "Per-tool interrupt rules keyed by tool identifier. Use `{}` for no interrupts.",
-            "additionalProperties": true
+            "description": "Per-tool interrupt rules. Keys are tool identifiers in the form `{mcp_server_url}::{tool_name}` (separator is two colons). The URL is normalized with any trailing slash stripped, so `https://tools.example.com` and `https://tools.example.com/` match the same tool. Additional `::`-separated components after the tool name (such as the MCP server display name) are accepted but ignored when matching. A bare tool name with no `::` is also accepted as a fallback. Values are booleans: `true` requires a human-in-the-loop interrupt before the tool runs; `false` allows it without interrupt. Use `{}` for no interrupts.",
+            "additionalProperties": {
+              "type": "boolean"
+            }
           }
         }
       },
@@ -1356,7 +1482,8 @@
           },
           "skip_memory_write_protection": {
             "type": "boolean",
-            "description": "Lets runs on this thread bypass the default long-term-memory write protection."
+            "default": false,
+            "description": "Controls whether the runtime pauses for human approval before the agent writes to long-term memory on this thread. By default (`false`), the runtime raises a human-in-the-loop interrupt when the agent tries to write or edit files in its memory directory, so the user can approve or reject the write before it persists. Set to `true` to bypass that interrupt and let memory writes proceed immediately — useful for headless or unattended runs."
           }
         }
       },
@@ -1420,7 +1547,7 @@
           },
           "user_timezone": {
             "type": "string",
-            "description": "User timezone for runtime context.",
+            "description": "IANA timezone name (for example, `America/Los_Angeles`) for this run. The runtime uses it to inject a localized current-date line into the agent's system prompt, so the agent reasons about dates in the user's local time. Optional. Defaults to the timezone stamped on the agent (or `UTC` if none was set); invalid values fall back to `UTC`.",
             "example": "America/Los_Angeles"
           }
         },

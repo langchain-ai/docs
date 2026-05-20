@@ -3,6 +3,8 @@ title: Streaming
 description: Stream real-time updates from agent runs
 ---
 
+import StreamingAgentProgressJs from '/snippets/code-samples/streaming-agent-progress-js.mdx';
+import StreamingAgentProgressPy from '/snippets/code-samples/streaming-agent-progress-py.mdx';
 import StreamingReasoningTokensPy from '/snippets/code-samples/streaming-reasoning-tokens-py.mdx';
 import StreamingReasoningTokensJs from '/snippets/code-samples/streaming-reasoning-tokens-js.mdx';
 
@@ -62,120 +64,33 @@ For example, if you have an agent that calls a tool once, you should see the fol
 
 :::python
 
-```python title="Streaming agent progress"
-from langchain.agents import create_agent
+Pass a `thread_id` via `config` so the conversation is checkpointed and follow-up turns can resume the same history. `thread_id` is independent of `stream_mode`; you can also pass `context` alongside it for per-run data your tools read from `runtime.context`.
 
-
-def get_weather(city: str) -> str:
-    """Get weather for a given city."""
-
-    return f"It's always sunny in {city}!"
-
-agent = create_agent(
-    model="gpt-5-nano",
-    tools=[get_weather],
-)
-for chunk in agent.stream(  # [!code highlight]
-    {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
-    stream_mode="updates",
-    version="v2",  # [!code highlight]
-):
-    if chunk["type"] == "updates":  # [!code highlight]
-        for step, data in chunk["data"].items():  # [!code highlight]
-            print(f"step: {step}")
-            print(f"content: {data['messages'][-1].content_blocks}")
-```
+<StreamingAgentProgressPy />
 
 ```shell title="Output"
 step: model
-content: [{'type': 'tool_call', 'name': 'get_weather', 'args': {'city': 'San Francisco'}, 'id': 'call_OW2NYNsNSKhRZpjW0wm2Aszd'}]
-
+content: [{'type': 'tool_call', 'name': 'get_weather', 'args': {'city': 'San Francisco'}, 'id': 'call_9lBtsDbmmobzyA8xc4I4Ctne'}]
 step: tools
 content: [{'type': 'text', 'text': "It's always sunny in San Francisco!"}]
-
 step: model
-content: [{'type': 'text', 'text': 'It's always sunny in San Francisco!'}]
+content: [{'type': 'text', 'text': "San Francisco weather: It's always sunny in San Francisco!\n\nIf you’d like the exact current conditions (temperature, humidity, wind) and a short forecast, I can fetch that next. Would you like me to pull live details for San Francisco?"}]
 ```
+
+<Note>
+Persisting conversation history with `thread_id` requires the agent to be configured with a [checkpointer](/oss/langchain/long-term-memory). On [LangSmith deployments](/langsmith/deployment) a checkpointer is provisioned automatically. Locally, pass one explicitly, for example `create_agent(..., checkpointer=InMemorySaver())`. The remaining snippets on this page omit `thread_id` for brevity, but you should pass it in production.
+</Note>
 :::
 
 :::js
-```typescript
-import z from "zod";
-import { createAgent, tool } from "langchain";
 
-const getWeather = tool(
-    async ({ city }) => {
-        return `The weather in ${city} is always sunny!`;
-    },
-    {
-        name: "get_weather",
-        description: "Get weather for a given city.",
-        schema: z.object({
-        city: z.string(),
-        }),
-    }
-);
+Pass a `thread_id` via `configurable` so the conversation is checkpointed and follow-up turns can resume the same history. `thread_id` is independent of `streamMode`; you can also pass `context` alongside it for per-run data your tools read from `runtime.context`.
 
-const agent = createAgent({
-    model: "gpt-5-nano",
-    tools: [getWeather],
-});
+<StreamingAgentProgressJs />
 
-for await (const chunk of await agent.stream(
-    { messages: [{ role: "user", content: "what is the weather in sf" }] },
-    { streamMode: "updates" }
-)) {
-    const [step, content] = Object.entries(chunk)[0];
-    console.log(`step: ${step}`);
-    console.log(`content: ${JSON.stringify(content, null, 2)}`);
-}
-/**
- * step: model
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         // ...
- *         "tool_calls": [
- *           {
- *             "name": "get_weather",
- *             "args": {
- *               "city": "San Francisco"
- *             },
- *             "type": "tool_call",
- *             "id": "call_0qLS2Jp3MCmaKJ5MAYtr4jJd"
- *           }
- *         ],
- *         // ...
- *       }
- *     }
- *   ]
- * }
- * step: tools
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         "content": "The weather in San Francisco is always sunny!",
- *         "name": "get_weather",
- *         // ...
- *       }
- *     }
- *   ]
- * }
- * step: model
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         "content": "The latest update says: The weather in San Francisco is always sunny!\n\nIf you'd like real-time details (current temperature, humidity, wind, and today's forecast), I can pull the latest data for you. Want me to fetch that?",
- *         // ...
- *       }
- *     }
- *   ]
- * }
- */
-```
+<Note>
+Persisting conversation history with `thread_id` requires the agent to be configured with a [checkpointer](/oss/langchain/long-term-memory). On [LangSmith deployments](/langsmith/deployment) a checkpointer is provisioned automatically. Locally, pass one explicitly, for example `createAgent({ ..., checkpointer: new MemorySaver() })`. The remaining snippets on this page omit `thread_id` for brevity, but you should pass it in production.
+</Note>
 :::
 
 ## LLM tokens
