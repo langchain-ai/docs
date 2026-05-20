@@ -97,9 +97,198 @@ For the API request, pass the agent instructions and tool configuration directly
 
 The `interrupt_config` map lets you require human approval for selected tools. Each key is `{mcp_server_url}::{tool_name}` (separator is two colons); trailing slashes on the URL are stripped before matching. Additional `::`-separated parts after the tool name (such as the MCP server display name shown in the example above) are accepted but ignored when matching. Set the value to `true` to require human approval before the tool runs, or `false` to allow it without interrupt.
 
+## Configure MCP servers
+
+Tools that need credentials — custom MCP servers, private endpoints, or any bearer-authenticated API — are registered once per workspace via `POST /v1/deepagents/mcp-servers`. The platform stores the server's URL and any credential headers; when an agent's `tools[].mcp_server_url` matches a registered server, the stored headers are attached automatically each time the tool is invoked.
+
+The bundled LangChain Fleet MCP server (`https://tools.langchain.com`) does **not** require a separate registration — its credentials are wired up via your LangSmith API key. Register your own MCP servers only when you need to attach custom credentials.
+
+### Register an MCP server
+
+Credentials are sent as a `headers` array of `{key, value}` objects. The headers are stored encrypted at rest and re-attached to every invocation against `url`.
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.post(
+        f"{BASE_URL}/mcp-servers",
+        headers=HEADERS,
+        json={
+            "name": "internal-search",
+            "url": "https://mcp.internal.example.com",
+            "headers": [
+                {"key": "Authorization", "value": "Bearer sk-..."},
+            ],
+        },
+    )
+    response.raise_for_status()
+    mcp_server_id = response.json()["id"]
+    print(f"MCP server ID: {mcp_server_id}")
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(`${BASE_URL}/mcp-servers`, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({
+        name: "internal-search",
+        url: "https://mcp.internal.example.com",
+        headers: [
+          { key: "Authorization", value: "Bearer sk-..." },
+        ],
+      }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    const { id: mcpServerId } = await response.json()
+    console.log(`MCP server ID: ${mcpServerId}`)
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request POST \
+      --url "$DEEPAGENTS_BASE_URL/mcp-servers" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "name": "internal-search",
+        "url": "https://mcp.internal.example.com",
+        "headers": [
+          {"key": "Authorization", "value": "Bearer sk-..."}
+        ]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+Reference the same `url` from `tools[].mcp_server_url` in your agent create/update payloads. The MCP server's credentials are applied automatically; you do not need to pass them again when creating the agent.
+
+### List and inspect MCP servers
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.get(f"{BASE_URL}/mcp-servers", headers=HEADERS)
+    response.raise_for_status()
+    servers = response.json()
+
+    response = httpx.get(f"{BASE_URL}/mcp-servers/{mcp_server_id}", headers=HEADERS)
+    response.raise_for_status()
+    server = response.json()
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const servers = await fetch(`${BASE_URL}/mcp-servers`, { headers: HEADERS }).then((r) =>
+      r.json(),
+    )
+
+    const server = await fetch(`${BASE_URL}/mcp-servers/${mcpServerId}`, {
+      headers: HEADERS,
+    }).then((r) => r.json())
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request GET \
+      --url "$DEEPAGENTS_BASE_URL/mcp-servers" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY"
+
+    curl --request GET \
+      --url "$DEEPAGENTS_BASE_URL/mcp-servers/$MCP_SERVER_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+### Rotate credentials
+
+`PATCH /v1/deepagents/mcp-servers/{mcp_server_id}` replaces the entire `headers` array. Pass the full new header set — partial diffs are not supported.
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.patch(
+        f"{BASE_URL}/mcp-servers/{mcp_server_id}",
+        headers=HEADERS,
+        json={
+            "headers": [
+                {"key": "Authorization", "value": "Bearer sk-rotated-..."},
+            ],
+        },
+    )
+    response.raise_for_status()
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(`${BASE_URL}/mcp-servers/${mcpServerId}`, {
+      method: "PATCH",
+      headers: HEADERS,
+      body: JSON.stringify({
+        headers: [
+          { key: "Authorization", value: "Bearer sk-rotated-..." },
+        ],
+      }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request PATCH \
+      --url "$DEEPAGENTS_BASE_URL/mcp-servers/$MCP_SERVER_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "headers": [
+          {"key": "Authorization", "value": "Bearer sk-rotated-..."}
+        ]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+### Delete an MCP server
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.delete(f"{BASE_URL}/mcp-servers/{mcp_server_id}", headers=HEADERS)
+    response.raise_for_status()
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(`${BASE_URL}/mcp-servers/${mcpServerId}`, {
+      method: "DELETE",
+      headers: HEADERS,
+    })
+    if (!response.ok) throw new Error(await response.text())
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request DELETE \
+      --url "$DEEPAGENTS_BASE_URL/mcp-servers/$MCP_SERVER_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+    `headers` may contain secrets (bearer tokens, API keys). The field is omitted from response bodies for callers without invoke permission on the server. Treat list and get responses as sensitive — avoid logging them verbatim.
+</Warning>
+
+<Note>
+    OAuth-backed MCP servers (the `POST /mcp-servers/{id}/oauth-provider` endpoint on `/v1/fleet`) are intentionally not exposed under `/v1/deepagents`. Managed Deep Agents pass static credentials through `headers`; OAuth per-user flows are configured at the LangSmith workspace level, not per agent.
+</Note>
+
 ## Create a managed agent
 
 Create the agent with `POST /v1/deepagents/agents`. The payload defines the managed resource, runtime settings, instructions, and tools.
+
+Each entry in `tools[].mcp_server_url` must either point to the bundled Fleet MCP server (`https://tools.langchain.com`) or match a server you registered in [Configure MCP servers](#configure-mcp-servers). The platform looks up the URL per workspace and attaches the stored headers at invocation time.
 
 <Tabs>
   <Tab title="Python (httpx)">
