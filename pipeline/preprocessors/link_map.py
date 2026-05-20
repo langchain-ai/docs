@@ -191,6 +191,12 @@ LINK_MAPS: list[LinkMap] = [
             "ParallelEnrichment": "langchain-parallel/tasks/ParallelEnrichment",
             "ParallelMonitor": "langchain-parallel/monitors/ParallelMonitor",
             "SourcePolicy": "langchain-parallel/_types/SourcePolicy",
+            # langchain-tavily
+            "langchain-tavily": "langchain-tavily/",
+            "TavilySearch": "langchain-tavily/tavily_search/TavilySearch",
+            "TavilyExtract": "langchain-tavily/tavily_extract/TavilyExtract",
+            "TavilyCrawl": "langchain-tavily/tavily_crawl/TavilyCrawl",
+            "TavilyMap": "langchain-tavily/tavily_map/TavilyMap",
             # langchain-amazon-nova
             "langchain-amazon-nova": "langchain-amazon-nova/",
             "ChatAmazonNova": "langchain-amazon-nova/chat_models/ChatAmazonNova",

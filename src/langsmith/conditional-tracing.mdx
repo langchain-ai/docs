@@ -188,6 +188,41 @@ with ls.tracing_context(enabled=False):
 
 This can be useful when you want to temporarily enable tracing for debugging within a normally non-traced section.
 
+## Conditionally redact inputs and outputs
+
+Sometimes you want the trace to be recorded—so you keep run timing, structure, errors, and metadata—but the inputs and outputs should be hidden for specific requests (for example, traces from tenants with strict privacy requirements). This is different from [disabling tracing](#disable-tracing-for-specific-invocations) entirely and from [`Client(hide_inputs=...)`](/langsmith/mask-inputs-outputs#hide-inputs-and-outputs), which applies the same redaction to every trace the client sends.
+
+To redact per-request, use @[`tracing_context`][tracing_context] with the `replicas` parameter and pass an `updates` dict that overrides `inputs` and `outputs` on the recorded run. Because `tracing_context` is scoped to the current execution context, concurrent requests with different redaction policies do not race.
+
+```python
+import langsmith as ls
+from langsmith import traceable
+
+@traceable
+def my_agent(user_input: str) -> str:
+    return process(user_input)
+
+def should_redact(tenant_id: str) -> bool:
+    """Return True if traces for this tenant should have inputs/outputs masked."""
+    return tenant_id in get_redacted_tenants()
+
+def handle_request(tenant_id: str, user_input: str) -> str:
+    replica: dict = {"project_name": "my-project"}
+    if should_redact(tenant_id):
+        # Recorded run will have empty inputs/outputs but full structure,
+        # timing, metadata, and any errors.
+        replica["updates"] = {"inputs": {}, "outputs": {}}
+
+    with ls.tracing_context(replicas=[replica]):
+        return my_agent(user_input)
+```
+
+You can use any subset of run fields in `updates` (for example, `{"inputs": {"redacted": True}}` to keep a marker, or `{"outputs": {}}` to redact only outputs). The same pattern works for routing different redaction policies to different destinations—each replica can specify its own `project_name`, `api_key`, and `updates`. See [Write traces to multiple destinations with replicas](/langsmith/log-traces-to-project#write-traces-to-multiple-destinations-with-replicas) for the full replica reference.
+
+<Note>
+Always set `project_name` on the replica when using `updates` to redact inputs or outputs. If the replica's `project_name` matches the active session's project, the `updates` may be dropped and the unredacted inputs/outputs will be sent.
+</Note>
+
 ## Customize tracing in deployed agents
 
 Tracing is enabled by default within LangSmith Deployment's [Agent Server](/langsmith/agent-server). When using a [factory function](/langsmith/graph-rebuild), you can wrap the yielded graph with `tracing_context` to control tracing per-execution. This is useful for adding custom metadata, disabling tracing entirely, or customizing tracing based on the authenticated user.
@@ -281,7 +316,7 @@ process_request("client-a", "some data")
 ```
 
 </Tab>
-<Tab title="TypeScript" icon="brand-javascript">
+<Tab title="TypeScript" icon="brand-typescript">
 
 ## How tracing enabled works
 
