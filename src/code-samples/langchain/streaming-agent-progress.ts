@@ -1,8 +1,7 @@
 // :snippet-start: streaming-agent-progress-js
-import { createAgent } from "langchain";
+import { createAgent, tool } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
 import z from "zod";
-import { createAgent, tool } from "langchain";
 
 const getWeather = tool(
   async ({ city }) => {
@@ -34,7 +33,7 @@ for await (const chunk of await agent.stream(
   console.log(`content: ${JSON.stringify(content, null, 2)}`);
 }
 /**
- * step: model
+ * step: model_request
  * content: {
  *   "messages": [
  *     {
@@ -67,7 +66,7 @@ for await (const chunk of await agent.stream(
  *     }
  *   ]
  * }
- * step: model
+ * step: model_request
  * content: {
  *   "messages": [
  *     {
