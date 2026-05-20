@@ -232,7 +232,7 @@ To support additional languages, add config entries in that script.
 
 ## Guidelines
 
-- Do not mock LangChain internals (for example `unittest.mock.patch` on `init_chat_model` helpers) so that imports resolve real chat model instances. Tests should exercise real model wiring; use lightweight fakes such as `GenericFakeChatModel` only when you need deterministic assertions without API calls.
+- Do not mock LangChain internals (for example `unittest.mock.patch` on `init_chat_model` helpers) so that imports resolve real chat model instances. Do not use fake chat models in docs code samples (for example `GenericFakeChatModel`, `FakeListChatModel`, or other `langchain_core` testing fakes). Wire a real chat model (for example `ChatOpenAI`) so snippets match what readers run; `make test-code-samples` requires a valid API key when the sample calls the model.
 - Do not change `pyproject.toml` when making code sample changes.
 - Always run `make test-code-samples FILES="path/to/your/file.py"` before `make code-snippets` to ensure new samples pass.
 - Run `make lint` once the code sample is written; fix any issues (or run `make format` to auto-fix).
