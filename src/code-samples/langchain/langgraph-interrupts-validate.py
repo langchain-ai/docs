@@ -41,7 +41,7 @@ builder.add_node("collect_age", get_age_node)
 builder.add_edge(START, "collect_age")
 builder.add_edge("collect_age", END)
 
-checkpointer = SqliteSaver(sqlite3.connect("forms.db")
+checkpointer = SqliteSaver(sqlite3.connect("forms.db"))
 # :remove-start:
 _db_path = _sqlite_db_path("forms.db")
 _conn = sqlite3.connect(_db_path, check_same_thread=False)

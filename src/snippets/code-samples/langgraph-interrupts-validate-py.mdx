@@ -1,21 +1,10 @@
 ```python
-import os
 import sqlite3
-import tempfile
 from typing import TypedDict
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
-
-
-def _sqlite_db_path(filename: str) -> str:
-    """Use a temp DB in CI; keep the documented filename for local runs."""
-    if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-        fd, path = tempfile.mkstemp(prefix="langgraph-", suffix=f"-{filename}")
-        os.close(fd)
-        return path
-    return filename
 
 
 class FormState(TypedDict):
@@ -39,9 +28,7 @@ builder.add_node("collect_age", get_age_node)
 builder.add_edge(START, "collect_age")
 builder.add_edge("collect_age", END)
 
-_db_path = _sqlite_db_path("forms.db")
-_conn = sqlite3.connect(_db_path, check_same_thread=False)
-checkpointer = SqliteSaver(_conn)
+checkpointer = SqliteSaver(sqlite3.connect("forms.db"))
 graph = builder.compile(checkpointer=checkpointer)
 
 config = {"configurable": {"thread_id": "form-1"}}
