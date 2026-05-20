@@ -253,27 +253,25 @@ graph = (
 
 config = {"configurable": {"thread_id": "1"}}
 
-# Step 1: invoke - both parallel nodes hit interrupt() and pause
-interrupted_result = graph.invoke({"vals": []}, config)
-print(interrupted_result)
+# Step 1: invoke with version="v2" to get typed GraphOutput
+# Both parallel nodes hit interrupt() and pause
+interrupted_result = graph.invoke({"vals": []}, config, version="v2")
+print(interrupted_result.interrupts)
 """
-{
-    'vals': [],
-    '__interrupt__': [
-        Interrupt(value='question_a', id='bd4f3183600f2c41dddafbf8f0f7be7b'),
-        Interrupt(value='question_b', id='29963e3d3585f0cef025dd0f14323f55')
-    ]
-}
+(
+    Interrupt(value='question_a', id='bd4f3183600f2c41dddafbf8f0f7be7b'),
+    Interrupt(value='question_b', id='29963e3d3585f0cef025dd0f14323f55'),
+)
 """
 
 # Step 2: resume all pending interrupts at once
 resume_map = {
     i.id: f"answer for {i.value}"
-    for i in interrupted_result["__interrupt__"]
+    for i in interrupted_result.interrupts
 }
-result = graph.invoke(Command(resume=resume_map), config)
+result = graph.invoke(Command(resume=resume_map), config, version="v2")
 
-print("Final state:", result)
+print("Final state:", result.value)
 #> Final state: {'vals': ['a:answer for question_a', 'b:answer for question_b']}
 ```
 
@@ -365,7 +363,7 @@ from typing import Literal
 from langgraph.types import interrupt, Command
 
 def approval_node(state: State) -> Command[Literal["proceed", "cancel"]]:
-    # Pause execution; payload shows up under result["__interrupt__"]
+    # Pause execution; payload shows up in result.interrupts (v2) or result["__interrupt__"] (v1)
     is_approved = interrupt({
         "question": "Do you want to proceed with this action?",
         "details": state["action_details"]
@@ -473,12 +471,13 @@ await graph.invoke(new Command({ resume: false }), config);
     initial = graph.invoke(
         {"action_details": "Transfer $500", "status": "pending"},
         config=config,
+        version="v2",
     )
-    print(initial["__interrupt__"])  # -> [Interrupt(value={'question': ..., 'details': ...})]
+    print(initial.interrupts)  # -> (Interrupt(value={'question': ..., 'details': ...}),)
 
     # Resume with the decision; True routes to proceed, False to cancel
-    resumed = graph.invoke(Command(resume=True), config=config)
-    print(resumed["status"])  # -> "approved"
+    resumed = graph.invoke(Command(resume=True), config=config, version="v2")
+    print(resumed.value["status"])  # -> "approved"
     ```
     :::
 
@@ -545,7 +544,7 @@ Sometimes you want to let a human review and edit part of the graph state before
 from langgraph.types import interrupt
 
 def review_node(state: State):
-    # Pause and show the current content for review (surfaces in result["__interrupt__"])
+    # Pause and show the current content for review (surfaces in result.interrupts with v2)
     edited_content = interrupt({
         "instruction": "Review and edit this content",
         "content": state["generated_text"]
@@ -627,15 +626,16 @@ await graph.invoke(
     graph = builder.compile(checkpointer=checkpointer)
 
     config = {"configurable": {"thread_id": "review-42"}}
-    initial = graph.invoke({"generated_text": "Initial draft"}, config=config)
-    print(initial["__interrupt__"])  # -> [Interrupt(value={'instruction': ..., 'content': ...})]
+    initial = graph.invoke({"generated_text": "Initial draft"}, config=config, version="v2")
+    print(initial.interrupts)  # -> (Interrupt(value={'instruction': ..., 'content': ...}),)
 
     # Resume with the edited text from the reviewer
     final_state = graph.invoke(
         Command(resume="Improved draft after review"),
         config=config,
+        version="v2",
     )
-    print(final_state["generated_text"])  # -> "Improved draft after review"
+    print(final_state.value["generated_text"])  # -> "Improved draft after review"
     ```
     :::
 
@@ -703,7 +703,7 @@ from langgraph.types import interrupt
 def send_email(to: str, subject: str, body: str):
     """Send an email to a recipient."""
 
-    # Pause before sending; payload surfaces in result["__interrupt__"]
+    # Pause before sending; payload surfaces in result.interrupts (v2)
     response = interrupt({
         "action": "send_email",
         "to": to,
@@ -785,7 +785,7 @@ This approach is useful when you want the approval logic to live with the tool i
     def send_email(to: str, subject: str, body: str):
         """Send an email to a recipient."""
 
-        # Pause before sending; payload surfaces in result["__interrupt__"]
+        # Pause before sending; payload surfaces in result.interrupts (v2)
         response = interrupt({
             "action": "send_email",
             "to": to,
@@ -831,15 +831,17 @@ This approach is useful when you want the approval logic to live with the tool i
             ]
         },
         config=config,
+        version="v2",
     )
-    print(initial["__interrupt__"])  # -> [Interrupt(value={'action': 'send_email', ...})]
+    print(initial.interrupts)  # -> (Interrupt(value={'action': 'send_email', ...}),)
 
     # Resume with approval and optionally edited arguments
     resumed = graph.invoke(
         Command(resume={"action": "approve", "subject": "Updated subject"}),
         config=config,
+        version="v2",
     )
-    print(resumed["messages"][-1])  # -> Tool result returned by send_email
+    print(resumed.value["messages"][-1])  # -> Tool result returned by send_email
     ```
     :::
 
@@ -948,7 +950,7 @@ def get_age_node(state: State):
     prompt = "What is your age?"
 
     while True:
-        answer = interrupt(prompt)  # payload surfaces in result["__interrupt__"]
+        answer = interrupt(prompt)  # payload surfaces in result.interrupts (v2)
 
         # Validate the input
         if isinstance(answer, int) and answer > 0:
@@ -1007,7 +1009,7 @@ Each time you resume the graph with invalid input, it will ask again with a clea
         prompt = "What is your age?"
 
         while True:
-            answer = interrupt(prompt)  # payload surfaces in result["__interrupt__"]
+            answer = interrupt(prompt)  # payload surfaces in result.interrupts (v2)
 
             if isinstance(answer, int) and answer > 0:
                 return {"age": answer}
@@ -1024,16 +1026,16 @@ Each time you resume the graph with invalid input, it will ask again with a clea
     graph = builder.compile(checkpointer=checkpointer)
 
     config = {"configurable": {"thread_id": "form-1"}}
-    first = graph.invoke({"age": None}, config=config)
-    print(first["__interrupt__"])  # -> [Interrupt(value='What is your age?', ...)]
+    first = graph.invoke({"age": None}, config=config, version="v2")
+    print(first.interrupts)  # -> (Interrupt(value='What is your age?', ...),)
 
     # Provide invalid data; the node re-prompts
-    retry = graph.invoke(Command(resume="thirty"), config=config)
-    print(retry["__interrupt__"])  # -> [Interrupt(value="'thirty' is not a valid age...", ...)]
+    retry = graph.invoke(Command(resume="thirty"), config=config, version="v2")
+    print(retry.interrupts)  # -> (Interrupt(value="'thirty' is not a valid age...", ...),)
 
     # Provide valid data; loop exits and state updates
-    final = graph.invoke(Command(resume=30), config=config)
-    print(final["age"])  # -> 30
+    final = graph.invoke(Command(resume=30), config=config, version="v2")
+    print(final.value["age"])  # -> 30
     ```
     :::
 

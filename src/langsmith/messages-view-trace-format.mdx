@@ -1,0 +1,636 @@
+---
+title: Messages view trace format reference
+sidebarTitle: Messages view reference
+description: Detection rules, payload shapes, and examples for how the LangSmith Messages view extracts conversations from traces.
+---
+
+<Note>
+If you trace with a [supported integration](/langsmith/messages-view-integrations), your traces render in the [Messages view](/langsmith/view-traces#messages-view) automatically.
+</Note>
+
+Use this reference when you're tracing an agent framework or LLM client that isn't on the supported list, emitting runs manually through `RunTree` or the REST API, or diagnosing a trace that does not render correctly in the [Messages view](/langsmith/view-traces#messages-view).
+
+[_Extraction strategy_](#extraction-strategy-resolution) refers to the per-integration logic that reads the LLM and tool runs in a trace and produces the ordered conversation the Messages view renders. For each supported integration, this page documents the metadata keys that determine which strategy LangSmith applies, the JSON shape the strategy expects on `inputs` and `outputs`, and how tool calls are paired with their results.
+
+<Note>
+**Tracing default** on this page means the LangSmith SDK sets the relevant metadata key automatically when you use the documented entry point. Anything else is the integration vendor's own instrumentation or a user override.
+</Note>
+
+## Extraction strategy resolution
+
+For each trace, the first matching extraction strategy wins. Each strategy's detection explicitly defers to others when it sees markers from another integration. The most common collision: `ls_provider: "openai"` paired with a LangChain-shaped payload; the OpenAI strategy defers to LangChain in that case. If no strategy matches the first run of the trace, the messages API returns `400 no adapter pair found for trace format`.
+
+| Integration | Strategy | Primary metadata signal | Tracing default (LangSmith SDK) |
+| --- | --- | --- | --- |
+| [Vercel AI SDK](#vercel-ai-sdk) | vercel | `ls_integration: "vercel-ai-sdk"` or `ai_sdk_method` | Yes (`wrapAISDK`) |
+| [OpenAI Chat Completions](#openai-wrap_openai) | openai | `ls_provider: "openai"` or `"azure"` (no `use_responses_api`) | Yes (`wrap_openai`) |
+| [OpenAI Responses](#openai-wrap_openai) | openai | `ls_provider` plus `ls_invocation_params.use_responses_api: true` | Yes (`wrap_openai` responses) |
+| [OpenAI Agents SDK](#openai-wrap_openai) | openai | `ls_integration: "openai-agents-sdk"` | Yes (Python tracing processor) |
+| [Anthropic Messages (`wrap_anthropic`)](#anthropic-messages-wrap_anthropic) | anthropic | `ls_message_format: "anthropic"` (must be set explicitly today) | Partial: provider set, format key is opt-in |
+| [Claude Agent SDK (Python)](#anthropic-messages-wrap_anthropic) | anthropic | `ls_integration: "claude-agent-sdk"` | Yes |
+| [Claude Code](#anthropic-messages-wrap_anthropic) | anthropic | `ls_integration: "claude-code"` | Set by claude-code itself |
+| [Claude Agent SDK (JS)](#anthropic-messages-wrap_anthropic) | anthropic | Currently does **not** auto-match (emits `"claude-agent-sdk-js"`) | Provider yes, format no (gap) |
+| [LangChain chat models](#langchain--langgraph) | langchain | `ls_integration: "langchain_chat_model"` | Yes (langchain-core) |
+| [LangGraph](#langchain--langgraph) | langchain | `graph_id` or `langgraph_node` | Yes (langgraph) |
+| [`langchain.create_agent`](#langchain--langgraph) | langchain | `ls_integration: "langchain_create_agent"` (falls through to other signals) | Yes (langchain) |
+| [Deep Agents](#langchain--langgraph) | langchain | `ls_integration: "deepagents"` or `"deepagents-cli"` | Yes (deepagents) |
+
+## LangChain / LangGraph
+
+Covers `BaseChatModel`-derived LLM runs, LangGraph graphs, `deepagents`, and `langchain.create_agent`.
+
+### Detection
+
+Any of the following on metadata triggers extraction:
+
+- `ls_message_format` is `"langchain"` (explicit override)
+- `ls_integration` is `"langchain_chat_model"`, `"deepagents"`, or `"deepagents-cli"`
+- `graph_id` is present (LangGraph root)
+- `langgraph_node` is present (LangGraph sub-run; sub-runs carry this even when `graph_id` is only on the root)
+
+OpenAI detection explicitly defers to LangChain when these markers are present, so LangChain extraction wins even when `ls_provider: "openai"`.
+
+### Tracing defaults
+
+**`langchain-core`** `BaseChatModel` sets the following on every chat-model run:
+
+- `metadata.ls_integration`: `"langchain_chat_model"`
+- Plus the provider-specific `_get_ls_params()` output (`ls_provider`, `ls_model_name`, `ls_model_type`, `ls_temperature`, `ls_max_tokens`, `ls_stop`)
+
+**`langchain.create_agent`** sets `metadata.ls_integration: "langchain_create_agent"` on the agent config.
+
+<Note>
+`langchain_create_agent` is not in the explicit detection allowlist. It's claimed today via the `ls_provider`/`ls_message_format` fallthroughs in the matching OpenAI/Anthropic detection, or via `graph_id` / `langgraph_node` when the agent runs inside LangGraph. If routing is unreliable, set `metadata.ls_message_format: "langchain"` explicitly.
+</Note>
+
+**LangGraph** sets `graph_id` (root) and `langgraph_node` (every sub-run).
+
+**Deep Agents** sets `metadata.ls_integration: "deepagents"` on the root chain run; the CLI variant uses `"deepagents-cli"`.
+
+### Run shape
+
+LangChain serializes messages with its constructor format. The `id` array's last element identifies the class:
+
+```json
+{
+  "lc": 1,
+  "type": "constructor",
+  "id": ["langchain", "schema", "messages", "AIMessage"],
+  "kwargs": {
+    "content": "...",
+    "id": "run-abc-123",
+    "type": "ai",
+    "tool_calls": [
+      {"name": "search", "args": {}, "id": "call_1", "type": "tool_call"}
+    ],
+    "tool_call_id": "call_1"
+  }
+}
+```
+
+Role mapping (last element of `id` → canonical role):
+
+- `SystemMessage` → system
+- `HumanMessage` → human
+- `AIMessage` → ai
+- `ToolMessage`, `FunctionMessage` → tool
+- `ChatMessage` → human
+
+**Inputs:**
+
+- `inputs.messages` is `[[msg, msg, ...]]`. LangChain wraps in an extra array for batched generations; the outer array is unwrapped during extraction.
+
+**Outputs** (multiple paths, tried in order):
+
+1. `outputs.generations[0][*].message`: standard chat-model output
+2. `outputs.messages[]`: direct messages (e.g., LangGraph state outputs)
+3. `outputs.output.update.messages[]`: deepagents-cli subagent outputs; the inner messages carry `tool_call_id` linking to the subagent invocation
+4. `outputs.output` (object): fallback for tool runs
+
+### Tool-call matching
+
+`tool_calls[*].id` on the assistant message matches either `kwargs.tool_call_id` (constructor format) or top-level `tool_call_id` (flat format) on the tool-result message.
+
+### Dedup
+
+Prefer `kwargs.id` (constructor format), then top-level `id` (flat format), then fall back to a `role + content` hash. Stable LangChain run IDs make dedup cheap across re-emissions.
+
+### Example trace
+
+A LangChain chat-model run that issues a tool call, the tool run, and the follow-up. Note the double-nesting on `inputs.messages` (`[[ ... ]]`) and the `generations` envelope on outputs.
+
+```json
+[
+  {
+    "id": "0001",
+    "trace_id": "trace-0005",
+    "run_type": "llm",
+    "name": "ChatOpenAI",
+    "metadata": {
+      "ls_integration": "langchain_chat_model",
+      "ls_provider": "openai",
+      "ls_model_name": "gpt-4o"
+    },
+    "inputs": {
+      "messages": [[
+        {"lc": 1, "type": "constructor", "id": ["langchain","schema","messages","SystemMessage"],
+         "kwargs": {"content": "You are a helpful assistant.", "id": "sys-1"}},
+        {"lc": 1, "type": "constructor", "id": ["langchain","schema","messages","HumanMessage"],
+         "kwargs": {"content": "what is the weather in paris?", "id": "hu-1"}}
+      ]]
+    },
+    "outputs": {
+      "generations": [[{
+        "message": {
+          "lc": 1, "type": "constructor",
+          "id": ["langchain","schema","messages","AIMessage"],
+          "kwargs": {
+            "content": "",
+            "id": "ai-1",
+            "tool_calls": [
+              {"name": "get_weather", "args": {"city": "Paris"}, "id": "call_abc", "type": "tool_call"}
+            ]
+          }
+        }
+      }]]
+    }
+  },
+  {
+    "id": "0002",
+    "trace_id": "trace-0005",
+    "parent_run_id": "0001",
+    "run_type": "tool",
+    "name": "get_weather",
+    "metadata": {"ls_integration": "langchain_chat_model"},
+    "inputs": {"city": "Paris"},
+    "outputs": {
+      "output": {
+        "lc": 1, "type": "constructor",
+        "id": ["langchain","schema","messages","ToolMessage"],
+        "kwargs": {"content": "Sunny, 22C", "tool_call_id": "call_abc", "id": "tool-1"}
+      }
+    }
+  },
+  {
+    "id": "0003",
+    "trace_id": "trace-0005",
+    "run_type": "llm",
+    "name": "ChatOpenAI",
+    "metadata": {
+      "ls_integration": "langchain_chat_model",
+      "ls_provider": "openai",
+      "ls_model_name": "gpt-4o"
+    },
+    "inputs": {
+      "messages": [[
+        {"lc": 1, "type": "constructor", "id": ["langchain","schema","messages","SystemMessage"],
+         "kwargs": {"content": "You are a helpful assistant.", "id": "sys-1"}},
+        {"lc": 1, "type": "constructor", "id": ["langchain","schema","messages","HumanMessage"],
+         "kwargs": {"content": "what is the weather in paris?", "id": "hu-1"}},
+        {"lc": 1, "type": "constructor", "id": ["langchain","schema","messages","AIMessage"],
+         "kwargs": {"content": "", "id": "ai-1",
+                    "tool_calls": [{"name": "get_weather", "args": {"city": "Paris"}, "id": "call_abc", "type": "tool_call"}]}},
+        {"lc": 1, "type": "constructor", "id": ["langchain","schema","messages","ToolMessage"],
+         "kwargs": {"content": "Sunny, 22C", "tool_call_id": "call_abc", "id": "tool-1"}}
+      ]]
+    },
+    "outputs": {
+      "generations": [[{
+        "message": {
+          "lc": 1, "type": "constructor",
+          "id": ["langchain","schema","messages","AIMessage"],
+          "kwargs": {"content": "It's sunny and 22°C in Paris.", "id": "ai-2"}
+        }
+      }]]
+    }
+  }
+]
+```
+
+LangGraph traces look the same but add `graph_id` / `langgraph_node` to the metadata, and may use `outputs.messages[]` directly instead of `outputs.generations`.
+
+## OpenAI (`wrap_openai`)
+
+One extraction strategy covers both OpenAI API shapes (Chat Completions and Responses) and the OpenAI Agents SDK (Responses shape). Detection picks the API shape from metadata.
+
+### Detection
+
+Decision tree, in order. The first rule that matches wins.
+
+1. `metadata.ls_integration`:
+    - `"openai-agents-sdk"` → Responses
+    - `"langchain_chat_model"`, `"deepagents"`, `"deepagents-cli"` → not claimed (these emit LangChain-shaped payloads with `ls_provider: "openai"`; LangChain extraction takes them)
+2. `metadata.ls_message_format` (explicit override, wins over the `ls_provider` heuristic):
+    - `"responses"` → Responses
+    - `"completions"` → Completions
+    - `"langchain"`, `"anthropic"` → not claimed
+    - Unknown values fall through to rule 3 so future format strings keep working
+3. `metadata.graph_id` or `metadata.langgraph_node` present → not claimed (LangGraph subtree; LangChain extraction takes it even when `ls_provider: "openai"`)
+4. `metadata.ls_provider` is `"openai"` or `"azure"`:
+    - If `metadata.ls_invocation_params.use_responses_api == true` → Responses
+    - Otherwise → Completions
+
+### Tracing defaults
+
+**`wrap_openai`** sets the following on every LLM run:
+
+- `metadata.ls_provider`: `"openai"` (or `"azure"` if the client is `AzureOpenAI` / `AsyncAzureOpenAI`)
+- `metadata.ls_model_type`: `"chat"` or `"llm"`
+- `metadata.ls_model_name`, `ls_temperature`, `ls_max_tokens`, `ls_stop`
+- `metadata.ls_invocation_params`: an allowlisted subset of the SDK call kwargs. When the call goes through `client.responses.create` or `client.responses.parse`, this dict contains `use_responses_api: true`.
+- `run_type`: `"llm"`
+- `name`: `"ChatOpenAI"`, `"OpenAI"`, `"AzureChatOpenAI"`, or `"AzureOpenAI"` (overridable)
+
+`wrap_openai` does **not** emit `ls_integration` or `ls_message_format`. Detection falls through to rule 4 (`ls_provider`).
+
+**OpenAI Agents SDK** uses a tracing processor (not a wrapper). On every span it sets:
+
+- `metadata.ls_integration`: `"openai-agents-sdk"`
+- `metadata.ls_integration_version`: package version
+- `metadata.ls_agent_type`: `"root"` on the root span
+- LLM spans also carry `metadata.openai_trace_id` and `openai_span_id`
+
+The Agents SDK emits Responses-API-shaped payloads but with `outputs = {"output": [...]}` only. The rest of the Response envelope (`id`, `model`, `tools`, `usage`) lives in `extra.metadata`, not in `outputs`.
+
+### Run shape
+
+**Completions:**
+
+- `inputs.messages` is an array of `{role, content, tool_calls?, tool_call_id?, refusal?, name?, id?}`
+- `outputs.choices[*].message` has the same shape (typically `role: "assistant"`)
+- Tool call IDs live on `tool_calls[*].id`; tool-result messages link back via top-level `tool_call_id`
+
+**Responses:**
+
+- Optional top-level `inputs.instructions` (string) is promoted to a synthetic system message and prepended.
+- `inputs.input` is an array of items where each item is one of:
+    - A simple `{role, content}` message
+    - A typed `{type: "message", role, content}`
+    - `{type: "function_call", call_id, name, arguments}` (assistant role)
+    - `{type: "function_call_output", call_id, output}` (tool role)
+    - `{type: "reasoning", ...}` (assistant role)
+- `outputs.output` has the same array shape for LLM runs. For tool runs it can be a string, an object, or a bare top-level object (Agents SDK case); each is wrapped as a tool-role message with `content` set to the JSON text.
+
+### Tool-call matching
+
+- Completions: `tool_call_id` on the tool-result message matches `tool_calls[*].id` on the prior assistant message.
+- Responses: `call_id` on `function_call` matches `call_id` on `function_call_output`. Bare-object tool-run outputs may carry `call_id` at the top level of `outputs`.
+
+### Dedup
+
+Responses items dedup by `id` when present, else by item-type-specific content: `call_id|arguments` for `function_call`, `call_id|output` for `function_call_output`, and `content` for messages.
+
+### Example traces
+
+**Chat Completions (`wrap_openai`):** three runs: a tool-calling assistant turn, the tool run, and the follow-up assistant turn with the final answer.
+
+```json
+[
+  {
+    "id": "0001",
+    "trace_id": "trace-0002",
+    "run_type": "llm",
+    "name": "ChatOpenAI",
+    "metadata": {"ls_provider": "openai", "ls_model_name": "gpt-4o"},
+    "inputs": {
+      "messages": [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "what is the weather in paris?"}
+      ]
+    },
+    "outputs": {
+      "choices": [{
+        "index": 0,
+        "finish_reason": "tool_calls",
+        "message": {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [{
+            "id": "call_abc123",
+            "type": "function",
+            "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}
+          }]
+        }
+      }]
+    }
+  },
+  {
+    "id": "0002",
+    "trace_id": "trace-0002",
+    "parent_run_id": "0001",
+    "run_type": "tool",
+    "name": "get_weather",
+    "inputs": {"city": "Paris"},
+    "outputs": {"tool_call_id": "call_abc123", "role": "tool", "content": "Sunny, 22C"}
+  },
+  {
+    "id": "0003",
+    "trace_id": "trace-0002",
+    "run_type": "llm",
+    "name": "ChatOpenAI",
+    "metadata": {"ls_provider": "openai", "ls_model_name": "gpt-4o"},
+    "inputs": {
+      "messages": [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "what is the weather in paris?"},
+        {"role": "assistant", "content": null, "tool_calls": [
+          {"id": "call_abc123", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}}
+        ]},
+        {"role": "tool", "tool_call_id": "call_abc123", "content": "Sunny, 22C"}
+      ]
+    },
+    "outputs": {
+      "choices": [{
+        "index": 0,
+        "finish_reason": "stop",
+        "message": {"role": "assistant", "content": "It's sunny and 22°C in Paris."}
+      }]
+    }
+  }
+]
+```
+
+**Responses API (OpenAI Agents SDK):** items are typed (`function_call`, `function_call_output`, `message`) rather than role-keyed. `inputs.instructions` is promoted to a synthetic system message.
+
+```json
+[
+  {
+    "id": "0001",
+    "trace_id": "trace-0003",
+    "run_type": "llm",
+    "name": "Helpful Assistant Response",
+    "metadata": {"ls_integration": "openai-agents-sdk", "ls_model_name": "gpt-4.1"},
+    "inputs": {
+      "instructions": "You are a helpful assistant.",
+      "input": [{"role": "user", "content": "what time is it in san francisco?"}]
+    },
+    "outputs": {
+      "output": [{
+        "type": "function_call",
+        "call_id": "call_LVsl",
+        "name": "get_time",
+        "arguments": "{\"timezone\":\"America/Los_Angeles\"}",
+        "id": "fc_0ed8"
+      }]
+    }
+  },
+  {
+    "id": "0002",
+    "trace_id": "trace-0003",
+    "parent_run_id": "0001",
+    "run_type": "tool",
+    "name": "get_time",
+    "metadata": {"ls_integration": "openai-agents-sdk"},
+    "inputs": {"timezone": "America/Los_Angeles"},
+    "outputs": {"output": "12:00 PM (America/Los_Angeles)", "call_id": "call_LVsl"}
+  },
+  {
+    "id": "0003",
+    "trace_id": "trace-0003",
+    "run_type": "llm",
+    "name": "Helpful Assistant Response",
+    "metadata": {"ls_integration": "openai-agents-sdk", "ls_model_name": "gpt-4.1"},
+    "inputs": {
+      "instructions": "You are a helpful assistant.",
+      "input": [
+        {"role": "user", "content": "what time is it in san francisco?"},
+        {"type": "function_call", "call_id": "call_LVsl", "name": "get_time", "arguments": "{\"timezone\":\"America/Los_Angeles\"}", "id": "fc_0ed8"},
+        {"type": "function_call_output", "call_id": "call_LVsl", "output": "12:00 PM (America/Los_Angeles)"}
+      ]
+    },
+    "outputs": {
+      "output": [{
+        "type": "message",
+        "role": "assistant",
+        "status": "completed",
+        "content": [{"type": "output_text", "text": "It is currently 12:00 PM in San Francisco.", "annotations": []}]
+      }]
+    }
+  }
+]
+```
+
+## Vercel AI SDK
+
+### Detection
+
+Either of the following on `extra.metadata` of any LLM run triggers extraction:
+
+- `ai_sdk_method` key is present (any value), or
+- `ls_integration` is `"vercel-ai-sdk"`
+
+Both are set automatically by the LangSmith Vercel AI SDK wrapper. The underlying language-model provider (OpenAI, Anthropic, Google, etc.) is irrelevant; the wrapper normalizes all of them into a single message envelope.
+
+### Tracing defaults
+
+When the Vercel AI SDK wrapper is in use, the SDK sets on every LLM run:
+
+- `metadata.ls_integration`: `"vercel-ai-sdk"`
+- `metadata.ai_sdk_method`: `"ai.doGenerate"` or `"ai.doStream"`
+- `metadata.ls_model_name`: the model id
+- `run_type`: `"llm"`
+- `name`: `"ai.doGenerate"` or `"ai.doStream"` (overridable)
+
+### Run shape
+
+LLM runs:
+
+- `run_type: "llm"`
+- `inputs.messages` or `inputs.prompt` contains the conversation
+- `outputs.role` is one of `assistant`, `tool`, `user`
+- `outputs.content` contains the emitted content. Tool calls are blocks within `content` carrying `toolCallId` and `toolName`.
+
+Tool runs:
+
+- `run_type: "tool"`
+- `inputs.toolCallId` matches the LLM output's `toolCallId`
+- `inputs.toolName` or `name` identifies the tool
+- `outputs.output` or `outputs.result` holds the tool result
+
+### Tool-call matching
+
+Prefer matching by `toolCallId`; fall back to tool name when the ID is unavailable.
+
+### Example trace
+
+A two-run trace: one LLM run that asks for a tool call, one tool run that returns the result. Each entry is one LangSmith run; `inputs`, `outputs`, and `metadata` are JSON-encoded strings on the wire (shown unescaped here for readability).
+
+```json
+[
+  {
+    "id": "0001",
+    "trace_id": "trace-0001",
+    "run_type": "llm",
+    "name": "ai.doGenerate",
+    "metadata": {
+      "ls_integration": "vercel-ai-sdk",
+      "ai_sdk_method": "ai.doGenerate",
+      "ls_model_name": "gpt-4o"
+    },
+    "inputs": {
+      "prompt": [
+        {"role": "user", "content": [{"type": "text", "text": "what's the weather in paris?"}]}
+      ]
+    },
+    "outputs": {
+      "role": "assistant",
+      "content": [
+        {"type": "tool-call", "toolCallId": "call_abc", "toolName": "get_weather", "input": {"city": "Paris"}}
+      ]
+    }
+  },
+  {
+    "id": "0002",
+    "trace_id": "trace-0001",
+    "parent_run_id": "0001",
+    "run_type": "tool",
+    "name": "get_weather",
+    "inputs": {"toolCallId": "call_abc", "toolName": "get_weather", "args": {"city": "Paris"}},
+    "outputs": {"result": "Sunny, 22C"}
+  }
+]
+```
+
+## Anthropic Messages (`wrap_anthropic`)
+
+Covers `wrap_anthropic` (the Messages-API wrapper) and the Claude Agent SDK / Claude Code integrations.
+
+### Detection
+
+Any of the following on metadata triggers extraction:
+
+- `ls_message_format` is `"anthropic"`
+- `ls_integration` is `"claude-agent-sdk"` or `"claude-code"`
+
+### Tracing defaults
+
+**`wrap_anthropic`** sets the following on every LLM run:
+
+- `metadata.ls_provider`: `"anthropic"`
+- `metadata.ls_model_type`: `"chat"`
+- `metadata.ls_model_name`, `ls_temperature`, `ls_max_tokens`, `ls_stop`
+- `metadata.ls_invocation_params`: an allowlisted subset (`mcp_servers`, `service_tier`, `tool_choice`, `top_k`, `top_p`, `stream`, `thinking`)
+- `run_type`: `"llm"`, `name`: `"ChatAnthropic"` (overridable)
+
+`wrap_anthropic` does **not** emit `ls_integration` or `ls_message_format`.
+
+<Warning>
+**Known limitation:** with only the wrapper, detection does not match today. Set `ls_message_format: "anthropic"` explicitly for the run to be claimed.
+</Warning>
+
+**Claude Agent SDK (Python)** sets the following on the root chain run:
+
+- `metadata.ls_integration`: `"claude-agent-sdk"`
+- `metadata.ls_integration_version`: package version
+- Optional `metadata.model`, `permission_mode`, `max_turns`
+
+Its synthetic LLM child runs get `metadata.ls_provider: "anthropic"` and optionally `ls_model_name`, but no `ls_integration`. They ride along on the parent chain's claim (the first run of the trace drives the choice).
+
+**Claude Agent SDK (JS)** sets `metadata.ls_integration: "claude-agent-sdk-js"` and `ls_agent_type: "root"`.
+
+<Warning>
+**Known limitation:** only `"claude-agent-sdk"` and `"claude-code"` are auto-detected today, not `"claude-agent-sdk-js"`. JS traces need `ls_message_format: "anthropic"` set explicitly to be picked up.
+</Warning>
+
+### Run shape
+
+**`wrap_anthropic`** Messages API:
+
+- `inputs.messages`: `[{role, content}, ...]`
+- Optional `inputs.system`: string OR array of content blocks; becomes a prepended system message
+- `content` may be a string or an array of `{type, ...}` content blocks (`text`, `tool_use`, `tool_result`, `image`, `thinking`, `redacted_thinking`)
+- Outputs preserve the full Anthropic `Message` object. Content is found at one of:
+    - `outputs.message.content` (most common, wrapped)
+    - `outputs.content` when `outputs.type == "message"` (bare)
+    - `outputs.content` when `outputs.role == "assistant"` (Agents SDK bare)
+    - `outputs.output.messages[0].content` (JS SDK)
+    - `outputs.messages[0].content` (Claude Code)
+
+**Claude Agent SDK / Claude Code:**
+
+- `inputs.input` (array of messages, same Anthropic message shape). `inputs.messages` takes precedence when both are present and non-empty.
+- Tool-run outputs use either `outputs.output` (object) or `outputs.content` (top-level array, subagent-style).
+
+### Tool-call matching
+
+`tool_use_id` on the assistant `tool_use` block matches `tool_result.tool_use_id` on the corresponding result block within the next user message.
+
+### Example trace
+
+`wrap_anthropic` Messages API with a tool call and follow-up. The assistant turn returns a content array containing a `tool_use` block; the tool result is sent back as a `tool_result` block inside the next user message.
+
+```json
+[
+  {
+    "id": "0001",
+    "trace_id": "trace-0004",
+    "run_type": "llm",
+    "name": "ChatAnthropic",
+    "metadata": {
+      "ls_provider": "anthropic",
+      "ls_model_name": "claude-opus-4-7",
+      "ls_message_format": "anthropic"
+    },
+    "inputs": {
+      "system": "You are a helpful assistant.",
+      "messages": [
+        {"role": "user", "content": "what is the weather in paris?"}
+      ]
+    },
+    "outputs": {
+      "message": {
+        "id": "msg_01",
+        "role": "assistant",
+        "type": "message",
+        "content": [
+          {"type": "text", "text": "Let me check."},
+          {"type": "tool_use", "id": "toolu_01", "name": "get_weather", "input": {"city": "Paris"}}
+        ]
+      }
+    }
+  },
+  {
+    "id": "0002",
+    "trace_id": "trace-0004",
+    "parent_run_id": "0001",
+    "run_type": "tool",
+    "name": "get_weather",
+    "inputs": {"city": "Paris"},
+    "outputs": {"output": {"temperature": 22, "condition": "Sunny"}}
+  },
+  {
+    "id": "0003",
+    "trace_id": "trace-0004",
+    "run_type": "llm",
+    "name": "ChatAnthropic",
+    "metadata": {
+      "ls_provider": "anthropic",
+      "ls_model_name": "claude-opus-4-7",
+      "ls_message_format": "anthropic"
+    },
+    "inputs": {
+      "system": "You are a helpful assistant.",
+      "messages": [
+        {"role": "user", "content": "what is the weather in paris?"},
+        {"role": "assistant", "content": [
+          {"type": "text", "text": "Let me check."},
+          {"type": "tool_use", "id": "toolu_01", "name": "get_weather", "input": {"city": "Paris"}}
+        ]},
+        {"role": "user", "content": [
+          {"type": "tool_result", "tool_use_id": "toolu_01", "content": "Sunny, 22C"}
+        ]}
+      ]
+    },
+    "outputs": {
+      "message": {
+        "id": "msg_02",
+        "role": "assistant",
+        "type": "message",
+        "content": [{"type": "text", "text": "It's sunny and 22°C in Paris."}]
+      }
+    }
+  }
+]
+```
+
+Claude Agent SDK / Claude Code traces look similar but use `inputs.input` instead of `inputs.messages` and set `ls_integration: "claude-agent-sdk"` (or `"claude-code"`) on the root chain run.

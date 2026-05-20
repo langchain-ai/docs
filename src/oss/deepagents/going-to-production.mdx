@@ -7,6 +7,8 @@ import SandboxLifecycleFactoryAssistantPy from '/snippets/deepagents-sandbox-lif
 import SandboxLifecycleFactoryAssistantTs from '/snippets/deepagents-sandbox-lifecycle-factory-assistant-ts.mdx';
 import SandboxLifecycleFactoryThreadPy from '/snippets/deepagents-sandbox-lifecycle-factory-thread-py.mdx';
 import SandboxLifecycleFactoryThreadTs from '/snippets/deepagents-sandbox-lifecycle-factory-thread-ts.mdx';
+import DeepagentsProductionInvokeJs from '/snippets/code-samples/deepagents-production-invoke-js.mdx';
+import DeepagentsProductionInvokePy from '/snippets/code-samples/deepagents-production-invoke-py.mdx';
 
 This guide covers considerations for taking a deep agent from a local prototype to a production deployment. It walks through scoping memory, configuring execution environments, adding guardrails, and connecting a frontend.
 
@@ -22,7 +24,7 @@ In production, there are a few primitives that determine how information is shar
 
 This page covers:
 - **[LangSmith Deployments](#langsmith-deployments)**: managed infrastructure with auth, webhooks, and cron
-- **[Production considerations](#production-considerations)**: multi-tenancy, authentication, credentials, async, and durability
+- **[Production considerations](#production-considerations)**: invocation, multi-tenancy, authentication, credentials, async, and durability
 - **[Memory](#memory)**: persist information across conversations
 - **[Execution environment](#execution-environment)**: file storage and code execution
 - **[Guardrails](#guardrails)**: rate limiting, error handling, and data privacy
@@ -30,11 +32,9 @@ This page covers:
 
 ## LangSmith Deployments
 
-![`deepagents deploy` packages your agent configuration—memory, sandbox, skills, MCP servers—and ships it to a LangSmith Deployment](/oss/images/deepagents/production/deepagents-deploy-config.png)
+![Managed Deep Agents packages your agent configuration, tools, and runtime settings for LangSmith](/oss/images/deepagents/production/deepagents-deploy-config.png)
 
-The fastest way to get a deep agent into production is [`deepagents deploy`](/oss/deepagents/deploy), which packages your agent configuration and deploys it as a LangSmith Deployment with one command. Alternatively, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [assistants](/langsmith/assistants), [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. It also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
-
-For the CLI-based approach, see [Deploy with the CLI](/oss/deepagents/deploy). For manual setup, see the [LangSmith Deployments quickstart](/langsmith/deployment-quickstart).
+The recommended path for taking a Deep Agent to production is [Managed Deep Agents](/langsmith/deploy-managed-deep-agent), an API-first hosted runtime for creating, running, and operating deep agents in LangSmith. Managed Deep Agents is currently in private preview ([join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist)). For teams that need custom application code, custom routes, advanced authentication, or full Agent Server APIs, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. A traditional LangSmith Deployment also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
 
 All code snippets on this page use the following `langgraph.json` unless otherwise specified:
 
@@ -73,6 +73,68 @@ All code snippets on this page use the following `langgraph.json` unless otherwi
 For the full set of configuration options (custom Docker steps, store indexing, auth handlers, and more), see [application structure](/oss/langgraph/application-structure).
 
 ## Production considerations
+
+### Invoking the agent
+
+In production, every invocation should carry two run-level parameters:
+
+- **`thread_id`** (passed via `config={"configurable": {"thread_id": ...}}`): a stable identifier for the conversation. The [checkpointer](#durability) uses it to persist and resume message history, so follow-up turns continue the same conversation. Generate a new `thread_id` to start a fresh conversation.
+- **`context`**: per-run data your tools and middleware read at invocation time, for example `user_id`, API keys, feature flags, or session metadata. Define the shape with `context_schema` and access it via `runtime.context`. See [Runtime context](/oss/deepagents/context-engineering#runtime-context).
+
+The two are independent and almost always passed together:
+
+:::python
+
+<DeepagentsProductionInvokePy />
+
+When deploying with the LangGraph SDK, the SDK manages threads for you and you pass the returned `thread_id` to each run:
+
+```python
+from langgraph_sdk import get_client
+
+client = get_client(url="<DEPLOYMENT_URL>", api_key="<LANGSMITH_API_KEY>")
+
+thread = await client.threads.create()
+async for chunk in client.runs.stream(
+    thread["thread_id"],  # [!code highlight]
+    "agent",
+    input={"messages": [{"role": "user", "content": "Plan a 3-day trip to Tokyo"}]},
+    context={"user_id": "user-123"},  # [!code highlight]
+    stream_mode="updates",
+):
+    print(chunk.data)
+```
+:::
+
+:::js
+
+<DeepagentsProductionInvokeJs />
+
+When deploying with the LangGraph SDK, the SDK manages threads for you and you pass the returned `thread_id` to each run:
+
+```typescript
+import { Client } from "@langchain/langgraph-sdk";
+
+const client = new Client({ apiUrl: "<DEPLOYMENT_URL>", apiKey: "<LANGSMITH_API_KEY>" });
+
+const thread = await client.threads.create();
+for await (const chunk of client.runs.stream(
+  thread.thread_id,  // [!code highlight]
+  "agent",
+  {
+    input: { messages: [{ role: "user", content: "Plan a 3-day trip to Tokyo" }] },
+    context: { userId: "user-123" },  // [!code highlight]
+    streamMode: "updates",
+  },
+)) {
+  console.log(chunk.data);
+}
+```
+:::
+
+<Tip>
+`thread_id` scopes the *conversation* (message history, checkpoints). `context` carries *per-run* data your tools and middleware read. They are independent: changing one does not affect the other, and you can pass either or both.
+</Tip>
 
 ### Multi-tenancy
 
@@ -203,7 +265,8 @@ Shared memory (assistant, user, or organization scope) is a vector for prompt in
 
 ### Configuration
 
-In Deep Agents, memory is stored as files in a virtual filesystem. By default, files are scoped to a single thread (conversation) and not shared across threads. To share memory across threads, route a path like `/memories/` to a @[StoreBackend] that writes to the LangGraph [Store](/langsmith/custom-store). Use a @[CompositeBackend] to give the agent both thread-scoped scratch space and cross-thread [long-term memory](/oss/deepagents/memory).
+In Deep Agents, memory is stored as files in a virtual filesystem. By default, files are scoped to a single thread (conversation) and not shared across threads.
+Otherwise, to share memory across threads, route a path like `/memories/` to a @[StoreBackend] that writes to the LangGraph [Store](/langsmith/custom-store). Use a @[CompositeBackend] to give the agent both thread-scoped scratch space and cross-thread [long-term memory](/oss/deepagents/memory).
 
 :::python
 <Note>

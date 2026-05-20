@@ -1,0 +1,153 @@
+---
+title: "Tavily map integration"
+description: "Integrate with the Tavily map tool using LangChain Python."
+---
+
+[Tavily](https://tavily.com) is a search engine built specifically for AI agents (LLMs), delivering real-time, accurate, and factual results at speed. Tavily offers a [Map](https://docs.tavily.com/documentation/api-reference/endpoint/map) endpoint that traverses websites and returns a list of discovered URLs without extracting page content, which is ideal for understanding site structure or locating specific pages on a large site.
+
+## Overview
+
+### Integration details
+
+| Class                                                          | Package                                                          | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools/tavily_map) |  Version |
+|:---------------------------------------------------------------|:-----------------------------------------------------------------| :---: | :---: | :---: |
+| @[`TavilyMap`] | @[`langchain-tavily`] | ✅ | ✅  |  ![PyPI - Version](https://img.shields.io/pypi/v/langchain-tavily?style=flat-square&label=%20) |
+
+### Tool features
+
+| [Returns artifact](/oss/langchain/tools) | Native async |                       Return data                        | Pricing |
+| :---: | :---: |:--------------------------------------------------------:| :---: |
+| ❌ | ✅ | list of discovered URLs | 1,000 free credits / month |
+
+## Setup
+
+The integration lives in the `langchain-tavily` package.
+
+```python
+pip install -qU langchain-tavily
+```
+
+### Credentials
+
+We also need to set our Tavily API key. You can get an API key by visiting [this site](https://app.tavily.com/sign-in) and creating an account.
+
+```python
+import getpass
+import os
+
+if not os.environ.get("TAVILY_API_KEY"):
+    os.environ["TAVILY_API_KEY"] = getpass.getpass("Tavily API key:\n")
+```
+
+## Instantiation
+
+The tool accepts the following parameters during instantiation:
+
+- `max_depth` (optional, int): Maximum number of hops from the starting URL. Default is 1.
+- `max_breadth` (optional, int): Maximum number of URLs returned per level. Default is 20.
+- `limit` (optional, int): Maximum total number of URLs to return. Default is 50.
+- `instructions` (optional, str): Natural-language instructions that guide the map traversal.
+- `select_paths` (optional, list[str]): Only include URLs containing these path regexes.
+- `select_domains` (optional, list[str]): Only include URLs from these domain regexes.
+- `exclude_paths` (optional, list[str]): Skip URLs containing these path regexes.
+- `exclude_domains` (optional, list[str]): Skip URLs from these domain regexes.
+- `allow_external` (optional, bool): Allow the map to follow external links.
+
+For a comprehensive overview of the available parameters, refer to the [Tavily Map API documentation](https://docs.tavily.com/documentation/api-reference/endpoint/map).
+
+```python
+from langchain_tavily import TavilyMap
+
+tool = TavilyMap(
+    max_depth=1,
+    max_breadth=20,
+    limit=50,
+    # allow_external=False,
+)
+```
+
+## Invocation
+
+### [Invoke directly with args](/oss/langchain/tools)
+
+The Tavily map tool accepts the following arguments during invocation:
+
+- `url` (required): The base URL to start mapping from.
+- The following arguments can also be set during invocation: `instructions`, `select_paths`, `select_domains`, `exclude_paths`, `exclude_domains`, `allow_external`.
+
+NOTE: The optional arguments are available for agents to dynamically set. If you set an argument during instantiation and then invoke the tool with a different value, the tool will use the value you passed during invocation.
+
+```python
+tool.invoke({"url": "https://docs.tavily.com"})
+```
+
+```json
+{
+  "base_url": "https://docs.tavily.com",
+  "results": [
+    "https://docs.tavily.com/",
+    "https://docs.tavily.com/changelog",
+    "https://docs.tavily.com/welcome",
+    "https://docs.tavily.com/documentation/mcp",
+    "https://docs.tavily.com/documentation/about",
+  ],
+  "response_time": 0.37
+}
+```
+
+### [Invoke with ToolCall](/oss/langchain/tools)
+
+We can also invoke the tool with a model-generated ToolCall, in which case a ToolMessage will be returned:
+
+```python
+model_generated_tool_call = {
+    "args": {"url": "https://docs.tavily.com", "instructions": "Find API reference pages"},
+    "id": "1",
+    "name": "tavily_map",
+    "type": "tool_call",
+}
+tool_msg = tool.invoke(model_generated_tool_call)
+
+print(tool_msg.content[:400])
+```
+
+## Use within an agent
+
+We can use the map tool directly with an agent by binding it to the model. The agent can then dynamically set instructions and filters to discover the URLs it needs.
+
+<ChatModelTabs customVarName="llm" />
+
+```python
+if not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = getpass.getpass("OPENAI_API_KEY:\n")
+```
+
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(model="gpt-5.4", model_provider="openai", temperature=0)
+```
+
+```python
+from langchain_tavily import TavilyMap
+from langchain.agents import create_agent
+
+
+tavily_map_tool = TavilyMap(max_depth=2, max_breadth=20, limit=30)
+
+agent = create_agent(model, [tavily_map_tool])
+
+user_input = "Map https://docs.tavily.com and list URLs that look like API reference pages."
+
+for step in agent.stream(
+    {"messages": user_input},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+```
+
+---
+
+## API reference
+
+For detailed documentation of all Tavily Map API features and configurations head to the API reference: [docs.tavily.com/documentation/api-reference/endpoint/map](https://docs.tavily.com/documentation/api-reference/endpoint/map)

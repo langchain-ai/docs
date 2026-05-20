@@ -107,7 +107,7 @@ Flat groups (no tabs):
 
 | Tab | Directory | Groups |
 |-----|-----------|--------|
-| Deep Agents | `src/oss/deepagents/` | Get started, Deployment, Core capabilities, Frontend, Protocols, Command line interface |
+| Deep Agents | `src/oss/deepagents/` | Get started, Deployment, Core capabilities, Frontend, Protocols, Code |
 | LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend, Advanced usage, Agent development, Deploy with LangSmith |
 | LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs |
 | Integrations* | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Popular Providers, Integrations by component (TS: "General integrations, RAG integrations") |
@@ -315,6 +315,7 @@ uv run python scripts/refresh_deepagents_category_matrix.py --write
 Notes:
 
 - For the latest `(model, category)` value per cell, the script walks runs newest-first and keeps the first hit. Models with fewer than four of the six fixed categories filled are dropped (`MIN_FILLED_CATEGORIES`).
+- Only models explicitly listed in `INCLUDED_MODELS` (in the script) appear in the table. To surface a new model, add its `provider:model` key there.
 - The fixed columns are defined by `FIXED_CATEGORY_COLUMNS` in the script (`unit_test` is intentionally excluded).
 - Without `--write`, the script prints the table to stdout for inspection.
 - After regenerating, commit only `src/snippets/deepagents-eval-category-matrix.mdx`. Do not edit that snippet by hand.
