@@ -84,20 +84,27 @@ for await (const chunk of await agent.stream(
 // :remove-start:
 async function main() {
   const collected: unknown[] = [];
-  for await (const chunk of await agent.stream(
+  const stream = await agent.streamEvents(
     { messages: [{ role: "user", content: "what is the weather in sf" }] },
     {
       configurable: { thread_id: crypto.randomUUID() },
-      streamMode: "updates",
-      version: "v2",
+      version: "v3",
     },
-  )) {
-    collected.push(chunk);
-  }
+  );
+  await Promise.all([
+    (async () => {
+      for await (const snapshot of stream.values) {
+        collected.push(snapshot);
+      }
+    })(),
+    stream.output,
+  ]);
   if (collected.length === 0) {
-    throw new Error("expected at least one stream chunk");
+    throw new Error("expected at least one stream values snapshot");
   }
-  console.log("✓ streaming agent progress (updates, v2) emits chunks");
+  console.log(
+    "✓ streaming agent progress (streamEvents v3) emits value snapshots",
+  );
 }
 
 main();

@@ -27,14 +27,13 @@ for chunk in agent.stream(  # [!code highlight]
 
 # :remove-start:
 if __name__ == "__main__":
-    chunks = list(
-        agent.stream(
-            {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
-            config={"configurable": {"thread_id": str(uuid7())}},
-            stream_mode="updates",
-            version="v2",
-        )
+    stream = agent.stream_events(
+        {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
+        config={"configurable": {"thread_id": str(uuid7())}},
+        version="v3",
     )
-    assert any(c.get("type") == "updates" for c in chunks), chunks
-    print("✓ streaming agent progress (updates, v2) emits update chunks")
+    snapshots = list(stream.values)
+    stream.output
+    assert len(snapshots) > 0, snapshots
+    print("✓ streaming agent progress (stream_events v3) emits value snapshots")
 # :remove-end:
