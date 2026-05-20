@@ -730,33 +730,31 @@ builder.addNode(myNode);
 
 :::
 
-### Determinism and consistent replay
+### Re-execution and idempotency
 
 :::python
 
-When you compile with a [checkpointer](/oss/langgraph/persistence), LangGraph saves checkpoints at [super-step](#graphs) boundaries, not mid-function inside a node. If execution stops and later resumes (for example after an [interrupt](/oss/langgraph/interrupts) or a [retry](/oss/langgraph/fault-tolerance#retries)), the affected **node** can run again from the start of its function, so statements before the pause execute again.
+When you compile with a [checkpointer](/oss/langgraph/persistence), LangGraph saves checkpoints at [super-step](#graphs) boundaries, not mid-function inside a node. If execution stops and later resumes (for example after an [interrupt](/oss/langgraph/interrupts) or a [retry](/oss/langgraph/fault-tolerance#retries)), the affected **node** runs again from the start of its function. Code and side effects before the pause run again.
 
-To ensure that your workflow is deterministic and can be consistently replayed, follow these guidelines:
+**Idempotency.** Design **node** logic so re-execution does not corrupt state. If a node inserts a database row, running it twice should not create duplicate rows unless that is intentional. Use idempotency keys, upserts, or read-before-write checks. For effects around `interrupt()`, see [Side effects called before `interrupt` must be idempotent](/oss/langgraph/interrupts#side-effects-called-before-interrupt-must-be-idempotent).
 
-* **Avoid repeating work**: Prefer several smaller **nodes** (or subgraphs) so each side effect or network call sits behind its own checkpoint boundary. If you need finer-grained checkpointing inside one node, call [**tasks**](/oss/langgraph/functional-api#task) from the node body; they are part of the [Functional API](/oss/langgraph/functional-api) and may only be invoked from an entrypoint, another task, or a graph node—see [Execution](/oss/langgraph/functional-api#execution) and [Using tasks in nodes](#using-tasks-in-nodes).
-* **Encapsulate non-deterministic operations**: Avoid wall-clock reads, randomness, or branching on volatile values in the middle of a large node if that logic runs again on resume. Move that work behind a **node** boundary, or run it inside a [**task**](/oss/langgraph/functional-api#task) you call from the node so the recorded result drives replay.
-* **Use idempotent operations**: Design side effects so a **node** that [retries](/oss/langgraph/fault-tolerance#retries) or re-executes after an interrupt does not corrupt data. Use idempotency keys or read-before-write checks. For how partial **task** failures interact with checkpoints, see [Idempotency](/oss/langgraph/functional-api#idempotency).
+**Graph changes.** [Determinism](/oss/langgraph/functional-api#determinism) rules about code changes do not apply to graph structure. You can add or remove **nodes** and edges without breaking resume for existing threads. Resumed runs use saved state and execute whatever graph you compile now.
+
+**Tasks and interrupts inside a node.** If a **node** calls [**tasks**](/oss/langgraph/functional-api#task) or @[`interrupt`], stricter determinism rules apply on resume. LangGraph restores completed **task** results from the checkpointer, but changing **task** or @[`interrupt`] order in code before the resume point can mismatch cached values. A [Functional API](/oss/langgraph/functional-api) **entrypoint** compiles to a single **node** that runs the whole entrypoint method this way. See [Determinism](/oss/langgraph/functional-api#determinism), [Idempotency](/oss/langgraph/functional-api#idempotency), and [Using tasks in nodes](#using-tasks-in-nodes).
 
 :::
 
 :::js
 
-When you compile with a [checkpointer](/oss/langgraph/persistence), LangGraph saves checkpoints at [super-step](#graphs) boundaries, not mid-function inside a node. If execution stops and later resumes (for example after an [interrupt](/oss/langgraph/interrupts) or a retry), the affected **node** can run again from the start of its function, so statements before the pause execute again.
+When you compile with a [checkpointer](/oss/langgraph/persistence), LangGraph saves checkpoints at [super-step](#graphs) boundaries, not mid-function inside a node. If execution stops and later resumes (for example after an [interrupt](/oss/langgraph/interrupts) or a retry), the affected **node** runs again from the start of its function. Code and side effects before the pause run again.
 
-To ensure that your workflow is deterministic and can be consistently replayed, follow these guidelines:
+**Idempotency.** Design **node** logic so re-execution does not corrupt state. If a node inserts a database row, running it twice should not create duplicate rows unless that is intentional. Use idempotency keys, upserts, or read-before-write checks. For effects around `interrupt()`, see [Side effects called before `interrupt` must be idempotent](/oss/langgraph/interrupts#side-effects-called-before-interrupt-must-be-idempotent).
 
-* **Avoid repeating work**: Prefer several smaller **nodes** (or subgraphs) so each side effect or network call sits behind its own checkpoint boundary. If you need finer-grained checkpointing inside one node, call [**tasks**](/oss/langgraph/functional-api#task) from the node body; they are part of the [Functional API](/oss/langgraph/functional-api) and may only be invoked from an entrypoint, another task, or a graph node—see [Execution](/oss/langgraph/functional-api#execution) and [Using tasks in nodes](#using-tasks-in-nodes).
-* **Encapsulate non-deterministic operations**: Avoid wall-clock reads, randomness, or branching on volatile values in the middle of a large node if that logic runs again on resume. Move that work behind a **node** boundary, or run it inside a [**task**](/oss/langgraph/functional-api#task) you call from the node so the recorded result drives replay.
-* **Use idempotent operations**: Design side effects so a **node** that retries or re-executes after an interrupt does not corrupt data. Use idempotency keys or read-before-write checks. For how partial **task** failures interact with checkpoints, see [Idempotency](/oss/langgraph/functional-api#idempotency).
+**Graph changes.** [Determinism](/oss/langgraph/functional-api#determinism) rules about code changes do not apply to graph structure. You can add or remove **nodes** and edges without breaking resume for existing threads. Resumed runs use saved state and execute whatever graph you compile now.
+
+**Tasks and interrupts inside a node.** If a **node** calls [**tasks**](/oss/langgraph/functional-api#task) or @[`interrupt`], stricter determinism rules apply on resume. LangGraph restores completed **task** results from the checkpointer, but changing **task** or @[`interrupt`] order in code before the resume point can mismatch cached values. A [Functional API](/oss/langgraph/functional-api) **entrypoint** compiles to a single **node** that runs the whole entrypoint method this way. See [Determinism](/oss/langgraph/functional-api#determinism), [Idempotency](/oss/langgraph/functional-api#idempotency), and [Using tasks in nodes](#using-tasks-in-nodes).
 
 :::
-
-For effects around `interrupt()`, see [Side effects called before `interrupt` must be idempotent](/oss/langgraph/interrupts#side-effects-called-before-interrupt-must-be-idempotent).
 
 ### Using tasks in nodes
 
