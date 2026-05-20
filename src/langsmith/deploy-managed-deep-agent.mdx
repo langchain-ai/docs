@@ -51,31 +51,16 @@ Requests require the `X-Api-Key` header:
 X-Api-Key: <LANGSMITH_API_KEY>
 ```
 
-Install the client library that matches how you want to call the API. The SDKs are recommended for typed access. If you prefer to call the REST endpoints directly, any HTTP client works (`httpx` in Python, `fetch` in JavaScript).
+Install the HTTP client you want to use to call the REST endpoints — `httpx` in Python, or the built-in `fetch` in JavaScript. SDK support is coming in a follow-up release.
 
 <Tabs>
-  <Tab title="Python (SDK)">
-    ```bash
-    pip install langgraph-sdk
-    ```
-  </Tab>
   <Tab title="Python (httpx)">
     ```bash
     pip install httpx
     ```
   </Tab>
-  <Tab title="JavaScript (SDK)">
-    ```bash
-    npm install @langchain/langgraph-sdk
-    ```
-  </Tab>
   <Tab title="JavaScript (fetch)">
     No install required. `fetch` is built into modern browsers and Node.js 18+.
-  </Tab>
-  <Tab title="React (useStream)">
-    ```bash
-    npm install @langchain/react
-    ```
   </Tab>
 </Tabs>
 
@@ -117,42 +102,6 @@ The `interrupt_config` map lets you require human approval for selected tools. E
 Create the agent with `POST /v1/deepagents/agents`. The payload defines the managed resource, runtime settings, instructions, and tools.
 
 <Tabs>
-  <Tab title="Python (SDK)">
-    ```python
-    import os
-
-    from langgraph_sdk import get_client
-
-    client = get_client(
-        url="https://api.smith.langchain.com/v1/deepagents",
-        api_key=os.environ["LANGSMITH_API_KEY"],
-    )
-
-    agent = await client.agents.create(
-        name="research-assistant",
-        description="Research assistant that can search the web and summarize sources.",
-        runtime={"model": {"model_id": "anthropic:claude-sonnet-4-6"}},
-        instructions=(
-            "You are a careful research assistant. Search for sources, "
-            "keep notes, and return concise answers with citations."
-        ),
-        tools={
-            "tools": [
-                {
-                    "name": "tavily_web_search",
-                    "mcp_server_url": "https://tools.langchain.com",
-                    "mcp_server_name": "Fleet",
-                    "display_name": "tavily_web_search",
-                }
-            ],
-            "interrupt_config": {
-                "https://tools.langchain.com::tavily_web_search::Fleet": True,
-            },
-        },
-    )
-    agent_id = agent["agent_id"]
-    ```
-  </Tab>
   <Tab title="Python (httpx)">
     ```python
     import os
@@ -191,38 +140,6 @@ Create the agent with `POST /v1/deepagents/agents`. The payload defines the mana
     response.raise_for_status()
     agent_id = response.json()["id"]
     print(f"Agent ID: {agent_id}")
-    ```
-  </Tab>
-  <Tab title="JavaScript (SDK)">
-    ```ts
-    import { Client } from "@langchain/langgraph-sdk"
-
-    const client = new Client({
-      apiUrl: "https://api.smith.langchain.com/v1/deepagents",
-      apiKey: process.env.LANGSMITH_API_KEY,
-    })
-
-    const agent = await client.agents.create({
-      name: "research-assistant",
-      description: "Research assistant that can search the web and summarize sources.",
-      runtime: { model: { model_id: "anthropic:claude-sonnet-4-6" } },
-      instructions:
-        "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
-      tools: {
-        tools: [
-          {
-            name: "tavily_web_search",
-            mcp_server_url: "https://tools.langchain.com",
-            mcp_server_name: "Fleet",
-            display_name: "tavily_web_search",
-          },
-        ],
-        interrupt_config: {
-          "https://tools.langchain.com::tavily_web_search::Fleet": true,
-        },
-      },
-    })
-    const agentId = agent.agent_id
     ```
   </Tab>
   <Tab title="JavaScript (fetch)">
@@ -306,18 +223,6 @@ Create the agent with `POST /v1/deepagents/agents`. The payload defines the mana
 Create a thread before running the agent. Threads preserve the conversation and execution state for long-running work.
 
 <Tabs>
-  <Tab title="Python (SDK)">
-    ```python
-    thread = await client.threads.create(
-        agent_id=agent_id,
-        options={
-            "test_run": False,
-            "skip_memory_write_protection": False,
-        },
-    )
-    thread_id = thread["thread_id"]
-    ```
-  </Tab>
   <Tab title="Python (httpx)">
     ```python
     response = httpx.post(
@@ -333,19 +238,7 @@ Create a thread before running the agent. Threads preserve the conversation and 
     )
     response.raise_for_status()
     thread_id = response.json()["id"]
-    print(f"Thread ID: {id}")
-    ```
-  </Tab>
-  <Tab title="JavaScript (SDK)">
-    ```ts
-    const thread = await client.threads.create({
-      agentId,
-      options: {
-        test_run: false,
-        skip_memory_write_protection: false,
-      },
-    })
-    const threadId = thread.thread_id
+    print(f"Thread ID: {thread_id}")
     ```
   </Tab>
   <Tab title="JavaScript (fetch)">
@@ -394,24 +287,6 @@ Create a thread before running the agent. Threads preserve the conversation and 
 Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stream`. Include the `agent_id` in the request body and set `Accept: text/event-stream` so your client receives progress as server-sent events.
 
 <Tabs>
-  <Tab title="Python (SDK)">
-    ```python
-    async for chunk in client.runs.stream(
-        thread_id,
-        agent_id=agent_id,
-        messages=[
-            {
-                "role": "user",
-                "content": "Research recent approaches to agent memory and summarize the main tradeoffs.",
-            }
-        ],
-        stream_mode=["values", "updates", "messages-tuple"],
-        stream_subgraphs=True,
-        user_timezone="America/Los_Angeles",
-    ):
-        print(chunk.event, chunk.data)
-    ```
-  </Tab>
   <Tab title="Python (httpx)">
     ```python
     payload = {
@@ -438,27 +313,6 @@ Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stre
         for line in response.iter_lines():
             if line:
                 print(line)
-    ```
-  </Tab>
-  <Tab title="JavaScript (SDK)">
-    ```ts
-    const stream = client.runs.stream(threadId, {
-      agentId,
-      messages: [
-        {
-          role: "user",
-          content:
-            "Research recent approaches to agent memory and summarize the main tradeoffs.",
-        },
-      ],
-      streamMode: ["values", "updates", "messages-tuple"],
-      streamSubgraphs: true,
-      userTimezone: "America/Los_Angeles",
-    })
-
-    for await (const chunk of stream) {
-      console.log(chunk.event, chunk.data)
-    }
     ```
   </Tab>
   <Tab title="JavaScript (fetch)">
@@ -492,46 +346,6 @@ Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stre
       console.log(value)
     }
     ```
-  </Tab>
-  <Tab title="React (useStream)">
-    Use `useStream` from `@langchain/react` when building a frontend that submits user input and renders agent output in real time. The hook handles thread lifecycle, SSE parsing, and message accumulation for you.
-
-    ```tsx
-    import { useStream } from "@langchain/react"
-
-    function ResearchAssistant() {
-      const stream = useStream({
-        apiUrl: "/api/deepagents",
-        agentId: process.env.NEXT_PUBLIC_AGENT_ID,
-      })
-
-      return (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault()
-            const form = event.currentTarget
-            const content = new FormData(form).get("content") as string
-            form.reset()
-            stream.submit({
-              messages: [{ role: "user", content }],
-            })
-          }}
-        >
-          {stream.messages.map((message) => (
-            <div key={message.id}>{message.content as string}</div>
-          ))}
-          <input name="content" />
-          <button type="submit" disabled={stream.isLoading}>
-            Send
-          </button>
-        </form>
-      )
-    }
-    ```
-
-    <Warning>
-      Do not expose `LANGSMITH_API_KEY` to the browser. Proxy requests through a server route that injects the `X-Api-Key` header, then point `apiUrl` at that route (for example, `/api/deepagents`). See [Deep Agents frontend overview](/oss/deepagents/frontend/overview) for the broader pattern.
-    </Warning>
   </Tab>
   <Tab title="cURL">
     ```bash
@@ -610,39 +424,6 @@ The run is traced in LangSmith. Open the trace to inspect messages, tool calls, 
 Use `PATCH /v1/deepagents/agents/{agent_id}` when you need to update instructions, runtime settings, or tool configuration.
 
 <Tabs>
-  <Tab title="Python (SDK)">
-    ```python
-    await client.agents.update(
-        agent_id,
-        description="Research assistant that searches the web, reads URLs, and summarizes sources.",
-        runtime={"model": {"model_id": "anthropic:claude-sonnet-4-6"}},
-        instructions=(
-            "You are a careful research assistant. Search for sources, "
-            "read relevant pages, keep notes, and return concise answers with citations."
-        ),
-        tools={
-            "tools": [
-                {
-                    "name": "tavily_web_search",
-                    "mcp_server_url": "https://tools.langchain.com",
-                    "mcp_server_name": "Fleet",
-                    "display_name": "tavily_web_search",
-                },
-                {
-                    "name": "read_url_content",
-                    "mcp_server_url": "https://tools.langchain.com",
-                    "mcp_server_name": "Fleet",
-                    "display_name": "read_url_content",
-                },
-            ],
-            "interrupt_config": {
-                "https://tools.langchain.com::tavily_web_search::Fleet": True,
-                "https://tools.langchain.com::read_url_content::Fleet": False,
-            },
-        },
-    )
-    ```
-  </Tab>
   <Tab title="Python (httpx)">
     ```python
     response = httpx.patch(
@@ -678,37 +459,6 @@ Use `PATCH /v1/deepagents/agents/{agent_id}` when you need to update instruction
         },
     )
     response.raise_for_status()
-    ```
-  </Tab>
-  <Tab title="JavaScript (SDK)">
-    ```ts
-    await client.agents.update(agentId, {
-      description:
-        "Research assistant that searches the web, reads URLs, and summarizes sources.",
-      runtime: { model: { model_id: "anthropic:claude-sonnet-4-6" } },
-      instructions:
-        "You are a careful research assistant. Search for sources, read relevant pages, keep notes, and return concise answers with citations.",
-      tools: {
-        tools: [
-          {
-            name: "tavily_web_search",
-            mcp_server_url: "https://tools.langchain.com",
-            mcp_server_name: "Fleet",
-            display_name: "tavily_web_search",
-          },
-          {
-            name: "read_url_content",
-            mcp_server_url: "https://tools.langchain.com",
-            mcp_server_name: "Fleet",
-            display_name: "read_url_content",
-          },
-        ],
-        interrupt_config: {
-          "https://tools.langchain.com::tavily_web_search::Fleet": true,
-          "https://tools.langchain.com::read_url_content::Fleet": false,
-        },
-      },
-    })
     ```
   </Tab>
   <Tab title="JavaScript (fetch)">
@@ -791,22 +541,12 @@ Use `PATCH /v1/deepagents/agents/{agent_id}` when you need to update instruction
 List agents:
 
 <Tabs>
-  <Tab title="Python (SDK)">
-    ```python
-    agents = await client.agents.search()
-    ```
-  </Tab>
   <Tab title="Python (httpx)">
     ```python
     response = httpx.get(f"{BASE_URL}/agents", headers=HEADERS)
     response.raise_for_status()
     agents = response.json()
     print(json.dumps(agents, indent=4))
-    ```
-  </Tab>
-  <Tab title="JavaScript (SDK)">
-    ```ts
-    const agents = await client.agents.search()
     ```
   </Tab>
   <Tab title="JavaScript (fetch)">
@@ -829,22 +569,12 @@ List agents:
 Get one agent:
 
 <Tabs>
-  <Tab title="Python (SDK)">
-    ```python
-    agent = await client.agents.get(agent_id)
-    ```
-  </Tab>
   <Tab title="Python (httpx)">
     ```python
     response = httpx.get(f"{BASE_URL}/agents/{agent_id}", headers=HEADERS)
     response.raise_for_status()
     agent = response.json()
     print(json.dumps(agent, indent=4))
-    ```
-  </Tab>
-  <Tab title="JavaScript (SDK)">
-    ```ts
-    const agent = await client.agents.get(agentId)
     ```
   </Tab>
   <Tab title="JavaScript (fetch)">
@@ -867,20 +597,10 @@ Get one agent:
 Delete an agent:
 
 <Tabs>
-  <Tab title="Python (SDK)">
-    ```python
-    await client.agents.delete(agent_id)
-    ```
-  </Tab>
   <Tab title="Python (httpx)">
     ```python
     response = httpx.delete(f"{BASE_URL}/agents/{agent_id}", headers=HEADERS)
     response.raise_for_status()
-    ```
-  </Tab>
-  <Tab title="JavaScript (SDK)">
-    ```ts
-    await client.agents.delete(agentId)
     ```
   </Tab>
   <Tab title="JavaScript (fetch)">
@@ -940,11 +660,9 @@ The Managed Deep Agents endpoints do not enforce per-key, per-workspace, or per-
 
 Routes live under `/v1/deepagents`, but the surface is in private preview and may change in backwards-incompatible ways before general availability. Breaking changes are communicated to preview customers directly through the contact provided when access was granted.
 
-### SDKs and HTTP clients
+### SDKs
 
-The Managed Deep Agents API is supported by the LangGraph SDKs (`langgraph_sdk` for Python and `@langchain/langgraph-sdk` for JavaScript) and by the `useStream` hook in `@langchain/react`. Point the SDK at `https://api.smith.langchain.com/v1/deepagents` and pass your LangSmith API key.
-
-The raw REST surface is also fully supported. Use any HTTP client (`httpx` or `requests` in Python, `fetch` in JavaScript) if you want to avoid an SDK dependency.
+REST is the only supported interface during private preview. Use any HTTP client (`httpx` or `requests` in Python, `fetch` in JavaScript) against `https://api.smith.langchain.com/v1/deepagents`. SDK wrappers for Python, JavaScript, and React (`useStream`) are in progress and will follow in a later release.
 
 ### Support and feedback
 
