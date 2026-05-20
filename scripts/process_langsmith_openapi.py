@@ -27,6 +27,7 @@ import json
 import ssl
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -69,6 +70,13 @@ HIDDEN_TAGS: set[str] = {
     "debug",
     # Low-value system endpoints
     "metrics",
+    # Untagged health checks are caught by HIDDEN_PATHS below.
+}
+
+# Exact paths that should always be hidden (health checks, etc.).
+HIDDEN_PATHS: set[str] = {
+    "/api/v1/ok",
+    "/ok",
 }
 
 # Path prefixes that should always be hidden regardless of tag.
@@ -109,6 +117,14 @@ TAG_GROUPS: dict[str, str] = {
     "directories": "Prompts & Playground",
     "hub_environments": "Prompts & Playground",
     "tag-transitions": "Prompts & Playground",
+    # Prompt hub
+    "repos": "Prompt Hub",
+    "comments": "Prompt Hub",
+    "likes": "Prompt Hub",
+    "tags": "Prompt Hub",
+    "ownerships": "Prompt Hub",
+    "settings": "Prompt Hub",
+    "optimization-jobs": "Prompt Hub",
     # Monitoring
     "charts": "Monitoring",
     "alert_rules": "Monitoring",
@@ -157,6 +173,25 @@ TAG_GROUPS: dict[str, str] = {
     "threads": "System",
 }
 
+# Display order for groups in the generated docs sidebar.
+# Groups not listed here are appended alphabetically after the listed ones.
+GROUP_ORDER: list[str] = [
+    "Tracing",
+    "Datasets",
+    "Evaluation",
+    "Feedback & Annotation",
+    "Monitoring",
+    "Prompts & Playground",
+    "Prompt Hub",
+    "Integrations & Tools",
+    "LLM Gateway",
+    "Sandboxes",
+    "Issues",
+    "Administration",
+    "Files",
+    "System",
+]
+
 
 # ---------------------------------------------------------------------------
 # Processing
@@ -164,8 +199,11 @@ TAG_GROUPS: dict[str, str] = {
 
 
 def _should_hide_by_path(path: str) -> bool:
-    """Return True if the path matches a hidden prefix."""
-    return any(path.startswith(prefix) for prefix in HIDDEN_PATH_PREFIXES)
+    """Return True if the path matches a hidden prefix or exact path."""
+    return (
+        path in HIDDEN_PATHS
+        or any(path.startswith(prefix) for prefix in HIDDEN_PATH_PREFIXES)
+    )
 
 
 def _should_hide_by_tags(tags: list[str]) -> bool:
@@ -222,6 +260,16 @@ def process_spec(spec: dict) -> dict:
             entry["x-hidden"] = True
         spec["tags"].append(entry)
 
+    # 3. Sort tags so groups appear in GROUP_ORDER.
+    group_rank = {g: i for i, g in enumerate(GROUP_ORDER)}
+    fallback = len(GROUP_ORDER)
+
+    def _tag_sort_key(tag_obj: dict) -> tuple:
+        group = tag_obj.get("x-group", tag_obj["name"])
+        return (group_rank.get(group, fallback), group, tag_obj["name"])
+
+    spec["tags"] = sorted(spec["tags"], key=_tag_sort_key)
+
     print(
         f"Processed {total_count} operations: "
         f"{hidden_count} hidden, {total_count - hidden_count} public",
@@ -238,7 +286,7 @@ def process_spec(spec: dict) -> dict:
 
 def fetch_spec(url: str) -> dict:
     """Fetch an OpenAPI JSON spec from *url*."""
-    parsed = urllib.request.urlparse(url)
+    parsed = urllib.parse.urlparse(url)
     if parsed.hostname not in ALLOWED_HOSTS:
         raise ValueError(
             f"Host {parsed.hostname!r} is not in the allow-list: {ALLOWED_HOSTS}"
