@@ -36,43 +36,30 @@ def get_user_input(interrupt_info: object) -> str:
 # :remove-end:
 
 # :snippet-start: langgraph-interrupts-hitl-stream-py
-from langchain.messages import AIMessageChunk
 from langgraph.types import Command
 
-for chunk in graph.stream(
-    initial_input,
-    stream_mode=["messages", "updates", "values"],
-    subgraphs=True,
-    config=config,
-    version="v2",
-):
-    if chunk["type"] == "messages":
-        msg, _ = chunk["data"]
-        if isinstance(msg, AIMessageChunk) and msg.content:
-            display_streaming_content(msg.content)
+stream = graph.stream_events(initial_input, config=config, version="v3")
 
-    elif chunk["type"] == "values" and chunk.get("interrupts"):
-        interrupt_info = chunk["interrupts"][0].value
-        user_response = get_user_input(interrupt_info)
-        initial_input = Command(resume=user_response)
-        break
+# Stream LLM message chunks (including any in subgraphs) as they arrive.
+for message in stream.messages:
+    for token in message.text:
+        display_streaming_content(token)
 
-    elif chunk["type"] == "updates":
-        current_node = list(chunk["data"].keys())[0]
+# After the run finishes (or pauses), check for interrupts and resume.
+if stream.interrupted:
+    interrupt_info = stream.interrupts[0].value
+    user_response = get_user_input(interrupt_info)
+    stream = graph.stream_events(
+        Command(resume=user_response), config=config, version="v3"
+    )
+    final_state = stream.output
 # :snippet-end:
 
 # :remove-start:
 if __name__ == "__main__":
-    saw_interrupt = False
-    for chunk in graph.stream(
-        {},
-        stream_mode=["values"],
-        config=config,
-        version="v2",
-    ):
-        if chunk["type"] == "values" and chunk.get("interrupts"):
-            saw_interrupt = True
-            break
-    assert saw_interrupt
+    test_config = {"configurable": {"thread_id": "stream-test"}}
+    test_stream = graph.stream_events({}, config=test_config, version="v3")
+    _ = test_stream.output  # drive to completion
+    assert test_stream.interrupted
     print("✓ langgraph-interrupts-hitl-stream")
 # :remove-end:

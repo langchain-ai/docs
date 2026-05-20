@@ -26,19 +26,23 @@ graph = (
 
 config = {"configurable": {"thread_id": "graph-api-resume"}}
 
-# First invocation - hits the interrupt and pauses
-result = graph.invoke({"messages": []}, config, version="v2")
-print(result.interrupts)
+# First run - hits the interrupt and pauses
+stream = graph.stream_events({"messages": []}, config, version="v3")
+_ = stream.output  # drive the stream to completion
+print(stream.interrupts)
 
 # Resume with a value - the interrupt() call returns "yes"
-result = graph.invoke(Command(resume="yes"), config, version="v2")
+resumed = graph.stream_events(Command(resume="yes"), config, version="v3")
+final = resumed.output
 # :snippet-end:
 
 # :remove-start:
 if __name__ == "__main__":
-    paused = graph.invoke({"messages": []}, config, version="v2")
-    assert paused.interrupts
-    finished = graph.invoke(Command(resume="yes"), config, version="v2")
-    assert finished.value["messages"][-1]["content"] == "yes"
+    test_config = {"configurable": {"thread_id": "graph-api-resume-test"}}
+    paused = graph.stream_events({"messages": []}, test_config, version="v3")
+    _ = paused.output  # drive to completion
+    assert paused.interrupted
+    finished = graph.stream_events(Command(resume="yes"), test_config, version="v3")
+    assert finished.output["messages"][-1]["content"] == "yes"
     print("✓ langgraph-graph-api-resume-v2")
 # :remove-end:

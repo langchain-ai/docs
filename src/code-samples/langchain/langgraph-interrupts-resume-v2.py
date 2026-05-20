@@ -30,22 +30,27 @@ from langgraph.types import Command
 # Initial run - hits the interrupt and pauses
 # thread_id is the persistent pointer (stores a stable ID in production)
 config = {"configurable": {"thread_id": "thread-1"}}
-result = graph.invoke({"input": "data"}, config=config, version="v2")
+stream = graph.stream_events({"input": "data"}, config=config, version="v3")
 
-# result is a GraphOutput with .value and .interrupts
-# .interrupts contains the payloads passed to interrupt()
-print(result.interrupts)
-# > (Interrupt(value='Do you approve this action?'),)
+# Drain the stream to drive the run; stream.output awaits the final state.
+final = stream.output
+
+# stream.interrupted is True when the run paused for human input, and
+# stream.interrupts contains the payloads passed to interrupt().
+if stream.interrupted:
+    print(stream.interrupts)
+    # > (Interrupt(value='Do you approve this action?'),)
 
 # Resume with the human's response
 # The resume payload becomes the return value of interrupt() inside the node
-graph.invoke(Command(resume=True), config=config, version="v2")
+resumed = graph.stream_events(Command(resume=True), config=config, version="v3")
+final = resumed.output
 # :snippet-end:
 
 # :remove-start:
 if __name__ == "__main__":
-    assert result.interrupts
-    results2 = graph.invoke(Command(resume=True), config=config, version="v2")
-    assert results2.value["approved"]
+    assert stream.interrupted
+    resumed2 = graph.stream_events(Command(resume=True), config=config, version="v3")
+    assert resumed2.output["approved"]
     print("✓ langgraph-interrupts-resume-v2")
 # :remove-end:

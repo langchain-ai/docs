@@ -30,20 +30,23 @@ checkpointer = MemorySaver()
 graph = builder.compile(checkpointer=checkpointer)
 
 config = {"configurable": {"thread_id": "review-42"}}
-initial = graph.invoke({"generated_text": "Initial draft"}, config=config, version="v2")
+initial = graph.stream_events(
+    {"generated_text": "Initial draft"}, config=config, version="v3"
+)
+_ = initial.output  # drive the stream to completion
 print(initial.interrupts)  # -> (Interrupt(value={'instruction': ..., 'content': ...}),)
 
 # Resume with the edited text from the reviewer
-final_state = graph.invoke(
+final_state = graph.stream_events(
     Command(resume="Improved draft after review"),
     config=config,
-    version="v2",
+    version="v3",
 )
-print(final_state.value["generated_text"])  # -> "Improved draft after review"
+print(final_state.output["generated_text"])  # -> "Improved draft after review"
 # :snippet-end:
 
 # :remove-start:
 if __name__ == "__main__":
-    assert final_state.value["generated_text"] == "Improved draft after review"
+    assert final_state.output["generated_text"] == "Improved draft after review"
     print("✓ langgraph-interrupts-review")
 # :remove-end:
