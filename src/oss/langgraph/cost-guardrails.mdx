@@ -1,0 +1,150 @@
+---
+title: Cost guardrails
+description: Stop a LangGraph agent graph when cumulative LLM spend exceeds a dollar budget.
+---
+
+:::python
+
+LangGraph graphs can loop through multiple nodes, each making one or more LLM calls. A research-heavy graph has no built-in spending cap—a single `graph.invoke()` can cost \$10–30 if the graph keeps researching instead of stopping. The [`agent-cost-guardrails`](https://pypi.org/project/agent-cost-guardrails/) package adds a LangChain callback handler that intercepts every LLM call in every node and enforces a hard dollar limit.
+
+## Installation
+
+```bash
+pip install "agent-cost-guardrails[langgraph]"
+```
+
+## Quick start
+
+Create a `LangGraphGuardrails` instance and pass its `callback_handler` in your graph's `config`:
+
+```python
+from agent_cost_guardrails.integrations import LangGraphGuardrails
+
+guards = LangGraphGuardrails(max_usd=2.00)
+
+result = graph.invoke(
+    state,
+    config={"callbacks": [guards.callback_handler]},
+)
+```
+
+When cumulative spend across all nodes crosses `max_usd`, the handler raises `BudgetExceededError` and the graph stops immediately—regardless of which node is running.
+
+## Budget alerts
+
+Register `on_alert` to receive warnings at configurable spend percentages before the hard stop:
+
+```python
+def on_budget_alert(threshold: float, spent: float, budget: float) -> None:
+    print(f"[ALERT] {int(threshold * 100)}% of ${budget:.2f} used (${spent:.4f} so far)")
+
+guards = LangGraphGuardrails(
+    max_usd=2.00,
+    on_alert=on_budget_alert,
+    alert_thresholds=[0.5, 0.8, 1.0],  # fire at 50 %, 80 %, 100 %
+)
+```
+
+Each threshold fires once. The graph continues running after 50 % and 80 % alerts; it stops at 100 %.
+
+## Full example
+
+The example below shows a ReAct-style research graph with a \$2.00 budget. When the budget is exhausted, the graph stops and the final `cost_report()` shows which nodes were responsible.
+
+```python
+from typing import TypedDict
+
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, StateGraph
+
+from agent_cost_guardrails.exceptions import BudgetExceededError
+from agent_cost_guardrails.integrations import LangGraphGuardrails
+
+
+def on_budget_alert(threshold: float, spent: float, budget: float) -> None:
+    if threshold >= 0.8:
+        print(f"WARNING: {threshold * 100:.0f}% of ${budget:.2f} budget used")
+
+
+guards = LangGraphGuardrails(
+    max_usd=2.00,
+    on_alert=on_budget_alert,
+    default_model="gpt-4o",
+)
+
+
+class AgentState(TypedDict):
+    query: str
+    research: str
+    iterations: int
+    result: str
+
+
+llm = ChatOpenAI(model="gpt-4o")
+
+
+def research_node(state: AgentState) -> AgentState:
+    response = llm.invoke(
+        f"Research this topic: {state['query']}\n"
+        f"Previous findings: {state.get('research', 'none')}"
+    )
+    return {
+        **state,
+        "research": state.get("research", "") + "\n" + response.content,
+        "iterations": state.get("iterations", 0) + 1,
+    }
+
+
+def should_continue(state: AgentState) -> str:
+    return "summarize" if state.get("iterations", 0) >= 3 else "research"
+
+
+def summarize_node(state: AgentState) -> AgentState:
+    response = llm.invoke(
+        f"Summarize these research findings:\n{state['research']}"
+    )
+    return {**state, "result": response.content}
+
+
+graph = StateGraph(AgentState)
+graph.add_node("research", research_node)
+graph.add_node("summarize", summarize_node)
+graph.set_entry_point("research")
+graph.add_conditional_edges("research", should_continue)
+graph.add_edge("summarize", END)
+app = graph.compile()
+
+try:
+    result = app.invoke(
+        {"query": "AI agent cost management", "research": "", "iterations": 0},
+        config={"callbacks": [guards.callback_handler]},
+    )
+    print(f"Result: {result['result'][:200]}...")
+except BudgetExceededError as e:
+    print(f"Graph stopped: {e}")
+finally:
+    report = guards.cost_report()
+    print(f"Total cost: ${report['total_cost_usd']:.4f}")
+    print(f"Cost by node: {report['cost_by_agent']}")
+```
+
+## Cost report
+
+After the graph finishes—or is stopped by the budget—call `cost_report()` to inspect the full breakdown:
+
+```python
+report = guards.cost_report()
+# {
+#   "budget_usd": 2.0,
+#   "total_cost_usd": 0.3142,
+#   "remaining_usd": 1.6858,
+#   "cost_by_agent": {
+#     "research": 0.2894,
+#     "summarize": 0.0248,
+#   },
+# }
+```
+
+`cost_by_agent` maps LangGraph node names to their cumulative spend, making it straightforward to identify which nodes are expensive and tune your graph accordingly.
+
+:::
