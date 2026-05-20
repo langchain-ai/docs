@@ -36,7 +36,7 @@ def get_user_input(interrupt_info: object) -> str:
 # :remove-end:
 
 # :snippet-start: langgraph-interrupts-hitl-stream-py
-from langchain_core.messages import AIMessageChunk
+from langchain.messages import AIMessageChunk
 from langgraph.types import Command
 
 for chunk in graph.stream(
