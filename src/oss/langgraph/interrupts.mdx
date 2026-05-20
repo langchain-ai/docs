@@ -61,7 +61,12 @@ When you call @[`interrupt`], here's what happens:
 
 1. **Graph execution gets suspended** at the exact point where @[`interrupt`] is called
 2. **State is saved** using the checkpointer so execution can be resumed later, In production, this should be a persistent checkpointer (e.g. backed by a database)
+:::python
+3. **Value is returned** to the caller on `result.interrupts` when using `version="v2"` (or under `__interrupt__` with the default v1 invoke API); it can be any JSON-serializable value (string, object, array, etc.)
+:::
+:::js
 3. **Value is returned** to the caller under `__interrupt__`; it can be any JSON-serializable value (string, object, array, etc.)
+:::
 4. **Graph waits indefinitely** until you resume execution with a response
 5. **Response is passed back** into the node when you resume, becoming the return value of the `interrupt()` call
 
@@ -170,7 +175,7 @@ The key thing that interrupts unlock is the ability to pause execution and wait 
 
 When building interactive agents with human-in-the-loop workflows, you can stream both message chunks and node updates simultaneously to provide real-time feedback while handling interrupts.
 
-Use multiple stream modes (`"messages"` and `"updates"`) with `subgraphs=True` (if subgraphs are present) to:
+Use multiple stream modes (`"messages"`, `"updates"`, and `"values"`) with `subgraphs=True` (if subgraphs are present) to:
 - Stream AI responses in real-time as they're generated
 - Detect when the graph encounters an interrupt
 - Handle user input and resume execution seamlessly
@@ -179,7 +184,7 @@ Use multiple stream modes (`"messages"` and `"updates"`) with `subgraphs=True` (
 ```python
 async for chunk in graph.astream(
     initial_input,
-    stream_mode=["messages", "updates"],
+    stream_mode=["messages", "updates", "values"],
     subgraphs=True,
     config=config,
     version="v2",
@@ -190,19 +195,19 @@ async for chunk in graph.astream(
         if isinstance(msg, AIMessageChunk) and msg.content:
             display_streaming_content(msg.content)
 
+    elif chunk["type"] == "values" and chunk.get("interrupts"):
+        # Interrupt payloads are on values stream parts with v2
+        interrupt_info = chunk["interrupts"][0].value
+        user_response = get_user_input(interrupt_info)
+        initial_input = Command(resume=user_response)
+        break
+
     elif chunk["type"] == "updates":
-        # Check for interrupts in the updates data
-        if "__interrupt__" in chunk["data"]:
-            interrupt_info = chunk["data"]["__interrupt__"][0].value
-            user_response = get_user_input(interrupt_info)
-            initial_input = Command(resume=user_response)
-            break
-        else:
-            current_node = list(chunk["data"].keys())[0]
+        current_node = list(chunk["data"].keys())[0]
 ```
 
-- **`version="v2"`**: All chunks are `StreamPart` dicts with `type`, `ns`, and `data` keys
-- **`chunk["type"]`**: Narrow on the stream mode (`"messages"`, `"updates"`, etc.) for type inference
+- **`version="v2"`**: All chunks are `StreamPart` dicts with `type`, `ns`, and `data` keys; pending interrupts appear on `chunk["interrupts"]` for `"values"` parts
+- **`chunk["type"]`**: Narrow on the stream mode (`"messages"`, `"updates"`, `"values"`, etc.) for type inference
 - **`chunk["ns"]`**: Identifies the source graph (empty tuple for root, populated for subgraphs)
 - **`subgraphs=True`**: Required for interrupt detection in nested graphs
 :::
@@ -402,10 +407,10 @@ const approvalNode: typeof State.Node = (state) => {
 When you resume the graph, pass `True` to approve or `False` to reject:
 ```python
 # To approve
-graph.invoke(Command(resume=True), config=config)
+graph.invoke(Command(resume=True), config=config, version="v2")
 
 # To reject
-graph.invoke(Command(resume=False), config=config)
+graph.invoke(Command(resume=False), config=config, version="v2")
 ```
 :::
 
@@ -578,7 +583,8 @@ When resuming, provide the edited content:
 ```python
 graph.invoke(
     Command(resume="The edited and improved text"),  # Value becomes the return from interrupt()
-    config=config
+    config=config,
+    version="v2",
 )
 ```
 :::
