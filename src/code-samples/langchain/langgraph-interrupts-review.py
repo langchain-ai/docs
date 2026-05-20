@@ -1,5 +1,4 @@
 # :snippet-start: langgraph-interrupts-review-py
-import sqlite3
 from typing import TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
