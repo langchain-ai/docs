@@ -223,12 +223,10 @@ To see a full list of integrations by component type, refer to the categories in
 
 ## All providers
 
-See [all providers](/oss/integrations/providers/all_providers) or search for a provider using the search field.
-
-Community integrations can be found in [`langchain-community`](https://github.com/langchain-ai/langchain-community).
+[See all providers](/oss/integrations/providers/all_providers) or search for a provider using the search field.
 
 <Info>
-    Want to build your own integration? See [how to create a custom integration package](/oss/contributing/integrations-langchain).
+    If you'd like to contribute an integration, see the [contributing guide](/oss/contributing).
 </Info>
 
 """  # noqa: E501
