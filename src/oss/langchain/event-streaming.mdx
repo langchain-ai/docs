@@ -455,6 +455,38 @@ for await (const activity of stream.extensions.toolActivity) {
 ```
 :::
 
+:::python
+### Register transformers on middleware
+
+<Note>Middleware-registered transformers require `langchain>=1.4`.</Note>
+
+Middleware can declare scope-aware transformer factories alongside their tools and hooks. Set the `transformers` attribute on an `AgentMiddleware` subclass to a sequence of factories; each factory is invoked as `factory(scope)` so every subgraph mini-mux receives a fresh instance.
+
+```py
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
+
+
+class ToolActivityMiddleware(AgentMiddleware):
+    transformers = (ToolActivityTransformer,)
+
+
+agent = create_agent(
+    model="gpt-5-nano",
+    tools=[get_weather],
+    middleware=[ToolActivityMiddleware()],
+)
+```
+
+At compile time, `create_agent` merges middleware-registered factories with anything passed to its own `transformers=` argument. The final order on the compiled graph is:
+
+1. The built-in `ToolCallTransformer`.
+2. Middleware-registered factories, in middleware order.
+3. Caller-supplied `transformers=` from `create_agent`.
+
+This keeps the built-in tool-call projection in front of consumer transformers and gives caller-supplied entries the final word.
+:::
+
 See [Build your own projection](/oss/langgraph/event-streaming#build-your-own-projection) for the transformer contract.
 
 ## Related
