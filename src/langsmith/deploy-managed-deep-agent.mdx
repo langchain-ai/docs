@@ -83,17 +83,19 @@ For the API request, pass the agent instructions and tool configuration directly
 {
   "tools": [
     {
-      "name": "tavily_web_search",
-      "mcp_server_url": "https://tools.langchain.com",
-      "mcp_server_name": "Fleet",
-      "display_name": "tavily_web_search"
+      "name": "tavily-search",
+      "mcp_server_url": "https://mcp.tavily.com/mcp/",
+      "mcp_server_name": "tavily",
+      "display_name": "tavily-search"
     }
   ],
   "interrupt_config": {
-    "https://tools.langchain.com::tavily_web_search::Fleet": true
+    "https://mcp.tavily.com/mcp/::tavily-search::tavily": false
   }
 }
 ```
+
+Each `mcp_server_url` you reference here needs to be registered first via [Configure MCP servers](#configure-mcp-servers) so its credentials are available at invocation time.
 
 The `interrupt_config` map lets you require human approval for selected tools. Each key is `{mcp_server_url}::{tool_name}` (separator is two colons); trailing slashes on the URL are stripped before matching. Additional `::`-separated parts after the tool name (such as the MCP server display name shown in the example above) are accepted but ignored when matching. Set the value to `true` to require human approval before the tool runs, or `false` to allow it without interrupt.
 
@@ -101,11 +103,11 @@ The `interrupt_config` map lets you require human approval for selected tools. E
 
 Tools that need credentials — custom MCP servers, private endpoints, or any bearer-authenticated API — are registered once per workspace via `POST /v1/deepagents/mcp-servers`. The platform stores the server's URL and any credential headers; when an agent's `tools[].mcp_server_url` matches a registered server, the stored headers are attached automatically each time the tool is invoked.
 
-The bundled LangChain Fleet MCP server (`https://tools.langchain.com`) does **not** require a separate registration — its credentials are wired up via your LangSmith API key. Register your own MCP servers only when you need to attach custom credentials.
-
 ### Register an MCP server
 
 Credentials are sent as a `headers` array of `{key, value}` objects. The headers are stored encrypted at rest and re-attached to every invocation against `url`.
+
+The example below registers Tavily's hosted MCP server with a bearer `Authorization` header. You will need a [Tavily API key](https://app.tavily.com); pass it as the bearer token value:
 
 <Tabs>
   <Tab title="Python (httpx)">
@@ -114,10 +116,10 @@ Credentials are sent as a `headers` array of `{key, value}` objects. The headers
         f"{BASE_URL}/mcp-servers",
         headers=HEADERS,
         json={
-            "name": "internal-search",
-            "url": "https://mcp.internal.example.com",
+            "name": "tavily",
+            "url": "https://mcp.tavily.com/mcp/",
             "headers": [
-                {"key": "Authorization", "value": "Bearer sk-..."},
+                {"key": "Authorization", "value": "Bearer tvly-..."},
             ],
         },
     )
@@ -132,10 +134,10 @@ Credentials are sent as a `headers` array of `{key, value}` objects. The headers
       method: "POST",
       headers: HEADERS,
       body: JSON.stringify({
-        name: "internal-search",
-        url: "https://mcp.internal.example.com",
+        name: "tavily",
+        url: "https://mcp.tavily.com/mcp/",
         headers: [
-          { key: "Authorization", value: "Bearer sk-..." },
+          { key: "Authorization", value: "Bearer tvly-..." },
         ],
       }),
     })
@@ -151,10 +153,10 @@ Credentials are sent as a `headers` array of `{key, value}` objects. The headers
       --header "X-Api-Key: $LANGSMITH_API_KEY" \
       --header 'Content-Type: application/json' \
       --data '{
-        "name": "internal-search",
-        "url": "https://mcp.internal.example.com",
+        "name": "tavily",
+        "url": "https://mcp.tavily.com/mcp/",
         "headers": [
-          {"key": "Authorization", "value": "Bearer sk-..."}
+          {"key": "Authorization", "value": "Bearer tvly-..."}
         ]
       }'
     ```
@@ -203,7 +205,7 @@ Reference the same `url` from `tools[].mcp_server_url` in your agent create/upda
 
 ### Rotate credentials
 
-`PATCH /v1/deepagents/mcp-servers/{mcp_server_id}` replaces the entire `headers` array. Pass the full new header set — partial diffs are not supported.
+`PATCH /v1/deepagents/mcp-servers/{mcp_server_id}` replaces the entire `headers` array. Pass the full new header set; partial diffs are not supported.
 
 <Tabs>
   <Tab title="Python (httpx)">
@@ -213,7 +215,7 @@ Reference the same `url` from `tools[].mcp_server_url` in your agent create/upda
         headers=HEADERS,
         json={
             "headers": [
-                {"key": "Authorization", "value": "Bearer sk-rotated-..."},
+                {"key": "Authorization", "value": "Bearer tvly-rotated-..."},
             ],
         },
     )
@@ -227,7 +229,7 @@ Reference the same `url` from `tools[].mcp_server_url` in your agent create/upda
       headers: HEADERS,
       body: JSON.stringify({
         headers: [
-          { key: "Authorization", value: "Bearer sk-rotated-..." },
+          { key: "Authorization", value: "Bearer tvly-rotated-..." },
         ],
       }),
     })
@@ -242,7 +244,7 @@ Reference the same `url` from `tools[].mcp_server_url` in your agent create/upda
       --header 'Content-Type: application/json' \
       --data '{
         "headers": [
-          {"key": "Authorization", "value": "Bearer sk-rotated-..."}
+          {"key": "Authorization", "value": "Bearer tvly-rotated-..."}
         ]
       }'
     ```
@@ -277,18 +279,18 @@ Reference the same `url` from `tools[].mcp_server_url` in your agent create/upda
 </Tabs>
 
 <Warning>
-    `headers` may contain secrets (bearer tokens, API keys). The field is omitted from response bodies for callers without invoke permission on the server. Treat list and get responses as sensitive — avoid logging them verbatim.
+    `headers` may contain secrets (bearer tokens, API keys). The field is omitted from response bodies for callers without invoke permission on the server. Treat list and get responses as sensitive; avoid logging them verbatim.
 </Warning>
 
 <Note>
-    OAuth-backed MCP servers (the `POST /mcp-servers/{id}/oauth-provider` endpoint on `/v1/fleet`) are intentionally not exposed under `/v1/deepagents`. Managed Deep Agents pass static credentials through `headers`; OAuth per-user flows are configured at the LangSmith workspace level, not per agent.
+    Managed Deep Agents currently supports MCP servers that authenticate via static headers (such as bearer tokens or custom API-key headers). OAuth-backed registration, including a number of LangSmith-hosted MCP servers that authenticate via OAuth 2.1, is planned for a future release.
 </Note>
 
 ## Create a managed agent
 
 Create the agent with `POST /v1/deepagents/agents`. The payload defines the managed resource, runtime settings, instructions, and tools.
 
-Each entry in `tools[].mcp_server_url` must either point to the bundled Fleet MCP server (`https://tools.langchain.com`) or match a server you registered in [Configure MCP servers](#configure-mcp-servers). The platform looks up the URL per workspace and attaches the stored headers at invocation time.
+Each entry in `tools[].mcp_server_url` must match a server you registered in [Configure MCP servers](#configure-mcp-servers). The platform looks up the URL per workspace and attaches the stored headers at invocation time.
 
 <Tabs>
   <Tab title="Python (httpx)">
@@ -314,14 +316,14 @@ Each entry in `tools[].mcp_server_url` must either point to the bundled Fleet MC
             "tools": {
                 "tools": [
                     {
-                        "name": "tavily_web_search",
-                        "mcp_server_url": "https://tools.langchain.com",
-                        "mcp_server_name": "Fleet",
-                        "display_name": "tavily_web_search",
-                    }
+                        "name": "tavily-search",
+                        "mcp_server_url": "https://mcp.tavily.com/mcp/",
+                        "mcp_server_name": "tavily",
+                        "display_name": "tavily-search",
+                    },
                 ],
                 "interrupt_config": {
-                    "https://tools.langchain.com::tavily_web_search::Fleet": True,
+                    "https://mcp.tavily.com/mcp/::tavily-search::tavily": False,
                 },
             },
         },
@@ -351,14 +353,14 @@ Each entry in `tools[].mcp_server_url` must either point to the bundled Fleet MC
         tools: {
           tools: [
             {
-              name: "tavily_web_search",
-              mcp_server_url: "https://tools.langchain.com",
-              mcp_server_name: "Fleet",
-              display_name: "tavily_web_search",
+              name: "tavily-search",
+              mcp_server_url: "https://mcp.tavily.com/mcp/",
+              mcp_server_name: "tavily",
+              display_name: "tavily-search",
             },
           ],
           interrupt_config: {
-            "https://tools.langchain.com::tavily_web_search::Fleet": true,
+            "https://mcp.tavily.com/mcp/::tavily-search::tavily": false,
           },
         },
       }),
@@ -386,14 +388,14 @@ Each entry in `tools[].mcp_server_url` must either point to the bundled Fleet MC
         "tools": {
           "tools": [
             {
-              "name": "tavily_web_search",
-              "mcp_server_url": "https://tools.langchain.com",
-              "mcp_server_name": "Fleet",
-              "display_name": "tavily_web_search"
+              "name": "tavily-search",
+              "mcp_server_url": "https://mcp.tavily.com/mcp/",
+              "mcp_server_name": "tavily",
+              "display_name": "tavily-search"
             }
           ],
           "interrupt_config": {
-            "https://tools.langchain.com::tavily_web_search::Fleet": true
+            "https://mcp.tavily.com/mcp/::tavily-search::tavily": false
           }
         }
       }'
@@ -612,6 +614,8 @@ The run is traced in LangSmith. Open the trace to inspect messages, tool calls, 
 
 Use `PATCH /v1/deepagents/agents/{agent_id}` when you need to update instructions, runtime settings, or tool configuration.
 
+The example below extends the agent created above by adding `tavily-extract` (Tavily's structured-extraction tool) alongside the existing `tavily-search` tool. It also flips `tavily-extract` to require human approval before each call by setting that tool's `interrupt_config` value to `true`. Because PATCH replaces `tools` wholesale, pass the full new tool set, not just the additions.
+
 <Tabs>
   <Tab title="Python (httpx)">
     ```python
@@ -619,30 +623,30 @@ Use `PATCH /v1/deepagents/agents/{agent_id}` when you need to update instruction
         f"{BASE_URL}/agents/{agent_id}",
         headers=HEADERS,
         json={
-            "description": "Research assistant that searches the web, reads URLs, and summarizes sources.",
+            "description": "Research assistant that searches the web and extracts structured content from pages.",
             "runtime": {"model": {"model_id": "anthropic:claude-sonnet-4-6"}},
             "instructions": (
-                "You are a careful research assistant. Search for sources, "
-                "read relevant pages, keep notes, and return concise answers with citations."
+                "You are a careful research assistant. Search for sources, extract structured information "
+                "when useful, keep notes, and return concise answers with citations."
             ),
             "tools": {
                 "tools": [
                     {
-                        "name": "tavily_web_search",
-                        "mcp_server_url": "https://tools.langchain.com",
-                        "mcp_server_name": "Fleet",
-                        "display_name": "tavily_web_search",
+                        "name": "tavily-search",
+                        "mcp_server_url": "https://mcp.tavily.com/mcp/",
+                        "mcp_server_name": "tavily",
+                        "display_name": "tavily-search",
                     },
                     {
-                        "name": "read_url_content",
-                        "mcp_server_url": "https://tools.langchain.com",
-                        "mcp_server_name": "Fleet",
-                        "display_name": "read_url_content",
+                        "name": "tavily-extract",
+                        "mcp_server_url": "https://mcp.tavily.com/mcp/",
+                        "mcp_server_name": "tavily",
+                        "display_name": "tavily-extract",
                     },
                 ],
                 "interrupt_config": {
-                    "https://tools.langchain.com::tavily_web_search::Fleet": True,
-                    "https://tools.langchain.com::read_url_content::Fleet": False,
+                    "https://mcp.tavily.com/mcp/::tavily-search::tavily": False,
+                    "https://mcp.tavily.com/mcp/::tavily-extract::tavily": True,
                 },
             },
         },
@@ -657,28 +661,28 @@ Use `PATCH /v1/deepagents/agents/{agent_id}` when you need to update instruction
       headers: HEADERS,
       body: JSON.stringify({
         description:
-          "Research assistant that searches the web, reads URLs, and summarizes sources.",
+          "Research assistant that searches the web and extracts structured content from pages.",
         runtime: { model: { model_id: "anthropic:claude-sonnet-4-6" } },
         instructions:
-          "You are a careful research assistant. Search for sources, read relevant pages, keep notes, and return concise answers with citations.",
+          "You are a careful research assistant. Search for sources, extract structured information when useful, keep notes, and return concise answers with citations.",
         tools: {
           tools: [
             {
-              name: "tavily_web_search",
-              mcp_server_url: "https://tools.langchain.com",
-              mcp_server_name: "Fleet",
-              display_name: "tavily_web_search",
+              name: "tavily-search",
+              mcp_server_url: "https://mcp.tavily.com/mcp/",
+              mcp_server_name: "tavily",
+              display_name: "tavily-search",
             },
             {
-              name: "read_url_content",
-              mcp_server_url: "https://tools.langchain.com",
-              mcp_server_name: "Fleet",
-              display_name: "read_url_content",
+              name: "tavily-extract",
+              mcp_server_url: "https://mcp.tavily.com/mcp/",
+              mcp_server_name: "tavily",
+              display_name: "tavily-extract",
             },
           ],
           interrupt_config: {
-            "https://tools.langchain.com::tavily_web_search::Fleet": true,
-            "https://tools.langchain.com::read_url_content::Fleet": false,
+            "https://mcp.tavily.com/mcp/::tavily-search::tavily": false,
+            "https://mcp.tavily.com/mcp/::tavily-extract::tavily": true,
           },
         },
       }),
@@ -693,31 +697,31 @@ Use `PATCH /v1/deepagents/agents/{agent_id}` when you need to update instruction
       --header "X-Api-Key: $LANGSMITH_API_KEY" \
       --header 'Content-Type: application/json' \
       --data '{
-        "description": "Research assistant that searches the web, reads URLs, and summarizes sources.",
+        "description": "Research assistant that searches the web and extracts structured content from pages.",
         "runtime": {
           "model": {
             "model_id": "anthropic:claude-sonnet-4-6"
           }
         },
-        "instructions": "You are a careful research assistant. Search for sources, read relevant pages, keep notes, and return concise answers with citations.",
+        "instructions": "You are a careful research assistant. Search for sources, extract structured information when useful, keep notes, and return concise answers with citations.",
         "tools": {
           "tools": [
             {
-              "name": "tavily_web_search",
-              "mcp_server_url": "https://tools.langchain.com",
-              "mcp_server_name": "Fleet",
-              "display_name": "tavily_web_search"
+              "name": "tavily-search",
+              "mcp_server_url": "https://mcp.tavily.com/mcp/",
+              "mcp_server_name": "tavily",
+              "display_name": "tavily-search"
             },
             {
-              "name": "read_url_content",
-              "mcp_server_url": "https://tools.langchain.com",
-              "mcp_server_name": "Fleet",
-              "display_name": "read_url_content"
+              "name": "tavily-extract",
+              "mcp_server_url": "https://mcp.tavily.com/mcp/",
+              "mcp_server_name": "tavily",
+              "display_name": "tavily-extract"
             }
           ],
           "interrupt_config": {
-            "https://tools.langchain.com::tavily_web_search::Fleet": true,
-            "https://tools.langchain.com::read_url_content::Fleet": false
+            "https://mcp.tavily.com/mcp/::tavily-search::tavily": false,
+            "https://mcp.tavily.com/mcp/::tavily-extract::tavily": true
           }
         }
       }'
