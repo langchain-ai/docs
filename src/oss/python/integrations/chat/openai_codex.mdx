@@ -1,0 +1,256 @@
+---
+title: "ChatOpenAICodex integration"
+description: "Integrate with the ChatOpenAICodex chat model using LangChain Python."
+---
+
+`ChatOpenAICodex` is a `ChatOpenAI` variant that authenticates with a ChatGPT OAuth session and routes requests to the ChatGPT Codex backend.
+
+Use `ChatOpenAICodex` when you want to call Codex models through ChatGPT subscription authentication. For standard OpenAI API-key authentication, use [`ChatOpenAI`](/oss/integrations/chat/openai) instead.
+
+<Warning>
+    **Authentication scope**
+
+    `ChatOpenAICodex` uses ChatGPT OAuth credentials. This is separate from the standard OpenAI API-key flow used by `ChatOpenAI`.
+</Warning>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS/TS Support | Downloads | Latest Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| `ChatOpenAICodex` | @[`langchain-openai`] | ❌ | ❌ | <a href="https://pypi.org/project/langchain-openai/" target="_blank"><img src="https://static.pepy.tech/badge/langchain-openai/month" alt="Downloads per month" noZoom height="100" class="rounded" /></a> | <a href="https://pypi.org/project/langchain-openai/" target="_blank"><img src="https://img.shields.io/pypi/v/langchain-openai?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
+
+### Model features
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | Image input | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
+
+## Setup
+
+To access Codex models with `ChatOpenAICodex`, install the `langchain-openai` integration package and complete a ChatGPT OAuth sign-in.
+
+### Installation
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-openai
+    ```
+    ```bash uv
+    uv add langchain-openai
+    ```
+</CodeGroup>
+
+### One-time login
+
+Run the browser-based ChatGPT OAuth flow:
+
+```python
+from langchain_openai.chatgpt_oauth import login_chatgpt
+
+login_chatgpt()
+```
+
+This opens a browser sign-in flow and stores the resulting OAuth token at:
+
+```text
+~/.langchain/chatgpt-auth.json
+```
+
+`ChatOpenAICodex` reads this file by default, so you usually only need to log in once.
+
+<Warning>
+    The token file contains OAuth credentials. Treat it like a secret and do not commit it to source control.
+</Warning>
+
+## Instantiation
+
+After login, instantiate the model:
+
+```python
+from langchain_openai import ChatOpenAICodex
+
+model = ChatOpenAICodex(
+    model="gpt-5.2-codex",
+    instructions="You are a senior Python reviewer. Be terse.",
+)
+```
+
+<Note>
+    **`instructions` is the system prompt.**
+
+    The ChatGPT Codex backend requires a top-level `instructions` field on every request and will return `400 Instructions are required` if it is missing. `ChatOpenAICodex` ships a generic fallback so quick experiments work, but you should almost always set your own — either at construction time (as above) or per call via `model.invoke(..., instructions=...)`.
+
+    A `SystemMessage` in the input list is **not** the same thing: it becomes a `system`-role entry in the `input` array, while `instructions` is a separate top-level field. Prefer `instructions` for the Codex backend.
+</Note>
+
+## Invocation
+
+```python
+response = model.invoke("Explain how to write a recursive file search in Python.")
+print(response.text)
+```
+
+To override the system prompt for a single call:
+
+```python
+response = model.invoke(
+    "Explain how to write a recursive file search in Python.",
+    instructions="You are a friendly tutor. Use short examples.",
+)
+```
+
+## Async usage
+
+```python
+response = await model.ainvoke("Write a short test plan for a CLI tool.")
+print(response.text)
+```
+
+The token provider refreshes tokens automatically when they are close to expiring.
+
+## Headless login
+
+For remote servers or environments without a browser, use the device-code flow:
+
+```python
+from langchain_openai.chatgpt_oauth import login_chatgpt_device
+
+login_chatgpt_device()
+```
+
+This prints a verification URL and code. Complete the login in a browser, then the token is saved locally for future model calls.
+
+## Custom token store
+
+By default, tokens are stored in `~/.langchain/chatgpt-auth.json`.
+
+To use a different path, pass `store_path` during login and pass the returned provider to the model:
+
+```python
+from pathlib import Path
+
+from langchain_openai import ChatOpenAICodex
+from langchain_openai.chatgpt_oauth import login_chatgpt
+
+provider = login_chatgpt(store_path=Path("/secure/path/chatgpt-auth.json"))
+
+model = ChatOpenAICodex(
+    model="gpt-5.2-codex",
+    token_provider=provider,
+)
+```
+
+You can also construct a file-backed provider directly:
+
+```python
+from pathlib import Path
+
+from langchain_openai import ChatOpenAICodex
+from langchain_openai.chatgpt_oauth import FileChatGPTOAuthTokenProvider
+
+provider = FileChatGPTOAuthTokenProvider(path=Path("/secure/path/chatgpt-auth.json"))
+
+model = ChatOpenAICodex(
+    model="gpt-5.2-codex",
+    token_provider=provider,
+)
+```
+
+## Behavior differences from ChatOpenAI
+
+`ChatOpenAICodex` is a specialized `ChatOpenAI` variant with Codex-specific defaults:
+
+- Uses the ChatGPT Codex backend by default: `https://chatgpt.com/backend-api/codex`
+- Authenticates with ChatGPT OAuth tokens instead of an OpenAI API key.
+- Forces Responses API behavior with `use_responses_api=True` and `output_version="responses/v1"`.
+- Requires a top-level `instructions` (system prompt) on every request and injects a generic fallback if you do not provide one.
+- Adds ChatGPT account headers automatically when available.
+- Stores OAuth tokens separately from Codex CLI and VS Code authentication to avoid invalidating those sessions.
+
+If you need standard OpenAI API-key authentication, use `ChatOpenAI` instead:
+
+```python
+from langchain_openai import ChatOpenAI
+```
+
+## Custom `originator` header
+
+`ChatOpenAICodex` sends an `originator: langchain` request header so OpenAI telemetry attributes calls to this package. Downstream consumers (e.g., a framework or product built on top of `ChatOpenAICodex`) can override the value to identify themselves instead.
+
+Set it on the constructor:
+
+```python
+from langchain_openai import ChatOpenAICodex
+
+model = ChatOpenAICodex(
+    model="gpt-5.2-codex",
+    originator="my-app/1.2",
+)
+```
+
+Or set the `LANGCHAIN_CODEX_ORIGINATOR` environment variable to tag every instance in a deployment without code changes:
+
+```bash
+export LANGCHAIN_CODEX_ORIGINATOR="my-app/1.2"
+```
+
+Resolution order (first match wins):
+
+1. Constructor / kwarg value.
+2. The `LANGCHAIN_CODEX_ORIGINATOR` env var, if set and non-empty.
+3. The package default (`"langchain"`).
+
+To drop the header entirely, pass `include_originator_header=False`. To override on a single call only, use `extra_headers={"originator": "..."}` — caller-supplied headers always win over the model's configured value.
+
+## Troubleshooting
+
+### `BadRequestError: Instructions are required`
+
+The Codex backend rejects requests without a top-level `instructions` field. `ChatOpenAICodex` injects a generic fallback, so this error usually means a caller explicitly passed `instructions=""` or `instructions=None`. Set a non-empty system prompt:
+
+```python
+model = ChatOpenAICodex(
+    model="gpt-5.2-codex",
+    instructions="You are a senior Python reviewer.",
+)
+```
+
+### No ChatGPT OAuth token found
+
+Run login first:
+
+```python
+from langchain_openai.chatgpt_oauth import login_chatgpt
+
+login_chatgpt()
+```
+
+### Browser login cannot bind to the default port
+
+`login_chatgpt()` uses localhost port `1455` by default. If that port is unavailable, pass another one:
+
+```python
+login_chatgpt(port=8765)
+```
+
+### Refresh token is invalid
+
+If token refresh fails with `invalid_grant`, re-run login:
+
+```python
+login_chatgpt()
+```
+
+This usually means the stored refresh token was revoked or expired.
+
+### Running on a server
+
+Use the device-code flow:
+
+```python
+from langchain_openai.chatgpt_oauth import login_chatgpt_device
+
+login_chatgpt_device()
+```
