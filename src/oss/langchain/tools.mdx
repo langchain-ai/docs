@@ -11,6 +11,8 @@ import ToolReturnCommandJs from '/snippets/code-samples/tool-return-command-js.m
 import ToolUpdateStatePy from '/snippets/code-samples/tool-update-state-py.mdx';
 import ToolErrorHandlingPy from '/snippets/code-samples/tool-error-handling-py.mdx';
 import ToolErrorHandlingJs from '/snippets/code-samples/tool-error-handling-js.mdx';
+import ToolRuntimeContextThreadJs from '/snippets/code-samples/tool-runtime-context-thread-js.mdx';
+import ToolRuntimeContextThreadPy from '/snippets/code-samples/tool-runtime-context-thread-py.mdx';
 
 Tools extend what [agents](/oss/langchain/agents) can do—letting them fetch real-time data, execute code, query external databases, and take actions in the world.
 
@@ -293,99 +295,21 @@ Include a `ToolMessage` in the update so the model can see the result of the too
 
 Context provides immutable configuration data that is passed at invocation time. Use it for user IDs, session details, or application-specific settings that shouldn't change during a conversation.
 
+<Note>
+While `thread_id` (passed via `config={"configurable": {"thread_id": ...}}`) scopes the *conversation*: message history and checkpoints, `context` carries *per-run* data your tools and middleware read at invocation time. In production you typically pass both together: a stable `thread_id` per conversation, and a `context` object on every invoke.
+</Note>
+
 :::python
-Access context through `runtime.context`:
+Access context through `runtime.context`. Pass it alongside a `thread_id` so the conversation is persisted across turns:
 
-```python
-from dataclasses import dataclass
-from langchain_openai import ChatOpenAI
-from langchain.agents import create_agent
-from langchain.tools import tool, ToolRuntime
-
-
-USER_DATABASE = {
-    "user123": {
-        "name": "Alice Johnson",
-        "account_type": "Premium",
-        "balance": 5000,
-        "email": "alice@example.com"
-    },
-    "user456": {
-        "name": "Bob Smith",
-        "account_type": "Standard",
-        "balance": 1200,
-        "email": "bob@example.com"
-    }
-}
-
-@dataclass
-class UserContext:
-    user_id: str
-
-@tool
-def get_account_info(runtime: ToolRuntime[UserContext]) -> str:
-    """Get the current user's account information."""
-    user_id = runtime.context.user_id
-
-    if user_id in USER_DATABASE:
-        user = USER_DATABASE[user_id]
-        return f"Account holder: {user['name']}\nType: {user['account_type']}\nBalance: ${user['balance']}"
-    return "User not found"
-
-model = ChatOpenAI(model="gpt-5.4")
-agent = create_agent(
-    model,
-    tools=[get_account_info],
-    context_schema=UserContext,
-    system_prompt="You are a financial assistant."
-)
-
-result = agent.invoke(
-    {"messages": [{"role": "user", "content": "What's my current balance?"}]},
-    context=UserContext(user_id="user123")
-)
-```
+<ToolRuntimeContextThreadPy />
 
 :::
 
 :::js
-Tools can access an agent's runtime context through the `config` parameter:
+Tools can access an agent's runtime context through the `config` parameter. Pass `context` alongside a `thread_id` so the conversation is persisted across turns:
 
-```ts
-import * as z from "zod"
-import { ChatOpenAI } from "@langchain/openai"
-import { createAgent } from "langchain"
-
-const getUserName = tool(
-  (_, config) => {
-    return config.context.user_name
-  },
-  {
-    name: "get_user_name",
-    description: "Get the user's name.",
-    schema: z.object({}),
-  }
-);
-
-const contextSchema = z.object({
-  user_name: z.string(),
-});
-
-const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-5.4" }),
-  tools: [getUserName],
-  contextSchema,
-});
-
-const result = await agent.invoke(
-  {
-    messages: [{ role: "user", content: "What is my name?" }]
-  },
-  {
-    context: { user_name: "John Smith" }
-  }
-);
-```
+<ToolRuntimeContextThreadJs />
 
 :::
 
