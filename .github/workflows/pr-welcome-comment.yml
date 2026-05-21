@@ -210,48 +210,72 @@ jobs:
                 )];
                 const reviewerSet = new Set(fromOwners);
 
-                // For open-swe, find the user who triggered the bot from the
-                // "Opened collaboratively by <Name> and open-swe." line in the
-                // PR body, then look up their GitHub username via search API.
-                // For all other bots, always include lnhsingh.
-                if (author !== 'open-swe[bot]') {
-                  reviewerSet.add('lnhsingh');
-                }
-                if (author === 'open-swe[bot]') {
-                  const collabMatch = (pr.body || '').match(
-                    /collaboratively by (.+?) and open-swe/i
-                  );
-                  if (collabMatch) {
+                // Some bots name the humans who should review in the PR
+                // body. Each parser below extracts those reviewers from the
+                // PR. A bot with a parser skips the lnhsingh fallback and
+                // uses whatever its parser returns; any other bot falls back
+                // to lnhsingh.
+                const botReviewerParsers = {
+                  // open-swe names the triggering user by display name in an
+                  // "Opened collaboratively by <Name> and open-swe." line;
+                  // resolve it to a GitHub login via the search API.
+                  'open-swe[bot]': async () => {
+                    const collabMatch = (pr.body || '').match(
+                      /collaboratively by (.+?) and open-swe/i
+                    );
+                    if (!collabMatch) return [];
                     const displayName = collabMatch[1].trim();
                     try {
                       const { data } = await github.rest.search.users({
                         q: `fullname:${displayName} org:langchain-ai`
                       });
                       if (data.total_count === 1) {
-                        reviewerSet.add(data.items[0].login);
                         console.log(`Resolved "${displayName}" to @${data.items[0].login}`);
-                      } else if (data.total_count === 0) {
-                        // Retry without org filter in case the user's org
-                        // membership is private
+                        return [data.items[0].login];
+                      }
+                      if (data.total_count === 0) {
+                        // Retry without org filter for private memberships
                         const retry = await github.rest.search.users({
                           q: `fullname:${displayName}`
                         });
                         if (retry.data.total_count === 1) {
-                          reviewerSet.add(retry.data.items[0].login);
                           console.log(`Resolved "${displayName}" to @${retry.data.items[0].login}`);
-                        } else {
-                          console.log(`Could not uniquely resolve "${displayName}" (${retry.data.total_count} results without org filter)`);
+                          return [retry.data.items[0].login];
                         }
+                        console.log(`Could not uniquely resolve "${displayName}" (${retry.data.total_count} results without org filter)`);
                       } else {
                         console.log(`Could not uniquely resolve "${displayName}" (${data.total_count} results in org)`);
                       }
                     } catch (error) {
                       console.log(`Failed to resolve "${displayName}": ${error.message}`);
                     }
-                  }
+                    return [];
+                  },
+                  // langsmith-fleet lists reviewers directly in the PR body
+                  // as "Requested review from: @user1, @user2". The @-handle
+                  // regex only matches valid GitHub usernames.
+                  'langsmith-fleet[bot]': async () => {
+                    const line = (pr.body || '').match(/Requested review from:\s*(.+)/i);
+                    const handles = line ? line[1].match(/@[A-Za-z0-9-]+/g) || [] : [];
+                    console.log(`langsmith-fleet reviewers: ${handles.join(', ') || '(none found)'}`);
+                    return handles.map(h => h.slice(1));
+                  },
+                };
+
+                const parseBotReviewers = botReviewerParsers[author];
+                if (parseBotReviewers) {
+                  for (const u of await parseBotReviewers()) reviewerSet.add(u);
+                } else {
+                  reviewerSet.add('lnhsingh');
                 }
 
                 reviewers = [...reviewerSet];
+              }
+              // requestReviewers rejects an empty list, so fall back to
+              // lnhsingh when no reviewer could be determined.
+              if (reviewers.length === 0) {
+                console.log(`No reviewers determined for bot PR #${pr.number}; defaulting to lnhsingh`);
+                reviewers = ['lnhsingh'];
               }
               await github.rest.pulls.requestReviewers({
                 owner, repo,
