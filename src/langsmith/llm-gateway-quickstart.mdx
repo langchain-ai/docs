@@ -23,7 +23,7 @@ Set the following in your terminal (or add them to your `~/.zshrc` to persist ac
 export BASE_URL="https://gateway.smith.langchain.com"
 
 export ANTHROPIC_BASE_URL="$BASE_URL/anthropic"
-export OPENAI_BASE_URL="$BASE_URL/openai"
+export OPENAI_BASE_URL="$BASE_URL/openai/v1"
 export GOOGLE_GEMINI_BASE_URL="$BASE_URL/gemini"
 
 export LANGSMITH_API_KEY="lsv2_..._....cbed3e"
@@ -53,7 +53,7 @@ import os
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://gateway.smith.langchain.com/openai/v1",
+    base_url=os.environ["OPENAI_BASE_URL"],
     api_key=os.environ["LANGSMITH_API_KEY"],
 )
 response = client.chat.completions.create(
@@ -69,7 +69,7 @@ import os
 import anthropic
 
 client = anthropic.Anthropic(
-    base_url="https://gateway.smith.langchain.com/anthropic",
+    base_url=os.environ["ANTHROPIC_BASE_URL"],
     api_key=os.environ["LANGSMITH_API_KEY"],
 )
 message = client.messages.create(
@@ -80,6 +80,24 @@ message = client.messages.create(
 print(message.content[0].text)
 ```
 
+```python LangChain
+import os
+
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+# Anthropic shown here; OpenAI and Gemini are also supported by swapping base_url and model_provider.
+model = init_chat_model(
+    model="claude-sonnet-4-6",
+    model_provider="anthropic",
+    base_url=os.environ["ANTHROPIC_BASE_URL"],
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+agent = create_agent(model=model, system_prompt="You are a helpful assistant.")
+result = agent.invoke({"messages": [{"role": "user", "content": "ping"}]})
+print(result["messages"][-1].content)
+```
+
 </CodeGroup>
 
 A `200` response with a chat completion confirms the gateway, your API key, and your role permissions are all working.
@@ -87,6 +105,10 @@ A `200` response with a chat completion confirms the gateway, your API key, and 
 ## 3. View your trace
 
 Open the [LangSmith UI](https://smith.langchain.com) and navigate to the tracing project named `gateway` or `gateway-<short_api_key>-<api_key_id>` in the workspace associated with your API key. You should see a new trace for the call you just made.
+
+<Note>
+If your application also emits its own LangSmith traces (for example, via [LangChain or LangGraph tracing](/langsmith/observability)), the gateway-side trace and your application trace appear as separate runs. Linking gateway traces to the parent application run is not yet supported.
+</Note>
 
 ## 4. Set a spend policy (optional)
 

@@ -51,6 +51,19 @@ Requests require the `X-Api-Key` header:
 X-Api-Key: <LANGSMITH_API_KEY>
 ```
 
+Install the HTTP client you want to use to call the REST endpoints — `httpx` in Python, or the built-in `fetch` in JavaScript. SDK support is coming in a follow-up release.
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```bash
+    pip install httpx
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    No install required. `fetch` is built into modern browsers and Node.js 18+.
+  </Tab>
+</Tabs>
+
 ## Define the agent
 
 Managed Deep Agents keeps the familiar Deep Agents project shape. Keep these files in your source repository so you can review changes and recreate the managed agent when needed:
@@ -62,7 +75,7 @@ Managed Deep Agents keeps the familiar Deep Agents project shape. Keep these fil
 | `subagents/` | Contains subagent definitions for delegated work. |
 | `tools.json` | Configures tools for the managed agent. |
 
-When you submit these files in a create-agent or update-agent request, the platform stores them as a versioned **agent repo** in the [Context Hub](/langsmith/use-the-context-hub). Every update creates a new commit (returned as `revision` on the agent response). The runtime serves the file tree to the agent on every run, and the agent can also read and write files at run time — including a `/memories/` directory for durable cross-run state.
+When you submit these files in a create-agent or update-agent request, the platform stores them as a versioned **agent repo** in the [Context Hub](/langsmith/use-the-context-hub). Every update creates a new commit (returned as `revision` on the agent response). The runtime serves the file tree to the agent on every run, and the agent can also read and write files at run time, including a `/memories/` directory for durable cross-run state.
 
 For the API request, pass the agent instructions and tool configuration directly in the create-agent payload. Use the same `tools.json` shape when you configure tools:
 
@@ -70,107 +83,483 @@ For the API request, pass the agent instructions and tool configuration directly
 {
   "tools": [
     {
-      "name": "tavily_web_search",
-      "mcp_server_url": "https://tools.langchain.com",
-      "mcp_server_name": "Fleet",
-      "display_name": "tavily_web_search"
+      "name": "tavily-search",
+      "mcp_server_url": "https://mcp.tavily.com/mcp/",
+      "mcp_server_name": "tavily",
+      "display_name": "tavily-search"
     }
   ],
   "interrupt_config": {
-    "https://tools.langchain.com::tavily_web_search::Fleet": true
+    "https://mcp.tavily.com/mcp/::tavily-search::tavily": false
   }
 }
 ```
 
+Each `mcp_server_url` you reference here needs to be registered first via [Configure MCP servers](#configure-mcp-servers) so its credentials are available at invocation time.
+
 The `interrupt_config` map lets you require human approval for selected tools. Each key is `{mcp_server_url}::{tool_name}` (separator is two colons); trailing slashes on the URL are stripped before matching. Additional `::`-separated parts after the tool name (such as the MCP server display name shown in the example above) are accepted but ignored when matching. Set the value to `true` to require human approval before the tool runs, or `false` to allow it without interrupt.
+
+## Configure MCP servers
+
+Tools that need credentials (like custom MCP servers, private endpoints, or any bearer-authenticated API) are registered once per workspace via `POST /v1/deepagents/mcp-servers`. The platform stores the server's URL and any credential headers; when an agent's `tools[].mcp_server_url` matches a registered server, the stored headers are attached automatically each time the tool is invoked.
+
+### Register an MCP server
+
+Credentials are sent as a `headers` array of `{key, value}` objects. The headers are stored encrypted at rest and re-attached to every invocation against `url`.
+
+The example below registers Tavily's hosted MCP server with a bearer `Authorization` header. You will need a [Tavily API key](https://app.tavily.com); pass it as the bearer token value:
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.post(
+        f"{BASE_URL}/mcp-servers",
+        headers=HEADERS,
+        json={
+            "name": "tavily",
+            "url": "https://mcp.tavily.com/mcp/",
+            "headers": [
+                {"key": "Authorization", "value": "Bearer tvly-..."},
+            ],
+        },
+    )
+    response.raise_for_status()
+    mcp_server_id = response.json()["id"]
+    print(f"MCP server ID: {mcp_server_id}")
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(`${BASE_URL}/mcp-servers`, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({
+        name: "tavily",
+        url: "https://mcp.tavily.com/mcp/",
+        headers: [
+          { key: "Authorization", value: "Bearer tvly-..." },
+        ],
+      }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    const { id: mcpServerId } = await response.json()
+    console.log(`MCP server ID: ${mcpServerId}`)
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request POST \
+      --url "$DEEPAGENTS_BASE_URL/mcp-servers" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "name": "tavily",
+        "url": "https://mcp.tavily.com/mcp/",
+        "headers": [
+          {"key": "Authorization", "value": "Bearer tvly-..."}
+        ]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+Reference the same `url` from `tools[].mcp_server_url` in your agent create/update payloads. The MCP server's credentials are applied automatically; you do not need to pass them again when creating the agent.
+
+### List and inspect MCP servers
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.get(f"{BASE_URL}/mcp-servers", headers=HEADERS)
+    response.raise_for_status()
+    servers = response.json()
+
+    response = httpx.get(f"{BASE_URL}/mcp-servers/{mcp_server_id}", headers=HEADERS)
+    response.raise_for_status()
+    server = response.json()
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const servers = await fetch(`${BASE_URL}/mcp-servers`, { headers: HEADERS }).then((r) =>
+      r.json(),
+    )
+
+    const server = await fetch(`${BASE_URL}/mcp-servers/${mcpServerId}`, {
+      headers: HEADERS,
+    }).then((r) => r.json())
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request GET \
+      --url "$DEEPAGENTS_BASE_URL/mcp-servers" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY"
+
+    curl --request GET \
+      --url "$DEEPAGENTS_BASE_URL/mcp-servers/$MCP_SERVER_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+### Rotate credentials
+
+`PATCH /v1/deepagents/mcp-servers/{mcp_server_id}` replaces the entire `headers` array. Pass the full new header set; partial diffs are not supported.
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.patch(
+        f"{BASE_URL}/mcp-servers/{mcp_server_id}",
+        headers=HEADERS,
+        json={
+            "headers": [
+                {"key": "Authorization", "value": "Bearer tvly-rotated-..."},
+            ],
+        },
+    )
+    response.raise_for_status()
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(`${BASE_URL}/mcp-servers/${mcpServerId}`, {
+      method: "PATCH",
+      headers: HEADERS,
+      body: JSON.stringify({
+        headers: [
+          { key: "Authorization", value: "Bearer tvly-rotated-..." },
+        ],
+      }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request PATCH \
+      --url "$DEEPAGENTS_BASE_URL/mcp-servers/$MCP_SERVER_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "headers": [
+          {"key": "Authorization", "value": "Bearer tvly-rotated-..."}
+        ]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+### Delete an MCP server
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.delete(f"{BASE_URL}/mcp-servers/{mcp_server_id}", headers=HEADERS)
+    response.raise_for_status()
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(`${BASE_URL}/mcp-servers/${mcpServerId}`, {
+      method: "DELETE",
+      headers: HEADERS,
+    })
+    if (!response.ok) throw new Error(await response.text())
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request DELETE \
+      --url "$DEEPAGENTS_BASE_URL/mcp-servers/$MCP_SERVER_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+    `headers` may contain secrets (bearer tokens, API keys). The field is omitted from response bodies for callers without invoke permission on the server. Treat list and get responses as sensitive; avoid logging them verbatim.
+</Warning>
+
+<Note>
+    Managed Deep Agents currently supports MCP servers that authenticate via static headers (such as bearer tokens or custom API-key headers). OAuth-backed registration, including a number of LangSmith-hosted MCP servers that authenticate via OAuth 2.1, is planned for a future release.
+</Note>
 
 ## Create a managed agent
 
 Create the agent with `POST /v1/deepagents/agents`. The payload defines the managed resource, runtime settings, instructions, and tools.
 
-```bash
-curl --request POST \
-  --url "$DEEPAGENTS_BASE_URL/agents" \
-  --header "X-Api-Key: $LANGSMITH_API_KEY" \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "name": "research-assistant",
-    "description": "Research assistant that can search the web and summarize sources.",
-    "runtime": {
-      "model": {
-        "model_id": "anthropic:claude-sonnet-4-6"
-      }
-    },
-    "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
-    "tools": {
-      "tools": [
-        {
-          "name": "tavily_web_search",
-          "mcp_server_url": "https://tools.langchain.com",
-          "mcp_server_name": "Fleet",
-          "display_name": "tavily_web_search"
-        }
-      ],
-      "interrupt_config": {
-        "https://tools.langchain.com::tavily_web_search::Fleet": true
-      }
+Each entry in `tools[].mcp_server_url` must match a server you registered in [Configure MCP servers](#configure-mcp-servers). The platform looks up the URL per workspace and attaches the stored headers at invocation time.
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    import os
+
+    import httpx
+
+    BASE_URL = os.environ["DEEPAGENTS_BASE_URL"]
+    HEADERS = {"X-Api-Key": os.environ["LANGSMITH_API_KEY"]}
+
+    response = httpx.post(
+        f"{BASE_URL}/agents",
+        headers=HEADERS,
+        json={
+            "name": "research-assistant",
+            "description": "Research assistant that can search the web and summarize sources.",
+            "runtime": {"model": {"model_id": "anthropic:claude-sonnet-4-6"}},
+            "instructions": (
+                "You are a careful research assistant. Search for sources, "
+                "keep notes, and return concise answers with citations."
+            ),
+            "tools": {
+                "tools": [
+                    {
+                        "name": "tavily-search",
+                        "mcp_server_url": "https://mcp.tavily.com/mcp/",
+                        "mcp_server_name": "tavily",
+                        "display_name": "tavily-search",
+                    },
+                ],
+                "interrupt_config": {
+                    "https://mcp.tavily.com/mcp/::tavily-search::tavily": False,
+                },
+            },
+        },
+    )
+    response.raise_for_status()
+    agent_id = response.json()["id"]
+    print(f"Agent ID: {agent_id}")
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const BASE_URL = process.env.DEEPAGENTS_BASE_URL!
+    const HEADERS = {
+      "X-Api-Key": process.env.LANGSMITH_API_KEY!,
+      "Content-Type": "application/json",
     }
-  }'
-```
 
-The response includes the managed agent ID. Store it for later requests:
+    const response = await fetch(`${BASE_URL}/agents`, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({
+        name: "research-assistant",
+        description: "Research assistant that can search the web and summarize sources.",
+        runtime: { model: { model_id: "anthropic:claude-sonnet-4-6" } },
+        instructions:
+          "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
+        tools: {
+          tools: [
+            {
+              name: "tavily-search",
+              mcp_server_url: "https://mcp.tavily.com/mcp/",
+              mcp_server_name: "tavily",
+              display_name: "tavily-search",
+            },
+          ],
+          interrupt_config: {
+            "https://mcp.tavily.com/mcp/::tavily-search::tavily": false,
+          },
+        },
+      }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    const { id: agentId } = await response.json()
+    console.log(`Agent ID: ${agentId}`)
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request POST \
+      --url "$DEEPAGENTS_BASE_URL/agents" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "name": "research-assistant",
+        "description": "Research assistant that can search the web and summarize sources.",
+        "runtime": {
+          "model": {
+            "model_id": "anthropic:claude-sonnet-4-6"
+          }
+        },
+        "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
+        "tools": {
+          "tools": [
+            {
+              "name": "tavily-search",
+              "mcp_server_url": "https://mcp.tavily.com/mcp/",
+              "mcp_server_name": "tavily",
+              "display_name": "tavily-search"
+            }
+          ],
+          "interrupt_config": {
+            "https://mcp.tavily.com/mcp/::tavily-search::tavily": false
+          }
+        }
+      }'
+    ```
 
-```bash
-export AGENT_ID="<AGENT_ID>"
-```
+    The response includes the managed agent ID. Store it for later requests:
+
+    ```bash
+    export AGENT_ID="<AGENT_ID>"
+    ```
+  </Tab>
+</Tabs>
 
 ## Create a thread
 
 Create a thread before running the agent. Threads preserve the conversation and execution state for long-running work.
 
-```bash
-curl --request POST \
-  --url "$DEEPAGENTS_BASE_URL/threads" \
-  --header "X-Api-Key: $LANGSMITH_API_KEY" \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "agent_id": "'"$AGENT_ID"'",
-    "options": {
-      "test_run": false,
-      "skip_memory_write_protection": false
-    }
-  }'
-```
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.post(
+        f"{BASE_URL}/threads",
+        headers=HEADERS,
+        json={
+            "agent_id": agent_id,
+            "options": {
+                "test_run": False,
+                "skip_memory_write_protection": False,
+            },
+        },
+    )
+    response.raise_for_status()
+    thread_id = response.json()["id"]
+    print(f"Thread ID: {thread_id}")
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(`${BASE_URL}/threads`, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({
+        agent_id: agentId,
+        options: {
+          test_run: false,
+          skip_memory_write_protection: false,
+        },
+      }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    const { id: threadId } = await response.json()
+    console.log(`Thread ID: ${threadId}`)
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request POST \
+      --url "$DEEPAGENTS_BASE_URL/threads" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "agent_id": "'"$AGENT_ID"'",
+        "options": {
+          "test_run": false,
+          "skip_memory_write_protection": false
+        }
+      }'
+    ```
 
-The response includes the thread ID:
+    The response includes the thread ID:
 
-```bash
-export THREAD_ID="<THREAD_ID>"
-```
+    ```bash
+    export THREAD_ID="<THREAD_ID>"
+    ```
+  </Tab>
+</Tabs>
 
 ## Stream a run
 
 Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stream`. Include the `agent_id` in the request body and set `Accept: text/event-stream` so your client receives progress as server-sent events.
 
-```bash
-curl --request POST \
-  --url "$DEEPAGENTS_BASE_URL/threads/$THREAD_ID/runs/stream" \
-  --header "X-Api-Key: $LANGSMITH_API_KEY" \
-  --header 'Accept: text/event-stream' \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "agent_id": "'"$AGENT_ID"'",
-    "messages": [
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    payload = {
+        "agent_id": agent_id,
+        "messages": [
+            {
+                "role": "user",
+                "content": "Research recent approaches to agent memory and summarize the main tradeoffs.",
+            }
+        ],
+        "stream_mode": ["values", "updates", "messages-tuple"],
+        "stream_subgraphs": True,
+        "user_timezone": "America/Los_Angeles",
+    }
+
+    with httpx.stream(
+        "POST",
+        f"{BASE_URL}/threads/{thread_id}/runs/stream",
+        headers={**HEADERS, "Accept": "text/event-stream"},
+        json=payload,
+        timeout=None,
+    ) as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            if line:
+                print(line)
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(
+      `${BASE_URL}/threads/${threadId}/runs/stream`,
       {
-        "role": "user",
-        "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
-      }
-    ],
-    "stream_mode": ["values", "updates", "messages-tuple"],
-    "stream_subgraphs": true,
-    "user_timezone": "America/Los_Angeles"
-  }'
-```
+        method: "POST",
+        headers: { ...HEADERS, Accept: "text/event-stream" },
+        body: JSON.stringify({
+          agent_id: agentId,
+          messages: [
+            {
+              role: "user",
+              content:
+                "Research recent approaches to agent memory and summarize the main tradeoffs.",
+            },
+          ],
+          stream_mode: ["values", "updates", "messages-tuple"],
+          stream_subgraphs: true,
+          user_timezone: "America/Los_Angeles",
+        }),
+      },
+    )
+    if (!response.ok || !response.body) throw new Error(await response.text())
+
+    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      console.log(value)
+    }
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request POST \
+      --url "$DEEPAGENTS_BASE_URL/threads/$THREAD_ID/runs/stream" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Accept: text/event-stream' \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "agent_id": "'"$AGENT_ID"'",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
+          }
+        ],
+        "stream_mode": ["values", "updates", "messages-tuple"],
+        "stream_subgraphs": true,
+        "user_timezone": "America/Los_Angeles"
+      }'
+    ```
+  </Tab>
+</Tabs>
 
 Use stream modes based on the experience you want to build:
 
@@ -225,67 +614,205 @@ The run is traced in LangSmith. Open the trace to inspect messages, tool calls, 
 
 Use `PATCH /v1/deepagents/agents/{agent_id}` when you need to update instructions, runtime settings, or tool configuration.
 
-```bash
-curl --request PATCH \
-  --url "$DEEPAGENTS_BASE_URL/agents/$AGENT_ID" \
-  --header "X-Api-Key: $LANGSMITH_API_KEY" \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "description": "Research assistant that searches the web, reads URLs, and summarizes sources.",
-    "runtime": {
-      "model": {
-        "model_id": "anthropic:claude-sonnet-4-6"
-      }
-    },
-    "instructions": "You are a careful research assistant. Search for sources, read relevant pages, keep notes, and return concise answers with citations.",
-    "tools": {
-      "tools": [
-        {
-          "name": "tavily_web_search",
-          "mcp_server_url": "https://tools.langchain.com",
-          "mcp_server_name": "Fleet",
-          "display_name": "tavily_web_search"
+The example below extends the agent created above by adding `tavily-extract` (Tavily's structured-extraction tool) alongside the existing `tavily-search` tool. It also flips `tavily-extract` to require human approval before each call by setting that tool's `interrupt_config` value to `true`. Because PATCH replaces `tools` wholesale, pass the full new tool set, not just the additions.
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.patch(
+        f"{BASE_URL}/agents/{agent_id}",
+        headers=HEADERS,
+        json={
+            "description": "Research assistant that searches the web and extracts structured content from pages.",
+            "runtime": {"model": {"model_id": "anthropic:claude-sonnet-4-6"}},
+            "instructions": (
+                "You are a careful research assistant. Search for sources, extract structured information "
+                "when useful, keep notes, and return concise answers with citations."
+            ),
+            "tools": {
+                "tools": [
+                    {
+                        "name": "tavily-search",
+                        "mcp_server_url": "https://mcp.tavily.com/mcp/",
+                        "mcp_server_name": "tavily",
+                        "display_name": "tavily-search",
+                    },
+                    {
+                        "name": "tavily-extract",
+                        "mcp_server_url": "https://mcp.tavily.com/mcp/",
+                        "mcp_server_name": "tavily",
+                        "display_name": "tavily-extract",
+                    },
+                ],
+                "interrupt_config": {
+                    "https://mcp.tavily.com/mcp/::tavily-search::tavily": False,
+                    "https://mcp.tavily.com/mcp/::tavily-extract::tavily": True,
+                },
+            },
         },
-        {
-          "name": "read_url_content",
-          "mcp_server_url": "https://tools.langchain.com",
-          "mcp_server_name": "Fleet",
-          "display_name": "read_url_content"
+    )
+    response.raise_for_status()
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(`${BASE_URL}/agents/${agentId}`, {
+      method: "PATCH",
+      headers: HEADERS,
+      body: JSON.stringify({
+        description:
+          "Research assistant that searches the web and extracts structured content from pages.",
+        runtime: { model: { model_id: "anthropic:claude-sonnet-4-6" } },
+        instructions:
+          "You are a careful research assistant. Search for sources, extract structured information when useful, keep notes, and return concise answers with citations.",
+        tools: {
+          tools: [
+            {
+              name: "tavily-search",
+              mcp_server_url: "https://mcp.tavily.com/mcp/",
+              mcp_server_name: "tavily",
+              display_name: "tavily-search",
+            },
+            {
+              name: "tavily-extract",
+              mcp_server_url: "https://mcp.tavily.com/mcp/",
+              mcp_server_name: "tavily",
+              display_name: "tavily-extract",
+            },
+          ],
+          interrupt_config: {
+            "https://mcp.tavily.com/mcp/::tavily-search::tavily": false,
+            "https://mcp.tavily.com/mcp/::tavily-extract::tavily": true,
+          },
+        },
+      }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request PATCH \
+      --url "$DEEPAGENTS_BASE_URL/agents/$AGENT_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "description": "Research assistant that searches the web and extracts structured content from pages.",
+        "runtime": {
+          "model": {
+            "model_id": "anthropic:claude-sonnet-4-6"
+          }
+        },
+        "instructions": "You are a careful research assistant. Search for sources, extract structured information when useful, keep notes, and return concise answers with citations.",
+        "tools": {
+          "tools": [
+            {
+              "name": "tavily-search",
+              "mcp_server_url": "https://mcp.tavily.com/mcp/",
+              "mcp_server_name": "tavily",
+              "display_name": "tavily-search"
+            },
+            {
+              "name": "tavily-extract",
+              "mcp_server_url": "https://mcp.tavily.com/mcp/",
+              "mcp_server_name": "tavily",
+              "display_name": "tavily-extract"
+            }
+          ],
+          "interrupt_config": {
+            "https://mcp.tavily.com/mcp/::tavily-search::tavily": false,
+            "https://mcp.tavily.com/mcp/::tavily-extract::tavily": true
+          }
         }
-      ],
-      "interrupt_config": {
-        "https://tools.langchain.com::tavily_web_search::Fleet": true,
-        "https://tools.langchain.com::read_url_content::Fleet": false
-      }
-    }
-  }'
-```
+      }'
+    ```
+  </Tab>
+</Tabs>
 
 ## Manage existing agents
 
 List agents:
 
-```bash
-curl --request GET \
-  --url "$DEEPAGENTS_BASE_URL/agents" \
-  --header "X-Api-Key: $LANGSMITH_API_KEY"
-```
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.get(f"{BASE_URL}/agents", headers=HEADERS)
+    response.raise_for_status()
+    agents = response.json()
+    print(json.dumps(agents, indent=4))
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const agents = await fetch(`${BASE_URL}/agents`, { headers: HEADERS }).then((r) =>
+      r.json(),
+    )
+    console.dir(agents, { depth: null })
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request GET \
+      --url "$DEEPAGENTS_BASE_URL/agents" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY"
+    ```
+  </Tab>
+</Tabs>
 
 Get one agent:
 
-```bash
-curl --request GET \
-  --url "$DEEPAGENTS_BASE_URL/agents/$AGENT_ID" \
-  --header "X-Api-Key: $LANGSMITH_API_KEY"
-```
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.get(f"{BASE_URL}/agents/{agent_id}", headers=HEADERS)
+    response.raise_for_status()
+    agent = response.json()
+    print(json.dumps(agent, indent=4))
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const agent = await fetch(`${BASE_URL}/agents/${agentId}`, {
+      headers: HEADERS,
+    }).then((r) => r.json())
+    console.dir(agent, { depth: null })
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request GET \
+      --url "$DEEPAGENTS_BASE_URL/agents/$AGENT_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY"
+    ```
+  </Tab>
+</Tabs>
 
 Delete an agent:
 
-```bash
-curl --request DELETE \
-  --url "$DEEPAGENTS_BASE_URL/agents/$AGENT_ID" \
-  --header "X-Api-Key: $LANGSMITH_API_KEY"
-```
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.delete(f"{BASE_URL}/agents/{agent_id}", headers=HEADERS)
+    response.raise_for_status()
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(`${BASE_URL}/agents/${agentId}`, {
+      method: "DELETE",
+      headers: HEADERS,
+    })
+    if (!response.ok) throw new Error(await response.text())
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request DELETE \
+      --url "$DEEPAGENTS_BASE_URL/agents/$AGENT_ID" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY"
+    ```
+  </Tab>
+</Tabs>
 
 <Warning>
     Deleting an agent does not cascade to its threads. Existing threads remain queryable, but starting new runs on them returns `502`. Track and delete threads explicitly when you want to clean them up.
@@ -306,7 +833,7 @@ Operational notes that apply during the private preview. Behavior may change bef
 
 ### Supported models
 
-Pass model identifiers in the form `{provider}:{model_id}` — for example, `anthropic:claude-sonnet-4-6` or `openai:gpt-5.4-mini`. The runtime resolves models with @[`init_chat_model`], so any provider that `init_chat_model` supports is usable from Managed Deep Agents. See [Supported providers and models](/oss/langchain/models#supported-providers-and-models) for the current list.
+Pass model identifiers in the form `{provider}:{model_id}`. For example, `anthropic:claude-sonnet-4-6` or `openai:gpt-5.4-mini`. The runtime resolves models with @[`init_chat_model`], so any provider that `init_chat_model` supports is usable from Managed Deep Agents. See [Supported providers and models](/oss/langchain/models#supported-providers-and-models) for the current list.
 
 Values without a colon are interpreted as references to a saved Playground configuration rather than as model identifiers, so always supply the full `{provider}:{model_id}` form when configuring a model directly.
 
@@ -320,7 +847,7 @@ The Managed Deep Agents endpoints do not enforce per-key, per-workspace, or per-
 
 ### Deleting agents
 
-`DELETE /agents/{agent_id}` does not cascade to threads. Threads created against a deleted agent remain queryable but cannot start new runs — attempts return `502`. Track and delete threads explicitly when you want to clean them up, as covered in [Manage existing agents](#manage-existing-agents).
+`DELETE /agents/{agent_id}` does not cascade to threads. Threads created against a deleted agent remain queryable but cannot start new runs, and new attempts return `502`. Track and delete threads explicitly when you want to clean them up, as covered in [Manage existing agents](#manage-existing-agents).
 
 ### API stability
 
@@ -328,7 +855,7 @@ Routes live under `/v1/deepagents`, but the surface is in private preview and ma
 
 ### SDKs
 
-REST is the only supported interface during private preview. SDK wrappers (Python and JavaScript) will follow soon.
+REST is the only supported interface during private preview. Use any HTTP client (`httpx` or `requests` in Python, `fetch` in JavaScript) against `https://api.smith.langchain.com/v1/deepagents`. SDK wrappers for Python, JavaScript, and React (`useStream`) are in progress and will follow in a later release.
 
 ### Support and feedback
 
