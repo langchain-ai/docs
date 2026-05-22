@@ -1,0 +1,172 @@
+---
+title: "Auxen integration"
+description: "Integrate with Auxen dedicated LLM endpoints using LangChain JavaScript."
+---
+
+[Auxen](https://auxen.ai) hosts per-customer dedicated LLM endpoints (Llama 3.1/3.2, Qwen 2.5, Mistral, Gemma 2, Mixtral, Phi-3, Command R) on stable HTTPS URLs with an OpenAI-compatible `/v1/chat/completions` API. Each instance is a dedicated GPU billed per-minute of runtime, not per token.
+
+Since Auxen instances are OpenAI-wire-compatible, the integration uses `ChatOpenAI` from `@langchain/openai` with a custom base URL and a per-instance bearer token. No dedicated package is required.
+
+<Tip>
+    **Auxen is OpenAI-compatible.** Models in the catalog implement the OpenAI Chat Completions schema directly. Standard features (tool calling, structured output, streaming, system messages) work out of the box; provider-specific non-standard response fields are not surfaced.
+</Tip>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | PY support |
+| :--- | :--- | :---: | :---: |
+| `ChatOpenAI` (with custom `configuration`) | `@langchain/openai` | beta | ✅ |
+
+### Model features
+
+Features depend on the model your Auxen instance is serving. Most tool-calling-trained open-source models support the following via the OpenAI-compatible wire format:
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+
+## Setup
+
+To use Auxen with LangChain you need an Auxen instance (provisioned from the [Auxen dashboard](https://auxen.ai)) and the `@langchain/openai` package.
+
+### Credentials
+
+Provision an instance at [auxen.ai](https://auxen.ai). You will be issued two values:
+
+- A per-instance **base URL** of the form `https://api.auxen.ai/v1/inst_xxx/v1`
+- A per-instance **API key** prefixed `auxk_`
+
+Set these as environment variables:
+
+```bash
+export AUXEN_API_BASE="https://api.auxen.ai/v1/inst_xxx/v1"
+export AUXEN_API_KEY="auxk_..."
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/home) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+Auxen reuses the `@langchain/openai` package:
+
+<CodeGroup>
+```bash npm
+npm install @langchain/openai @langchain/core
+```
+```bash yarn
+yarn add @langchain/openai @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/openai @langchain/core
+```
+</CodeGroup>
+
+## Instantiation
+
+Construct `ChatOpenAI` pointed at your Auxen instance:
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+
+const llm = new ChatOpenAI({
+  model: "llama-3.1-8b",
+  apiKey: process.env.AUXEN_API_KEY,
+  configuration: {
+    baseURL: process.env.AUXEN_API_BASE,
+  },
+  temperature: 0,
+  maxTokens: 512,
+});
+```
+
+The `model` argument is the model name your instance is serving (e.g. `llama-3.1-8b`, `qwen2.5-14b`, `mistral-nemo-12b`). Each Auxen instance is provisioned with one model at creation time.
+
+## Invocation
+
+```typescript
+const aiMsg = await llm.invoke([
+  ["system", "You are a helpful translator. Translate the user sentence to French."],
+  ["human", "I love programming."],
+]);
+
+console.log(aiMsg.content);
+```
+
+## Streaming
+
+```typescript
+const stream = await llm.stream("Say hi in three languages.");
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.content as string);
+}
+```
+
+## Tool calling
+
+Tool-capable models (Llama 3.1/3.2, Qwen 2.5, Mistral Nemo, Mixtral, Command R) accept the standard LangChain tools schema:
+
+```typescript
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ city }) => `It is sunny in ${city}.`,
+  {
+    name: "get_weather",
+    description: "Get the current weather for a city.",
+    schema: z.object({ city: z.string() }),
+  },
+);
+
+const llmWithTools = llm.bindTools([getWeather]);
+const result = await llmWithTools.invoke("What's the weather in Toronto?");
+console.log(result.tool_calls);
+```
+
+## Chaining
+
+```typescript
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+
+const prompt = ChatPromptTemplate.fromMessages([
+  ["system", "You are a helpful assistant that {style}."],
+  ["human", "{input}"],
+]);
+
+const chain = prompt.pipe(llm);
+const response = await chain.invoke({
+  style: "answers concisely",
+  input: "Why is the sky blue?",
+});
+
+console.log(response.content);
+```
+
+## Catalog
+
+Auxen-hosted models (the `model` argument matches one of these — your instance is provisioned with one at creation):
+
+- `llama-3.1-8b`, `llama-3.1-70b`, `llama-3.2-3b`
+- `qwen2.5-7b`, `qwen2.5-14b`, `qwen2.5-32b`
+- `mistral-7b`, `mistral-nemo-12b`, `mixtral-8x7b`
+- `gemma2-9b`, `phi-3-mini`, `command-r-7b`
+
+## Pricing model
+
+Auxen bills per-minute of dedicated GPU runtime, not per token. See [auxen.ai/pricing](https://auxen.ai/pricing) for hourly rates by model size.
+
+## Related
+
+For an Auxen-specific AI SDK provider (Vercel AI SDK), see [`@auxen/ai-sdk-provider`](https://www.npmjs.com/package/@auxen/ai-sdk-provider) on npm.
+
+## API reference
+
+Auxen reuses the `@langchain/openai` integration. See the `ChatOpenAI` API reference for the full surface.
