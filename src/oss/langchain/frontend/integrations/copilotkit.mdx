@@ -1,9 +1,11 @@
 ---
 title: CopilotKit
-description: Add a custom CopilotKit endpoint to a LangGraph deployment and render structured generative UI in React
+description: Use CopilotKit with LangGraph, Deep Agents, and React with custom endpoints, the Python AG-UI bridge, and structured generative UI
 ---
 
 [CopilotKit](https://www.copilotkit.ai/) provides a full React chat runtime and pairs especially well with LangGraph when you want the agent to return **structured UI payloads** instead of only plain text. In this pattern, your LangGraph deployment serves both the graph API and a custom CopilotKit endpoint, while the frontend parses assistant messages into dynamic React components.
+
+On the server, the [copilotkit](https://pypi.org/project/copilotkit/) package provides [`CopilotKitMiddleware`](https://docs.copilotkit.ai) so a LangGraph graph, a LangChain agent, or a [Deep Agent](/oss/deepagents/overview) can speak the [Agent UI (AG-UI)](https://docs.ag-ui.com/) wire protocol, stream tool and message events to a chat UI, and read or write the shared **CopilotKit** slice of state, with helpers to mount a CopilotKit-compatible HTTP endpoint in front of your graph.
 
 This approach is useful when you want:
 
@@ -11,9 +13,12 @@ This approach is useful when you want:
 - a custom server endpoint that can add provider-specific behavior next to your deployed graph
 - structured generative UI rendered from a constrained component registry
 
+[CopilotKit for LangGraph](https://docs.copilotkit.ai/langgraph) also documents [generative UI](https://docs.copilotkit.ai/langgraph/generative-ui), [human in the loop](https://docs.copilotkit.ai/langgraph/human-in-the-loop) (HITL), and [shared state](https://docs.copilotkit.ai/langgraph/shared-state) on top of the same middleware and clients.
+
 <Info>
   For CopilotKit-specific APIs, UI patterns, and runtime configuration, see the
-  [CopilotKit docs](https://docs.copilotkit.ai/langgraph).
+  [CopilotKit docs](https://docs.copilotkit.ai/langgraph). For a Deep Agent walkthrough, see
+  [Deep Agents and CopilotKit](https://docs.copilotkit.ai/langgraph/deep-agents) in the CopilotKit docs.
 </Info>
 
 import { ExampleEmbed } from "/snippets/example-embed.jsx"
@@ -53,6 +58,23 @@ graph LR
   UI --> RENDER
 ```
 
+:::python
+## What you get on the Python server
+
+The [copilotkit](https://pypi.org/project/copilotkit/) and related packages bridge a LangGraph deployment and CopilotKit clients.
+
+| Component | Role |
+| --------- | ---- |
+| `CopilotKitMiddleware` | Merges CopilotKit and AG-UI state and requests into your agent, including frontend [tool calls](/oss/langchain/agents#tools) and context. Add it to the `middleware` list for @[create_agent] or @[create_deep_agent]. |
+| `CopilotKitState` (subclass) | [Custom state](/oss/langchain/agents#memory): extend `CopilotKitState` so the CopilotKit key is part of graph state. |
+| `LangGraphAGUIAgent` | Bundles a compiled graph with a name and description for the runtime. |
+| `add_langgraph_fastapi_endpoint` (from [ag-ui-langgraph](https://pypi.org/project/ag-ui-langgraph/)) | Wires a **FastAPI** app so CopilotKit can run your graph on the same [LangGraph](/oss/langgraph/overview) process. Use it when you add a [custom `http` app in `langgraph.json`](#extend-the-langgraph-deployment-with-a-custom-endpoint) instead of a separate HTTP server. |
+
+`CopilotKitMiddleware` is the same middleware for @[create_deep_agent] and for a graph from @[create_agent] when you add it to the `middleware` list. For a `create_agent` graph with `CopilotKitState` and a FastAPI bridge, follow the [Python `main.py` example](#extend-the-langgraph-deployment-with-a-custom-endpoint) below. Structured generative UI (for example `useAgentContext` and an `output_schema` from the client) needs extra middleware that maps Copilot state to a [structured output](/oss/langchain/agents#structured-output) strategy, as in the expandable `src/middleware.py` example in the same section.
+
+Mounting `app` on the `http` key in `langgraph.json` follows the usual [LangGraph or LangSmith deployment](/oss/langgraph/deploy) so one process serves the graph and the same FastAPI app to the CopilotKit client.
+:::
+
 ## Installation
 
 For the backend endpoint:
@@ -67,6 +89,18 @@ bun add @copilotkit/runtime hono
 ```bash
 uv add copilotkit ag-ui-langgraph fastapi uvicorn
 ```
+
+The middleware package sits alongside the Deep Agents stack. Install it with your [chat model](/oss/integrations/chat) package (this example uses OpenAI):
+
+<CodeGroup>
+```python pip
+pip install -U deepagents copilotkit langchain-openai
+```
+
+```python uv
+uv add deepagents copilotkit langchain-openai
+```
+</CodeGroup>
 :::
 
 For the frontend app:
@@ -74,6 +108,34 @@ For the frontend app:
 ```bash
 bun add @copilotkit/react-core @copilotkit/react-ui @hashbrownai/core @hashbrownai/react
 ```
+
+:::python
+## Use CopilotKit with a Deep Agent
+
+Add `CopilotKitMiddleware` to the `middleware` list you pass to @[create_deep_agent]. The middleware lets CopilotKit route frontend tool calls and align chat state with your graph. Keep any other [middleware you configure](/oss/deepagents/customization#middleware) in the same list.
+
+The compiled graph is then ready to plug into a CopilotKit- or AG-UI–aware process (for example, the [FastAPI pattern below](#extend-the-langgraph-deployment-with-a-custom-endpoint)) or a guide such as [Deep Agents and CopilotKit](https://docs.copilotkit.ai/langgraph/deep-agents) in the CopilotKit documentation.
+
+```python
+from deepagents import create_deep_agent
+from copilotkit import CopilotKitMiddleware
+from langgraph.checkpoint.memory import MemorySaver
+
+
+def get_weather(location: str) -> str:
+    """Return a simple weather string for a location."""
+    return f"The weather in {location} is sunny."
+
+
+agent = create_deep_agent(
+    model="openai:gpt-5.4",
+    tools=[get_weather],
+    middleware=[CopilotKitMiddleware()],  # AG-UI, frontend tools, and context
+    system_prompt="You are a helpful research assistant.",
+    checkpointer=MemorySaver(),
+)
+```
+:::
 
 ## Extend the LangGraph deployment with a custom endpoint
 
@@ -290,7 +352,7 @@ const structuredOutputMiddleware = createMiddleware({
 });
 
 export const agent = createAgent({
-  model: process.env.COPILOTKIT_MODEL ?? "google_genai:gemini-3.1-pro-preview",
+  model: process.env.COPILOTKIT_MODEL ?? "google_genai:gemini-3.5-flash",
   contextSchema,
   middleware: [structuredOutputMiddleware],
   tools: [searchWebTool, deepSearchTool],
@@ -416,6 +478,12 @@ The result is a clean separation of concerns:
 - LangGraph still owns graph execution and persistence
 - CopilotKit owns the chat-facing runtime contract
 - your custom endpoint glues them together inside one deployment
+
+:::python
+Point your CopilotKit `runtimeUrl` at the route the FastAPI (or other) app exposes, not only the raw graph REST surface, when you use the [CopilotKit](https://docs.copilotkit.ai) runtime adapter.
+:::
+Follow the CopilotKit documentation for [LangGraphHttpAgent](https://docs.copilotkit.ai/langgraph) or `LangGraphAgent` in the Node **CopilotRuntime**; the **Python** graph and middleware still define tool behavior and agent logic.
+:::
 
 ## Structure the frontend app
 
@@ -569,6 +637,12 @@ This renderer pattern is what makes the integration feel native:
 - CopilotKit handles chat state and transport
 - the custom renderer decides how assistant payloads become UI
 - [Hashbrown](https://hashbrown.dev/) turns validated structured data into concrete React elements
+
+## Resources
+
+- [Deep Agents and CopilotKit](https://docs.copilotkit.ai/langgraph/deep-agents) in the CopilotKit documentation — end-to-end Next.js, dev server, and **Deep Agent** path
+- [CopilotKit: LangGraph features](https://docs.copilotkit.ai/langgraph) — generative UI, HITL, shared state
+- [LangGraph deployment](/oss/langgraph/deploy) — production and dev server
 
 ## Best practices
 

@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
 from tqdm import tqdm
@@ -39,6 +40,7 @@ class DocumentationBuilder:
         """
         self.src_dir = src_dir
         self.build_dir = build_dir
+        self.snippet_component_extensions: set[str] = {".jsx", ".tsx"}
 
         # File extensions to copy directly
         self.copy_extensions: set[str] = {
@@ -54,8 +56,7 @@ class DocumentationBuilder:
             ".yaml",
             ".css",
             ".js",
-            ".jsx",
-            ".tsx",
+            *self.snippet_component_extensions,
             ".txt",
             ".woff2",
             ".woff",
@@ -773,8 +774,13 @@ class DocumentationBuilder:
         }:
             return True
 
+        # Snippets are imported from MDX through /snippets/... paths. This
+        # includes MDX snippets and local React components such as .tsx files.
+        if "snippets" in relative_path.parts:
+            return True
+
         # Directories whose contents should be shared
-        shared_dirs = {"images", "snippets", ".well-known", "fonts"}
+        shared_dirs = {"images", ".well-known", "fonts"}
         if shared_dirs & set(relative_path.parts):
             return True
 
@@ -824,13 +830,13 @@ class DocumentationBuilder:
         logger.info("✅ Shared files copied: %d files", copied_count)
 
     # Maps npm dist filenames to their output names in build/snippets/
-    _NPM_SNIPPET_FILES: dict[str, str] = {
+    _NPM_SNIPPET_FILES: ClassVar[dict[str, str]] = {
         "PatternEmbed.jsx": "pattern-embed.jsx",
         "ExampleEmbed.jsx": "example-embed.jsx",
     }
 
     # Maps npm dist filenames to their output names in build/ (served at site root).
-    _NPM_BUILD_FILES: dict[str, str] = {
+    _NPM_BUILD_FILES: ClassVar[dict[str, str]] = {
         "ChatLangChainEmbed.js": "ChatLangChainEmbed.js",
     }
 

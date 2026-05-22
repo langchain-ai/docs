@@ -1,0 +1,137 @@
+---
+title: "Perplexity search integration"
+description: "Integrate with the Perplexity search tool using LangChain Python."
+---
+
+[Perplexity Search](https://docs.perplexity.ai/docs/search/quickstart) is a web search API that returns ranked, source-attributed results designed for use by LLMs and agents. It powers the answer engine at [perplexity.ai](https://www.perplexity.ai/) and is exposed through the dedicated [Search API endpoint](https://docs.perplexity.ai/api-reference/search-post).
+
+This page goes over how to use the Perplexity Search API as a LangChain tool.
+
+## Setup
+
+### Installation
+
+Install the LangChain Perplexity integration package:
+
+```python
+pip install -qU langchain-perplexity
+
+# and some deps for this notebook
+pip install -qU langchain langchain-openai
+```
+
+### Credentials
+
+You'll need a Perplexity API key to use this integration. Create one in the [Perplexity API key dashboard](https://www.perplexity.ai/account/api/keys).
+
+```python
+import getpass
+import os
+
+if not os.environ.get("PPLX_API_KEY"):
+    os.environ["PPLX_API_KEY"] = getpass.getpass("Perplexity API key:\n")
+```
+
+The integration also accepts `PERPLEXITY_API_KEY` if you prefer that name.
+
+## Using PerplexitySearchResults tool
+
+`PerplexitySearchResults` is a tool that can be used with LangChain agents to perform Perplexity searches. Calling it returns a JSON array of search results, each containing a `title`, `url`, `snippet`, `date`, and `last_updated` field.
+
+```python
+from langchain_perplexity import PerplexitySearchResults
+
+# Initialize the PerplexitySearchResults tool
+search_tool = PerplexitySearchResults(max_results=5)
+
+# Perform a search query
+search_results = search_tool.invoke("When was the last time the New York Knicks won the NBA Championship?")
+
+print("Search Results:", search_results)
+```
+
+### Advanced features for PerplexitySearchResults
+
+The tool accepts the following constructor and call-time arguments:
+
+- `max_results` — number of results to return.
+- `country` — ISO country code to bias results (e.g. `"US"`).
+- `search_domain_filter` — list of domains to include or exclude (max 20). Prefix a domain with `-` to exclude it. See the [domain filter docs](https://docs.perplexity.ai/docs/search/filters/domain-filter).
+- `search_recency_filter` — one of `"day"`, `"week"`, `"month"`, `"year"`. See the [date and time filter docs](https://docs.perplexity.ai/docs/search/filters/date-time-filters).
+- `search_after_date` / `search_before_date` — date strings in `MM/DD/YYYY` format.
+
+```python
+from langchain_perplexity import PerplexitySearchResults
+
+# Restrict results to a recent timeframe and a specific set of domains
+search_tool = PerplexitySearchResults(
+    max_results=10,
+    country="US",
+    search_recency_filter="week",
+    search_domain_filter=["nytimes.com", "reuters.com", "-pinterest.com"],
+)
+
+results = search_tool.invoke("Latest AI research papers")
+print(results)
+```
+
+```python
+from langchain_perplexity import PerplexitySearchResults
+
+# Restrict results to a specific date range
+search_tool = PerplexitySearchResults(
+    max_results=5,
+    search_after_date="01/01/2025",
+    search_before_date="06/30/2025",
+)
+
+results = search_tool.invoke("US Federal Reserve interest rate decisions")
+print(results)
+```
+
+## Use within an Agent
+
+We can use the `PerplexitySearchResults` tool with a LangGraph agent. This gives the agent the ability to dynamically search the web for grounded, source-attributed information.
+
+First, set up the language model. You'll need to provide your OpenAI API key:
+
+```python
+import getpass
+
+if not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = getpass.getpass("OpenAI API key:\n")
+```
+
+```python
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+from langchain_perplexity import PerplexitySearchResults
+
+
+# Initialize the language model
+model = init_chat_model(model="gpt-5.5", temperature=0)
+
+# Initialize the Perplexity search tool
+perplexity_search = PerplexitySearchResults(
+    max_results=5,
+    search_recency_filter="month",
+)
+
+# Create the agent
+agent = create_agent(model, [perplexity_search])
+
+# Run the agent
+user_input = "What are the latest developments in quantum computing?"
+
+for step in agent.stream(
+    {"messages": [{"role": "user", "content": user_input}]},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+```
+
+---
+
+## API reference
+
+For detailed documentation of the Perplexity Search API and all of its options, see the [Search API reference](https://docs.perplexity.ai/api-reference/search-post) and the [Perplexity API documentation](https://docs.perplexity.ai).

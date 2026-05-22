@@ -14,11 +14,16 @@ description: Log events from LangChain and LangGraph to Google BigQuery for moni
 The `BigQueryCallbackHandler` allows you to log events from LangChain and LangGraph to Google BigQuery. This is useful for monitoring, auditing, and analyzing the performance of your LLM applications.
 
 **Key features:**
-- **LangGraph support**: Automatic detection of LangGraph nodes with `NODE_STARTING`, `NODE_COMPLETED`, and `GRAPH_START/END` events
-- **Latency tracking**: Built-in latency measurement for all LLM and tool calls
-- **Event filtering**: Configurable allowlist/denylist to control which events are logged
-- **Graph context manager**: Explicit graph execution boundaries with accurate timing
-- **Real-time dashboard**: FastAPI-based monitoring webapp with live event streaming
+- **LangGraph support**: automatic detection of LangGraph nodes with `AGENT_STARTING` / `AGENT_COMPLETED` events and top-level `INVOCATION_STARTING` / `INVOCATION_COMPLETED` boundaries (vocabulary aligned with [Google ADK's `BigQueryAgentAnalyticsPlugin`](https://github.com/google/adk-python/blob/main/src/google/adk/plugins/bigquery_agent_analytics_plugin.py))
+- **Auto-created analytics views**: one typed-column `CREATE OR REPLACE VIEW` per event type (`v_llm_response.usage_total_tokens` instead of `JSON_VALUE(...)`)
+- **Auto schema upgrade**: additive `ALTER TABLE ADD COLUMN` on existing tables, gated by a schema-version label so it runs at most once per version
+- **Sub-agent attribution**: the `agent` BigQuery column is auto-derived from `langgraph_node` when no explicit `agent` is set in metadata, so multi-agent graphs are tagged per sub-agent without any user changes
+- **Rich LLM telemetry**: token usage (`prompt_tokens` / `completion_tokens` / `total_tokens` / `cached_content_token_count`), `model_version`, full `usage_metadata`, `cache_metadata`, plus `llm_config` (temperature, top_p, …) and `tools` on `LLM_REQUEST`
+- **Latency tracking**: built-in latency measurement for all LLM and tool calls
+- **Event filtering**: configurable allowlist / denylist plus an opt-in `skip_internal_chain_events` heuristic that drops noisy framework chains (`ChannelWrite`, `RunnableLambda`, …) without breaking trace continuity
+- **Graph context manager**: explicit `INVOCATION_*` boundaries with accurate timing
+- **`flush()` between requests**: drain the queue without tearing the handler down
+- **Real-time dashboard**: FastAPI monitoring webapp with live event streaming
 
 <Note>
   **Preview release**
@@ -65,9 +70,9 @@ For the callback handler to work properly, the principal (e.g., service account,
 
 ## Use with LangGraph agent
 
-To use the `BigQueryCallbackHandler` with a LangGraph agent, instantiate it with your Google Cloud project ID, dataset ID, and table ID. Use the `graph_context()` method to track graph execution boundaries and enable `GRAPH_START`/`GRAPH_END` events with latency measurements.
+To use the `BigQueryCallbackHandler` with a LangGraph agent, instantiate it with your Google Cloud project ID and dataset ID. The handler creates the events table (and per-event-type analytics views) on first run. Use the `graph_context()` method to track top-level invocation boundaries — it emits `INVOCATION_STARTING` on enter and `INVOCATION_COMPLETED` (or `INVOCATION_ERROR` on exception) with accurate latency.
 
-Pass `session_id`, `user_id`, and `agent` via the `metadata` dictionary in the `config` object when invoking the agent.
+Pass `session_id`, `user_id`, and (optionally) `agent` via the `metadata` dictionary in the `config` object when invoking the agent. If `agent` is not set, the handler auto-derives it from `metadata['langgraph_node']` so each sub-agent's events are correctly attributed.
 
 ```python
 import os
@@ -118,20 +123,22 @@ def run_agent_example(project_id: str):
     """Run a LangGraph agent with BigQuery logging."""
 
     dataset_id = "agent_analytics"
-    table_id = "agent_events_v2"
 
-    # 2. Configure the callback handler
+    # 2. Configure the callback handler.
+    # `table_id` defaults to "agent_events"; pass it explicitly only if you
+    # want a different table. The handler creates the table and the
+    # per-event-type `v_*` analytics views on first run.
     config = BigQueryLoggerConfig(
         batch_size=1,
         batch_flush_interval=0.5,
+        custom_tags={"env": "prod", "service": "travel"},  # static tags on every event
     )
 
     handler = BigQueryCallbackHandler(
         project_id=project_id,
         dataset_id=dataset_id,
-        table_id=table_id,
         config=config,
-        graph_name="travel_assistant",  # Enable LangGraph tracking
+        graph_name="travel_assistant",  # used for INVOCATION_* events + root_agent_name
     )
 
     # 3. Create the LLM and agent
@@ -143,13 +150,14 @@ def run_agent_example(project_id: str):
     tools = [get_current_time, get_weather, convert_currency]
     agent = create_agent(llm, tools)
 
-    # 4. Run with graph_context for GRAPH_START/GRAPH_END events
+    # 4. Run with graph_context for INVOCATION_STARTING / INVOCATION_COMPLETED
     query = "What time is it? What's the weather in Tokyo? How much is 100 USD in EUR?"
 
     run_metadata = {
         "session_id": "session-001",
         "user_id": "user-123",
-        "agent": "travel_assistant",
+        # `agent` is optional — when omitted the handler falls back to
+        # metadata['langgraph_node'] for per-sub-agent attribution.
     }
 
     with handler.graph_context("travel_assistant", metadata=run_metadata):
@@ -163,7 +171,11 @@ def run_agent_example(project_id: str):
 
     print(f"Response: {result['messages'][-1].content}")
 
-    # 5. Clean up
+    # 5. Block until pending rows are written (between request boundaries).
+    # Does NOT shut the handler down — subsequent invocations still work.
+    handler.flush(timeout=5.0)
+
+    # 6. Final cleanup at process exit.
     handler.shutdown()
 
 if __name__ == "__main__":
@@ -219,7 +231,7 @@ You can customize the callback handler using `BigQueryLoggerConfig`.
   Whether to log detailed content parts (including GCS references).
 </ParamField>
 
-<ParamField body="table_id" type="str" default="agent_events_v2">
+<ParamField body="table_id" type="str" default="agent_events">
   The default table ID to use if not explicitly provided to the callback handler constructor.
 </ParamField>
 
@@ -229,6 +241,34 @@ You can customize the callback handler using `BigQueryLoggerConfig`.
 
 <ParamField body="queue_max_size" type="int" default="10000">
   The maximum number of events to hold in the internal buffer queue before dropping new events.
+</ParamField>
+
+<ParamField body="skip_internal_chain_events" type="bool" default="False">
+  When `True`, drop `CHAIN_*` events emitted by framework-internal Runnables (`ChannelWrite`, `ChannelRead`, `Branch`, `RunnableLambda`, `RunnableSequence`, `RunnableParallel`, `RunnableAssign`, `RunnablePassthrough`, `RunnableBinding`, `Pregel`, `__start__`, `__end__`). Skipped runs are still registered in the trace registry so child LLM/tool events keep the real graph root as their `trace_id` (no broken traces). Each suppression logs a `DEBUG` line so the heuristic is auditable.
+</ParamField>
+
+<ParamField body="custom_tags" type="dict[str, Any]" default="{}">
+  Static tags written to `attributes.custom_tags` on every event row. Useful for slicing dashboards by deployment, cohort, or experiment (e.g. `{"env": "prod", "agent_role": "sales"}`).
+</ParamField>
+
+<ParamField body="log_session_metadata" type="bool" default="True">
+  When `True`, dumps the user-supplied `RunnableConfig` metadata (minus keys we already promote to first-class columns like `session_id`, `user_id`, `agent`, `langgraph_node`) under `attributes.session_metadata`.
+</ParamField>
+
+<ParamField body="content_formatter" type="Callable[[Any, str], Any]" default="None">
+  Optional `(raw_content, event_type) -> formatted` hook invoked before content parsing. Useful for PII redaction or coercing custom payloads. Failures fall back to raw content with a warning — the formatter cannot break the agent.
+</ParamField>
+
+<ParamField body="auto_schema_upgrade" type="bool" default="True">
+  When `True`, additively `ALTER TABLE ADD COLUMN` any new fields that future versions of this handler add to the events schema. Gated by a `langchain_bq_schema_version` table label so the diff runs at most once per schema version. Never drops, renames, or retypes columns.
+</ParamField>
+
+<ParamField body="create_views" type="bool" default="True">
+  When `True`, automatically `CREATE OR REPLACE` per-event-type analytics views beside the events table. Each view unnests the JSON columns into typed top-level columns (see [Auto-created analytics views](#auto-created-analytics-views) below).
+</ParamField>
+
+<ParamField body="view_prefix" type="str" default="v">
+  Prefix for auto-created view names (`v_llm_request`, `v_tool_completed`, …). Set per-table when several handler instances share one dataset to avoid collisions.
 </ParamField>
 
 The following code sample shows how to define a configuration for the BigQuery callback handler with event filtering:
@@ -263,7 +303,7 @@ The plugin automatically creates the table if it does not exist. However, for pr
 **Recommended DDL:**
 
 ```sql
-CREATE TABLE `your-gcp-project-id.adk_agent_logs.agent_events_v2`
+CREATE TABLE `your-gcp-project-id.adk_agent_logs.agent_events`
 (
   timestamp TIMESTAMP NOT NULL OPTIONS(description="The UTC timestamp when the event occurred."),
   event_type STRING OPTIONS(description="The category of the event."),
@@ -299,6 +339,77 @@ PARTITION BY DATE(timestamp)
 CLUSTER BY event_type, agent, user_id;
 ```
 
+## Auto-created analytics views
+
+When the handler creates the events table, it also creates one
+`CREATE OR REPLACE VIEW` per event type beside it (controlled by
+`create_views`, default `True`). Each view unnests the JSON columns into
+typed top-level columns so analytics queries don't have to spell
+`JSON_VALUE(...)` every time:
+
+```sql
+-- With the auto-view
+SELECT agent, SUM(usage_total_tokens) AS tokens
+FROM `PROJECT.DATASET.v_llm_response`
+GROUP BY agent;
+
+-- Equivalent against the raw table
+SELECT agent,
+       SUM(CAST(JSON_VALUE(attributes, '$.usage.total_tokens') AS INT64)) AS tokens
+FROM `PROJECT.DATASET.agent_events`
+WHERE event_type = 'LLM_RESPONSE'
+GROUP BY agent;
+```
+
+The default view names (configurable via `view_prefix`) and the typed
+columns each one adds on top of the always-included columns:
+
+| View | Extra typed columns |
+|---|---|
+| `v_invocation_starting` | _(none — only the always-included columns)_ |
+| `v_invocation_completed` / `v_invocation_error` | `total_ms` |
+| `v_agent_starting` | `node_name`, `step` |
+| `v_agent_completed` | `node_name`, `step`, `total_ms` |
+| `v_agent_error` | `node_name`, `total_ms` |
+| `v_llm_request` | `model`, `request_content`, `llm_config`, `tools` |
+| `v_llm_response` | `response`, `usage_prompt_tokens`, `usage_completion_tokens`, `usage_total_tokens`, `usage_cached_tokens`, `context_cache_hit_rate`, `total_ms`, `ttft_ms`, `model_version`, `usage_metadata`, `cache_metadata` |
+| `v_llm_error` | `total_ms` |
+| `v_tool_starting` | `tool_name`, `tool_args` |
+| `v_tool_completed` | `tool_name`, `tool_result`, `total_ms` |
+| `v_tool_error` | `tool_name`, `total_ms` |
+| `v_retriever_start` | `query` |
+| `v_retriever_end` / `v_retriever_error` | `total_ms` |
+
+Every view also exposes the always-included columns from the raw table
+(`timestamp`, `event_type`, `agent`, `session_id`, `invocation_id`,
+`user_id`, `trace_id`, `span_id`, `parent_span_id`, `status`,
+`error_message`, `is_truncated`) plus three columns lifted from the
+`attributes` JSON: `root_agent_name`, `custom_tags`, `session_metadata`.
+
+## Auto schema upgrade
+
+Existing tables are auto-upgraded additively when the handler's schema
+gains new columns. The handler reads the table at startup and runs
+`ALTER TABLE ADD COLUMN` for any new fields, gated by a
+`langchain_bq_schema_version` table label so the diff runs at most once
+per schema version. **Never** drops, renames, or retypes columns.
+Disable with `auto_schema_upgrade=False`.
+
+## Sub-agent attribution
+
+For multi-agent LangGraph deployments, the `agent` BigQuery column is
+auto-derived from this fallback chain:
+
+1. `metadata["agent"]` — explicit user-supplied value (highest priority)
+2. `metadata["langgraph_node"]` — the active LangGraph node, so each
+   sub-agent's events are tagged with the node name
+3. `metadata["checkpoint_ns"]` — LangGraph checkpoint namespace
+4. `handler.graph_name` — fallback for top-level `INVOCATION_*` events
+
+A multi-agent graph (e.g. supervisor → `TheCritic`, `TheMeteo`, …) thus
+produces telemetry where each event is attributed to the originating
+sub-agent without any user changes.
+
 ## Event types and payloads
 
 The `content` column contains a **JSON** object specific to the `event_type`.
@@ -311,35 +422,59 @@ The `content_parts` column provides a structured view of the content, especially
   - If `gcs_bucket_name` is configured, large content is offloaded to GCS instead of being truncated, and a reference is stored in `content_parts.object_ref`.
 </Note>
 
+<Note>
+  **`content` always carries a `summary` key**
+
+  Every event row's `content` JSON object includes a `summary` string with
+  a human-readable preview of the payload (capped at `max_content_length`).
+  The `summary` is omitted from the per-event tables below to keep the
+  shapes readable, but it is always present on disk.
+</Note>
+
 ### LLM interactions
 
 These events track the raw requests sent to and responses received from the LLM.
 
-| Event Type | Content (JSON) Structure | Attributes (JSON) | Example Content (Simplified) |
-|---|---|---|---|
-| `LLM_REQUEST` | **Chat Model:** `{"messages": [{"content": "..."}]}` **Legacy Model:** `{"prompts": ["..."]}` | `{"tags": ["tag1"], "model": "gemini-2.5-flash"}` | `{"messages": [{"content": "What is the weather?"}]}` |
-| `LLM_RESPONSE` | `"The weather is sunny."` (Stored as JSON string) | `{"usage": {"total_tokens": 20}}` | `"The weather is sunny."` |
-| `LLM_ERROR` | `null` | `{}` | `null` |
+| Event Type | Content (JSON) Structure | Attributes (JSON) |
+|---|---|---|
+| `LLM_REQUEST` | **Chat Model:** `{"messages": [<dumped messages>]}`<br/>**Legacy Model:** `{"prompt": [<prompts>]}` | `{"tags": ["..."], "model": "...", "llm_config": {"temperature": 0.2, ...}, "tools": ["get_weather", ...]}` |
+| `LLM_RESPONSE` | `{"response": "<generation text>"}` | `{"usage": {"prompt_tokens": 100, "completion_tokens": 25, "total_tokens": 125}, "model_version": "gemini-2.5-flash-001", "usage_metadata": {"cached_content_token_count": 30, ...}, "cache_metadata": {...}}` |
+| `LLM_ERROR` | `{"data": null}` (the actual exception text lives in the `error_message` column) | `{}` |
+
+### Sub-agent (LangGraph node) and invocation lifecycle
+
+These events come from LangGraph's node and graph-context lifecycle.
+`agent` is auto-derived from `metadata['langgraph_node']` when no
+explicit `agent` is set, so events are tagged per sub-agent.
+
+| Event Type | Description |
+|---|---|
+| `AGENT_STARTING` / `AGENT_COMPLETED` / `AGENT_ERROR` | A LangGraph node begins / ends / errors |
+| `INVOCATION_STARTING` / `INVOCATION_COMPLETED` / `INVOCATION_ERROR` | Top-level graph invocation begins / ends / errors (emitted by `handler.graph_context()`) |
 
 ### Tool usage
 
-These events track the execution of tools by the agent.
+These events track the execution of tools by the agent. The tool name is
+also surfaced in `attributes.tool_name` and (for the auto-views) as a
+typed `tool_name` column.
 
 | Event Type | Content (JSON) Structure |
 |---|---|
-| `TOOL_STARTING` | **Input String:** `"city='Paris'"` |
-| `TOOL_COMPLETED` | **Output String:** `"25°C, Sunny"` |
-| `TOOL_ERROR` | `"Error: Connection timeout"` |
+| `TOOL_STARTING` | `{"tool": "<name>", "input": "<input string>"}` — e.g. `{"tool": "get_weather", "input": "city='Paris'"}` |
+| `TOOL_COMPLETED` | `{"tool": "<name>", "result": "<output string>"}` — e.g. `{"tool": "get_weather", "result": "25°C, Sunny"}` |
+| `TOOL_ERROR` | `{"data": null}` (the actual exception text lives in the `error_message` column) |
 
-### Chain Execution
+### Chain execution
 
-These events track the start and end of high-level chains/graphs.
+These events fire for non-graph LangChain `Runnable` lifecycles (graph
+invocations and LangGraph nodes use the `INVOCATION_*` / `AGENT_*` events
+listed above instead).
 
 | Event Type | Content (JSON) Structure |
 |---|---|
-| `CHAIN_START` | `{"messages": [...]}` |
-| `CHAIN_END` | `{"output": "..."}` |
-| `CHAIN_ERROR` | `null` (See `error_message` column) |
+| `CHAIN_START` | `{"data": "<JSON-stringified inputs>"}` |
+| `CHAIN_END`  | `{"data": "<JSON-stringified outputs>"}` |
+| `CHAIN_ERROR` | `{"data": null}` (see `error_message` column) |
 
 ### Retriever usage
 
@@ -347,28 +482,30 @@ These events track the execution of retrievers.
 
 | Event Type | Content (JSON) Structure |
 |---|---|
-| `RETRIEVER_START` | **Query String:** `"What is the capital of France?"` |
-| `RETRIEVER_END` | **Documents List:** `[{"page_content": "Paris is the capital...", "metadata": {"source": "wiki"}}]` |
-| `RETRIEVER_ERROR` | `null` (See `error_message` column) |
+| `RETRIEVER_START` | `{"data": "<query string>"}` — e.g. `{"data": "What is the capital of France?"}` |
+| `RETRIEVER_END`   | `{"data": "<JSON-stringified list of documents>"}` |
+| `RETRIEVER_ERROR` | `{"data": null}` (the actual exception text lives in the `error_message` column) |
 
 ### Agent Actions
 
-These events track specific actions taken by the agent.
+These events come from legacy LangChain `AgentExecutor`-style agents
+(`on_agent_action` / `on_agent_finish`). The `data` field contains a
+JSON-serialized string of the action / finish payload.
 
 | Event Type | Content (JSON) Structure |
 |---|---|
-| `AGENT_ACTION` | `{"tool": "Calculator", "input": "2 + 2"}` |
-| `AGENT_FINISH` | `{"output": "The answer is 4"}` |
+| `AGENT_ACTION` | `{"data": "{\"tool\": \"Calculator\", \"input\": \"2 + 2\"}"}` |
+| `AGENT_FINISH` | `{"data": "{\"output\": \"The answer is 4\"}"}` |
 
 ### Other Events
 
 | Event Type | Content (JSON) Structure |
 |---|---|
-| `TEXT` | **Arbitrary Text:** `"Some logging text..."` |
+| `TEXT` | `{"data": "<text>"}` — e.g. `{"data": "Some logging text..."}` |
 
 ## Advanced analysis queries
 
-Once your agent is running and logging events, you can perform power analysis on the `agent_events_v2` table.
+Once your agent is running and logging events, you can perform power analysis on the `agent_events` table.
 
 ### 1. Reconstruct a Trace (Conversation Turn)
 Use the `trace_id` to group all events (Chain, LLM, Tool) belonging to a single execution flow.
@@ -387,7 +524,7 @@ SELECT
   ) AS summary,
   JSON_VALUE(latency_ms, '$.total_ms') AS duration_ms
 FROM
-  `your-gcp-project-id.adk_agent_logs.agent_events_v2`
+  `your-gcp-project-id.adk_agent_logs.agent_events`
 WHERE
     -- Replace with a specific trace_id from your logs
   trace_id = '019bb986-a0db-7da1-802d-2725795ab340'
@@ -405,7 +542,7 @@ SELECT
   AVG(CAST(JSON_VALUE(latency_ms, '$.total_ms') AS FLOAT64)) AS avg_latency_ms,
   SUM(CAST(JSON_VALUE(attributes, '$.usage.total_tokens') AS INT64)) AS total_tokens
 FROM
-  `your-gcp-project-id.adk_agent_logs.agent_events_v2`
+  `your-gcp-project-id.adk_agent_logs.agent_events`
 WHERE
   event_type = 'LLM_RESPONSE'
 GROUP BY
@@ -426,7 +563,7 @@ SELECT
     ('Describe this image briefly. What company logo?', parts.object_ref)
   ) AS generated_result
 FROM
-  `your-gcp-project-id.adk_agent_logs.agent_events_v2` logs,
+  `your-gcp-project-id.adk_agent_logs.agent_events` logs,
   UNNEST(logs.content_parts) AS parts
 WHERE
   parts.mime_type LIKE 'image/%'
@@ -450,7 +587,7 @@ SELECT
     JSON_VALUE(content, '$.tool'),
     'LLM_CALL'
   ) as operation
-FROM `your-gcp-project-id.adk_agent_logs.agent_events_v2`
+FROM `your-gcp-project-id.adk_agent_logs.agent_events`
 WHERE trace_id = 'your-trace-id'
   AND event_type IN ('LLM_RESPONSE', 'TOOL_COMPLETED')
 ORDER BY timestamp ASC;
@@ -467,7 +604,7 @@ SELECT
   part.object_ref.uri AS gcs_uri,
   -- Generate a signed URL to read the content directly (requires connection_id configuration)
   STRING(OBJ.GET_ACCESS_URL(part.object_ref, 'r').access_urls.read_url) AS signed_url
-FROM `your-gcp-project-id.adk_agent_logs.agent_events_v2`,
+FROM `your-gcp-project-id.adk_agent_logs.agent_events`,
 UNNEST(content_parts) AS part
 WHERE part.storage_mode = 'GCS_REFERENCE'
 ORDER BY timestamp DESC
@@ -493,27 +630,29 @@ SELECT
   ) AS events,
   STRING_AGG(
       CASE
-          WHEN event_type = 'USER_MESSAGE_RECEIVED' THEN CONCAT('User: ', JSON_VALUE(content, '$.input'))
-          WHEN event_type = 'LLM_RESPONSE' THEN CONCAT('Agent: ', JSON_VALUE(content, '$.text'))
-          WHEN event_type = 'TOOL_STARTING' THEN CONCAT('SYS: Calling ', JSON_VALUE(content, '$.tool_name'))
-          WHEN event_type = 'TOOL_COMPLETED' THEN CONCAT('SYS: Result from ', JSON_VALUE(content, '$.tool_name'))
-          WHEN event_type = 'TOOL_ERROR' THEN CONCAT('SYS: ERROR in ', JSON_VALUE(content, '$.tool_name'))
+          -- LLM_REQUEST carries the user's prompt under content.messages
+          WHEN event_type = 'LLM_REQUEST' THEN CONCAT('User: ', JSON_VALUE(content, '$.summary'))
+          WHEN event_type = 'LLM_RESPONSE' THEN CONCAT('Agent: ', JSON_VALUE(content, '$.summary'))
+          WHEN event_type = 'TOOL_STARTING' THEN CONCAT('SYS: Calling ', JSON_VALUE(content, '$.tool'))
+          WHEN event_type = 'TOOL_COMPLETED' THEN CONCAT('SYS: Result from ', JSON_VALUE(content, '$.tool'))
+          WHEN event_type = 'TOOL_ERROR' THEN CONCAT('SYS: ERROR in ', JSON_VALUE(content, '$.tool'))
           ELSE NULL
       END,
       '\n' ORDER BY timestamp ASC
   ) AS full_conversation
 FROM
-  `your-project.your-dataset.agent_events_v2`
+  `your-project.your-dataset.agent_events`
 GROUP BY
   session_id, user_id;
 
 -- 2. Tool Usage Analysis
--- Extract tool names and count execution status
+-- Extract tool names from content (the auto-view `v_tool_completed`
+-- exposes `tool_name` directly if you'd rather skip the JSON_VALUE).
 SELECT
-  JSON_VALUE(content, '$.tool_name') AS tool_name,
+  JSON_VALUE(content, '$.tool') AS tool_name,
   event_type,
   COUNT(*) as count
-FROM `your-project.your-dataset.agent_events_v2`
+FROM `your-project.your-dataset.agent_events`
 WHERE event_type IN ('TOOL_STARTING', 'TOOL_COMPLETED', 'TOOL_ERROR')
 GROUP BY 1, 2
 ORDER BY tool_name, event_type;
@@ -526,7 +665,7 @@ SELECT
   SUM(LENGTH(TO_JSON_STRING(content))) / 4 AS estimated_tokens,
   -- Example cost: $0.0001 per 1k tokens
   ROUND((SUM(LENGTH(TO_JSON_STRING(content))) / 4) / 1000 * 0.0001, 6) AS estimated_cost_usd
-FROM `your-project.your-dataset.agent_events_v2`
+FROM `your-project.your-dataset.agent_events`
 GROUP BY session_id
 ORDER BY estimated_cost_usd DESC
 LIMIT 5;
@@ -578,16 +717,16 @@ In addition to standard LangChain events, the callback handler automatically det
 
 | Event Type | Description |
 |---|---|
-| `NODE_STARTING` | Emitted when a LangGraph node begins execution |
-| `NODE_COMPLETED` | Emitted when a LangGraph node completes successfully |
-| `NODE_ERROR` | Emitted when a LangGraph node fails |
-| `GRAPH_START` | Emitted when a graph execution begins (via context manager) |
-| `GRAPH_END` | Emitted when a graph execution completes |
-| `GRAPH_ERROR` | Emitted when a graph execution fails |
+| `AGENT_STARTING` | Emitted when a LangGraph node begins execution |
+| `AGENT_COMPLETED` | Emitted when a LangGraph node completes successfully |
+| `AGENT_ERROR` | Emitted when a LangGraph node fails |
+| `INVOCATION_STARTING` | Emitted when a graph execution begins (via context manager) |
+| `INVOCATION_COMPLETED` | Emitted when a graph execution completes |
+| `INVOCATION_ERROR` | Emitted when a graph execution fails |
 
 ### Graph context manager
 
-Use the `graph_context()` method to explicitly mark graph execution boundaries. This enables `GRAPH_START` and `GRAPH_END` events with accurate latency measurements:
+Use the `graph_context()` method to explicitly mark graph execution boundaries. This enables `INVOCATION_STARTING` and `INVOCATION_COMPLETED` events with accurate latency measurements:
 
 ```python
 from langchain.agents import create_agent
@@ -601,14 +740,14 @@ from langchain_google_community.callbacks.bigquery_callback import (
 handler = BigQueryCallbackHandler(
     project_id="your-project-id",
     dataset_id="agent_analytics",
-    table_id="agent_events_v2",
+    table_id="agent_events",
     graph_name="my_agent",
 )
 
 # Create your agent
 agent = create_agent(llm, tools)
 
-# Use the graph context manager for proper GRAPH_START/GRAPH_END events
+# Use the graph context manager for proper INVOCATION_STARTING/INVOCATION_COMPLETED events
 run_metadata = {
     "session_id": "session-123",
     "user_id": "user-456",
@@ -637,9 +776,9 @@ SELECT
     COUNT(*) as count,
     ROUND(AVG(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64)), 2) as avg_latency_ms,
     ROUND(APPROX_QUANTILES(CAST(JSON_EXTRACT_SCALAR(latency_ms, '$.total_ms') AS FLOAT64), 100)[OFFSET(95)], 2) as p95_latency_ms
-FROM `your-project.your-dataset.agent_events_v2`
+FROM `your-project.your-dataset.agent_events`
 WHERE DATE(timestamp) = CURRENT_DATE()
-  AND event_type IN ('LLM_RESPONSE', 'TOOL_COMPLETED', 'GRAPH_END')
+  AND event_type IN ('LLM_RESPONSE', 'TOOL_COMPLETED', 'INVOCATION_COMPLETED')
 GROUP BY event_type, agent
 ORDER BY avg_latency_ms DESC;
 ```
@@ -661,8 +800,8 @@ config = BigQueryLoggerConfig(
         "LLM_ERROR",
         "TOOL_COMPLETED",
         "TOOL_ERROR",
-        "GRAPH_END",
-        "GRAPH_ERROR",
+        "INVOCATION_COMPLETED",
+        "INVOCATION_ERROR",
     ],
 )
 

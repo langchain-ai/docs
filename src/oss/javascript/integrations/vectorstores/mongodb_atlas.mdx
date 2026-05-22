@@ -1,6 +1,6 @@
 ---
-title: "MongoDB atlas integration"
-description: "Integrate with the MongoDB atlas vector store using LangChain JavaScript."
+title: "MongoDB Atlas integration"
+description: "Integrate with the MongoDB Atlas vector store using LangChain JavaScript."
 ---
 
 <Tip>
@@ -12,7 +12,6 @@ You can still create API routes that use MongoDB with Next.js by setting the `ru
 
 For more information, see [Edge runtimes in the Next.js documentation](https://nextjs.org/docs/app/building-your-application/rendering/edge-and-nodejs-runtimes).
 </Tip>
-```
 
 This guide provides a quick overview for getting started with MongoDB Atlas [vector stores](/oss/integrations/vectorstores). For detailed documentation of all `MongoDBAtlasVectorSearch` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-mongodb/MongoDBAtlasVectorSearch).
 
@@ -34,52 +33,106 @@ To create a MongoDB Atlas cluster, navigate to the [MongoDB Atlas website](https
 
 Create and name a cluster when prompted, then find it under `Database`. Select `Browse Collections` and create either a blank collection or one from the provided sample data.
 
-**Note:** The cluster created must be MongoDB 7.0 or higher.
+**Note:** The cluster must be MongoDB 7.0 or higher for manual embedding mode. Automated embedding mode requires [MongoDB 8.2 or higher](https://www.mongodb.com/docs/atlas/atlas-vector-search/crud-embeddings/create-embeddings-automatic/?interface=driver&language=nodejs).
 
-### Creating an Index
+### Creating a Vector Search Index
 
-After configuring your cluster, you'll need to create an index on the collection field you want to search over.
+After configuring your cluster, create a vector search index on your collection. You can do this either on [Atlas](https://www.mongodb.com/docs/atlas/atlas-vector-search/tutorials/vector-search-quick-start/), [Compass](https://www.mongodb.com/docs/compass/indexes/create-vector-search-index/), or [MongoDB Shell](https://www.mongodb.com/docs/atlas/atlas-vector-search/tutorials/vector-search-quick-start/?deployment-type=atlas&embedding=byo&interface=mongosh). The index definition depends on which embedding mode you use.
 
-Switch to the `Atlas Search` tab and click `Create Search Index`. From there, make sure you select `Atlas Vector Search - JSON Editor`, then select the appropriate database and collection and paste the following into the textbox:
+**Manual embedding** (MongoDB 7.0+): you embed documents client-side and store the vectors in a field. Use the following definition, adjusting `numDimensions` to match your embeddings model.
 
 ```json
 {
-  "fields": [
-    {
-      "numDimensions": 1536,
-      "path": "embedding",
-      "similarity": "euclidean",
-      "type": "vector"
-    }
-  ]
+  "name": "index_name",
+  "type": "vectorSeach",
+  "definition": {
+    "fields": [
+      {
+        "numDimensions": 1536,
+        "path": "embedding",
+        "similarity": "euclidean",
+        "type": "vector"
+      }
+    ]
+  }
 }
 ```
 
-Note that the dimensions property should match the dimensionality of the embeddings you are using. For example, Cohere embeddings have 1024 dimensions, and by default OpenAI embeddings have 1536:
+**Automated embedding** (MongoDB 8.2+): MongoDB generates embeddings server-side using [Voyage AI models](https://www.mongodb.com/products/platform/ai-search-and-retrieval/models). Use the `autoEmbed` field type and specify the model:
 
-Note: By default the vector store expects an index name of default, an indexed collection field name of embedding, and a raw text field name of text. You should initialize the vector store with field names matching your index name collection schema as shown below.
+```json
+{
+  "name": "index_name",
+  "type": "vectorSeach",
+  "definition": {
+    "fields": [
+      {
+        "type": "autoEmbed",
+        "modality": "text",
+        "path": "textContent",
+        "model": "voyage-4"
+      }
+    ]
+  }
+}
+```
 
-Finally, proceed to build the index.
+By default, the vector store reads from a text field named `text` and (in manual mode) writes vectors to a field named `embedding`. Set `textKey` and `embeddingKey` to match your index.
+
+```typescript
+const vectorStore = new MongoDBAtlasVectorSearch(
+  embeddings,                  // omit in auto embedding mode
+  {
+    collection,
+    indexName: "index_name",
+    textKey: "textContent",    // document field where raw text is stored
+    embeddingKey: "embedding", // matches "path" (omit in auto embedding mode)
+  }
+);
+```
+
+Proceed to build the index.
 
 ### Embeddings
 
-This guide will also use [OpenAI embeddings](/oss/integrations/embeddings/openai), which require you to install the `@langchain/openai` integration package. You can also use [other supported embeddings models](/oss/integrations/embeddings) if you wish.
+In **manual embedding mode**, you provide an embeddings model and embed documents client-side. This guide uses [OpenAI embeddings](/oss/integrations/embeddings/openai) as an example. You can also use [other supported embeddings models](/oss/integrations/embeddings).
+
+In **automated embedding mode**, MongoDB Atlas handles embedding generation server-side. No client-side embeddings package is required.
 
 ### Installation
 
-Install the following packages:
+<Tabs>
+  <Tab title="Manual embedding">
+    Install the core package plus an embeddings provider:
 
-<CodeGroup>
-```bash npm
-npm install @langchain/mongodb mongodb @langchain/openai @langchain/core
-```
-```bash yarn
-yarn add @langchain/mongodb mongodb @langchain/openai @langchain/core
-```
-```bash pnpm
-pnpm add @langchain/mongodb mongodb @langchain/openai @langchain/core
-```
-</CodeGroup>
+    <CodeGroup>
+    ```bash npm
+    npm install @langchain/mongodb mongodb @langchain/core @langchain/openai
+    ```
+    ```bash yarn
+    yarn add @langchain/mongodb mongodb @langchain/core @langchain/openai
+    ```
+    ```bash pnpm
+    pnpm add @langchain/mongodb mongodb @langchain/core @langchain/openai
+    ```
+    </CodeGroup>
+  </Tab>
+  <Tab title="Automated embedding">
+    Only the core package and MongoDB driver are required:
+
+    <CodeGroup>
+    ```bash npm
+    npm install @langchain/mongodb mongodb @langchain/core
+    ```
+    ```bash yarn
+    yarn add @langchain/mongodb mongodb @langchain/core
+    ```
+    ```bash pnpm
+    pnpm add @langchain/mongodb mongodb @langchain/core
+    ```
+    </CodeGroup>
+  </Tab>
+</Tabs>
 
 ### Credentials
 
@@ -87,15 +140,17 @@ Once you've done the above, set the `MONGODB_ATLAS_URI` environment variable fro
 
 ```typescript
 process.env.MONGODB_ATLAS_URI = "your-atlas-URL";
-process.env.MONGODB_ATLAS_COLLECTION_NAME = "your-atlas-db-name";
+process.env.MONGODB_ATLAS_COLLECTION_NAME = "your-atlas-collection-name";
 process.env.MONGODB_ATLAS_DB_NAME = "your-atlas-db-name";
 ```
 
-If you are using OpenAI embeddings for this guide, you'll need to set your OpenAI key as well:
+If you are using manual embedding mode with OpenAI, set your OpenAI key as well:
 
 ```typescript
 process.env.OPENAI_API_KEY = "YOUR_API_KEY";
 ```
+
+In automated embedding mode, no additional API key is required — MongoDB Atlas handles embedding generation using the model configured in your index.
 
 If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/home) API key by uncommenting below:
 
@@ -106,28 +161,53 @@ If you want to get automated tracing of your model calls you can also set your [
 
 ## Instantiation
 
-Once you've set up your cluster as shown above, you can initialize your vector store as follows:
+Once you've set up your cluster and index, initialize your vector store. The constructor accepts two forms depending on whether you use manual or automated embedding.
 
-```typescript
-import { MongoDBAtlasVectorSearch } from "@langchain/mongodb";
-import { OpenAIEmbeddings } from "@langchain/openai";
-import { MongoClient } from "mongodb";
+<Tabs>
+  <Tab title="Manual embedding">
+    Pass an embeddings instance as the first argument:
 
-const client = new MongoClient(process.env.MONGODB_ATLAS_URI || "");
-const collection = client.db(process.env.MONGODB_ATLAS_DB_NAME)
-  .collection(process.env.MONGODB_ATLAS_COLLECTION_NAME);
+    ```typescript
+    import { MongoDBAtlasVectorSearch } from "@langchain/mongodb";
+    import { OpenAIEmbeddings } from "@langchain/openai";
+    import { MongoClient } from "mongodb";
 
-const embeddings = new OpenAIEmbeddings({
-  model: "text-embedding-3-small",
-});
+    const client = new MongoClient(process.env.MONGODB_ATLAS_URI!);
+    const collection = client
+      .db(process.env.MONGODB_ATLAS_DB_NAME)
+      .collection(process.env.MONGODB_ATLAS_COLLECTION_NAME);
 
-const vectorStore = new MongoDBAtlasVectorSearch(embeddings, {
-  collection: collection,
-  indexName: "vector_index", // The name of the Atlas search index. Defaults to "default"
-  textKey: "text", // The name of the collection field containing the raw content. Defaults to "text"
-  embeddingKey: "embedding", // The name of the collection field containing the embedded text. Defaults to "embedding"
-});
-```
+    const embeddings = new OpenAIEmbeddings({
+      model: "text-embedding-3-small",
+    });
+
+    const vectorStore = new MongoDBAtlasVectorSearch(embeddings, {
+      collection,
+      indexName: "vector_index", // Defaults to "default"
+      textKey: "text",           // Defaults to "text"
+      embeddingKey: "embedding", // Defaults to "embedding"
+    });
+    ```
+  </Tab>
+  <Tab title="Automated embedding">
+    Pass only the configuration object (no embeddings argument is needed).
+
+    ```typescript
+    import { MongoDBAtlasVectorSearch } from "@langchain/mongodb";
+    import { MongoClient } from "mongodb";
+
+    const client = new MongoClient(process.env.MONGODB_ATLAS_URI!);
+    const collection = client
+      .db(process.env.MONGODB_ATLAS_DB_NAME)
+      .collection(process.env.MONGODB_ATLAS_COLLECTION_NAME);
+
+    const vectorStore = new MongoDBAtlasVectorSearch({
+      collection,
+      indexName: "default", // Must match the index name in your Atlas cluster
+    });
+    ```
+  </Tab>
+</Tabs>
 
 ## Manage vector store
 
@@ -163,11 +243,9 @@ const documents = [document1, document2, document3, document4];
 await vectorStore.addDocuments(documents, { ids: ["1", "2", "3", "4"] });
 ```
 
-```python
-[ '1', '2', '3', '4' ]
-```
-
-**Note:** After adding documents, there is a slight delay before they become queryable.
+<Note>
+After adding documents, there is a delay before they become queryable. In automated embedding mode this delay is longer because MongoDB must generate embeddings server-side after insertion. Wait until the Atlas search index reports that documents are indexed before querying.
+</Note>
 
 Adding a document with the same `id` as an existing document will update the existing one.
 
