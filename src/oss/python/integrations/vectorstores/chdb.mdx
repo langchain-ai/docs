@@ -1,0 +1,288 @@
+---
+title: "chDB integration"
+description: "Integrate with the chDB vector store using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the chDB [vector store](/oss/integrations/vectorstores#overview). For the full list of `ChDBVectorStore` features, parameters, and configurations, head to the [`langchain-chdb` repository](https://github.com/chdb-io/langchain-chdb).
+
+[chDB](https://github.com/chdb-io/chdb) is an in-process OLAP SQL engine powered by ClickHouse. The `langchain-chdb` package wraps a local chDB session as a LangChain `VectorStore`, with ClickHouse SQL available for analytical agent workflows alongside retrieval.
+
+## Setup
+
+To access the chDB vector store, install the `langchain-chdb` integration package. No external service or API key is required—the engine runs in the same process as your application.
+
+### Credentials
+
+chDB itself does not require credentials. To enable automated <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```python Enable tracing icon="flask"
+import getpass
+import os
+
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The LangChain chDB integration lives in the `langchain-chdb` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-chdb
+    ```
+    ```python uv
+    uv add langchain-chdb
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+`ChDBVectorStore` accepts any LangChain `Embeddings` implementation. The examples below use a small deterministic embedder so they run without network access or API keys; substitute your production embedder (OpenAI, Cohere, Hugging Face, etc.) when wiring this into a real application.
+
+```python Define an embedder icon="cog"
+import random
+from langchain.embeddings import Embeddings
+
+class LocalEmbedder(Embeddings):
+    """Deterministic 8-dim embedder for offline docs / smoke tests."""
+    DIM = 8
+
+    def embed_documents(self, texts):
+        return [self._embed(t) for t in texts]
+
+    def embed_query(self, text):
+        return self._embed(text)
+
+    def _embed(self, text):
+        rng = random.Random(text)
+        return [rng.gauss(0.0, 1.0) for _ in range(self.DIM)]
+
+embeddings = LocalEmbedder()
+```
+
+```python Initialize vector store icon="database"
+from langchain_chdb import ChDBVectorStore, DistanceStrategy
+
+vector_store = ChDBVectorStore(
+    embedding=embeddings,
+    database=":memory:",                 # or a local filesystem path for persistence
+    embedding_dimension=LocalEmbedder.DIM,
+    distance_strategy=DistanceStrategy.COSINE,
+)
+```
+
+The constructor short alias `ChDB = ChDBVectorStore` is also exported for brevity.
+
+---
+
+## Manage vector store
+
+### Add items
+
+```python Add documents icon="folder-plus"
+from langchain_core.documents import Document
+
+document_1 = Document(page_content="foo", metadata={"source": "https://example.com"})
+document_2 = Document(page_content="bar", metadata={"source": "https://example.com"})
+document_3 = Document(page_content="baz", metadata={"source": "https://another-example.com"})
+
+vector_store.add_documents(
+    documents=[document_1, document_2, document_3],
+    ids=["1", "2", "3"],
+)
+```
+
+### Update items
+
+`ChDBVectorStore` does not have a separate `update_documents` method—re-adding with the same id is an idempotent upsert. Internally each write does `DELETE WHERE id IN (...) SETTINGS mutations_sync = 1` followed by `INSERT`, so a subsequent read sees the new value immediately.
+
+```python Update via re-add icon="pencil"
+updated = Document(
+    page_content="qux",
+    metadata={"source": "https://another-example.com"},
+)
+vector_store.add_documents(documents=[updated], ids=["1"])
+```
+
+### Delete items
+
+```python Delete documents by IDs icon="trash"
+vector_store.delete(ids=["3"])
+```
+
+The delete is synchronous (`mutations_sync = 1`), so any subsequent `get_by_ids` or `similarity_search` from the same instance sees the removal immediately.
+
+---
+
+## Query vector store
+
+### Directly
+
+```python Similarity search icon="folders"
+results = vector_store.similarity_search(
+    query="thud", k=2,
+)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+### With metadata filters
+
+The metadata filter DSL is a whitelist of operators: `$in`, `$gt`, `$gte`, `$lt`, `$lte`, `$ne`, `$and`, `$or`, `$not`. Unknown operators raise `ValueError` before any SQL is emitted.
+
+```python Filtered search icon="filter"
+results = vector_store.similarity_search(
+    query="thud",
+    k=10,
+    filter={"source": {"$in": ["https://example.com"]}},
+)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+### With scores
+
+`similarity_search_with_score` returns the raw chDB distance—smaller is closer for `COSINE` / `EUCLIDEAN`, larger is closer for `MAX_INNER_PRODUCT`.
+
+```python Similarity search with raw scores icon="star-half"
+results = vector_store.similarity_search_with_score(query="thud", k=2)
+for doc, score in results:
+    print(f"* [dist={score:.4f}] {doc.page_content} [{doc.metadata}]")
+```
+
+### With relevance scores
+
+`similarity_search_with_relevance_scores` returns a strategy-specific `[0, 1]` relevance—larger is more relevant for every strategy. Optional `score_threshold` filters out pairs below the cutoff.
+
+```python Relevance-scored search icon="star"
+results = vector_store.similarity_search_with_relevance_scores(
+    query="thud", k=5, score_threshold=0.3,
+)
+for doc, score in results:
+    print(f"* [relevance={score:.4f}] {doc.page_content}")
+```
+
+### By vector
+
+```python Search by precomputed vector icon="vector-square"
+query_vec = embeddings.embed_query("thud")
+results = vector_store.similarity_search_by_vector(query_vec, k=2)
+for doc in results:
+    print(f"* {doc.page_content}")
+```
+
+### Async usage
+
+Every read/write method has an `a`-prefixed async counterpart. The async variants dispatch the blocking chDB call via `asyncio.to_thread`.
+
+```python Async similarity search icon="bolt"
+import asyncio
+
+async def main():
+    results = await vector_store.asimilarity_search("thud", k=2)
+    for doc in results:
+        print(f"* {doc.page_content}")
+
+asyncio.run(main())
+```
+
+### As a retriever
+
+```python Use as retriever icon="robot"
+retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+retriever.invoke("thud")
+```
+
+---
+
+## Persistence
+
+`":memory:"` keeps the table only for the lifetime of the Python process. Pass a local filesystem path to persist data across process restarts. The `database` parameter accepts `":memory:"` or a local filesystem path; chDB SQL table functions like `s3()` or `remoteSecure()` are SQL sources inside queries, not values for this parameter.
+
+<Note>
+chDB initializes a single in-process engine on first use and binds it to that path for the rest of the process lifetime. The rest of this page uses `":memory:"`, so each snippet below is a **complete standalone script** that defines its own embedder and runs as its own Python process.
+</Note>
+
+```python Write to a file-backed store icon="floppy-disk"
+import random
+from langchain_core.documents import Document
+from langchain.embeddings import Embeddings
+from langchain_chdb import ChDBVectorStore
+
+
+class LocalEmbedder(Embeddings):
+    DIM = 8
+
+    def embed_documents(self, texts):
+        return [self._embed(t) for t in texts]
+
+    def embed_query(self, text):
+        return self._embed(text)
+
+    def _embed(self, text):
+        rng = random.Random(text)
+        return [rng.gauss(0.0, 1.0) for _ in range(self.DIM)]
+
+
+persistent = ChDBVectorStore(
+    embedding=LocalEmbedder(),
+    database="./chdb-store",              # on-disk chDB session
+    embedding_dimension=LocalEmbedder.DIM,
+)
+persistent.add_documents(
+    [Document(page_content="alpha", metadata={"source": "demo"})],
+    ids=["a"],
+)
+persistent.close()
+```
+
+Launch a new Python process and point `ChDBVectorStore` at the same path. Prior rows are readable through the public API alone:
+
+```python Reopen in a fresh process icon="folder-open"
+import random
+from langchain.embeddings import Embeddings
+from langchain_chdb import ChDBVectorStore
+
+
+class LocalEmbedder(Embeddings):
+    DIM = 8
+
+    def embed_documents(self, texts):
+        return [self._embed(t) for t in texts]
+
+    def embed_query(self, text):
+        return self._embed(text)
+
+    def _embed(self, text):
+        rng = random.Random(text)
+        return [rng.gauss(0.0, 1.0) for _ in range(self.DIM)]
+
+
+reopened = ChDBVectorStore(
+    embedding=LocalEmbedder(),
+    database="./chdb-store",
+    embedding_dimension=LocalEmbedder.DIM,
+)
+print(reopened.get_by_ids(["a"]))
+```
+
+The reopen path probes `system.tables` on first read, so the table is recognized without manual setup.
+
+---
+
+## chDB-specific notes
+
+- <Icon icon="ruler" size={16}/> **Distance strategies.** `DistanceStrategy.COSINE` (`cosineDistance`), `EUCLIDEAN` (`L2Distance`), and `MAX_INNER_PRODUCT` (`dotProduct`) map to the chDB scalar distance functions.
+- <Icon icon="tags" size={16}/> **Vector search shape.** The current release performs exact vector search with chDB / ClickHouse distance functions. ClickHouse vector-similarity index support will be added in the next release.
+- <Icon icon="filter" size={16}/> **Filter DSL is a whitelist.** Unsupported operators or invalid identifiers raise `ValueError` before any SQL reaches chDB.
+- <Icon icon="server" size={16}/> **Federation in broader chDB SQL workflows.** chDB SQL supports the `remoteSecure()` table function for joining against remote ClickHouse clusters. This `VectorStore` page does not exercise that path; combining the vector table with remote sources is a separate SQL workflow on top of the same chDB engine (for example via the `langchain-chdb[sql]` extra and `SQLDatabaseToolkit`).
+- <Icon icon="database" size={16}/> **One backing table per store.** A `ChDBVectorStore` maps to a single `MergeTree` table sorted by `id`. Idempotent upsert is implemented as synchronous `DELETE` then `INSERT`; an append-only / `ReplacingMergeTree` variant is planned for the next release.
+
+---
+
+## API reference
+
+For detailed documentation of `ChDBVectorStore` features and configurations, head to the [`langchain-chdb` repository](https://github.com/chdb-io/langchain-chdb).
