@@ -1,0 +1,152 @@
+---
+title: "Auxen integration"
+description: "Integrate with Auxen dedicated LLM endpoints using LangChain Python."
+---
+
+[Auxen](https://auxen.ai) hosts per-customer dedicated LLM endpoints (Llama 3.1/3.2, Qwen 2.5, Mistral, Gemma 2, Mixtral, Phi-3, Command R) on stable HTTPS URLs with an OpenAI-compatible `/v1/chat/completions` API. Each instance is a dedicated GPU billed per-minute of runtime, not per token.
+
+Since Auxen instances are OpenAI-wire-compatible, the integration uses @[`ChatOpenAI`] with a custom `base_url` and a per-instance bearer token. No dedicated package is required.
+
+<Tip>
+    **Auxen is OpenAI-compatible.** Models in the catalog (e.g. Llama 3.1, Qwen 2.5, Mistral Nemo) implement the OpenAI Chat Completions schema directly. Standard features (tool calling, structured output, streaming, system messages) work out of the box; provider-specific non-standard response fields are not surfaced.
+</Tip>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support |
+| :--- | :--- | :---: | :---: |
+| @[`ChatOpenAI`] (with `base_url`) | @[`langchain-openai`] | beta | ✅ |
+
+### Model features
+
+Features depend on the model your Auxen instance is serving. Most tool-calling-trained open-source models support the following via the OpenAI-compatible wire format:
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+
+## Setup
+
+To use Auxen with LangChain you need an Auxen instance (provisioned from the [Auxen dashboard](https://auxen.ai)) and the `langchain-openai` package.
+
+### Credentials
+
+Provision an instance at [auxen.ai](https://auxen.ai). You will be issued two values:
+
+- A per-instance **base URL** of the form `https://api.auxen.ai/v1/inst_xxx/v1`
+- A per-instance **API key** prefixed `auxk_`
+
+Set these as environment variables:
+
+```python
+import getpass
+import os
+
+if not os.getenv("AUXEN_API_BASE"):
+    os.environ["AUXEN_API_BASE"] = input("Enter your Auxen instance base URL: ")
+if not os.getenv("AUXEN_API_KEY"):
+    os.environ["AUXEN_API_KEY"] = getpass.getpass("Enter your Auxen API key: ")
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```python
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+Auxen reuses the `langchain-openai` package:
+
+```python
+pip install -qU langchain-openai
+```
+
+## Instantiation
+
+Construct @[`ChatOpenAI`] pointed at your Auxen instance:
+
+```python
+import os
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="llama-3.1-8b",
+    base_url=os.environ["AUXEN_API_BASE"],
+    api_key=os.environ["AUXEN_API_KEY"],
+    temperature=0,
+    max_tokens=512,
+)
+```
+
+The `model` argument is the model name your instance is serving (e.g. `llama-3.1-8b`, `qwen2.5-14b`, `mistral-nemo-12b`). Each Auxen instance is provisioned with one model at creation time.
+
+## Invocation
+
+```python
+messages = [
+    ("system", "You are a helpful translator. Translate the user sentence to French."),
+    ("human", "I love programming."),
+]
+ai_msg = llm.invoke(messages)
+print(ai_msg.content)
+```
+
+## Streaming
+
+```python
+for chunk in llm.stream("Say hi in three languages."):
+    print(chunk.content, end="", flush=True)
+```
+
+## Tool calling
+
+Tool-capable models (Llama 3.1/3.2, Qwen 2.5, Mistral Nemo, Mixtral, Command R) accept the standard LangChain tools schema:
+
+```python
+from langchain_core.tools import tool
+
+@tool
+def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    return f"It is sunny in {city}."
+
+llm_with_tools = llm.bind_tools([get_weather])
+result = llm_with_tools.invoke("What's the weather in Toronto?")
+print(result.tool_calls)
+```
+
+## Chaining
+
+```python
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant that {style}."),
+    ("human", "{input}"),
+])
+
+chain = prompt | llm
+response = chain.invoke({"style": "answers concisely", "input": "Why is the sky blue?"})
+print(response.content)
+```
+
+## Catalog
+
+Auxen-hosted models (the `model` argument matches one of these — your instance is provisioned with one at creation):
+
+- `llama-3.1-8b`, `llama-3.1-70b`, `llama-3.2-3b`
+- `qwen2.5-7b`, `qwen2.5-14b`, `qwen2.5-32b`
+- `mistral-7b`, `mistral-nemo-12b`, `mixtral-8x7b`
+- `gemma2-9b`, `phi-3-mini`, `command-r-7b`
+
+## Pricing model
+
+Auxen bills per-minute of dedicated GPU runtime, not per token. See [auxen.ai/pricing](https://auxen.ai/pricing) for hourly rates by model size.
+
+## API reference
+
+Auxen reuses the `langchain-openai` integration. See the @[`ChatOpenAI`] API reference for the full surface.
