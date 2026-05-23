@@ -1,0 +1,172 @@
+---
+title: "Bilig WorkPaper integration"
+description: "Integrate with the Bilig WorkPaper tool using LangChain JavaScript."
+---
+
+[Bilig WorkPaper](https://github.com/proompteng/bilig) is a headless workbook runtime for Node.js services and agent tools. Use it when an agent needs to edit workbook input cells, recalculate formulas, and return proof that the computed output changed before the next step runs.
+
+This guide wraps a WorkPaper calculation as a LangChain tool. The example runs locally and does not require an API key.
+
+## Setup
+
+Install LangChain, Bilig WorkPaper, and Zod:
+
+<CodeGroup>
+```bash npm
+npm install langchain @langchain/core @bilig/workpaper zod
+```
+```bash yarn
+yarn add langchain @langchain/core @bilig/workpaper zod
+```
+```bash pnpm
+pnpm add langchain @langchain/core @bilig/workpaper zod
+```
+</CodeGroup>
+
+## Create a WorkPaper tool
+
+Create a workbook with input cells and a formula output, then expose a tool that writes one input cell and returns recalculation and restore proof.
+
+```typescript
+import { tool } from "@langchain/core/tools";
+import {
+  WorkPaper,
+  createWorkPaperFromDocument,
+  exportWorkPaperDocument,
+  parseWorkPaperDocument,
+  serializeWorkPaperDocument,
+} from "@bilig/workpaper";
+import { z } from "zod";
+
+const workbook = WorkPaper.buildFromSheets({
+  Inputs: [
+    ["Metric", "Value"],
+    ["Units", 40],
+    ["Price", 1200],
+  ],
+  Summary: [
+    ["Metric", "Value"],
+    ["Revenue", "=Inputs!B2*Inputs!B3"],
+  ],
+});
+
+const cellValue = (address: string) => {
+  const parsed = workbook.simpleCellAddressFromString(address);
+  if (parsed === undefined) {
+    throw new Error(`Invalid cell address: ${address}`);
+  }
+
+  const value = workbook.getCellValue(parsed);
+  return typeof value === "object" && value !== null && "value" in value
+    ? value.value
+    : value;
+};
+
+const setWorkPaperInputCell = tool(
+  async ({ target, value }) => {
+    const parsedTarget = workbook.simpleCellAddressFromString(target);
+    if (parsedTarget === undefined) {
+      throw new Error(`Invalid input cell: ${target}`);
+    }
+
+    const editedCell = workbook.simpleCellAddressToString(parsedTarget, {
+      includeSheetName: true,
+    });
+    if (!editedCell.startsWith("Inputs!")) {
+      throw new Error("Only Inputs sheet cells are writable");
+    }
+
+    const beforeRevenue = cellValue("Summary!B2");
+    workbook.setCellContents(parsedTarget, value);
+    const afterRevenue = cellValue("Summary!B2");
+
+    const serialized = serializeWorkPaperDocument(
+      exportWorkPaperDocument(workbook),
+    );
+    const restored = createWorkPaperFromDocument(
+      parseWorkPaperDocument(serialized),
+    );
+
+    try {
+      const restoredRevenueCell = restored.simpleCellAddressFromString("Summary!B2");
+      if (restoredRevenueCell === undefined) {
+        throw new Error("Invalid restored revenue cell");
+      }
+
+      const restoredRevenueValue = restored.getCellValue(restoredRevenueCell);
+      const restoredRevenue =
+        typeof restoredRevenueValue === "object" &&
+        restoredRevenueValue !== null &&
+        "value" in restoredRevenueValue
+          ? restoredRevenueValue.value
+          : restoredRevenueValue;
+
+      return JSON.stringify({
+        editedCell,
+        beforeRevenue,
+        afterRevenue,
+        checks: {
+          computedOutputChanged: beforeRevenue !== afterRevenue,
+          restoredMatchesAfter: restoredRevenue === afterRevenue,
+        },
+      });
+    } finally {
+      restored.dispose();
+    }
+  },
+  {
+    name: "set_workpaper_input_cell",
+    description:
+      "Set one allowed WorkPaper input cell and return recalculated readback proof.",
+    schema: z.object({
+      target: z
+        .string()
+        .describe("Sheet-qualified input cell, for example Inputs!B2"),
+      value: z.number().describe("Numeric input value to write"),
+    }),
+  },
+);
+
+const proof = await setWorkPaperInputCell.invoke({
+  target: "Inputs!B2",
+  value: 48,
+});
+
+console.log(proof);
+workbook.dispose();
+```
+
+The output includes the edited cell, the formula result before and after the input change, and checks that the output changed and survived JSON export/restore.
+
+```json
+{
+  "editedCell": "Inputs!B2",
+  "beforeRevenue": 48000,
+  "afterRevenue": 57600,
+  "checks": {
+    "computedOutputChanged": true,
+    "restoredMatchesAfter": true
+  }
+}
+```
+
+## Use with an agent
+
+Pass `setWorkPaperInputCell` with your other tools when you create an agent:
+
+```typescript
+import { createAgent } from "langchain";
+
+const agent = createAgent({
+  llm,
+  tools: [setWorkPaperInputCell],
+});
+```
+
+Use a WorkPaper tool when workbook shape matters: cell addresses, stored formulas, recalculation, JSON persistence, and readback proof. For a single scalar formula that does not need workbook state, a small function tool is usually simpler.
+
+## Related
+
+- [Tool conceptual guide](/oss/langchain/tools)
+- [Bilig WorkPaper documentation](https://proompteng.github.io/bilig/)
+- [Bilig WorkPaper source](https://github.com/proompteng/bilig)
