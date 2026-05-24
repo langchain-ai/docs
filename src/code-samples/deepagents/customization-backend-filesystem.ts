@@ -3,7 +3,7 @@ import { createDeepAgent, FilesystemBackend } from "deepagents";
 
 // KEEP MODEL
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.1-pro-preview",
+  model: "google_genai:gemini-3.5-flash",
   backend: new FilesystemBackend({ rootDir: ".", virtualMode: true }),
 });
 // :snippet-end:
