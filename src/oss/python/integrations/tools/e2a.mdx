@@ -1,0 +1,208 @@
+---
+title: "e2a integration"
+description: "Integrate with the e2a email gateway for AI agents using LangChain Python."
+---
+
+[e2a](https://e2a.dev) is an authenticated email gateway for AI agents. It gives each agent its own inbox, verifies inbound mail with SPF and DKIM, signs outbound mail with DKIM, and supports human-in-the-loop (HITL) approval on send. The [`@e2a/mcp-server`](https://www.npmjs.com/package/@e2a/mcp-server) package exposes the full e2a tool surface as MCP tools, which load into LangChain via [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com) | Version |
+|:------|:--------| :---: | :---: | :---: |
+| `MultiServerMCPClient` (e2a server) | [`@e2a/mcp-server`](https://www.npmjs.com/package/@e2a/mcp-server) | N/A | ✅ | ![npm](https://img.shields.io/npm/v/@e2a/mcp-server?style=flat-square&label=%20) |
+
+### Tool features
+
+- **Per-agent inboxes**: each agent gets its own addressable email identity, isolated from your personal mailbox.
+- **Verified inbound**: SPF and DKIM checks on every received message, exposed to the LLM as `auth.spf` / `auth.dkim` fields.
+- **HITL on outbound**: optionally hold sends for human approval before they leave your domain.
+- **Two transports**: run the MCP server locally over stdio for laptop dev, or talk to the hosted endpoint at `https://mcp.e2a.dev/mcp` over Streamable HTTP for serverless deployments.
+
+### Available tools
+
+The e2a MCP server exposes 18 tools grouped into four categories.
+
+| Category | Tools |
+|:---------|:------|
+| **Identity** | `whoami`, `list_agents`, `create_agent`, `update_agent`, `delete_agent` |
+| **Messages** | `send_email`, `reply_to_message`, `list_messages`, `get_message`, `get_attachment_data` |
+| **HITL** | `list_pending_messages`, `get_pending_message`, `approve_pending_message`, `reject_pending_message` |
+| **Domains** | `list_domains`, `register_domain`, `verify_domain`, `delete_domain` |
+
+## Setup
+
+### Credentials
+
+You need an e2a API key. Sign up at [e2a.dev](https://e2a.dev) to get one.
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if not os.environ.get("E2A_API_KEY"):
+    os.environ["E2A_API_KEY"] = getpass.getpass("e2a API key:\n")
+
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Anthropic API key:\n")
+```
+
+It's also helpful to set up [LangSmith](/langsmith/home) for tracing:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_TRACING"] = "true"
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+Install the LangChain MCP adapter and a model provider package:
+
+<CodeGroup>
+```python pip
+pip install -U langchain-mcp-adapters langgraph "langchain[anthropic]"
+```
+```python uv
+uv add langchain-mcp-adapters langgraph "langchain[anthropic]"
+```
+</CodeGroup>
+
+For the local stdio transport, you also need Node.js 18+ on the host (the script shells out to `npx -y @e2a/mcp-server`). The hosted transport has no Node requirement.
+
+### Configuration
+
+| Variable | Required | Description |
+|:---------|:--------:|:------------|
+| `E2A_API_KEY` | ✅ | API key from [e2a.dev](https://e2a.dev). |
+| `E2A_AGENT_EMAIL` |  | Default agent inbox. If unset and your account has exactly one agent, the server resolves it automatically at session init. |
+| `E2A_BASE_URL` |  | Override the e2a API base URL (for self-hosted deployments). Defaults to the public e2a API. |
+| `ANTHROPIC_API_KEY` | ✅ | Used by the example agent below; swap for any provider supported by [`init_chat_model`](https://python.langchain.com/docs/how_to/chat_models_universal_init/). |
+
+## Instantiation
+
+Pick the transport that fits your deployment:
+
+- **Local stdio** — `@e2a/mcp-server` runs as a child process via `npx`. Simplest for development; needs a Node toolchain.
+- **Hosted Streamable HTTP** — talk to `https://mcp.e2a.dev/mcp` with a Bearer header. Pick this for serverless runtimes (Cloud Run, Lambda) where spawning a child process per request is awkward, or when you don't want a Node toolchain on the agent host.
+
+### Local (stdio)
+
+```python e2a over stdio icon="terminal"
+import asyncio
+import os
+import sys
+
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+
+SYSTEM_PROMPT = (
+    "You manage email through the e2a tools. Call whoami once to find "
+    "your inbox address. Use list_messages and get_message to read; "
+    "use reply_to_message (not send_email) when replying to an existing "
+    "thread so In-Reply-To and References headers are preserved."
+)
+
+
+def _e2a_env() -> dict[str, str]:
+    env = {"E2A_API_KEY": os.environ["E2A_API_KEY"]}
+    for k in ("E2A_AGENT_EMAIL", "E2A_BASE_URL"):
+        if k in os.environ:
+            env[k] = os.environ[k]
+    return env
+
+
+async def main(prompt: str) -> None:
+    client = MultiServerMCPClient(
+        {
+            "e2a": {
+                "command": "npx",
+                "args": ["-y", "@e2a/mcp-server"],
+                "transport": "stdio",
+                "env": _e2a_env(),
+            },
+        }
+    )
+    tools = await client.get_tools()
+    print(f"Loaded {len(tools)} e2a tools: {', '.join(t.name for t in tools)}\n")
+
+    agent = create_react_agent("anthropic:claude-sonnet-4-6", tools, prompt=SYSTEM_PROMPT)
+    result = await agent.ainvoke({"messages": [{"role": "user", "content": prompt}]})
+
+    final = result["messages"][-1]
+    print(getattr(final, "content", final))
+
+
+if __name__ == "__main__":
+    prompt = " ".join(sys.argv[1:]) or "what's in my inbox?"
+    asyncio.run(main(prompt))
+```
+
+### Hosted (Streamable HTTP)
+
+```python e2a over hosted endpoint icon="cloud"
+import asyncio
+import os
+import sys
+from datetime import timedelta
+
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+
+SYSTEM_PROMPT = (
+    "You manage email through the e2a tools. Call whoami once to find "
+    "your inbox address. Use list_messages and get_message to read; "
+    "use reply_to_message (not send_email) when replying to an existing "
+    "thread so In-Reply-To and References headers are preserved."
+)
+
+
+async def main(prompt: str) -> None:
+    client = MultiServerMCPClient(
+        {
+            "e2a": {
+                "transport": "streamable_http",
+                "url": "https://mcp.e2a.dev/mcp",
+                "headers": {
+                    "Authorization": f"Bearer {os.environ['E2A_API_KEY']}",
+                },
+                "timeout": timedelta(seconds=30),
+            },
+        }
+    )
+    tools = await client.get_tools()
+    print(f"Loaded {len(tools)} e2a tools: {', '.join(t.name for t in tools)}\n")
+
+    agent = create_react_agent("anthropic:claude-sonnet-4-6", tools, prompt=SYSTEM_PROMPT)
+    result = await agent.ainvoke({"messages": [{"role": "user", "content": prompt}]})
+
+    final = result["messages"][-1]
+    print(getattr(final, "content", final))
+
+
+if __name__ == "__main__":
+    prompt = " ".join(sys.argv[1:]) or "what's in my inbox?"
+    asyncio.run(main(prompt))
+```
+
+If your account has exactly one agent, the hosted endpoint auto-resolves it at session init — no `E2A_AGENT_EMAIL` needed. With multiple agents, pass `agent_email` per tool call.
+
+## Invocation
+
+Run either example with a natural-language prompt:
+
+```bash
+python agent.py "what's in my inbox?"
+python agent.py "reply to the most recent message politely"
+python agent.py "send a status update to alice@example.com about the Q3 launch"
+```
+
+`MultiServerMCPClient.get_tools()` returns LangChain `BaseTool` objects — one per MCP tool — so they slot into any LangChain agent or chain unchanged. To swap models, change `"anthropic:claude-sonnet-4-6"` to any provider:model string [`init_chat_model`](https://python.langchain.com/docs/how_to/chat_models_universal_init/) accepts.
+
+## Additional resources
+
+- [MCP server source](https://github.com/Mnexa-AI/e2a/tree/main/mcp) — the `@e2a/mcp-server` implementation, including all 18 tool schemas.
+- [LangChain examples](https://github.com/Mnexa-AI/e2a/tree/main/mcp/examples/langchain) — runnable `agent.py` and `agent_hosted.py` matching the snippets above.
+- [npm package `@e2a/mcp-server`](https://www.npmjs.com/package/@e2a/mcp-server)
+- [Hosted MCP endpoint](https://mcp.e2a.dev/mcp)
+- [e2a.dev](https://e2a.dev) — API keys, dashboard, and full docs.
