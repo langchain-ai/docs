@@ -1,0 +1,131 @@
+---
+title: "Adeu Redlining & Word Tools"
+description: "Integrate with Adeu tools using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the Adeu [tools](/oss/langchain/tools) in LangChain. For a detailed listing of all Adeu features, parameters, and configurations, head to the [Adeu Developer Portal](https://github.com/dealfluence/adeu).
+
+## Overview
+
+Adeu acts as a Virtual DOM for Microsoft Word (.docx) documents, translating complex OpenXML structures into token-efficient Markdown representations with inline CriticMarkup. This allows LLM agents to safely redline documents without damaging layouts, custom XML namespaces, or existing metadata.
+
+### Details
+
+| Class | Package | Serializable | JS Support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [AdeuToolkit](https://reference.langchain.com/python/langchain-core/tools/base/BaseTool) | [langchain-adeu](https://pypi.org/project/langchain-adeu/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-adeu?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-adeu?style=flat-square&label=%20) |
+
+### Features
+
+* **Lossless Translation**: Converts `.docx` documents into clean Markdown on read, and back into native OpenXML on write.
+* **Granular Redlining**: Commits edits as standard tracked changes and comment bubbles using native Microsoft Word nodes (`w:ins`/`w:del`).
+* **Metadata Sanitization**: Strips dangerous hidden tracking fields, rsids, DMS metadata, and template paths before distributing documents.
+* **Fuzzy Anchor Protection**: Automatically protects document boundaries by catching and rejecting ambiguous search-and-replace matches.
+
+---
+
+## Setup
+
+To use the Adeu LangChain tools, you will need to install the `langchain-adeu` integration package.
+
+### Installation
+
+The Adeu integration package resides in `langchain-adeu`:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-adeu
+    ```
+    ```python uv
+    uv add langchain-adeu
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+Instantiate the `AdeuToolkit` to retrieve all five document processing tools:
+
+```python Initialize toolkit
+from langchain_adeu import AdeuToolkit
+
+toolkit = AdeuToolkit()
+tools = toolkit.get_tools()
+```
+
+---
+
+## Invocation
+
+### Directly
+
+You can invoke individual tools directly using a dictionary of standard keyword arguments:
+
+```python Call tool directly
+read_tool = [t for t in tools if t.name == "adeu_read_docx"][0]
+
+# Read document body with active tracked changes visible
+markdown_content = read_tool.invoke({
+    "file_path": "path/to/agreement.docx",
+    "clean_view": False,
+    "mode": "full",
+    "page": 1
+})
+```
+
+### As a ToolCall
+
+The tools can process model-generated `ToolCall` payloads, returning a standard `ToolMessage` carrying both free-form output and detailed programmatic artifacts:
+
+```python ToolCall invocation
+apply_tool = [t for t in tools if t.name == "adeu_apply_changes"][0]
+
+model_generated_tool_call = {
+    "args": {
+        "file_path": "path/to/agreement.docx",
+        "author_name": "Legal Agent",
+        "changes": [
+            {
+                "type": "modify",
+                "target_text": "Governing Law shall be New York.",
+                "new_text": "Governing Law shall be Delaware."
+            }
+        ]
+    },
+    "id": "1",
+    "name": apply_tool.name,
+    "type": "tool_call",
+}
+
+tool_message = apply_tool.invoke(model_generated_tool_call)
+```
+
+### Within an Agent
+
+The tools are ready for integration with tool-calling chat model agents inside LangChain:
+
+```python Agent with tool
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+
+# Initialize a tool-calling LLM
+model = ChatOpenAI(model="anthropic:claude-sonnet-4-6")
+
+# Build the agent
+agent = create_agent(
+    model=model,
+    tools=tools,
+)
+
+# Execute agentic workflow
+response = agent.invoke(
+    {"messages": [{"role": "user", "content": "Analyze agreement.docx and standardize jurisdiction to Delaware."}]}
+)
+```
+
+---
+
+## API Reference
+
+For detailed documentation of all classes, schemas, and configurations, refer to the [langchain-adeu API reference](https://github.com/dealfluence/adeu/tree/main/langchain).
