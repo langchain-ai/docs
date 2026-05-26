@@ -2,6 +2,13 @@
 title: Interrupts
 ---
 
+import LanggraphInterruptsResumeV2Py from '/snippets/code-samples/langgraph-interrupts-resume-v2-py.mdx';
+import LanggraphInterruptsMultiplePy from '/snippets/code-samples/langgraph-interrupts-multiple-py.mdx';
+import LanggraphInterruptsHitlStreamPy from '/snippets/code-samples/langgraph-interrupts-hitl-stream-py.mdx';
+import LanggraphInterruptsApprovalPy from '/snippets/code-samples/langgraph-interrupts-approval-py.mdx';
+import LanggraphInterruptsReviewPy from '/snippets/code-samples/langgraph-interrupts-review-py.mdx';
+import LanggraphInterruptsValidatePy from '/snippets/code-samples/langgraph-interrupts-validate-py.mdx';
+
 Interrupts allow you to pause graph execution at specific points and wait for external input before continuing. This enables human-in-the-loop patterns where you need external input to proceed. When an interrupt is triggered, LangGraph saves the graph state using its [persistence](/oss/langgraph/persistence) layer and waits indefinitely until you resume execution.
 
 Interrupts work by calling the `interrupt()` function at any point in your graph nodes. The function accepts any JSON-serializable value which is surfaced to the caller. When you're ready to continue, you resume execution by re-invoking the graph using `Command`, which then becomes the return value of the `interrupt()` call from inside the node.
@@ -61,7 +68,12 @@ When you call @[`interrupt`], here's what happens:
 
 1. **Graph execution gets suspended** at the exact point where @[`interrupt`] is called
 2. **State is saved** using the checkpointer so execution can be resumed later, In production, this should be a persistent checkpointer (e.g. backed by a database)
+:::python
+3. **Value is returned** to the caller on `result.interrupts` when using `version="v2"` (or under `__interrupt__` with the default v1 invoke API); it can be any JSON-serializable value (string, object, array, etc.)
+:::
+:::js
 3. **Value is returned** to the caller under `__interrupt__`; it can be any JSON-serializable value (string, object, array, etc.)
+:::
 4. **Graph waits indefinitely** until you resume execution with a response
 5. **Response is passed back** into the node when you resume, becoming the return value of the `interrupt()` call
 
@@ -72,23 +84,7 @@ After an interrupt pauses execution, you resume the graph by invoking it again w
 :::python
 <Tabs>
     <Tab title="v2 (LangGraph >= 1.1)">
-    ```python
-    from langgraph.types import Command
-
-    # Initial run - hits the interrupt and pauses
-    # thread_id is the persistent pointer (stores a stable ID in production)
-    config = {"configurable": {"thread_id": "thread-1"}}
-    result = graph.invoke({"input": "data"}, config=config, version="v2")
-
-    # result is a GraphOutput with .value and .interrupts
-    # .interrupts contains the payloads passed to interrupt()
-    print(result.interrupts)
-    # > (Interrupt(value='Do you approve this action?'),)
-
-    # Resume with the human's response
-    # The resume payload becomes the return value of interrupt() inside the node
-    graph.invoke(Command(resume=True), config=config, version="v2")
-    ```
+    <LanggraphInterruptsResumeV2Py />
     </Tab>
     <Tab title="v1 (default)">
     ```python
@@ -170,39 +166,16 @@ The key thing that interrupts unlock is the ability to pause execution and wait 
 
 When building interactive agents with human-in-the-loop workflows, you can stream both message chunks and node updates simultaneously to provide real-time feedback while handling interrupts.
 
-Use multiple stream modes (`"messages"` and `"updates"`) with `subgraphs=True` (if subgraphs are present) to:
+Use multiple stream modes (`"messages"`, `"updates"`, and `"values"`) with `subgraphs=True` (if subgraphs are present) to:
 - Stream AI responses in real-time as they're generated
 - Detect when the graph encounters an interrupt
 - Handle user input and resume execution seamlessly
 
 :::python
-```python
-async for chunk in graph.astream(
-    initial_input,
-    stream_mode=["messages", "updates"],
-    subgraphs=True,
-    config=config,
-    version="v2",
-):
-    if chunk["type"] == "messages":
-        # Handle streaming message content
-        msg, _ = chunk["data"]
-        if isinstance(msg, AIMessageChunk) and msg.content:
-            display_streaming_content(msg.content)
+<LanggraphInterruptsHitlStreamPy />
 
-    elif chunk["type"] == "updates":
-        # Check for interrupts in the updates data
-        if "__interrupt__" in chunk["data"]:
-            interrupt_info = chunk["data"]["__interrupt__"][0].value
-            user_response = get_user_input(interrupt_info)
-            initial_input = Command(resume=user_response)
-            break
-        else:
-            current_node = list(chunk["data"].keys())[0]
-```
-
-- **`version="v2"`**: All chunks are `StreamPart` dicts with `type`, `ns`, and `data` keys
-- **`chunk["type"]`**: Narrow on the stream mode (`"messages"`, `"updates"`, etc.) for type inference
+- **`version="v2"`**: All chunks are `StreamPart` dicts with `type`, `ns`, and `data` keys; pending interrupts appear on `chunk["interrupts"]` for `"values"` parts
+- **`chunk["type"]`**: Narrow on the stream mode (`"messages"`, `"updates"`, `"values"`, etc.) for type inference
 - **`chunk["ns"]`**: Identifies the source graph (empty tuple for root, populated for subgraphs)
 - **`subgraphs=True`**: Required for interrupt detection in nested graphs
 :::
@@ -217,63 +190,7 @@ This ensures each response is paired with the correct interrupt at runtime.
 
 :::python
 
-```python
-from typing import Annotated, TypedDict
-import operator
-
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.graph import START, END, StateGraph
-from langgraph.types import Command, interrupt
-
-
-class State(TypedDict):
-    vals: Annotated[list[str], operator.add]
-
-
-def node_a(state):
-    answer = interrupt("question_a")
-    return {"vals": [f"a:{answer}"]}
-
-
-def node_b(state):
-    answer = interrupt("question_b")
-    return {"vals": [f"b:{answer}"]}
-
-
-graph = (
-    StateGraph(State)
-    .add_node("a", node_a)
-    .add_node("b", node_b)
-    .add_edge(START, "a")
-    .add_edge(START, "b")
-    .add_edge("a", END)
-    .add_edge("b", END)
-    .compile(checkpointer=InMemorySaver())
-)
-
-config = {"configurable": {"thread_id": "1"}}
-
-# Step 1: invoke with version="v2" to get typed GraphOutput
-# Both parallel nodes hit interrupt() and pause
-interrupted_result = graph.invoke({"vals": []}, config, version="v2")
-print(interrupted_result.interrupts)
-"""
-(
-    Interrupt(value='question_a', id='bd4f3183600f2c41dddafbf8f0f7be7b'),
-    Interrupt(value='question_b', id='29963e3d3585f0cef025dd0f14323f55'),
-)
-"""
-
-# Step 2: resume all pending interrupts at once
-resume_map = {
-    i.id: f"answer for {i.value}"
-    for i in interrupted_result.interrupts
-}
-result = graph.invoke(Command(resume=resume_map), config, version="v2")
-
-print("Final state:", result.value)
-#> Final state: {'vals': ['a:answer for question_a', 'b:answer for question_b']}
-```
+<LanggraphInterruptsMultiplePy />
 
 :::
 
@@ -402,10 +319,10 @@ const approvalNode: typeof State.Node = (state) => {
 When you resume the graph, pass `True` to approve or `False` to reject:
 ```python
 # To approve
-graph.invoke(Command(resume=True), config=config)
+graph.invoke(Command(resume=True), config=config, version="v2")
 
 # To reject
-graph.invoke(Command(resume=False), config=config)
+graph.invoke(Command(resume=False), config=config, version="v2")
 ```
 :::
 
@@ -423,62 +340,8 @@ await graph.invoke(new Command({ resume: false }), config);
 <Accordion title="Full example">
     :::python
 
-    ```python
-    from typing import Literal, Optional, TypedDict
+    <LanggraphInterruptsApprovalPy />
 
-    from langgraph.checkpoint.memory import MemorySaver
-    from langgraph.graph import StateGraph, START, END
-    from langgraph.types import Command, interrupt
-
-
-    class ApprovalState(TypedDict):
-        action_details: str
-        status: Optional[Literal["pending", "approved", "rejected"]]
-
-
-    def approval_node(state: ApprovalState) -> Command[Literal["proceed", "cancel"]]:
-        # Expose details so the caller can render them in a UI
-        decision = interrupt({
-            "question": "Approve this action?",
-            "details": state["action_details"],
-        })
-
-        # Route to the appropriate node after resume
-        return Command(goto="proceed" if decision else "cancel")
-
-
-    def proceed_node(state: ApprovalState):
-        return {"status": "approved"}
-
-
-    def cancel_node(state: ApprovalState):
-        return {"status": "rejected"}
-
-
-    builder = StateGraph(ApprovalState)
-    builder.add_node("approval", approval_node)
-    builder.add_node("proceed", proceed_node)
-    builder.add_node("cancel", cancel_node)
-    builder.add_edge(START, "approval")
-    builder.add_edge("proceed", END)
-    builder.add_edge("cancel", END)
-
-    # Use a more durable checkpointer in production
-    checkpointer = MemorySaver()
-    graph = builder.compile(checkpointer=checkpointer)
-
-    config = {"configurable": {"thread_id": "approval-123"}}
-    initial = graph.invoke(
-        {"action_details": "Transfer $500", "status": "pending"},
-        config=config,
-        version="v2",
-    )
-    print(initial.interrupts)  # -> (Interrupt(value={'question': ..., 'details': ...}),)
-
-    # Resume with the decision; True routes to proceed, False to cancel
-    resumed = graph.invoke(Command(resume=True), config=config, version="v2")
-    print(resumed.value["status"])  # -> "approved"
-    ```
     :::
 
     :::js
@@ -578,7 +441,8 @@ When resuming, provide the edited content:
 ```python
 graph.invoke(
     Command(resume="The edited and improved text"),  # Value becomes the return from interrupt()
-    config=config
+    config=config,
+    version="v2",
 )
 ```
 :::
@@ -595,48 +459,8 @@ await graph.invoke(
 <Accordion title="Full example">
     :::python
 
-    ```python
-    import sqlite3
-    from typing import TypedDict
+    <LanggraphInterruptsReviewPy />
 
-    from langgraph.checkpoint.memory import MemorySaver
-    from langgraph.graph import StateGraph, START, END
-    from langgraph.types import Command, interrupt
-
-
-    class ReviewState(TypedDict):
-        generated_text: str
-
-
-    def review_node(state: ReviewState):
-        # Ask a reviewer to edit the generated content
-        updated = interrupt({
-            "instruction": "Review and edit this content",
-            "content": state["generated_text"],
-        })
-        return {"generated_text": updated}
-
-
-    builder = StateGraph(ReviewState)
-    builder.add_node("review", review_node)
-    builder.add_edge(START, "review")
-    builder.add_edge("review", END)
-
-    checkpointer = MemorySaver()
-    graph = builder.compile(checkpointer=checkpointer)
-
-    config = {"configurable": {"thread_id": "review-42"}}
-    initial = graph.invoke({"generated_text": "Initial draft"}, config=config, version="v2")
-    print(initial.interrupts)  # -> (Interrupt(value={'instruction': ..., 'content': ...}),)
-
-    # Resume with the edited text from the reviewer
-    final_state = graph.invoke(
-        Command(resume="Improved draft after review"),
-        config=config,
-        version="v2",
-    )
-    print(final_state.value["generated_text"])  # -> "Improved draft after review"
-    ```
     :::
 
     :::js
@@ -992,51 +816,8 @@ Each time you resume the graph with invalid input, it will ask again with a clea
 <Accordion title="Full example">
     :::python
 
-    ```python
-    import sqlite3
-    from typing import TypedDict
+    <LanggraphInterruptsValidatePy />
 
-    from langgraph.checkpoint.sqlite import SqliteSaver
-    from langgraph.graph import StateGraph, START, END
-    from langgraph.types import Command, interrupt
-
-
-    class FormState(TypedDict):
-        age: int | None
-
-
-    def get_age_node(state: FormState):
-        prompt = "What is your age?"
-
-        while True:
-            answer = interrupt(prompt)  # payload surfaces in result.interrupts (v2)
-
-            if isinstance(answer, int) and answer > 0:
-                return {"age": answer}
-
-            prompt = f"'{answer}' is not a valid age. Please enter a positive number."
-
-
-    builder = StateGraph(FormState)
-    builder.add_node("collect_age", get_age_node)
-    builder.add_edge(START, "collect_age")
-    builder.add_edge("collect_age", END)
-
-    checkpointer = SqliteSaver(sqlite3.connect("forms.db"))
-    graph = builder.compile(checkpointer=checkpointer)
-
-    config = {"configurable": {"thread_id": "form-1"}}
-    first = graph.invoke({"age": None}, config=config, version="v2")
-    print(first.interrupts)  # -> (Interrupt(value='What is your age?', ...),)
-
-    # Provide invalid data; the node re-prompts
-    retry = graph.invoke(Command(resume="thirty"), config=config, version="v2")
-    print(retry.interrupts)  # -> (Interrupt(value="'thirty' is not a valid age...", ...),)
-
-    # Provide valid data; loop exits and state updates
-    final = graph.invoke(Command(resume=30), config=config, version="v2")
-    print(final.value["age"])  # -> 30
-    ```
     :::
 
     :::js
