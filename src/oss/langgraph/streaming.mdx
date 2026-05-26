@@ -6,7 +6,7 @@ import NostreamTagPy from '/snippets/code-samples/nostream-tag-py.mdx';
 import NostreamTagJs from '/snippets/code-samples/nostream-tag-js.mdx';
 
 <Tip>
-**For new applications, use [event streaming](/oss/langgraph/event-streaming).** `graph.stream_events(..., version="v3")` is the recommended in-process streaming API: it returns a run stream with typed projections (`stream.messages`, `stream.values`, `stream.output`, `stream.subgraphs`, `stream.interrupts`, `stream.interrupted`) that you can consume independently — no branching on `stream_mode` chunks required.
+**For new applications, use [event streaming](/oss/langgraph/event-streaming).** `graph.stream_events(..., version="v3")` is the recommended in-process streaming API: it returns a run stream with typed projections (`stream.messages`, `stream.values`, `stream.output`, `stream.subgraphs`, `stream.interrupts`, `stream.interrupted`) that you can consume independently—no branching on `stream_mode` chunks required.
 
 The stream-mode API described on this page remains supported for cases where you need direct access to raw stream-mode output.
 </Tip>
@@ -96,26 +96,63 @@ for await (const chunk of await graph.stream(inputs, {
 Debug streaming events, inspect token-by-token LLM output, and monitor latency with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to get set up.
 </Tip>
 
-:::python
-### Stream output shape
-
-The shape of each chunk yielded by `graph.stream(...)` depends on your options:
-
-- Single stream mode: yields the raw payload (e.g. for `stream_mode="updates"`, a `{node_name: ...}` dict).
-- Multiple stream modes: yields `(mode, data)` tuples.
-- `subgraphs=True`: yields `(namespace, data)` tuples (or `(namespace, mode, data)` with multiple modes).
-
-<Tip>
-For applications that want a single, consistent shape across modes, prefer [event streaming](/oss/langgraph/event-streaming): `graph.stream_events(..., version="v3")` returns a run stream object with typed projections (`stream.messages`, `stream.values`, etc.) and a stable raw event protocol.
-</Tip>
-
-LangGraph also supports an opt-in unified `StreamPart` format on `stream()` by passing `version="v2"`. It is supported but is no longer the recommended path for new code; new applications should use event streaming instead.
-:::
-
 ## Stream modes
 
 :::python
-Pass one or more of the following stream modes as a list to the @[`stream`][CompiledStateGraph.stream] or @[`astream`][CompiledStateGraph.astream] methods:
+LangGraph exposes three in-process streaming APIs. Each uses a different output shape and reference surface:
+
+<Tabs default="Event streaming (v3)">
+<Tab title="Event streaming (v3)">
+
+Recommended for new applications. Call @[`stream_events`][Pregel.stream_events] (or @[`astream_events`][Pregel.astream_events]) with `version="v3"`. See [Event streaming](/oss/langgraph/event-streaming) for full guidance.
+
+```python
+stream = graph.stream_events(inputs, version="v3")
+```
+
+**Output shape:** A run stream object with typed projections. Multiple projections can be read concurrently from one run (for example, `stream.messages` and `stream.values` at the same time). Await final state with `stream.output`.
+
+| Projection | Description |
+| :--------- | :---------- |
+| `stream` | Iterate every protocol event. |
+| `stream.messages` | Chat model messages and token deltas (see [LLM tokens](#llm-tokens)). |
+| `stream.values` | State snapshots after each step (see [Graph state](#graph-state)). |
+| `stream.output` | Final graph output when the run completes. |
+| `stream.subgraphs` | Nested graph runs (see [Subgraph outputs](#subgraph-outputs)). |
+| `stream.interrupts` | Human-in-the-loop interrupt payloads. |
+| `stream.interrupted` | Whether the run paused for human input. |
+| `stream.extensions` | Custom stream transformer projections. |
+
+Underlying Pregel events still use modes such as `updates`, `values`, and `messages`; event streaming routes them through transformers so application code does not branch on raw `stream_mode` chunks.
+
+</Tab>
+<Tab title="stream() v2">
+
+<Note>
+Requires LangGraph >= 1.1. Pass `version="v2"` to @[`stream`][CompiledStateGraph.stream] or @[`astream`][CompiledStateGraph.
+astream] with one or more [stream modes](#graph-state) in `stream_mode`. Supported for existing code; new applications should use **Event streaming (v3)**.
+</Note>
+
+Pass `version="v2"` with one or more [stream modes](#graph-state) in `stream_mode`. Every chunk is a unified @[`StreamPart`] dict with the same fields regardless of how many modes or subgraphs you enable:
+
+```python
+{
+    "type": "values" | "updates" | "messages" | "custom" | "checkpoints" | "tasks" | "debug",
+    "ns": (),    # namespace tuple; populated for subgraph events
+    "data": ..., # payload; type depends on "type"
+}
+```
+
+Each mode has a corresponding `TypedDict` in `langgraph.types` (@[`ValuesStreamPart`], @[`UpdatesStreamPart`], @[`MessagesStreamPart`], and so on). The union @[`StreamPart`] is a disjoint union on `part["type"]`, so filtering on `chunk["type"]` narrows `chunk["data"]` in type checkers.
+
+The shape is always `{"type", "ns", "data"}`:
+
+```python
+for chunk in graph.stream(inputs, stream_mode="updates", version="v2"):
+    print(chunk["type"])  # "updates"
+    print(chunk["ns"])    # ()
+    print(chunk["data"])  # {"node_name": {"key": "value"}}
+```
 
 | Mode | Type | Description |
 | :--- | :--- | :---------- |
@@ -126,6 +163,65 @@ Pass one or more of the following stream modes as a list to the @[`stream`][Comp
 | [checkpoints](#checkpoints) | @[`CheckpointStreamPart`] | Checkpoint events (same format as `get_state()`). Requires a checkpointer. |
 | [tasks](#tasks) | @[`TasksStreamPart`] | Task start/finish events with results and errors. Requires a checkpointer. |
 | [debug](#debug) | @[`DebugStreamPart`] | All available info — combines `checkpoints` and `tasks` with extra metadata. |
+
+**Type narrowing across multiple modes:**
+
+```python
+for part in graph.stream(
+    {"topic": "ice cream"},
+    stream_mode=["values", "updates", "messages", "custom"],
+    version="v2",
+):
+    if part["type"] == "values":
+        # ValuesStreamPart — full state snapshot after each step
+        print(f"State: topic={part['data']['topic']}")
+    elif part["type"] == "updates":
+        # UpdatesStreamPart — only the changed keys from each node
+        for node_name, state in part["data"].items():
+            print(f"Node `{node_name}` updated: {state}")
+    elif part["type"] == "messages":
+        # MessagesStreamPart — (message_chunk, metadata) from LLM calls
+        msg, metadata = part["data"]
+        print(msg.content, end="", flush=True)
+    elif part["type"] == "custom":
+        # CustomStreamPart — arbitrary data from get_stream_writer()
+        print(f"Progress: {part['data']['progress']}%")
+```
+
+</Tab>
+<Tab title="stream()">
+
+Pass one or more of the following modes as a list to @[`stream`][CompiledStateGraph.stream] or @[`astream`][CompiledStateGraph.astream]. For a single consistent chunk shape across modes, use the **stream() v2** tab or **Event streaming (v3)** instead.
+
+**Output shape:** Chunk shape depends on your options:
+
+- Single `stream_mode`: yields the raw payload (for example, `stream_mode="updates"` yields a `{node_name: ...}` dict).
+- Multiple modes: yields `(mode, data)` tuples.
+- `subgraphs=True`: yields `(namespace, data)` tuples, or `(namespace, mode, data)` with multiple modes.
+
+<CodeGroup>
+```python Single mode
+for chunk in graph.stream(inputs, stream_mode="updates"):
+    print(chunk)  # {"node_name": {"key": "value"}}
+```
+```python Multiple modes
+for mode, chunk in graph.stream(inputs, stream_mode=["updates", "custom"]):
+    print(mode, chunk)
+```
+</CodeGroup>
+
+| Mode | Chunk shape | Description |
+| :--- | :------------ | :---------- |
+| [values](#graph-state) | Full state dict | Full state after each step. |
+| [updates](#graph-state) | `{node_name: partial_state}` dict | State updates after each step. Multiple updates in the same step are streamed separately. |
+| [messages](#llm-tokens) | `(message_chunk, metadata)` tuple | LLM tokens and metadata from LLM calls. |
+| [custom](#custom-data) | Arbitrary JSON-serializable value | Custom data from @[`get_stream_writer`] in nodes. |
+| [checkpoints](#checkpoints) | Checkpoint dict | Checkpoint events (same format as `get_state()`). Requires a checkpointer. |
+| [tasks](#tasks) | Task event dict | Task start and finish events with results and errors. Requires a checkpointer. |
+| [debug](#debug) | Debug event dict | All available info — combines `checkpoints` and `tasks` with extra metadata. |
+
+</Tab>
+</Tabs>
 :::
 
 :::js

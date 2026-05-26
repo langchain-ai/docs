@@ -7,19 +7,27 @@ from langgraph.types import Command, interrupt
 
 
 class StreamState(TypedDict):
+    step: int
     done: bool
 
 
-def stream_node(state: StreamState):
-    interrupt("wait for user")
+def first_interrupt(state: StreamState):
+    interrupt("first question")
+    return {"step": 1}
+
+
+def second_interrupt(state: StreamState):
+    interrupt("second question")
     return {"done": True}
 
 
 graph = (
     StateGraph(StreamState)
-    .add_node("n", stream_node)
-    .add_edge(START, "n")
-    .add_edge("n", END)
+    .add_node("first", first_interrupt)
+    .add_node("second", second_interrupt)
+    .add_edge(START, "first")
+    .add_edge("first", "second")
+    .add_edge("second", END)
     .compile(checkpointer=InMemorySaver())
 )
 
@@ -38,28 +46,40 @@ def get_user_input(interrupt_info: object) -> str:
 # :snippet-start: langgraph-interrupts-hitl-stream-py
 from langgraph.types import Command
 
-stream = graph.stream_events(initial_input, config=config, version="v3")
+stream_input: dict | Command = initial_input
 
-# Stream LLM message chunks (including any in subgraphs) as they arrive.
-for message in stream.messages:
-    for token in message.text:
-        display_streaming_content(token)
+while True:
+    stream = graph.stream_events(stream_input, config=config, version="v3")
 
-# After the run finishes (or pauses), check for interrupts and resume.
-if stream.interrupted:
+    # Stream LLM message chunks (including any in subgraphs) as they arrive.
+    for message in stream.messages:
+        for token in message.text:
+            display_streaming_content(token)
+
+    # After the run finishes (or pauses), check for interrupts and resume.
+    if not stream.interrupted:
+        final_state = stream.output
+        break
+
     interrupt_info = stream.interrupts[0].value
     user_response = get_user_input(interrupt_info)
-    stream = graph.stream_events(
-        Command(resume=user_response), config=config, version="v3"
-    )
-    final_state = stream.output
+    stream_input = Command(resume=user_response)
 # :snippet-end:
 
 # :remove-start:
 if __name__ == "__main__":
     test_config = {"configurable": {"thread_id": "stream-test"}}
-    test_stream = graph.stream_events({}, config=test_config, version="v3")
-    _ = test_stream.output  # drive to completion
-    assert test_stream.interrupted
+    stream_input: dict | Command = {}
+    resume_rounds = 0
+    while True:
+        test_stream = graph.stream_events(stream_input, config=test_config, version="v3")
+        _ = list(test_stream.messages)
+        if not test_stream.interrupted:
+            final = test_stream.output
+            break
+        stream_input = Command(resume="ok")
+        resume_rounds += 1
+    assert resume_rounds == 2
+    assert final["done"]
     print("✓ langgraph-interrupts-hitl-stream")
 # :remove-end:
