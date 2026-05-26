@@ -625,6 +625,7 @@ LINK_MAPS: list[LinkMap] = [
             "tools_condition": "langchain-langgraph/prebuilt/toolsCondition",
             "ToolRuntime": "langchain/index/Runtime",
             "RunnableLambda": "langchain-core/runnables/RunnableLambda",
+            "PIIMiddleware": "langchain/index/piiMiddleware",
             # LangSmith Deployment SDK - JS
             "LangGraphSDK": "langgraph-sdk/",
             "ThreadsClient": "langchain-langgraph-sdk/client/ThreadsClient",
