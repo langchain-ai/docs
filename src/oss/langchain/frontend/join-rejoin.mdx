@@ -29,10 +29,10 @@ The join/rejoin pattern involves three key mechanisms:
 
 | Method / Option | Purpose |
 |---|---|
-| `stream.stop()` | Disconnect the client from the stream without stopping the agent |
-| `stream.joinStream(runId)` | Reconnect to an existing stream by its run ID |
-| `onDisconnect: "continue"` | Submit option that tells the server to keep running after client disconnects |
-| `streamResumable: true` | Submit option that enables the stream to be rejoined later |
+| `threadId` | Bind the stream to the LangGraph thread you want to observe |
+| `onThreadId` | Persist newly-created thread IDs so a remount can reconnect |
+| `stream.stop()` | Stop receiving the current stream from this client |
+| Remount with the same `threadId` | Reattach to in-flight work for that thread |
 
 <Note>
 `stream.stop()` is fundamentally different from cancelling a run. Stopping only disconnects the **client**. The agent continues processing server-side. To actually cancel the agent's execution, you would use interrupt or cancel mechanisms instead.
@@ -40,7 +40,9 @@ The join/rejoin pattern involves three key mechanisms:
 
 ## Setting up `useStream`
 
-The key setup step is capturing the `run_id` from the `onCreated` callback so you can rejoin later.
+The key setup step is persisting `threadId`. When the component remounts with
+the same thread ID, the stream attaches to the thread's current state and any
+in-flight run.
 
 :::python
 
@@ -70,29 +72,45 @@ import type { myAgent } from "./agent";
 
 ```tsx React
 import { useStream } from "@langchain/react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 function Chat() {
-  const [savedRunId, setSavedRunId] = useState<string | null>(null);
+  const [connected, setConnected] = useState(true);
+  const [mountKey, setMountKey] = useState(0);
+  const [threadId, setThreadId] = useState<string | null>(
+    () => sessionStorage.getItem("activeThreadId"),
+  );
 
   const stream = useStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
     assistantId: "join_rejoin",
-    onCreated(run) {
-      setSavedRunId(run.run_id);
+    threadId,
+    onThreadId(id) {
+      setThreadId(id);
+      if (id) sessionStorage.setItem("activeThreadId", id);
     },
   });
 
-  const isConnected = stream.isLoading;
+  const disconnect = useCallback(() => {
+    stream.stop();
+    setConnected(false);
+  }, [stream]);
+
+  const rejoin = useCallback(() => {
+    setMountKey((key) => key + 1);
+    setConnected(true);
+  }, []);
 
   return (
-    <div>
-      <ConnectionStatus connected={isConnected} />
+    <div key={mountKey}>
+      <ConnectionStatus connected={connected} />
       <MessageList messages={stream.messages} />
       <ChatControls
         stream={stream}
-        savedRunId={savedRunId}
-        isConnected={isConnected}
+        threadId={threadId}
+        connected={connected}
+        onDisconnect={disconnect}
+        onRejoin={rejoin}
       />
     </div>
   );
@@ -102,29 +120,43 @@ function Chat() {
 ```vue Vue
 <script setup lang="ts">
 import { useStream } from "@langchain/vue";
-import { ref, computed } from "vue";
+import { ref } from "vue";
 
-const savedRunId = ref<string | null>(null);
+const connected = ref(true);
+const mountKey = ref(0);
+const threadId = ref<string | null>(sessionStorage.getItem("activeThreadId"));
 
 const stream = useStream<typeof myAgent>({
   apiUrl: "http://localhost:2024",
   assistantId: "join_rejoin",
-  onCreated(run) {
-    savedRunId.value = run.run_id;
+  threadId,
+  onThreadId(id) {
+    threadId.value = id;
+    if (id) sessionStorage.setItem("activeThreadId", id);
   },
 });
 
-const isConnected = computed(() => stream.isLoading.value);
+function disconnect() {
+  stream.stop();
+  connected.value = false;
+}
+
+function rejoin() {
+  mountKey.value += 1;
+  connected.value = true;
+}
 </script>
 
 <template>
-  <div>
-    <ConnectionStatus :connected="isConnected" />
+  <div :key="mountKey">
+    <ConnectionStatus :connected="connected" />
     <MessageList :messages="stream.messages" />
     <ChatControls
       :stream="stream"
-      :savedRunId="savedRunId"
-      :isConnected="isConnected"
+      :threadId="threadId"
+      :connected="connected"
+      @disconnect="disconnect"
+      @rejoin="rejoin"
     />
   </div>
 </template>
@@ -134,82 +166,98 @@ const isConnected = computed(() => stream.isLoading.value);
 <script lang="ts">
   import { useStream } from "@langchain/svelte";
 
-  let savedRunId: string | null = null;
+  let connected = $state(true);
+  let mountKey = $state(0);
+  let threadId = $state<string | null>(sessionStorage.getItem("activeThreadId"));
 
-  const { messages, isLoading, submit, stop, joinStream } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
     assistantId: "join_rejoin",
-    onCreated(run) {
-      savedRunId = run.run_id;
+    threadId: () => threadId,
+    onThreadId(id) {
+      threadId = id;
+      if (id) sessionStorage.setItem("activeThreadId", id);
     },
   });
+
+  function disconnect() {
+    stream.stop();
+    connected = false;
+  }
+
+  function rejoin() {
+    mountKey += 1;
+    connected = true;
+  }
 </script>
 
-<div>
-  <ConnectionStatus connected={$isLoading} />
-  <MessageList messages={$messages} />
+<div key={mountKey}>
+  <ConnectionStatus {connected} />
+  <MessageList messages={stream.messages} />
   <ChatControls
-    {savedRunId}
-    isConnected={$isLoading}
-    on:disconnect={() => stop()}
-    on:rejoin={() => joinStream(savedRunId)}
+    {threadId}
+    {connected}
+    onDisconnect={disconnect}
+    onRejoin={rejoin}
   />
 </div>
 ```
 
 ```ts Angular
 import { Component, signal } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream } from "@langchain/angular";
 
 @Component({
   selector: "app-chat",
   template: `
-    <connection-status [connected]="stream.isLoading()" />
+    <connection-status [connected]="connected()" />
     <message-list [messages]="stream.messages()" />
     <chat-controls
       [stream]="stream"
-      [savedRunId]="savedRunId()"
-      [isConnected]="stream.isLoading()"
+      [threadId]="threadId()"
+      [connected]="connected()"
+      (disconnect)="disconnect()"
+      (rejoin)="rejoin()"
     />
   `,
 })
 export class ChatComponent {
-  savedRunId = signal<string | null>(null);
+  threadId = signal<string | null>(sessionStorage.getItem("activeThreadId"));
+  connected = signal(true);
+  mountKey = signal(0);
 
-  stream = useStream<typeof myAgent>({
+  stream = injectStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
     assistantId: "join_rejoin",
-    onCreated: (run) => {
-      this.savedRunId.set(run.run_id);
+    threadId: this.threadId,
+    onThreadId: (id) => {
+      this.threadId.set(id);
+      if (id) sessionStorage.setItem("activeThreadId", id);
     },
   });
+
+  disconnect() {
+    this.stream.stop();
+    this.connected.set(false);
+  }
+
+  rejoin() {
+    this.mountKey.update((key) => key + 1);
+    this.connected.set(true);
+  }
 }
 ```
 
 </CodeGroup>
 
-## Submitting with resumable options
+## Submitting messages
 
-When you submit a message, pass `onDisconnect: "continue"` and `streamResumable: true` to enable the join/rejoin flow:
+Submit messages normally. The thread ID binding is what allows a later remount
+to reconnect to the same conversation:
 
 ```ts
-stream.submit(
-  { messages: [{ type: "human", content: text }] },
-  {
-    onDisconnect: "continue",
-    streamResumable: true,
-  }
-);
+stream.submit({ messages: [{ type: "human", content: text }] });
 ```
-
-| Option | Default | Description |
-|---|---|---|
-| `onDisconnect` | `"cancel"` | What happens when the client disconnects. `"continue"` keeps the agent running; `"cancel"` stops it. |
-| `streamResumable` | `false` | When `true`, the server retains the stream state so a client can rejoin later. |
-
-<Tip>
-Always use both options together. Setting `onDisconnect: "continue"` without `streamResumable: true` means the agent keeps running but you cannot rejoin the stream to see its output.
-</Tip>
 
 ## Disconnecting from a stream
 
@@ -221,23 +269,28 @@ stream.stop();
 
 After calling `stop()`:
 - `stream.isLoading` becomes `false`
+- Your own `connected` flag should also become `false`
 - The message list retains all messages received up to the disconnect point
 - The agent continues running on the server
 - No new messages are received until you rejoin
 
 ## Rejoining a stream
 
-Call `stream.joinStream(runId)` with the saved run ID to reconnect:
+Remount the stream consumer with the saved thread ID to reconnect. In React, the
+demo bumps a `mountKey`; in other frameworks, use the equivalent remount or
+conditional-render pattern:
 
 ```ts
-stream.joinStream(savedRunId);
+setMountKey((key) => key + 1);
+setConnected(true);
 ```
 
 After rejoining:
-- `stream.isLoading` becomes `true` again
+- `connected` becomes `true`
 - Any messages generated while disconnected are delivered
 - New streaming messages resume in real-time
-- If the agent has already finished, you receive the final state immediately
+- If the agent is still running, `stream.isLoading` becomes `true`; if it has
+  already finished, you receive the final state immediately
 
 ## Building a connection status indicator
 
@@ -285,15 +338,12 @@ Style the indicator with a green/red dot:
 Provide explicit buttons for disconnecting and rejoining so users have full control:
 
 ```tsx
-function ChatControls({ stream, savedRunId, isConnected }) {
+function ChatControls({ stream, threadId, connected, onDisconnect, onRejoin }) {
   const [input, setInput] = useState("");
 
   const handleSend = () => {
     if (!input.trim()) return;
-    stream.submit(
-      { messages: [{ type: "human", content: input.trim() }] },
-      { onDisconnect: "continue", streamResumable: true }
-    );
+    stream.submit({ messages: [{ type: "human", content: input.trim() }] });
     setInput("");
   };
 
@@ -310,14 +360,14 @@ function ChatControls({ stream, savedRunId, isConnected }) {
       </div>
 
       <div className="stream-controls">
-        {isConnected ? (
-          <button onClick={() => stream.stop()} className="disconnect-btn">
+        {connected ? (
+          <button onClick={onDisconnect} className="disconnect-btn">
             Disconnect
           </button>
         ) : (
-          savedRunId && (
+          threadId && (
             <button
-              onClick={() => stream.joinStream(savedRunId)}
+              onClick={onRejoin}
               className="rejoin-btn"
             >
               Rejoin stream
@@ -330,68 +380,96 @@ function ChatControls({ stream, savedRunId, isConnected }) {
 }
 ```
 
-## Persisting the run ID
+## Persisting the thread ID
 
-For cross-session rejoin (e.g., the user closes the browser and returns later), persist the run ID to storage:
+For rejoin across remounts or page refreshes, persist the thread ID to storage:
 
 ```ts
 const stream = useStream<typeof myAgent>({
   apiUrl: "http://localhost:2024",
   assistantId: "join_rejoin",
-  onCreated(run) {
-    localStorage.setItem("activeRunId", run.run_id);
+  onThreadId(threadId) {
+    if (threadId) sessionStorage.setItem("activeThreadId", threadId);
   },
 });
 
-// On page load, check for an active run
-const existingRunId = localStorage.getItem("activeRunId");
-if (existingRunId) {
-  stream.joinStream(existingRunId);
-}
+// On page load, pass this value back into `useStream({ threadId })`.
+const existingThreadId = sessionStorage.getItem("activeThreadId");
 ```
 
 <Info>
-Persisted run IDs should be cleaned up when a run completes. Listen for the stream to finish and remove the stored ID to avoid attempting to rejoin completed runs.
+Clear stale thread IDs when users explicitly start a new conversation or when
+your backend reports that a thread no longer exists.
 </Info>
 
 ## Error handling
 
-Rejoining can fail if the run has expired, been deleted, or if the server has restarted. Handle these cases gracefully:
+Rejoining can fail if the thread was deleted or if the server cannot load it.
+Handle these cases gracefully:
 
 ```ts
 try {
-  stream.joinStream(savedRunId);
+  setConnected(true);
 } catch (error) {
   console.error("Failed to rejoin stream:", error);
-  // Clear stale run ID and inform the user
-  setSavedRunId(null);
-  localStorage.removeItem("activeRunId");
+  setThreadId(null);
+  sessionStorage.removeItem("activeThreadId");
 }
 ```
 
 ## Complete example
 
 ```tsx
-function JoinRejoinChat() {
-  const [savedRunId, setSavedRunId] = useState<string | null>(null);
+function JoinRejoinShell() {
+  const [threadId, setThreadId] = useState<string | null>(
+    () => sessionStorage.getItem("activeThreadId"),
+  );
+  const [connected, setConnected] = useState(true);
+  const [mountKey, setMountKey] = useState(0);
+
+  function reconnect() {
+    setMountKey((key) => key + 1);
+    setConnected(true);
+  }
+
+  return connected ? (
+    <JoinRejoinChat
+      key={mountKey}
+      threadId={threadId}
+      onThreadId={(id) => {
+        setThreadId(id);
+        if (id) sessionStorage.setItem("activeThreadId", id);
+      }}
+      onDisconnect={() => setConnected(false)}
+    />
+  ) : (
+    <button disabled={!threadId} onClick={reconnect}>
+      Rejoin stream
+    </button>
+  );
+}
+
+function JoinRejoinChat({
+  threadId,
+  onThreadId,
+  onDisconnect,
+}: {
+  threadId: string | null;
+  onThreadId: (id: string | null) => void;
+  onDisconnect: () => void;
+}) {
   const [input, setInput] = useState("");
 
   const stream = useStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
     assistantId: "join_rejoin",
-    onCreated(run) {
-      setSavedRunId(run.run_id);
-    },
+    threadId,
+    onThreadId,
   });
-
-  const isConnected = stream.isLoading;
 
   const handleSend = () => {
     if (!input.trim()) return;
-    stream.submit(
-      { messages: [{ type: "human", content: input.trim() }] },
-      { onDisconnect: "continue", streamResumable: true }
-    );
+    stream.submit({ messages: [{ type: "human", content: input.trim() }] });
     setInput("");
   };
 
@@ -399,7 +477,7 @@ function JoinRejoinChat() {
     <div className="chat-container">
       <header>
         <h2>Join & Rejoin Demo</h2>
-        <ConnectionStatus connected={isConnected} />
+        <ConnectionStatus connected />
       </header>
 
       <div className="messages">
@@ -419,17 +497,14 @@ function JoinRejoinChat() {
         </form>
 
         <div className="stream-actions">
-          {isConnected ? (
-            <button onClick={() => stream.stop()}>
-              Disconnect
-            </button>
-          ) : (
-            savedRunId && (
-              <button onClick={() => stream.joinStream(savedRunId)}>
-                Rejoin stream
-              </button>
-            )
-          )}
+          <button
+            onClick={() => {
+              stream.stop();
+              onDisconnect();
+            }}
+          >
+            Disconnect
+          </button>
         </div>
       </div>
     </div>
@@ -439,8 +514,8 @@ function JoinRejoinChat() {
 
 ## Best practices
 
-- **Always save the run ID**: without it, rejoining is impossible. Use both component state and persistent storage for resilience.
+- **Always save the thread ID**: without it, rejoining is impossible. Use both component state and persistent storage for resilience.
 - **Show clear connection state**: users should always know whether they are receiving live updates or viewing a snapshot.
 - **Auto-rejoin on visibility change**: use the Page Visibility API to automatically rejoin when the user returns to the tab.
 - **Set reasonable timeouts**: if a rejoin attempt takes too long, fall back to fetching the thread history instead.
-- **Clean up completed runs**: remove persisted run IDs when the agent finishes to avoid stale rejoin attempts.
+- **Clean up stale threads**: remove persisted thread IDs when the user starts over or the backend reports that the thread is unavailable.

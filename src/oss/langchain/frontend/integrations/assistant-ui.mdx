@@ -43,7 +43,7 @@ import { Thread } from "@assistant-ui/react";
 export function Chat() {
   const stream = useStream({
     apiUrl: "http://localhost:2024",
-    assistantId: "agent",
+    assistantId: "claude",
   });
 
   const onNew = useCallback(
@@ -83,7 +83,7 @@ export function Chat() {
 `toThreadMessages` maps LangChain `BaseMessage[]` to the `ThreadMessageLike[]` format assistant-ui expects. Handle each message type — human, AI, and tool — and convert content blocks, tool calls, and reasoning tokens:
 
 ```tsx expandable
-import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage, type BaseMessage } from "langchain";
 import type { ThreadMessageLike } from "@assistant-ui/react";
 
 export function toThreadMessages(messages: BaseMessage[]): ThreadMessageLike[] {
@@ -93,14 +93,14 @@ export function toThreadMessages(messages: BaseMessage[]): ThreadMessageLike[] {
     if (HumanMessage.isInstance(msg)) {
       result.push({
         role: "user",
-        content: [{ type: "text", text: getTextContent(msg.content) }],
+        content: [{ type: "text", text: msg.text }],
       });
     } else if (AIMessage.isInstance(msg)) {
       const parts: ThreadMessageLike["content"] = [];
 
       // Reasoning tokens
-      const reasoning = getReasoningText(msg);
-      if (reasoning) parts.push({ type: "reasoning", reasoning });
+      const reasoning = msg.contentBlocks.find((block) => block.type === "reasoning")?.reasoning;
+      if (reasoning) parts.push({ type: "reasoning", text: reasoning });
 
       // Tool calls
       for (const tc of msg.tool_calls ?? []) {
@@ -113,7 +113,7 @@ export function toThreadMessages(messages: BaseMessage[]): ThreadMessageLike[] {
       }
 
       // Text response
-      const text = getTextContent(msg.content);
+      const text = msg.text;
       if (text) parts.push({ type: "text", text });
 
       result.push({ role: "assistant", content: parts });
@@ -126,7 +126,7 @@ export function toThreadMessages(messages: BaseMessage[]): ThreadMessageLike[] {
             part.type === "tool-call" &&
             part.toolCallId === msg.tool_call_id
           ) {
-            (part as { result?: string }).result = getTextContent(msg.content);
+            (part as { result?: string }).result = msg.text;
           }
         }
       }
@@ -164,5 +164,5 @@ function CustomThread() {
 
 - **Memoise message conversion:** wrap `toThreadMessages(stream.messages)` in `useMemo` to avoid re-running the conversion on every render
 - **Handle attachments:** use `CompositeAttachmentAdapter` with `SimpleImageAttachmentAdapter` for image uploads; extend with custom adapters for files
-- **Use branching:** assistant-ui has built-in message branching support via `MessageBranch`; edit a message to regenerate from that point
-- **Thread persistence:** `useStream` with `fetchStateHistory: true` and `reconnectOnMount: true` gives assistant-ui access to the full thread history on page load
+- **Use branching:** assistant-ui has built-in message branching support via `MessageBranch`; pair edits with `useMessageMetadata` and `forkFrom` when you need LangGraph checkpoint forks
+- **Thread persistence:** persist `threadId` with `onThreadId` and pass it back into `useStream` on page load so assistant-ui reconnects to the same thread

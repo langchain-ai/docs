@@ -5,9 +5,13 @@ description: Render LangGraph agents to the frontend
 
 Build frontends that visualize LangGraph pipelines in real time. These patterns show how to render multi-step graph execution with per-node status and streaming content from custom `StateGraph` workflows.
 
+<Note>
+For package-level API changes in the v1 SDKs, see the migration guides for [React](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-react/docs/v1-migration.md), [Vue](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-vue/docs/v1-migration.md), [Svelte](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-svelte/docs/v1-migration.md), and [Angular](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-angular/docs/v1-migration.md).
+</Note>
+
 ## Architecture
 
-LangGraph graphs are composed of named nodes connected by edges. Each node executes a step (classify, research, analyze, synthesize) and writes output to a specific state key. On the frontend, `useStream` provides reactive access to node outputs, streaming tokens, and graph metadata so you can map each node to a UI card.
+LangGraph graphs are composed of named nodes connected by edges. Each node executes a step (classify, research, analyze, synthesize) and writes output to a specific state key. On the frontend, the v1 SDK stream handle provides reactive access to node outputs, streaming tokens, and discovered subgraphs so you can map each node to a UI card.
 
 ```mermaid
 %%{
@@ -48,15 +52,18 @@ class State(MessagesState):
     classification: str
     research: str
     analysis: str
+    synthesis: str
 
 graph = StateGraph(State)
 graph.add_node("classify", classify_node)
-graph.add_node("research", research_node)
+graph.add_node("do_research", research_node)
 graph.add_node("analyze", analyze_node)
+graph.add_node("synthesize", synthesize_node)
 graph.add_edge(START, "classify")
-graph.add_edge("classify", "research")
-graph.add_edge("research", "analyze")
-graph.add_edge("analyze", END)
+graph.add_edge("classify", "do_research")
+graph.add_edge("do_research", "analyze")
+graph.add_edge("analyze", "synthesize")
+graph.add_edge("synthesize", END)
 
 app = graph.compile()
 ```
@@ -66,30 +73,36 @@ app = graph.compile()
 :::js
 
 ```ts
-import { StateGraph, StateSchema, MessagesValue, START, END } from "@langchain/langgraph";
-import * as z from "zod";
+import { Annotation, MessagesAnnotation, StateGraph, START, END } from "@langchain/langgraph";
 
-const State = new StateSchema({
-  messages: MessagesValue,
-  classification: z.string(),
-  research: z.string(),
-  analysis: z.string(),
+const State = Annotation.Root({
+  ...MessagesAnnotation.spec,
+  classification: Annotation<string>(),
+  research: Annotation<string>(),
+  analysis: Annotation<string>(),
+  synthesis: Annotation<string>(),
 });
 
 const graph = new StateGraph(State)
   .addNode("classify", classifyNode)
-  .addNode("research", researchNode)
+  .addNode("do_research", researchNode)
   .addNode("analyze", analyzeNode)
+  .addNode("synthesize", synthesizeNode)
   .addEdge(START, "classify")
-  .addEdge("classify", "research")
-  .addEdge("research", "analyze")
-  .addEdge("analyze", END)
+  .addEdge("classify", "do_research")
+  .addEdge("do_research", "analyze")
+  .addEdge("analyze", "synthesize")
+  .addEdge("synthesize", END)
   .compile();
 ```
 
 :::
 
-On the frontend, `useStream` exposes `stream.values` for completed node outputs and `getMessagesMetadata` for identifying which node produced each streaming token.
+On the frontend, `useStream` exposes `stream.subgraphs` for graph-node discovery
+and selector helpers such as `useMessages(stream, node)` for node-scoped
+streaming content. `stream.values` still holds the full graph state when you
+need fields such as the final `synthesis`. Angular uses the same stream API
+shape through `injectStream`.
 
 ```ts
 import { useStream } from "@langchain/react";
@@ -103,6 +116,7 @@ function Pipeline() {
   const classification = stream.values?.classification;
   const research = stream.values?.research;
   const analysis = stream.values?.analysis;
+  const graphNodes = [...stream.subgraphs.values()];
 }
 ```
 
@@ -116,4 +130,4 @@ function Pipeline() {
 
 ## Related patterns
 
-The [LangChain frontend patterns](/oss/langchain/frontend/overview)—markdown messages, tool calling, optimistic updates, and more—work with any LangGraph graph. The `useStream` hook provides the same core API whether you use `createAgent`, `createDeepAgent`, or a custom `StateGraph`.
+The [LangChain frontend patterns](/oss/langchain/frontend/overview)—markdown messages, tool calling, optimistic updates, and more—work with any LangGraph graph. The v1 stream API provides the same core data model whether you use `createAgent`, `createDeepAgent`, or a custom `StateGraph`.

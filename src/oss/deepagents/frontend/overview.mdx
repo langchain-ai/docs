@@ -7,7 +7,7 @@ Build frontends that visualize deep agent workflows in real time. These patterns
 
 ## Architecture
 
-Deep Agents use a coordinator-worker architecture. The main agent plans tasks and delegates to specialized subagents, each running in isolation. On the frontend, `useStream` surfaces both the coordinator's messages and each subagent's streaming state.
+Deep Agents use a coordinator-worker architecture. The main agent plans tasks and delegates to specialized subagents, each running in isolation. On the frontend, the v1 stream handle surfaces coordinator messages on the root stream and exposes subagent discovery snapshots for scoped subagent views.
 
 ```mermaid
 %%{
@@ -20,11 +20,15 @@ Deep Agents use a coordinator-worker architecture. The main agent plans tasks an
 }%%
 graph LR
   FRONTEND["useStream()"]
+  SELECTORS["selector helpers"]
   BACKEND["createDeepAgent()"]
   SUB1["Subagent A"]
   SUB2["Subagent B"]
 
   BACKEND --"stream"--> FRONTEND
+  FRONTEND --"scope by subagent"--> SELECTORS
+  SELECTORS --> SUB1
+  SELECTORS --> SUB2
   FRONTEND --"submit"--> BACKEND
   BACKEND --"delegate"--> SUB1
   BACKEND --"delegate"--> SUB2
@@ -34,7 +38,7 @@ graph LR
   classDef blueHighlight fill:#E5F4FF,stroke:#006DDD,color:#030710;
   classDef greenHighlight fill:#F6FFDB,stroke:#6E8900,color:#2E3900;
   classDef purpleHighlight fill:#EBD0F0,stroke:#885270,color:#441E33;
-  class FRONTEND blueHighlight;
+  class FRONTEND,SELECTORS blueHighlight;
   class BACKEND greenHighlight;
   class SUB1,SUB2 purpleHighlight;
 ```
@@ -66,7 +70,7 @@ import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
   tools: [getWeather],
-  system: "You are a helpful assistant",
+  systemPrompt: "You are a helpful assistant",
   subagents: [
     {
       name: "researcher",
@@ -78,7 +82,7 @@ const agent = createDeepAgent({
 
 :::
 
-On the frontend, connect with `useStream` the same way as with `createAgent`. Deep agent patterns use additional `useStream` features like `stream.subagents`, `stream.values.todos`, and `filterSubagentMessages` to render subagent-specific UIs.
+On the frontend, connect with `useStream` the same way as with `createAgent`. Deep agent patterns use `stream.subagents`, selector helpers such as `useMessages(stream, subagent)`, and custom state values like `stream.values.todos` to render subagent-specific UIs.
 
 ```ts
 import { useStream } from "@langchain/react";
@@ -91,7 +95,7 @@ function App() {
 
   // Deep agent state beyond messages
   const todos = stream.values?.todos;
-  const subagents = stream.subagents;
+  const subagents = [...stream.subagents.values()];
 }
 ```
 

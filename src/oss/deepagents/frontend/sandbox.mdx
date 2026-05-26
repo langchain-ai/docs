@@ -55,7 +55,7 @@ graph LR
   SANDBOX["Sandbox"]
 
   UI --"useStream()"--> AGENT
-  UI --"/api/sandbox/:threadId/*"--> API
+  UI --"/sandbox/:threadId/*"--> API
   AGENT --"read/write/execute"--> SANDBOX
   API --"ls / read"--> SANDBOX
 
@@ -96,7 +96,7 @@ sequenceDiagram
     FE->>LG: POST /threads
     LG-->>FE: threadId
 
-    FE->>HTTP: GET /api/sandbox/:threadId/tree
+    FE->>HTTP: GET /sandbox/:threadId/tree
     HTTP->>LG: threads.get(threadId) → metadata.sandbox_id
     alt No sandbox yet
         HTTP->>SB: LangSmithSandbox.create()
@@ -192,7 +192,7 @@ import urllib.request
 
 session_id = str(uuid.uuid4())
 query = urllib.parse.urlencode({"sessionId": session_id})
-urllib.request.urlopen(f"http://localhost:2024/api/sandbox/tree?{query}")
+urllib.request.urlopen(f"http://localhost:2024/sandbox/{session_id}/tree?filePath=/app")
 ```
 
 :::
@@ -201,7 +201,7 @@ urllib.request.urlopen(f"http://localhost:2024/api/sandbox/tree?{query}")
 
 ```ts
 const sessionId = crypto.randomUUID();
-fetch(`/api/sandbox/tree?sessionId=${sessionId}`);
+fetch(`/sandbox/${sessionId}/tree?filePath=/app`);
 ```
 
 :::
@@ -251,13 +251,14 @@ commands. No tool configuration needed.
 ### Resolve a sandbox per thread
 
 Instead of creating a sandbox at module level (which would be shared across
-all threads and may expire), resolve the sandbox per-thread at runtime. The sandbox reads `thread_id` from the LangGraph config via `getConfig()`:
+all threads and may expire), resolve the sandbox per-thread at runtime. The
+backend factory receives the LangGraph runtime and reads `thread_id` from
+`runtime.configurable`:
 
 :::js
 
 ```ts
-import { createDeepAgent, LangSmithSandbox } from "deepagents";
-import { getConfig } from "@langchain/langgraph";
+import { createDeepAgent, type BackendRuntime } from "deepagents";
 
 async function getOrCreateSandboxForThread(threadId: string): Promise<LangSmithSandbox> {
   // Check thread metadata for existing sandbox_id
@@ -279,19 +280,15 @@ async function getOrCreateSandboxForThread(threadId: string): Promise<LangSmithS
   return sandbox;
 }
 
-// Create a sandbox that resolves per-thread at runtime
-const sandbox = new LangSmithSandbox({
-  resolve: async () => {
-    const config = getConfig();
-    const threadId = config.configurable?.thread_id;
-    if (!threadId) throw new Error("No thread_id — agent must run on a thread");
-    return getOrCreateSandboxForThread(threadId);
-  },
-});
+async function sandboxBackendFactory(runtime: BackendRuntime) {
+  const threadId = runtime.configurable?.thread_id;
+  if (!threadId) throw new Error("No thread_id — agent must run on a thread");
+  return getOrCreateSandboxForThread(threadId);
+}
 
 export const agent = createDeepAgent({
   model: "google_genai:gemini-3.5-flash",
-  backend: sandbox,
+  backend: sandboxBackendFactory,
   systemPrompt: "You are an expert developer working on a project in /app.",
 });
 ```
@@ -398,7 +395,7 @@ import { getOrCreateSandboxForThread } from "./utils.js";
 
 export const app = new Hono();
 
-app.get("/api/sandbox/:threadId/tree", async (c) => {
+app.get("/sandbox/:threadId/tree", async (c) => {
   const threadId = c.req.param("threadId");
   const rootPath = c.req.query("filePath") || "/app";
 
@@ -424,7 +421,7 @@ app.get("/api/sandbox/:threadId/tree", async (c) => {
   return c.json({ path: rootPath, entries, sandboxId: sandbox.id });
 });
 
-app.get("/api/sandbox/:threadId/file", async (c) => {
+app.get("/sandbox/:threadId/file", async (c) => {
   const threadId = c.req.param("threadId");
   const filePath = c.req.query("filePath");
   if (!filePath) return c.json({ error: "filePath is required" }, 400);
@@ -450,14 +447,14 @@ from utils import get_or_create_sandbox_for_thread
 
 app = FastAPI()
 
-@app.get("/api/sandbox/{thread_id}/tree")
+@app.get("/sandbox/{thread_id}/tree")
 async def list_tree(
     thread_id: str = Path(...),
-    path: str = Query("/app"),
+    filePath: str = Query("/app"),
 ):
     sandbox = await get_or_create_sandbox_for_thread(thread_id)
     result = await sandbox.aexecute(
-        f"find {path} -printf '%y\\t%s\\t%p\\n' 2>/dev/null | sort"
+        f"find {filePath} -printf '%y\\t%s\\t%p\\n' 2>/dev/null | sort"
     )
     entries = []
     for line in result.output.strip().split("\n"):
@@ -470,16 +467,16 @@ async def list_tree(
             "path": full_path,
             "size": int(size_str),
         })
-    return {"path": path, "entries": entries, "sandbox_id": sandbox.id}
+    return {"path": filePath, "entries": entries, "sandboxId": sandbox.id}
 
-@app.get("/api/sandbox/{thread_id}/file")
+@app.get("/sandbox/{thread_id}/file")
 async def read_file(
     thread_id: str = Path(...),
-    path: str = Query(...),
+    filePath: str = Query(...),
 ):
     sandbox = await get_or_create_sandbox_for_thread(thread_id)
-    results = await sandbox.adownload_files([path])
-    return {"path": path, "content": results[0].content.decode()}
+    results = await sandbox.adownload_files([filePath])
+    return {"path": filePath, "content": results[0].content.decode()}
 ```
 
 :::
@@ -507,7 +504,7 @@ the LangGraph platform to serve your custom routes alongside the default ones:
 {
   "node_version": "22",
   "graphs": {
-    "coding_agent": "./src/agents/my-agent.ts:agent"
+    "deep_agent_ide": "./src/agents/my-agent.ts:agent"
   },
   "env": ".env",
   "http": {
@@ -523,7 +520,7 @@ the LangGraph platform to serve your custom routes alongside the default ones:
 ```json
 {
   "graphs": {
-    "coding_agent": "./src/agents/my_agent.py:agent"
+    "deep_agent_ide": "./src/agents/my_agent.py:agent"
   },
   "env": ".env",
   "http": {
@@ -570,7 +567,7 @@ function IDEPreview() {
 
   const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "coding_agent",
+    assistantId: "deep_agent_ide",
     threadId,
     onThreadId: updateThreadId,
   });
@@ -592,7 +589,6 @@ fresh thread (and sandbox):
 
 ```tsx
 function handleNewThread() {
-  stream.switchThread(null);
   updateThreadId(null);
 }
 ```
@@ -608,7 +604,7 @@ const AGENT_URL = "http://localhost:2024";
 
 async function fetchTree(threadId: string): Promise<FileEntry[]> {
   const res = await fetch(
-    `${AGENT_URL}/api/sandbox/${encodeURIComponent(threadId)}/tree?filePath=/app`,
+    `${AGENT_URL}/sandbox/${encodeURIComponent(threadId)}/tree?filePath=/app`,
   );
   const data = await res.json();
   return data.entries.filter((e: FileEntry) => !e.path.includes("node_modules"));
@@ -616,7 +612,7 @@ async function fetchTree(threadId: string): Promise<FileEntry[]> {
 
 async function fetchFile(threadId: string, path: string): Promise<string | null> {
   const res = await fetch(
-    `${AGENT_URL}/api/sandbox/${encodeURIComponent(threadId)}/file?filePath=${encodeURIComponent(path)}`,
+    `${AGENT_URL}/sandbox/${encodeURIComponent(threadId)}/file?filePath=${encodeURIComponent(path)}`,
   );
   const data = await res.json();
   return data.content ?? null;
@@ -641,7 +637,7 @@ const FILE_MUTATING_TOOLS = new Set(["write_file", "edit_file", "execute"]);
 export function IDEPreview() {
   const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "coding_agent",
+    assistantId: "deep_agent_ide",
   });
 
   const processedIds = useRef(new Set<string>());
@@ -669,9 +665,9 @@ export function IDEPreview() {
       processedIds.current.add(id);
 
       if (call.name === "write_file" || call.name === "edit_file") {
-        refreshSingleFile(call.args.path);
+        refreshSingleFile(call.args.path ?? call.args.file_path);
       } else if (call.name === "execute") {
-        refreshAllFiles();
+        refreshTreeAndFiles();
       }
     }
   }, [stream.messages]);
@@ -689,7 +685,7 @@ const processedIds = new Set<string>();
 
 const stream = useStream<typeof myAgent>({
   apiUrl: AGENT_URL,
-  assistantId: "coding_agent",
+  assistantId: "deep_agent_ide",
 });
 
 watch(
@@ -716,16 +712,16 @@ watch(
       processedIds.add(id);
 
       if (call.name === "write_file" || call.name === "edit_file") {
-        refreshSingleFile(call.args.path);
+        refreshSingleFile(call.args.path ?? call.args.file_path);
       } else if (call.name === "execute") {
-        refreshAllFiles();
+        refreshTreeAndFiles();
       }
     }
   },
   { deep: true },
 );
 </script>
-````
+```
 
 ```svelte Svelte
 <script lang="ts">
@@ -735,13 +731,13 @@ watch(
   const FILE_MUTATING_TOOLS = new Set(["write_file", "edit_file", "execute"]);
   const processedIds = new Set<string>();
 
-  const { messages, submit } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "coding_agent",
+    assistantId: "deep_agent_ide",
   });
 
   $effect(() => {
-    const msgs = $messages;
+    const msgs = stream.messages;
     const toolCallMap = new Map();
     for (const msg of msgs) {
       if (AIMessage.isInstance(msg)) {
@@ -763,9 +759,9 @@ watch(
       processedIds.add(id);
 
       if (call.name === "write_file" || call.name === "edit_file") {
-        refreshSingleFile(call.args.path);
+        refreshSingleFile(call.args.path ?? call.args.file_path);
       } else if (call.name === "execute") {
-        refreshAllFiles();
+        refreshTreeAndFiles();
       }
     }
   });
@@ -774,7 +770,7 @@ watch(
 
 ```ts Angular
 import { Component, effect } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream } from "@langchain/angular";
 import { ToolMessage, AIMessage } from "langchain";
 
 const FILE_MUTATING_TOOLS = new Set(["write_file", "edit_file", "execute"]);
@@ -784,9 +780,9 @@ const FILE_MUTATING_TOOLS = new Set(["write_file", "edit_file", "execute"]);
   template: `<!-- ... -->`,
 })
 export class IdePreviewComponent {
-  stream = useStream<typeof myAgent>({
+  stream = injectStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "coding_agent",
+    assistantId: "deep_agent_ide",
   });
 
   private processedIds = new Set<string>();
@@ -815,9 +811,9 @@ export class IdePreviewComponent {
         this.processedIds.add(id);
 
         if (call.name === "write_file" || call.name === "edit_file") {
-          this.refreshSingleFile(call.args.path);
+          this.refreshSingleFile(call.args.path ?? call.args.file_path);
         } else if (call.name === "execute") {
-          this.refreshAllFiles();
+          this.refreshTreeAndFiles();
         }
       }
     });
