@@ -31,7 +31,7 @@ stream = agent.stream_events(
     config=config,
     version="v3",
 )
-_ = stream.output  # drive the stream to completion
+output = stream.output  # drive the stream to completion
 # stream.interrupts contains pending interrupts (and stream.interrupted is True)
 
 # Resume - approve the interrupt
@@ -41,17 +41,7 @@ final = resumed.output
 
 # :remove-start:
 if __name__ == "__main__":
-    test_config = {"configurable": {"thread_id": "test-1"}}
-    test_stream = agent.stream_events(
-        {"messages": [{"role": "user", "content": "Tell me about apples"}]},
-        config=test_config,
-        version="v3",
-    )
-    _ = test_stream.output  # drive to completion
-    assert test_stream.interrupted
-    resumed_test = agent.stream_events(
-        Command(resume=True), config=test_config, version="v3"
-    )
-    assert resumed_test.output["messages"]
+    assert stream.interrupted
+    assert resumed.output["messages"]
     print("✓ langgraph-subgraphs-interrupt-v2")
 # :remove-end:
