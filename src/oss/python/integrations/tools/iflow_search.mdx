@@ -1,0 +1,195 @@
+---
+title: "iFlow Search integration"
+description: "Integrate with the iFlow Search tools using LangChain Python."
+---
+
+>[iFlow Search](https://platform.iflow.cn) provides web search, image search, and full-page content extraction APIs for LLM and agent applications.
+
+`iflow-search-langchain` exposes the three iFlow Search endpoints — `web_search`, `image_search`, and `web_fetch` — as `BaseTool` instances ready to drop into a LangChain agent, a LangGraph `ToolNode`, or any chain that consumes tools.
+
+<Note>
+    This integration is maintained by the iFlow team and is community-contributed; it is not an official LangChain package. The Python source lives at [iflow-ai/iflow-search-py](https://github.com/iflow-ai/iflow-search-py) under `packages/iflow-search-langchain/`.
+</Note>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Package latest |
+| :--- | :--- | :---: | :---: | :---: |
+| `create_iflow_search_tools` | `iflow-search-langchain` | ❌ | ❌ | <a href="https://pypi.org/project/iflow-search-langchain/" target="_blank"><img src="https://img.shields.io/pypi/v/iflow-search-langchain?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
+
+### Features
+
+- Three tools out of the box: web search, image search, and single-URL content fetch.
+- Native sync and async (`tool.invoke` and `tool.ainvoke`) with separate underlying clients — no thread-pool delegation under FastAPI / asyncio.
+- `response_format="content_and_artifact"`: tool returns a model-friendly text summary plus the full structured response as the `ToolMessage` artifact (consumable by LangGraph's `ToolNode`).
+- Stable error contract via the underlying `iflow-search` SDK (`IFlowAPIError`, `IFlowTimeoutError`, etc., each with a stable `code` string).
+- Optional caller-supplied core client for connection-pool reuse across many tool instances.
+
+---
+
+## Setup
+
+To use the iFlow Search tools you need an iFlow API key. Sign up at [platform.iflow.cn](https://platform.iflow.cn) to generate one, then expose it as the `IFLOW_API_KEY` environment variable.
+
+### Credentials
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "IFLOW_API_KEY" not in os.environ:
+    os.environ["IFLOW_API_KEY"] = getpass.getpass("Enter your iFlow API key: ")
+```
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability/<Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls. To enable automated tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The integration lives in the `iflow-search-langchain` package, which pulls in the core `iflow-search` SDK as a dependency:
+
+<CodeGroup>
+    ```bash pip
+    pip install -U iflow-search-langchain
+    ```
+    ```bash uv
+    uv add iflow-search-langchain
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+The package exposes four factory functions. Each accepts the same keyword-only arguments — `api_key`, `base_url`, `timeout`, `client`, and `async_client` — and each defaults to reading `IFLOW_API_KEY` from the environment when `api_key` is omitted.
+
+```python Build the tools icon="robot"
+from iflow_search_langchain import (
+    create_iflow_web_search_tool,
+    create_iflow_image_search_tool,
+    create_iflow_web_fetch_tool,
+    create_iflow_search_tools,
+)
+
+# Build a single tool:
+web_search = create_iflow_web_search_tool()
+image_search = create_iflow_image_search_tool()
+web_fetch = create_iflow_web_fetch_tool()
+
+# Or build all three at once. The returned list is in fixed order:
+# [web_search, image_search, web_fetch]. All three share one sync and one
+# async client, so you get a single connection pool per kind rather than three.
+tools = create_iflow_search_tools()
+```
+
+To reuse an existing core client (for connection-pool sharing across many adapter instances), pass it in directly — the factory takes the client verbatim and does not mutate it:
+
+```python Reuse an existing core client icon="recycle"
+from iflow_search import AsyncIFlowSearchClient, IFlowSearchClient
+from iflow_search_langchain import create_iflow_search_tools
+
+sync_client = IFlowSearchClient()        # reads IFLOW_API_KEY
+async_client = AsyncIFlowSearchClient()  # reads IFLOW_API_KEY
+
+tools = create_iflow_search_tools(
+    client=sync_client,
+    async_client=async_client,
+)
+```
+
+---
+
+## Invocation
+
+### Invoke directly with args
+
+`web_search` and `image_search` take a `query` string and an optional `count`. `web_fetch` takes a `url` string.
+
+```python Web search icon="rocket"
+result = web_search.invoke({"query": "Anthropic Claude latest news", "count": 5})
+print(result)
+```
+
+```python Image search icon="image"
+result = image_search.invoke({"query": "cherry blossoms Tokyo", "count": 8})
+```
+
+```python Web fetch icon="file"
+result = web_fetch.invoke({"url": "https://www.langchain.com/"})
+```
+
+### Invoke with a ToolCall
+
+Each tool is built with `response_format="content_and_artifact"`. Invoking with a model-generated `ToolCall` returns a `ToolMessage` whose `.content` is the LLM-friendly summary and whose `.artifact` is the full structured response (titles, URLs, snippets, dates, raw envelope, and timing).
+
+```python ToolCall icon="briefcase"
+model_generated_tool_call = {
+    "args": {"query": "Anthropic Claude latest news", "count": 5},
+    "id": "call_123",
+    "name": web_search.name,  # "iflow_web_search"
+    "type": "tool_call",
+}
+
+tool_message = web_search.invoke(model_generated_tool_call)
+
+print(tool_message.content)   # text summary for the model
+print(tool_message.artifact)  # full structured dict, including .raw envelope
+```
+
+### Async usage
+
+```python Async icon="bolt"
+async def run():
+    return await web_search.ainvoke(
+        {"query": "quantum computing breakthroughs", "count": 5}
+    )
+
+result = await run()
+```
+
+### Within an agent
+
+We can use all three tools together inside a `create_agent` agent — the model picks `iflow_web_search`, `iflow_image_search`, or `iflow_web_fetch` based on the task.
+
+```python Agent with tools icon="robot"
+# pip install -qU "langchain[anthropic]" to call the model
+from langchain.agents import create_agent
+from iflow_search_langchain import create_iflow_search_tools
+
+tools = create_iflow_search_tools()
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=tools,
+)
+
+agent.invoke(
+    {"messages": [{"role": "user", "content": "Find a recent article about LangChain and summarize it."}]}
+)
+```
+
+The same `tools` list also drops straight into a LangGraph `ToolNode`.
+
+---
+
+## Tool names
+
+The names below are what the model sees as tool names. They are stable and safe to reference in prompts or routing logic:
+
+- `iflow_web_search` — query the web, returns titles / URLs / snippets / publication dates.
+- `iflow_image_search` — query images, returns image URLs and their source pages.
+- `iflow_web_fetch` — fetch one URL and return its extracted readable content.
+
+---
+
+## API reference
+
+- PyPI: [iflow-search-langchain](https://pypi.org/project/iflow-search-langchain/) (core SDK: [iflow-search](https://pypi.org/project/iflow-search/))
+- Source: [iflow-ai/iflow-search-py](https://github.com/iflow-ai/iflow-search-py)
+- iFlow Search platform docs: [platform.iflow.cn](https://platform.iflow.cn)
