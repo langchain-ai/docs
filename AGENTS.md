@@ -212,10 +212,13 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 
 - Match existing conventions in the file you are editing — do not restructure, combine, or split pages unless explicitly asked
 - Reference existing pages for style patterns when creating new content
-- Be concise — no hyperbolic or redundant language
+- Be concise — cut filler words and wordy phrases ("to" not "in order to", "because" not "due to the fact that", "can" not "has the ability to")
 - Second-person imperative present tense ("Run the following code…")
+- Active voice ("The function returns a list" not "A list is returned by the function")
 - Sentence-case headings starting with active verb, not gerund ("Add a tool" not "Adding a tool")
 - American English spelling
+- Oxford commas in lists ("traces, datasets, and experiments")
+- Descriptive link text ("[View the tracing docs](/langsmith/tracing)" not "click [here](/langsmith/tracing)")
 - Add cross-links where applicable
 - Use `@[ClassName]` link map for API references
 - Use `:::python`/`:::js` fencing on OSS docs
@@ -232,13 +235,21 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use model aliases — use full identifiers (e.g., `claude-sonnet-4-6`)
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
+- Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
+- Use first person ("we", "I", "our", "let's") — write in second person or use the product name as subject
+- Use future tense ("The function returns X" not "The function will return X")
+- Use weasel words or filler (avoid "simply", "easily", "just", "very", "basically", "obviously")
 - Use H5 or H6 headings
-- Overuse em dashes — prefer commas, colons, or separate sentences instead
-- Do not add spaces around em dashes — write `word—word` not `word — word` (Vale enforces this)
+- Start headings with articles ("Add a tool" not "The tool setup guide")
+- Use em dashes — prefer commas, colons, or separate sentences instead. Only use an em dash when no alternative reads naturally
+- Add spaces around em dashes — write `word—word` not `word — word` (`make lint_prose` enforces this)
 - Use excessive bold/italics in body text
+- Start bulleted list items with a lowercase letter — always capitalize the first word
 - Include "key features" lists
-- Use horizontal lines
+- Use horizontal lines (`---`) to separate sections — use headings instead
 - Apply bold to UI element names unless existing docs already do so
+- Misspell product names — use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
+- Skip `make lint_prose` — always run it on changed files before committing and fix all violations
 
 ### Model references
 
