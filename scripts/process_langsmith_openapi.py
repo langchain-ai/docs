@@ -47,6 +47,19 @@ FETCH_TIMEOUT_SECONDS = 30
 
 # Tags whose operations should be hidden from the public docs.
 HIDDEN_TAGS: set[str] = {
+    # Fleet
+    "agents",
+    "fleet auth",
+    "fleet credentials",
+    "fleet github-app",
+    "fleet integrations",
+    "fleet mcp",
+    "fleet threads",
+    "fleet trigger-templates",
+    "fleet triggers",
+    "fleet usage",
+    "fleet_webhooks",
+    "skills",
     # Internal / infra
     "beacon",
     "nps",
@@ -68,6 +81,9 @@ HIDDEN_PATHS: set[str] = {
 
 # Path prefixes that should always be hidden regardless of tag.
 HIDDEN_PATH_PREFIXES: list[str] = [
+    "/v1/fleet/",
+    "/v1/platform/fleet/",
+    "/v1/platform/fleet-webhooks/",
     "/v1/beacon/",
     "/v1/platform/nps/",
     "/v2/sandboxes/internal/",
@@ -142,19 +158,6 @@ TAG_GROUPS: dict[str, str] = {
     "mcp_vendors": "Integrations & Tools",
     "mcp": "Integrations & Tools",
     "oauth": "Integrations & Tools",
-    # Fleet
-    "agents": "Fleet",
-    "skills": "Fleet",
-    "fleet auth": "Fleet",
-    "fleet credentials": "Fleet",
-    "fleet github-app": "Fleet",
-    "fleet integrations": "Fleet",
-    "fleet mcp": "Fleet",
-    "fleet threads": "Fleet",
-    "fleet trigger-templates": "Fleet",
-    "fleet triggers": "Fleet",
-    "fleet usage": "Fleet",
-    "fleet_webhooks": "Fleet",
     # Issues
     "issues": "Issues",
     "issues-agent": "Issues",
@@ -183,7 +186,6 @@ GROUP_ORDER: list[str] = [
     "Integrations & Tools",
     "LLM Gateway",
     "Sandboxes",
-    "Fleet",
     "Issues",
     "Administration",
     "Files",
