@@ -485,6 +485,7 @@ LINK_MAPS: list[LinkMap] = [
             "SubgraphDiscoverySnapshot": "https://reference.langchain.com/javascript/langchain-react/SubgraphDiscoverySnapshot",
             "SubmissionQueueEntry": "https://reference.langchain.com/javascript/langchain-react/SubmissionQueueEntry",
             "useStream": "https://reference.langchain.com/javascript/langchain-react/index/useStream",
+            "injectStream": "https://reference.langchain.com/javascript/langchain-angular/injectStream",
             "client.runs.cancel": "https://reference.langchain.com/javascript/langchain-langgraph-sdk/client/RunsClient/cancel",
             "ThreadStateJS": "https://reference.langchain.com/javascript/langchain-langgraph-sdk/index/ThreadState",
         },
@@ -688,6 +689,7 @@ LINK_MAPS: list[LinkMap] = [
             "SubgraphDiscoverySnapshot": "langchain-react/SubgraphDiscoverySnapshot",
             "SubmissionQueueEntry": "langchain-react/SubmissionQueueEntry",
             "useStream": "langchain-react/index/useStream",
+            "injectStream": "langchain-angular/injectStream",
         },
     },
     {

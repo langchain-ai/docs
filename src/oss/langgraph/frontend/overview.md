@@ -102,7 +102,7 @@ On the frontend, @[`useStream`] exposes `stream.subgraphs` for graph-node discov
 and selector helpers such as `useMessages(stream, node)` for node-scoped
 streaming content. `stream.values` still holds the full graph state when you
 need fields such as the final `synthesis`. Angular uses the same stream API
-shape through `injectStream`.
+shape through @[`injectStream`].
 
 ```ts
 import { useStream } from "@langchain/react";
