@@ -455,12 +455,20 @@ for await (const activity of stream.extensions.toolActivity) {
 ```
 :::
 
-:::python
 ### Register transformers on middleware
 
+:::python
 <Note>Middleware-registered transformers require `langchain>=1.3.2`.</Note>
+:::
 
-Middleware can declare scope-aware transformer factories alongside their tools and hooks. Set the `transformers` attribute on an `AgentMiddleware` subclass to a sequence of factories; each factory is invoked as `factory(scope)` so every subgraph mini-mux receives a fresh instance.
+:::js
+<Note>Middleware-registered transformers require `langchain@1.4.3` or later.</Note>
+:::
+
+Middleware can declare scope-aware transformer factories alongside its hooks and tools. Each factory is invoked per scope so every subgraph mini-mux receives a fresh instance.
+
+:::python
+Set the `transformers` attribute on an `AgentMiddleware` subclass to a sequence of factories:
 
 ```py
 from langchain.agents import create_agent
@@ -477,7 +485,28 @@ agent = create_agent(
     middleware=[ToolActivityMiddleware()],
 )
 ```
+:::
 
+:::js
+Pass `streamTransformers` to `createMiddleware`:
+
+```ts
+import { createAgent, createMiddleware } from "langchain";
+
+const toolActivityMiddleware = createMiddleware({
+  name: "ToolActivityMiddleware",
+  streamTransformers: [toolActivityTransformer],
+});
+
+const agent = createAgent({
+  model: "gpt-5-nano",
+  tools: [getWeather],
+  middleware: [toolActivityMiddleware],
+});
+```
+:::
+
+:::python
 At compile time, `create_agent` merges middleware-registered factories with anything passed to its own `transformers=` argument. The final order on the compiled graph is:
 
 1. The built-in `ToolCallTransformer`.
@@ -502,6 +531,16 @@ agent = create_agent(
 ```
 
 See [PII detection](/oss/langchain/middleware/built-in#pii-detection) for the full configuration surface.
+:::
+
+:::js
+At compile time, `createAgent` merges middleware-registered factories with anything passed to its own `streamTransformers` option. The final order on the compiled graph is:
+
+1. The built-in `ToolCallTransformer`.
+2. Middleware-registered factories, in middleware order.
+3. Caller-supplied `streamTransformers` from `createAgent`.
+
+This keeps the built-in tool-call projection in front of consumer transformers and gives caller-supplied entries the final word.
 :::
 
 See [Build your own projection](/oss/langgraph/event-streaming#build-your-own-projection) for the transformer contract.
