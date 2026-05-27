@@ -30,6 +30,7 @@ lint:
 	uv run ruff format $(PYTHON_FILES) --diff
 	uv run ruff check $(PYTHON_FILES) --diff
 	uv run ty check
+	uv run codespell src
 
 format:
 	uv run ruff format $(PYTHON_FILES)
@@ -108,7 +109,7 @@ broken-links: build
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
 	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
-		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
+		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/langsmith/smith-api' | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+.*/'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
 		else \
@@ -130,7 +131,7 @@ broken-links-with-anchors: build
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
 	@cd build && mint broken-links --check-anchors 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
-		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
+		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/langsmith/smith-api' | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+.*/'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
 		else \
@@ -142,11 +143,11 @@ check-openapi: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.406'"; exit 1; }
 	@cd build && output=$$(mint openapi-check langsmith/agent-server-openapi.json) && echo "$$output"
 
-# Extract code snippets from src/code-samples using Bluehawk
+# Extract code snippets from src/code-samples (line-based, Bluehawk-compatible tags)
 code-snippets:
-	@echo "Extracting code snippets with Bluehawk..."
+	@echo "Extracting code snippets..."
 	@mkdir -p src/code-samples-generated
-	@npx --yes bluehawk snip -o src/code-samples-generated/ --ignore node_modules --ignore .DS_Store src/code-samples/
+	@PYTHONPATH=$(CURDIR) python scripts/extract_code_snippets.py
 	@PYTHONPATH=$(CURDIR) python scripts/generate_code_snippet_mdx.py
 
 # Run code samples. By default runs all; pass FILES to test specific paths.
@@ -175,7 +176,7 @@ help:
 	@echo "  make lint_prose         - Lint prose with Vale (terminology, style)"
 	@echo "  make test               - Run tests"
 	@echo "  make install            - Install dependencies"
-	@echo "  make code-snippets      - Extract code snippets with Bluehawk"
+	@echo "  make code-snippets      - Extract code snippets (line-based, Bluehawk-compatible)"
 	@echo "  make test-code-samples  - Run code samples (FILES=\"path ...\" for specific)"
 	@echo "  make clean              - Clean build artifacts"
 	@echo "  make help               - Show this help message"

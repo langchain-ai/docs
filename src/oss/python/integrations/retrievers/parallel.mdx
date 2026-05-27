@@ -1,0 +1,134 @@
+---
+title: "ParallelSearchRetriever integration"
+description: "Integrate with the ParallelSearchRetriever retriever using LangChain Python."
+---
+
+@[`ParallelSearchRetriever`] is a LangChain [`BaseRetriever`](/oss/langchain/retrieval) backed by [Parallel](https://platform.parallel.ai/)'s [Search API](https://docs.parallel.ai/search/search-quickstart). It returns `list[Document]` with rich `metadata` (`url`, `title`, `publish_date`, `search_id`, `excerpts`, `query`) and slots into any RAG pipeline.
+
+<Note>
+    Looking for an LLM-callable tool that returns the raw search response instead of `Document`s? See [ParallelSearchTool](/oss/integrations/tools/parallel_search).
+</Note>
+
+## Overview
+
+### Integration details
+
+| Class | Package | JS support | Package latest |
+| :--- | :--- | :---: | :---: |
+| @[`ParallelSearchRetriever`] | @[`langchain-parallel`] | ❌ | <a href="https://pypi.org/project/langchain-parallel/" target="_blank"><img src="https://img.shields.io/pypi/v/langchain-parallel?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
+
+## Setup
+
+The integration lives in the `langchain-parallel` package.
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-parallel
+    ```
+    ```bash uv
+    uv add langchain-parallel
+    ```
+</CodeGroup>
+
+### Credentials
+
+Head to [Parallel](https://platform.parallel.ai) to sign up and generate an API key. Set `PARALLEL_API_KEY` in your environment:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("PARALLEL_API_KEY"):
+    os.environ["PARALLEL_API_KEY"] = getpass.getpass("Parallel API key:\n")
+```
+
+## Instantiation
+
+```python
+from langchain_parallel import ParallelSearchRetriever
+
+retriever = ParallelSearchRetriever(
+    max_results=3,
+    excerpts={"max_chars_per_result": 800},
+)
+```
+
+## Usage
+
+Each returned `Document` has its excerpts joined into `page_content` and exposes the source URL, title, and publish date in `metadata`:
+
+```python
+docs = retriever.invoke("breakthroughs in fusion energy 2025")
+for d in docs:
+    print(d.metadata.get("title"), "—", d.metadata.get("url"))
+    print(d.page_content[:200], "...\n")
+```
+
+```text
+Net energy gain in fusion: NIF results — https://www.nature.com/articles/...
+The National Ignition Facility achieved net energy gain on December 5, 2022 ...
+
+Commonwealth Fusion's SPARC milestone — https://news.mit.edu/...
+SPARC is on track for first plasma in 2026 ...
+```
+
+### Configured search
+
+Pass an `objective` for a richer retrieval target alongside the keyword `search_queries`. The retriever forwards source and fetch policies to the underlying Search API.
+
+```python
+configured = ParallelSearchRetriever(
+    max_results=5,
+    excerpts={"max_chars_per_result": 1500},
+    mode="basic",  # 'basic' (lower latency) or 'advanced' (higher quality)
+    source_policy={
+        "include_domains": ["nature.com", "science.org", "iter.org"],
+    },
+)
+
+docs = configured.invoke(
+    "What's the latest peer-reviewed result on net-energy-gain fusion?"
+)
+```
+
+### Async
+
+```python
+docs = await retriever.ainvoke("Latest GLP-1 trial results 2025")
+```
+
+## Use within a chain
+
+`ParallelSearchRetriever` plugs into any LangChain chain:
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain.chat_models import init_chat_model
+
+llm = init_chat_model(model="claude-opus-4-7")
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "Answer using only the context below. Cite URLs."),
+    ("human", "Context:\n{context}\n\nQuestion: {question}"),
+])
+
+def format_docs(docs):
+    return "\n\n".join(
+        f"[{d.metadata.get('url')}] {d.page_content[:500]}" for d in docs
+    )
+
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+chain.invoke("What was the most recent fusion energy breakthrough?")
+```
+
+## API reference
+
+For detailed documentation, head to the @[`ParallelSearchRetriever`] API reference or the [Parallel Search API guides](https://docs.parallel.ai/search/search-quickstart).

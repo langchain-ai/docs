@@ -1,0 +1,140 @@
+---
+title: "PerplexityEmbeddings integration"
+description: "Integrate with Perplexity's embedding models using LangChain Python."
+---
+
+This will help you get started with Perplexity embedding models using LangChain. For detailed documentation on `PerplexityEmbeddings` features and configuration options, please refer to the [API reference](https://reference.langchain.com/python/langchain-perplexity/embeddings/PerplexityEmbeddings).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | Py support | Package downloads | Package latest |
+|:---|:---|:---:|:---:|:---:|:---:|
+| [`PerplexityEmbeddings`](https://reference.langchain.com/python/langchain-perplexity/embeddings/PerplexityEmbeddings) | [`langchain-perplexity`](https://github.com/langchain-ai/langchain/tree/master/libs/partners/perplexity) | ❌ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-perplexity?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-perplexity?style=flat-square&label=%20) |
+
+## Setup
+
+To access Perplexity embedding models you'll need to create a Perplexity account, get an API key, and install the `langchain-perplexity` integration package.
+
+### Credentials
+
+Head to [https://www.perplexity.ai/account/api/keys](https://www.perplexity.ai/account/api/keys) to sign up for the Perplexity API and generate an API key. Once you've done this, set the `PPLX_API_KEY` (or `PERPLEXITY_API_KEY`) environment variable:
+
+```python
+import getpass
+import os
+
+if not os.getenv("PPLX_API_KEY"):
+    os.environ["PPLX_API_KEY"] = getpass.getpass("Enter your Perplexity API key: ")
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```python
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+The LangChain Perplexity integration lives in the `langchain-perplexity` package:
+
+```python
+pip install -qU langchain-perplexity
+```
+
+## Instantiation
+
+Now we can instantiate our embedding model object and generate embeddings:
+
+```python
+from langchain_perplexity import PerplexityEmbeddings
+
+embeddings = PerplexityEmbeddings(
+    model="pplx-embed-v1-4b",
+    # api_key="...",       # if you prefer to pass the key explicitly
+    # request_timeout=60,
+    # max_retries=6,
+)
+```
+
+Available models include `pplx-embed-v1-4b` (default) and `pplx-embed-v1-0.6b`. See the [Perplexity Embeddings API reference](https://docs.perplexity.ai/api-reference/embeddings-post) for the current list and dimensions.
+
+## Indexing and retrieval
+
+Embedding models are often used in retrieval-augmented generation (RAG) flows, both as part of indexing data as well as later retrieving it. For more detailed instructions, please see our [RAG tutorials](/oss/langchain/rag).
+
+Below, see how to index and retrieve data using the `embeddings` object we initialized above. In this example, we will index and retrieve a sample document in the `InMemoryVectorStore`.
+
+```python
+# Create a vector store with a sample text
+from langchain_core.vectorstores import InMemoryVectorStore
+
+text = "LangChain is the framework for building context-aware reasoning applications"
+
+vectorstore = InMemoryVectorStore.from_texts(
+    [text],
+    embedding=embeddings,
+)
+
+# Use the vectorstore as a retriever
+retriever = vectorstore.as_retriever()
+
+# Retrieve the most similar text
+retrieved_documents = retriever.invoke("What is LangChain?")
+
+# show the retrieved document's content
+retrieved_documents[0].page_content
+```
+
+```text
+'LangChain is the framework for building context-aware reasoning applications'
+```
+
+## Direct usage
+
+Under the hood, the vectorstore and retriever implementations are calling `embeddings.embed_documents(...)` and `embeddings.embed_query(...)` to create embeddings for the text(s) used in `from_texts` and retrieval `invoke` operations, respectively.
+
+You can directly call these methods to get embeddings for your own use cases.
+
+### Embed single texts
+
+You can embed single texts or documents with `embed_query`:
+
+```python
+single_vector = embeddings.embed_query(text)
+print(str(single_vector)[:100])  # Show the first 100 characters of the vector
+```
+
+### Embed multiple texts
+
+You can embed multiple texts with `embed_documents`:
+
+```python
+text2 = (
+    "LangGraph is a library for building stateful, multi-actor applications with LLMs"
+)
+two_vectors = embeddings.embed_documents([text, text2])
+for vector in two_vectors:
+    print(str(vector)[:100])  # Show the first 100 characters of the vector
+```
+
+### Async usage
+
+`PerplexityEmbeddings` also exposes async methods:
+
+```python
+single_vector = await embeddings.aembed_query(text)
+two_vectors = await embeddings.aembed_documents([text, text2])
+```
+
+<Note>
+Perplexity returns base64-encoded signed int8 embeddings. `PerplexityEmbeddings` decodes these into `list[float]` values in the range `[-128, 127]`. The magnitude is preserved from the API's quantized output; cosine similarity is unaffected by the lack of unit-length normalization.
+</Note>
+
+---
+
+## API reference
+
+For detailed documentation on `PerplexityEmbeddings` features and configuration options, please refer to the [API reference](https://reference.langchain.com/python/langchain-perplexity/embeddings/PerplexityEmbeddings) and the [Perplexity Embeddings API documentation](https://docs.perplexity.ai/api-reference/embeddings-post).

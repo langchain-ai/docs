@@ -14,6 +14,10 @@ This guide reviews common workflow and agent patterns.
 
 LangGraph offers several benefits when building agents and workflows, including [persistence](/oss/langgraph/persistence), [streaming](/oss/langgraph/streaming), and support for debugging as well as [deployment](/oss/langgraph/deploy).
 
+<Tip>
+Trace and compare these workflow patterns with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to see how data flows through each step.
+</Tip>
+
 ## Setup
 
 To build a workflow or agent, you can use [any chat model](/oss/integrations/chat) that supports structured outputs and tool calling. The following example uses Anthropic:
@@ -2176,4 +2180,65 @@ for await (const step of stream) {
 }
 ```
 </CodeGroup>
+:::
+
+### ToolNode
+
+@[`ToolNode`] is a prebuilt node that executes tools in LangGraph workflows. It handles parallel tool execution, error handling, and state injection automatically.
+
+Use @[`ToolNode`] when you need fine-grained control over how your graph executes tools. This is the building block that powers tool execution in many LangGraph agent patterns.
+
+:::python
+
+```python
+from langchain.tools import tool
+from langgraph.prebuilt import ToolNode
+from langgraph.graph import MessagesState, StateGraph
+
+@tool
+def search(query: str) -> str:
+    """Search for information."""
+    return f"Results for: {query}"
+
+@tool
+def calculator(expression: str) -> str:
+    """Evaluate a math expression."""
+    return str(eval(expression))
+
+builder = StateGraph(MessagesState)
+builder.add_node("tools", ToolNode([search, calculator]))
+# ... add other nodes and edges
+graph = builder.compile()
+```
+
+:::
+
+:::js
+
+```typescript
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { tool } from "@langchain/core/tools";
+import * as z from "zod";
+
+const search = tool(
+  ({ query }) => `Results for: ${query}`,
+  {
+    name: "search",
+    description: "Search for information.",
+    schema: z.object({ query: z.string() }),
+  }
+);
+
+const calculator = tool(
+  ({ expression }) => String(eval(expression)),
+  {
+    name: "calculator",
+    description: "Evaluate a math expression.",
+    schema: z.object({ expression: z.string() }),
+  }
+);
+
+const toolNode = new ToolNode([search, calculator]);
+```
+
 :::

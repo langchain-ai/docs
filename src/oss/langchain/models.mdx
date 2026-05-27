@@ -151,6 +151,42 @@ const model = await initChatModel(
 ```
 :::
 
+### Connection resilience
+
+LangChain chat models automatically retry failed API requests with exponential backoff. By default, models retry up to **6 times** for network errors, rate limits (429), and server errors (5xx). Client errors like 401 (unauthorized) or 404 are not retried.
+
+:::python
+You can adjust `max_retries` and `timeout` when creating a model, then pass that instance to `create_agent`, `create_deep_agent`, or call it standalone:
+
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(
+    "google_genai:gemini-3.5-flash",
+    max_retries=10,  # Increase for unreliable networks (default: 6)
+    timeout=120,  # Seconds; increase for slow connections
+)
+```
+:::
+
+:::js
+You can adjust `maxRetries` and `timeout` when creating a model, then pass that instance to `createAgent`, `createDeepAgent`, or call it standalone:
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+
+const model = new ChatAnthropic({
+  model: "google_genai:gemini-3.5-flash",
+  maxRetries: 10, // Increase for unreliable networks (default: 6)
+  timeout: 120_000, // Milliseconds; increase for slow connections
+});
+```
+:::
+
+<Tip>
+    For long-running agent graphs on unreliable networks, consider higher `max_retries` (for example 10–15) and a [checkpointer](/oss/langgraph/persistence) so that progress is preserved across failures.
+</Tip>
+
 <Info>
     Each chat model integration may have additional params used to control provider-specific functionality.
 
@@ -1263,7 +1299,7 @@ Model profile data allow applications to work around model capabilities dynamica
 1. [Summarization middleware](/oss/langchain/middleware/built-in#summarization) can trigger summarization based on a model's context window size.
 2. [Structured output](/oss/langchain/structured-output) strategies in `create_agent` can be inferred automatically (e.g., by checking support for native structured output features).
 3. Model inputs can be gated based on supported [modalities](#multimodal) and maximum input tokens.
-4. The [Deep Agents CLI](/oss/deepagents/cli) filters the [interactive model switcher](/oss/deepagents/cli/providers#which-models-appear-in-the-switcher) to models whose profiles report `tool_calling` support and text I/O, and displays context window sizes and capability flags in the selector detail view.
+4. [Deep Agents Code](/oss/deepagents/code) filters the [interactive model switcher](/oss/deepagents/code/providers#which-models-appear-in-the-switcher) to models whose profiles report `tool_calling` support and text I/O, and displays context window sizes and capability flags in the selector detail view.
 
 <Accordion title="Updating or overwriting profile data">
     Model profile data can be changed if it is missing, stale, or incorrect.
@@ -1344,7 +1380,7 @@ Model profile data allow applications to work around model capabilities dynamica
 1. [Summarization middleware](/oss/langchain/middleware/built-in#summarization) can trigger summarization based on a model's context window size.
 2. [Structured output](/oss/langchain/structured-output) strategies in `createAgent` can be inferred automatically (e.g., by checking support for native structured output features).
 3. Model inputs can be gated based on supported [modalities](#multimodal) and maximum input tokens.
-4. The [Deep Agents CLI](/oss/deepagents/cli) filters the [interactive model switcher](/oss/deepagents/cli/providers#which-models-appear-in-the-switcher) to models whose profiles report `tool_calling` support and text I/O, and displays context window sizes and capability flags in the selector detail view.
+4. [Deep Agents Code](/oss/deepagents/code) filters the [interactive model switcher](/oss/deepagents/code/providers#which-models-appear-in-the-switcher) to models whose profiles report `tool_calling` support and text I/O, and displays context window sizes and capability flags in the selector detail view.
 
 <Accordion title="Modify profile data">
     Model profile data can be changed if it is missing, stale, or incorrect.
@@ -1983,3 +2019,83 @@ configurable_model.invoke(
     ```
 </Accordion>
 :::
+
+### Dynamic model selection
+
+Dynamic models are selected at <Tooltip tip="The execution environment of your agent, containing immutable configuration and contextual data that persists throughout the agent's execution (e.g., user IDs, session details, or application-specific configuration).">runtime</Tooltip> based on the current <Tooltip tip="The data that flows through your agent's execution, including messages, custom fields, and any information that needs to be tracked and potentially modified during processing (e.g., user preferences or tool usage stats).">state</Tooltip> and context. This enables sophisticated routing logic and cost optimization.
+
+:::python
+
+To use a dynamic model, create middleware using the @[`@wrap_model_call`] decorator that modifies the model in the request:
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
+
+
+basic_model = ChatOpenAI(model="gpt-5.4-mini")
+advanced_model = ChatOpenAI(model="gpt-5.4")
+
+@wrap_model_call
+def dynamic_model_selection(request: ModelRequest, handler) -> ModelResponse:
+    """Choose model based on conversation complexity."""
+    message_count = len(request.state["messages"])
+
+    if message_count > 10:
+        # Use an advanced model for longer conversations
+        model = advanced_model
+    else:
+        model = basic_model
+
+    return handler(request.override(model=model))
+
+agent = create_agent(
+    model=basic_model,  # Default model
+    tools=tools,
+    middleware=[dynamic_model_selection]
+)
+```
+
+<Warning>
+Pre-bound models (models with @[`bind_tools`][BaseChatModel.bind_tools] already called) are not supported when using structured output. If you need dynamic model selection with structured output, ensure the models passed to the middleware are not pre-bound.
+</Warning>
+
+:::
+:::js
+
+To use a dynamic model, create middleware with `wrapModelCall` that modifies the model in the request:
+
+```ts
+import { ChatOpenAI } from "@langchain/openai";
+import { createAgent, createMiddleware } from "langchain";
+
+const basicModel = new ChatOpenAI({ model: "gpt-5.4-mini" });
+const advancedModel = new ChatOpenAI({ model: "gpt-5.4" });
+
+const dynamicModelSelection = createMiddleware({
+  name: "DynamicModelSelection",
+  wrapModelCall: (request, handler) => {
+    // Choose model based on conversation complexity
+    const messageCount = request.messages.length;
+
+    return handler({
+        ...request,
+        model: messageCount > 10 ? advancedModel : basicModel,
+    });
+  },
+});
+
+const agent = createAgent({
+  model: "gpt-5.4-mini", // Base model (used when messageCount ≤ 10)
+  tools,
+  middleware: [dynamicModelSelection],
+});
+```
+
+For more details on middleware and advanced patterns, see the [middleware documentation](/oss/langchain/middleware).
+:::
+
+<Tip>
+For model configuration details, see [Models](/oss/langchain/models). For dynamic model selection patterns, see [Dynamic model in middleware](/oss/langchain/middleware#dynamic-model).
+</Tip>
