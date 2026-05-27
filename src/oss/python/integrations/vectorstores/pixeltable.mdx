@@ -9,11 +9,13 @@ This guide provides a quick overview for getting started with the Pixeltable [ve
 
 Key differentiators as a vector backend:
 
+- **Metadata filtering via `.where()`**: Filter on metadata fields *before* ranking, not post-hoc
+- **Computed column lineage**: Add derived columns that auto-backfill and auto-compute on new inserts
 - **Multimodal native**: Image, video, audio, and document columns alongside text
 - **Incremental**: Only new/changed rows get re-embedded
 - **Persistent and versioned**: Data survives restarts; every change is tracked
 - **No external services**: Embedded PostgreSQL, no Docker required
-- **25+ AI providers**: Built-in functions for OpenAI, Anthropic, Gemini, and more
+- **Any embedding model**: Works with OpenAI, Hugging Face, or any local model
 
 ## Setup
 
@@ -44,7 +46,10 @@ os.environ["LANGSMITH_TRACING"] = "true"
 
 ## Instantiation
 
-```python Initialize vector store icon="database"
+Works with any LangChain `Embeddings` model -- cloud or local:
+
+<CodeGroup>
+```python OpenAI icon="cloud"
 from langchain_pixeltable import PixeltableVectorStore
 from langchain_openai import OpenAIEmbeddings
 
@@ -53,6 +58,16 @@ vector_store = PixeltableVectorStore(
     embedding=OpenAIEmbeddings(model="text-embedding-3-small"),
 )
 ```
+```python Local (no API key) icon="laptop"
+from langchain_pixeltable import PixeltableVectorStore
+from langchain_huggingface import HuggingFaceEmbeddings
+
+vector_store = PixeltableVectorStore(
+    table_name="mydir.documents",
+    embedding=HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2"),
+)
+```
+</CodeGroup>
 
 The store creates a Pixeltable directory and table on first use. The embedding dimension is inferred from the embedding model.
 
@@ -66,9 +81,9 @@ The store creates a Pixeltable directory and table on first use. The embedding d
 from langchain_core.documents import Document
 
 documents = [
-    Document(page_content="Pixeltable handles multimodal data", metadata={"source": "docs"}),
-    Document(page_content="LangChain builds LLM applications", metadata={"source": "docs"}),
-    Document(page_content="Vector databases store embeddings", metadata={"source": "tutorial"}),
+    Document(page_content="Pixeltable handles multimodal data", metadata={"category": "infra", "priority": 1}),
+    Document(page_content="LangChain builds LLM applications", metadata={"category": "framework", "priority": 2}),
+    Document(page_content="Vector databases store embeddings", metadata={"category": "infra", "priority": 3}),
 ]
 
 vector_store.add_documents(documents=documents, ids=["1", "2", "3"])
@@ -84,23 +99,39 @@ vector_store.delete(ids=["3"])
 
 ## Query vector store
 
-### Directly
+### Similarity search
 
-```python Similarity search icon="folders"
+```python Basic similarity search icon="folders"
 results = vector_store.similarity_search("multimodal data management", k=2)
 for doc in results:
     print(f"* {doc.page_content} [{doc.metadata}]")
 ```
 
-With scores:
+### Filtered similarity search
 
-```python Similarity search with scores icon="star-half"
-results = vector_store.similarity_search_with_score("multimodal data", k=2)
-for doc, score in results:
-    print(f"* [SIM={score:.3f}] {doc.page_content} [{doc.metadata}]")
+The `filter` parameter maps to Pixeltable's `.where()` clause -- predicates are evaluated **before** ranking, so only matching rows participate in the similarity sort:
+
+```python Filter by metadata icon="filter"
+results = vector_store.similarity_search(
+    "data infrastructure",
+    k=5,
+    filter={"category": "infra"},
+)
+for doc in results:
+    print(f"* {doc.page_content} [category={doc.metadata['category']}]")
 ```
 
-### By turning into retriever
+### With scores
+
+```python Similarity search with scores icon="star-half"
+results = vector_store.similarity_search_with_score(
+    "multimodal data", k=2, filter={"category": "infra"},
+)
+for doc, score in results:
+    print(f"* [SIM={score:.3f}] {doc.page_content}")
+```
+
+### As retriever
 
 ```python Create retriever icon="robot"
 retriever = vector_store.as_retriever(search_kwargs={"k": 3})
@@ -109,9 +140,41 @@ retriever.invoke("What is multimodal data infrastructure?")
 
 ---
 
+## Access the underlying Pixeltable table
+
+The `.table` property gives you the raw Pixeltable table for operations beyond the VectorStore interface -- computed columns, lineage, joins, version history, and arbitrary `.where()` predicates:
+
+```python Computed columns with lineage icon="link"
+import pixeltable as pxt
+
+t = vector_store.table
+
+# Inspect data
+t.select(t.text, t.metadata, t.embedding).collect()
+
+# Add computed columns -- auto-backfills existing rows
+t.add_computed_column(word_count=my_word_counter(t.text))
+
+# New inserts via the wrapper auto-compute lineage columns
+vector_store.add_texts(["New document"], metadatas=[{"category": "infra"}])
+
+# WHERE on computed columns + similarity
+import numpy as np
+sim = t.embedding.similarity(vector=np.array(query_vec, dtype=np.float32))
+results = (
+    t.where(t.word_count > 5)
+    .order_by(sim, asc=False)
+    .limit(3)
+    .select(t.text, t.word_count, sim=sim)
+    .collect()
+)
+```
+
+---
+
 ## Connect to an existing Pixeltable table
 
-If you already have a Pixeltable table with an embedding index, connect directly:
+If you already have a Pixeltable table -- including tables with multimodal columns like images or video -- connect directly:
 
 ```python
 vs = PixeltableVectorStore.from_existing_table(
@@ -120,7 +183,7 @@ vs = PixeltableVectorStore.from_existing_table(
     text_column="content",
     embedding_column="content_embedding",
 )
-results = vs.similarity_search("search query")
+results = vs.similarity_search("search query", filter={"source": "arxiv"})
 ```
 
 ---
