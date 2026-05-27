@@ -38,10 +38,10 @@ checkpoint ID to fork from.
 
 :::python
 
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
+Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to @[`useStream`] for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
 
 ```ts
-import type { BaseMessage } from "@langchain/core/messages";
+import type { BaseMessage } from "langchain";
 
 interface AgentState {
   messages: BaseMessage[];
@@ -52,7 +52,7 @@ interface AgentState {
 
 :::js
 
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
+Import your agent and pass `typeof myAgent` as a type parameter to @[`useStream`] for type-safe access to state values:
 
 ```ts
 import type { myAgent } from "./agent";
@@ -156,18 +156,67 @@ export class ChatComponent {
 
 ## Understand message metadata
 
-The `useMessageMetadata(stream, messageId)` helper returns checkpoint metadata
-for one message:
+The `useMessageMetadata(stream, messageId)` helper returns @[MessageMetadata]
+for one message. Use it in the component that renders each message so the
+metadata stays scoped to that message ID:
 
-```ts
-interface MessageMetadata {
-  parentCheckpointId?: string;
+```tsx
+import type { BaseMessage } from "langchain";
+import { useState } from "react";
+import { useMessageMetadata, useStream } from "@langchain/react";
+
+function Chat() {
+  const stream = useStream<typeof myAgent>({
+    apiUrl: AGENT_URL,
+    assistantId: "simple_agent",
+  });
+
+  return stream.messages.map((message) => (
+    <MessageWithForkControls
+      key={message.id}
+      stream={stream}
+      message={message}
+    />
+  ));
+}
+
+function MessageWithForkControls({
+  stream,
+  message,
+}: {
+  stream: ReturnType<typeof useStream>;
+  message: BaseMessage;
+}) {
+  const metadata = useMessageMetadata(stream, message.id);
+  const checkpointId = metadata?.parentCheckpointId;
+  const [editedText, setEditedText] = useState(message.text);
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!checkpointId) return;
+
+        stream.submit(
+          { messages: [{ type: "human", content: editedText }] },
+          { forkFrom: { checkpointId } }
+        );
+      }}
+    >
+      <textarea
+        value={editedText}
+        onChange={(event) => setEditedText(event.target.value)}
+      />
+      <button disabled={!checkpointId || editedText === message.text}>
+        Submit edited branch
+      </button>
+    </form>
+  );
 }
 ```
 
-| Property | Description |
-| --- | --- |
-| `parentCheckpointId` | The checkpoint just before this message. Use it as the fork point for edits and regenerations |
+`parentCheckpointId` is the checkpoint just before the message. Use it as the
+fork point for edits and regenerations.
 
 ## Edit a message
 
@@ -229,32 +278,6 @@ with temperature, regenerating the same prompt often produces meaningfully
 different responses.
 </Tip>
 
-## Show fork controls
-
-Render edit controls on user messages and regenerate controls on AI messages.
-Both controls use the same message metadata:
-
-```tsx
-function ForkControls({
-  metadata,
-  onEdit,
-  onRegenerate,
-}: {
-  metadata: MessageMetadata;
-  onEdit: () => void;
-  onRegenerate: () => void;
-}) {
-  if (!metadata.parentCheckpointId) return null;
-
-  return (
-    <div className="flex items-center gap-2 text-xs text-gray-500">
-      <button onClick={onEdit}>Edit</button>
-      <button onClick={onRegenerate}>Regenerate</button>
-    </div>
-  );
-}
-```
-
 ## How branching works under the hood
 
 LangGraph persists every state transition as a **checkpoint**. When you submit
@@ -276,159 +299,6 @@ User: "Tell me about JSX" (edited from branch A)
 Each path is persisted in the checkpoint store. Use
 `stream.client.threads.getHistory(threadId)` when you want to build a separate
 timeline view across checkpoints.
-
-## Complete message component
-
-Here is a full component that combines message display, editing, and
-regeneration:
-
-```tsx
-function MessageWithBranching({
-  message,
-  stream,
-}: {
-  message: BaseMessage;
-  stream: ReturnType<typeof useStream>;
-}) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editText, setEditText] = useState(message.text);
-  const metadata = useMessageMetadata(stream, message.id);
-
-  const isHuman = message._getType() === "human";
-  const isAI = message._getType() === "ai";
-
-  return (
-    <div className="group relative py-2">
-      {isEditing ? (
-        <EditForm
-          text={editText}
-          onChange={setEditText}
-          onSave={() => {
-            handleEdit(stream, message as HumanMessage, metadata, editText);
-            setIsEditing(false);
-          }}
-          onCancel={() => {
-            setEditText(message.text);
-            setIsEditing(false);
-          }}
-        />
-      ) : (
-        <>
-          <div className={isHuman ? "text-right" : "text-left"}>
-            <div
-              className={
-                isHuman
-                  ? "inline-block rounded-lg bg-blue-600 px-4 py-2 text-white"
-                  : "inline-block rounded-lg bg-gray-100 px-4 py-2"
-              }
-            >
-              {message.text}
-            </div>
-          </div>
-
-          <div className="mt-1 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-            {isHuman && (
-              <button
-                className="text-xs text-gray-400 hover:text-gray-700"
-                onClick={() => setIsEditing(true)}
-              >
-                Edit
-              </button>
-            )}
-
-            {isAI && (
-              <button
-                className="text-xs text-gray-400 hover:text-gray-700"
-                onClick={() =>
-                  handleRegenerate(stream, metadata)
-                }
-              >
-                Regenerate
-              </button>
-            )}
-
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function EditForm({
-  text,
-  onChange,
-  onSave,
-  onCancel,
-}: {
-  text: string;
-  onChange: (text: string) => void;
-  onSave: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <textarea
-        className="w-full rounded-lg border p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        value={text}
-        onChange={(e) => onChange(e.target.value)}
-        rows={3}
-      />
-      <div className="flex gap-2">
-        <button
-          className="rounded bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700"
-          onClick={onSave}
-        >
-          Save & Rerun
-        </button>
-        <button
-          className="rounded border px-4 py-1.5 text-sm hover:bg-gray-50"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-```
-
-## Refresh history after forks
-
-If you render a checkpoint timeline, refresh it after an edit or regeneration
-settles:
-
-```ts
-async function refreshHistory(stream: ReturnType<typeof useStream>) {
-  if (!stream.threadId) return [];
-  return stream.client.threads.getHistory(stream.threadId, { limit: 100 });
-}
-```
-
-## Add keyboard shortcuts
-
-Keyboard shortcuts are useful for power users. Bind them to the same edit and
-regenerate handlers you expose in the message controls:
-
-```tsx
-useEffect(() => {
-  function handleKeyDown(e: KeyboardEvent) {
-    if (!focusedMessage) return;
-    if (e.altKey && e.key === "e") {
-      startEditing(focusedMessage);
-    }
-    if (e.altKey && e.key === "r") {
-      regenerate(focusedMessage);
-    }
-  }
-
-  window.addEventListener("keydown", handleKeyDown);
-  return () => window.removeEventListener("keydown", handleKeyDown);
-}, [focusedMessage, stream]);
-```
-
-<Tip>
-Keep shortcuts secondary to visible controls so the pattern remains discoverable.
-</Tip>
 
 ## Best practices
 

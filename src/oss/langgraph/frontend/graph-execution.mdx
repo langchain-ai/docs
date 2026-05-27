@@ -24,46 +24,31 @@ task. For example, a research pipeline might have:
 3. **Analyze**: draw conclusions from the research
 4. **Synthesize**: produce a final, polished response
 
-Each node writes its output to a specific key in the graph's state. By mapping
-these node names and state keys to UI components, you can create a visual
-representation of the entire pipeline.
+Each node writes its output to a specific key in the graph's state. On the
+frontend, you don't need to hardcode that mapping as @[`useStream`] discovers
+each node as it runs via `stream.subgraphs` and exposes a
+@[`SubgraphDiscoverySnapshot`] for every observed step:
 
 ```ts
-const PIPELINE_NODES = [
-  { name: "classify", stateKey: "classification", label: "Classify" },
-  { name: "do_research", stateKey: "research", label: "Research" },
-  { name: "analyze", stateKey: "analysis", label: "Analyze" },
-  { name: "synthesize", stateKey: "synthesis", label: "Synthesize" },
-];
+// Nodes are discovered automatically — no hardcoded list needed
+const graphNodes = [...stream.subgraphs.values()];
 
-const PIPELINE_NODE_NAMES = new Set(PIPELINE_NODES.map((n) => n.name));
+// Each snapshot carries the node name and current status
+graphNodes.forEach((node) => {
+  console.log(node.nodeName, node.status); // "classify", "running"
+});
 ```
 
-## Setting up useStream
+Use `node.nodeName` for labels in the progress bar and card headers. Pass each
+snapshot to `useMessages(stream, node)` to render node-scoped streaming content
+without coupling the UI to graph state key names.
 
-Wire up `useStream` as usual. The key properties you'll use are `messages`
+## Setting up `useStream`
+
+Wire up @[`useStream`] as usual. The key properties you'll use are `messages`
 (for the conversation) and `subgraphs` (for the graph nodes discovered in the
 current run). Pass each discovered subgraph snapshot to a selector to read the
 messages scoped to that node.
-
-:::js
-
-Import your compiled graph and pass it as the type parameter to `useStream`.
-The playground demo uses `typeof graphExecutionCardsGraph`; replace it with
-your graph export:
-
-```ts
-import { graphExecutionCardsGraph } from "@langchain/playground-agents";
-```
-
-:::
-
-:::python
-
-If your graph is defined in Python, use the same `assistantId` from
-`langgraph.json` and type the stream with your frontend state interface.
-
-:::
 
 <CodeGroup>
 ```tsx React
@@ -200,7 +185,7 @@ When the node card unmounts, the subscription is released automatically.
 ## Determining node status
 
 Each discovered node carries its current status. Use `node.status` directly;
-the v1 discovery snapshot reports `"pending"`, `"running"`, `"complete"`, or
+the discovery snapshot reports `"pending"`, `"running"`, `"complete"`, or
 `"error"`:
 
 ```ts
@@ -404,8 +389,9 @@ that have no matching snapshot.
 
 ## Best practices
 
-- **Define display metadata declaratively**. Keep labels and descriptions in one
-  map keyed by graph node name.
+- **Discover nodes from the stream**. Render cards from `stream.subgraphs`
+  rather than hardcoding expected nodes; conditional or skipped steps won't
+  appear until they run.
 - **Use scoped messages for node cards**. They work while a node is streaming
   and after it completes, without coupling UI cards to state key names.
 - **Auto-collapse completed nodes**. In long pipelines, auto-collapse finished

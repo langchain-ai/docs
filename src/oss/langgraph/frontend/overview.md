@@ -6,12 +6,12 @@ description: Render LangGraph agents to the frontend
 Build frontends that visualize LangGraph pipelines in real time. These patterns show how to render multi-step graph execution with per-node status and streaming content from custom `StateGraph` workflows.
 
 <Note>
-For package-level API changes in the v1 SDKs, see the migration guides for [React](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-react/docs/v1-migration.md), [Vue](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-vue/docs/v1-migration.md), [Svelte](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-svelte/docs/v1-migration.md), and [Angular](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-angular/docs/v1-migration.md).
+These patterns use the v1 frontend SDK packages, see the migration guides for [React](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-react/docs/v1-migration.md), [Vue](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-vue/docs/v1-migration.md), [Svelte](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-svelte/docs/v1-migration.md), and [Angular](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-angular/docs/v1-migration.md).
 </Note>
 
 ## Architecture
 
-LangGraph graphs are composed of named nodes connected by edges. Each node executes a step (classify, research, analyze, synthesize) and writes output to a specific state key. On the frontend, the v1 SDK stream handle provides reactive access to node outputs, streaming tokens, and discovered subgraphs so you can map each node to a UI card.
+LangGraph graphs are composed of named nodes connected by edges. Each node executes a step (classify, research, analyze, synthesize) and writes output to a specific state key. On the frontend, the SDK stream handle provides reactive access to node outputs, streaming tokens, and discovered subgraphs so you can map each node to a UI card.
 
 ```mermaid
 %%{
@@ -98,7 +98,7 @@ const graph = new StateGraph(State)
 
 :::
 
-On the frontend, `useStream` exposes `stream.subgraphs` for graph-node discovery
+On the frontend, @[`useStream`] exposes `stream.subgraphs` for graph-node discovery
 and selector helpers such as `useMessages(stream, node)` for node-scoped
 streaming content. `stream.values` still holds the full graph state when you
 need fields such as the final `synthesis`. Angular uses the same stream API
@@ -130,4 +130,4 @@ function Pipeline() {
 
 ## Related patterns
 
-The [LangChain frontend patterns](/oss/langchain/frontend/overview)—markdown messages, tool calling, optimistic updates, and more—work with any LangGraph graph. The v1 stream API provides the same core data model whether you use `createAgent`, `createDeepAgent`, or a custom `StateGraph`.
+The [LangChain frontend patterns](/oss/langchain/frontend/overview)—markdown messages, tool calling, optimistic updates, and more—work with any LangGraph graph. The stream API provides the same core data model whether you use `createAgent`, `createDeepAgent`, or a custom `StateGraph`.

@@ -23,21 +23,21 @@ When a LangGraph agent decides it needs external data, it emits one or more
 - **id**: a unique identifier linking the call to its result
 
 The agent runtime executes the tool, and the result comes back as a
-`ToolMessage`. The `useStream` hook unifies all of this into a single
+`ToolMessage`. The @[`useStream`] hook unifies all of this into a single
 `toolCalls` array you can render directly.
 
-## Setting up useStream
+## Setting up `useStream`
 
-The first step is wiring up `useStream` to your agent backend. The hook returns
+The first step is wiring up @[`useStream`] to your agent backend. The hook returns
 reactive state including a `toolCalls` array that updates in real time as the
 agent streams.
 
 :::python
 
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
+Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to @[`useStream`] for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
 
 ```ts
-import type { BaseMessage } from "@langchain/core/messages";
+import type { BaseMessage } from "langchain";
 
 interface AgentState {
   messages: BaseMessage[];
@@ -48,7 +48,7 @@ interface AgentState {
 
 :::js
 
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
+Import your agent and pass `typeof myAgent` as a type parameter to @[`useStream`] for type-safe access to state values:
 
 ```ts
 import type { myAgent } from "./agent";
@@ -149,23 +149,33 @@ export class ChatComponent {
 Each entry in the `toolCalls` array is an `AssembledToolCall` object:
 
 ```ts
-interface AssembledToolCall {
+interface AssembledToolCall<
+  TName extends string = string,
+  TInput = unknown,
+  TOutput = unknown,
+> {
+  name: TName;
   callId: string;
-  name: string;
-  input: Record<string, unknown>;
+  id: string;
+  namespace: string[];
+  input: TInput;
+  args: TInput;
+  output: TOutput | null;
   status: "running" | "finished" | "error";
-  output: unknown;
-  error: unknown;
+  error: string | undefined;
 }
 ```
 
 | Property | Description |
 | --- | --- |
-| `callId` | Unique ID matching the AI message's `tool_calls` entry |
 | `name` | The name of the tool (e.g. `"get_weather"`) |
+| `callId` | Unique ID matching the AI message's `tool_calls` entry |
+| `id` | Alias for `callId`, matching message-level tool calls |
+| `namespace` | Namespace where the tool call was emitted |
 | `input` | Structured arguments the agent passed to the tool |
+| `args` | Alias for `input`, matching message-level tool calls |
+| `output` | Tool output after a successful call, or `null` while running or after an error |
 | `status` | Lifecycle state: `"running"`, `"finished"`, or `"error"` |
-| `output` | Tool output, available once the tool finishes |
 | `error` | Error details when the tool call fails |
 
 ## Filtering tool calls per message
@@ -294,7 +304,7 @@ const getWeather = tool(async ({ location }) => { /* ... */ }, {
 });
 
 type WeatherToolCall = ToolCallFromTool<typeof getWeather>;
-// WeatherToolCall.input is now { location: string }
+// WeatherToolCall.input and WeatherToolCall.args are now { location: string }
 ```
 
 <Tip>
@@ -304,7 +314,7 @@ changes, your UI components will flag type errors immediately.
 
 ## Rendering tool calls inline with streaming text
 
-Tool calls often arrive interleaved with streamed text. The `useStream` hook
+Tool calls often arrive interleaved with streamed text. The @[`useStream`] hook
 keeps `toolCalls` in sync with the stream, so pending cards appear as soon as
 the agent emits the call, before the tool has finished executing.
 

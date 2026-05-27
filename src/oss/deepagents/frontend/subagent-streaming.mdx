@@ -27,7 +27,7 @@ The root stream stays focused on the coordinator conversation:
 This separation lets you render the orchestrator's messages in one place and
 mount subagent cards only when the user needs to see specialist work.
 
-## Setting up useStream
+## Setting up `useStream`
 
 No extra stream options are required. Point the stream at your deep agent,
 render coordinator messages from `stream.messages`, and use `stream.subagents`
@@ -37,7 +37,7 @@ that delegated the work.
 
 :::js
 
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream`
+Import your agent and pass `typeof myAgent` as a type parameter to @[`useStream`]
 for type-safe access to state values:
 
 ```ts
@@ -214,36 +214,15 @@ needed.
 
 ## The SubagentDiscoverySnapshot
 
-Each subagent discovery snapshot carries identity and lifecycle metadata:
+Each @[SubagentDiscoverySnapshot] is a lightweight discovery record for a
+subagent running inside the thread. It tells your UI that a subagent exists,
+where it sits in the subagent tree, and what lifecycle state it is in.
 
-```ts
-interface SubagentDiscoverySnapshot {
-  id: string;
-  name: string;
-  namespace: readonly string[];
-  parentId: string | null;
-  depth: number;
-  status: "pending" | "running" | "complete" | "error";
-  taskInput?: string;
-  output?: string;
-  error?: unknown;
-  startedAt?: number;
-  completedAt?: number;
-}
-```
-
-| Property | Description |
-| --- | --- |
-| `id` | Unique identifier for this subagent instance |
-| `name` | The specialist name, such as `"researcher"` or `"analyst"` |
-| `namespace` | Namespace used by selector helpers to scope messages and tool calls |
-| `parentId` | Parent subagent ID when the specialist was spawned by another subagent |
-| `depth` | Nesting depth in the subagent tree |
-| `status` | Lifecycle state: `pending` → `running` → `complete` or `error` |
-| `taskInput` | Optional task description used to spawn the subagent |
-| `output` | Final output captured on the snapshot, when available |
-| `error` | Error payload if the subagent failed |
-| `startedAt` / `completedAt` | Optional timestamps for duration and ordering |
+The snapshot does **not** include the subagent's streamed messages or tool calls.
+Instead, pass the snapshot to selector hooks such as
+`useMessages(stream, subagent)` or `useToolCalls(stream, subagent)`. These hooks
+use the snapshot namespace to subscribe to the subagent's stream primitives only
+when the corresponding card or panel is mounted.
 
 ## Building the SubagentCard
 
@@ -309,40 +288,6 @@ function SubagentCard({
         </div>
       )}
     </div>
-  );
-}
-```
-
-## Status icons and badges
-
-Consistent visual indicators help users parse subagent status at a glance:
-
-```tsx
-function StatusIcon({ status }: { status: SubagentDiscoverySnapshot["status"] }) {
-  switch (status) {
-    case "pending":
-      return <span className="text-gray-400">○</span>;
-    case "running":
-      return <span className="animate-spin text-blue-500">◉</span>;
-    case "complete":
-      return <span className="text-green-500">✓</span>;
-    case "error":
-      return <span className="text-red-500">✕</span>;
-  }
-}
-
-function StatusBadge({ status }: { status: SubagentDiscoverySnapshot["status"] }) {
-  const styles = {
-    pending: "bg-gray-100 text-gray-600",
-    running: "bg-blue-100 text-blue-700",
-    complete: "bg-green-100 text-green-700",
-    error: "bg-red-100 text-red-700",
-  };
-
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${styles[status]}`}>
-      {status}
-    </span>
   );
 }
 ```
@@ -417,69 +362,6 @@ function DeepAgentLayout({ stream }: { stream: AnyStream }) {
   );
 }
 ```
-
-## Synthesis indicator
-
-After all subagents complete, the coordinator takes time to synthesize their
-results into a final response. Show a clear indicator during this phase:
-
-```tsx
-function SynthesisIndicator({
-  subagents,
-  isLoading,
-}: {
-  subagents: SubagentDiscoverySnapshot[];
-  isLoading: boolean;
-}) {
-  const allComplete =
-    subagents.length > 0 &&
-    subagents.every((s) => s.status === "complete" || s.status === "error");
-
-  if (!allComplete || !isLoading) return null;
-
-  return (
-    <div className="flex items-center gap-2 rounded-lg bg-purple-50 px-4 py-2 text-sm text-purple-700">
-      <span className="animate-spin">⟳</span>
-      Synthesizing results from {subagents.length} subagent
-      {subagents.length !== 1 ? "s" : ""}...
-    </div>
-  );
-}
-```
-
-<Tip>
-The synthesis phase can take several seconds for complex multi-expert
-workflows. A clear "Synthesizing results..." indicator prevents users from
-thinking the agent has stalled.
-</Tip>
-
-## Use cases
-
-Deep agent subagent cards are the right choice when your agent workflow
-involves:
-
-- **Deep research** where a coordinator dispatches researchers to investigate
-  different facets of a question, then synthesizes their findings
-- **Multi-expert analysis** such as domain specialists (legal, financial, technical)
-  each contribute their perspective
-- **Complex task decomposition** where a planner breaks a large task into subtasks
-  and assigns each to a specialist worker
-- **Code review pipelines** where separate agents handle security review, style
-  checking, performance analysis, and documentation review
-
-## Accessing the full subagents map
-
-Access all subagents through `stream.subagents`:
-
-```ts
-const allSubagents = [...stream.subagents.values()];
-const running = allSubagents.filter((s) => s.status === "running");
-const completed = allSubagents.filter((s) => s.status === "complete");
-const errors = allSubagents.filter((s) => s.status === "error");
-```
-
-This is useful for building progress indicators or dashboards that summarize all
-subagent activity.
 
 ## Best practices
 
