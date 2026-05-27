@@ -6,12 +6,12 @@ from deepagents.backends import StateBackend
 
 # By default we provide a StateBackend
 # KEEP MODEL
-agent = create_deep_agent(model="google_genai:gemini-3.1-pro-preview")
+agent = create_deep_agent(model="google_genai:gemini-3.5-flash")
 
 # Under the hood, it looks like
 # KEEP MODEL
 agent2 = create_deep_agent(
-    model="google_genai:gemini-3.1-pro-preview",
+    model="google_genai:gemini-3.5-flash",
     backend=StateBackend(),
 )
 # :snippet-end:
@@ -22,7 +22,7 @@ from deepagents.backends import FilesystemBackend
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.1-pro-preview",
+    model="google_genai:gemini-3.5-flash",
     backend=FilesystemBackend(root_dir=".", virtual_mode=True),
 )
 # :snippet-end:
@@ -33,7 +33,7 @@ from deepagents.backends import LocalShellBackend
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.1-pro-preview",
+    model="google_genai:gemini-3.5-flash",
     backend=LocalShellBackend(root_dir=".", virtual_mode=True, env={"PATH": "/usr/bin:/bin"}),
 )
 # :snippet-end:
@@ -45,7 +45,7 @@ from langgraph.store.memory import InMemoryStore
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.1-pro-preview",
+    model="google_genai:gemini-3.5-flash",
     backend=StoreBackend(
         namespace=lambda rt: (rt.server_info.user.identity,),
     ),
@@ -59,7 +59,7 @@ from deepagents.backends import ContextHubBackend
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.1-pro-preview",
+    model="google_genai:gemini-3.5-flash",
     backend=ContextHubBackend("my-agent"),
 )
 # :snippet-end:
@@ -71,7 +71,7 @@ from langgraph.store.memory import InMemoryStore
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.1-pro-preview",
+    model="google_genai:gemini-3.5-flash",
     backend=CompositeBackend(
         default=StateBackend(),
         routes={

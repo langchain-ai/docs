@@ -32,7 +32,7 @@ Let's download the required packages and set our API keys:
 
 :::python
 ```python
-pip install -U langgraph "langchain[openai]" langchain-community langchain-text-splitters bs4
+pip install -U langgraph "langchain[openai]" langchain-text-splitters bs4 requests
 ```
 
 ```python
@@ -52,19 +52,19 @@ _set_env("OPENAI_API_KEY")
 :::js
 <CodeGroup>
 ```bash npm
-npm install @langchain/langgraph @langchain/openai @langchain/community @langchain/textsplitters
+npm install @langchain/langgraph @langchain/openai @langchain/textsplitters cheerio
 ```
 
 ```bash pnpm
-pnpm install @langchain/langgraph @langchain/openai @langchain/community @langchain/textsplitters
+pnpm install @langchain/langgraph @langchain/openai @langchain/textsplitters cheerio
 ```
 
 ```bash yarn
-yarn add @langchain/langgraph @langchain/openai @langchain/community @langchain/textsplitters
+yarn add @langchain/langgraph @langchain/openai @langchain/textsplitters cheerio
 ```
 
 ```bash bun
-bun add @langchain/langgraph @langchain/openai @langchain/community @langchain/textsplitters
+bun add @langchain/langgraph @langchain/openai @langchain/textsplitters cheerio
 ```
 </CodeGroup>
 
@@ -77,9 +77,20 @@ bun add @langchain/langgraph @langchain/openai @langchain/community @langchain/t
 ## 1. Preprocess documents
 
 :::python
-1. Fetch documents to use in our RAG system. We will use three of the most recent pages from [Lilian Weng's excellent blog](https://lilianweng.github.io/). We'll start by fetching the content of the pages using `WebBaseLoader` utility:
+1. Fetch documents to use in our RAG system. We will use three of the most recent pages from [Lilian Weng's excellent blog](https://lilianweng.github.io/). We'll start by fetching the content of the pages with a minimal helper built on `requests` and `BeautifulSoup`:
   ```python
-  from langchain_community.document_loaders import WebBaseLoader
+  import bs4
+  import requests
+  from langchain_core.documents import Document
+
+
+  # Below is a minimal helper for demonstration purposes.
+  def load_web_page(url: str, bs_kwargs: dict | None = None) -> list[Document]:
+      response = requests.get(url)
+      response.raise_for_status()
+      soup = bs4.BeautifulSoup(response.text, "html.parser", **(bs_kwargs or {}))
+      return [Document(page_content=soup.get_text(), metadata={"source": url})]
+
 
   urls = [
       "https://lilianweng.github.io/posts/2024-11-28-reward-hacking/",
@@ -87,7 +98,7 @@ bun add @langchain/langgraph @langchain/openai @langchain/community @langchain/t
       "https://lilianweng.github.io/posts/2024-04-12-diffusion-video/",
   ]
 
-  docs = [WebBaseLoader(url).load() for url in urls]
+  docs = [load_web_page(url) for url in urls]
   ```
   ```python
   docs[0][0].page_content.strip()[:1000]
@@ -109,9 +120,26 @@ bun add @langchain/langgraph @langchain/openai @langchain/community @langchain/t
 :::
 
 :::js
-1. Fetch documents to use in our RAG system. We will use three of the most recent pages from [Lilian Weng's excellent blog](https://lilianweng.github.io/). We'll start by fetching the content of the pages using `CheerioWebBaseLoader`:
+1. Fetch documents to use in our RAG system. We will use three of the most recent pages from [Lilian Weng's excellent blog](https://lilianweng.github.io/). We'll start by fetching the content of the pages with a minimal helper built on `fetch` and `cheerio`:
   ```typescript
-  import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
+  import * as cheerio from "cheerio";
+  import { Document } from "@langchain/core/documents";
+
+  // Below is a minimal helper for demonstration purposes.
+  async function loadWebPage(
+    url: string,
+    selector: string = "body"
+  ): Promise<Document[]> {
+    const response = await fetch(url);
+    const html = await response.text();
+    const $ = cheerio.load(html);
+    return [
+      new Document({
+        pageContent: $(selector).text(),
+        metadata: { source: url },
+      }),
+    ];
+  }
 
   const urls = [
     "https://lilianweng.github.io/posts/2023-06-23-agent/",
@@ -119,9 +147,7 @@ bun add @langchain/langgraph @langchain/openai @langchain/community @langchain/t
     "https://lilianweng.github.io/posts/2023-10-25-adv-attack-llm/",
   ];
 
-  const docs = await Promise.all(
-    urls.map((url) => new CheerioWebBaseLoader(url).load()),
-  );
+  const docs = await Promise.all(urls.map((url) => loadWebPage(url)));
   ```
 2. Split the fetched documents into smaller chunks for indexing into our vectorstore:
   ```typescript

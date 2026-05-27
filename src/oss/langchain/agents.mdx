@@ -2,1303 +2,214 @@
 title: Agents
 ---
 
-Agents combine language models with [tools](/oss/langchain/tools) to create systems that can reason about tasks, decide which tools to use, and iteratively work towards solutions.
+import AgentInvocationThreadAndContextJs from '/snippets/code-samples/agent-invocation-thread-and-context-js.mdx';
+import AgentInvocationThreadAndContextPy from '/snippets/code-samples/agent-invocation-thread-and-context-py.mdx';
+import AgentInvocationThreadIdJs from '/snippets/code-samples/agent-invocation-thread-id-js.mdx';
+import AgentInvocationThreadIdPy from '/snippets/code-samples/agent-invocation-thread-id-py.mdx';
+
+An agent is a model calling tools in a loop until a given task is complete.
+
+<img
+    src="/oss/images/core_agent_loop.png"
+    alt="Core agent loop diagram"
+    style={{height: "200px", width: "auto", justifyContent: "center"}}
+    className="rounded-lg block mx-auto"
+/>
+
+<Note>
+**Agent = Model + Harness**
+
+The job of a harness: get the model the right context at the right time for the given task.
+</Note>
+
+A harness is everything around that loop: the model, its prompt, its tools, and any middleware that shapes its behavior.
+
+@[`create_agent`] is a highly configurable harness. At its simplest:
 
 :::python
-@[`create_agent`] provides a production-ready agent implementation.
-:::
-:::js
-`createAgent()` provides a production-ready agent implementation.
-:::
-
-[An LLM Agent runs tools in a loop to achieve a goal](https://simonwillison.net/2025/Sep/18/agents/).
-An agent runs until a stop condition is met - i.e., when the model emits a final output or an iteration limit is reached.
-
-```mermaid
-%%{
-  init: {
-    "fontFamily": "monospace",
-    "flowchart": {
-      "curve": "curve"
-    }
-  }
-}%%
-graph TD
-  %% Outside the agent
-  QUERY([input])
-  LLM{model}
-  TOOL(tools)
-  ANSWER([output])
-
-  %% Main flows (no inline labels)
-  QUERY --> LLM
-  LLM --"action"--> TOOL
-  TOOL --"observation"--> LLM
-  LLM --"finish"--> ANSWER
-
-  classDef blueHighlight fill:#E5F4FF,stroke:#006DDD,color:#030710;
-  classDef greenHighlight fill:#F6FFDB,stroke:#6E8900,color:#2E3900;
-  class QUERY blueHighlight;
-  class ANSWER blueHighlight;
-  class LLM greenHighlight;
-  class TOOL greenHighlight;
-```
-
-<Info>
-
-:::python
-@[`create_agent`] builds a **graph**-based agent runtime using [LangGraph](/oss/langgraph/overview). A graph consists of nodes (steps) and edges (connections) that define how your agent processes information. The agent moves through this graph, executing nodes like the model node (which calls the model), the tools node (which executes tools), or middleware.
-:::
-:::js
-`createAgent()` builds a **graph**-based agent runtime using [LangGraph](/oss/langgraph/overview). A graph consists of nodes (steps) and edges (connections) that define how your agent processes information. The agent moves through this graph, executing nodes like the model node (which calls the model), the tools node (which executes tools), or middleware.
-:::
-
-Learn more about the [Graph API](/oss/langgraph/graph-api).
-
-</Info>
-
-<Tip>
-Trace each step of this loop, debug tool calls, and evaluate agent outputs with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langchain) to get set up.
-</Tip>
-
-## Core components
-
-### Model
-
-The [model](/oss/langchain/models) is the reasoning engine of your agent. It can be specified in multiple ways, supporting both static and dynamic model selection.
-
-#### Static model
-
-Static models are configured once when creating the agent and remain unchanged throughout execution. This is the most common and straightforward approach.
-
-To initialize a static model from a <Tooltip tip="A string that follows the format `provider:model` (e.g. openai:gpt-5)" cta="See mappings" href="https://reference.langchain.com/python/langchain/models/#langchain.chat_models.init_chat_model(model)">model identifier string</Tooltip>:
-
-:::python
-```python wrap
+```python
 from langchain.agents import create_agent
 
 agent = create_agent("openai:gpt-5.4", tools=tools)
 ```
 :::
 :::js
-```ts wrap
+```typescript
 import { createAgent } from "langchain";
 
-const agent = createAgent({
-  model: "openai:gpt-5.4",
-  tools: []
-});
+const agent = createAgent({ model: "openai:gpt-5.4", tools });
 ```
 :::
+
+Configure the basics directly — `model=`, `tools=`, `system_prompt=`. For more advanced capabilities, extend the harness with [middleware](#configure-the-harness).
+
+## Core components
+
+### Model
+
+Pass a model identifier string (`"provider:model"`) or an initialized model instance. See [Models](/oss/langchain/models) for parameters, provider setup, and dynamic model selection.
 
 :::python
-<Tip>
-    Model identifier strings support automatic inference (e.g., `"gpt-5.4"` will be inferred as `"openai:gpt-5.4"`). Refer to the @[reference][init_chat_model(model)] to see a full list of model identifier string mappings.
-</Tip>
-
-For more control over the model configuration, initialize a model instance directly using the provider package. In this example, we use @[`ChatOpenAI`]. See [Chat models](/oss/integrations/chat) for other available chat model classes.
-
-```python wrap
-from langchain.agents import create_agent
-from langchain_openai import ChatOpenAI
-
-model = ChatOpenAI(
-    model="gpt-5.4",
-    temperature=0.1,
-    max_tokens=1000,
-    timeout=30
-    # ... (other params)
-)
-agent = create_agent(model, tools=tools)
-```
-
-Model instances give you complete control over configuration. Use them when you need to set specific [parameters](/oss/langchain/models#parameters) like `temperature`, `max_tokens`, `timeouts`, `base_url`, and other provider-specific settings. Refer to the [reference](/oss/integrations/providers/all_providers) to see available params and methods on your model.
-:::
-:::js
-Model identifier strings use the format `provider:model` (e.g. `"openai:gpt-5.4"`). You may want more control over the model configuration, in which case you can initialize a model instance directly using the provider package:
-
-```ts wrap
-import { createAgent } from "langchain";
-import { ChatOpenAI } from "@langchain/openai";
-
-const model = new ChatOpenAI({
-  model: "gpt-5.4",
-  temperature: 0.1,
-  maxTokens: 1000,
-  timeout: 30
-});
-
-const agent = createAgent({
-  model,
-  tools: []
-});
-```
-
-Model instances give you complete control over configuration. Use them when you need to set specific parameters like `temperature`, `max_tokens`, `timeouts`, or configure API keys, `base_url`, and other provider-specific settings. Refer to the [API reference](/oss/integrations/providers/) to see available params and methods on your model.
-:::
-
-#### Dynamic model
-
-Dynamic models are selected at <Tooltip tip="The execution environment of your agent, containing immutable configuration and contextual data that persists throughout the agent's execution (e.g., user IDs, session details, or application-specific configuration).">runtime</Tooltip> based on the current <Tooltip tip="The data that flows through your agent's execution, including messages, custom fields, and any information that needs to be tracked and potentially modified during processing (e.g., user preferences or tool usage stats).">state</Tooltip> and context. This enables sophisticated routing logic and cost optimization.
-
-:::python
-
-To use a dynamic model, create middleware using the @[`@wrap_model_call`] decorator that modifies the model in the request:
-
 ```python
-from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
 
-
-basic_model = ChatOpenAI(model="gpt-5.4-mini")
-advanced_model = ChatOpenAI(model="gpt-5.4")
-
-@wrap_model_call
-def dynamic_model_selection(request: ModelRequest, handler) -> ModelResponse:
-    """Choose model based on conversation complexity."""
-    message_count = len(request.state["messages"])
-
-    if message_count > 10:
-        # Use an advanced model for longer conversations
-        model = advanced_model
-    else:
-        model = basic_model
-
-    return handler(request.override(model=model))
-
-agent = create_agent(
-    model=basic_model,  # Default model
-    tools=tools,
-    middleware=[dynamic_model_selection]
-)
+agent = create_agent("openai:gpt-5.4", tools=tools)
 ```
-
-<Warning>
-Pre-bound models (models with @[`bind_tools`][BaseChatModel.bind_tools] already called) are not supported when using structured output. If you need dynamic model selection with structured output, ensure the models passed to the middleware are not pre-bound.
-</Warning>
-
 :::
 :::js
+```typescript
+import { createAgent } from "langchain";
 
-To use a dynamic model, create middleware with `wrapModelCall` that modifies the model in the request:
-
-```ts
-import { ChatOpenAI } from "@langchain/openai";
-import { createAgent, createMiddleware } from "langchain";
-
-const basicModel = new ChatOpenAI({ model: "gpt-5.4-mini" });
-const advancedModel = new ChatOpenAI({ model: "gpt-5.4" });
-
-const dynamicModelSelection = createMiddleware({
-  name: "DynamicModelSelection",
-  wrapModelCall: (request, handler) => {
-    // Choose model based on conversation complexity
-    const messageCount = request.messages.length;
-
-    return handler({
-        ...request,
-        model: messageCount > 10 ? advancedModel : basicModel,
-    });
-  },
-});
-
-const agent = createAgent({
-  model: "gpt-5.4-mini", // Base model (used when messageCount ≤ 10)
-  tools,
-  middleware: [dynamicModelSelection],
-});
+const agent = createAgent({ model: "openai:gpt-5.4", tools });
 ```
-
-For more details on middleware and advanced patterns, see the [middleware documentation](/oss/langchain/middleware).
 :::
-
-<Tip>
-For model configuration details, see [Models](/oss/langchain/models). For dynamic model selection patterns, see [Dynamic model in middleware](/oss/langchain/middleware#dynamic-model).
-</Tip>
 
 ### Tools
 
-Tools give agents the ability to take actions. Agents go beyond simple model-only tool binding by facilitating:
-
-- Multiple tool calls in sequence (triggered by a single prompt)
-- Parallel tool calls when appropriate
-- Dynamic tool selection based on previous results
-- Tool retry logic and error handling
-- State persistence across tool calls
-
-For more information, see [Tools](/oss/langchain/tools).
-
-#### Static tools
-
-Static tools are defined when creating the agent and remain unchanged throughout execution. This is the most common and straightforward approach.
-
-To define an agent with static tools, pass a list of the tools to the agent.
+Pass any Python callable, LangChain tool, or tool dict. See [Tools](/oss/langchain/tools) for tool definition, context access, and dynamic tool selection.
 
 :::python
-
-<Tip>
-Tools can be specified as plain Python functions or <Tooltip tip="A method that can suspend execution and resume at a later time">coroutines</Tooltip>.
-
-The [tool decorator](/oss/langchain/tools#create-tools) can be used to customize tool names, descriptions, argument schemas, and other properties.
-</Tip>
-
-```python wrap
+```python
 from langchain.tools import tool
-from langchain.agents import create_agent
-
 
 @tool
 def search(query: str) -> str:
     """Search for information."""
     return f"Results for: {query}"
 
-@tool
-def get_weather(location: str) -> str:
-    """Get weather information for a location."""
-    return f"Weather in {location}: Sunny, 72°F"
-
-agent = create_agent(model, tools=[search, get_weather])
+agent = create_agent("openai:gpt-5.4", tools=[search])
 ```
 :::
 :::js
-```ts wrap
-import * as z from "zod";
+```typescript
 import { createAgent, tool } from "langchain";
-
-const search = tool(
-  ({ query }) => `Results for: ${query}`,
-  {
-    name: "search",
-    description: "Search for information",
-    schema: z.object({
-      query: z.string().describe("The query to search for"),
-    }),
-  }
-);
-
-const getWeather = tool(
-  ({ location }) => `Weather in ${location}: Sunny, 72°F`,
-  {
-    name: "get_weather",
-    description: "Get weather information for a location",
-    schema: z.object({
-      location: z.string().describe("The location to get weather for"),
-    }),
-  }
-);
-
-const agent = createAgent({
-  model: "gpt-5.4",
-  tools: [search, getWeather],
-});
-```
-:::
-
-If an empty tool list is provided, the agent will consist of a single LLM node without tool-calling capabilities.
-
-#### Dynamic tools
-
-With dynamic tools, the set of tools available to the agent is modified at runtime rather than defined all upfront. Not every tool is appropriate for every situation. Too many tools may overwhelm the model (overload context) and increase errors; too few limit capabilities. Dynamic tool selection enables adapting the available toolset based on authentication state, user permissions, feature flags, or conversation stage.
-
-There are two approaches depending on whether tools are known ahead of time:
-
-<Tabs>
-  <Tab title="Filtering pre-registered tools">
-
-    When all possible tools are known at agent creation time, you can pre-register them and dynamically filter which ones are exposed to the model based on state, permissions, or context.
-
-    <Tabs>
-      <Tab title="State">
-        Enable advanced tools only after certain conversation milestones:
-
-        :::python
-
-        ```python
-        from langchain.agents import create_agent
-        from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-        from typing import Callable
-
-        @wrap_model_call
-        def state_based_tools(
-            request: ModelRequest,
-            handler: Callable[[ModelRequest], ModelResponse]
-        ) -> ModelResponse:
-            """Filter tools based on conversation State."""
-            # Read from State: check if user has authenticated
-            state = request.state
-            is_authenticated = state.get("authenticated", False)
-            message_count = len(state["messages"])
-
-            # Only enable sensitive tools after authentication
-            if not is_authenticated:
-                tools = [t for t in request.tools if t.name.startswith("public_")]
-                request = request.override(tools=tools)
-            elif message_count < 5:
-                # Limit tools early in conversation
-                tools = [t for t in request.tools if t.name != "advanced_search"]
-                request = request.override(tools=tools)
-
-            return handler(request)
-
-        agent = create_agent(
-            model="gpt-5.4",
-            tools=[public_search, private_search, advanced_search],
-            middleware=[state_based_tools]
-        )
-        ```
-
-        :::
-
-        :::js
-
-        ```typescript
-        import { createMiddleware, tool } from "langchain";
-        import { createDeepAgent } from "deepagents";
-
-        const stateBasedTools = createMiddleware({
-            name: "StateBasedTools",
-            wrapModelCall: (request, handler) => {
-                // Read from State: check authentication and conversation length
-                const state = request.state as typeof request.state & {
-                    authenticated?: boolean;
-                };
-                const isAuthenticated = state.authenticated ?? false;
-                const messageCount = state.messages.length;
-
-                let filteredTools = request.tools;
-
-                // Only enable sensitive tools after authentication
-                if (!isAuthenticated) {
-                    filteredTools = request.tools.filter(
-                        (t: any) => typeof t.name === "string" && t.name.startsWith("public_"),
-                    );
-                } else if (messageCount < 5) {
-                    filteredTools = request.tools.filter(
-                        (t: any) => typeof t.name === "string" && t.name !== "advanced_search",
-                    );
-                }
-
-                return handler({ ...request, tools: filteredTools });
-            },
-        });
-
-        const agent = await createDeepAgent({
-            model: "claude-sonnet-4-20250514",
-            tools: tools,
-            middleware: [stateBasedTools] as any,
-        });
-        ```
-
-        :::
-      </Tab>
-
-      <Tab title="Store">
-        Filter tools based on user preferences or feature flags in Store:
-
-        :::python
-
-        ```python
-        from dataclasses import dataclass
-        from langchain.agents import create_agent
-        from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-        from typing import Callable
-        from langgraph.store.memory import InMemoryStore
-
-        @dataclass
-        class Context:
-            user_id: str
-
-        @wrap_model_call
-        def store_based_tools(
-            request: ModelRequest,
-            handler: Callable[[ModelRequest], ModelResponse]
-        ) -> ModelResponse:
-            """Filter tools based on Store preferences."""
-            user_id = request.runtime.context.user_id
-
-            # Read from Store: get user's enabled features
-            store = request.runtime.store
-            feature_flags = store.get(("features",), user_id)
-
-            if feature_flags:
-                enabled_features = feature_flags.value.get("enabled_tools", [])
-                # Only include tools that are enabled for this user
-                tools = [t for t in request.tools if t.name in enabled_features]
-                request = request.override(tools=tools)
-
-            return handler(request)
-
-        agent = create_agent(
-            model="gpt-5.4",
-            tools=[search_tool, analysis_tool, export_tool],
-            middleware=[store_based_tools],
-            context_schema=Context,
-            store=InMemoryStore()
-        )
-        ```
-
-        :::
-
-        :::js
-
-        ```typescript
-        import { createMiddleware } from "langchain";
-        import { createDeepAgent, StoreBackend } from "deepagents";
-        import * as z from "zod";
-        import { InMemoryStore } from "@langchain/langgraph";
-
-        const contextSchema = z.object({
-          userId: z.string(),
-        });
-
-        const storeBasedTools = createMiddleware({
-          name: "StoreBasedTools",
-          contextSchema,
-          wrapModelCall: async (request, handler) => {
-            const userId =
-              (request.runtime?.context as { userId?: string } | undefined)?.userId ??
-                "user-123";
-
-            // Read from Store: get user's enabled features
-            const runtimeStore = request.runtime?.store as InMemoryStore | undefined;
-            const rawFlags = (await runtimeStore?.get(
-              ["features"],
-              userId as string,
-            )) as unknown;
-            const featureFlags = rawFlags as FeatureFlags | undefined;
-
-            let filteredTools = request.tools;
-
-            if (featureFlags) {
-              const enabledFeatures = featureFlags.enabledTools || [];
-              filteredTools = request.tools.filter((t) =>
-                enabledFeatures.includes(t.name as string)
-              );
-            }
-
-            return handler({ ...request, tools: filteredTools });
-          },
-        });
-
-        const agent = await createDeepAgent({
-          model: "claude-sonnet-4-20250514",
-          backend: new StoreBackend(),
-          store,
-          checkpointer,
-          tools,
-          middleware: [storeBasedTools] as any,
-        });
-        ```
-
-        :::
-      </Tab>
-
-      <Tab title="Runtime Context">
-        Filter tools based on user permissions from Runtime Context:
-
-        :::python
-
-        ```python
-        from dataclasses import dataclass
-        from langchain.agents import create_agent
-        from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-        from typing import Callable
-
-        @dataclass
-        class Context:
-            user_role: str
-
-        @wrap_model_call
-        def context_based_tools(
-            request: ModelRequest,
-            handler: Callable[[ModelRequest], ModelResponse]
-        ) -> ModelResponse:
-            """Filter tools based on Runtime Context permissions."""
-            # Read from Runtime Context: get user role
-            if request.runtime is None or request.runtime.context is None:
-                # If no context provided, default to viewer (most restrictive)
-                user_role = "viewer"
-            else:
-                user_role = request.runtime.context.user_role
-
-            if user_role == "admin":
-                # Admins get all tools
-                pass
-            elif user_role == "editor":
-                # Editors can't delete
-                tools = [t for t in request.tools if t.name != "delete_data"]
-                request = request.override(tools=tools)
-            else:
-                # Viewers get read-only tools
-                tools = [t for t in request.tools if t.name.startswith("read_")]
-                request = request.override(tools=tools)
-
-            return handler(request)
-
-        agent = create_agent(
-            model="gpt-5.4",
-            tools=[read_data, write_data, delete_data],
-            middleware=[context_based_tools],
-            context_schema=Context
-        )
-        ```
-
-        :::
-
-        :::js
-
-        ```typescript
-        import * as z from "zod";
-        import { createMiddleware } from "langchain";
-        import { createDeepAgent } from "deepagents";
-
-        const contextSchema = z.object({
-          userRole: z.string(),
-        });
-
-        const contextBasedTools = createMiddleware({
-          name: "ContextBasedTools",
-          contextSchema,
-          wrapModelCall: (request, handler) => {
-            // Read from Runtime Context: get user role
-            const userRole = request.runtime.context.userRole;
-
-            let filteredTools = request.tools;
-
-            if (userRole === "admin") {
-              // Admins get all tools
-            } else if (userRole === "editor") {
-              filteredTools = request.tools.filter((t) => t.name !== "delete_data");
-            } else {
-              filteredTools = request.tools.filter(
-                (t) => (t.name as string).startsWith("read_"),
-              );
-            }
-
-            return handler({ ...request, tools: filteredTools });
-          },
-        });
-
-        const agent = await createDeepAgent({
-          model: "claude-sonnet-4-20250514",
-          store,
-          checkpointer,
-          tools,
-          middleware: [contextBasedTools] as any,
-        });
-        ```
-
-        :::
-      </Tab>
-    </Tabs>
-
-    This approach is best when:
-    - All possible tools are known at compile/startup time
-    - You want to filter based on permissions, feature flags, or conversation state
-    - Tools are static but their availability is dynamic
-
-    See [Dynamically selecting tools](/oss/langchain/middleware/custom#dynamically-selecting-tools) for more examples.
-
-  </Tab>
-
-  <Tab title="Runtime tool registration">
-
-    When tools are discovered or created at runtime (e.g., loaded from an MCP server, generated based on user data, or fetched from a remote registry), you need to both register the tools and handle their execution dynamically.
-
-    This requires two middleware hooks:
-    1. `wrap_model_call` - Add the dynamic tools to the request
-    2. `wrap_tool_call` - Handle execution of the dynamically added tools
-
-    :::python
-
-    ```python
-    from langchain.tools import tool
-    from langchain.agents import create_agent
-    from langchain.agents.middleware import AgentMiddleware, ModelRequest, ToolCallRequest
-
-    # A tool that will be added dynamically at runtime
-    @tool
-    def calculate_tip(bill_amount: float, tip_percentage: float = 20.0) -> str:
-        """Calculate the tip amount for a bill."""
-        tip = bill_amount * (tip_percentage / 100)
-        return f"Tip: ${tip:.2f}, Total: ${bill_amount + tip:.2f}"
-
-    class DynamicToolMiddleware(AgentMiddleware):
-        """Middleware that registers and handles dynamic tools."""
-
-        def wrap_model_call(self, request: ModelRequest, handler):
-            # Add dynamic tool to the request
-            # This could be loaded from an MCP server, database, etc.
-            updated = request.override(tools=[*request.tools, calculate_tip])
-            return handler(updated)
-
-        def wrap_tool_call(self, request: ToolCallRequest, handler):
-            # Handle execution of the dynamic tool
-            if request.tool_call["name"] == "calculate_tip":
-                return handler(request.override(tool=calculate_tip))
-            return handler(request)
-
-    agent = create_agent(
-        model="gpt-4o",
-        tools=[get_weather],  # Only static tools registered here
-        middleware=[DynamicToolMiddleware()],
-    )
-
-    # The agent can now use both get_weather AND calculate_tip
-    result = agent.invoke({
-        "messages": [{"role": "user", "content": "Calculate a 20% tip on $85"}]
-    })
-    ```
-
-    :::
-
-    :::js
-
-    ```typescript
-    import { createAgent, createMiddleware, tool } from "langchain";
-    import * as z from "zod";
-
-    // A tool that will be added dynamically at runtime
-    const calculateTip = tool(
-      ({ billAmount, tipPercentage = 20 }) => {
-        const tip = billAmount * (tipPercentage / 100);
-        return `Tip: $${tip.toFixed(2)}, Total: $${(billAmount + tip).toFixed(2)}`;
-      },
-      {
-        name: "calculate_tip",
-        description: "Calculate the tip amount for a bill",
-        schema: z.object({
-          billAmount: z.number().describe("The bill amount"),
-          tipPercentage: z.number().default(20).describe("Tip percentage"),
-        }),
-      }
-    );
-
-    const dynamicToolMiddleware = createMiddleware({
-      name: "DynamicToolMiddleware",
-      wrapModelCall: (request, handler) => {
-        // Add dynamic tool to the request
-        // This could be loaded from an MCP server, database, etc.
-        return handler({
-          ...request,
-          tools: [...request.tools, calculateTip],
-        });
-      },
-      wrapToolCall: (request, handler) => {
-        // Handle execution of the dynamic tool
-        if (request.toolCall.name === "calculate_tip") {
-          return handler({ ...request, tool: calculateTip });
-        }
-        return handler(request);
-      },
-    });
-
-    const agent = createAgent({
-      model: "gpt-4o",
-      tools: [getWeather], // Only static tools registered here
-      middleware: [dynamicToolMiddleware],
-    });
-
-    // The agent can now use both getWeather AND calculateTip
-    const result = await agent.invoke({
-      messages: [{ role: "user", content: "Calculate a 20% tip on $85" }],
-    });
-    ```
-
-    :::
-
-    This approach is best when:
-    - Tools are discovered at runtime (e.g., from an MCP server)
-    - Tools are generated dynamically based on user data or configuration
-    - You're integrating with external tool registries
-
-    <Note>
-    The `wrap_tool_call` hook is required for runtime-registered tools because the agent needs to know how to execute tools that weren't in the original tool list. Without it, the agent won't know how to invoke the dynamically added tool.
-    </Note>
-
-  </Tab>
-</Tabs>
-
-<Tip>
-To learn more about tools, see [Tools](/oss/langchain/tools).
-</Tip>
-
-#### Tool error handling
-
-:::python
-
-To customize how tool errors are handled, use the @[`@wrap_tool_call`] decorator to create middleware:
-
-```python wrap
-from langchain.agents import create_agent
-from langchain.agents.middleware import wrap_tool_call
-from langchain.messages import ToolMessage
-
-
-@wrap_tool_call
-def handle_tool_errors(request, handler):
-    """Handle tool execution errors with custom messages."""
-    try:
-        return handler(request)
-    except Exception as e:
-        # Return a custom error message to the model
-        return ToolMessage(
-            content=f"Tool error: Please check your input and try again. ({str(e)})",
-            tool_call_id=request.tool_call["id"]
-        )
-
-agent = create_agent(
-    model="gpt-5.4",
-    tools=[search, get_weather],
-    middleware=[handle_tool_errors]
-)
-```
-
-The agent will return a @[`ToolMessage`] with the custom error message when a tool fails:
-
-```python
-[
-    ...
-    ToolMessage(
-        content="Tool error: Please check your input and try again. (division by zero)",
-        tool_call_id="..."
-    ),
-    ...
-]
-```
-
-:::
-:::js
-
-To customize how tool errors are handled, use the `wrapToolCall` hook in a custom middleware:
-
-```ts wrap
-import { createAgent, createMiddleware, ToolMessage } from "langchain";
-
-const handleToolErrors = createMiddleware({
-  name: "HandleToolErrors",
-  wrapToolCall: async (request, handler) => {
-    try {
-      return await handler(request);
-    } catch (error) {
-      // Return a custom error message to the model
-      return new ToolMessage({
-        content: `Tool error: Please check your input and try again. (${error})`,
-        tool_call_id: request.toolCall.id!,
-      });
-    }
-  },
+import * as z from "zod";
+
+const search = tool(({ query }) => `Results for: ${query}`, {
+  name: "search",
+  description: "Search for information",
+  schema: z.object({ query: z.string() }),
 });
 
-const agent = createAgent({
-  model: "gpt-5.4",
-  tools: [
-    /* ... */
-  ],
-  middleware: [handleToolErrors],
-});
+const agent = createAgent({ model: "openai:gpt-5.4", tools: [search] });
 ```
-
-The agent will return a @[`ToolMessage`] with the custom error message when a tool fails.
 :::
-
-#### Tool use in the ReAct loop
-
-Agents follow the ReAct ("Reasoning + Acting") pattern, alternating between brief reasoning steps with targeted tool calls and feeding the resulting observations into subsequent decisions until they can deliver a final answer.
-
-<Accordion title="Example of ReAct loop">
-**Prompt:** Identify the current most popular wireless headphones and verify availability.
-
-```
-================================ Human Message =================================
-
-Find the most popular wireless headphones right now and check if they're in stock
-```
-
-* **Reasoning**: "Popularity is time-sensitive, I need to use the provided search tool."
-* **Acting**: Call `search_products("wireless headphones")`
-
-```
-================================== Ai Message ==================================
-Tool Calls:
-  search_products (call_abc123)
- Call ID: call_abc123
-  Args:
-    query: wireless headphones
-```
-```
-================================= Tool Message =================================
-
-Found 5 products matching "wireless headphones". Top 5 results: WH-1000XM5, ...
-```
-
-* **Reasoning**: "I need to confirm availability for the top-ranked item before answering."
-* **Acting**: Call `check_inventory("WH-1000XM5")`
-
-```
-================================== Ai Message ==================================
-Tool Calls:
-  check_inventory (call_def456)
- Call ID: call_def456
-  Args:
-    product_id: WH-1000XM5
-```
-```
-================================= Tool Message =================================
-
-Product WH-1000XM5: 10 units in stock
-```
-
-* **Reasoning**: "I have the most popular model and its stock status. I can now answer the user's question."
-* **Acting**: Produce final answer
-
-```
-================================== Ai Message ==================================
-
-I found wireless headphones (model WH-1000XM5) with 10 units in stock...
-```
-</Accordion>
 
 ### System prompt
 
-:::python
-You can shape how your agent approaches tasks by providing a prompt. The @[`system_prompt`] parameter can be provided as a string:
-:::
-
-:::js
-You can shape how your agent approaches tasks by providing a prompt. The `systemPrompt` parameter can be provided as a string:
-:::
+Shape how the agent approaches tasks. Accepts a string or `SystemMessage`. For dynamic prompts at runtime, use [middleware](/oss/langchain/middleware).
 
 :::python
-```python wrap
+```python
 agent = create_agent(
-    model,
-    tools,
-    system_prompt="You are a helpful assistant. Be concise and accurate."
+    "openai:gpt-5.4",
+    tools=tools,
+    system_prompt="You are a helpful assistant. Be concise and accurate.",
 )
 ```
 :::
 :::js
-```ts wrap
+```typescript
 const agent = createAgent({
-  model,
+  model: "openai:gpt-5.4",
   tools,
   systemPrompt: "You are a helpful assistant. Be concise and accurate.",
 });
 ```
 :::
 
-:::python
-When no @[`system_prompt`] is provided, the agent will infer its task from the messages directly.
+### Structured output
 
-The @[`system_prompt`] parameter accepts either a `str` or a @[`SystemMessage`]. Using a `SystemMessage` gives you more control over the prompt structure, which is useful for provider-specific features like [Anthropic's prompt caching](/oss/integrations/chat/anthropic#prompt-caching):
-
-```python wrap
-from langchain.agents import create_agent
-from langchain.messages import SystemMessage, HumanMessage
-
-literary_agent = create_agent(
-    model="google_genai:gemini-3.1-pro-preview",
-    system_prompt=SystemMessage(
-        content=[
-            {
-                "type": "text",
-                "text": "You are an AI assistant tasked with analyzing literary works.",
-            },
-            {
-                "type": "text",
-                "text": "<the entire contents of 'Pride and Prejudice'>",
-                "cache_control": {"type": "ephemeral"}
-            }
-        ]
-    )
-)
-
-result = literary_agent.invoke(
-    {"messages": [HumanMessage("Analyze the major themes in 'Pride and Prejudice'.")]}
-)
-```
-
-The `cache_control` field with `{"type": "ephemeral"}` tells Anthropic to cache that content block, reducing latency and costs for repeated requests that use the same system prompt.
-:::
-
-:::js
-When no `systemPrompt` is provided, the agent will infer its task from the messages directly.
-
-The `systemPrompt` parameter accepts either a `string` or a `SystemMessage`. Using a `SystemMessage` gives you more control over the prompt structure, which is useful for provider-specific features like [Anthropic's prompt caching](/oss/integrations/chat/anthropic#prompt-caching):
-
-```ts wrap
-import { createAgent } from "langchain";
-import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-
-const literaryAgent = createAgent({
-  model: "google_genai:gemini-3.1-pro-preview",
-  systemPrompt: new SystemMessage({
-    content: [
-      {
-        type: "text",
-        text: "You are an AI assistant tasked with analyzing literary works.",
-      },
-      {
-        type: "text",
-        text: "<the entire contents of 'Pride and Prejudice'>",
-        cache_control: { type: "ephemeral" }
-      }
-    ]
-  })
-});
-
-const result = await literaryAgent.invoke({
-  messages: [new HumanMessage("Analyze the major themes in 'Pride and Prejudice'.")]
-});
-```
-
-The `cache_control` field with `{ type: "ephemeral" }` tells Anthropic to cache that content block, reducing latency and costs for repeated requests that use the same system prompt.
-:::
-
-#### Dynamic system prompt
-
-For more advanced use cases where you need to modify the system prompt based on runtime context or agent state, you can use [middleware](/oss/langchain/middleware).
-
-:::python
-
-The @[`@dynamic_prompt`] decorator creates middleware that generates system prompts based on the model request:
-
-```python wrap
-from typing import TypedDict
-
-from langchain.agents import create_agent
-from langchain.agents.middleware import dynamic_prompt, ModelRequest
-
-
-class Context(TypedDict):
-    user_role: str
-
-@dynamic_prompt
-def user_role_prompt(request: ModelRequest) -> str:
-    """Generate system prompt based on user role."""
-    user_role = request.runtime.context.get("user_role", "user")
-    base_prompt = "You are a helpful assistant."
-
-    if user_role == "expert":
-        return f"{base_prompt} Provide detailed technical responses."
-    elif user_role == "beginner":
-        return f"{base_prompt} Explain concepts simply and avoid jargon."
-
-    return base_prompt
-
-agent = create_agent(
-    model="gpt-5.4",
-    tools=[web_search],
-    middleware=[user_role_prompt],
-    context_schema=Context
-)
-
-# The system prompt will be set dynamically based on context
-result = agent.invoke(
-    {"messages": [{"role": "user", "content": "Explain machine learning"}]},
-    context={"user_role": "expert"}
-)
-```
-:::
-
-:::js
-```typescript wrap
-import * as z from "zod";
-import { createAgent, dynamicSystemPromptMiddleware } from "langchain";
-
-const contextSchema = z.object({
-  userRole: z.enum(["expert", "beginner"]),
-});
-
-const agent = createAgent({
-  model: "gpt-5.4",
-  tools: [/* ... */],
-  contextSchema,
-  middleware: [
-    dynamicSystemPromptMiddleware<z.infer<typeof contextSchema>>((state, runtime) => {
-      const userRole = runtime.context.userRole || "user";
-      const basePrompt = "You are a helpful assistant.";
-
-      if (userRole === "expert") {
-        return `${basePrompt} Provide detailed technical responses.`;
-      } else if (userRole === "beginner") {
-        return `${basePrompt} Explain concepts simply and avoid jargon.`;
-      }
-      return basePrompt;
-    }),
-  ],
-});
-
-// The system prompt will be set dynamically based on context
-const result = await agent.invoke(
-  { messages: [{ role: "user", content: "Explain machine learning" }] },
-  { context: { userRole: "expert" } }
-);
-```
-:::
-
-<Tip>
-For more details on message types and formatting, see [Messages](/oss/langchain/messages). For comprehensive middleware documentation, see [Middleware](/oss/langchain/middleware).
-</Tip>
-
-### Name
-
-:::python
-Set an optional @[`name`][create_agent(name)] for the agent. This is used as the node identifier when adding the agent as a subgraph in [multi-agent systems](/oss/langchain/multi-agent):
-
-```python
-agent = create_agent(
-    model,
-    tools,
-    name="research_assistant"
-)
-```
-:::
-:::js
-Set an optional `name` for the agent. This is used as the node identifier when adding the agent as a subgraph in [multi-agent systems](/oss/langchain/multi-agent):
-
-```ts
-const agent = createAgent({
-  model,
-  tools,
-  name: "research_assistant",
-});
-```
-:::
-
-<Warning>
-    Prefer `snake_case` for agent names (e.g., `research_assistant` instead of `Research Assistant`). Some model providers reject names containing spaces or special characters with errors. Using alphanumeric characters, underscores, and hyphens only ensures compatibility across all providers. The same applies to [tool names](/oss/langchain/tools).
-</Warning>
-
-## Invocation
-
-:::python
-You can invoke an agent by passing an update to its [`State`](/oss/langgraph/graph-api#state). All agents include a [sequence of messages](/oss/langgraph/use-graph-api#messagesstate) in their state; to invoke the agent, pass a new message:
-:::
-:::js
-You can invoke an agent by passing an update to its [`State`](/oss/langgraph/graph-api#state). All agents include a [sequence of messages](/oss/langgraph/use-graph-api#messagesvalue) in their state; to invoke the agent, pass a new message:
-:::
+Return a validated schema from the agent using `response_format=`. See [Structured output](/oss/langchain/structured-output) for strategies and examples.
 
 :::python
 ```python
-result = agent.invoke(
-    {"messages": [{"role": "user", "content": "What's the weather in San Francisco?"}]}
-)
+from pydantic import BaseModel
+from langchain.agents import create_agent
+
+class Answer(BaseModel):
+    summary: str
+    confidence: float
+
+agent = create_agent("openai:gpt-5.4", tools=tools, response_format=Answer)
+result = agent.invoke({"messages": [{"role": "user", "content": "Summarize AI trends"}]})
+result["structured_response"]  # Answer(summary=..., confidence=...)
 ```
 :::
 :::js
 ```typescript
-await agent.invoke({
-  messages: [{ role: "user", content: "What's the weather in San Francisco?" }],
-})
-```
-:::
-
-For streaming steps and / or tokens from the agent, refer to the [streaming](/oss/langchain/streaming) guide.
-
-Otherwise, the agent follows the LangGraph [Graph API](/oss/langgraph/use-graph-api) and supports all associated methods, such as `stream` and `invoke`.
-
-## Advanced concepts
-
-### Structured output
-
-:::python
-
-In some situations, you may want the agent to return an output in a specific format. LangChain provides strategies for structured output via the @[`response_format`][create_agent(response_format)] parameter.
-
-#### ToolStrategy
-
-`ToolStrategy` uses artificial tool calling to generate structured output. This works with any model that supports tool calling. `ToolStrategy` should be used when provider-native structured output (via [`ProviderStrategy`](#providerstrategy)) is not available or reliable.
-
-```python wrap
-from pydantic import BaseModel
-from langchain.agents import create_agent
-from langchain.agents.structured_output import ToolStrategy
-
-
-class ContactInfo(BaseModel):
-    name: str
-    email: str
-    phone: str
-
-agent = create_agent(
-    model="gpt-5.4-mini",
-    tools=[search_tool],
-    response_format=ToolStrategy(ContactInfo)
-)
-
-result = agent.invoke({
-    "messages": [{"role": "user", "content": "Extract contact info from: John Doe, john@example.com, (555) 123-4567"}]
-})
-
-result["structured_response"]
-# ContactInfo(name='John Doe', email='john@example.com', phone='(555) 123-4567')
-```
-
-#### ProviderStrategy
-
-`ProviderStrategy` uses the model provider's native structured output generation. This is more reliable but only works with providers that support native structured output:
-
-```python wrap
-from langchain.agents.structured_output import ProviderStrategy
-
-agent = create_agent(
-    model="gpt-5.4",
-    response_format=ProviderStrategy(ContactInfo)
-)
-```
-
-<Note>
-As of `langchain 1.0`, simply passing a schema (e.g., `response_format=ContactInfo`) will default to `ProviderStrategy` if the model supports native structured output. It will fall back to `ToolStrategy` otherwise.
-</Note>
-
-:::
-:::js
-In some situations, you may want the agent to return an output in a specific format. LangChain provides a simple, universal way to do this with the `responseFormat` parameter.
-
-```ts wrap
 import * as z from "zod";
-import { createAgent } from "langchain";
 
-const ContactInfo = z.object({
-  name: z.string(),
-  email: z.string(),
-  phone: z.string(),
-});
+const Answer = z.object({ summary: z.string(), confidence: z.number() });
 
-const agent = createAgent({
-  model: "gpt-5.4",
-  responseFormat: ContactInfo,
-});
-
-const result = await agent.invoke({
-  messages: [
-    {
-      role: "user",
-      content: "Extract contact info from: John Doe, john@example.com, (555) 123-4567",
-    },
-  ],
-});
-
-console.log(result.structuredResponse);
-// {
-//   name: 'John Doe',
-//   email: 'john@example.com',
-//   phone: '(555) 123-4567'
-// }
+const agent = createAgent({ model: "openai:gpt-5.4", tools, responseFormat: Answer });
+const result = await agent.invoke({ messages: [{ role: "user", content: "Summarize AI trends" }] });
+result.structuredResponse; // { summary: ..., confidence: ... }
 ```
 :::
+
+### Name
+
+Optional identifier used as the node name when embedding this agent as a subgraph in [multi-agent](/oss/langchain/multi-agent) systems.
+
+:::python
+```python
+agent = create_agent("openai:gpt-5.4", tools=tools, name="research_assistant")
+```
+:::
+:::js
+```typescript
+const agent = createAgent({ model: "openai:gpt-5.4", tools, name: "research_assistant" });
+```
+:::
+
+
 <Tip>
-    To learn about structured output, see [Structured output](/oss/langchain/structured-output).
+To extend the agent's state schema with custom fields, use [`state_schema`](/oss/langchain/long-term-memory) on `create_agent` or define it via middleware. See [Memory](/oss/langchain/long-term-memory) for details.
+</Tip>
+## Invocation
+
+<Tip>
+Trace each step of this loop, debug tool calls, and evaluate agent outputs with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langchain) to get set up.
 </Tip>
 
-### Memory
 
-Agents maintain conversation history automatically through the message state. You can also configure the agent to use a custom state schema to remember additional information during the conversation.
-
-Information stored in the state can be thought of as the [short-term memory](/oss/langchain/short-term-memory) of the agent:
+:::python
+You can invoke an agent by passing an update to its [`State`](/oss/langgraph/graph-api#state). All agents include a [sequence of messages](/oss/langgraph/use-graph-api#messagesstate) in their state; to invoke the agent, pass a new message along with a `thread_id` so the agent can persist and resume conversation history:
+:::
+:::js
+You can invoke an agent by passing an update to its [`State`](/oss/langgraph/graph-api#state). All agents include a [sequence of messages](/oss/langgraph/use-graph-api#messagesvalue) in their state; to invoke the agent, pass a new message along with a `thread_id` so the agent can persist and resume conversation history:
+:::
 
 :::python
 
-Custom state schemas must extend @[`AgentState`] as a `TypedDict`.
-
-There are two ways to define custom state:
-1. Via [middleware](/oss/langchain/middleware) (preferred)
-2. Via @[`state_schema`] on @[`create_agent`]
-
-#### Defining state via middleware
-
-Use middleware to define custom state when your custom state needs to be accessed by specific middleware hooks and tools attached to said middleware.
-
-```python
-from langchain.agents import AgentState
-from langchain.agents.middleware import AgentMiddleware
-from typing import Any
-
-
-class CustomState(AgentState):
-    user_preferences: dict
-
-class CustomMiddleware(AgentMiddleware):
-    state_schema = CustomState
-    tools = [tool1, tool2]
-
-    def before_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
-        ...
-
-agent = create_agent(
-    model,
-    tools=tools,
-    middleware=[CustomMiddleware()]
-)
-
-# The agent can now track additional state beyond messages
-result = agent.invoke({
-    "messages": [{"role": "user", "content": "I prefer technical explanations"}],
-    "user_preferences": {"style": "technical", "verbosity": "detailed"},
-})
-```
-
-#### Defining state via `state_schema`
-
-Use the @[`state_schema`] parameter as a shortcut to define custom state that is only used in tools.
-
-```python
-from langchain.agents import AgentState
-
-
-class CustomState(AgentState):
-    user_preferences: dict
-
-agent = create_agent(
-    model,
-    tools=[tool1, tool2],
-    state_schema=CustomState
-)
-# The agent can now track additional state beyond messages
-result = agent.invoke({
-    "messages": [{"role": "user", "content": "I prefer technical explanations"}],
-    "user_preferences": {"style": "technical", "verbosity": "detailed"},
-})
-```
-
-<Note>
-As of `langchain 1.0`, custom state schemas **must** be `TypedDict` types. Pydantic models and dataclasses are no longer supported. See the [v1 migration guide](/oss/migrate/langchain-v1#state-type-restrictions) for more details.
-</Note>
+<AgentInvocationThreadIdPy />
 
 :::
 :::js
-```ts wrap
-import { z } from "zod/v4";
-import { StateSchema, MessagesValue } from "@langchain/langgraph";
-import { createAgent } from "langchain";
 
-const CustomAgentState = new StateSchema({
-  messages: MessagesValue,
-  userPreferences: z.record(z.string(), z.string()),
-});
+<AgentInvocationThreadIdJs />
 
-const customAgent = createAgent({
-  model: "gpt-5.4",
-  tools: [],
-  stateSchema: CustomAgentState,
-});
-```
 :::
+
+<Note>
+Persisting conversation history with `thread_id` requires the agent to be configured with a [checkpointer](/oss/langchain/long-term-memory). When deployed on [LangSmith](/langsmith/deployment), a checkpointer is provisioned automatically. Locally, pass one explicitly, for example `create_agent(..., checkpointer=InMemorySaver())`.
+</Note>
 
 :::python
-<Note>
-    Defining custom state via middleware is preferred over defining it via @[`state_schema`] on @[`create_agent`] because it allows you to keep state extensions conceptually scoped to the relevant middleware and tools.
+If you also need to pass per-run configuration (such as a user ID, API keys, or feature flags) to tools and middleware, pass it as `context` alongside `config`. Define the shape of that data with `context_schema` and access it through `runtime.context`:
 
-    @[`state_schema`] is still supported for backwards compatibility on @[`create_agent`].
-</Note>
+<AgentInvocationThreadAndContextPy />
+
+`thread_id` scopes the *conversation* (message history, checkpoints), while `context` carries *per-run* data your tools and middleware read at invocation time. Both are commonly passed together. See [tool context](/oss/langchain/tools#context) and [Runtime](/oss/langchain/runtime) for more.
 :::
+:::js
+If you also need to pass per-run configuration (such as a user ID, API keys, or feature flags) to tools and middleware, pass it as `context` alongside the config. Define the shape of that data with `contextSchema` and access it through `runtime.context`:
 
-<Tip>
-    To learn more about memory, see [Memory](/oss/concepts/memory). For information on implementing long-term memory that persists across sessions, see [Long-term memory](/oss/langchain/long-term-memory).
-</Tip>
+<AgentInvocationThreadAndContextJs />
+
+`thread_id` scopes the *conversation* (message history, checkpoints), while `context` carries *per-run* data your tools and middleware read at invocation time. Both are commonly passed together. See [tool context](/oss/langchain/tools#context) and [Runtime](/oss/langchain/runtime) for more.
+:::
 
 ### Streaming
 
@@ -1351,26 +262,265 @@ for await (const chunk of stream) {
 For more details on streaming, see [Streaming](/oss/langchain/streaming).
 </Tip>
 
-### Middleware
+## Configure the harness
 
-[Middleware](/oss/langchain/middleware) provides powerful extensibility for customizing agent behavior at different stages of execution. You can use middleware to:
+`create_agent` is highly extensible. Middleware is the primitive for customization: each piece handles one concern, hooks into the agent loop at the right moment, and composes freely with any other. Take exactly what your use case needs — skip the rest.
 
-- Process state before the model is called (e.g., message trimming, context injection)
-- Modify or validate the model's response (e.g., guardrails, content filtering)
-- Handle tool execution errors with custom logic
-- Implement dynamic model selection based on state or context
-- Add custom logging, monitoring, or analytics
+Common patterns are pre-built as first-class middleware. Anything custom is [one middleware away](/oss/langchain/middleware/custom).
 
-Middleware integrates seamlessly into the agent's execution, allowing you to intercept and modify data flow at key points without changing the core agent logic.
+<img
+    src="/oss/images/middleware_final.png"
+    alt="Middleware lifecycle diagram"
+    style={{height: "300px", width: "auto", justifyContent: "center"}}
+    className="rounded-lg mx-auto"
+/>
+
+As agents take on complex work, they need support across a few key areas. The middleware ecosystem covers each:
+
+
+<CardGroup cols={2}>
+  <Card title="Execution environment" icon="bolt" href="#execution-environment">
+    Tools, filesystem, sandboxes, and code execution
+  </Card>
+  <Card title="Context management" icon="database" href="#context-management">
+    Summarization, memory, skills, and prompt caching
+  </Card>
+  <Card title="Planning and delegation" icon="sitemap" href="#planning-and-delegation">
+    Todo lists and subagents for parallel, isolated work
+  </Card>
+  <Card title="Fault tolerance" icon="shield" href="#fault-tolerance">
+    Retries, fallbacks, and call limits
+  </Card>
+  <Card title="Guardrails" icon="lock" href="#guardrails">
+    PII detection and content controls
+  </Card>
+  <Card title="Steering" icon="user" href="#steering">
+    Human-in-the-loop approval before high-impact actions
+  </Card>
+</CardGroup>
+
+### Execution environment
+
+Agents are useful when they can take action — not just generate text. The execution environment gives the agent a workspace: tools it can call, a filesystem for reading and writing files across turns, and code execution for running scripts or shell commands.
 
 :::python
-<Tip>
-For comprehensive middleware documentation including decorators like @[`@before_model`], @[`@after_model`], and @[`@wrap_tool_call`], see [Middleware](/oss/langchain/middleware).
-</Tip>
+```python
+from langchain.agents import create_agent
+from deepagents.backends import StateBackend
+from deepagents.middleware import FilesystemMiddleware
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-6",
+    tools=[search],
+    middleware=[FilesystemMiddleware(backend=StateBackend())],
+)
+```
+:::
+:::js
+```typescript
+import { createAgent } from "langchain";
+import { FilesystemMiddleware, StateBackend } from "deepagents";
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [search],
+  middleware: [new FilesystemMiddleware({ backend: new StateBackend() })],
+});
+```
 :::
 
-:::js
-<Tip>
-For comprehensive middleware documentation including hooks like `beforeModel`, `afterModel`, and `wrapToolCall`, see [Middleware](/oss/langchain/middleware).
-</Tip>
+See @[`FilesystemMiddleware`], [Sandboxes](/oss/deepagents/sandboxes), [Interpreters](/oss/deepagents/interpreters).
+
+### Context management
+
+Every model call has a fixed context window. As an agent runs — accumulating history, tool results, and intermediate steps — that window fills. Summarization compresses history before overflow hits; memory loads persistent instructions at startup so knowledge carries across sessions; skills surface domain knowledge on demand rather than loading everything upfront.
+
+:::python
+```python
+from deepagents.backends import StateBackend
+from deepagents.middleware import FilesystemMiddleware, MemoryMiddleware, SkillsMiddleware, SummarizationMiddleware
+
+backend = StateBackend()
+model = "anthropic:claude-sonnet-4-6"
+
+agent = create_agent(
+    model=model,
+    tools=[search],
+    middleware=[
+        FilesystemMiddleware(backend=backend),
+        SummarizationMiddleware(model=model, backend=backend),
+        MemoryMiddleware(backend=backend, sources=["./AGENTS.md"]),
+        SkillsMiddleware(backend=backend, sources=["./skills/"]),
+    ],
+)
+```
 :::
+:::js
+```typescript
+import { FilesystemMiddleware, MemoryMiddleware, SkillsMiddleware, SummarizationMiddleware, StateBackend } from "deepagents";
+
+const backend = new StateBackend();
+const model = "anthropic:claude-sonnet-4-6";
+
+const agent = createAgent({
+  model,
+  tools: [search],
+  middleware: [
+    new FilesystemMiddleware({ backend }),
+    new SummarizationMiddleware({ model, backend }),
+    new MemoryMiddleware({ backend, sources: ["./AGENTS.md"] }),
+    new SkillsMiddleware({ backend, sources: ["./skills/"] }),
+  ],
+});
+```
+:::
+
+See @[`SummarizationMiddleware`], @[`MemoryMiddleware`], @[`SkillsMiddleware`], [Context engineering](/oss/deepagents/context-engineering).
+
+### Planning and delegation
+
+Complex tasks often exceed what one context window can handle. Delegation lets the main agent break work into pieces, hand them to subagents that each run in their own isolated context, and stay focused on coordination rather than execution. Work can run in parallel; the main agent's context stays clean.
+
+:::python
+```python
+from langchain.agents.middleware import TodoListMiddleware
+from deepagents import SubAgent
+from deepagents.middleware import FilesystemMiddleware, SubAgentMiddleware
+
+researcher: SubAgent = {
+    "name": "researcher",
+    "description": "Searches and returns a structured summary.",
+    "tools": [search],
+}
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-6",
+    tools=[search],
+    middleware=[
+        FilesystemMiddleware(backend=StateBackend()),
+        TodoListMiddleware(),
+        SubAgentMiddleware(backend=StateBackend(), subagents=[researcher]),
+    ],
+)
+```
+:::
+:::js
+```typescript
+import { createAgent, TodoListMiddleware } from "langchain";
+import { FilesystemMiddleware, SubAgentMiddleware, StateBackend } from "deepagents";
+
+const researcher = { name: "researcher", description: "Searches and returns a structured summary.", tools: [search] };
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [search],
+  middleware: [
+    new FilesystemMiddleware({ backend: new StateBackend() }),
+    new TodoListMiddleware(),
+    new SubAgentMiddleware({ backend: new StateBackend(), subagents: [researcher] }),
+  ],
+});
+```
+:::
+
+See @[`SubAgentMiddleware`], [Subagents](/oss/deepagents/subagents).
+
+### Fault tolerance
+
+Agents in production encounter failures that rarely appear in development: rate limits, model timeouts, transient API errors. Fault tolerance middleware handles these at the infrastructure level so your tools and business logic don't need try/catch around every call.
+
+:::python
+```python
+from langchain.agents.middleware import ModelRetryMiddleware, ToolRetryMiddleware
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-6",
+    tools=[search],
+    middleware=[
+        ModelRetryMiddleware(max_retries=3),
+        ToolRetryMiddleware(max_retries=2),
+    ],
+)
+```
+:::
+:::js
+```typescript
+import { createAgent, ModelRetryMiddleware, ToolRetryMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [search],
+  middleware: [new ModelRetryMiddleware({ maxRetries: 3 }), new ToolRetryMiddleware({ maxRetries: 2 })],
+});
+```
+:::
+
+See @[`ModelRetryMiddleware`], @[`ToolRetryMiddleware`], [Prebuilt middleware](/oss/langchain/middleware/built-in).
+
+### Guardrails
+
+Some policies can't live in a prompt — they need to be enforced deterministically regardless of what the model does. Guardrails intercept data as it flows through the agent loop, applying compliance rules or content policies before tool results reach the model's context.
+
+:::python
+```python
+from langchain.agents.middleware import PIIMiddleware
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-6",
+    tools=[search],
+    middleware=[PIIMiddleware()],
+)
+```
+:::
+:::js
+```typescript
+import { createAgent, PIIMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [search],
+  middleware: [new PIIMiddleware()],
+});
+```
+:::
+
+See @[`PIIMiddleware`], [Prebuilt middleware](/oss/langchain/middleware/built-in).
+
+### Steering
+
+Full autonomy isn't always appropriate. Steering lets you place humans at specific decision points — before destructive writes, expensive API calls, or anything requiring judgment — without restructuring your agent. The agent pauses and waits; a human approves, edits, or rejects; execution continues.
+
+:::python
+```python
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-6",
+    tools=[search],
+    middleware=[HumanInTheLoopMiddleware(interrupt_on={"write_file": True})],
+)
+```
+:::
+:::js
+```typescript
+import { createAgent, HumanInTheLoopMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [search],
+  middleware: [new HumanInTheLoopMiddleware({ interruptOn: { writeFile: true } })],
+});
+```
+:::
+
+See @[`HumanInTheLoopMiddleware`], [Human-in-the-loop](/oss/deepagents/human-in-the-loop).
+
+
+<Tip>
+`create_deep_agent` pre-assembles this stack for long-running coding and research tasks (filesystem, summarization, subagents, and prompt caching included by default). See [Deep Agents](/oss/deepagents/harness) for the full pre-built harness.
+</Tip>
+
+**Middleware resources:**
+- [Middleware overview](/oss/langchain/middleware/overview): how the middleware stack works and when hooks fire
+- [Prebuilt middleware](/oss/langchain/middleware/built-in): full reference with configuration examples
+- [Custom middleware](/oss/langchain/middleware/custom): write your own hooks for business logic, PII scrubbing, and more

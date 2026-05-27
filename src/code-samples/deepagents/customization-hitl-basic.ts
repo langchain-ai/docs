@@ -58,7 +58,7 @@ const checkpointer = new MemorySaver();
 
 // KEEP MODEL
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.1-pro-preview",
+  model: "google_genai:gemini-3.5-flash",
   tools: [removeFile, fetchFile, notifyEmail],
   interruptOn: {
     remove_file: true, // Default: approve, edit, reject, respond
