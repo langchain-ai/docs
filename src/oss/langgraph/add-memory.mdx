@@ -500,6 +500,110 @@ with PostgresSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight
         </Tab>
     </Tabs>
 </Accordion>
+
+<Accordion title="Example: using Oracle checkpointer">
+  ```
+  pip install -U langgraph langgraph-oracledb
+  ```
+
+    <Note>
+    **Setup**
+    To use the [Oracle checkpointer](https://pypi.org/project/langgraph-oracledb/), you will need an Oracle AI Database instance. A local container (for example `gvenzl/oracle-free:23-slim`) or an Oracle Autonomous Database in OCI both work.
+    </Note>
+
+    <Tip>
+    You need to call `checkpointer.setup()` the first time you're using the Oracle checkpointer.
+    </Tip>
+
+    <Tabs>
+        <Tab title="Sync">
+      ```python
+      from langchain.chat_models import init_chat_model
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph_oracledb.checkpoint.oracle import OracleSaver  # [!code highlight]
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+      DB_URI = "user/password@localhost:1521/FREEPDB1"
+      with OracleSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight]
+          # checkpointer.setup()
+
+          def call_model(state: MessagesState):
+              response = model.invoke(state["messages"])
+              return {"messages": response}
+
+          builder = StateGraph(MessagesState)
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(checkpointer=checkpointer)  # [!code highlight]
+
+          config = {
+              "configurable": {
+                  "thread_id": "1"  # [!code highlight]
+              }
+          }
+
+          for chunk in graph.stream(
+              {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
+              config,  # [!code highlight]
+              stream_mode="values"
+          ):
+              chunk["messages"][-1].pretty_print()
+
+          for chunk in graph.stream(
+              {"messages": [{"role": "user", "content": "what's my name?"}]},
+              config,  # [!code highlight]
+              stream_mode="values"
+          ):
+              chunk["messages"][-1].pretty_print()
+```
+        </Tab>
+        <Tab title="Async">
+      ```python
+      from langchain.chat_models import init_chat_model
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph_oracledb.checkpoint.oracle import AsyncOracleSaver  # [!code highlight]
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+      DB_URI = "user/password@localhost:1521/FREEPDB1"
+      async with AsyncOracleSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight]
+          # await checkpointer.setup()
+
+          async def call_model(state: MessagesState):
+              response = await model.ainvoke(state["messages"])
+              return {"messages": response}
+
+          builder = StateGraph(MessagesState)
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(checkpointer=checkpointer)  # [!code highlight]
+
+          config = {
+              "configurable": {
+                  "thread_id": "1"  # [!code highlight]
+              }
+          }
+
+          async for chunk in graph.astream(
+              {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
+              config,  # [!code highlight]
+              stream_mode="values"
+          ):
+              chunk["messages"][-1].pretty_print()
+
+          async for chunk in graph.astream(
+              {"messages": [{"role": "user", "content": "what's my name?"}]},
+              config,  # [!code highlight]
+              stream_mode="values"
+          ):
+              chunk["messages"][-1].pretty_print()
+```
+        </Tab>
+    </Tabs>
+</Accordion>
 :::
 
 ### Use in subgraphs
@@ -651,7 +755,6 @@ graph.invoke(
 :::js
 ```typescript
 import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
-import { v4 as uuidv4 } from "uuid";
 
 const State = new StateSchema({
   messages: MessagesValue,
@@ -671,7 +774,7 @@ const callModel: GraphNode<typeof State> = async (state, runtime) => {
   // ... Use memories in model call
 
   // Store a new memory
-  await runtime.store?.put(namespace, uuidv4(), { data: "User prefers dark mode" });
+  await runtime.store?.put(namespace, crypto.randomUUID(), { data: "User prefers dark mode" });
 };
 
 const builder = new StateGraph(State)
@@ -909,7 +1012,6 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
   import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
   import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
   import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
-  import { v4 as uuidv4 } from "uuid";
 
   const State = new StateSchema({
     messages: MessagesValue,
@@ -928,7 +1030,7 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
     const lastMessage = state.messages.at(-1);
     if (lastMessage?.content?.toLowerCase().includes("remember")) {
       const memory = "User name is Bob";
-      await runtime.store?.put(namespace, uuidv4(), { data: memory });
+      await runtime.store?.put(namespace, crypto.randomUUID(), { data: memory });
     }
 
     const response = await model.invoke([
@@ -981,7 +1083,6 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
   import { ChatAnthropic } from "@langchain/anthropic";
   import { MemorySaver, StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
   import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
-  import { v4 as uuidv4 } from "uuid";
 
   const State = new StateSchema({
     messages: MessagesValue,
@@ -1000,7 +1101,7 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
     const lastMessage = state.messages.at(-1);
     if (lastMessage?.content?.toLowerCase().includes("remember")) {
       const memory = "User name is Bob";
-      await runtime.store?.put(namespace, uuidv4(), { data: memory });
+      await runtime.store?.put(namespace, crypto.randomUUID(), { data: memory });
     }
 
     const response = await model.invoke([
@@ -1198,6 +1299,199 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
               config,
               stream_mode="values",
               context=Context(user_id="1"),  # [!code highlight]
+          ):
+              chunk["messages"][-1].pretty_print()
+```
+        </Tab>
+    </Tabs>
+</Accordion>
+
+<Accordion title="Example: using Oracle store">
+
+  ```
+  pip install -U langgraph langgraph-oracledb langchain-openai
+  ```
+
+    <Note>
+    **Setup**
+    To use the [Oracle store](https://pypi.org/project/langgraph-oracledb/), you will need an Oracle AI Database instance — the vector index used for semantic `search` requires [Oracle AI Vector Search](https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/).
+    </Note>
+
+    <Tip>
+    You need to call `store.setup()` and `checkpointer.setup()` the first time you're using the Oracle store and checkpointer.
+    </Tip>
+
+    <Tabs>
+        <Tab title="Sync">
+      ```python
+      import uuid
+
+      from langchain.chat_models import init_chat_model
+      from langchain.embeddings import init_embeddings
+      from langchain_core.runnables import RunnableConfig
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph.store.base import BaseStore
+      from langgraph_oracledb.checkpoint.oracle import OracleSaver
+      from langgraph_oracledb.store.oracle import OracleStore  # [!code highlight]
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+      embeddings = init_embeddings("openai:text-embedding-3-small")
+
+      DB_URI = "user/password@localhost:1521/FREEPDB1"
+
+      with (
+          OracleStore.from_conn_string(  # [!code highlight]
+              DB_URI,
+              index={"embed": embeddings, "dims": 1536},  # [!code highlight]
+          ) as store,
+          OracleSaver.from_conn_string(DB_URI) as checkpointer,
+      ):
+          store.setup()
+          checkpointer.setup()
+
+          def call_model(
+              state: MessagesState,
+              config: RunnableConfig,
+              *,
+              store: BaseStore,  # [!code highlight]
+          ):
+              user_id = config["configurable"]["user_id"]
+              namespace = ("memories", user_id)
+              memories = store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+              info = "\n".join([d.value["data"] for d in memories])
+              system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
+
+              # Store new memories if the user asks the model to remember
+              last_message = state["messages"][-1]
+              if "remember" in last_message.content.lower():
+                  memory = "User name is Bob"
+                  store.put(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
+
+              response = model.invoke(
+                  [{"role": "system", "content": system_msg}] + state["messages"]
+              )
+              return {"messages": response}
+
+          builder = StateGraph(MessagesState)
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(
+              checkpointer=checkpointer,
+              store=store,  # [!code highlight]
+          )
+
+          config = {
+              "configurable": {
+                  "thread_id": "1",  # [!code highlight]
+                  "user_id": "1",  # [!code highlight]
+              }
+          }
+          for chunk in graph.stream(
+              {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
+              config,  # [!code highlight]
+              stream_mode="values",
+          ):
+              chunk["messages"][-1].pretty_print()
+
+          config = {
+              "configurable": {
+                  "thread_id": "2",  # [!code highlight]
+                  "user_id": "1",
+              }
+          }
+
+          for chunk in graph.stream(
+              {"messages": [{"role": "user", "content": "what is my name?"}]},
+              config,  # [!code highlight]
+              stream_mode="values",
+          ):
+              chunk["messages"][-1].pretty_print()
+```
+        </Tab>
+        <Tab title="Async">
+      ```python
+      import uuid
+
+      from langchain.chat_models import init_chat_model
+      from langchain.embeddings import init_embeddings
+      from langchain_core.runnables import RunnableConfig
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph.store.base import BaseStore
+      from langgraph_oracledb.checkpoint.oracle import AsyncOracleSaver
+      from langgraph_oracledb.store.oracle import AsyncOracleStore  # [!code highlight]
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+      embeddings = init_embeddings("openai:text-embedding-3-small")
+
+      DB_URI = "user/password@localhost:1521/FREEPDB1"
+
+      async with (
+          AsyncOracleStore.from_conn_string(  # [!code highlight]
+              DB_URI,
+              index={"embed": embeddings, "dims": 1536},  # [!code highlight]
+          ) as store,
+          AsyncOracleSaver.from_conn_string(DB_URI) as checkpointer,
+      ):
+          await store.setup()
+          await checkpointer.setup()
+
+          async def call_model(
+              state: MessagesState,
+              config: RunnableConfig,
+              *,
+              store: BaseStore,  # [!code highlight]
+          ):
+              user_id = config["configurable"]["user_id"]
+              namespace = ("memories", user_id)
+              memories = await store.asearch(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+              info = "\n".join([d.value["data"] for d in memories])
+              system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
+
+              # Store new memories if the user asks the model to remember
+              last_message = state["messages"][-1]
+              if "remember" in last_message.content.lower():
+                  memory = "User name is Bob"
+                  await store.aput(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
+
+              response = await model.ainvoke(
+                  [{"role": "system", "content": system_msg}] + state["messages"]
+              )
+              return {"messages": response}
+
+          builder = StateGraph(MessagesState)
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(
+              checkpointer=checkpointer,
+              store=store,  # [!code highlight]
+          )
+
+          config = {
+              "configurable": {
+                  "thread_id": "1",  # [!code highlight]
+                  "user_id": "1",  # [!code highlight]
+              }
+          }
+          async for chunk in graph.astream(
+              {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
+              config,  # [!code highlight]
+              stream_mode="values",
+          ):
+              chunk["messages"][-1].pretty_print()
+
+          config = {
+              "configurable": {
+                  "thread_id": "2",  # [!code highlight]
+                  "user_id": "1",
+              }
+          }
+
+          async for chunk in graph.astream(
+              {"messages": [{"role": "user", "content": "what is my name?"}]},
+              config,  # [!code highlight]
+              stream_mode="values",
           ):
               chunk["messages"][-1].pretty_print()
 ```
@@ -2027,7 +2321,6 @@ const summarizeConversation: GraphNode<typeof State> = async (state) => {
     MemorySaver,
   } from "@langchain/langgraph";
   import * as z from "zod";
-  import { v4 as uuidv4 } from "uuid";
 
   const memory = new MemorySaver();
 
@@ -2047,7 +2340,7 @@ const summarizeConversation: GraphNode<typeof State> = async (state) => {
     let { messages } = state;
     if (summary) {
       const systemMessage = new SystemMessage({
-        id: uuidv4(),
+        id: crypto.randomUUID(),
         content: `Summary of conversation earlier: ${summary}`,
       });
       messages = [systemMessage, ...messages];
@@ -2084,7 +2377,7 @@ const summarizeConversation: GraphNode<typeof State> = async (state) => {
 
     const allMessages = [
       ...messages,
-      new HumanMessage({ id: uuidv4(), content: summaryMessage }),
+      new HumanMessage({ id: crypto.randomUUID(), content: summaryMessage }),
     ];
 
     const response = await model.invoke(allMessages);
@@ -2455,7 +2748,7 @@ await checkpointer.deleteThread(threadId);
 
 ## Database management
 
-If you are using any database-backed persistence implementation (such as Postgres or Redis) to store short and/or long-term memory, you will need to run migrations to set up the required schema before you can use it with your database.
+If you are using any database-backed persistence implementation (such as Postgres, Redis, or Oracle) to store short and/or long-term memory, you will need to run migrations to set up the required schema before you can use it with your database.
 
 By convention, most database-specific libraries define a `setup()` method on the checkpointer or store instance that runs the required migrations. However, you should check with your specific implementation of @[`BaseCheckpointSaver`] or @[`BaseStore`] to confirm the exact method name and usage.
 

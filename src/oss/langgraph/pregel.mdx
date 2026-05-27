@@ -158,6 +158,16 @@ reducer(reducer(state, [xs]), [ys]) == reducer(state, [xs, ys])
 If your reducer is not associative, the reconstructed state may differ depending on how LangGraph batches writes across steps, producing inconsistent behavior.
 </Warning>
 
+<Warning>
+**The reducer runs on reconstruction, not on write.** Unlike a @[`BinaryOperatorAggregate`], whose reducer is invoked at write time so the combined value is what gets serialized into the checkpoint, a `DeltaChannel` reducer is invoked when the channel value is *rebuilt* from its persisted writes. The raw per-step writes are what get serialized; the reducer is only called when the value is materialized—on the next read, on the next step's actors, or when replaying history.
+
+Practical consequences when designing a reducer:
+
+- **Make it a pure function of `(state, writes)`.** Any side effects, randomness, or wall-clock reads (e.g., `uuid.uuid4()`, `datetime.now()`) execute every time the value is reconstructed and produce different results on each replay. They are *not* baked into the persisted writes.
+- **Do not rely on mutations to incoming writes being persisted.** If your reducer mutates a write object (for example, assigning a stable ID to an item that arrived without one), that mutation lives only in the reconstructed value. The stored write still has the original shape, so the next reconstruction will see the un-mutated input again.
+- **Attach identity and other stable metadata upstream.** If downstream code needs to reference an item by ID across turns (e.g., to update or remove it later), assign that ID before the value is written to the channel—not inside the reducer.
+</Warning>
+
 Here are bulk reducers for the two most common cases:
 
 ```python

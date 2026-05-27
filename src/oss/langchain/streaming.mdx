@@ -3,12 +3,14 @@ title: Streaming
 description: Stream real-time updates from agent runs
 ---
 
+import StreamingAgentProgressJs from '/snippets/code-samples/streaming-agent-progress-js.mdx';
+import StreamingAgentProgressPy from '/snippets/code-samples/streaming-agent-progress-py.mdx';
 import StreamingReasoningTokensPy from '/snippets/code-samples/streaming-reasoning-tokens-py.mdx';
 import StreamingReasoningTokensJs from '/snippets/code-samples/streaming-reasoning-tokens-js.mdx';
 
-<Info>
-**In preview:** Try event streaming typed agent projections over messages, tool calls, state, and final output. Start with [LangChain Event Streaming](/oss/langchain/event-streaming), or explore runnable examples in the [streaming cookbook](https://github.com/langchain-ai/streaming-cookbook).
-</Info>
+<Tip>
+For new applications, we recommend [event streaming](/oss/langchain/event-streaming)—the typed-projection API introduced in LangChain v1.3. Event streaming gives you separate iterators per projection (messages, values, tool calls, subgraphs) so you can consume them independently instead of branching on `stream_mode` chunks.
+</Tip>
 
 LangChain implements a streaming system to surface real-time updates.
 
@@ -62,120 +64,33 @@ For example, if you have an agent that calls a tool once, you should see the fol
 
 :::python
 
-```python title="Streaming agent progress"
-from langchain.agents import create_agent
+Pass a `thread_id` via `config` so the conversation is checkpointed and follow-up turns can resume the same history. `thread_id` is independent of `stream_mode`; you can also pass `context` alongside it for per-run data your tools read from `runtime.context`.
 
-
-def get_weather(city: str) -> str:
-    """Get weather for a given city."""
-
-    return f"It's always sunny in {city}!"
-
-agent = create_agent(
-    model="gpt-5-nano",
-    tools=[get_weather],
-)
-for chunk in agent.stream(  # [!code highlight]
-    {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
-    stream_mode="updates",
-    version="v2",  # [!code highlight]
-):
-    if chunk["type"] == "updates":  # [!code highlight]
-        for step, data in chunk["data"].items():  # [!code highlight]
-            print(f"step: {step}")
-            print(f"content: {data['messages'][-1].content_blocks}")
-```
+<StreamingAgentProgressPy />
 
 ```shell title="Output"
 step: model
-content: [{'type': 'tool_call', 'name': 'get_weather', 'args': {'city': 'San Francisco'}, 'id': 'call_OW2NYNsNSKhRZpjW0wm2Aszd'}]
-
+content: [{'type': 'tool_call', 'name': 'get_weather', 'args': {'city': 'San Francisco'}, 'id': 'call_9lBtsDbmmobzyA8xc4I4Ctne'}]
 step: tools
 content: [{'type': 'text', 'text': "It's always sunny in San Francisco!"}]
-
 step: model
-content: [{'type': 'text', 'text': 'It's always sunny in San Francisco!'}]
+content: [{'type': 'text', 'text': "San Francisco weather: It's always sunny in San Francisco!\n\nIf you’d like the exact current conditions (temperature, humidity, wind) and a short forecast, I can fetch that next. Would you like me to pull live details for San Francisco?"}]
 ```
+
+<Note>
+Persisting conversation history with `thread_id` requires the agent to be configured with a [checkpointer](/oss/langchain/long-term-memory). On [LangSmith deployments](/langsmith/deployment) a checkpointer is provisioned automatically. Locally, pass one explicitly, for example `create_agent(..., checkpointer=InMemorySaver())`. The remaining snippets on this page omit `thread_id` for brevity, but you should pass it in production.
+</Note>
 :::
 
 :::js
-```typescript
-import z from "zod";
-import { createAgent, tool } from "langchain";
 
-const getWeather = tool(
-    async ({ city }) => {
-        return `The weather in ${city} is always sunny!`;
-    },
-    {
-        name: "get_weather",
-        description: "Get weather for a given city.",
-        schema: z.object({
-        city: z.string(),
-        }),
-    }
-);
+Pass a `thread_id` via `configurable` so the conversation is checkpointed and follow-up turns can resume the same history. `thread_id` is independent of `streamMode`; you can also pass `context` alongside it for per-run data your tools read from `runtime.context`.
 
-const agent = createAgent({
-    model: "gpt-5-nano",
-    tools: [getWeather],
-});
+<StreamingAgentProgressJs />
 
-for await (const chunk of await agent.stream(
-    { messages: [{ role: "user", content: "what is the weather in sf" }] },
-    { streamMode: "updates" }
-)) {
-    const [step, content] = Object.entries(chunk)[0];
-    console.log(`step: ${step}`);
-    console.log(`content: ${JSON.stringify(content, null, 2)}`);
-}
-/**
- * step: model
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         // ...
- *         "tool_calls": [
- *           {
- *             "name": "get_weather",
- *             "args": {
- *               "city": "San Francisco"
- *             },
- *             "type": "tool_call",
- *             "id": "call_0qLS2Jp3MCmaKJ5MAYtr4jJd"
- *           }
- *         ],
- *         // ...
- *       }
- *     }
- *   ]
- * }
- * step: tools
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         "content": "The weather in San Francisco is always sunny!",
- *         "name": "get_weather",
- *         // ...
- *       }
- *     }
- *   ]
- * }
- * step: model
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         "content": "The latest update says: The weather in San Francisco is always sunny!\n\nIf you'd like real-time details (current temperature, humidity, wind, and today's forecast), I can pull the latest data for you. Want me to fetch that?",
- *         // ...
- *       }
- *     }
- *   ]
- * }
- */
-```
+<Note>
+Persisting conversation history with `thread_id` requires the agent to be configured with a [checkpointer](/oss/langchain/long-term-memory). On [LangSmith deployments](/langsmith/deployment) a checkpointer is provisioned automatically. Locally, pass one explicitly, for example `createAgent({ ..., checkpointer: new MemorySaver() })`. The remaining snippets on this page omit `thread_id` for brevity, but you should pass it in production.
+</Note>
 :::
 
 ## LLM tokens
@@ -587,7 +502,7 @@ You may want to stream both:
 
 Specifying [`stream_mode="messages"`](#llm-tokens) will stream incremental [message chunks](/oss/langchain/messages#streaming-and-chunks) generated by all LLM calls in the agent. To access the completed messages with parsed tool calls:
 
-1. If those messages are tracked in the [state](/oss/langchain/agents#memory) (as in the model node of [`create_agent`](/oss/langchain/agents)), use `stream_mode=["messages", "updates"]` to access completed messages through [state updates](#agent-progress) (demonstrated below).
+1. If those messages are tracked in the [state](/oss/langchain/short-term-memory) (as in the model node of [`create_agent`](/oss/langchain/agents)), use `stream_mode=["messages", "updates"]` to access completed messages through [state updates](#agent-progress) (demonstrated below).
 2. If those messages are not tracked in the state, use [custom updates](#custom-updates) or aggregate the chunks during the streaming loop ([next section](#accessing-completed-messages)).
 
 <Note>
@@ -655,7 +570,7 @@ The| weather| in| Boston| is| **|sun|ny|**|.|
 #### Accessing completed messages
 
 <Note>
-If completed messages are tracked in an agent's [state](/oss/langchain/agents#memory), you can use `stream_mode=["messages", "updates"]` as demonstrated in the [Streaming tool calls](#streaming-tool-calls) section to access completed messages during streaming.
+If completed messages are tracked in an agent's [state](/oss/langchain/short-term-memory), you can use `stream_mode=["messages", "updates"]` as demonstrated in the [Streaming tool calls](#streaming-tool-calls) section to access completed messages during streaming.
 </Note>
 
 In some cases, completed messages are not reflected in [state updates](#agent-progress). If you have access to the agent internals, you can use [custom updates](#custom-updates) to access these messages during streaming. Otherwise, you can aggregate message chunks in the streaming loop (see below).
