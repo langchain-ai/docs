@@ -10,6 +10,11 @@ for each node, showing its status, streaming its content in real time, and
 tracking completion across the entire workflow. Users see exactly what the agent
 is doing, which step it's on, and what each step produced.
 
+This pattern is especially useful for production agents because it turns graph
+structure into product UX. Instead of treating the run as a single assistant
+response, you can expose the same checkpoints, node names, state keys, and
+stream metadata that LangGraph uses internally.
+
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
 import UseStreamTypeInference from '/snippets/oss/use-stream-type-inference.mdx';
 
@@ -43,6 +48,11 @@ graphNodes.forEach((node) => {
 Use `node.nodeName` for labels in the progress bar and card headers. Pass each
 snapshot to `useMessages(stream, node)` to render node-scoped streaming content
 without coupling the UI to graph state key names.
+
+This mapping becomes the contract between your graph and your UI. Backend
+authors can add, rename, or reorder nodes intentionally, while frontend authors
+decide how each state key should be visualized: a status badge, markdown panel,
+table, chart, trace view, or approval card.
 
 ## Setting up `useStream`
 
@@ -310,6 +320,11 @@ example, `do_research` writes to `research` in the playground graph):
 The pattern is: show the most recent scoped AI message in the node card, and
 use `stream.values` only when you intentionally need a graph state field.
 
+Because scoped messages are tied to the producing node, the UI can support
+parallel graph paths without guessing from message order. Each card updates from
+the stream events that belong to its node, and completed values remain available
+through `stream.values`.
+
 ```ts
 function NodeContent({ stream, node }: { stream: AnyStream; node: SubgraphDiscoverySnapshot }) {
   const messages = useMessages(stream, node);
@@ -395,6 +410,9 @@ that have no matching snapshot.
 - **Discover nodes from the stream**. Render cards from `stream.subgraphs`
   rather than hardcoding expected nodes; conditional or skipped steps won't
   appear until they run.
+- **Treat state keys as UI contracts**. Decide which graph outputs should be
+  stable enough for the frontend to render, and keep those keys documented next
+  to the graph definition.
 - **Use scoped messages for node cards**. They work while a node is streaming
   and after it completes, without coupling UI cards to state key names.
 - **Auto-collapse completed nodes**. In long pipelines, auto-collapse finished

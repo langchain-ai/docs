@@ -3,7 +3,15 @@ title: Overview
 description: Render LangGraph agents to the frontend
 ---
 
-Build frontends that visualize LangGraph pipelines in real time. These patterns show how to render multi-step graph execution with per-node status and streaming content from custom `StateGraph` workflows.
+Build frontends that visualize LangGraph pipelines in real time. These patterns
+show how to render multi-step graph execution with per-node status and streaming
+content from custom `StateGraph` workflows.
+
+LangGraph's frontend advantage is that the UI can follow the same structure as
+the graph. Nodes, state keys, checkpoints, interrupts, subgraphs, and streamed
+messages are all visible runtime concepts, so you can build interfaces that
+explain what the system is doing instead of hiding execution behind one
+assistant message.
 
 <Note>
 These patterns use the v1 frontend SDK packages. If you are using an earlier version, see the migration guides for [React](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-react/docs/v1-migration.md), [Vue](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-vue/docs/v1-migration.md), [Svelte](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-svelte/docs/v1-migration.md), and [Angular](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-angular/docs/v1-migration.md).
@@ -120,6 +128,24 @@ function Pipeline() {
 }
 ```
 
+## What makes this different from a chat stream
+
+Custom graphs often power product workflows: research pipelines, approval flows,
+data pipelines, data enrichment, code review, planning, and multi-step analysis. The
+frontend SDK lets you render these workflows using graph-native signals:
+
+| Runtime concept | Frontend UX |
+| --- | --- |
+| **Named nodes** | One card, timeline step, or status badge per graph node. |
+| **State keys** | Dedicated UI regions for typed outputs such as classification, sources, analysis, and final synthesis. |
+| **Streaming metadata** | Route partial messages to the node that produced them. |
+| **Checkpoints** | Inspect or resume from prior graph states for debugging and auditability. |
+| **Interrupts** | Pause a node for human input, approval, or correction, then continue. |
+| **Subgraphs** | Reveal nested execution only when the user needs more detail. |
+
+Because the SDK exposes these concepts directly, you can scale from a simple
+chat panel to a full workflow debugger without changing the backend protocol.
+
 ## Patterns
 
 <CardGroup cols={2}>
@@ -130,4 +156,4 @@ function Pipeline() {
 
 ## Related patterns
 
-The [LangChain frontend patterns](/oss/langchain/frontend/overview)—markdown messages, tool calling, optimistic updates, and more—work with any LangGraph graph. The stream API provides the same core data model whether you use `createAgent`, `createDeepAgent`, or a custom `StateGraph`.
+The [LangChain frontend patterns](/oss/langchain/frontend/overview)—markdown messages, tool calling, human-in-the-loop, resumable streams, and time travel—work with any LangGraph graph. The stream API provides the same core data model whether you use `createAgent`, `createDeepAgent`, or a custom `StateGraph`.
