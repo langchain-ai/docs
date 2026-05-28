@@ -226,10 +226,13 @@ LINK_MAPS: list[LinkMap] = [
             # Embeddings
             "init_embeddings": "langchain/embeddings/base/init_embeddings",
             "Embeddings": "langchain-core/embeddings/embeddings/Embeddings",
+            "PineconeSparseEmbeddings": "langchain-pinecone/embeddings/PineconeSparseEmbeddings",
             # Documents
             "Document": "langchain-core/documents/base/Document",
             # Document loaders
             "BaseLoader": "langchain-core/document_loaders/base/BaseLoader",
+            "AzureBlobStorageContainerLoader": "langchain-community/document_loaders/azure_blob_storage_container/AzureBlobStorageContainerLoader",
+            "AzureBlobStorageFileLoader": "langchain-community/document_loaders/azure_blob_storage_file/AzureBlobStorageFileLoader",
             # Text splitters
             "CharacterTextSplitter": "langchain-text-splitters/character/CharacterTextSplitter",
             "RecursiveCharacterTextSplitter": "langchain-text-splitters/character/RecursiveCharacterTextSplitter",
@@ -244,6 +247,18 @@ LINK_MAPS: list[LinkMap] = [
             # VectorStores
             "VectorStore": "langchain-core/vectorstores/base/VectorStore",
             "VectorStore.max_marginal_relevance_search": "langchain-core/vectorstores/base/VectorStore/max_marginal_relevance_search",
+            "PGVector": "langchain-postgres/vectorstores/PGVector",
+            "PGVectorStore": "langchain-postgres/v2/vectorstores/PGVectorStore",
+            "AstraDBVectorStore": "langchain-astradb/vectorstores/AstraDBVectorStore",
+            "ChromaVectorStore": "langchain-chroma/vectorstores/Chroma",
+            "ElasticSearchStore": "langchain-elasticsearch/vectorstores/ElasticsearchStore",
+            "MilvusVectorStore": "langchain-milvus/vectorstores/milvus/Milvus",
+            "MongoDBAtlasVectorSearch": "langchain-mongodb/vectorstores/MongoDBAtlasVectorSearch",
+            "PineconeSparseVectorStore": "langchain-pinecone/vectorstores_sparse/PineconeSparseVectorStore",
+            "PineconeVectorStore": "langchain-pinecone/vectorstores/PineconeVectorStore",
+            "QdrantVectorStore": "langchain-qdrant/qdrant/QdrantVectorStore",
+            "SurrealDBStore": "langchain-surrealdb/vectorstores/SurrealDBVectorStore",
+            "SQLServer_VectorStore": "langchain-sqlserver/vectorstores/SQLServer_VectorStore",
             # Key-value stores
             "BaseStore": "langchain-core/stores/BaseStore",
             "BaseStore.put": "langgraph/store/#langgraph.store.base.BaseStore.put",

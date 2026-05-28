@@ -36,9 +36,10 @@ initial_state = {
 
 # Run with a thread_id for persistence
 config = {"configurable": {"thread_id": "customer_123"}}
-result = app.invoke(initial_state, config, version="v2")
+stream = app.stream_events(initial_state, config, version="v3")
+_ = stream.output  # drive the stream to completion
 # The graph will pause at human_review
-print(f"human review interrupt:{result.interrupts}")
+print(f"human review interrupt:{stream.interrupts}")
 
 human_response = Command(
     resume={
@@ -48,13 +49,14 @@ human_response = Command(
 )
 
 # Resume execution
-final_result = app.invoke(human_response, config, version="v2")
+resumed = app.stream_events(human_response, config, version="v3")
+final_state = resumed.output
 print("Email sent successfully!")
 # :snippet-end:
 
 # :remove-start:
 if __name__ == "__main__":
-    assert result.interrupts
-    assert final_result.value["response_text"]
+    assert stream.interrupted
+    assert final_state["response_text"]
     print("✓ langgraph-thinking-hitl-v2")
 # :remove-end:
