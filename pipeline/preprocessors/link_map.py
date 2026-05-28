@@ -231,7 +231,6 @@ LINK_MAPS: list[LinkMap] = [
             "Document": "langchain-core/documents/base/Document",
             # Document loaders
             "BaseLoader": "langchain-core/document_loaders/base/BaseLoader",
-            "AzureBlobStorageContainerLoader": "langchain-community/document_loaders/azure_blob_storage_container/AzureBlobStorageContainerLoader",
             # Text splitters
             "CharacterTextSplitter": "langchain-text-splitters/character/CharacterTextSplitter",
             "RecursiveCharacterTextSplitter": "langchain-text-splitters/character/RecursiveCharacterTextSplitter",
