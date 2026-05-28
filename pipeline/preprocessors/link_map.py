@@ -255,6 +255,7 @@ LINK_MAPS: list[LinkMap] = [
             "PineconeSparseVectorStore": "langchain-pinecone/vectorstores_sparse/PineconeSparseVectorStore",
             "PineconeVectorStore": "langchain-pinecone/vectorstores/PineconeVectorStore",
             "QdrantVectorStore": "langchain-qdrant/qdrant/QdrantVectorStore",
+            "SurrealDBStore": "langchain-surrealdb/vectorstores/SurrealDBVectorStore",
             "SQLServer_VectorStore": "langchain-sqlserver/vectorstores/SQLServer_VectorStore",
             # Key-value stores
             "BaseStore": "langchain-core/stores/BaseStore",
