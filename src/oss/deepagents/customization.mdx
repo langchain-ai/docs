@@ -49,36 +49,75 @@ import CustomizationProfilesPy from '/snippets/code-samples/customization-profil
 import CustomizationStructuredOutputPy from '/snippets/code-samples/customization-structured-output-py.mdx';
 import CustomizationStructuredOutputJs from '/snippets/code-samples/customization-structured-output-js.mdx';
 
-:::python
-`create_deep_agent` has the following core configuration options:
-:::
-
-:::js
-`createDeepAgent` has the following configuration options:
-:::
-
-- [Model](#model)
-- [Tools](#tools)
-- [System Prompt](#system-prompt)
-- [Middleware](#middleware), including [prebuilt middleware](#prebuilt-middleware) and [custom middleware](#custom-middleware)
-- [Interpreters](#interpreters)
-- [Subagents](#subagents)
-- [Backends (virtual filesystems)](#backends)
-- [Human-in-the-loop](#human-in-the-loop)
-- [Skills](#skills)
-- [Memory](#memory)
-- [Profiles](#profiles)
+Build the harness around your goal. `create_deep_agent` gives you a production-ready foundation: connect it to your data, shape its behavior, and add the capabilities your use case needs.
 
 :::python
+
+```python
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    system_prompt="You are a helpful assistant.",
+    tools=[search, fetch_url],
+    memory=["./AGENTS.md"],
+    skills=["./skills/"],
+)
+```
+
+| Parameter | What it does |
+|---|---|
+| [`model=`](#model) | Which model to use |
+| [`system_prompt=`](#system-prompt) | Custom instructions for the agent |
+| [`tools=`](#tools) | Domain tools the agent can call |
+| [`memory=`](#memory) | AGENTS.md files loaded at startup |
+| [`skills=`](#skills) | Skills directory for on-demand knowledge |
+| [`backend=`](#backends) | Filesystem backend (StateBackend by default) |
+| [`permissions=`](/oss/deepagents/permissions) | Path-level access control for the filesystem |
+| [`subagents=`](#subagents) | Custom subagents for delegated tasks |
+| [`middleware=`](#middleware) | Extra middleware to add to the stack |
+| [`interrupt_on=`](#human-in-the-loop) | Pause before tool calls for human approval |
+| [`response_format=`](#structured-output) | Structured output schema |
+| [profiles](#profiles) | Per-model defaults as a reusable bundle |
+
+<Accordion title="Full function signature">
 <CreateDeepAgentConfigOptionsPy />
+</Accordion>
 
-For the full parameter list, see the @[`create_deep_agent`] API reference.
+For the full parameter list, see the @[`create_deep_agent`] API reference. To compose a fully custom harness from scratch, see [Configure the harness](/oss/langchain/agents#configure-the-harness) or follow the step-by-step [Build a deep agent from scratch](/oss/langchain/deep-agent-from-scratch) guide.
 :::
 
 :::js
-<CreateDeepAgentConfigOptionsJs />
 
-For the full parameter list, see the [`createDeepAgent`](https://reference.langchain.com/javascript/deepagents/types/CreateDeepAgentParams) API reference.
+`createDeepAgent` ships with a pre-assembled harness: filesystem, summarization, subagents, and prompt caching by default. The parameters below let you define the agent's persona, connect it to your data and tools, and extend the stack with additional middleware.
+
+```typescript
+import { createDeepAgent } from "deepagents";
+
+const agent = await createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  systemPrompt: "You are a helpful assistant.",
+  tools: [search, fetchUrl],
+  memory: ["./AGENTS.md"],
+  skills: ["./skills/"],
+});
+```
+
+| Parameter | What it does |
+|---|---|
+| `model` | Which model to use |
+| `systemPrompt` | Custom instructions for the agent |
+| `tools` | Domain tools the agent can call |
+| `memory` | AGENTS.md files loaded at startup |
+| `skills` | Skills directory for on-demand knowledge |
+| `backend` | Filesystem backend (StateBackend by default) |
+| `permissions` | Path-level access control for the filesystem |
+| `subagents` | Custom subagents for delegated tasks |
+| `middleware` | Extra middleware to add to the stack |
+| `interruptOn` | Pause before tool calls for human approval |
+| `responseFormat` | Structured output schema |
+
+For the full parameter list, see the [`createDeepAgent`](https://reference.langchain.com/javascript/deepagents/types/CreateDeepAgentParams) API reference. To compose a fully custom harness from scratch, see [Configure the harness](/oss/langchain/agents#configure-the-harness).
 :::
 
 ## Model
@@ -112,6 +151,82 @@ In addition to [built-in tools](/oss/deepagents/overview#core-capabilities) for 
 :::js
 <CustomizationToolsJs />
 :::
+
+### MCP tools
+
+<Tip>
+  Deep Agents fully support [Model Context Protocol (MCP)](/oss/langchain/mcp) tools. You can load tools from any MCP server—databases, APIs, file systems, and more—and pass them directly to `create_deep_agent`.
+</Tip>
+
+:::python
+Install `langchain-mcp-adapters` to connect to MCP servers:
+
+```bash
+pip install langchain-mcp-adapters
+```
+
+```python
+import asyncio
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from deepagents import create_deep_agent
+
+async def main():
+    async with MultiServerMCPClient(
+        {
+            "my_server": {
+                "transport": "http",
+                "url": "http://localhost:8000/mcp",
+            }
+        }
+    ) as client:
+        tools = await client.get_tools()
+
+        agent = create_deep_agent(
+            model="openai:gpt-5.4",
+            tools=tools,
+        )
+
+        result = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "Use the MCP server to help me."}]},
+            config={"configurable": {"thread_id": "1"}},
+        )
+
+asyncio.run(main())
+```
+:::
+
+:::js
+Install `@langchain/mcp-adapters` to connect to MCP servers:
+
+```bash
+npm install @langchain/mcp-adapters
+```
+
+```ts
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+import { createDeepAgent } from "deepagents";
+
+const client = new MultiServerMCPClient({
+    my_server: {
+        transport: "http",
+        url: "http://localhost:8000/mcp",
+    },
+});
+
+const tools = await client.getTools();
+
+const agent = await createDeepAgent({
+    model: "openai:gpt-5.4",
+    tools,
+});
+
+const result = await agent.invoke({
+    messages: [{ role: "user", content: "Use the MCP server to help me." }],
+});
+```
+:::
+
+For detailed configuration options including stdio servers, OAuth authentication, tool filtering, and stateful sessions, see the full [MCP guide](/oss/langchain/mcp).
 
 ## System prompt
 
@@ -178,12 +293,12 @@ agent = create_deep_agent(
 ```
 
 <Note>
-    Passing a `SystemMessage` (rather than a string) triggers a different concatenation path: the right-hand assembly (`BASE`-or-`CUSTOM` plus any `SUFFIX`) is appended as an additional text content block onto the message's existing `content_blocks`. The same logical ordering applies (caller blocks first), and any `cache_control` markers on the caller's blocks are preserved — useful for placing explicit Anthropic prompt-cache breakpoints.
+    Passing a `SystemMessage` (rather than a string) triggers a different concatenation path: the right-hand assembly (`BASE`-or-`CUSTOM` plus any `SUFFIX`) is appended as an additional text content block onto the message's existing `content_blocks`. The same logical ordering applies (caller blocks first), and any `cache_control` markers on the caller's blocks are preserved—useful for placing explicit Anthropic prompt-cache breakpoints.
 </Note>
 
 <AccordionGroup>
     <Accordion title="Subagent prompts">
-        The same overlay rules apply to declarative [subagents](/oss/deepagents/subagents) — each subagent re-runs profile resolution against **its own model**, then applies the resolved profile's `base_system_prompt` / `system_prompt_suffix` to its authored `system_prompt`. The subagent's `system_prompt` plays the `BASE` role; `CUSTOM` and `SUFFIX` come from the profile that matches the subagent's model (which may differ from the main agent's profile).
+        The same overlay rules apply to declarative [subagents](/oss/deepagents/subagents)—each subagent re-runs profile resolution against **its own model**, then applies the resolved profile's `base_system_prompt` / `system_prompt_suffix` to its authored `system_prompt`. The subagent's `system_prompt` plays the `BASE` role; `CUSTOM` and `SUFFIX` come from the profile that matches the subagent's model (which may differ from the main agent's profile).
 
         | `spec["system_prompt"]` | profile `base_system_prompt` (`CUSTOM`) | profile `system_prompt_suffix` (`SUFFIX`) | Final subagent system prompt |
         | ----------------------- | :-------------------------------------: | :---------------------------------------: | ---------------------------- |
@@ -192,7 +307,7 @@ agent = create_deep_agent(
         | authored                |                    ✓                    |                     -                     | `CUSTOM`                     |
         | authored                |                    ✓                    |                     ✓                     | `CUSTOM` + `SUFFIX`          |
 
-        There is no `USER` segment for subagents — the spec's authored `system_prompt` is the closest analog and stays in the `BASE` slot. A profile that ships only a `system_prompt_suffix` (the common case for built-in Anthropic / OpenAI profiles) just appends to whatever the subagent author wrote; a profile that sets `base_system_prompt` will *replace* the authored prompt outright, so reach for that field deliberately.
+        There is no `USER` segment for subagents—the spec's authored `system_prompt` is the closest analog and stays in the `BASE` slot. A profile that ships only a `system_prompt_suffix` (the common case for built-in Anthropic / OpenAI profiles) just appends to whatever the subagent author wrote; a profile that sets `base_system_prompt` will *replace* the authored prompt outright, so reach for that field deliberately.
     </Accordion>
     <Accordion title="General-purpose subagent prompt">
         The auto-added [general-purpose subagent](/oss/deepagents/subagents#the-general-purpose-subagent) follows the same overlay rules with one extra layer: the GP base prompt is resolved as **`general_purpose_subagent.system_prompt` (if set) -> `HarnessProfile.base_system_prompt` (if set) -> SDK GP default**. The profile suffix layers on top either way.
@@ -377,6 +492,10 @@ If you are using [skills](#skills) or [memory](#memory), you must add the expect
         :::js
         <BackendFilesystemJs />
         :::
+
+        <Tip>
+            Wrap `FilesystemBackend` in a `CompositeBackend` to prevent internal agent data (offloaded tool results, conversation history) from being written to disk alongside your project files. See the [recommended pattern](/oss/deepagents/backends#filesystembackend-local-disk).
+        </Tip>
     </Tab>
     <Tab title="LocalShellBackend">
         A filesystem with shell execution directly on the host. Provides filesystem tools plus the `execute` tool for running commands.
@@ -532,11 +651,13 @@ You can pass one or more file paths to the `memory` parameter when creating your
 
 ## Profiles
 
-A [harness profile](/oss/deepagents/profiles#harness-profiles) packages per-provider or per-model tweaks (system prompt suffixes, tool description overrides, excluded tools or middleware, extra middleware, and general-purpose subagent edits) so `create_deep_agent` applies them automatically when the matching model is selected.
+A [harness profile](/oss/deepagents/profiles#harness-profiles) is a reusable bundle of per-model configuration that `create_deep_agent` applies automatically when the matching model is selected. Profiles are the right tool when you want behaviour that follows the model—not the call site—such as a system prompt suffix tuned for Claude's instruction style, tool descriptions rewritten for GPT, or extra middleware that only makes sense with a specific provider.
+
+A single profile can carry: a custom base system prompt (`base_system_prompt`), an appended suffix (`system_prompt_suffix`), tool description overrides, tools or middleware to exclude, additional middleware to inject, and edits to the auto-added general-purpose subagent.
 
 <CustomizationProfilesPy />
 
-See [Profiles](/oss/deepagents/profiles) for registration keys, merge semantics, and plugin packaging. A narrower companion API, [provider profiles](/oss/deepagents/profiles#provider-profiles), packages model-construction arguments for a provider.
+See [Profiles](/oss/deepagents/profiles) for registration keys, merge semantics, and plugin packaging. A narrower companion API, [provider profiles](/oss/deepagents/profiles#provider-profiles), packages model-construction arguments (API keys, timeouts, retry settings) for a provider.
 
 :::
 
@@ -559,3 +680,18 @@ When the model generates the structured data, it's captured, validated, and retu
 :::
 
 For more information and examples, see [response format](/oss/langchain/structured-output#response-format).
+
+## Advanced
+
+:::python
+
+`create_deep_agent` pre-assembles a middleware stack on top of @[`create_agent`]. To build a fully custom agent—choosing exactly which capabilities to include—see [Configure the harness](/oss/langchain/agents#configure-the-harness).
+
+:::
+
+:::js
+
+`createDeepAgent` pre-assembles a middleware stack on top of `createAgent`. To build a fully custom agent—choosing exactly which capabilities to include—see [Configure the harness](/oss/langchain/agents#configure-the-harness).
+
+:::
+

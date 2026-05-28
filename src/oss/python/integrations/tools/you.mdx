@@ -3,16 +3,14 @@ title: "You.com search integration"
 description: "Integrate with the You.com search tool using LangChain Python."
 ---
 
-The [you.com API](https://api.you.com) is a suite of tools designed to help developers ground the output of LLMs in the most recent, most accurate, most relevant information that may not have been included in their training dataset.
+The [You.com API](https://api.you.com) is a suite of tools designed to help developers ground the output of LLMs in the most recent, most accurate, most relevant information that may not have been included in their training dataset.
 
 ## Setup
 
-The tool lives in the `langchain-community` package.
-
-You also need to set your you.com API key.
+Install the `langchain-youdotcom` package and set your You.com API key. Get your API key at [you.com/platform](https://you.com/platform).
 
 ```python
-pip install -qU langchain-community
+pip install -qU langchain-youdotcom
 ```
 
 ```python
@@ -30,7 +28,7 @@ os.environ["OPENAI_API_KEY"] = ""
 # dotenv.load_dotenv()
 ```
 
-It's also helpful (but not needed) to set up [LangSmith](https://smith.langchain.com) for best-in-class observability
+It's also helpful (but not needed) to set up [LangSmith](https://smith.langchain.com/) for best-in-class observability.
 
 ```python
 os.environ["LANGSMITH_TRACING"] = "true"
@@ -39,25 +37,20 @@ os.environ["LANGSMITH_TRACING"] = "true"
 
 ## Tool usage
 
-```python
-from langchain_community.tools.you import YouSearchTool
-from langchain_community.utilities.you import YouSearchAPIWrapper
+The `langchain-youdotcom` package provides two tools: `YouSearchTool` for web search and `YouContentsTool` for fetching and extracting clean content from web pages.
 
-api_wrapper = YouSearchAPIWrapper(num_web_results=1)
-tool = YouSearchTool(api_wrapper=api_wrapper)
+```python
+from langchain_youdotcom import YouSearchTool
+
+tool = YouSearchTool()
 
 tool
 ```
 
-```text
-YouSearchTool(api_wrapper=YouSearchAPIWrapper(ydc_api_key='x', num_web_results=1, safesearch=None, country=None, k=None, n_snippets_per_hit=None, endpoint_type='search', n_hits=None))
-```
-
 ```python
-# .invoke wraps utility.results
+# Invoke the search tool directly
 response = tool.invoke("What is the weather in NY")
 
-# .invoke should have a Document for each `snippet`
 print(len(response))
 
 for item in response:
@@ -77,23 +70,24 @@ page_content='- Humidity70%\n- UV Index1 of 11\n- Sunrise7:18 am\n- Sunset4:34 p
 
 ## Chaining
 
-We show here how to use it as part of an [agent](/oss/langchain/agents). We use the OpenAI Functions Agent, so we will need to setup and install the required dependencies for that. We will also use [LangSmith Hub](https://smith.langchain.com/hub) to pull the prompt from, so we will need to install that.
+Use `YouSearchTool` as part of an [agent](/oss/langchain/agents).
 
 ```python
 # you need a model to use in the chain
-!pip install -qU langchain langchain-openai langchainhub langchain-community
+!pip install -qU langchain langchain-openai langchainhub langchain-youdotcom
 ```
 
 ```python
-from langchain_classic import hub
+from langchain import hub
 from langchain.agents import AgentExecutor, create_openai_functions_agent
 from langchain_openai import ChatOpenAI
+from langchain_youdotcom import YouSearchTool
 
 instructions = """You are an assistant."""
 base_prompt = hub.pull("langchain-ai/openai-functions-template")
 prompt = base_prompt.partial(instructions=instructions)
 llm = ChatOpenAI(temperature=0)
-you_tool = YouSearchTool(api_wrapper=YouSearchAPIWrapper(num_web_results=1))
+you_tool = YouSearchTool()
 tools = [you_tool]
 agent = create_openai_functions_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(
