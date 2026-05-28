@@ -45,6 +45,7 @@ LINK_MAPS: list[LinkMap] = [
             "FilesystemPermission": "deepagents/middleware/permissions/FilesystemPermission",
             "SummarizationToolMiddleware": "deepagents/middleware/summarization/SummarizationToolMiddleware",
             "PatchToolCallsMiddleware": "deepagents/middleware/patch_tool_calls/PatchToolCallsMiddleware",
+            "RubricMiddleware": "deepagents/middleware/rubric/RubricMiddleware",
             "StateBackend": "deepagents/backends/state/StateBackend",
             "FilesystemBackend": "deepagents/backends/filesystem/FilesystemBackend",
             "LocalShellBackend": "deepagents/backends/local_shell/LocalShellBackend",
