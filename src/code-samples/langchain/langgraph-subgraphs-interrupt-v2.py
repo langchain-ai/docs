@@ -25,28 +25,23 @@ from langgraph.types import Command
 
 config = {"configurable": {"thread_id": "1"}}
 
-# Invoke - the subagent's tool calls interrupt()
-response = agent.invoke(
+# Stream events - the subagent's tool calls interrupt()
+stream = agent.stream_events(
     {"messages": [{"role": "user", "content": "Tell me about apples"}]},
     config=config,
-    version="v2",
+    version="v3",
 )
-# response.interrupts contains pending interrupts
+output = stream.output  # drive the stream to completion
+# stream.interrupts contains pending interrupts (and stream.interrupted is True)
 
 # Resume - approve the interrupt
-response = agent.invoke(Command(resume=True), config=config, version="v2")
+resumed = agent.stream_events(Command(resume=True), config=config, version="v3")
+final = resumed.output
 # :snippet-end:
 
 # :remove-start:
 if __name__ == "__main__":
-    config = {"configurable": {"thread_id": "1"}}
-    response = agent.invoke(
-        {"messages": [{"role": "user", "content": "Tell me about apples"}]},
-        config=config,
-        version="v2",
-    )
-    assert response.interrupts
-    response = agent.invoke(Command(resume=True), config=config, version="v2")
-    assert response.value["messages"]
+    assert stream.interrupted
+    assert resumed.output["messages"]
     print("✓ langgraph-subgraphs-interrupt-v2")
 # :remove-end:
