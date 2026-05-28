@@ -43,20 +43,20 @@ We will cover the following concepts:
     :::python
     <CodeGroup>
     ```bash pip
-    pip install langchain  langgraph  langchain-community
+    pip install langchain langgraph
     ```
     </CodeGroup>
     :::
     :::js
     <CodeGroup>
     ```bash npm
-    npm i langchain @langchain/core typeorm sqlite3 zod
+    npm i langchain @langchain/core sqlite3 zod
     ```
     ```bash yarn
-    yarn add langchain @langchain/core typeorm sqlite3 zod
+    yarn add langchain @langchain/core sqlite3 zod
     ```
     ```bash pnpm
-    pnpm add langchain @langchain/core typeorm sqlite3 zod
+    pnpm add langchain @langchain/core sqlite3 zod
     ```
     </CodeGroup>
     :::
@@ -130,16 +130,23 @@ async function resolveDbPath() {
 ```
 :::
 :::python
-We will use a handy SQL database wrapper available in the `langchain_community` package to interact with the database. The wrapper provides a simple interface to execute SQL queries and fetch results:
+We will use Python's built-in `sqlite3` module to interact with the database:
 
 ```python
-from langchain_community.utilities import SQLDatabase
+import sqlite3
 
-db = SQLDatabase.from_uri("sqlite:///Chinook.db")
+con = sqlite3.connect("Chinook.db")
+cursor = con.cursor()
 
-print(f"Dialect: {db.dialect}")
-print(f"Available tables: {db.get_usable_table_names()}")
-print(f'Sample output: {db.run("SELECT * FROM Artist LIMIT 5;")}')
+cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+tables = [row[0] for row in cursor.fetchall() if not row[0].startswith("sqlite_")]
+
+print("Dialect: sqlite")
+print(f"Available tables: {tables}")
+
+cursor.execute("SELECT * FROM Artist LIMIT 5;")
+print(f"Sample output: {cursor.fetchall()}")
+con.close()
 ```
 ```
 Dialect: sqlite
@@ -149,49 +156,150 @@ Sample output: [(1, 'AC/DC'), (2, 'Accept'), (3, 'Aerosmith'), (4, 'Alanis Moris
 :::
 
 ## 3. Add tools for database interactions
+
+<Warning>
+The following database tools are minimal wrappers for demonstration purposes only. They are not intended to be secure or used in production. Use narrowly scoped database permissions and add application-specific validation before executing model-generated SQL.
+</Warning>
+
 :::python
-Use the `SQLDatabase` wrapper available in the `langchain_community` package to interact with the database. The wrapper provides a simple interface to execute SQL queries and fetch results:
+We can implement database [tools](/oss/langchain/tools) as thin wrappers using the `@tool` decorator from `langchain.tools`:
 
 ```python
-from langchain_community.agent_toolkits import SQLDatabaseToolkit
+import sqlite3
+from langchain.tools import tool
 
-toolkit = SQLDatabaseToolkit(db=db, llm=model)
+# Below are minimal tools for demonstration purposes.
+# They are not intended to be secure or for production use.
 
-tools = toolkit.get_tools()
+@tool
+def sql_db_list_tables() -> str:
+    """Input is an empty string, output is a comma-separated list of tables in the database."""
+    con = sqlite3.connect("Chinook.db")
+    try:
+        cursor = con.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = [row[0] for row in cursor.fetchall() if not row[0].startswith("sqlite_")]
+        return ", ".join(tables)
+    finally:
+        con.close()
+
+@tool
+def sql_db_schema(table_names: str) -> str:
+    """Input to this tool is a comma-separated list of tables, output is the schema and sample rows for those tables.
+    Be sure that the tables actually exist by calling sql_db_list_tables first!
+    Example Input: table1, table2, table3"""
+    con = sqlite3.connect("Chinook.db")
+    try:
+        cursor = con.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        valid_tables = {row[0] for row in cursor.fetchall() if not row[0].startswith("sqlite_")}
+        results = []
+        for table in table_names.split(","):
+            table = table.strip()
+            if table not in valid_tables:
+                results.append(f"Error: table_names {{{table!r}}} not found in database")
+                continue
+            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?;", (table,))
+            schema_row = cursor.fetchone()
+            if schema_row:
+                results.append(schema_row[0])
+                try:
+                    quoted_table = '"' + table.replace('"', '""') + '"'
+                    cursor.execute(f"SELECT * FROM {quoted_table} LIMIT 3;")
+                    rows = cursor.fetchall()
+                    if rows:
+                        col_names = [description[0] for description in cursor.description]
+                        results.append(f"/*\n3 rows from {table} table:\n" + "\t".join(col_names) + "\n" + "\n".join("\t".join(str(x) for x in row) for row in rows) + "\n*/")
+                except Exception as e:
+                    results.append(f"Error fetching sample rows: {e}")
+        return "\n\n".join(results)
+    finally:
+        con.close()
+
+@tool
+def sql_db_query(query: str) -> str:
+    """Input to this tool is a detailed and correct SQL query, output is a result from the database.
+    If the query is not correct, an error message will be returned.
+    If an error is returned, rewrite the query, check the query, and try again.
+    If you encounter an issue with Unknown column 'xxxx' in 'field list', use sql_db_schema to query the correct table fields."""
+    con = sqlite3.connect("Chinook.db")
+    try:
+        cursor = con.cursor()
+        cursor.execute(query)
+        res = cursor.fetchall()
+        return str(res)
+    except Exception as e:
+        return f"Error: {e}"
+    finally:
+        con.close()
+
+@tool
+def sql_db_query_checker(query: str) -> str:
+    """Use this tool to double check if your query is correct before executing it.
+    Always use this tool before executing a query with sql_db_query!"""
+    trigger_prompt = """{query}
+Double check the sqlite query above for common mistakes, including:
+- Using NOT IN with NULL values
+- Using UNION when UNION ALL should have been used
+- Using BETWEEN for exclusive ranges
+- Data type mismatch in predicates
+- Properly quoting identifiers
+- Using the correct number of arguments for functions
+- Casting to the correct data type
+- Using the proper columns for joins
+
+If there are any of the above mistakes, rewrite the query. If there are no mistakes, just reproduce the original query.
+
+Output the final SQL query only.
+
+SQL Query: """.format(query=query)
+
+    response = model.invoke(trigger_prompt)
+    return response.text.strip()
+
+tools = [sql_db_list_tables, sql_db_schema, sql_db_query, sql_db_query_checker]
 
 for tool in tools:
     print(f"{tool.name}: {tool.description}\n")
 ```
 ```
-sql_db_query: Input to this tool is a detailed and correct SQL query, output is a result from the database. If the query is not correct, an error message will be returned. If an error is returned, rewrite the query, check the query, and try again. If you encounter an issue with Unknown column 'xxxx' in 'field list', use sql_db_schema to query the correct table fields.
+sql_db_query: Input to this tool is a detailed and correct SQL query, output is a result from the database.
+    If the query is not correct, an error message will be returned.
+    If an error is returned, rewrite the query, check the query, and try again.
+    If you encounter an issue with Unknown column 'xxxx' in 'field list', use sql_db_schema to query the correct table fields.
 
-sql_db_schema: Input to this tool is a comma-separated list of tables, output is the schema and sample rows for those tables. Be sure that the tables actually exist by calling sql_db_list_tables first! Example Input: table1, table2, table3
+sql_db_schema: Input to this tool is a comma-separated list of tables, output is the schema and sample rows for those tables.
+    Be sure that the tables actually exist by calling sql_db_list_tables first!
+    Example Input: table1, table2, table3
 
 sql_db_list_tables: Input is an empty string, output is a comma-separated list of tables in the database.
 
-sql_db_query_checker: Use this tool to double check if your query is correct before executing it. Always use this tool before executing a query with sql_db_query!
+sql_db_query_checker: Use this tool to double check if your query is correct before executing it.
+    Always use this tool before executing a query with sql_db_query!
 ```
 :::
 :::js
 
-Use the `SqlDatabase` wrapper available in the `langchain/sql_db` to interact with the database. The wrapper provides a simple interface to execute SQL queries and fetch results:
+We will use the `sqlite3` library to query the database and fetch schemas:
 ```typescript
-import { SqlDatabase } from "@langchain/classic/sql_db";
-import { DataSource } from "typeorm";
+import sqlite3 from "sqlite3";
 
-let db: SqlDatabase | undefined;
-async function getDb() {
-  if (!db) {
-    const dbPath = await resolveDbFile();
-    const datasource = new DataSource({ type: "sqlite", database: dbPath });
-    db = await SqlDatabase.fromDataSourceParams({ appDataSource: datasource });
-  }
-  return db;
+// Below are minimal tools for demonstration purposes.
+async function runQuery(query: string): Promise<any[]> {
+  const dbPath = await resolveDbPath();
+  const db = new sqlite3.Database(dbPath);
+  return new Promise((resolve, reject) => {
+    db.all(query, [], (err, rows) => {
+      db.close();
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
 }
 
 async function getSchema() {
-  const db = await getDb();
-  return await db.getTableInfo();
+  const tables = await runQuery("SELECT sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
+  return tables.map((row) => row.sql).join("\n\n");
 }
 ```
 :::
@@ -226,7 +334,7 @@ can query. Do NOT skip this step.
 
 Then you should query the schema of the most relevant tables.
 """.format(
-    dialect=db.dialect,
+    dialect="sqlite",
     top_k=5,
 )
 ```
@@ -379,11 +487,11 @@ Create a file `sql_agent.py` and insert this:
 ```python
 #sql_agent.py for studio
 import pathlib
+import sqlite3
 
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
-from langchain_community.agent_toolkits import SQLDatabaseToolkit
-from langchain_community.utilities import SQLDatabase
+from langchain.tools import tool
 import requests
 
 
@@ -404,12 +512,95 @@ else:
     else:
         print(f"Failed to download the file. Status code: {response.status_code}")
 
-db = SQLDatabase.from_uri("sqlite:///Chinook.db")
+# Below are minimal tools for demonstration purposes.
 
-# Create the tools
-toolkit = SQLDatabaseToolkit(db=db, llm=model)
+@tool
+def sql_db_list_tables() -> str:
+    """Input is an empty string, output is a comma-separated list of tables in the database."""
+    con = sqlite3.connect("Chinook.db")
+    try:
+        cursor = con.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = [row[0] for row in cursor.fetchall() if not row[0].startswith("sqlite_")]
+        return ", ".join(tables)
+    finally:
+        con.close()
 
-tools = toolkit.get_tools()
+@tool
+def sql_db_schema(table_names: str) -> str:
+    """Input to this tool is a comma-separated list of tables, output is the schema and sample rows for those tables.
+    Be sure that the tables actually exist by calling sql_db_list_tables first!
+    Example Input: table1, table2, table3"""
+    con = sqlite3.connect("Chinook.db")
+    try:
+        cursor = con.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        valid_tables = {row[0] for row in cursor.fetchall() if not row[0].startswith("sqlite_")}
+        results = []
+        for table in table_names.split(","):
+            table = table.strip()
+            if table not in valid_tables:
+                results.append(f"Error: table_names {{{table!r}}} not found in database")
+                continue
+            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?;", (table,))
+            schema_row = cursor.fetchone()
+            if schema_row:
+                results.append(schema_row[0])
+                try:
+                    quoted_table = '"' + table.replace('"', '""') + '"'
+                    cursor.execute(f"SELECT * FROM {quoted_table} LIMIT 3;")
+                    rows = cursor.fetchall()
+                    if rows:
+                        col_names = [description[0] for description in cursor.description]
+                        results.append(f"/*\n3 rows from {table} table:\n" + "\t".join(col_names) + "\n" + "\n".join("\t".join(str(x) for x in row) for row in rows) + "\n*/")
+                except Exception as e:
+                    results.append(f"Error fetching sample rows: {e}")
+        return "\n\n".join(results)
+    finally:
+        con.close()
+
+@tool
+def sql_db_query(query: str) -> str:
+    """Input to this tool is a detailed and correct SQL query, output is a result from the database.
+    If the query is not correct, an error message will be returned.
+    If an error is returned, rewrite the query, check the query, and try again.
+    If you encounter an issue with Unknown column 'xxxx' in 'field list', use sql_db_schema to query the correct table fields."""
+    con = sqlite3.connect("Chinook.db")
+    try:
+        cursor = con.cursor()
+        cursor.execute(query)
+        res = cursor.fetchall()
+        return str(res)
+    except Exception as e:
+        return f"Error: {e}"
+    finally:
+        con.close()
+
+@tool
+def sql_db_query_checker(query: str) -> str:
+    """Use this tool to double check if your query is correct before executing it.
+    Always use this tool before executing a query with sql_db_query!"""
+    trigger_prompt = """{query}
+Double check the sqlite query above for common mistakes, including:
+- Using NOT IN with NULL values
+- Using UNION when UNION ALL should have been used
+- Using BETWEEN for exclusive ranges
+- Data type mismatch in predicates
+- Properly quoting identifiers
+- Using the correct number of arguments for functions
+- Casting to the correct data type
+- Using the proper columns for joins
+
+If there are any of the above mistakes, rewrite the query. If there are no mistakes, just reproduce the original query.
+
+Output the final SQL query only.
+
+SQL Query: """.format(query=query)
+
+    response = model.invoke(trigger_prompt)
+    return response.text.strip()
+
+tools = [sql_db_list_tables, sql_db_schema, sql_db_query, sql_db_query_checker]
 
 for tool in tools:
     print(f"{tool.name}: {tool.description}\n")
@@ -437,7 +628,7 @@ can query. Do NOT skip this step.
 
 Then you should query the schema of the most relevant tables.
 """.format(
-    dialect=db.dialect,
+    dialect="sqlite",
     top_k=5,
 )
 
@@ -586,7 +777,7 @@ function sanitizeSqlQuery(q) {
 
 ```
 
-Then, use `run` from `SQLDatabase` to execute commands with an `execute_sql` tool:
+Then, execute commands with an `execute_sql` tool:
 
 ```typescript
 import { tool } from "langchain"
@@ -596,8 +787,8 @@ const executeSql = tool(
   async ({ query }) => {
     const q = sanitizeSqlQuery(query);
     try {
-      const result = await db.run(q);
-      return typeof result === "string" ? result : JSON.stringify(result, null, 2);
+      const result = await runQuery(q);
+      return JSON.stringify(result, null, 2);
     } catch (e) {
       throw new Error(e?.message ?? String(e))
     }
@@ -708,8 +899,7 @@ In directory you will run in, you will need a `langgraph.json` file with the fol
 ```typescript
 import fs from "node:fs/promises";
 import path from "node:path";
-import { SqlDatabase } from "@langchain/classic/sql_db";
-import { DataSource } from "typeorm";
+import sqlite3 from "sqlite3";
 import { SystemMessage, createAgent, tool } from "langchain"
 import * as z from "zod";
 
@@ -727,19 +917,22 @@ async function resolveDbPath() {
   return localPath;
 }
 
-let db: SqlDatabase | undefined;
-async function getDb() {
-  if (!db) {
-    const dbPath = await resolveDbPath();
-    const datasource = new DataSource({ type: "sqlite", database: dbPath });
-    db = await SqlDatabase.fromDataSourceParams({ appDataSource: datasource });
-  }
-  return db;
+// Below are minimal tools for demonstration purposes.
+async function runQuery(query: string): Promise<any[]> {
+  const dbPath = await resolveDbPath();
+  const db = new sqlite3.Database(dbPath);
+  return new Promise((resolve, reject) => {
+    db.all(query, [], (err, rows) => {
+      db.close();
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
 }
 
 async function getSchema() {
-  const db = await getDb();
-  return await db.getTableInfo();
+  const tables = await runQuery("SELECT sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
+  return tables.map((row) => row.sql).join("\n\n");
 }
 
 const DENY_RE = /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|REPLACE|TRUNCATE)\b/i;
@@ -774,8 +967,8 @@ const executeSql = tool(
   async ({ query }) => {
     const q = sanitizeSqlQuery(query);
     try {
-      const result = await db.run(q);
-      return typeof result === "string" ? result : JSON.stringify(result, null, 2);
+      const result = await runQuery(q);
+      return JSON.stringify(result, null, 2);
     } catch (e) {
       throw new Error(e?.message ?? String(e))
     }
