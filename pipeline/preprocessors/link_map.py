@@ -34,6 +34,7 @@ LINK_MAPS: list[LinkMap] = [
             "langchain_text_splitters": "langchain-text-splitters/",
             # Deep Agents
             "create_deep_agent": "deepagents/graph/create_deep_agent",
+            "DeepAgentState": "deepagents/graph/DeepAgentState",
             "SubAgent": "deepagents/middleware/subagents/SubAgent",
             "CompiledSubAgent": "deepagents/middleware/subagents/CompiledSubAgent",
             "SubAgentMiddleware": "deepagents/middleware/subagents/SubAgentMiddleware",
