@@ -1,63 +1,70 @@
 ---
 title: Computer use
-description: Give your Fleet agent access to a persistent virtual computer to run code, manage files, and make authenticated requests.
+description: Run code, manage files, and call authenticated APIs from a persistent virtual computer attached to your Fleet agent.
 ---
 
-Computer use gives your Fleet agent access to an isolated virtual computer. The agent can write and execute code, manage files, install packages, and make authenticated outbound HTTP requests, all without exposing secrets to the language model directly.
+Computer use gives your Fleet agent access to an isolated virtual computer. The agent can write and execute code, manage files, install packages, and call authenticated external APIs without exposing credentials to the language model.
 
 <Note>
-Computer use is available on the Plus and Enterprise plans.
+Computer use is available on the [Plus and Enterprise plans](https://langchain.com/pricing).
 </Note>
 
 ## Computer modes
 
-Fleet offers two computer modes. Select the mode that best matches how your agent works.
-
 ### Shared computer
 
-All conversation threads share a single computer. The agent's filesystem, installed packages, and running processes persist across threads.
+All conversation threads share a single computer. The filesystem, installed packages, and running processes persist across threads. Shared computers are not deleted automatically.
 
-Use this mode when you want state (files, installed dependencies, environment setup) to accumulate over time across multiple conversations.
+Choose this mode when you want files, dependencies, or environment setup to accumulate across conversations.
 
 ### Computer per thread
 
-Each conversation thread gets its own isolated computer. The computer is created fresh when a new thread starts and is archived when it goes idle.
+Each conversation thread gets its own isolated computer. The computer starts fresh when a thread starts, and is archived when it goes idle.
 
-Use this mode when threads should be independent of one another, or when you want a clean environment for each conversation. Often used when your agent may perform many write-heavy parallel tasks (for example, a software engineering agent).
+Choose this mode for software-engineering agents and other workloads that run many parallel, write-heavy tasks, or for any case where threads should not see each other's state.
 
 ## Configure computer use
 
+<Warning>
+The computer mode is set when the agent is created and cannot be changed afterward. To switch modes, create a new agent.
+</Warning>
+
 <Steps>
-  <Step title="Open the agent editor">
-    In [Fleet](https://smith.langchain.com/agents), select the agent you want to configure and click the <Icon icon="pencil" /> **Edit** icon.
+  <Step title="Open the Create agent dialog">
+    In the [Fleet](https://smith.langchain.com/agents) left navigation, under **My Agents**, click <Icon icon="plus" /> and select either **Create with AI** or **Blank agent**. Enter a name for your agent.
   </Step>
-  <Step title="Select a computer mode">
-    In the graph view, find the **Computer** node. Select either **Shared computer** or **Computer per thread**.
+  <Step title="Enable computer use">
+    Under **Should your agent use a computer?**, select **Yes**, then choose **Shared computer** or **Computer per thread**.
   </Step>
-  <Step title="Save changes">
-    Click **Save changes**.
+  <Step title="Set the base snapshot (optional)">
+    Expand **Advanced** to choose a **Snapshot** for new computers.
+  </Step>
+  <Step title="Create the agent">
+    Click **Create Agent**.
   </Step>
 </Steps>
 
-<Note>
-The computer mode is set when the agent is created and cannot be changed afterward.
-</Note>
+<Info>
+To create an agent with no computer access, select **No** (the default) under **Should your agent use a computer?**.
+</Info>
 
 ## Access profiles
 
-Access profiles let the computer make authenticated requests to external services without exposing credentials to the agent. When the computer makes an outbound HTTP request to a matching host, a proxy intercepts the request and injects the configured credentials before forwarding it. The agent never sees the token or secret.
+Use access profiles to let your agent call authenticated external APIs without putting credentials in the prompt or exposing them to the language model. Outbound HTTP requests to matching hosts are routed through a proxy that injects the configured headers before forwarding.
 
-Each access profile specifies:
+A profile contains one or more **Custom rules**. Each rule specifies:
 
-- **Hosts**: The target hostnames to match (for example, `github.com` or `*.slack.com`).
-- **Credentials**: Either a workspace secret (for static API keys) or an OAuth connection (for user-delegated access).
-- **Network scope** (optional): Whether to allow all outbound traffic, restrict it to an allowlist, or block a denylist of hosts.
+- **Match Hosts**: The target hostnames the rule applies to. Use `*` as a wildcard (for example, `*.example.com` matches `api.example.com`).
+- **Source Type and Provider**: The credential source. Choose **Connection** for user-delegated OAuth, or **Workspace Secret** for static API keys.
+- **Inject Headers**: The HTTP headers the proxy adds to matched requests. Use template values such as `{access_token}` to reference the credential (for example, `Authorization: Bearer {access_token}`).
+
+A profile also has a **Network scope** that controls outbound traffic for the agent's computer. The default is **None (all traffic allowed)**.
 
 ### Add an access profile
 
 <Steps>
   <Step title="Create the access profile">
-    Go to the [Fleet Integrations tab](https://smith.langchain.com/agents/tools) and navigate to the **Computer** section. Click **+ Add** and follow the prompts to configure the host patterns and credentials.
+    Go to the [Fleet Integrations tab](https://smith.langchain.com/agents/tools) and navigate to the **Computer** section. Click **+ Create profile** and follow the prompts to configure the host patterns and credentials.
   </Step>
   <Step title="Attach the profile to an agent">
     In the agent editor, click the **Computer** node. Click **+ Add** next to **Access profiles** and select the profile you created.
@@ -69,60 +76,42 @@ Each access profile specifies:
 
 ## Computer lifecycle
 
-You can configure how long a computer stays active and how long stopped computers are retained. These settings are per-agent.
+The idle timeout and stopped computer cleanup control how long a computer stays active and how long it is kept after it stops. Both are configured per agent.
 
 ### Idle timeout
 
-The idle timeout is a soft time-to-live (TTL). When the computer has not received any commands for the configured duration, it stops and the disk is archived. The agent can resume the same computer later without losing its data.
+When the computer has not received any commands for this duration, it pauses and the disk is archived. The agent can resume the same computer later without losing data.
 
 Default: **15 minutes**
 
 ### Stopped computer cleanup
 
-The stopped computer cleanup period is a hard TTL. After a computer has been stopped for the configured duration, it is permanently deleted along with all disk data.
+After a computer has been stopped for this duration, it is permanently deleted along with all disk data.
 
 Default: **14 days**
 
 <Note>
-The stopped computer cleanup setting applies to **Computer per thread** mode only. Computers in **Shared computer** mode are not automatically deleted.
+**Stopped computer cleanup** applies only to **Computer per thread** mode. Shared computers are not deleted automatically.
 </Note>
 
-### Configure lifecycle settings
-
-<Steps>
-  <Step title="Open the agent editor">
-    In [Fleet](https://smith.langchain.com/agents), select the agent and click the <Icon icon="pencil" /> **Edit** icon.
-  </Step>
-  <Step title="Open lifecycle settings">
-    Click the <Icon icon="settings" /> settings icon in the agent editor to open the settings popover, then select the **Computer lifecycle** panel.
-  </Step>
-  <Step title="Set the timeouts">
-    Select a preset or enter a custom value for **Idle timeout** and, if using Computer per thread mode, **Stopped computer cleanup**.
-  </Step>
-  <Step title="Save changes">
-    Click **Save changes**.
-  </Step>
-</Steps>
-
-## Advanced: base snapshot
+## Base snapshot
 
 A snapshot is the disk image used to boot the computer. By default, all Fleet agents use the workspace default snapshot. To build, capture, or configure custom snapshots, see [Sandbox snapshots](/langsmith/sandbox-snapshots).
 
 <Note>
-For agents using **Shared computer** mode, the snapshot cannot be changed after the agent is published. The computer retains its original snapshot for its lifetime.
+Snapshot changes apply only to new computers for the agent. The single shared computer in **Shared computer** mode keeps its original snapshot for its lifetime.
 </Note>
 
-### Select a snapshot for an agent
+## Configure lifecycle and snapshot
+
+The snapshot, idle timeout, and stopped computer cleanup for an agent are all set in the **Computer lifecycle** section of the settings popover.
 
 <Steps>
-  <Step title="Open the agent editor">
-    In [Fleet](https://smith.langchain.com/agents), select the agent and click the <Icon icon="pencil" /> **Edit** icon.
+  <Step title="Open the settings popover">
+    In [Fleet](https://smith.langchain.com/agents), open the agent and click the <Icon icon="settings" /> settings icon in the agent editor.
   </Step>
-  <Step title="Open lifecycle settings">
-    Click the <Icon icon="settings" /> settings icon in the agent editor to open the settings popover, then select the **Computer lifecycle** panel.
-  </Step>
-  <Step title="Choose a snapshot">
-    In the **Snapshot** dropdown, select the snapshot you want the computer to boot from.
+  <Step title="Set the lifecycle fields">
+    Scroll to the **Computer lifecycle** section. Set the **Snapshot**, **Idle timeout**, and, for **Computer per thread** mode, **Stopped computer cleanup**.
   </Step>
   <Step title="Save changes">
     Click **Save changes**.
