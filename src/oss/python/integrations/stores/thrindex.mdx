@@ -1,0 +1,130 @@
+---
+title: "ThrindexStore integration"
+description: "Integrate with the ThrindexStore LangGraph store using LangChain Python."
+---
+
+This guide will help you get started with [Thrindex](https://thrindex.com) as a persistent [LangGraph store](/oss/integrations/stores). For detailed documentation of all `ThrindexStore` features and configurations head to the [langchain-thrindex README](https://pypi.org/project/langchain-thrindex/).
+
+## Overview
+
+`ThrindexStore` is a persistent `BaseStore` implementation backed by [Thrindex](https://thrindex.com) — a memory API for AI agents. It stores memories durably and supports native semantic search, so your LangGraph agents can recall relevant facts across sessions without managing embeddings or vector infrastructure.
+
+Unlike ephemeral stores such as `InMemoryStore`, `ThrindexStore` persists across process restarts and deployments, making it suitable for production agents.
+
+### Integration details
+
+| Class | Package | Local | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [`ThrindexStore`](https://pypi.org/project/langchain-thrindex/) | [`langchain-thrindex`](https://pypi.org/project/langchain-thrindex/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_thrindex?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_thrindex?style=flat-square&label=%20) |
+
+## Setup
+
+To use `ThrindexStore`, create a free account at [thrindex.com](https://thrindex.com) and generate an API key.
+
+### Installation
+
+```python
+pip install -qU langchain-thrindex
+```
+
+## Instantiation
+
+```python
+from langchain_thrindex import ThrindexStore
+
+store = ThrindexStore(
+    api_key="th_live_...",  # your Thrindex API key
+    agent_id="my-agent",   # stable identifier for your agent
+)
+```
+
+## Use with a LangGraph agent
+
+Pass `store` directly to `graph.compile()`. The agent can then read and write long-term memories that persist across all sessions.
+
+```python
+from langgraph.prebuilt import create_react_agent
+from langchain_thrindex import ThrindexStore
+
+store = ThrindexStore(api_key="th_live_...", agent_id="support-bot")
+
+agent = create_react_agent(
+    model="openai:gpt-4o",
+    tools=[...],
+    store=store,
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "My name is Alice and I prefer dark mode."}]},
+    config={"configurable": {"thread_id": "thread-1"}},
+)
+```
+
+On the next session the agent automatically searches Thrindex for relevant memories before responding.
+
+## Usage
+
+You can also interact with the store directly.
+
+### Store a memory
+
+```python
+store.put(
+    ("memories", "user-42"),   # namespace — (category, user_id)
+    "preference-display",      # unique key within the namespace
+    {"content": "User prefers dark mode and compact layout"},
+)
+```
+
+### Semantic search
+
+```python
+results = store.search(
+    ("memories", "user-42"),
+    query="display preferences",
+    limit=5,
+)
+
+for item in results:
+    print(item.value["content"], item.score)
+```
+
+### Get by key
+
+```python
+item = store.get(("memories", "user-42"), "preference-display")
+```
+
+### Delete
+
+```python
+store.delete(("memories", "user-42"), "preference-display")
+```
+
+### Async support
+
+All operations have async counterparts for use in async frameworks:
+
+```python
+await store.aput(namespace, key, value)
+item  = await store.aget(namespace, key)
+items = await store.asearch(namespace, query="...")
+await store.adelete(namespace, key)
+```
+
+## Namespace mapping
+
+LangGraph namespaces are tuples of strings, e.g. `("memories", "user-42")`. `ThrindexStore` maps them to Thrindex scopes as follows:
+
+| LangGraph | Thrindex |
+| :--- | :--- |
+| `agent_id` constructor arg | `agent_id` on every API call |
+| `"/".join(namespace)` | `user_id` on every API call |
+
+This means every unique namespace is isolated within Thrindex's user scope, enabling per-user and per-agent memory separation.
+
+---
+
+## API reference
+
+For full configuration options, head to the [langchain-thrindex PyPI page](https://pypi.org/project/langchain-thrindex/) or the [Thrindex documentation](https://docs.thrindex.com).
