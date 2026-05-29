@@ -72,6 +72,10 @@ Set your LangSmith API key:
 export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
 ```
 
+<Note>
+    If `deepagents init`, `deploy`, `agents`, or `mcp-servers` are missing or behave unexpectedly, confirm the beta is active with `deepagents --version`. A previously installed stable `deepagents` can shadow the beta release on your `PATH`.
+</Note>
+
 ## Create a project
 
 Create a Managed Deep Agents project:
@@ -95,7 +99,7 @@ You can also add:
 | File or directory | Purpose |
 | --- | --- |
 | `subagents/` | Contains subagent definitions for delegated work. |
-| `tools.json` | Advanced tool configuration for compatibility with API-shaped tool payloads. |
+| `tools.json` | Configures the MCP-backed tools the agent can call. Required if the agent uses MCP tools. |
 
 The generated `agent.json` uses the readable local CLI shape:
 
@@ -111,6 +115,8 @@ The generated `agent.json` uses the readable local CLI shape:
 ```
 
 Edit `AGENTS.md` to define the agent's behavior. Add skills or subagents if your agent needs extra procedures or delegated workers.
+
+If your agent calls MCP tools, [register the MCP server](#configure-mcp-servers) once for the workspace, then add a [`tools.json`](#reference-mcp-servers) that references it by URL before you deploy.
 
 ### Model configuration
 
@@ -159,6 +165,18 @@ deepagents deploy
 ```
 
 The first deploy creates a Managed Deep Agent through `/v1/deepagents/agents`. Later deploys update the same remote agent by using user-local deploy state, not hidden state committed to the repository.
+
+On success, the CLI prints the agent name, ID, short revision, the agent URL, and a post-deploy MCP health check:
+
+```text
+Deployed: my-agent
+  agent_id: e2de7a35-9dda-462b-b982-9e57051993bc
+  revision: 13ac11f1
+  https://smith.langchain.com/o/-/agents/e2de7a35-9dda-462b-b982-9e57051993bc
+  health:   {'agent_id': '...', 'mcp_check': {'ok': True, 'servers': [{'url': 'https://example.com/mcp', 'ok': True}]}, ...}
+```
+
+A `mcp_check.ok` of `True` confirms the agent can reach the MCP servers its tools reference. Each deploy creates a new agent revision, even when no managed files changed, because deploy always sends a metadata update; the managed file tree itself only changes when its contents do.
 
 Creating a Managed Deep Agent creates:
 
@@ -255,27 +273,7 @@ deepagents mcp-servers connect <mcp_server_id>
 
 ### Reference MCP servers
 
-Reference MCP servers from `agent.json` by URL:
-
-```json
-{
-  "name": "my-agent",
-  "description": "A managed deep agent.",
-  "model": "anthropic:claude-sonnet-4-6",
-  "backend": {
-    "type": "thread_scoped_sandbox"
-  },
-  "tools": {
-    "mcp_servers": [
-      {
-        "url": "https://example.com/mcp"
-      }
-    ]
-  }
-}
-```
-
-If your project uses API-shaped tool configuration, you can keep it in `tools.json`:
+Reference MCP tools from a `tools.json` file in your project root. Each entry names a tool exposed by a registered MCP server and points at that server by URL:
 
 ```json
 {
@@ -287,9 +285,17 @@ If your project uses API-shaped tool configuration, you can keep it in `tools.js
       "display_name": "example_tool"
     }
   ],
-  "interrupt_config": {}
+  "interrupt_config": {
+    "https://example.com/mcp::example_tool::my-tools": true
+  }
 }
 ```
+
+Each tool requires `name` (the tool name as exposed by the MCP server) and `mcp_server_url`. The `mcp_server_name` and `display_name` fields are optional. Use `interrupt_config` to require human approval before a tool runs; key each entry by `"{mcp_server_url}::{tool_name}::{mcp_server_name}"` and set it to `true`.
+
+<Note>
+    `deepagents init` does not create `tools.json`. Add it yourself when your agent calls MCP tools, then run `deepagents deploy`. An agent with no `tools.json` deploys with no MCP tools.
+</Note>
 
 Before deploying, the CLI validates referenced MCP server URLs. If a server URL is not registered, deploy fails with a command hint to add it. If an OAuth server is registered but the caller cannot invoke it, deploy fails with a hint to run `deepagents mcp-servers connect <mcp_server_id>`.
 
@@ -541,7 +547,11 @@ Threads have no retention window or per-workspace cap during private preview. Cr
 
 ### Rate limits and quotas
 
-The Managed Deep Agents endpoints do not enforce per-key, per-workspace, or per-agent rate limits during private preview.
+The Managed Deep Agents endpoints do not enforce per-key, per-workspace, or per-agent request rate limits during private preview.
+
+### Agent limits
+
+Free LangSmith workspaces are limited to **one** Managed Deep Agent. Paid LangSmith plans can create unlimited agents. When a free workspace is already at its limit, `deepagents deploy` (and `POST /v1/deepagents/agents`) fails with `HTTP 409` and a message to delete the existing agent or upgrade your plan.
 
 ### Deleting agents
 
