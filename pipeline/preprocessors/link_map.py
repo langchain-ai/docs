@@ -34,6 +34,7 @@ LINK_MAPS: list[LinkMap] = [
             "langchain_text_splitters": "langchain-text-splitters/",
             # Deep Agents
             "create_deep_agent": "deepagents/graph/create_deep_agent",
+            "DeepAgentState": "deepagents/graph/DeepAgentState",
             "SubAgent": "deepagents/middleware/subagents/SubAgent",
             "CompiledSubAgent": "deepagents/middleware/subagents/CompiledSubAgent",
             "SubAgentMiddleware": "deepagents/middleware/subagents/SubAgentMiddleware",
@@ -45,6 +46,7 @@ LINK_MAPS: list[LinkMap] = [
             "FilesystemPermission": "deepagents/middleware/permissions/FilesystemPermission",
             "SummarizationToolMiddleware": "deepagents/middleware/summarization/SummarizationToolMiddleware",
             "PatchToolCallsMiddleware": "deepagents/middleware/patch_tool_calls/PatchToolCallsMiddleware",
+            "RubricMiddleware": "deepagents/middleware/rubric/RubricMiddleware",
             "StateBackend": "deepagents/backends/state/StateBackend",
             "FilesystemBackend": "deepagents/backends/filesystem/FilesystemBackend",
             "LocalShellBackend": "deepagents/backends/local_shell/LocalShellBackend",

@@ -306,6 +306,51 @@ const result = await agent.invoke(
 
 Runtime context **propagates to all subagents**. When a subagent runs, it receives the same runtime context as the parent. See [Subagents](/oss/deepagents/subagents#context-management) for per-subagent context (namespaced keys).
 
+:::python
+## Custom state schema
+
+<Note>
+    Custom state schemas require `deepagents>=0.6.6`.
+</Note>
+
+Use `state_schema` when data must be part of the agent's mutable graph state, checkpointed with the thread, or available through `runtime.state`. For immutable per-run inputs such as user IDs, credentials, or feature flags, prefer [runtime context](#runtime-context).
+
+Custom state schemas must subclass @[DeepAgentState]. This preserves the built-in `DeltaChannel` reducer on `messages`, which keeps checkpoint growth linear as conversations get longer.
+
+```python
+from deepagents import DeepAgentState, create_deep_agent
+from langchain.tools import ToolRuntime, tool
+
+
+class ResearchState(DeepAgentState):
+    page_url: str
+    file_urls: list[str]
+
+
+@tool
+def cite_page(runtime: ToolRuntime) -> str:
+    """Return the current page URL."""
+    return runtime.state["page_url"]
+
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    tools=[cite_page],
+    state_schema=ResearchState,
+)
+
+result = agent.invoke(
+    {
+        "messages": [{"role": "user", "content": "Cite the current page"}],
+        "page_url": "https://example.com/report",
+        "file_urls": [],
+    }
+)
+```
+
+The schema is merged with state schemas contributed by middleware. Declarative @[SubAgent] specs passed to `subagents=` inherit the parent `state_schema` when Deep Agents compiles them for the `task` tool. @[CompiledSubAgent] runnables and remote @[AsyncSubAgent] specs do not inherit it because their graphs are already compiled or hosted separately. Compile those graphs with a compatible schema if they need the same state fields.
+:::
+
 ## Context compression
 
 Long-running tasks produce large tool outputs and long conversation history.
