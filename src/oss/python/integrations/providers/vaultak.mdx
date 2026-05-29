@@ -1,29 +1,49 @@
-# Vaultak
+---
+title: "Vaultak integrations"
+description: "Integrate with Vaultak using LangChain Python."
+---
 
-[Vaultak](https://vaultak.com) is a runtime security and behavioral monitoring platform for AI agents. It intercepts agent actions in real time, scores risk across five dimensions, enforces policy rules, and automatically blocks or rolls back dangerous behavior before it reaches production systems.
+[Vaultak](https://vaultak.com) is a runtime security and behavioral monitoring platform for AI agents.
+It intercepts every agent action, tool call, and chain execution in real time — scoring risk across
+five dimensions, enforcing policy rules, masking PII in tool outputs, and automatically blocking or
+rolling back dangerous behavior before it reaches production systems.
 
-## Installation
+## Installation and setup
 
-```python
+Install the `langchain-vaultak` package:
+
+<CodeGroup>
+```bash pip
 pip install langchain-vaultak
 ```
 
-## Setup
+```bash uv
+uv add langchain-vaultak
+```
+</CodeGroup>
 
-Sign up at [vaultak.com](https://vaultak.com) to get your API key.
+Sign up at [vaultak.com](https://vaultak.com) to get your API key (starts with `vtk_`).
 
-## Usage
+## Callback handler
 
-### Basic Usage
+`VaultakCallbackHandler` implements LangChain's `BaseCallbackHandler` interface and wraps any
+agent, chain, or LCEL pipeline with runtime security monitoring.
+
+```python
+from langchain_vaultak import VaultakCallbackHandler
+```
+
+### Basic usage
 
 ```python
 from langchain_vaultak import VaultakCallbackHandler
 
 handler = VaultakCallbackHandler(api_key="vtk_...")
-result = agent.run("Summarize our Q3 data", callbacks=[handler])
+
+result = agent.run("Summarize our Q3 sales data", callbacks=[handler])
 ```
 
-### With AgentExecutor
+### With `AgentExecutor`
 
 ```python
 from langchain.agents import AgentExecutor
@@ -31,20 +51,67 @@ from langchain_vaultak import VaultakCallbackHandler
 
 handler = VaultakCallbackHandler(
     api_key="vtk_...",
-    agent_name="my-production-agent",
+    agent_name="sales-agent",
+    block_on_high_risk=True,
     risk_threshold=6.0,
+    verbose=True,
 )
 
 agent_executor = AgentExecutor(agent=agent, tools=tools)
 result = agent_executor.invoke(
     {"input": "your task"},
-    config={"callbacks": [handler]}
+    config={"callbacks": [handler]},
 )
 ```
+
+### With LCEL (LangChain Expression Language)
+
+```python
+from langchain_vaultak import VaultakCallbackHandler
+
+handler = VaultakCallbackHandler(api_key="vtk_...")
+
+chain = prompt | llm | output_parser
+result = chain.invoke(
+    {"input": "your task"},
+    config={"callbacks": [handler]},
+)
+```
+
+### Global callback (applies to all chains in the process)
+
+```python
+from langchain.callbacks import set_handler
+from langchain_vaultak import VaultakCallbackHandler
+
+set_handler(VaultakCallbackHandler(api_key="vtk_..."))
+```
+
+## Configuration
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `api_key` | `str` | — | Your Vaultak API key (required) |
+| `agent_name` | `str` | `"langchain-agent"` | Label shown in the Vaultak dashboard |
+| `block_on_high_risk` | `bool` | `True` | Raise an exception when risk score exceeds the threshold |
+| `risk_threshold` | `float` | `7.0` | Score (0–10) above which actions are blocked |
+| `verbose` | `bool` | `False` | Log every scored action to stdout |
+
+## What it monitors
+
+| LangChain event | Vaultak action |
+|---|---|
+| `on_chain_start` | Opens a monitoring session |
+| `on_agent_action` | Risk-scores the action (0–10); blocks if above threshold |
+| `on_tool_start` | Checks the tool call against your policy rules |
+| `on_tool_end` | Scans output for PII and masks it before it reaches the LLM |
+| `on_tool_error` / `on_llm_error` | Sends an alert to your Vaultak dashboard |
+| `on_chain_error` | Triggers automatic rollback |
+| `on_chain_end` | Closes the monitoring session |
 
 ## Links
 
 - [Vaultak documentation](https://docs.vaultak.com)
 - [PyPI package](https://pypi.org/project/langchain-vaultak)
-- [GitHub](https://github.com/samueloladji-beep/langchain-vaultak)
-
+<<<<<<< HEAD
+- [GitHub](https://github.com/vaultak/langchain-vaultak)
