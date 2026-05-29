@@ -3,7 +3,11 @@ title: Graph API overview
 sidebarTitle: Graph API
 ---
 
-
+import GraphApiUsingTasksOriginalJs from '/snippets/code-samples/graph-api-using-tasks-original-js.mdx';
+import GraphApiUsingTasksOriginalPy from '/snippets/code-samples/graph-api-using-tasks-original-py.mdx';
+import GraphApiUsingTasksTaskJs from '/snippets/code-samples/graph-api-using-tasks-task-js.mdx';
+import GraphApiUsingTasksTaskPy from '/snippets/code-samples/graph-api-using-tasks-task-py.mdx';
+import LanggraphGraphApiResumeV2Py from '/snippets/code-samples/langgraph-graph-api-resume-v2-py.mdx';
 
 ## Graphs
 
@@ -627,7 +631,7 @@ In LangGraph, nodes are Python functions (either synchronous or asynchronous) th
 
 1. `state`—The [state](#state) of the graph
 2. `config`—A @[`RunnableConfig`] object that contains configuration information like `thread_id` and tracing information like `tags`
-3. `runtime`—A `Runtime` object that contains [runtime `context`](#runtime-context) and other information like `store`, `stream_writer`, `execution_info`, `server_info`, `heartbeat` (for idle timeout refresh), and `control` (for [graceful shutdown](/oss/langgraph/durable-execution#graceful-shutdown))
+3. `runtime`—A `Runtime` object that contains [runtime `context`](#runtime-context) and other information like `store`, `stream_writer`, `execution_info`, `server_info`, `heartbeat` (for idle timeout refresh), and `control` (for [graceful shutdown](/oss/langgraph/fault-tolerance#graceful-shutdown))
 
 Similar to `NetworkX`, you add these nodes to a graph using the @[`add_node`] method:
 
@@ -727,6 +731,58 @@ builder.addNode(myNode);
 
 :::
 
+### Re-execution and idempotency
+
+:::python
+
+When you compile with a [checkpointer](/oss/langgraph/persistence), LangGraph saves checkpoints at [super-step](#graphs) boundaries, not mid-function inside a node. If execution stops and later resumes (for example after an [interrupt](/oss/langgraph/interrupts) or a [retry](/oss/langgraph/fault-tolerance#retries)), the affected **node** runs again from the start of its function. Code and side effects before the pause run again.
+
+**Idempotency.** Design **node** logic so re-execution does not corrupt state. If a node inserts a database row, running it twice should not create duplicate rows unless that is intentional. Use idempotency keys, upserts, or read-before-write checks. For effects around `interrupt()`, see [Side effects called before `interrupt` must be idempotent](/oss/langgraph/interrupts#side-effects-called-before-interrupt-must-be-idempotent).
+
+**Graph changes.** [Determinism](/oss/langgraph/functional-api#determinism) rules about code changes do not apply to graph structure. You can add or remove **nodes** and edges without breaking resume for existing threads. Resumed runs use saved state and execute whatever graph you compile now.
+
+**Tasks and interrupts inside a node.** If a **node** calls [**tasks**](/oss/langgraph/functional-api#task) or @[`interrupt`], stricter determinism rules apply on resume. LangGraph restores completed **task** results from the checkpointer, but changing **task** or @[`interrupt`] order in code before the resume point can mismatch cached values. A [Functional API](/oss/langgraph/functional-api) **entrypoint** compiles to a single **node** that runs the whole entrypoint method this way. See [Determinism](/oss/langgraph/functional-api#determinism), [Idempotency](/oss/langgraph/functional-api#idempotency), and [Using tasks in nodes](#using-tasks-in-nodes).
+
+:::
+
+:::js
+
+When you compile with a [checkpointer](/oss/langgraph/persistence), LangGraph saves checkpoints at [super-step](#graphs) boundaries, not mid-function inside a node. If execution stops and later resumes (for example after an [interrupt](/oss/langgraph/interrupts) or a retry), the affected **node** runs again from the start of its function. Code and side effects before the pause run again.
+
+**Idempotency.** Design **node** logic so re-execution does not corrupt state. If a node inserts a database row, running it twice should not create duplicate rows unless that is intentional. Use idempotency keys, upserts, or read-before-write checks. For effects around `interrupt()`, see [Side effects called before `interrupt` must be idempotent](/oss/langgraph/interrupts#side-effects-called-before-interrupt-must-be-idempotent).
+
+**Graph changes.** [Determinism](/oss/langgraph/functional-api#determinism) rules about code changes do not apply to graph structure. You can add or remove **nodes** and edges without breaking resume for existing threads. Resumed runs use saved state and execute whatever graph you compile now.
+
+**Tasks and interrupts inside a node.** If a **node** calls [**tasks**](/oss/langgraph/functional-api#task) or @[`interrupt`], stricter determinism rules apply on resume. LangGraph restores completed **task** results from the checkpointer, but changing **task** or @[`interrupt`] order in code before the resume point can mismatch cached values. A [Functional API](/oss/langgraph/functional-api) **entrypoint** compiles to a single **node** that runs the whole entrypoint method this way. See [Determinism](/oss/langgraph/functional-api#determinism), [Idempotency](/oss/langgraph/functional-api#idempotency), and [Using tasks in nodes](#using-tasks-in-nodes).
+
+:::
+
+### Using tasks in nodes
+
+If a [node](#nodes) contains multiple operations, you may find it easier to implement each operation as a [**task**](/oss/langgraph/functional-api#task) instead of splitting the logic across multiple nodes. Task results are checkpointed when the graph uses a checkpointer, so resuming a thread can skip completed **task** work inside the node.
+
+:::python
+<Tabs>
+    <Tab title="Original">
+    <GraphApiUsingTasksOriginalPy />
+    </Tab>
+    <Tab title="With task">
+    <GraphApiUsingTasksTaskPy />
+    </Tab>
+</Tabs>
+:::
+
+:::js
+<Tabs>
+    <Tab title="Original">
+    <GraphApiUsingTasksOriginalJs />
+    </Tab>
+    <Tab title="With task">
+    <GraphApiUsingTasksTaskJs />
+    </Tab>
+</Tabs>
+:::
+
 ### `START` node
 
 The @[`START`] Node is a special node that represents the node that sends user input to the graph. The main purpose for referencing this node is to determine which nodes should be called first.
@@ -820,6 +876,17 @@ print(graph.invoke({"x": 5}, stream_mode='updates'))    # [!code highlight]
 print(graph.invoke({"x": 5}, stream_mode='updates'))    # [!code highlight]
 # [{'expensive_node': {'result': 10}, '__metadata__': {'cached': True}}]
 ```
+
+<Note>
+`set_entry_point(node)` defines the first node the graph will execute.
+It is equivalent to `builder.add_edge(START, node)`.
+
+`set_finish_point(node)` defines the last node in the graph.
+It is equivalent to `builder.add_edge(node, END)`.
+
+Both methods are valid but `add_edge(START, ...)` and `add_edge(..., END)`
+are the recommended modern syntax.
+</Note>
 
 1. First run takes two seconds to run (due to mocked expensive computation).
 2. Second run utilizes cache and returns quickly.
@@ -1244,20 +1311,7 @@ await graph.invoke({ messages: [{ role: "user", content: "follow up" }] }, confi
 
 Use `Command(resume=...)` to provide a value and resume graph execution after an [interrupt](/oss/langgraph/interrupts). The value passed to `resume` becomes the return value of the `interrupt()` call inside the paused node:
 
-```python
-from langgraph.types import Command, interrupt
-
-def human_review(state: State):
-    # Pauses the graph and waits for a value
-    answer = interrupt("Do you approve?")
-    return {"messages": [{"role": "user", "content": answer}]}
-
-# First invocation - hits the interrupt and pauses
-result = graph.invoke({"messages": [...]}, config)
-
-# Resume with a value - the interrupt() call returns "yes"
-result = graph.invoke(Command(resume="yes"), config)
-```
+<LanggraphGraphApiResumeV2Py />
 
 Check out the [interrupts conceptual guide](/oss/langgraph/interrupts) for full details on interrupt patterns, including multiple interrupts and validation loops.
 
@@ -1442,13 +1496,13 @@ The current step counter is accessible in `config.metadata.langgraph_step` withi
 
 :::python
 
-The step counter is stored in `config["metadata"]["langgraph_step"]`. The recursion limit check follows the logic: `step > stop` where `stop = step + recursion_limit + 1`. When the limit is exceeded, LangGraph raises a `GraphRecursionError`.
+The step counter is stored in `config["metadata"]["langgraph_step"]`. LangGraph increments this counter as the graph executes and raises a `GraphRecursionError` once the configured `recursion_limit` is exceeded.
 
 :::
 
 :::js
 
-The step counter is stored in `config.metadata.langgraph_step`. The recursion limit check follows the logic: `step > stop` where `stop = step + recursionLimit + 1`. When the limit is exceeded, LangGraph raises a `GraphRecursionError`.
+The step counter is stored in `config.metadata.langgraph_step`. LangGraph increments this counter as the graph executes and raises a `GraphRecursionError` once the configured `recursionLimit` is exceeded.
 
 :::
 
