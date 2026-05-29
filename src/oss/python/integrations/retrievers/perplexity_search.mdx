@@ -1,0 +1,136 @@
+---
+title: "PerplexitySearch integration"
+description: "Integrate with the PerplexitySearchRetriever using LangChain Python."
+---
+
+>[Perplexity Search](https://docs.perplexity.ai/docs/search/quickstart) is a web search API that returns ranked, source-attributed results designed for use by LLMs and agents. The [Search API endpoint](https://docs.perplexity.ai/api-reference/search-post) returns the underlying web results that power Perplexity's answer engine.
+
+We can use this as a [retriever](/oss/langchain/retrieval). It will show functionality specific to this integration. After going through, it may be useful to explore [relevant use-case pages](/oss/langchain/rag) to learn how to use this retriever as part of a larger chain.
+
+## Setup
+
+### Installation
+
+The integration lives in the `langchain-perplexity` package:
+
+```python
+pip install -qU langchain-perplexity
+```
+
+### Credentials
+
+You'll need a Perplexity API key to use this integration. Create one in the [Perplexity API key dashboard](https://www.perplexity.ai/account/api/keys), then set it as the `PPLX_API_KEY` environment variable (the integration also accepts `PERPLEXITY_API_KEY`).
+
+```python
+import getpass
+import os
+
+if not os.environ.get("PPLX_API_KEY"):
+    os.environ["PPLX_API_KEY"] = getpass.getpass("Perplexity API key:\n")
+```
+
+If you want to get automated tracing from individual queries, you can also set your [LangSmith](/langsmith/home) API key by uncommenting below:
+
+```python
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+# os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Instantiation
+
+`PerplexitySearchRetriever` accepts the following constructor arguments:
+
+- `k` — max number of results (1–20). Defaults to `10`.
+- `max_tokens` — max total tokens across all results.
+- `max_tokens_per_page` — max tokens returned per result page.
+- `country` — ISO country code to bias results (e.g. `"US"`).
+- `search_domain_filter` — list of domains to include or exclude (max 20). Prefix a domain with `-` to exclude it. See the [domain filter docs](https://docs.perplexity.ai/docs/search/filters/domain-filter).
+- `search_recency_filter` — one of `"day"`, `"week"`, `"month"`, `"year"`. See the [date and time filter docs](https://docs.perplexity.ai/docs/search/filters/date-time-filters).
+- `search_after_date` / `search_before_date` — date strings in `MM/DD/YYYY` format.
+
+```python
+from langchain_perplexity import PerplexitySearchRetriever
+
+retriever = PerplexitySearchRetriever(k=3)
+```
+
+## Usage
+
+```python
+query = "what year was breath of the wild released?"
+
+retriever.invoke(query)
+```
+
+Each returned @[`Document`] has the result `snippet` as its `page_content`, plus `title`, `url`, `date`, and `last_updated` in `metadata`.
+
+### Filtered usage
+
+You can constrain the search with the same filters supported by the Perplexity Search API:
+
+```python
+from langchain_perplexity import PerplexitySearchRetriever
+
+retriever = PerplexitySearchRetriever(
+    k=5,
+    country="US",
+    search_recency_filter="week",
+    search_domain_filter=["nytimes.com", "reuters.com", "-pinterest.com"],
+)
+
+retriever.invoke("US Federal Reserve interest rate decisions")
+```
+
+```python
+from langchain_perplexity import PerplexitySearchRetriever
+
+# Restrict results to a specific date range
+retriever = PerplexitySearchRetriever(
+    k=5,
+    search_after_date="01/01/2025",
+    search_before_date="06/30/2025",
+)
+
+retriever.invoke("US Federal Reserve interest rate decisions")
+```
+
+## Use within a chain
+
+We can easily combine this retriever into a chain to build a simple RAG pipeline.
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+
+prompt = ChatPromptTemplate.from_template(
+    """Answer the question based only on the context provided.
+
+Context: {context}
+
+Question: {question}"""
+)
+
+llm = ChatOpenAI(model="gpt-5.5")
+
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+chain.invoke("What were the major outcomes of the most recent Federal Reserve meeting?")
+```
+
+---
+
+## API reference
+
+For detailed documentation of the Perplexity Search API and all of its options, see the [Search API reference](https://docs.perplexity.ai/api-reference/search-post) and the [Perplexity API documentation](https://docs.perplexity.ai).

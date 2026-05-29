@@ -1,0 +1,253 @@
+---
+title: "Parallel Task API integration"
+description: "Integrate with the ParallelTaskRunTool tool using LangChain Python."
+---
+
+>[Parallel](https://platform.parallel.ai/) is a real-time web search and content extraction platform built for LLMs and AI applications.
+
+The [Task API](https://docs.parallel.ai/task-api/task-quickstart) runs research-grade tasks across a tiered processor menu (`lite` → `ultra`, plus matching `-fast` variants). `langchain-parallel` exposes it as four LangChain surfaces, all on this page so you can pick the right shape for your workload.
+
+## Which surface should I use?
+
+- **One ad-hoc question, agent-callable**: `ParallelTaskRunTool` (`BaseTool`).
+- **One long-running, multi-source report**: `ParallelDeepResearch` (`Runnable`).
+- **Bulk enrichment over a list, with typed inputs and outputs**: `ParallelEnrichment` (`Runnable`).
+- **Low-level batch when you need full control of the run envelope**: `ParallelTaskGroup` (plain class).
+
+All four default to a `-fast` processor variant (2-5x faster than the corresponding non-fast tier at similar accuracy). Drop the `-fast` suffix when latency matters less than maximum quality. See [Choose a processor](https://docs.parallel.ai/task-api/guides/choose-a-processor) for the full menu.
+
+## Overview
+
+### Integration details
+
+| Class | Shape | Default processor | Package |
+| :--- | :--- | :--- | :--- |
+| @[`ParallelTaskRunTool`] | `BaseTool` | `lite-fast` | @[`langchain-parallel`] |
+| @[`ParallelDeepResearch`] | `Runnable` | `pro-fast` | @[`langchain-parallel`] |
+| @[`ParallelTaskGroup`] | Plain class | `lite-fast` | @[`langchain-parallel`] |
+| @[`ParallelEnrichment`] | `Runnable` | `core-fast` | @[`langchain-parallel`] |
+
+## Setup
+
+The integration lives in the `langchain-parallel` package.
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-parallel
+    ```
+    ```bash uv
+    uv add langchain-parallel
+    ```
+</CodeGroup>
+
+### Credentials
+
+Head to [Parallel](https://platform.parallel.ai) to sign up and generate an API key. Set `PARALLEL_API_KEY` in your environment:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("PARALLEL_API_KEY"):
+    os.environ["PARALLEL_API_KEY"] = getpass.getpass("Parallel API key:\n")
+```
+
+## ParallelTaskRunTool
+
+`ParallelTaskRunTool` is an agent-callable `BaseTool`. It runs one task synchronously and returns the structured `output`, per-field `basis` citations, and the `run_id`.
+
+```python
+from langchain_parallel import ParallelTaskRunTool
+
+tool = ParallelTaskRunTool()
+result = tool.invoke({"input": "Who founded SpaceX, in one sentence?"})
+
+print(result["output"]["content"])
+print("run_id:", result["run"]["run_id"])
+```
+
+`result["output"]` is always a dict; the answer text lives at `result["output"]["content"]` and per-field citations at `result["output"]["basis"]`. Pass a `task_output_schema` to have `content` arrive as a parsed pydantic-shaped dict instead of a free-text string:
+
+```python
+from pydantic import BaseModel, Field
+
+class FounderFact(BaseModel):
+    founder: str = Field(description="Full name of the founder")
+    year: int = Field(description="Year the company was founded")
+
+structured = ParallelTaskRunTool(task_output_schema=FounderFact)
+res = structured.invoke({"input": "Who founded SpaceX and in what year?"})
+
+print(res["output"]["content"])
+print(res["output"]["basis"])  # citations + reasoning + confidence per field
+```
+
+```text
+{'founder': 'Elon Musk', 'year': 2002}
+[{'field': 'founder', 'citations': [...], 'reasoning': '...', 'confidence': 'high'}, ...]
+```
+
+### parse_basis: citations + low-confidence fields
+
+Every consumer that cares about confidence ends up writing the same boilerplate to walk a result for citations, low-confidence fields, and the `interaction_id`. `parse_basis()` does that for you:
+
+```python
+from langchain_parallel import parse_basis
+
+parsed = parse_basis(res)
+print("citations per field:", {f: len(c) for f, c in parsed["citations_by_field"].items()})
+print("low-confidence fields:", parsed["low_confidence_fields"])
+print("interaction_id:", parsed["interaction_id"])
+```
+
+### Multi-turn chaining
+
+Result dicts surface `interaction_id` at the top level. Pass it as `previous_interaction_id` on the next call to chain context across turns:
+
+```python
+first = tool.invoke({"input": "Who founded SpaceX?"})
+followup = tool.invoke({
+    "input": "And what year was it founded?",
+    "previous_interaction_id": first["interaction_id"],
+})
+```
+
+## ParallelDeepResearch
+
+`ParallelDeepResearch` is a `Runnable`. It defaults to `pro-fast` (the `-fast` variant of "Exploratory web research"). For the most thorough multi-source reports, pass `processor="ultra"`.
+
+```python
+from langchain_parallel import ParallelDeepResearch
+
+research = ParallelDeepResearch()
+result = research.invoke("Summarize the state of net-energy-gain fusion research as of 2026.")
+print(result["output"]["content"])
+```
+
+<Note>
+    Deep research runs are not instant. `pro-fast` typically takes a few minutes; `pro` and `ultra` can take longer. Wire up a webhook (see [Webhook signature verification](#webhook-signature-verification)) for production usage rather than blocking on `invoke`.
+</Note>
+
+For typed deep research, pass an `output_schema`:
+
+```python
+class CityFact(BaseModel):
+    capital: str
+    population_millions: float
+
+typed = ParallelDeepResearch(output_schema=CityFact)
+out = typed.invoke("Capital and population (in millions) of France?")
+print(out["output"]["content"])
+```
+
+## ParallelTaskGroup
+
+`ParallelTaskGroup` creates a Task Group, fans out runs, and collects results. Use it directly when you need fine-grained control over the batch envelope; otherwise prefer `ParallelEnrichment` for typed bulk runs.
+
+```python
+from langchain_parallel import ParallelTaskGroup
+
+group = ParallelTaskGroup()
+results = group.run([
+    "Founder of Anthropic? One sentence.",
+    "Founder of OpenAI? One sentence.",
+])
+
+for r in results:
+    print(r["output"]["content"])
+```
+
+`ParallelTaskGroup` exposes `run` (sync) and `arun` (async). Latency is dictated by the slowest run in the batch and the chosen processor — `lite-fast` typically resolves in seconds, higher tiers in minutes.
+
+## ParallelEnrichment
+
+`ParallelEnrichment` wraps `ParallelTaskGroup` with a `default_task_spec` built from your input/output pydantic schemas. It coerces pydantic instances into dicts, fans out the batch, and returns results in input order.
+
+```python
+from langchain_parallel import ParallelEnrichment
+
+class CompanyInput(BaseModel):
+    company: str = Field(description="Company name")
+
+class CompanyOutput(BaseModel):
+    headquarters: str
+    founding_year: int
+
+enricher = ParallelEnrichment(
+    input_schema=CompanyInput,
+    output_schema=CompanyOutput,
+)
+results = enricher.invoke([
+    CompanyInput(company="Anthropic"),
+    {"company": "OpenAI"},
+])
+
+for r in results:
+    print(r["output"]["content"])
+```
+
+`ParallelEnrichment` blocks until every input has resolved. With the default `core-fast` processor, expect a few minutes for a non-trivial batch; pass a faster processor for short-form fields, or run in a background worker for large batches.
+
+## build_task_spec
+
+`build_task_spec` accepts pydantic classes, raw JSON-schema dicts, or text descriptions and returns a `TaskSpec` dict ready for `client.task_run.create` or `add_runs(default_task_spec=...)`. Use it when you want full control of the run envelope on a `ParallelTaskRunTool` or `ParallelTaskGroup`.
+
+```python
+from langchain_parallel import build_task_spec
+
+spec = build_task_spec(input_schema=CompanyInput, output_schema=CompanyOutput)
+print(list(spec.keys()))  # ['output_schema', 'input_schema']
+```
+
+## BYOMCP: bring your own MCP server
+
+`ParallelTaskRunTool` and `ParallelDeepResearch` accept `mcp_servers=[McpServer(...)]` to expose Streamable-HTTP MCP endpoints to the run.
+
+```python
+from langchain_parallel import McpServer
+
+mcp = McpServer(
+    name="my_internal_mcp",
+    url="https://example.com/mcp",
+    headers={"Authorization": "Bearer ..."},
+)
+
+tool_with_mcp = ParallelTaskRunTool(mcp_servers=[mcp])
+result = tool_with_mcp.invoke({"input": "What's our latest internal release?"})
+```
+
+## Webhook signature verification
+
+Long-running tasks can deliver results via webhook. Verify the signature with `verify_webhook` (Standard Webhooks scheme: HMAC-SHA256 over `<webhook-id>.<webhook-timestamp>.<body>`, base64-encoded, `v1,<sig>` with replay protection). See [webhook setup](https://docs.parallel.ai/resources/webhook-setup) for the delivery contract.
+
+```python
+from langchain_parallel import verify_webhook
+
+ok = verify_webhook(
+    body,
+    webhook_id=request.headers["webhook-id"],
+    webhook_timestamp=request.headers["webhook-timestamp"],
+    webhook_signature=request.headers["webhook-signature"],
+    secret=os.environ["PARALLEL_WEBHOOK_SECRET"],
+)
+if not ok:
+    raise PermissionError("invalid webhook signature")
+```
+
+## Chaining
+
+Bind `ParallelTaskRunTool` to any tool-calling chat model and drive an agent with [`create_agent`](/oss/langchain/agents):
+
+```python
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+llm = init_chat_model(model="claude-opus-4-7")
+agent = create_agent(model=llm, tools=[tool])
+
+agent.invoke({"messages": [("human", "Look up Anthropic's founding year.")]})
+```
+
+## API reference
+
+For detailed documentation, head to the @[`ParallelTaskRunTool`], @[`ParallelDeepResearch`], @[`ParallelTaskGroup`], or @[`ParallelEnrichment`] API references, or the [Parallel Task API guides](https://docs.parallel.ai/task-api/task-quickstart).
