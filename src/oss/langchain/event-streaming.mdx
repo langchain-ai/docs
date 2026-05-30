@@ -473,6 +473,94 @@ for await (const activity of stream.extensions.toolActivity) {
 ```
 :::
 
+### Register transformers on middleware
+
+:::python
+<Note>Middleware-registered transformers require `langchain>=1.3.2`.</Note>
+:::
+
+:::js
+<Note>Middleware-registered transformers require `langchain@1.4.3` or later.</Note>
+:::
+
+Middleware can declare stream transformer factories alongside its hooks and tools. The factory shape differs between languages:
+
+:::python
+Set the `transformers` attribute on an `AgentMiddleware` subclass to a sequence of factories. Each factory has the shape `Callable[[tuple[str, ...]], StreamTransformer]` and is invoked as `factory(scope)`, where `scope` is the mini-mux scope tuple (`()` for the root mux, non-empty for subgraphs). Returning a fresh transformer per call keeps each subgraph isolated.
+
+```py
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
+
+
+class ToolActivityMiddleware(AgentMiddleware):
+    transformers = (ToolActivityTransformer,)
+
+
+agent = create_agent(
+    model="gpt-5-nano",
+    tools=[get_weather],
+    middleware=[ToolActivityMiddleware()],
+)
+```
+:::
+
+:::js
+Pass `streamTransformers` to `createMiddleware` as a tuple of factories. Each factory has the shape `() => StreamTransformer<any>` (zero arguments) and is invoked once per scope. Returning a fresh transformer per call keeps each subgraph isolated.
+
+```ts
+import { createAgent, createMiddleware } from "langchain";
+
+const toolActivityMiddleware = createMiddleware({
+  name: "ToolActivityMiddleware",
+  streamTransformers: [toolActivityTransformer],
+});
+
+const agent = createAgent({
+  model: "gpt-5-nano",
+  tools: [getWeather],
+  middleware: [toolActivityMiddleware],
+});
+```
+:::
+
+:::python
+At compile time, `create_agent` merges middleware-registered factories with anything passed to its own `transformers=` argument. The final order on the compiled graph is:
+
+1. The built-in `ToolCallTransformer`.
+2. Middleware-registered factories, in middleware order.
+3. Caller-supplied `transformers=` from `create_agent`.
+
+This keeps the built-in tool-call projection in front of consumer transformers and gives caller-supplied entries the final word.
+
+The built-in `PIIMiddleware` uses this hook to redact PII from streamed wire output. With `apply_to_output=True`, its registered transformer scrubs detected PII from text deltas, tool-call args, tool outputs, and state snapshots before they leave the run, closing the window where `after_model` state-level redaction would otherwise let raw PII through to live readers of `stream_events(version="v3")`.
+
+```py
+from langchain.agents import create_agent
+from langchain.agents.middleware import PIIMiddleware
+
+agent = create_agent(
+    model="gpt-5-nano",
+    tools=[],
+    middleware=[
+        PIIMiddleware("email", strategy="redact", apply_to_output=True),
+    ],
+)
+```
+
+See [PII detection](/oss/langchain/middleware/built-in#pii-detection) for the full configuration surface.
+:::
+
+:::js
+At compile time, `createAgent` merges middleware-registered factories with anything passed to its own `streamTransformers` option. The final order on the compiled graph is:
+
+1. The built-in `ToolCallTransformer`.
+2. Middleware-registered factories, in middleware order.
+3. Caller-supplied `streamTransformers` from `createAgent`.
+
+This keeps the built-in tool-call projection in front of consumer transformers and gives caller-supplied entries the final word.
+:::
+
 See [Build your own projection](/oss/langgraph/event-streaming#build-your-own-projection) for the transformer contract.
 
 ## Related
