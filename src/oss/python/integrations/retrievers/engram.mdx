@@ -5,19 +5,18 @@ description: "Integrate with the Engram retriever using LangChain Python."
 
 # EngramRetriever
 
-This will help you get started with the Engram [retriever](/oss/langchain/retrieval)
-and memory classes.
+This will help you get started with the Engram [retriever](/oss/langchain/retrieval).
 
 Engram is cognitive memory infrastructure for AI agents — tracking not just what
-agents know, but how confident they should be, and when to doubt it.
+agents know, but how confident they should be, and when to doubt it. Each retrieved
+memory is a `Document` carrying confidence score, memory tier, and relevance scores
+from Engram's hybrid vector + knowledge-graph recall.
 
 ### Integration details
 
 | Retriever | Self-host | Cloud offering | Package |
 | :--- | :---: | :---: | :---: |
 | `EngramRetriever` | ✅ | ✅ | `langchain-engram` |
-| `EngramChatMemory` | ✅ | ✅ | `langchain-engram` |
-| `EngramEntityMemory` | ✅ | ✅ | `langchain-engram` |
 
 ## Setup
 
@@ -39,7 +38,7 @@ curl -X POST http://localhost:8080/v1/setup \
   -H "X-Setup-Token: changeme" \
   -H "Content-Type: application/json" \
   -d '{"org_name": "My Org"}'
-# → {"api_key": "mk_..."}  — save this
+# → {"api_key": "mk_..."}
 ```
 
 ### Environment variables
@@ -49,15 +48,10 @@ export ENGRAM_BASE_URL=http://localhost:8080
 export ENGRAM_API_KEY=mk_...
 ```
 
-## EngramRetriever
-
-Retrieves memories using Engram's hybrid vector + knowledge-graph recall.
-Each result is a `Document` with full metadata: confidence, tier, type, and scores.
+## Instantiation
 
 ```python
 from langchain_engram import EngramRetriever
-from langchain.chains import RetrievalQA
-from langchain_openai import ChatOpenAI
 
 retriever = EngramRetriever(
     agent_id="your-agent-uuid",
@@ -65,99 +59,56 @@ retriever = EngramRetriever(
     top_k=5,
     min_confidence=0.6,  # only surface confident memories
 )
+```
 
-# Standalone retrieval
+## Usage
+
+```python
 docs = retriever.invoke("display preferences")
 for doc in docs:
     print(doc.page_content)
     print(f"  confidence: {doc.metadata['confidence']:.0%}")
-    print(f"  tier: {doc.metadata['tier']}")        # hot / warm / cold
-    print(f"  type: {doc.metadata['memory_type']}")  # fact / preference / decision
+    print(f"  tier:       {doc.metadata['tier']}")         # hot / warm / cold
+    print(f"  type:       {doc.metadata['memory_type']}")  # fact / preference / decision
+    print(f"  score:      {doc.metadata.get('score', 'n/a')}")
+```
 
-# In a RetrievalQA chain
+### In a RetrievalQA chain
+
+```python
+from langchain.chains import RetrievalQA
+from langchain_openai import ChatOpenAI
+
 qa = RetrievalQA.from_chain_type(llm=ChatOpenAI(), retriever=retriever)
 answer = qa.invoke({"query": "What are the user's display preferences?"})
 ```
 
-## EngramChatMemory
+### Document metadata fields
 
-Drop-in replacement for `ConversationBufferMemory`. Stores conversation turns as
-Engram memories and recalls semantically relevant context on each turn — not a
-flat buffer.
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `memory_id` | `str` | UUID of the memory |
+| `agent_id` | `str` | Owning agent UUID |
+| `memory_type` | `str` | `fact` / `preference` / `decision` / `constraint` |
+| `confidence` | `float` | Calibrated confidence score (0–1) |
+| `tier` | `str` | `hot` / `warm` / `cold` |
+| `source` | `str` | Origin of the memory |
+| `score` | `float` | Combined recall score |
+| `vector_score` | `float` | Vector similarity component |
+| `graph_score` | `float` | Graph traversal component |
+| `created_at` | `str` | ISO 8601 timestamp |
 
-```python
-from langchain_engram import EngramChatMemory
-from langchain.chains import ConversationChain
-from langchain_openai import ChatOpenAI
+## Configuration
 
-memory = EngramChatMemory(
-    agent_id="your-agent-uuid",
-    memory_key="history",
-    top_k=8,
-    min_confidence=0.5,
-)
-
-chain = ConversationChain(llm=ChatOpenAI(), memory=memory)
-
-# Memories persist across sessions — not in RAM
-chain.predict(input="I always prefer dark mode in all my tools")
-chain.predict(input="I'm a backend engineer, mostly Go and Rust")
-
-# Start a new session — context is recalled from Engram
-chain.predict(input="What do you know about my setup?")
-# → "You prefer dark mode and work with Go and Rust as a backend engineer."
-```
-
-## EngramEntityMemory
-
-Extracts structured entities from conversations using Engram's LLM extraction
-pipeline. Instead of storing raw text, it identifies typed memories — preferences,
-facts, decisions, constraints.
-
-```python
-from langchain_engram import EngramEntityMemory
-from langchain.chains import LLMChain
-from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
-
-memory = EngramEntityMemory(
-    agent_id="your-agent-uuid",
-    memory_key="entities",
-    min_confidence=0.6,
-)
-
-prompt = PromptTemplate(
-    input_variables=["entities", "input"],
-    template=(
-        "You are a helpful assistant.\n\n"
-        "What you know about this user:\n{entities}\n\n"
-        "Human: {input}\nAI:"
-    ),
-)
-
-chain = LLMChain(llm=ChatOpenAI(), prompt=prompt, memory=memory)
-chain.predict(input="I work in Go and need a REST API for a todo app")
-chain.predict(input="What stack should I use for the database layer?")
-# LLM sees: "Known entities and facts:
-#   - User is building a REST API todo app [fact, 93% confident]
-#   - User works in Go [fact, 91% confident]"
-```
-
-## API key scopes
-
-| Key prefix | Scopes | Use case |
-|---|---|---|
-| `mk_...` | admin + read + write | Server setup, key management |
-| `rk_...` | user-chosen | Production agents (read + write is sufficient) |
-
-For LangChain usage, a `rk_` key with `read` and `write` scopes is sufficient:
-
-```python
-from engram import Engram
-client = Engram()  # uses mk_ key from env
-result = client.keys.create(name="langchain-bot", scopes=["read", "write"])
-print(result.api_key)  # rk_...  — use this as ENGRAM_API_KEY
-```
+| Parameter | Default | Description |
+| :--- | :--- | :--- |
+| `agent_id` | required | Engram agent UUID |
+| `api_key` | `ENGRAM_API_KEY` env | `mk_` or `rk_` prefixed API key |
+| `base_url` | `ENGRAM_BASE_URL` env | Engram server URL |
+| `top_k` | `10` | Max memories to return |
+| `min_confidence` | `None` | Confidence floor (0–1) |
+| `memory_type` | `None` | Filter by type: `fact`, `preference`, `decision`, `constraint` |
+| `graph_weight` | `None` | Graph/vector blend (0–1); server default 0.4/0.6 |
 
 ## Related links
 
