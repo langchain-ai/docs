@@ -1,0 +1,91 @@
+---
+title: Traces, Engine, and access control
+description: Understand where gateway traces land, how policy violations surface in LangSmith Engine, and who can see and configure what.
+hidden: true
+---
+
+<Note>
+**Private beta:** The LLM Gateway is in private beta. [Sign up for the waitlist](https://www.langchain.com/langsmith-llm-gateway-waitlist) to get access.
+</Note>
+
+Every call through the LLM Gateway is traced to LangSmith, and policy violations surface in [LangSmith Engine](/langsmith/engine) for triage.
+
+## Where gateway traces appear
+
+By default, all gateway-proxied calls are traced to a project named `gateway` in the [workspace](/langsmith/administration-overview#workspaces) associated with the caller's API key, as well as a API-key specific project with the scheme `gateway-<short_api_key>-<api_key_id>`.
+
+Control access to these tracing projects with [RBAC](/langsmith/rbac) and [ABAC](/langsmith/abac)
+
+### Trace metadata
+
+Gateway-proxied calls are distinguishable from direct LLM calls by the project they land in and the metadata attached to their spans:
+
+- **Gateway project:** all gateway traffic is written to a central gateway project in each workspace, as well as a fixed LangSmith project named `gateway` with a per-API-key copy at `gateway-<short_api_key>-<api_key_id>` for UI isolation. Filter by project (or by the presence of `langsmith.metadata.gateway.*` span attributes) to find gateway-proxied calls.
+- **Policy evaluation results:** every gateway span records which policies were evaluated and their outcome via `langsmith.metadata.gateway.policy.matched_ids/_names`, `passed_ids/_names`, and `violated_ids/_names`, so both passes and blocks are captured.
+- **Guard rule matches:** when redaction policies apply, the guard pipeline emits a `rule_id → count` map stamped onto the span as `policy.matched_rules`, `passed_rules`, and `violated_rules`. These are rule IDs, not PII or secret category labels.
+- **Cost data:** token counts and cost are computed inline and feed the same spend accumulator that spend-cap policies enforce against.
+
+## LangSmith Engine integration
+
+When a governance policy fires (such as when a spend limit is hit, PII is detected and redacted, or a secret is caught), the event is recorded as metadata on the trace. These policy violations surface as issues in LangSmith Engine.
+
+From an Engine issue, you can:
+
+1. **See the violation:** which policy fired, what was blocked or redacted.
+1. **Click through to the trace:** see exactly what the agent was doing when the policy triggered.
+1. **Diagnose the root cause:** was it a retry loop burning budget, a user pasting credentials into a prompt, or a legitimate workload that outgrew its cap, etc.
+1. **Take action:** update the agent's configuration, adjust the policy, or escalate.
+
+## Audit logging
+
+The gateway logs two categories of events:
+
+| Category | What's logged |
+| --- | --- |
+| **Administrative changes** | Policy creation, modification, and deletion. Role and permission changes related to gateway access. |
+| **Gateway invocations** | Each proxied call, including the caller identity and matched policy IDs. |
+
+[Audit logs](/langsmith/audit-logs) are available to organization admins on the [Enterprise plan](/langsmith/pricing-plans).
+
+## Permissions
+
+### Required permissions
+
+| Action | Permission needed | Who has it by default |
+| --- | --- | --- |
+| Make calls through the gateway | `gateway:invoke` + `workspaces:read` | `WORKSPACE_ADMIN` only |
+| Create, edit, or delete policies | `organization:manage` | Org admins |
+| View gateway traces | `projects:read` + `runs:read` | `WORKSPACE_ADMIN`, `WORKSPACE_USER`, `WORKSPACE_VIEWER` |
+| View audit logs | `organization:manage` | Org admins |
+
+The built-in `WORKSPACE_USER` and `WORKSPACE_VIEWER` roles do **not** include `gateway:invoke` and cannot be edited. To grant gateway access without full workspace-admin privileges, create a custom workspace role with `gateway:invoke` and `workspaces:read` (requires an RBAC-enabled plan). For instructions, refer to [Admin setup](/langsmith/llm-gateway-admin-setup).
+
+### API key scoping
+
+Always use workspace-scoped API keys for the gateway. Organization-scoped keys are not supported for invoking the gateway.
+
+### Centralizing provider credentials
+
+The gateway centralizes provider API keys in LangSmith workspace secrets. Individual developers and agents authenticate with their [LangSmith API key](/langsmith/create-account-api-key) and never need direct access to provider keys.
+
+This means:
+
+- **Credential control:** provider keys live in one place, managed by admins. Revoking access means revoking the LangSmith API key, not finding distributed copies of provider keys.
+- **Policy enforcement:** because all calls flow through the gateway, policies are enforced consistently. There's no way to bypass cost limits by calling the provider directly (as long as developers don't have access to the provider key separately).
+
+For this to work as intended, don't distribute provider API keys to developers alongside gateway access. The gateway centralizes provider credentials by default. A pass-through mode also exists for OAuth-based flows like Claude Code Max—contact us if your organization wants to allow or restrict it.
+
+### Restricting trace visibility
+
+Gateway traces are written as runs into a workspace project and follow LangSmith's standard workspace membership model. Anyone with `runs:read` (and `projects:read` to see the project itself) on the workspace can view traces in that workspace's gateway project. The built-in roles `WORKSPACE_ADMIN`, `WORKSPACE_USER`, and `WORKSPACE_VIEWER` all include both permissions by default.
+
+If you need to limit who can see gateway traces, you have two options:
+
+- **Separate workspaces** (works on any [plan](/langsmith/pricing-plans)): create one workspace with restricted membership and another for developer coding agents with broader membership. Each workspace has its own provider secrets and trace projects.
+- **Project-level access policies** (requires an [Enterprise plan](/langsmith/pricing-plans)): write an ABAC policy restricting `projects:read` and `runs:read` on the gateway project to specific users or roles.
+
+## Next steps
+
+- [Admin setup](/langsmith/llm-gateway-admin-setup): the step-by-step guide for configuring all of this.
+- [Spend policies](/langsmith/llm-gateway-spend-policies): attach cost limits to API keys and users.
+- [PII and secrets redaction](/langsmith/llm-gateway-redaction): configure data protection policies.

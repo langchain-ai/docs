@@ -66,6 +66,62 @@ Middleware exposes hooks before and after each of those steps:
     className="rounded-lg mx-auto"
 />
 
+## Use middleware inside a LangGraph workflow
+
+Middleware is not a separate runtime: hooks run inside the compiled [LangGraph](/oss/langgraph/overview) that @[`create_agent`] returns. You can drop the whole agent (middleware and all) into a larger @[StateGraph] as a node or subgraph, and every middleware hook continues to run.
+
+Reach for this pattern when the surrounding topology is more than a standard "loop until done": classifying input before routing to one of several agents, fanning out work in parallel, or stitching agent calls together with deterministic steps.
+
+`HumanInTheLoopMiddleware` matches against each tool's `.name`. In Python, `@tool`-decorated functions take their name from the function (so the key below is `"send_email"`); in TypeScript, the key matches the `name` you pass to `tool({...}, { name })`.
+
+:::python
+```python
+from langchain.agents import AgentState, create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langgraph.graph import START, StateGraph
+
+# Assumes read_email, send_email, classify_node, and route are defined elsewhere.
+email_agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=[read_email, send_email],
+    middleware=[HumanInTheLoopMiddleware(interrupt_on={"send_email": True})],
+)
+
+graph = (
+    StateGraph(AgentState)
+    .add_node("classify", classify_node)
+    .add_node("email_agent", email_agent)
+    .add_edge(START, "classify")
+    .add_conditional_edges("classify", route)
+    .compile()
+)
+```
+:::
+
+:::js
+```typescript
+import { AgentState, createAgent, humanInTheLoopMiddleware } from "langchain";
+import { StateGraph, START } from "@langchain/langgraph";
+
+// Assumes readEmail, sendEmail, classifyNode, and route are defined elsewhere.
+// readEmail / sendEmail are registered with name: "read_email" / "send_email".
+const emailAgent = createAgent({
+  model: "claude-sonnet-4-6",
+  tools: [readEmail, sendEmail],
+  middleware: [humanInTheLoopMiddleware({ interruptOn: { send_email: true } })],
+});
+
+const graph = new StateGraph(AgentState)
+  .addNode("classify", classifyNode)
+  .addNode("emailAgent", emailAgent)
+  .addEdge(START, "classify")
+  .addConditionalEdges("classify", route)
+  .compile();
+```
+:::
+
+The HITL interrupt, summarization, PII redaction, retries, and any custom hooks all travel with the agent node. See [Use subgraphs](/oss/langgraph/use-subgraphs) for the full set of composition patterns, including subgraph checkpointer scoping (per-invocation versus per-thread).
+
 ## Additional resources
 
 <CardGroup cols={2}>
