@@ -1,15 +1,15 @@
 # LangChain Documentation Guidelines
 
-Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored docs only—not `**/reference/**` directories or build artifacts.
+Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`—not Mintlify `build/` output.
 
 ## Critical rules
 
 1. **Always ask for clarification** rather than making assumptions
-2. **Never use markdown in frontmatter `description`** — breaks SEO
-3. **Never edit `reference/` directory** — auto-generated
-4. **Always update `src/docs.json`** when adding new pages
-5. **Use Tabler icons only** — not FontAwesome
-6. **Test code examples** before including them
+1. **Never use markdown in frontmatter `description`** — breaks SEO
+1. **Never edit `build/`** — Mintlify build output (regenerate with `make build` or `make dev`)
+1. **Always update `src/docs.json`** when adding new pages
+1. **Use Tabler icons only** — not FontAwesome
+1. **Test code examples** before including them
 
 ## Repository structure
 
@@ -28,14 +28,14 @@ docs/
 │   │   ├── javascript/         #   TypeScript-specific (integrations, migrations, releases)
 │   │   ├── integrations/       #   Shared integration content
 │   │   ├── concepts/           #   Conceptual overviews
-│   │   └── contributing/       #   Contribution guides
+│   │   ├── contributing/       #   Contribution guides
+│   │   └── reference/          #   Reference tab entry pages (link to reference.langchain.com)
 │   ├── snippets/               # Reusable MDX snippets
 │   ├── images/                 # Documentation images
 │   │   ├── brand/              #   Logos, favicons
 │   │   └── providers/          #   Provider icons (dark/ and light/ variants)
 │   └── fonts/                  # Font files
 ├── pipeline/                   # Python build system & preprocessors
-├── reference/                  # Auto-generated API reference — do not edit
 ├── build/                      # Build output — do not edit
 ├── scripts/                    # Helper utilities
 └── tests/                      # Pipeline tests
@@ -74,7 +74,7 @@ Flat groups (no tabs): Get started, Tools and integrations, Advanced, Additional
 | LangGraph | `src/oss/langgraph/` |
 | Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` |
 | Learn | `src/oss/` (various) |
-| Reference | `reference/` — auto-generated, do not edit |
+| Reference | `src/oss/reference/` — short entry pages linking to reference.langchain.com |
 | Contribute | `src/oss/contributing/` |
 
 ## Quick reference

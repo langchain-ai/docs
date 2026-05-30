@@ -34,6 +34,7 @@ LINK_MAPS: list[LinkMap] = [
             "langchain_text_splitters": "langchain-text-splitters/",
             # Deep Agents
             "create_deep_agent": "deepagents/graph/create_deep_agent",
+            "DeepAgentState": "deepagents/graph/DeepAgentState",
             "SubAgent": "deepagents/middleware/subagents/SubAgent",
             "CompiledSubAgent": "deepagents/middleware/subagents/CompiledSubAgent",
             "SubAgentMiddleware": "deepagents/middleware/subagents/SubAgentMiddleware",
@@ -45,6 +46,7 @@ LINK_MAPS: list[LinkMap] = [
             "FilesystemPermission": "deepagents/middleware/permissions/FilesystemPermission",
             "SummarizationToolMiddleware": "deepagents/middleware/summarization/SummarizationToolMiddleware",
             "PatchToolCallsMiddleware": "deepagents/middleware/patch_tool_calls/PatchToolCallsMiddleware",
+            "RubricMiddleware": "deepagents/middleware/rubric/RubricMiddleware",
             "StateBackend": "deepagents/backends/state/StateBackend",
             "FilesystemBackend": "deepagents/backends/filesystem/FilesystemBackend",
             "LocalShellBackend": "deepagents/backends/local_shell/LocalShellBackend",
@@ -191,6 +193,12 @@ LINK_MAPS: list[LinkMap] = [
             "ParallelEnrichment": "langchain-parallel/tasks/ParallelEnrichment",
             "ParallelMonitor": "langchain-parallel/monitors/ParallelMonitor",
             "SourcePolicy": "langchain-parallel/_types/SourcePolicy",
+            # langchain-tavily
+            "langchain-tavily": "langchain-tavily/",
+            "TavilySearch": "langchain-tavily/tavily_search/TavilySearch",
+            "TavilyExtract": "langchain-tavily/tavily_extract/TavilyExtract",
+            "TavilyCrawl": "langchain-tavily/tavily_crawl/TavilyCrawl",
+            "TavilyMap": "langchain-tavily/tavily_map/TavilyMap",
             # langchain-amazon-nova
             "langchain-amazon-nova": "langchain-amazon-nova/",
             "ChatAmazonNova": "langchain-amazon-nova/chat_models/ChatAmazonNova",
@@ -220,10 +228,13 @@ LINK_MAPS: list[LinkMap] = [
             # Embeddings
             "init_embeddings": "langchain/embeddings/base/init_embeddings",
             "Embeddings": "langchain-core/embeddings/embeddings/Embeddings",
+            "PineconeSparseEmbeddings": "langchain-pinecone/embeddings/PineconeSparseEmbeddings",
             # Documents
             "Document": "langchain-core/documents/base/Document",
             # Document loaders
             "BaseLoader": "langchain-core/document_loaders/base/BaseLoader",
+            "AzureBlobStorageContainerLoader": "langchain-community/document_loaders/azure_blob_storage_container/AzureBlobStorageContainerLoader",
+            "AzureBlobStorageFileLoader": "langchain-community/document_loaders/azure_blob_storage_file/AzureBlobStorageFileLoader",
             # Text splitters
             "CharacterTextSplitter": "langchain-text-splitters/character/CharacterTextSplitter",
             "RecursiveCharacterTextSplitter": "langchain-text-splitters/character/RecursiveCharacterTextSplitter",
@@ -238,6 +249,18 @@ LINK_MAPS: list[LinkMap] = [
             # VectorStores
             "VectorStore": "langchain-core/vectorstores/base/VectorStore",
             "VectorStore.max_marginal_relevance_search": "langchain-core/vectorstores/base/VectorStore/max_marginal_relevance_search",
+            "PGVector": "langchain-postgres/vectorstores/PGVector",
+            "PGVectorStore": "langchain-postgres/v2/vectorstores/PGVectorStore",
+            "AstraDBVectorStore": "langchain-astradb/vectorstores/AstraDBVectorStore",
+            "ChromaVectorStore": "langchain-chroma/vectorstores/Chroma",
+            "ElasticSearchStore": "langchain-elasticsearch/vectorstores/ElasticsearchStore",
+            "MilvusVectorStore": "langchain-milvus/vectorstores/milvus/Milvus",
+            "MongoDBAtlasVectorSearch": "langchain-mongodb/vectorstores/MongoDBAtlasVectorSearch",
+            "PineconeSparseVectorStore": "langchain-pinecone/vectorstores_sparse/PineconeSparseVectorStore",
+            "PineconeVectorStore": "langchain-pinecone/vectorstores/PineconeVectorStore",
+            "QdrantVectorStore": "langchain-qdrant/qdrant/QdrantVectorStore",
+            "SurrealDBStore": "langchain-surrealdb/vectorstores/SurrealDBVectorStore",
+            "SQLServer_VectorStore": "langchain-sqlserver/vectorstores/SQLServer_VectorStore",
             # Key-value stores
             "BaseStore": "langchain-core/stores/BaseStore",
             "BaseStore.put": "langgraph/store/#langgraph.store.base.BaseStore.put",
@@ -619,6 +642,7 @@ LINK_MAPS: list[LinkMap] = [
             "tools_condition": "langchain-langgraph/prebuilt/toolsCondition",
             "ToolRuntime": "langchain/index/Runtime",
             "RunnableLambda": "langchain-core/runnables/RunnableLambda",
+            "PIIMiddleware": "langchain/index/piiMiddleware",
             # LangSmith Deployment SDK - JS
             "LangGraphSDK": "langgraph-sdk/",
             "ThreadsClient": "langchain-langgraph-sdk/client/ThreadsClient",

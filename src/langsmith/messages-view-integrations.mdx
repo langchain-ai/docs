@@ -1,0 +1,208 @@
+---
+title: Messages view integrations
+description: Frameworks and SDKs that render in the LangSmith Messages view.
+---
+
+The [Messages view](/langsmith/view-traces#messages-view) renders an agent's trace as a chat-style conversation: user prompts, model responses, tool calls, and tool results, in order. It works automatically with any of the integrations listed in the table on this page. A couple of integrations (`wrap_anthropic` alone, and the JavaScript Claude Agent SDK) need a single metadata key set manually, which are listed in the table and in [Known limitations](#known-limitations).
+
+## Supported integrations
+
+| Integration | Tracing SDK | Setup required |
+| --- | --- | --- |
+| LangChain chat models | langchain-core | None |
+| LangGraph | langgraph | None |
+| `langchain.create_agent` | langchain | None (see caveat in [Known limitations](#known-limitations)) |
+| Deep Agents | deepagents | None |
+| OpenAI Chat Completions | `wrap_openai` | None |
+| OpenAI Responses | `wrap_openai` (responses API) | None |
+| OpenAI Agents SDK | Python tracing processor | None |
+| Vercel AI SDK | `wrapAISDK` | None |
+| Anthropic Messages (`wrap_anthropic`) | `wrap_anthropic` | Set `ls_message_format: "anthropic"` |
+| Claude Agent SDK (Python) | claude-agent-sdk | None |
+| Claude Agent SDK (JS) | claude-agent-sdk-js | Set `ls_message_format: "anthropic"` |
+| Claude Code | claude-code | None |
+
+For the full detection rules, expected payload shape, and worked JSON examples for each integration, see [Trace format reference](/langsmith/messages-view-trace-format).
+
+## Known limitations
+
+A few integrations need a metadata override to be picked up:
+
+- **`wrap_anthropic` alone:** the wrapper does not set `ls_message_format`, so detection doesn't match today. Set `metadata={"ls_message_format": "anthropic"}` on the call (or via `RunnableConfig`) for the run to be claimed.
+- **Claude Agent SDK (JS):** auto-detection currently allowlists only `"claude-agent-sdk"` and `"claude-code"`, not the JS-emitted `"claude-agent-sdk-js"`. Set `ls_message_format: "anthropic"` explicitly on JS traces.
+- **`langchain.create_agent`:** not in the explicit detection allowlist. It's claimed today via `ls_provider`/`ls_message_format` fallthroughs in the matching OpenAI/Anthropic detection, or via `graph_id` / `langgraph_node` when the agent runs inside LangGraph. If routing is unreliable, set `metadata.ls_message_format: "langchain"` explicitly.
+
+## Exclude runs from the Messages view
+
+Setting `ls_message_view_exclude` on a run's metadata tells the Messages view to skip that run. The key's presence is what matters; `True` is the conventional value. The filter runs before any extraction strategy sees the trace, so an excluded LLM or tool run never affects detection, message extraction, or tool-call pairing.
+
+Use it for LLM subspans that aren't conversational turns, such as classification calls, embedding lookups, safety filters, or routing/guardrail decisions, that you still want visible elsewhere in LangSmith but don't want cluttering the conversation transcript.
+
+### Python
+
+**1. On a `@traceable` decorator**: exclude a whole function's run.
+
+```python
+from langsmith import traceable
+
+@traceable(run_type="llm", metadata={"ls_message_view_exclude": True})
+def classify_intent(query: str) -> str:
+    # This LLM call is internal routing, not part of the chat
+    return llm.predict(f"Classify the intent of: {query}")
+```
+
+**2. Via the `trace` context manager**: exclude an ad-hoc span.
+
+```python
+from langsmith import trace
+
+with trace(
+    "safety_check",
+    run_type="llm",
+    metadata={"ls_message_view_exclude": True},
+) as run:
+    result = safety_model.score(text)
+    run.end(outputs={"score": result})
+```
+
+**3. From inside a running function**: set the key on the current run tree at any point before the run is patched.
+
+```python
+from langsmith import get_current_run_tree, traceable
+
+@traceable(run_type="llm")
+def maybe_internal(query: str) -> str:
+    result = llm.predict(query)
+    if _looks_like_routing(query):
+        rt = get_current_run_tree()
+        if rt is not None:
+            rt.add_metadata({"ls_message_view_exclude": True})
+    return result
+```
+
+**4. Per-call when using `wrap_openai` / `wrap_anthropic`**: pass `langsmith_extra` through to the wrapped client call.
+
+```python
+import openai
+from langsmith.wrappers import wrap_openai
+
+client = wrap_openai(openai.Client())
+
+resp = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Classify: ..."}],
+    langsmith_extra={"metadata": {"ls_message_view_exclude": True}},
+)
+```
+
+**5. LangChain `RunnableConfig`**: exclude a single invocation of a chain or chat model.
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o")
+result = llm.invoke(
+    "Classify this query",
+    config={"metadata": {"ls_message_view_exclude": True}},
+)
+```
+
+### TypeScript
+
+**1. On a `traceable` wrapper**: exclude a whole function's run.
+
+```typescript
+import { traceable } from "langsmith/traceable";
+
+const classifyIntent = traceable(
+  async (query: string) => {
+    return await llm.predict(`Classify the intent of: ${query}`);
+  },
+  {
+    name: "classify_intent",
+    run_type: "llm",
+    metadata: { ls_message_view_exclude: true },
+  },
+);
+```
+
+**2. From inside a running function**: mutate the current run tree.
+
+```typescript
+import { traceable, getCurrentRunTree } from "langsmith/traceable";
+
+const maybeInternal = traceable(
+  async (query: string) => {
+    const result = await llm.predict(query);
+    if (looksLikeRouting(query)) {
+      const rt = getCurrentRunTree();
+      rt.extra = rt.extra ?? {};
+      rt.extra.metadata = { ...rt.extra.metadata, ls_message_view_exclude: true };
+    }
+    return result;
+  },
+  { run_type: "llm" },
+);
+```
+
+**3. Per-call with `wrapOpenAI`**: pass `langsmithExtra` on the call.
+
+```typescript
+import { wrapOpenAI } from "langsmith/wrappers";
+import OpenAI from "openai";
+
+const client = wrapOpenAI(new OpenAI());
+
+const resp = await client.chat.completions.create(
+  {
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Classify: ..." }],
+  },
+  { langsmithExtra: { metadata: { ls_message_view_exclude: true } } },
+);
+```
+
+**4. Vercel AI SDK middleware**: pass the key via `lsConfig.metadata` on `wrapAISDK`. The middleware merges this onto every emitted LLM run.
+
+```typescript
+import { wrapAISDK } from "langsmith/experimental/vercel";
+import * as ai from "ai";
+
+const { generateText } = wrapAISDK(ai, {
+  metadata: { ls_message_view_exclude: true },
+});
+```
+
+To exclude only some calls and not others, wrap with `wrapAISDK` normally and instead mutate `getCurrentRunTree()` from inside a parent `traceable` that calls into the AI SDK, or use a child `RunTree` with `createChild({ extra: { metadata: { ls_message_view_exclude: true } } })`.
+
+**5. Manual `RunTree.createChild`**: when you're building runs by hand.
+
+```typescript
+import { RunTree } from "langsmith/run_trees";
+
+const parent = new RunTree({ name: "agent", run_type: "chain" });
+const child = parent.createChild({
+  name: "safety_check",
+  run_type: "llm",
+  extra: { metadata: { ls_message_view_exclude: true } },
+});
+```
+
+### Notes
+
+- The filter checks for the **presence of the key**, not truthiness. `ls_message_view_exclude: false` still excludes the run. Omit the key entirely to include the run.
+- Exclusion applies to that run only: child runs are not implicitly excluded. To drop a whole subtree, set the key on each run.
+- Excluded runs still appear in the regular trace view, runs explorer, and metrics. Only the Messages view filters them out.
+
+## Manual instrumentation
+
+If you trace without one of the wrappers in [Supported integrations](#supported-integrations)—for example, emitting runs through `RunTree`, the REST API, or a custom wrapper around a provider SDK—set `ls_message_format` on each LLM run's metadata to route the trace to the correct extractor:
+
+| Trace shape | Set on metadata |
+| --- | --- |
+| LangChain messages (constructor envelope) | `ls_message_format: "langchain"` |
+| OpenAI Chat Completions | `ls_message_format: "completions"` |
+| OpenAI Responses API | `ls_message_format: "responses"` |
+| Anthropic Messages API | `ls_message_format: "anthropic"` |
+
+For the JSON shape each extractor expects, see the [Trace format reference](/langsmith/messages-view-trace-format).

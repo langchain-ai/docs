@@ -1,58 +1,46 @@
 ---
 title: "Hugging Face integration"
 sidebarTitle: HuggingFaceEmbeddings
-description: "Integrate with the Hugging Face embedding model using LangChain Python."
+description: "Integrate with Hugging Face embedding models using LangChain Python."
 ---
 
-## Local Embeddings
+LangChain supports three ways to use Hugging Face embedding models:
 
-You can generate embeddings locally using the `HuggingFaceEmbeddings` class. This utilizes the `sentence_transformers` library to download the model weights and run them directly on your machine.
+- **Local inference** via `HuggingFaceEmbeddings`: downloads the model and runs it in-process with [Sentence Transformers](https://sbert.net).
+- **Inference Providers and dedicated Inference Endpoints** via `HuggingFaceEndpointEmbeddings`: serverless or dedicated hosted inference through Hugging Face.
+- **Self-hosted at scale** via [Text Embeddings Inference (TEI)](/oss/integrations/embeddings/text_embeddings_inference): Hugging Face's production inference server, pointed at by `HuggingFaceEndpointEmbeddings`.
 
-Let's load the Hugging Face Embedding class.
+All three use the same `Embeddings` interface, so you can start local and graduate to a hosted or self-hosted deployment without changing the rest of your application.
 
+## Setup
+
+```shell
+pip install -qU langchain-huggingface
+```
+
+## Local embeddings
+
+Generate embeddings locally via `sentence-transformers`. This downloads the model weights the first time you run it.
 
 ```python
-pip install -qU  langchain langchain-huggingface sentence_transformers
+from langchain_huggingface import HuggingFaceEmbeddings
+
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-mpnet-base-v2",
+    encode_kwargs={"normalize_embeddings": True},
+)
+
+query_result = embeddings.embed_query("This is a test document.")
+doc_result = embeddings.embed_documents(["This is a test document."])
 ```
 
-```python
-from langchain_huggingface.embeddings import HuggingFaceEmbeddings
-```
+See the dedicated [Sentence Transformers guide](/oss/integrations/embeddings/sentence_transformers) for model selection, GPU configuration, and query/document prompts.
 
-```python
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
-```
+## Hugging Face Inference Endpoints and Providers
 
-```python
-text = "This is a test document."
-```
+If you prefer not to download models locally, you can access embedding models through [Hugging Face Inference Providers](https://huggingface.co/docs/inference-providers) or a dedicated [Inference Endpoint](https://huggingface.co/inference-endpoints/dedicated). Both expose open-source embedding models on Hugging Face's scalable serverless infrastructure.
 
-```python
-query_result = embeddings.embed_query(text)
-```
-
-```python
-query_result[:3]
-```
-
-```text
-[-0.04895168915390968, -0.03986193612217903, -0.021562768146395683]
-```
-
-```python
-doc_result = embeddings.embed_documents([text])
-```
-
-## Hugging Face Inference Endpoints (Serverless API)
-
-If you prefer not to download models locally, you can access embedding models via the [Inference Endpoints](https://huggingface.co/docs/inference-endpoints/index), which let us use open-source models on Hugging Face's scalable serverless infrastructure.
-
-Ensure you have huggingface_hub installed, which is usually included with langchain-huggingface
-```python
-!pip install huggingface_hub
-```
-
-First, we need to get a read-only API key from [Hugging Face](https://huggingface.co/settings/tokens).
+First, get a token from [your Hugging Face settings](https://huggingface.co/settings/tokens):
 
 ```python
 import os
@@ -61,26 +49,29 @@ from getpass import getpass
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = getpass()
 ```
 
-Now we can use the `HuggingFaceEndpointEmbeddings` class to run open-source embedding models remotely via the API.
+Then use `HuggingFaceEndpointEmbeddings`:
 
 ```python
-from langchain_huggingface.embeddings import HuggingFaceEndpointEmbeddings
+from langchain_huggingface import HuggingFaceEndpointEmbeddings
+
+embeddings = HuggingFaceEndpointEmbeddings(
+    model="sentence-transformers/all-mpnet-base-v2"
+)
+
+query_result = embeddings.embed_query("This is a test document.")
 ```
+
+To route through a specific Inference Provider (e.g., `hf-inference`, `sambanova`, `together`), pass `provider=`:
 
 ```python
 embeddings = HuggingFaceEndpointEmbeddings(
-    model="sentence-transformers/all-MiniLM-L6-v2"
+    model="BAAI/bge-m3",
+    provider="hf-inference",
 )
 ```
 
-```python
-text = "This is a test document."
-```
+The full list of providers and their supported models is in the [Inference Providers documentation](https://huggingface.co/docs/inference-providers).
 
-```python
-query_result = embeddings.embed_query(text)
-```
+## Self-hosted with Text Embeddings Inference
 
-```python
-query_result[:3]
-```
+For production-scale serving of Sentence Transformers models on your own infrastructure, use [Text Embeddings Inference (TEI)](https://github.com/huggingface/text-embeddings-inference). TEI handles batching, GPU acceleration, and exposes an OpenAI-compatible API. See the [TEI integration guide](/oss/integrations/embeddings/text_embeddings_inference) for a walkthrough.

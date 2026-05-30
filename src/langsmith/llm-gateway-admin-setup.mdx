@@ -1,0 +1,87 @@
+---
+title: Admin setup
+description: One-time organization setup to enable the LLM Gateway and grant user access.
+hidden: true
+---
+
+<Note>
+**Private beta:** The LLM Gateway is in private beta. [Sign up for the waitlist](https://www.langchain.com/langsmith-llm-gateway-waitlist) to get access.
+</Note>
+
+One-time setup to enable the LLM Gateway for your LangSmith [organization](/langsmith/administration-overview#organizations). [Organization admins](/langsmith/rbac#organization-admin) should complete this before individual users can route calls through the gateway.
+
+## Prerequisites
+
+You need [`organization:manage` permission](/langsmith/organization-workspace-operations) in LangSmith. [Step 3 Option A](/langsmith/llm-gateway-admin-setup#option-a-create-a-custom-workspace-role-recommended) also requires a plan that includes [RBAC](/langsmith/rbac) (custom roles).
+
+## 1. Enable the LLM Gateway
+
+During private beta, the gateway must be enabled for your organization by LangChain. Once you've been accepted into the beta, the `llm_gateway_enabled` feature flag will be turned on for your organization.
+
+At General Availability, this will be a self-service setting.
+
+## 2. Add Provider Secrets
+
+The gateway resolves provider API keys from your workspace's Provider Secrets—this is how it proxies calls to upstream providers without individual users needing local copies of provider keys.
+
+Go to **Settings → Integrations → Provider Secrets** and add the keys for the providers you want to proxy through the gateway:
+
+| Secret name | Provider |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Anthropic (Claude models) |
+| `OPENAI_API_KEY` | OpenAI (GPT models) |
+| `GOOGLE_API_KEY` | Google (Gemini models) |
+
+Add only the providers your organization uses. The gateway will return an error if a user tries to call a provider whose key hasn't been added.
+
+## 3. Configure gateway access for users
+
+The built-in roles `WORKSPACE_USER` and `WORKSPACE_VIEWER` do not include the `gateway:invoke` permission and cannot be edited. You have two options for granting gateway access:
+
+### Option A: Create a custom workspace role (recommended)
+
+Requires an RBAC-enabled plan.
+
+1. Go to **Settings → Members/Roles**.
+1. Create a new workspace role.
+1. Grant it at minimum `gateway:invoke` and `workspaces:read`.
+1. Assign users who need gateway access to this role.
+
+Use this when you want to grant gateway access to specific users without giving them full workspace-admin privileges. This gives you the most control over who can use the gateway.
+
+### Option B: Use the workspace admin role
+
+No plan requirement.
+
+The `WORKSPACE_ADMIN` role already includes both `gateway:invoke` and `workspaces:read` by default. Assign users who need gateway access to this role.
+
+Use this if you don't need fine-grained access control, or if you don't have RBAC enabled.
+
+## 4. Configure policies (optional)
+
+Gateway policy management requires `organization:manage` permission.
+
+Go to **Settings → Gateway → LLM Gateway** to create governance policies. You can configure:
+
+- **Spend limits:** hard caps at the organization, workspace, API key, or user level. Refer to [Spend policies](/langsmith/llm-gateway-spend-policies).
+- **PII and secrets redaction:** detect and redact sensitive data before it reaches the model. Refer to [PII and secrets redaction](/langsmith/llm-gateway-redaction).
+
+Policies are optional during initial setup. The gateway will freely allow invocations until you have configured policies.
+
+## 5. Distribute API keys to users
+
+Create workspace-scoped [Service Keys](/langsmith/administration-overview#service-keys) for users who need gateway access. Each key should be attached to a role that includes `gateway:invoke` and `workspaces:read`.
+
+Use workspace-scoped keys, not organization-scoped keys. See [API key scoping](/langsmith/llm-gateway-access#api-key-scoping) for details.
+
+Share the key and the gateway endpoint with each user, or distribute them via MDM (mobile device management) for company-wide coding agent rollouts. For per-agent configuration instructions, refer to [Set up coding agents](/langsmith/llm-gateway-coding-agents).
+
+## Verification
+
+Ask a user to run the [verification curl from the Quickstart](/langsmith/llm-gateway-quickstart#2-make-a-call). A `200` response confirms the gateway, the API key, provider secrets, and role permissions are all configured correctly. The call will appear as a trace in the **gateway** tracing project in the workspace.
+
+## Next steps
+
+- [Quickstart](/langsmith/llm-gateway-quickstart): share with your users as the getting-started guide.
+- [Set up coding agents](/langsmith/llm-gateway-coding-agents): configure Claude Code, Codex, and other agents org-wide.
+- [Traces, Engine, and access control](/langsmith/llm-gateway-access): deep dive on roles, scoped keys, trace routing, and who can see what.
