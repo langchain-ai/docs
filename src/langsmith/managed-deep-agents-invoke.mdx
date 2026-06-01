@@ -1,0 +1,277 @@
+---
+title: Run Managed Deep Agents
+sidebarTitle: Run agents
+description: Create Managed Deep Agents with the REST API, then create threads and stream runs.
+icon: "player-play"
+tag: "PREVIEW"
+---
+
+Running a Managed Deep Agent, which covers creating threads, starting runs, and streaming output, is currently available through the REST API. There is no CLI equivalent yet. Deploy the agent first with the [CLI](/langsmith/deploy-managed-deep-agent#deploy-with-the-cli) or the REST API, then invoke it with the routes below.
+
+<Note>
+    Managed Deep Agents is in private preview. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
+</Note>
+
+For route-level details, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api).
+
+## Set request defaults
+
+```bash
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+export LANGSMITH_API_URL="https://api.smith.langchain.com"
+export DEEPAGENTS_BASE_URL="$LANGSMITH_API_URL/v1/deepagents"
+```
+
+Requests require the `X-Api-Key` header:
+
+```txt
+X-Api-Key: <LANGSMITH_API_KEY>
+```
+
+Install an HTTP client for Python examples:
+
+```bash
+uv pip install httpx
+```
+
+## Create an agent
+
+Use the CLI for normal deploy workflows. Use the REST API when you need a custom client, a workflow that cannot shell out to the CLI, or direct control over request payloads.
+
+Create the agent with `POST /v1/deepagents/agents`. REST payloads use the API shape, including `runtime.model.model_id`:
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    import os
+
+    import httpx
+
+    BASE_URL = os.environ["DEEPAGENTS_BASE_URL"]
+    HEADERS = {"X-Api-Key": os.environ["LANGSMITH_API_KEY"]}
+
+    response = httpx.post(
+        f"{BASE_URL}/agents",
+        headers=HEADERS,
+        json={
+            "name": "research-assistant",
+            "description": "Research assistant that can search the web and summarize sources.",
+            "runtime": {"model": {"model_id": "anthropic:claude-sonnet-4-6"}},
+            "backend": {"type": "thread_scoped_sandbox"},
+            "instructions": (
+                "You are a careful research assistant. Search for sources, "
+                "keep notes, and return concise answers with citations."
+            ),
+        },
+    )
+    response.raise_for_status()
+    agent_id = response.json()["id"]
+    print(f"Agent ID: {agent_id}")
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const BASE_URL = process.env.DEEPAGENTS_BASE_URL!
+    const HEADERS = {
+      "X-Api-Key": process.env.LANGSMITH_API_KEY!,
+      "Content-Type": "application/json",
+    }
+
+    const response = await fetch(`${BASE_URL}/agents`, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({
+        name: "research-assistant",
+        description: "Research assistant that can search the web and summarize sources.",
+        runtime: { model: { model_id: "anthropic:claude-sonnet-4-6" } },
+        backend: { type: "thread_scoped_sandbox" },
+        instructions:
+          "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
+      }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    const { id: agentId } = await response.json()
+    console.log(`Agent ID: ${agentId}`)
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request POST \
+      --url "$DEEPAGENTS_BASE_URL/agents" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "name": "research-assistant",
+        "description": "Research assistant that can search the web and summarize sources.",
+        "runtime": {
+          "model": {
+            "model_id": "anthropic:claude-sonnet-4-6"
+          }
+        },
+        "backend": {
+          "type": "thread_scoped_sandbox"
+        },
+        "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations."
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+The examples below reuse `BASE_URL`, `HEADERS`, and the `agent_id` returned when you created the agent.
+
+## Create a thread
+
+Create a thread before running the agent. Threads preserve conversation and execution state for long-running work:
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    response = httpx.post(
+        f"{BASE_URL}/threads",
+        headers=HEADERS,
+        json={
+            "agent_id": agent_id,
+            "options": {
+                "test_run": False,
+                "skip_memory_write_protection": False,
+            },
+        },
+    )
+    response.raise_for_status()
+    thread_id = response.json()["id"]
+    print(f"Thread ID: {thread_id}")
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(`${BASE_URL}/threads`, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({
+        agent_id: agentId,
+        options: {
+          test_run: false,
+          skip_memory_write_protection: false,
+        },
+      }),
+    })
+    if (!response.ok) throw new Error(await response.text())
+    const { id: threadId } = await response.json()
+    console.log(`Thread ID: ${threadId}`)
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request POST \
+      --url "$DEEPAGENTS_BASE_URL/threads" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "agent_id": "'"$AGENT_ID"'",
+        "options": {
+          "test_run": false,
+          "skip_memory_write_protection": false
+        }
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+## Stream a run from a thread
+
+Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stream`. Include the `agent_id` in the request body and set `Accept: text/event-stream`:
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    payload = {
+        "agent_id": agent_id,
+        "messages": [
+            {
+                "role": "user",
+                "content": "Research recent approaches to agent memory and summarize the main tradeoffs.",
+            }
+        ],
+        "stream_mode": ["values", "updates", "messages-tuple"],
+        "stream_subgraphs": True,
+        "user_timezone": "America/Los_Angeles",
+    }
+
+    with httpx.stream(
+        "POST",
+        f"{BASE_URL}/threads/{thread_id}/runs/stream",
+        headers={**HEADERS, "Accept": "text/event-stream"},
+        json=payload,
+        timeout=None,
+    ) as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            if line:
+                print(line)
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const response = await fetch(
+      `${BASE_URL}/threads/${threadId}/runs/stream`,
+      {
+        method: "POST",
+        headers: { ...HEADERS, Accept: "text/event-stream" },
+        body: JSON.stringify({
+          agent_id: agentId,
+          messages: [
+            {
+              role: "user",
+              content:
+                "Research recent approaches to agent memory and summarize the main tradeoffs.",
+            },
+          ],
+          stream_mode: ["values", "updates", "messages-tuple"],
+          stream_subgraphs: true,
+          user_timezone: "America/Los_Angeles",
+        }),
+      }
+    )
+    if (!response.ok || !response.body) throw new Error(await response.text())
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      process.stdout.write(decoder.decode(value, { stream: true }))
+    }
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request POST \
+      --url "$DEEPAGENTS_BASE_URL/threads/$THREAD_ID/runs/stream" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY" \
+      --header 'Accept: text/event-stream' \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "agent_id": "'"$AGENT_ID"'",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
+          }
+        ],
+        "stream_mode": ["values", "updates", "messages-tuple"],
+        "stream_subgraphs": true,
+        "user_timezone": "America/Los_Angeles"
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+Use stream modes based on the experience you want to build:
+
+| Stream mode | Use for |
+| --- | --- |
+| `values` | Full state snapshots after steps. |
+| `updates` | Incremental state updates as the agent works. |
+| `messages-tuple` | Token-level message output for chat UIs. |
+
+`messages-tuple` mode emits a `messages` event. The payload is a `[chunk, metadata]` tuple.
