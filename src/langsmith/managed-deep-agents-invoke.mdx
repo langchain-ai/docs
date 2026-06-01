@@ -1,25 +1,42 @@
 ---
-title: Run Managed Deep Agents
-sidebarTitle: Run agents
-description: Create Managed Deep Agents with the REST API, then create threads and stream runs.
+title: Run a Managed Deep Agent
+sidebarTitle: Run an agent
+description: Create threads and stream runs for a Managed Deep Agent.
 icon: "player-play"
 tag: "PREVIEW"
 ---
 
-Running a Managed Deep Agent, which covers creating threads, starting runs, and streaming output, is currently available through the REST API. There is no CLI equivalent yet. Deploy the agent first with the [CLI](/langsmith/deploy-managed-deep-agent#deploy-with-the-cli) or the REST API, then invoke it with the routes below.
+Running a Managed Deep Agent covers creating threads, starting runs, and streaming output. Deploy the agent first with the [CLI or REST API](/langsmith/managed-deep-agents-deploy), then invoke it with the REST API.
 
 <Note>
     Managed Deep Agents is in private preview. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
 </Note>
 
-For route-level details, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api).
+## CLI: find the agent ID
 
-## Set request defaults
+There is no CLI command for running Managed Deep Agents yet. Use the CLI to find the agent ID, then use the REST API to create threads and stream runs.
+
+List agents:
+
+```bash
+deepagents agents list
+```
+
+Inspect one agent:
+
+```bash
+deepagents agents get <agent_id>
+```
+
+## API: create threads and stream runs
+
+Set request defaults:
 
 ```bash
 export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
 export LANGSMITH_API_URL="https://api.smith.langchain.com"
 export DEEPAGENTS_BASE_URL="$LANGSMITH_API_URL/v1/deepagents"
+export AGENT_ID="<agent_id>"
 ```
 
 Requests require the `X-Api-Key` header:
@@ -34,11 +51,7 @@ Install an HTTP client for Python examples:
 uv pip install httpx
 ```
 
-## Create an agent
-
-Use the CLI for normal deploy workflows. Use the REST API when you need a custom client, a workflow that cannot shell out to the CLI, or direct control over request payloads.
-
-Create the agent with `POST /v1/deepagents/agents`. REST payloads use the API shape, including `runtime.model.model_id`:
+The examples below reuse these variables:
 
 <Tabs>
   <Tab title="Python (httpx)">
@@ -49,24 +62,7 @@ Create the agent with `POST /v1/deepagents/agents`. REST payloads use the API sh
 
     BASE_URL = os.environ["DEEPAGENTS_BASE_URL"]
     HEADERS = {"X-Api-Key": os.environ["LANGSMITH_API_KEY"]}
-
-    response = httpx.post(
-        f"{BASE_URL}/agents",
-        headers=HEADERS,
-        json={
-            "name": "research-assistant",
-            "description": "Research assistant that can search the web and summarize sources.",
-            "runtime": {"model": {"model_id": "anthropic:claude-sonnet-4-6"}},
-            "backend": {"type": "thread_scoped_sandbox"},
-            "instructions": (
-                "You are a careful research assistant. Search for sources, "
-                "keep notes, and return concise answers with citations."
-            ),
-        },
-    )
-    response.raise_for_status()
-    agent_id = response.json()["id"]
-    print(f"Agent ID: {agent_id}")
+    agent_id = os.environ["AGENT_ID"]
     ```
   </Tab>
   <Tab title="JavaScript (fetch)">
@@ -76,50 +72,17 @@ Create the agent with `POST /v1/deepagents/agents`. REST payloads use the API sh
       "X-Api-Key": process.env.LANGSMITH_API_KEY!,
       "Content-Type": "application/json",
     }
-
-    const response = await fetch(`${BASE_URL}/agents`, {
-      method: "POST",
-      headers: HEADERS,
-      body: JSON.stringify({
-        name: "research-assistant",
-        description: "Research assistant that can search the web and summarize sources.",
-        runtime: { model: { model_id: "anthropic:claude-sonnet-4-6" } },
-        backend: { type: "thread_scoped_sandbox" },
-        instructions:
-          "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
-      }),
-    })
-    if (!response.ok) throw new Error(await response.text())
-    const { id: agentId } = await response.json()
-    console.log(`Agent ID: ${agentId}`)
+    const agentId = process.env.AGENT_ID!
     ```
   </Tab>
   <Tab title="cURL">
     ```bash
-    curl --request POST \
-      --url "$DEEPAGENTS_BASE_URL/agents" \
-      --header "X-Api-Key: $LANGSMITH_API_KEY" \
-      --header 'Content-Type: application/json' \
-      --data '{
-        "name": "research-assistant",
-        "description": "Research assistant that can search the web and summarize sources.",
-        "runtime": {
-          "model": {
-            "model_id": "anthropic:claude-sonnet-4-6"
-          }
-        },
-        "backend": {
-          "type": "thread_scoped_sandbox"
-        },
-        "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations."
-      }'
+    export AGENT_ID="<agent_id>"
     ```
   </Tab>
 </Tabs>
 
-The examples below reuse `BASE_URL`, `HEADERS`, and the `agent_id` returned when you created the agent.
-
-## Create a thread
+### Create a thread
 
 Create a thread before running the agent. Threads preserve conversation and execution state for long-running work:
 
@@ -177,7 +140,7 @@ Create a thread before running the agent. Threads preserve conversation and exec
   </Tab>
 </Tabs>
 
-## Stream a run from a thread
+### Stream a run from a thread
 
 Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stream`. Include the `agent_id` in the request body and set `Accept: text/event-stream`:
 
@@ -275,3 +238,5 @@ Use stream modes based on the experience you want to build:
 | `messages-tuple` | Token-level message output for chat UIs. |
 
 `messages-tuple` mode emits a `messages` event. The payload is a `[chunk, metadata]` tuple.
+
+For route-level details, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api).

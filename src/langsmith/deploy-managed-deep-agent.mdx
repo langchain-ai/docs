@@ -1,26 +1,56 @@
 ---
 title: Managed Deep Agents
-description: Create, run, and operate Managed Deep Agents with the private preview CLI and API.
+sidebarTitle: Overview
+description: Overview of Managed Deep Agents private preview features, workflows, and limits.
 icon: "robot"
 tag: "PREVIEW"
 ---
 
-Managed Deep Agents is a hosted runtime for creating, running, and operating deep agents in LangSmith. The recommended workflow is to scaffold a local agent project with `deepagents-cli`, edit files locally, register or connect MCP servers when needed, and deploy the project to Managed Deep Agents.
+Managed Deep Agents is a hosted runtime for creating, running, and operating deep agents in LangSmith. Use Managed Deep Agents when you want the [Deep Agents](/oss/deepagents/overview) harness with managed infrastructure for durable runs, [LangSmith sandboxes](/langsmith/sandboxes), thread state, MCP tools, file trees, traces, and agent revisions.
 
 <Note>
     Managed Deep Agents is in private preview. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
 </Note>
 
-[Deep Agents](/oss/deepagents/overview) give developers an open-source harness for building agents that can plan, use tools, delegate to subagents, write files, and work over long horizons. Managed Deep Agents packages the operational layer around that harness, so you can focus on the agent's behavior instead of running custom runtime infrastructure.
+The recommended workflow is:
 
-For route-level details, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api).
+1. Create or edit a local Managed Deep Agents project.
+2. Keep or adjust the LangSmith sandbox backend for the agent.
+3. Connect MCP tools when the agent needs external capabilities.
+4. Deploy the project to Managed Deep Agents.
+5. Run the agent through the REST API.
+6. Inspect traces, files, tool calls, runtime state, and revisions in LangSmith.
 
-## When to use Managed Deep Agents
+## Follow the workflow
 
-Use Managed Deep Agents when you want to:
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/langsmith/managed-deep-agents-quickstart">
+    Deploy a first agent with the CLI, then run it with the REST API.
+  </Card>
+  <Card title="Connect tools" icon="plug" href="/langsmith/managed-deep-agents-mcp">
+    Register static-header or OAuth MCP servers and reference their tools from agents.
+  </Card>
+  <Card title="Deploy an agent" icon="upload" href="/langsmith/managed-deep-agents-deploy">
+    Create or update Managed Deep Agents with the CLI or REST API.
+  </Card>
+  <Card title="Run an agent" icon="player-play" href="/langsmith/managed-deep-agents-invoke">
+    Create threads and stream Managed Deep Agent runs through the REST API.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/langsmith/managed-deep-agents-cli">
+    Review all deploy commands, project files, flags, and validation rules.
+  </Card>
+  <Card title="API reference" icon="api" href="/langsmith/managed-deep-agents-api">
+    Review common REST commands and generated endpoint reference pages.
+  </Card>
+</CardGroup>
+
+## Use Managed Deep Agents
+
+Managed Deep Agents is useful when you want to:
 
 - Create and manage deep agents from local project files.
 - Run long-running agents without standing up a custom agent server.
+- Give each thread or agent isolated LangSmith sandbox resources for code execution, filesystem work, and long-running tasks.
 - Stream runs and preserve durable thread state.
 - Use a managed file tree for instructions, skills, subagents, tools, and runtime files.
 - Register workspace-level MCP servers, including OAuth MCP servers.
@@ -30,119 +60,7 @@ Use Managed Deep Agents when you want to:
     You can also deploy Deep Agents with a standard [LangSmith Deployment](/langsmith/deployment-quickstart). Use that path when you need custom application code, custom routes, advanced authentication, full Agent Server APIs, stronger isolation controls, or maximum scalability.
 </Tip>
 
-## Prerequisites
-
-Before you start, make sure you have:
-
-- Managed Deep Agents private preview access.
-- A LangSmith API key for a workspace with private preview access.
-- The beta release of `deepagents-cli`.
-
-Install or upgrade the CLI with `uv`:
-
-<Note>
-    The Managed Deep Agents deploy flow requires the beta release of `deepagents-cli`. The stable Deep Agents deploy experience remains available and unchanged while Managed Deep Agents is in private preview.
-</Note>
-
-```bash
-uv tool install --prerelease allow deepagents-cli
-```
-
-If you already installed the tool, upgrade it:
-
-```bash
-uv tool upgrade --prerelease allow deepagents-cli
-```
-
-If you were given an exact beta version, pin that version:
-
-```bash
-uv tool install --force "deepagents-cli==<version>"
-```
-
-As a fallback, you can install the CLI with `pip`:
-
-```bash
-pip install -U --pre deepagents-cli
-```
-
-Set your LangSmith API key:
-
-```bash
-export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
-```
-
-<Note>
-    If `deepagents init`, `deploy`, `agents`, or `mcp-servers` are missing or behave unexpectedly, confirm the beta is active with `deepagents --version`. A previously installed stable `deepagents` can shadow the beta release on your `PATH`.
-</Note>
-
-## Deploy with the CLI
-
-The CLI is the recommended way to deploy. It scaffolds a local project, registers any MCP servers the agent references, and deploys the project to Managed Deep Agents. To run the agent after you deploy it, use the [REST API](/langsmith/managed-deep-agents-invoke).
-
-### Create a project
-
-Create a Managed Deep Agents project:
-
-```bash
-deepagents init my-agent
-cd my-agent
-```
-
-The command scaffolds:
-
-| File or directory | Purpose |
-| --- | --- |
-| `agent.json` | Configures the managed agent name, model, backend, and optional target `agent_id`. |
-| `AGENTS.md` | Defines the agent instructions. |
-| `skills/` | Contains optional skills the agent can use. |
-| `.gitignore` | Excludes local environment files. |
-
-You can also add:
-
-| File or directory | Purpose |
-| --- | --- |
-| `subagents/` | Contains subagent definitions for delegated work. |
-| `tools.json` | Configures the MCP-backed tools the agent can call. Required if the agent uses MCP tools. |
-
-The generated `agent.json` uses the readable local CLI shape:
-
-```json
-{
-  "name": "my-agent",
-  "description": "A managed deep agent.",
-  "model": "anthropic:claude-sonnet-4-6",
-  "backend": {
-    "type": "thread_scoped_sandbox"
-  }
-}
-```
-
-Edit `AGENTS.md` to define the agent's behavior. Add skills or subagents if your agent needs extra procedures or delegated workers.
-
-If your agent calls MCP tools, [register the MCP server](/langsmith/managed-deep-agents-mcp) once for the workspace, then add a `tools.json` that references it by URL before you deploy.
-
-### Deploy the agent
-
-Deploy the local project:
-
-```bash
-deepagents deploy
-```
-
-The first deploy creates a Managed Deep Agent through `/v1/deepagents/agents`. Later deploys update the same remote agent by using user-local deploy state, not hidden state committed to the repository.
-
-On success, the CLI prints the agent name, ID, short revision, the agent URL, and a post-deploy MCP health check:
-
-```text
-Deployed: my-agent
-  agent_id: e2de7a35-9dda-462b-b982-9e57051993bc
-  revision: 13ac11f1
-  https://smith.langchain.com/o/-/agents/e2de7a35-9dda-462b-b982-9e57051993bc
-  health:   {'agent_id': '...', 'mcp_check': {'ok': True, 'servers': [{'url': 'https://example.com/mcp', 'ok': True}]}, ...}
-```
-
-A `mcp_check.ok` of `True` confirms the agent can reach the MCP servers its tools reference. Each deploy creates a new agent revision, even when no managed files changed, because deploy always sends a metadata update. The managed file tree itself only changes when its contents do.
+## Understand created resources
 
 Creating a Managed Deep Agent creates:
 
@@ -152,62 +70,29 @@ Creating a Managed Deep Agent creates:
 
 It does not create a LangSmith Deployment.
 
-### Update a shared agent
+Managed Deep Agent runs are traced in the separate tracing project created for the agent. Open traces in LangSmith to inspect user inputs, final responses, model calls, tool calls, subagent activity, files, and runtime state created during the run.
 
-For shared repositories or intentional updates to an existing Managed Deep Agent, declare the target visibly in `agent.json`:
+The Context Hub agent repo stores the managed file tree for the agent, including instructions, skills, subagents, and tool configuration.
+
+## Understand LangSmith sandboxes
+
+Managed Deep Agents projects generated by the CLI use a [LangSmith sandbox](/langsmith/sandboxes) backend by default:
 
 ```json
 {
-  "name": "my-agent",
-  "agent_id": "agent-uuid",
-  "model": "anthropic:claude-sonnet-4-6",
   "backend": {
     "type": "thread_scoped_sandbox"
   }
 }
 ```
 
-Then deploy:
+LangSmith sandboxes are isolated environments for operations such as running code and interacting with a filesystem without affecting your main infrastructure. In Managed Deep Agents, they give agents a managed runtime for long-running work while LangSmith handles the underlying sandbox lifecycle.
 
-```bash
-deepagents deploy
-```
+Use `thread_scoped_sandbox` for the default workflow. It scopes sandbox resources to a thread, so long-running work can use a LangSmith sandbox while preserving thread-level execution state.
 
-On first use, the CLI asks you to confirm before updating that remote agent. To skip this, pass `--yes`:
+Use `agent_scoped_sandbox` when the sandbox should be scoped to the agent instead of an individual thread. Use `default` when the agent should not use sandbox-specific backend behavior.
 
-```bash
-deepagents deploy --yes
-```
-
-For all commands, flags, and supported project files, see the [Managed Deep Agents CLI reference](/langsmith/managed-deep-agents-cli).
-
-## Next steps
-
-<CardGroup cols={2}>
-  <Card title="CLI reference" icon="terminal" href="/langsmith/managed-deep-agents-cli">
-    Review all deploy commands, project files, flags, and validation rules.
-  </Card>
-  <Card title="MCP servers" icon="plug" href="/langsmith/managed-deep-agents-mcp">
-    Register static-header or OAuth MCP servers and reference their tools from agents.
-  </Card>
-  <Card title="Run agents" icon="player-play" href="/langsmith/managed-deep-agents-invoke">
-    Create threads and stream Managed Deep Agent runs with the REST API.
-  </Card>
-  <Card title="API reference" icon="api" href="/langsmith/managed-deep-agents-api">
-    Browse the generated REST API reference for Managed Deep Agents.
-  </Card>
-</CardGroup>
-
-## Inspect the result in LangSmith
-
-Managed Deep Agents runs are traced in the separate tracing project created for the agent. Open traces in LangSmith to inspect:
-
-- User inputs and final responses.
-- Model calls and tool calls.
-- Subagent activity.
-- Files and runtime state created during the run.
-
-The Context Hub agent repo stores the managed file tree for the agent, including instructions, skills, subagents, and tool configuration.
+For standalone sandbox concepts, see the [LangSmith sandboxes overview](/langsmith/sandboxes). For Managed Deep Agents configuration fields and validation rules, see [Deploy an agent](/langsmith/managed-deep-agents-deploy#choose-a-backend) and the [CLI reference](/langsmith/managed-deep-agents-cli#agentjson).
 
 ## Limits and notes
 
@@ -221,7 +106,7 @@ Managed Deep Agents deploy is available through the beta CLI release during priv
 
 Pass model identifiers in the form `{provider}:{model_id}`. For example, `anthropic:claude-sonnet-4-6`. The runtime resolves models with @[`init_chat_model`], so any provider that `init_chat_model` supports is usable from Managed Deep Agents. See [Supported providers and models](/oss/langchain/models#supported-providers-and-models) for the current list.
 
-Values without a colon are interpreted as references to a saved Playground configuration rather than as model identifiers, so always supply the full `{provider}:{model_id}` form when configuring a model directly.
+Values without a colon are interpreted as references to a saved Playground configuration rather than as model identifiers. Always supply the full `{provider}:{model_id}` form when configuring a model directly.
 
 ### Thread retention
 
@@ -233,9 +118,9 @@ The Managed Deep Agents endpoints do not enforce per-key, per-workspace, or per-
 
 ### Agent limits
 
-Free LangSmith workspaces are limited to **one** Managed Deep Agent. Paid LangSmith plans can create unlimited agents. When a free workspace is already at its limit, `deepagents deploy` and `POST /v1/deepagents/agents` fail with `HTTP 409` and a message to delete the existing agent or upgrade your plan.
+Free LangSmith workspaces are limited to one Managed Deep Agent. Paid LangSmith plans can create unlimited agents. When a free workspace is already at its limit, `deepagents deploy` and `POST /v1/deepagents/agents` fail with `HTTP 409` and a message to delete the existing agent or upgrade your plan.
 
-### Deleting agents
+### Delete agents
 
 `DELETE /agents/{agent_id}` does not cascade to threads. Threads created against a deleted agent remain queryable but cannot start new runs. Track and delete threads explicitly when you want to clean them up.
 
