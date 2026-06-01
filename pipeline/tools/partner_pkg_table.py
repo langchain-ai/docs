@@ -65,6 +65,65 @@ def _get_type(package: dict) -> str:
     return "third-party"
 
 
+def _is_integration(p: dict) -> bool:
+    return p.get("integration", True) not in (False, "false", "False")
+
+
+def pypi_url(package_name: str) -> str:
+    return f"https://pypi.org/project/{package_name}/"
+
+
+def reference_url(p: dict) -> str | None:
+    if p["type"] not in ("monorepo", "langchain-org") and not p.get(
+        "has_reference_docs"
+    ):
+        return None
+
+    if not _is_integration(p):
+        return f"https://reference.langchain.com/python/{p['name']}/"
+
+    ref_doc_name = p["name"].replace("-", "_")
+    return f"https://reference.langchain.com/python/integrations/{ref_doc_name}/"
+
+
+def package_url(p: dict) -> str:
+    return reference_url(p) or pypi_url(p["name"])
+
+
+def npm_url(p: dict) -> str | None:
+    js_package = p.get("js")
+    if js_package and js_package != "n/a":
+        return f"https://www.npmjs.com/package/{js_package}"
+    return None
+
+
+def downloads_badge(package_name: str) -> str:
+    url = pypi_url(package_name)
+    img = f"https://static.pepy.tech/badge/{package_name}/month"
+    return (
+        f'<a href="{url}" target="_blank"><img src="{img}" '
+        'alt="Downloads per month" noZoom class="rounded not-prose" /></a>'
+    )
+
+
+def version_badge(package_name: str) -> str:
+    url = pypi_url(package_name)
+    img = f"https://img.shields.io/pypi/v/{package_name}?style=flat-square&label=%20"
+    return (
+        f'<a href="{url}" target="_blank"><img src="{img}" '
+        'alt="PyPI - Latest version" noZoom class="rounded not-prose" /></a>'
+    )
+
+
+def js_support(p: dict) -> str:
+    js_value = p.get("js")
+    if url := npm_url(p):
+        return f"[✅]({url})"
+    if js_value == "n/a":
+        return "N/A"
+    return "❌"
+
+
 def _enrich_package(p: dict) -> dict | None:
     """Enrich package metadata with additional fields.
 
@@ -114,25 +173,14 @@ def _enrich_package(p: dict) -> dict | None:
         )
         raise ValueError(msg)
 
-    # Handling for package URLs
-    ref_doc_name = p["name"].replace("-", "_")
-
-    if p.get("has_reference_docs") and p.get("integration") == "false":
+    if p.get("has_reference_docs") and not _is_integration(p):
         msg = (
             f"{p['name']}: has_reference_docs=true and integration=false "
             "is not a supported combination"
         )
         raise ValueError(msg)
 
-    if p["type"] in ("monorepo", "langchain-org") or p.get("has_reference_docs"):
-        if p.get("integration") == "false":
-            p["package_url"] = f"https://reference.langchain.com/python/{p['name']}/"
-        else:
-            p["package_url"] = (
-                f"https://reference.langchain.com/python/integrations/{ref_doc_name}/"
-            )
-    else:
-        p["package_url"] = f"https://pypi.org/project/{p['name']}/"
+    p["package_url"] = package_url(p)
 
     return p
 
@@ -160,22 +208,16 @@ PACKAGES_SORTED = PACKAGES_SORTED[:50]
 
 def package_row(p: dict) -> str:
     """Generate a markdown table row for a package."""
-    js_value = p.get("js")
-    if js_value and js_value != "n/a":
-        js = f"[✅](https://www.npmjs.com/package/{js_value})"
-    elif js_value == "n/a":
-        js = "N/A"
-    else:
-        js = "❌"
     link = p["provider_page"]
     title = p["name_title"]
     provider = f"[{title}]({link})" if link else title
+    package_name = p["name"]
     return (
         f"| {provider} "
-        f"| [`{p['name']}`]({p['package_url']}) "
-        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://static.pepy.tech/badge/{p["name"]}/month" alt="Downloads per month" noZoom class="rounded not-prose" /></a> '  # noqa: E501
-        f'| <a href="https://pypi.org/project/{p["name"]}/" target="_blank"><img src="https://img.shields.io/pypi/v/{p["name"]}?style=flat-square&label=%20" alt="PyPI - Latest version" noZoom class="rounded not-prose" /></a> '  # noqa: E501
-        f"| {js} |"
+        f"| [`{package_name}`]({p['package_url']}) "
+        f"| {downloads_badge(package_name)} "
+        f"| {version_badge(package_name)} "
+        f"| {js_support(p)} |"
     )
 
 

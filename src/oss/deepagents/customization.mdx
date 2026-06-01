@@ -78,6 +78,7 @@ agent = create_deep_agent(
 | [`middleware=`](#middleware) | Extra middleware to add to the stack |
 | [`interrupt_on=`](#human-in-the-loop) | Pause before tool calls for human approval |
 | [`response_format=`](#structured-output) | Structured output schema |
+| [`state_schema=`](/oss/deepagents/context-engineering#custom-state-schema) | Custom graph state schema |
 | [profiles](#profiles) | Per-model defaults as a reusable bundle |
 
 <Accordion title="Full function signature">
@@ -119,6 +120,12 @@ const agent = await createDeepAgent({
 
 For the full parameter list, see the [`createDeepAgent`](https://reference.langchain.com/javascript/deepagents/types/CreateDeepAgentParams) API reference. To compose a fully custom harness from scratch, see [Configure the harness](/oss/langchain/agents#configure-the-harness).
 :::
+
+<Tip>
+As you add tools, subagents, and backends, use [LangSmith](https://smith.langchain.com) to trace how each piece behaves together. Follow the [observability quickstart](/langsmith/observability-quickstart) to get set up, and see [Going to production](/oss/deepagents/going-to-production) for deployment on LangSmith.
+
+We recommend you also set up [LangSmith Engine](/langsmith/engine), which monitors your traces, detects issues, and proposes fixes.
+</Tip>
 
 ## Model
 
@@ -298,7 +305,7 @@ agent = create_deep_agent(
 
 <AccordionGroup>
     <Accordion title="Subagent prompts">
-        The same overlay rules apply to declarative [subagents](/oss/deepagents/subagents)—each subagent re-runs profile resolution against **its own model**, then applies the resolved profile's `base_system_prompt` / `system_prompt_suffix` to its authored `system_prompt`. The subagent's `system_prompt` plays the `BASE` role; `CUSTOM` and `SUFFIX` come from the profile that matches the subagent's model (which may differ from the main agent's profile).
+        The [prompt assembly](#prompt-assembly) overlay rules also apply to declarative [subagents](/oss/deepagents/subagents): each subagent re-runs profile resolution against **its own model**, then applies the resolved profile's `base_system_prompt` / `system_prompt_suffix` to its authored `system_prompt`. The subagent's `system_prompt` plays the `BASE` role; `CUSTOM` and `SUFFIX` come from the profile that matches the subagent's model (which may differ from the main agent's profile).
 
         | `spec["system_prompt"]` | profile `base_system_prompt` (`CUSTOM`) | profile `system_prompt_suffix` (`SUFFIX`) | Final subagent system prompt |
         | ----------------------- | :-------------------------------------: | :---------------------------------------: | ---------------------------- |
@@ -307,12 +314,12 @@ agent = create_deep_agent(
         | authored                |                    ✓                    |                     -                     | `CUSTOM`                     |
         | authored                |                    ✓                    |                     ✓                     | `CUSTOM` + `SUFFIX`          |
 
-        There is no `USER` segment for subagents—the spec's authored `system_prompt` is the closest analog and stays in the `BASE` slot. A profile that ships only a `system_prompt_suffix` (the common case for built-in Anthropic / OpenAI profiles) just appends to whatever the subagent author wrote; a profile that sets `base_system_prompt` will *replace* the authored prompt outright, so reach for that field deliberately.
+        There is no `USER` segment for subagents. The spec's authored `system_prompt` is the closest analog and stays in the `BASE` slot. A profile that ships only a `system_prompt_suffix` (the common case for built-in Anthropic / OpenAI profiles) just appends to whatever the subagent author wrote. A profile that sets `base_system_prompt` will *replace* the authored prompt outright.
     </Accordion>
     <Accordion title="General-purpose subagent prompt">
-        The auto-added [general-purpose subagent](/oss/deepagents/subagents#the-general-purpose-subagent) follows the same overlay rules with one extra layer: the GP base prompt is resolved as **`general_purpose_subagent.system_prompt` (if set) -> `HarnessProfile.base_system_prompt` (if set) -> SDK GP default**. The profile suffix layers on top either way.
+        The auto-added [general-purpose subagent](/oss/deepagents/subagents#the-general-purpose-subagent) follows the [prompt assembly](#prompt-assembly) overlay rules with one extra layer: the GP base prompt is resolved as **`general_purpose_subagent.system_prompt` (if set) -> `HarnessProfile.base_system_prompt` (if set) -> SDK general-purpose default**. The profile suffix layers on top either way.
 
-        The two override fields can both carry a base-prompt replacement, but they are not interchangeable. `general_purpose_subagent.system_prompt` is GP-specific configuration; `base_system_prompt` is a global override that primarily targets the main agent. When both are set, the **GP-specific intent wins for the GP subagent** so a user tuning both fields never sees their GP override silently dropped:
+        The two override fields can both carry a base-prompt replacement, but they are not interchangeable. `general_purpose_subagent.system_prompt` is general-purpose-specific configuration; `base_system_prompt` is a global override that primarily targets the main agent. When both are set, the **general-purpose-specific intent wins for the general-purpose subagent** so a user tuning both fields never sees their GP override silently dropped:
 
         ```python
         register_harness_profile(
@@ -332,28 +339,98 @@ agent = create_deep_agent(
         | Main agent | `"You are ACME's support orchestrator." + SUFFIX` |
         | GP subagent | `"You are a research subagent. Cite sources." + SUFFIX` |
 
-        If `general_purpose_subagent.system_prompt` is unset, the GP subagent falls back to `base_system_prompt` (when set) and finally to the SDK GP default.
+        If `general_purpose_subagent.system_prompt` is unset, the GP subagent falls back to `base_system_prompt` (when set) and finally to the SDK general-purpose default.
     </Accordion>
 </AccordionGroup>
 
 ## Middleware
 
-Deep Agents support any [middleware](/oss/langchain/middleware/overview), including the built-in middleware listed below, prebuilt middleware from LangChain, provider-specific middleware, and custom middleware you write yourself. Pass middleware to the `middleware` argument of `create_deep_agent`.
+Deep Agents support any [middleware](/oss/langchain/middleware/overview), including the built-in middleware listed below, prebuilt middleware from LangChain, provider-specific middleware, and custom middleware you write yourself.
+
+:::python
+Pass middleware to the `middleware` argument of `create_deep_agent`.
+:::
+
+:::js
+Pass middleware to the `middleware` argument of `createDeepAgent`.
+:::
 
 By default, Deep Agents have access to the following middleware:
 
-- @[`TodoListMiddleware`]: Tracks and manages todo lists for organizing agent tasks and work
-- @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories
-- @[`SubAgentMiddleware`]: Spawns and coordinates subagents for delegating tasks to specialized agents
-- @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long
-- @[`AnthropicPromptCachingMiddleware`]: Automatic reduction of redundant token processing when using Anthropic models
-- @[`PatchToolCallsMiddleware`]: Automatic message history fixes when tool calls are interrupted or cancelled before receiving results
+### Default stack (main agent)
 
-If you are using memory, skills, or human-in-the-loop, the following middleware is also included:
+From first to last:
 
-- @[`MemoryMiddleware`]: Persists and retrieves conversation context across sessions when the `memory` argument is provided
-- @[`SkillsMiddleware`]: Enables custom skills when the `skills` argument is provided
-- `HumanInTheLoopMiddleware`: Pauses for human approval or input at specified points when the `interruptOn` argument is provided
+:::python
+
+1. @[`TodoListMiddleware`]: Tracks and manages todo lists for organizing agent tasks and work.
+2. @[`SkillsMiddleware`]: Only when you pass `skills`. Injected **immediately after** the todo middleware and **before** filesystem middleware so skill metadata is available before file tools run.
+3. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories. When you pass `permissions`, filesystem permissions enforcement is included here so it can evaluate every tool the agent might call.
+4. @[`SubAgentMiddleware`]: Spawns and coordinates subagents for delegating tasks to specialized agents.
+5. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[create_summarization_middleware]).
+6. @[`PatchToolCallsMiddleware`]: Automatic message history fixes when tool calls are interrupted or cancelled before receiving results. Runs **before** Anthropic prompt caching and the tail stack below.
+7. @[`AsyncSubAgentMiddleware`]: Only when you configure async subagents.
+8. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is appended here (after Patch, before the tail stack).
+9. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
+10. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
+11. @[`AnthropicPromptCachingMiddleware`]: Always registered; it no-ops on non-Anthropic models (`unsupported_model_behavior="ignore"`). Runs **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
+12. @[`MemoryMiddleware`]: Only when you pass `memory`.
+
+    <Note>
+    `MemoryMiddleware` is placed **after** profile extras and Anthropic prompt caching so updates to injected memory are less likely to invalidate the Anthropic cache prefix. The same ordering concern is called out in the `create_deep_agent` implementation comments.
+    </Note>
+
+13. `HumanInTheLoopMiddleware`: Only when you pass `interrupt_on`. Pauses for human approval or input at configured tool calls.
+
+:::
+
+:::js
+
+1. @[`TodoListMiddleware`]: Tracks and manages todo lists for organizing agent tasks and work.
+2. @[`SkillsMiddleware`]: Only when you pass `skills`. Injected **immediately after** the todo middleware and **before** filesystem middleware so skill metadata is available before file tools run.
+3. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories. When you pass `permissions`, filesystem permissions enforcement is included here so it can evaluate every tool the agent might call.
+4. @[`SubAgentMiddleware`]: Spawns and coordinates subagents for delegating tasks to specialized agents.
+5. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[createSummarizationMiddleware]).
+6. @[`PatchToolCallsMiddleware`]: Automatic message history fixes when tool calls are interrupted or cancelled before receiving results. Runs **before** Anthropic prompt caching and the tail stack below.
+7. @[`AsyncSubAgentMiddleware`]: Only when you configure async subagents.
+8. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is appended here (after Patch, before the tail stack).
+9. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
+tools from the agent.
+10. @[`AnthropicPromptCachingMiddleware`]: Automatically added when you are using an Anthropic mode. Runs **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
+11. @[`MemoryMiddleware`]: Only when you pass `memory`.
+
+    <Note>
+    `MemoryMiddleware` is placed **after** profile extras and Anthropic prompt caching so updates to injected memory are less likely to invalidate the Anthropic cache prefix. The same ordering concern is called out in the `createDeepAgent` implementation comments.
+    </Note>
+
+12. `HumanInTheLoopMiddleware`: Only when you pass `interruptOn`. Pauses for human approval or input at configured tool calls.
+13. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those ```
+
+:::
+
+### Default stack (synchronous subagents)
+
+:::python
+
+The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `create_deep_agent` builds in code. It matches the main agent in broad shape (todo list, filesystem, summarization, Patch, profile extras, Anthropic caching, optional permissions) but differs in two ways:
+
+- **Skills run after** @[`PatchToolCallsMiddleware`] on these inner agents (on the main agent, skills run **before** filesystem middleware when `skills` is set).
+- There is **no** @[`SubAgentMiddleware`] inside a subagent graph (only the parent agent exposes the `task` tool).
+
+When a declarative subagent sets `interrupt_on`, that value is forwarded to `create_agent` for the subagent, which wires up human-in-the-loop handling for the configured tool calls.
+
+:::
+
+:::js
+
+The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `createDeepAgent` builds in code. It matches the main agent in broad shape (todo list, filesystem, summarization, Patch, profile extras, Anthropic caching, optional permissions) but differs in two ways:
+
+- **Skills run after** @[`PatchToolCallsMiddleware`] on these inner agents (on the main agent, skills run **before** filesystem middleware when `skills` is set).
+- There is **no** @[`SubAgentMiddleware`] inside a subagent graph (only the parent agent exposes the `task` tool).
+
+When a declarative subagent sets `interruptOn`, that value is forwarded to `createAgent` for the subagent, which wires up human-in-the-loop handling for the configured tool calls.
+
+:::
 
 ### Prebuilt middleware
 
@@ -415,12 +492,13 @@ Do **not** do this:
 
 :::python
 Mutation in place, such as modifying `self.x` in `before_agent` or changing other shared values in hooks, can lead to subtle bugs and race conditions because many operations run concurrently (subagents, parallel tools, and parallel invocations on different threads).
+
+For full details on extending state with custom properties, see [Custom middleware - Custom state schema](/oss/langchain/middleware/custom#custom-state-schema).
 :::
 :::js
 Mutation in place, such as modifying `state.x` in `beforeAgent`, mutating a shared variable in `beforeAgent`, or changing other shared values in hooks, can lead to subtle bugs and race conditions because many operations run concurrently (subagents, parallel tools, and parallel invocations on different threads).
 :::
 
-For full details on extending state with custom properties, see [Custom middleware - Custom state schema](/oss/langchain/middleware/custom#custom-state-schema).
 If you must use mutation in custom middleware, consider what happens when subagents, parallel tools, or concurrent agent invocations run at the same time.
 </Warning>
 
@@ -618,7 +696,6 @@ You can pass one or more file paths to the `memory` parameter when creating your
 :::python
 
 <Tabs>
-<<<<<<< HEAD
     <Tab title="StateBackend">
         <CustomizationMemoryStatePy />
     </Tab>
@@ -628,119 +705,6 @@ You can pass one or more file paths to the `memory` parameter when creating your
     <Tab title="FilesystemBackend">
         <CustomizationMemoryFilesystemPy />
     </Tab>
-=======
-  <Tab title="StateBackend">
-    ```python
-    from urllib.request import urlopen
-
-    from deepagents import create_deep_agent
-    from deepagents.backends.utils import create_file_data
-    from langgraph.checkpoint.memory import MemorySaver
-
-    with urlopen("https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/examples/text-to-sql-agent/AGENTS.md") as response:
-        agents_md = response.read().decode("utf-8")
-    checkpointer = MemorySaver()
-
-    agent = create_deep_agent(
-        memory=[
-            "/AGENTS.md"
-        ],
-        checkpointer=checkpointer,
-    )
-
-    result = agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Please tell me what's in your memory files.",
-                }
-            ],
-            # Seed the default StateBackend's in-state filesystem (virtual paths must start with "/").
-            "files": {"/AGENTS.md": create_file_data(agents_md)},
-        },
-        config={"configurable": {"thread_id": "123456"}},
-    )
-    ```
-  </Tab>
-  <Tab title="StoreBackend">
-    ```python
-    from urllib.request import urlopen
-
-    from deepagents import create_deep_agent
-    from deepagents.backends import StoreBackend
-    from deepagents.backends.utils import create_file_data
-    from langgraph.store.memory import InMemoryStore
-
-    with urlopen("https://raw.githubusercontent.com/langchain-ai/deepagents/refs/heads/main/examples/text-to-sql-agent/AGENTS.md") as response:
-        agents_md = response.read().decode("utf-8")
-
-    # Create the store and add the file to it
-    store = InMemoryStore()
-    file_data = create_file_data(agents_md)
-    store.put(
-        namespace=("filesystem",),
-        key="/AGENTS.md",
-        value=file_data
-    )
-
-    agent = create_deep_agent(
-        backend=(lambda rt: StoreBackend(rt)),
-        store=store,
-        memory=[
-            "/AGENTS.md"
-        ]
-    )
-
-    result = agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Please tell me what's in your memory files.",
-                }
-            ],
-        },
-        config={"configurable": {"thread_id": "12345"}},
-    )
-    ```
-  </Tab>
-  <Tab title="FilesystemBackend">
-    ```python
-    from deepagents import create_deep_agent
-    from langgraph.checkpoint.memory import MemorySaver
-    from deepagents.backends import FilesystemBackend
-
-    # Checkpointer is REQUIRED for human-in-the-loop
-    checkpointer = MemorySaver()
-
-    agent = create_deep_agent(
-        backend=FilesystemBackend(root_dir="/Users/user/{project}"),
-        memory=[
-            "./AGENTS.md"
-        ],
-        interrupt_on={
-            "write_file": True,  # Default: approve, edit, reject
-            "read_file": False,  # No interrupts needed
-            "edit_file": True    # Default: approve, edit, reject
-        },
-        checkpointer=checkpointer,  # Required!
-    )
-
-    result = agent.invoke(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Please tell me what's in your memory files.",
-                }
-            ],
-        },
-        config={"configurable": {"thread_id": "12345"}},
-    )
-    ```
-  </Tab>
->>>>>>> 52a9f1dd4 (Improve doc for memory)
 </Tabs>
 
 :::
