@@ -128,7 +128,7 @@ Rules:
 // :snippet-start: sql-agent-create-agent-js
 import { createAgent } from "langchain";
 
-const agent = createAgent({
+let agent = createAgent({
   model: "gpt-5.4",
   tools: [executeSql],
   systemPrompt: await getSystemPrompt(),
@@ -136,12 +136,12 @@ const agent = createAgent({
 // :snippet-end:
 
 // :snippet-start: sql-agent-run-agent-js
-const question = "Which genre, on average, has the longest tracks?";
-const stream = await agent.stream(
+let question = "Which genre, on average, has the longest tracks?";
+
+for await (const step of await agent.stream(
   { messages: [{ role: "user", content: question }] },
   { streamMode: "values" },
-);
-for await (const step of stream) {
+)) {
   const message = step.messages.at(-1);
   console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
 }
@@ -151,7 +151,7 @@ for await (const step of stream) {
 import { createAgent, humanInTheLoopMiddleware } from "langchain"; // [!code highlight]
 import { MemorySaver } from "@langchain/langgraph"; // [!code highlight]
 
-const agent = createAgent({
+agent = createAgent({
   model: "gpt-5.4",
   tools: [executeSql],
   systemPrompt: await getSystemPrompt(),
@@ -170,14 +170,13 @@ const agent = createAgent({
 // :snippet-end:
 
 // :snippet-start: sql-agent-hitl-run-js
-const question = "Which genre, on average, has the longest tracks?";
+question = "Which genre, on average, has the longest tracks?";
 const config = { configurable: { thread_id: "1" } }; // [!code highlight]
 
-const stream = await agent.stream(
+for await (const step of await agent.stream(
   { messages: [{ role: "user", content: question }] },
   { ...config, streamMode: "values" }, // [!code highlight]
-);
-for await (const step of stream) {
+)) {
   if ("__interrupt__" in step) {
     // [!code highlight]
     console.log("INTERRUPTED:"); // [!code highlight]
@@ -198,31 +197,23 @@ for await (const step of stream) {
 // :snippet-start: sql-agent-hitl-resume-js
 import { Command } from "@langchain/langgraph"; // [!code highlight]
 
-// :remove-start:
-if (false) {
-  // :remove-end:
-  for await (const step of await agent.stream(
-    new Command({ resume: { decisions: [{ type: "approve" }] } }), // [!code highlight]
-    { ...config, streamMode: "values" },
-  )) {
-    if (step.messages) {
-      const message = step.messages.at(-1);
-      console.log(
-        `${message.role}: ${JSON.stringify(message.content, null, 2)}`,
-      );
-    }
-    if ("__interrupt__" in step) {
-      console.log("INTERRUPTED:");
-      for (const interrupt of step.__interrupt__) {
-        for (const request of interrupt.value.actionRequests) {
-          console.log(request.description);
-        }
+for await (const step of await agent.stream(
+  new Command({ resume: { decisions: [{ type: "approve" }] } }), // [!code highlight]
+  { ...config, streamMode: "values" },
+)) {
+  if (step.messages) {
+    const message = step.messages.at(-1);
+    console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
+  }
+  if ("__interrupt__" in step) {
+    console.log("INTERRUPTED:");
+    for (const interrupt of step.__interrupt__) {
+      for (const request of interrupt.value.actionRequests) {
+        console.log(request.description);
       }
     }
   }
-  // :remove-start:
 }
-// :remove-end:
 // :snippet-end:
 
 // :remove-start:
