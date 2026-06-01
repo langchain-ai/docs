@@ -147,6 +147,13 @@ LINK_MAPS: list[LinkMap] = [
             # langchain-openrouter
             "langchain-openrouter": "integrations/langchain_openrouter",
             "ChatOpenRouter": "integrations/langchain_openrouter",
+            # langchain-litellm
+            "langchain-litellm": "langchain-litellm/",
+            "ChatLiteLLM": "langchain-litellm/chat_models/litellm/ChatLiteLLM",
+            "ChatLiteLLMRouter": "langchain-litellm/chat_models/litellm_router/ChatLiteLLMRouter",
+            "LiteLLMEmbeddings": "langchain-litellm/embeddings/litellm/LiteLLMEmbeddings",
+            "LiteLLMEmbeddingsRouter": "langchain-litellm/embeddings/litellm_router/LiteLLMEmbeddingsRouter",
+            "LiteLLMOCRLoader": "langchain-litellm/document_loaders/litellm_ocr/LiteLLMOCRLoader",
             # langchain-anthropic
             "langchain-anthropic": "langchain-anthropic/",
             "ChatAnthropic": "langchain-anthropic/chat_models/ChatAnthropic",
