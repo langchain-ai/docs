@@ -680,6 +680,32 @@ authProxy:
       - ".internal.corp"
 ```
 
+### Deploy without a public ingress
+
+When the auth proxy does not have a public ingress and is only reachable through internal Kubernetes networking, LangSmith services must be configured to allow outbound requests to private IP addresses. Without these settings, the built-in SSRF protection blocks requests to private IPs.
+
+Add the following environment variables to your [LangSmith `values.yaml`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml):
+
+- **`SSRF_ALLOW_K8S_INTERNAL`** — required on all services that make LLM calls. Add this to `commonEnv` for services that support it or to each service's `extraEnv` for services that do not support `commonEnv`.
+- **`SSRF_ALLOW_PRIVATE_IPS_PLAYGROUND`** — required on the `playground` service only. Add this to `playground.deployment.extraEnv`.
+
+```yaml
+# Allow all LLM-calling services to reach the auth proxy on private IPs
+commonEnv:
+  SSRF_ALLOW_K8S_INTERNAL: "true"
+
+# Allow the playground service to reach the auth proxy on private IPs
+playground:
+  deployment:
+    extraEnv:
+      - name: SSRF_ALLOW_K8S_INTERNAL
+        value: "true"
+      - name: SSRF_ALLOW_PRIVATE_IPS_PLAYGROUND
+        value: "true"
+```
+
+If `commonEnv` does not apply to all required services in your deployment, set `SSRF_ALLOW_K8S_INTERNAL` individually via `extraEnv` on each service that makes LLM calls.
+
 ### Other options
 
 For ingress, autoscaling, resource limits, and other configuration options, see the [Helm chart README](https://github.com/langchain-ai/helm/tree/main/charts/langsmith-auth-proxy#readme).
@@ -774,6 +800,10 @@ Yes. Multiple organizations can point to the same auth proxy instance via their 
 <Accordion title="Can the LangSmith to auth proxy connection use HTTP instead of HTTPS?">
 Yes, but only in self-hosted, and we generally recommend placing the auth proxy behind a dedicated ingress so communication uses HTTPS. To allow HTTP, add `LLM_AUTH_PROXY_ACCEPT_HTTP` to `commonEnv` and `playground.deployment.extraEnv` in your [LangSmith `values.yaml`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml).
 To enable HTTP traffic to the auth proxy for [Polly and Insights](/langsmith/deploy-self-hosted-full-platform#enable-fleet-insights-and-polly), set this environment variable in the respective `extraEnv` sections: `config.polly.agent.extraEnv` and `config.insights.agent.extraEnv`.
+</Accordion>
+
+<Accordion title="Does the auth proxy work without a public ingress?">
+Yes. When the auth proxy is only reachable through internal Kubernetes networking (no public ingress), add `SSRF_ALLOW_K8S_INTERNAL` to all services that make LLM calls and both `SSRF_ALLOW_K8S_INTERNAL` and `SSRF_ALLOW_PRIVATE_IPS_PLAYGROUND` to the `playground` service. See [Deploy without a public ingress](#deploy-without-a-public-ingress) for configuration details.
 </Accordion>
 
 ## Helm chart reference

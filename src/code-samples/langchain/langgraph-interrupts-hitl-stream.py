@@ -7,19 +7,27 @@ from langgraph.types import Command, interrupt
 
 
 class StreamState(TypedDict):
+    step: int
     done: bool
 
 
-def stream_node(state: StreamState):
-    interrupt("wait for user")
+def first_interrupt(state: StreamState):
+    interrupt("first question")
+    return {"step": 1}
+
+
+def second_interrupt(state: StreamState):
+    interrupt("second question")
     return {"done": True}
 
 
 graph = (
     StateGraph(StreamState)
-    .add_node("n", stream_node)
-    .add_edge(START, "n")
-    .add_edge("n", END)
+    .add_node("first", first_interrupt)
+    .add_node("second", second_interrupt)
+    .add_edge(START, "first")
+    .add_edge("first", "second")
+    .add_edge("second", END)
     .compile(checkpointer=InMemorySaver())
 )
 
@@ -36,43 +44,42 @@ def get_user_input(interrupt_info: object) -> str:
 # :remove-end:
 
 # :snippet-start: langgraph-interrupts-hitl-stream-py
-from langchain.messages import AIMessageChunk
 from langgraph.types import Command
 
-for chunk in graph.stream(
-    initial_input,
-    stream_mode=["messages", "updates", "values"],
-    subgraphs=True,
-    config=config,
-    version="v2",
-):
-    if chunk["type"] == "messages":
-        msg, _ = chunk["data"]
-        if isinstance(msg, AIMessageChunk) and msg.content:
-            display_streaming_content(msg.content)
+stream_input: dict | Command = initial_input
 
-    elif chunk["type"] == "values" and chunk.get("interrupts"):
-        interrupt_info = chunk["interrupts"][0].value
-        user_response = get_user_input(interrupt_info)
-        initial_input = Command(resume=user_response)
+while True:
+    stream = graph.stream_events(stream_input, config=config, version="v3")
+
+    # Stream LLM message chunks (including any in subgraphs) as they arrive.
+    for message in stream.messages:
+        for token in message.text:
+            display_streaming_content(token)
+
+    # After the run finishes (or pauses), check for interrupts and resume.
+    if not stream.interrupted:
+        final_state = stream.output
         break
 
-    elif chunk["type"] == "updates":
-        current_node = list(chunk["data"].keys())[0]
+    interrupt_info = stream.interrupts[0].value
+    user_response = get_user_input(interrupt_info)
+    stream_input = Command(resume=user_response)
 # :snippet-end:
 
 # :remove-start:
 if __name__ == "__main__":
-    saw_interrupt = False
-    for chunk in graph.stream(
-        {},
-        stream_mode=["values"],
-        config=config,
-        version="v2",
-    ):
-        if chunk["type"] == "values" and chunk.get("interrupts"):
-            saw_interrupt = True
+    test_config = {"configurable": {"thread_id": "stream-test"}}
+    stream_input: dict | Command = {}
+    resume_rounds = 0
+    while True:
+        test_stream = graph.stream_events(stream_input, config=test_config, version="v3")
+        _ = list(test_stream.messages)
+        if not test_stream.interrupted:
+            final = test_stream.output
             break
-    assert saw_interrupt
+        stream_input = Command(resume="ok")
+        resume_rounds += 1
+    assert resume_rounds == 2
+    assert final["done"]
     print("✓ langgraph-interrupts-hitl-stream")
 # :remove-end:
