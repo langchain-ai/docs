@@ -34,18 +34,19 @@ graph = (
 
 config = {"configurable": {"thread_id": "1"}}
 
-# Step 1: invoke with version="v2" to get typed GraphOutput
-# Both parallel nodes hit interrupt() and pause
-interrupted_result = graph.invoke({"vals": []}, config, version="v2")
-print(interrupted_result.interrupts)
+# Step 1: stream events to drive the run; both parallel nodes hit interrupt() and pause
+stream = graph.stream_events({"vals": []}, config, version="v3")
+_ = stream.output  # drive the stream to completion
+# stream.interrupts contains the pending Interrupt payloads
+print(stream.interrupts)
 # > (Interrupt(value='question_a', id='...'), Interrupt(value='question_b', id='...'))
 
 # Step 2: resume all pending interrupts at once
 resume_map = {
-    i.id: f"answer for {i.value}" for i in interrupted_result.interrupts
+    i.id: f"answer for {i.value}" for i in stream.interrupts
 }
-result = graph.invoke(Command(resume=resume_map), config, version="v2")
+resumed = graph.stream_events(Command(resume=resume_map), config, version="v3")
 
-print("Final state:", result.value)
+print("Final state:", resumed.output)
 # Final state: {'vals': ['a:answer for question_a', 'b:answer for question_b']}
 ```

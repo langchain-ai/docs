@@ -45,20 +45,21 @@ checkpointer = InMemorySaver()
 graph = builder.compile(checkpointer=checkpointer)
 
 config = {"configurable": {"thread_id": "approval-123"}}
-initial = graph.invoke(
+initial = graph.stream_events(
     {"action_details": "Transfer $500", "status": "pending"},
     config=config,
-    version="v2",
+    version="v3",
 )
+_ = initial.output  # drive the stream to completion
 print(initial.interrupts)  # -> (Interrupt(value={'question': ..., 'details': ...}),)
 
 # Resume with the decision; True routes to proceed, False to cancel
-resumed = graph.invoke(Command(resume=True), config=config, version="v2")
-print(resumed.value["status"])
+resumed = graph.stream_events(Command(resume=True), config=config, version="v3")
+print(resumed.output["status"])
 # :snippet-end:
 
 # :remove-start:
 if __name__ == "__main__":
-    assert resumed.value["status"] == "approved"
+    assert resumed.output["status"] == "approved"
     print("✓ langgraph-interrupts-approval")
 # :remove-end:
