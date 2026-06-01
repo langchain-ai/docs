@@ -108,8 +108,21 @@ agent = create_deep_agent(
     },
     checkpointer=checkpointer,  # Required!
 )
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Please tell me what's in your memory files.",
+            }
+        ],
+    },
+    config={"configurable": {"thread_id": "12345"}},
+)
 # :snippet-end:
 
 # :remove-start:
 assert agent is not None
+assert result is not None
 # :remove-end:
