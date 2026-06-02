@@ -204,63 +204,9 @@ Instructions for the agent go here. See the [basic skill example](#basic-skill) 
     Refer to the full [Agent Skills specification](https://agentskills.io/specification) for detailed constraints and validation rules. In Deep Agents, `SKILL.md` files must be under 10 MB. Files exceeding this limit are skipped during skill loading.
 </Warning>
 
-## Write effective skills
-
-### Write specific descriptions
-
-During [discovery](#how-skills-work), the `description` field is the only information the agent sees for each skill. A good description tells the agent both what the skill does and when to activate it, with specific keywords the agent can match against:
-
-```yaml
-# Good: specific about what and when
-description: >-
-  Extract text and tables from PDF files, fill PDF forms, and merge
-  multiple PDFs. Use when working with PDF documents or when the user
-  mentions PDFs, forms, or document extraction.
-
-# Poor: too vague for reliable matching
-description: Helps with PDFs.
-```
-
-When you have multiple skills in related domains, differentiate their descriptions clearly. Overlapping descriptions cause the agent to activate the wrong skill or hesitate between options. If two skills serve similar purposes, consolidate them into one.
-
-### Keep instructions focused
-
-The Agent Skills specification recommends keeping your `SKILL.md` under 500 lines. When instructions grow longer, move detailed reference material into separate files and reference them from the main `SKILL.md`:
-
-```plaintext
-skills/
-└── data-pipeline/
-    ├── SKILL.md
-    └── references/
-        ├── schema-reference.md
-        └── error-codes.md
-```
-
-The agent loads reference files only when the instructions call for them, keeping each layer of progressive disclosure appropriately sized. Keep file references one level deep from `SKILL.md` and avoid deeply nested reference chains, which force the agent through multiple reads to reach the information it needs.
-
-### Structure instructions for the agent
-
-Write your `SKILL.md` body as clear instructions the agent can follow:
-
-- **Step-by-step procedures** for multi-step workflows
-- **Decision criteria** for choosing between approaches
-- **Examples of expected inputs and outputs** so the agent knows what success looks like
-- **Edge cases** the agent should handle or flag to the user
-
-### Manage skill count
-
-Fewer well-scoped skills outperform many overlapping ones. As the number of skills with similar descriptions grows, the agent's ability to select the right one degrades. If you find yourself with many related skills, consider:
-
-- Consolidating related capabilities into a single skill with sections for each sub-task
-- Using reference files to keep the main `SKILL.md` concise while covering multiple sub-tasks
-
-<Tip>
-    Use the [`skills-ref` validation tool](https://github.com/agentskills/agentskills/tree/main/skills-ref) to check that your `SKILL.md` frontmatter follows the Agent Skills specification naming and format conventions.
-</Tip>
-
 ## Usage
 
-Pass the skills directory when creating your deep agent:
+Pass a list of skill directory paths when creating your agent. The backend you choose determines how skill files are stored and loaded:
 
 :::python
 <SkillsUsageTabsPy />
@@ -318,7 +264,55 @@ Pass the skills directory when creating your deep agent:
     </Accordion>
 </Note>
 
-## Source precedence
+## Build effective skills
+
+### Write effective skills
+
+**Write specific descriptions.** During [discovery](#how-skills-work), the `description` field is the only information the agent sees for each skill. A good description tells the agent both what the skill does and when to activate it, with specific keywords the agent can match against:
+
+```yaml
+# Good: specific about what and when
+description: >-
+  Extract text and tables from PDF files, fill PDF forms, and merge
+  multiple PDFs. Use when working with PDF documents or when the user
+  mentions PDFs, forms, or document extraction.
+
+# Poor: too vague for reliable matching
+description: Helps with PDFs.
+```
+
+When you have multiple skills in related domains, differentiate their descriptions clearly. Overlapping descriptions cause the agent to activate the wrong skill or hesitate between options. If two skills serve similar purposes, consolidate them into one.
+
+**Keep instructions focused.** The Agent Skills specification recommends keeping your `SKILL.md` under 500 lines. When instructions grow longer, move detailed reference material into separate files and reference them from the main `SKILL.md`:
+
+```plaintext
+skills/
+└── data-pipeline/
+    ├── SKILL.md
+    └── references/
+        ├── schema-reference.md
+        └── error-codes.md
+```
+
+The agent loads reference files only when the instructions call for them, keeping each layer of progressive disclosure appropriately sized. Keep file references one level deep from `SKILL.md` and avoid deeply nested reference chains, which force the agent through multiple reads to reach the information it needs.
+
+**Structure instructions for the agent.** Write your `SKILL.md` body as clear instructions the agent can follow:
+
+- **Step-by-step procedures** for multi-step workflows
+- **Decision criteria** for choosing between approaches
+- **Examples of expected inputs and outputs** so the agent knows what success looks like
+- **Edge cases** the agent should handle or flag to the user
+
+**Manage skill count.** Fewer well-scoped skills outperform many overlapping ones. As the number of skills with similar descriptions grows, the agent's ability to select the right one degrades. If you find yourself with many related skills, consider:
+
+- Consolidating related capabilities into a single skill with sections for each sub-task
+- Using reference files to keep the main `SKILL.md` concise while covering multiple sub-tasks
+
+<Tip>
+    Use the [`skills-ref` validation tool](https://github.com/agentskills/agentskills/tree/main/skills-ref) to check that your `SKILL.md` frontmatter follows the Agent Skills specification naming and format conventions.
+</Tip>
+
+### Source precedence
 
 When multiple skill sources contain a skill with the same name, the skill from the source listed later in the `skills` array takes precedence (last one wins). This lets you layer skills from different origins.
 
@@ -345,7 +339,7 @@ const agent = await createDeepAgent({
 ```
 :::
 
-## Skills for subagents
+### Skills for subagents
 
 When you use [subagents](/oss/deepagents/subagents), you can configure which skills each type has access to:
 
@@ -398,10 +392,10 @@ For more information on subagent configuration and skills inheritance, see [Suba
 
 Skills support code execution in two ways:
 
-- [Execute skill scripts in a sandbox](#execute-skill-scripts-in-a-sandbox) when the agent needs to install dependencies, run tests, call CLIs, or work with an operating-system filesystem.
-- [Use interpreter skills](#use-interpreter-skills) when the agent needs reusable, importable helpers available from interpreter code.
+- [Sandbox scripts](#sandbox-scripts) when the agent needs to install dependencies, run tests, call CLIs, or work with an operating-system filesystem.
+- [Interpreter skills](#interpreter-skills) when the agent needs reusable, importable helpers available from interpreter code.
 
-### Execute skill scripts in a sandbox
+### Sandbox scripts
 
 Skills can include scripts alongside the `SKILL.md` file, such as a Python file that performs a search or data transformation. The agent can _read_ these scripts from any backend, but to _execute_ them, the agent needs access to a shell, which only [sandbox backends](/oss/deepagents/sandboxes) provide.
 
@@ -423,8 +417,7 @@ The middleware's `beforeAgent` hook runs before each agent invocation, reading s
 
 For a more complete example that also syncs [memories](/oss/deepagents/memory) bidirectionally, see [syncing skills and memories with custom middleware](/oss/deepagents/going-to-production#example-syncing-skills-and-memories-with-custom-middleware).
 
-### Use interpreter skills
-
+### Interpreter skills
 
 Interpreter skills expose code modules to an [interpreter](/oss/deepagents/interpreters). Regular skills give the agent instructions and context. Interpreter skills also give the agent importable functions it can call from interpreter code.
 
@@ -543,7 +536,29 @@ const grouped = groupByStatus(orders);
 grouped;
 ```
 
-## Read-only skills from a store
+## Skills, memory, and tools
+
+Skills, [memory](/oss/deepagents/memory) (`AGENTS.md` files), and tools all provide context or capabilities to the agent. The following table summarizes when to reach for each:
+
+| | Skills | Memory | Tools |
+|---|--------|--------|-------|
+| **Purpose** | On-demand capabilities discovered through progressive disclosure | Persistent context always loaded at startup | Programmatic actions the agent can call |
+| **Loading** | Read only when the agent determines relevance | Always injected into system prompt | Available every turn |
+| **Format** | `SKILL.md` in named directories | `AGENTS.md` files | Functions bound to the agent |
+| **Layering** | User, then project (last wins) | User, then project (combined) | Defined at agent creation |
+| **Use when** | Instructions are task-specific and potentially large | Context is always relevant (project conventions, preferences) | The agent needs a programmatic action, or does not have access to the file system |
+
+These are guidelines, not hard boundaries. In practice, skills and memory sit on a spectrum. An agent can update its own skills as it works, capturing new procedures and refining instructions over time. In this way, skills can function as a form of progressive-disclosure memory: context the agent builds up and retrieves on demand rather than loading on every prompt.
+
+## Skill permissions
+
+By default, agents can write to skill files if the backend permits it. Use these mechanisms to control that behavior:
+
+- **Read-only skills**: Use [filesystem permissions](/oss/deepagents/permissions) to deny write operations under skill paths.
+- **Scoped permissions**: Allow writes to user-scoped skill paths while keeping workspace or shared skills read-only, so agents can personalize their own skills without modifying shared ones.
+- **Human-in-the-loop**: Use [`interrupt_on`](/oss/deepagents/human-in-the-loop) to require approval before the agent executes write operations, adding a review step without fully blocking writes.
+
+### Read-only skills
 
 A common production pattern is to give agents access to a curated skills library without allowing them to change it. Route `/skills/` to a shared `StoreBackend`, pass that route in `skills`, and deny write operations under `/skills/**` with [filesystem permissions](/oss/deepagents/permissions). The agent can discover and read skills, while only your application code or an admin workflow updates the store.
 
@@ -562,28 +577,6 @@ A common production pattern is to give agents access to a curated skills library
 Seed the store under the same namespace with keys like `/company-policies/SKILL.md` and values that include `content` and `encoding` fields. The `/skills/` route prefix is stripped before records are read from the store.
 
 Use this for enterprise knowledge bases, approved tool instructions, or shared skill packs where the agent should benefit from centrally managed context but should not rewrite the source of truth. If you want agents to save their own learnings, route a separate path such as `/memories/` to another backend with write permissions enabled. See [Backends](/oss/deepagents/backends) for routing and store setup.
-
-## Skills, memory, and tools
-
-Skills, [memory](/oss/deepagents/memory) (`AGENTS.md` files), and tools all provide context or capabilities to the agent. The following table summarizes when to reach for each:
-
-| | Skills | Memory | Tools |
-|---|--------|--------|-------|
-| **Purpose** | On-demand capabilities discovered through progressive disclosure | Persistent context always loaded at startup | Programmatic actions the agent can call |
-| **Loading** | Read only when the agent determines relevance | Always injected into system prompt | Available every turn |
-| **Format** | `SKILL.md` in named directories | `AGENTS.md` files | Functions bound to the agent |
-| **Layering** | User, then project (last wins) | User, then project (combined) | Defined at agent creation |
-| **Use when** | Instructions are task-specific and potentially large | Context is always relevant (project conventions, preferences) | The agent needs a programmatic action, or does not have access to the file system |
-
-These are guidelines, not hard boundaries. In practice, skills and memory sit on a spectrum. An agent can update its own skills as it works, capturing new procedures and refining instructions over time. In this way, skills can function as a form of progressive-disclosure memory: context the agent builds up and retrieves on demand rather than loading on every prompt.
-
-### Control skill updates
-
-By default, agents can write to skill files if the backend permits it. Use these mechanisms to control that behavior:
-
-- **Read-only skills**: Use [filesystem permissions](/oss/deepagents/permissions) to deny write operations under skill paths. See [read-only skills from a store](#read-only-skills-from-a-store) for a production pattern.
-- **Scoped permissions**: Allow writes to user-scoped skill paths while keeping workspace or shared skills read-only, so agents can personalize their own skills without modifying shared ones.
-- **Human-in-the-loop**: Use [`interrupt_on`](/oss/deepagents/human-in-the-loop) to require approval before the agent executes write operations, adding a review step without fully blocking writes.
 
 <Tip>
 Trace how your agent discovers and executes skills with [LangSmith](https://smith.langchain.com). Follow the [observability quickstart](/langsmith/observability-quickstart) to get set up.
