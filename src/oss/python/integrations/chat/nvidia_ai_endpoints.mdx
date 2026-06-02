@@ -93,6 +93,47 @@ result = llm.invoke("Write a ballad about LangChain.")
 print(result.content)
 ```
 
+## Enable thinking mode
+
+Some NVIDIA reasoning models support a configurable thinking mode. Enable thinking for a single request by passing `thinking_mode=True` to `invoke`:
+
+```python
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+
+model = ChatNVIDIA(model="nvidia/nemotron-3-nano-30b-a3b")
+
+response = model.invoke("Solve this step by step: 17 * 23", thinking_mode=True)
+print(response.content_blocks)
+```
+
+Use `with_thinking_mode` when you want a reusable runnable with thinking enabled:
+
+```python
+thinking_model = model.with_thinking_mode(enabled=True)
+response = thinking_model.invoke("Solve this step by step: 17 * 23")
+```
+
+To list models that are known to support thinking mode, call `get_available_models` and inspect `supports_thinking`. This queries the NVIDIA model-listing API, then filters the returned model metadata:
+
+```python
+thinking_models = [
+    model for model in ChatNVIDIA.get_available_models() if model.supports_thinking
+]
+```
+
+`ChatNVIDIA` translates `thinking_mode=True` into the control mechanism required by the selected model. Some models use request parameters, such as `chat_template_kwargs={"enable_thinking": True}`. Other models use prompt-based control, where LangChain appends a model-specific thinking prefix to the system message, or creates a system message if one is not present. If both mechanisms are configured for a model, request parameters take precedence.
+
+Do not pass `thinking_mode=True` when constructing `ChatNVIDIA`. Unknown constructor arguments become raw `model_kwargs`, which are merged directly into the API payload. The thinking-mode translation runs only for invocation kwargs or bound kwargs, so use one of these forms instead:
+
+```python
+response = model.invoke("Solve this step by step: 17 * 23", thinking_mode=True)
+```
+
+```python
+thinking_model = model.with_thinking_mode(enabled=True)
+response = thinking_model.invoke("Solve this step by step: 17 * 23")
+```
+
 ## Self-host with NVIDIA NIM Microservices
 
 When you are ready to deploy your AI application, you can self-host models with NVIDIA NIM. For more information, refer to [NVIDIA NIM Microservices](https://www.nvidia.com/en-us/ai-data-science/products/nim-microservices/).
