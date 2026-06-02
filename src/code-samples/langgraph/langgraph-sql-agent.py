@@ -271,6 +271,7 @@ pathlib.Path("graph.png").write_bytes(agent.get_graph().draw_mermaid_png())
 # :snippet-start: langgraph-sql-agent-hitl-interrupt-py
 from langchain.tools import tool
 from langgraph.types import interrupt
+from langchain_core.runnables import RunnableConfig
 
 
 @tool(
