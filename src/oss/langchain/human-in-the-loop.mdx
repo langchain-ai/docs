@@ -17,12 +17,14 @@ The [middleware](/oss/langchain/middleware/built-in#human-in-the-loop) defines f
 |---------------|---------------------------------------------------------------------------|-----------------------------------------------------|
 | ✅ `approve`   | The action is approved as-is and executed without changes.                | Send an email draft exactly as written              |
 | ✏️ `edit`     | The tool call is executed with modifications.                             | Change the recipient before sending an email        |
-| ❌ `reject`    | The tool call is rejected, with an explanation added to the conversation. | Reject an email draft and explain how to rewrite it |
+| ❌ `reject`    | The tool call is rejected, with an explanation added to the conversation. | Deny file deletion and explain why                  |
 | 💬 `respond`  | Tool execution is skipped; the human's message becomes the tool result.   | Answer an "ask_user" prompt with a direct reply     |
 
 The available decision types for each tool depend on the policy you configure in `interrupt_on`.
 When multiple tool calls are paused at the same time, each action requires a separate decision.
 Decisions must be provided in the same order as the actions appear in the interrupt request.
+
+Use `reject` when the human is denying the requested action. Use `respond` only when the human is acting as the tool, such as answering an `ask_user` prompt. Do not use `respond` to deny side-effecting tools, because its message is treated as a successful tool result.
 
 <Tip>
 When **editing** tool arguments, make changes conservatively. Significant modifications to the original arguments may cause the model to re-evaluate its approach and potentially execute the tool multiple times or take unexpected actions.
@@ -377,7 +379,7 @@ await agent.invoke(
 </Tab>
 
 <Tab title="❌ reject">
-    Use `reject` to reject the tool call and provide feedback instead of execution.
+    Use `reject` to deny the tool call and provide feedback instead of execution. The tool is not executed.
 
     :::python
     ```python
@@ -390,8 +392,9 @@ await agent.invoke(
                 "decisions": [
                     {
                         "type": "reject",
-                        # An explanation about why the action was rejected
-                        "message": "No, this is wrong because ..., instead do this ...",
+                        # Optional: explain why the action was rejected
+                        # and whether the agent should retry a different approach.
+                        "message": "User rejected this action. Do not retry this tool call.",
                     }
                 ]
             }
@@ -413,8 +416,9 @@ await agent.invoke(
                 decisions: [
                     {
                         type: "reject",
-                        // An explanation about why the action was rejected
-                        message: "No, this is wrong because ..., instead do this ...",
+                        // Optional: explain why the action was rejected
+                        // and whether the agent should retry a different approach.
+                        message: "User rejected this action. Do not retry this tool call.",
                     }
                 ]
             }
@@ -424,7 +428,7 @@ await agent.invoke(
     ```
     :::
 
-The `message` is added to the conversation as feedback to help the agent understand why the action was rejected and what it should do instead.
+The `message` is added to the conversation as feedback to help the agent understand why the action was rejected and what it should do instead. When you omit `message`, the middleware uses a default rejection message that tells the model the tool was not executed and not to retry the same tool call unless the user asks. For side-effecting tools, provide a domain-specific message that is explicit about whether the agent should abandon the action, ask a follow-up question, or try a safer alternative.
 
 </Tab>
 
@@ -476,7 +480,7 @@ The `message` is added to the conversation as feedback to help the agent underst
     ```
     :::
 
-The `message` is returned to the agent as a successful `ToolMessage`. Use `respond` when the tool is intentionally a placeholder for human input—for example, an `ask_user` tool that prompts for clarification.
+The `message` is returned to the agent as a successful `ToolMessage`. Use `respond` when the tool is intentionally a placeholder for human input, for example, an `ask_user` tool that prompts for clarification. Do not use `respond` to deny a proposed action, because it tells the model that the tool completed successfully.
 
 </Tab>
 </Tabs>

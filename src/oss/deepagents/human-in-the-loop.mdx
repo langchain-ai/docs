@@ -55,8 +55,10 @@ The `allowed_decisions` list controls what actions a human can take when reviewi
 
 - **`"approve"`**: Execute the tool with the original arguments as proposed by the agent
 - **`"edit"`**: Modify the tool arguments before execution
-- **`"reject"`**: Skip executing this tool call entirely
-- **`"respond"`**: Return the human's message directly as the tool result, skipping execution — for "ask user" style tools
+- **`"reject"`**: Skip executing this tool call entirely and return rejection feedback to the agent
+- **`"respond"`**: Return the human's message directly as the tool result, skipping execution, for "ask user" style tools
+
+Use `reject` when the human denies a proposed action. Use `respond` only when the human is acting as the tool, such as answering an `ask_user` prompt. Do not use `respond` to deny side-effecting tools, because its message is treated as a successful tool result.
 
 You can customize which decisions are available for each tool:
 
@@ -220,7 +222,10 @@ if result.interrupts:  # [!code highlight]
     # Provide decisions in the same order as action_requests
     decisions = [
         {"type": "approve"},  # First tool: delete_file
-        {"type": "reject"}    # Second tool: send_email
+        {
+            "type": "reject",
+            "message": "User rejected this action. Do not retry this tool call.",
+        }  # Second tool: send_email
     ]
 
     result = agent.invoke(
@@ -252,7 +257,10 @@ if (result.__interrupt__) {
   // Provide decisions in the same order as actionRequests
   const decisions = [
     { type: "approve" },  // First tool: delete_file
-    { type: "reject" }    // Second tool: send_email
+    {
+      type: "reject",
+      message: "User rejected this action. Do not retry this tool call.",
+    }  // Second tool: send_email
   ];
 
   result = await agent.invoke(
@@ -260,6 +268,34 @@ if (result.__interrupt__) {
     config
   );
 }
+```
+:::
+
+## Rejection messages
+
+When a reviewer returns a `reject` decision, Deep Agents skip the tool call and send rejection feedback back to the agent. If you omit `message`, the default feedback tells the model that the tool was not executed and not to retry the same tool call unless the user asks.
+
+For sensitive or side-effecting tools, pass a domain-specific `message` with the decision. Be explicit about whether the agent should abandon the action, ask a follow-up question, or try a safer alternative.
+
+:::python
+```python
+decisions = [
+    {
+        "type": "reject",
+        "message": "User rejected deleting this file. Do not retry deletion. Ask which file to archive instead.",
+    }
+]
+```
+:::
+
+:::js
+```typescript
+const decisions = [
+  {
+    type: "reject",
+    message: "User rejected deleting this file. Do not retry deletion. Ask which file to archive instead.",
+  },
+];
 ```
 :::
 
