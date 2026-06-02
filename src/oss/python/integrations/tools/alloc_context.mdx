@@ -1,0 +1,169 @@
+---
+title: "AllocContext integration"
+description: "Integrate with AllocContext portfolio crypto context tools using LangChain Python."
+---
+
+[AllocContext](https://github.com/AllocContext/alloc-context) exposes **portfolio-aware
+crypto context** for AI agents over MCP — holdings-scoped market, sentiment, macro,
+regime, and optional allocation analysis. The hosted endpoint uses **x402 on Base**
+(micro-payments per tool call).
+
+This guide covers the **LangChain StructuredTool** wrapper shipped in the
+`alloc-context` PyPI package. For MCP transport details and payer setup, see the
+[AllocContext LangChain integration doc](https://github.com/AllocContext/alloc-context/blob/main/docs/langchain-integration.md).
+
+> **Privacy:** nothing stored · one-time read-only · pass-through only.  
+> **Not financial advice.** Deterministic JSON facts only.
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [`build_hosted_langchain_tools`](https://github.com/AllocContext/alloc-context/blob/main/alloccontext/integrations/langchain.py) | [`alloc-context`](https://pypi.org/project/alloc-context/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/alloc-context?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/alloc-context?style=flat-square&label=%20) |
+
+### Features
+
+- Sync **StructuredTool** wrappers for the hosted MCP (`https://mcp.alloc-context.com/mcp`)
+- x402 payer via environment variable or `user.yaml` (`x402.payer_private_key_file`)
+- Default tools: `get_market_context`, `get_context_bundle`, `get_rebalance_plan`, `check_allocation_band`
+- Local Docker path via [langchain-mcp-adapters](https://github.com/langchain-ai/langchain-mcp-adapters) (no x402)
+
+---
+
+## Setup
+
+Install AllocContext with the hosted extra (includes x402 client dependencies) and
+LangChain core:
+
+```python pip
+pip install -U "alloc-context[hosted]" langchain-core
+```
+
+### Credentials (x402 payer)
+
+Hosted tool calls require a funded **Base** wallet for x402 payments. Configure one of:
+
+```python Set payer icon="key"
+import os
+
+# Option A: environment variable
+os.environ["EVM_PRIVATE_KEY"] = "0x..."  # payer wallet, not the seller address
+```
+
+Or create `~/.config/alloc-context/user.yaml`:
+
+```yaml
+x402:
+  payer_private_key_file: ~/.config/alloc-context/x402-payer.key
+```
+
+See [agent on-ramp](https://github.com/AllocContext/alloc-context/blob/main/docs/agent-onramp.md)
+for payer funding steps.
+
+Optional LangSmith tracing:
+
+```python Enable tracing icon="flask"
+import getpass
+import os
+
+if "LANGSMITH_API_KEY" not in os.environ:
+    os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+---
+
+## Instantiation
+
+```python Initialize tools icon="robot"
+from alloccontext.integrations.langchain import build_hosted_langchain_tools
+
+tools = build_hosted_langchain_tools()
+# Default tools: get_market_context, get_context_bundle, get_rebalance_plan,
+# check_allocation_band. Pass tool_names=("get_market_context",) to customize.
+```
+
+Load payer config from `user.yaml` explicitly:
+
+```python
+from alloccontext.integrations.langchain import (
+    build_hosted_langchain_tools,
+    resolve_hosted_user_config,
+)
+
+tools = build_hosted_langchain_tools(user=resolve_hosted_user_config())
+```
+
+---
+
+## Invocation
+
+### Directly
+
+```python Call tool icon="rocket"
+market_tool = next(t for t in tools if t.name == "get_market_context")
+result = market_tool.invoke({"symbols": ["BTC", "ETH"]})
+```
+
+Missing payer configuration raises `RuntimeError` (not a silent JSON error payload).
+
+### Within an agent
+
+```python Agent with tools icon="robot"
+# pip install -U langchain langchain-openai
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
+
+from alloccontext.integrations.langchain import build_hosted_langchain_tools
+
+tools = build_hosted_langchain_tools()
+agent = create_agent(ChatOpenAI(model="gpt-4.1-mini"), tools)
+
+response = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Summarize BTC/ETH market context from cached facts.",
+            }
+        ]
+    }
+)
+```
+
+Each hosted call is priced per AllocContext MCP tiers (**$0.02** cached context/math,
+**$0.05** live or portfolio reads).
+
+---
+
+## Local Docker (no x402)
+
+For free local evaluation, run the AllocContext Docker stack and connect with
+**langchain-mcp-adapters** streamable HTTP transport:
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient(
+    {
+        "alloc-context": {
+            "transport": "http",
+            "url": "http://127.0.0.1:8000/mcp",
+        }
+    }
+)
+tools = await client.get_tools()
+```
+
+See [docker self-host](https://github.com/AllocContext/alloc-context/blob/main/docs/docker-self-host.md).
+
+---
+
+## API reference
+
+- Source: [alloccontext.integrations.langchain](https://github.com/AllocContext/alloc-context/blob/main/alloccontext/integrations/langchain.py)
+- Full guide: [docs/langchain-integration.md](https://github.com/AllocContext/alloc-context/blob/main/docs/langchain-integration.md)
+- Hosted MCP: [agent-integration.md](https://github.com/AllocContext/alloc-context/blob/main/docs/agent-integration.md)
+- Example script: [examples/langchain/run_example.py](https://github.com/AllocContext/alloc-context/blob/main/examples/langchain/run_example.py)
