@@ -5,7 +5,7 @@ description: Retrieve detailed trace and LangSmith Deployment usage data broken 
 ---
 
 <Note>
-For LangSmith Cloud, granular billable usage data collection started on January 5, 2026. Data is not available for usage before this date. 
+For LangSmith Cloud, granular billable usage data collection started on January 5, 2026. Data is not available for usage before this date.
 
 For self-hosted instances, data collection begins when the feature is enabled via the following environment variables, or after [upgrading to a version with it enabled by default](/langsmith/self-hosted-changelog#langsmith-0-13-12).
 
@@ -15,12 +15,12 @@ GRANULAR_USAGE_TABLE_ENABLED=true
 ```
 </Note>
 
-LangSmith provides granular billable usage APIs that allow you to retrieve detailed usage data broken down by workspace, project, user, or API key. Two billable domains are supported via sibling endpoints:
+LangSmith provides granular billable usage APIs that let you retrieve detailed usage data broken down by workspace, project, user, or API key. Two billable domains are supported by the same endpoint, selected via a `kind` query parameter:
 
-- **Trace usage** — number of traces ingested. Read via `GET /granular-usage/traces`.
-- **LangSmith Deployment usage** — nodes executed, agent runs, and agent uptime for [LangSmith Deployment](/langsmith/billing#langsmith-deployment) (formerly LangGraph Platform). Read via `GET /granular-usage/deployment`.
+- **Trace usage** (`kind=traces`, default) — number of traces ingested.
+- **LangSmith Deployment usage** (`kind=langsmith_deployments`) — nodes executed, agent runs, and agent uptime for [LangSmith Deployment](/langsmith/billing#langsmith-deployment) (formerly LangGraph Platform).
 
-Both endpoints share the same query parameters (time range, workspace filter, grouping dimension) and respond with the same time-bucketed shape. The data sources are separate, so a record returned by one endpoint will not appear in the other.
+Both kinds share the same query parameters (time range, workspace filter, grouping dimension) and return the same time-bucketed shape. The data sources are separate, so a record returned by one kind will not appear in the other.
 
 These APIs enable you to:
 
@@ -40,50 +40,63 @@ You can also view granular usage data in the [LangSmith UI](https://smith.langch
 
 1. Navigate to **Settings** > **Billing and Usage**
 2. Select the **Granular Usage** tab
-3. Use the controls to:
-   - Select a time range:
-      - Last 7 days, 30 days, 3 months, 6 months, 1 year, or custom
-   - Choose aggregation level (daily, weekly, or monthly)
+3. Switch between the **LangSmith Traces** and **LangSmith Deployments** sub-tabs to view each domain. The active sub-tab is reflected in the URL (`?tab=traces` or `?tab=deployments`) so the page can be bookmarked and reloads land on the same view.
+4. Use the controls to:
+   - Select a time range (Last 7 days, 30 days, 3 months, 6 months, 1 year, or custom)
    - Group by workspace, project, user, or API key
    - Filter to specific workspaces
-4. Click **Export CSV** to download the data
+   - On the **LangSmith Traces** tab, optionally filter by retention tier (`All Retention` / `Long-lived only` / `Short-lived only`)
+5. Click **Export CSV** to download the data for the active tab.
 
-## Shared query parameters
+Time range and workspace filters are shared across both sub-tabs — switching tabs preserves what you've selected. The **LangSmith Deployments** tab shows three stat cards (Total Nodes Executed / Total Agent Runs / Total Agent Uptime (seconds)) and one chart per metric stacked vertically, since the three metrics use different units.
 
-Both the trace and Deployment endpoints accept the same query parameters:
+## Query parameters
+
+The granular usage endpoint accepts the following query parameters:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `start_time` | datetime | Yes | Start of the time range (ISO 8601 format) |
-| `end_time` | datetime | Yes | End of the time range (must be after start_time) |
-| `workspace_ids` | array of UUIDs | Yes | Filter results to specific workspaces |
-| `group_by` | string | No | Dimension to group by. One of: `workspace`, `project`, `user`, `api_key`. Default: `workspace` |
+| `start_time` | datetime | Yes | Start of the time range (ISO 8601 format). |
+| `end_time` | datetime | Yes | End of the time range. Must be after `start_time`. |
+| `workspace_ids` | array of UUIDs | Yes | Filter results to specific workspaces. |
+| `kind` | string | No | `traces` (default) or `langsmith_deployments`. Selects the billable domain. |
+| `group_by` | string | No | Dimension to group by. One of: `workspace`, `project`, `user`, `api_key`. Default: `workspace`. |
+| `trace_tier` | string | No | Trace-only retention filter: `longlived` or `shortlived`. Omit for all retention. Ignored when `kind=langsmith_deployments`. |
 
-The `stride` field in each response indicates the time bucket size used for aggregation, calculated from the requested time range:
+### Day-granular contract
+
+Both kinds aggregate from daily-rollup tables. The endpoint normalizes the window to whole days at the API layer:
+
+- `start_time` is floored to its day's UTC midnight.
+- `end_time` is ceiled to the next UTC midnight (no-op when already at midnight).
+- Any day overlapping the requested window is included in full.
+
+A 24-hour window from `2026-01-01T12:00:00Z` to `2026-01-02T12:00:00Z` therefore returns usage for the full Jan 1 and Jan 2 buckets.
+
+### Stride
+
+The `stride` field in each response indicates the time bucket size used for aggregation, calculated from the requested time range. Daily is the minimum — sub-day windows still bucket at one day.
 
 | Time range | Aggregation | Stride |
 |------------|-------------|--------|
-| Less than 1 day | Hourly (traces only)* | `hours: 1` |
-| 1-31 days | Daily | `days: 1` |
-| 32-93 days (~3 months) | Weekly | `days: 7` |
-| 94-366 days (~1 year) | Monthly | `days: 30` |
+| Up to 31 days | Daily | `days: 1` |
+| 32–93 days (~3 months) | Weekly | `days: 7` |
+| 94–366 days (~1 year) | Monthly | `days: 30` |
 | More than 366 days | Yearly | `days: 365` |
 
-*The Deployment endpoint's minimum stride is daily — it reads from a daily aggregate, so sub-day ranges still bucket at one day.
+### Compatibility
 
-## API endpoints
+`kind=langsmith_deployments` combined with `group_by=trace_tier` returns `400 Bad Request` — retention tiers only apply to traces.
 
-### Trace usage
-
-Retrieve granular trace usage data.
+## API endpoint
 
 ```
-GET /api/v1/orgs/current/billing/granular-usage/traces
+GET /api/v1/orgs/current/billing/granular-usage
 ```
 
-<Note>
-The legacy path `GET /api/v1/orgs/current/billing/granular-usage` is a deprecated alias that returns the same response. Prefer `/granular-usage/traces` in new integrations — it pairs symmetrically with `/granular-usage/deployment`.
-</Note>
+Existing callers that omit `kind` continue to get trace usage with the same response shape they always did.
+
+### Trace usage (`kind=traces`)
 
 #### Response
 
@@ -122,13 +135,13 @@ end_time = datetime.now(timezone.utc)
 start_time = end_time - timedelta(days=30)
 
 response = client.get(
-    "/api/v1/orgs/current/billing/granular-usage/traces",
+    "/api/v1/orgs/current/billing/granular-usage",
     params={
         "start_time": start_time.isoformat(),
         "end_time": end_time.isoformat(),
         "workspace_ids": ["<workspace-id>"],
-        "group_by": "workspace"
-    }
+        "group_by": "workspace",
+    },
 )
 
 data = response.json()
@@ -138,17 +151,17 @@ for record in data["usage"]:
 
 ```typescript TypeScript
 const response = await fetch(
-  `https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage/traces?` +
+  `https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage?` +
   new URLSearchParams({
     start_time: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
     end_time: new Date().toISOString(),
     workspace_ids: "<workspace-id>",
-    group_by: "workspace"
+    group_by: "workspace",
   }),
   {
     headers: {
-      "x-api-key": "<your-api-key>"
-    }
+      "x-api-key": "<your-api-key>",
+    },
   }
 );
 
@@ -159,7 +172,7 @@ for (const record of data.usage) {
 ```
 
 ```bash cURL
-curl -X GET "https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage/traces?\
+curl -X GET "https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage?\
 start_time=2026-01-01T00:00:00Z&\
 end_time=2026-01-15T00:00:00Z&\
 workspace_ids=<workspace-id>&\
@@ -168,88 +181,33 @@ group_by=workspace" \
 ```
 </CodeGroup>
 
-#### Example: Get trace usage by user
+#### Example: Get trace usage by user, filtered to long-lived retention only
 
 <CodeGroup>
 ```python Python
 response = client.get(
-    "/api/v1/orgs/current/billing/granular-usage/traces",
+    "/api/v1/orgs/current/billing/granular-usage",
     params={
         "start_time": start_time.isoformat(),
         "end_time": end_time.isoformat(),
         "workspace_ids": ["<workspace-id>"],
-        "group_by": "user"
-    }
+        "group_by": "user",
+        "trace_tier": "longlived",
+    },
 )
 
 data = response.json()
 for record in data["usage"]:
     user_email = record["dimensions"].get("user_email", "Unknown")
-    print(f"{user_email}: {record['traces']} traces")
+    print(f"{user_email}: {record['traces']} long-lived traces")
 ```
 </CodeGroup>
 
-#### Export trace usage as CSV
+### LangSmith Deployment usage (`kind=langsmith_deployments`)
 
-```
-GET /api/v1/orgs/current/billing/granular-usage/traces/export
-```
+Each record carries three metrics together so a single fetch powers the whole Deployment view.
 
-<Note>
-The legacy path `GET /api/v1/orgs/current/billing/granular-usage/export` is a deprecated alias and returns the same CSV.
-</Note>
-
-Returns a CSV file with one row per (time bucket, dimension) tuple. All dimension columns are always present; only the columns matching the selected `group_by` are populated.
-
-| Column | Description |
-|--------|-------------|
-| Time Bucket Start | Start of the time bucket |
-| Time Bucket End | End of the time bucket |
-| Workspace ID | UUID of the workspace (when grouping by workspace) |
-| Workspace Name | Name of the workspace (when grouping by workspace) |
-| Project ID | UUID of the project (when grouping by project) |
-| Project Name | Name of the project (when grouping by project) |
-| User ID | UUID of the user (when grouping by user) |
-| User Email | Email of the user (when grouping by user) |
-| API Key Short Key | Short key identifier (when grouping by API key) |
-| Traces | Number of traces in the time bucket |
-
-<CodeGroup>
-```python Python
-response = client.get(
-    "/api/v1/orgs/current/billing/granular-usage/traces/export",
-    params={
-        "start_time": start_time.isoformat(),
-        "end_time": end_time.isoformat(),
-        "workspace_ids": ["<workspace-id>"],
-        "group_by": "workspace"
-    }
-)
-
-with open("trace_usage_report.csv", "wb") as f:
-    f.write(response.content)
-```
-
-```bash cURL
-curl -X GET "https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage/traces/export?\
-start_time=2026-01-01T00:00:00Z&\
-end_time=2026-01-15T00:00:00Z&\
-workspace_ids=<workspace-id>&\
-group_by=workspace" \
-  -H "x-api-key: <your-api-key>" \
-  -o trace_usage_report.csv
-```
-</CodeGroup>
-
-### LangSmith Deployment usage
-
-Retrieve granular usage for [LangSmith Deployment](/langsmith/billing#langsmith-deployment) (formerly LangGraph Platform). Each record carries three metrics together so a single fetch powers the whole Deployment view.
-
-```
-GET /api/v1/orgs/current/billing/granular-usage/deployment
-```
-
-Data collection for Deployment usage began once the rollup job started running (see [self-hosted changelog](/langsmith/self-hosted-changelog) for the LangSmith version that enables it). The minimum aggregation stride is daily.
+Data collection for Deployment usage began once the rollup job started running (see [self-hosted changelog](/langsmith/self-hosted-changelog) for the LangSmith version that enables it).
 
 #### Response
 
@@ -285,13 +243,14 @@ Data collection for Deployment usage began once the rollup job started running (
 <CodeGroup>
 ```python Python
 response = client.get(
-    "/api/v1/orgs/current/billing/granular-usage/deployment",
+    "/api/v1/orgs/current/billing/granular-usage",
     params={
+        "kind": "langsmith_deployments",
         "start_time": start_time.isoformat(),
         "end_time": end_time.isoformat(),
         "workspace_ids": ["<workspace-id>"],
-        "group_by": "workspace"
-    }
+        "group_by": "workspace",
+    },
 )
 
 data = response.json()
@@ -306,17 +265,18 @@ for record in data["usage"]:
 
 ```typescript TypeScript
 const response = await fetch(
-  `https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage/deployment?` +
+  `https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage?` +
   new URLSearchParams({
+    kind: "langsmith_deployments",
     start_time: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
     end_time: new Date().toISOString(),
     workspace_ids: "<workspace-id>",
-    group_by: "workspace"
+    group_by: "workspace",
   }),
   {
     headers: {
-      "x-api-key": "<your-api-key>"
-    }
+      "x-api-key": "<your-api-key>",
+    },
   }
 );
 
@@ -330,7 +290,8 @@ for (const record of data.usage) {
 ```
 
 ```bash cURL
-curl -X GET "https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage/deployment?\
+curl -X GET "https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage?\
+kind=langsmith_deployments&\
 start_time=2026-01-01T00:00:00Z&\
 end_time=2026-01-15T00:00:00Z&\
 workspace_ids=<workspace-id>&\
@@ -339,39 +300,40 @@ group_by=workspace" \
 ```
 </CodeGroup>
 
-#### Export Deployment usage as CSV
+## CSV export
 
 ```
-GET /api/v1/orgs/current/billing/granular-usage/deployment/export
+GET /api/v1/orgs/current/billing/granular-usage/export
 ```
 
-Returns a CSV file with one row per (time bucket, dimension) tuple. The CSV uses the same dimension columns as the trace export but with three metric columns instead of one:
+Same query parameters as the data endpoint, including `kind`. Returns a CSV file with one row per (time bucket, dimension) tuple. All dimension columns are always present; only the columns matching the selected `group_by` are populated.
 
-| Column | Description |
-|--------|-------------|
-| Time Bucket Start | Start of the time bucket |
-| Time Bucket End | End of the time bucket |
-| Workspace ID | UUID of the workspace (when grouping by workspace) |
-| Workspace Name | Name of the workspace (when grouping by workspace) |
-| Project ID | UUID of the project (when grouping by project) |
-| Project Name | Name of the project (when grouping by project) |
-| User ID | UUID of the user (when grouping by user) |
-| User Email | Email of the user (when grouping by user) |
-| API Key Short Key | Short key identifier (when grouping by API key) |
-| Nodes Executed | Total nodes executed in the time bucket |
-| Agent Runs | Total agent runs in the time bucket |
-| Agent Uptime (seconds) | Total replica uptime, in seconds |
+For `kind=traces`, the value column is `Traces`. For `kind=langsmith_deployments`, the value columns are `Nodes Executed`, `Agent Runs`, and `Agent Uptime (seconds)`.
+
+| Column | Present when |
+|--------|--------------|
+| Time Bucket Start | Always |
+| Time Bucket End | Always |
+| Workspace ID / Name | Always (populated when `group_by=workspace`) |
+| Project ID / Name | Always (populated when `group_by=project`) |
+| User ID / Email | Always (populated when `group_by=user`) |
+| API Key Short Key | Always (populated when `group_by=api_key`) |
+| Traces | `kind=traces` |
+| Nodes Executed / Agent Runs / Agent Uptime (seconds) | `kind=langsmith_deployments` |
+
+Cells whose value would start with `=`, `+`, `-`, `@`, tab, or carriage-return are tab-prefixed to neutralize spreadsheet formula injection (CWE-1236).
 
 <CodeGroup>
 ```python Python
 response = client.get(
-    "/api/v1/orgs/current/billing/granular-usage/deployment/export",
+    "/api/v1/orgs/current/billing/granular-usage/export",
     params={
+        "kind": "langsmith_deployments",
         "start_time": start_time.isoformat(),
         "end_time": end_time.isoformat(),
         "workspace_ids": ["<workspace-id>"],
-        "group_by": "workspace"
-    }
+        "group_by": "workspace",
+    },
 )
 
 with open("deployment_usage_report.csv", "wb") as f:
@@ -379,7 +341,8 @@ with open("deployment_usage_report.csv", "wb") as f:
 ```
 
 ```bash cURL
-curl -X GET "https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage/deployment/export?\
+curl -X GET "https://api.smith.langchain.com/api/v1/orgs/current/billing/granular-usage/export?\
+kind=langsmith_deployments&\
 start_time=2026-01-01T00:00:00Z&\
 end_time=2026-01-15T00:00:00Z&\
 workspace_ids=<workspace-id>&\
@@ -391,14 +354,14 @@ group_by=workspace" \
 
 ## Grouping options
 
-The `group_by` parameter determines how usage data is aggregated. The same four values are supported by both endpoints:
+The `group_by` parameter determines how usage data is aggregated:
 
-| Value | Description | Dimensions returned |
-|-------|-------------|---------------------|
-| `workspace` | Group by workspace | `workspace_id`, `workspace_name` |
-| `project` | Group by project | `project_id`, `project_name` |
-| `user` | Group by user | `user_id`, `user_email` |
-| `api_key` | Group by API key | `api_key_short_key` |
+| Value | Description | Dimensions returned | Available for |
+|-------|-------------|---------------------|---------------|
+| `workspace` | Group by workspace | `workspace_id`, `workspace_name` | Both kinds |
+| `project` | Group by project | `project_id`, `project_name` | Both kinds |
+| `user` | Group by user | `user_id`, `user_email` | Both kinds |
+| `api_key` | Group by API key | `api_key_short_key` | Both kinds |
 
 For trace usage, "project" refers to the [LangSmith tracer session](/langsmith/observability-concepts). For Deployment usage, "project" refers to the LangSmith Deployment project (a deployed agent).
 
