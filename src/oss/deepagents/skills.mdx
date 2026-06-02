@@ -10,7 +10,9 @@ import SkillsSandboxJs from '/snippets/code-samples/skills-sandbox-js.mdx';
 import BackendReadonlySkillsPy from '/snippets/code-samples/backend-readonly-skills-py.mdx';
 import BackendReadonlySkillsJs from '/snippets/code-samples/backend-readonly-skills-js.mdx';
 
-Skills are reusable agent capabilities that provide specialized workflows and domain knowledge.
+As agents take on more complex tasks, the context they need grows with them. Loading all instructions into the system prompt wastes tokens on information irrelevant to the current task, and providing the same guidance manually across sessions does not scale.
+
+Skills solve this by packaging domain expertise—workflows, best practices, scripts, reference docs, and templates—into reusable directories that the agent discovers and reads only when relevant.
 
 :::js
 <Note>
@@ -18,174 +20,62 @@ Skills require `deepagents>=1.7.0`.
 </Note>
 :::
 
-You can use [Agent Skills](https://agentskills.io/) to provide your deep agent with new capabilities and expertise. For ready-to-use skills that improve your agent's performance on LangChain ecosystem tasks, see the [LangChain Skills](https://github.com/langchain-ai/langchain-skills) repository.
-
-Deep agent skills follow the [Agent Skills specification](https://agentskills.io/specification) and add additional capability for interpreter skills, which makes it possible to provide skills with importable functions that an interpreter can call.
+Deep agent skills follow the [Agent Skills specification](https://agentskills.io/specification). For ready-to-use skills that improve your agent's performance on LangChain ecosystem tasks, see the [LangChain Skills](https://github.com/langchain-ai/langchain-skills) repository.
 
 ## What are skills
 
-Skills are a directory of folders, where each folder has one or more files that contain context the agent can use:
+Each skill is a directory containing a `SKILL.md` file: a markdown file with YAML frontmatter (`name` and `description`) followed by instructions the agent follows when the skill is activated. A skill directory can also include supporting files:
 
-- A `SKILL.md` file containing instructions and metadata about the skill
-- Additional scripts (optional)
-- Additional reference info, such as docs (optional)
-- Additional assets, such as templates and other resources (optional)
+- **`SKILL.md`** (required): Metadata and instructions for the agent
+- **`scripts/`** (optional): Executable code the agent can run
+- **`references/`** (optional): Additional documentation or technical details
+- **`assets/`** (optional): Templates, schemas, or other resources
 
 <Note>
-    Any additional assets (scripts, docs, templates, or other resources) must be referenced in the `SKILL.md` file with information on what the file contains and how to use it so the agent can decide when to use them.
+    Reference any supporting files in your `SKILL.md` with a description of what each file contains and when to use it. The agent discovers these files through the references in the skill instructions.
 </Note>
 
 ## How skills work
 
-When you create a deep agent, you can pass in a list of directories containing skills. As the agent starts, it reads through the frontmatter of each `SKILL.md` file.
+Skills use *progressive disclosure*: the agent loads skill information in layers, pulling in more detail only when the task calls for it.
 
-When the agent receives a prompt, the agent checks if it can use any skills while fulfilling the prompt. If it finds a matching prompt, it then reviews the rest of the skill files. This pattern of only reviewing the skill information when needed is called *progressive disclosure*.
+In Deep Agents, `SkillsMiddleware` handles this in three stages:
 
-## Example
+1. **Discovery**: At agent start, the middleware scans the configured skill paths, parses each `SKILL.md` frontmatter, and injects skill names and descriptions into the system prompt.
+2. **Read**: When the agent determines a skill matches the current task, it reads the full `SKILL.md` content via `read_file`. There is no dedicated activation mechanism.
+3. **Execute**: The agent follows the skill's instructions and reads any supporting files (scripts, references, assets) as needed.
 
-You might have a skills folder that contains a skill to use a docs site in a certain way, as well as another skill to search the arXiv preprint repository of research papers:
+The [Agent Skills specification](https://agentskills.io/specification) recommends ~100 tokens for frontmatter and under 5,000 tokens for the `SKILL.md` body. Following these guidelines matters because every skill's frontmatter is added to the system prompt at discovery, while the full body is only read when activated. Keeping both layers small means you can load many skills without crowding the context window.
 
-:::python
+<Tip>
+    Write clear, specific descriptions in your `SKILL.md` frontmatter. The agent decides whether to activate a skill based on the description alone. Include specific keywords and use cases so the agent can match accurately.
+</Tip>
+
+## Examples
+
+### Basic skill
+
+A minimal skill is a directory with a single `SKILL.md` file:
+
 ```plaintext
-    skills/
-    ├── langgraph-docs
-    │   └── SKILL.md
-    └── arxiv_search
-        ├── SKILL.md
-        └── arxiv_search.py # code for searching arXiv
+skills/
+└── langgraph-docs/
+    └── SKILL.md
 ```
-:::
 
-:::js
-```plaintext
-    skills/
-    ├── langgraph-docs
-    │   └── SKILL.md
-    └── arxiv_search
-        ├── SKILL.md
-        └── arxiv_search.ts # code for searching arXiv
-```
-:::
-
-The `SKILL.md` file always follows the same pattern, starting with metadata in the frontmatter and followed by the instructions for the skill.
-
-The following example shows a skill that gives instructions on how to provide relevant langgraph docs when prompted:
+The `SKILL.md` starts with YAML frontmatter followed by markdown instructions:
 
 ````md
 ---
 name: langgraph-docs
 description: Use this skill for requests related to LangGraph in order to fetch relevant documentation to provide accurate, up-to-date guidance.
-module: index.ts
 ---
 
 # langgraph-docs
 
 ## Overview
 
-This skill explains how to access LangGraph Python documentation to help answer questions and guide implementation.
-
-## Instructions
-
-### 1. Fetch the Documentation Index
-
-Use the fetch_url tool to read the following URL:
-https://docs.langchain.com/llms.txt
-
-This provides a structured list of all available documentation with descriptions.
-
-### 2. Select Relevant Documentation
-
-Based on the question, identify 2-4 most relevant documentation URLs from the index. Prioritize:
-
-- Specific how-to guides for implementation questions
-- Core concept pages for understanding questions
-- Tutorials for end-to-end examples
-- Reference docs for API details
-
-### 3. Fetch Selected Documentation
-
-Use the fetch_url tool to read the selected documentation URLs.
-
-### 4. Provide accurate guidance
-
-After reading the documentation, answer the user's question using the relevant LangGraph docs you fetched.
-
-In your response:
-
-- Give a direct answer first.
-- Include the minimum necessary context and any key steps or API names.
-- Avoid quoting long passages. Paraphrase and link instead.
-
-### 5. Provide the regular links for the used references
-
-At the end of your response, include a **References** section listing the page URLs you used.
-
-`llms.txt` uses Markdown link targets that typically end in `.md`. Use the helper from this skill module to resolve those into the actual page URLs before listing them as references.
-
-```typescript
-const { resolveLlmsUrl } = await import("@/skills/langgraph-docs");
-
-// llms.txt uses Markdown link targets that typically end in `.md`.
-// Convert those into the actual page URLs before fetching.
-const llmsUrls = [
-  "https://docs.langchain.com/oss/langgraph/concepts.md",
-  "https://docs.langchain.com/oss/langgraph/concepts.md",
-  "https://docs.langchain.com/oss/langgraph/tutorials.md",
-];
-
-const pageUrls = [...new Set(llmsUrls.map(resolveLlmsUrl))];
-pageUrls;
-```
-````
-
-The referenced helper code would be placed in `index.ts`:
-
-```typescript
-// index.ts
-export function resolveLlmsUrl(url: string) {
-  return url.endsWith(".md") ? url.slice(0, -3) : url;
-}
-```
-
-:::python
-For more example skills, see [Deep Agents example skills](https://github.com/langchain-ai/deepagents/tree/main/libs/cli/examples/skills).
-:::
-
-:::js
-For more example skills, see [Deep Agents example skills](https://github.com/langchain-ai/deepagentsjs/tree/main/examples/skills).
-:::
-
-<Warning>
-    **Important**
-
-    Refer to the full [Agent Skills Specification](https://agentskills.io/specification) for information on constraints and best practices when authoring skill files. Notably:
-
-    * The `description` field is truncated to 1024 characters if it exceeds that length.
-    * In Deep Agents, `SKILL.md` files must be under 10 MB. Files exceeding this limit are skipped during skill loading.
-</Warning>
-
-### Full example
-
-The following example shows a `SKILL.md` file using all available frontmatter fields:
-
-````md expandable
----
-name: langgraph-docs
-description: Use this skill for requests related to LangGraph in order to fetch relevant documentation to provide accurate, up-to-date guidance.
-license: MIT
-compatibility: Requires internet access for fetching documentation URLs
-metadata:
-  author: langchain
-  version: "1.0"
-allowed-tools: fetch_url
-module: index.ts
----
-
-# langgraph-docs
-
-## Overview
-
-This skill explains how to access LangGraph Python documentation to help answer questions and guide implementation.
+This skill explains how to access LangGraph documentation to help answer questions and guide implementation.
 
 ## Instructions
 
@@ -205,41 +95,168 @@ Based on the question, identify 2-4 most relevant documentation URLs from the in
 - Tutorials for end-to-end examples
 - Reference docs for API details
 
-### 3. Fetch selected documentation
+### 3. Fetch and synthesize
 
-Use the fetch_url tool to read the selected documentation URLs.
-
-### 4. Provide accurate guidance
-
-After reading the documentation, answer the user's question using the relevant LangGraph docs you fetched.
-
-In your response:
-
-- Give a direct answer first.
-- Include the minimum necessary context and any key steps or API names.
-- Avoid quoting long passages. Paraphrase and link instead.
-
-### 5. Provide the regular links for the used references
-
-At the end of your response, include a **References** section listing the page URLs you used.
-
-`llms.txt` uses Markdown link targets that typically end in `.md`. Use the helper from this skill module to resolve those into the actual page URLs before listing them as references.
-
-```typescript
-const { resolveLlmsUrl } = await import("@/skills/langgraph-docs");
-
-// llms.txt uses Markdown link targets that typically end in `.md`.
-// Convert those into the actual page URLs before fetching.
-const llmsUrls = [
-  "https://docs.langchain.com/oss/langgraph/concepts.md",
-  "https://docs.langchain.com/oss/langgraph/concepts.md",
-  "https://docs.langchain.com/oss/langgraph/tutorials.md",
-];
-
-const pageUrls = [...new Set(llmsUrls.map(resolveLlmsUrl))];
-pageUrls;
-```
+Use the fetch_url tool to read the selected documentation URLs, then answer the user's question. Give a direct answer first, include the minimum necessary context, and link to the source pages rather than quoting long passages.
 ````
+
+### Skill with scripts
+
+Skills can include executable code alongside the instructions. Reference scripts in your `SKILL.md` so the agent knows they exist and when to run them:
+
+:::python
+```plaintext
+skills/
+└── arxiv-search/
+    ├── SKILL.md
+    └── scripts/
+        └── search.py
+```
+:::
+
+:::js
+```plaintext
+skills/
+└── arxiv-search/
+    ├── SKILL.md
+    └── scripts/
+        └── search.ts
+```
+:::
+
+:::python
+````md
+---
+name: arxiv-search
+description: Search the arXiv preprint repository for research papers. Use when the user asks about academic papers, recent research, or scientific literature.
+---
+
+# arxiv-search
+
+Search arXiv for papers matching the user's query.
+
+## Instructions
+
+1. Run `scripts/search.py` with the user's query as an argument.
+2. Parse the results and present them with title, authors, abstract summary, and link.
+3. If the user asks for more detail on a specific paper, fetch the full abstract.
+````
+:::
+
+:::js
+````md
+---
+name: arxiv-search
+description: Search the arXiv preprint repository for research papers. Use when the user asks about academic papers, recent research, or scientific literature.
+---
+
+# arxiv-search
+
+Search arXiv for papers matching the user's query.
+
+## Instructions
+
+1. Run `scripts/search.ts` with the user's query as an argument.
+2. Parse the results and present them with title, authors, abstract summary, and link.
+3. If the user asks for more detail on a specific paper, fetch the full abstract.
+````
+:::
+
+:::python
+For more example skills, see [Deep Agents example skills](https://github.com/langchain-ai/deepagents/tree/main/libs/cli/examples/skills).
+:::
+
+:::js
+For more example skills, see [Deep Agents example skills](https://github.com/langchain-ai/deepagentsjs/tree/main/examples/skills).
+:::
+
+### All frontmatter fields
+
+The [Agent Skills specification](https://agentskills.io/specification) defines the following frontmatter fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Lowercase alphanumeric with hyphens, 1-64 characters. Must match the parent directory name. |
+| `description` | Yes | What the skill does and when to use it. Max 1,024 characters. |
+| `license` | No | License name or reference to a bundled license file. |
+| `compatibility` | No | Environment requirements (system packages, network access). Max 500 characters. |
+| `metadata` | No | Arbitrary key-value pairs for additional properties. |
+| `allowed-tools` | No | Space-separated list of pre-approved tools the skill can use. Experimental. |
+
+````md expandable
+---
+name: langgraph-docs
+description: Use this skill for requests related to LangGraph in order to fetch relevant documentation to provide accurate, up-to-date guidance.
+license: MIT
+compatibility: Requires internet access for fetching documentation URLs
+metadata:
+  author: langchain
+  version: "1.0"
+allowed-tools: fetch_url
+---
+
+# langgraph-docs
+
+Instructions for the agent go here. See the [basic skill example](#basic-skill) for a complete example of skill instructions.
+````
+
+<Warning>
+    Refer to the full [Agent Skills specification](https://agentskills.io/specification) for detailed constraints and validation rules. In Deep Agents, `SKILL.md` files must be under 10 MB. Files exceeding this limit are skipped during skill loading.
+</Warning>
+
+## Write effective skills
+
+### Write specific descriptions
+
+During [discovery](#how-skills-work), the `description` field is the only information the agent sees for each skill. A good description tells the agent both what the skill does and when to activate it, with specific keywords the agent can match against:
+
+```yaml
+# Good: specific about what and when
+description: >-
+  Extract text and tables from PDF files, fill PDF forms, and merge
+  multiple PDFs. Use when working with PDF documents or when the user
+  mentions PDFs, forms, or document extraction.
+
+# Poor: too vague for reliable matching
+description: Helps with PDFs.
+```
+
+When you have multiple skills in related domains, differentiate their descriptions clearly. Overlapping descriptions cause the agent to activate the wrong skill or hesitate between options. If two skills serve similar purposes, consolidate them into one.
+
+### Keep instructions focused
+
+The Agent Skills specification recommends keeping your `SKILL.md` under 500 lines. When instructions grow longer, move detailed reference material into separate files and reference them from the main `SKILL.md`:
+
+```plaintext
+skills/
+└── data-pipeline/
+    ├── SKILL.md
+    └── references/
+        ├── schema-reference.md
+        └── error-codes.md
+```
+
+The agent loads reference files only when the instructions call for them, keeping each layer of progressive disclosure appropriately sized. Keep file references one level deep from `SKILL.md` and avoid deeply nested reference chains, which force the agent through multiple reads to reach the information it needs.
+
+### Structure instructions for the agent
+
+Write your `SKILL.md` body as clear instructions the agent can follow:
+
+- **Step-by-step procedures** for multi-step workflows
+- **Decision criteria** for choosing between approaches
+- **Examples of expected inputs and outputs** so the agent knows what success looks like
+- **Edge cases** the agent should handle or flag to the user
+
+### Manage skill count
+
+Fewer well-scoped skills outperform many overlapping ones. As the number of skills with similar descriptions grows, the agent's ability to select the right one degrades. If you find yourself with many related skills, consider:
+
+- Consolidating related capabilities into a single skill with sections for each sub-task
+- Using reference files to keep the main `SKILL.md` concise while covering multiple sub-tasks
+
+<Tip>
+    Use the [`skills-ref` validation tool](https://github.com/agentskills/agentskills/tree/main/skills-ref) to check that your `SKILL.md` frontmatter follows the Agent Skills specification naming and format conventions.
+</Tip>
 
 ## Usage
 
@@ -376,18 +393,6 @@ const agent = await createDeepAgent({
 :::
 
 For more information on subagent configuration and skills inheritance, see [Subagents](/oss/deepagents/subagents).
-
-## What the agent sees
-
-When skills are configured, a "Skills System" section is injected into the agent's system prompt. The agent uses this information to follow a three-step process:
-
-1. **Match**—When a user prompt arrives, the agent checks whether any skill's description matches the task.
-2. **Read**—If a skill applies, the agent reads the full `SKILL.md` file using the path shown in its skills list.
-3. **Execute**—The agent follows the skill's instructions and accesses any supporting files (scripts, templates, reference docs) as needed.
-
-<Tip>
-    Write clear, specific descriptions in your `SKILL.md` frontmatter. The agent decides whether to use a skill based on the description alone—detailed descriptions lead to better skill matching.
-</Tip>
 
 ## Execute code with skills
 
@@ -556,25 +561,27 @@ Seed the store under the same namespace with keys like `/company-policies/SKILL.
 
 Use this for enterprise knowledge bases, approved tool instructions, or shared skill packs where the agent should benefit from centrally managed context but should not rewrite the source of truth. If you want agents to save their own learnings, route a separate path such as `/memories/` to another backend with write permissions enabled. See [Backends](/oss/deepagents/backends) for routing and store setup.
 
-## Skills vs. memory
+## Skills, memory, and tools
 
-Skills and [memory](/oss/deepagents/customization#memory) (`AGENTS.md` files) serve different purposes:
+Skills, [memory](/oss/deepagents/memory) (`AGENTS.md` files), and tools all provide context or capabilities to the agent. The following table summarizes when to reach for each:
 
-| | Skills | Memory |
-|---|--------|--------|
-| **Purpose** | On-demand capabilities discovered through progressive disclosure | Persistent context always loaded at startup |
-| **Loading** | Read only when the agent determines relevance | Always injected into system prompt |
-| **Format** | `SKILL.md` in named directories | `AGENTS.md` files |
-| **Layering** | User → project (last wins) | User → project (combined) |
-| **Use when** | Instructions are task-specific and potentially large | Context is always relevant (project conventions, preferences) |
+| | Skills | Memory | Tools |
+|---|--------|--------|-------|
+| **Purpose** | On-demand capabilities discovered through progressive disclosure | Persistent context always loaded at startup | Programmatic actions the agent can call |
+| **Loading** | Read only when the agent determines relevance | Always injected into system prompt | Available every turn |
+| **Format** | `SKILL.md` in named directories | `AGENTS.md` files | Functions bound to the agent |
+| **Layering** | User, then project (last wins) | User, then project (combined) | Defined at agent creation |
+| **Use when** | Instructions are task-specific and potentially large | Context is always relevant (project conventions, preferences) | The agent needs a programmatic action, or does not have access to the file system |
 
-## When to use skills and tools
+These are guidelines, not hard boundaries. In practice, skills and memory sit on a spectrum. An agent can update its own skills as it works, capturing new procedures and refining instructions over time. In this way, skills can function as a form of progressive-disclosure memory: context the agent builds up and retrieves on demand rather than loading on every prompt.
 
-These are a few general guidelines for using tools and skills:
+### Control skill updates
 
-- Use skills when there is a lot of context to reduce the number of tokens in the system prompt.
-- Use skills to bundle capabilities together into larger actions and provide additional context beyond single tool descriptions.
-- Use tools if the agent does not have access to the file system.
+By default, agents can write to skill files if the backend permits it. Use these mechanisms to control that behavior:
+
+- **Read-only skills**: Use [filesystem permissions](/oss/deepagents/permissions) to deny write operations under skill paths. See [read-only skills from a store](#read-only-skills-from-a-store) for a production pattern.
+- **Scoped permissions**: Allow writes to user-scoped skill paths while keeping workspace or shared skills read-only, so agents can personalize their own skills without modifying shared ones.
+- **Human-in-the-loop**: Use [`interrupt_on`](/oss/deepagents/human-in-the-loop) to require approval before the agent executes write operations, adding a review step without fully blocking writes.
 
 <Tip>
 Trace how your agent discovers and executes skills with [LangSmith](https://smith.langchain.com). Follow the [observability quickstart](/langsmith/observability-quickstart) to get set up.
