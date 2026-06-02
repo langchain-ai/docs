@@ -1,0 +1,33 @@
+```ts
+import { ConditionalEdgeRouter } from "@langchain/langgraph";
+
+const shouldContinue: ConditionalEdgeRouter<
+  typeof MessagesState,
+  "check_query"
+> = (state) => {
+  const messages = state.messages;
+  const lastMessage = messages[messages.length - 1];
+  if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {
+    return END;
+  } else {
+    return "check_query";
+  }
+};
+
+const builder = new StateGraph(MessagesState)
+  .addNode("list_tables", listTables)
+  .addNode("call_get_schema", callGetSchema)
+  .addNode("get_schema", getSchemaNode)
+  .addNode("generate_query", generateQuery)
+  .addNode("check_query", checkQuery)
+  .addNode("run_query", runQueryNode)
+  .addEdge(START, "list_tables")
+  .addEdge("list_tables", "call_get_schema")
+  .addEdge("call_get_schema", "get_schema")
+  .addEdge("get_schema", "generate_query")
+  .addConditionalEdges("generate_query", shouldContinue)
+  .addEdge("check_query", "run_query")
+  .addEdge("run_query", "generate_query");
+
+const agent = builder.compile();
+```

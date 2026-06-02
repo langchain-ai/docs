@@ -1,0 +1,49 @@
+```ts TypeScript
+import type { EvaluationResult } from "langsmith/evaluation";
+import { z } from "zod";
+
+// Grade prompt
+const correctnessInstructions = `You are a teacher grading a quiz. You will be given a QUESTION, the GROUND TRUTH (correct) ANSWER, and the STUDENT ANSWER. Here is the grade criteria to follow:
+(1) Grade the student answers based ONLY on their factual accuracy relative to the ground truth answer. (2) Ensure that the student answer does not contain any conflicting statements.
+(3) It is OK if the student answer contains more information than the ground truth answer, as long as it is factually accurate relative to the  ground truth answer.
+
+Correctness:
+A correctness value of True means that the student's answer meets all of the criteria.
+A correctness value of False means that the student's answer does not meet all of the criteria.
+
+Explain your reasoning in a step-by-step manner to ensure your reasoning and conclusion are correct. Avoid simply stating the correct answer at the outset.`;
+
+const graderLLM = new ChatOpenAI({
+  model: "gpt-5.4",
+  temperature: 0,
+}).withStructuredOutput(
+  z
+    .object({
+      explanation: z.string().describe("Explain your reasoning for the score"),
+      correct: z
+        .boolean()
+        .describe("True if the answer is correct, False otherwise."),
+    })
+    .describe("Correctness score for reference answer v.s. generated answer."),
+);
+
+async function correctness({
+  inputs,
+  outputs,
+  referenceOutputs,
+}: {
+  inputs: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  referenceOutputs?: Record<string, unknown>;
+}): Promise<EvaluationResult> {
+  const answer = `QUESTION: ${inputs.question}
+    GROUND TRUTH ANSWER: ${referenceOutputs?.answer}
+    STUDENT ANSWER: ${outputs.answer}`;
+
+  const grade = await graderLLM.invoke([
+    { role: "system", content: correctnessInstructions },
+    { role: "user", content: answer },
+  ]);
+  return { key: "correctness", score: grade.correct };
+}
+```

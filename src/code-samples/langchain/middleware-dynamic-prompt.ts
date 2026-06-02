@@ -20,7 +20,7 @@ const agent = createAgent({
 
 // :remove-start:
 import { FakeListChatModel } from "@langchain/core/utils/testing";
-import type { BaseMessage } from "@langchain/core/messages";
+import type { BaseMessage } from "langchain";
 
 function flattenMessageContent(content: unknown): string {
   if (typeof content === "string") return content;

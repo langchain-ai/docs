@@ -381,6 +381,22 @@ Content offloading happens when tool call inputs or results exceed a token thres
 
     ![An example of offloading showing a large tool response that is replaced with a message about the location of the offloaded results and the first 10 lines of the result](/oss/images/deepagents/offloading-results.png)
 
+### Multimodal inputs
+
+Deep Agents supports multimodal inputs, such as images returned by `read_file` or provided in messages, but the built-in context management mechanisms are primarily text and message-history oriented. They do not resize images, lower image resolution, or generate reusable visual embeddings.
+
+For multimodal workloads, keep large media out of active message history when possible:
+
+- Store images, screenshots, and charts in a filesystem backend or external object store, then pass file paths or URLs through messages.
+- Prefer references over base64-encoded image blocks in long-running conversations.
+- If a tool produces an image, have the tool save the image and return a concise text description plus a path or URL.
+- Use subagents for image-heavy inspection work so the main agent receives a compact text result instead of every multimodal intermediate step.
+- Tune summarization thresholds or provide a custom token counter when your model provider charges many tokens for images.
+
+Offloading large tool inputs and results only measures text content. Non-text blocks, including images, are preserved in the replacement message rather than compressed. A message that contains only an image will not be offloaded because of image size alone.
+
+Summarization replaces older messages with a text summary once those messages fall outside the preserved recent context. Any images in the summarized partition are no longer sent as active image blocks after summarization. The conversation history file written to the backend is a textual record, not a media artifact store, so store important images separately if the agent needs to inspect them again later.
+
 ### Summarization
 
 :::js
@@ -394,9 +410,9 @@ When the context size crosses the model's context window limit (for example 85% 
 This process has two components:
 
 - **In-context summary**: An LLM generates a structured summary of the conversation including session intent, artifacts created, and next steps—which replaces the full conversation history in the agent's working memory.
-- **Filesystem preservation**: The complete, original conversation messages are written to the filesystem as a canonical record.
+- **Filesystem preservation**: A text rendering of the original conversation messages is written to the filesystem as a canonical record.
 
-This dual approach ensures the agent maintains awareness of its goals and progress (via the summary) while preserving the ability to recover specific details when needed (via filesystem search).
+This dual approach ensures the agent maintains awareness of its goals and progress (via the summary) while preserving the ability to recover text details when needed (via filesystem search).
 
 ![An example of summarization showing an agent's conversation history, where several steps get compacted](/oss/images/deepagents/summarization.png)
 
