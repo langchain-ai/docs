@@ -1,0 +1,150 @@
+---
+title: Set up coding agents
+description: Configure Claude Code, Codex, Gemini CLI, and Deep Agents to route LLM calls through the LLM Gateway.
+hidden: true
+---
+
+<Note>
+**Private beta:** The LLM Gateway is in private beta. [Sign up for the waitlist](https://www.langchain.com/langsmith-llm-gateway-waitlist) to get access.
+</Note>
+
+Configure coding agents to route LLM calls through the LLM Gateway, giving your organization cost controls, observability, and audit trails on developer LLM usage without changing agent code.
+
+Most coding agents let you override the LLM provider endpoint via environment variables or configuration files. By pointing them at the LLM Gateway instead of the provider directly, all LLM calls flow through the gateway. The gateway authenticates the caller, resolves the actual provider key from workspace secrets, enforces policies, and traces the call. No agent code changes required.
+
+## Prerequisites
+
+- Your [Organization admin](/langsmith/rbac#organization-admin) has completed [Admin setup](/langsmith/llm-gateway-admin-setup).
+- You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations).
+- You have set the [gateway environment variables](/langsmith/llm-gateway-quickstart#1-set-environment-variables) in your terminal.
+
+## Supported clients
+
+- Claude Code CLI
+- Codex CLI
+- Gemini CLI
+- Deep Agents
+
+## Claude Code CLI
+
+No extra configuration beyond the [environment variables](/langsmith/llm-gateway-quickstart#1-set-environment-variables). Run:
+
+```bash
+claude
+```
+
+Claude Code will use `ANTHROPIC_BASE_URL` and `ANTHROPIC_API_KEY` from your environment automatically.
+
+<Warning>
+Claude Desktop desktop plugins break when the gateway is configured. Claude users on a paid plan (Plus, Max) are not yet supported.
+</Warning>
+
+## Codex CLI
+
+Codex requires a TOML configuration file in addition to environment variables.
+
+Add this to `~/.codex/config.toml`:
+
+```toml
+model_provider = "langsmith-gateway"
+
+[model_providers.langsmith-gateway]
+name = "LangSmith Gateway"
+base_url = "https://gateway.smith.langchain.com/openai/v1"
+env_key = "LANGSMITH_API_KEY"
+supports_websockets = false
+```
+
+Make sure the `LANGSMITH_API_KEY` environment variable is [set](/langsmith/llm-gateway-quickstart#1-set-environment-variables), then run:
+
+```bash
+codex
+```
+
+<Warning>
+Codex Desktop plugins break when the gateway is configured. The TOML configuration forces authentication through the gateway, so OpenAI no longer handles plugin auth directly.
+</Warning>
+
+## Gemini CLI
+
+No extra configuration beyond the [environment variables](/langsmith/llm-gateway-quickstart#1-set-environment-variables). Run:
+
+```bash
+gemini
+```
+
+Gemini CLI will use `GOOGLE_GEMINI_BASE_URL` and `GEMINI_API_KEY` from your environment automatically.
+
+## Deep Agents
+
+No extra configuration beyond the [environment variables](/langsmith/llm-gateway-quickstart#1-set-environment-variables). For details, refer to the [provider selection docs](/oss/deepagents/cli/providers#provider-reference). Run:
+
+```bash
+deepagents
+```
+
+## Python SDK usage
+
+If you call LLM providers from Python scripts rather than through a coding agent, swap the `base_url`:
+
+<Tabs>
+  <Tab title="OpenAI SDK">
+    ```python
+    import os
+
+    from openai import OpenAI
+
+    client = OpenAI(
+        base_url="https://gateway.smith.langchain.com/openai/v1",
+        api_key=os.environ["LANGSMITH_API_KEY"],
+    )
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Say hello!"}],
+    )
+    print(response.choices[0].message.content)
+    ```
+  </Tab>
+  <Tab title="Anthropic SDK">
+    ```python
+    import os
+
+    import anthropic
+
+    client = anthropic.Anthropic(
+        base_url="https://gateway.smith.langchain.com/anthropic",
+        api_key=os.environ["LANGSMITH_API_KEY"],
+    )
+    message = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": "Say hello!"}],
+    )
+    print(message.content[0].text)
+    ```
+  </Tab>
+</Tabs>
+
+## Company-wide deployment
+
+For organizations rolling the gateway out to all developers, distribute the configuration through MDM (mobile device management) or a shared shell profile. The key pieces to distribute are:
+
+1. The gateway base URL (`https://gateway.smith.langchain.com`).
+1. A workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) per user (or per team, depending on your policy granularity).
+1. The Codex `config.toml` if your organization uses Codex.
+
+Provider API keys stay centralized in LangSmith workspace secrets.
+
+## Verify the setup
+
+After configuring a coding agent, make a test call and confirm that:
+
+1. The call succeeds (the agent gets a response).
+1. A trace appears in the `gateway` and `gateway-<short_api_key>-<api_key_id>` tracing projects in your LangSmith workspace.
+
+If the call fails with a `403`, check that your API key's role includes `gateway:invoke` and `workspaces:read`. If it fails with a `400` mentioning a missing provider key, ask your org admin to add the provider's key to workspace secrets.
+
+## Next steps
+
+- [Spend policies](/langsmith/llm-gateway-spend-policies): set cost limits on developer LLM usage.
+- [Traces, Engine, and access control](/langsmith/llm-gateway-access): understand where gateway traces appear.

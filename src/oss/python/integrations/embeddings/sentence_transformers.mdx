@@ -1,55 +1,99 @@
 ---
-title: "Sentence transformers on Hugging Face integration"
-description: "Integrate with the Sentence transformers on Hugging Face embedding model using LangChain Python."
+title: "Sentence Transformers on Hugging Face integration"
+description: "Integrate with Sentence Transformers embedding models using LangChain Python."
 ---
 
->[Hugging Face sentence-transformers](https://huggingface.co/sentence-transformers) is a Python framework for state-of-the-art sentence, text and image embeddings.
->You can use these embedding models from the `HuggingFaceEmbeddings` class.
-
-<Warning>
-**Running sentence-transformers locally can be affected by your operating system and other global factors. It is recommended for experienced users only.**
-
-</Warning>
+>[Sentence Transformers](https://sbert.net) is the most widely used Python framework for state-of-the-art text and image embeddings. The Hugging Face Hub hosts thousands of pretrained [embedding](https://huggingface.co/models?library=sentence-transformers&pipeline_tag=feature-extraction) and [reranker](https://huggingface.co/models?pipeline_tag=text-ranking) models that run locally with no API key required, accessible via the `HuggingFaceEmbeddings` class.
 
 ## Setup
 
-You'll need to install the `langchain_huggingface` package as a dependency:
-
-```python
+```shell
 pip install -qU langchain-huggingface
 ```
 
-## Usage
+`langchain-huggingface` pulls in `sentence-transformers` as a dependency, which in turn installs `transformers` and `torch`.
+
+## Basic usage
 
 ```python
 from langchain_huggingface import HuggingFaceEmbeddings
 
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 
-text = "This is a test document."
-query_result = embeddings.embed_query(text)
-
-# show only the first 100 characters of the stringified vector
-print(str(query_result)[:100] + "...")
+query_embedding = embeddings.embed_query("What is a sentence embedding?")
+doc_embeddings = embeddings.embed_documents(
+    [
+        "Sentence embeddings map text to dense vectors.",
+        "LangChain provides a standard Embeddings interface.",
+    ]
+)
 ```
 
-```text
-[-0.038338568061590195, 0.12346471101045609, -0.028642969205975533, 0.05365273356437683, 0.008845377...
-```
+## Choosing a model
+
+Start from the [MTEB leaderboard](https://huggingface.co/spaces/mteb/leaderboard). Strong starting points across different tradeoffs:
+
+| Model | Size | Notes |
+|---|---|---|
+| `sentence-transformers/all-mpnet-base-v2` | 110M | Classic, small, CPU-friendly, no prompt required |
+| `BAAI/bge-m3` | 570M | Multilingual; produces dense, sparse, and multi-vector embeddings in one pass |
+| `mixedbread-ai/mxbai-embed-large-v1` | 335M | Strong English performance, supports Matryoshka truncation |
+| `nomic-ai/modernbert-embed-base` | 149M | 8192-token context, modern architecture |
+| `lightonai/DenseOn` | 149M | modern architecture, strong performance for its size |
+| `Qwen/Qwen3-Embedding-0.6B` | 595M | Multilingual, instruction-aware, top MTEB performance |
+
+See also [Factors to weigh](/oss/integrations/embeddings#factors-to-weigh) for a deeper walkthrough of the tradeoffs.
+
+## Normalize embeddings
+
+Models trained with cosine similarity benefit from normalized output vectors. If your vector store uses cosine similarity, normalize at the source:
 
 ```python
-doc_result = embeddings.embed_documents([text, "This is not a test document."])
-print(str(doc_result)[:100] + "...")
+embeddings = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-m3",
+    encode_kwargs={"normalize_embeddings": True},
+)
 ```
 
-```text
-[[-0.038338497281074524, 0.12346471846103668, -0.028642890974879265, 0.05365274101495743, 0.00884535...
+## Device and throughput
+
+Sentence Transformers auto-selects the best available device (CUDA > MPS > CPU), so you don't need to set `device=` explicitly in most cases. On a GPU, raise `batch_size` to keep it fed:
+
+```python
+embeddings = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-m3",
+    encode_kwargs={"batch_size": 64, "normalize_embeddings": True},
+)
 ```
+
+To pin to a specific device, pass `model_kwargs={"device": "cpu"}` (or `"cuda:1"`, etc.). For multiple GPUs, set `multi_process=True`. For Intel CPUs, use `model_kwargs={"backend": "ipex"}` after installing `optimum[ipex]`.
+
+## Query and document prompts
+
+Some models (`intfloat/e5-*`, `Qwen/Qwen3-Embedding-*`, many `BAAI/bge-*`) are trained with distinct prompts for queries and documents. Pass these via `encode_kwargs` and `query_encode_kwargs`:
+
+```python
+embeddings = HuggingFaceEmbeddings(
+    model_name="intfloat/e5-large-v2",
+    encode_kwargs={"prompt": "passage: "},
+    query_encode_kwargs={"prompt": "query: "},
+)
+```
+
+Using the right prompts at indexing and query time typically gives a meaningful retrieval quality boost. Check each model's card on Hugging Face for the recommended prompt strings.
+
+## Deploy for production
+
+For serving Sentence Transformers models at scale, use [Text Embeddings Inference (TEI)](/oss/integrations/embeddings/text_embeddings_inference), a dedicated inference server from Hugging Face with batching, GPU support, and OpenAI-compatible APIs. Point LangChain at a TEI deployment via `HuggingFaceEndpointEmbeddings`: see the [main Hugging Face embeddings guide](/oss/integrations/embeddings/huggingfacehub).
+
+## Reranking
+
+The same ecosystem hosts [cross-encoder reranker models](https://huggingface.co/models?pipeline_tag=text-ranking). For a local reranker on top of a vector store, see the [Cross Encoder Reranker guide](/oss/integrations/document_transformers/cross_encoder_reranker).
 
 ## Troubleshooting
 
-If you are having issues with the `accelerate` package not being found or failing to import, installing/upgrading it may help:
+If the `accelerate` package is missing or fails to import:
 
-```python
+```shell
 pip install -qU accelerate
 ```
