@@ -33,15 +33,17 @@ The command scaffolds:
 | --- | --- |
 | `agent.json` | Configures the managed agent name, model, backend, and optional target `agent_id`. |
 | `AGENTS.md` | Defines the agent instructions. |
-| `skills/` | Contains optional skills the agent can use. |
+| `tools.json` | Starts empty. Add MCP-backed tools after registering an MCP server. |
+| `skills/example-skill/` | Contains an example skill you can edit, replace, or delete. |
+| `subagents/researcher/` | Contains an example subagent you can edit, replace, or delete. |
 | `.gitignore` | Excludes local environment files. |
 
 You can also add:
 
 | File or directory | Purpose |
 | --- | --- |
-| `subagents/` | Contains subagent definitions for delegated work. |
-| `tools.json` | Configures the MCP-backed tools the agent can call. Required if the agent uses MCP tools. |
+| `skills/<name>/` | Contains additional skills the agent can use. |
+| `subagents/<name>/` | Contains additional subagent definitions for delegated work. |
 
 The generated `agent.json` uses the readable local CLI shape:
 
@@ -49,36 +51,202 @@ The generated `agent.json` uses the readable local CLI shape:
 {
   "name": "my-agent",
   "description": "A managed deep agent.",
-  "model": "anthropic:claude-sonnet-4-6",
+  "model": "openai:gpt-5.5",
   "backend": {
-    "type": "thread_scoped_sandbox"
+    "type": "default"
   }
 }
 ```
 
-Edit `AGENTS.md` to define the agent's behavior. Add skills or subagents if your agent needs extra procedures or delegated workers.
+Edit `AGENTS.md` to define the agent's behavior. The full project layout that deploy syncs to the managed file tree is:
 
-If your agent calls MCP tools, [register the MCP server](/langsmith/managed-deep-agents-mcp) once for the workspace, then add a `tools.json` that references it by URL before you deploy.
+```text
+my-agent/
+  agent.json                       # Agent metadata, model, and backend
+  AGENTS.md                        # Main agent instructions (system prompt)
+  tools.json                       # Optional: MCP-backed tools
+  skills/<name>/SKILL.md           # Optional: reusable procedures
+  subagents/<name>/agent.json      # Optional: delegated worker metadata
+  subagents/<name>/AGENTS.md       # Optional: delegated worker instructions
+  subagents/<name>/tools.json      # Optional: subagent-scoped MCP tools
+```
+
+`deepagents init` scaffolds an empty `tools.json`, one example skill, and one example subagent so the first deploy succeeds without first registering an MCP server. Edit or remove the examples to fit your agent. Deploy reads every file in the project and syncs the tree to the Context Hub agent repo. For the complete field reference, see the [CLI reference](/langsmith/managed-deep-agents-cli#project-file-reference).
+
+### Add MCP tools
+
+To let the agent call MCP tools, [register the MCP server](/langsmith/managed-deep-agents-mcp) once for the workspace, then add tool entries to the project `tools.json`. Tool entries reference a registered server by URL.
+
+After you register a server, list its tools and print a paste-ready `tools.json` snippet:
+
+```bash
+deepagents mcp-servers tools <id|name|url>
+```
+
+The `deepagents mcp-servers add` command also tries to list tools after registration. Pass `--no-tools` when you want to skip that discovery step.
+
+```json tools.json
+{
+  "tools": [
+    {
+      "name": "example_tool",
+      "mcp_server_url": "https://example.com/mcp",
+      "mcp_server_name": "my-tools",
+      "display_name": "example_tool"
+    }
+  ],
+  "interrupt_config": {
+    "https://example.com/mcp::example_tool": true
+  }
+}
+```
+
+Each tool requires `name` and `mcp_server_url`. The `mcp_server_name` and `display_name` fields are optional. Use the optional `interrupt_config` object to require human approval before a tool runs. Key each entry by `"{mcp_server_url}::{tool_name}"` and set it to `true`.
+
+Deploy validates referenced MCP server URLs before sending a request. If a server URL is not registered, deploy fails with a hint to add it. For server setup and OAuth, see [Connect tools](/langsmith/managed-deep-agents-mcp).
+
+### Add subagents
+
+Subagents are delegated workers the main agent can call for focused tasks. Add a `subagents/` directory to the project root, then create one directory per subagent. Each subagent directory requires an `agent.json` and an `AGENTS.md`, and can include its own `tools.json` and `skills/`. The subagent name comes from its directory name.
+
+```text
+my-agent/
+  agent.json
+  AGENTS.md
+  subagents/
+    researcher/
+      agent.json
+      AGENTS.md
+      tools.json                   # Optional: subagent-scoped MCP tools
+      skills/                      # Optional: subagent-local skills
+```
+
+The subagent `agent.json` supports an optional `description` and `model`:
+
+```json subagents/researcher/agent.json
+{
+  "description": "Researches a topic and returns concise findings with citations.",
+  "model": "openai:gpt-5.5"
+}
+```
+
+The legacy `model_id` key still works in local subagent files, but use `model` for new projects. The REST API subagent schema still uses `model_id`.
+
+Write the subagent instructions in `subagents/researcher/AGENTS.md`:
+
+```mdx subagents/researcher/AGENTS.md
+# Researcher
+
+Search for sources, take notes, and return concise findings with citations.
+```
+
+To give a subagent its own MCP tools, add `subagents/researcher/tools.json` with the same shape as the project-level `tools.json`. Subagent names are checked case-insensitively for duplicates.
+
+### Review the complete project
+
+Tools and subagents are not configured inside `agent.json`. `agent.json` holds only agent metadata, model, and backend. Tools live in `tools.json`, and subagents live in the `subagents/` directory. A project that uses all three looks like this:
+
+```text
+research-assistant/
+  agent.json
+  AGENTS.md
+  tools.json
+  subagents/
+    researcher/
+      agent.json
+      AGENTS.md
+      tools.json
+```
+
+`agent.json` stays focused on agent metadata, model, and backend:
+
+```json agent.json
+{
+  "name": "research-assistant",
+  "description": "Research assistant that searches the web and delegates deep research.",
+  "model": "openai:gpt-5.5",
+  "backend": {
+    "type": "default"
+  }
+}
+```
+
+`AGENTS.md` defines the main agent instructions:
+
+```mdx AGENTS.md
+# Research assistant
+
+You are a research assistant. Use the available tools to search for sources, and
+delegate deep research to the `researcher` subagent. Return concise answers with
+citations.
+```
+
+`tools.json` references the workspace MCP server the main agent calls:
+
+```json tools.json
+{
+  "tools": [
+    {
+      "name": "web_search",
+      "mcp_server_url": "https://example.com/mcp",
+      "mcp_server_name": "my-tools"
+    }
+  ]
+}
+```
+
+`subagents/researcher/agent.json` sets the subagent metadata and model:
+
+```json subagents/researcher/agent.json
+{
+  "description": "Researches a topic and returns concise findings with citations.",
+  "model": "openai:gpt-5.5"
+}
+```
+
+`subagents/researcher/AGENTS.md` defines the subagent instructions:
+
+```mdx subagents/researcher/AGENTS.md
+# Researcher
+
+Search for sources, take notes, and return concise findings with citations.
+```
+
+`subagents/researcher/tools.json` gives the subagent its own MCP tools:
+
+```json subagents/researcher/tools.json
+{
+  "tools": [
+    {
+      "name": "web_search",
+      "mcp_server_url": "https://example.com/mcp",
+      "mcp_server_name": "my-tools"
+    }
+  ]
+}
+```
+
+Run `deepagents deploy --dry-run` to inspect the assembled agent payload and managed file tree before you deploy.
 
 ### Choose a backend
 
-Managed Deep Agents projects generated by the CLI use a [LangSmith sandbox](/langsmith/sandboxes) backend by default:
+Managed Deep Agents projects generated by the CLI use the `default` backend:
 
 ```json
 {
   "backend": {
-    "type": "thread_scoped_sandbox"
+    "type": "default"
   }
 }
 ```
 
-Use a LangSmith sandbox backend when the agent needs an isolated environment for code execution, filesystem work, or long-running tasks. LangSmith manages the underlying sandbox lifecycle while the agent keeps its thread or agent scope.
+Use a [LangSmith sandbox](/langsmith/sandboxes) backend when the agent needs an isolated environment for code execution, filesystem work, or long-running tasks. LangSmith manages the underlying sandbox lifecycle while the agent keeps its thread or agent scope.
 
 | Backend type | Use for |
 | --- | --- |
-| `thread_scoped_sandbox` | Default. Scope LangSmith sandbox resources to each thread. |
-| `agent_scoped_sandbox` | Scope LangSmith sandbox resources to the agent. |
 | `default` | Use no sandbox-specific backend behavior. |
+| `thread_scoped_sandbox` | Scope LangSmith sandbox resources to each thread. |
+| `agent_scoped_sandbox` | Scope LangSmith sandbox resources to the agent. |
 
 Sandbox backends can include optional sandbox settings:
 
@@ -135,9 +303,9 @@ For shared repositories or intentional updates to an existing Managed Deep Agent
 {
   "name": "my-agent",
   "agent_id": "agent-uuid",
-  "model": "anthropic:claude-sonnet-4-6",
+  "model": "openai:gpt-5.5",
   "backend": {
-    "type": "thread_scoped_sandbox"
+    "type": "default"
   }
 }
 ```
@@ -188,74 +356,80 @@ Create the agent with `POST /v1/deepagents/agents`:
 
 <Tabs>
   <Tab title="Python (httpx)">
-    ```python
-    import os
 
-    import httpx
+```python
+import os
 
-    BASE_URL = os.environ["DEEPAGENTS_BASE_URL"]
-    HEADERS = {"X-Api-Key": os.environ["LANGSMITH_API_KEY"]}
+import httpx
 
-    response = httpx.post(
-        f"{BASE_URL}/agents",
-        headers=HEADERS,
-        json={
-            "name": "research-assistant",
-            "description": "Research assistant that can search the web and summarize sources.",
-            "model": "anthropic:claude-sonnet-4-6",
-            "backend": {"type": "thread_scoped_sandbox"},
-            "instructions": (
-                "You are a careful research assistant. Search for sources, "
-                "keep notes, and return concise answers with citations."
-            ),
-        },
-    )
-    response.raise_for_status()
-    agent_id = response.json()["id"]
-    print(f"Agent ID: {agent_id}")
-    ```
-  </Tab>
-  <Tab title="JavaScript (fetch)">
-    ```ts
-    const BASE_URL = process.env.DEEPAGENTS_BASE_URL!
-    const HEADERS = {
-      "X-Api-Key": process.env.LANGSMITH_API_KEY!,
-      "Content-Type": "application/json",
-    }
+BASE_URL = os.environ["DEEPAGENTS_BASE_URL"]
+HEADERS = {"X-Api-Key": os.environ["LANGSMITH_API_KEY"]}
 
-    const response = await fetch(`${BASE_URL}/agents`, {
-      method: "POST",
-      headers: HEADERS,
-      body: JSON.stringify({
-        name: "research-assistant",
-        description: "Research assistant that can search the web and summarize sources.",
-        model: "anthropic:claude-sonnet-4-6",
-        backend: { type: "thread_scoped_sandbox" },
-        instructions:
-          "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
-      }),
-    })
-    if (!response.ok) throw new Error(await response.text())
-    const { id: agentId } = await response.json()
-    console.log(`Agent ID: ${agentId}`)
-    ```
-  </Tab>
-  <Tab title="cURL">
-    ```bash
-    curl --request POST \
-      --url "$DEEPAGENTS_BASE_URL/agents" \
-      --header "X-Api-Key: $LANGSMITH_API_KEY" \
-      --header 'Content-Type: application/json' \
-      --data '{
+response = httpx.post(
+    f"{BASE_URL}/agents",
+    headers=HEADERS,
+    json={
         "name": "research-assistant",
         "description": "Research assistant that can search the web and summarize sources.",
-        "model": "anthropic:claude-sonnet-4-6",
-        "backend": {
-          "type": "thread_scoped_sandbox"
-        },
-        "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations."
-      }'
-    ```
+        "model": "openai:gpt-5.5",
+        "backend": {"type": "default"},
+        "instructions": (
+            "You are a careful research assistant. Search for sources, "
+            "keep notes, and return concise answers with citations."
+        ),
+    },
+)
+response.raise_for_status()
+agent_id = response.json()["id"]
+print(f"Agent ID: {agent_id}")
+```
+
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+
+```ts
+const BASE_URL = process.env.DEEPAGENTS_BASE_URL!
+const HEADERS = {
+  "X-Api-Key": process.env.LANGSMITH_API_KEY!,
+  "Content-Type": "application/json",
+}
+
+const response = await fetch(`${BASE_URL}/agents`, {
+  method: "POST",
+  headers: HEADERS,
+  body: JSON.stringify({
+    name: "research-assistant",
+    description: "Research assistant that can search the web and summarize sources.",
+    model: "openai:gpt-5.5",
+    backend: { type: "default" },
+    instructions:
+      "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
+  }),
+})
+if (!response.ok) throw new Error(await response.text())
+const { id: agentId } = await response.json()
+console.log(`Agent ID: ${agentId}`)
+```
+
+  </Tab>
+  <Tab title="cURL">
+
+```bash
+curl --request POST \
+  --url "$DEEPAGENTS_BASE_URL/agents" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "name": "research-assistant",
+    "description": "Research assistant that can search the web and summarize sources.",
+    "model": "openai:gpt-5.5",
+    "backend": {
+      "type": "default"
+    },
+    "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations."
+  }'
+```
+
   </Tab>
 </Tabs>
 
