@@ -110,7 +110,7 @@ After rolling the secret, update every consumer that verifies `X-LangSmith-Signa
 
 ### Severity filtering
 
-Each subscription has a `severity_threshold` from `0` to `3`. An event is delivered only when the issue's `severity` is less than or equal to the threshold. Lower numbers are more urgent.
+Each subscription has a `severity_threshold` from `0` to `3`. For issue events, an event is delivered only when the issue's `severity` is less than or equal to the threshold. Lower numbers are more urgent.
 
 | Severity | Meaning |
 | --- | --- |
@@ -120,6 +120,8 @@ Each subscription has a `severity_threshold` from `0` to `3`. An event is delive
 | `3` | Low |
 
 For example, a subscription with `severity_threshold: 1` receives events for `URGENT` (0) and `HIGH` (1) issues only.
+
+Severity thresholds do not apply to [`issue.agent_run.failed`](#issue-agent-run-failed), because run-failure events are scoped to the Engine session rather than to a specific issue.
 
 ### Event-type filtering
 
@@ -132,14 +134,14 @@ Every event delivered to your endpoint uses the same outer JSON shape.
 | Field | Type | Description |
 | --- | --- | --- |
 | `id` | UUID | Unique identifier for this delivery. Stable across retries. Use it to dedupe. |
-| `type` | string | Event type. One of [`issue.created`](#issue-created) or [`issue.trace.added`](#issue-trace-added). |
+| `type` | string | Event type. One of [`issue.created`](#issue-created), [`issue.trace.added`](#issue-trace-added), or [`issue.agent_run.failed`](#issue-agent-run-failed). |
 | `created` | integer | Unix seconds (UTC) when the event was enqueued. |
 | `request_id` | UUID | Shared by every event fired from the same upstream action. See [Batch coalescing](#batch-coalescing). |
-| `data` | object | Event payload. Always contains [`data.object`](#data-object). Contains [`data.trace`](#data-trace) only on [`issue.trace.added`](#issue-trace-added) events. |
+| `data` | object | Event payload. Always contains `data.object`. Contains [`data.trace`](#data-trace) only on [`issue.trace.added`](#issue-trace-added) events. |
 
-### `data.object`
+### Issue `data.object`
 
-`data.object` is a snapshot of the issue and is included on every event, regardless of type. Treat it as the authoritative state of the issue at the time the event was generated.
+For [`issue.created`](#issue-created) and [`issue.trace.added`](#issue-trace-added), `data.object` is a snapshot of the issue. Treat it as the authoritative state of the issue at the time the event was generated.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -152,6 +154,23 @@ Every event delivered to your endpoint uses the same outer JSON shape.
 | `session_id` | UUID | Tracing project the issue belongs to. |
 | `session_name` | string | Tracing project name (best-effort). Empty if the project has been deleted. |
 | `url` | string | Deep link to the issue in the LangSmith UI. |
+
+### Run failure `data.object`
+
+For [`issue.agent_run.failed`](#issue-agent-run-failed), `data.object` describes the Engine run that failed.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `tenant_id` | UUID | Workspace the run belongs to. |
+| `tenant_name` | string | Workspace display name (best-effort). Empty if the workspace has been deleted. |
+| `session_id` | UUID | Tracing project the run belongs to. |
+| `session_name` | string | Tracing project name (best-effort). Empty if the project has been deleted. |
+| `url` | string | Deep link to the LangSmith project in the UI. |
+| `thread_id` | string | Engine thread ID. |
+| `run_id` | string | Engine run ID. Omitted when unavailable. |
+| `status` | string | Final run status. |
+| `error_message` | string | Error text from the failed run. Omitted when unavailable. |
+| `occurred_at` | string | RFC 3339 timestamp of when the failure occurred. |
 
 ### `data.trace`
 
@@ -225,6 +244,33 @@ Sent when a new trace is linked to an existing issue. `data.trace` describes the
       "trace_id": "abcdefab-1234-5678-9abc-def012345678",
       "start_time": "2026-05-14T12:30:00Z",
       "comment": "Reproduces the same tool-loop pattern."
+    }
+  }
+}
+```
+
+### `issue.agent_run.failed`
+
+Sent when the LangSmith Engine fails to complete a run. This event is session-scoped, so it does not include `data.trace` and does not use severity filtering.
+
+```json
+{
+  "id": "4d0e8db2-81e6-4491-b8e5-b13a8f5afc0d",
+  "type": "issue.agent_run.failed",
+  "created": 1747238500,
+  "request_id": "f6bbd48a-0386-403d-9344-31051264b45f",
+  "data": {
+    "object": {
+      "tenant_id": "11111111-2222-3333-4444-555555555555",
+      "tenant_name": "Acme Workspace",
+      "session_id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+      "session_name": "prod-api",
+      "url": "https://smith.langchain.com/o/11111111-2222-3333-4444-555555555555/projects/p/66666666-7777-8888-9999-aaaaaaaaaaaa",
+      "thread_id": "thread-123",
+      "run_id": "run-456",
+      "status": "error",
+      "error_message": "RuntimeError: missing API key",
+      "occurred_at": "2026-05-14T12:45:00Z"
     }
   }
 }
