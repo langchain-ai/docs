@@ -1,7 +1,12 @@
 ---
-title: Grading Rubrics
+title: Grading rubrics
 description: Self-evaluating agents that iterate against a rubric until done
+tag: "Beta"
 ---
+
+<Note>
+`RubricMiddleware` is in [**beta**](/oss/versioning). The API may change in the future.
+</Note>
 
 Some agent tasks have a clear definition of "done" that the model alone cannot reliably hit on the first try: a haiku in the right syllable pattern, a refactor with all tests passing, a report that hits every required section. `RubricMiddleware` lets you declare *what done looks like* as a rubric and have the agent **self-evaluate and iterate** until the rubric is satisfied (or a configured maximum iteration cap is hit).
 
@@ -33,10 +38,6 @@ graph LR
     class Done,MaxOut alert
 ```
 
-<Note>
-`RubricMiddleware` is in [**beta**](/oss/versioning). The API may change in the future.
-</Note>
-
 ## Rubric verdicts
 
 Every grader pass produces one of five verdicts:
@@ -49,7 +50,7 @@ Every grader pass produces one of five verdicts:
 | `failed` | The grader judged the rubric malformed or impossible to evaluate against the transcript. | No |
 | `grader_error` | The grader sub-agent itself raised an exception (provider timeout, missing credentials, malformed structured response, etc.). | No |
 
-## Configuration
+## Configure the middleware
 
 | Argument | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -59,11 +60,30 @@ Every grader pass produces one of five verdicts:
 | `max_iterations` | No | `3` | Hard cap on grader iterations per rubric attempt. Maximum input value is 20. When the cap is reached without a `satisfied` verdict, the agent terminates with status `max_iterations_reached`. |
 | `on_evaluation` | No | `None` | Optional callback invoked with each `RubricEvaluation` after grading. Useful for evals, observability, or persisting iteration history. |
 
-## Example: grading a lipogram with a custom tool and prompt
+## Observe iteration progress
+
+Run the agent with `agent.stream(..., stream_mode="custom")` instead of `agent.invoke(...)` to receive each grader event as it fires.
+
+| Event | When fired | Payload fields |
+| --- | --- | --- |
+| `rubric_evaluation_start` | Before the grader runs. | `type` — event name<br/>`grading_run_id` — shared across all events within one rubric attempt<br/>`iteration` — zero-based index of the current grading run |
+| `rubric_evaluation_end` | After the grader returns or after a grader exception. | `type` — event name<br/>`grading_run_id` — shared across all events within one rubric attempt<br/>`iteration` — zero-based index of the current grader pass<br/>`result` — terminal verdict for this pass<br/>`explanation` — summary from the grader<br/>`criteria` — per-criterion verdicts |
+
+The same `RubricEvaluation` payload is also delivered synchronously to the `on_evaluation` callback after each grader pass, and the full history is reachable through `agent.get_state(config).values` on a checkpointed thread.
+
+## Persist rubrics across invocations
+
+A single `agent.invoke()` call runs the rubric loop to completion and returns with a terminal verdict: `satisfied`, `failed`, or `max_iterations_reached`.
+
+Rubrics carry over to follow-up invocations only if a checkpointer is attached and the same `thread_id` is passed alongside the invocation. In these cases, the same `rubric` persists across future `invoke` calls until the user passes a new one in.
+
+Interrupts (`KeyboardInterrupt`, `asyncio.CancelledError`) propagate out of `agent.invoke()` uncaught. On a checkpointed thread, the next invocation with the same rubric resumes the in-flight grading run.
+
+## Example: grade a lipogram with a custom tool and prompt
 
 The following example builds a deep agent that writes a short paragraph about the ocean without using the letter "e". The rubric asks for zero instances of "e", at least two vivid sensory details, and a 3-4 sentence length.
 
-```python expand
+```python expandable wrap
 from deepagents import RubricMiddleware, create_deep_agent
 from langchain.messages import HumanMessage
 from langchain.tools import tool
@@ -124,22 +144,3 @@ print(result["messages"][-1].content)   # the final paragraph
 The `rubric` field on input state is the trigger. Each grader iteration is delivered to `on_evaluation` as a `RubricEvaluation` dictionary containing the verdict, explanation, and per-criterion gaps.
 
 When no `rubric` is supplied on input state, the middleware does not run.
-
-## Observing iteration progress
-
-Run the agent with `agent.stream(..., stream_mode="custom")` instead of `agent.invoke(...)` to receive each grader event as it fires.
-
-| Event | When fired | Payload fields |
-| --- | --- | --- |
-| `rubric_evaluation_start` | Before the grader runs. | `type` — event name<br/>`grading_run_id` — shared across all events within one rubric attempt<br/>`iteration` — zero-based index of the current grading run |
-| `rubric_evaluation_end` | After the grader returns or after a grader exception. | `type` — event name<br/>`grading_run_id` — shared across all events within one rubric attempt<br/>`iteration` — zero-based index of the current grader pass<br/>`result` — terminal verdict for this pass<br/>`explanation` — summary from the grader<br/>`criteria` — per-criterion verdicts |
-
-The same `RubricEvaluation` payload is also delivered synchronously to the `on_evaluation` callback after each grader pass, and the full history is reachable through `agent.get_state(config).values` on a checkpointed thread.
-
-## Rubric persistence
-
-A single `agent.invoke()` call runs the rubric loop to completion and returns with a terminal verdict: `satisfied`, `failed`, or `max_iterations_reached`.
-
-Rubrics carry over to follow-up invocations only if a checkpointer is attached and the same `thread_id` is passed alongside the invocation. In these cases, the same `rubric` persists across future `invoke` calls until the user passes a new one in.
-
-Interrupts (`KeyboardInterrupt`, `asyncio.CancelledError`) propagate out of `agent.invoke()` uncaught. On a checkpointed thread, the next invocation with the same rubric resumes the in-flight grading run.

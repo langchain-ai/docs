@@ -33,6 +33,10 @@
       "description": "Register MCP servers and store credentials referenced by agent tools."
     },
     {
+      "name": "MCP tools",
+      "description": "List tools exposed by registered MCP servers."
+    },
+    {
       "name": "Auth sessions",
       "description": "Start and poll OAuth authorization sessions for OAuth MCP servers."
     }
@@ -184,9 +188,9 @@
                       "identity": "personal",
                       "visibility": "user"
                     },
-                    "model": "anthropic:claude-sonnet-4-6",
+                    "model": "openai:gpt-5.5",
                     "backend": {
-                      "type": "thread_scoped_sandbox"
+                      "type": "default"
                     },
                     "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
                     "tools": {
@@ -233,11 +237,11 @@
                       },
                       "runtime": {
                         "model": {
-                          "model_id": "anthropic:claude-sonnet-4-6"
+                          "model_id": "openai:gpt-5.5"
                         }
                       },
                       "backend": {
-                        "type": "thread_scoped_sandbox"
+                        "type": "default"
                       },
                       "revision": "13ac11f11da376e588cb84825ed88d05298f27aaaa90c6f694abf572f34161d9",
                       "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
@@ -1327,6 +1331,116 @@
         }
       }
     },
+    "/mcp/tools": {
+      "get": {
+        "tags": [
+          "MCP tools"
+        ],
+        "summary": "List MCP tools",
+        "description": "Return tools exposed by a registered MCP server. The API serves cached results when fresh; otherwise, it fetches tools from the remote MCP server and caches the response.",
+        "operationId": "listMcpTools",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/mcp-tools/list-mcp-tools",
+          "metadata": {
+            "title": "List MCP tools",
+            "sidebarTitle": "List MCP tools"
+          }
+        },
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "description": "Registered MCP server URL to fetch tools from.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "oauth_provider_id",
+            "in": "query",
+            "required": false,
+            "description": "OAuth provider ID for token-based MCP server auth.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "force_refresh",
+            "in": "query",
+            "required": false,
+            "description": "Skip cached tool definitions and fetch fresh tools from the MCP server.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "ls_user_id",
+            "in": "query",
+            "required": false,
+            "description": "User ID override for service-key callers.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "MCP tools returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListMcpToolsResponse"
+                },
+                "examples": {
+                  "basic": {
+                    "summary": "Tools from a registered server",
+                    "value": {
+                      "tools": [
+                        {
+                          "name": "read_url_content",
+                          "description": "Read and extract content from a URL.",
+                          "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "url"
+                            ]
+                          }
+                        }
+                      ],
+                      "cached": true,
+                      "fetched_at": "2026-06-01T20:50:32Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
     "/auth-sessions": {
       "post": {
         "tags": [
@@ -1699,8 +1813,8 @@
           },
           "model": {
             "type": "string",
-            "description": "Model identifier used to run the agent. Use the form `{provider}:{model_name}` — for example, `anthropic:claude-sonnet-4-6` or `openai:gpt-5.4-mini`. Values without a colon are interpreted as references to a saved Playground configuration, not as direct model identifiers.",
-            "example": "anthropic:claude-sonnet-4-6"
+            "description": "Model identifier used to run the agent. Use the form `{provider}:{model_name}`, for example `openai:gpt-5.5`. Values without a colon are interpreted as references to a saved Playground configuration, not as direct model identifiers.",
+            "example": "openai:gpt-5.5"
           },
           "permissions": {
             "$ref": "#/components/schemas/AgentPermissions"
@@ -1757,7 +1871,7 @@
           "model": {
             "type": "string",
             "description": "Updated model identifier. Use the form `{provider}:{model_name}`.",
-            "example": "anthropic:claude-sonnet-4-6"
+            "example": "openai:gpt-5.5"
           },
           "permissions": {
             "$ref": "#/components/schemas/AgentPermissions"
@@ -1875,14 +1989,14 @@
         "properties": {
           "model_id": {
             "type": "string",
-            "description": "Model identifier used to run the agent. Use the form `{provider}:{model_name}` — for example, `anthropic:claude-sonnet-4-6` or `openai:gpt-5.4-mini`. Values without a colon are interpreted as references to a saved Playground configuration, not as direct model identifiers. See [Supported models](/langsmith/deploy-managed-deep-agent#supported-models) for the recognized provider prefixes.",
-            "example": "anthropic:claude-sonnet-4-6"
+            "description": "Model identifier used to run the agent. Use the form `{provider}:{model_name}`, for example `openai:gpt-5.5`. Values without a colon are interpreted as references to a saved Playground configuration, not as direct model identifiers. See [Supported models](/langsmith/deploy-managed-deep-agent#supported-models) for the recognized provider prefixes.",
+            "example": "openai:gpt-5.5"
           }
         }
       },
       "AgentBackend": {
         "type": "object",
-        "description": "Backend configuration for the agent. Use `thread_scoped_sandbox` for the same LangSmith sandbox backend generated by the CLI. LangSmith sandboxes provide isolated environments for code execution, filesystem work, and long-running tasks. See [Sandboxes overview](/langsmith/sandboxes).",
+        "description": "Backend configuration for the agent. Use `default` when the agent does not need sandbox-specific backend behavior. Use `thread_scoped_sandbox` or `agent_scoped_sandbox` when the agent needs LangSmith sandbox resources for code execution, filesystem work, or long-running tasks. See [Sandboxes overview](/langsmith/sandboxes).",
         "properties": {
           "type": {
             "type": "string",
@@ -1892,7 +2006,7 @@
               "agent_scoped_sandbox"
             ],
             "description": "Backend type. `thread_scoped_sandbox` scopes LangSmith sandbox resources to each thread. `agent_scoped_sandbox` scopes LangSmith sandbox resources to the agent. `default` uses no sandbox-specific backend behavior.",
-            "example": "thread_scoped_sandbox"
+            "example": "default"
           },
           "sandbox": {
             "$ref": "#/components/schemas/SandboxBackendConfig"
@@ -1974,7 +2088,7 @@
           },
           "model_id": {
             "type": "string",
-            "description": "Model ID for this subagent. Inherits the parent runtime when empty."
+            "description": "Model ID for this subagent. Inherits the parent runtime when empty. The REST API field is `model_id`; local CLI project files use `model`."
           },
           "instructions": {
             "type": "string",
@@ -2258,6 +2372,49 @@
         "type": "object",
         "description": "JSON payload passed through to the upstream agent runtime.",
         "additionalProperties": true
+      },
+      "McpTool": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tool name as exposed by the MCP server."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable tool description."
+          },
+          "inputSchema": {
+            "type": "object",
+            "description": "JSON schema for the tool input.",
+            "additionalProperties": true
+          },
+          "annotations": {
+            "type": "object",
+            "description": "MCP tool annotations returned by the server.",
+            "additionalProperties": true
+          }
+        }
+      },
+      "ListMcpToolsResponse": {
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpTool"
+            },
+            "description": "Tools exposed by the MCP server."
+          },
+          "cached": {
+            "type": "boolean",
+            "description": "Whether the response came from the MCP tools cache."
+          },
+          "fetched_at": {
+            "type": "string",
+            "description": "UTC timestamp when the tools were fetched from the MCP server."
+          }
+        }
       },
       "ErrorResponse": {
         "type": "object",
