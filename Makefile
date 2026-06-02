@@ -154,7 +154,7 @@ code-snippets:
 #   make test-code-samples
 #   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 test-code-samples:
-	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent) || true; fi
+	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent); fi
 	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
 
 # Check that all @[ref] cross-references in source files resolve against link_map.py

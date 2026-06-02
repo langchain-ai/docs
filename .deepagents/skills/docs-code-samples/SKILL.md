@@ -24,7 +24,8 @@ This skill documents the workflow for moving inline code samples from LangChain 
 
 Code samples live under `src/code-samples/` in folders that match the product:
 
-- `langchain/` — LangChain and LangGraph docs
+- `langchain/` — LangChain docs
+- `langgraph/` — LangGraph docs
 - `deepagents/` — Deep Agents docs
 - `langsmith/` — LangSmith docs
 
@@ -36,6 +37,9 @@ src/
 │   ├── langchain/
 │   │   ├── return-a-string.py
 │   │   └── return-a-string.ts
+│   ├── langgraph/
+│   │   ├── langgraph-sql-agent.py
+│   │   └── langgraph-sql-agent.ts
 │   ├── deepagents/
 │   │   └── example-skill.py
 │   └── langsmith/
@@ -58,7 +62,7 @@ src/
 
 ### 1. Create the code sample file
 
-Place the file under `src/code-samples/` in the folder for the product: `langchain/`, `deepagents/`, or `langsmith/` (for example, `src/code-samples/langchain/return-a-string.py` for LangChain docs).
+Place the file under `src/code-samples/` in the folder for the product: `langchain/`, `langgraph/`, `deepagents/`, or `langsmith/` (for example, `src/code-samples/langgraph/langgraph-sql-agent.py` for LangGraph docs).
 
 Use a descriptive filename, for example, `return-a-string.py`, `return-a-string.ts`, or `traceable-pipeline.java`.
 
