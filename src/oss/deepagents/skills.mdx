@@ -398,21 +398,46 @@ For more information on subagent configuration and skills inheritance, see [Suba
 
 Skills support code execution in two ways:
 
-- [Use interpreter skills](#use-interpreter-skills) when the agent needs reusable, importable helpers available from interpreter code.
 - [Execute skill scripts in a sandbox](#execute-skill-scripts-in-a-sandbox) when the agent needs to install dependencies, run tests, call CLIs, or work with an operating-system filesystem.
+- [Use interpreter skills](#use-interpreter-skills) when the agent needs reusable, importable helpers available from interpreter code.
+
+### Execute skill scripts in a sandbox
+
+Skills can include scripts alongside the `SKILL.md` file, such as a Python file that performs a search or data transformation. The agent can _read_ these scripts from any backend, but to _execute_ them, the agent needs access to a shell, which only [sandbox backends](/oss/deepagents/sandboxes) provide.
+
+When you use a @[CompositeBackend] that routes skills to a @[StoreBackend] for persistence while using a sandbox as the default backend, skill files live in the store rather than in the sandbox where code runs. For sandboxes to use the scripts, you must use [custom middleware](/oss/langchain/middleware/custom) to upload skill scripts into the sandbox before the agent starts:
+
+:::python
+
+<SkillsSandboxPy />
+
+The middleware's `before_agent` hook runs before each agent invocation, reading skill files from that shared namespace and uploading them into the sandbox filesystem. Once synced, the agent can execute scripts with the `execute` tool just like any other file in the sandbox.
+
+:::
+
+:::js
+<SkillsSandboxJs />
+
+The middleware's `beforeAgent` hook runs before each agent invocation, reading skill files from that shared namespace and uploading them into the sandbox filesystem. Once synced, the agent can execute scripts with the `execute` tool just like any other file in the sandbox.
+:::
+
+For a more complete example that also syncs [memories](/oss/deepagents/memory) bidirectionally, see [syncing skills and memories with custom middleware](/oss/deepagents/going-to-production#example-syncing-skills-and-memories-with-custom-middleware).
 
 ### Use interpreter skills
 
-Interpreter skills are skills that expose code modules to an [interpreter](/oss/deepagents/interpreters). Regular skills give the agent instructions and context. Interpreter skills also give the agent importable functions it can call from interpreter code.
+<Note>
+    Interpreter skills use a `module` frontmatter field that is a Deep Agents extension, not part of the [Agent Skills specification](https://agentskills.io/specification).
+</Note>
 
-This lets you package domain-specific logic once and make it available as a deterministic building block inside the agent's workspace. Instead of asking the model to re-create a parser, scorer, normalizer, validator, or aggregation routine from scratch, the agent can import a tested helper and compose it with tools, subagents, and runtime state.
+Interpreter skills expose code modules to an [interpreter](/oss/deepagents/interpreters). Regular skills give the agent instructions and context. Interpreter skills also give the agent importable functions it can call from interpreter code.
+
+This lets you package domain-specific logic once and make it available as a deterministic building block. Instead of asking the model to re-create a parser, validator, or aggregation routine from scratch, the agent can import a tested helper and compose it with tools, subagents, and runtime state.
 
 Use interpreter skills for code that should be:
 
-- **Reusable** across prompts, agents, or projects.
-- **Deterministic** enough that you want the same behavior every time.
-- **Too detailed** to keep in the model context as instructions.
-- **Useful inside larger workflows**, such as scoring search results, normalizing API responses, validating records, grouping rows, or converting data into a report-ready shape.
+- **Reusable** across prompts, agents, or projects
+- **Deterministic** enough that you want the same behavior every time
+- **Too detailed** to keep in the model context as instructions
 
 To make a skill importable:
 
@@ -518,28 +543,6 @@ const { groupByStatus } = await import("@/skills/order-helpers");
 const grouped = groupByStatus(orders);
 grouped;
 ```
-
-### Execute skill scripts in a sandbox
-
-Skills can include scripts alongside the `SKILL.md` file, such as, for example, a Python file that performs a search or data transformation. The agent can _read_ these scripts from any backend, but to _execute_ them, the agent needs access to a shell — which only [sandbox backends](/oss/deepagents/sandboxes) provide.
-
-When you use a @[CompositeBackend] that routes skills to a @[StoreBackend] for persistence while using a sandbox as the default backend, skill files live in the store rather than in the sandbox is where code runs. For sandboxes to be able to use the scripts, you must use [custom middleware](/oss/langchain/middleware/custom) to upload skill scripts into the sandbox before the agent starts:
-
-:::python
-
-<SkillsSandboxPy />
-
-The middleware's `before_agent` hook runs before each agent invocation, reading skill files from that shared namespace and uploading them into the sandbox filesystem. Once synced, the agent can execute scripts with the `execute` tool just like any other file in the sandbox.
-
-:::
-
-:::js
-<SkillsSandboxJs />
-
-The middleware's `beforeAgent` hook runs before each agent invocation, reading skill files from that shared namespace and uploading them into the sandbox filesystem. Once synced, the agent can execute scripts with the `execute` tool just like any other file in the sandbox.
-:::
-
-For a more complete example that also syncs [memories](/oss/deepagents/memory) bidirectionally, see [syncing skills and memories with custom middleware](/oss/deepagents/going-to-production#example-syncing-skills-and-memories-with-custom-middleware).
 
 ## Read-only skills from a store
 
