@@ -626,6 +626,7 @@ LINK_MAPS: list[LinkMap] = [
             "createSummarizationMiddleware": "deepagents/middleware/createSummarizationMiddleware",
             "TodoListMiddleware": "langchain/index/todoListMiddleware",
             "HumanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
+            "humanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
             "HITLRequest": "langchain/index/HITLRequest",
             "AnthropicPromptCachingMiddleware": "langchain/index/anthropicPromptCachingMiddleware",
             "SummarizationMiddleware": "langchain/index/summarizationMiddleware",
