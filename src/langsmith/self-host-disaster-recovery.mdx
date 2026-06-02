@@ -27,7 +27,7 @@ Self-hosted LangSmith is composed of stateless services backed by four state sto
 | Kubernetes objects | Helm values, `Secret`s, TLS material, IRSA / Workload Identity bindings | Configuration | Re-apply from source control or back up cluster state |
 
 <Warning>
-All four data stores must be protected. Restoring Postgres without ClickHouse and blob storage (or vice versa) produces an inconsistent installation. References from Postgres to runs in ClickHouse and to objects in blob storage break across the divergence point. Always take coordinated backups, or use point-in-time recovery (PITR) targets that are close together across stores.
+All durable data stores must be protected together. Postgres, ClickHouse, and blob storage are the three stores that hold durable data; Redis is ephemeral and does not need to be backed up. Restoring Postgres without ClickHouse and blob storage (or vice versa) produces an inconsistent installation. References from Postgres to runs in ClickHouse and to objects in blob storage break across the divergence point. Always take coordinated backups, or use point-in-time recovery (PITR) targets that are close together across stores.
 </Warning>
 
 ## Plan your RPO and RTO
@@ -43,7 +43,7 @@ The following deployment patterns assume one of three target profiles:
 |---------|-------------|-------------|----------|
 | Snapshot-only | 6 to 24 hours | Hours | Daily managed backups of each store. Lowest cost, longest restore. |
 | Multi-AZ HA | Seconds | Minutes (zone failure) | Synchronous standby in another AZ for Postgres and ClickHouse, Multi-AZ Redis, zone-redundant blob storage. Standard production posture. |
-| Cross-region DR | Minutes | Minutes to an hour | Asynchronous replication of Postgres, ClickHouse, and blob storage to a second region; standby Kubernetes cluster ready to scale up. Highest cost, fastest recovery from a regional outage. |
+| Cross-region DR | Minutes to hours | Hours | Backups of Postgres, ClickHouse, and blob storage copied to a second region, restored on demand. Optionally a Postgres cross-region replica for a tighter Postgres RPO. Highest cost, slower recovery than Multi-AZ, but protects against a regional outage. |
 
 ## Postgres
 
@@ -102,8 +102,8 @@ If you self-manage ClickHouse for compliance or air-gap reasons, use a replicate
 - Configure a multi-node ClickHouse cluster with replication via [Keeper or ZooKeeper](https://clickhouse.com/docs/architecture/replication).
 - Set the `cluster` value in the LangSmith chart so migrations create `Replicated` table engines from the start. **Clustered setups must be configured against a fresh schema**, you cannot convert a standalone instance to clustered later.
 - Spread replicas across availability zones.
-- Schedule [`BACKUP TABLE` or `BACKUP DATABASE`](https://clickhouse.com/docs/operations/backup) to object storage on a frequency matching your RPO.
-- For cross-region DR, replicate the backup bucket to a secondary region, or run a second ClickHouse cluster in the DR region and replicate via [`remote()` table functions](https://clickhouse.com/docs/sql-reference/table-functions/remote) or external pipelines.
+- Schedule [`BACKUP TABLE` or `BACKUP DATABASE`](https://clickhouse.com/docs/operations/backup) to object storage on a frequency matching your RPO. The community [`clickhouse-backup`](https://github.com/Altinity/clickhouse-backup) tool is also a popular option for scheduled, incremental backups with built-in S3, GCS, and Azure Blob support.
+- For cross-region DR, copy the backup bucket to a secondary region. Cross-region ClickHouse replication is not generally supported in self-managed deployments and is not offered by ClickHouse Cloud either, so plan for a backup/restore failover model rather than a hot replica.
 
 For an example replicated configuration, see the [replicated ClickHouse example](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/examples/replicated-clickhouse/README.md) in the Helm repo.
 
@@ -182,7 +182,7 @@ This protects against a regional outage. It is significantly more expensive but 
 
 - A second Kubernetes cluster in the DR region with the LangSmith Helm chart installed but scaled to a low replica count (warm) or zero (cold).
 - Postgres cross-region replica (RDS or Aurora cross-region replica, Cloud SQL cross-region replica, Azure Flexible Server cross-region replica). Promote on failover.
-- ClickHouse Cloud or LangSmith Managed ClickHouse with a region failover plan, **or** a replicated self-managed ClickHouse cluster in the DR region with backups copied from the primary.
+- ClickHouse Cloud or LangSmith Managed ClickHouse with a region failover plan, **or** ClickHouse backups copied to the DR region and restored into a fresh self-managed cluster on failover. Cross-region ClickHouse replication is not generally supported (ClickHouse Cloud does not offer it either), so plan for backup/restore rather than a hot DR replica.
 - Blob storage replicated to a DR bucket with versioning and matching lifecycle rules.
 - Redis provisioned fresh in the DR region during failover.
 - DNS managed by [Route 53](https://aws.amazon.com/route53/), [Cloud DNS](https://cloud.google.com/dns), or [Azure DNS](https://azure.microsoft.com/en-us/products/dns/) with health checks and failover policies pointing at the LangSmith frontend ingress in each region.
