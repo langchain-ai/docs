@@ -1,0 +1,136 @@
+---
+title: "Firecrawl integration"
+description: "Integrate with the Firecrawl tools using LangChain Python."
+---
+
+[Firecrawl](https://www.firecrawl.dev) is an API that turns websites into clean, LLM-ready data. The `langchain-firecrawl` package exposes Firecrawl's scrape, crawl, map, extract, and search capabilities as LangChain tools you can bind to an agent.
+
+This guide provides a quick overview for getting started with the Firecrawl tools. For a detailed listing of all parameters and configurations, head to the [Firecrawl docs](https://docs.firecrawl.dev).
+
+## Overview
+
+### Details
+
+| Class              | Package                                                              | Serializable | JS support |                                             Version                                              |
+| :----------------- | :------------------------------------------------------------------- | :----------: | :--------: | :----------------------------------------------------------------------------------------------: |
+| `FirecrawlScrape`  | [langchain-firecrawl](https://pypi.org/project/langchain-firecrawl/) |      ❌      |     ❌     | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-firecrawl?style=flat-square&label=%20) |
+| `FirecrawlCrawl`   | [langchain-firecrawl](https://pypi.org/project/langchain-firecrawl/) |      ❌      |     ❌     |                                                                                                  |
+| `FirecrawlMap`     | [langchain-firecrawl](https://pypi.org/project/langchain-firecrawl/) |      ❌      |     ❌     |                                                                                                  |
+| `FirecrawlExtract` | [langchain-firecrawl](https://pypi.org/project/langchain-firecrawl/) |      ❌      |     ❌     |                                                                                                  |
+| `FirecrawlSearch`  | [langchain-firecrawl](https://pypi.org/project/langchain-firecrawl/) |      ❌      |     ❌     |                                                                                                  |
+
+### Features
+
+- **Scrape** a single page into clean markdown + metadata.
+- **Crawl** a whole site, following accessible sub-pages.
+- **Map** a site to discover its URLs.
+- **Extract** structured data from pages with a prompt or JSON schema.
+- **Search** the web and return LLM-ready results.
+
+---
+
+## Setup
+
+To access the Firecrawl tools, you'll need to create a Firecrawl account, get an API key, and install the `langchain-firecrawl` integration package.
+
+### Credentials
+
+Head to [firecrawl.dev](https://www.firecrawl.dev) to sign up and generate an API key. Once you've done this, set the `FIRECRAWL_API_KEY` environment variable:
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "FIRECRAWL_API_KEY" not in os.environ:
+    os.environ["FIRECRAWL_API_KEY"] = getpass.getpass("Enter your Firecrawl API key: ")
+```
+
+It's also helpful (but not needed) to set up [LangSmith](/langsmith/home) for best-in-class observability/<Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The Firecrawl tools live in the `langchain-firecrawl` package:
+
+<CodeGroup>```python pip pip install -U langchain-firecrawl ``` ```python uv uv add langchain-firecrawl ```</CodeGroup>
+
+---
+
+## Instantiation
+
+Each capability is its own tool. Instantiate the ones you need:
+
+```python Initialize tool instances icon="robot"
+from langchain_firecrawl import (
+    FirecrawlScrape,
+    FirecrawlCrawl,
+    FirecrawlMap,
+    FirecrawlExtract,
+    FirecrawlSearch,
+)
+
+scrape = FirecrawlScrape()
+search = FirecrawlSearch()
+```
+
+---
+
+## Invocation
+
+### Invoke directly with args
+
+```python
+scrape.invoke({"url": "https://www.firecrawl.dev"})
+```
+
+```python
+search.invoke({"query": "best open source web scraping tools", "limit": 5})
+```
+
+`FirecrawlScrape` returns a dict with `markdown` and `metadata`; the crawl, map, and search tools return lists of result dicts; `FirecrawlExtract` returns the extracted structured data.
+
+### Invoke with ToolCall
+
+We can also invoke the tool with a model-generated `ToolCall`, in which case a `ToolMessage` will be returned:
+
+```python
+model_generated_tool_call = {
+    "args": {"url": "https://www.firecrawl.dev"},
+    "id": "1",
+    "name": "firecrawl_scrape",
+    "type": "tool_call",
+}
+scrape.invoke(model_generated_tool_call)
+```
+
+---
+
+## Use within an agent
+
+```python
+from langchain.agents import create_agent
+from langchain_firecrawl import FirecrawlScrape, FirecrawlSearch
+
+agent = create_agent(
+    "openai:gpt-4o-mini",
+    tools=[FirecrawlSearch(), FirecrawlScrape()],
+)
+
+for step in agent.stream(
+    {"messages": [("human", "Find the Firecrawl pricing page and summarize the tiers.")]},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+```
+
+---
+
+## API reference
+
+- [GitHub](https://github.com/firecrawl/langchain-firecrawl)
+- [PyPI](https://pypi.org/project/langchain-firecrawl/)
+- [Firecrawl docs](https://docs.firecrawl.dev)
