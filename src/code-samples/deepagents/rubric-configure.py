@@ -35,9 +35,10 @@ result = agent.invoke(
 
 # :snippet-start: rubric-stream-py
 from langchain.messages import HumanMessage
+from langgraph.stream import CustomTransformer
 
 config = {"configurable": {"thread_id": "my-rubric-thread"}}
-for chunk in agent.stream(
+stream = agent.stream_events(
     {
         "messages": [HumanMessage("Write a haiku about spring.")],
         "rubric": (
@@ -47,12 +48,11 @@ for chunk in agent.stream(
         ),
     },
     config=config,
-    stream_mode="custom",
-    version="v2",
-):
-    if chunk.get("type") != "custom":
-        continue
-    event = chunk["data"]
+    version="v3",
+    transformers=[CustomTransformer],
+)
+
+for event in stream.custom:
     event_type = event.get("type")
     if event_type == "rubric_evaluation_start":
         print(
@@ -101,6 +101,6 @@ agent.invoke(
 # :remove-start:
 if __name__ == "__main__":
     assert agent is not None
-    assert hasattr(agent, "stream")
+    assert hasattr(agent, "stream_events")
     print("✓ rubric configure sample completed")
 # :remove-end:
