@@ -605,6 +605,7 @@ LINK_MAPS: list[LinkMap] = [
             "add_edge": "classes/_langchain_langgraph.index.StateGraph.html#addEdge",
             "addEdge": "classes/_langchain_langgraph.index.StateGraph.html#addEdge",
             "add_node": "classes/_langchain_langgraph.index.StateGraph.html#addNode",
+            "addNode": "classes/_langchain_langgraph.index.StateGraph.html#addNode",
             "add_messages": "functions/_langchain_langgraph.index.messagesStateReducer.html",
             "LastValue": "classes/_langchain_langgraph.channels.LastValue.html",
             "Topic": "langchain-langgraph/channels/Topic",
