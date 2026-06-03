@@ -166,8 +166,20 @@ Conditional interrupts require `langchain>=1.3.3`.
 
 ```python
 from langchain.agents import create_agent
-from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langchain.agents.middleware import HumanInTheLoopMiddleware, ToolCallRequest
 from langgraph.checkpoint.memory import InMemorySaver
+
+
+def writes_outside_workspace(request: ToolCallRequest) -> bool:
+    """Pause writes to paths outside the workspace directory."""
+    path = request.tool_call["args"].get("path", "")
+    return not path.startswith("/workspace/")
+
+
+def is_write_query(request: ToolCallRequest) -> bool:
+    """Pause SQL that isn't a read-only SELECT."""
+    query = request.tool_call["args"].get("query", "")
+    return not query.lstrip().upper().startswith("SELECT")
 
 
 agent = create_agent(
@@ -178,19 +190,11 @@ agent = create_agent(
             interrupt_on={
                 "write_file": {
                     "allowed_decisions": ["approve", "edit", "reject"],
-                    # Only pause writes outside the workspace directory.
-                    "when": lambda req: not req.tool_call["args"]
-                    .get("path", "")
-                    .startswith("/workspace/"),
+                    "when": writes_outside_workspace,
                 },
                 "execute_sql": {
                     "allowed_decisions": ["approve", "reject"],
-                    # Auto-approve read-only queries; pause on anything else.
-                    "when": lambda req: not req.tool_call["args"]
-                    .get("query", "")
-                    .lstrip()
-                    .upper()
-                    .startswith("SELECT"),
+                    "when": is_write_query,
                 },
             },
         ),
