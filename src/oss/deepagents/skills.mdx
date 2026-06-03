@@ -206,6 +206,8 @@ Instructions for the agent go here. See the [basic skill example](#basic-skill) 
 
 ## Usage
 
+### Getting started
+
 Pass a list of skill directory paths when creating your agent. The backend you choose determines how skill files are stored and loaded:
 
 :::python
@@ -263,54 +265,6 @@ Pass a list of skill directory paths when creating your agent. The backend you c
         Then pass that ordered list as `skills` when creating your agent.
     </Accordion>
 </Note>
-
-## Build effective skills
-
-### Authoring best practices
-
-**Write specific descriptions.** During [discovery](#how-skills-work), the `description` field is the only information the agent sees for each skill. A good description tells the agent both what the skill does and when to activate it, with specific keywords the agent can match against:
-
-```yaml
-# Good: specific about what and when
-description: >-
-  Extract text and tables from PDF files, fill PDF forms, and merge
-  multiple PDFs. Use when working with PDF documents or when the user
-  mentions PDFs, forms, or document extraction.
-
-# Poor: too vague for reliable matching
-description: Helps with PDFs.
-```
-
-When you have multiple skills in related domains, differentiate their descriptions clearly. Overlapping descriptions cause the agent to activate the wrong skill or hesitate between options. If two skills serve similar purposes, consolidate them into one.
-
-**Keep instructions focused.** The Agent Skills specification recommends keeping your `SKILL.md` under 500 lines. When instructions grow longer, move detailed reference material into separate files and reference them from the main `SKILL.md`:
-
-```plaintext
-skills/
-└── data-pipeline/
-    ├── SKILL.md
-    └── references/
-        ├── schema-reference.md
-        └── error-codes.md
-```
-
-The agent loads reference files only when the instructions call for them, keeping each layer of progressive disclosure appropriately sized. Keep file references one level deep from `SKILL.md` and avoid deeply nested reference chains, which force the agent through multiple reads to reach the information it needs.
-
-**Structure instructions for the agent.** Write your `SKILL.md` body as clear instructions the agent can follow:
-
-- **Step-by-step procedures** for multi-step workflows
-- **Decision criteria** for choosing between approaches
-- **Examples of expected inputs and outputs** so the agent knows what success looks like
-- **Edge cases** the agent should handle or flag to the user
-
-**Manage skill count.** Fewer well-scoped skills outperform many overlapping ones. As the number of skills with similar descriptions grows, the agent's ability to select the right one degrades. If you find yourself with many related skills, consider:
-
-- Consolidating related capabilities into a single skill with sections for each sub-task
-- Using reference files to keep the main `SKILL.md` concise while covering multiple sub-tasks
-
-<Tip>
-    Use the [`skills-ref` validation tool](https://github.com/agentskills/agentskills/tree/main/skills-ref) to check that your `SKILL.md` frontmatter follows the Agent Skills specification naming and format conventions.
-</Tip>
 
 ### Source precedence
 
@@ -387,6 +341,170 @@ const agent = await createDeepAgent({
 :::
 
 For more information on subagent configuration and skills inheritance, see [Subagents](/oss/deepagents/subagents).
+
+### Dynamic skills per run
+
+To serve different skills to different users, route `/skills/` to a @[StoreBackend] with a namespace factory. Pre-seed each namespace with the appropriate skills, and the middleware automatically resolves to the correct set at runtime:
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    skills=["/skills/"],
+    backend=CompositeBackend(
+        default=StateBackend(),
+        routes={
+            "/skills/": StoreBackend(
+                namespace=lambda rt: (
+                    rt.server_info.assistant_id,
+                    rt.server_info.user.identity,
+                ),
+            ),
+        },
+    ),
+)
+```
+:::
+
+:::js
+```typescript
+import {
+  createDeepAgent,
+  CompositeBackend,
+  StateBackend,
+  StoreBackend,
+} from "deepagents";
+
+const agent = await createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  skills: ["/skills/"],
+  backend: new CompositeBackend({
+    default: new StateBackend(),
+    routes: {
+      "/skills/": new StoreBackend({
+        namespace: (ctx) => [
+          ctx.assistantId ?? "default",
+          ctx.config?.configurable?.user_id ?? "anonymous",
+        ],
+      }),
+    },
+  }),
+});
+```
+:::
+
+Each user's namespace contains only their skills. This pattern is useful for multi-tenant applications, role-based skill access, and per-customer configurations.
+
+Seed each namespace with the skills that user should have access to:
+
+:::python
+```python
+from deepagents.backends.utils import create_file_data
+from langgraph.store.memory import InMemoryStore
+
+store = InMemoryStore()
+
+# Seed skills for user "alice"
+store.put(
+    ("my-agent", "alice"),
+    "/data-analysis/SKILL.md",
+    create_file_data(data_analysis_skill_content),
+)
+
+store.put(
+    ("my-agent", "alice"),
+    "/report-builder/SKILL.md",
+    create_file_data(report_builder_skill_content),
+)
+
+# Seed different skills for user "bob"
+store.put(
+    ("my-agent", "bob"),
+    "/code-review/SKILL.md",
+    create_file_data(code_review_skill_content),
+)
+```
+:::
+
+:::js
+```typescript
+import { createFileData } from "deepagents";
+import { InMemoryStore } from "@langchain/langgraph";
+
+const store = new InMemoryStore();
+
+// Seed skills for user "alice"
+await store.put(
+  ["my-agent", "alice"],
+  "/data-analysis/SKILL.md",
+  createFileData(dataAnalysisSkillContent),
+);
+
+await store.put(
+  ["my-agent", "alice"],
+  "/report-builder/SKILL.md",
+  createFileData(reportBuilderSkillContent),
+);
+
+// Seed different skills for user "bob"
+await store.put(
+  ["my-agent", "bob"],
+  "/code-review/SKILL.md",
+  createFileData(codeReviewSkillContent),
+);
+```
+:::
+
+When Alice invokes the agent, the namespace resolves to `("my-agent", "alice")` and the agent discovers only `data-analysis` and `report-builder`. Bob sees only `code-review`.
+
+## Writing effective skills
+
+**Write specific descriptions.** During [discovery](#how-skills-work), the `description` field is the only information the agent sees for each skill. A good description tells the agent both what the skill does and when to activate it, with specific keywords the agent can match against:
+
+```yaml
+# Good: specific about what and when
+description: >-
+  Extract text and tables from PDF files, fill PDF forms, and merge
+  multiple PDFs. Use when working with PDF documents or when the user
+  mentions PDFs, forms, or document extraction.
+
+# Poor: too vague for reliable matching
+description: Helps with PDFs.
+```
+
+When you have multiple skills in related domains, differentiate their descriptions clearly. Overlapping descriptions cause the agent to activate the wrong skill or hesitate between options. If two skills serve similar purposes, consolidate them into one.
+
+**Keep instructions focused.** The Agent Skills specification recommends keeping your `SKILL.md` under 500 lines. When instructions grow longer, move detailed reference material into separate files and reference them from the main `SKILL.md`:
+
+```plaintext
+skills/
+└── data-pipeline/
+    ├── SKILL.md
+    └── references/
+        ├── schema-reference.md
+        └── error-codes.md
+```
+
+The agent loads reference files only when the instructions call for them, keeping each layer of progressive disclosure appropriately sized. Keep file references one level deep from `SKILL.md` and avoid deeply nested reference chains, which force the agent through multiple reads to reach the information it needs.
+
+**Structure instructions for the agent.** Write your `SKILL.md` body as clear instructions the agent can follow:
+
+- **Step-by-step procedures** for multi-step workflows
+- **Decision criteria** for choosing between approaches
+- **Examples of expected inputs and outputs** so the agent knows what success looks like
+- **Edge cases** the agent should handle or flag to the user
+
+**Manage skill count.** Fewer well-scoped skills outperform many overlapping ones. As the number of skills with similar descriptions grows, the agent's ability to select the right one degrades. If you find yourself with many related skills, consider:
+
+- Consolidating related capabilities into a single skill with sections for each sub-task
+- Using reference files to keep the main `SKILL.md` concise while covering multiple sub-tasks
+
+<Tip>
+    Use the [`skills-ref` validation tool](https://github.com/agentskills/agentskills/tree/main/skills-ref) to check that your `SKILL.md` frontmatter follows the Agent Skills specification naming and format conventions.
+</Tip>
 
 ## Execute code with skills
 
