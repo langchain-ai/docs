@@ -14,7 +14,7 @@ Use [**`set_node_defaults`**](#graph-defaults) to configure these mechanisms onc
 :::
 
 :::js
-Configure retries, timeouts, and error handlers per node via [`addNode`](https://reference.langchain.com/javascript/langchain-langgraph/index/StateGraph#member-addNode-3) options. `setNodeDefaults` is not yet available in the JavaScript/TypeScript SDK.
+Configure retries, timeouts, and error handlers per node via [`addNode`](https://reference.langchain.com/javascript/langchain-langgraph/index/StateGraph#member-addNode-3) options. For graph-wide **`retryPolicy`** and **`cachePolicy`** defaults, see [`setNodeDefaults`](#graph-defaults).
 :::
 
 These compose in a fixed order: when a node attempt raises any exception (including @[`NodeTimeoutError`] from a timeout), the retry policy decides whether to retry. Only after retries are exhausted does the error handler run.
@@ -29,7 +29,7 @@ Per-node timeouts and node-level error handlers require `langgraph>=1.2`.
 
 :::js
 <Note>
-Per-node timeouts and node-level error handlers require a recent `@langchain/langgraph` release. `setNodeDefaults` is not yet available in the JavaScript/TypeScript SDK.
+Per-node timeouts and node-level error handlers require a recent `@langchain/langgraph` release.
 </Note>
 :::
 
@@ -75,7 +75,7 @@ builder.add_node(
 :::
 
 :::js
-Pass `retryPolicy` to [`addNode`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.Graph.html#addnode):
+Pass `retryPolicy` to [`addNode`](https://reference.langchain.com/javascript/langchain-langgraph/index/StateGraph#member-addNode-3):
 
 ```typescript
 import { StateGraph } from "@langchain/langgraph";
@@ -108,13 +108,15 @@ For exceptions from popular HTTP libraries such as `requests` and `httpx`, it on
 :::
 
 :::js
-By default, the retry policy retries on **any** exception except the following:
+By default, when `retryOn` is omitted, the built-in handler retries on **any** thrown error except:
 
-- `TypeError`
-- `SyntaxError`
-- `ReferenceError`
+- Abort/cancel errors (`AbortError`, or messages starting with `"Cancel"` or `"AbortError"`)
+- `GraphValueError`
+- Connection aborted errors (`ECONNABORTED`)
+- Common HTTP 4xx responses (400, 401, 402, 403, 404, 405, 406, 407, 409) from `fetch`, Axios, or similar clients
+- OpenAI `insufficient_quota` errors
 
-@[`NodeTimeoutError`] is retryable by default.
+@[`NodeTimeoutError`] is retryable by default. There is no exported equivalent of Python's `default_retry_on`—provide your own `retryOn` callback to extend or replace this behavior.
 :::
 
 ### Parameters
@@ -137,7 +139,7 @@ By default, the retry policy retries on **any** exception except the following:
 | `initialInterval` | `number` | `500` | Milliseconds before the first retry. |
 | `backoffFactor` | `number` | `2.0` | Multiplier applied to the interval after each retry. |
 | `maxInterval` | `number` | `128000` | Maximum milliseconds between retries. |
-| `jitter` | `boolean` | `true` | Add random jitter to the interval. |
+| `jitter` | `boolean` | `false` | Add random jitter to the interval. |
 | `retryOn` | `(error: unknown) => boolean` | built-in handler | Callable returning `true` for retryable exceptions. |
 | `logWarning` | `boolean` | `true` | Whether to log a warning when a retry is attempted. |
 :::
@@ -164,7 +166,7 @@ builder.add_node(
 :::
 
 :::js
-Pass a callable to `retryOn`:
+Pass a callable to `retryOn`. Unlike Python, there is no exported `defaultRetryOn` helper—implement your own predicate:
 
 ```typescript
 import { StateGraph } from "@langchain/langgraph";
@@ -558,7 +560,8 @@ import { Send } from "@langchain/langgraph";
 
 const fanOut = (state: typeof State.State) =>
   state.items.map(
-    (item) => new Send("processItem", { item }, { idleTimeout: 15_000 })
+    (item) =>
+      new Send("processItem", { item }, { timeout: { idleTimeout: 15_000 } })
   );
 ```
 :::
@@ -947,6 +950,53 @@ Defaults set on a parent graph are **not** inherited by subgraphs. Each graph ma
 
 :::
 
+:::js
+
+## Graph defaults
+
+Instead of repeating the same `retryPolicy` or `cachePolicy` on every `addNode` call, use [`setNodeDefaults`](https://reference.langchain.com/javascript/langchain-langgraph/index/StateGraph#member-setNodeDefaults) to configure graph-wide defaults in one place:
+
+```typescript
+import { StateGraph, START } from "@langchain/langgraph";
+
+const graph = new StateGraph(State)
+  .setNodeDefaults({
+    retryPolicy: { maxAttempts: 3 },
+    cachePolicy: { ttl: 60 },
+  })
+  .addNode("stepA", stepA)
+  .addNode("stepB", stepB)
+  .addEdge(START, "stepA")
+  .compile();
+```
+
+Both `stepA` and `stepB` share the same retry and cache policies without duplication.
+
+<Note>
+In the JavaScript/TypeScript SDK, `setNodeDefaults` supports **`retryPolicy`** and **`cachePolicy`** only. Default `errorHandler` and `timeout` values are not yet supported—set those per node via `addNode` options.
+</Note>
+
+### Precedence
+
+Per-node values passed directly to `addNode()` always override defaults set by `setNodeDefaults()`. Defaults are resolved at `compile()` time, so you can call `setNodeDefaults()` before or after `addNode()` in any order:
+
+```typescript
+import { StateGraph, START } from "@langchain/langgraph";
+
+const graph = new StateGraph(State)
+  .setNodeDefaults({ retryPolicy: { maxAttempts: 3 } })
+  .addNode("stepA", stepA) // uses default retry policy
+  .addNode("stepB", stepB, { retryPolicy: { maxAttempts: 5 } }) // overrides default
+  .addEdge(START, "stepA")
+  .compile();
+```
+
+### Scope
+
+Defaults set on a parent graph are **not** inherited by subgraphs. Each graph maintains its own defaults.
+
+:::
+
 ## Functional API
 
 :::python
@@ -974,7 +1024,7 @@ The behavior is identical to `add_node`: `NodeTimeoutError` is raised on timeout
 :::
 
 :::js
-The `timeout` and `retryPolicy` options are available on `task` and `entrypoint` in the functional API:
+The `timeout` option is available on `task` and `entrypoint`; `task` also accepts a `retry` option (not `retryPolicy`):
 
 ```typescript
 import { entrypoint, task } from "@langchain/langgraph";
@@ -983,7 +1033,7 @@ const callApi = task(
   {
     name: "callApi",
     timeout: { idleTimeout: 30_000 },
-    retryPolicy: { maxAttempts: 3 },
+    retry: { maxAttempts: 3 },
   },
   async (url: string) => {
     const response = await fetch(url);
@@ -1178,7 +1228,8 @@ try {
 :::
 
 :::js
-- **`setNodeDefaults` is Python-only**: configure retries, timeouts, and error handlers per node via `addNode` options instead.
+- **`setNodeDefaults` is partial in JS**: supports `retryPolicy` and `cachePolicy` defaults only; set `errorHandler` and `timeout` per node via `addNode` options.
+- **`setNodeDefaults` is not inherited by subgraphs**: each graph manages its own defaults independently.
 - **Error handlers are `StateGraph`-only**: pass `errorHandler` to `StateGraph.addNode`, not the base `Graph` class. Error handlers are not available on `task` / `entrypoint`.
 - **One handler per node**: each node can have at most one `errorHandler`.
 - **Handler failures bubble up**: if the error handler itself throws, that exception propagates as if the node had no handler.
