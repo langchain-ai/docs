@@ -108,15 +108,19 @@ For exceptions from popular HTTP libraries such as `requests` and `httpx`, it on
 :::
 
 :::js
-By default, when `retryOn` is omitted, the built-in handler retries on **any** thrown error except:
+Retries are opt-in. A node retries only when it has a `retryPolicy` configured, either directly or through graph defaults with [`setNodeDefaults`](#graph-defaults). An empty policy (`{}`) is enough. Without a policy, the first failure ends the attempt and LangGraph does not call `retryOn`.
 
-- Abort/cancel errors (`AbortError`, or messages starting with `"Cancel"` or `"AbortError"`)
-- `GraphValueError`
-- Connection aborted errors (`ECONNABORTED`)
-- Common HTTP 4xx responses (400, 401, 402, 403, 404, 405, 406, 407, 409) from `fetch`, Axios, or similar clients
-- OpenAI `insufficient_quota` errors
+If the policy omits `retryOn`, LangGraph uses a built-in handler that retries thrown errors except:
 
-@[`NodeTimeoutError`] is retryable by default. There is no exported equivalent of Python's `default_retry_on`—provide your own `retryOn` callback to extend or replace this behavior.
+- Abort and cancellation errors: `error.name === "AbortError"`, or `error.message` starts with `"Cancel"` or `"AbortError"`
+- `GraphValueError`, matched by `error.name`
+- Aborted connections: `error.code === "ECONNABORTED"`
+- HTTP client errors with status 400, 401, 402, 403, 404, 405, 406, 407, or 409, read from `error.response?.status` or `error.status` for clients such as `fetch`, Axios, and similar clients
+- OpenAI-style quota errors: `error.error?.code === "insufficient_quota"`
+
+Other HTTP statuses, including 408 and 5xx responses, are retryable unless you override `retryOn`. @[`NodeTimeoutError`] is not on this blocklist, so it is retryable when a retry policy is configured.
+
+Some failures bypass `retryOn`. Graph control-flow errors, such as `GraphInterrupt` and `Command` routing, bubble up without retrying. An aborted run signal also stops the retry loop, even if `retryOn` would return `true`.
 :::
 
 ### Parameters
@@ -140,7 +144,7 @@ By default, when `retryOn` is omitted, the built-in handler retries on **any** t
 | `backoffFactor` | `number` | `2.0` | Multiplier applied to the interval after each retry. |
 | `maxInterval` | `number` | `128000` | Maximum milliseconds between retries. |
 | `jitter` | `boolean` | `true` | Add random jitter to the interval. |
-| `retryOn` | `(error: unknown) => boolean` | built-in handler | Callable returning `true` for retryable exceptions. |
+| `retryOn` | `(error: unknown) => boolean` | built-in handler (when policy is set) | Callable returning `true` for retryable exceptions. Only used when `retryPolicy` is configured. |
 | `logWarning` | `boolean` | `true` | Whether to log a warning when a retry is attempted. |
 :::
 
