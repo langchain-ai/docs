@@ -14,7 +14,7 @@ Use [**`set_node_defaults`**](#graph-defaults) to configure these mechanisms onc
 :::
 
 :::js
-Configure retries, timeouts, and error handlers per node via @[`addNode`] options. For graph-wide **`retryPolicy`** and **`cachePolicy`** defaults, see [`setNodeDefaults`](#graph-defaults).
+Use [**`setNodeDefaults`**](#graph-defaults) to configure these mechanisms once for all nodes instead of repeating them on every `addNode` call.
 :::
 
 These compose in a fixed order: when a node attempt raises any exception (including @[`NodeTimeoutError`] from a timeout), the retry policy decides whether to retry. Only after retries are exhausted does the error handler run.
@@ -300,6 +300,10 @@ Node timeouts only apply to **async** nodes. Sync nodes with a `timeout` are rej
 :::
 
 :::js
+<Note>
+Requires `@langchain/langgraph>=1.4.0`.
+</Note>
+
 The `timeout` parameter on @[`addNode`] caps how long a single node attempt may run. Pass a number (milliseconds) or a @[`TimeoutPolicy`] for separate run and idle limits:
 
 ```typescript
@@ -970,14 +974,25 @@ Defaults set on a parent graph are **not** inherited by subgraphs. Each graph ma
 
 ## Graph defaults
 
-Instead of repeating the same `retryPolicy` or `cachePolicy` on every `addNode` call, use [`setNodeDefaults`](https://reference.langchain.com/javascript/langchain-langgraph/index/StateGraph#member-setNodeDefaults) to configure graph-wide defaults in one place:
+<Note>
+Requires `@langchain/langgraph>=1.4.0`.
+</Note>
+
+Instead of repeating the same `retryPolicy`, `errorHandler`, `timeout`, or `cachePolicy` on every `addNode` call, use [`setNodeDefaults`](https://reference.langchain.com/javascript/langchain-langgraph/index/StateGraph#member-setNodeDefaults) to configure graph-wide defaults in one place:
 
 ```typescript
-import { StateGraph, START } from "@langchain/langgraph";
+import { StateGraph, START, NodeError } from "@langchain/langgraph";
+
+const defaultErrorHandler = (
+  state: typeof State.State,
+  error: NodeError
+) => ({ status: `handled: ${error.error.message}` });
 
 const graph = new StateGraph(State)
   .setNodeDefaults({
     retryPolicy: { maxAttempts: 3 },
+    errorHandler: defaultErrorHandler,
+    timeout: { runTimeout: 30_000 },
     cachePolicy: { ttl: 60 },
   })
   .addNode("stepA", stepA)
@@ -986,11 +1001,7 @@ const graph = new StateGraph(State)
   .compile();
 ```
 
-Both `stepA` and `stepB` share the same retry and cache policies without duplication.
-
-<Note>
-In the JavaScript/TypeScript SDK, `setNodeDefaults` supports **`retryPolicy`** and **`cachePolicy`** only. Default `errorHandler` and `timeout` values are not yet supported—set those per node via `addNode` options.
-</Note>
+Both `stepA` and `stepB` now share the same retry policy, error handler, timeout, and cache policy without any duplication.
 
 ### Precedence
 
@@ -1000,12 +1011,23 @@ Per-node values passed directly to `addNode()` always override defaults set by `
 import { StateGraph, START } from "@langchain/langgraph";
 
 const graph = new StateGraph(State)
-  .setNodeDefaults({ retryPolicy: { maxAttempts: 3 } })
-  .addNode("stepA", stepA) // uses default retry policy
-  .addNode("stepB", stepB, { retryPolicy: { maxAttempts: 5 } }) // overrides default
+  .setNodeDefaults({ errorHandler: defaultErrorHandler })
+  .addNode("stepA", stepA) // uses defaultErrorHandler
+  .addNode("stepB", stepB, { errorHandler: customErrorHandler }) // overrides default
   .addEdge(START, "stepA")
   .compile();
 ```
+
+### Applicability matrix
+
+Not all defaults apply to all node types. Error-handler nodes (those registered via `addNode(..., { errorHandler })`) are excluded from certain defaults to prevent unsafe behavior:
+
+| `setNodeDefaults` parameter | Applies to regular nodes | Applies to error-handler nodes | Reason |
+| ----------------------------- | ------------------------ | ------------------------------ | ------ |
+| `retryPolicy` | ✅ | ✅ | Handlers should be retried on transient failures |
+| `timeout` | ✅ | ✅ | Stuck handlers should be cancelled like stuck regular nodes |
+| `errorHandler` | ✅ | ❌ | Handlers must never catch themselves |
+| `cachePolicy` | ✅ | ❌ | Caching handler results is unsafe |
 
 ### Scope
 
@@ -1098,6 +1120,10 @@ except GraphDrained as e:
 :::
 
 :::js
+<Note>
+Requires `@langchain/langgraph>=1.4.0`.
+</Note>
+
 Create a @[`RunControl`] and pass it as `control` to `invoke` or `stream`. Call `requestDrain()` from any context to signal that the run should stop:
 
 ```typescript
@@ -1126,13 +1152,25 @@ try {
 
 Drain is cooperative and operates between supersteps, never preempting work that is already running:
 
+:::python
 | Scenario | Behavior |
 | -------- | -------- |
 | Node mid-execution | Runs to completion. Drain takes effect on the next superstep. |
 | Node with a retry policy currently retrying | Retry loop runs to exhaustion or success. Drain takes effect after. |
-| Graph finishes naturally on the same tick as drain | Returns normally. Inspect `control.drain_requested` / `control.drainRequested` to distinguish from a normal run. |
+| Graph finishes naturally on the same tick as drain | Returns normally. Inspect `control.drain_requested` to distinguish from a normal run. |
 | More supersteps remain | Raises `GraphDrained(reason)`. Checkpoint is saved and resumable. |
 | Subgraph requests drain | `GraphDrained` bubbles up through the parent and stops it at its own next superstep boundary. |
+:::
+
+:::js
+| Scenario | Behavior |
+| -------- | -------- |
+| Node mid-execution | Runs to completion. Drain takes effect on the next superstep. |
+| Node with a retry policy currently retrying | Retry loop runs to exhaustion or success. Drain takes effect after. |
+| Graph finishes naturally on the same tick as drain | Returns normally. Inspect `control.drainRequested` to distinguish from a normal run. |
+| More supersteps remain | Raises `GraphDrained(reason)`. Checkpoint is saved and resumable. |
+| Subgraph requests drain | `GraphDrained` bubbles up through the parent and stops it at its own next superstep boundary. |
+:::
 
 ### Resume after drain
 
@@ -1237,14 +1275,13 @@ try {
 ## Limitations
 
 :::python
-- **Timeouts are async-only (Python)**: sync nodes with a `timeout` are rejected at compile time.
+- **Timeouts are async-only**: sync nodes with a `timeout` are rejected at compile time.
 - **One handler per node**: each node can have at most one `error_handler`.
 - **Handler failures bubble up**: if the error handler itself raises, that exception propagates as if the node had no handler.
 - **`set_node_defaults` is not inherited by subgraphs**: each graph manages its own defaults independently.
 :::
 
 :::js
-- **`setNodeDefaults` is partial in JS**: supports `retryPolicy` and `cachePolicy` defaults only; set `errorHandler` and `timeout` per node via `addNode` options.
 - **`setNodeDefaults` is not inherited by subgraphs**: each graph manages its own defaults independently.
 - **Error handlers are `StateGraph`-only**: pass `errorHandler` to `StateGraph.addNode`, not the base `Graph` class. Error handlers are not available on `task` / `entrypoint`.
 - **One handler per node**: each node can have at most one `errorHandler`.
