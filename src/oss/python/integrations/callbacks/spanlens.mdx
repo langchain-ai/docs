@@ -1,0 +1,172 @@
+---
+title: "Spanlens callback handler integration"
+description: Trace LangChain chains, agents, tools, retrievers, and LangGraph compiled graphs into Spanlens — an open-source LLM observability platform.
+---
+
+# Spanlens Callback Handler
+
+<div class="language-support-tag">
+  <span class="lst-supported">Community</span><span class="lst-python">Python</span>
+</div>
+
+> [Spanlens](https://spanlens.io) ([GitHub](https://github.com/spanlens/Spanlens)) is an open-source (MIT) LLM observability platform. Capture every LangChain or LangGraph run as a span tree with cost, latency, token usage, and tool I/O — visible in a dashboard you self-host with a single Docker image or use as a hosted service.
+
+The `SpanlensCallbackHandler` plugs into LangChain's standard callback contract, so it works with plain LangChain chains, LCEL pipelines, agents, and LangGraph compiled graphs through the same interface. Each `run_id` / `parent_run_id` pair from the callback dispatcher becomes a span; the resulting trace mirrors your graph topology 1:1 — graph → node → llm / tool / retriever.
+
+**Key features:**
+
+- **LangGraph support without extra wiring** — LangGraph reuses LangChain's callback manager, so dropping the handler into `config={"callbacks": [...]}` traces every node, including parallel fan-outs, with the right parent-child links.
+- **Span tree per run** — `chain` / `llm` / `tool` / `retriever` events become typed spans. Concurrent runs are tracked by LangChain's per-run UUIDs, so a single handler instance is safe to share across parallel invocations.
+- **Token + cost capture** — token usage (`prompt_tokens` / `completion_tokens` / `total_tokens`) and `model_name` are read from `LLMResult.llm_output`. Cost is computed server-side from Spanlens's model price catalog.
+- **Bounded payload size** — `span.input` and `span.output` are JSON-truncated above a configurable limit (16 KB by default), with a marker dict left in place so traces never blow up on large prompts.
+- **Optional `langchain-core` dependency** — the handler subclasses `BaseCallbackHandler` when the package is installed and falls back to a plain class otherwise, so it stays drop-in for any environment.
+
+## Installation
+
+The handler ships in the main `spanlens` package. The `langchain` extra pulls in `langchain-core>=0.1.0`.
+
+```bash
+pip install "spanlens[langchain]"
+```
+
+You'll also need a Spanlens API key. Issue one from the **Projects & Keys** page of your Spanlens dashboard (hosted: [spanlens.io/projects](https://spanlens.io/projects); self-hosted: same path on your deployment) and export it:
+
+```bash
+export SPANLENS_API_KEY=sl_live_...
+```
+
+## Use with LangChain
+
+Attach the handler via the standard `callbacks=[...]` configuration on `invoke` / `ainvoke` / `stream`. A new trace is created on the first start-event and closed when the root run ends.
+
+```python
+import os
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from spanlens import SpanlensClient
+from spanlens.integrations.langchain import SpanlensCallbackHandler
+
+client = SpanlensClient(api_key=os.environ["SPANLENS_API_KEY"])
+handler = SpanlensCallbackHandler(client=client)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant."),
+    ("human", "{question}"),
+])
+llm = ChatOpenAI(model="gpt-4o-mini")
+chain = prompt | llm
+
+result = chain.invoke(
+    {"question": "What is LangChain?"},
+    config={"callbacks": [handler]},
+)
+```
+
+The resulting trace contains a root `chain` span with a nested `llm` span carrying the model name, token counts, and the raw response.
+
+## Use with LangGraph
+
+LangGraph's compiled graphs share LangChain's callback contract, so the same handler works without changes. The graph itself becomes the root span; each node executes inside it.
+
+```python
+import os
+from typing import TypedDict
+
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, START, StateGraph
+
+from spanlens import SpanlensClient
+from spanlens.integrations.langchain import SpanlensCallbackHandler
+
+client = SpanlensClient(api_key=os.environ["SPANLENS_API_KEY"])
+handler = SpanlensCallbackHandler(client=client, trace_name="support_agent")
+
+
+class State(TypedDict):
+    question: str
+    draft: str
+    final: str
+
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+
+def draft(state: State) -> dict:
+    msg = llm.invoke(f"Draft a reply to: {state['question']}")
+    return {"draft": msg.content}
+
+
+def polish(state: State) -> dict:
+    msg = llm.invoke(f"Tighten this reply, keep the meaning: {state['draft']}")
+    return {"final": msg.content}
+
+
+workflow = StateGraph(State)
+workflow.add_node("draft", draft)
+workflow.add_node("polish", polish)
+workflow.add_edge(START, "draft")
+workflow.add_edge("draft", "polish")
+workflow.add_edge("polish", END)
+
+graph = workflow.compile()
+result = graph.invoke(
+    {"question": "Where is my order?"},
+    config={"callbacks": [handler]},
+)
+```
+
+In the Spanlens dashboard you'll see a `support_agent` trace with `draft` and `polish` chain spans, each containing an `llm` child span with the model + token usage from that node's LLM call.
+
+## Attaching to an existing trace
+
+If you already have a Spanlens trace in flight (for example, a parent workflow that calls into LangChain partway through), pass it via `trace` and the handler will record its spans under that trace instead of opening a new one. The trace's lifecycle stays with the caller.
+
+```python
+trace = client.start_trace(name="customer_request")
+handler = SpanlensCallbackHandler(client=client, trace=trace)
+
+# ... LangChain or LangGraph invocations using `handler` ...
+
+trace.end(status="completed")
+```
+
+## Options
+
+<ResponseField name="client" type="SpanlensClient" required>
+  Spanlens client instance.
+</ResponseField>
+
+<ResponseField name="trace" type="TraceHandle" default="None">
+  Existing trace to attach spans to. When omitted, a new trace is created on the first start-event and closed when the root run ends.
+</ResponseField>
+
+<ResponseField name="trace_name" type="str" default='"langchain_run"'>
+  Name for auto-created traces.
+</ResponseField>
+
+<ResponseField name="capture_chains" type="bool" default="True">
+  Whether to record chain spans (LangGraph nodes, LCEL pipeline steps).
+</ResponseField>
+
+<ResponseField name="capture_tools" type="bool" default="True">
+  Whether to record tool spans.
+</ResponseField>
+
+<ResponseField name="capture_retrieval" type="bool" default="True">
+  Whether to record retriever spans (for RAG).
+</ResponseField>
+
+<ResponseField name="max_input_bytes" type="int" default="16384">
+  Maximum size of `span.input` before truncation.
+</ResponseField>
+
+<ResponseField name="max_output_bytes" type="int" default="16384">
+  Maximum size of `span.output` before truncation.
+</ResponseField>
+
+## Related links
+
+- [Spanlens documentation](https://spanlens.io/docs)
+- [`spanlens` on PyPI](https://pypi.org/project/spanlens/)
+- [Spanlens GitHub](https://github.com/spanlens/Spanlens)
+- [Self-host guide](https://spanlens.io/docs/self-host)
