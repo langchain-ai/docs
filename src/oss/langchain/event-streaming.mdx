@@ -240,11 +240,11 @@ await Promise.all([
 
 ## Streaming sub-agents
 
-When a `create_agent` call invokes another `create_agent` (via a wrapping tool, typically), the inner agent's events flow at a nested namespace and surface as a handle on `stream.subgraphs`. Each handle exposes the inner agent's own `.messages`, `.values`, `.tool_calls`, and `.output` projections. The `name=` you pass to `create_agent` becomes `subagent.graph_name` (Python) / `subagent.name` (JS), which lets you filter and label per agent.
-
-Every nested `CompiledStateGraph` shows up on `stream.subgraphs` — `create_agent` instances are one specific kind. Filter on the name to act only on the ones you care about.
+When a `create_agent` call invokes another named `create_agent` (via a wrapping tool, typically), the inner agent's events flow at a nested namespace. The `name=` you pass to `create_agent` identifies that inner agent in the stream, so you can filter and label per agent.
 
 :::python
+Named sub-agents surface on the dedicated `stream.subagents` projection. Each handle exposes the inner agent's own `.messages`, `.values`, `.tool_calls`, and `.output`, plus `.name` (the `name=` you passed) and `.cause` (the tool call that dispatched the sub-agent). Because only named `create_agent` runs appear here, you don't need to filter plain subgraphs out.
+
 ```py
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
@@ -279,10 +279,8 @@ stream = supervisor.stream_events(
     version="v3",
 )
 
-for subagent in stream.subgraphs:
-    if subagent.graph_name != "weather_agent":
-        continue
-    print(f"{subagent.graph_name}: ", end="")
+for subagent in stream.subagents:
+    print(f"{subagent.name}: ", end="")
     for message in subagent.messages:
         for token in message.text:
             print(token, end="", flush=True)
@@ -291,6 +289,8 @@ for subagent in stream.subgraphs:
 :::
 
 :::js
+Named sub-agents surface as handles on `stream.subgraphs`, alongside any plain subgraphs. Each handle exposes the inner agent's `.messages`, `.values`, `.toolCalls`, and `.output`; filter on `subagent.name` (the `name=` you passed) to act on a specific agent.
+
 ```ts
 import { createAgent, tool } from "langchain";
 import { z } from "zod";
@@ -340,7 +340,15 @@ for await (const subagent of stream.subgraphs) {
 ```
 :::
 
-The same projection covers plain `StateGraph` subgraphs invoked from a tool — set `name=` on `.compile(name=...)` to get a label in `subagent.graph_name`. There's no separate sub-agent-only projection; the filter is what you write into your loop.
+Plain `StateGraph` subgraphs invoked from a tool also surface on `stream.subgraphs` — set `name=` on `.compile(name=...)` to get a label in `subagent.graph_name`.
+
+:::python
+`stream.subagents` is the focused view of named `create_agent` sub-agents, while `stream.subgraphs` covers every nested graph. Use whichever matches your UI.
+:::
+
+:::js
+Named sub-agents share the `stream.subgraphs` projection with plain subgraphs; the filter you write into your loop is what separates them.
+:::
 
 ## State and final output
 

@@ -680,6 +680,63 @@ Execution completed!
 
 :::
 
+:::python
+
+## Filesystem permission interrupts
+
+<Note>
+Filesystem permission interrupts require `deepagents>=0.6.8`.
+</Note>
+
+Beyond `interrupt_on`, you can pause the built-in filesystem tools by marking a [permission rule](/oss/deepagents/permissions) with `mode="interrupt"`. When the agent calls `write_file` or `edit_file` on a path that matches an interrupt-mode rule, `create_deep_agent` raises the same human-in-the-loop interrupt as a configured tool, using the filesystem tool's name as the action name.
+
+```python
+from deepagents import FilesystemPermission, create_deep_agent
+from langgraph.checkpoint.memory import MemorySaver
+
+
+agent = create_deep_agent(
+    model=model,
+    permissions=[
+        FilesystemPermission(
+            operations=["write"],
+            paths=["/secrets/**"],
+            mode="interrupt",
+        ),
+    ],
+    checkpointer=MemorySaver(),  # Required to pause and resume
+)
+```
+
+Handle and resume the interrupt the same way as a tool-call interrupt: run until it pauses, inspect the request, then resume with a decision.
+
+```python
+from langgraph.types import Command
+
+config = {"configurable": {"thread_id": "fs-thread-1"}}
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Save the API key to /secrets/key.txt"}]},
+    config=config,
+    version="v2",
+)
+
+if result.interrupts:
+    action = result.interrupts[0].value["action_requests"][0]
+    print(f"Approve {action['name']} on {action['args']}?")
+
+    # Resume with the human decision (approve, edit, or reject).
+    result = agent.invoke(
+        Command(resume={"decisions": [{"type": "approve"}]}),
+        config=config,  # Same thread ID
+        version="v2",
+    )
+```
+
+Filesystem-permission interrupts merge with any `interrupt_on` you pass, so a single review step can cover both custom tools and protected filesystem paths.
+
+:::
+
 ## Best practices
 
 ### Always use a checkpointer
