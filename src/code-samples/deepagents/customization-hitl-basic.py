@@ -27,7 +27,6 @@ def notify_email(to: str, subject: str, body: str) -> str:
 # Checkpointer is REQUIRED for human-in-the-loop
 checkpointer = MemorySaver()
 
-# KEEP MODEL
 agent = create_deep_agent(
     model="google_genai:gemini-3.5-flash",
     tools=[remove_file, fetch_file, notify_email],
