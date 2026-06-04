@@ -129,6 +129,10 @@ const agent = createAgent({
 <ParamField body="description" type="string | callable">
     Static string or callable function for custom description
 </ParamField>
+
+<ParamField body="when" type="callable">
+    Optional predicate that receives a `ToolCallRequest` and returns `True` to interrupt or `False` to auto-approve. Use it to gate interrupts on a call's arguments. Requires `langchain>=1.3.3`.
+</ParamField>
 :::
 
 :::js
@@ -152,6 +156,61 @@ const agent = createAgent({
 :::
 
 </Accordion>
+
+## Conditional interrupts
+
+By default, every tool call listed in `interrupt_on` pauses for review. To pause only some calls, add a `when` predicate to a tool's `InterruptOnConfig`. The predicate receives a `ToolCallRequest` and returns `True` to interrupt or `False` to auto-approve, so you can gate on the tool's arguments.
+
+:::python
+<Note>
+Conditional interrupts require `langchain>=1.3.3`.
+</Note>
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware, ToolCallRequest
+from langgraph.checkpoint.memory import InMemorySaver
+
+
+def writes_outside_workspace(request: ToolCallRequest) -> bool:
+    """Pause writes to paths outside the workspace directory."""
+    path = request.tool_call["args"].get("path", "")
+    return not path.startswith("/workspace/")
+
+
+def is_write_query(request: ToolCallRequest) -> bool:
+    """Pause SQL that isn't a read-only SELECT."""
+    query = request.tool_call["args"].get("query", "")
+    return not query.lstrip().upper().startswith("SELECT")
+
+
+agent = create_agent(
+    model="gpt-5.4",
+    tools=[write_file, execute_sql, read_data],
+    middleware=[
+        HumanInTheLoopMiddleware(
+            interrupt_on={
+                "write_file": {
+                    "allowed_decisions": ["approve", "edit", "reject"],
+                    "when": writes_outside_workspace,
+                },
+                "execute_sql": {
+                    "allowed_decisions": ["approve", "reject"],
+                    "when": is_write_query,
+                },
+            },
+        ),
+    ],
+    checkpointer=InMemorySaver(),
+)
+```
+
+When the `when` predicate returns `False`, the call runs without interrupting. When it returns `True`, or when you omit `when`, the call pauses as usual. Calls that evaluate to `False` are never added to the interrupt batch, so a reviewer only sees the actions that need a decision.
+:::
+
+:::js
+Conditional interrupts are currently available in Python only.
+:::
 
 ## Responding to interrupts
 
