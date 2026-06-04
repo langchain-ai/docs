@@ -56,7 +56,9 @@ src/
         └── ...
 ```
 
-**More than one snippet in one file**: A single code sample file can contain more than one named snippet using different `:snippet-start: snippet-name` and `:snippet-end:` pairs. Each snippet must have a unique name. This is useful for keeping related code samples together in one testable file.
+**Prefer one file per doc page or topic**: Collocate related snippets in a single code sample file whenever they belong to the same MDX page, tutorial flow, or feature (for example, setup plus invocation, or a do/don't pair). Use multiple `:snippet-start:` / `:snippet-end:` pairs in that file rather than splitting into several `.py` or `.ts` files. Reserve separate files for unrelated samples or when a page genuinely needs independent test entry points.
+
+**More than one snippet in one file**: A single code sample file can contain more than one named snippet using different `:snippet-start: snippet-name` and `:snippet-end:` pairs. Each snippet must have a unique name. Shared imports, helpers, and `:remove-start:` test harness code live once in the file; only the fenced regions between snippet tags appear in the generated MDX snippets.
 
 ## Step-by-step instructions
 
@@ -64,7 +66,7 @@ src/
 
 Place the file under `src/code-samples/` in the folder for the product: `langchain/`, `langgraph/`, `deepagents/`, or `langsmith/` (for example, `src/code-samples/langgraph/langgraph-sql-agent.py` for LangGraph docs).
 
-Use a descriptive filename, for example, `return-a-string.py`, `return-a-string.ts`, or `traceable-pipeline.java`.
+Use a descriptive filename, for example, `return-a-string.py`, `return-a-string.ts`, or `traceable-pipeline.java`. When a doc page needs several code blocks for the same feature, add them as multiple snippets in one file (for example, `rubric-configure.py` with `rubric-configure-py` and `rubric-invoke-py`) instead of creating `rubric-configure.py` and `rubric-invoke.py`.
 
 ### 2. Add snippet delineators
 
@@ -236,6 +238,7 @@ To support additional languages, add config entries in that script.
 
 ## Guidelines
 
+- **Collocate related snippets** in one code sample file per doc page or feature when possible. Import each generated MDX snippet separately in the MDX file (for example, `<RubricConfigurePy />` then `<RubricInvokePy />` from the same source file).
 - Do not mock LangChain internals (for example `unittest.mock.patch` on `init_chat_model` helpers) so that imports resolve real chat model instances. Do not use fake chat models in docs code samples (for example `GenericFakeChatModel`, `FakeListChatModel`, or other `langchain_core` testing fakes). Wire a real chat model (for example `ChatOpenAI`) so snippets match what readers run; `make test-code-samples` requires a valid API key when the sample calls the model.
 - Do not change `pyproject.toml` when making code sample changes.
 - Always run `make test-code-samples FILES="path/to/your/file.py"` before `make code-snippets` to ensure new samples pass.
