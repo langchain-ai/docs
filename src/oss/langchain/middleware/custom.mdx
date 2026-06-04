@@ -608,6 +608,22 @@ agent = create_agent(
 
 More powerful for complex middleware with multiple hooks or configuration. Use classes when you need to define both sync and async implementations for the same hook, or when you want to combine multiple hooks in a single middleware.
 
+:::python
+An `AgentMiddleware` subclass can declare three class attributes that the agent factory picks up at compile time:
+
+- `state_schema` — extend the agent state with custom fields. See [Custom state schema](#custom-state-schema).
+- `tools` — register additional tools that ship with the middleware (e.g., `write_todos` on the to-do list middleware).
+- `transformers` — register scope-aware stream transformer factories. See [Custom stream transformers](#custom-stream-transformers).
+:::
+
+:::js
+`createMiddleware` accepts three configuration fields that the agent factory picks up at compile time:
+
+- `stateSchema` — extend the agent state with custom fields. See [Custom state schema](#custom-state-schema).
+- `tools` — register additional tools that ship with the middleware.
+- `streamTransformers` — register scope-aware stream transformer factories. See [Custom stream transformers](#custom-stream-transformers).
+:::
+
 **Example:**
 
 ```python
@@ -871,6 +887,61 @@ console.log(result._internalFlag); // undefined
 ```
 
 :::
+
+## Custom stream transformers
+
+:::python
+<Note>Middleware-registered transformers require `langchain>=1.3.2`.</Note>
+:::
+
+:::js
+<Note>Middleware-registered transformers require `langchain@1.4.3` or later.</Note>
+:::
+
+Middleware can register stream transformer factories that project events from the live agent stream onto typed extension channels. This is useful for surfacing counters, side-channel artifacts, partial outputs, or wire-level redaction without coupling to the framework's built-in projections.
+
+At compile time, middleware-registered factories merge with anything the caller passes directly to the agent factory. The [final ordering rules](/oss/langchain/event-streaming#register-transformers-on-middleware) keep the built-in `ToolCallTransformer` in front and let caller-supplied entries land last.
+
+:::python
+Set the `transformers` class attribute to a tuple of factory callables. Each factory has the shape `Callable[[tuple[str, ...]], StreamTransformer]` and is invoked as `factory(scope)`, where `scope` is the mini-mux scope tuple (`()` for the root, non-empty for subgraphs); returning a fresh transformer per call keeps each subgraph isolated.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
+
+
+class ToolActivityMiddleware(AgentMiddleware):
+    transformers = (ToolActivityTransformer,)
+
+
+agent = create_agent(
+    model="gpt-5-nano",
+    tools=[...],
+    middleware=[ToolActivityMiddleware()],
+)
+```
+:::
+
+:::js
+Pass `streamTransformers` to `createMiddleware` as a tuple of factories. Each factory has the shape `() => StreamTransformer<any>` (zero arguments) and is invoked once per scope; returning a fresh transformer per call keeps each subgraph isolated.
+
+```typescript
+import { createAgent, createMiddleware } from "langchain";
+
+const toolActivityMiddleware = createMiddleware({
+  name: "ToolActivityMiddleware",
+  streamTransformers: [toolActivityTransformer],
+});
+
+const agent = createAgent({
+  model: "gpt-5-nano",
+  tools: [...],
+  middleware: [toolActivityMiddleware],
+});
+```
+:::
+
+See [Register transformers on middleware](/oss/langchain/event-streaming#register-transformers-on-middleware) for the full ordering rules and the PII redaction example.
 
 :::js
 ## Custom context
