@@ -204,9 +204,9 @@ You can preview alert behavior over a historical time window to understand how m
 
     ### 2. Configure webhook parameters
 
-    ![Webhook Setup](/langsmith/images/webhook-setup.png)
+    In the **Monitoring** section of the [LangSmith UI](https://smith.langchain.com) under the **Alerts** tab, click **+ Alert** to create a. new alert.
 
-    In the notification section of your alert, complete the webhook configuration with the following parameters:
+    In the **Notification Settings** section, complete the webhook configuration with the following parameters:
 
     **Required fields**
 
@@ -254,7 +254,11 @@ You can preview alert behavior over a historical time window to understand how m
     - Consider adding a shared secret in your headers to verify webhook sources
     - Validate incoming webhook requests before processing them
 
-    ### Send alerts to Slack
+    ### Example recipes
+
+    <Info>
+    LangSmith does not perform template substitution on the request body. The auto-populated fields listed above (`alert_rule_name`, `project_name`, `triggered_metric_value`, and so on) are merged into the outgoing JSON as top-level keys, alongside the body you configure. Placeholder syntax like `{alert_rule_name}` is sent verbatim to the receiving service. It only resolves to a real value if the receiver itself can extract fields from the incoming JSON (for example, a Power Automate Workflow, an AWS Lambda, or a custom HTTP handler).
+    </Info>
 
     <Accordion title="Configure Slack notifications via webhook">
       Here is an example for configuring LangSmith alerts to send notifications to Slack channels using the [`chat.postMessage`](https://api.slack.com/methods/chat.postMessage) API.
@@ -377,24 +381,37 @@ You can preview alert behavior over a historical time window to understand how m
     </Accordion>
 
     <Accordion title="Configure Microsoft Teams notifications via webhook">
-      Here is an example for configuring LangSmith alerts to send notifications to a Microsoft Teams channel using an [Incoming Webhook connector](https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook).
+      Here is an example for configuring LangSmith alerts to send notifications to a Microsoft Teams channel using the [Workflows app](https://support.microsoft.com/en-us/office/create-incoming-webhooks-with-workflows-for-microsoft-teams-8ae491c7-0394-4861-ba59-055e33f75498) (Power Automate). This approach is recommended because it extracts fields from the incoming JSON within the flow, so the auto-populated LangSmith alert fields render correctly in the Teams message.
+
+      <Note>
+      Microsoft's legacy Office 365 Incoming Webhook connectors are being retired. Use the Workflows app for new integrations.
+      </Note>
 
       **Prerequisites**
 
-      - Access to a Microsoft Teams workspace with permissions to add connectors
+      - Access to a Microsoft Teams workspace with permissions to add Workflows
       - A LangSmith project to set up alerts
 
-      **Step 1: Create an Incoming Webhook in Teams**
+      **Step 1: Create a Workflow in Teams**
 
       1. In Microsoft Teams, navigate to the channel where you want to receive alerts
       2. Click the **...** (More options) menu next to the channel name
-      3. Select **Connectors**
-      4. Search for **Incoming Webhook** and click **Configure**
-      5. Provide a name for the webhook (e.g., "LangSmith Alerts") and optionally upload an image
-      6. Click **Create**
-      7. Copy the webhook URL that is generated — you will use this in LangSmith
+      3. Select **Workflows**
+      4. Search for and select the **Post to a channel when a webhook request is received** template
+      5. Sign in to confirm the connections, then click **Next**
+      6. Confirm the team and channel where alerts should be posted, then click **Add workflow**
+      7. Copy the generated **HTTP POST URL**—use this in LangSmith
 
-      **Step 2: Configure the webhook alert in LangSmith**
+      **Step 2: Customize the message in Power Automate (optional)**
+
+      The default workflow posts the raw JSON body as a card. To format alert details, edit the flow in Power Automate:
+
+      1. Open the [Power Automate portal](https://make.powerautomate.com) and edit the workflow you created
+      2. Click the **Post card in a chat or channel** action
+      3. In the **Adaptive Card** field, reference incoming fields using `triggerOutputs()?['body/alert_rule_name']`, `triggerOutputs()?['body/project_name']`, `triggerOutputs()?['body/triggered_metric_value']`, `triggerOutputs()?['body/triggered_threshold']`, `triggerOutputs()?['body/timestamp']`, and `triggerOutputs()?['body/alert_rule_url']`
+      4. Save the flow
+
+      **Step 3: Configure the webhook alert in LangSmith**
 
       1. In LangSmith, navigate to your project
       2. Select **Alerts → Create Alert**
@@ -404,10 +421,10 @@ You can preview alert behavior over a historical time window to understand how m
 
       **Webhook URL**
 
-      Paste the Incoming Webhook URL you copied from Teams:
+      Paste the HTTP POST URL from your Teams Workflow:
 
       ```
-      https://your-org.webhook.office.com/webhookb2/...
+      https://prod-XX.westus.logic.azure.com:443/workflows/.../triggers/manual/paths/invoke?...
       ```
 
       **Headers**
@@ -420,63 +437,19 @@ You can preview alert behavior over a historical time window to understand how m
 
       **Request Body Template**
 
-      <Note>
-      Replace `{project_url}` with your LangSmith project URL. The fields `alert_name`, `project_name`, `triggered_metric_value`, and `triggered_threshold` are populated automatically by LangSmith at alert time.
-      </Note>
+      LangSmith automatically merges the auto-populated alert fields (`alert_rule_name`, `project_name`, `triggered_metric_value`, `triggered_threshold`, `timestamp`, `alert_rule_url`, and others) into the request body as top-level JSON keys. Power Automate reads these fields directly from the incoming payload, so an empty body is sufficient:
 
       ```json
-      {
-        "@type": "MessageCard",
-        "@context": "http://schema.org/extensions",
-        "themeColor": "FF0000",
-        "summary": "{alert_name} triggered",
-        "sections": [
-          {
-            "activityTitle": "🚨 LangSmith Alert: {alert_name}",
-            "activitySubtitle": "Project: {project_name}",
-            "facts": [
-              {
-                "name": "Metric value",
-                "value": "{triggered_metric_value}"
-              },
-              {
-                "name": "Threshold",
-                "value": "{triggered_threshold}"
-              },
-              {
-                "name": "Timestamp",
-                "value": "{timestamp}"
-              }
-            ],
-            "markdown": true
-          }
-        ],
-        "potentialAction": [
-          {
-            "@type": "OpenUri",
-            "name": "View in LangSmith",
-            "targets": [
-              {
-                "os": "default",
-                "uri": "{project_url}"
-              }
-            ]
-          }
-        ]
-      }
+      {}
       ```
 
       6. Click **Save** to activate the webhook configuration
 
-      **Step 3: Test the integration**
+      **Step 4: Test the integration**
 
       1. In the LangSmith alert configuration, click **Send Test Alert**
       2. Check your specified Teams channel for the test notification
       3. Verify that the card contains the expected alert information
-
-      <Note>
-      Microsoft's legacy Office 365 Incoming Webhook connectors are being retired. If your organization uses the newer **Workflows** app in Teams (Power Automate), create a workflow with the "Post to a channel when a webhook request is received" template instead, and use the workflow's HTTP trigger URL as your webhook endpoint in LangSmith.
-      </Note>
     </Accordion>
 
     <Accordion title="Configure email notifications via webhook">
@@ -529,7 +502,7 @@ You can preview alert behavior over a historical time window to understand how m
       **Request Body Template**
 
       <Note>
-      Replace `alerts@your-company.com` with your verified sender address and `oncall@your-company.com` with the recipient address. The fields `alert_name`, `project_name`, `triggered_metric_value`, `triggered_threshold`, and `timestamp` are populated automatically by LangSmith at alert time.
+      Replace `alerts@your-company.com` with your verified sender address and `oncall@your-company.com` with the recipient address. SendGrid does not extract fields from arbitrary top-level JSON keys, so this example uses a fixed subject and body. To include alert-specific values in the email, route the LangSmith webhook through a middleware (such as a Power Automate flow, AWS Lambda, or Zapier webhook) that reads the incoming payload and renders the SendGrid request.
       </Note>
 
       ```json
@@ -541,7 +514,7 @@ You can preview alert behavior over a historical time window to understand how m
                 "email": "oncall@your-company.com"
               }
             ],
-            "subject": "🚨 LangSmith Alert: {alert_name}"
+            "subject": "LangSmith alert triggered"
           }
         ],
         "from": {
@@ -551,11 +524,7 @@ You can preview alert behavior over a historical time window to understand how m
         "content": [
           {
             "type": "text/plain",
-            "value": "Alert '{alert_name}' was triggered for project '{project_name}'.\n\nMetric value: {triggered_metric_value}\nThreshold: {triggered_threshold}\nTimestamp: {timestamp}"
-          },
-          {
-            "type": "text/html",
-            "value": "<h2>🚨 LangSmith Alert: {alert_name}</h2><p><strong>Project:</strong> {project_name}</p><ul><li><strong>Metric value:</strong> {triggered_metric_value}</li><li><strong>Threshold:</strong> {triggered_threshold}</li><li><strong>Timestamp:</strong> {timestamp}</li></ul>"
+            "value": "A LangSmith alert was triggered. Open your LangSmith workspace to view the alert details, including the project, metric value, threshold, and timestamp."
           }
         ]
       }
@@ -571,23 +540,22 @@ You can preview alert behavior over a historical time window to understand how m
 
       **Using other email providers**
 
-      The same pattern works with other transactional email APIs. Change the **Webhook URL** and **Headers** to match your provider:
+      The same pattern works with other transactional email APIs that accept static authentication headers. Change the **Webhook URL** and **Headers** to match your provider:
 
       | Provider | Webhook URL | Auth header format |
       |----------|-------------|--------------------|
       | Mailgun | `https://api.mailgun.net/v3/{your-domain}/messages` | `Authorization: Basic <base64(api:<key>)>` |
       | Postmark | `https://api.postmarkapp.com/email` | `X-Postmark-Server-Token: <token>` |
-      | Amazon SES (SMTP) | Use an SMTP relay or SES HTTP endpoint | See [AWS SES docs](https://docs.aws.amazon.com/ses/latest/dg/send-email-api.html) |
 
-      Adjust the **Request Body Template** to match each provider's expected payload format.
+      Adjust the **Request Body Template** to match each provider's expected payload format. Amazon SES is not directly compatible because the SES API requires per-request AWS SigV4 signing, which cannot be expressed as a static header. To use SES, route through a middleware (for example, a Lambda function with an HTTP trigger).
     </Accordion>
 
     ### Additional resources
 
     - [Slack chat.postMessage API Documentation](https://api.slack.com/methods/chat.postMessage)
     - [Slack Block Kit Builder](https://app.slack.com/block-kit-builder/)
-    - [Microsoft Teams Incoming Webhooks](https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook)
-    - [Microsoft Teams Workflows app](https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-incoming-webhook?tabs=newteams%2Cdotnet)
+    - [Create incoming webhooks with Workflows for Microsoft Teams](https://support.microsoft.com/en-us/office/create-incoming-webhooks-with-workflows-for-microsoft-teams-8ae491c7-0394-4861-ba59-055e33f75498)
+    - [Power Automate documentation](https://learn.microsoft.com/en-us/power-automate/)
     - [SendGrid Mail Send API Documentation](https://docs.sendgrid.com/api-reference/mail-send/mail-send)
   </Tab>
 </Tabs>
