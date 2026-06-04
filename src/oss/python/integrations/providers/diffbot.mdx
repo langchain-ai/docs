@@ -1,0 +1,179 @@
+---
+title: "Diffbot integrations"
+description: "Integrate with Diffbot using LangChain Python."
+---
+
+[Diffbot](https://www.diffbot.com) turns the public web into structured data. Its APIs cover the [Knowledge Graph](https://docs.diffbot.com/reference/dql-quickstart) (queryable with DQL), web search, structured page extraction, NLP entity recognition, crawling, and a retrieval-augmented LLM endpoint.
+
+The `langchain-diffbot` package maps each Diffbot API to the closest LangChain primitive:
+
+| Diffbot API | LangChain class(es) |
+| --- | --- |
+| Knowledge Graph (DQL) | `DiffbotKnowledgeGraphRetriever`, `DiffbotKnowledgeGraphTool` |
+| Web Search | `DiffbotWebSearchRetriever`, `DiffbotWebSearchTool` |
+| Extract (Analyze) | `DiffbotExtractTool`, `DiffbotExtractLoader` |
+| NLP entities | `DiffbotEntitiesTool` |
+| Crawl | `DiffbotCrawlLoader` |
+| LLM RAG (`ask`) | `ChatDiffbot` |
+
+## Installation and setup
+
+Install the Diffbot integration package for LangChain Python:
+
+<CodeGroup>
+```bash pip
+pip install langchain-diffbot
+```
+
+```bash uv
+uv add langchain-diffbot
+```
+</CodeGroup>
+
+[Get a Diffbot API token](https://app.diffbot.com/get-started/) and set it as an environment variable named `DIFFBOT_API_TOKEN`:
+
+```bash
+export DIFFBOT_API_TOKEN="your-api-key"
+```
+
+Every class also accepts `diffbot_api_token=...` directly, or a pre-built `diffbot.Diffbot` / `diffbot.DiffbotAsync` client via `client=...` / `async_client=...`.
+
+## Chat models
+
+### ChatDiffbot
+
+A chat model backed by Diffbot's retrieval-augmented LLM endpoint (`ask`), with native streaming.
+
+```python
+from langchain_core.messages import HumanMessage
+from langchain_diffbot import ChatDiffbot
+
+llm = ChatDiffbot()
+
+for chunk in llm.stream([HumanMessage(content="What is the Diffbot Knowledge Graph?")]):
+    print(chunk.content, end="", flush=True)
+```
+
+## Retrievers
+
+### DiffbotKnowledgeGraphRetriever
+
+A `BaseRetriever` over the Diffbot Knowledge Graph. The query string is a [DQL](https://docs.diffbot.com/reference/dql-quickstart) expression.
+
+```python
+from langchain_diffbot import DiffbotKnowledgeGraphRetriever
+
+retriever = DiffbotKnowledgeGraphRetriever(k=5)
+docs = retriever.invoke('type:Organization industries:"Artificial Intelligence"')
+```
+
+Knowledge Graph entities are large, so the retriever exposes output-shaping knobs — `fields` (metadata allowlist), `content_fields` (priority list for `page_content`), and `document_mapper` (full override):
+
+```python
+retriever = DiffbotKnowledgeGraphRetriever(
+    k=5,
+    fields=["id", "type", "name", "homepageUri", "nbEmployees"],
+)
+```
+
+### DiffbotWebSearchRetriever
+
+A `BaseRetriever` over Diffbot Web Search. Supports the same `fields` / `content_fields` / `document_mapper` shaping knobs.
+
+```python
+from langchain_diffbot import DiffbotWebSearchRetriever
+
+web = DiffbotWebSearchRetriever(k=5, fields=["title", "pageUrl", "score"])
+docs = web.invoke("diffbot knowledge graph llm grounding")
+```
+
+## Document loaders
+
+### DiffbotExtractLoader
+
+Loads one `Document` per URL using Diffbot's Extract (Analyze) API.
+
+```python
+from langchain_diffbot import DiffbotExtractLoader
+
+loader = DiffbotExtractLoader(urls=["https://example.com", "https://diffbot.com"])
+for doc in loader.lazy_load():
+    print(doc.metadata["title"], doc.page_content[:200])
+```
+
+### DiffbotCrawlLoader
+
+Loads `Document`s from a Diffbot crawl job.
+
+```python
+from langchain_diffbot import DiffbotCrawlLoader
+```
+
+## Tools
+
+### DiffbotExtractTool
+
+Extracts the structured content of a single URL. Returns a structured `{"error": ..., "errorCode": ...}` dict on extraction failure so agents can react and try another URL.
+
+```python
+from langchain_diffbot import DiffbotExtractTool
+
+tool = DiffbotExtractTool()
+page = tool.invoke({"url": "https://www.diffbot.com/products/extract/"})
+```
+
+### DiffbotWebSearchTool
+
+Runs a Diffbot web search and returns LLM-ready results.
+
+```python
+from langchain_diffbot import DiffbotWebSearchTool
+```
+
+### DiffbotKnowledgeGraphTool
+
+Runs a DQL query against the Knowledge Graph from within an agent.
+
+```python
+from langchain_diffbot import DiffbotKnowledgeGraphTool
+```
+
+### DiffbotEntitiesTool
+
+Extracts named entities from text using Diffbot's NLP API.
+
+```python
+from langchain_diffbot import DiffbotEntitiesTool
+```
+
+### DiffbotOntologyTool
+
+Navigates the Knowledge Graph ontology so an agent can discover valid DQL field and type names before querying.
+
+```python
+from langchain_diffbot import DiffbotOntologyTool
+```
+
+### DiffbotDQLProbeTool
+
+Probes DQL query variants at `size=0` (hit counts only) so an agent can check selectivity before committing to a full query.
+
+```python
+from langchain_diffbot import DiffbotDQLProbeTool
+```
+
+## Components reference
+
+| Class | Abstraction | Import path |
+|-------|-------------|-------------|
+| `ChatDiffbot` | Chat model | `from langchain_diffbot import ChatDiffbot` |
+| `DiffbotKnowledgeGraphRetriever` | Retriever | `from langchain_diffbot import DiffbotKnowledgeGraphRetriever` |
+| `DiffbotWebSearchRetriever` | Retriever | `from langchain_diffbot import DiffbotWebSearchRetriever` |
+| `DiffbotExtractLoader` | Document loader | `from langchain_diffbot import DiffbotExtractLoader` |
+| `DiffbotCrawlLoader` | Document loader | `from langchain_diffbot import DiffbotCrawlLoader` |
+| `DiffbotExtractTool` | Tool | `from langchain_diffbot import DiffbotExtractTool` |
+| `DiffbotWebSearchTool` | Tool | `from langchain_diffbot import DiffbotWebSearchTool` |
+| `DiffbotKnowledgeGraphTool` | Tool | `from langchain_diffbot import DiffbotKnowledgeGraphTool` |
+| `DiffbotEntitiesTool` | Tool | `from langchain_diffbot import DiffbotEntitiesTool` |
+| `DiffbotOntologyTool` | Tool | `from langchain_diffbot import DiffbotOntologyTool` |
+| `DiffbotDQLProbeTool` | Tool | `from langchain_diffbot import DiffbotDQLProbeTool` |
