@@ -34,6 +34,7 @@ LINK_MAPS: list[LinkMap] = [
             "langchain_text_splitters": "langchain-text-splitters/",
             # Deep Agents
             "create_deep_agent": "deepagents/graph/create_deep_agent",
+            "DeepAgentState": "deepagents/graph/DeepAgentState",
             "SubAgent": "deepagents/middleware/subagents/SubAgent",
             "CompiledSubAgent": "deepagents/middleware/subagents/CompiledSubAgent",
             "SubAgentMiddleware": "deepagents/middleware/subagents/SubAgentMiddleware",
@@ -45,6 +46,7 @@ LINK_MAPS: list[LinkMap] = [
             "FilesystemPermission": "deepagents/middleware/permissions/FilesystemPermission",
             "SummarizationToolMiddleware": "deepagents/middleware/summarization/SummarizationToolMiddleware",
             "PatchToolCallsMiddleware": "deepagents/middleware/patch_tool_calls/PatchToolCallsMiddleware",
+            "RubricMiddleware": "deepagents/middleware/rubric/RubricMiddleware",
             "StateBackend": "deepagents/backends/state/StateBackend",
             "FilesystemBackend": "deepagents/backends/filesystem/FilesystemBackend",
             "LocalShellBackend": "deepagents/backends/local_shell/LocalShellBackend",
@@ -145,6 +147,13 @@ LINK_MAPS: list[LinkMap] = [
             # langchain-openrouter
             "langchain-openrouter": "integrations/langchain_openrouter",
             "ChatOpenRouter": "integrations/langchain_openrouter",
+            # langchain-litellm
+            "langchain-litellm": "langchain-litellm/",
+            "ChatLiteLLM": "langchain-litellm/chat_models/litellm/ChatLiteLLM",
+            "ChatLiteLLMRouter": "langchain-litellm/chat_models/litellm_router/ChatLiteLLMRouter",
+            "LiteLLMEmbeddings": "langchain-litellm/embeddings/litellm/LiteLLMEmbeddings",
+            "LiteLLMEmbeddingsRouter": "langchain-litellm/embeddings/litellm_router/LiteLLMEmbeddingsRouter",
+            "LiteLLMOCRLoader": "langchain-litellm/document_loaders/litellm_ocr/LiteLLMOCRLoader",
             # langchain-anthropic
             "langchain-anthropic": "langchain-anthropic/",
             "ChatAnthropic": "langchain-anthropic/chat_models/ChatAnthropic",
@@ -191,6 +200,12 @@ LINK_MAPS: list[LinkMap] = [
             "ParallelEnrichment": "langchain-parallel/tasks/ParallelEnrichment",
             "ParallelMonitor": "langchain-parallel/monitors/ParallelMonitor",
             "SourcePolicy": "langchain-parallel/_types/SourcePolicy",
+            # langchain-tavily
+            "langchain-tavily": "langchain-tavily/",
+            "TavilySearch": "langchain-tavily/tavily_search/TavilySearch",
+            "TavilyExtract": "langchain-tavily/tavily_extract/TavilyExtract",
+            "TavilyCrawl": "langchain-tavily/tavily_crawl/TavilyCrawl",
+            "TavilyMap": "langchain-tavily/tavily_map/TavilyMap",
             # langchain-amazon-nova
             "langchain-amazon-nova": "langchain-amazon-nova/",
             "ChatAmazonNova": "langchain-amazon-nova/chat_models/ChatAmazonNova",
@@ -220,10 +235,13 @@ LINK_MAPS: list[LinkMap] = [
             # Embeddings
             "init_embeddings": "langchain/embeddings/base/init_embeddings",
             "Embeddings": "langchain-core/embeddings/embeddings/Embeddings",
+            "PineconeSparseEmbeddings": "langchain-pinecone/embeddings/PineconeSparseEmbeddings",
             # Documents
             "Document": "langchain-core/documents/base/Document",
             # Document loaders
             "BaseLoader": "langchain-core/document_loaders/base/BaseLoader",
+            "AzureBlobStorageContainerLoader": "langchain-community/document_loaders/azure_blob_storage_container/AzureBlobStorageContainerLoader",
+            "AzureBlobStorageFileLoader": "langchain-community/document_loaders/azure_blob_storage_file/AzureBlobStorageFileLoader",
             # Text splitters
             "CharacterTextSplitter": "langchain-text-splitters/character/CharacterTextSplitter",
             "RecursiveCharacterTextSplitter": "langchain-text-splitters/character/RecursiveCharacterTextSplitter",
@@ -238,6 +256,18 @@ LINK_MAPS: list[LinkMap] = [
             # VectorStores
             "VectorStore": "langchain-core/vectorstores/base/VectorStore",
             "VectorStore.max_marginal_relevance_search": "langchain-core/vectorstores/base/VectorStore/max_marginal_relevance_search",
+            "PGVector": "langchain-postgres/vectorstores/PGVector",
+            "PGVectorStore": "langchain-postgres/v2/vectorstores/PGVectorStore",
+            "AstraDBVectorStore": "langchain-astradb/vectorstores/AstraDBVectorStore",
+            "ChromaVectorStore": "langchain-chroma/vectorstores/Chroma",
+            "ElasticSearchStore": "langchain-elasticsearch/vectorstores/ElasticsearchStore",
+            "MilvusVectorStore": "langchain-milvus/vectorstores/milvus/Milvus",
+            "MongoDBAtlasVectorSearch": "langchain-mongodb/vectorstores/MongoDBAtlasVectorSearch",
+            "PineconeSparseVectorStore": "langchain-pinecone/vectorstores_sparse/PineconeSparseVectorStore",
+            "PineconeVectorStore": "langchain-pinecone/vectorstores/PineconeVectorStore",
+            "QdrantVectorStore": "langchain-qdrant/qdrant/QdrantVectorStore",
+            "SurrealDBStore": "langchain-surrealdb/vectorstores/SurrealDBVectorStore",
+            "SQLServer_VectorStore": "langchain-sqlserver/vectorstores/SQLServer_VectorStore",
             # Key-value stores
             "BaseStore": "langchain-core/stores/BaseStore",
             "BaseStore.put": "langgraph/store/#langgraph.store.base.BaseStore.put",
@@ -473,7 +503,15 @@ LINK_MAPS: list[LinkMap] = [
             "ls.logFeedback": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html#logFeedback",
             "Client.listExamples": "https://reference.langchain.com/javascript/classes/langsmith.client.Client.html#listexamples",
             "Example": "https://reference.langchain.com/javascript/interfaces/langsmith.Example.html",
+            "HITLRequest": "https://reference.langchain.com/javascript/langchain/index/HITLRequest",
+            "MessageMetadata": "https://reference.langchain.com/javascript/langchain-react/MessageMetadata",
+            "SubagentDiscoverySnapshot": "https://reference.langchain.com/javascript/langchain-react/SubagentDiscoverySnapshot",
+            "SubgraphDiscoverySnapshot": "https://reference.langchain.com/javascript/langchain-react/SubgraphDiscoverySnapshot",
+            "SubmissionQueueEntry": "https://reference.langchain.com/javascript/langchain-react/SubmissionQueueEntry",
             "useStream": "https://reference.langchain.com/javascript/langchain-react/index/useStream",
+            "injectStream": "https://reference.langchain.com/javascript/langchain-angular/injectStream",
+            "client.runs.cancel": "https://reference.langchain.com/javascript/langchain-langgraph-sdk/client/RunsClient/cancel",
+            "ThreadStateJS": "https://reference.langchain.com/javascript/langchain-langgraph-sdk/index/ThreadState",
         },
     },
     {
@@ -528,10 +566,13 @@ LINK_MAPS: list[LinkMap] = [
             "wrapGemini": "functions/langsmith.wrappers_gemini.wrapGemini.html",
             # LangGraph SDK references
             "Auth": "langchain-langgraph-sdk/auth/Auth",
+            "client.runs.cancel": "langchain-langgraph-sdk/client/RunsClient/cancel",
             "client.runs.stream": "classes/_langchain_langgraph-sdk.client.RunsClient.html#stream",
             "client.runs.wait": "classes/_langchain_langgraph-sdk.client.RunsClient.html#wait",
             "client.threads.get_history": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#getHistory",
             "client.threads.update_state": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#updateState",
+            "ThreadState": "langchain-langgraph-sdk/index/ThreadState",
+            "ThreadStateJS": "langchain-langgraph-sdk/index/ThreadState",
             # LangGraph checkpoint references
             "BaseCheckpointSaver": "langchain-langgraph/index/BaseCheckpointSaver",
             "BaseStore": "langchain-core/stores/BaseStore",
@@ -585,6 +626,8 @@ LINK_MAPS: list[LinkMap] = [
             "createSummarizationMiddleware": "deepagents/middleware/createSummarizationMiddleware",
             "TodoListMiddleware": "langchain/index/todoListMiddleware",
             "HumanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
+            "humanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
+            "HITLRequest": "langchain/index/HITLRequest",
             "AnthropicPromptCachingMiddleware": "langchain/index/anthropicPromptCachingMiddleware",
             "SummarizationMiddleware": "langchain/index/summarizationMiddleware",
             "createMiddleware": "langchain/index/createMiddleware",
@@ -619,6 +662,7 @@ LINK_MAPS: list[LinkMap] = [
             "tools_condition": "langchain-langgraph/prebuilt/toolsCondition",
             "ToolRuntime": "langchain/index/Runtime",
             "RunnableLambda": "langchain-core/runnables/RunnableLambda",
+            "PIIMiddleware": "langchain/index/piiMiddleware",
             # LangSmith Deployment SDK - JS
             "LangGraphSDK": "langgraph-sdk/",
             "ThreadsClient": "langchain-langgraph-sdk/client/ThreadsClient",
@@ -666,7 +710,12 @@ LINK_MAPS: list[LinkMap] = [
             "listRuns": "langsmith/client/Client/listRuns",
             "Client.listExamples": "classes/langsmith.client.Client.html#listexamples",
             "Example": "langchain-core/prompts/Example",
+            "MessageMetadata": "langchain-react/MessageMetadata",
+            "SubagentDiscoverySnapshot": "langchain-react/SubagentDiscoverySnapshot",
+            "SubgraphDiscoverySnapshot": "langchain-react/SubgraphDiscoverySnapshot",
+            "SubmissionQueueEntry": "langchain-react/SubmissionQueueEntry",
             "useStream": "langchain-react/index/useStream",
+            "injectStream": "langchain-angular/injectStream",
         },
     },
     {

@@ -173,6 +173,8 @@ for await (const subgraph of stream.subgraphs) {
 ```
 :::
 
+`subgraph.graph_name` is the `name` of the compiled graph or agent. A named agent dispatched from a tool (for example, a `create_agent(name=...)` invoked through the Deep Agents `task` tool) surfaces here under that name, and the `lifecycle` event that opens the scope carries a `cause` linking back to the dispatching tool call. See [Lifecycle](#lifecycle) for more information.
+
 For product-specific streams, see [Deep Agents streaming](/oss/deepagents/event-streaming) for subagent streams and [LangChain agent streaming](/oss/langchain/streaming) for tool calls and middleware events.
 
 ## Stream state
@@ -205,9 +207,29 @@ const finalState = await stream.output;
 ## Stream multiple projections
 
 :::python
-Use `stream.interleave(...)` to consume multiple projections in strict arrival order in synchronous Python code:
+For concurrent consumption in async code, use `astream_events` with `asyncio.gather`:
 
 ```py
+import asyncio
+
+stream = await graph.astream_events(input, version="v3")
+
+async def consume_messages():
+    async for message in stream.messages:
+        print(f"[llm] node={message.node}")
+
+async def consume_subgraphs():
+    async for subgraph in stream.subgraphs:
+        print(f"[subgraph] path={subgraph.path}")
+
+await asyncio.gather(consume_messages(), consume_subgraphs())
+```
+
+For synchronous code, use `stream.interleave(...)` to consume multiple projections in strict arrival order:
+
+```py
+stream = graph.stream_events(input, version="v3")
+
 for name, item in stream.interleave("values", "messages", "subgraphs"):
     if name == "values":
         print(f"[state] keys={list(item)}")
@@ -388,7 +410,9 @@ for event in stream:
     if event["method"] != "messages":
         continue
 
-    data = event["params"]["data"]
+    data = event["params"]["data"][0]
+    if not isinstance(data, dict):
+        continue
     if data.get("event") != "content-block-delta":
         continue
 

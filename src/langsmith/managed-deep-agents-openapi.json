@@ -27,12 +27,26 @@
     {
       "name": "Runs",
       "description": "Start runs on Managed Deep Agent threads."
+    },
+    {
+      "name": "MCP servers",
+      "description": "Register MCP servers and store credentials referenced by agent tools."
+    },
+    {
+      "name": "MCP tools",
+      "description": "List tools exposed by registered MCP servers."
+    },
+    {
+      "name": "Auth sessions",
+      "description": "Start and poll OAuth authorization sessions for OAuth MCP servers."
     }
   ],
   "paths": {
     "/agents": {
       "get": {
-        "tags": ["Agents"],
+        "tags": [
+          "Agents"
+        ],
         "summary": "List agents",
         "description": "Return Managed Deep Agents owned by the authenticated user. System-created default agents are excluded.",
         "operationId": "listManagedDeepAgents",
@@ -81,7 +95,11 @@
             "description": "Field to sort by.",
             "schema": {
               "type": "string",
-              "enum": ["created_at", "updated_at", "name"],
+              "enum": [
+                "created_at",
+                "updated_at",
+                "name"
+              ],
               "default": "updated_at"
             }
           },
@@ -92,7 +110,10 @@
             "description": "Sort order.",
             "schema": {
               "type": "string",
-              "enum": ["asc", "desc"],
+              "enum": [
+                "asc",
+                "desc"
+              ],
               "default": "desc"
             }
           }
@@ -129,7 +150,9 @@
         }
       },
       "post": {
-        "tags": ["Agents"],
+        "tags": [
+          "Agents"
+        ],
         "summary": "Create an agent",
         "description": "Create an agent with metadata, runtime configuration, and an optional file tree. Creation is atomic: either the agent is fully created or no state is persisted.",
         "operationId": "createManagedDeepAgent",
@@ -165,10 +188,9 @@
                       "identity": "personal",
                       "visibility": "user"
                     },
-                    "runtime": {
-                      "model": {
-                        "model_id": "claude-sonnet-4-6"
-                      }
+                    "model": "openai:gpt-5.5",
+                    "backend": {
+                      "type": "default"
                     },
                     "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
                     "tools": {
@@ -197,6 +219,47 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Agent"
+                },
+                "examples": {
+                  "basic": {
+                    "summary": "Research assistant with one tool",
+                    "value": {
+                      "id": "dfa71115-c971-4197-8f02-20826fbc6f40",
+                      "name": "research-assistant",
+                      "description": "Research assistant that can search the web and summarize sources.",
+                      "owner_id": "33499cf9-4c02-49af-909d-b8f42e051eab",
+                      "created_at": "2026-05-15T20:50:32.708302+00:00",
+                      "updated_at": "2026-05-15T20:50:32.708302+00:00",
+                      "permissions": {
+                        "identity": "personal",
+                        "visibility": "user",
+                        "tenant_access_level": "read"
+                      },
+                      "runtime": {
+                        "model": {
+                          "model_id": "openai:gpt-5.5"
+                        }
+                      },
+                      "backend": {
+                        "type": "default"
+                      },
+                      "revision": "13ac11f11da376e588cb84825ed88d05298f27aaaa90c6f694abf572f34161d9",
+                      "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
+                      "tools": {
+                        "tools": [
+                          {
+                            "name": "tavily_web_search",
+                            "mcp_server_url": "https://tools.langchain.com",
+                            "mcp_server_name": "Fleet",
+                            "display_name": "tavily_web_search"
+                          }
+                        ],
+                        "interrupt_config": {
+                          "https://tools.langchain.com::tavily_web_search::Fleet": true
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -227,7 +290,9 @@
     },
     "/agents/{agent_id}": {
       "get": {
-        "tags": ["Agents"],
+        "tags": [
+          "Agents"
+        ],
         "summary": "Get an agent",
         "description": "Return the specified agent, including metadata, permissions, runtime, extras, and the parsed file tree at the latest commit. Pass `include_files=true` to include the raw file map.",
         "operationId": "getManagedDeepAgent",
@@ -281,7 +346,9 @@
         }
       },
       "patch": {
-        "tags": ["Agents"],
+        "tags": [
+          "Agents"
+        ],
         "summary": "Update an agent",
         "description": "Update the specified agent. Top-level scalar fields merge field-by-field. Nested objects such as `runtime`, `permissions`, `tools`, `subagents`, `skills`, and `extras` are replaced in full when provided. Providing file-tree fields such as `instructions`, `tools`, `subagents`, `skills`, or `files` creates a new file tree commit.",
         "operationId": "updateManagedDeepAgent",
@@ -371,9 +438,11 @@
         }
       },
       "delete": {
-        "tags": ["Agents"],
+        "tags": [
+          "Agents"
+        ],
         "summary": "Delete an agent",
-        "description": "Delete the agent and its associated state. The call is idempotent: deleting a non-existent agent returns `204`.",
+        "description": "Delete the agent. The call is idempotent: deleting a non-existent agent returns `204`. Deletion does not cascade to the agent's threads — existing threads remain queryable but cannot start new runs (attempts return `502`). Delete threads explicitly when you want to clean them up.",
         "operationId": "deleteManagedDeepAgent",
         "x-mint": {
           "href": "/langsmith/managed-deep-agents-api/agents/delete-agent",
@@ -414,7 +483,9 @@
     },
     "/threads": {
       "post": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Create a thread",
         "description": "Create a thread bound to a Managed Deep Agent. Use the returned thread ID to start runs.",
         "operationId": "createManagedDeepAgentThread",
@@ -454,6 +525,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Thread"
+                },
+                "examples": {
+                  "basic": {
+                    "summary": "Thread bound to an agent",
+                    "value": {
+                      "id": "019e2d67-ff4d-7251-bce5-dfdec8e1991b",
+                      "agent_id": "",
+                      "status": "idle",
+                      "metadata": {
+                        "is_test_run": false,
+                        "ls_user_id": "33499cf9-4c02-49af-909d-b8f42e051eab",
+                        "skip_memory_write_protection": false,
+                        "tenant_id": "ebbaf2eb-769b-4505-aca2-d11de10372a4"
+                      },
+                      "created_at": "2026-05-15T20:50:50.832351+00:00",
+                      "updated_at": "2026-05-15T20:50:50.832351+00:00"
+                    }
+                  }
                 }
               }
             }
@@ -478,7 +567,9 @@
     },
     "/threads/search": {
       "post": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Search threads",
         "description": "Search threads. Request and response bodies are proxied unchanged to the upstream agent runtime.",
         "operationId": "searchManagedDeepAgentThreads",
@@ -534,7 +625,9 @@
     },
     "/threads/count": {
       "post": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Count threads",
         "description": "Count threads matching the specified criteria. Request and response bodies are proxied unchanged to the upstream agent runtime.",
         "operationId": "countManagedDeepAgentThreads",
@@ -589,7 +682,9 @@
     },
     "/threads/{threadID}": {
       "get": {
-        "tags": ["Threads"],
+        "tags": [
+          "Threads"
+        ],
         "summary": "Get thread",
         "description": "Return thread metadata and status for the given thread ID.",
         "operationId": "getManagedDeepAgentThread",
@@ -634,7 +729,9 @@
     },
     "/threads/{threadID}/runs": {
       "post": {
-        "tags": ["Runs"],
+        "tags": [
+          "Runs"
+        ],
         "summary": "Create a thread run",
         "description": "Start a run on the thread. This endpoint is proxied to the upstream agent runtime and accepts its run payload. Include the assistant or agent identifier and run inputs in the request body.",
         "operationId": "createManagedDeepAgentThreadRun",
@@ -703,7 +800,9 @@
     },
     "/threads/{threadID}/runs/stream": {
       "post": {
-        "tags": ["Runs"],
+        "tags": [
+          "Runs"
+        ],
         "summary": "Stream a thread run",
         "description": "Start a run on a thread and stream output as server-sent events. The request must use `agent_id`; `assistant_id` is reserved for server-side forwarding and is rejected.",
         "operationId": "streamManagedDeepAgentThreadRun",
@@ -737,7 +836,9 @@
                         "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
                       }
                     ],
-                    "stream_mode": ["updates"],
+                    "stream_mode": [
+                      "updates"
+                    ],
                     "stream_subgraphs": true,
                     "user_timezone": "America/Los_Angeles"
                   }
@@ -777,7 +878,9 @@
     },
     "/threads/{threadID}/resolve-interrupt": {
       "post": {
-        "tags": ["Runs"],
+        "tags": [
+          "Runs"
+        ],
         "summary": "Resolve an interrupted thread",
         "description": "Complete a human-interrupt pause on the thread without sending new input, allowing execution to continue or finish. On success the response has no body.",
         "operationId": "resolveManagedDeepAgentThreadInterrupt",
@@ -814,6 +917,657 @@
           },
           "422": {
             "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/mcp-servers": {
+      "post": {
+        "tags": [
+          "MCP servers"
+        ],
+        "summary": "Register an MCP server",
+        "description": "Register an MCP server in the caller's workspace. Static-header servers can include credential headers. OAuth servers should set `auth_type=oauth` and `oauth_mode=per_user_dynamic_client`, then register an OAuth provider and start an auth session before use.",
+        "operationId": "createMcpServer",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/mcp-servers/create-mcp-server",
+          "metadata": {
+            "title": "Register an MCP server",
+            "sidebarTitle": "Register an MCP server"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMcpServerRequest"
+              },
+              "examples": {
+                "basic": {
+                  "summary": "Register Tavily's hosted MCP server with a bearer credential",
+                  "value": {
+                    "name": "tavily",
+                    "url": "https://mcp.tavily.com/mcp/",
+                    "headers": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer tvly-..."
+                      }
+                    ]
+                  }
+                },
+                "oauth": {
+                  "summary": "Register an OAuth MCP server",
+                  "value": {
+                    "name": "github-tools",
+                    "url": "https://example.com/mcp",
+                    "auth_type": "oauth",
+                    "oauth_mode": "per_user_dynamic_client"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "MCP server registered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServer"
+                },
+                "examples": {
+                  "basic": {
+                    "summary": "Newly registered Tavily MCP server",
+                    "value": {
+                      "id": "5b6f6a2b-2c95-4f0f-9c2b-7c3a3e4f8d11",
+                      "tenant_id": "33499cf9-4c02-49af-909d-b8f42e051eab",
+                      "name": "tavily",
+                      "url": "https://mcp.tavily.com/mcp/",
+                      "headers": [
+                        {
+                          "key": "Authorization",
+                          "value": "Bearer tvly-..."
+                        }
+                      ],
+                      "auth_type": "",
+                      "oauth_mode": "",
+                      "created_at": "2026-05-20T20:50:32.708302+00:00",
+                      "updated_at": "2026-05-20T20:50:32.708302+00:00",
+                      "mcp_vendor_id": null,
+                      "vendor_id": null,
+                      "external_system_id": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "MCP servers"
+        ],
+        "summary": "List MCP servers",
+        "description": "List MCP servers registered in the caller's workspace.",
+        "operationId": "listMcpServers",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/mcp-servers/list-mcp-servers",
+          "metadata": {
+            "title": "List MCP servers",
+            "sidebarTitle": "List MCP servers"
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "List of registered MCP servers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListMcpServersResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/mcp-servers/{mcp_server_id}": {
+      "get": {
+        "tags": [
+          "MCP servers"
+        ],
+        "summary": "Get an MCP server",
+        "description": "Fetch a single MCP server by ID.",
+        "operationId": "getMcpServer",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/mcp-servers/get-mcp-server",
+          "metadata": {
+            "title": "Get an MCP server",
+            "sidebarTitle": "Get an MCP server"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/McpServerID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "MCP server.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "MCP servers"
+        ],
+        "summary": "Update an MCP server",
+        "description": "Update an MCP server's URL, credential headers, or auth configuration. Passing `headers` replaces the entire stored header array — partial diffs are not supported. Use this endpoint to rotate credentials.",
+        "operationId": "updateMcpServer",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/mcp-servers/update-mcp-server",
+          "metadata": {
+            "title": "Update an MCP server",
+            "sidebarTitle": "Update an MCP server"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/McpServerID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMcpServerRequest"
+              },
+              "examples": {
+                "rotate": {
+                  "summary": "Rotate the bearer token",
+                  "value": {
+                    "headers": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer tvly-rotated-..."
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MCP server updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "MCP servers"
+        ],
+        "summary": "Delete an MCP server",
+        "description": "Delete an MCP server. The call is idempotent: deleting a non-existent server returns `204`. After deletion, agents whose tools reference this server's URL will no longer have the stored headers attached at invocation time.",
+        "operationId": "deleteMcpServer",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/mcp-servers/delete-mcp-server",
+          "metadata": {
+            "title": "Delete an MCP server",
+            "sidebarTitle": "Delete an MCP server"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/McpServerID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "MCP server deleted."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/mcp-servers/{mcp_server_id}/oauth-provider": {
+      "post": {
+        "tags": [
+          "MCP servers"
+        ],
+        "summary": "Register per-user MCP OAuth provider",
+        "description": "Discovers and registers an OAuth provider for the authenticated user against a Deep Agents MCP server configured with per-user dynamic client mode. Idempotent when a mapping already exists.",
+        "operationId": "registerMcpOAuthProvider",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/mcp-servers/register-oauth-provider",
+          "metadata": {
+            "title": "Register per-user MCP OAuth provider",
+            "sidebarTitle": "Register OAuth provider"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/McpServerID"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterMcpOAuthProviderRequest"
+              },
+              "examples": {
+                "empty": {
+                  "summary": "Infer the user from the authenticated request",
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OAuth provider registered or returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterMcpOAuthProviderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/mcp/tools": {
+      "get": {
+        "tags": [
+          "MCP tools"
+        ],
+        "summary": "List MCP tools",
+        "description": "Return tools exposed by a registered MCP server. The API serves cached results when fresh; otherwise, it fetches tools from the remote MCP server and caches the response.",
+        "operationId": "listMcpTools",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/mcp-tools/list-mcp-tools",
+          "metadata": {
+            "title": "List MCP tools",
+            "sidebarTitle": "List MCP tools"
+          }
+        },
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "description": "Registered MCP server URL to fetch tools from.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "oauth_provider_id",
+            "in": "query",
+            "required": false,
+            "description": "OAuth provider ID for token-based MCP server auth.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "force_refresh",
+            "in": "query",
+            "required": false,
+            "description": "Skip cached tool definitions and fetch fresh tools from the MCP server.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "ls_user_id",
+            "in": "query",
+            "required": false,
+            "description": "User ID override for service-key callers.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "MCP tools returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListMcpToolsResponse"
+                },
+                "examples": {
+                  "basic": {
+                    "summary": "Tools from a registered server",
+                    "value": {
+                      "tools": [
+                        {
+                          "name": "read_url_content",
+                          "description": "Read and extract content from a URL.",
+                          "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "url"
+                            ]
+                          }
+                        }
+                      ],
+                      "cached": true,
+                      "fetched_at": "2026-06-01T20:50:32Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/auth-sessions": {
+      "post": {
+        "tags": [
+          "Auth sessions"
+        ],
+        "summary": "Start an authorization session",
+        "description": "Start an OAuth authorization session for the caller. If the user is already authorized, the response can be completed immediately. Otherwise, the response includes a verification URL that the user must visit to complete authorization.",
+        "operationId": "startAuthSession",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/auth-sessions/start-auth-session",
+          "metadata": {
+            "title": "Start an authorization session",
+            "sidebarTitle": "Start an auth session"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAuthSessionRequest"
+              },
+              "examples": {
+                "oauth": {
+                  "summary": "Start an OAuth session for an MCP server provider",
+                  "value": {
+                    "provider_id": "github-tools-provider",
+                    "scopes": [
+                      "repo"
+                    ],
+                    "strategy": "REUSE"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing token reused; no new session created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateAuthSessionResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New pending session created; visit `verification_url` to complete authorization.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateAuthSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/auth-sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "Auth sessions"
+        ],
+        "summary": "Get an authorization session",
+        "description": "Return the current status of an in-flight authorization session. Use `wait_seconds` to long-poll until the session completes or the wait window expires.",
+        "operationId": "getAuthSession",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/auth-sessions/get-auth-session",
+          "metadata": {
+            "title": "Get an authorization session",
+            "sidebarTitle": "Get an auth session"
+          }
+        },
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "description": "Authorization session ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "wait_seconds",
+            "in": "query",
+            "required": false,
+            "description": "Long-poll window in seconds. Defaults to 1. Maximum is 25.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 25,
+              "default": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorization session status returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAuthSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "502": {
             "$ref": "#/components/responses/BadGateway"
@@ -865,10 +1619,20 @@
         "name": "X-User-Timezone",
         "in": "header",
         "required": false,
-        "description": "User timezone for runtime configuration stamping. Defaults to `UTC` when omitted.",
+        "description": "IANA timezone name (for example, `America/Los_Angeles`) stamped into the agent's runtime configuration when the agent is created or updated. The runtime uses this timezone to inject a localized current-date line into the agent's system prompt, so the agent reasons about dates in the user's local time. Optional. Defaults to `UTC` when omitted; invalid values fall back to `UTC`.",
         "schema": {
           "type": "string",
           "example": "America/Los_Angeles"
+        }
+      },
+      "McpServerID": {
+        "name": "mcp_server_id",
+        "in": "path",
+        "required": true,
+        "description": "MCP server ID.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
         }
       }
     },
@@ -879,26 +1643,72 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "missingRequiredField": {
+                "summary": "Required field missing",
+                "value": {
+                  "type": "https://docs.langchain.com/errors/missing_required_field",
+                  "code": "missing_required_field",
+                  "detail": "Set 'name' to a non-empty string: 'name' is required",
+                  "status": 400
+                }
+              },
+              "invalidRequestBody": {
+                "summary": "Malformed JSON body",
+                "value": {
+                  "type": "https://docs.langchain.com/errors/invalid_request_body",
+                  "code": "invalid_request_body",
+                  "detail": "Provide a valid JSON request body matching the documented schema",
+                  "status": 400
+                }
+              }
             }
           }
         }
       },
       "Unauthorized": {
-        "description": "Authentication required or invalid.",
+        "description": "Authentication required. The auth layer returns a simple `{\"error\": \"Unauthorized\"}` body that does not match the structured `ErrorResponse` shape used by other 4xx responses.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            },
+            "examples": {
+              "missingApiKey": {
+                "summary": "No `X-Api-Key` header supplied",
+                "value": {
+                  "error": "Unauthorized"
+                }
+              }
             }
           }
         }
       },
       "Forbidden": {
-        "description": "The authenticated workspace does not have access to the resource or feature.",
+        "description": "The authenticated identity does not have access to the resource or feature. The auth layer returns a simple `{\"error\": \"Forbidden\"}` body that does not match the structured `ErrorResponse` shape used by other 4xx responses.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
+              "type": "object",
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            },
+            "examples": {
+              "invalidApiKey": {
+                "summary": "API key is invalid or lacks workspace access",
+                "value": {
+                  "error": "Forbidden"
+                }
+              }
             }
           }
         }
@@ -909,6 +1719,17 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "agentNotFound": {
+                "summary": "Unknown agent ID",
+                "value": {
+                  "type": "https://docs.langchain.com/errors/agent_not_found",
+                  "code": "agent_not_found",
+                  "detail": "Verify the agent ID and that the calling identity has access: agent not found",
+                  "status": 404
+                }
+              }
             }
           }
         }
@@ -949,6 +1770,17 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "upstreamAuthFailed": {
+                "summary": "Upstream runtime rejected the request (e.g. orphaned thread after agent deletion)",
+                "value": {
+                  "type": "https://docs.langchain.com/errors/upstream_auth_failed",
+                  "code": "upstream_auth_failed",
+                  "detail": "Verify that the calling identity is authorized for this organization: upstream agent runtime rejected the request",
+                  "status": 502
+                }
+              }
             }
           }
         }
@@ -967,7 +1799,9 @@
     "schemas": {
       "CreateAgentRequest": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -977,11 +1811,19 @@
             "type": "string",
             "description": "Short agent description."
           },
+          "model": {
+            "type": "string",
+            "description": "Model identifier used to run the agent. Use the form `{provider}:{model_name}`, for example `openai:gpt-5.5`. Values without a colon are interpreted as references to a saved Playground configuration, not as direct model identifiers.",
+            "example": "openai:gpt-5.5"
+          },
           "permissions": {
             "$ref": "#/components/schemas/AgentPermissions"
           },
           "runtime": {
             "$ref": "#/components/schemas/AgentRuntime"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/AgentBackend"
           },
           "instructions": {
             "type": "string",
@@ -1026,11 +1868,19 @@
             "type": "string",
             "description": "Updated agent description."
           },
+          "model": {
+            "type": "string",
+            "description": "Updated model identifier. Use the form `{provider}:{model_name}`.",
+            "example": "openai:gpt-5.5"
+          },
           "permissions": {
             "$ref": "#/components/schemas/AgentPermissions"
           },
           "runtime": {
             "$ref": "#/components/schemas/AgentRuntime"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/AgentBackend"
           },
           "instructions": {
             "type": "string",
@@ -1069,19 +1919,29 @@
         "properties": {
           "identity": {
             "type": "string",
-            "enum": ["personal", "shared"],
+            "enum": [
+              "personal",
+              "shared"
+            ],
             "default": "personal",
             "description": "Agent identity scope."
           },
           "visibility": {
             "type": "string",
-            "enum": ["tenant", "user"],
+            "enum": [
+              "tenant",
+              "user"
+            ],
             "default": "tenant",
             "description": "Visibility scope for the agent."
           },
           "tenant_access_level": {
             "type": "string",
-            "enum": ["read", "run", "write"],
+            "enum": [
+              "read",
+              "run",
+              "write"
+            ],
             "default": "read",
             "description": "Workspace access level."
           },
@@ -1129,8 +1989,48 @@
         "properties": {
           "model_id": {
             "type": "string",
-            "description": "Model ID used to run the agent.",
-            "example": "claude-sonnet-4-6"
+            "description": "Model identifier used to run the agent. Use the form `{provider}:{model_name}`, for example, `openai:gpt-5.5`. Values without a colon are interpreted as references to a saved Playground configuration, not as direct model identifiers. See [Supported models](/langsmith/managed-deep-agents-overview#supported-models) for the recognized provider prefixes.",
+            "example": "openai:gpt-5.5"
+          }
+        }
+      },
+      "AgentBackend": {
+        "type": "object",
+        "description": "Backend configuration for the agent. Use `default` when the agent does not need sandbox-specific backend behavior. Use `thread_scoped_sandbox` or `agent_scoped_sandbox` when the agent needs LangSmith sandbox resources for code execution, filesystem work, or long-running tasks. See [Sandboxes overview](/langsmith/sandboxes).",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "default",
+              "thread_scoped_sandbox",
+              "agent_scoped_sandbox"
+            ],
+            "description": "Backend type. `thread_scoped_sandbox` scopes LangSmith sandbox resources to each thread. `agent_scoped_sandbox` scopes LangSmith sandbox resources to the agent. `default` uses no sandbox-specific backend behavior.",
+            "example": "default"
+          },
+          "sandbox": {
+            "$ref": "#/components/schemas/SandboxBackendConfig"
+          }
+        }
+      },
+      "SandboxBackendConfig": {
+        "type": "object",
+        "description": "LangSmith sandbox settings for `thread_scoped_sandbox` and `agent_scoped_sandbox` backends.",
+        "properties": {
+          "policy_ids": {
+            "type": "array",
+            "description": "Sandbox policy IDs.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "idle_ttl_seconds": {
+            "type": "integer",
+            "description": "Sandbox idle timeout in seconds."
+          },
+          "delete_after_stop_seconds": {
+            "type": "integer",
+            "description": "Sandbox deletion delay after stop, in seconds."
           }
         }
       },
@@ -1146,8 +2046,10 @@
           },
           "interrupt_config": {
             "type": "object",
-            "description": "Per-tool interrupt rules keyed by tool identifier. Use `{}` for no interrupts.",
-            "additionalProperties": true
+            "description": "Per-tool interrupt rules. Keys are tool identifiers in the form `{mcp_server_url}::{tool_name}` (separator is two colons). The URL is normalized with any trailing slash stripped, so `https://tools.example.com` and `https://tools.example.com/` match the same tool. Additional `::`-separated components after the tool name (such as the MCP server display name) are accepted but ignored when matching. A bare tool name with no `::` is also accepted as a fallback. Values are booleans: `true` requires a human-in-the-loop interrupt before the tool runs; `false` allows it without interrupt. Use `{}` for no interrupts.",
+            "additionalProperties": {
+              "type": "boolean"
+            }
           }
         }
       },
@@ -1186,7 +2088,7 @@
           },
           "model_id": {
             "type": "string",
-            "description": "Model ID for this subagent. Inherits the parent runtime when empty."
+            "description": "Model ID for this subagent. Inherits the parent runtime when empty. The REST API field is `model_id`; local CLI project files use `model`."
           },
           "instructions": {
             "type": "string",
@@ -1202,7 +2104,9 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["inline"],
+            "enum": [
+              "inline"
+            ],
             "default": "inline",
             "description": "Skill discriminator. Only `inline` is supported."
           },
@@ -1274,6 +2178,9 @@
           "runtime": {
             "$ref": "#/components/schemas/AgentRuntime"
           },
+          "backend": {
+            "$ref": "#/components/schemas/AgentBackend"
+          },
           "extras": {
             "type": "object",
             "additionalProperties": true
@@ -1328,14 +2235,19 @@
             }
           },
           "next_cursor": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Cursor for the next page, or `null` when there are no more pages."
           }
         }
       },
       "CreateThreadRequest": {
         "type": "object",
-        "required": ["agent_id"],
+        "required": [
+          "agent_id"
+        ],
         "properties": {
           "agent_id": {
             "type": "string",
@@ -1356,7 +2268,8 @@
           },
           "skip_memory_write_protection": {
             "type": "boolean",
-            "description": "Lets runs on this thread bypass the default long-term-memory write protection."
+            "default": false,
+            "description": "Controls whether the runtime pauses for human approval before the agent writes to long-term memory on this thread. By default (`false`), the runtime raises a human-in-the-loop interrupt when the agent tries to write or edit files in its memory directory, so the user can approve or reject the write before it persists. Set to `true` to bypass that interrupt and let memory writes proceed immediately — useful for headless or unattended runs."
           }
         }
       },
@@ -1373,7 +2286,12 @@
           },
           "status": {
             "type": "string",
-            "enum": ["idle", "busy", "interrupted", "error"]
+            "enum": [
+              "idle",
+              "busy",
+              "interrupted",
+              "error"
+            ]
           },
           "metadata": {
             "type": "object",
@@ -1391,7 +2309,10 @@
       },
       "StreamRunRequest": {
         "type": "object",
-        "required": ["agent_id", "messages"],
+        "required": [
+          "agent_id",
+          "messages"
+        ],
         "properties": {
           "agent_id": {
             "type": "string",
@@ -1411,7 +2332,11 @@
             "description": "Stream modes to return.",
             "items": {
               "type": "string",
-              "enum": ["values", "updates", "messages-tuple"]
+              "enum": [
+                "values",
+                "updates",
+                "messages-tuple"
+              ]
             }
           },
           "stream_subgraphs": {
@@ -1420,7 +2345,7 @@
           },
           "user_timezone": {
             "type": "string",
-            "description": "User timezone for runtime context.",
+            "description": "IANA timezone name (for example, `America/Los_Angeles`) for this run. The runtime uses it to inject a localized current-date line into the agent's system prompt, so the agent reasons about dates in the user's local time. Optional. Defaults to the timezone stamped on the agent (or `UTC` if none was set); invalid values fall back to `UTC`.",
             "example": "America/Los_Angeles"
           }
         },
@@ -1431,7 +2356,12 @@
         "properties": {
           "role": {
             "type": "string",
-            "enum": ["user", "assistant", "system", "tool"]
+            "enum": [
+              "user",
+              "assistant",
+              "system",
+              "tool"
+            ]
           },
           "content": {
             "type": "string"
@@ -1442,6 +2372,49 @@
         "type": "object",
         "description": "JSON payload passed through to the upstream agent runtime.",
         "additionalProperties": true
+      },
+      "McpTool": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tool name as exposed by the MCP server."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable tool description."
+          },
+          "inputSchema": {
+            "type": "object",
+            "description": "JSON schema for the tool input.",
+            "additionalProperties": true
+          },
+          "annotations": {
+            "type": "object",
+            "description": "MCP tool annotations returned by the server.",
+            "additionalProperties": true
+          }
+        }
+      },
+      "ListMcpToolsResponse": {
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpTool"
+            },
+            "description": "Tools exposed by the MCP server."
+          },
+          "cached": {
+            "type": "boolean",
+            "description": "Whether the response came from the MCP tools cache."
+          },
+          "fetched_at": {
+            "type": "string",
+            "description": "UTC timestamp when the tools were fetched from the MCP server."
+          }
+        }
       },
       "ErrorResponse": {
         "type": "object",
@@ -1457,6 +2430,307 @@
           },
           "status": {
             "type": "integer"
+          }
+        }
+      },
+      "McpServerHeader": {
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "description": "A single header attached to MCP server invocations.",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Header name (for example, `Authorization`)."
+          },
+          "value": {
+            "type": "string",
+            "description": "Header value. May contain secrets such as bearer tokens."
+          }
+        }
+      },
+      "CreateMcpServerRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "url"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for the MCP server."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "MCP server URL. Must be a valid HTTPS endpoint."
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpServerHeader"
+            },
+            "description": "Credential headers attached to every invocation of this MCP server. Omitted from response bodies when the caller lacks invoke permission on the server."
+          },
+          "auth_type": {
+            "$ref": "#/components/schemas/AuthType"
+          },
+          "oauth_provider_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Optional OAuth provider ID for legacy shared OAuth providers."
+          },
+          "oauth_mode": {
+            "$ref": "#/components/schemas/OAuthMode"
+          },
+          "vendor_id": {
+            "type": "string",
+            "description": "Optional vendor identifier for catalog grouping."
+          },
+          "external_system_id": {
+            "type": "string",
+            "description": "Optional opaque external system identifier."
+          }
+        }
+      },
+      "UpdateMcpServerRequest": {
+        "type": "object",
+        "description": "All fields are optional. Passing `headers` replaces the entire stored header array.",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpServerHeader"
+            },
+            "description": "Credential headers attached to every invocation of this MCP server. Omitted from response bodies when the caller lacks invoke permission on the server. Passing this field replaces the entire stored array."
+          },
+          "auth_type": {
+            "$ref": "#/components/schemas/AuthType"
+          },
+          "oauth_provider_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Optional OAuth provider ID for legacy shared OAuth providers."
+          },
+          "oauth_mode": {
+            "$ref": "#/components/schemas/OAuthMode"
+          }
+        }
+      },
+      "McpServer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpServerHeader"
+            },
+            "description": "Credential headers attached to every invocation of this MCP server. Omitted from response bodies when the caller lacks invoke permission on the server."
+          },
+          "auth_type": {
+            "$ref": "#/components/schemas/AuthType"
+          },
+          "oauth_provider_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "OAuth provider ID for legacy shared OAuth providers, when configured."
+          },
+          "oauth_mode": {
+            "$ref": "#/components/schemas/OAuthMode"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "mcp_vendor_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vendor_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "external_system_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "can_invoke": {
+            "type": "boolean",
+            "description": "Whether the caller has invoke permission on this server. Omitted when ambient permissions already imply invoke."
+          }
+        }
+      },
+      "ListMcpServersResponse": {
+        "type": "array",
+        "description": "List of MCP servers in the caller's workspace.",
+        "items": {
+          "$ref": "#/components/schemas/McpServer"
+        }
+      },
+      "AuthType": {
+        "type": "string",
+        "enum": [
+          "headers",
+          "oauth"
+        ],
+        "description": "Authentication scheme used by the MCP server."
+      },
+      "OAuthMode": {
+        "type": "string",
+        "enum": [
+          "legacy_shared_provider",
+          "per_user_dynamic_client"
+        ],
+        "description": "OAuth mode used by an OAuth MCP server."
+      },
+      "AuthSessionStrategy": {
+        "type": "string",
+        "enum": [
+          "REUSE",
+          "CREATE"
+        ],
+        "description": "`REUSE` returns an existing valid token when possible. `CREATE` starts a fresh authorization session."
+      },
+      "AuthSessionStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "COMPLETED",
+          "CONNECTION_REQUIRED",
+          "TOKEN_EXPIRED"
+        ],
+        "description": "Current authorization session status."
+      },
+      "CreateAuthSessionRequest": {
+        "type": "object",
+        "required": [
+          "provider_id",
+          "scopes",
+          "strategy"
+        ],
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "description": "OAuth provider ID returned by the MCP OAuth provider registration endpoint."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "OAuth scopes to request."
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/AuthSessionStrategy"
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "Optional agent ID to associate with the session."
+          },
+          "token_id": {
+            "type": "string",
+            "description": "Optional token ID to reuse or update."
+          },
+          "is_default": {
+            "type": "boolean",
+            "description": "Whether the resulting token should be the default token for this provider."
+          }
+        }
+      },
+      "CreateAuthSessionResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Authorization session ID. Present for pending sessions."
+          },
+          "provider_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AuthSessionStatus"
+          },
+          "verification_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL the user must visit to complete authorization. Present when status is `PENDING`."
+          },
+          "token": {
+            "type": "string",
+            "description": "Token identifier or token payload returned when authorization is already complete. Treat this value as sensitive."
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "GetAuthSessionResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AuthSessionStatus"
+          }
+        }
+      },
+      "RegisterMcpOAuthProviderRequest": {
+        "type": "object",
+        "properties": {
+          "ls_user_id": {
+            "type": "string",
+            "description": "Deprecated. User identity is inferred from the authenticated request when available."
+          }
+        }
+      },
+      "RegisterMcpOAuthProviderResponse": {
+        "type": "object",
+        "properties": {
+          "oauth_provider_id": {
+            "type": "string",
+            "description": "OAuth provider ID to use when starting an authorization session."
           }
         }
       }
