@@ -25,7 +25,7 @@ def save_user_info(user_info: UserInfo, runtime: ToolRuntime[Context]) -> str:
     return "Successfully saved user info."
 
 
-DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 # :remove-start:
 import os
 import sys

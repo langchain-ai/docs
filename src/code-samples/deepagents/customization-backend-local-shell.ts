@@ -2,9 +2,9 @@
 import { createDeepAgent, LocalShellBackend } from "deepagents";
 
 const backend = new LocalShellBackend({ workingDirectory: "." });
-// KEEP MODEL
+
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.1-pro-preview",
+  model: "openai:gpt-5.4",
   backend,
 });
 // :snippet-end:

@@ -2,7 +2,7 @@
 
 # LangChain Documentation Guidelines
 
-Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`—not Mintlify `build/` output.
+Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`, not Mintlify `build/` output.
 
 ## Critical rules
 
@@ -19,7 +19,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | What | Where/How |
 |------|-----------|
 | LangSmith docs | `src/langsmith/` |
-| Open source docs | `src/oss/` (LangChain, LangGraph, DeepAgents) |
+| Open source docs | `src/oss/` (LangChain, LangGraph, Deep Agents) |
 | Python integrations | `src/oss/python/integrations/` |
 | JS integrations | `src/oss/javascript/integrations/` |
 | Reusable snippets | `src/snippets/` |
@@ -29,7 +29,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Build system | `pipeline/` |
 | Icon library | Tabler — <https://tabler.io/icons> |
 | Mintlify components | <https://mintlify.com/docs/components> |
-| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report issues here](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
+| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report reference docs issues](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 
 ## Project structure
@@ -212,15 +212,19 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 
 - Match existing conventions in the file you are editing — do not restructure, combine, or split pages unless explicitly asked
 - Reference existing pages for style patterns when creating new content
-- Be concise — no hyperbolic or redundant language
+- Be concise — cut filler words and wordy phrases ("to" not "in order to", "because" not "due to the fact that", "can" not "has the ability to")
 - Second-person imperative present tense ("Run the following code…")
+- Active voice ("The function returns a list" not "A list is returned by the function")
 - Sentence-case headings starting with active verb, not gerund ("Add a tool" not "Adding a tool")
 - American English spelling
+- Oxford commas in lists ("traces, datasets, and experiments")
+- Descriptive link text ("[View the tracing docs](/langsmith/tracing)" not "click [this link](/langsmith/tracing)")
 - Add cross-links where applicable
 - Use `@[ClassName]` link map for API references
 - Use `:::python`/`:::js` fencing on OSS docs
 - Language tags on all code blocks (use actual language, not `output`)
 - Sort imports in all code snippets (stdlib, third-party, local)
+- Use `.content_blocks` instead of `.content` when accessing message content in LangChain code snippets
 - Test code examples and links before publishing
 
 **Don't:**
@@ -232,13 +236,21 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use model aliases — use full identifiers (e.g., `claude-sonnet-4-6`)
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
+- Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
+- Use first person ("we", "I", "our", "let's") — write in second person or use the product name as subject
+- Use future tense ("The function returns X" not "The function will return X")
+- Use weasel words or filler (avoid "simply", "easily", "just", "very", "basically", "obviously")
 - Use H5 or H6 headings
-- Overuse em dashes — prefer commas, colons, or separate sentences instead
-- Do not add spaces around em dashes — write `word—word` not `word — word` (Vale enforces this)
+- Start headings with articles ("Add a tool" not "The tool setup guide")
+- Use em dashes — prefer commas, colons, or separate sentences instead. Only use an em dash when no alternative reads naturally
+- Add spaces around em dashes — write `word—word` not `word — word` (`make lint_prose` enforces this)
 - Use excessive bold/italics in body text
+- Start bulleted list items with a lowercase letter — always capitalize the first word
 - Include "key features" lists
-- Use horizontal lines
+- Use horizontal lines (`---`) to separate sections — use headings instead
 - Apply bold to UI element names unless existing docs already do so
+- Misspell product names — use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
+- Skip `make lint_prose` — always run it on changed files before committing and fix all violations
 
 ### Model references
 
@@ -315,6 +327,7 @@ uv run python scripts/refresh_deepagents_category_matrix.py --write
 Notes:
 
 - For the latest `(model, category)` value per cell, the script walks runs newest-first and keeps the first hit. Models with fewer than four of the six fixed categories filled are dropped (`MIN_FILLED_CATEGORIES`).
+- Only models explicitly listed in `INCLUDED_MODELS` (in the script) appear in the table. To surface a new model, add its `provider:model` key there.
 - The fixed columns are defined by `FIXED_CATEGORY_COLUMNS` in the script (`unit_test` is intentionally excluded).
 - Without `--write`, the script prints the table to stdout for inspection.
 - After regenerating, commit only `src/snippets/deepagents-eval-category-matrix.mdx`. Do not edit that snippet by hand.

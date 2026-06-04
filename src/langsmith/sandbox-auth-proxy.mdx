@@ -1,18 +1,117 @@
 ---
 title: Sandbox auth proxy
 sidebarTitle: Auth proxy
-description: Inject credentials into outbound API requests from sandboxes without hardcoding secrets.
+description: Inject credentials into outbound requests and control which destinations a sandbox can reach.
 ---
 
-The auth proxy lets sandbox code call external APIs (OpenAI, Anthropic, GitHub, etc.) without hardcoding credentials. When configured on a sandbox, a proxy sidecar automatically injects authentication headers into matching outbound requests using your workspace secrets.
+The auth proxy lets sandbox code call external APIs (OpenAI, Anthropic, GitHub, etc.) without hardcoding credentials. When configured on a sandbox, a proxy sidecar automatically injects authentication headers into matching outbound requests using your workspace secrets or write-only credentials you provide in the proxy config.
 
 <Warning>
 You must configure your secrets (e.g., `OPENAI_API_KEY`) in your LangSmith [workspace](/langsmith/administration-overview#workspaces) settings before creating a sandbox that references them.
 </Warning>
 
+## Egress and network access control
+
+The same `proxy_config` that injects credentials also controls which destinations a sandbox can reach.
+
+### Default egress posture
+
+By default (no `access_control` configured):
+
+- **HTTP and HTTPS (ports 80 and 443) to any host are allowed.** Outbound HTTP(S) is transparently routed through the proxy, where your `rules` and `callbacks` inject credentials.
+- **All other raw TCP is blocked.** Connections to non-HTTP ports—databases (`psql`/`dbt` on 5432), SSH (22), Redis (6379), and so on—are dropped unless you explicitly allow them.
+
+This means raw protocols are not blocked because the proxy "can't speak" them—they are blocked by default and opened per host and port via `access_control`.
+
+### Allow and deny lists
+
+Add an `access_control` object to `proxy_config` with **either** an `allow_list` **or** a `deny_list` (not both—the request is rejected if both are set):
+
+| Mode | Behavior |
+|------|----------|
+| `allow_list` | **Default-deny.** Only listed destinations are reachable—including HTTP/HTTPS. If you set an `allow_list`, you must also list every HTTP(S) host the sandbox needs. |
+| `deny_list` | **Default-allow for HTTP/HTTPS.** All HTTP(S) hosts remain reachable except those listed. A `deny_list` cannot open raw TCP ports. |
+
+<Note>
+Raw TCP egress (e.g. PostgreSQL on 5432) can **only** be enabled with an `allow_list` entry that specifies an explicit non-HTTP port (`host:PORT`). The default posture and `deny_list` mode only ever permit HTTP/HTTPS.
+</Note>
+
+### Pattern syntax
+
+Each `allow_list`/`deny_list` entry uses the following forms:
+
+| Pattern | Meaning |
+|---------|---------|
+| `host` | Bare host → ports **80 and 443 only** (HTTP/S). |
+| `host:PORT` | Host on exactly `PORT`. `:22` grants only 22, **not** additive with 80/443—list the host twice if you need both. |
+| `*.example.com` | Glob (RFC 1034-style). The apex (`example.com`) is **not** included. |
+| `~regex` | Opaque regex match; no port suffix parsing. |
+| `1.2.3.4` / `10.0.0.0/8` | Literal IP or CIDR. CIDRs **cannot** carry a port (HTTP/S only in allow mode; block all ports in deny mode). |
+| `[::1]:22` | IPv6 literal uses the bracketed form when specifying a port. |
+
+### Connecting to a database (raw TCP)
+
+To let sandbox code reach an external PostgreSQL database with `psql`, `dbt`, or any driver, allow-list the host on its port. Because `allow_list` is default-deny, also list any HTTP(S) hosts the sandbox needs:
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "db-sandbox",
+    "wait_for_ready": true,
+    "proxy_config": {
+      "access_control": {
+        "allow_list": [
+          "db.example.com:5432",
+          "api.openai.com"
+        ]
+      }
+    }
+  }'
+```
+
+The connection to `db.example.com:5432` is passed through at the TCP layer with no interception, so the PostgreSQL wire protocol—and TLS, host-key checking, and any other end-to-end protocol on top of it—works unchanged.
+
+### Configure via SDK
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+
+client.create_sandbox(
+    name="db-sandbox",
+    proxy_config={
+        "access_control": {
+            "allow_list": ["db.example.com:5432", "api.openai.com"]
+        }
+    },
+)
+```
+
+```ts TypeScript
+import { SandboxClient } from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+await client.createSandbox({
+  name: "db-sandbox",
+  proxyConfig: {
+    accessControl: {
+      allowList: ["db.example.com:5432", "api.openai.com"],
+    },
+  },
+});
+```
+
+</CodeGroup>
+
 ## Configure auth proxy rules
 
-Add a `proxy_config` when creating a sandbox. Each rule specifies:
+Add a `proxy_config` when creating a sandbox, or update an existing sandbox by patching its `proxy_config`. Each rule specifies:
 
 | Field | Description |
 |-------|-------------|
@@ -27,7 +126,7 @@ Each header has a `type` that controls how its value is stored and displayed:
 
 | Type | Description |
 |------|-------------|
-| `workspace_secret` | References a workspace secret using `{KEY}` syntax. Resolved at push time. |
+| `workspace_secret` | References a workspace secret using `{KEY}` syntax. Resolved when the proxy configuration is applied. |
 | `plaintext` | Value is stored and returned as-is. Use for non-sensitive headers. |
 | `opaque` | Write-only. Value is encrypted at rest and never returned via the API. |
 
@@ -36,7 +135,7 @@ Each header has a `type` that controls how its value is stored and displayed:
 Create a sandbox that automatically injects an OpenAI API key into outbound requests:
 
 ```bash
-curl -X POST "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes" \
+curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "x-api-key: $LANGSMITH_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -67,7 +166,7 @@ The sandbox can now call OpenAI with no API key setup—the proxy injects it aut
 Add multiple rules to authenticate with several services at once:
 
 ```bash
-curl -X POST "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes" \
+curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "x-api-key: $LANGSMITH_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -119,6 +218,81 @@ curl -X POST "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes" \
     }
   }'
 ```
+
+## GitHub example
+
+[Open SWE](https://github.com/langchain-ai/open-swe/blob/main/agent/integrations/langsmith.py) authenticates GitHub access by minting a short-lived GitHub App installation token outside the sandbox, then patching the sandbox with write-only `opaque` proxy rules. This keeps the short-lived GitHub access token out of the sandbox filesystem and out of deployment environment variables.
+
+Configure two rules:
+
+| Host | Header |
+|------|--------|
+| `api.github.com` | `Authorization: Bearer <github-token>` for `gh` and REST API calls |
+| `github.com`, `*.github.com` | `Authorization: Basic <base64("x-access-token:<github-token>")>` for Git over HTTPS operations like clone, fetch, and push |
+
+```python Python
+import base64
+import os
+from typing import Any
+
+import httpx
+
+
+def github_proxy_rules(github_token: str) -> list[dict[str, Any]]:
+    basic_auth = base64.b64encode(
+        f"x-access-token:{github_token}".encode()
+    ).decode()
+
+    return [
+        {
+            "name": "github-api",
+            "match_hosts": ["api.github.com"],
+            "headers": [
+                {
+                    "name": "Authorization",
+                    "type": "opaque",
+                    "value": f"Bearer {github_token}",
+                }
+            ],
+        },
+        {
+            "name": "github",
+            "match_hosts": ["github.com", "*.github.com"],
+            "headers": [
+                {
+                    "name": "Authorization",
+                    "type": "opaque",
+                    "value": f"Basic {basic_auth}",
+                }
+            ],
+        },
+    ]
+
+
+def configure_github_proxy(sandbox_name: str, github_token: str) -> None:
+    endpoint = os.environ.get(
+        "LANGSMITH_ENDPOINT", "https://api.smith.langchain.com"
+    )
+    response = httpx.patch(
+        f"{endpoint}/v2/sandboxes/boxes/{sandbox_name}",
+        headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]},
+        json={"proxy_config": {"rules": github_proxy_rules(github_token)}},
+        timeout=30.0,
+    )
+    response.raise_for_status()
+```
+
+Call `configure_github_proxy` after creating or reattaching to a sandbox. GitHub App installation tokens expire, so refresh the proxy config whenever you reuse a sandbox for a new run.
+
+Inside the sandbox, set a non-secret placeholder token when a CLI requires a local credential before it sends a request:
+
+```bash
+GH_TOKEN=dummy gh repo view langchain-ai/langchain
+GH_TOKEN=dummy gh pr list --repo langchain-ai/langchain
+GH_TOKEN=dummy gh repo clone langchain-ai/langchain
+```
+
+The placeholder only satisfies the `gh` CLI's local check. The proxy injects the real `Authorization` header into the outbound request.
 
 ## Configure via SDK
 
@@ -176,9 +350,9 @@ await client.createSandbox({
 
 </CodeGroup>
 
-## Dynamic credentials with callbacks
+## Callback credential example
 
-Static rules pull credentials from your workspace secrets at sandbox creation time. For credentials that need to be resolved per-request—short-lived OAuth tokens, per-user-scoped tokens, tokens minted by your own auth service—use a **callback** instead. The proxy POSTs to a URL you provide, your endpoint returns the headers to inject, and the proxy caches the result.
+Static `workspace_secret` rules pull credentials from your workspace when the proxy configuration is applied, and `opaque` rules let your application patch in short-lived credentials such as the [GitHub token example](#github-example). For credentials that must be resolved by your own service at proxy time, use a **callback**. The proxy POSTs to a URL you provide, your endpoint returns the headers to inject, and the proxy caches the result.
 
 Callbacks are configured alongside rules under `proxy_config`:
 
@@ -221,7 +395,7 @@ The proxy injects every header in the response into the sandbox's outbound reque
 Use a callback when your OAuth tokens are minted on demand by your own service:
 
 ```bash
-curl -X POST "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes" \
+curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "x-api-key: $LANGSMITH_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{

@@ -9,7 +9,13 @@ irreversible operation, you need a human to review and approve the action first.
 The Human-in-the-Loop (HITL) pattern lets your agent pause execution, present
 the pending action to the user, and resume only after explicit approval.
 
+Because HITL is built on LangGraph interrupts and checkpoints, the pause is
+durable. A user can refresh the page, a reviewer can answer from a different
+component, and the agent still resumes from the exact point where execution
+stopped instead of replaying the whole run.
+
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+import UseStreamTypeInference from '/snippets/oss/use-stream-type-inference.mdx';
 
 <PatternEmbed pattern="human-in-the-loop" />
 
@@ -19,37 +25,26 @@ LangGraph agents support **interrupts**, explicit pause points where the agent
 yields control back to the client. When the agent hits an interrupt:
 
 1. The agent stops executing and emits an interrupt payload
-2. The `useStream` hook surfaces the interrupt via `stream.interrupt`
+2. The @[`useStream`] hook surfaces the interrupt via `stream.interrupt`
 3. Your UI renders a review card with approve/reject/edit options
 4. The user makes a decision
 5. Your code calls `stream.submit()` with a resume command
 6. The agent picks up where it left off
 
-## Setting up useStream for HITL
+The frontend SDK keeps the interrupt alongside the rest of the thread state, so
+your UI can render it wherever it makes sense: inline in the transcript, in a
+review queue, in an admin dashboard, or in a modal that blocks the next user
+action until the decision is made.
 
-:::python
+## Setting up `useStream`
 
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
+Connect @[`useStream`] to your human-in-the-loop agent. When the graph hits an
+interrupt, the hook exposes the pending payload on `stream.interrupt`. Render an
+approval card while that value is set, then resume the run with
+`stream.submit(null, { command: { resume: response } })` after the user
+approves, rejects, or edits the action.
 
-```ts
-import type { BaseMessage } from "@langchain/core/messages";
-
-interface AgentState {
-  messages: BaseMessage[];
-}
-```
-
-:::
-
-:::js
-
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
-
-```ts
-import type { myAgent } from "./agent";
-```
-
-:::
+<UseStreamTypeInference />
 
 <CodeGroup>
 ```tsx React
@@ -121,30 +116,30 @@ function handleRespond(response: HITLResponse) {
 
   const AGENT_URL = "http://localhost:2024";
 
-  const { messages, interrupt, submit } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "human_in_the_loop",
   });
 
   function handleRespond(response: HITLResponse) {
-    submit(null, { command: { resume: response } });
+    stream.submit(null, { command: { resume: response } });
   }
 </script>
 
 <div>
-  {#each $messages as msg (msg.id)}
+  {#each stream.messages as msg (msg.id)}
     <Message message={msg} />
   {/each}
 
-  {#if $interrupt}
-    <ApprovalCard interrupt={$interrupt} onRespond={handleRespond} />
+  {#if stream.interrupt}
+    <ApprovalCard interrupt={stream.interrupt} onRespond={handleRespond} />
   {/if}
 </div>
 ```
 
 ```ts Angular
 import { Component } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream } from "@langchain/angular";
 import type { HITLResponse } from "langchain";
 
 const AGENT_URL = "http://localhost:2024";
@@ -164,7 +159,7 @@ const AGENT_URL = "http://localhost:2024";
   `,
 })
 export class ChatComponent {
-  stream = useStream<typeof myAgent>({
+  stream = injectStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "human_in_the_loop",
   });
@@ -178,7 +173,7 @@ export class ChatComponent {
 
 ## The interrupt payload
 
-When the agent pauses, `stream.interrupt` contains a `HITLRequest` with the
+When the agent pauses, `stream.interrupt` contains a @[HITLRequest] with the
 following structure:
 
 ```ts
@@ -188,7 +183,7 @@ interface HITLRequest {
 }
 
 interface ActionRequest {
-  action: string;
+  name: string;
   args: Record<string, unknown>;
   description?: string;
 }
@@ -201,7 +196,7 @@ interface ReviewConfig {
 | Property | Description |
 | --- | --- |
 | `actionRequests` | Array of pending actions the agent wants to perform |
-| `actionRequests[].action` | The action name (e.g. `"send_email"`, `"delete_record"`) |
+| `actionRequests[].name` | The action name (e.g. `"send_email"`, `"delete_record"`) |
 | `actionRequests[].args` | Structured arguments for the action |
 | `actionRequests[].description` | Optional human-readable description of what the action does |
 | `reviewConfigs` | Per-action configuration controlling which decisions are allowed |
@@ -217,7 +212,7 @@ The user confirms the action should proceed as-is:
 
 ```ts
 const response: HITLResponse = {
-  decision: "approve",
+  decisions: [{ type: "approve" }],
 };
 
 stream.submit(null, { command: { resume: response } });
@@ -225,12 +220,16 @@ stream.submit(null, { command: { resume: response } });
 
 ### Reject
 
-The user denies the action with an optional reason:
+The user denies the action with an optional reason. The tool is not executed:
 
 ```ts
 const response: HITLResponse = {
-  decision: "reject",
-  reason: "The email tone is too aggressive. Please revise.",
+  decisions: [
+    {
+      type: "reject",
+      message: "The email tone is too aggressive. Do not send it.",
+    },
+  ],
 };
 
 stream.submit(null, { command: { resume: response } });
@@ -238,8 +237,11 @@ stream.submit(null, { command: { resume: response } });
 
 <Note>
 When an action is rejected, the agent receives the rejection reason and can
-decide how to proceed. It may rephrase, ask clarifying questions, or abandon
-the action entirely.
+decide how to proceed. If you omit `message`, the backend uses a default
+message that tells the model the tool was not executed and not to retry the
+same tool call unless the user asks. For side-effecting tools, pass a clear
+message that tells the agent whether to abandon the action, ask a follow-up
+question, or try a safer alternative.
 </Note>
 
 ### Edit
@@ -248,12 +250,19 @@ The user modifies the action's arguments before approving:
 
 ```ts
 const response: HITLResponse = {
-  decision: "edit",
-  args: {
-    ...originalArgs,
-    subject: "Updated subject line",
-    body: "Revised email body with softer language.",
-  },
+  decisions: [
+    {
+      type: "edit",
+      editedAction: {
+        name: actionRequest.name,
+        args: {
+          ...actionRequest.args,
+          subject: "Updated subject line",
+          body: "Revised email body with softer language.",
+        },
+      },
+    },
+  ],
 };
 
 stream.submit(null, { command: { resume: response } });
@@ -265,153 +274,54 @@ The user provides a direct reply for "ask user" style tools. The `message` becom
 
 ```ts
 const response: HITLResponse = {
-  decision: "respond",
-  message: "Blue.",
+  decisions: [{ type: "respond", message: "Blue." }],
 };
 
 stream.submit(null, { command: { resume: response } });
 ```
 
 <Note>
-Use `respond` when the tool is intentionally a placeholder for human input — for example, an `ask_user` tool that prompts the agent to collect information from the user.
+Use `respond` when the tool is intentionally a placeholder for human input, for example, an `ask_user` tool that prompts the agent to collect information from the user. Do not use `respond` to deny a proposed action, because it is returned to the model as a successful tool result.
 </Note>
 
 ## Building the ApprovalCard
 
-Here is a full approval card component that handles all four decision types:
+Here is the decision wiring used by the approval cards. The UI can split each
+action into its own card, but the resume payload is a single `HITLResponse`
+with one decision per pending action:
 
 ```tsx
-function ApprovalCard({
-  interrupt,
-  onRespond,
-}: {
-  interrupt: { value: HITLRequest };
-  onRespond: (response: HITLResponse) => void;
-}) {
-  const request = interrupt.value;
-  const [editedArgs, setEditedArgs] = useState(
-    request.actionRequests[0]?.args ?? {}
-  );
-  const [rejectReason, setRejectReason] = useState("");
-  const [respondMessage, setRespondMessage] = useState("");
-  const [mode, setMode] = useState<"review" | "edit" | "reject" | "respond">("review");
+async function approveAll() {
+  const resume: HITLResponse = {
+    decisions: actionRequests.map(() => ({ type: "approve" })),
+  };
+  await stream.submit(null, { command: { resume } });
+}
 
-  const action = request.actionRequests[0];
-  const config = request.reviewConfigs[0];
+async function rejectOne(index: number, message: string) {
+  const resume: HITLResponse = {
+    decisions: actionRequests.map((_, i) =>
+      i === index
+        ? { type: "reject", message }
+        : { type: "reject", message: "Rejected along with other actions" },
+    ),
+  };
+  await stream.submit(null, { command: { resume } });
+}
 
-  if (!action || !config) return null;
-
-  return (
-    <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
-      <h3 className="font-semibold text-amber-800">Action Review Required</h3>
-      <p className="mt-1 text-sm text-amber-700">
-        {action.description ?? `The agent wants to perform: ${action.action}`}
-      </p>
-
-      <div className="mt-3 rounded bg-white p-3 font-mono text-sm">
-        <pre>{JSON.stringify(action.args, null, 2)}</pre>
-      </div>
-
-      {mode === "review" && (
-        <div className="mt-4 flex gap-2">
-          {config.allowedDecisions.includes("approve") && (
-            <button
-              className="rounded bg-green-600 px-4 py-2 text-white"
-              onClick={() => onRespond({ decision: "approve" })}
-            >
-              Approve
-            </button>
-          )}
-          {config.allowedDecisions.includes("reject") && (
-            <button
-              className="rounded bg-red-600 px-4 py-2 text-white"
-              onClick={() => setMode("reject")}
-            >
-              Reject
-            </button>
-          )}
-          {config.allowedDecisions.includes("edit") && (
-            <button
-              className="rounded bg-blue-600 px-4 py-2 text-white"
-              onClick={() => setMode("edit")}
-            >
-              Edit
-            </button>
-          )}
-          {config.allowedDecisions.includes("respond") && (
-            <button
-              className="rounded bg-purple-600 px-4 py-2 text-white"
-              onClick={() => setMode("respond")}
-            >
-              Respond
-            </button>
-          )}
-        </div>
-      )}
-
-      {mode === "reject" && (
-        <div className="mt-4 space-y-2">
-          <textarea
-            className="w-full rounded border p-2"
-            placeholder="Reason for rejection..."
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-          />
-          <button
-            className="rounded bg-red-600 px-4 py-2 text-white"
-            onClick={() =>
-              onRespond({ decision: "reject", reason: rejectReason })
-            }
-          >
-            Confirm Rejection
-          </button>
-        </div>
-      )}
-
-      {mode === "edit" && (
-        <div className="mt-4 space-y-2">
-          <textarea
-            className="w-full rounded border p-2 font-mono text-sm"
-            value={JSON.stringify(editedArgs, null, 2)}
-            onChange={(e) => {
-              try {
-                setEditedArgs(JSON.parse(e.target.value));
-              } catch {
-                // allow invalid JSON while editing
-              }
-            }}
-          />
-          <button
-            className="rounded bg-blue-600 px-4 py-2 text-white"
-            onClick={() =>
-              onRespond({ decision: "edit", args: editedArgs })
-            }
-          >
-            Submit Edits
-          </button>
-        </div>
-      )}
-
-      {mode === "respond" && (
-        <div className="mt-4 space-y-2">
-          <textarea
-            className="w-full rounded border p-2"
-            placeholder="Your response..."
-            value={respondMessage}
-            onChange={(e) => setRespondMessage(e.target.value)}
-          />
-          <button
-            className="rounded bg-purple-600 px-4 py-2 text-white"
-            onClick={() =>
-              onRespond({ decision: "respond", message: respondMessage })
-            }
-          >
-            Send Response
-          </button>
-        </div>
-      )}
-    </div>
-  );
+async function editOne(index: number, editedArgs: Record<string, unknown>) {
+  const originalAction = actionRequests[index];
+  const resume: HITLResponse = {
+    decisions: actionRequests.map((_, i) =>
+      i === index
+        ? {
+            type: "edit",
+            editedAction: { name: originalAction.name, args: editedArgs },
+          }
+        : { type: "approve" },
+    ),
+  };
+  await stream.submit(null, { command: { resume } });
 }
 ```
 
@@ -420,12 +330,13 @@ function ApprovalCard({
 After the user makes a decision, the full cycle looks like this:
 
 1. Call `stream.submit(null, { command: { resume: hitlResponse } })`
-2. The `useStream` hook sends the resume command to the LangGraph backend
-3. The agent receives the `HITLResponse` and continues execution. The HITL response may be one of:
-    - `"approve"`: The agent continues executing the next action
-    - `"reject"`: The agent receives the rejection reasoning and decides its next step
-    - `"edit"`: The agent runs the tool with the edited arguments
-    - `"respond"`: The human's message is returned directly as the tool result without executing the tool
+2. The @[`useStream`] hook sends the resume command to the LangGraph backend
+3. The agent receives the `HITLResponse` and continues execution. Each entry in
+   `decisions` may be one of:
+    - `{ type: "approve" }`: The agent continues executing the action
+    - `{ type: "reject", message }`: The tool is not executed, and the agent receives the rejection message before deciding its next step
+    - `{ type: "edit", editedAction }`: The agent runs the tool with edited arguments
+    - `{ type: "respond", message }`: The human's message is returned directly as the tool result without executing the tool
 4. The `interrupt` property resets to `null` as the agent resumes streaming
 
 <Tip>
@@ -433,17 +344,6 @@ You can chain multiple HITL checkpoints in a single agent run. For example, an
 agent might ask for approval to search, then ask again before sending an email
 with the results. Each interrupt is handled independently.
 </Tip>
-
-## Common use cases
-
-| Use Case | Action | Review Config |
-| --- | --- | --- |
-| Email sending | `send_email` | `["approve", "reject", "edit"]` |
-| Database writes | `update_record` | `["approve", "reject"]` |
-| Financial transactions | `transfer_funds` | `["approve", "reject"]` |
-| File deletion | `delete_files` | `["approve", "reject"]` |
-| API calls to external services | `call_api` | `["approve", "reject", "edit"]` |
-| Collecting user input | `ask_user` | `["respond"]` |
 
 ## Handling multiple pending actions
 
@@ -457,9 +357,9 @@ function MultiActionReview({
   onRespond,
 }: {
   interrupt: { value: HITLRequest };
-  onRespond: (responses: HITLResponse[]) => void;
+  onRespond: (response: HITLResponse) => void;
 }) {
-  const [decisions, setDecisions] = useState<Record<number, HITLResponse>>({});
+  const [decisions, setDecisions] = useState<Record<number, HITLResponse["decisions"][number]>>({});
   const request = interrupt.value;
 
   const allDecided =
@@ -481,9 +381,9 @@ function MultiActionReview({
         <button
           className="rounded bg-green-600 px-4 py-2 text-white"
           onClick={() =>
-            onRespond(
-              request.actionRequests.map((_, i) => decisions[i])
-            )
+            onRespond({
+              decisions: request.actionRequests.map((_, i) => decisions[i]),
+            })
           }
         >
           Submit All Decisions
@@ -505,7 +405,7 @@ Keep these guidelines in mind when implementing HITL workflows:
 - **Validate edited args**. When users edit action arguments, validate the
   JSON structure before sending. Show inline errors for malformed input.
 - **Persist the interrupt state**. If the user refreshes the page, the
-  interrupt should still be visible. `useStream` handles this via the thread's
+  interrupt should still be visible. @[`useStream`] handles this via the thread's
   checkpoint.
 - **Log all decisions**. For audit trails, log every approve/reject/edit
   decision with timestamps and the user who made the decision.
