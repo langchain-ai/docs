@@ -4,7 +4,7 @@ sidebarTitle: CLI reference
 description: Reference for Managed Deep Agents CLI commands, project files, and deploy behavior.
 ---
 
-The `deepagents` CLI provides deployment tooling for Managed Deep Agents. Use it to scaffold local agent projects, deploy them to LangSmith, manage Managed Deep Agent resources, and register MCP servers.
+The `deepagents` CLI, installed from the `deepagents-cli` package, provides deployment tooling for [Managed Deep Agents](/langsmith/managed-deep-agents-overview). Use it to scaffold local agent projects, deploy them to LangSmith, manage Managed Deep Agent resources, and register MCP servers.
 
 <Note>
     Managed Deep Agents is in private preview. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
@@ -36,7 +36,7 @@ As a fallback, install the CLI with `pip`:
 pip install -U "deepagents-cli>=0.2.0"
 ```
 
-The CLI reads `LANGSMITH_API_KEY`, or `LANGCHAIN_API_KEY` as a fallback. It reads `LANGSMITH_ENDPOINT`, or `LANGCHAIN_ENDPOINT` as a fallback, when you need to override the default endpoint.
+The CLI reads `LANGSMITH_API_KEY`, or `LANGCHAIN_API_KEY` as a fallback. To create a key, see [Create an API key](/langsmith/create-account-api-key). To override the default endpoint, set `LANGSMITH_ENDPOINT` (or `LANGCHAIN_ENDPOINT` as a fallback).
 
 ```bash
 export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
@@ -63,7 +63,7 @@ Project `.env` files can set API keys. Project `.env` files cannot set endpoint,
 | `deepagents mcp-servers delete <server>` | Delete one MCP server. |
 | `deepagents mcp-servers connect <server>` | Complete OAuth for an OAuth MCP server. |
 
-Bare `deepagents` invocations no longer start an interactive REPL. Install and run [Deep Agents Code](/oss/deepagents/code/overview) for interactive coding sessions.
+Bare `deepagents` invocations do not start an interactive REPL. Install and run [Deep Agents Code](/oss/deepagents/code/overview) for interactive coding sessions.
 
 ## Initialize projects
 
@@ -87,7 +87,7 @@ deepagents init
 
 The command creates:
 
-| File or directory | Purpose |
+| File or directory | Description |
 | --- | --- |
 | `agent.json` | Agent metadata, model, backend, permissions, and optional target `agent_id`. |
 | `AGENTS.md` | Main agent instructions. |
@@ -104,7 +104,9 @@ Run `deepagents deploy` from a project directory:
 deepagents deploy
 ```
 
-The first deploy creates a Managed Deep Agent. Later deploys update the same remote agent by using user-local deploy state. The state is stored outside the project checkout, so repository-controlled files do not silently steer authenticated deploys.
+The first deploy creates a Managed Deep Agent. Later deploys update the same agent. Deploy state is user-local and stored outside your project, so files committed to the repository do not change which agent you deploy to.
+
+By default, deploy uploads the project, polls the agent health endpoint, and prints the agent name, ID, short revision, agent URL, and a post-deploy MCP health check. Use `--detach` to skip polling and exit immediately after create or update.
 
 | Flag | Use |
 | --- | --- |
@@ -112,7 +114,7 @@ The first deploy creates a Managed Deep Agent. Later deploys update the same rem
 | `--dry-run` | Print the agent payload and managed file tree without sending a request. |
 | `--detach` | Exit after create or update without polling the agent health endpoint. |
 | `--reset` | Discard local deploy state and create a fresh agent. Cannot be used when `agent.json` declares `agent_id`. |
-| `--yes` | Confirm target-agent updates without prompting. Useful in automation. |
+| `--yes` | Confirm target-agent updates without prompting. |
 | `-h`, `--help` | Show command help. |
 
 `deepagents deploy --dry-run` prints JSON with:
@@ -139,7 +141,7 @@ For shared repositories or intentional updates to an existing Managed Deep Agent
 
 On first use, the CLI asks you to confirm before updating that remote agent. Use `--yes` to skip the prompt.
 
-### Deploy validation
+### Validate the project before deploy
 
 Deploy fails before sending a request when the project is malformed. Common validation rules include:
 
@@ -165,7 +167,11 @@ List agents:
 deepagents agents list
 ```
 
-The command prints tab-separated rows with agent ID, agent name, and update time.
+The command prints tab-separated rows with agent ID, agent name, and update time:
+
+```text
+e2de7a35-9dda-462b-b982-9e57051993bc	my-agent	2026-06-01T12:00:00Z
+```
 
 Inspect an agent:
 
@@ -179,6 +185,11 @@ Include managed files in the response:
 deepagents agents get <agent_id> --include-files
 ```
 
+| Flag | Use |
+| --- | --- |
+| `--include-files` | Include managed files in the response. |
+| `-h`, `--help` | Show command help. |
+
 Delete an agent:
 
 ```bash
@@ -190,6 +201,11 @@ The delete command asks for confirmation. Skip the prompt with `--yes`:
 ```bash
 deepagents agents delete <agent_id> --yes
 ```
+
+| Flag | Use |
+| --- | --- |
+| `--yes` | Skip the confirmation prompt. |
+| `-h`, `--help` | Show command help. |
 
 ## Manage MCP servers
 
@@ -239,7 +255,7 @@ deepagents mcp-servers add \
   --connect
 ```
 
-OAuth add supports the same OAuth flags as `connect`.
+OAuth `add` supports the same OAuth flags as [`connect`](/langsmith/managed-deep-agents-cli#connect-oauth-mcp-servers): `--scope`, `--force-new`, `--timeout`, and `--no-browser`.
 
 ### List MCP server tools
 
@@ -377,7 +393,9 @@ Sandbox backends can include optional sandbox settings:
 | `idle_ttl_seconds` | Integer idle timeout. |
 | `delete_after_stop_seconds` | Integer deletion delay after stop. |
 
-Supported permission values are:
+### Configure permissions
+
+The optional `permissions` field in `agent.json` sets identity, visibility, and tenant access. Supported values are:
 
 | Field | Values |
 | --- | --- |
@@ -426,13 +444,13 @@ description: Summarize text into a one-paragraph summary.
 Given a text, produce a one-paragraph summary.
 ```
 
-The CLI includes sibling files under the same skill directory recursively, excluding hidden paths.
+The CLI recursively includes all other files in the skill directory, excluding hidden paths.
 
 ### subagents
 
 Each subagent lives under `subagents/<name>/` and requires:
 
-| File | Purpose |
+| File | Description |
 | --- | --- |
 | `agent.json` | Subagent metadata. Supports `description` and `model`. |
 | `AGENTS.md` | Subagent instructions. |
@@ -448,6 +466,6 @@ Example subagent `agent.json`:
 }
 ```
 
-The legacy `model_id` key is still accepted in local subagent files, but new projects should use `model`. The REST API `SubagentSpec` still uses `model_id`.
+The legacy `model_id` key is still accepted in local subagent files, but new projects should use `model`. The REST API `SubagentSpec` uses `model_id`.
 
 Subagent names come from directory names. Names are checked case-insensitively for duplicates.
