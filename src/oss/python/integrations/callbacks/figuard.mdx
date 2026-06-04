@@ -1,0 +1,206 @@
+---
+title: FiGuard
+description: Pre-flight spend authorization for LangChain agents. Set a budget, let the agent ask permission before every tool call that costs money.
+---
+
+## Overview
+
+[FiGuard](https://github.com/figuard/figuard-core) is a pre-flight spend authorization layer for LangChain agents. Before a tool call executes, FiGuard checks whether the agent is allowed to make that spend and blocks it if not.
+
+The authorization decision (AUTHORIZED or DENIED with a structured reason) becomes the tool result. The LLM receives it in the same stream as any other tool output and can adapt its plan.
+
+## Why
+
+LangChain agents can call tools in a loop. Without a control layer, a single stuck or runaway agent can spend thousands of dollars before anyone notices.
+
+Common failure modes FiGuard prevents:
+
+- **Duplicate charges on retry**: agent times out waiting for a response, retries, the first call already went through. FiGuard's idempotency key catches the retry and returns the original authorization instead of creating a second one.
+- **Concurrent overspend**: two agents share a budget, both see "$400 available", both get approved at the same time. FiGuard uses pessimistic locking so only one reservation can land at a time.
+- **Runaway loops**: agent hits an ambiguous query, runs 30 iterations. FiGuard stops it when the budget is exhausted, before the bill arrives.
+- **Fleet attribution loss**: supervisor routes through 3 sub-agents, no per-agent caps. FiGuard delegation tokens give each sub-agent its own limit without changing any agent code.
+
+## How it works
+
+FiGuard uses a reserve-then-confirm model:
+
+1. `on_tool_start` calls `authorize()`, which checks the budget and reserves the requested amount
+2. `on_tool_end` calls `confirm_event()`, which settles the actual cost (may differ from the reserved amount)
+3. `on_tool_error` calls `fail_event()`, which releases the reservation if the tool fails
+
+The reservation prevents two concurrent tools from both seeing "$200 available" and both getting approved when only $200 is left.
+
+Every authorization, denial, and confirmation is recorded in an append-only ledger queryable via `client.get_ledger()`.
+
+## Prerequisites
+
+```shell
+pip install figuard[langchain]
+```
+
+No account required. FiGuard connects to a shared public sandbox automatically. For production, self-host FiGuard and set `FIGUARD_API_KEY` and `FIGUARD_BASE_URL`.
+
+## Quickstart
+
+One line wraps an existing executor:
+
+```python
+from figuard.integrations.langchain import auto_guard_langchain
+
+executor = auto_guard_langchain(executor, budget=500, currency="USD")
+```
+
+`auto_guard_langchain` creates a $500 / 24h budget, wires `FiGuardCallbackHandler`, and returns the same executor ready to run.
+
+## Full setup
+
+```python
+from figuard import FiGuardClient
+from figuard.integrations.langchain import FiGuardCallbackHandler
+from langchain.agents import AgentExecutor
+
+client = FiGuardClient()
+
+budget = client.create_budget(
+    user_id="agent_001",
+    total_limit=500.00,
+    currency="USD",
+    expires_in="24h",
+)
+
+handler = FiGuardCallbackHandler(
+    client=client,
+    session_token=budget.primary_token.session_token,
+    agent_id="travel_agent",
+)
+
+executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    handle_tool_error=True,  # required: sends denial reason to the LLM
+    callbacks=[handler],
+)
+```
+
+## Category-based budgets
+
+Ring-fence spend by category. A hotel booking cannot consume the flights allocation even if the total budget has headroom.
+
+```python
+budget = client.create_budget(
+    user_id="agent_001",
+    total_limit=500.00,
+    currency="USD",
+    expires_in="24h",
+    allocations=[
+        {
+            "category": "flights",
+            "limit": 300.00,
+            "enforcementMode": "CATEGORY_CONSTRAINED",
+            "allowedCategories": ["flights"],
+        },
+        {
+            "category": "hotels",
+            "limit": 200.00,
+            "enforcementMode": "CATEGORY_CONSTRAINED",
+            "allowedCategories": ["hotels"],
+        },
+    ],
+)
+
+handler = FiGuardCallbackHandler(
+    client=client,
+    session_token=budget.primary_token.session_token,
+    agent_id="travel_agent",
+    tool_category_map={
+        "book_flight": "flights",
+        "book_hotel": "hotels",
+    },
+)
+```
+
+A spend claiming category `hotels` against a `flights` allocation is denied with `NO_MATCHING_ALLOCATION` before any external call happens.
+
+## Skip read-only tools
+
+Pass `ignore_tools` to bypass authorization for tools that do not spend money:
+
+```python
+handler = FiGuardCallbackHandler(
+    client=client,
+    session_token=budget.primary_token.session_token,
+    agent_id="research_agent",
+    ignore_tools={"search_web", "read_file", "get_weather"},
+)
+```
+
+## Inspect the spend ledger
+
+After a run, query what happened:
+
+```python
+page = client.get_ledger(budget.id, page=0, size=20)
+
+for event in page.events:
+    status = "OK" if event.decision == "CONFIRMED" else "DENIED"
+    amount = event.confirmed_quantity or event.requested_quantity
+    print(f"{status}  {event.agent_id}  ${amount:.2f}  {event.denial_reason or ''}")
+```
+
+## Fleet budgets with delegation tokens
+
+For multi-agent systems, issue each sub-agent a scoped token with its own cap:
+
+```python
+fleet = client.create_budget(
+    user_id="orchestrator",
+    total_limit=1000.00,
+    currency="USD",
+    expires_in="24h",
+)
+
+flight_token = client.create_delegation_token(
+    budget_id=fleet.id,
+    label="flight-booker",
+    caps=[{"category": "flights", "limit": 600.00}],
+)
+
+hotel_token = client.create_delegation_token(
+    budget_id=fleet.id,
+    label="hotel-booker",
+    caps=[{"category": "hotels", "limit": 500.00}],
+)
+```
+
+Each sub-agent uses its delegation token exactly like a regular session token. FiGuard enforces both the per-token cap and the fleet ceiling.
+
+## OTEL tracing
+
+FiGuard emits OpenTelemetry spans for every authorization decision. Install the optional dependency and configure your OTEL provider. FiGuard picks it up automatically:
+
+```shell
+pip install figuard[opentelemetry]
+```
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="...")))
+trace.set_tracer_provider(provider)
+
+# FiGuard authorization spans now appear as children of LangChain tool spans
+# in Langfuse, Jaeger, Honeycomb, Datadog, or any OTEL-compatible backend
+```
+
+A denied hotel booking appears as an `ERROR` span nested inside the tool call span, in the same trace as the LLM that triggered it.
+
+## Additional resources
+
+- [GitHub](https://github.com/figuard/figuard-core)
+- [PyPI](https://pypi.org/project/figuard/)
+- [Self-hosting guide](https://github.com/figuard/figuard-core/blob/main/docs/self-hosting.md)
+- [Interactive Colab](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/01_langchain_payment_retry.ipynb)
