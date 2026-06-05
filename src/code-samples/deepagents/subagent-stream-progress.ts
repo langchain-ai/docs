@@ -1,22 +1,8 @@
 // :snippet-start: subagent-stream-progress-js
-import {
-  createDeepAgent,
-  createHarnessProfile,
-  registerHarnessProfile,
-} from "deepagents";
-import { initChatModel } from "langchain";
-
-registerHarnessProfile(
-  "openai:gpt-5.4",
-  createHarnessProfile({
-    generalPurposeSubagent: { enabled: false },
-  }),
-);
-
-const model = await initChatModel("openai:gpt-5.4", { temperature: 0 });
+import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
-  model,
+  model: "openai:gpt-5.4",
   systemPrompt:
     "You are a project coordinator with no research knowledge. " +
     "For every user request, you must call the task() tool with " +

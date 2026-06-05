@@ -2,22 +2,11 @@
 
 # :snippet-start: subagent-stream-progress-py
 from deepagents import (
-    GeneralPurposeSubagentProfile,
-    HarnessProfile,
-    create_deep_agent,
-    register_harness_profile,
-)
-from langchain.chat_models import init_chat_model
-
-register_harness_profile(
-    "openai:gpt-5.4",
-    HarnessProfile(
-        general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
-    ),
+    create_deep_agent
 )
 
 agent = create_deep_agent(
-    model=init_chat_model("openai:gpt-5.4", temperature=0),
+    model="openai:gpt-5.4",
     system_prompt=(
         "You are a project coordinator with no research knowledge. "
         "For every user request, you must call the task() tool with "
