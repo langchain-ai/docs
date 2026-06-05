@@ -4,7 +4,7 @@ sidebarTitle: Run an agent
 description: Create threads and stream runs for a Managed Deep Agent.
 ---
 
-Running a Managed Deep Agent involves creating a thread, starting a run, and streaming output. Deploy the agent first with the [CLI or REST API](/langsmith/managed-deep-agents-deploy), then invoke it with the REST API.
+Running a [Managed Deep Agent](/langsmith/managed-deep-agents-overview) involves creating a thread, starting a run, and streaming output. Deploy the agent first with the [CLI or REST API](/langsmith/managed-deep-agents-deploy), then invoke it with the REST API.
 
 For a shorter end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart).
 
@@ -12,9 +12,11 @@ For a shorter end-to-end path, see the [quickstart](/langsmith/managed-deep-agen
 Managed Deep Agents is in **private preview**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
 </Note>
 
-## CLI: find the agent ID
+## Find the agent ID
 
-There is no CLI command for running Managed Deep Agents yet. Use the CLI to find the agent ID, then use the REST API to create threads and stream runs.
+There is no CLI command for running Managed Deep Agents yet. Find the agent ID with the CLI or the REST API, then use the REST API to create threads and stream runs.
+
+### CLI
 
 List agents:
 
@@ -28,7 +30,7 @@ Inspect one agent:
 deepagents agents get <agent_id>
 ```
 
-## API: create threads and stream runs
+### API
 
 Set request defaults:
 
@@ -36,7 +38,6 @@ Set request defaults:
 export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
 export LANGSMITH_API_URL="https://api.smith.langchain.com"
 export DEEPAGENTS_BASE_URL="$LANGSMITH_API_URL/v1/deepagents"
-export AGENT_ID="<agent_id>"
 ```
 
 Requests require the `X-Api-Key` header:
@@ -49,6 +50,59 @@ Install an HTTP client for Python examples (run this inside an activated virtual
 
 ```bash
 uv pip install httpx
+```
+
+List agents with `GET /v1/deepagents/agents`, then read the `id` of the agent you want:
+
+<Tabs>
+  <Tab title="Python (httpx)">
+    ```python
+    import os
+
+    import httpx
+
+    BASE_URL = os.environ["DEEPAGENTS_BASE_URL"]
+    HEADERS = {"X-Api-Key": os.environ["LANGSMITH_API_KEY"]}
+
+    response = httpx.get(f"{BASE_URL}/agents", headers=HEADERS)
+    response.raise_for_status()
+    for agent in response.json()["items"]:
+        print(agent["id"], agent["name"])
+    ```
+  </Tab>
+  <Tab title="JavaScript (fetch)">
+    ```ts
+    const BASE_URL = process.env.DEEPAGENTS_BASE_URL!
+    const HEADERS = {
+      "X-Api-Key": process.env.LANGSMITH_API_KEY!,
+      "Content-Type": "application/json",
+    }
+
+    const response = await fetch(`${BASE_URL}/agents`, { headers: HEADERS })
+    if (!response.ok) throw new Error(await response.text())
+    const { items } = await response.json()
+    for (const agent of items) {
+      console.log(agent.id, agent.name)
+    }
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    curl --request GET \
+      --url "$DEEPAGENTS_BASE_URL/agents" \
+      --header "X-Api-Key: $LANGSMITH_API_KEY"
+    ```
+  </Tab>
+</Tabs>
+
+To inspect a single agent, call `GET /v1/deepagents/agents/{agent_id}`.
+
+## Create threads and stream runs with the API
+
+The request defaults set above still apply. Export the agent ID you retrieved with the CLI or API:
+
+```bash
+export AGENT_ID="<agent_id>"
 ```
 
 The examples below reuse these variables:
@@ -143,7 +197,7 @@ Create a thread before running the agent. Threads preserve conversation and exec
 
 ### Stream a run from a thread
 
-The `options` object is optional and shown here with its defaults. `test_run` marks the thread as a test run that is filtered out of usage and analytics. `skip_memory_write_protection` controls whether the runtime pauses for human approval before the agent writes to long-term memory. By default, the runtime raises a human-in-the-loop interrupt before a memory write so you can approve or reject it; set the field to `true` to let memory writes proceed immediately, which is useful for headless runs. For the full field reference, see the [API reference](/langsmith/managed-deep-agents-api-overview).
+The `options` object is optional and shown here with its defaults. `test_run` marks the thread as a test run that is filtered out of usage and analytics. `skip_memory_write_protection` controls whether the runtime pauses for human approval before the agent writes to long-term memory. By default, the runtime raises a human-in-the-loop interrupt before a memory write so you can approve or reject it; set the field to `true` to let memory writes proceed immediately, which is useful for headless runs where no human is available to approve the write. For the full field reference, see the [API reference](/langsmith/managed-deep-agents-api-overview).
 
 Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stream`. Include the `agent_id` in the request body and set `Accept: text/event-stream`:
 
@@ -239,7 +293,7 @@ The endpoint streams Server-Sent Events (`text/event-stream`). With the `stream_
 
 The examples above print each raw event line as it arrives. Parse the `data:` payloads as JSON to drive a UI.
 
-Pick a stream mode:
+Choose a stream mode:
 
 | Stream mode | Use for |
 | --- | --- |
