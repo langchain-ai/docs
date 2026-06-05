@@ -5,6 +5,8 @@ description: Learn how to use subagents to delegate work and keep context clean
 
 import SubagentBasicPy from '/snippets/code-samples/subagent-basic-py.mdx';
 import SubagentBasicJs from '/snippets/code-samples/subagent-basic-js.mdx';
+import SubagentStreamProgressPy from '/snippets/code-samples/subagent-stream-progress-py.mdx';
+import SubagentStreamProgressJs from '/snippets/code-samples/subagent-stream-progress-js.mdx';
 
 A deep agent can create subagents to delegate work. You can specify custom subagents in the `subagents` parameter. Subagents are useful for [context quarantine](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html#context-quarantine) (keeping the main agent's context clean) and for providing specialized instructions.
 
@@ -207,57 +209,79 @@ const agent = createDeepAgent({
 
 ## Streaming
 
-When streaming tracing information agents' names are available as `lc_agent_name` in metadata.
-When reviewing tracing information, you can use this metadata to differentiate which agent the data came from.
+Deep Agents support streaming updates from both the coordinator and every delegated subagent.
+:::python
+Use [`stream_events`](/oss/deepagents/event-streaming) to get typed projections—separate iterators for subagents, messages, tool calls, and values—so you can consume each independently.
+::::::js
+Use [`streamEvents`](/oss/deepagents/event-streaming) to get typed projections—separate iterators for subagents, messages, tool calls, and values—so you can consume each independently.
 
-The following example creates a deep agent with the name `main-agent` and a subagent with the name `research-agent`:
+### Stream subagent progress
 
-```python
-import os
-from typing import Literal
-from tavily import TavilyClient
-from deepagents import create_deep_agent
+The simplest pattern is to iterate `stream.subagents` to track each delegated task as it starts, runs, and completes. Each subagent handle exposes `.name`, `.messages`, `.tool_calls`, and `.output`.
 
-tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+:::python
 
-def internet_search(
-    query: str,
-    max_results: int = 5,
-    topic: Literal["general", "news", "finance"] = "general",
-    include_raw_content: bool = False,
-):
-    """Run a web search"""
-    return tavily_client.search(
-        query,
-        max_results=max_results,
-        include_raw_content=include_raw_content,
-        topic=topic,
-    )
+<SubagentStreamProgressPy />
 
-research_subagent = {
-    "name": "research-agent",
-    "description": "Used to research more in depth questions",
-    "system_prompt": "You are a great researcher",
-    "tools": [internet_search],
-    "model": "google_genai:gemini-3.5-flash",  # Optional override, defaults to main agent model
-}
-subagents = [research_subagent]
+:::
 
-agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    subagents=subagents,
-    name="main-agent"
-)
-```
+:::js
 
-As you prompt your deep agent, all agent runs executed by a subagent or deep agent will have the agent name in their metadata.
-In this case the subagent with the name `"research-agent"`, will have `{'lc_agent_name': 'research-agent'}` in any associated agent run metadata:
+<SubagentStreamProgressJs />
+
+:::
+
+### LangSmith tracing
+
+As your deep agent runs, all runs executed by a subagent or the coordinator will have the agent name in their metadata under the `lc_agent_name` key—for example, `{'lc_agent_name': 'research-agent'}`. This lets you identify and filter runs by subagent in LangSmith.
 
 ![LangSmith Example trace showing the metadata](/oss/images/deepagents/deepagents-langsmith.png)
 
 <Tip>
-Open the run in [LangSmith](https://smith.langchain.com) to compare the supervisor trace with each subagent run. Follow the [observability quickstart](/langsmith/observability-quickstart) to get set up. We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
+Open the run in [LangSmith](https://smith.langchain.com) to compare the coordinator trace with each subagent run. Follow the [observability quickstart](/langsmith/observability-quickstart) to get set up. We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
 </Tip>
+
+## Filter by subagent in LangSmith
+
+Because each subagent's `name` is written to the `lc_agent_name` metadata key on every run it produces, you can use LangSmith's metadata filtering to isolate all runs from a specific subagent — useful for debugging, monitoring, or comparing subagent behavior over time.
+
+### Filter in the LangSmith UI
+
+1. Open your tracing project in [LangSmith](https://smith.langchain.com).
+2. Switch the view to **Runs** on the Tracing project page to see individual spans.
+3. Click **Add filter** and select **Metadata**.
+4. Set the **Key** to `lc_agent_name` and the **Value** to the subagent name (for example, `research-agent`).
+
+This shows only the runs produced by that subagent. You can save the filter as a named view for reuse. For a full reference on filtering options, see [Filter traces](/langsmith/filter-traces-in-application).
+
+### Filter programmatically with the SDK
+
+Use the `has` comparator in the LangSmith filter query language to match runs by metadata key-value pair:
+
+```python
+from langsmith import Client
+
+client = Client()
+
+runs = client.list_runs(
+    project_name="<your-project>",
+    filter='has(metadata, \'{"lc_agent_name": "research-agent"}\')',
+)
+
+for run in runs:
+    print(run.name, run.start_time, run.status)
+```
+
+To fetch runs from _any_ named subagent (excluding the main agent), filter for runs that have the `lc_agent_name` key at all:
+
+```python
+runs = client.list_runs(
+    project_name="<your-project>",
+    filter="has(metadata, 'lc_agent_name')",
+)
+```
+
+For the full filter query language reference, see [Trace query syntax](/langsmith/trace-query-syntax).
 
 ## Structured output
 
