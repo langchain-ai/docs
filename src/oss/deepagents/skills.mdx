@@ -185,7 +185,7 @@ const result = await agent.invoke(
 As agents take on more complex tasks, the context they need grows with them. Loading all instructions into the system prompt wastes tokens on information irrelevant to the current task, and providing the same guidance manually across sessions does not scale.
 
 <Info>
-Skills use **progressive disclosure**: the agent loads skill information in layers instead of all at once. At startup, it sees only each skill's name and description. When a skill matches the task, it reads the full `SKILL.md` instructions. Supporting files load last, only when the skill references them.
+Skills use **progressive disclosure**: the agent loads skill information in layers instead of all at once. At startup, it sees only each skill's name and description. When a skill is invoked, it reads the full `SKILL.md` instructions. Supporting files load afterward, only when the instructions call for them.
 </Info>
 
 Skills load in three levels. Each level adds more detail only when the task needs it:
@@ -193,10 +193,10 @@ Skills load in three levels. Each level adds more detail only when the task need
 | Level | What loads | When |
 | ----- | ---------- | ---- |
 | **1. Metadata** | [`name`](#frontmatter-fields) and [`description`](#frontmatter-fields) from `SKILL.md` [frontmatter](#frontmatter-fields) | Agent startup, for every configured skill |
-| **2. Instructions** | Full `SKILL.md` body | When the agent determines the skill matches the task |
-| **3. Resources** | [Supporting files](#add-supporting-resources) under `scripts/`, `references/`, and `assets/` | When the skill instructions reference them |
+| **2. Instructions** | Full `SKILL.md` body | When the skill is invoked |
+| **3. Resources** | [Supporting files](#add-supporting-resources) under `scripts/`, `references/`, and `assets/` | As needed after invocation, when the instructions reference them |
 
-The following diagram shows what appears in agent context at a given moment. At startup, level 1 metadata for every skill is in the system prompt. When a skill is activated, level 2 instructions join the context. Level 3 files stay on the backend until referenced.
+The following diagram shows what appears in agent context at a given moment. At startup, level 1 metadata for every skill is in the system prompt. When a skill is invoked, level 2 instructions join the context. Level 3 files stay on the backend until the agent reads them after invocation.
 
 <div className="skills-composition-diagram">
 
@@ -215,8 +215,8 @@ As the agent works through a task, it loads skill information in layers:
 In Deep Agents, `SkillsMiddleware` handles the first two levels, with the third level being handled by the LLM:
 
 1. **Discovery** (level 1): At agent start, the middleware scans the configured skill paths, parses each `SKILL.md` [frontmatter](#frontmatter-fields), and injects the [`name`](#frontmatter-fields) and [`description`](#frontmatter-fields) fields into the system prompt.
-2. **Read** (level 2): When the agent determines a skill matches the current task, it reads the full `SKILL.md` content via `read_file`.
-3. **Execute** (level 3): The agent follows the skill's instructions and reads any supporting files (scripts, references, assets) as needed.
+2. **Read** (level 2): When the agent invokes a skill, it reads the full `SKILL.md` content via `read_file`.
+3. **Execute** (level 3): After invocation, the agent follows the skill's instructions and reads supporting files (scripts, references, assets) only as the instructions require.
 
 ## When to use skills
 
@@ -230,6 +230,7 @@ Skills are especially helpful for codifying:
 
 - **Step-by-step workflows**: Workflows that span multiple steps, similar to recipes.
 - **Domain-specific knowledge**: Instruct the agent on how to use tools for the workflow. For example, include information on where to pull information from, including other reference information or scripts that the skill may have access to.
+- **Instructions with executable code**: Bundle procedures with scripts or modules the agent can run, so it follows tested logic instead of regenerating it from instructions each time. See [Execute code with skills](#execute-code-with-skills).
 - **Guidelines**: Provide the agent with supporting instructions about guardrails to adhere to. For example, following a specific format or style guide, or specifying to always run tests as part of the workflow.
 
 ## Write effective skills
