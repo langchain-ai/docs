@@ -224,6 +224,7 @@ LINK_MAPS: list[LinkMap] = [
             "BaseChatModel.with_structured_output": "langchain-core/language_models/chat_models/BaseChatModel/with_structured_output",
             "BaseChatModel.with_structured_output(include_raw)": "langchain-core/language_models/chat_models/BaseChatModel/with_structured_output",
             "BaseChatModel.with_retry": "langchain_core/language_models/#langchain_core.language_models.BaseChatModel.with_retry",
+            "ModelProfile": "langchain-core/language_models/model_profile/ModelProfile",
             # ??
             "ChatPromptTemplate": "langchain-core/prompts/chat/ChatPromptTemplate",
             "GenericFakeChatModel": "langchain-core/language_models/fake_chat_models/GenericFakeChatModel",
