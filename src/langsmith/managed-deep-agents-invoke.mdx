@@ -4,7 +4,9 @@ sidebarTitle: Run an agent
 description: Create threads and stream runs for a Managed Deep Agent.
 ---
 
-Running a Managed Deep Agent covers creating threads, starting runs, and streaming output. Deploy the agent first with the [CLI or REST API](/langsmith/managed-deep-agents-deploy), then invoke it with the REST API.
+Running a Managed Deep Agent involves creating a thread, starting a run, and streaming output. Deploy the agent first with the [CLI or REST API](/langsmith/managed-deep-agents-deploy), then invoke it with the REST API.
+
+For a shorter end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart).
 
 <Note>
 Managed Deep Agents is in **private preview**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
@@ -43,7 +45,7 @@ Requests require the `X-Api-Key` header:
 X-Api-Key: <LANGSMITH_API_KEY>
 ```
 
-Install an HTTP client for Python examples:
+Install an HTTP client for Python examples (run this inside an activated virtual environment):
 
 ```bash
 uv pip install httpx
@@ -75,7 +77,8 @@ The examples below reuse these variables:
   </Tab>
   <Tab title="cURL">
     ```bash
-    export AGENT_ID="<agent_id>"
+    # The cURL examples below reuse the shell variables exported above.
+    # No additional setup is required.
     ```
   </Tab>
 </Tabs>
@@ -139,6 +142,8 @@ Create a thread before running the agent. Threads preserve conversation and exec
 </Tabs>
 
 ### Stream a run from a thread
+
+The `options` object is optional and shown here with its defaults. `test_run` marks the thread as a test run that is filtered out of usage and analytics. `skip_memory_write_protection` controls whether the runtime pauses for human approval before the agent writes to long-term memory. By default, the runtime raises a human-in-the-loop interrupt before a memory write so you can approve or reject it; set the field to `true` to let memory writes proceed immediately, which is useful for headless runs. For the full field reference, see the [API reference](/langsmith/managed-deep-agents-api-overview).
 
 Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stream`. Include the `agent_id` in the request body and set `Accept: text/event-stream`:
 
@@ -206,6 +211,9 @@ Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stre
   </Tab>
   <Tab title="cURL">
     ```bash
+    # Set THREAD_ID to the id returned when you created the thread.
+    export THREAD_ID="<thread_id>"
+
     curl --request POST \
       --url "$DEEPAGENTS_BASE_URL/threads/$THREAD_ID/runs/stream" \
       --header "X-Api-Key: $LANGSMITH_API_KEY" \
@@ -227,14 +235,20 @@ Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stre
   </Tab>
 </Tabs>
 
-Use stream modes based on the experience you want to build:
+The endpoint streams Server-Sent Events (`text/event-stream`). With the `stream_mode` shown, you receive incremental `updates` and `messages-tuple` events as the agent works, then a final `values` event that contains the run's full state, including the agent's response. Set `stream_subgraphs` to `true` to also stream events from subgraphs, such as subagents. `user_timezone` is optional: set it to the caller's IANA timezone so the agent reasons about dates in local time. It defaults to the timezone configured on the agent, or `UTC`.
+
+The examples above print each raw event line as it arrives. Parse the `data:` payloads as JSON to drive a UI.
+
+Pick a stream mode:
 
 | Stream mode | Use for |
 | --- | --- |
 | `values` | Full state snapshots after steps. |
 | `updates` | Incremental state updates as the agent works. |
-| `messages-tuple` | Token-level message output for chat UIs. |
-
-`messages-tuple` mode emits a `messages` event. The payload is a `[chunk, metadata]` tuple.
+| `messages-tuple` | Token-level message output for chat UIs. Emits a `messages` event whose payload is a `[chunk, metadata]` tuple. |
 
 For route-level details, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api-overview).
+
+<Note>
+If a request fails, confirm that your API key is valid, that the workspace has [private preview access](https://www.langchain.com/langsmith-managed-deep-agents-waitlist), and that you are calling the supported region. For response status codes and error shapes, see the [API reference](/langsmith/managed-deep-agents-api-overview).
+</Note>
