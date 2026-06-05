@@ -4,15 +4,25 @@ sidebarTitle: Deploy an agent
 description: Create or update a Managed Deep Agent with the CLI or REST API.
 ---
 
-Deploying a Managed Deep Agent creates or updates the hosted agent resource and syncs the managed file tree that contains instructions, skills, subagents, and tool configuration. Use the CLI for normal project-based workflows. Use the REST API when you need a custom client, automation that cannot shell out to the CLI, or direct control over request payloads.
+LangChain hosts Managed Deep Agents, so you can deploy an agent without running your own infrastructure. Deploying creates or updates the hosted agent resource and syncs the managed file tree that contains instructions, skills, subagents, and tool configuration. A deploy also creates a separate LangSmith tracing project and a [Context Hub](/langsmith/use-the-context-hub) repo for the file tree, but it does not create a LangSmith Deployment.
+
+Use the CLI for project-based workflows. Use the REST API when you need a custom client, automation that cannot invoke the CLI directly, or direct control over request payloads.
 
 <Note>
-Managed Deep Agents is in **private preview**, available on LangSmith Cloud in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
+Managed Deep Agents is in **private preview**, available on LangSmith Cloud in the US region only. If you do not have access yet, [join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request it before you start.
 </Note>
 
-For a shorter end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart). For all commands and project file rules, see the [CLI reference](/langsmith/managed-deep-agents-cli).
+For a faster path, see the [quickstart](/langsmith/managed-deep-agents-quickstart). For all commands and project file rules, see the [CLI reference](/langsmith/managed-deep-agents-cli).
 
-## CLI: deploy from project files
+## Prerequisites
+
+Before you deploy, make sure you have:
+
+- Managed Deep Agents [private preview access](https://www.langchain.com/langsmith-managed-deep-agents-waitlist).
+- A [LangSmith API key](/langsmith/create-account-api-key) for a workspace with preview access, exported as `LANGSMITH_API_KEY`.
+- The `deepagents-cli` installed. For install and version requirements, see the [quickstart](/langsmith/managed-deep-agents-quickstart#prerequisites).
+
+## Deploy from project files (CLI)
 
 The CLI scaffolds a local project, validates files, checks referenced MCP servers, and deploys the project to Managed Deep Agents.
 
@@ -32,8 +42,8 @@ The command scaffolds:
 | `agent.json` | Configures the managed agent name, model, backend, and optional target `agent_id`. |
 | `AGENTS.md` | Defines the agent instructions. |
 | `tools.json` | Starts empty. Add MCP-backed tools after registering an MCP server. |
-| `skills/example-skill/` | Contains an example skill you can edit, replace, or delete. |
-| `subagents/researcher/` | Contains an example subagent you can edit, replace, or delete. |
+| `skills/example-skill/` | Contains an example skill you can edit or remove. |
+| `subagents/researcher/` | Contains an example subagent you can edit or remove. |
 | `.gitignore` | Excludes local environment files. |
 
 You can also add:
@@ -56,6 +66,10 @@ The generated `agent.json` uses the readable local CLI shape:
 }
 ```
 
+<Note>
+Model identifiers use the `{provider}:{model_id}` form. For the providers and models you can use, see [Supported models](/langsmith/managed-deep-agents-overview#supported-models).
+</Note>
+
 Edit `AGENTS.md` to define the agent's behavior. The full project layout that deploy syncs to the managed file tree is:
 
 ```text
@@ -69,7 +83,7 @@ my-agent/
   subagents/<name>/tools.json      # Optional: subagent-scoped MCP tools
 ```
 
-`deepagents init` scaffolds an empty `tools.json`, one example skill, and one example subagent so the first deploy succeeds without first registering an MCP server. Edit or remove the examples to fit your agent. Deploy reads every file in the project and syncs the tree to the Context Hub agent repo. For the complete field reference, see the [CLI reference](/langsmith/managed-deep-agents-cli#project-file-reference).
+`deepagents init` scaffolds an empty `tools.json`, one example skill, and one example subagent so the initial deploy succeeds before you register an MCP server. Edit or remove the examples to fit your agent. Deploy reads every file in the project and syncs the tree to the Context Hub agent repo. For the complete field reference, see the [CLI reference](/langsmith/managed-deep-agents-cli#project-file-reference).
 
 ### Add MCP tools
 
@@ -128,11 +142,11 @@ The subagent `agent.json` supports an optional `description` and `model`:
 }
 ```
 
-The legacy `model_id` key still works in local subagent files, but use `model` for new projects. The REST API subagent schema still uses `model_id`.
+Use `model` for new projects. For compatibility, the legacy `model_id` key still works in local subagent files, and the REST API subagent schema still uses `model_id`.
 
 Write the subagent instructions in `subagents/researcher/AGENTS.md`:
 
-```mdx subagents/researcher/AGENTS.md
+```md subagents/researcher/AGENTS.md
 # Researcher
 
 Search for sources, take notes, and return concise findings with citations.
@@ -142,7 +156,7 @@ To give a subagent its own MCP tools, add `subagents/researcher/tools.json` with
 
 ### Review the complete project
 
-Tools and subagents are not configured inside `agent.json`. `agent.json` holds only agent metadata, model, and backend. Tools live in `tools.json`, and subagents live in the `subagents/` directory. A project that uses all three looks like this:
+Tools and subagents live outside `agent.json`: tools in `tools.json`, subagents in the `subagents/` directory. A project that uses all three looks like this:
 
 ```text
 research-assistant/
@@ -171,7 +185,7 @@ research-assistant/
 
 `AGENTS.md` defines the main agent instructions:
 
-```mdx AGENTS.md
+```md AGENTS.md
 # Research assistant
 
 You are a research assistant. Use the available tools to search for sources, and
@@ -204,7 +218,7 @@ citations.
 
 `subagents/researcher/AGENTS.md` defines the subagent instructions:
 
-```mdx subagents/researcher/AGENTS.md
+```md subagents/researcher/AGENTS.md
 # Researcher
 
 Search for sources, take notes, and return concise findings with citations.
@@ -271,7 +285,7 @@ Deploy the local project:
 deepagents deploy
 ```
 
-The first deploy creates a Managed Deep Agent through `/v1/deepagents/agents`. Later deploys update the same remote agent by using user-local deploy state, not hidden state committed to the repository.
+The first deploy creates a Managed Deep Agent through `/v1/deepagents/agents`. Later deploys update the same remote agent using local deploy state.
 
 On success, the CLI prints the agent name, ID, short revision, the agent URL, and a post-deploy MCP health check:
 
@@ -283,7 +297,7 @@ Deployed: my-agent
   health:   {'agent_id': '...', 'mcp_check': {'ok': True, 'servers': [{'url': 'https://example.com/mcp', 'ok': True}]}, ...}
 ```
 
-A `mcp_check.ok` value of `True` confirms the agent can reach the MCP servers its tools reference. Each deploy creates a new agent revision, even when no managed files changed, because deploy always sends a metadata update. The managed file tree itself only changes when its contents do.
+The `health` output above is abbreviated; it includes the full `mcp_check` result for every referenced server. A `mcp_check.ok` value of `True` confirms the agent can reach the MCP servers its tools reference. Each deploy creates a new agent revision, even when no managed files changed, because deploy always sends a metadata update. The managed file tree itself only changes when its contents do.
 
 Creating a Managed Deep Agent creates:
 
@@ -314,7 +328,11 @@ Then deploy:
 deepagents deploy
 ```
 
-On first use, the CLI asks you to confirm before updating that remote agent. To skip this, pass `--yes`:
+<Warning>
+Deploying with `agent_id` set updates an existing shared agent in place.
+</Warning>
+
+On first use, the CLI asks you to confirm before updating that remote agent. To skip the confirmation, pass `--yes`:
 
 ```bash
 deepagents deploy --yes
@@ -326,7 +344,17 @@ Use `--dry-run` to inspect the agent payload and managed file tree before deploy
 deepagents deploy --dry-run
 ```
 
-## API: create or update an agent
+### Troubleshoot a deploy
+
+| Symptom | Cause and fix |
+| --- | --- |
+| Deploy fails with an unregistered MCP server URL | A tool in `tools.json` references a server that is not registered for the workspace. [Register the server](/langsmith/managed-deep-agents-mcp), then deploy again. |
+| `mcp_check.ok` is `False` in the deploy output | The agent cannot reach one or more referenced MCP servers. Find the failing URL under `servers`, confirm the server is running and reachable, then deploy again. |
+| Deploy prompts to confirm an update you did not expect | `agent.json` declares an `agent_id` that targets an existing remote agent. Confirm the target before continuing, or remove `agent_id` to create a new agent. |
+
+Run `deepagents deploy --dry-run` to inspect the assembled payload and managed file tree before deploying.
+
+## Create or update an agent (REST API)
 
 Create and update payloads can use the same top-level `model` field that `deepagents init` writes to `agent.json`. Use the same `backend` object for sandbox configuration.
 
