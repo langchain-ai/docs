@@ -207,56 +207,94 @@ const agent = createDeepAgent({
 
 ## Streaming
 
-When streaming tracing information agents' names are available as `lc_agent_name` in metadata.
-When reviewing tracing information, you can use this metadata to differentiate which agent the data came from.
+Deep Agents support streaming updates from both the coordinator and every delegated subagent. Use `stream_events` (or `streamEvents` in JS) with the v3 API to get typed projections—separate iterators for subagents, messages, tool calls, and values—so you can consume each independently.
 
-The following example creates a deep agent with the name `main-agent` and a subagent with the name `research-agent`:
+<Tip>
+For complete streaming documentation including LLM token streaming, tool-call streaming, custom update events, and concurrent consumption, see [Event streaming](/oss/deepagents/event-streaming).
+</Tip>
 
+### Stream subagent progress
+
+The simplest pattern is to iterate `stream.subagents` to track each delegated task as it starts, runs, and completes. Each subagent handle exposes `.name`, `.messages`, `.tool_calls`, and `.output`.
+
+:::python
 ```python
-import os
-from typing import Literal
-from tavily import TavilyClient
 from deepagents import create_deep_agent
-
-tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
-
-def internet_search(
-    query: str,
-    max_results: int = 5,
-    topic: Literal["general", "news", "finance"] = "general",
-    include_raw_content: bool = False,
-):
-    """Run a web search"""
-    return tavily_client.search(
-        query,
-        max_results=max_results,
-        include_raw_content=include_raw_content,
-        topic=topic,
-    )
-
-research_subagent = {
-    "name": "research-agent",
-    "description": "Used to research more in depth questions",
-    "system_prompt": "You are a great researcher",
-    "tools": [internet_search],
-    "model": "google_genai:gemini-3.5-flash",  # Optional override, defaults to main agent model
-}
-subagents = [research_subagent]
 
 agent = create_deep_agent(
     model="google_genai:gemini-3.5-flash",
-    subagents=subagents,
-    name="main-agent"
+    system_prompt="You are a project coordinator. Delegate research tasks to your subagent.",
+    subagents=[
+        {
+            "name": "research-agent",
+            "description": "Used to research more in depth questions",
+            "system_prompt": "You are a great researcher.",
+        },
+    ],
+    name="main-agent",
 )
-```
 
-As you prompt your deep agent, all agent runs executed by a subagent or deep agent will have the agent name in their metadata.
-In this case the subagent with the name `"research-agent"`, will have `{'lc_agent_name': 'research-agent'}` in any associated agent run metadata:
+stream = agent.stream_events(
+    {"messages": [{"role": "user", "content": "Research quantum computing advances"}]},
+    version="v3",
+)
+
+# Iterate top-level coordinator messages
+for message in stream.messages:
+    print("[coordinator]", message.text)
+
+# Iterate each delegated subagent task
+for subagent in stream.subagents:
+    print(f"[{subagent.name}] started")
+    for message in subagent.messages:
+        print(f"[{subagent.name}]", message.text)
+    print(f"[{subagent.name}] status: {subagent.status}")
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+
+const agent = createDeepAgent({
+  systemPrompt: "You are a project coordinator. Delegate research tasks to your subagent.",
+  subagents: [
+    {
+      name: "research-agent",
+      description: "Used to research more in depth questions",
+      systemPrompt: "You are a great researcher.",
+    },
+  ],
+});
+
+const stream = await agent.streamEvents(
+  { messages: [{ role: "user", content: "Research quantum computing advances" }] },
+  { version: "v3" },
+);
+
+// Iterate top-level coordinator messages
+for await (const message of stream.messages) {
+  console.log("[coordinator]", await message.text);
+}
+
+// Iterate each delegated subagent task
+for await (const subagent of stream.subagents) {
+  console.log(`[${subagent.name}] started`);
+  for await (const message of subagent.messages) {
+    console.log(`[${subagent.name}]`, await message.text);
+  }
+}
+```
+:::
+
+### LangSmith tracing
+
+As your deep agent runs, all runs executed by a subagent or the coordinator will have the agent name in their metadata under the `lc_agent_name` key—for example, `{'lc_agent_name': 'research-agent'}`. This lets you identify and filter runs by subagent in LangSmith.
 
 ![LangSmith Example trace showing the metadata](/oss/images/deepagents/deepagents-langsmith.png)
 
 <Tip>
-Open the run in [LangSmith](https://smith.langchain.com) to compare the supervisor trace with each subagent run. Follow the [observability quickstart](/langsmith/observability-quickstart) to get set up. We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
+Open the run in [LangSmith](https://smith.langchain.com) to compare the coordinator trace with each subagent run. Follow the [observability quickstart](/langsmith/observability-quickstart) to get set up. We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
 </Tip>
 
 ## Filter by subagent in LangSmith
