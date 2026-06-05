@@ -5,6 +5,8 @@ description: Learn how to use subagents to delegate work and keep context clean
 
 import SubagentBasicPy from '/snippets/code-samples/subagent-basic-py.mdx';
 import SubagentBasicJs from '/snippets/code-samples/subagent-basic-js.mdx';
+import SubagentStreamProgressPy from '/snippets/code-samples/subagent-stream-progress-py.mdx';
+import SubagentStreamProgressJs from '/snippets/code-samples/subagent-stream-progress-js.mdx';
 
 A deep agent can create subagents to delegate work. You can specify custom subagents in the `subagents` parameter. Subagents are useful for [context quarantine](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html#context-quarantine) (keeping the main agent's context clean) and for providing specialized instructions.
 
@@ -207,84 +209,26 @@ const agent = createDeepAgent({
 
 ## Streaming
 
-Deep Agents support streaming updates from both the coordinator and every delegated subagent. Use `stream_events` (or `streamEvents` in JS) with the v3 API to get typed projections—separate iterators for subagents, messages, tool calls, and values—so you can consume each independently.
-
-<Tip>
-For complete streaming documentation including LLM token streaming, tool-call streaming, custom update events, and concurrent consumption, see [Event streaming](/oss/deepagents/event-streaming).
-</Tip>
+Deep Agents support streaming updates from both the coordinator and every delegated subagent.
+:::python
+Use [`stream_events`](/oss/deepagents/event-streaming) to get typed projections—separate iterators for subagents, messages, tool calls, and values—so you can consume each independently.
+::::::js
+Use [`streamEvents`](/oss/deepagents/event-streaming) to get typed projections—separate iterators for subagents, messages, tool calls, and values—so you can consume each independently.
 
 ### Stream subagent progress
 
 The simplest pattern is to iterate `stream.subagents` to track each delegated task as it starts, runs, and completes. Each subagent handle exposes `.name`, `.messages`, `.tool_calls`, and `.output`.
 
 :::python
-```python
-from deepagents import create_deep_agent
 
-agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    system_prompt="You are a project coordinator. Delegate research tasks to your subagent.",
-    subagents=[
-        {
-            "name": "research-agent",
-            "description": "Used to research more in depth questions",
-            "system_prompt": "You are a great researcher.",
-        },
-    ],
-    name="main-agent",
-)
+<SubagentStreamProgressPy />
 
-stream = agent.stream_events(
-    {"messages": [{"role": "user", "content": "Research quantum computing advances"}]},
-    version="v3",
-)
-
-# Iterate top-level coordinator messages
-for message in stream.messages:
-    print("[coordinator]", message.text)
-
-# Iterate each delegated subagent task
-for subagent in stream.subagents:
-    print(f"[{subagent.name}] started")
-    for message in subagent.messages:
-        print(f"[{subagent.name}]", message.text)
-    print(f"[{subagent.name}] status: {subagent.status}")
-```
 :::
 
 :::js
-```typescript
-import { createDeepAgent } from "deepagents";
 
-const agent = createDeepAgent({
-  systemPrompt: "You are a project coordinator. Delegate research tasks to your subagent.",
-  subagents: [
-    {
-      name: "research-agent",
-      description: "Used to research more in depth questions",
-      systemPrompt: "You are a great researcher.",
-    },
-  ],
-});
+<SubagentStreamProgressJs />
 
-const stream = await agent.streamEvents(
-  { messages: [{ role: "user", content: "Research quantum computing advances" }] },
-  { version: "v3" },
-);
-
-// Iterate top-level coordinator messages
-for await (const message of stream.messages) {
-  console.log("[coordinator]", await message.text);
-}
-
-// Iterate each delegated subagent task
-for await (const subagent of stream.subagents) {
-  console.log(`[${subagent.name}] started`);
-  for await (const message of subagent.messages) {
-    console.log(`[${subagent.name}]`, await message.text);
-  }
-}
-```
 :::
 
 ### LangSmith tracing
@@ -304,7 +248,7 @@ Because each subagent's `name` is written to the `lc_agent_name` metadata key on
 ### Filter in the LangSmith UI
 
 1. Open your tracing project in [LangSmith](https://smith.langchain.com).
-2. Switch the view to **Runs** (instead of Traces or Threads) to see individual spans.
+2. Switch the view to **Runs** on the Tracing project page to see individual spans.
 3. Click **Add filter** and select **Metadata**.
 4. Set the **Key** to `lc_agent_name` and the **Value** to the subagent name (for example, `research-agent`).
 
