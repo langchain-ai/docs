@@ -536,6 +536,9 @@ LINK_MAPS: list[LinkMap] = [
             "BaseChatModel.bindTools": "classes/_langchain_core.language_models_chat_models.BaseChatModel.html#bindTools",
             "BaseChatModel.with_structured_output": "classes/_langchain_core.language_models_chat_models.BaseChatModel.html#withStructuredOutput",
             "BaseChatModel.with_structured_output(include_raw)": "classes/_langchain_core.language_models_chat_models.BaseChatModel.html#withStructuredOutput",
+            # Deep Agents Code is Python-only; point its JS-scope build at the
+            # Python reference since there is no JS ModelProfile.
+            "ModelProfile": "https://reference.langchain.com/python/langchain-core/language_models/model_profile/ModelProfile",
             "BaseTool": "classes/_langchain_core.tools.StructuredTool.html",
             "ContentBlock": "langchain-core/messages/ContentBlock",
             "ChatOpenAI": "langchain-openai/ChatOpenAI",
