@@ -1,0 +1,125 @@
+---
+title: Best practices for structuring traces
+sidebarTitle: Best practices
+description: Structure LangSmith traces for searchability, attribution, evaluation, and cost analysis.
+---
+
+A _trace_ is the primary artifact for a single operation in an LLM application. When an application behaves unexpectedly, makes an incorrect tool call, runs up unexpected cost, or regresses on latency, the trace is the record that tells you which run produced the failure, what inputs it saw, which model and prompt version were in use, and how the rest of the pipeline reacted.
+
+Without deliberate structure, a trace will not be helpful as a debugging tool. For example:
+
+- You won't be able to attribute regressions to a specific deploy.
+- Agent loops collapse into a flat sequence of identical spans with no run types or parent-child structure for filtering or search.
+- Cost attribution captures only top-level input and output tokens, missing cache and reasoning token classes.
+
+The best practices on this page are framework agnostic and apply whether you instrument with the [LangSmith SDK](/langsmith/reference), a [native integration](/langsmith/integrations), or [OpenTelemetry](/langsmith/trace-with-opentelemetry).
+
+<Tip>
+For details on LangSmith data models (projects, traces, runs, threads, feedback), refer to [Observability concepts](/langsmith/observability-concepts).
+</Tip>
+
+![A well-structured agent trace in LangSmith, with the run tree, run types, and per-run metadata visible](/images/langsmith/structured-trace-example.png)
+
+## Standardize on the LangSmith schema
+
+LangSmith defines a set of `ls_*` metadata keys that the UI and pricing pipeline read directly. Use them as the contract between your application and observability data, even if the transport is OpenTelemetry.
+
+The minimum required schema for an LLM run:
+
+| Key | Purpose |
+|-----|---------|
+| `ls_provider` | Provider name (for example, `openai`, `anthropic`, `bedrock`). Required for cost tracking. |
+| `ls_model_name` | Full model identifier. Required for cost tracking. Use full IDs, not aliases. |
+| `ls_temperature`, `ls_max_tokens`, `ls_stop`, `ls_invocation_params` | Configuration captured for experiment comparison and debugging. |
+| `ls_message_format` | Set on agent or chain runs to opt into the [Messages view](/langsmith/view-traces#messages-view). |
+| `ls_agent_type` | `"root"`, `"subagent"`, or `"middleware"`. Controls how custom agents render in the Messages view. |
+
+OpenTelemetry users: set `LANGSMITH_OTEL_ENABLED=true` to forward LangChain or LangGraph telemetry, or point any OTel SDK at the OTLP endpoint. LangSmith maps OTel spans 1:1 to runs and recognizes the same `ls_*` keys on span attributes. See [Metadata parameters](/langsmith/ls-metadata-parameters) for the full `ls_*` reference, and [Messages view trace format](/langsmith/messages-view-trace-format) for the rules that govern `ls_message_format` and `ls_agent_type`.
+
+## Create one run per meaningful operation
+
+A run in LangSmith is the equivalent of a span: a discrete unit of work with inputs, outputs, timing, and metadata. Aim for one run per operation a reviewer would want to inspect: a model call, a retrieval, a tool invocation, a guardrail check, an output parse. A single run wrapping an entire agent loop hides everything, and a run per private helper inflates traces past the [maximum runs per trace](/langsmith/observability-concepts#traces) limit.
+
+For supported frameworks, the [LangChain](/langsmith/trace-with-langchain), [LangGraph](/langsmith/trace-with-langgraph), and provider integrations create runs at the right boundaries automatically. For custom code, use [`@traceable`](/langsmith/annotate-code) to mark function boundaries, and use the lower-level [`trace` context manager or `RunTree` API](/langsmith/annotate-code) only when you need explicit control. Nesting happens through execution context, so child runs attach to their parent without manual wiring. For multi-process or async-handoff cases, see [Distributed tracing](/langsmith/distributed-tracing).
+
+## Attach prompt versions to LLM runs
+
+Without a prompt version on every LLM run, you cannot attribute regressions to a specific rollout. Treat the prompt identifier as required metadata on any run that calls a model.
+
+If prompts live in [Prompt Hub](/langsmith/manage-prompts), pin to a [commit hash or tag](/langsmith/prompt-commit) and pass it as metadata (for example, `prompt_commit: "a1b2c3d"` or `prompt_tag: "production"`). If prompts live in your repository, record the file path plus a content hash or release tag. Either way, the value must change every time the prompt changes, which is what lets you slice metrics and feedback before and after a deploy. Pair this with [environment promotion](/langsmith/manage-prompts) so the same metadata key reveals which environment a trace came from.
+
+## Combine head-based sampling with conditional tracing
+
+LangSmith uses head-based sampling rather than tail-based sampling. The trade-off is intentional: tail sampling requires holding spans in memory until a trace completes, which conflicts with the streaming, long-running nature of agent workloads. Use these two controls together:
+
+- **Probabilistic volume control.** Set `LANGSMITH_TRACING_SAMPLING_RATE` between `0` and `1`, or pass `tracing_sampling_rate` per `Client` instance. See [Set a sampling rate for traces](/langsmith/sample-traces).
+- **Deterministic rules.** Use [Conditional tracing](/langsmith/conditional-tracing) to guarantee capture or suppression based on business logic: trace every paid-tier request, never trace zero-retention tenants, route sensitive workloads to a separate project.
+
+For long-tail failure analysis (the workload tail sampling typically solves), capture everything for a target population using conditional tracing and rely on [filters](/langsmith/filter-traces-in-application), [alerts](/langsmith/alerts), and [online evaluators](/langsmith/online-evaluations-llm-as-judge) to surface the failure modes after the fact.
+
+## Redact sensitive data before ingestion
+
+Redaction belongs as close to the source as possible. LangSmith supports redaction at four layers, and most teams need at least the first.
+
+| Layer | When to use |
+|-------|-------------|
+| **Client-side masking** | Default. Use [`hide_inputs` and `hide_outputs`](/langsmith/mask-inputs-outputs) on the `Client` (or per run) to strip or rewrite payloads before they leave the application process. |
+| **LLM Gateway redaction** (Private beta) | LangSmith-native option. Configure [redaction policies](/langsmith/llm-gateway-redaction) on the LangSmith [LLM Gateway](/langsmith/llm-gateway) to scan outbound requests for PII and secrets before they reach the provider. Redaction also applies to the LangSmith trace, so sensitive data is removed from observability data in the same pass. |
+| **OTel Gateway redaction** | For OTel-instrumented services, run an [OpenTelemetry collector with a transform processor](/langsmith/otel-gateway-trace-redaction) so redaction is centralized and language-agnostic. |
+| **External anonymizers** | For structured PII (names, emails, addresses), pipe through Presidio, AWS Comprehend, or similar before handing payloads to the SDK. |
+
+Whichever layer you choose, replace sensitive content with a placeholder such as `"<redacted>"` rather than dropping the field. Preserving shape keeps the [Messages view](/langsmith/view-traces), [evaluators](/langsmith/evaluation-types#implement-evaluators), and downstream consumers working. Document which fields are redacted alongside the schema convention.
+
+## Attach evaluation scores to runs
+
+Attach feedback to the specific run that produced an output, not just the root trace. Run-level scoring lets you trace a failing score back to the exact step that caused it, instead of knowing only that something in a multi-step agent loop went wrong.
+
+LangSmith provides four ways to attach feedback, all writing to the same [feedback data format](/langsmith/feedback-data-format):
+
+- **Online evaluators**: LLM-as-judge or code-based evaluators that score runs as they ingest. See [Online evaluations](/langsmith/online-evaluations-llm-as-judge).
+- **Annotation queues**: Human reviewers score runs through a managed queue. See [Annotation queues](/langsmith/annotation-queues).
+- **Inline feedback**: The application sends a score directly using the SDK, useful for capturing implicit signals such as thumbs-up or task completion.
+- **Offline experiments**: Run [evaluations on datasets](/langsmith/evaluation-quickstart) and attach scores to the resulting runs.
+
+Pick stable feedback keys (for example, `correctness`, `helpfulness`, `pii_leak`) and reuse them across evaluators so dashboards and [alerts](/langsmith/alerts) stay coherent over time.
+
+## Use stable run names and run types
+
+Run names are the join key for cross-trace aggregation. If a name drifts every release, every dashboard built on top of it breaks. Two rules keep names stable:
+
+- **Set `name` explicitly** on `@traceable`, `trace`, or `RunTree`. Default names derived from function names change whenever code refactors.
+- **Set `run_type`** to one of LangSmith's recognized values (`llm`, `tool`, `chain`, `retriever`, `prompt`, `parser`, `embedding`). Run type controls icon, [Messages view](/langsmith/view-traces#messages-view) rendering, and [cost-tracking](/langsmith/cost-tracking) eligibility for LLM runs.
+
+For agent steps, treat the run name as a public API: name it after the operation, not the implementation (`retrieve_context` rather than `pinecone_query_v2`).
+
+## Track cost as a first-class attribute
+
+[Cost tracking](/langsmith/cost-tracking) in LangSmith is driven by three pieces of data on each LLM run: `ls_provider`, `ls_model_name`, and [token usage](/langsmith/log-llm-trace#provide-token-and-cost-information). Native integrations and the OpenAI and Anthropic wrappers set all three automatically. Custom or self-hosted models need to provide them explicitly.
+
+For accurate attribution on modern models, capture all token classes, not just input and output:
+
+- **Reasoning tokens** (Anthropic extended thinking, OpenAI o-series): include in the output token count or as a separate `usage_metadata` field so reasoning-heavy workloads are not under-attributed.
+- **Cache read and cache creation tokens**: track separately so cache hits are visible in cost dashboards.
+- **Embedding and tool runs**: enable [arbitrary cost tracking](/langsmith/cost-tracking#other-runs-send-costs) if you want non-LLM runs to contribute to spend totals.
+
+If a model is not in the [pricing database](https://smith.langchain.com/settings/workspaces/models), configure custom pricing per workspace rather than computing costs upstream.
+
+## Preserve tree structure for agent runs
+
+A flat list of spans is unreadable for agent workloads with tool loops and subagents. LangSmith preserves and renders tree structure when the trace carries the right metadata.
+
+- **LangGraph**: Tree structure is automatic. Each node becomes a run, and metadata like `graph_id` and `langgraph_node` populate without instrumentation. See [Trace with LangGraph](/langsmith/trace-with-langgraph).
+- **Messages view**: Set `ls_message_format` on agent or chain runs to render them as a chat conversation rather than raw JSON. Set `ls_agent_type` to `"root"`, `"subagent"`, or `"middleware"` to control how nested agents appear. See [Messages view integrations](/langsmith/messages-view-integrations) and [Trace format](/langsmith/messages-view-trace-format).
+- **Threads**: Group multi-turn conversations across separate traces by passing a `session_id`, `thread_id`, or `conversation_id` metadata key with a stable value. See [Threads](/langsmith/threads).
+- **Custom agents**: For instrumentation outside the supported integrations, use `ls_agent_type` to hide middleware runs and route subagent messages to a side thread.
+
+## Related
+
+- [Observability concepts](/langsmith/observability-concepts): Projects, traces, runs, threads, and feedback.
+- [Metadata parameters reference](/langsmith/ls-metadata-parameters): Complete `ls_*` schema.
+- [Annotate code](/langsmith/annotate-code): Instrumentation primitives (`@traceable`, `trace`, `RunTree`).
+- [Cost tracking](/langsmith/cost-tracking): Cost attribution across token classes.
+- [Sample traces](/langsmith/sample-traces) and [Conditional tracing](/langsmith/conditional-tracing): Volume and rule-based control.
+- [Mask inputs and outputs](/langsmith/mask-inputs-outputs): Client-side redaction.
+- [Messages view integrations](/langsmith/messages-view-integrations): Agent trace rendering.
+- [Threads](/langsmith/threads): Multi-turn conversation grouping.
