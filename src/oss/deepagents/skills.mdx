@@ -10,9 +10,9 @@ import SkillsSandboxJs from '/snippets/code-samples/skills-sandbox-js.mdx';
 import BackendReadonlySkillsPy from '/snippets/code-samples/backend-readonly-skills-py.mdx';
 import BackendReadonlySkillsJs from '/snippets/code-samples/backend-readonly-skills-js.mdx';
 
-As agents take on more complex tasks, the context they need grows with them. Loading all instructions into the system prompt wastes tokens on information irrelevant to the current task, and providing the same guidance manually across sessions does not scale.
+Skills package domain expertise, such as workflows, best practices, scripts, reference docs, and templates, into reusable directories. The agent gets a summary of the contents on startup and discovers and reads the contained files only when relevant.
 
-Skills solve this by packaging domain expertise, such as workflows, best practices, scripts, reference docs, and templates, into reusable directories. The agent gets a summary of the contents on startup and discovers and reads the contained files only when relevant.
+You can think of skills as the equivalent of wiki pages that you write for yourself or others to remember how to accomplish a task. Just like wiki pages, skills make instructions for tasks easily shareable whenever needed, without the need to re-explain all the steps and context for the task.
 
 :::js
 <Note>
@@ -20,21 +20,46 @@ Skills require `deepagents>=1.7.0`.
 </Note>
 :::
 
-Deep agent skills follow the [Agent Skills specification](https://agentskills.io/specification).
-
 <Tip>
 For ready-to-use skills that improve your agent's performance on LangChain ecosystem tasks, see the [LangChain Skills](https://github.com/langchain-ai/langchain-skills) repository.
 </Tip>
 
-## What are skills
+## Usage
 
-Each skill is a directory containing a `SKILL.md` file: a markdown file with YAML frontmatter (`name` and `description`) followed by instructions the agent follows when the skill is activated. A skill directory can also include supporting files such as scripts, reference docs, and templates.
+<Steps>
+<Step title="Create a top-level skills directory">
 
-```plaintext
-skills/
-└── langgraph-docs/
-    └── SKILL.md
-```
+Create a directory to hold all skills for your project, such as `skills/` under your backend root.
+
+</Step>
+<Step title="Create a subdirectory inside your skills directory for your skill">
+
+Each skill is a directory containing a `SKILL.md` file: a markdown file with YAML frontmatter (`name` and `description`) followed by instructions the agent follows when the skill is activated. A skill directory can also optionally include supporting files such as scripts, reference docs, and templates.
+
+<Tree>
+  <Tree.Folder name="skills" defaultOpen>
+    <Tree.Folder name="langgraph-docs" defaultOpen>
+      <Tree.File name="SKILL.md" />
+      <Tree.Folder name="scripts">
+        <Tree.File name="fetch_docs.py" />
+      </Tree.Folder>
+      <Tree.Folder name="references">
+        <Tree.File name="api-patterns.md" />
+        <Tree.File name="style-guide.md" />
+      </Tree.Folder>
+      <Tree.Folder name="assets">
+        <Tree.File name="report-template.md" />
+        <Tree.File name="schema.json" />
+      </Tree.Folder>
+    </Tree.Folder>
+    <Tree.File name="additional-files.md" />
+  </Tree.Folder>
+</Tree>
+
+Deep agent skills follow the [Agent Skills specification](https://agentskills.io/specification).
+
+</Step>
+<Step title="Add a `SKILL.md` file with YAML frontmatter and instructions.">
 
 The `SKILL.md` starts with YAML frontmatter followed by markdown instructions:
 
@@ -74,10 +99,103 @@ Use the fetch_url tool to read the selected documentation URLs, then answer the 
 ````
 
 <Note>
-    Reference any supporting files in your `SKILL.md` with a description of what each file contains and when to use it. The agent discovers these files through the references in the skill instructions.
+    Reference any [supporting resources](#add-supporting-resources) in your `SKILL.md` with a description of what each file contains and when to use it. The agent discovers these files through the references in the skill instructions.
 </Note>
 
+</Step>
+<Step title="Pass the skills path when creating your agent">
+
+Pass the path to your top-level skills directory in the `skills` argument when creating your agent:
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends.filesystem import FilesystemBackend
+
+backend = FilesystemBackend(root_dir="./my-project")
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    backend=backend,
+    skills=["./my-project/skills/"],
+)
+```
+:::
+
+:::js
+```typescript
+import { createDeepAgent, FilesystemBackend } from "deepagents";
+
+const backend = new FilesystemBackend({ rootDir: process.cwd() });
+
+const agent = await createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  backend,
+  skills: ["/skills/"],
+});
+```
+:::
+
+This example uses `FilesystemBackend` to load skills from disk. For other storage options, including loading skills from remote sources, see [Backends and remote skill loading](#backends-and-remote-skill-loading).
+
+<ParamField body="skills" type="list[str]" optional>
+    List of skill source paths.
+
+    Paths must be specified using forward slashes and are relative to the backend's root.
+
+    - If omitted, no skills are loaded.
+    - When using `StateBackend` (default), provide skill files with `invoke(files={...})`. Use `create_file_data()` from `deepagents.backends.utils` to format file contents; raw strings are not supported.
+    - With `FilesystemBackend`, skills are loaded from disk relative to the backend's `root_dir`.
+
+    Later sources override earlier ones for skills with the same name (last one wins).
+
+    <Note>
+    When multiple skill sources contain a skill with the same name, the skill from the source listed later in the `skills` array takes precedence (last one wins). This lets you layer skills from different origins, such as base skills overridden by project-specific versions.
+    </Note>
+
+</ParamField>
+
+</Step>
+<Step title="Invoke the agent">
+
+Send a task to the agent with `invoke()`. At startup, the agent loads each skill's name and description into the system prompt. When your task matches a skill's description, the agent reads that skill's `SKILL.md` and follows its instructions.
+
+:::python
+```python
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What is LangGraph?"}]},
+    config={"configurable": {"thread_id": "1"}},
+)
+```
+:::
+
+:::js
+```typescript
+const result = await agent.invoke(
+  { messages: [{ role: "user", content: "What is LangGraph?" }] },
+  { configurable: { thread_id: "1" } },
+);
+```
+:::
+
+</Step>
+</Steps>
+
+## How skills work
+
+As agents take on more complex tasks, the context they need grows with them. Loading all instructions into the system prompt wastes tokens on information irrelevant to the current task, and providing the same guidance manually across sessions does not scale.
+
 Skills use *progressive disclosure*: the agent loads skill information in layers, pulling in more detail only when the task calls for it.
+
+The following diagram below shows how skill components map into the agent context. At startup, the system prompt includes a description for every skill. When the agent activates a skill, it reads that skill's full body into context. Supporting files stay on disk until the skill instructions reference them.
+
+<div className="skills-composition-diagram">
+
+![How skill components map into agent context at startup and activation](/oss/images/deepagents/skills-composition.svg)
+
+</div>
+
+As the agent works through a task, it loads skill information in layers:
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#40668D', 'primaryColor': '#E5F4FF', 'primaryTextColor': '#030710', 'primaryBorderColor': '#006DDD'}}}%%
@@ -119,66 +237,19 @@ The [Agent Skills specification](https://agentskills.io/specification) recommend
     Write clear, specific descriptions in your `SKILL.md` frontmatter. The agent decides whether to activate a skill based on the description alone. Include specific keywords and use cases so the agent can match accurately.
 </Tip>
 
-## Usage
+## When to use skills
 
-Create a top level skills directory. Then create a directory inside that with a `SKILL.md` file for your first skill. Finally, pass the path to the top level skills directory when creating your agent:
+If you find yourself giving similar instructions to an agent, especially if they are detailed and contain multiple steps, consider codifying the instructions for the agent. That way, in future when you want to accomplish a similar task, the agent will already know what to do.
 
-:::python
-```python
-from deepagents import create_deep_agent
-from deepagents.backends.filesystem import FilesystemBackend
+<Tip>
+    You can also ask your agent to write a skill for a task you worked on with the agent.
+</Tip>
 
-backend = FilesystemBackend(root_dir="./my-project")
+Skills are especially helpful for codifying:
 
-agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
-    backend=backend,
-    skills=["./my-project/skills/"],
-)
-
-result = agent.invoke(
-    {"messages": [{"role": "user", "content": "What is LangGraph?"}]},
-    config={"configurable": {"thread_id": "1"}},
-)
-```
-:::
-
-:::js
-```typescript
-import { createDeepAgent, FilesystemBackend } from "deepagents";
-
-const backend = new FilesystemBackend({ rootDir: process.cwd() });
-
-const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
-  backend,
-  skills: ["/skills/"],
-});
-
-const result = await agent.invoke(
-  { messages: [{ role: "user", content: "What is LangGraph?" }] },
-  { configurable: { thread_id: "1" } },
-);
-```
-:::
-
-This example uses `FilesystemBackend` to load skills from disk. For other storage options, including loading skills from remote sources, see [Backends and remote skill loading](#backends-and-remote-skill-loading).
-
-<ParamField body="skills" type="list[str]" optional>
-    List of skill source paths.
-
-    Paths must be specified using forward slashes and are relative to the backend's root.
-
-    - If omitted, no skills are loaded.
-    - When using `StateBackend` (default), provide skill files with `invoke(files={...})`. Use `create_file_data()` from `deepagents.backends.utils` to format file contents; raw strings are not supported.
-    - With `FilesystemBackend`, skills are loaded from disk relative to the backend's `root_dir`.
-
-    Later sources override earlier ones for skills with the same name (last one wins).
-</ParamField>
-
-<Note>
-    When multiple skill sources contain a skill with the same name, the skill from the source listed later in the `skills` array takes precedence (last one wins). This lets you layer skills from different origins, such as base skills overridden by project-specific versions.
-</Note>
+- **Step-by-step workflows**: Workflows that span multiple steps, similar to recipes.
+- **Domain-specific knowledge**: Instruct the agent on how to use tools for the workflow. For example, include information on where to pull information from, including other reference information or scripts that the skill may have access to.
+- **Guidelines**: Provide the agent with supporting instructions about guardrails to adhere to. For example, following a specific format or style guide, or specifying to always run tests as part of the workflow.
 
 ## Write effective skills
 
@@ -199,16 +270,19 @@ description: Helps with PDFs.
 
 When you have multiple skills in related domains, differentiate their descriptions clearly. Overlapping descriptions cause the agent to activate the wrong skill or hesitate between options. If two skills serve similar purposes, consolidate them into one.
 
-**Keep instructions focused.** The Agent Skills specification recommends keeping your `SKILL.md` under 500 lines. When instructions grow longer, move detailed reference material into separate files and reference them from the main `SKILL.md`:
+**Keep instructions focused.** The Agent Skills specification recommends keeping your `SKILL.md` under 500 lines. When instructions grow longer, move detailed reference material into [supporting resource files](#add-supporting-resources) and reference them from the main `SKILL.md`:
 
-```plaintext
-skills/
-└── data-pipeline/
-    ├── SKILL.md
-    └── references/
-        ├── schema-reference.md
-        └── error-codes.md
-```
+<Tree>
+  <Tree.Folder name="skills" defaultOpen>
+    <Tree.Folder name="data-pipeline" defaultOpen>
+      <Tree.File name="SKILL.md" />
+      <Tree.Folder name="references" defaultOpen>
+        <Tree.File name="schema-reference.md" />
+        <Tree.File name="error-codes.md" />
+      </Tree.Folder>
+    </Tree.Folder>
+  </Tree.Folder>
+</Tree>
 
 The agent loads reference files only when the instructions call for them, keeping each layer of progressive disclosure appropriately sized. Keep file references one level deep from `SKILL.md` and avoid deeply nested reference chains, which force the agent through multiple reads to reach the information it needs.
 
@@ -227,6 +301,53 @@ The agent loads reference files only when the instructions call for them, keepin
 <Tip>
     Use the [`skills-ref` validation tool](https://github.com/agentskills/agentskills/tree/main/skills-ref) to check that your `SKILL.md` frontmatter follows the Agent Skills specification naming and format conventions.
 </Tip>
+
+## Add supporting resources
+
+Beyond `SKILL.md`, a skill directory can include any additional files or directories. The [Agent Skills specification](https://agentskills.io/specification) defines three optional directories for common resource types. Deep Agents does not load these files at discovery or activation. The agent reads or executes them only when your `SKILL.md` instructions say to.
+
+### `scripts/`
+
+The `scripts/` directory holds executable code the agent can run, such as API clients, data transforms, or validation checks. Scripts should:
+
+- Be self-contained or clearly document dependencies
+- Include helpful error messages
+- Handle edge cases gracefully
+
+Supported languages depend on your agent setup. Common options include Python, Bash, and JavaScript or TypeScript. To execute scripts rather than only read them, see [Execute code with skills](#execute-code-with-skills). Use [sandbox scripts](#sandbox-scripts) when the agent needs a shell, or [interpreter skills](#interpreter-skills) when the agent needs importable helpers in an interpreter.
+
+### `references/`
+
+The `references/` directory holds supplementary documentation the agent reads on demand. Use it for material that is too detailed for `SKILL.md` but still task-specific, such as:
+
+- `REFERENCE.md` for detailed technical reference
+- `FORMS.md` for form templates or structured data formats
+- Domain-specific guides (`finance.md`, `legal.md`, and similar)
+
+Keep individual reference files focused. The agent loads them only when needed, so smaller files use less context.
+
+### `assets/`
+
+The `assets/` directory holds static resources the agent uses but does not need to read as instructions, such as:
+
+- Document or configuration templates
+- Images (diagrams, examples)
+- Data files (lookup tables, schemas)
+
+Describe in `SKILL.md` when the agent should open or copy each asset.
+
+### Reference files from `SKILL.md`
+
+When you reference supporting files, use paths relative to the skill root:
+
+````md
+For API details, see the [reference guide](references/api-patterns.md).
+
+To extract tables from a PDF, run:
+scripts/extract.py
+````
+
+For each file you reference, state what it contains and when the agent should use it. Keep references one level deep from `SKILL.md`. Avoid deeply nested reference chains that force the agent through multiple reads to reach the information it needs.
 
 ## Backends and remote skill loading
 
@@ -396,17 +517,14 @@ const agent = await createDeepAgent({
 
 For more information on subagent configuration and skills inheritance, see [Subagents](/oss/deepagents/subagents).
 
-## Skill permissions
+## Share skills
 
-By default, agents can write to skill files if the backend permits it. Use these mechanisms to control that behavior:
+Most production deployments share one curated skills library across agents and users. The agent reads those skills at runtime, but writes to shared files should stay under your control. Use [filesystem permissions](/oss/deepagents/permissions), backend routing, and [`interrupt_on`](/oss/deepagents/human-in-the-loop) to decide who can change what.
 
-- **Read-only skills**: Use [filesystem permissions](/oss/deepagents/permissions) to deny write operations under skill paths.
-- **Scoped permissions**: Allow writes to user-scoped skill paths while keeping workspace or shared skills read-only, so agents can personalize their own skills without modifying shared ones.
-- **Human-in-the-loop**: Use [`interrupt_on`](/oss/deepagents/human-in-the-loop) to require approval before the agent executes write operations, adding a review step without fully blocking writes.
+### Shared read-only libraries
 
-### Read-only skills
-
-A common production pattern is to give agents access to a curated skills library without allowing them to change it. Route `/skills/` to a shared `StoreBackend`, pass that route in `skills`, and deny write operations under `/skills/**` with [filesystem permissions](/oss/deepagents/permissions). The agent can discover and read skills, while only your application code or an admin workflow updates the store.
+A common production pattern is to give agents access to a curated skills library without
+allowing them to change it. Route `/skills/` to a shared `StoreBackend`, pass that route in `skills`, and deny write operations under `/skills/**` with [filesystem permissions](/oss/deepagents/permissions). The agent can discover and read skills, while only your application code or an admin workflow updates the store.
 
 :::python
 
@@ -422,7 +540,21 @@ A common production pattern is to give agents access to a curated skills library
 
 Seed the store under the same namespace with keys like `/company-policies/SKILL.md` and values that include `content` and `encoding` fields. The `/skills/` route prefix is stripped before records are read from the store.
 
-Use this for enterprise knowledge bases, approved tool instructions, or shared skill packs where the agent should benefit from centrally managed context but should not rewrite the source of truth. If you want agents to save their own learnings, route a separate path such as `/memories/` to another backend with write permissions enabled. See [Backends](/oss/deepagents/backends) for routing and store setup.
+Use this for enterprise knowledge bases, approved tool instructions, or shared skill packs
+where the agent should benefit from centrally managed context but should not rewrite the
+source of truth. If you want agents to save their own learnings, route a separate path such as
+`/memories/` to another backend with write permissions enabled. See [Backends](/oss/deepagents/
+backends) for routing and store setup.
+
+### Personal skills alongside shared skills
+
+Agents can maintain their own skill libraries without modifying shared ones. Route a shared path such as `/skills/shared/` to an organization-scoped `StoreBackend`, route a separate path such as `/skills/personal/` to a user-scoped backend, and pass both paths in `skills`. Deny writes under the shared path while leaving the personal path writable.
+
+This pairs well with [namespaced skills](#namespaced-skills) when each user should see both workspace-wide skills and their own additions. To capture general learnings outside the skills format, route a separate path such as `/memories/` to another writable backend.
+
+### Approve skill writes
+
+By default, agents can write to skill files if the backend permits it. If you want agents to propose updates without applying them immediately, use [`interrupt_on`](/oss/deepagents/human-in-the-loop) to require approval before write operations run. This adds a review step without fully blocking writes.
 
 ## Execute code with skills
 
@@ -438,23 +570,29 @@ Skills support code execution in two ways:
 Skills can include scripts alongside the `SKILL.md` file. Reference scripts in your `SKILL.md` so the agent knows they exist and when to run them:
 
 :::python
-```plaintext
-skills/
-└── arxiv-search/
-    ├── SKILL.md
-    └── scripts/
-        └── search.py
-```
+<Tree>
+  <Tree.Folder name="skills" defaultOpen>
+    <Tree.Folder name="arxiv-search" defaultOpen>
+      <Tree.File name="SKILL.md" />
+      <Tree.Folder name="scripts" defaultOpen>
+        <Tree.File name="search.py" />
+      </Tree.Folder>
+    </Tree.Folder>
+  </Tree.Folder>
+</Tree>
 :::
 
 :::js
-```plaintext
-skills/
-└── arxiv-search/
-    ├── SKILL.md
-    └── scripts/
-        └── search.ts
-```
+<Tree>
+  <Tree.Folder name="skills" defaultOpen>
+    <Tree.Folder name="arxiv-search" defaultOpen>
+      <Tree.File name="SKILL.md" />
+      <Tree.Folder name="scripts" defaultOpen>
+        <Tree.File name="search.ts" />
+      </Tree.Folder>
+    </Tree.Folder>
+  </Tree.Folder>
+</Tree>
 :::
 
 :::python
@@ -545,13 +683,16 @@ To make a skill importable:
 
 Minimal skill layout:
 
-```text
-skills/
-`-- order-helpers/
-    |-- SKILL.md
-    `-- scripts/
-        `-- index.ts
-```
+<Tree>
+  <Tree.Folder name="skills" defaultOpen>
+    <Tree.Folder name="order-helpers" defaultOpen>
+      <Tree.File name="SKILL.md" />
+      <Tree.Folder name="scripts" defaultOpen>
+        <Tree.File name="index.ts" />
+      </Tree.Folder>
+    </Tree.Folder>
+  </Tree.Folder>
+</Tree>
 
 ````md
 ---
@@ -633,6 +774,76 @@ const grouped = groupByStatus(orders);
 grouped;
 ```
 
+## Troubleshooting
+
+Use [LangSmith](https://smith.langchain.com) traces to debug skill discovery, `read_file` calls on `SKILL.md`, and supporting resource access. Follow the [tracing quickstart](/langsmith/observability-quickstart) to get set up. We recommend you also set up [LangSmith Engine](/langsmith/engine), which monitors your traces, detects issues, and proposes fixes.
+
+### Skill not activated
+
+**Problem**: The agent handles the task without reading the skill's `SKILL.md`.
+
+**Solutions**:
+
+1. **Make the description more specific.** The agent selects skills from `description` alone at discovery. Include what the skill does, when to use it, and keywords the agent can match:
+
+   ```yaml
+   # Good
+   description: >-
+     Search the arXiv preprint repository for research papers. Use when the
+     user asks about academic papers, recent research, or scientific literature.
+
+   # Poor
+   description: Helps with research.
+   ```
+
+2. **Reduce overlap between skills.** If multiple skills have similar descriptions, the agent may skip the right one or pick the wrong one. Differentiate descriptions or [consolidate related skills](#write-effective-skills).
+
+3. **Confirm the skill is in the `skills` array.** Skills load only from paths you pass at agent creation or from subagent-specific `skills` parameters.
+
+### Skills missing at startup
+
+**Problem**: The agent does not list a skill in its system prompt, or `read_file` on `SKILL.md` fails.
+
+**Solutions**:
+
+1. **Check the skill path.** Paths must use forward slashes and be relative to the backend root. With `FilesystemBackend`, the path is relative to `root_dir`. With `StateBackend`, pass skill files in `invoke(files={...})` using `create_file_data()`.
+
+2. **Validate `SKILL.md` frontmatter.** The `name` must match the parent directory name and follow the [Agent Skills specification](https://agentskills.io/specification). Use the [`skills-ref` validation tool](https://github.com/agentskills/agentskills/tree/main/skills-ref) to check formatting.
+
+3. **Check file size.** Deep Agents skips `SKILL.md` files over 10 MB during discovery.
+
+4. **Check layered sources.** When the same skill name appears in multiple sources, the [last source wins](#usage). An older or empty skill from a later path can override the one you expect.
+
+### Supporting files not found
+
+**Problem**: The agent reads `SKILL.md` but cannot access scripts, references, or assets.
+
+**Solutions**:
+
+1. **Reference files from `SKILL.md`.** The agent does not auto-discover supporting files. State what each file contains and when to use it. Use [relative paths](#reference-files-from-skillmd) from the skill root.
+
+2. **Keep paths within the skill directory.** File paths resolve against the backend. Confirm supporting files exist at the paths your instructions reference.
+
+3. **Sync skills into sandboxes.** If you use [sandbox backends](/oss/deepagents/sandboxes), skill files outside the container are not available until you copy them in. See [Sandbox scripts](#sandbox-scripts) and [syncing skills and memories with custom middleware](/oss/deepagents/going-to-production#example-syncing-skills-and-memories-with-custom-middleware).
+
+### Scripts or imports fail
+
+**Problem**: The agent reads a script but cannot run it, or `import("@/skills/<name>")` fails in the interpreter.
+
+**Solutions**:
+
+1. **Use a sandbox for shell execution.** The agent can read scripts from any backend, but running them requires a [sandbox backend](/oss/deepagents/sandboxes). See [Execute code with skills](#execute-code-with-skills).
+
+2. **Configure interpreter middleware.** [Interpreter skills](#interpreter-skills) require `metadata.entrypoint` in `SKILL.md` frontmatter and interpreter middleware with the same backend that loads skill files.
+
+3. **Match skill and interpreter backends.** If `SkillsMiddleware` and the interpreter use different backends, import paths may not resolve to the files you expect.
+
+### Subagent cannot access a skill
+
+**Problem**: A custom subagent does not see skills that the main agent uses.
+
+**Solution**: Custom subagents do not inherit the main agent's skills. Add a `skills` parameter to each [subagent definition](#skills-for-subagents) with that subagent's skill source paths. The general-purpose subagent inherits skills from `create_deep_agent` automatically.
+
 ## Reference
 
 ### Skills, memory, and tools
@@ -691,8 +902,3 @@ For more example skills, see [Deep Agents example skills](https://github.com/lan
 For more example skills, see [Deep Agents example skills](https://github.com/langchain-ai/deepagentsjs/tree/main/examples/skills).
 :::
 
-<Tip>
-Trace how your agent discovers and executes skills with [LangSmith](https://smith.langchain.com). Follow the [observability quickstart](/langsmith/observability-quickstart) to get set up.
-
-We recommend you also set up [LangSmith Engine](/langsmith/engine), which monitors your traces, detects issues, and proposes fixes.
-</Tip>
