@@ -188,7 +188,15 @@ As agents take on more complex tasks, the context they need grows with them. Loa
 Skills use **progressive disclosure**: the agent loads skill information in layers instead of all at once. At startup, it sees only each skill's name and description. When a skill matches the task, it reads the full `SKILL.md` instructions. Supporting files load last, only when the skill references them.
 </Info>
 
-The following diagram below shows how skill components map into the agent context. At startup, the system prompt includes a description for every skill. When the agent activates a skill, it reads that skill's full body into context. Supporting files stay on disk until the skill instructions reference them.
+Skills load in three levels. Each level adds more detail only when the task needs it:
+
+| Level | What loads | When |
+| ----- | ---------- | ---- |
+| **1. Metadata** | [`name`](#frontmatter-fields) and [`description`](#frontmatter-fields) from `SKILL.md` [frontmatter](#frontmatter-fields) | Agent startup, for every configured skill |
+| **2. Instructions** | Full `SKILL.md` body | When the agent determines the skill matches the task |
+| **3. Resources** | [Supporting files](#add-supporting-resources) under `scripts/`, `references/`, and `assets/` | When the skill instructions reference them |
+
+The following diagram shows what appears in agent context at a given moment. At startup, level 1 metadata for every skill is in the system prompt. When a skill is activated, level 2 instructions join the context. Level 3 files stay on the backend until referenced.
 
 <div className="skills-composition-diagram">
 
@@ -204,11 +212,11 @@ As the agent works through a task, it loads skill information in layers:
 
 </div>
 
-In Deep Agents, `SkillsMiddleware` handles this in three stages:
+In Deep Agents, `SkillsMiddleware` handles the first two levels, with the third level being handled by the LLM:
 
-1. **Discovery**: At agent start, the middleware scans the configured skill paths, parses each `SKILL.md` [frontmatter](#frontmatter-fields), and injects the [`name`](#frontmatter-fields) and [`description`](#frontmatter-fields) fields into the system prompt.
-2. **Read**: When the agent determines a skill matches the current task, it reads the full `SKILL.md` content via `read_file`. There is no dedicated activation mechanism.
-3. **Execute**: The agent follows the skill's instructions and reads any supporting files (scripts, references, assets) as needed.
+1. **Discovery** (level 1): At agent start, the middleware scans the configured skill paths, parses each `SKILL.md` [frontmatter](#frontmatter-fields), and injects the [`name`](#frontmatter-fields) and [`description`](#frontmatter-fields) fields into the system prompt.
+2. **Read** (level 2): When the agent determines a skill matches the current task, it reads the full `SKILL.md` content via `read_file`.
+3. **Execute** (level 3): The agent follows the skill's instructions and reads any supporting files (scripts, references, assets) as needed.
 
 ## When to use skills
 
