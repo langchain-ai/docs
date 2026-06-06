@@ -147,6 +147,13 @@ LINK_MAPS: list[LinkMap] = [
             # langchain-openrouter
             "langchain-openrouter": "integrations/langchain_openrouter",
             "ChatOpenRouter": "integrations/langchain_openrouter",
+            # langchain-litellm
+            "langchain-litellm": "langchain-litellm/",
+            "ChatLiteLLM": "langchain-litellm/chat_models/litellm/ChatLiteLLM",
+            "ChatLiteLLMRouter": "langchain-litellm/chat_models/litellm_router/ChatLiteLLMRouter",
+            "LiteLLMEmbeddings": "langchain-litellm/embeddings/litellm/LiteLLMEmbeddings",
+            "LiteLLMEmbeddingsRouter": "langchain-litellm/embeddings/litellm_router/LiteLLMEmbeddingsRouter",
+            "LiteLLMOCRLoader": "langchain-litellm/document_loaders/litellm_ocr/LiteLLMOCRLoader",
             # langchain-anthropic
             "langchain-anthropic": "langchain-anthropic/",
             "ChatAnthropic": "langchain-anthropic/chat_models/ChatAnthropic",
@@ -217,6 +224,7 @@ LINK_MAPS: list[LinkMap] = [
             "BaseChatModel.with_structured_output": "langchain-core/language_models/chat_models/BaseChatModel/with_structured_output",
             "BaseChatModel.with_structured_output(include_raw)": "langchain-core/language_models/chat_models/BaseChatModel/with_structured_output",
             "BaseChatModel.with_retry": "langchain_core/language_models/#langchain_core.language_models.BaseChatModel.with_retry",
+            "ModelProfile": "langchain-core/language_models/model_profile/ModelProfile",
             # ??
             "ChatPromptTemplate": "langchain-core/prompts/chat/ChatPromptTemplate",
             "GenericFakeChatModel": "langchain-core/language_models/fake_chat_models/GenericFakeChatModel",
@@ -496,7 +504,15 @@ LINK_MAPS: list[LinkMap] = [
             "ls.logFeedback": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html#logFeedback",
             "Client.listExamples": "https://reference.langchain.com/javascript/classes/langsmith.client.Client.html#listexamples",
             "Example": "https://reference.langchain.com/javascript/interfaces/langsmith.Example.html",
+            "HITLRequest": "https://reference.langchain.com/javascript/langchain/index/HITLRequest",
+            "MessageMetadata": "https://reference.langchain.com/javascript/langchain-react/MessageMetadata",
+            "SubagentDiscoverySnapshot": "https://reference.langchain.com/javascript/langchain-react/SubagentDiscoverySnapshot",
+            "SubgraphDiscoverySnapshot": "https://reference.langchain.com/javascript/langchain-react/SubgraphDiscoverySnapshot",
+            "SubmissionQueueEntry": "https://reference.langchain.com/javascript/langchain-react/SubmissionQueueEntry",
             "useStream": "https://reference.langchain.com/javascript/langchain-react/index/useStream",
+            "injectStream": "https://reference.langchain.com/javascript/langchain-angular/injectStream",
+            "client.runs.cancel": "https://reference.langchain.com/javascript/langchain-langgraph-sdk/client/RunsClient/cancel",
+            "ThreadStateJS": "https://reference.langchain.com/javascript/langchain-langgraph-sdk/index/ThreadState",
         },
     },
     {
@@ -520,6 +536,9 @@ LINK_MAPS: list[LinkMap] = [
             "BaseChatModel.bindTools": "classes/_langchain_core.language_models_chat_models.BaseChatModel.html#bindTools",
             "BaseChatModel.with_structured_output": "classes/_langchain_core.language_models_chat_models.BaseChatModel.html#withStructuredOutput",
             "BaseChatModel.with_structured_output(include_raw)": "classes/_langchain_core.language_models_chat_models.BaseChatModel.html#withStructuredOutput",
+            # Deep Agents Code is Python-only; point its JS-scope build at the
+            # Python reference since there is no JS ModelProfile.
+            "ModelProfile": "https://reference.langchain.com/python/langchain-core/language_models/model_profile/ModelProfile",
             "BaseTool": "classes/_langchain_core.tools.StructuredTool.html",
             "ContentBlock": "langchain-core/messages/ContentBlock",
             "ChatOpenAI": "langchain-openai/ChatOpenAI",
@@ -551,10 +570,13 @@ LINK_MAPS: list[LinkMap] = [
             "wrapGemini": "functions/langsmith.wrappers_gemini.wrapGemini.html",
             # LangGraph SDK references
             "Auth": "langchain-langgraph-sdk/auth/Auth",
+            "client.runs.cancel": "langchain-langgraph-sdk/client/RunsClient/cancel",
             "client.runs.stream": "classes/_langchain_langgraph-sdk.client.RunsClient.html#stream",
             "client.runs.wait": "classes/_langchain_langgraph-sdk.client.RunsClient.html#wait",
             "client.threads.get_history": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#getHistory",
             "client.threads.update_state": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#updateState",
+            "ThreadState": "langchain-langgraph-sdk/index/ThreadState",
+            "ThreadStateJS": "langchain-langgraph-sdk/index/ThreadState",
             # LangGraph checkpoint references
             "BaseCheckpointSaver": "langchain-langgraph/index/BaseCheckpointSaver",
             "BaseStore": "langchain-core/stores/BaseStore",
@@ -608,6 +630,8 @@ LINK_MAPS: list[LinkMap] = [
             "createSummarizationMiddleware": "deepagents/middleware/createSummarizationMiddleware",
             "TodoListMiddleware": "langchain/index/todoListMiddleware",
             "HumanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
+            "humanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
+            "HITLRequest": "langchain/index/HITLRequest",
             "AnthropicPromptCachingMiddleware": "langchain/index/anthropicPromptCachingMiddleware",
             "SummarizationMiddleware": "langchain/index/summarizationMiddleware",
             "createMiddleware": "langchain/index/createMiddleware",
@@ -690,7 +714,12 @@ LINK_MAPS: list[LinkMap] = [
             "listRuns": "langsmith/client/Client/listRuns",
             "Client.listExamples": "classes/langsmith.client.Client.html#listexamples",
             "Example": "langchain-core/prompts/Example",
+            "MessageMetadata": "langchain-react/MessageMetadata",
+            "SubagentDiscoverySnapshot": "langchain-react/SubagentDiscoverySnapshot",
+            "SubgraphDiscoverySnapshot": "langchain-react/SubgraphDiscoverySnapshot",
+            "SubmissionQueueEntry": "langchain-react/SubmissionQueueEntry",
             "useStream": "langchain-react/index/useStream",
+            "injectStream": "langchain-angular/injectStream",
         },
     },
     {

@@ -142,7 +142,8 @@ Use with caution and only in appropriate environments.
 1. Exclude secrets from accessible filesystem paths (especially in CI/CD).
 1. Use a [sandbox backend](/oss/deepagents/sandboxes) for production environments requiring filesystem interaction.
 1. **Always** use `virtual_mode=True` with `root_dir` to enable path-based access restrictions (blocks `..`, `~`, and absolute paths outside root).
-   Note that the default (`virtual_mode=False`) provides no security even with `root_dir` set.
+
+    Note that the default (`virtual_mode=False`) provides no security even with `root_dir` set.
 </Warning>
 
 :::python
@@ -535,7 +536,7 @@ class S3Backend(BackendProtocol):
         # Optionally filter server‑side; else list and scan content
         ...
 
-    def glob(self, pattern: str, path: str = "/") -> GlobResult:
+    def glob(self, pattern: str, path: str | None = None) -> GlobResult:
         # Apply glob relative to path across keys
         ...
 
@@ -742,7 +743,7 @@ class PolicyWrapper(BackendProtocol):
         return self.inner.read(file_path, offset=offset, limit=limit)
     def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
         return self.inner.grep(pattern, path, glob)
-    def glob(self, pattern: str, path: str = "/") -> GlobResult:
+    def glob(self, pattern: str, path: str | None = None) -> GlobResult:
         return self.inner.glob(pattern, path)
     def write(self, file_path: str, content: str) -> WriteResult:
         if self._deny(file_path):
@@ -1007,17 +1008,17 @@ Backends must implement @[`BackendProtocol`].
 
 Required methods:
 - `ls(path: str) -> LsResult`
-  - Return entries with at least `path`. Include `is_dir`, `size`, `modified_at` when available. Sort by `path` for deterministic output.
+    - Return entries with at least `path`. Include `is_dir`, `size`, `modified_at` when available. Sort by `path` for deterministic output.
 - `read(file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult`
-  - Return file data on success. On missing file, return `ReadResult(error="Error: File '/x' not found")`.
+    - Return file data on success. On missing file, return `ReadResult(error="Error: File '/x' not found")`.
 - `grep(pattern: str, path: Optional[str] = None, glob: Optional[str] = None) -> GrepResult`
-  - Return structured matches. On error, return `GrepResult(error="...")` (do not raise).
-- `glob(pattern: str, path: str = "/") -> GlobResult`
-  - Return matched files as `FileInfo` entries (empty list if none).
+    - Return structured matches. On error, return `GrepResult(error="...")` (do not raise).
+- `glob(pattern: str, path: Optional[str] = None) -> GlobResult`
+    - Return matched files as `FileInfo` entries (empty list if none).
 - `write(file_path: str, content: str) -> WriteResult`
-  - Create-only. On conflict, return `WriteResult(error=...)`. On success, set `path` and for state backends set `files_update={...}`; external backends should use `files_update=None`.
+    - Create-only. On conflict, return `WriteResult(error=...)`. On success, set `path` and for state backends set `files_update={...}`; external backends should use `files_update=None`.
 - `edit(file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> EditResult`
-  - Enforce uniqueness of `old_string` unless `replace_all=True`. If not found, return error. Include `occurrences` on success.
+    - Enforce uniqueness of `old_string` unless `replace_all=True`. If not found, return error. Include `occurrences` on success.
 
 Supporting types:
 - `LsResult(error, entries)` — `entries` is a `list[FileInfo]` on success, `None` on failure.
@@ -1037,25 +1038,25 @@ Backends implement `BackendProtocolV2`. All query methods return structured Resu
 ### Required methods
 
 - **`ls(path: string) → LsResult`**
-  - List files and directories in the specified directory (non-recursive). Directories have a trailing `/` in their path and `is_dir=true`. Include `is_dir`, `size`, `modified_at` when available.
+    - List files and directories in the specified directory (non-recursive). Directories have a trailing `/` in their path and `is_dir=true`. Include `is_dir`, `size`, `modified_at` when available.
 
 - **`read(filePath: string, offset?: number, limit?: number) → ReadResult`**
-  - Read file content. For text files, content is paginated by line offset/limit (default offset 0, limit 500). For binary files, the full raw `Uint8Array` content is returned with the `mimeType` field set. On missing file, return `{ error: "File '/x' not found" }`.
+    - Read file content. For text files, content is paginated by line offset/limit (default offset 0, limit 500). For binary files, the full raw `Uint8Array` content is returned with the `mimeType` field set. On missing file, return `{ error: "File '/x' not found" }`.
 
 - **`readRaw(filePath: string) → ReadRawResult`**
-  - Read file content as raw `FileData`. Returns the full file data including timestamps.
+    - Read file content as raw `FileData`. Returns the full file data including timestamps.
 
 - **`grep(pattern: string, path?: string | null, glob?: string | null) → GrepResult`**
-  - Search file contents for a literal text pattern. Binary files (determined by MIME type) are skipped. On failure, return `{ error: "..." }`.
+    - Search file contents for a literal text pattern. Binary files (determined by MIME type) are skipped. On failure, return `{ error: "..." }`.
 
 - **`glob(pattern: string, path?: string) → GlobResult`**
-  - Return files matching a glob pattern as `FileInfo` entries.
+    - Return files matching a glob pattern as `FileInfo` entries.
 
 - **`write(filePath: string, content: string) → WriteResult`**
-  - Create-only semantics. On conflict, return `{ error: "..." }`. On success, set `path` and for state backends set `filesUpdate={...}`; external backends should use `filesUpdate=null`.
+    - Create-only semantics. On conflict, return `{ error: "..." }`. On success, set `path` and for state backends set `filesUpdate={...}`; external backends should use `filesUpdate=null`.
 
 - **`edit(filePath: string, oldString: string, newString: string, replaceAll?: boolean) → EditResult`**
-  - Enforce uniqueness of `oldString` unless `replaceAll=true`. If not found, return error. Include `occurrences` on success.
+    - Enforce uniqueness of `oldString` unless `replaceAll=true`. If not found, return error. Include `occurrences` on success.
 
 ### Optional methods
 

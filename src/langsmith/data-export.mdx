@@ -59,10 +59,10 @@ Refer to [Manage bulk export destinations](/langsmith/data-export-destinations) 
 
 ## 2. Create an export job
 
-An export job targets a specific project and date range. You will need:
+An export job targets a project (or all experiments in a workspace) and a date range. You will need:
 
 - The destination `id` from the [previous step](#1-create-a-destination).
-- The project ID (`session_id`)—copy this from the individual project view in the [**Tracing Projects** list](https://smith.langchain.com).
+- Either a project ID (`session_id`) or `"all_experiments": true`—copy the project ID from the individual project view in the [**Tracing Projects** list](https://smith.langchain.com).
 - A `start_time` and `end_time` in UTC ISO 8601 format.
 
 ```bash
@@ -85,6 +85,46 @@ The `start_time` is inclusive and `end_time` is exclusive. The export will inclu
 Save the `id` from the response to monitor the export's progress.
 
 You can optionally add a `filter` expression to narrow the set of runs exported. Refer to our [filter query language](/langsmith/trace-query-syntax#filter-query-language) and [examples](/langsmith/export-traces#use-filter-query-language) for syntax. Not setting the `filter` field will export all runs.
+
+### Export all experiments
+
+<Note>
+[Self-hosted](/langsmith/self-hosted): currently available only on the `v0.16.1rc1` [preview release](/langsmith/release-versions#preview). Wait for the `v0.16.1` stable release before running it in production.
+</Note>
+
+To export every experiment in the workspace instead of targeting a single project with `session_id`, set `all_experiments: true`. LangSmith creates an experiment whenever you run an evaluation against a dataset, any tracing project with `reference_dataset_id` set qualifies.
+
+`all_experiments` and `session_id` are mutually exclusive—set exactly one.
+
+```bash
+curl --request POST \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "bulk_export_destination_id": "your_destination_id",
+    "all_experiments": true,
+    "start_time": "2024-01-01T00:00:00Z",
+    "end_time": "2024-02-01T00:00:00Z",
+    "format_version": "v2_beta"
+  }'
+```
+
+LangSmith resolves the set of experiment sessions at run time, so the export picks up any experiments you create after submitting the job but before the orchestrator starts processing.
+
+The same `all_experiments` flag works with [scheduled exports](#schedule-recurring-exports)—include `interval_hours` and omit `end_time` instead of supplying `end_time`.
+
+<Note>
+**Cloud limit: 250 experiments per export**
+
+On [LangSmith cloud](/langsmith/cloud), each `all_experiments` export includes at most 250 experiments. To export more:
+
+- Query the completed `all_experiments` export to see which tracing projects were included, then create standard bulk exports with `session_id` for the remaining experiments.
+- Or, contact support via [support.langchain.com](https://support.langchain.com) to request a higher limit for your workspace.
+
+[Self-hosted LangSmith](/langsmith/self-hosted) has no per-export limit.
+</Note>
 
 ### Schedule recurring exports
 
