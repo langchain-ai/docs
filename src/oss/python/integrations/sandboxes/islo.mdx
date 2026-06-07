@@ -1,0 +1,81 @@
+---
+title: "IsloSandbox integration"
+description: "Integrate with the IsloSandbox sandbox backend using LangChain Python."
+---
+
+[Islo](https://islo.dev) provides long-running, reconnect-surviving sandboxes on real Linux VMs, with pause/resume, snapshots, and a gateway layer for secret isolation and egress policies. See the [Islo docs](https://docs.islo.dev) for signup, authentication, and platform details.
+
+## Installation
+
+<CodeGroup>
+```bash pip
+pip install langchain-islo
+```
+
+```bash uv
+uv add langchain-islo
+```
+</CodeGroup>
+
+Set your API key (keys look like `ak_...`):
+
+```bash
+export ISLO_API_KEY="ak_..."
+```
+
+## Create a sandbox backend
+
+In Python, you create the sandbox using the provider SDK, then wrap it with the [deepagents backend](/oss/deepagents/backends).
+
+```python
+from islo import Islo
+
+from langchain_islo import IsloSandbox
+
+client = Islo()  # reads ISLO_API_KEY
+sandbox = client.sandboxes.create_sandbox(image="python:3.12-slim")
+backend = IsloSandbox(client=client, sandbox=sandbox)
+
+result = backend.execute("echo hello")
+print(result.output)
+```
+
+## Use with Deep Agents
+
+```python
+from islo import Islo
+from langchain_anthropic import ChatAnthropic
+
+from deepagents import create_deep_agent
+from langchain_islo import IsloSandbox
+
+client = Islo()
+sandbox = client.sandboxes.create_sandbox(image="python:3.12-slim")
+backend = IsloSandbox(client=client, sandbox=sandbox)
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-20250514"),
+    system_prompt="You are a coding assistant with sandbox access.",
+    backend=backend,
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {"role": "user", "content": "Create a hello world Python script and run it"}
+        ]
+    }
+)
+```
+
+## Cleanup
+
+You are responsible for managing the sandbox lifecycle via the Islo SDK.
+When you are done, pause, stop, or delete the sandbox:
+
+```python
+client.sandboxes.pause_sandbox(sandbox.name)   # resume later with resume_sandbox
+client.sandboxes.delete_sandbox(sandbox.name)   # permanently delete
+```
+
+See also: [Sandboxes](/oss/deepagents/sandboxes).
