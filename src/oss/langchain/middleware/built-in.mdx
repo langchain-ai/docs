@@ -2177,10 +2177,25 @@ Defer selected tools behind model providers' server-side tool search, so the mod
 
 ```typescript
 import { createAgent, providerToolSearchMiddleware } from "langchain";
-import { ChatAnthropic } from "@langchain/anthropic";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const getWeather = tool(async () => "Sunny, 22C", {
+  name: "get_weather",
+  description: "Get the current weather for a city",
+  schema: z.object({ city: z.string() }),
+});
+
+const lookupOrderStatus = tool(async () => "OUT_FOR_DELIVERY", {
+  name: "lookup_order_status",
+  description: "Look up the current delivery status of a customer order by ID",
+  schema: z.object({ orderId: z.string() }),
+});
+
+const nicheTools = [lookupOrderStatus];
 
 const agent = createAgent({
-  model: new ChatAnthropic({ model: "claude-sonnet-4-5" }),
+  model: "anthropic:claude-opus-4-7",
   tools: [getWeather, ...nicheTools],
   middleware: [
     providerToolSearchMiddleware({ searchableTools: nicheTools }),
@@ -2201,12 +2216,12 @@ const agent = createAgent({
 The middleware opts-in all tools included in the `searchableTools` for deferral and search. A tool can also opt into deferral at construction time by setting `extras.defer_loading: true`
 
 ```typescript
-import { tool } from "@langchain/core/tools";
 import { createAgent, providerToolSearchMiddleware } from "langchain";
-import { ChatAnthropic } from "@langchain/anthropic";
+import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 
-// Marked `defer_loading` at construction, so it's deferred on its own.
+// Marked `defer_loading` at construction, so it's deferred on its own —
+// no need to list it in `searchableTools`.
 const sendEmail = tool(async () => "sent", {
   name: "send_email",
   description: "Send an email",
@@ -2215,8 +2230,8 @@ const sendEmail = tool(async () => "sent", {
 });
 
 const agent = createAgent({
-  model: new ChatAnthropic({ model: "claude-sonnet-4-5" }),
-  tools: [getWeather, sendEmail],
+  model: "anthropic:claude-opus-4-7",
+  tools: [sendEmail],
   middleware: [providerToolSearchMiddleware()],
 });
 ```
