@@ -345,6 +345,7 @@ LINK_MAPS: list[LinkMap] = [
             "RunControl": "langgraph/runtime/RunControl",
             "interrupt": "langgraph/types/interrupt",
             "ToolNode": "langgraph/agents/#langgraph.prebuilt.tool_node.ToolNode",
+            "ToolCallRequest": "langgraph.prebuilt/tool_node/ToolCallRequest",
             "tools_condition": "langgraph/agents/#langgraph.prebuilt.tool_node.tools_condition",
             "AsyncPostgresSaver": "langgraph/checkpoints/#langgraph.checkpoint.postgres.aio.AsyncPostgresSaver",
             "AsyncSqliteSaver": "langgraph/checkpoints/#langgraph.checkpoint.sqlite.aio.AsyncSqliteSaver",
