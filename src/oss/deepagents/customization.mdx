@@ -368,7 +368,7 @@ From first to last:
 3. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories. When you pass `permissions`, filesystem permissions enforcement is included here so it can evaluate every tool the agent might call.
 4. @[`SubAgentMiddleware`]: Spawns and coordinates subagents for delegating tasks to specialized agents.
 5. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[create_summarization_middleware]).
-6. @[`PatchToolCallsMiddleware`]: Automatic message history fixes when tool calls are interrupted or cancelled before receiving results. Runs **before** Anthropic prompt caching and the tail stack below.
+6. @[`PatchToolCallsMiddleware`]: Repairs dangling tool calls in message history when a run resumes after an interruption or receives malformed tool-call arguments. See [Patch tool-call history](#patch-tool-call-history). Runs **before** Anthropic prompt caching and the tail stack below.
 7. @[`AsyncSubAgentMiddleware`]: Only when you configure async subagents.
 8. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is appended here (after Patch, before the tail stack).
 9. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
@@ -391,22 +391,29 @@ From first to last:
 3. @[`FilesystemMiddleware`]: Handles file system operations such as reading, writing, and navigating directories. When you pass `permissions`, filesystem permissions enforcement is included here so it can evaluate every tool the agent might call.
 4. @[`SubAgentMiddleware`]: Spawns and coordinates subagents for delegating tasks to specialized agents.
 5. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[createSummarizationMiddleware]).
-6. @[`PatchToolCallsMiddleware`]: Automatic message history fixes when tool calls are interrupted or cancelled before receiving results. Runs **before** Anthropic prompt caching and the tail stack below.
+6. @[`PatchToolCallsMiddleware`]: Repairs dangling tool calls in message history when a run resumes after an interruption or receives malformed tool-call arguments. See [Patch tool-call history](#patch-tool-call-history). Runs **before** Anthropic prompt caching and the tail stack below.
 7. @[`AsyncSubAgentMiddleware`]: Only when you configure async subagents.
 8. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is appended here (after Patch, before the tail stack).
 9. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
-tools from the agent.
-10. @[`AnthropicPromptCachingMiddleware`]: Automatically added when you are using an Anthropic mode. Runs **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
-11. @[`MemoryMiddleware`]: Only when you pass `memory`.
+10. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
+11. @[`AnthropicPromptCachingMiddleware`]: Automatically added when you are using an Anthropic mode. Runs **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
+12. @[`MemoryMiddleware`]: Only when you pass `memory`.
 
     <Note>
     `MemoryMiddleware` is placed **after** profile extras and Anthropic prompt caching so updates to injected memory are less likely to invalidate the Anthropic cache prefix. The same ordering concern is called out in the `createDeepAgent` implementation comments.
     </Note>
 
-12. `HumanInTheLoopMiddleware`: Only when you pass `interruptOn`. Pauses for human approval or input at configured tool calls.
-13. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those ```
+13. `HumanInTheLoopMiddleware`: Only when you pass `interruptOn`. Pauses for human approval or input at configured tool calls.
 
 :::
+
+### Patch tool-call history
+
+`PatchToolCallsMiddleware` is an internal Deep Agents middleware that keeps message history valid across interruptions and retries. It runs before the next agent step, scans prior `AIMessage` tool calls, and appends a synthetic `ToolMessage` for any tool call ID that does not already have a matching result.
+
+This repair is most useful when a run is interrupted, canceled, or resumed after the model emitted a tool call but before the tool returned. It also handles malformed or truncated tool-call arguments by adding an explanatory tool message instead of leaving an unanswered tool call in the history. The middleware does not execute tools or change tool outputs. It only patches the transcript so the next model call satisfies provider message-ordering requirements.
+
+You may see `PatchToolCallsMiddleware` in every Deep Agents trace because it is part of the default harness stack. Seeing it in a trace is expected and usually does not indicate an error. If you build a custom harness outside `create_deep_agent` or `createDeepAgent`, include equivalent handling when your application supports interrupts, cancellation, or replay from checkpoints.
 
 ### Default stack (synchronous subagents)
 
