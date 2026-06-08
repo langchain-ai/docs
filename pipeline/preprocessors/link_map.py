@@ -693,6 +693,7 @@ LINK_MAPS: list[LinkMap] = [
             "ModelFallbackMiddleware": "langchain/index/modelFallbackMiddleware",
             "ModelCallLimitMiddleware": "langchain/index/modelCallLimitMiddleware",
             "ToolCallLimitMiddleware": "langchain/index/toolCallLimitMiddleware",
+            "providerToolSearchMiddleware": "langchain/index/providerToolSearchMiddleware",
             "systemPrompt": "types/langchain.index.CreateAgentParams.html#systemprompt",
             "openAIModerationMiddleware": "langchain/index/openAIModerationMiddleware",
             # LangSmith SDK - Vitest references
