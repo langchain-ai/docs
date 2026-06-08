@@ -75,7 +75,7 @@ agent = create_deep_agent(
 | [`backend=`](#backends) | Filesystem backend (StateBackend by default) |
 | [`permissions=`](/oss/deepagents/permissions) | Path-level access control for the filesystem |
 | [`subagents=`](#subagents) | Custom subagents for delegated tasks |
-| [`middleware=`](#middleware) | Extra middleware to add to the stack |
+| [`middleware=`](#middleware) | Extra middleware appended to the [default stack](#default-stack-main-agent) |
 | [`interrupt_on=`](#human-in-the-loop) | Pause before tool calls for human approval |
 | [`response_format=`](#structured-output) | Structured output schema |
 | [`state_schema=`](/oss/deepagents/context-engineering#custom-state-schema) | Custom graph state schema |
@@ -90,7 +90,7 @@ For the full parameter list, see the @[`create_deep_agent`] API reference. To co
 
 :::js
 
-`createDeepAgent` ships with a pre-assembled harness: filesystem, summarization, subagents, and prompt caching by default. The parameters below let you define the agent's persona, connect it to your data and tools, and extend the stack with additional middleware.
+`createDeepAgent` ships with a pre-assembled harness: filesystem, summarization, subagents, and prompt caching by default. The parameters below let you define the agent's persona, connect it to your data and tools, and extend the [default middleware stack](#default-stack-main-agent) with additional middleware.
 
 ```typescript
 import { createDeepAgent } from "deepagents";
@@ -114,7 +114,7 @@ const agent = await createDeepAgent({
 | `backend` | Filesystem backend (StateBackend by default) |
 | `permissions` | Path-level access control for the filesystem |
 | `subagents` | Custom subagents for delegated tasks |
-| `middleware` | Extra middleware to add to the stack |
+| `middleware` | Extra middleware appended to the [default stack](#default-stack-main-agent) |
 | `interruptOn` | Pause before tool calls for human approval |
 | `responseFormat` | Structured output schema |
 
@@ -348,11 +348,11 @@ agent = create_deep_agent(
 Deep Agents support any [middleware](/oss/langchain/middleware/overview), including the built-in middleware listed below, prebuilt middleware from LangChain, provider-specific middleware, and custom middleware you write yourself.
 
 :::python
-Pass middleware to the `middleware` argument of `create_deep_agent`.
+Pass middleware to the `middleware` argument of `create_deep_agent`. Custom middleware is appended after @[`PatchToolCallsMiddleware`] in the [default stack](#default-stack-main-agent).
 :::
 
 :::js
-Pass middleware to the `middleware` argument of `createDeepAgent`.
+Pass middleware to the `middleware` argument of `createDeepAgent`. Custom middleware is appended after @[`PatchToolCallsMiddleware`] in the [default stack](#default-stack-main-agent).
 :::
 
 By default, Deep Agents have access to the following middleware:
@@ -396,7 +396,7 @@ From first to last:
 8. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is appended here (after Patch, before the tail stack).
 9. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
 10. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
-11. @[`AnthropicPromptCachingMiddleware`]: Automatically added when you are using an Anthropic mode. Runs **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
+11. @[`AnthropicPromptCachingMiddleware`]: Automatically added when you are using an Anthropic model. Runs **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
 12. @[`MemoryMiddleware`]: Only when you pass `memory`.
 
     <Note>
@@ -406,14 +406,6 @@ From first to last:
 13. `HumanInTheLoopMiddleware`: Only when you pass `interruptOn`. Pauses for human approval or input at configured tool calls.
 
 :::
-
-### Patch tool-call history
-
-`PatchToolCallsMiddleware` is an internal Deep Agents middleware that keeps message history valid across interruptions and retries. It runs before the next agent step, scans prior `AIMessage` tool calls, and appends a synthetic `ToolMessage` for any tool call ID that does not already have a matching result.
-
-This repair is most useful when a run is interrupted, canceled, or resumed after the model emitted a tool call but before the tool returned. It also handles malformed or truncated tool-call arguments by adding an explanatory tool message instead of leaving an unanswered tool call in the history. The middleware does not execute tools or change tool outputs. It only patches the transcript so the next model call satisfies provider message-ordering requirements.
-
-You may see `PatchToolCallsMiddleware` in every Deep Agents trace because it is part of the default harness stack. Seeing it in a trace is expected and usually does not indicate an error. If you build a custom harness outside `create_deep_agent` or `createDeepAgent`, include equivalent handling when your application supports interrupts, cancellation, or replay from checkpoints.
 
 ### Default stack (synchronous subagents)
 
