@@ -22,8 +22,7 @@ result = agent.invoke({
 # The agent returns the tool output directly without another LLM call:
 # "Order 12345 is shipped and will arrive in 2 days."
 # :snippet-end:
-import pprint
-pprint.pprint(result)
+
 # :remove-start:
 if __name__ == "__main__":
     last = result["messages"][-1]
