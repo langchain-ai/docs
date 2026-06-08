@@ -1,0 +1,83 @@
+---
+title: MINT Attest
+description: On-chain work attestation for every LangChain chain and agent run.
+---
+
+## Overview
+
+`MintAttestCallback` attests each LangChain chain or agent run on [MINT Protocol](https://foundrynet.io) — a tamper-evident, on-chain (Solana) record of the work an agent did.
+
+## Why
+
+As agents take on real work, "did this agent actually do the job, and how well?" becomes a question other agents, customers, and auditors need to answer without trusting your logs. MINT gives every run a verifiable, independently checkable receipt.
+
+## How it works
+
+On each chain run, the callback hashes the inputs and outputs (SHA-256 — your data never leaves the process, only the hash does), records the duration, and settles a work record on Solana mainnet through the MINT server. It returns a public Solscan verify URL and updates the agent's trust score. The agent auto-registers on the first attestation (free); attesting costs $0.02 per run. No wallet, keypair, or blockchain code on your side — it's an HTTPS call.
+
+**What gets recorded:**
+- The work type, a summary, and the duration of the run
+- SHA-256 hashes of the input and output (never the raw data)
+- A permanent, tamper-evident record on Solana, verifiable by anyone
+
+Attestation never breaks your chain: if no key is set or the network hiccups, it logs a warning and the run proceeds normally.
+
+## Prerequisites
+
+```shell
+pip install "mint-attest[langchain]" langchain langchain-anthropic
+```
+
+Set your MINT key (free at [foundrynet.io](https://foundrynet.io)):
+
+```shell
+export MINT_API_KEY=fnet_...
+```
+
+## Example
+
+<Steps>
+  <Step title="Configure credentials">
+    ```python
+    import os
+
+    os.environ["MINT_API_KEY"] = "fnet_..."        # free at foundrynet.io
+    os.environ["ANTHROPIC_API_KEY"] = "sk-ant-..."
+    ```
+  </Step>
+  <Step title="Attach the callback to a chain">
+    The handler attests on chain completion, so attach it to a runnable chain
+    (or agent), not a bare model call.
+
+    ```python
+    from mint_attest.langchain import MintAttestCallback
+    from langchain_anthropic import ChatAnthropic
+    from langchain_core.prompts import ChatPromptTemplate
+
+    attest = MintAttestCallback(work_type="generation", name="my-langchain-agent")
+
+    prompt = ChatPromptTemplate.from_template("Summarize: {text}")
+    chain = prompt | ChatAnthropic(model="claude-sonnet-4-6")
+
+    result = chain.invoke(
+        {"text": "Quarterly revenue grew 18% on strong agent adoption."},
+        config={"callbacks": [attest]},
+    )
+    print(result.content)
+    # the chain run is now attested on MINT — the Solscan receipt is logged
+    ```
+  </Step>
+</Steps>
+
+## Verification
+
+Every attestation settles a transaction you can open on Solscan. Anyone can browse
+an agent's full work history and trust score on the public
+[MINT Explorer](https://mint.foundrynet.io) — no account required.
+
+## Resources
+
+- [Website](https://foundrynet.io)
+- [MINT Explorer](https://mint.foundrynet.io)
+- [PyPI](https://pypi.org/project/mint-attest)
+- [GitHub](https://github.com/FoundryNet/mint-mcp)
