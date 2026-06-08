@@ -1,0 +1,291 @@
+---
+title: Managed Deep Agents SDKs
+sidebarTitle: SDKs
+description: Use the Python, TypeScript, and React SDKs for Managed Deep Agents.
+---
+
+The Managed Deep Agents SDKs wrap the `/v1/deepagents` API for creating agents, managing threads, streaming runs, connecting MCP servers, and building React UIs.
+
+<Note>
+The SDK packages are in **public beta**. Managed Deep Agents still requires [preview access](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) on [LangSmith Cloud](/langsmith/cloud) in the US region.
+</Note>
+
+## Install
+
+<CodeGroup>
+
+```bash Python
+pip install managed-deepagents
+```
+
+```bash TypeScript
+npm install @langchain/managed-deepagents
+```
+
+```bash React
+npm install @langchain/managed-deepagents @langchain/react
+```
+
+</CodeGroup>
+
+Requirements:
+
+- Python 3.10 or newer for `managed-deepagents`.
+- Node.js 20 or newer for `@langchain/managed-deepagents`.
+- A LangSmith API key for a workspace with Managed Deep Agents access.
+
+## Configure a client
+
+Set your API key:
+
+```bash
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+```
+
+Both SDKs default to `https://api.smith.langchain.com/v1/deepagents`. To use a compatible endpoint, set `LANGSMITH_ENDPOINT` or pass the API URL directly:
+
+<CodeGroup>
+
+```python Python
+from managed_deepagents import Client
+
+client = Client(
+    api_key="<LANGSMITH_API_KEY>",
+    api_url="https://api.smith.langchain.com/v1/deepagents",
+)
+```
+
+```ts TypeScript
+import { Client } from "@langchain/managed-deepagents";
+
+const client = new Client({
+  apiKey: process.env.LANGSMITH_API_KEY,
+  apiUrl: "https://api.smith.langchain.com/v1/deepagents",
+});
+```
+
+</CodeGroup>
+
+<Warning>
+Do not expose long-lived LangSmith API keys in browser code. For browser applications, call your own backend or pass a custom `fetch` implementation that proxies requests through your server.
+</Warning>
+
+## Create an agent
+
+Create-agent requests can use the same top-level `model` and `backend` fields used by the Managed Deep Agents CLI:
+
+<CodeGroup>
+
+```python Python
+from managed_deepagents import Client
+
+with Client() as client:
+    agent = client.agents.create(
+        name="research-assistant",
+        description="Research assistant that can search the web and summarize sources.",
+        model="openai:gpt-5.5",
+        backend={"type": "state"},
+        instructions=(
+            "You are a careful research assistant. Search for sources, "
+            "keep notes, and return concise answers with citations."
+        ),
+    )
+
+print(f"Agent ID: {agent['id']}")
+```
+
+```ts TypeScript
+import { Client } from "@langchain/managed-deepagents";
+
+const client = new Client({
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+
+const agent = await client.agents.create({
+  name: "research-assistant",
+  description: "Research assistant that can search the web and summarize sources.",
+  model: "openai:gpt-5.5",
+  backend: { type: "state" },
+  instructions:
+    "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
+});
+
+console.log(`Agent ID: ${agent.id}`);
+```
+
+</CodeGroup>
+
+## Run and stream
+
+Create a thread before running the agent. Threads preserve conversation and execution state for long-running work.
+
+<CodeGroup>
+
+```python Python
+from managed_deepagents import Client
+
+agent_id = "<agent_id>"
+
+with Client() as client:
+    thread = client.threads.create(
+        agent_id=agent_id,
+        options={
+            "test_run": False,
+            "skip_memory_write_protection": False,
+        },
+    )
+
+    for event in client.threads.stream(
+        thread["id"],
+        agent_id=agent_id,
+        messages=[
+            {
+                "role": "user",
+                "content": "Research recent approaches to agent memory and summarize the main tradeoffs.",
+            }
+        ],
+        stream_mode=["values", "updates", "messages-tuple"],
+        stream_subgraphs=True,
+        user_timezone="America/Los_Angeles",
+    ):
+        print(event.event, event.data)
+```
+
+```ts TypeScript
+import { Client } from "@langchain/managed-deepagents";
+
+const agentId = "<agent_id>";
+const client = new Client({
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+
+const thread = await client.threads.create({
+  agent_id: agentId,
+  options: {
+    test_run: false,
+    skip_memory_write_protection: false,
+  },
+});
+
+const langGraphClient = client.getLangGraphClient({ agentId });
+const stream = langGraphClient.runs.stream(thread.id, agentId, {
+  input: {
+    messages: [
+      {
+        role: "user",
+        content:
+          "Research recent approaches to agent memory and summarize the main tradeoffs.",
+      },
+    ],
+  },
+  streamMode: ["values", "updates", "messages-tuple"],
+  streamSubgraphs: true,
+});
+
+for await (const event of stream) {
+  console.log(event.event, event.data);
+}
+```
+
+</CodeGroup>
+
+## Use React `useStream`
+
+The TypeScript SDK includes a LangGraph client adapter for `@langchain/react`. Use `getLangGraphClient()` so `useStream` owns the thread, run, and state projection behavior while the Managed Deep Agents SDK handles routes, headers, and payload fields.
+
+```tsx
+import { Client } from "@langchain/managed-deepagents";
+import { useStream } from "@langchain/react";
+
+const agentId = "<agent_id>";
+
+const managedDeepAgents = new Client({
+  // In browser apps, prefer passing a custom fetch that calls your backend.
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+
+const client = managedDeepAgents.getLangGraphClient({ agentId });
+
+export function ManagedDeepAgentStream() {
+  const stream = useStream({
+    client,
+    assistantId: agentId,
+    fetchStateHistory: false,
+  });
+
+  return (
+    <section>
+      <button
+        type="button"
+        disabled={stream.isLoading}
+        onClick={() => {
+          void stream.submit({
+            messages: [
+              { role: "user", content: "Write a short status update." },
+            ],
+          });
+        }}
+      >
+        Run agent
+      </button>
+
+      {stream.messages.map((message, index) => (
+        <p key={message.id ?? index}>{String(message.content)}</p>
+      ))}
+
+      <p>State keys: {Object.keys(stream.values).join(", ")}</p>
+    </section>
+  );
+}
+```
+
+## Resources
+
+The SDK clients expose these resource groups:
+
+| Resource | Python | TypeScript |
+| --- | --- | --- |
+| Agents | `client.agents` | `client.agents` |
+| Threads and runs | `client.threads` | `client.threads` |
+| MCP servers | `client.mcp_servers` | `client.mcpServers` |
+| Auth sessions | `client.auth_sessions` | `client.authSessions` |
+
+Python methods use `snake_case`, such as `create_and_run` and `resolve_interrupt`. TypeScript methods use `camelCase`, such as `createAndRun` and `resolveInterrupt`.
+
+The SDKs can register MCP servers, complete auth sessions, and discover a registered server's tool schemas with `client.mcp_servers.list_tools(...)` in Python or `client.mcpServers.listTools(...)` in TypeScript. Pass the selected tool entries to `client.agents.create(...)` or `client.agents.update(...)`.
+
+## Handle errors
+
+SDK requests raise SDK-specific errors that include status and response details.
+
+<CodeGroup>
+
+```python Python
+from managed_deepagents import Client, ManagedDeepAgentsAPIError
+
+with Client() as client:
+    try:
+        client.agents.get("missing-agent")
+    except ManagedDeepAgentsAPIError as error:
+        print(error.status_code, error.code, error.detail)
+```
+
+```ts TypeScript
+import { Client, ManagedDeepAgentsAPIError } from "@langchain/managed-deepagents";
+
+const client = new Client({
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+
+try {
+  await client.agents.get("missing-agent");
+} catch (error) {
+  if (error instanceof ManagedDeepAgentsAPIError) {
+    console.log(error.status, error.code, error.detail);
+  }
+}
+```
+
+</CodeGroup>
+
+For endpoint-level request and response schemas, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api-overview).

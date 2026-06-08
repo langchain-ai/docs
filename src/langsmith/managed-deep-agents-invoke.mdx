@@ -4,7 +4,7 @@ sidebarTitle: Run an agent
 description: Create threads and stream runs for a Managed Deep Agent.
 ---
 
-Running a Managed Deep Agent covers creating threads, starting runs, and streaming output. Deploy the agent first with the [CLI or REST API](/langsmith/managed-deep-agents-deploy), then invoke it with the REST API.
+Running a Managed Deep Agent covers creating threads, starting runs, and streaming output. Deploy the agent first with the [CLI, SDK, or REST API](/langsmith/managed-deep-agents-deploy), then invoke it with the SDKs or REST API.
 
 <Note>
 Managed Deep Agents is in **private preview**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
@@ -12,7 +12,7 @@ Managed Deep Agents is in **private preview**, available on [LangSmith Cloud](/l
 
 ## CLI: find the agent ID
 
-There is no CLI command for running Managed Deep Agents yet. Use the CLI to find the agent ID, then use the REST API to create threads and stream runs.
+There is no CLI command for running Managed Deep Agents yet. Use the CLI to find the agent ID, then use the SDKs or REST API to create threads and stream runs.
 
 List agents:
 
@@ -26,7 +26,21 @@ Inspect one agent:
 deepagents agents get <agent_id>
 ```
 
-## API: create threads and stream runs
+## SDK or API: create threads and stream runs
+
+Install the SDK for your runtime:
+
+<CodeGroup>
+
+```bash Python
+pip install managed-deepagents
+```
+
+```bash TypeScript
+npm install @langchain/managed-deepagents
+```
+
+</CodeGroup>
 
 Set request defaults:
 
@@ -37,46 +51,45 @@ export DEEPAGENTS_BASE_URL="$LANGSMITH_API_URL/v1/deepagents"
 export AGENT_ID="<agent_id>"
 ```
 
-Requests require the `X-Api-Key` header:
+The SDKs read `LANGSMITH_API_KEY` by default. REST requests require the `X-Api-Key` header:
 
 ```txt
 X-Api-Key: <LANGSMITH_API_KEY>
 ```
 
-Install an HTTP client for Python examples:
-
-```bash
-uv pip install httpx
-```
-
 The examples below reuse these variables:
 
 <Tabs>
-  <Tab title="Python (httpx)">
-    ```python
-    import os
+  <Tab title="Python SDK">
 
-    import httpx
+```python
+import os
 
-    BASE_URL = os.environ["DEEPAGENTS_BASE_URL"]
-    HEADERS = {"X-Api-Key": os.environ["LANGSMITH_API_KEY"]}
-    agent_id = os.environ["AGENT_ID"]
-    ```
+from managed_deepagents import Client
+
+agent_id = os.environ["AGENT_ID"]
+client = Client()
+```
+
   </Tab>
-  <Tab title="JavaScript (fetch)">
-    ```ts
-    const BASE_URL = process.env.DEEPAGENTS_BASE_URL!
-    const HEADERS = {
-      "X-Api-Key": process.env.LANGSMITH_API_KEY!,
-      "Content-Type": "application/json",
-    }
-    const agentId = process.env.AGENT_ID!
-    ```
+  <Tab title="TypeScript SDK">
+
+```ts
+import { Client } from "@langchain/managed-deepagents";
+
+const agentId = process.env.AGENT_ID!;
+const client = new Client({
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+```
+
   </Tab>
   <Tab title="cURL">
-    ```bash
-    export AGENT_ID="<agent_id>"
-    ```
+
+```bash
+export AGENT_ID="<agent_id>"
+```
+
   </Tab>
 </Tabs>
 
@@ -85,147 +98,188 @@ The examples below reuse these variables:
 Create a thread before running the agent. Threads preserve conversation and execution state for long-running work:
 
 <Tabs>
-  <Tab title="Python (httpx)">
-    ```python
-    response = httpx.post(
-        f"{BASE_URL}/threads",
-        headers=HEADERS,
-        json={
-            "agent_id": agent_id,
-            "options": {
-                "test_run": False,
-                "skip_memory_write_protection": False,
-            },
-        },
-    )
-    response.raise_for_status()
-    thread_id = response.json()["id"]
-    print(f"Thread ID: {thread_id}")
-    ```
+  <Tab title="Python SDK">
+
+```python
+thread = client.threads.create(
+    agent_id=agent_id,
+    options={
+        "test_run": False,
+        "skip_memory_write_protection": False,
+    },
+)
+thread_id = thread["id"]
+print(f"Thread ID: {thread_id}")
+```
+
   </Tab>
-  <Tab title="JavaScript (fetch)">
-    ```ts
-    const response = await fetch(`${BASE_URL}/threads`, {
-      method: "POST",
-      headers: HEADERS,
-      body: JSON.stringify({
-        agent_id: agentId,
-        options: {
-          test_run: false,
-          skip_memory_write_protection: false,
-        },
-      }),
-    })
-    if (!response.ok) throw new Error(await response.text())
-    const { id: threadId } = await response.json()
-    console.log(`Thread ID: ${threadId}`)
-    ```
+  <Tab title="TypeScript SDK">
+
+```ts
+const thread = await client.threads.create({
+  agent_id: agentId,
+  options: {
+    test_run: false,
+    skip_memory_write_protection: false,
+  },
+});
+const threadId = thread.id;
+console.log(`Thread ID: ${threadId}`);
+```
+
   </Tab>
   <Tab title="cURL">
-    ```bash
-    curl --request POST \
-      --url "$DEEPAGENTS_BASE_URL/threads" \
-      --header "X-Api-Key: $LANGSMITH_API_KEY" \
-      --header 'Content-Type: application/json' \
-      --data '{
-        "agent_id": "'"$AGENT_ID"'",
-        "options": {
-          "test_run": false,
-          "skip_memory_write_protection": false
-        }
-      }'
-    ```
+
+```bash
+curl --request POST \
+  --url "$DEEPAGENTS_BASE_URL/threads" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "agent_id": "'"$AGENT_ID"'",
+    "options": {
+      "test_run": false,
+      "skip_memory_write_protection": false
+    }
+  }'
+```
+
   </Tab>
 </Tabs>
+
+For cURL, set the returned thread ID before streaming:
+
+```bash
+export THREAD_ID="<thread_id>"
+```
 
 ### Stream a run from a thread
 
-Start work on the thread with `POST /v1/deepagents/threads/{thread_id}/runs/stream`. Include the `agent_id` in the request body and set `Accept: text/event-stream`:
+Start work on the thread and stream the result:
 
 <Tabs>
-  <Tab title="Python (httpx)">
-    ```python
-    payload = {
-        "agent_id": agent_id,
-        "messages": [
-            {
-                "role": "user",
-                "content": "Research recent approaches to agent memory and summarize the main tradeoffs.",
-            }
-        ],
-        "stream_mode": ["values", "updates", "messages-tuple"],
-        "stream_subgraphs": True,
-        "user_timezone": "America/Los_Angeles",
-    }
+  <Tab title="Python SDK">
 
-    with httpx.stream(
-        "POST",
-        f"{BASE_URL}/threads/{thread_id}/runs/stream",
-        headers={**HEADERS, "Accept": "text/event-stream"},
-        json=payload,
-        timeout=None,
-    ) as response:
-        response.raise_for_status()
-        for line in response.iter_lines():
-            if line:
-                print(line)
-    ```
+```python
+for event in client.threads.stream(
+    thread_id,
+    agent_id=agent_id,
+    messages=[
+        {
+            "role": "user",
+            "content": "Research recent approaches to agent memory and summarize the main tradeoffs.",
+        }
+    ],
+    stream_mode=["values", "updates", "messages-tuple"],
+    stream_subgraphs=True,
+    user_timezone="America/Los_Angeles",
+):
+    print(event.event, event.data)
+```
+
   </Tab>
-  <Tab title="JavaScript (fetch)">
-    ```ts
-    const response = await fetch(
-      `${BASE_URL}/threads/${threadId}/runs/stream`,
-      {
-        method: "POST",
-        headers: { ...HEADERS, Accept: "text/event-stream" },
-        body: JSON.stringify({
-          agent_id: agentId,
-          messages: [
-            {
-              role: "user",
-              content:
-                "Research recent approaches to agent memory and summarize the main tradeoffs.",
-            },
-          ],
-          stream_mode: ["values", "updates", "messages-tuple"],
-          stream_subgraphs: true,
-          user_timezone: "America/Los_Angeles",
-        }),
-      }
-    )
-    if (!response.ok || !response.body) throw new Error(await response.text())
+  <Tab title="TypeScript SDK">
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      process.stdout.write(decoder.decode(value, { stream: true }))
-    }
-    ```
+```ts
+const langGraphClient = client.getLangGraphClient({ agentId });
+const stream = langGraphClient.runs.stream(threadId, agentId, {
+  input: {
+    messages: [
+      {
+        role: "user",
+        content:
+          "Research recent approaches to agent memory and summarize the main tradeoffs.",
+      },
+    ],
+  },
+  streamMode: ["values", "updates", "messages-tuple"],
+  streamSubgraphs: true,
+});
+
+for await (const event of stream) {
+  console.log(event.event, event.data);
+}
+```
+
   </Tab>
   <Tab title="cURL">
-    ```bash
-    curl --request POST \
-      --url "$DEEPAGENTS_BASE_URL/threads/$THREAD_ID/runs/stream" \
-      --header "X-Api-Key: $LANGSMITH_API_KEY" \
-      --header 'Accept: text/event-stream' \
-      --header 'Content-Type: application/json' \
-      --data '{
-        "agent_id": "'"$AGENT_ID"'",
-        "messages": [
-          {
-            "role": "user",
-            "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
-          }
-        ],
-        "stream_mode": ["values", "updates", "messages-tuple"],
-        "stream_subgraphs": true,
-        "user_timezone": "America/Los_Angeles"
-      }'
-    ```
+
+```bash
+curl --request POST \
+  --url "$DEEPAGENTS_BASE_URL/threads/$THREAD_ID/runs/stream" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY" \
+  --header 'Accept: text/event-stream' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "agent_id": "'"$AGENT_ID"'",
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
+        }
+      ]
+    },
+    "stream_mode": ["values", "updates", "messages-tuple"],
+    "stream_subgraphs": true,
+    "user_timezone": "America/Los_Angeles"
+  }'
+```
+
   </Tab>
 </Tabs>
+
+The Python SDK and TypeScript SDK examples stream route-level events. The React `useStream` example below exposes LangGraph projections such as `stream.messages`, `stream.values`, and output state for chat UIs.
+
+### Stream with React `useStream`
+
+For React applications, use the TypeScript SDK's LangGraph client adapter with `@langchain/react`:
+
+```tsx
+import { Client } from "@langchain/managed-deepagents";
+import { useStream } from "@langchain/react";
+
+const agentId = "<agent_id>";
+
+const managedDeepAgents = new Client({
+  // In browser apps, prefer passing a custom fetch that calls your backend.
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+
+const client = managedDeepAgents.getLangGraphClient({ agentId });
+
+export function ManagedDeepAgentStream() {
+  const stream = useStream({
+    client,
+    assistantId: agentId,
+    fetchStateHistory: false,
+  });
+
+  return (
+    <section>
+      <button
+        type="button"
+        disabled={stream.isLoading}
+        onClick={() => {
+          void stream.submit({
+            messages: [
+              { role: "user", content: "Write a short status update." },
+            ],
+          });
+        }}
+      >
+        Run agent
+      </button>
+
+      {stream.messages.map((message, index) => (
+        <p key={message.id ?? index}>{String(message.content)}</p>
+      ))}
+    </section>
+  );
+}
+```
+
+For more SDK configuration details, see the [Managed Deep Agents SDK reference](/langsmith/managed-deep-agents-sdk).
 
 Use stream modes based on the experience you want to build:
 
