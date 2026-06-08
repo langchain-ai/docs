@@ -1,0 +1,170 @@
+---
+title: "YDB integration"
+description: "Integrate with the YDBVectorStore vector store using LangChain JavaScript."
+---
+
+> [YDB](https://ydb.tech/) is a versatile open source Distributed SQL Database that combines high availability and scalability with strong consistency and ACID transactions. It accommodates transactional (OLTP), analytical (OLAP), and streaming workloads simultaneously.
+
+This guide provides a quick overview for getting started with the `YDBVectorStore` [vector store](/oss/integrations/vectorstores). For detailed documentation of all features and configurations, head to the [YDB LangChain.js guide](https://ydb.js.org/guide/langchain/).
+
+## Setup
+
+Set up a local YDB instance with Docker:
+
+```bash
+docker run -d -p 2136:2136 --name ydb-langchain -e YDB_USE_IN_MEMORY_PDISKS=true -h localhost ydbplatform/local-ydb:trunk
+```
+
+Install `@ydbjs/langchain` and `@langchain/core` to use this integration.
+
+This guide uses [OpenAI embeddings](/oss/integrations/embeddings/openai) as an example. You can use [other supported embeddings models](/oss/integrations/embeddings) instead.
+
+<CodeGroup>
+```bash npm
+npm install @ydbjs/langchain @langchain/openai @langchain/core
+```
+```bash yarn
+yarn add @ydbjs/langchain @langchain/openai @langchain/core
+```
+```bash pnpm
+pnpm add @ydbjs/langchain @langchain/openai @langchain/core
+```
+</CodeGroup>
+
+### Credentials
+
+There are no credentials required for a local YDB instance. Make sure you have installed the packages shown above.
+
+If you are using OpenAI embeddings for this guide, set your OpenAI key:
+
+```typescript
+process.env.OPENAI_API_KEY = "YOUR_API_KEY";
+```
+
+If you want to get automated tracing of your model calls, you can also set your [LangSmith](/langsmith/home) API key by uncommenting below:
+
+```typescript
+// process.env.LANGSMITH_TRACING="true"
+// process.env.LANGSMITH_API_KEY="your-api-key"
+```
+
+## Instantiation
+
+To instantiate the vector store, pass an embeddings model and a connection string. When the store creates the driver, it also manages its lifecycle:
+
+```typescript
+import { YDBVectorStore } from "@ydbjs/langchain";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const embeddings = new OpenAIEmbeddings({
+  model: "text-embedding-3-small",
+});
+
+await using vectorStore = new YDBVectorStore(embeddings, {
+  connectionString: "grpc://localhost:2136/local",
+});
+```
+
+The `await using` syntax automatically disposes of the store and closes its driver when the variable goes out of scope. If you do not use `await using`, call `close()` manually when you are finished:
+
+```typescript
+const vectorStore = new YDBVectorStore(embeddings, {
+  connectionString: "grpc://localhost:2136/local",
+});
+// ...
+vectorStore.close();
+```
+
+## Manage vector store
+
+### Add items to vector store
+
+Add documents using the `addDocuments` method. Documents without an ID receive auto-generated UUIDs, and re-inserting a document with an existing ID replaces it.
+
+```typescript
+import { Document } from "@langchain/core/documents";
+
+const document1 = new Document({
+  pageContent: "The powerhouse of the cell is the mitochondria",
+  metadata: { source: "https://example.com" },
+});
+
+const document2 = new Document({
+  pageContent: "Buildings are made out of brick",
+  metadata: { source: "https://example.com" },
+});
+
+const document3 = new Document({
+  pageContent: "Mitochondria are made out of lipids",
+  metadata: { source: "https://example.com" },
+});
+
+const documents = [document1, document2, document3];
+
+const ids = await vectorStore.addDocuments(documents);
+```
+
+### Delete items from vector store
+
+Delete specific documents by ID:
+
+```typescript
+await vectorStore.delete({ ids: [ids[ids.length - 1]] });
+```
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added, you will most likely wish to query it during the running of your chain or agent.
+
+### Query directly
+
+Perform a simple similarity search as follows:
+
+```typescript
+const results = await vectorStore.similaritySearch("biology", 2);
+
+for (const doc of results) {
+  console.log(`* ${doc.pageContent} [${JSON.stringify(doc.metadata)}]`);
+}
+```
+
+To execute a similarity search and receive the corresponding scores, run:
+
+```typescript
+const resultsWithScore = await vectorStore.similaritySearchWithScore("biology", 2);
+
+for (const [doc, score] of resultsWithScore) {
+  console.log(`* [SIM=${score.toFixed(3)}] ${doc.pageContent} [${JSON.stringify(doc.metadata)}]`);
+}
+```
+
+You can also filter results by metadata. Filters are passed as key-value pairs and combined with `AND` logic:
+
+```typescript
+const filteredResults = await vectorStore.similaritySearch("biology", 2, {
+  source: "https://example.com",
+});
+```
+
+### Query by turning into retriever
+
+You can also transform the vector store into a [retriever](/oss/langchain/retrieval) for easier usage in your chains:
+
+```typescript
+const retriever = vectorStore.asRetriever({
+  k: 2,
+});
+await retriever.invoke("biology");
+```
+
+## Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+- [Build a RAG app with LangChain](/oss/langchain/rag)
+- [Agentic RAG](/oss/langgraph/agentic-rag)
+- [Retrieval docs](/oss/langchain/retrieval)
+
+## API reference
+
+For detailed documentation of all `YDBVectorStore` features and configurations, including search strategies, approximate nearest-neighbor indexing, and column customization, head to the [YDB LangChain.js guide](https://ydb.js.org/guide/langchain/).

@@ -70,7 +70,7 @@ Each `FilesystemPermission` has three fields:
 |-------|------|-------------|
 | `operations` | `list["read" \| "write"]` | Operations this rule applies to. `"read"` covers `ls`, `read_file`, `glob`, `grep`. `"write"` covers `write_file`, `edit_file`. |
 | `paths` | `list[str]` | Glob patterns for matching file paths (e.g., `["/workspace/**"]`). Supports `**` for recursive matching and `{a,b}` for alternation. |
-| `mode` | `"allow" \| "deny"` | Whether to allow or deny matching operations. Defaults to `"allow"`. |
+| `mode` | `"allow" \| "deny" \| "interrupt"` | Whether to allow, deny, or pause for human approval on matching operations. Defaults to `"allow"`. See [Pause for human approval](#pause-for-human-approval). |
 
 Rules use first-match-wins evaluation: the first rule whose `operations` and `paths` match the current call determines the outcome. If no rule matches, the call is **allowed** (permissive default).
 
@@ -89,6 +89,44 @@ Each `FilesystemPermission` has three fields:
 Rules use first-match-wins evaluation: the first rule whose `operations` and `paths` match the current call determines the outcome. If no rule matches, the call is **allowed** (permissive default).
 
 Paths must be absolute (start with `/`) and cannot contain `..` or `~`. Invalid paths throw at agent construction time.
+
+:::
+
+:::python
+
+## Pause for human approval
+
+<Note>
+The `"interrupt"` mode requires `deepagents>=0.6.8`.
+</Note>
+
+Set `mode="interrupt"` to pause for human approval instead of allowing or denying a matching operation outright. When the agent calls a built-in write tool (`write_file`, `edit_file`) on a path that matches an interrupt-mode rule, `create_deep_agent` raises a human-in-the-loop interrupt rather than running the tool, and a reviewer can approve, edit, or reject the call.
+
+```python
+from deepagents import FilesystemPermission, create_deep_agent
+from langgraph.checkpoint.memory import InMemorySaver
+
+
+agent = create_deep_agent(
+    model=model,
+    permissions=[
+        # Pause for approval before writing anything under /secrets.
+        FilesystemPermission(
+            operations=["write"],
+            paths=["/secrets/**"],
+            mode="interrupt",
+        ),
+    ],
+    # Interrupt mode requires a checkpointer to pause and resume.
+    checkpointer=InMemorySaver(),
+)
+```
+
+Interrupt-mode rules are wired into the agent's human-in-the-loop middleware automatically and merge with any `interrupt_on` you pass, so you handle and resume them the same way as tool-call interrupts. See [Human-in-the-loop](/oss/deepagents/human-in-the-loop) for the resume flow.
+
+<Tip>
+Anchor interrupt patterns with a literal leading segment (for example, `/secrets/**` or `/projects/*/secrets/**`). Bulk tools (`ls`, `glob`, `grep`) fire the interrupt when their search subtree could overlap the rule's anchored prefix, so a fully unanchored pattern like `/**/secrets` conservatively over-fires.
+</Tip>
 
 :::
 
