@@ -1,0 +1,107 @@
+---
+title: "TypeDB integrations"
+description: "Integrate with TypeDB for LangGraph checkpointing and store persistence using LangChain Python."
+---
+
+>[TypeDB](https://typedb.com/) is a strongly-typed database for managing complex, relational data, with applications in agentic systems and knowledge graph use cases.
+
+The TypeDB LangGraph integrations provide a [checkpointer](/oss/langgraph/persistence) for persisting graph execution state and a [store](/oss/langgraph/persistence#memory-store) for long-lived agent memory such as user preferences and learned facts, removing the need to operate a separate Redis or Postgres instance alongside TypeDB.
+
+## Installation
+
+Install both packages:
+
+```bash
+pip install langgraph-checkpoint-typedb langgraph-store-typedb
+```
+
+Both packages require Python 3.11+ and a TypeDB 3.8+ server.
+
+## Run TypeDB locally
+
+Start a TypeDB server using the official Docker image:
+
+```bash
+docker run -d --name typedb \
+  -p 1729:1729 \
+  typedb/typedb:latest
+```
+
+## LangGraph checkpointer
+
+`TypeDBSaver` is a `BaseCheckpointSaver` implementation that persists graph state across invocations, mirroring the schema shape of `langgraph-checkpoint-postgres` translated to TypeDB entities.
+
+```python
+from typedb.driver import TypeDB, Credentials, DriverOptions, DriverTlsConfig
+from langgraph_checkpoint_typedb import TypeDBSaver
+
+driver = TypeDB.driver(
+    "localhost:1729",
+    Credentials("admin", "password"),
+    DriverOptions(DriverTlsConfig.disabled()),
+)
+saver = TypeDBSaver(driver, database="langgraph_checkpoints")
+saver.ensure_database()
+saver.ensure_schema()
+
+graph = builder.compile(checkpointer=saver)
+graph.invoke({"input": "hi"}, config={"configurable": {"thread_id": "u-1"}})
+```
+
+An async variant, `AsyncTypeDBSaver`, offloads each operation to a thread via `asyncio.to_thread` because the TypeDB Python driver is synchronous-only.
+
+```python
+from langgraph_checkpoint_typedb import AsyncTypeDBSaver, TypeDBSaver
+
+sync = TypeDBSaver(driver, database="langgraph_checkpoints")
+sync.ensure_database()
+sync.ensure_schema()
+asaver = AsyncTypeDBSaver(sync)
+
+graph = builder.compile(checkpointer=asaver)
+await graph.ainvoke({"input": "hi"}, config={"configurable": {"thread_id": "u-1"}})
+```
+
+The saver does not own the driver lifecycle, call `driver.close()` yourself when done.
+
+## LangGraph store
+
+`TypeDBStore` is a `BaseStore` implementation that stores LangGraph memory items as opaque JSON blobs keyed by `(namespace, key)`.
+
+```python
+from typedb.driver import TypeDB, Credentials, DriverOptions, DriverTlsConfig
+from langgraph_store_typedb import TypeDBStore
+
+driver = TypeDB.driver(
+    "localhost:1729",
+    Credentials("admin", "password"),
+    DriverOptions(DriverTlsConfig.disabled()),
+)
+store = TypeDBStore(driver, database="langgraph_memory")
+store.ensure_database()
+store.ensure_schema()
+
+store.put(("users", "alice"), "pref-1", {"theme": "dark"})
+item = store.get(("users", "alice"), "pref-1")
+print(item.value)  # {'theme': 'dark'}
+```
+
+An async variant, `AsyncTypeDBStore`, is available with the same threading model as the async saver:
+
+```python
+from langgraph_store_typedb import AsyncTypeDBStore, TypeDBStore
+
+sync = TypeDBStore(driver, database="langgraph_memory")
+sync.ensure_database()
+sync.ensure_schema()
+astore = AsyncTypeDBStore(sync)
+
+await astore.aput(("users", "alice"), "pref-1", {"theme": "dark"})
+```
+
+## Resources
+
+- [langgraph-checkpoint-typedb on PyPI](https://pypi.org/project/langgraph-checkpoint-typedb/)
+- [langgraph-store-typedb on PyPI](https://pypi.org/project/langgraph-store-typedb/)
+- [Announcing the TypeDB plugin for LangGraph](https://typedb.com/blog/announcing-the-typedb-plugin-for-langgraph)
+- [TypeDB documentation](https://typedb.com/docs)
