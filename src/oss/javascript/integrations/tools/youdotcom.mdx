@@ -3,7 +3,7 @@ title: "You.com search tools"
 description: "Integrate with the You.com search tools using LangChain JavaScript."
 ---
 
-The `@youdotcom-oss/langchain` package provides three `DynamicStructuredTool` instances for web search and content extraction, built for LangChain.js agents.
+The `@youdotcom-oss/langchain` package provides three `DynamicStructuredTool` factories for web search, research, and content extraction, built for LangChain.js agents.
 
 ## Setup
 
@@ -11,74 +11,98 @@ Install the package with your preferred package manager:
 
 <CodeGroup>
     ```bash npm
-    npm install @youdotcom-oss/langchain
+    npm install @youdotcom-oss/langchain langchain
     ```
 
     ```bash yarn
-    yarn add @youdotcom-oss/langchain
+    yarn add @youdotcom-oss/langchain langchain
     ```
 
     ```bash pnpm
-    pnpm add @youdotcom-oss/langchain
+    pnpm add @youdotcom-oss/langchain langchain
     ```
 </CodeGroup>
 
-Set your You.com API key. Get your API key at [you.com/platform](https://you.com/platform).
+[Get a You.com API key](https://you.com/platform/api-keys) and set it as an environment variable:
 
 ```typescript
 process.env.YDC_API_KEY = "your-api-key";
 ```
 
-## Available tools
-
-### `youSearch`
-
-Web and news search with advanced filtering (dates, sites, file types).
+Each factory reads `YDC_API_KEY` from the environment. To pass a key explicitly, provide `apiKey`:
 
 ```typescript
 import { youSearch } from "@youdotcom-oss/langchain";
 
 const searchTool = youSearch({ apiKey: process.env.YDC_API_KEY });
+```
+
+## `youSearch`
+
+Web and news search with up-to-date results. The tool accepts the following arguments at invocation:
+
+- `query` (required, `string`): The search query.
+- `count` (`number`): Max results to return.
+- `freshness` (`string`): Filter by recency.
+- `offset` (`number`): Pagination offset.
+- `country` (`string`): Two-letter country code to focus results geographically.
+- `safesearch` (`"off" | "moderate" | "strict"`): Content filter.
+- `livecrawl` (`"web" | "news" | "all"`): Fetch full page content.
+- `livecrawl_formats` (`("markdown" | "html")[]`): Format for live-crawled content.
+- `language` (`string`): Language code for results.
+
+```typescript
+import { youSearch } from "@youdotcom-oss/langchain";
+
+const searchTool = youSearch();
 const result = await searchTool.invoke({ query: "latest AI developments", count: 5 });
 ```
 
-### `youResearch`
+## `youResearch`
 
-Comprehensive answers with cited sources. Supports configurable effort levels: `lite`, `standard`, `deep`, and `exhaustive`.
+Comprehensive answers with cited sources. The tool accepts:
+
+- `input` (required, `string`): The research question.
+- `research_effort` (`"lite" | "standard" | "deep" | "exhaustive"`): Controls depth and speed. Defaults to `standard`.
 
 ```typescript
 import { youResearch } from "@youdotcom-oss/langchain";
 
-const researchTool = youResearch({ apiKey: process.env.YDC_API_KEY });
-const result = await researchTool.invoke({ query: "WebAssembly vs JavaScript performance" });
+const researchTool = youResearch();
+const result = await researchTool.invoke({
+  input: "WebAssembly vs JavaScript performance",
+  research_effort: "deep",
+});
 ```
 
-### `youContents`
+## `youContents`
 
-Extract full page content from URLs in markdown or HTML format.
+Extract full page content from URLs. The tool accepts:
+
+- `urls` (required, `string[]`): URLs to extract content from.
+- `formats` (`("markdown" | "html" | "metadata")[]`): Output formats. Defaults to `["markdown", "metadata"]`.
+- `crawl_timeout` (`number`): Per-URL crawl timeout in seconds.
 
 ```typescript
 import { youContents } from "@youdotcom-oss/langchain";
 
-const contentsTool = youContents({ apiKey: process.env.YDC_API_KEY });
+const contentsTool = youContents();
 const result = await contentsTool.invoke({ urls: ["https://example.com/article"] });
 ```
 
-## Use with an agent
+## Use within an agent
+
+Pass the tools to an agent. The model decides which one to call:
 
 ```typescript
 import { createAgent, initChatModel } from "langchain";
 import { youSearch, youResearch, youContents } from "@youdotcom-oss/langchain";
 
-const model = await initChatModel("claude-haiku-4-5", { temperature: 0 });
+const model = await initChatModel("claude-sonnet-4-6", { temperature: 0 });
 
 const agent = createAgent({
   model,
-  tools: [
-    youSearch(),
-    youResearch(),
-    youContents(),
-  ],
+  tools: [youSearch(), youResearch(), youContents()],
   systemPrompt: "You are a helpful research assistant. Always cite your sources.",
 });
 
