@@ -17,6 +17,7 @@ LangSmith sends a `POST` request with a JSON body to your webhook URL. The reque
 | Method | `POST` |
 | Body | JSON, [common envelope](#event-envelope) below |
 | Scheme | `http://` and `https://` are accepted. `https://` is strongly recommended |
+| Signature | `X-LangSmith-Signature` header, signed with the subscription's signing secret |
 | Timeout | 20 seconds per attempt |
 | Attempts | Up to 4 attempts (1 initial plus 3 retries with exponential backoff) on transport errors, HTTP `408`, `425`, `429`, and any HTTP `5xx`. Other `4xx` responses are treated as permanent and are not retried |
 | Response | Success is determined from the status code alone. Response bodies are ignored. |
@@ -29,9 +30,87 @@ Retries deliver a byte-identical payload, including the same `id`. Dedupe on `id
 
 You can attach arbitrary headers to each subscription (for example, `Authorization: Bearer …`) to authenticate the caller at your endpoint. `Content-Type` is always set by LangSmith and cannot be overridden.
 
+### Signing secret
+
+Each subscription has a signing secret. LangSmith uses this secret to sign the raw webhook request body and sends the result in the `X-LangSmith-Signature` header.
+
+The header value has this format:
+
+```text
+sha256=<hex-encoded HMAC-SHA256 digest>
+```
+
+Verify the signature before parsing or acting on the payload. The HMAC input is the exact raw request body bytes, and the HMAC key is the subscription's signing secret. Do not parse and reserialize the JSON body before verification.
+
+<CodeGroup>
+
+```python Python
+import hashlib
+import hmac
+from typing import Optional
+
+
+def verify_langsmith_signature(
+    *,
+    body: bytes,
+    signing_secret: str,
+    signature_header: Optional[str],
+) -> bool:
+    if not signature_header or not signature_header.startswith("sha256="):
+        return False
+
+    expected = "sha256=" + hmac.new(
+        signing_secret.encode("utf-8"),
+        body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    return hmac.compare_digest(expected, signature_header)
+```
+
+```typescript TypeScript
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+export function verifyLangSmithSignature({
+  body,
+  signingSecret,
+  signatureHeader,
+}: {
+  body: Buffer;
+  signingSecret: string;
+  signatureHeader: string | undefined;
+}) {
+  if (!signatureHeader?.startsWith("sha256=")) {
+    return false;
+  }
+
+  const expected = `sha256=${createHmac("sha256", signingSecret)
+    .update(body)
+    .digest("hex")}`;
+
+  const expectedBytes = Buffer.from(expected);
+  const actualBytes = Buffer.from(signatureHeader);
+
+  return (
+    expectedBytes.length === actualBytes.length &&
+    timingSafeEqual(expectedBytes, actualBytes)
+  );
+}
+```
+
+</CodeGroup>
+
+### Roll a signing secret
+
+Roll a signing secret when it may have been exposed, or when your organization's credential rotation policy requires a new secret.
+
+To roll a secret, open the subscription row in **Engine Settings**, click **Roll signing secret**, and confirm. LangSmith generates a new signing secret and uses it for future webhook deliveries immediately. The previous secret stops signing deliveries as soon as the roll completes.
+
+After rolling the secret, update every consumer that verifies `X-LangSmith-Signature` with the new value.
+
 ### Severity filtering
 
-Each subscription has a `severity_threshold` from `0` to `3`. An event is delivered only when the issue's `severity` is less than or equal to the threshold. Lower numbers are more urgent.
+Each subscription has a `severity_threshold` from `0` to `3`. For issue events, an event is delivered only when the issue's `severity` is less than or equal to the threshold. Lower numbers are more urgent.
 
 | Severity | Meaning |
 | --- | --- |
@@ -41,6 +120,8 @@ Each subscription has a `severity_threshold` from `0` to `3`. An event is delive
 | `3` | Low |
 
 For example, a subscription with `severity_threshold: 1` receives events for `URGENT` (0) and `HIGH` (1) issues only.
+
+Severity thresholds do not apply to [`issue.agent_run.failed`](#issue-agent-run-failed), because run-failure events are scoped to the Engine session rather than to a specific issue.
 
 ### Event-type filtering
 
@@ -53,14 +134,14 @@ Every event delivered to your endpoint uses the same outer JSON shape.
 | Field | Type | Description |
 | --- | --- | --- |
 | `id` | UUID | Unique identifier for this delivery. Stable across retries. Use it to dedupe. |
-| `type` | string | Event type. One of [`issue.created`](#issue-created) or [`issue.trace.added`](#issue-trace-added). |
+| `type` | string | Event type. One of [`issue.created`](#issue-created), [`issue.trace.added`](#issue-trace-added), or [`issue.agent_run.failed`](#issue-agent-run-failed). |
 | `created` | integer | Unix seconds (UTC) when the event was enqueued. |
 | `request_id` | UUID | Shared by every event fired from the same upstream action. See [Batch coalescing](#batch-coalescing). |
-| `data` | object | Event payload. Always contains [`data.object`](#data-object). Contains [`data.trace`](#data-trace) only on [`issue.trace.added`](#issue-trace-added) events. |
+| `data` | object | Event payload. Always contains `data.object`. Contains [`data.trace`](#data-trace) only on [`issue.trace.added`](#issue-trace-added) events. |
 
-### `data.object`
+### Issue `data.object`
 
-`data.object` is a snapshot of the issue and is included on every event, regardless of type. Treat it as the authoritative state of the issue at the time the event was generated.
+For [`issue.created`](#issue-created) and [`issue.trace.added`](#issue-trace-added), `data.object` is a snapshot of the issue. Treat it as the authoritative state of the issue at the time the event was generated.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -69,10 +150,27 @@ Every event delivered to your endpoint uses the same outer JSON shape.
 | `description` | string | Human-readable description. |
 | `severity` | integer | `0` (urgent) through `3` (low). See [Severity filtering](#severity-filtering). |
 | `tenant_id` | UUID | Workspace the issue belongs to. |
-| `tenant_name` | string | Workspace display name (best-effort). Empty if the workspace has been deleted. |
+| `tenant_name` | string | Workspace display name. |
 | `session_id` | UUID | Tracing project the issue belongs to. |
-| `session_name` | string | Tracing project name (best-effort). Empty if the project has been deleted. |
+| `session_name` | string | Tracing project name. |
 | `url` | string | Deep link to the issue in the LangSmith UI. |
+
+### Run failure `data.object`
+
+For [`issue.agent_run.failed`](#issue-agent-run-failed), `data.object` describes the Engine run that failed.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `tenant_id` | UUID | Workspace the run belongs to. |
+| `tenant_name` | string | Workspace display name. |
+| `session_id` | UUID | Tracing project the run belongs to. |
+| `session_name` | string | Tracing project name. |
+| `url` | string | Deep link to the LangSmith project in the UI. |
+| `thread_id` | string | Engine thread ID. |
+| `run_id` | string | Engine run ID. Omitted when unavailable. |
+| `status` | string | Final run status. |
+| `error_message` | string | Error text from the failed run. Omitted when unavailable. |
+| `occurred_at` | string | RFC 3339 timestamp of when the failure occurred. |
 
 ### `data.trace`
 
@@ -151,6 +249,33 @@ Sent when a new trace is linked to an existing issue. `data.trace` describes the
 }
 ```
 
+### `issue.agent_run.failed`
+
+Sent when the LangSmith Engine fails to complete a run. This event is session-scoped, so it does not include `data.trace` and does not use severity filtering.
+
+```json
+{
+  "id": "4d0e8db2-81e6-4491-b8e5-b13a8f5afc0d",
+  "type": "issue.agent_run.failed",
+  "created": 1747238500,
+  "request_id": "f6bbd48a-0386-403d-9344-31051264b45f",
+  "data": {
+    "object": {
+      "tenant_id": "11111111-2222-3333-4444-555555555555",
+      "tenant_name": "Acme Workspace",
+      "session_id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+      "session_name": "prod-api",
+      "url": "https://smith.langchain.com/o/11111111-2222-3333-4444-555555555555/projects/p/66666666-7777-8888-9999-aaaaaaaaaaaa",
+      "thread_id": "thread-123",
+      "run_id": "run-456",
+      "status": "error",
+      "error_message": "RuntimeError: missing API key",
+      "occurred_at": "2026-05-14T12:45:00Z"
+    }
+  }
+}
+```
+
 ## Test your endpoint
 
 Before pointing a real subscription at your endpoint, send a sample payload to verify it accepts and acknowledges within the 20-second timeout:
@@ -171,7 +296,8 @@ Use the example body from [`issue.created`](#issue-created) as `sample-issue-cre
 ## Security
 
 - Webhook URLs are validated when the subscription is created and again at delivery time. Private and metadata IP ranges are blocked in SaaS. Both `http://` and `https://` are accepted; use `https://` so the payload and any custom headers are not sent in cleartext.
-- LangSmith does not sign webhook bodies. Authenticate the sender by setting a secret as a custom header on the subscription (for example, `Authorization: Bearer …`) and verifying it at your endpoint. Anyone with the webhook URL can POST to it, so treat the URL itself as confidential and rely on the header for authentication.
+- LangSmith signs webhook bodies with the subscription's signing secret. Verify `X-LangSmith-Signature` before processing the payload.
+- You can also set custom headers on the subscription, such as `Authorization: Bearer …`, for routing or additional authentication at your endpoint.
 - Dedupe on the event `id` so that a retried delivery does not cause a duplicate notification.
 
 ## Best practices

@@ -281,6 +281,76 @@ There are two subtle and important points to note here:
 2. We initialize the graph with `StateGraph({ state: OverallState, input: InputState, output: OutputState })`. How can we write to `PrivateState` in `node2`? How does the graph gain access to this schema if it was not passed in the `StateGraph` initialization? We can do this because _nodes can also declare additional state channels_ as long as the state schema definition exists. In this case, the `PrivateState` schema is defined, so we can add `bar` as a new state channel in the graph and write to it.
 :::
 
+:::python
+<Warning>
+**Private channels are not redacted when streaming.**
+
+Input, output, and private schemas constrain what each node _reads_ (its input schema) and what `invoke` _returns_ (the output schema). They do **not** hide channels from `stream`.
+
+When you stream with `stream_mode="values"`, the graph emits **all** of its state channels by default, including private ones, because values streaming defaults to the full set of state channels rather than the output schema. This is why a private channel like `bar` is hidden by `invoke` but visible while streaming:
+
+```python
+for chunk in graph.stream({"user_input": "My"}, stream_mode="values"):
+    print(chunk)
+# {'user_input': 'My'}
+# {'user_input': 'My', 'foo': 'My name'}
+# {'user_input': 'My', 'foo': 'My name', 'bar': 'My name is'}        # <-- private channel
+# {'user_input': 'My', 'foo': 'My name', 'bar': 'My name is', 'graph_output': 'My name is Lance'}
+```
+
+To restrict the streamed values to a specific set of channels (e.g. only the output schema), pass `output_keys`:
+
+```python
+for chunk in graph.stream(
+    {"user_input": "My"},
+    stream_mode="values",
+    output_keys=["graph_output"],  # [!code highlight]
+):
+    print(chunk)
+# {'graph_output': 'My name is Lance'}
+```
+
+If you only need the channels a node actually produced each step (rather than the full accumulated state), use `stream_mode="updates"` instead.
+</Warning>
+:::
+
+:::js
+<Warning>
+**Private channels are not redacted when streaming.**
+
+Input, output, and private schemas constrain what each node _reads_ (its input schema) and what `invoke` _returns_ (the output schema). They do **not** hide channels from `stream`.
+
+When you stream with `streamMode: "values"`, the graph emits **all** of its state channels by default — including private ones — because values streaming defaults to the full set of state channels rather than the output schema. This is why a private channel like `bar` is hidden by `invoke` but visible while streaming:
+
+```typescript
+for await (const chunk of await graph.stream(
+  { userInput: "My" },
+  { streamMode: "values" }
+)) {
+  console.log(chunk);
+}
+// { userInput: 'My' }
+// { userInput: 'My', foo: 'My name' }
+// { userInput: 'My', foo: 'My name', bar: 'My name is' }            // <-- private channel
+// { userInput: 'My', foo: 'My name', bar: 'My name is', graphOutput: 'My name is Lance' }
+```
+
+To restrict the streamed values to a specific set of channels (e.g. only the output schema), pass `outputKeys`:
+
+```typescript
+for await (const chunk of await graph.stream(
+  { userInput: "My" },
+  { streamMode: "values", outputKeys: ["graphOutput"] }  // [!code highlight]
+)) {
+  console.log(chunk);
+}
+// { graphOutput: 'My name is Lance' }
+```
+
+If you only need the channels a node actually produced each step (rather than the full accumulated state), use `streamMode: "updates"` instead.
+</Warning>
+:::
+
 ### Reducers
 
 Reducers are key to understanding how updates from nodes are applied to the `State`. Each key in the `State` has its own independent reducer function. If no reducer function is explicitly specified then it is assumed that all updates to that key should override it. There are a few different types of reducers, starting with the default type of reducer:

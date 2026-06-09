@@ -1,169 +1,265 @@
 ---
 title: Managed Deep Agents quickstart
 sidebarTitle: Quickstart
-description: Deploy a first Managed Deep Agent with the CLI and run it with the REST API.
-icon: "rocket"
-tag: "PREVIEW"
+description: Create and run your first Managed Deep Agent with the CLI or SDKs.
 ---
 
-Use this quickstart to deploy a first Managed Deep Agent with the CLI, then run it with the REST API.
+LangChain hosts [Managed Deep Agents](/langsmith/managed-deep-agents-overview), so you can create an agent and stream a response without setting up infrastructure. This quickstart shows the CLI, Python SDK, TypeScript SDK, and React `useStream` paths.
+
+For the full deploy workflow and all backend options, see [Deploy an agent](/langsmith/managed-deep-agents-deploy). For package configuration and API details, see the [Managed Deep Agents SDKs](/langsmith/managed-deep-agents-sdk).
 
 <Note>
-    Managed Deep Agents is in private preview. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
+Managed Deep Agents is in **private preview**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
 </Note>
 
 ## Prerequisites
 
 Before you start, make sure you have:
 
-- Managed Deep Agents private preview access.
-- A LangSmith API key for a workspace with private preview access.
-- The beta release of `deepagents-cli`.
+- Managed Deep Agents [private preview access](https://www.langchain.com/langsmith-managed-deep-agents-waitlist).
+- A [LangSmith API key](/langsmith/create-account-api-key) for a workspace with private preview access.
+- One of the clients shown below: `deepagents-cli>=0.2.2`, `managed-deepagents`, or `@langchain/managed-deepagents`.
 
-<Note>
-    The Managed Deep Agents deploy flow requires the beta release of `deepagents-cli`. The stable Deep Agents deploy experience remains available and unchanged while Managed Deep Agents is in private preview.
-</Note>
-
-## CLI: deploy a first agent
+## Create and run an agent
 
 <Steps>
-  <Step title="Install the CLI">
-    Install or upgrade the beta CLI with `uv`:
+  <Step title="Install a client">
 
-    ```bash
-    uv tool install --prerelease allow deepagents-cli
-    ```
+Choose the client for your runtime:
 
-    If you already installed the tool, upgrade it:
+<CodeGroup>
 
-    ```bash
-    uv tool upgrade --prerelease allow deepagents-cli
-    ```
+```bash CLI
+uv tool install "deepagents-cli>=0.2.2"
 
-    If you were given an exact beta version, pin that version:
+# Or with pip:
+pip install -U "deepagents-cli>=0.2.2"
+```
 
-    ```bash
-    uv tool install --force "deepagents-cli==<version>"
-    ```
+```bash Python
+pip install managed-deepagents
+```
 
-    As a fallback, install the CLI with `pip`:
+```bash TypeScript
+npm install @langchain/managed-deepagents
 
-    ```bash
-    pip install -U --pre deepagents-cli
-    ```
+# For React streaming:
+npm install @langchain/react
+```
+
+</CodeGroup>
+
+To upgrade an existing CLI install from `uv`, run `uv tool upgrade deepagents-cli`.
+
   </Step>
 
   <Step title="Set your API key">
-    Set a LangSmith API key for a workspace with private preview access:
 
-    ```bash
-    export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
-    ```
+Set a LangSmith API key for a workspace with private preview access:
+
+```bash
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+```
+
+<Note>
+If a request returns 401 or 403, confirm your API key belongs to a workspace with private preview access.
+</Note>
+
   </Step>
 
-  <Step title="Create a project">
-    Scaffold a project:
+  <Step title="Create the agent">
 
-    ```bash
-    deepagents init my-agent
-    cd my-agent
-    ```
+Create a Managed Deep Agent. Save the returned `agent_id` for the run step.
 
-    The command creates `agent.json`, `AGENTS.md`, `skills/`, and `.gitignore`.
+<CodeGroup>
+
+```bash CLI
+deepagents init research-assistant
+cd research-assistant
+
+# Edit AGENTS.md to define the agent behavior, then deploy.
+deepagents deploy
+```
+
+```python Python
+from managed_deepagents import Client
+
+with Client() as client:
+    agent = client.agents.create(
+        name="research-assistant",
+        description="Research assistant that can search the web and summarize sources.",
+        model="openai:gpt-5.5",
+        backend={"type": "state"},
+        instructions=(
+            "You are a careful research assistant. Search for sources, "
+            "keep notes, and return concise answers with citations."
+        ),
+    )
+
+agent_id = agent["id"]
+print(f"Agent ID: {agent_id}")
+```
+
+```ts TypeScript
+import { Client } from "@langchain/managed-deepagents";
+
+const client = new Client({
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+
+const agent = await client.agents.create({
+  name: "research-assistant",
+  description: "Research assistant that can search the web and summarize sources.",
+  model: "openai:gpt-5.5",
+  backend: { type: "state" },
+  instructions:
+    "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
+});
+
+const agentId = agent.id;
+console.log(`Agent ID: ${agentId}`);
+```
+
+</CodeGroup>
+
+The CLI creates `agent.json`, `AGENTS.md`, `.gitignore`, an empty `tools.json`, an example skill, and an example subagent before deploying. The SDK examples create the hosted agent directly.
+
+The examples use the `state` backend so the agent can run without sandbox-specific configuration. Switch to the `sandbox` backend when the agent needs a [LangSmith sandbox](/langsmith/sandboxes) for code execution, filesystem work, or long-running tasks. For options, see [Choose a backend](/langsmith/managed-deep-agents-deploy#choose-a-backend).
+
+If the agent calls MCP tools, [connect tools](/langsmith/managed-deep-agents-mcp) before creating or deploying the agent.
+
   </Step>
 
-  <Step title="Edit the agent">
-    Edit `AGENTS.md` to define the agent's behavior.
+  <Step title="Run the agent">
 
-    The generated `agent.json` uses the readable local CLI shape:
+Stream a response from the agent:
 
-    ```json
-    {
-      "name": "my-agent",
-      "description": "A managed deep agent.",
-      "model": "anthropic:claude-sonnet-4-6",
-      "backend": {
-        "type": "thread_scoped_sandbox"
-      }
-    }
-    ```
+<CodeGroup>
 
-    The generated project uses a [LangSmith sandbox](/langsmith/sandboxes) backend by default. Keep `thread_scoped_sandbox` unless the agent needs a different sandbox scope. LangSmith sandboxes give the agent an isolated environment for code execution, filesystem work, and long-running tasks. For other options, see [Choose a backend](/langsmith/managed-deep-agents-deploy#choose-a-backend).
+```python Python
+from managed_deepagents import Client
 
-    If the agent calls MCP tools, [connect tools](/langsmith/managed-deep-agents-mcp) before you deploy.
-  </Step>
+agent_id = "<agent_id>"
 
-  <Step title="Deploy the agent">
-    Deploy the project:
+with Client() as client:
+    thread = client.threads.create(
+        agent_id=agent_id,
+        options={
+            "test_run": False,
+            "skip_memory_write_protection": False,
+        },
+    )
 
-    ```bash
-    deepagents deploy
-    ```
+    for event in client.threads.stream(
+        thread["id"],
+        agent_id=agent_id,
+        messages=[
+            {
+                "role": "user",
+                "content": "Research recent approaches to agent memory and summarize the main tradeoffs.",
+            }
+        ],
+        stream_mode=["values", "updates", "messages-tuple"],
+        stream_subgraphs=True,
+        user_timezone="America/Los_Angeles",
+    ):
+        print(event.event, event.data)
+```
 
-    On success, the CLI prints the agent name, agent ID, short revision, agent URL, and deploy health check. Save the `agent_id` for the run step.
+```ts TypeScript
+import { Client } from "@langchain/managed-deepagents";
+
+const agentId = "<agent_id>";
+const client = new Client({
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+
+const thread = await client.threads.create({
+  agent_id: agentId,
+  options: {
+    test_run: false,
+    skip_memory_write_protection: false,
+  },
+});
+
+const langGraphClient = client.getLangGraphClient({ agentId });
+const stream = langGraphClient.runs.stream(thread.id, agentId, {
+  input: {
+    messages: [
+      {
+        role: "user",
+        content:
+          "Research recent approaches to agent memory and summarize the main tradeoffs.",
+      },
+    ],
+  },
+  streamMode: ["values", "updates", "messages-tuple"],
+  streamSubgraphs: true,
+});
+
+for await (const event of stream) {
+  console.log(event.event, event.data);
+}
+```
+
+```tsx useStream
+import { Client } from "@langchain/managed-deepagents";
+import { useStream } from "@langchain/react";
+
+const agentId = "<agent_id>";
+
+const managedDeepAgents = new Client({
+  // In browser apps, prefer passing a custom fetch that calls your backend.
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+
+const client = managedDeepAgents.getLangGraphClient({ agentId });
+
+export function ManagedDeepAgentStream() {
+  const stream = useStream({
+    client,
+    assistantId: agentId,
+    fetchStateHistory: false,
+  });
+
+  return (
+    <section>
+      <button
+        type="button"
+        disabled={stream.isLoading}
+        onClick={() => {
+          void stream.submit({
+            messages: [
+              {
+                role: "user",
+                content:
+                  "Research recent approaches to agent memory and summarize the main tradeoffs.",
+              },
+            ],
+          });
+        }}
+      >
+        Run agent
+      </button>
+
+      {stream.messages.map((message, index) => (
+        <p key={message.id ?? index}>{String(message.content)}</p>
+      ))}
+    </section>
+  );
+}
+```
+
+</CodeGroup>
+
+The Python stream yields Server-Sent Events from the run. The TypeScript SDK and React `useStream` examples use LangGraph stream projections for messages, values, and output state.
+
   </Step>
 </Steps>
 
 <Note>
-    If `deepagents init`, `deploy`, `agents`, or `mcp-servers` are missing or behave unexpectedly, confirm the beta is active with `deepagents --version`. A previously installed stable `deepagents` can shadow the beta release on your `PATH`.
+If `deepagents init`, `deploy`, `agents`, or `mcp-servers` are missing or behave unexpectedly, confirm the installed version is `0.2.2` or later with `deepagents --version`. An older `deepagents` can shadow the current release on your `PATH`.
 </Note>
-
-## API: run the agent
-
-Running a Managed Deep Agent is currently available through the REST API. Set request defaults:
-
-```bash
-export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
-export LANGSMITH_API_URL="https://api.smith.langchain.com"
-export DEEPAGENTS_BASE_URL="$LANGSMITH_API_URL/v1/deepagents"
-export AGENT_ID="<agent_id>"
-```
-
-Create a thread:
-
-```bash
-curl --request POST \
-  --url "$DEEPAGENTS_BASE_URL/threads" \
-  --header "X-Api-Key: $LANGSMITH_API_KEY" \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "agent_id": "'"$AGENT_ID"'",
-    "options": {
-      "test_run": false,
-      "skip_memory_write_protection": false
-    }
-  }'
-```
-
-Set the returned thread ID:
-
-```bash
-export THREAD_ID="<thread_id>"
-```
-
-Stream a run:
-
-```bash
-curl --request POST \
-  --url "$DEEPAGENTS_BASE_URL/threads/$THREAD_ID/runs/stream" \
-  --header "X-Api-Key: $LANGSMITH_API_KEY" \
-  --header 'Accept: text/event-stream' \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "agent_id": "'"$AGENT_ID"'",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
-      }
-    ],
-    "stream_mode": ["values", "updates", "messages-tuple"],
-    "stream_subgraphs": true,
-    "user_timezone": "America/Los_Angeles"
-  }'
-```
-
-For Python and JavaScript examples, see [Run an agent](/langsmith/managed-deep-agents-invoke).
 
 ## Next steps
 
@@ -172,7 +268,10 @@ For Python and JavaScript examples, see [Run an agent](/langsmith/managed-deep-a
     Add MCP-backed tools before deploying an agent that needs external capabilities.
   </Card>
   <Card title="Deploy an agent" icon="upload" href="/langsmith/managed-deep-agents-deploy">
-    Learn the full CLI and REST API deploy workflow.
+    Learn the full CLI, SDK, and REST API deploy workflow.
+  </Card>
+  <Card title="SDKs" icon="code" href="/langsmith/managed-deep-agents-sdk">
+    Use the Python, TypeScript, and React SDKs for Managed Deep Agents.
   </Card>
   <Card title="CLI reference" icon="terminal" href="/langsmith/managed-deep-agents-cli">
     Review all commands, flags, project files, and validation rules.
