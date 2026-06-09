@@ -79,7 +79,7 @@ const agent = await createDeepAgent({
 The `system_prompt` parameter is static which means it does not change per invocation.
 For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from [long-term memory](#long-term-memory).
 If your prompt depends on context or `runtime.store`, use `@dynamic_prompt` to build context-aware instructions. Your middleware can read `request.runtime.context` and `request.runtime.store`.
-See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
+See [Customization](/oss/deepagents/customization#middleware) for the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent) and for adding [custom middleware](/oss/langchain/middleware). See the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
 
 You do **not** need middleware when tools alone use context or `runtime.store`; tools receive the @[ToolRuntime] object (including `runtime.context` and `runtime.store`) directly. Add middleware only when tools should be packaged with an update to the system prompt.
 :::
@@ -89,7 +89,7 @@ The `systemPrompt` parameter is static which means it does not change per invoca
 For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from [long-term memory](#long-term-memory).
 If your prompt depends on context or `runtime.store`, use `dynamicSystemPromptMiddleware` to build context-aware instructions.
 Your middleware can read `request.runtime.context` and `request.runtime.store`.
-See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
+See [Customization](/oss/deepagents/customization#middleware) for the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent) and for adding [custom middleware](/oss/langchain/middleware). See the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
 
 You do **not** need middleware when tools alone use context or `runtime.store`; tools receive the `runtime` object (including `runtime.context` and `runtime.store`) directly. Add middleware only when the system prompt itself must vary per request.
 :::
@@ -148,9 +148,9 @@ Keep each skill focused on a single workflow or domain; broad or overlapping ski
 
 ### Tool prompts
 
-[Tool](/oss/langchain/tools) prompts are instructions that shape how the model uses tools. All tools expose metadata the model sees in its prompt—typically a schema and a description. Tools you pass via the `tools` parameter surface that tool metadata (schema and descriptions) to the model. A deep agent's built-in tools are packaged in middleware and typically also update the system prompt with more guidance for those tools.
+[Tool](/oss/langchain/tools) prompts are instructions that shape how the model uses tools. All tools expose metadata the model sees in its prompt—typically a schema and a description. Tools you pass via the `tools` parameter surface that tool metadata (schema and descriptions) to the model. A deep agent's built-in tools are packaged in the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent) and typically also update the system prompt with more guidance for those tools.
 
-**Built-in tools** – Middleware that adds harness capabilities (planning, filesystem, subagents) automatically appends tool-specific instructions to the system prompt, creating tool prompts that explain how to use those tools effectively:
+**Built-in tools** – Middleware that adds harness capabilities (planning, filesystem, subagents) automatically appends tool-specific instructions to the system prompt, creating tool prompts that explain how to use those tools effectively. See [Customization](/oss/deepagents/customization#middleware) for the full list:
 - Planning prompt – Instructions for `write_todos` to maintain a structured task list
 - Filesystem prompt – Documentation for `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` (and `execute` when using a sandbox backend)
 - Subagent prompt – Guidance for delegating work with the `task` tool
@@ -405,7 +405,7 @@ The current summarization behavior (in-model summarization via `wrapModelCall`, 
 </Note>
 :::
 
-When the context size crosses the model's context window limit (for example 85% of `max_input_tokens`), and there is no more context eligible for offloading, the deep agent summarizes the message history.
+Every `create_deep_agent` call includes @[`SummarizationMiddleware`] in the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent). When the context size crosses the model's context window limit (for example 85% of `max_input_tokens`), and there is no more context eligible for offloading, the deep agent summarizes the message history automatically.
 
 This process has two components:
 
@@ -461,11 +461,13 @@ for await (const [namespace, chunk] of await agent.stream(
 :::
 
 :::python
-##### Summarization Tool
+##### On-demand compaction tool
 
-Deep agents include an optional [tool](/oss/langchain/tools) for summarization, enabling agents to trigger summarization at opportune times—such as between tasks—instead of at fixed token intervals.
 
-You can enable this tool by appending it to the middleware list:
+By default, automatic summarization runs when context thresholds are reached.
+Separately, you can give the agent a `compact_conversation` [tool](/oss/langchain/tools) so it can trigger compaction on demand, for example between tasks, instead of waiting for the 85% threshold.
+
+Enable the tool by passing @[`create_summarization_tool_middleware`] using the `middleware` argument on `create_deep_agent`. Custom middleware is inserted into the [default stack](/oss/deepagents/customization#default-stack-main-agent) after @[`PatchToolCallsMiddleware`]:
 
 ```python
 from deepagents import create_deep_agent
@@ -485,9 +487,9 @@ agent = create_deep_agent(
 )
 ```
 
-Enabling this feature does not disable the default summarization action at 85% of the model's context limit.
+Adding the compaction tool does not disable automatic summarization at 85% of the model's context limit. Both share the same summarization engine and state.
 
-See the @[`SummarizationToolMiddleware`] API reference for details.
+See @[`SummarizationToolMiddleware`] and @[`create_summarization_tool_middleware`] in the API reference for details.
 
 :::
 

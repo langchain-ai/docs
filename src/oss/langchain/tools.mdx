@@ -813,6 +813,8 @@ def get_message_count(runtime: ToolRuntime) -> str:
 ```
 :::
 
+For more details on accessing state, context, and long-term memory from tools, see [Access context](#access-context).
+
 ## Dynamic tool selection
 
 With dynamic tools, the set of tools available to the agent is modified at runtime rather than defined all upfront. Not every tool is appropriate for every situation. Too many tools may overwhelm the model (overload context) and increase errors; too few limit capabilities. Dynamic tool selection enables adapting the available toolset based on authentication state, user permissions, feature flags, or conversation stage.
@@ -1235,6 +1237,61 @@ There are two approaches depending on whether tools are known ahead of time:
 
   </Tab>
 </Tabs>
+
+## Headless tools
+
+Some tools should run **where your user's app runs** (typically the browser), not inside the process. **Headless tools** are tool definitions, which include the name, description, and argument schema, that you register on the **server** with your agent. The **implementation** is registered only on the **client** and executed after a short interrupt/resume handshake.
+
+This is different from ordinary tools whose function body runs on the server, and from [server-side tool use](#server-side-tool-use) where the model provider executes built-in tools remotely.
+
+### When to use headless tools
+
+Use them when the work depends on the **environment, device, or UI** that only exists on the client. For example:
+
+- **Browser APIs:** Geolocation, IndexedDB, Clipboard, Canvas 2D, file pickers, Battery API, etc.
+- **Privacy and locality:** Data stays on the device (for example, local “memory” in IndexedDB).
+- **Latency:** No extra server round trip for purely local operations.
+- **Structured, safe effects:** Prefer many small, typed tools (for example one tool per canvas primitive) instead of sending arbitrary code to `eval`.
+
+### How the pattern works
+
+In both runtimes, the model sees a normal tool it can call, but the actual execution happens outside the server process.
+
+:::python
+1. **Define** a headless tool with `tool(name=..., description=..., args_schema=...)` from `langchain.tools`. A headless tool is schema-only, with no in-process implementation.
+2. **Register** that tool with `create_agent` or your LangGraph graph so the model can call it normally.
+3. **Handle** the interrupt payload when the tool is invoked. Instead of running locally, the graph pauses with a payload shaped like `{"type": "tool", "tool_call": {"id", "name", "args"}}`.
+4. **Resume** the graph after your app, another service, or a human step performs the action. For browser-based flows, you can mirror the schema in the frontend and attach `.implement(...)` there.
+
+<Info>
+    If you call `tool(...)` in Python with only `name`, `description`, and `args_schema`, LangChain returns a `HeadlessTool`. There is no `.implement()` API on the Python side.
+</Info>
+:::
+
+:::js
+1. **Define** the tool with `tool({ name, description, schema })` from `langchain`, metadata and validation only, no server-side runner.
+2. **Attach** the real behavior with `.implement(async (args) => { ... })`, which returns a **headless tool implementation** (definition + `execute` function).
+3. **Register** the definition from step 1 with `createAgent` or your graph so the model sees the tool in its usual tool-calling loop.
+4. **Pass** the implementation from step 2 to your streaming hook's `tools` option.
+
+<Info>
+    Put **tool definitions** (`tool({ name, description, schema })`) and **implementations** (`.implement(...)`) in **separate modules**. Import the shared definition file from your server agent and from your frontend so names and schemas stay aligned; keep client-only execute logic in implementation modules the server never loads.
+</Info>
+:::
+
+When the model issues a tool call for one of these tools, the run **interrupts** instead of executing the tool locally. Your app can inspect the payload, perform the action in the right environment (for example a browser, another service, or a human review step), then **resume** the graph with the tool result. When you use the supported JS SDK hooks, they can detect headless-tool interrupts, run the matching client implementation, and submit the resume command for you.
+
+Use the optional **`onTool`** callback to observe lifecycle events (`start`, `success`, `error`) for UI feedback such as spinners or toasts.
+
+<Card
+    title="Headless tools frontend pattern"
+    href="/oss/langchain/frontend/headless-tools"
+    icon="device-desktop"
+    arrow="true"
+    horizontal
+>
+    See an end-to-end example of schema-only tools executed in the client with `useStream`.
+</Card>
 
 ## Prebuilt tools
 
