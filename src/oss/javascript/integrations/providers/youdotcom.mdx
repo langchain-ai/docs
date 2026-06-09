@@ -5,7 +5,7 @@ description: "Integrate with You.com using LangChain JavaScript."
 
 [You.com](https://you.com) provides real-time web search, content extraction, and research APIs built for grounding LLMs in current, accurate information.
 
-The `@youdotcom-oss/langchain` package exposes three `DynamicStructuredTool` factories for LangChain.js agents: `youSearch`, `youResearch`, and `youContents`.
+The `@youdotcom-oss/langchain` package connects to the hosted You.com MCP server via `createYouClient()`, returning a LangChain MCP client whose `getTools()` method resolves the full tool set.
 
 ## Installation and setup
 
@@ -25,26 +25,43 @@ The `@youdotcom-oss/langchain` package exposes three `DynamicStructuredTool` fac
 
 [Get a You.com API key](https://you.com/platform/api-keys) and set it as an environment variable:
 
-```typescript
-process.env.YDC_API_KEY = "your-api-key";
+```bash
+export YDC_API_KEY="your-api-key"
 ```
 
 ## Tools
 
+The package connects to `https://api.you.com/mcp` and exposes the following tools via `client.getTools()`:
+
+| Tool | Description |
+|------|-------------|
+| `you-search` | Real-time web and news search with filtering |
+| `you-research` | Comprehensive, cited answers with configurable effort |
+| `you-contents` | Full page content extraction from URLs |
+| `you-finance` | Finance-optimized research over SEC filings, earnings, and market data |
+
+`you-finance` is not included in the default tool set. Request it explicitly with the `tools` option.
+
 See a [usage example](/oss/integrations/tools/youdotcom).
 
+## Quick start
+
 ```typescript
-import { youSearch, youResearch, youContents } from "@youdotcom-oss/langchain";
+import { createAgent, initChatModel } from "langchain";
+import { createYouClient } from "@youdotcom-oss/langchain";
+
+const client = await createYouClient();
+const tools = await client.getTools();
+
+const agent = createAgent({
+  model: await initChatModel("claude-sonnet-4-6"),
+  tools,
+  systemPrompt: "You are a helpful research assistant. Always cite your sources.",
+});
+
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "What are the latest developments in AI?" }],
+});
+
+await client.close();
 ```
-
-### `youSearch`
-
-Web and news search with advanced filtering by recency, country, language, and live-crawling for full page content.
-
-### `youResearch`
-
-Comprehensive, cited answers to complex questions, with configurable effort levels (`lite`, `standard`, `deep`, `exhaustive`).
-
-### `youContents`
-
-Full page content extraction from URLs in markdown or HTML format.

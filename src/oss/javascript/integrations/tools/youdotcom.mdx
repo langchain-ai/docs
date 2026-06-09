@@ -3,7 +3,7 @@ title: "You.com search tools"
 description: "Integrate with the You.com search tools using LangChain JavaScript."
 ---
 
-The `@youdotcom-oss/langchain` package provides three `DynamicStructuredTool` factories for web search, research, and content extraction, built for LangChain.js agents.
+The `@youdotcom-oss/langchain` package connects to the hosted You.com MCP server and returns a LangChain MCP client. Call `client.getTools()` to resolve the tool set and pass it to any LangChain agent.
 
 ## Setup
 
@@ -25,90 +25,98 @@ Install the package with your preferred package manager:
 
 [Get a You.com API key](https://you.com/platform/api-keys) and set it as an environment variable:
 
-```typescript
-process.env.YDC_API_KEY = "your-api-key";
+```bash
+export YDC_API_KEY="your-api-key"
 ```
 
-Each factory reads `YDC_API_KEY` from the environment. To pass a key explicitly, provide `apiKey`:
+## Create a client
+
+`createYouClient()` connects to `https://api.you.com/mcp` and returns a `MultiServerMCPClient`. Always call `client.close()` when finished.
 
 ```typescript
-import { youSearch } from "@youdotcom-oss/langchain";
+import { createYouClient } from "@youdotcom-oss/langchain";
 
-const searchTool = youSearch({ apiKey: process.env.YDC_API_KEY });
+const client = await createYouClient();
+const tools = await client.getTools();
+
+// ... use tools ...
+
+await client.close();
 ```
 
-## `youSearch`
-
-Web and news search with up-to-date results. The tool accepts the following arguments at invocation:
-
-- `query` (required, `string`): The search query.
-- `count` (`number`): Max results to return.
-- `freshness` (`string`): Filter by recency.
-- `offset` (`number`): Pagination offset.
-- `country` (`string`): Two-letter country code to focus results geographically.
-- `safesearch` (`"off" | "moderate" | "strict"`): Content filter.
-- `livecrawl` (`"web" | "news" | "all"`): Fetch full page content.
-- `livecrawl_formats` (`("markdown" | "html")[]`): Format for live-crawled content.
-- `language` (`string`): Language code for results.
+The client accepts a `YouClientConfig` object:
 
 ```typescript
-import { youSearch } from "@youdotcom-oss/langchain";
-
-const searchTool = youSearch();
-const result = await searchTool.invoke({ query: "latest AI developments", count: 5 });
+type YouClientConfig = {
+  apiKey?: string;           // defaults to YDC_API_KEY env var
+  tools?: string | string[]; // scope which tools are returned
+  profile?: string;          // select a hosted server profile
+};
 ```
 
-## `youResearch`
+## Available tools
 
-Comprehensive answers with cited sources. The tool accepts:
+The default tool set returned by `client.getTools()`:
 
-- `input` (required, `string`): The research question.
-- `research_effort` (`"lite" | "standard" | "deep" | "exhaustive"`): Controls depth and speed. Defaults to `standard`.
+| Tool | Description |
+|------|-------------|
+| `you-search` | Real-time web and news search with filtering by recency, country, language, and live-crawling |
+| `you-research` | Comprehensive, cited answers with configurable effort (`lite`, `standard`, `deep`, `exhaustive`) |
+| `you-contents` | Full page content extraction from URLs as markdown or HTML |
+
+`you-finance` is optional and not included by default. Request it explicitly:
 
 ```typescript
-import { youResearch } from "@youdotcom-oss/langchain";
-
-const researchTool = youResearch();
-const result = await researchTool.invoke({
-  input: "WebAssembly vs JavaScript performance",
-  research_effort: "deep",
+const client = await createYouClient({
+  tools: ["you-search", "you-research", "you-contents", "you-finance"],
 });
 ```
 
-## `youContents`
-
-Extract full page content from URLs. The tool accepts:
-
-- `urls` (required, `string[]`): URLs to extract content from.
-- `formats` (`("markdown" | "html" | "metadata")[]`): Output formats. Defaults to `["markdown", "metadata"]`.
-- `crawl_timeout` (`number`): Per-URL crawl timeout in seconds.
+To use only a subset of tools:
 
 ```typescript
-import { youContents } from "@youdotcom-oss/langchain";
-
-const contentsTool = youContents();
-const result = await contentsTool.invoke({ urls: ["https://example.com/article"] });
+const client = await createYouClient({
+  tools: ["you-search", "you-contents"],
+});
 ```
 
 ## Use within an agent
 
-Pass the tools to an agent. The model decides which one to call:
+Pass the resolved tools to any LangChain agent. The model selects the right tool based on the request:
 
 ```typescript
 import { createAgent, initChatModel } from "langchain";
-import { youSearch, youResearch, youContents } from "@youdotcom-oss/langchain";
+import { createYouClient } from "@youdotcom-oss/langchain";
 
-const model = await initChatModel("claude-sonnet-4-6", { temperature: 0 });
+const client = await createYouClient();
+const tools = await client.getTools();
 
 const agent = createAgent({
-  model,
-  tools: [youSearch(), youResearch(), youContents()],
+  model: await initChatModel("claude-sonnet-4-6", { temperature: 0 }),
+  tools,
   systemPrompt: "You are a helpful research assistant. Always cite your sources.",
 });
 
 const result = await agent.invoke({
   messages: [{ role: "user", content: "What are the latest developments in AI?" }],
 });
+
+await client.close();
+```
+
+## Invoke a tool directly
+
+```typescript
+import { createYouClient } from "@youdotcom-oss/langchain";
+
+const client = await createYouClient({ tools: "you-search" });
+const tools = await client.getTools();
+const searchTool = tools.find((t) => t.name === "you-search");
+
+const result = await searchTool?.invoke({ query: "AI news", count: 5 });
+console.log(result);
+
+await client.close();
 ```
 
 For more details, see the [You.com LangChain package README](https://github.com/youdotcom-oss/dx-toolkit/tree/main/packages/langchain#readme).
