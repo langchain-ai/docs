@@ -1,0 +1,88 @@
+---
+title: "LangSmith sandbox integration"
+description: "Use LangSmith managed sandboxes as a Deep Agents backend using LangChain Python."
+---
+
+[LangSmith Sandboxes](https://smith.langchain.com) are first-party managed sandbox environments provided by LangChain — no separate provider account required. See the [LangSmith Sandboxes docs](/langsmith/sandboxes) for setup, snapshots, service URLs, and the auth proxy.
+
+<Note>
+LangSmith sandboxes are currently in private beta.
+</Note>
+
+## Installation
+
+<CodeGroup>
+```bash pip
+pip install "langsmith[sandbox]" deepagents
+```
+
+```bash uv
+uv add "langsmith[sandbox]" deepagents
+```
+</CodeGroup>
+
+## Set your API key
+
+```bash
+export LANGSMITH_API_KEY="<your-api-key>"
+```
+
+## Create a sandbox backend
+
+Create a LangSmith sandbox using the `SandboxClient`, then wrap it with `LangSmithSandbox` to use it as a [Deep Agents backend](/oss/deepagents/backends).
+
+```python
+from deepagents.backends.langsmith import LangSmithSandbox
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+ls_sandbox = client.create_sandbox()
+backend = LangSmithSandbox(sandbox=ls_sandbox)
+
+result = backend.execute("echo hello")
+print(result.output)
+```
+
+## Use with Deep Agents
+
+```python
+from deepagents import create_deep_agent
+from deepagents.backends.langsmith import LangSmithSandbox
+from langchain_anthropic import ChatAnthropic
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+ls_sandbox = client.create_sandbox()
+backend = LangSmithSandbox(sandbox=ls_sandbox)
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5"),
+    system_prompt="You are a coding assistant with sandbox access.",
+    backend=backend,
+)
+
+try:
+    result = agent.invoke(
+        {
+            "messages": [
+                {"role": "user", "content": "Create a hello world Python script and run it"}
+            ]
+        }
+    )
+finally:
+    client.delete_sandbox(ls_sandbox.name)
+```
+
+## Cleanup
+
+You are responsible for deleting sandboxes when they are no longer needed. Sandboxes consume resources until deleted.
+
+```python
+client.delete_sandbox(ls_sandbox.name)
+```
+
+You can also manage sandbox resources from the [LangSmith UI](https://smith.langchain.com) under **Sandboxes**.
+
+See also:
+- [Sandboxes in Deep Agents](/oss/deepagents/sandboxes) — lifecycle, scoping, and provider comparison
+- [LangSmith Sandboxes](/langsmith/sandboxes) — snapshots, service URLs, auth proxy, and SDK reference
