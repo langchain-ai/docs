@@ -1,0 +1,143 @@
+---
+title: "GoodSender Toolkit"
+description: "Integrate with the GoodSender email tool using LangChain Python."
+---
+
+[GoodSender](https://goodsender.com) is a free email API (100,000 emails/month free) with two sending paths: transactional templates that deliver to any address with no recipient consent, and consent-gated custom/marketing email enforced through the Permission Loop. The `langchain-goodsender` package provides LangChain tools for sending transactional templates, sending custom email, and requesting recipient consent.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com) | Version |
+|:------|:--------| :---: | :---: | :---: |
+| `GoodSenderToolkit` | [`langchain-goodsender`](https://pypi.org/project/langchain-goodsender/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-goodsender?style=flat-square&label=%20) |
+
+### Available tools
+
+| Tool | Description |
+|:-----|:------------|
+| `goodsender_send_template` | Send a predefined transactional email instantly to any address — no recipient consent needed |
+| `goodsender_send_email` | Send a custom/marketing email — consent-gated, delivers only to recipients who granted consent |
+| `goodsender_request_consent` | Ask one or more recipients to approve future custom email from your sending domain |
+
+## Setup
+
+Install the package:
+
+```bash
+pip install -qU langchain-goodsender
+```
+
+### Credentials
+
+You need a GoodSender API key. Sign up at [goodsender.com](https://goodsender.com) to get one (free — 100,000 emails/month, no credit card required).
+
+```python
+import getpass
+import os
+
+if not os.environ.get("GOODSENDER_API_KEY"):
+    os.environ["GOODSENDER_API_KEY"] = getpass.getpass("GoodSender API key:\n")
+```
+
+## Instantiation
+
+Use the toolkit to get all tools at once:
+
+```python
+from langchain_goodsender import GoodSenderToolkit
+
+toolkit = GoodSenderToolkit()  # reads GOODSENDER_API_KEY
+tools = toolkit.get_tools()
+```
+
+You can also instantiate individual tools directly:
+
+```python
+from langchain_goodsender import GoodSenderClient, GoodSenderSendTemplateTool
+
+client = GoodSenderClient()
+send_template = GoodSenderSendTemplateTool(client=client)
+```
+
+## Invocation
+
+### Invoke directly with args
+
+```python
+from langchain_goodsender import GoodSenderToolkit
+
+toolkit = GoodSenderToolkit()
+send_template, send_email, request_consent = toolkit.get_tools()
+
+# Transactional template — delivers to any address, no consent needed
+result = send_template.invoke({
+    "template_id": "otp_code",
+    "to_email": "alice@example.com",
+    "subject": "Your verification code",
+    "from_email": "noreply@myapp.com",
+    "variables": {"otp_code": "482193", "app_name": "MyApp"},
+})
+print(result)
+```
+
+### Invoke with ToolCall
+
+```python
+model_generated_tool_call = {
+    "args": {
+        "template_id": "otp_code",
+        "to_email": "alice@example.com",
+        "subject": "Your verification code",
+        "from_email": "noreply@myapp.com",
+        "variables": {"otp_code": "482193", "app_name": "MyApp"},
+    },
+    "id": "1",
+    "name": "goodsender_send_template",
+    "type": "tool_call",
+}
+tool_msg = send_template.invoke(model_generated_tool_call)
+print(tool_msg.content)
+```
+
+## Use within an agent
+
+```python
+from langchain_goodsender import GoodSenderToolkit
+from langchain.chat_models import init_chat_model
+from langgraph.prebuilt import create_react_agent
+
+model = init_chat_model(model="claude-sonnet-4-6", model_provider="anthropic")
+
+toolkit = GoodSenderToolkit()
+agent = create_react_agent(model, toolkit.get_tools())
+
+response = agent.invoke({
+    "messages": [(
+        "user",
+        "Send an OTP code 482193 to alice@example.com from noreply@myapp.com, app name MyApp.",
+    )]
+})
+```
+
+## Consent caveat
+
+GoodSender has two sending paths, and they behave differently:
+
+| Path | Tool | Consent required? |
+|:-----|:-----|:------------------|
+| Transactional templates | `goodsender_send_template` | No — delivers instantly to any address |
+| Custom / marketing email | `goodsender_send_email` | Yes — recipient must have granted consent |
+
+If your agent sends a custom email to a recipient who has **not** granted consent, the send is silently filtered and the email is **not** delivered. Call `goodsender_request_consent` first; once the recipient approves via the Permission Loop, custom sends deliver instantly. Transactional templates (`otp_code`, `mfa_enrollment`, and so on) bypass consent entirely.
+
+## Template variables
+
+Each transactional template accepts optional string variables passed via `variables`. Available `template_id` values: `mfa_enrollment`, `new_device_login`, `order_completed`, `otp_code`, `email_changed`, `password_changed`, `order_receipt`.
+
+---
+
+## API reference
+
+For detailed documentation of the GoodSender API, visit [goodsender.com/docs/api-reference](https://goodsender.com/docs/api-reference). The Python package source lives at [github.com/good-sender/langchain-goodsender](https://github.com/good-sender/langchain-goodsender).
