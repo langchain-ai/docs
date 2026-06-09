@@ -34,7 +34,7 @@
     },
     {
       "name": "MCP tools",
-      "description": "List tools exposed by registered MCP servers."
+      "description": "Discover tools exposed by registered MCP servers."
     },
     {
       "name": "Auth sessions",
@@ -188,9 +188,10 @@
                       "identity": "personal",
                       "visibility": "user"
                     },
-                    "model": "openai:gpt-5.5",
-                    "backend": {
-                      "type": "default"
+                    "runtime": {
+                      "model": {
+                        "model_id": "openai:gpt-5.5"
+                      }
                     },
                     "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
                     "tools": {
@@ -239,9 +240,6 @@
                         "model": {
                           "model_id": "openai:gpt-5.5"
                         }
-                      },
-                      "backend": {
-                        "type": "default"
                       },
                       "revision": "13ac11f11da376e588cb84825ed88d05298f27aaaa90c6f694abf572f34161d9",
                       "instructions": "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
@@ -482,6 +480,121 @@
       }
     },
     "/threads": {
+      "get": {
+        "tags": [
+          "Threads"
+        ],
+        "summary": "List threads",
+        "description": "Return one page of recent threads for a Managed Deep Agent. Results are ordered by latest conversation activity.",
+        "operationId": "listManagedDeepAgentThreads",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/threads/list-threads",
+          "metadata": {
+            "title": "List threads",
+            "sidebarTitle": "List threads"
+          }
+        },
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": true,
+            "description": "Managed Deep Agent ID.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "description": "Items per page. Defaults to 20.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 20
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Opaque pagination cursor returned by the previous list call.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Filter to a single thread status.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "idle",
+                "busy",
+                "interrupted",
+                "error"
+              ]
+            }
+          },
+          {
+            "name": "is_pinned",
+            "in": "query",
+            "required": false,
+            "description": "Filter by pinned state.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "test_run",
+            "in": "query",
+            "required": false,
+            "description": "Return test-run threads instead of non-test threads. Defaults to `false`.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "requires_attention",
+            "in": "query",
+            "required": false,
+            "description": "Return only threads that need user action. Cannot be combined with `status`.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Threads returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListThreadsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      },
       "post": {
         "tags": [
           "Threads"
@@ -624,12 +737,12 @@
       }
     },
     "/threads/count": {
-      "post": {
+      "get": {
         "tags": [
           "Threads"
         ],
-        "summary": "Count threads",
-        "description": "Count threads matching the specified criteria. Request and response bodies are proxied unchanged to the upstream agent runtime.",
+        "summary": "Inbox attention count",
+        "description": "Return the caller inbox `attention_count`: unread idle threads plus interrupted and errored threads. Scoped to deep-agent threads; test-run threads are excluded.",
         "operationId": "countManagedDeepAgentThreads",
         "x-mint": {
           "href": "/langsmith/managed-deep-agents-api/threads/count-threads",
@@ -638,23 +751,25 @@
             "sidebarTitle": "Count threads"
           }
         },
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PassThroughJSON"
-              }
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "description": "Optional Managed Deep Agent ID to scope the count.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
-        },
+        ],
         "responses": {
           "200": {
-            "description": "Thread count.",
+            "description": "Thread count returned.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "integer"
+                  "$ref": "#/components/schemas/CountResponse"
                 }
               }
             }
@@ -668,19 +783,13 @@
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
           "502": {
             "$ref": "#/components/responses/BadGateway"
           }
         }
       }
     },
-    "/threads/{threadID}": {
+    "/threads/{thread_id}": {
       "get": {
         "tags": [
           "Threads"
@@ -725,9 +834,119 @@
             "$ref": "#/components/responses/BadGateway"
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "Threads"
+        ],
+        "summary": "Update thread",
+        "description": "Update thread fields such as title and metadata. Omitted fields are unchanged.",
+        "operationId": "updateManagedDeepAgentThread",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/threads/update-thread",
+          "metadata": {
+            "title": "Update thread",
+            "sidebarTitle": "Update thread"
+          }
+        },
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "description": "Thread ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateThreadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Thread updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Threads"
+        ],
+        "summary": "Delete thread",
+        "description": "Delete a thread and all of its runs. Idempotent: deleting a missing thread returns 204.",
+        "operationId": "deleteManagedDeepAgentThread",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/threads/delete-thread",
+          "metadata": {
+            "title": "Delete thread",
+            "sidebarTitle": "Delete thread"
+          }
+        },
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "description": "Thread ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Thread deleted."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
       }
     },
-    "/threads/{threadID}/runs": {
+    "/threads/{thread_id}/runs": {
       "post": {
         "tags": [
           "Runs"
@@ -798,7 +1017,7 @@
         }
       }
     },
-    "/threads/{threadID}/runs/stream": {
+    "/threads/{thread_id}/runs/stream": {
       "post": {
         "tags": [
           "Runs"
@@ -830,12 +1049,14 @@
                   "summary": "Stream updates",
                   "value": {
                     "agent_id": "11111111-1111-1111-1111-111111111111",
-                    "messages": [
-                      {
-                        "role": "user",
-                        "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
-                      }
-                    ],
+                    "input": {
+                      "messages": [
+                        {
+                          "role": "user",
+                          "content": "Research recent approaches to agent memory and summarize the main tradeoffs."
+                        }
+                      ]
+                    },
                     "stream_mode": [
                       "updates"
                     ],
@@ -876,7 +1097,7 @@
         }
       }
     },
-    "/threads/{threadID}/resolve-interrupt": {
+    "/threads/{thread_id}/resolve-interrupt": {
       "post": {
         "tags": [
           "Runs"
@@ -1574,6 +1795,274 @@
           }
         }
       }
+    },
+    "/agents/{agent_id}/clone": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Clone an agent",
+        "description": "Create a new agent that mirrors the source agent behavior but is owned by the caller. The clone copies runtime, backend, file tree, tools, subagents, and skills; caller metadata and sharing state start fresh.",
+        "operationId": "cloneManagedDeepAgent",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/agents/clone-agent",
+          "metadata": {
+            "title": "Clone an agent",
+            "sidebarTitle": "Clone an agent"
+          }
+        },
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "description": "Managed Deep Agent ID.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "include_files",
+            "in": "query",
+            "required": false,
+            "description": "Include the raw file map in the agent response. Accepted truthy values are `true` and `1`.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "X-User-Timezone",
+            "in": "header",
+            "required": false,
+            "description": "IANA timezone name (for example, `America/Los_Angeles`) stamped into the agent's runtime configuration when the agent is created or updated. The runtime uses this timezone to inject a localized current-date line into the agent's system prompt, so the agent reasons about dates in the user's local time. Optional. Defaults to `UTC` when omitted; invalid values fall back to `UTC`.",
+            "schema": {
+              "type": "string",
+              "example": "America/Los_Angeles"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent cloned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}/health": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Check agent health",
+        "description": "Return a per-MCP-server health summary for the agent.",
+        "operationId": "getManagedDeepAgentHealth",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/agents/check-agent-health",
+          "metadata": {
+            "title": "Check agent health",
+            "sidebarTitle": "Check agent health"
+          }
+        },
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "description": "Managed Deep Agent ID.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Health summary returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/threads/runs": {
+      "post": {
+        "tags": [
+          "Runs"
+        ],
+        "summary": "Create a thread and start a run",
+        "description": "Create a thread bound to `agent_id` and start a run on it in one call. Run kwargs are passed through; thread-creation flags go in the optional `thread` envelope.",
+        "operationId": "createManagedDeepAgentThreadAndRun",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/runs/create-thread-and-run",
+          "metadata": {
+            "title": "Create a thread and start a run",
+            "sidebarTitle": "Create thread and run"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateThreadAndRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Run returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Run created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
+    },
+    "/threads/bulk-modify": {
+      "post": {
+        "tags": [
+          "Threads"
+        ],
+        "summary": "Bulk update threads",
+        "description": "Apply one thread update payload to multiple threads. Returns one result per thread in request order.",
+        "operationId": "bulkUpdateManagedDeepAgentThreads",
+        "x-mint": {
+          "href": "/langsmith/managed-deep-agents-api/threads/bulk-update-threads",
+          "metadata": {
+            "title": "Bulk update threads",
+            "sidebarTitle": "Bulk update threads"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkUpdateThreadsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk update results returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkUpdateThreadsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "502": {
+            "$ref": "#/components/responses/BadGateway"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1597,7 +2086,7 @@
         }
       },
       "ThreadID": {
-        "name": "threadID",
+        "name": "thread_id",
         "in": "path",
         "required": true,
         "description": "Thread ID.",
@@ -1811,23 +2300,15 @@
             "type": "string",
             "description": "Short agent description."
           },
-          "model": {
-            "type": "string",
-            "description": "Model identifier used to run the agent. Use the form `{provider}:{model_name}`, for example `openai:gpt-5.5`. Values without a colon are interpreted as references to a saved Playground configuration, not as direct model identifiers.",
-            "example": "openai:gpt-5.5"
-          },
           "permissions": {
             "$ref": "#/components/schemas/AgentPermissions"
           },
           "runtime": {
             "$ref": "#/components/schemas/AgentRuntime"
           },
-          "backend": {
-            "$ref": "#/components/schemas/AgentBackend"
-          },
           "instructions": {
             "type": "string",
-            "description": "Agent system prompt. Written to `AGENTS.md`."
+            "description": "Deprecated alias for `system_prompt`. Accepted for backwards compatibility; `system_prompt` takes precedence when both are set."
           },
           "tools": {
             "$ref": "#/components/schemas/ToolsConfig"
@@ -1853,6 +2334,18 @@
           },
           "files": {
             "$ref": "#/components/schemas/FileMap"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/AgentBackend"
+          },
+          "system_prompt": {
+            "type": "string",
+            "description": "Agent system prompt. Written to `AGENTS.md`. Preferred over deprecated `instructions` when both are provided."
+          },
+          "configurable": {
+            "type": "object",
+            "description": "Caller-defined runtime configuration merged into the agent config. Typed runtime fields win on key collision.",
+            "additionalProperties": true
           }
         }
       },
@@ -1868,23 +2361,15 @@
             "type": "string",
             "description": "Updated agent description."
           },
-          "model": {
-            "type": "string",
-            "description": "Updated model identifier. Use the form `{provider}:{model_name}`.",
-            "example": "openai:gpt-5.5"
-          },
           "permissions": {
             "$ref": "#/components/schemas/AgentPermissions"
           },
           "runtime": {
             "$ref": "#/components/schemas/AgentRuntime"
           },
-          "backend": {
-            "$ref": "#/components/schemas/AgentBackend"
-          },
           "instructions": {
             "type": "string",
-            "description": "Updated agent system prompt. Triggers a new file tree commit."
+            "description": "Deprecated alias for `system_prompt`. Accepted for backwards compatibility; `system_prompt` takes precedence when both are set."
           },
           "tools": {
             "$ref": "#/components/schemas/ToolsConfig"
@@ -1910,6 +2395,25 @@
           },
           "files": {
             "$ref": "#/components/schemas/FileMap"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/AgentBackend"
+          },
+          "system_prompt": {
+            "type": "string",
+            "description": "Updated agent system prompt. Written to `AGENTS.md`. Preferred over deprecated `instructions` when both are provided."
+          },
+          "configurable": {
+            "type": "object",
+            "description": "Updated caller-defined runtime configuration. Typed runtime fields win on key collision.",
+            "additionalProperties": true
+          },
+          "deleted_paths": {
+            "type": "array",
+            "description": "Relative file paths to remove from the file tree.",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -1989,48 +2493,8 @@
         "properties": {
           "model_id": {
             "type": "string",
-            "description": "Model identifier used to run the agent. Use the form `{provider}:{model_name}`, for example, `openai:gpt-5.5`. Values without a colon are interpreted as references to a saved Playground configuration, not as direct model identifiers. See [Supported models](/langsmith/managed-deep-agents-overview#supported-models) for the recognized provider prefixes.",
+            "description": "Model identifier used to run the agent. Use the form `{provider}:{model_name}` — for example, `openai:gpt-5.5` or `openai:gpt-5.4-mini`. Values without a colon are interpreted as references to a saved Playground configuration, not as direct model identifiers. See [Supported models](/langsmith/managed-deep-agents-overview#supported-models) for the recognized provider prefixes.",
             "example": "openai:gpt-5.5"
-          }
-        }
-      },
-      "AgentBackend": {
-        "type": "object",
-        "description": "Backend configuration for the agent. Use `default` when the agent does not need sandbox-specific backend behavior. Use `thread_scoped_sandbox` or `agent_scoped_sandbox` when the agent needs LangSmith sandbox resources for code execution, filesystem work, or long-running tasks. See [Sandboxes overview](/langsmith/sandboxes).",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "default",
-              "thread_scoped_sandbox",
-              "agent_scoped_sandbox"
-            ],
-            "description": "Backend type. `thread_scoped_sandbox` scopes LangSmith sandbox resources to each thread. `agent_scoped_sandbox` scopes LangSmith sandbox resources to the agent. `default` uses no sandbox-specific backend behavior.",
-            "example": "default"
-          },
-          "sandbox": {
-            "$ref": "#/components/schemas/SandboxBackendConfig"
-          }
-        }
-      },
-      "SandboxBackendConfig": {
-        "type": "object",
-        "description": "LangSmith sandbox settings for `thread_scoped_sandbox` and `agent_scoped_sandbox` backends.",
-        "properties": {
-          "policy_ids": {
-            "type": "array",
-            "description": "Sandbox policy IDs.",
-            "items": {
-              "type": "string"
-            }
-          },
-          "idle_ttl_seconds": {
-            "type": "integer",
-            "description": "Sandbox idle timeout in seconds."
-          },
-          "delete_after_stop_seconds": {
-            "type": "integer",
-            "description": "Sandbox deletion delay after stop, in seconds."
           }
         }
       },
@@ -2088,7 +2552,7 @@
           },
           "model_id": {
             "type": "string",
-            "description": "Model ID for this subagent. Inherits the parent runtime when empty. The REST API field is `model_id`; local CLI project files use `model`."
+            "description": "Model ID for this subagent. Inherits the parent runtime when empty."
           },
           "instructions": {
             "type": "string",
@@ -2141,9 +2605,28 @@
       "FileEntry": {
         "type": "object",
         "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "skill"
+            ],
+            "description": "Entry discriminator. Defaults to `file` when omitted.",
+            "example": "file"
+          },
           "content": {
             "type": "string",
-            "description": "File contents as a UTF-8 string."
+            "description": "File contents as a UTF-8 string. Must be empty when `type` is `skill`.",
+            "example": "# AGENTS.md\n\nYou are a helpful agent."
+          },
+          "repo_handle": {
+            "type": "string",
+            "description": "Workspace skill repo handle. Required when `type` is `skill`.",
+            "example": "summarizer"
+          },
+          "commit_id": {
+            "type": "string",
+            "description": "Optional pin to a specific skill commit. Defaults to latest."
           }
         }
       },
@@ -2178,12 +2661,25 @@
           "runtime": {
             "$ref": "#/components/schemas/AgentRuntime"
           },
-          "backend": {
-            "$ref": "#/components/schemas/AgentBackend"
-          },
           "extras": {
             "type": "object",
             "additionalProperties": true
+          },
+          "access_level": {
+            "type": "string",
+            "enum": [
+              "READ",
+              "RUN",
+              "WRITE"
+            ],
+            "description": "Caller access level for this agent."
+          },
+          "is_owner": {
+            "type": "boolean",
+            "description": "Whether the authenticated caller owns this agent."
+          },
+          "backend": {
+            "$ref": "#/components/schemas/AgentBackend"
           }
         }
       },
@@ -2201,7 +2697,7 @@
               },
               "instructions": {
                 "type": "string",
-                "description": "Agent system prompt parsed from `AGENTS.md`."
+                "description": "Deprecated alias echoed alongside `system_prompt` for backwards compatibility."
               },
               "tools": {
                 "$ref": "#/components/schemas/ToolsConfig"
@@ -2220,6 +2716,10 @@
               },
               "files": {
                 "$ref": "#/components/schemas/FileMap"
+              },
+              "system_prompt": {
+                "type": "string",
+                "description": "Agent system prompt parsed from `AGENTS.md`."
               }
             }
           }
@@ -2256,6 +2756,24 @@
           },
           "options": {
             "$ref": "#/components/schemas/CreateThreadOptions"
+          },
+          "thread_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional caller-supplied thread ID."
+          },
+          "if_exists": {
+            "type": "string",
+            "enum": [
+              "do_nothing",
+              "raise"
+            ],
+            "description": "Behavior when `thread_id` already exists."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Thread metadata.",
+            "additionalProperties": true
           }
         }
       },
@@ -2307,11 +2825,51 @@
           }
         }
       },
+      "ThreadSummary": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Thread"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "has_interrupts": {
+                "type": "boolean"
+              },
+              "state_updated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      },
+      "ListThreadsResponse": {
+        "type": "object",
+        "properties": {
+          "threads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ThreadSummary"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Cursor for the next page, or `null` when there are no more pages."
+          }
+        }
+      },
       "StreamRunRequest": {
         "type": "object",
         "required": [
           "agent_id",
-          "messages"
+          "input"
         ],
         "properties": {
           "agent_id": {
@@ -2319,13 +2877,23 @@
             "format": "uuid",
             "description": "Managed Deep Agent ID. The server forwards this upstream as `assistant_id`."
           },
-          "messages": {
-            "type": "array",
-            "minItems": 1,
-            "description": "Input messages for the run.",
-            "items": {
-              "$ref": "#/components/schemas/Message"
-            }
+          "input": {
+            "type": "object",
+            "required": [
+              "messages"
+            ],
+            "description": "Run input state. Include `messages` for chat input; additional properties are forwarded as graph input state.",
+            "properties": {
+              "messages": {
+                "type": "array",
+                "minItems": 1,
+                "description": "Input messages for the run.",
+                "items": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            },
+            "additionalProperties": true
           },
           "stream_mode": {
             "type": "array",
@@ -2372,49 +2940,6 @@
         "type": "object",
         "description": "JSON payload passed through to the upstream agent runtime.",
         "additionalProperties": true
-      },
-      "McpTool": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Tool name as exposed by the MCP server."
-          },
-          "description": {
-            "type": "string",
-            "description": "Human-readable tool description."
-          },
-          "inputSchema": {
-            "type": "object",
-            "description": "JSON schema for the tool input.",
-            "additionalProperties": true
-          },
-          "annotations": {
-            "type": "object",
-            "description": "MCP tool annotations returned by the server.",
-            "additionalProperties": true
-          }
-        }
-      },
-      "ListMcpToolsResponse": {
-        "type": "object",
-        "properties": {
-          "tools": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/McpTool"
-            },
-            "description": "Tools exposed by the MCP server."
-          },
-          "cached": {
-            "type": "boolean",
-            "description": "Whether the response came from the MCP tools cache."
-          },
-          "fetched_at": {
-            "type": "string",
-            "description": "UTC timestamp when the tools were fetched from the MCP server."
-          }
-        }
       },
       "ErrorResponse": {
         "type": "object",
@@ -2607,6 +3132,49 @@
           "$ref": "#/components/schemas/McpServer"
         }
       },
+      "ListMcpToolsResponse": {
+        "type": "object",
+        "properties": {
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpTool"
+            },
+            "description": "Tools exposed by the MCP server."
+          },
+          "cached": {
+            "type": "boolean",
+            "description": "Whether the response came from the MCP tools cache."
+          },
+          "fetched_at": {
+            "type": "string",
+            "description": "UTC timestamp when the tools were fetched from the MCP server."
+          }
+        }
+      },
+      "McpTool": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Tool name as exposed by the MCP server."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable tool description."
+          },
+          "inputSchema": {
+            "type": "object",
+            "description": "JSON schema for the tool input.",
+            "additionalProperties": true
+          },
+          "annotations": {
+            "type": "object",
+            "description": "MCP tool annotations returned by the server.",
+            "additionalProperties": true
+          }
+        }
+      },
       "AuthType": {
         "type": "string",
         "enum": [
@@ -2733,6 +3301,190 @@
             "description": "OAuth provider ID to use when starting an authorization session."
           }
         }
+      },
+      "SandboxConfig": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "thread",
+              "agent"
+            ],
+            "description": "Sandbox scope. Use `thread` for one sandbox per thread, or `agent` for one sandbox shared by the agent.",
+            "example": "thread"
+          },
+          "snapshot_id": {
+            "type": "string",
+            "description": "Snapshot used when creating new sandbox-backed computers.",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "policy_ids": {
+            "type": "array",
+            "description": "Sandbox policies governing tool execution.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "idle_ttl_seconds": {
+            "type": "integer",
+            "description": "Idle timeout after which an unused sandbox is paused, in seconds.",
+            "example": 600
+          },
+          "delete_after_stop_seconds": {
+            "type": "integer",
+            "description": "Time after a sandbox is stopped before it is deleted, in seconds.",
+            "example": 1200
+          }
+        }
+      },
+      "AgentBackend": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "state",
+              "sandbox"
+            ],
+            "description": "Execution backend type. Use `state` for state-only agents or `sandbox` for sandbox-backed agents.",
+            "example": "state"
+          },
+          "sandbox_config": {
+            "$ref": "#/components/schemas/SandboxConfig"
+          }
+        }
+      },
+      "CountResponse": {
+        "type": "object",
+        "properties": {
+          "attention_count": {
+            "type": "integer",
+            "description": "Number of threads needing user action."
+          }
+        }
+      },
+      "CloneAgentRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Optional clone name override."
+          },
+          "permissions": {
+            "$ref": "#/components/schemas/AgentPermissions"
+          }
+        }
+      },
+      "CreateThreadAndRunThread": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "if_exists": {
+            "type": "string",
+            "enum": [
+              "do_nothing",
+              "raise"
+            ]
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "options": {
+            "$ref": "#/components/schemas/CreateThreadOptions"
+          }
+        }
+      },
+      "CreateThreadAndRunRequest": {
+        "type": "object",
+        "required": [
+          "agent_id"
+        ],
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Managed Deep Agent ID.",
+            "example": "11111111-1111-1111-1111-111111111111"
+          },
+          "thread": {
+            "$ref": "#/components/schemas/CreateThreadAndRunThread"
+          }
+        },
+        "additionalProperties": true
+      },
+      "UpdateThreadRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "BulkUpdateThreadsRequest": {
+        "type": "object",
+        "required": [
+          "thread_ids",
+          "data"
+        ],
+        "properties": {
+          "thread_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "data": {
+            "$ref": "#/components/schemas/UpdateThreadRequest"
+          }
+        }
+      },
+      "BulkUpdateThreadResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "failure"
+            ]
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "BulkUpdateThreadsResponse": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BulkUpdateThreadResult"
+            }
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "description": "Per-MCP-server health summary for an agent.",
+        "additionalProperties": true
       }
     }
   }

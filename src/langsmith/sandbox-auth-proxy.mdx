@@ -100,8 +100,8 @@ const client = new SandboxClient();
 await client.createSandbox({
   name: "db-sandbox",
   proxyConfig: {
-    accessControl: {
-      allowList: ["db.example.com:5432", "api.openai.com"],
+    access_control: {
+      allow_list: ["db.example.com:5432", "api.openai.com"],
     },
   },
 });
@@ -129,6 +129,100 @@ Each header has a `type` that controls how its value is stored and displayed:
 | `workspace_secret` | References a workspace secret using `{KEY}` syntax. Resolved when the proxy configuration is applied. |
 | `plaintext` | Value is stored and returned as-is. Use for non-sensitive headers. |
 | `opaque` | Write-only. Value is encrypted at rest and never returned via the API. |
+
+## Authenticate AWS requests
+
+Use an AWS auth rule when sandbox code needs to call AWS services with an AWS SDK or CLI. The proxy keeps the real AWS credentials outside the sandbox, then signs supported outbound HTTPS requests with AWS SigV4.
+
+This is useful when agent code needs to inspect S3 objects, call Bedrock, or use another supported AWS HTTPS endpoint without exposing long-lived AWS access keys in sandbox files, environment variables, shell history, or logs. The sandbox receives compatibility AWS credential placeholders so SDK credential detection works, while the proxy signs the outbound request with the configured credentials.
+
+<Warning>
+Do not set real AWS access keys as sandbox environment variables. Configure them as `workspace_secret` or `opaque` proxy values. Plaintext AWS credential values are rejected.
+</Warning>
+
+AWS auth rules are different from header injection rules:
+
+- Set `type` to `aws`.
+- Put credentials under the `aws` object.
+- Do not set `match_hosts`, `match_paths`, or `headers`; AWS host matching is built into the proxy.
+- Configure at most one AWS auth rule per sandbox.
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "aws-sandbox",
+    "wait_for_ready": true,
+    "proxy_config": {
+      "rules": [
+        {
+          "name": "aws",
+          "type": "aws",
+          "enabled": true,
+          "aws": {
+            "access_key_id": {
+              "type": "workspace_secret",
+              "value": "{AWS_ACCESS_KEY_ID}"
+            },
+            "secret_access_key": {
+              "type": "workspace_secret",
+              "value": "{AWS_SECRET_ACCESS_KEY}"
+            }
+          }
+        }
+      ]
+    }
+  }'
+```
+
+### Configure AWS auth via SDK
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import (
+    SandboxClient,
+    aws_auth_proxy_config,
+    workspace_secret,
+)
+
+client = SandboxClient()
+
+client.create_sandbox(
+    name="aws-sandbox",
+    proxy_config=aws_auth_proxy_config(
+        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+    ),
+)
+```
+
+```ts TypeScript
+import {
+  SandboxClient,
+  awsAuthProxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+await client.createSandbox({
+  name: "aws-sandbox",
+  proxyConfig: awsAuthProxyConfig({
+    accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
+    secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
+  }),
+});
+```
+
+</CodeGroup>
+
+After the sandbox is ready, use AWS SDKs or CLIs normally inside the sandbox. The SDK or CLI can discover the placeholder AWS environment variables, and the proxy applies the real SigV4 signature to outbound AWS requests.
+
+<Note>
+AWS auth proxy rules currently support access key ID and secret access key credentials. They do not include a session token or assume-role configuration.
+</Note>
 
 ## Single API example
 
@@ -334,7 +428,7 @@ await client.createSandbox({
     rules: [
       {
         name: "openai-api",
-        matchHosts: ["api.openai.com"],
+        match_hosts: ["api.openai.com"],
         headers: [
           {
             name: "Authorization",
@@ -461,16 +555,16 @@ await client.createSandbox({
   proxyConfig: {
     callbacks: [
       {
-        matchHosts: ["api.github.com", "*.githubusercontent.com"],
+        match_hosts: ["api.github.com", "*.githubusercontent.com"],
         url: "https://auth.your-app.example.com/sandbox-credentials",
-        requestHeaders: [
+        request_headers: [
           {
             name: "X-Integrator-Secret",
             type: "opaque",
             value: "<shared-secret-your-endpoint-verifies>",
           },
         ],
-        ttlSeconds: 300,
+        ttl_seconds: 300,
       },
     ],
   },
