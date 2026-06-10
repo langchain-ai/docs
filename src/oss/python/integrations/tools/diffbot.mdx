@@ -1,0 +1,158 @@
+---
+title: "Diffbot tools"
+description: "Integrate with Diffbot tools including DiffbotExtractTool, DiffbotWebSearchTool, and DiffbotKnowledgeGraphTool using LangChain Python."
+---
+
+[Diffbot](https://www.diffbot.com) is a structured web knowledge tool for developers. The `langchain-diffbot` package exposes its APIs as agent-callable structured knowledge tools: query the Diffbot Knowledge Graph, extract any URL into structured data, search the web, tag named entities in text, and answer questions with grounded responses. Each tool takes a prebuilt SDK client and returns structured results usable by a tool-calling agent.
+
+See the [Diffbot provider page](/oss/integrations/providers/diffbot) for installation and authentication setup.
+
+<Info>
+    For complete runnable examples, including a company research agent, see the [`examples/`](https://github.com/diffbot/langchain-diffbot/tree/main/examples) folder in the langchain-diffbot repository.
+</Info>
+
+## Extract a URL
+
+`DiffbotExtractTool` fetches and structures the content at a given URL. On extraction failure (HTTP 200 with `errorCode`), it returns a structured `{"error": ..., "errorCode": ...}` dict rather than raising an exception, so agents can react and try another URL.
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_diffbot import DiffbotExtractTool
+
+db = Diffbot(token=os.environ["DIFFBOT_API_TOKEN"])
+tool = DiffbotExtractTool(client=db)
+page = tool.invoke({"url": "https://www.diffbot.com/products/extract/"})
+```
+
+## Search the web
+
+`DiffbotWebSearchTool` runs a Diffbot web search and returns a list of results, each with `title`, `pageUrl`, `score`, and `content`. Use [`DiffbotWebSearchRetriever`](/oss/integrations/retrievers/diffbot) instead when you want `Document` output.
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_diffbot import DiffbotWebSearchTool
+
+tool = DiffbotWebSearchTool(client=Diffbot(token=os.environ["DIFFBOT_API_TOKEN"]))
+results = tool.invoke({"text": "diffbot knowledge graph"})
+```
+
+## Query the Knowledge Graph
+
+`DiffbotKnowledgeGraphTool` runs a [DQL (Diffbot Query Language)](https://docs.diffbot.com/docs/en/dql-quickstart) expression against the Knowledge Graph and returns the raw response dict. Use [`DiffbotKnowledgeGraphRetriever`](/oss/integrations/retrievers/diffbot) instead when you want `Document` output.
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_diffbot import DiffbotKnowledgeGraphTool
+
+tool = DiffbotKnowledgeGraphTool(client=Diffbot(token=os.environ["DIFFBOT_API_TOKEN"]))
+body = tool.invoke({"query": 'type:Organization name:"Diffbot"'})
+```
+
+## Extract named entities
+
+`DiffbotEntitiesTool` identifies named entities and sentiment in text via Diffbot's NLP API. The returned entity IDs can be looked up in the Knowledge Graph using a query like `id:or("E1", "E2")`.
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_diffbot import DiffbotEntitiesTool
+
+tool = DiffbotEntitiesTool(client=Diffbot(token=os.environ["DIFFBOT_API_TOKEN"]))
+result = tool.invoke({"text": "Diffbot was founded in Menlo Park."})
+```
+
+## Answer a question
+
+`DiffbotAskTool` answers a natural-language question by synthesizing information from the Knowledge Graph and the live web. It returns a string answer — use it when you want an agent to consult Diffbot's AI rather than use it as the primary model.
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_diffbot import DiffbotAskTool
+
+ask = DiffbotAskTool(client=Diffbot(token=os.environ["DIFFBOT_API_TOKEN"]))
+print(ask.invoke({"question": "Who founded Diffbot, and when?"}))
+```
+
+## Author DQL queries
+
+Two tools help an agent build valid DQL without guessing field names. The intended authoring loop is: introspect → probe → run (`DiffbotKnowledgeGraphTool`) → refine.
+
+### Introspect the ontology
+
+`DiffbotOntologyTool` navigates the Knowledge Graph ontology to discover entity types, field paths, taxonomy, and enum values before querying. The ontology is fetched once over HTTP and cached on the tool instance.
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_diffbot import DiffbotOntologyTool
+
+tool = DiffbotOntologyTool(client=Diffbot(token=os.environ["DIFFBOT_API_TOKEN"]))
+types = tool.invoke({"op": "types"})
+```
+
+### Probe query selectivity
+
+`DiffbotDQLProbeTool` runs query variants at `size=0` (hit counts only), so an agent can verify selectivity — not zero, not millions — before committing to a full query.
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_diffbot import DiffbotDQLProbeTool
+
+tool = DiffbotDQLProbeTool(client=Diffbot(token=os.environ["DIFFBOT_API_TOKEN"]))
+counts = tool.invoke({"queries": ['type:Organization name:"Diffbot"', "type:Person"]})
+```
+
+## Build a multi-tool agent
+
+All tools share a single client. Build only the tools you need and pass them to a tool-calling agent:
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain.agents import create_agent
+from langchain_anthropic import ChatAnthropic
+from langchain_diffbot import (
+    DiffbotAskTool,
+    DiffbotDQLProbeTool,
+    DiffbotExtractTool,
+    DiffbotKnowledgeGraphTool,
+    DiffbotOntologyTool,
+    DiffbotWebSearchTool,
+)
+
+db = Diffbot(token=os.environ["DIFFBOT_API_TOKEN"], timeout=60.0)
+tools = [
+    DiffbotWebSearchTool(client=db),
+    DiffbotKnowledgeGraphTool(client=db),
+    DiffbotOntologyTool(client=db),
+    DiffbotDQLProbeTool(client=db),
+    DiffbotExtractTool(client=db),
+    DiffbotAskTool(client=db),
+]
+
+model = ChatAnthropic(model="claude-sonnet-4-6")
+agent = create_agent(
+    model,
+    tools,
+    system_prompt="You are a research assistant. Use the Diffbot tools to answer questions.",
+)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What companies are working on AI in Boston?"}]}
+)
+result["messages"][-1].pretty_print()
+```
+
+Call `db.close()` when you are done; components never close the client for you.

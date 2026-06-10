@@ -1,0 +1,125 @@
+---
+title: "Diffbot retrievers"
+description: "Integrate with the DiffbotKnowledgeGraphRetriever and DiffbotWebSearchRetriever using LangChain Python."
+---
+
+[Diffbot](https://www.diffbot.com) is a structured web knowledge tool for developers. The `langchain-diffbot` package provides two retrievers that return @[`Document`] objects: one over the Diffbot Knowledge Graph, a structured database of entities drawn from the public web, and one over Diffbot web search. Both are standard `BaseRetriever` implementations.
+
+See the [Diffbot provider page](/oss/integrations/providers/diffbot) for installation and authentication setup. For complete runnable examples, see the [`examples/`](https://github.com/diffbot/langchain-diffbot/tree/main/examples) folder in the langchain-diffbot repository.
+
+## Knowledge Graph retriever
+
+`DiffbotKnowledgeGraphRetriever` queries the Diffbot Knowledge Graph using [DQL (Diffbot Query Language)](https://docs.diffbot.com/docs/en/dql-quickstart) and returns entities as `Document` objects.
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_diffbot import DiffbotKnowledgeGraphRetriever
+
+db = Diffbot(token=os.environ["DIFFBOT_API_TOKEN"])
+retriever = DiffbotKnowledgeGraphRetriever(client=db, k=5)
+docs = retriever.invoke('type:Organization industries:"Artificial Intelligence" location.city.name:"Boston"')
+for d in docs:
+    print(d.metadata["name"], "—", d.page_content[:120])
+```
+
+Use `DiffbotKnowledgeGraphTool` instead when you need the raw response dict inside an agent.
+
+## Web search retriever
+
+`DiffbotWebSearchRetriever` runs a Diffbot web search and returns results as `Document` objects.
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_diffbot import DiffbotWebSearchRetriever
+
+db = Diffbot(token=os.environ["DIFFBOT_API_TOKEN"])
+web = DiffbotWebSearchRetriever(client=db, k=5)
+docs = web.invoke("diffbot knowledge graph llm grounding")
+```
+
+Use `DiffbotWebSearchTool` instead when you need the raw result list inside an agent.
+
+## Shape the output
+
+Diffbot Knowledge Graph entities and web search results are large. Passing them directly to an LLM prompt can exceed per-minute token limits in a single call. Both retrievers expose three output-shaping parameters:
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_core.documents import Document
+from langchain_diffbot import DiffbotKnowledgeGraphRetriever
+
+db = Diffbot(token=os.environ["DIFFBOT_API_TOKEN"])
+
+# Project only the fields you care about — drops everything else from metadata.
+# Recommended for agent and tool-use scenarios.
+retriever = DiffbotKnowledgeGraphRetriever(
+    client=db,
+    k=5,
+    fields=["id", "type", "name", "homepageUri", "nbEmployees"],
+)
+
+# Choose which field becomes page_content. First non-empty value wins.
+retriever = DiffbotKnowledgeGraphRetriever(
+    client=db,
+    content_fields=["summary", "description", "name"],
+)
+
+# For total control, pass a document_mapper that converts a raw entity dict into a Document.
+def mapper(entity: dict) -> Document:
+    return Document(
+        page_content=entity.get("summary", ""),
+        metadata={"id": entity["id"], "name": entity["name"]},
+    )
+
+retriever = DiffbotKnowledgeGraphRetriever(client=db, document_mapper=mapper)
+```
+
+`fields` and `content_fields` are ignored when `document_mapper` is set. The same parameters work on `DiffbotWebSearchRetriever`.
+
+## Use a retriever in a chain
+
+Both retrievers are standard `BaseRetriever` objects and slot into LCEL chains:
+
+```python
+import os
+
+from diffbot import Diffbot
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_anthropic import ChatAnthropic
+from langchain_diffbot import DiffbotKnowledgeGraphRetriever
+
+retriever = DiffbotKnowledgeGraphRetriever(
+    client=Diffbot(token=os.environ["DIFFBOT_API_TOKEN"]),
+    k=5,
+    fields=["id", "name", "homepageUri", "nbEmployees", "industries"],
+)
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer using only this Diffbot KG context:\n\n{context}\n\nQuestion: {question}"
+)
+
+
+def _format(docs):
+    return "\n---\n".join(
+        f"{d.metadata.get('name')} (id={d.metadata.get('id')}): {d.page_content}"
+        for d in docs
+    )
+
+
+chain = (
+    {"context": retriever | _format, "question": RunnablePassthrough()}
+    | prompt
+    | ChatAnthropic(model="claude-sonnet-4-6")
+    | StrOutputParser()
+)
+
+chain.invoke('type:Organization location.city.name:"Boston" industries:"Biotech"')
+```
