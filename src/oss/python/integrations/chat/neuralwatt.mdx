@@ -1,0 +1,162 @@
+---
+title: "Neuralwatt integration"
+description: "Integrate with Neuralwatt energy-aware AI inference using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the [Neuralwatt](https://neuralwatt.com) chat model integration. Neuralwatt is an energy-aware AI inference platform that surfaces per-call energy and carbon metrics alongside standard LLM responses.
+
+For a detailed listing of all `ChatNeuralwatt` features and parameters, head to the [ChatNeuralwatt API reference](https://pypi.org/project/langchain-neuralwatt/).
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [ChatNeuralwatt](https://pypi.org/project/langchain-neuralwatt/) | [langchain-neuralwatt](https://pypi.org/project/langchain-neuralwatt/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-neuralwatt?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-neuralwatt?style=flat-square&label=%20) |
+
+### Features
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output/) | [Image input](/oss/langchain/messages#multimodal) | [Audio input](/oss/langchain/messages#multimodal) | [Video input](/oss/langchain/messages#multimodal) | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ |
+
+---
+
+## Setup
+
+To access Neuralwatt models you'll need to create a [Neuralwatt account](https://neuralwatt.com), get an API key, and install the `langchain-neuralwatt` integration package.
+
+### Credentials
+
+Head to [neuralwatt.com](https://neuralwatt.com) to sign up and get an API key. Then set it as an environment variable:
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "NEURALWATT_API_KEY" not in os.environ:
+    os.environ["NEURALWATT_API_KEY"] = getpass.getpass("Enter your Neuralwatt API key: ")
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-neuralwatt
+    ```
+    ```python uv
+    uv add langchain-neuralwatt
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+```python Initialize chat model icon="robot"
+from langchain_neuralwatt import ChatNeuralwatt
+
+llm = ChatNeuralwatt(
+    model="glm-5-fast",
+    temperature=0,
+    max_tokens=1024,
+    max_retries=2,
+    # base_url="https://api.neuralwatt.com/v1",  # default
+)
+```
+
+---
+
+## Invocation
+
+```python Invoke icon="book"
+messages = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the second law of thermodynamics?"},
+]
+response = llm.invoke(messages)
+print(response.content)
+```
+
+---
+
+## Energy and carbon metadata
+
+Neuralwatt's key differentiator is per-call energy and carbon attribution. Every non-streaming response includes an `energy` object in `response_metadata`:
+
+```python Energy metadata icon="leaf"
+response = llm.invoke("Summarize the water cycle in one sentence.")
+
+energy = response.response_metadata.get("energy", {})
+print(f"Energy: {energy.get('energy_kwh', 0):.6f} kWh")
+print(f"Power:  {energy.get('avg_power_watts', 0):.1f} W")
+print(f"Carbon: {energy.get('carbon_g_co2eq', 0):.4f} g CO₂eq")
+```
+
+<Note>
+Energy metadata is only present on non-streaming (`invoke`) responses. `llm.stream()` responses will not have an `energy` key in `response_metadata`.
+</Note>
+
+The `energy` dict includes:
+
+| Field | Description |
+|---|---|
+| `energy_joules` | Total energy consumed for the request |
+| `energy_kwh` | Same in kilowatt-hours |
+| `avg_power_watts` | Average GPU power draw during inference |
+| `duration_seconds` | Wall-clock request duration |
+| `attribution_method` | How energy was attributed (e.g. `token_pool`) |
+| `carbon_g_co2eq` | Carbon footprint in grams CO₂-equivalent (when grid data is available) |
+
+### Tracking energy across a chain
+
+Use `NeuralwattEnergyCallback` to accumulate totals across multiple LLM calls in a chain or agent run:
+
+```python Energy callback icon="chart-bar"
+from langchain_neuralwatt import ChatNeuralwatt, NeuralwattEnergyCallback
+
+cb = NeuralwattEnergyCallback()
+llm = ChatNeuralwatt(model="glm-5-fast")
+
+llm.invoke("Explain photosynthesis.", config={"callbacks": [cb]})
+llm.invoke("Explain cellular respiration.", config={"callbacks": [cb]})
+
+print(cb.summary())
+# {
+#   'calls': 2,
+#   'energy_joules': 2450.0,
+#   'energy_kwh': 6.8e-07,
+#   'carbon_g_co2eq': 0.00024
+# }
+```
+
+---
+
+## Chaining
+
+```python Chaining icon="link"
+from langchain_core.prompts import ChatPromptTemplate
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant."),
+    ("human", "{input}"),
+])
+
+chain = prompt | llm
+response = chain.invoke({"input": "Tell me about renewable energy."})
+print(response.content)
+```
+
+---
+
+## API reference
+
+For full documentation of all `ChatNeuralwatt` features and configurations, see the [langchain-neuralwatt PyPI page](https://pypi.org/project/langchain-neuralwatt/) and the [source repository](https://github.com/neuralwatt/inference_frontend/tree/main/langchain-neuralwatt).
