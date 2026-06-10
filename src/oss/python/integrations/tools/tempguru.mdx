@@ -1,0 +1,248 @@
+---
+title: "TempGuru"
+description: "Integrate with the TempGuru event staffing tools using LangChain Python."
+---
+
+[TempGuru](https://tempguru.co) is a W-2 event staffing platform covering 345+ US and Canadian cities. The `tempguru` package's `langchain` extra exposes TempGuru's free public API as LangChain tools: five read-only lookups (city coverage, staffing roles, hourly rates, booking lead times, and state labor compliance) plus an opt-in tool that submits a staffing plan for a human-reviewed quote.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com) | Version |
+|:------|:--------| :---: | :---: | :---: |
+| [`get_tools`](https://github.com/Tempguru-co/tempguru-mcp/blob/main/clients/python/src/tempguru/langchain.py) | [`tempguru`](https://pypi.org/project/tempguru/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/tempguru?style=flat-square&label=%20) |
+
+### Tool features
+
+| [Returns artifact](/oss/langchain/tools) | Native async | Toolkit | Number of tools | Pricing |
+| :---: | :---: | :---: | :---: | :---: |
+| ❌ | ❌ | ❌ | 6 | Free, no API key required |
+
+### Available tools
+
+| Tool | Access | Description |
+|:-----|:-------|:------------|
+| `event_staffing_cities` | Read | List the covered US and Canadian cities, filterable by state and market tier. |
+| `event_staffing_roles` | Read | List the 10 staffing roles (brand ambassadors, registration staff, ushers, and more) with slugs and skill tiers. |
+| `event_staffing_availability` | Read | Booking lead-time guidance for a city and event date. |
+| `event_staffing_pricing` | Read | All-inclusive W-2 hourly rate range for a role in a city. |
+| `event_staffing_state_compliance` | Read | State minimum wage, overtime thresholds, and rules relevant to temporary event staff. |
+| `submit_event_staffing_quote_request` | Write (opt-in) | Submit a confirmed staffing plan to TempGuru for a human-reviewed quote. |
+
+## Setup
+
+The tools live in the `tempguru` package, behind the `langchain` extra:
+
+<CodeGroup>
+    ```bash pip
+    pip install -U "tempguru[langchain]"
+    ```
+    ```bash uv
+    uv add "tempguru[langchain]"
+    ```
+</CodeGroup>
+
+### Credentials
+
+None. The TempGuru API is public and unauthenticated, so there is no API key to set.
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability/<Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls. To enable automated tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python
+import getpass
+import os
+
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Instantiation
+
+`get_tools()` returns the full tool list, ready to pass to an agent:
+
+```python
+from tempguru.langchain import get_tools
+
+tools = get_tools()
+for tool in tools:
+    print(tool.name)
+```
+
+```output
+event_staffing_cities
+event_staffing_roles
+event_staffing_availability
+event_staffing_pricing
+event_staffing_state_compliance
+submit_event_staffing_quote_request
+```
+
+For a strictly read-only toolset, leave out the quote submission tool:
+
+```python
+tools = get_tools(include_quote_submission=False)
+```
+
+## Invocation
+
+### Invoke directly with args
+
+The role slugs come from `event_staffing_roles`; pricing accepts a slug plus a city name:
+
+```python
+import json
+
+pricing = next(t for t in tools if t.name == "event_staffing_pricing")
+result = pricing.invoke({"role": "brand-ambassadors", "city": "Chicago"})
+print(json.dumps(result, indent=2, ensure_ascii=False))
+```
+
+```output
+{
+  "input": {
+    "role": "brand-ambassadors",
+    "city": "Chicago"
+  },
+  "role": "Brand Ambassadors",
+  "role_slug": "brand-ambassadors",
+  "city": "Chicago",
+  "state": "Illinois",
+  "city_tier": "hub",
+  "hourly_range_low": 56,
+  "hourly_range_high": 65,
+  "currency": "USD",
+  "all_inclusive": "Workers comp, general liability, and payroll taxes (FICA/FUTA/SUTA) included.",
+  "tier_definition": "Primary markets (~25 cities) — NYC, LA, SF, Chicago, Boston, Miami, DC, Houston, Dallas, Atlanta, Seattle, Denver, etc.",
+  "all_tiers_for_context": {
+    "small": {
+      "low": 40,
+      "high": 48
+    },
+    "mid": {
+      "low": 48,
+      "high": 56
+    },
+    "hub": {
+      "low": 56,
+      "high": 65
+    }
+  },
+  "pricing_notes": "All rates USD/hr, all-inclusive (worker pay + workers comp + general liability + payroll taxes). Canadian markets bill in CAD at parity; client invoicing converts. Floors enforced — Brand Ambassadors never below $40 anywhere."
+}
+```
+
+Lead-time guidance works the same way:
+
+```python
+availability = next(t for t in tools if t.name == "event_staffing_availability")
+result = availability.invoke(
+    {"city": "Chicago", "date": "2026-09-12", "role": "brand-ambassadors", "headcount": 10}
+)
+print(f"{result['recommendation']} ({result['days_until_event']} days out)")
+```
+
+```output
+yes (94 days out)
+```
+
+### Invoke with ToolCall
+
+We can also invoke the tool with a model-generated `ToolCall`, in which case a `ToolMessage` is returned:
+
+```python
+compliance = next(t for t in tools if t.name == "event_staffing_state_compliance")
+
+model_generated_tool_call = {
+    "args": {"state": "IL"},
+    "id": "1",
+    "name": compliance.name,
+    "type": "tool_call",
+}
+tool_msg = compliance.invoke(model_generated_tool_call)
+print(tool_msg.content[:230])
+```
+
+```output
+{"input": {"state": "IL"}, "state": "Illinois", "state_abbr": "IL", "min_wage_usd": 15, "w2_required": true, "w2_note": "TempGuru classifies ALL workers as W-2 employees regardless of state.", "overtime_threshold_weekly_hours": 40
+```
+
+## Use within an agent
+
+In an agent, the model chains the lookups on its own: confirm coverage, fetch rates, then check lead time. We need a model with tool-calling capabilities:
+
+```python
+# pip install -qU "langchain[anthropic]" to call the model
+from langchain.agents import create_agent
+from tempguru.langchain import get_tools
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=get_tools(include_quote_submission=False),  # read-only lookups
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What would 10 brand ambassadors cost for a trade show "
+                "in Chicago on September 12, and how far ahead should I book?",
+            }
+        ]
+    }
+)
+print(result["messages"][-1].content)
+```
+
+## Quote requests (opt-in write)
+
+`submit_event_staffing_quote_request` is the one write tool. It sends a staffing plan to TempGuru for a human-reviewed quote, answered within one business day. It creates no reservation and takes no payment, but it does file a real request with a real team.
+
+<Warning>
+Every call submits a live quote request to TempGuru. Keep this tool out of automated tests and demos by passing `include_quote_submission=False`, and have your agent confirm the full plan with the user before calling it. The tool's description instructs the model to do exactly that, and to call at most once.
+</Warning>
+
+```python
+from tempguru.langchain import get_tools
+
+quote = next(
+    t for t in get_tools() if t.name == "submit_event_staffing_quote_request"
+)
+
+quote.invoke(
+    {
+        "contact_name": "...",
+        "contact_email": "...",
+        "company": "...",
+        "event_name": "...",
+        "event_type": "trade-show",
+        "city": "Chicago",
+        "event_dates": "September 12-14, 2026",
+        "roles": [{"role": "brand-ambassadors", "headcount": 10}],
+    }
+)
+```
+
+## MCP server
+
+TempGuru serves the same six capabilities over Model Context Protocol at `https://mcp.tempguru.co/mcp` (streamable HTTP, no auth). The MCP tool names are shorter (`get_cities`, `get_role_pricing`, `request_quote`, and so on), but the inputs and outputs match. If your stack already speaks MCP, you can skip the `tempguru` package and connect with [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters):
+
+```python
+# pip install langchain-mcp-adapters
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient(
+    {
+        "tempguru": {
+            "transport": "http",
+            "url": "https://mcp.tempguru.co/mcp",
+        }
+    }
+)
+tools = await client.get_tools()
+```
+
+## API reference
+
+Request and response shapes for every tool are in the [TempGuru OpenAPI spec](https://mcp.tempguru.co/openapi.json). For the Python client behind the tools, see the [`tempguru` package documentation](https://github.com/Tempguru-co/tempguru-mcp/tree/main/clients/python).
