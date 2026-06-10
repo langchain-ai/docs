@@ -1218,3 +1218,102 @@ const responseFormat = toolStrategy(ProductRating, {
 )
 ```
 :::
+
+## Handle parsing errors in chains
+
+:::python
+The strategies above, including `handle_errors` retries, apply to agents created with @[`create_agent`]. Chains composed with the pipe operator (for example, `prompt | model | parser`) have no built-in retry mechanism for output parsing failures. To handle malformed model output in a chain, use one of the following approaches:
+
+- **Model-level structured output**: Bind the schema to the model with @[`with_structured_output`][BaseChatModel.with_structured_output]. The provider enforces the schema, which avoids most parsing failures. See [Models - Structured output](/oss/langchain/models#structured-output). Use this approach when the model supports it.
+- **Fix malformed output with a model**: Wrap the output parser in an `OutputFixingParser` from [`langchain-classic`](https://pypi.org/project/langchain-classic). On a parsing failure, the wrapper sends the malformed output, the parser's format instructions, and the error message to a model and parses the corrected response.
+
+<Note>
+    `OutputFixingParser` requires the `langchain-classic` package. Before v1, it was available as `langchain.output_parsers.OutputFixingParser`.
+</Note>
+
+```python
+from langchain.chat_models import init_chat_model
+from langchain_classic.output_parsers import OutputFixingParser
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel, Field
+
+
+class ProductReview(BaseModel):
+    """Analysis of a product review."""
+
+    rating: int = Field(description="The rating of the product (1-5)", ge=1, le=5)
+    sentiment: str = Field(description="The sentiment of the review")
+
+
+model = init_chat_model("gpt-5.4")
+
+base_parser = JsonOutputParser(pydantic_object=ProductReview)
+fixing_parser = OutputFixingParser.from_llm(
+    parser=base_parser,
+    llm=model,
+    max_retries=3,
+)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "Analyze the product review.\n{format_instructions}"),
+    ("user", "{review}"),
+]).partial(format_instructions=base_parser.get_format_instructions())
+
+chain = prompt | model | fixing_parser
+
+result = chain.invoke({"review": "Great product, 5 stars! Fast shipping, but expensive."})
+# {'rating': 5, 'sentiment': 'positive'}
+```
+
+The wrapped parser only invokes the fixing model when the initial parse fails, so well-formed output incurs no extra model calls. `max_retries` controls how many fix attempts are made before the original `OutputParserException` is raised. Both sync (`invoke`) and async (`ainvoke`) execution are supported.
+
+`OutputFixingParser` sends only the malformed completion and the error to the fixing model. If correcting the output requires the original prompt for context, use `RetryOutputParser` from `langchain-classic` instead. It is invoked through its `parse_with_prompt(completion, prompt_value)` method rather than `parse`, so it cannot be piped directly as the final step of a chain.
+:::
+:::js
+The strategies above, including `handleError` retries, apply to agents created with `createAgent`. Chains composed with `.pipe()` (for example, `prompt.pipe(model).pipe(parser)`) have no built-in retry mechanism for output parsing failures. To handle malformed model output in a chain, use one of the following approaches:
+
+- **Model-level structured output**: Bind the schema to the model with @[`withStructuredOutput`][BaseChatModel.with_structured_output]. The provider enforces the schema, which avoids most parsing failures. See [Models - Structured output](/oss/langchain/models#structured-output). Use this approach when the model supports it.
+- **Fix malformed output with a model**: Wrap the output parser in an `OutputFixingParser` from [`@langchain/classic`](https://www.npmjs.com/package/@langchain/classic). On a parsing failure, the wrapper sends the malformed output, the parser's format instructions, and the error message to a model and parses the corrected response.
+
+<Note>
+    `OutputFixingParser` requires the `@langchain/classic` package. Before v1, it was available from `langchain/output_parsers`.
+</Note>
+
+```ts
+import { OutputFixingParser } from "@langchain/classic/output_parsers";
+import { StructuredOutputParser } from "@langchain/core/output_parsers";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { initChatModel } from "langchain";
+import * as z from "zod";
+
+const ProductReview = z.object({
+    rating: z.number().min(1).max(5).describe("The rating of the product (1-5)"),
+    sentiment: z.enum(["positive", "negative"]).describe("The sentiment of the review"),
+});
+
+const model = await initChatModel("gpt-5.4");
+
+const baseParser = StructuredOutputParser.fromZodSchema(ProductReview);
+const fixingParser = OutputFixingParser.fromLLM(model, baseParser);
+
+const prompt = ChatPromptTemplate.fromMessages([
+    ["system", "Analyze the product review.\n{format_instructions}"],
+    ["user", "{review}"],
+]);
+
+const chain = prompt.pipe(model).pipe(fixingParser);
+
+const result = await chain.invoke({
+    review: "Great product, 5 stars! Fast shipping, but expensive.",
+    format_instructions: baseParser.getFormatInstructions(),
+});
+// { rating: 5, sentiment: "positive" }
+```
+
+The wrapped parser only invokes the fixing model when the initial parse fails, so well-formed output incurs no extra model calls.
+
+<Warning>
+    `OutputFixingParser` retries only errors thrown as `OutputParserException`. Parsers that throw raw errors are not retried: for example, `JsonOutputParser` throws a plain `SyntaxError` on invalid JSON, which propagates uncaught. Wrap a parser that throws `OutputParserException`, such as `StructuredOutputParser`.
+</Warning>
+:::
