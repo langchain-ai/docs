@@ -84,6 +84,7 @@ LINK_MAPS: list[LinkMap] = [
             "HumanInTheLoopMiddleware": "langchain/agents/middleware/human_in_the_loop/HumanInTheLoopMiddleware",
             "ModelCallLimitMiddleware": "langchain/agents/middleware/model_call_limit/ModelCallLimitMiddleware",
             "ToolCallLimitMiddleware": "langchain/agents/middleware/tool_call_limit/ToolCallLimitMiddleware",
+            "ProviderToolSearchMiddleware": "langchain/agents/middleware/provider_tool_search/ProviderToolSearchMiddleware",
             "ModelFallbackMiddleware": "langchain/agents/middleware/model_fallback/ModelFallbackMiddleware",
             "TodoListMiddleware": "langchain/agents/middleware/todo/TodoListMiddleware",
             "LLMToolSelectorMiddleware": "langchain/agents/middleware/tool_selection/LLMToolSelectorMiddleware",
