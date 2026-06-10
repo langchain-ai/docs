@@ -84,6 +84,7 @@ LINK_MAPS: list[LinkMap] = [
             "HumanInTheLoopMiddleware": "langchain/agents/middleware/human_in_the_loop/HumanInTheLoopMiddleware",
             "ModelCallLimitMiddleware": "langchain/agents/middleware/model_call_limit/ModelCallLimitMiddleware",
             "ToolCallLimitMiddleware": "langchain/agents/middleware/tool_call_limit/ToolCallLimitMiddleware",
+            "ProviderToolSearchMiddleware": "langchain/agents/middleware/provider_tool_search/ProviderToolSearchMiddleware",
             "ModelFallbackMiddleware": "langchain/agents/middleware/model_fallback/ModelFallbackMiddleware",
             "TodoListMiddleware": "langchain/agents/middleware/todo/TodoListMiddleware",
             "LLMToolSelectorMiddleware": "langchain/agents/middleware/tool_selection/LLMToolSelectorMiddleware",
@@ -104,6 +105,7 @@ LINK_MAPS: list[LinkMap] = [
             "StateFileSearchMiddleware": "langchain-anthropic/middleware/file_search/StateFileSearchMiddleware",
             "OpenAIModerationMiddleware": "langchain-openai/middleware/openai_moderation/OpenAIModerationMiddleware",
             "ContextSize": "langchain/agents/middleware/summarization/ContextSize",
+            "TriggerClause": "langchain/agents/middleware/summarization/TriggerClause",
             # Messages
             "AIMessage": "langchain-core/messages/ai/AIMessage",
             "AIMessage.tool_calls": "langchain/messages/#langchain.messages.AIMessage.tool_calls",
@@ -345,6 +347,7 @@ LINK_MAPS: list[LinkMap] = [
             "RunControl": "langgraph/runtime/RunControl",
             "interrupt": "langgraph/types/interrupt",
             "ToolNode": "langgraph/agents/#langgraph.prebuilt.tool_node.ToolNode",
+            "ToolCallRequest": "langgraph.prebuilt/tool_node/ToolCallRequest",
             "tools_condition": "langgraph/agents/#langgraph.prebuilt.tool_node.tools_condition",
             "AsyncPostgresSaver": "langgraph/checkpoints/#langgraph.checkpoint.postgres.aio.AsyncPostgresSaver",
             "AsyncSqliteSaver": "langgraph/checkpoints/#langgraph.checkpoint.sqlite.aio.AsyncSqliteSaver",
@@ -692,6 +695,7 @@ LINK_MAPS: list[LinkMap] = [
             "ModelFallbackMiddleware": "langchain/index/modelFallbackMiddleware",
             "ModelCallLimitMiddleware": "langchain/index/modelCallLimitMiddleware",
             "ToolCallLimitMiddleware": "langchain/index/toolCallLimitMiddleware",
+            "providerToolSearchMiddleware": "langchain/index/providerToolSearchMiddleware",
             "systemPrompt": "types/langchain.index.CreateAgentParams.html#systemprompt",
             "openAIModerationMiddleware": "langchain/index/openAIModerationMiddleware",
             # LangSmith SDK - Vitest references
