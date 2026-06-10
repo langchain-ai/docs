@@ -1,0 +1,94 @@
+---
+title: "Voxell integration"
+description: "Integrate with the Voxell Forge embedding models using LangChain Python."
+---
+
+This guide walks you through generating embeddings with [Voxell's](/oss/integrations/providers/voxell) Forge API and the LangChain integration.
+
+Voxell's Ingot-8B-R3 ranks #1 for English on the public MTEB leaderboard (English v2), with a 75.98 mean task score across 41 tasks. It is the top usable English embedding model.
+
+## 1. Create an API key
+
+Head to [dash.voxell.ai](https://dash.voxell.ai) to create a free account and an API key. New accounts include 10M free tokens. You can also try Forge with no signup on the [playground](https://playground.voxell.ai).
+
+## 2. Install the integration package
+
+<CodeGroup>
+```bash pip
+pip install langchain-voxell
+```
+
+```bash uv
+uv add langchain-voxell
+```
+</CodeGroup>
+
+## 3. Choose a tier
+
+Forge offers three tiers on one API. Pick your point on the quality and cost curve:
+
+| Tier | Dimensions |
+| ------- | ---------- |
+| `turbo` | 1024 |
+| `pro` | 2560 |
+| `ultra` | 4096 |
+
+## 4. Embed text
+
+Initialize the client with your API key, set either through the `FORGE_API_KEY` environment variable or passed directly with `api_key=...`.
+
+```python
+from langchain_voxell import ForgeEmbeddings
+
+emb = ForgeEmbeddings(model="turbo")  # reads FORGE_API_KEY from the environment
+```
+
+Embed documents and queries. The integration sets the Forge `input_type` for you, so document and query vectors are optimized for retrieval.
+
+```python
+document_embedding = emb.embed_documents(["Voxell Forge turns text into vectors."])[0]
+query_embedding = emb.embed_query("How do I turn text into vectors?")
+```
+
+## 5. Score similarity
+
+Forge returns unit-norm vectors, so the dot product equals cosine similarity.
+
+```python
+import numpy as np
+
+doc = emb.embed_documents(["Voxell Forge turns text into vectors."])[0]
+relevant = emb.embed_query("How do I turn text into vectors?")
+unrelated = emb.embed_query("What time does the store close?")
+
+print(f"relevant:  {np.dot(relevant, doc) * 100:.2f}")
+print(f"unrelated: {np.dot(unrelated, doc) * 100:.2f}")
+```
+
+## Shorter vectors with Matryoshka
+
+Forge supports Matryoshka truncation. Pass `dimensions` to get a shorter, re-normalized vector, which means a smaller index with minimal quality loss.
+
+```python
+emb = ForgeEmbeddings(model="turbo", dimensions=256)
+short_vector = emb.embed_query("a compact embedding")
+```
+
+## Async
+
+Every method has an async counterpart.
+
+```python
+vectors = await emb.aembed_documents(["alpha", "beta"])
+query_vector = await emb.aembed_query("a search query")
+```
+
+## Use with a vector store
+
+```python
+from langchain_community.vectorstores import FAISS
+from langchain_voxell import ForgeEmbeddings
+
+store = FAISS.from_texts(["doc one", "doc two"], ForgeEmbeddings(model="pro"))
+hits = store.similarity_search("query", k=2)
+```
