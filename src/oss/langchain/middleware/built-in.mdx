@@ -25,6 +25,7 @@ The following middleware work with any LLM provider:
 | [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
 | [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
 | [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
+| [Provider tool search](#provider-tool-search) | Defer tools behind providers' server-side tool search, surfacing them on demand. |
 | [Shell tool](#shell-tool) | Expose a persistent shell session to agents for command execution. |
 | [File search](#file-search) | Provide Glob and Grep search tools over filesystem files. |
 | [Filesystem](#filesystem-middleware) | Provide agents with a filesystem for storing context and long-term memories. |
@@ -48,6 +49,7 @@ The following middleware work with any LLM provider:
 | [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
 | [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
 | [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
+| [Provider tool search](#provider-tool-search) | Defer tools behind providers' server-side tool search, surfacing them on demand. |
 | [Filesystem](#filesystem-middleware) | Provide agents with a filesystem for storing context and long-term memories. |
 | [Subagent middleware](#subagent) | Add the ability to spawn subagents. |
 
@@ -2193,6 +2195,147 @@ const agent = createAgent({
 :::
 
 </Accordion>
+
+:::python
+### Provider tool search
+
+Defer selected tools behind model providers' server-side tool search, so the model discovers them on demand instead of receiving every tool schema up front. Provider tool search is useful for:
+
+- Reducing context bloat when using many tools.
+- Improving tool selection accuracy by surfacing only relevant tools.
+
+<Note>
+    Requires a model with server-side tool search support: Anthropic (Claude Sonnet 4+/Opus 4+/Haiku 4.5+) or OpenAI (gpt-5.4+). Other providers raise a `ValueError`.
+</Note>
+
+**API reference:** @[`ProviderToolSearchMiddleware`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ProviderToolSearchMiddleware
+
+agent = create_agent(
+    model="anthropic:claude-opus-4-8",
+    tools=[get_weather, lookup_order],
+    middleware=[
+        ProviderToolSearchMiddleware(searchable_tools=["lookup_order"]),
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="searchable_tools" type="list[str | BaseTool]">
+    Tools to defer behind the provider's tool search, given by name or instance. Deferred tools are withheld from the model until its search surfaces them. Tools constructed with `extras={"defer_loading": True}` are deferred regardless of this option; if `searchable_tools` is omitted, only those pre-marked tools are deferred.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware opts-in all tools included in `searchable_tools` for deferral and search. A tool can also opt into deferral at construction time by setting `extras={"defer_loading": True}`.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ProviderToolSearchMiddleware
+from langchain.tools import tool
+
+
+# Marked `defer_loading` at construction, so it's deferred on its own —
+# no need to list it in `searchable_tools`.
+@tool(extras={"defer_loading": True})
+def send_email(to: str) -> str:
+    """Send an email."""
+    return "sent"
+
+
+agent = create_agent(
+    model="anthropic:claude-opus-4-8",
+    tools=[send_email],
+    middleware=[ProviderToolSearchMiddleware()],
+)
+```
+
+</Accordion>
+:::
+
+:::js
+### Provider tool search
+
+Defer selected tools behind model providers' server-side tool search, so the model discovers them on demand instead of receiving every tool schema up front. Provider tool search is useful for:
+
+- Reducing context bloat when using many tools.
+- Improving tool selection accuracy by surfacing only relevant tools.
+
+<Note>
+    Requires a model with server-side tool search support: Anthropic (Claude Sonnet 4+/Opus 4+/Haiku 4.5+) or OpenAI (gpt-5.4+). Other providers throw an error.
+</Note>
+
+**API reference:** @[`providerToolSearchMiddleware`]
+
+```typescript
+import { createAgent, providerToolSearchMiddleware } from "langchain";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const getWeather = tool(async () => "Sunny, 22C", {
+  name: "get_weather",
+  description: "Get the current weather for a city",
+  schema: z.object({ city: z.string() }),
+});
+
+const lookupOrderStatus = tool(async () => "OUT_FOR_DELIVERY", {
+  name: "lookup_order_status",
+  description: "Look up the current delivery status of a customer order by ID",
+  schema: z.object({ orderId: z.string() }),
+});
+
+const nicheTools = [lookupOrderStatus];
+
+const agent = createAgent({
+  model: "anthropic:claude-opus-4-8",
+  tools: [getWeather, ...nicheTools],
+  middleware: [
+    providerToolSearchMiddleware({ searchableTools: nicheTools }),
+  ],
+});
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="searchableTools" type="(string | StructuredToolInterface)[]">
+    Tools to defer behind the provider's tool search, given by name or instance. Deferred tools are withheld from the model until its search surfaces them. Tools constructed with `extras.defer_loading: true` are deferred regardless of this option; if `searchableTools` is omitted, only those pre-marked tools are deferred.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware opts-in all tools included in the `searchableTools` for deferral and search. A tool can also opt into deferral at construction time by setting `extras.defer_loading: true`
+
+```typescript
+import { createAgent, providerToolSearchMiddleware } from "langchain";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+// Marked `defer_loading` at construction, so it's deferred on its own —
+// no need to list it in `searchableTools`.
+const sendEmail = tool(async () => "sent", {
+  name: "send_email",
+  description: "Send an email",
+  schema: z.object({ to: z.string() }),
+  extras: { defer_loading: true },
+});
+
+const agent = createAgent({
+  model: "anthropic:claude-opus-4-8",
+  tools: [sendEmail],
+  middleware: [providerToolSearchMiddleware()],
+});
+```
+
+</Accordion>
+:::
 
 :::python
 ### Shell tool
