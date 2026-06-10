@@ -104,6 +104,7 @@ LINK_MAPS: list[LinkMap] = [
             "StateFileSearchMiddleware": "langchain-anthropic/middleware/file_search/StateFileSearchMiddleware",
             "OpenAIModerationMiddleware": "langchain-openai/middleware/openai_moderation/OpenAIModerationMiddleware",
             "ContextSize": "langchain/agents/middleware/summarization/ContextSize",
+            "TriggerClause": "langchain/agents/middleware/summarization/TriggerClause",
             # Messages
             "AIMessage": "langchain-core/messages/ai/AIMessage",
             "AIMessage.tool_calls": "langchain/messages/#langchain.messages.AIMessage.tool_calls",
