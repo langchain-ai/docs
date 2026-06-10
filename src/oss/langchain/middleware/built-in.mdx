@@ -2162,6 +2162,69 @@ const agent = createAgent({
 
 </Accordion>
 
+:::python
+### Provider tool search
+
+Defer selected tools behind model providers' server-side tool search, so the model discovers them on demand instead of receiving every tool schema up front. Provider tool search is useful for:
+
+- Reducing context bloat when using many tools.
+- Improving tool selection accuracy by surfacing only relevant tools.
+
+<Note>
+    Requires a model with server-side tool search support: Anthropic (Claude Sonnet 4+/Opus 4+/Haiku 4.5+) or OpenAI (gpt-5.4+). Other providers raise a `ValueError`.
+</Note>
+
+**API reference:** @[`ProviderToolSearchMiddleware`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ProviderToolSearchMiddleware
+
+agent = create_agent(
+    model="anthropic:claude-opus-4-8",
+    tools=[get_weather, lookup_order],
+    middleware=[
+        ProviderToolSearchMiddleware(searchable_tools=["lookup_order"]),
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="searchable_tools" type="list[str | BaseTool]">
+    Tools to defer behind the provider's tool search, given by name or instance. Deferred tools are withheld from the model until its search surfaces them. Tools constructed with `extras={"defer_loading": True}` are deferred regardless of this option; if `searchable_tools` is omitted, only those pre-marked tools are deferred.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware opts-in all tools included in `searchable_tools` for deferral and search. A tool can also opt into deferral at construction time by setting `extras={"defer_loading": True}`.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ProviderToolSearchMiddleware
+from langchain.tools import tool
+
+
+# Marked `defer_loading` at construction, so it's deferred on its own —
+# no need to list it in `searchable_tools`.
+@tool(extras={"defer_loading": True})
+def send_email(to: str) -> str:
+    """Send an email."""
+    return "sent"
+
+
+agent = create_agent(
+    model="anthropic:claude-opus-4-8",
+    tools=[send_email],
+    middleware=[ProviderToolSearchMiddleware()],
+)
+```
+
+</Accordion>
+:::
+
 :::js
 ### Provider tool search
 
@@ -2235,69 +2298,6 @@ const agent = createAgent({
   tools: [sendEmail],
   middleware: [providerToolSearchMiddleware()],
 });
-```
-
-</Accordion>
-:::
-
-:::python
-### Provider tool search
-
-Defer selected tools behind model providers' server-side tool search, so the model discovers them on demand instead of receiving every tool schema up front. Provider tool search is useful for:
-
-- Reducing context bloat when using many tools.
-- Improving tool selection accuracy by surfacing only relevant tools.
-
-<Note>
-    Requires a model with server-side tool search support: Anthropic (Claude Sonnet 4+/Opus 4+/Haiku 4.5+) or OpenAI (gpt-5.4+). Other providers raise a `ValueError`.
-</Note>
-
-**API reference:** @[`ProviderToolSearchMiddleware`]
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ProviderToolSearchMiddleware
-
-agent = create_agent(
-    model="anthropic:claude-opus-4-8",
-    tools=[get_weather, lookup_order],
-    middleware=[
-        ProviderToolSearchMiddleware(searchable_tools=["lookup_order"]),
-    ],
-)
-```
-
-<Accordion title="Configuration options">
-
-<ParamField body="searchable_tools" type="list[str | BaseTool]">
-    Tools to defer behind the provider's tool search, given by name or instance. Deferred tools are withheld from the model until its search surfaces them. Tools constructed with `extras={"defer_loading": True}` are deferred regardless of this option; if `searchable_tools` is omitted, only those pre-marked tools are deferred.
-</ParamField>
-
-</Accordion>
-
-<Accordion title="Full example">
-
-The middleware opts-in all tools included in `searchable_tools` for deferral and search. A tool can also opt into deferral at construction time by setting `extras={"defer_loading": True}`.
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ProviderToolSearchMiddleware
-from langchain.tools import tool
-
-
-# Marked `defer_loading` at construction, so it's deferred on its own —
-# no need to list it in `searchable_tools`.
-@tool(extras={"defer_loading": True})
-def send_email(to: str) -> str:
-    """Send an email."""
-    return "sent"
-
-
-agent = create_agent(
-    model="anthropic:claude-opus-4-8",
-    tools=[send_email],
-    middleware=[ProviderToolSearchMiddleware()],
-)
 ```
 
 </Accordion>
