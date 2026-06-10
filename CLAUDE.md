@@ -2,7 +2,7 @@
 
 # LangChain Documentation Guidelines
 
-Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`—not Mintlify `build/` output.
+Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`, not Mintlify `build/` output.
 
 ## Critical rules
 
@@ -19,7 +19,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | What | Where/How |
 |------|-----------|
 | LangSmith docs | `src/langsmith/` |
-| Open source docs | `src/oss/` (LangChain, LangGraph, DeepAgents) |
+| Open source docs | `src/oss/` (LangChain, LangGraph, Deep Agents) |
 | Python integrations | `src/oss/python/integrations/` |
 | JS integrations | `src/oss/javascript/integrations/` |
 | Reusable snippets | `src/snippets/` |
@@ -29,7 +29,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Build system | `pipeline/` |
 | Icon library | Tabler — <https://tabler.io/icons> |
 | Mintlify components | <https://mintlify.com/docs/components> |
-| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report issues here](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
+| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report reference docs issues](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 
 ## Project structure
@@ -218,12 +218,13 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Sentence-case headings starting with active verb, not gerund ("Add a tool" not "Adding a tool")
 - American English spelling
 - Oxford commas in lists ("traces, datasets, and experiments")
-- Descriptive link text ("[View the tracing docs](/langsmith/tracing)" not "click [here](/langsmith/tracing)")
+- Descriptive link text ("[View the tracing docs](/langsmith/tracing)" not "click [this link](/langsmith/tracing)")
 - Add cross-links where applicable
 - Use `@[ClassName]` link map for API references
 - Use `:::python`/`:::js` fencing on OSS docs
 - Language tags on all code blocks (use actual language, not `output`)
 - Sort imports in all code snippets (stdlib, third-party, local)
+- Use `.content_blocks` instead of `.content` when accessing message content in LangChain code snippets
 - Test code examples and links before publishing
 
 **Don't:**

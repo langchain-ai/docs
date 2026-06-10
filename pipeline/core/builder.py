@@ -199,6 +199,10 @@ class DocumentationBuilder:
             if relative_path.parts == ("index.mdx",):
                 return content
 
+            # Snippet files are imported into other pages — never append page footers.
+            if "snippets" in relative_path.parts:
+                return content
+
             # Construct the GitHub URLs
             edit_url = (
                 f"https://github.com/langchain-ai/docs/edit/main/src/{relative_path}"

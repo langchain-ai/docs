@@ -79,7 +79,7 @@ const agent = await createDeepAgent({
 The `system_prompt` parameter is static which means it does not change per invocation.
 For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from [long-term memory](#long-term-memory).
 If your prompt depends on context or `runtime.store`, use `@dynamic_prompt` to build context-aware instructions. Your middleware can read `request.runtime.context` and `request.runtime.store`.
-See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
+See [Customization](/oss/deepagents/customization#middleware) for the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent) and for adding [custom middleware](/oss/langchain/middleware). See the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
 
 You do **not** need middleware when tools alone use context or `runtime.store`; tools receive the @[ToolRuntime] object (including `runtime.context` and `runtime.store`) directly. Add middleware only when tools should be packaged with an update to the system prompt.
 :::
@@ -89,7 +89,7 @@ The `systemPrompt` parameter is static which means it does not change per invoca
 For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from [long-term memory](#long-term-memory).
 If your prompt depends on context or `runtime.store`, use `dynamicSystemPromptMiddleware` to build context-aware instructions.
 Your middleware can read `request.runtime.context` and `request.runtime.store`.
-See [Customization](/oss/deepagents/customization#middleware) for adding [custom middleware](/oss/langchain/middleware) and the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
+See [Customization](/oss/deepagents/customization#middleware) for the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent) and for adding [custom middleware](/oss/langchain/middleware). See the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
 
 You do **not** need middleware when tools alone use context or `runtime.store`; tools receive the `runtime` object (including `runtime.context` and `runtime.store`) directly. Add middleware only when the system prompt itself must vary per request.
 :::
@@ -148,9 +148,9 @@ Keep each skill focused on a single workflow or domain; broad or overlapping ski
 
 ### Tool prompts
 
-[Tool](/oss/langchain/tools) prompts are instructions that shape how the model uses tools. All tools expose metadata the model sees in its prompt—typically a schema and a description. Tools you pass via the `tools` parameter surface that tool metadata (schema and descriptions) to the model. A deep agent's built-in tools are packaged in middleware and typically also update the system prompt with more guidance for those tools.
+[Tool](/oss/langchain/tools) prompts are instructions that shape how the model uses tools. All tools expose metadata the model sees in its prompt—typically a schema and a description. Tools you pass via the `tools` parameter surface that tool metadata (schema and descriptions) to the model. A deep agent's built-in tools are packaged in the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent) and typically also update the system prompt with more guidance for those tools.
 
-**Built-in tools** – Middleware that adds harness capabilities (planning, filesystem, subagents) automatically appends tool-specific instructions to the system prompt, creating tool prompts that explain how to use those tools effectively:
+**Built-in tools** – Middleware that adds harness capabilities (planning, filesystem, subagents) automatically appends tool-specific instructions to the system prompt, creating tool prompts that explain how to use those tools effectively. See [Customization](/oss/deepagents/customization#middleware) for the full list:
 - Planning prompt – Instructions for `write_todos` to maintain a structured task list
 - Filesystem prompt – Documentation for `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` (and `execute` when using a sandbox backend)
 - Subagent prompt – Guidance for delegating work with the `task` tool
@@ -306,6 +306,51 @@ const result = await agent.invoke(
 
 Runtime context **propagates to all subagents**. When a subagent runs, it receives the same runtime context as the parent. See [Subagents](/oss/deepagents/subagents#context-management) for per-subagent context (namespaced keys).
 
+:::python
+## Custom state schema
+
+<Note>
+    Custom state schemas require `deepagents>=0.6.6`.
+</Note>
+
+Use `state_schema` when data must be part of the agent's mutable graph state, checkpointed with the thread, or available through `runtime.state`. For immutable per-run inputs such as user IDs, credentials, or feature flags, prefer [runtime context](#runtime-context).
+
+Custom state schemas must subclass @[DeepAgentState]. This preserves the built-in `DeltaChannel` reducer on `messages`, which keeps checkpoint growth linear as conversations get longer.
+
+```python
+from deepagents import DeepAgentState, create_deep_agent
+from langchain.tools import ToolRuntime, tool
+
+
+class ResearchState(DeepAgentState):
+    page_url: str
+    file_urls: list[str]
+
+
+@tool
+def cite_page(runtime: ToolRuntime) -> str:
+    """Return the current page URL."""
+    return runtime.state["page_url"]
+
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    tools=[cite_page],
+    state_schema=ResearchState,
+)
+
+result = agent.invoke(
+    {
+        "messages": [{"role": "user", "content": "Cite the current page"}],
+        "page_url": "https://example.com/report",
+        "file_urls": [],
+    }
+)
+```
+
+The schema is merged with state schemas contributed by middleware. Declarative @[SubAgent] specs passed to `subagents=` inherit the parent `state_schema` when Deep Agents compiles them for the `task` tool. @[CompiledSubAgent] runnables and remote @[AsyncSubAgent] specs do not inherit it because their graphs are already compiled or hosted separately. Compile those graphs with a compatible schema if they need the same state fields.
+:::
+
 ## Context compression
 
 Long-running tasks produce large tool outputs and long conversation history.
@@ -336,6 +381,22 @@ Content offloading happens when tool call inputs or results exceed a token thres
 
     ![An example of offloading showing a large tool response that is replaced with a message about the location of the offloaded results and the first 10 lines of the result](/oss/images/deepagents/offloading-results.png)
 
+### Multimodal inputs
+
+Deep Agents supports multimodal inputs, such as images returned by `read_file` or provided in messages, but the built-in context management mechanisms are primarily text and message-history oriented. They do not resize images, lower image resolution, or generate reusable visual embeddings.
+
+For multimodal workloads, keep large media out of active message history when possible:
+
+- Store images, screenshots, and charts in a filesystem backend or external object store, then pass file paths or URLs through messages.
+- Prefer references over base64-encoded image blocks in long-running conversations.
+- If a tool produces an image, have the tool save the image and return a concise text description plus a path or URL.
+- Use subagents for image-heavy inspection work so the main agent receives a compact text result instead of every multimodal intermediate step.
+- Tune summarization thresholds or provide a custom token counter when your model provider charges many tokens for images.
+
+Offloading large tool inputs and results only measures text content. Non-text blocks, including images, are preserved in the replacement message rather than compressed. A message that contains only an image will not be offloaded because of image size alone.
+
+Summarization replaces older messages with a text summary once those messages fall outside the preserved recent context. Any images in the summarized partition are no longer sent as active image blocks after summarization. The conversation history file written to the backend is a textual record, not a media artifact store, so store important images separately if the agent needs to inspect them again later.
+
 ### Summarization
 
 :::js
@@ -344,14 +405,14 @@ The current summarization behavior (in-model summarization via `wrapModelCall`, 
 </Note>
 :::
 
-When the context size crosses the model's context window limit (for example 85% of `max_input_tokens`), and there is no more context eligible for offloading, the deep agent summarizes the message history.
+Every `create_deep_agent` call includes @[`SummarizationMiddleware`] in the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent). When the context size crosses the model's context window limit (for example 85% of `max_input_tokens`), and there is no more context eligible for offloading, the deep agent summarizes the message history automatically.
 
 This process has two components:
 
 - **In-context summary**: An LLM generates a structured summary of the conversation including session intent, artifacts created, and next steps—which replaces the full conversation history in the agent's working memory.
-- **Filesystem preservation**: The complete, original conversation messages are written to the filesystem as a canonical record.
+- **Filesystem preservation**: A text rendering of the original conversation messages is written to the filesystem as a canonical record.
 
-This dual approach ensures the agent maintains awareness of its goals and progress (via the summary) while preserving the ability to recover specific details when needed (via filesystem search).
+This dual approach ensures the agent maintains awareness of its goals and progress (via the summary) while preserving the ability to recover text details when needed (via filesystem search).
 
 ![An example of summarization showing an agent's conversation history, where several steps get compacted](/oss/images/deepagents/summarization.png)
 
@@ -400,11 +461,13 @@ for await (const [namespace, chunk] of await agent.stream(
 :::
 
 :::python
-##### Summarization Tool
+##### On-demand compaction tool
 
-Deep agents include an optional [tool](/oss/langchain/tools) for summarization, enabling agents to trigger summarization at opportune times—such as between tasks—instead of at fixed token intervals.
 
-You can enable this tool by appending it to the middleware list:
+By default, automatic summarization runs when context thresholds are reached.
+Separately, you can give the agent a `compact_conversation` [tool](/oss/langchain/tools) so it can trigger compaction on demand, for example between tasks, instead of waiting for the 85% threshold.
+
+Enable the tool by passing @[`create_summarization_tool_middleware`] using the `middleware` argument on `create_deep_agent`. Custom middleware is inserted into the [default stack](/oss/deepagents/customization#default-stack-main-agent) after @[`PatchToolCallsMiddleware`]:
 
 ```python
 from deepagents import create_deep_agent
@@ -424,9 +487,9 @@ agent = create_deep_agent(
 )
 ```
 
-Enabling this feature does not disable the default summarization action at 85% of the model's context limit.
+Adding the compaction tool does not disable automatic summarization at 85% of the model's context limit. Both share the same summarization engine and state.
 
-See the @[`SummarizationToolMiddleware`] API reference for details.
+See @[`SummarizationToolMiddleware`] and @[`create_summarization_tool_middleware`] in the API reference for details.
 
 :::
 

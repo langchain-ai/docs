@@ -60,6 +60,10 @@ Automatically summarize conversation history when approaching token limits, pres
 - Multi-turn dialogues with extensive history.
 - Applications where preserving full conversation context matters.
 
+<Note>
+    Summarization is text-oriented context compression. It does not resize, downsample, or otherwise compress image/audio/video payloads. Recent messages retained by `keep` still include their original multimodal blocks, while older multimodal messages that are summarized are represented only by the generated text summary. For image-heavy applications, store media in a filesystem or object store and pass URLs or file references through message history.
+</Note>
+
 :::python
 **API reference:** @[`SummarizationMiddleware`]
 
@@ -121,21 +125,24 @@ const agent = createAgent({
     Model for generating summaries. Can be a model identifier string (e.g., `'openai:gpt-5.4-mini'`) or a `BaseChatModel` instance. See @[`init_chat_model`][init_chat_model(model)] for more information.
 </ParamField>
 
-<ParamField body="trigger" type="ContextSize | list[ContextSize] | None">
+<ParamField body="trigger" type="ContextSize | TriggerClause | list[ContextSize | TriggerClause] | None">
     Condition(s) for triggering summarization. Can be:
 
-    - A single @[`ContextSize`] tuple (specified condition must be met)
-    - A list of @[`ContextSize`] tuples (any condition must be met - OR logic)
+    - A single @[`ContextSize`] tuple (the specified threshold must be met)
+    - A single @[`TriggerClause`] dict (all specified thresholds must be met - AND logic)
+    - A list mixing either form (any item must be met - OR logic)
 
-    Condition should be one of the following:
+    Supported thresholds are:
 
     - `fraction` (float): Fraction of model's context size (0-1)
     - `tokens` (int): Absolute token count
     - `messages` (int): Message count
 
-    At least one condition must be specified. If not provided, summarization will not trigger automatically.
+    A @[`ContextSize`] tuple expresses exactly one threshold. A @[`TriggerClause`] dict can include one or more thresholds, e.g. `{"tokens": 4000, "messages": 10}`, and all thresholds in the dict must be met (AND).
 
-    See the API reference for @[`ContextSize`] for more information.
+    Each @[`TriggerClause`] dict must specify at least one threshold. If `trigger` is not provided, summarization will not trigger automatically.
+
+    See the API reference for @[`ContextSize`] and @[`TriggerClause`] for more information.
 </ParamField>
 
 <ParamField body="keep" type="ContextSize" default="('messages', 20)">
@@ -245,9 +252,10 @@ const agent = createAgent({
 The summarization middleware monitors message token counts and automatically summarizes older messages when thresholds are reached.
 
 **Trigger conditions** control when summarization runs:
-- Single condition object (specified must be met)
-- Array of conditions (any condition must be met - OR logic)
-- Each condition can use `fraction` (of model's context size), `tokens` (absolute count), or `messages` (message count)
+- A single threshold triggers when that threshold is met
+- A trigger clause with multiple thresholds triggers only when all thresholds are met (AND logic)
+- A list of trigger conditions triggers when any item is met (OR logic)
+- Each threshold can use `fraction` (of model's context size), `tokens` (absolute count), or `messages` (message count)
 
 **Keep condition** control how much context to preserve (specify exactly one):
 - `fraction` - Fraction of model's context size to keep
@@ -289,8 +297,38 @@ agent2 = create_agent(
     ],
 )
 
-# Using fractional limits
+# AND logic: trigger only when tokens >= 4000 AND messages >= 10
 agent3 = create_agent(
+    model="gpt-5.4",
+    tools=[your_weather_tool, your_calculator_tool],
+    middleware=[
+        SummarizationMiddleware(
+            model="gpt-5.4-mini",
+            trigger={"tokens": 4000, "messages": 10},
+            keep=("messages", 20),
+        ),
+    ],
+)
+
+# Combine AND and OR: trigger if (tokens >= 5000 AND messages >= 3)
+# OR (tokens >= 3000 AND messages >= 6)
+agent4 = create_agent(
+    model="gpt-5.4",
+    tools=[your_weather_tool, your_calculator_tool],
+    middleware=[
+        SummarizationMiddleware(
+            model="gpt-5.4-mini",
+            trigger=[
+                {"tokens": 5000, "messages": 3},
+                {"tokens": 3000, "messages": 6},
+            ],
+            keep=("messages", 20),
+        ),
+    ],
+)
+
+# Using fractional limits
+agent5 = create_agent(
     model="gpt-5.4",
     tools=[your_weather_tool, your_calculator_tool],
     middleware=[
@@ -801,6 +839,10 @@ Detect and handle Personally Identifiable Information (PII) in conversations usi
 - Any application handling sensitive user data.
 
 :::python
+<Note>
+With `apply_to_output=True`, `PIIMiddleware` also redacts streamed wire output—text deltas, tool-call args, tool outputs, and state snapshots—via a registered stream transformer. Requires `langchain>=1.3.2`. See [Register transformers on middleware](/oss/langchain/event-streaming#register-transformers-on-middleware).
+</Note>
+
 **API reference:** @[`PIIMiddleware`]
 
 ```python
@@ -1041,7 +1083,7 @@ function detector(content: string): PIIMatch[] {
 </ParamField>
 
 <ParamField body="apply_to_output" type="boolean" default="False">
-    Check AI messages after model call
+    Check AI messages after model call. With `langchain>=1.3.2`, also redacts streamed wire output (text deltas, tool-call args, tool outputs, state snapshots) via a registered stream transformer. See [event streaming](/oss/langchain/event-streaming#register-transformers-on-middleware).
 </ParamField>
 
 <ParamField body="apply_to_tool_results" type="boolean" default="False">
