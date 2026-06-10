@@ -5,7 +5,28 @@ sidebarTitle: Custom SQL agent
 
 import ChatModelTabsPy from '/snippets/chat-model-tabs.mdx';
 import ChatModelTabsJS from '/snippets/chat-model-tabs-js.mdx';
-
+import SqlAgentDownloadChinookPy from '/snippets/code-samples/sql-agent-download-chinook-py.mdx';
+import SqlAgentExploreDatabasePy from '/snippets/code-samples/sql-agent-explore-database-py.mdx';
+import LanggraphSqlAgentToolsPy from '/snippets/code-samples/langgraph-sql-agent-tools-py.mdx';
+import LanggraphSqlAgentDefineStepsPy from '/snippets/code-samples/langgraph-sql-agent-define-steps-py.mdx';
+import LanggraphSqlAgentAssembleAgentPy from '/snippets/code-samples/langgraph-sql-agent-assemble-agent-py.mdx';
+import LanggraphSqlAgentVisualizeGraphPy from '/snippets/code-samples/langgraph-sql-agent-visualize-graph-py.mdx';
+import LanggraphSqlAgentStreamAgentPy from '/snippets/code-samples/langgraph-sql-agent-stream-agent-py.mdx';
+import LanggraphSqlAgentHitlInterruptPy from '/snippets/code-samples/langgraph-sql-agent-hitl-interrupt-py.mdx';
+import LanggraphSqlAgentHitlAssemblePy from '/snippets/code-samples/langgraph-sql-agent-hitl-assemble-py.mdx';
+import LanggraphSqlAgentHitlStreamPy from '/snippets/code-samples/langgraph-sql-agent-hitl-stream-py.mdx';
+import LanggraphSqlAgentHitlResumePy from '/snippets/code-samples/langgraph-sql-agent-hitl-resume-py.mdx';
+import LanggraphSqlAgentDownloadChinookJs from '/snippets/code-samples/langgraph-sql-agent-download-chinook-js.mdx';
+import LanggraphSqlAgentExploreDatabaseJs from '/snippets/code-samples/langgraph-sql-agent-explore-database-js.mdx';
+import LanggraphSqlAgentToolsJs from '/snippets/code-samples/langgraph-sql-agent-tools-js.mdx';
+import LanggraphSqlAgentDefineStepsJs from '/snippets/code-samples/langgraph-sql-agent-define-steps-js.mdx';
+import LanggraphSqlAgentAssembleAgentJs from '/snippets/code-samples/langgraph-sql-agent-assemble-agent-js.mdx';
+import LanggraphSqlAgentVisualizeGraphJs from '/snippets/code-samples/langgraph-sql-agent-visualize-graph-js.mdx';
+import LanggraphSqlAgentStreamAgentJs from '/snippets/code-samples/langgraph-sql-agent-stream-agent-js.mdx';
+import LanggraphSqlAgentHitlInterruptJs from '/snippets/code-samples/langgraph-sql-agent-hitl-interrupt-js.mdx';
+import LanggraphSqlAgentHitlAssembleJs from '/snippets/code-samples/langgraph-sql-agent-hitl-assemble-js.mdx';
+import LanggraphSqlAgentHitlStreamJs from '/snippets/code-samples/langgraph-sql-agent-hitl-stream-js.mdx';
+import LanggraphSqlAgentHitlResumeJs from '/snippets/code-samples/langgraph-sql-agent-hitl-resume-js.mdx';
 
 In this tutorial we will build a custom agent that can answer questions about a SQL database using LangGraph.
 
@@ -80,41 +101,12 @@ You will be creating a [SQLite database](https://www.sqlitetutorial.net/sqlite-s
 For convenience, we have hosted the database (`Chinook.db`) on a public GCS bucket.
 
 :::python
-```python
-import requests, pathlib
 
-url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db"
-local_path = pathlib.Path("Chinook.db")
-
-if local_path.exists():
-    print(f"{local_path} already exists, skipping download.")
-else:
-    response = requests.get(url)
-    if response.status_code == 200:
-        local_path.write_bytes(response.content)
-        print(f"File downloaded and saved as {local_path}")
-    else:
-        print(f"Failed to download the file. Status code: {response.status_code}")
-```
+<SqlAgentDownloadChinookPy />
 
 We will use Python's built-in `sqlite3` module to interact with the database:
 
-```python
-import sqlite3
-
-con = sqlite3.connect("Chinook.db")
-cursor = con.cursor()
-
-cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-tables = [row[0] for row in cursor.fetchall() if not row[0].startswith("sqlite_")]
-
-print("Dialect: sqlite")
-print(f"Available tables: {tables}")
-
-cursor.execute("SELECT * FROM Artist LIMIT 5;")
-print(f"Sample output: {cursor.fetchall()}")
-con.close()
-```
+<SqlAgentExploreDatabasePy />
 ```
 Dialect: sqlite
 Available tables: ['Album', 'Artist', 'Customer', 'Employee', 'Genre', 'Invoice', 'InvoiceLine', 'MediaType', 'Playlist', 'PlaylistTrack', 'Track']
@@ -122,54 +114,12 @@ Sample output: [(1, 'AC/DC'), (2, 'Accept'), (3, 'Aerosmith'), (4, 'Alanis Moris
 ```
 :::
 :::js
-```typescript
-import fs from "node:fs/promises";
-import path from "node:path";
 
-const url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db";
-const localPath = path.resolve("Chinook.db");
-
-async function resolveDbPath() {
-  const exists = await fs.access(localPath).then(() => true).catch(() => false);
-  if (exists) {
-    console.log(`${localPath} already exists, skipping download.`);
-    return localPath;
-  }
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Failed to download DB. Status code: ${resp.status}`);
-  const buf = Buffer.from(await resp.arrayBuffer());
-  await fs.writeFile(localPath, buf);
-  console.log(`File downloaded and saved as ${localPath}`);
-  return localPath;
-}
-```
+<LanggraphSqlAgentDownloadChinookJs />
 
 We will use the `sqlite3` library to interact with the database:
 
-```typescript
-import sqlite3 from "sqlite3";
-
-const dialect = "sqlite";
-
-async function runQuery(query: string, params: unknown[] = []): Promise<any[]> {
-  const dbPath = await resolveDbPath();
-  const db = new sqlite3.Database(dbPath);
-  return new Promise((resolve, reject) => {
-    db.all(query, params, (err, rows) => {
-      db.close();
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-}
-
-const tableRows = await runQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
-const tableNames = tableRows.map((row) => String(row.name));
-console.log(`Dialect: ${dialect}`);
-console.log(`Available tables: ${tableNames.join(", ")}`);
-const sampleResults = await runQuery("SELECT * FROM Artist LIMIT 5;");
-console.log(`Sample output: ${JSON.stringify(sampleResults)}`);
-```
+<LanggraphSqlAgentExploreDatabaseJs />
 ```
 Dialect: sqlite
 Available tables: Album, Artist, Customer, Employee, Genre, Invoice, InvoiceLine, MediaType, Playlist, PlaylistTrack, Track
@@ -186,79 +136,7 @@ The following database tools are minimal wrappers for demonstration purposes onl
 :::python
 We can implement database [tools](/oss/langchain/tools) as thin wrappers using the `@tool` decorator from `langchain.tools`:
 
-```python
-import sqlite3
-from langchain.tools import tool
-
-# Below are minimal tools for demonstration purposes.
-
-@tool
-def sql_db_list_tables() -> str:
-    """Input is an empty string, output is a comma-separated list of tables in the database."""
-    con = sqlite3.connect("Chinook.db")
-    try:
-        cursor = con.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = [row[0] for row in cursor.fetchall() if not row[0].startswith("sqlite_")]
-        return ", ".join(tables)
-    finally:
-        con.close()
-
-@tool
-def sql_db_schema(table_names: str) -> str:
-    """Input to this tool is a comma-separated list of tables, output is the schema and sample rows for those tables.
-    Be sure that the tables actually exist by calling sql_db_list_tables first!
-    Example Input: table1, table2, table3"""
-    con = sqlite3.connect("Chinook.db")
-    try:
-        cursor = con.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        valid_tables = {row[0] for row in cursor.fetchall() if not row[0].startswith("sqlite_")}
-        results = []
-        for table in table_names.split(","):
-            table = table.strip()
-            if table not in valid_tables:
-                results.append(f"Error: table_names {{{table!r}}} not found in database")
-                continue
-            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?;", (table,))
-            schema_row = cursor.fetchone()
-            if schema_row:
-                results.append(schema_row[0])
-                try:
-                    quoted_table = '"' + table.replace('"', '""') + '"'
-                    cursor.execute(f"SELECT * FROM {quoted_table} LIMIT 3;")
-                    rows = cursor.fetchall()
-                    if rows:
-                        col_names = [description[0] for description in cursor.description]
-                        results.append(f"/*\n3 rows from {table} table:\n" + "\t".join(col_names) + "\n" + "\n".join("\t".join(str(x) for x in row) for row in rows) + "\n*/")
-                except Exception as e:
-                    results.append(f"Error fetching sample rows: {e}")
-        return "\n\n".join(results)
-    finally:
-        con.close()
-
-@tool
-def sql_db_query(query: str) -> str:
-    """Input to this tool is a detailed and correct SQL query, output is a result from the database.
-    If the query is not correct, an error message will be returned.
-    If an error is returned, rewrite the query, check the query, and try again.
-    If you encounter an issue with Unknown column 'xxxx' in 'field list', use sql_db_schema to query the correct table fields."""
-    con = sqlite3.connect("Chinook.db")
-    try:
-        cursor = con.cursor()
-        cursor.execute(query)
-        res = cursor.fetchall()
-        return str(res)
-    except Exception as e:
-        return f"Error: {e}"
-    finally:
-        con.close()
-
-tools = [sql_db_list_tables, sql_db_schema, sql_db_query]
-
-for tool in tools:
-    print(f"{tool.name}: {tool.description}\n")
-```
+<LanggraphSqlAgentToolsPy />
 ```
 sql_db_list_tables: Input is an empty string, output is a comma-separated list of tables in the database.
 
@@ -275,97 +153,7 @@ sql_db_query: Input to this tool is a detailed and correct SQL query, output is 
 :::js
 We'll create custom tools to interact with the database:
 
-```typescript
-import { tool } from "langchain";
-import * as z from "zod";
-
-async function getTableNames() {
-  const rows = await runQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
-  return rows.map((row) => String(row.name));
-}
-
-function quoteSqliteIdentifier(identifier: string) {
-  return `"${identifier.replaceAll('"', '""')}"`;
-}
-
-const listTablesTool = tool(
-  async () => {
-    const tableNames = await getTableNames();
-    return tableNames.join(", ");
-  },
-  {
-    name: "sql_db_list_tables",
-    description: "Input is an empty string, output is a comma-separated list of tables in the database.",
-    schema: z.object({}),
-  }
-);
-
-const getSchemaTool = tool(
-  async ({ table_names }) => {
-    const validTables = new Set(await getTableNames());
-    const results: string[] = [];
-    for (const table of table_names.split(",").map((t) => t.trim())) {
-      if (!validTables.has(table)) {
-        results.push(`Error: table_names {'${table}'} not found in database`);
-        continue;
-      }
-      const schemaRows = await runQuery(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?;",
-        [table]
-      );
-      const schema = schemaRows[0]?.sql;
-      if (schema) {
-        results.push(String(schema));
-        try {
-          const rows = await runQuery(`SELECT * FROM ${quoteSqliteIdentifier(table)} LIMIT 3;`);
-          if (rows.length > 0) {
-            const colNames = Object.keys(rows[0]);
-            results.push(
-              `/*\n3 rows from ${table} table:\n${colNames.join("\t")}\n` +
-                rows.map((row) => colNames.map((col) => String(row[col])).join("\t")).join("\n") +
-                "\n*/"
-            );
-          }
-        } catch (e) {
-          results.push(`Error fetching sample rows: ${e}`);
-        }
-      }
-    }
-    return results.join("\n\n");
-  },
-  {
-    name: "sql_db_schema",
-    description: "Input to this tool is a comma-separated list of tables, output is the schema and sample rows for those tables. Be sure that the tables actually exist by calling sql_db_list_tables first! Example Input: table1, table2, table3",
-    schema: z.object({
-      table_names: z.string().describe("Comma-separated list of table names"),
-    }),
-  }
-);
-
-const queryTool = tool(
-  async ({ query }) => {
-    try {
-      const result = await runQuery(query);
-      return JSON.stringify(result);
-    } catch (error) {
-      return `Error: ${error instanceof Error ? error.message : String(error)}`;
-    }
-  },
-  {
-    name: "sql_db_query",
-    description: "Input to this tool is a detailed and correct SQL query, output is a result from the database. If the query is not correct, an error message will be returned. If an error is returned, rewrite the query, check the query, and try again.",
-    schema: z.object({
-      query: z.string().describe("SQL query to execute"),
-    }),
-  }
-);
-
-const tools = [listTablesTool, getSchemaTool, queryTool];
-
-for (const tool of tools) {
-  console.log(`${tool.name}: ${tool.description}\n`);
-}
-```
+<LanggraphSqlAgentToolsJs />
 ```
 sql_db_list_tables: Input is an empty string, output is a comma-separated list of tables in the database.
 
@@ -387,224 +175,14 @@ We construct dedicated nodes for the following steps:
 Putting these steps in dedicated nodes lets us (1) force tool-calls when needed, and (2) customize the prompts associated with each step.
 
 :::python
-```python
-from typing import Literal
 
-from langchain.messages import AIMessage
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import END, START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode
+<LanggraphSqlAgentDefineStepsPy />
 
-
-get_schema_tool = next(tool for tool in tools if tool.name == "sql_db_schema")
-get_schema_node = ToolNode([get_schema_tool], name="get_schema")
-
-run_query_tool = next(tool for tool in tools if tool.name == "sql_db_query")
-run_query_node = ToolNode([run_query_tool], name="run_query")
-
-
-# Example: create a predetermined tool call
-def list_tables(state: MessagesState):
-    tool_call = {
-        "name": "sql_db_list_tables",
-        "args": {},
-        "id": "abc123",
-        "type": "tool_call",
-    }
-    tool_call_message = AIMessage(content="", tool_calls=[tool_call])
-
-    list_tables_tool = next(tool for tool in tools if tool.name == "sql_db_list_tables")
-    tool_message = list_tables_tool.invoke(tool_call)
-    response = AIMessage(f"Available tables: {tool_message.content}")
-
-    return {"messages": [tool_call_message, tool_message, response]}
-
-
-# Example: force a model to create a tool call
-def call_get_schema(state: MessagesState):
-    # Note that LangChain enforces that all models accept `tool_choice="any"`
-    # as well as `tool_choice=<string name of tool>`.
-    llm_with_tools = model.bind_tools([get_schema_tool], tool_choice="any")
-    response = llm_with_tools.invoke(state["messages"])
-
-    return {"messages": [response]}
-
-
-generate_query_system_prompt = """
-You are an agent designed to interact with a SQL database.
-Given an input question, create a syntactically correct {dialect} query to run,
-then look at the results of the query and return the answer. Unless the user
-specifies a specific number of examples they wish to obtain, always limit your
-query to at most {top_k} results.
-
-You can order the results by a relevant column to return the most interesting
-examples in the database. Never query for all the columns from a specific table,
-only ask for the relevant columns given the question.
-
-DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database.
-""".format(
-    dialect="sqlite",
-    top_k=5,
-)
-
-
-def generate_query(state: MessagesState):
-    system_message = {
-        "role": "system",
-        "content": generate_query_system_prompt,
-    }
-    # We do not force a tool call here, to allow the model to
-    # respond naturally when it obtains the solution.
-    llm_with_tools = model.bind_tools([run_query_tool])
-    response = llm_with_tools.invoke([system_message] + state["messages"])
-
-    return {"messages": [response]}
-
-
-check_query_system_prompt = """
-You are a SQL expert with a strong attention to detail.
-Double check the {dialect} query for common mistakes, including:
-- Using NOT IN with NULL values
-- Using UNION when UNION ALL should have been used
-- Using BETWEEN for exclusive ranges
-- Data type mismatch in predicates
-- Properly quoting identifiers
-- Using the correct number of arguments for functions
-- Casting to the correct data type
-- Using the proper columns for joins
-
-If there are any of the above mistakes, rewrite the query. If there are no mistakes,
-just reproduce the original query.
-
-You will call the appropriate tool to execute the query after running this check.
-""".format(dialect="sqlite")
-
-
-def check_query(state: MessagesState):
-    system_message = {
-        "role": "system",
-        "content": check_query_system_prompt,
-    }
-
-    # Generate an artificial user message to check
-    tool_call = state["messages"][-1].tool_calls[0]
-    user_message = {"role": "user", "content": tool_call["args"]["query"]}
-    llm_with_tools = model.bind_tools([run_query_tool], tool_choice="any")
-    response = llm_with_tools.invoke([system_message, user_message])
-    response.id = state["messages"][-1].id
-
-    return {"messages": [response]}
-```
 :::
 :::js
-```typescript
-import { AIMessage, ToolMessage, SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { StateSchema, MessagesValue, GraphNode, StateGraph, START, END } from "@langchain/langgraph";
-import { z } from "zod/v4";
 
-// Create tool nodes for schema and query execution
-const getSchemaNode = new ToolNode([getSchemaTool]);
-const runQueryNode = new ToolNode([queryTool]);
+<LanggraphSqlAgentDefineStepsJs />
 
-// Define state schema
-const MessagesState = new StateSchema({
-  messages: MessagesValue,
-});
-
-// Example: create a predetermined tool call
-const listTables: GraphNode<typeof MessagesState> = async (state) => {
-  const toolCall = {
-    name: "sql_db_list_tables",
-    args: {},
-    id: "abc123",
-    type: "tool_call" as const,
-  };
-  const toolCallMessage = new AIMessage({
-    content: "",
-    tool_calls: [toolCall],
-  });
-
-  const toolMessage = await listTablesTool.invoke({});
-  const response = new AIMessage(`Available tables: ${toolMessage}`);
-
-  return { messages: [toolCallMessage, new ToolMessage({ content: toolMessage, tool_call_id: "abc123" }), response] };
-};
-
-// Example: force a model to create a tool call
-const callGetSchema: GraphNode<typeof MessagesState> = async (state) => {
-  const llmWithTools = model.bindTools([getSchemaTool], {
-    tool_choice: "any",
-  });
-  const response = await llmWithTools.invoke(state.messages);
-
-  return { messages: [response] };
-};
-
-const topK = 5;
-
-const generateQuerySystemPrompt = `
-You are an agent designed to interact with a SQL database.
-Given an input question, create a syntactically correct ${dialect}
-query to run, then look at the results of the query and return the answer. Unless
-the user specifies a specific number of examples they wish to obtain, always limit
-your query to at most ${topK} results.
-
-You can order the results by a relevant column to return the most interesting
-examples in the database. Never query for all the columns from a specific table,
-only ask for the relevant columns given the question.
-
-DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the database.
-`;
-
-const generateQuery: GraphNode<typeof MessagesState> = async (state) => {
-  const systemMessage = new SystemMessage(generateQuerySystemPrompt);
-  // We do not force a tool call here, to allow the model to
-  // respond naturally when it obtains the solution.
-  const llmWithTools = model.bindTools([queryTool]);
-  const response = await llmWithTools.invoke([systemMessage, ...state.messages]);
-
-  return { messages: [response] };
-};
-
-const checkQuerySystemPrompt = `
-You are a SQL expert with a strong attention to detail.
-Double check the ${dialect} query for common mistakes, including:
-- Using NOT IN with NULL values
-- Using UNION when UNION ALL should have been used
-- Using BETWEEN for exclusive ranges
-- Data type mismatch in predicates
-- Properly quoting identifiers
-- Using the correct number of arguments for functions
-- Casting to the correct data type
-- Using the proper columns for joins
-
-If there are any of the above mistakes, rewrite the query. If there are no mistakes,
-just reproduce the original query.
-
-You will call the appropriate tool to execute the query after running this check.
-`;
-
-const checkQuery: GraphNode<typeof MessagesState> = async (state) => {
-  const systemMessage = new SystemMessage(checkQuerySystemPrompt);
-
-  // Generate an artificial user message to check
-  const lastMessage = state.messages[state.messages.length - 1];
-  if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {
-    throw new Error("No tool calls found in the last message");
-  }
-  const toolCall = lastMessage.tool_calls[0];
-  const userMessage = new HumanMessage(toolCall.args.query);
-  const llmWithTools = model.bindTools([queryTool], {
-    tool_choice: "any",
-  });
-  const response = await llmWithTools.invoke([systemMessage, userMessage]);
-  // Preserve the original message ID
-  response.id = lastMessage.id;
-
-  return { messages: [response] };
-};
-```
 :::
 
 ## 5. Implement the agent
@@ -612,86 +190,22 @@ const checkQuery: GraphNode<typeof MessagesState> = async (state) => {
 We can now assemble these steps into a workflow using the [Graph API](/oss/langgraph/graph-api). We define a [conditional edge](/oss/langgraph/graph-api#conditional-edges) at the query generation step that will route to the query checker if a query is generated, or end if there are no tool calls present, such that the LLM has delivered a response to the query.
 
 :::python
-```python
-def should_continue(state: MessagesState) -> Literal[END, "check_query"]:
-    messages = state["messages"]
-    last_message = messages[-1]
-    if not last_message.tool_calls:
-        return END
-    else:
-        return "check_query"
 
+<LanggraphSqlAgentAssembleAgentPy />
 
-builder = StateGraph(MessagesState)
-builder.add_node(list_tables)
-builder.add_node(call_get_schema)
-builder.add_node(get_schema_node, "get_schema")
-builder.add_node(generate_query)
-builder.add_node(check_query)
-builder.add_node(run_query_node, "run_query")
-
-builder.add_edge(START, "list_tables")
-builder.add_edge("list_tables", "call_get_schema")
-builder.add_edge("call_get_schema", "get_schema")
-builder.add_edge("get_schema", "generate_query")
-builder.add_conditional_edges(
-    "generate_query",
-    should_continue,
-)
-builder.add_edge("check_query", "run_query")
-builder.add_edge("run_query", "generate_query")
-
-agent = builder.compile()
-```
 We visualize the application below:
-```python
-from IPython.display import Image, display
-from langchain_core.runnables.graph import CurveStyle, MermaidDrawMethod, NodeStyles
 
-display(Image(agent.get_graph().draw_mermaid_png()))
-```
+<LanggraphSqlAgentVisualizeGraphPy />
+
 :::
 :::js
-```typescript
-import { StateGraph, ConditionalEdgeRouter } from "@langchain/langgraph";
 
-const shouldContinue: ConditionalEdgeRouter<typeof MessagesState, "check_query"> = (state) => {
-  const messages = state.messages;
-  const lastMessage = messages[messages.length - 1];
-  if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {
-    return END;
-  } else {
-    return "check_query";
-  }
-};
+<LanggraphSqlAgentAssembleAgentJs />
 
-const builder = new StateGraph(MessagesState)
-  .addNode("list_tables", listTables)
-  .addNode("call_get_schema", callGetSchema)
-  .addNode("get_schema", getSchemaNode)
-  .addNode("generate_query", generateQuery)
-  .addNode("check_query", checkQuery)
-  .addNode("run_query", runQueryNode)
-  .addEdge(START, "list_tables")
-  .addEdge("list_tables", "call_get_schema")
-  .addEdge("call_get_schema", "get_schema")
-  .addEdge("get_schema", "generate_query")
-  .addConditionalEdges("generate_query", shouldContinue)
-  .addEdge("check_query", "run_query")
-  .addEdge("run_query", "generate_query");
-
-const agent = builder.compile();
-```
 We visualize the application below:
-```typescript
-import * as fs from "node:fs/promises";
 
-const drawableGraph = await agent.getGraphAsync();
-const image = await drawableGraph.drawMermaidPng();
-const imageBuffer = new Uint8Array(await image.arrayBuffer());
+<LanggraphSqlAgentVisualizeGraphJs />
 
-await fs.writeFile("graph.png", imageBuffer);
-```
 :::
 <img
   src="/oss/images/sql-agent-langgraph.png"
@@ -701,32 +215,14 @@ await fs.writeFile("graph.png", imageBuffer);
 
 We can now invoke the graph:
 :::python
-```python
-question = "Which genre on average has the longest tracks?"
 
-for step in agent.stream(
-    {"messages": [{"role": "user", "content": question}]},
-    stream_mode="values",
-):
-    step["messages"][-1].pretty_print()
-```
+<LanggraphSqlAgentStreamAgentPy />
+
 :::
 :::js
-```typescript
-const question = "Which genre on average has the longest tracks?";
 
-const stream = await agent.stream(
-  { messages: [{ role: "user", content: question }] },
-  { streamMode: "values" }
-);
+<LanggraphSqlAgentStreamAgentJs />
 
-for await (const step of stream) {
-  if (step.messages && step.messages.length > 0) {
-    const lastMessage = step.messages[step.messages.length - 1];
-    console.log(lastMessage.toFormattedString());
-  }
-}
-```
 :::
 ```
 ================================ Human Message =================================
@@ -823,84 +319,14 @@ Here we leverage LangGraph's [human-in-the-loop](/oss/langgraph/interrupts) feat
 Let's wrap the `sql_db_query` tool in a node that receives human input. We can implement this using the [interrupt](/oss/langgraph/interrupts) function. Below, we allow for input to approve the tool call, edit its arguments, or provide user feedback.
 
 :::python
-```python
-from langchain_core.runnables import RunnableConfig
-from langchain.tools import tool
-from langgraph.types import interrupt
 
-@tool(
-    run_query_tool.name,
-    description=run_query_tool.description,
-    args_schema=run_query_tool.args_schema
-)
-def run_query_tool_with_interrupt(config: RunnableConfig, **tool_input):
-    request = {
-        "action": run_query_tool.name,
-        "args": tool_input,
-        "description": "Please review the tool call"
-    }
-    response = interrupt([request]) # [!code highlight]
-    # approve the tool call
-    if response["type"] == "accept":
-        tool_response = run_query_tool.invoke(tool_input, config)
-    # update tool call args
-    elif response["type"] == "edit":
-        tool_input = response["args"]["args"]
-        tool_response = run_query_tool.invoke(tool_input, config)
-    # respond to the LLM with user feedback
-    elif response["type"] == "response":
-        user_feedback = response["args"]
-        tool_response = user_feedback
-    else:
-        raise ValueError(f"Unsupported interrupt response type: {response['type']}")
+<LanggraphSqlAgentHitlInterruptPy />
 
-    return tool_response
-
-# Redefine the tool node to use the interrupt version
-run_query_node = ToolNode([run_query_tool_with_interrupt], name="run_query") # [!code highlight]
-```
 :::
 :::js
-```typescript
-import { RunnableConfig } from "@langchain/core/runnables";
-import { tool } from "langchain";
-import { interrupt } from "@langchain/langgraph";
-import * as z from "zod";
 
-const queryToolWithInterrupt = tool(
-  async (input, config: RunnableConfig) => {
-    const request = {
-      action: queryTool.name,
-      args: input,
-      description: "Please review the tool call",
-    };
-    const response = interrupt([request]); // [!code highlight]
-    // approve the tool call
-    if (response.type === "accept") {
-      const toolResponse = await queryTool.invoke(input, config);
-      return toolResponse;
-    }
-    // update tool call args
-    else if (response.type === "edit") {
-      const editedInput = response.args.args;
-      const toolResponse = await queryTool.invoke(editedInput, config);
-      return toolResponse;
-    }
-    // respond to the LLM with user feedback
-    else if (response.type === "response") {
-      const userFeedback = response.args;
-      return userFeedback;
-    } else {
-      throw new Error(`Unsupported interrupt response type: ${response.type}`);
-    }
-  },
-  {
-    name: queryTool.name,
-    description: queryTool.description,
-    schema: queryTool.schema,
-  }
-);
-```
+<LanggraphSqlAgentHitlInterruptJs />
+
 :::
 
 <Note>
@@ -910,123 +336,27 @@ The above implementation follows the [tool interrupt example](/oss/langgraph/int
 Let's now re-assemble our graph. We will replace the programmatic check with human review. Note that we now include a [checkpointer](/oss/langgraph/persistence); this is required to pause and resume the run.
 
 :::python
-```python
-from langgraph.checkpoint.memory import InMemorySaver
 
-def should_continue(state: MessagesState) -> Literal[END, "run_query"]:
-    messages = state["messages"]
-    last_message = messages[-1]
-    if not last_message.tool_calls:
-        return END
-    else:
-        return "run_query"
+<LanggraphSqlAgentHitlAssemblePy />
 
-builder = StateGraph(MessagesState)
-builder.add_node(list_tables)
-builder.add_node(call_get_schema)
-builder.add_node(get_schema_node, "get_schema")
-builder.add_node(generate_query)
-builder.add_node(run_query_node, "run_query")
-
-builder.add_edge(START, "list_tables")
-builder.add_edge("list_tables", "call_get_schema")
-builder.add_edge("call_get_schema", "get_schema")
-builder.add_edge("get_schema", "generate_query")
-builder.add_conditional_edges(
-    "generate_query",
-    should_continue,
-)
-builder.add_edge("run_query", "generate_query")
-
-checkpointer = InMemorySaver() # [!code highlight]
-agent = builder.compile(checkpointer=checkpointer) # [!code highlight]
-```
 :::
 :::js
-```typescript
-import { MemorySaver, ConditionalEdgeRouter } from "@langchain/langgraph";
 
-const shouldContinueWithHuman: ConditionalEdgeRouter<typeof MessagesState, "run_query"> = (state) => {
-  const messages = state.messages;
-  const lastMessage = messages[messages.length - 1];
-  if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {
-    return END;
-  } else {
-    return "run_query";
-  }
-};
+<LanggraphSqlAgentHitlAssembleJs />
 
-const runQueryNodeWithInterrupt = new ToolNode([queryToolWithInterrupt]);
-
-const builderWithHuman = new StateGraph(MessagesState)
-  .addNode("list_tables", listTables)
-  .addNode("call_get_schema", callGetSchema)
-  .addNode("get_schema", getSchemaNode)
-  .addNode("generate_query", generateQuery)
-  .addNode("run_query", runQueryNodeWithInterrupt)
-  .addEdge(START, "list_tables")
-  .addEdge("list_tables", "call_get_schema")
-  .addEdge("call_get_schema", "get_schema")
-  .addEdge("get_schema", "generate_query")
-  .addConditionalEdges("generate_query", shouldContinueWithHuman)
-  .addEdge("run_query", "generate_query");
-
-const checkpointer = new MemorySaver(); // [!code highlight]
-const agentWithHuman = builderWithHuman.compile({ checkpointer }); // [!code highlight]
-```
 :::
 
 We can invoke the graph as before. This time, execution is interrupted:
 
 :::python
-```python
-import json
 
-config = {"configurable": {"thread_id": "1"}}
+<LanggraphSqlAgentHitlStreamPy />
 
-question = "Which genre on average has the longest tracks?"
-
-for step in agent.stream(
-    {"messages": [{"role": "user", "content": question}]},
-    config,
-    stream_mode="values",
-):
-    if "messages" in step:
-        step["messages"][-1].pretty_print()
-    elif "__interrupt__" in step:
-        action = step["__interrupt__"][0]
-        print("INTERRUPTED:")
-        for request in action.value:
-            print(json.dumps(request, indent=2))
-    else:
-        pass
-```
 :::
 :::js
-```typescript
-const config = { configurable: { thread_id: "1" } };
 
-const question = "Which genre on average has the longest tracks?";
+<LanggraphSqlAgentHitlStreamJs />
 
-const stream = await agentWithHuman.stream(
-  { messages: [{ role: "user", content: question }] },
-  { ...config, streamMode: "values" }
-);
-
-for await (const step of stream) {
-  if (step.messages && step.messages.length > 0) {
-    const lastMessage = step.messages[step.messages.length - 1];
-    console.log(lastMessage.toFormattedString());
-  }
-}
-
-// Check for interrupts
-const state = await agentWithHuman.getState(config);
-if (state.next.length > 0) {
-  console.log("\nINTERRUPTED:");
-  console.log(JSON.stringify(state.tasks[0].interrupts[0], null, 2));
-}
-```
 :::
 
 ```
@@ -1044,44 +374,14 @@ INTERRUPTED:
 We can accept or edit the tool call using [Command](/oss/langgraph/use-graph-api#combine-control-flow-and-state-updates-with-command):
 
 :::python
-```python
-from langgraph.types import Command
 
+<LanggraphSqlAgentHitlResumePy />
 
-for step in agent.stream(
-    Command(resume={"type": "accept"}),
-    # Command(resume={"type": "edit", "args": {"query": "..."}}),
-    config,
-    stream_mode="values",
-):
-    if "messages" in step:
-        step["messages"][-1].pretty_print()
-    elif "__interrupt__" in step:
-        action = step["__interrupt__"][0]
-        print("INTERRUPTED:")
-        for request in action.value:
-            print(json.dumps(request, indent=2))
-    else:
-        pass
-```
 :::
 :::js
-```typescript
-import { Command } from "@langchain/langgraph";
 
-const resumeStream = await agentWithHuman.stream(
-  new Command({ resume: { type: "accept" } }),
-  // new Command({ resume: { type: "edit", args: { query: "..." } } }),
-  { ...config, streamMode: "values" }
-);
+<LanggraphSqlAgentHitlResumeJs />
 
-for await (const step of resumeStream) {
-  if (step.messages && step.messages.length > 0) {
-    const lastMessage = step.messages[step.messages.length - 1];
-    console.log(lastMessage.toFormattedString());
-  }
-}
-```
 :::
 
 ```

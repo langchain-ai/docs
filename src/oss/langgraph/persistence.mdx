@@ -19,7 +19,7 @@ When using the [Agent Server](/langsmith/agent-server), you don't need to implem
 </Info>
 
 <Tip>
-Trace checkpointed state and debug how your agent resumes across sessions with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to get set up.
+Trace checkpointed state and debug how your agent resumes across sessions with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to get set up. We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
 </Tip>
 
 ## Why use persistence
@@ -1136,12 +1136,40 @@ When we use the LangSmith, either locally (e.g., in [Studio](/langsmith/studio))
 
 See the [deployment guide](/langsmith/semantic-search) for more details and configuration options.
 
+## Durability modes
+
+LangGraph supports three durability modes that allow you to balance performance and data consistency based on your application's requirements. A higher durability mode adds more overhead to the workflow execution. You can specify the durability mode when calling any graph execution method:
+
+:::python
+```python
+graph.stream(
+    {"input": "test"},
+    durability="sync"
+)
+```
+:::
+
+:::js
+```typescript
+await graph.stream(
+  { input: "test" },
+  { durability: "sync" }
+)
+```
+:::
+
+The durability modes, from least to most durable, are as follows:
+
+* `"exit"`: LangGraph persists changes only when graph execution exits either successfully, with an error, or due to a human in the loop interrupt. This provides the best performance for long-running graphs but means intermediate state is not saved, so you cannot recover from system failures (like process crashes) that occur mid-execution.
+* `"async"`: LangGraph persists changes asynchronously while the next step executes. This provides good performance and durability, but there's a small risk that LangGraph does not write checkpoints if the process crashes during execution.
+* `"sync"`: LangGraph persists changes synchronously before the next step starts. This ensures that LangGraph writes every checkpoint before continuing execution, providing high durability at the cost of some performance overhead.
+
 ## Optimize checkpoint storage
 
 :::python
 By default, LangGraph checkpoints write the full value of every state channel at each super-step. For long-running threads with large accumulations—such as multi-turn conversations—this can produce significant storage growth over time.
 
-@[`DeltaChannel`] stores only incremental deltas instead of the full accumulated value, substantially reducing checkpoint size for append-heavy channels. See [DeltaChannel](/oss/langgraph/pregel#deltachannel-beta) for usage and the storage-vs-latency tradeoff.
+@[`DeltaChannel`] stores only incremental deltas instead of the full accumulated value, substantially reducing checkpoint size for append-heavy channels. See [DeltaChannel](/oss/langgraph/pregel#deltachannel) for usage and the storage-vs-latency tradeoff.
 
 <Warning>
 `DeltaChannel` requires `langgraph>=1.2` and is currently in beta. The API may change in future releases.

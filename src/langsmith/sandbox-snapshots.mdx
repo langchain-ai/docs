@@ -82,6 +82,142 @@ const snapshot = await client.createSnapshot(
 
 </CodeGroup>
 
+## Build a snapshot from a Dockerfile
+
+When you have a local `Dockerfile` but don't want to publish the image to a registry first, build a snapshot directly from the `Dockerfile` and its build context. LangSmith spins up a temporary builder sandbox, uploads the context, runs the build inside it with [BuildKit](https://docs.docker.com/build/buildkit/), and captures the resulting image as a snapshot. The builder sandbox is torn down automatically once the build finishes.
+
+The call blocks until the snapshot is ready (default timeout is 60 seconds; raise it for large or slow builds). `fs_capacity_bytes` must be large enough to hold the build context, the intermediate layers, and the final image.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+
+snapshot = client.create_snapshot_from_dockerfile(
+    "my-app",
+    dockerfile="Dockerfile",
+    fs_capacity_bytes=2 * 1024**3,  # 2 GiB
+    context=".",  # build context directory (default: current directory)
+)
+
+print(snapshot.id)
+```
+
+```ts TypeScript
+import { SandboxClient } from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const snapshot = await client.createSnapshotFromDockerfile(
+  "my-app",
+  "Dockerfile",
+  2_147_483_648, // 2 GiB
+  { context: "." },
+);
+
+console.log(snapshot.id);
+```
+
+</CodeGroup>
+
+<Note>
+`dockerfile` is resolved relative to `context` unless you pass an absolute path, and it must live inside the context directory. The `.git` directory is excluded from the uploaded context automatically.
+</Note>
+
+### Build args and target stage
+
+Pass `build_args` / `buildArgs` to set Docker `ARG` values, and `target` to stop at a specific stage of a multi-stage build.
+
+<CodeGroup>
+
+```python Python
+snapshot = client.create_snapshot_from_dockerfile(
+    "my-app",
+    dockerfile="Dockerfile",
+    fs_capacity_bytes=2 * 1024**3,
+    build_args={"PYTHON_VERSION": "3.12", "ENV": "prod"},
+    target="runtime",
+)
+```
+
+```ts TypeScript
+const snapshot = await client.createSnapshotFromDockerfile(
+  "my-app",
+  "Dockerfile",
+  2_147_483_648,
+  {
+    buildArgs: { PYTHON_VERSION: "3.12", ENV: "prod" },
+    target: "runtime",
+  },
+);
+```
+
+</CodeGroup>
+
+### Stream build logs
+
+Pass a callback to `on_build_log` / `onBuildLog` to receive the build's stdout and stderr as it runs, which is useful for surfacing progress or debugging a failing build.
+
+<CodeGroup>
+
+```python Python
+snapshot = client.create_snapshot_from_dockerfile(
+    "my-app",
+    dockerfile="Dockerfile",
+    fs_capacity_bytes=2 * 1024**3,
+    on_build_log=lambda line: print(line, end=""),
+)
+```
+
+```ts TypeScript
+const snapshot = await client.createSnapshotFromDockerfile(
+  "my-app",
+  "Dockerfile",
+  2_147_483_648,
+  { onBuildLog: (line) => process.stdout.write(line) },
+);
+```
+
+</CodeGroup>
+
+### Speed up cold builds
+
+`vcpus` / `vCpus` and `mem_bytes` / `memBytes` size the temporary builder sandbox. The build runs BuildKit plus the native snapshotter's layer copies inside it, which contend for a single core by default, so giving the builder an extra vCPU can cut a cold build's wall time substantially.
+
+<CodeGroup>
+
+```python Python
+snapshot = client.create_snapshot_from_dockerfile(
+    "my-app",
+    dockerfile="Dockerfile",
+    fs_capacity_bytes=2 * 1024**3,
+    vcpus=2,
+    mem_bytes=4 * 1024**3,  # 4 GiB
+    timeout=600,
+)
+```
+
+```ts TypeScript
+const snapshot = await client.createSnapshotFromDockerfile(
+  "my-app",
+  "Dockerfile",
+  2_147_483_648,
+  {
+    vCpus: 2,
+    memBytes: 4_294_967_296, // 4 GiB
+    timeout: 600,
+  },
+);
+```
+
+</CodeGroup>
+
+<Tip>
+Both the sync `SandboxClient` and the `AsyncSandboxClient` expose this method with the same arguments—`await client.create_snapshot_from_dockerfile(...)` on the async client.
+</Tip>
+
 ## Capture a snapshot from a running sandbox
 
 Start a sandbox from an existing snapshot, install packages or prepare data, then capture the result as a new snapshot. The returned snapshot has its `source_sandbox_id` set to the sandbox it was captured from, and can be used as the `snapshot_id` for any later `create_sandbox` call.

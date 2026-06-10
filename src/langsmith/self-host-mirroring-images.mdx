@@ -190,3 +190,81 @@ operator:
 Replace `(your-registry)` with your registry URL. The template variables (`${service_name}`, `${namespace}`, `${max_connections}`, `${storage_gi}`) are replaced by the operator at runtime and must be kept as-is.
 
 Once configured, you will need to update your LangSmith installation. You can follow our upgrade guide here: [Upgrading LangSmith](/langsmith/self-host-upgrades). If your upgrade is successful, your LangSmith instance should now be using the mirrored images from your Docker registry.
+
+## Verifying image signatures
+
+<Note>
+Image signatures are available **starting with v15** (LangSmith app version `0.15.x` and later). Earlier releases on the `v14-stable` and older channels are not signed and cannot be verified with the steps below.
+</Note>
+
+Stable-channel LangSmith images on `docker.io/langchain/*` are signed at release time using keyless [Sigstore/Cosign](https://docs.sigstore.dev/cosign/overview/) from the release workflow. The signing identity is bound to a specific GitHub Actions workflow, run, and commit, so the signature attests not just that the image is authentic but that it was produced by the stable-branch release pipeline running in `langchain-ai/langchainplus`. You can verify a signature before pulling or mirroring an image, and again after mirroring to confirm the digest you mirrored matches what we signed.
+
+Install `cosign` ([installation guide](https://docs.sigstore.dev/cosign/system_config/installation/)), then verify any tag:
+
+```bash
+cosign verify \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
+  docker.io/langchain/langsmith-backend:<tag>
+```
+
+A successful verification confirms:
+
+- The cosign claims on the signature are valid.
+- The certificate chains to the Sigstore root and is logged in the [Rekor](https://docs.sigstore.dev/rekor/overview/) transparency log.
+- The signing certificate was issued to the stable-branch release workflow via GitHub Actions OIDC.
+
+The same command works against any of the released images by substituting the repository (`langsmith-frontend`, `langsmith-go-backend`, `agent-builder-deep-agent`, `langsmith-clio`, `langsmith-polly`, `agent-builder-tool-server`, `agent-builder-trigger-server`, `hosted-langserve-backend`, `langsmith-playground`, `langsmith-ace-backend`, plus their `*-fips` variants).
+
+### Pinning to a specific release
+
+For stricter verification — for example, pinning to a single stable branch or a specific commit — drop the regex and supply the exact certificate identity. Each signature's certificate also carries the workflow run ID and commit SHA as Subject Alternative Name extensions, so you can constrain to a specific release:
+
+```bash
+cosign verify \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity 'https://github.com/langchain-ai/langchainplus/.github/workflows/release_self_hosted_on_version_bump.yaml@refs/heads/v15-stable' \
+  docker.io/langchain/langsmith-backend:0.15.9
+```
+
+To inspect the certificate's claims (workflow run, commit, runner), download the attestation and decode the embedded certificate:
+
+```bash
+cosign download attestation docker.io/langchain/langsmith-backend:<tag>
+```
+
+### Verifying SBOM attestations
+
+Released images also carry signed SPDX software bill of materials (SBOM) attestations, one per architecture in the image index. The attestations are attached to the per-architecture child digests rather than to the multi-architecture tag, so `cosign verify-attestation` against a bare tag reports `no matching attestations`. Resolve the child digests first, then verify each one.
+
+List the per-architecture digests for a tag:
+
+```bash
+docker buildx imagetools inspect --raw docker.io/langchain/langsmith-backend:<tag> \
+  | jq -r '.manifests[] | select(.platform.os == "linux") | .digest + "  " + .platform.architecture'
+```
+
+Verify the SBOM attestation on one of those digests:
+
+```bash
+cosign verify-attestation \
+  --type spdxjson \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
+  docker.io/langchain/langsmith-backend@<digest>
+```
+
+A successful verification gives the same guarantees as the image signature: the attestation was produced by the stable-branch release workflow, and its claims are logged in the [Rekor](https://docs.sigstore.dev/rekor/overview/) transparency log.
+
+To extract the SPDX document itself, decode the verified attestation payload:
+
+```bash
+cosign verify-attestation \
+  --type spdxjson \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
+  docker.io/langchain/langsmith-backend@<digest> \
+  | jq -r '.payload' | base64 -d | jq '.predicate'
+```
+
+The decoded predicate is a standard SPDX 2.3 document listing every package in that image.
