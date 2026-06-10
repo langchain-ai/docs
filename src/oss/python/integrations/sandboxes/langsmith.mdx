@@ -1,12 +1,12 @@
 ---
 title: "LangSmith sandbox integration"
-description: "Use LangSmith managed sandboxes as a Deep Agents backend using LangChain Python."
+description: "Integrate with the LangSmithSandbox type using LangChain Python."
 ---
 
-[LangSmith Sandboxes](https://smith.langchain.com) are first-party managed sandbox environments provided by LangChain — no separate provider account required. See the [LangSmith Sandboxes docs](/langsmith/sandboxes) for setup, snapshots, service URLs, and the auth proxy.
+LangSmith sandboxes are sandbox environments that LangChain manages for you, so there is no separate provider account, billing, or infrastructure to set up. They are the zero-setup default for running agent code, while third-party providers such as Daytona and Modal remain available when you want to bring your own. Because they are part of the LangChain platform, you manage them alongside your other LangSmith resources. For setup, snapshots, service URLs, and the auth proxy, see the [LangSmith Sandboxes docs](/langsmith/sandboxes).
 
 <Note>
-LangSmith sandboxes are currently in private beta.
+LangSmith sandboxes are in private beta. Contact the LangChain team to request access.
 </Note>
 
 ## Installation
@@ -27,9 +27,11 @@ uv add "langsmith[sandbox]" deepagents
 export LANGSMITH_API_KEY="<your-api-key>"
 ```
 
+`SandboxClient()` reads this key from the environment, so no further configuration is required.
+
 ## Create a sandbox backend
 
-Create a LangSmith sandbox using the `SandboxClient`, then wrap it with `LangSmithSandbox` to use it as a [Deep Agents backend](/oss/deepagents/backends).
+Create a LangSmith sandbox with `SandboxClient`, then wrap it in @[LangSmithSandbox] to run it as a [Deep Agents backend](/oss/deepagents/backends).
 
 ```python
 from deepagents.backends.langsmith import LangSmithSandbox
@@ -41,9 +43,14 @@ backend = LangSmithSandbox(sandbox=ls_sandbox)
 
 result = backend.execute("echo hello")
 print(result.output)
+
+# Delete the sandbox when you are done (see Clean up)
+client.delete_sandbox(ls_sandbox.name)
 ```
 
 ## Use with Deep Agents
+
+Pass the backend to @[create_deep_agent] along with a chat model such as @[ChatAnthropic], then invoke the agent. The `try`/`finally` block deletes the sandbox even if the run fails.
 
 ```python
 from deepagents import create_deep_agent
@@ -56,7 +63,7 @@ ls_sandbox = client.create_sandbox()
 backend = LangSmithSandbox(sandbox=ls_sandbox)
 
 agent = create_deep_agent(
-    model=ChatAnthropic(model="claude-sonnet-4-5"),
+    model=ChatAnthropic(model="claude-sonnet-4-6"),
     system_prompt="You are a coding assistant with sandbox access.",
     backend=backend,
 )
@@ -69,13 +76,14 @@ try:
             ]
         }
     )
+    print(result["messages"][-1].content_blocks)
 finally:
     client.delete_sandbox(ls_sandbox.name)
 ```
 
-## Cleanup
+## Clean up
 
-You are responsible for deleting sandboxes when they are no longer needed. Sandboxes consume resources until deleted.
+Delete sandboxes when you are done, since they consume resources until deleted.
 
 ```python
 client.delete_sandbox(ls_sandbox.name)
@@ -83,6 +91,7 @@ client.delete_sandbox(ls_sandbox.name)
 
 You can also manage sandbox resources from the [LangSmith UI](https://smith.langchain.com) under **Sandboxes**.
 
-See also:
-- [Sandboxes in Deep Agents](/oss/deepagents/sandboxes) — lifecycle, scoping, and provider comparison
-- [LangSmith Sandboxes](/langsmith/sandboxes) — snapshots, service URLs, auth proxy, and SDK reference
+For more detail, see:
+
+- [Sandboxes in Deep Agents](/oss/deepagents/sandboxes): lifecycle, scoping, and a comparison of sandbox providers.
+- [LangSmith Sandboxes](/langsmith/sandboxes): snapshots, service URLs, the auth proxy, and the SDK reference.
