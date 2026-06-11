@@ -354,11 +354,12 @@ if __name__ == "__main__":
         # :snippet-start: langgraph-sql-agent-stream-agent-py
         question = "Which genre on average has the longest tracks?"
 
-        for step in agent.stream(
+        stream = agent.stream_events(
             {"messages": [{"role": "user", "content": question}]},
-            stream_mode="values",
-        ):
-            step["messages"][-1].pretty_print()
+            version="v3",
+        )
+        for snapshot in stream.values:
+            snapshot["messages"][-1].pretty_print()
         # :snippet-end:
 
         # :snippet-start: langgraph-sql-agent-hitl-assemble-py
@@ -398,40 +399,42 @@ if __name__ == "__main__":
         # :snippet-start: langgraph-sql-agent-hitl-stream-py
         question = "Which genre on average has the longest tracks?"
 
-        for step in agent.stream(
+        stream = agent.stream_events(
             {"messages": [{"role": "user", "content": question}]},
             config,
-            stream_mode="values",
-        ):
-            if "__interrupt__" in step:
-                action = step["__interrupt__"][0]
+            version="v3",
+        )
+        for snapshot in stream.values:
+            if "__interrupt__" in snapshot:
+                action = snapshot["__interrupt__"][0]
                 print("INTERRUPTED:")
                 for request in action.value:
                     print(json.dumps(request, indent=2))
-            elif "messages" in step:
-                step["messages"][-1].pretty_print()
+            elif "messages" in snapshot:
+                snapshot["messages"][-1].pretty_print()
             else:
-                raise ValueError(f"Unsupported stream step type: {type(step)}")
+                raise ValueError(f"Unsupported stream step type: {type(snapshot)}")
         # :snippet-end:
 
         # :snippet-start: langgraph-sql-agent-hitl-resume-py
         from langgraph.types import Command
 
-        for step in agent.stream(
+        stream = agent.stream_events(
             Command(resume={"type": "accept"}),
             # Command(resume={"type": "edit", "args": {"query": "..."}}),
             config,
-            stream_mode="values",
-        ):
-            if "__interrupt__" in step:
-                action = step["__interrupt__"][0]
+            version="v3",
+        )
+        for snapshot in stream.values:
+            if "__interrupt__" in snapshot:
+                action = snapshot["__interrupt__"][0]
                 print("INTERRUPTED:")
                 for request in action.value:
                     print(json.dumps(request, indent=2))
-            elif "messages" in step:
-                step["messages"][-1].pretty_print()
+            elif "messages" in snapshot:
+                snapshot["messages"][-1].pretty_print()
             else:
-                raise ValueError(f"Unsupported stream step type: {type(step)}")
+                raise ValueError(f"Unsupported stream step type: {type(snapshot)}")
         # :snippet-end:
 
     print("✓ langgraph-sql-agent")

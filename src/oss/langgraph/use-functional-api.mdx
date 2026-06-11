@@ -543,12 +543,9 @@ def main(inputs: dict) -> int:
 
 config = {"configurable": {"thread_id": "abc"}}
 
-for mode, chunk in main.stream(   # [!code highlight]
-    {"x": 5},
-    stream_mode=["custom", "updates"],   # [!code highlight]
-    config=config
-):
-    print(f"{mode}: {chunk}")
+stream = main.stream_events({"x": 5}, config=config, version="v3")   # [!code highlight]
+for snapshot in stream.values:   # [!code highlight]
+    print(snapshot)
 ```
 
 1. Import @[`get_stream_writer`] from `langgraph.config`.
@@ -606,12 +603,12 @@ const main = entrypoint(
 
 const config = { configurable: { thread_id: "abc" } };
 
-  // [!code highlight]
-for await (const [mode, chunk] of await main.stream(
+const stream = await main.streamEvents(   // [!code highlight]
   { x: 5 },
-  { streamMode: ["custom", "updates"], ...config }   // [!code highlight]
-)) {
-  console.log(`${mode}: ${JSON.stringify(chunk)}`);
+  { ...config, version: "v3" }   // [!code highlight]
+);
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
 }
 ```
 
@@ -792,8 +789,9 @@ def main(inputs: dict) -> dict[str, int]:
     return {"result1": result1, "result2": result2}
 
 
-for chunk in main.stream({"x": 5}, stream_mode="updates"):
-    print(chunk)
+stream = main.stream_events({"x": 5}, version="v3")
+for snapshot in stream.values:
+    print(snapshot)
 
 #> {'slow_add': 10}
 #> {'slow_add': 10, '__metadata__': {'cached': True}}
@@ -832,11 +830,9 @@ const main = entrypoint(
   }
 );
 
-for await (const chunk of await main.stream(
-  { x: 5 },
-  { streamMode: "updates" }
-)) {
-  console.log(chunk);
+const stream = await main.streamEvents({ x: 5 }, { version: "v3" });
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
 }
 
 //> { slowAdd: 10 }
@@ -1109,9 +1105,10 @@ Let's send in a query string:
 ```python
 config = {"configurable": {"thread_id": "1"}}
 
-for event in graph.stream("foo", config):
-    print(event)
-    print("\n")
+stream = graph.stream_events("foo", config, version="v3")
+for message in stream.messages:
+    for token in message.text:
+        print(token, end="", flush=True)
 ```
 :::
 
@@ -1119,9 +1116,11 @@ for event in graph.stream("foo", config):
 ```typescript
 const config = { configurable: { thread_id: "1" } };
 
-for await (const event of await graph.stream("foo", config)) {
-  console.log(event);
-  console.log("\n");
+const stream = await graph.streamEvents("foo", config, { version: "v3" });
+for await (const message of stream.messages) {
+  for await (const token of message.text) {
+    process.stdout.write(token);
+  }
 }
 ```
 :::
@@ -1131,21 +1130,25 @@ Note that we've paused with an @[`interrupt`] after `step_1`. The interrupt prov
 :::python
 ```python
 # Continue execution
-for event in graph.stream(Command(resume="baz"), config):
-    print(event)
-    print("\n")
+stream = graph.stream_events(Command(resume="baz"), config, version="v3")
+for message in stream.messages:
+    for token in message.text:
+        print(token, end="", flush=True)
 ```
 :::
 
 :::js
 ```typescript
 // Continue execution
-for await (const event of await graph.stream(
+const stream = await graph.streamEvents(
   new Command({ resume: "baz" }),
-  config
-)) {
-  console.log(event);
-  console.log("\n");
+  config,
+  { version: "v3" }
+);
+for await (const message of stream.messages) {
+  for await (const token of message.text) {
+    process.stdout.write(token);
+  }
 }
 ```
 :::
@@ -1630,12 +1633,14 @@ def workflow(inputs: list[BaseMessage], *, previous: list[BaseMessage]):
 
 config = {"configurable": {"thread_id": "1"}}
 input_message = {"role": "user", "content": "hi! I'm bob"}
-for chunk in workflow.stream([input_message], config, stream_mode="values"):
-    chunk.pretty_print()
+stream = workflow.stream_events([input_message], config, version="v3")
+for snapshot in stream.values:
+    print(snapshot)
 
 input_message = {"role": "user", "content": "what's my name?"}
-for chunk in workflow.stream([input_message], config, stream_mode="values"):
-    chunk.pretty_print()
+stream = workflow.stream_events([input_message], config, version="v3")
+for snapshot in stream.values:
+    print(snapshot)
 ```
 :::
 
@@ -1684,19 +1689,15 @@ const workflow = entrypoint(
 const config = { configurable: { thread_id: "1" } };
 const inputMessage = { role: "user", content: "hi! I'm bob" };
 
-for await (const chunk of await workflow.stream([inputMessage], {
-  ...config,
-  streamMode: "values",
-})) {
-  console.log(chunk.content);
+const stream1 = await workflow.streamEvents([inputMessage], { ...config, version: "v3" });
+for await (const snapshot of stream1.values) {
+  console.log(snapshot);
 }
 
 const inputMessage2 = { role: "user", content: "what's my name?" };
-for await (const chunk of await workflow.stream([inputMessage2], {
-  ...config,
-  streamMode: "values",
-})) {
-  console.log(chunk.content);
+const stream2 = await workflow.streamEvents([inputMessage2], { ...config, version: "v3" });
+for await (const snapshot of stream2.values) {
+  console.log(snapshot);
 }
 ```
 :::

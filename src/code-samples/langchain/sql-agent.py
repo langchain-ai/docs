@@ -188,11 +188,12 @@ agent = create_agent(
 # :snippet-start: sql-agent-run-agent-py
 question = "Which genre on average has the longest tracks?"
 
-for step in agent.stream(
+stream = agent.stream_events(
     {"messages": [{"role": "user", "content": question}]},
-    stream_mode="values",
-):
-    step["messages"][-1].pretty_print()
+    version="v3",
+)
+for snapshot in stream.values:
+    snapshot["messages"][-1].pretty_print()
 # :snippet-end:
 
 # :snippet-start: sql-agent-hitl-middleware-py
@@ -219,18 +220,19 @@ agent = create_agent(
 question = "Which genre on average has the longest tracks?"
 config = {"configurable": {"thread_id": "1"}} # [!code highlight]
 
-for step in agent.stream(
+stream = agent.stream_events( # [!code highlight]
     {"messages": [{"role": "user", "content": question}]},
     config, # [!code highlight]
-    stream_mode="values",
-):
-    if "__interrupt__" in step: # [!code highlight]
+    version="v3",
+)
+for snapshot in stream.values:
+    if "__interrupt__" in snapshot: # [!code highlight]
         print("INTERRUPTED:") # [!code highlight]
-        interrupt = step["__interrupt__"][0] # [!code highlight]
+        interrupt = snapshot["__interrupt__"][0] # [!code highlight]
         for request in interrupt.value["action_requests"]: # [!code highlight]
             print(request["description"]) # [!code highlight]
-    elif "messages" in step:
-        step["messages"][-1].pretty_print()
+    elif "messages" in snapshot:
+        snapshot["messages"][-1].pretty_print()
     else:
         pass
 # :snippet-end:
@@ -238,16 +240,17 @@ for step in agent.stream(
 # :snippet-start: sql-agent-hitl-resume-py
 from langgraph.types import Command # [!code highlight]
 
-for step in agent.stream(
+stream = agent.stream_events( # [!code highlight]
     Command(resume={"decisions": [{"type": "approve"}]}), # [!code highlight]
     config,
-    stream_mode="values",
-):
-    if "messages" in step:
-        step["messages"][-1].pretty_print()
-    if "__interrupt__" in step:
+    version="v3",
+)
+for snapshot in stream.values:
+    if "messages" in snapshot:
+        snapshot["messages"][-1].pretty_print()
+    if "__interrupt__" in snapshot:
         print("INTERRUPTED:")
-        interrupt = step["__interrupt__"][0]
+        interrupt = snapshot["__interrupt__"][0]
         for request in interrupt.value["action_requests"]:
             print(request["description"])
     else:

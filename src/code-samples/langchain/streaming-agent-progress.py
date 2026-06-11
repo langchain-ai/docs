@@ -13,16 +13,13 @@ agent = create_agent(
     checkpointer=InMemorySaver()
 )
 config = {"configurable": {"thread_id": str(uuid7())}}
-for chunk in agent.stream(  # [!code highlight]
+stream = agent.stream_events(  # [!code highlight]
     {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
     config=config,
-    stream_mode="updates",
-    version="v2",  # [!code highlight]
-):
-    if chunk["type"] == "updates":  # [!code highlight]
-        for step, data in chunk["data"].items():  # [!code highlight]
-            print(f"step: {step}")
-            print(f"content: {data['messages'][-1].content_blocks}")
+    version="v3",  # [!code highlight]
+)
+for snapshot in stream.values:  # [!code highlight]
+    print(f"snapshot: {snapshot}")
 # :snippet-end:
 
 # :remove-start:
