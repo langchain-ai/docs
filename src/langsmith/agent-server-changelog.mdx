@@ -11,6 +11,61 @@ rss: true
 
 [Agent Server](/langsmith/agent-server) is an API platform for creating and managing agent-based applications. It provides built-in persistence, a task queue, and supports deploying, configuring, and running assistants (agentic workflows) at scale. This changelog documents all notable updates, features, and fixes to Agent Server releases.
 
+<Update label="2026-06-10" tags={["agent-server"]}>
+## v0.10.0
+
+### General Notes
+- v0.10.0 is the stable promotion of the v0.10.0rc line. Note in particular the potentially breaking security changes in 0.10.0rc1.
+- Includes dependency and security maintenance updates.
+
+### New Features
+- Added DeltaChannel-aware pruning that preserves only the minimum ancestor checkpoints needed for state reconstruction, replacing the previous behavior that refused to prune threads with active delta channels. Supported across the Postgres, SQLite, DeferredDelete, and in-memory runtimes.
+</Update>
+
+<Update label="2026-06-05" tags={["agent-server"]}>
+## v0.10.0rc3
+
+### Fixes
+- Fixed protocol v2 event streaming against JS sidecar (remote) graphs, which were incorrectly served through the legacy reconstruction path. Remote graphs now use LangGraphJS's native v3 stream for v2 event-streaming runs, resolving tool calls not rendering, headless interrupts never executing or resuming, and `400: tool_use ids must be unique` errors on the final message after a resume.
+</Update>
+
+<Update label="2026-06-02" tags={["agent-server"]}>
+## v0.10.0rc2
+
+### Fixes
+- Fixed protocol v2 runs on JS graphs failing silently. The sidecar rejected `streamEvents` with a 400 due to strict stream-mode validation, the error was swallowed, and runs falsely reported success with 0 nodes executed. Relaxed stream-mode validation at the HTTP boundary and now raise a clear error on non-2xx sidecar responses instead of masking the failure.
+</Update>
+
+<Update label="2026-06-01" tags={["agent-server"]}>
+## v0.10.0rc1
+
+### General Notes
+- v0.10.0rc1 includes breaking changes for security and correctness. Refer to the [Security section](#security) for more details.
+- Includes dependency and security maintenance updates.
+
+### New Features
+- Added cron retrieval by ID endpoint (`GET /runs/crons/{cron_id}`).
+
+### Fixes
+- Fixed Event Streaming v2 run start handling so checkpoint replay targets supplied via `config.configurable.checkpoint_id` are honored.
+- Fixed Event Streaming v2 `input.respond` returning `no_such_interrupt` for legitimate interrupts on the postgres backend over HTTP `POST /commands`.
+- Fixed a bug where a thread's `checkpoint_map` from a prior time-travel run would persist and contaminate a subsequent `Command(resume=...)`, causing nested subgraphs to incorrectly replay from the start.
+
+### Security
+- **Potentially breaking** Loopback webhook targets are now denied by default to fix an authentication-bypass primitive ([GHSA-2c9q-c2q9-qgqv](https://github.com/langchain-ai/helm/security/advisories/GHSA-2c9q-c2q9-qgqv)). The `webhooks.url.disable_loopback` policy now defaults to `true`, blocking relative-URL webhooks (which dispatch through the in-process ASGI transport and bypass auth), as well as localhost / 127.x / ::1 / host.docker.internal absolute URLs and any hostname that DNS-resolves into the loopback range (mitigating DNS rebinding). Deployments that legitimately need loopback webhooks (e.g. `langgraph dev` with a localhost webhook receiver, or production setups that dispatch to a custom FastAPI route mounted on the same server) can opt back in by setting `webhooks.url.disable_loopback: false` in `langgraph.json` (or the equivalent `LANGGRAPH_WEBHOOKS` JSON env var). Only do this when you control the routes that loopback webhooks reach, as those routes are dispatched without authentication.
+- **Potentially breaking** `POST /runs` and `POST /threads/{thread_id}/runs` now authorize the attached assistant via the`assistants.read` auth event (matching cron creation and direct GET) instead of the previously-used `assistants.search` event with an incomplete payload ([GHSA-jfj5-wrj9-63x4](https://github.com/langchain-ai/helm/security/advisories/GHSA-jfj5-wrj9-63x4)). Deployments that registered only `@auth.on.assistants.read` (and no `.search` handler) were vulnerable to a cross-user authorization bypass; their existing read handler will now be invoked on the run-creation path. As a defense-in-depth follow-up, client-supplied run/cron metadata is no longer forwarded into the `assistants.read` auth event payload from `Runs.put` or `Crons.put`, and inmem/postgres runtimes now agree on the value shape. Breaking change for deployments with custom auth handlers: (1) any `@auth.on.assistants.search` handler that was previously invoked during run creation is no longer called there — ensure you have an equivalent`@auth.on.assistants.read` handler returning the same owner-style filter; (2) `value["metadata"]` on the `assistants.read` event invoked from run/cron creation is no longer populated, so handlers that inspected or mutated it must move that logic into `@auth.on.runs.create_run` / `@auth.on.crons.create` and rely on returning a filter for ownership enforcement.
+- Deployments now see a structured warning at server start listing every uncovered dispatch path along with a default-deny snippet to copy. The warning is silent for deployments that register a global `@auth.on` handler or that only use `@auth.authenticate` without any resource-level handlers.
+
+</Update>
+
+<Update label="2026-05-27" tags={["agent-server"]}>
+## v0.9.0
+
+### General Notes
+- v0.9.0 is the stable promotion of the v0.9.0rc line.
+- Includes dependency and security maintenance updates.
+</Update>
+
 <Update label="2026-05-11" tags={["agent-server"]}>
 ## v0.9.0rc1
 

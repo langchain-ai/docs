@@ -109,9 +109,9 @@ For a deeper look at sandbox architecture, integration patterns, and security be
 
 | Flag | Description |
 |------|-------------|
-| `--sandbox TYPE` | Sandbox provider to use: `langsmith`, `agentcore`, `modal`, `daytona`, or `runloop` (default: `none`) |
-| `--sandbox-id ID` | Reuse an existing sandbox by ID instead of creating a new one. Skips creation and cleanup. Refer to your sandbox documentation for more |
-| `--sandbox-snapshot-name NAME` | Use or create a sandbox snapshot (LangSmith only). Cannot be combined with `--sandbox-id` |
+| `--sandbox TYPE` | Sandbox provider to use. Built-ins: `langsmith`, `agentcore`, `modal`, `daytona`, `runloop` (default: `none`). [Third-party](#third-party-providers) and [config-declared](#config-declared-providers) providers are also accepted. Pass `--sandbox` with no value to use `[sandboxes].default` from your config |
+| `--sandbox-id ID` | Reuse an existing sandbox by ID instead of creating a new one. Skips creation and cleanup. Only for providers that support reattaching by ID. Refer to your sandbox documentation for more |
+| `--sandbox-snapshot-name NAME` | Use or create a sandbox snapshot. Supported by `langsmith` and `runloop` (and any third-party provider that advertises snapshot support). Cannot be combined with `--sandbox-id` |
 | `--sandbox-setup PATH` | Path to a setup script to run inside the sandbox upon creation |
 
 Each provider exposes a default working directory inside the sandbox. Setup scripts and `execute` commands run from this directory unless overridden:
@@ -135,7 +135,131 @@ dcode --sandbox runloop --sandbox-id dbx_abc123
 
 # Run a setup script after sandbox creation
 dcode --sandbox modal --sandbox-setup ./setup.sh
+
+# Use the provider set as [sandboxes].default in config
+dcode --sandbox
 ```
+
+<Note>
+    Because `--sandbox` accepts an optional value, keep the bare form **last** on the command line. Otherwise a following argument (e.g. `dcode --sandbox agents`) is consumed as the flag's value. Pass an explicit provider name to avoid ambiguity.
+</Note>
+
+## Pluggable providers
+
+The five built-in providers above aren't the only options. Deep Agents Code discovers sandbox providers from three sources, so you can use providers shipped by other packages or declare your own without changing Deep Agents Code:
+
+1. **Built-in providers** — the curated set above, installed as `deepagents-code` extras.
+2. **[Third-party providers](#third-party-providers)** — published by other installed packages via a Python entry point.
+3. **[Config-declared providers](#config-declared-providers)** — defined in your `~/.deepagents/config.toml`.
+
+When two sources define the same provider name, **config wins over third-party entry points, which win over built-ins**, so your config file can always override discovery.
+
+### Third-party providers
+
+A package can publish a sandbox provider under the `deepagents_code.sandbox_providers` [entry-point group](https://packaging.python.org/en/latest/specifications/entry-points/). Once you install such a package, its provider is available to `--sandbox` automatically—no config needed:
+
+```bash
+# Install the package that publishes the provider, then use it
+dcode --sandbox acme
+```
+
+If you pass a `--sandbox` name that isn't installed or declared, Deep Agents Code lists the available providers and explains how to install or configure the missing one.
+
+<Accordion title="Publishing a sandbox provider" icon="package">
+    To distribute a provider so users can run `dcode --sandbox <name>` after installing your package, implement a `SandboxProvider` subclass and register it under the `deepagents_code.sandbox_providers` entry-point group.
+
+    Override the `metadata` property so Deep Agents Code can surface your working directory and capability flags without instantiating the provider:
+
+    ```python
+    from deepagents_code.integrations.sandbox_provider import (
+        SandboxInstallHint,
+        SandboxProvider,
+        SandboxProviderMetadata,
+    )
+
+
+    class AcmeProvider(SandboxProvider):
+        @property
+        def metadata(self) -> SandboxProviderMetadata:
+            return SandboxProviderMetadata(
+                name="acme",
+                working_dir="/workspace",
+                install=SandboxInstallHint(kind="package", name="acme-dcode-sandbox"),
+                supports_sandbox_id=True,
+                supports_snapshot_name=False,
+            )
+
+        def get_or_create(self, *, sandbox_id=None, **kwargs):
+            ...  # return a SandboxBackendProtocol
+
+        def delete(self, *, sandbox_id, **kwargs):
+            ...
+    ```
+
+    Implement `get_or_create` and `delete`; async callers are handled by the base class. Then register the entry point in your package's `pyproject.toml`:
+
+    ```toml
+    [project.entry-points."deepagents_code.sandbox_providers"]
+    acme = "acme_sandbox.provider:AcmeProvider"
+    ```
+
+    If you omit the `metadata` property, a generic default (`/workspace`, no snapshot support) is used.
+</Accordion>
+
+### Config-declared providers
+
+For an in-house or local provider you don't want to package, declare it under `[sandboxes.providers]` in `~/.deepagents/config.toml`. This parallels [arbitrary model providers](/oss/deepagents/code/configuration#arbitrary-providers) and uses the same `class_path` trust model.
+
+```toml
+[sandboxes]
+# Used when you run `dcode --sandbox` with no value.
+default = "acme"
+
+[sandboxes.providers.acme]
+# Required: the provider class to import, in module.path:ClassName format.
+class_path = "acme_sandbox.provider:AcmeProvider"
+# Default working directory inside the sandbox.
+working_dir = "/workspace"
+# Package suggested when the provider's dependencies are missing.
+package = "acme-dcode-sandbox"
+# Capability flags (defaults: supports_sandbox_id = true, supports_snapshot_name = false).
+supports_sandbox_id = true
+supports_snapshot_name = false
+
+# Extra keyword arguments forwarded to the provider's get_or_create().
+[sandboxes.providers.acme.params]
+region = "us-east-1"
+```
+
+<ResponseField name="class_path" type="string" post={["required"]}>
+    Fully-qualified provider class in `module.path:ClassName` format. Deep Agents Code imports and instantiates this class for the provider.
+</ResponseField>
+
+<ResponseField name="working_dir" type="string" post={["optional"]}>
+    Default working directory inside the sandbox. Defaults to `/workspace`.
+</ResponseField>
+
+<ResponseField name="package" type="string" post={["optional"]}>
+    Package name suggested in error messages when the provider's dependencies are missing.
+</ResponseField>
+
+<ResponseField name="supports_sandbox_id" type="boolean" post={["optional"]}>
+    Whether `--sandbox-id` reattach is allowed for this provider. Defaults to `true`.
+</ResponseField>
+
+<ResponseField name="supports_snapshot_name" type="boolean" post={["optional"]}>
+    Whether `--sandbox-snapshot-name` is allowed for this provider. Defaults to `false`.
+</ResponseField>
+
+<ResponseField name="params" type="object" post={["optional"]}>
+    Extra keyword arguments forwarded to the provider's `get_or_create()`.
+</ResponseField>
+
+A config entry that reuses a built-in provider's name **overrides** that built-in while keeping its dependency pre-flight check. Malformed entries are skipped with a warning rather than crashing startup.
+
+<Warning>
+    Setting `class_path` causes Deep Agents Code to import and run arbitrary Python from the named module—module-level code executes on import. This is the same trust model as the model [`class_path`](/oss/deepagents/code/configuration#arbitrary-providers): you control your own machine and your own config file.
+</Warning>
 
 ## Setup scripts
 
