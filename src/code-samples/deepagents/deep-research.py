@@ -285,13 +285,10 @@ if __name__ == "__main__":
         },
         version="v3",
     )
-    for snapshot in stream.values:
-        messages = snapshot.get("messages", [])
-        for msg in messages:
-            if hasattr(msg, "content") and msg.content:
-                print(msg.content)
+    for message in stream.messages:
+        for token in message.text:
+            print(token, end="", flush=True)
         # :remove-start:
-        assert messages is not None
         if os.environ.get("CI"):
             break  # Don't wait for full response in CI
         # :remove-end:
