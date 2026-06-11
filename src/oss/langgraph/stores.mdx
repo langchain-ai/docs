@@ -10,7 +10,7 @@ import StoreListNamespacePaginateJs from '/snippets/code-samples/store-list-name
 import StoreListNamespaceListPy from '/snippets/code-samples/store-list-namespace-list-py.mdx';
 import StoreListNamespaceListJs from '/snippets/code-samples/store-list-namespace-list-js.mdx';
 
-Stores let agents persist information across threads—user preferences, accumulated knowledge, and facts that should survive beyond a single conversation. Unlike [checkpointers](/oss/langgraph/checkpointers), which save the full graph state scoped to one thread, stores hold arbitrary key-value data accessible from any thread.
+Stores let agents persist information across threads, including user preferences, accumulated knowledge, and facts that should survive beyond a single conversation. Unlike [checkpointers](/oss/langgraph/checkpointers), which save the full graph state scoped to one thread, stores hold arbitrary key-value data accessible from any thread.
 
 <Info>
 **Agent Server handles stores automatically**
@@ -23,7 +23,7 @@ When using the [Agent Server](/langsmith/agent-server), you do not need to imple
 
 ## Basic usage
 
-First, let's showcase this in isolation without using LangGraph.
+The following code snippet shows the @[InMemoryStore] in isolation without using LangGraph:
 
 :::python
 ```python
@@ -40,7 +40,7 @@ const memoryStore = new MemoryStore();
 ```
 :::
 
-Memories are namespaced by a `tuple`, which in this specific example will be `(<user_id>, "memories")`. The namespace can be any length and represent anything, does not have to be user specific.
+Memories are namespaced by a `tuple`, which is `(<user_id>, "memories")` in the following example. The namespace can be any length and represent anything, does not have to be user specific.
 
 :::python
 ```python
@@ -56,7 +56,7 @@ const namespaceForMemory = [userId, "memories"];
 ```
 :::
 
-We use the `store.put` method to save memories to our namespace in the store. When we do this, we specify the namespace, as defined above, and a key-value pair for the memory: the key is simply a unique identifier for the memory (`memory_id`) and the value (a dictionary) is the memory itself.
+Use the `store.put` method to save memories to the namespace in the store. Specify the namespace, as defined above, and a key-value pair for the memory: the key is simply a unique identifier for the memory (`memory_id`) and the value (a dictionary) is the memory itself.
 
 :::python
 ```python
@@ -74,7 +74,7 @@ await memoryStore.put(namespaceForMemory, memoryId, memory);
 ```
 :::
 
-We can read out memories in our namespace using the `store.search` method, which will return memories for a given user as a list, up to the `limit` argument (default `10`). With `InMemoryStore`, items are returned in insertion order, so the most recent memory is last in the list; other backends may order differently (see [Listing items in a namespace](#listing-items-in-a-namespace)).
+Read out memories from your namespace using the `store.search` method, which returns memories for a given user as a list, up to the `limit` argument (default `10`). With `InMemoryStore`, items are returned in insertion order, so the most recent memory is last in the list; other backends may order memories differently (see [Listing items in a namespace](#listing-items-in-a-namespace)).
 
 :::python
 ```python
@@ -87,7 +87,7 @@ memories[-1].dict()
  'updated_at': '2024-10-02T17:22:31.590605+00:00'}
 ```
 
-Each memory type is a Python class ([`Item`](https://langchain-ai.github.io/langgraph/reference/store/#langgraph.store.base.Item)) with certain attributes. We can access it as a dictionary by converting via `.dict` as above.
+Each memory type is a Python class ([`Item`](https://langchain-ai.github.io/langgraph/reference/store/#langgraph.store.base.Item)) with certain attributes. We can access it as a dictionary by converting with `.dict`.
 
 The attributes it has are:
 
@@ -159,7 +159,7 @@ Three behaviors to keep in mind:
 
 - **`namespace_prefix` matches by prefix, not exactly.** `("alice",)` also returns items under `("alice", "memories")`, `("alice", "preferences")`, and so on. To restrict to a single level, pass the full namespace or filter the returned items client-side on `item.namespace`.
 - **Results past `limit` are silently truncated.** There is no overflow signal—set `limit` above your expected maximum, or paginate with `offset`.
-- **Default ordering depends on the store backend.** `PostgresStore` and `AsyncPostgresStore` return results ordered by `updated_at` descending (most recently updated first). `InMemoryStore` returns results in insertion order (most recently inserted last). Do not rely on a specific order across implementations—sort client-side on `item.updated_at` if order matters.
+- **Default ordering depends on the store backend.** `PostgresStore` and `AsyncPostgresStore` return results ordered by `updated_at` descending (most recently updated first). `InMemoryStore` returns results in insertion order (most recently inserted last). Do not rely on a specific order across implementations; sort client-side on `item.updated_at` if order matters.
 
 :::python
 To page through a large namespace:
@@ -297,7 +297,7 @@ await store.put(
 ## Using in LangGraph
 
 :::python
-With this all in place, we use the store in LangGraph. The store works hand-in-hand with the checkpointer: the checkpointer saves state to threads, as discussed above, and the store allows us to store arbitrary information for access _across_ threads. We compile the graph with both the checkpointer and the store as follows.
+The store works hand-in-hand with the checkpointer: the checkpointer saves state to threads, as discussed above, and the store allows you to store arbitrary information for access _across_ threads. Compile the graph with both the checkpointer and the store as follows.
 
 ```python
 from dataclasses import dataclass
@@ -320,7 +320,7 @@ graph = builder.compile(checkpointer=checkpointer, store=store)
 :::
 
 :::js
-With this all in place, we use the `memoryStore` in LangGraph. The `memoryStore` works hand-in-hand with the checkpointer: the checkpointer saves state to threads, as discussed above, and the `memoryStore` allows us to store arbitrary information for access _across_ threads. We compile the graph with both the checkpointer and the `memoryStore` as follows.
+The `memoryStore` works hand-in-hand with the checkpointer: the checkpointer saves state to threads, as discussed above, and the `memoryStore` allows you to store arbitrary information for access _across_ threads. Compile the graph with both the checkpointer and the `memoryStore` as follows.
 
 ```typescript
 import { MemorySaver } from "@langchain/langgraph";
@@ -335,7 +335,7 @@ const graph = workflow.compile({ checkpointer, store: memoryStore });
 ```
 :::
 
-We invoke the graph with a `thread_id`, as before, and also with a `user_id`, which we'll use to namespace our memories to this particular user as we showed above.
+Then invoke the graph with a `thread_id`, as before, and also with a `user_id`, which serves as the namespace for memories for this particular user as before.
 
 :::python
 ```python
@@ -370,7 +370,7 @@ for await (const update of await graph.stream(
 :::
 
 :::python
-You can access the store and the `user_id` in _any node_ by using the `Runtime` object. The `Runtime` is automatically injected by LangGraph when you add it as a parameter to your node function. Here's how you might use it to save memories:
+You can access the store and the `user_id` from _any node_ by using the `Runtime` object. The `Runtime` is automatically injected by LangGraph when you add it as a parameter to your node function. You can use it to save memories:
 
 ```python
 from langgraph.runtime import Runtime
@@ -402,7 +402,7 @@ async def update_memory(state: MessagesState, runtime: Runtime[Context]):
 :::
 
 :::js
-You can access the store and the `userId` in _any node_ with the `runtime` argument. Here's how you might use it to save memories:
+You can access the store and the `userId` from _any node_ with the `runtime` argument. You can use it to save memories:
 
 ```typescript
 import { StateSchema, MessagesValue, Runtime } from "@langchain/langgraph";
@@ -431,7 +431,7 @@ const updateMemory: GraphNode<typeof MessagesState> = async (state, runtime) => 
 ```
 :::
 
-As we showed above, we can also access the store in any node and use the `store.search` method to get memories. Recall the memories are returned as a list of objects that can be converted to a dictionary.
+You can also access the store from any node and use the `store.search` method to get memories. Memories are returned as a list of objects that can be converted to a dictionary.
 
 :::python
 ```python
@@ -457,7 +457,7 @@ memories[memories.length - 1];
 ```
 :::
 
-We can access the memories and use them in our model call.
+You access the memories and use them in model calls.
 
 :::python
 ```python
@@ -508,7 +508,7 @@ const callModel: GraphNode<typeof MessagesState> = async (state, runtime) => {
 ```
 :::
 
-If we create a new thread, we can still access the same memories so long as the `user_id` is the same.
+If you create a new thread, you can still access the same memories so long as the `user_id` is the same.
 
 :::python
 ```python
@@ -541,7 +541,7 @@ for await (const update of await graph.stream(
 ```
 :::
 
-When we use the LangSmith, either locally (e.g., in [Studio](/langsmith/studio)) or [hosted with LangSmith](/langsmith/platform-setup), the base store is available to use by default and does not need to be specified during graph compilation. To enable semantic search, however, you **do** need to configure the indexing settings in your `langgraph.json` file. For example:
+When you use LangSmith locally (e.g., in [Studio](/langsmith/studio)) or [hosted](/langsmith/platform-setup), the base store is available to use by default and you do not need to specify it during graph compilation. To enable semantic search, however, you **do** need to configure the indexing settings in your `langgraph.json` file. For example:
 
 ```json
 {
@@ -558,9 +558,9 @@ When we use the LangSmith, either locally (e.g., in [Studio](/langsmith/studio))
 
 See the [deployment guide](/langsmith/semantic-search) for more details and configuration options.
 
+:::python
 ## Build a custom store
 
-:::python
 
 To use a storage backend other than the built-in implementations, subclass @[BaseStore] and implement its required methods. The built-in @[InMemoryStore] is the simplest reference implementation.
 
@@ -622,7 +622,7 @@ If your backend does not support vector search, raise `NotImplementedError` when
 
 ### Testing
 
-No conformance suite exists yet for custom stores. Test against @[InMemoryStore] as the reference:
+There is currently no conformance suite for custom stores. Test against @[InMemoryStore] as the reference:
 
 ```python
 import pytest
@@ -659,10 +659,9 @@ async def test_search_prefix(store, reference):
         results = await s.asearch(("user",))
         assert any(r.key == "m1" for r in results)
 ```
+:::
 
 ### Next steps
 
 - [Add a custom store to Agent Server](/langsmith/custom-store) — deploying your implementation
 - [Checkpointers](/oss/langgraph/checkpointers) — thread-scoped state persistence
-
-:::
