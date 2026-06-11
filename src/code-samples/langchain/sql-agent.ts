@@ -138,11 +138,12 @@ let agent = createAgent({
 // :snippet-start: sql-agent-run-agent-js
 let question = "Which genre, on average, has the longest tracks?";
 
-for await (const step of await agent.stream(
+const stream = await agent.streamEvents(
   { messages: [{ role: "user", content: question }] },
-  { streamMode: "values" },
-)) {
-  const message = step.messages.at(-1);
+  { version: "v3" },
+);
+for await (const snapshot of stream.values) {
+  const message = snapshot.messages.at(-1);
   console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
 }
 // :snippet-end:
@@ -173,23 +174,23 @@ agent = createAgent({
 question = "Which genre, on average, has the longest tracks?";
 const config = { configurable: { thread_id: "1" } }; // [!code highlight]
 
-for await (const step of await agent.stream(
+const hitlStream = await agent.streamEvents(
   { messages: [{ role: "user", content: question }] },
-  { ...config, streamMode: "values" }, // [!code highlight]
-)) {
-  if ("__interrupt__" in step) {
+  { ...config, version: "v3" }, // [!code highlight]
+);
+for await (const snapshot of hitlStream.values) {
+  const message = snapshot.messages.at(-1);
+  console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
+}
+if (hitlStream.interrupted) {
+  // [!code highlight]
+  console.log("INTERRUPTED:"); // [!code highlight]
+  for (const interrupt of hitlStream.interrupts) {
     // [!code highlight]
-    console.log("INTERRUPTED:"); // [!code highlight]
-    for (const interrupt of step.__interrupt__) {
+    for (const request of interrupt.value.actionRequests) {
       // [!code highlight]
-      for (const request of interrupt.value.actionRequests) {
-        // [!code highlight]
-        console.log(request.description); // [!code highlight]
-      }
+      console.log(request.description); // [!code highlight]
     }
-  } else if (step.messages) {
-    const message = step.messages.at(-1);
-    console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
   }
 }
 // :snippet-end:
@@ -197,20 +198,19 @@ for await (const step of await agent.stream(
 // :snippet-start: sql-agent-hitl-resume-js
 import { Command } from "@langchain/langgraph"; // [!code highlight]
 
-for await (const step of await agent.stream(
+const resumeStream = await agent.streamEvents(
   new Command({ resume: { decisions: [{ type: "approve" }] } }), // [!code highlight]
-  { ...config, streamMode: "values" },
-)) {
-  if (step.messages) {
-    const message = step.messages.at(-1);
-    console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
-  }
-  if ("__interrupt__" in step) {
-    console.log("INTERRUPTED:");
-    for (const interrupt of step.__interrupt__) {
-      for (const request of interrupt.value.actionRequests) {
-        console.log(request.description);
-      }
+  { ...config, version: "v3" },
+);
+for await (const snapshot of resumeStream.values) {
+  const message = snapshot.messages.at(-1);
+  console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
+}
+if (resumeStream.interrupted) {
+  console.log("INTERRUPTED:");
+  for (const interrupt of resumeStream.interrupts) {
+    for (const request of interrupt.value.actionRequests) {
+      console.log(request.description);
     }
   }
 }

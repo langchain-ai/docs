@@ -226,15 +226,13 @@ stream = agent.stream_events( # [!code highlight]
     version="v3",
 )
 for snapshot in stream.values:
-    if "__interrupt__" in snapshot: # [!code highlight]
-        print("INTERRUPTED:") # [!code highlight]
-        interrupt = snapshot["__interrupt__"][0] # [!code highlight]
-        for request in interrupt.value["action_requests"]: # [!code highlight]
-            print(request["description"]) # [!code highlight]
-    elif "messages" in snapshot:
+    if "messages" in snapshot:
         snapshot["messages"][-1].pretty_print()
-    else:
-        pass
+if stream.interrupted: # [!code highlight]
+    print("INTERRUPTED:") # [!code highlight]
+    interrupt = stream.interrupts[0] # [!code highlight]
+    for request in interrupt.value["action_requests"]: # [!code highlight]
+        print(request["description"]) # [!code highlight]
 # :snippet-end:
 
 # :snippet-start: sql-agent-hitl-resume-py
@@ -248,13 +246,11 @@ stream = agent.stream_events( # [!code highlight]
 for snapshot in stream.values:
     if "messages" in snapshot:
         snapshot["messages"][-1].pretty_print()
-    if "__interrupt__" in snapshot:
-        print("INTERRUPTED:")
-        interrupt = snapshot["__interrupt__"][0]
-        for request in interrupt.value["action_requests"]:
-            print(request["description"])
-    else:
-        pass
+if stream.interrupted:
+    print("INTERRUPTED:")
+    interrupt = stream.interrupts[0]
+    for request in interrupt.value["action_requests"]:
+        print(request["description"])
 # :snippet-end:
 
 # :snippet-start: sql-agent-studio-py

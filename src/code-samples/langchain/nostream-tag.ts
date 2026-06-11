@@ -44,17 +44,17 @@ const graph = new StateGraph(State)
   .addEdge("writeAnswer", "internal_notes")
   .compile();
 
-const stream = await graph.stream(
+const stream = await graph.streamEvents(
   { topic: "AI", answer: "", notes: "" },
-  { streamMode: "messages" },
+  { version: "v3" },
 );
 // :snippet-end:
 
 // :remove-start:
 const streamedNodes: string[] = [];
-for await (const [msg, metadata] of stream) {
-  if (msg.content) {
-    streamedNodes.push(metadata.langgraph_node);
+for await (const message of stream.messages) {
+  if (message.node) {
+    streamedNodes.push(message.node);
   }
 }
 

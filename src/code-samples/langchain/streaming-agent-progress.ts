@@ -24,60 +24,15 @@ const agent = createAgent({
 
 const config = { configurable: { thread_id: crypto.randomUUID() } };
 
-for await (const chunk of await agent.stream(
+const stream = await agent.streamEvents(
   { messages: [{ role: "user", content: "what is the weather in sf" }] },
-  { ...config, streamMode: "updates", version: "v2" },
-)) {
-  const [step, content] = Object.entries(chunk)[0];
-  console.log(`step: ${step}`);
-  console.log(`content: ${JSON.stringify(content, null, 2)}`);
+  { ...config, version: "v3" },
+);
+for await (const snapshot of stream.values) {
+  console.log(
+    `content: ${JSON.stringify(snapshot.messages.at(-1).contentBlocks, null, 2)}`,
+  );
 }
-/**
- * step: model_request
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         // ...
- *         "tool_calls": [
- *           {
- *             "name": "get_weather",
- *             "args": {
- *               "city": "San Francisco"
- *             },
- *             "type": "tool_call",
- *             "id": "call_0qLS2Jp3MCmaKJ5MAYtr4jJd"
- *           }
- *         ],
- *         // ...
- *       }
- *     }
- *   ]
- * }
- * step: tools
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         "content": "The weather in San Francisco is always sunny!",
- *         "name": "get_weather",
- *         // ...
- *       }
- *     }
- *   ]
- * }
- * step: model_request
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         "content": "The latest update says: The weather in San Francisco is always sunny!\n\nIf you'd like real-time details (current temperature, humidity, wind, and today's forecast), I can pull the latest data for you. Want me to fetch that?",
- *         // ...
- *       }
- *     }
- *   ]
- * }
- */
 // :snippet-end:
 
 // :remove-start:

@@ -19,7 +19,7 @@ stream = agent.stream_events(  # [!code highlight]
     version="v3",  # [!code highlight]
 )
 for snapshot in stream.values:  # [!code highlight]
-    print(f"snapshot: {snapshot}")
+    print(f"content: {snapshot['messages'][-1].content_blocks}")
 # :snippet-end:
 
 # :remove-start:

@@ -405,15 +405,13 @@ if __name__ == "__main__":
             version="v3",
         )
         for snapshot in stream.values:
-            if "__interrupt__" in snapshot:
-                action = snapshot["__interrupt__"][0]
-                print("INTERRUPTED:")
-                for request in action.value:
-                    print(json.dumps(request, indent=2))
-            elif "messages" in snapshot:
+            if "messages" in snapshot:
                 snapshot["messages"][-1].pretty_print()
-            else:
-                raise ValueError(f"Unsupported stream step type: {type(snapshot)}")
+        if stream.interrupted:
+            action = stream.interrupts[0]
+            print("INTERRUPTED:")
+            for request in action.value:
+                print(json.dumps(request, indent=2))
         # :snippet-end:
 
         # :snippet-start: langgraph-sql-agent-hitl-resume-py
@@ -426,15 +424,13 @@ if __name__ == "__main__":
             version="v3",
         )
         for snapshot in stream.values:
-            if "__interrupt__" in snapshot:
-                action = snapshot["__interrupt__"][0]
-                print("INTERRUPTED:")
-                for request in action.value:
-                    print(json.dumps(request, indent=2))
-            elif "messages" in snapshot:
+            if "messages" in snapshot:
                 snapshot["messages"][-1].pretty_print()
-            else:
-                raise ValueError(f"Unsupported stream step type: {type(snapshot)}")
+        if stream.interrupted:
+            action = stream.interrupts[0]
+            print("INTERRUPTED:")
+            for request in action.value:
+                print(json.dumps(request, indent=2))
         # :snippet-end:
 
     print("✓ langgraph-sql-agent")
