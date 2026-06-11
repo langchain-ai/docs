@@ -1,0 +1,84 @@
+---
+title: "Respan integrations"
+description: "Integrate with Respan using LangChain Python."
+---
+
+[Respan](https://www.respan.ai/) provides observability, tracing, evaluation, prompt management, and an OpenAI-compatible gateway for LLM applications. The `respan-instrumentation-langchain` package exports LangChain callback spans to Respan for LangChain, LangGraph, and Langflow-compatible flows.
+
+## Installation and setup
+
+Install the Respan entry point, the LangChain instrumentation package, and LangChain Core:
+
+<CodeGroup>
+```bash pip
+pip install -U respan-ai respan-instrumentation-langchain langchain-core
+```
+
+```bash uv
+uv add respan-ai respan-instrumentation-langchain langchain-core
+```
+</CodeGroup>
+
+Create a Respan API key in the [Respan platform](https://platform.respan.ai/platform/api/api-keys), then set it as an environment variable:
+
+```bash
+export RESPAN_API_KEY="your-respan-api-key"
+```
+
+## Tracing
+
+Use `LangChainInstrumentor` with the Respan SDK to send LangChain callback spans to Respan.
+
+```python
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
+from langchain_core.messages import HumanMessage
+from respan import Respan
+from respan_instrumentation_langchain import LangChainInstrumentor
+
+respan = Respan(instrumentations=[LangChainInstrumentor()])
+model = FakeListChatModel(responses=["Hello from a traced LangChain run."])
+
+try:
+    response = model.invoke(
+        [HumanMessage(content="Say hello to Respan tracing.")]
+    )
+    print(response.content)
+finally:
+    respan.flush()
+```
+
+To attach tags, metadata, or LangGraph configuration to a specific run, pass the callback config explicitly.
+
+```python
+from respan_instrumentation_langchain import add_respan_callback
+
+response = model.invoke(
+    [HumanMessage(content="Say hello to Respan tracing.")],
+    config=add_respan_callback(
+        {
+            "run_name": "hello_respan",
+            "tags": ["langchain", "respan"],
+            "metadata": {"service": "docs-example"},
+        }
+    ),
+)
+```
+
+The same helper works with LangGraph:
+
+```python
+graph.invoke(
+    {"messages": [{"role": "user", "content": "hi"}]},
+    config=add_respan_callback({"configurable": {"thread_id": "thread-1"}}),
+)
+```
+
+## Gateway
+
+LangChain can also route underlying LLM calls through the OpenAI-compatible Respan gateway. See the [Respan LangChain gateway guide](https://docs.respan.ai/docs/gateway/langchain) for setup details.
+
+## Resources
+
+- [Respan LangChain tracing guide](https://docs.respan.ai/docs/integrations/langchain)
+- [`respan-instrumentation-langchain` package](https://pypi.org/project/respan-instrumentation-langchain/)
+- [Respan example projects](https://github.com/respanai/respan-example-projects)
