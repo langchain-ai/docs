@@ -11,7 +11,26 @@ description: LangGraph's persistence layer gives agents short-term memory throug
 <a id="pending-writes" />
 <a id="durability-modes" />
 
-LangGraph agents maintain a **state** object that nodes read from and write to during execution. The persistence layer saves that state so agents can resume after interruptions, remember past interactions, and share information across conversations.
+LangGraph agents maintain a **state** object that nodes read from and write to during execution. The persistence layer saves information from graph runs so agents can resume work, keep conversation context, and remember useful facts across interactions.
+
+Persistence has two complementary systems:
+
+- **Checkpointers** save graph state within a thread. Use them when the agent needs to resume a run, continue a conversation, support human review, replay prior states, or recover from failures.
+- **Stores** save arbitrary data across threads. Use them when the agent needs durable facts, user preferences, or shared knowledge that should outlive a single conversation.
+
+Most applications can use both. The checkpointer tracks what happened in the current thread; the store holds information the agent should remember across threads.
+
+## What are you trying to persist?
+
+| Goal | Use | Why |
+| ---- | --- | --- |
+| Continue a conversation or task session | [Checkpointer](/oss/langgraph/checkpointers) | Saves the thread's graph state after each execution step. |
+| Pause for human input and resume later | [Checkpointer](/oss/langgraph/checkpointers) | Restores the interrupted thread from the saved checkpoint. |
+| Replay, fork, or debug past execution | [Checkpointer](/oss/langgraph/checkpointers) | Keeps checkpoint history for time travel. |
+| Recover from failures without starting over | [Checkpointer](/oss/langgraph/checkpointers) | Resumes from the last successful checkpoint and preserves pending writes. |
+| Remember user preferences or facts across conversations | [Store](/oss/langgraph/stores) | Saves key-value data outside any single thread. |
+| Share durable context across users, sessions, or agents | [Store](/oss/langgraph/stores) | Makes namespaced data available across threads. |
+| Combine conversation continuity with long-term personalization | [Checkpointer](/oss/langgraph/checkpointers) and [store](/oss/langgraph/stores) | Uses thread state for the current interaction and cross-thread memory for durable knowledge. |
 
 <Info>
 **Agent Server handles persistence automatically**
@@ -20,35 +39,21 @@ When using the [Agent Server](/langsmith/agent-server), you do not need to imple
 
 ## Checkpointers
 
-Checkpointers save the full graph state at each execution step, organized into **threads**. A thread is a sequence of runs sharing the same state history—typically a single conversation or task session.
+Checkpointers save the full graph state at each execution step, organized into **threads**. A thread is a sequence of runs sharing the same state history, typically a single conversation or task session.
 
-Checkpointers give agents **short-term, thread-scoped memory**: the agent can pause and resume, support human-in-the-loop review, replay past states, and recover from failures.
-
-| | |
-|--|--|
-| Scope | Single thread |
-| Memory type | Short-term |
-| Saves | Full graph state snapshot at each step |
-| Use for | Resume, human-in-the-loop, time travel, fault tolerance |
+Checkpointers give agents **short-term, thread-scoped memory**. They are required for conversation continuity, human-in-the-loop workflows, time travel, and fault-tolerant execution.
 
 See [Checkpointers](/oss/langgraph/checkpointers) for the full guide, including how to use built-in backends and build a custom checkpointer.
 
 ## Stores
 
-Stores persist arbitrary data outside of any thread, accessible across all conversations. They give agents **long-term, cross-thread memory**: user preferences, accumulated knowledge, and facts that should survive beyond a single session.
-
-| | |
-|--|--|
-| Scope | Cross-thread |
-| Memory type | Long-term |
-| Saves | Key-value items in namespaced collections |
-| Use for | User preferences, facts, shared knowledge |
+Stores persist arbitrary data outside of any thread, accessible across conversations. They give agents **long-term, cross-thread memory**: user preferences, accumulated knowledge, and facts that should survive beyond a single session.
 
 See [Stores](/oss/langgraph/stores) for the full guide, including how to use built-in backends and build a custom store.
 
-## Using both together
+## Use both together
 
-When you compile a graph with both a checkpointer and a store, the two systems complement each other: the checkpointer tracks what the agent did in this conversation; the store holds what the agent knows about the user across all conversations.
+When you compile a graph with both a checkpointer and a store, the two systems complement each other. The checkpointer tracks what the agent did in this conversation; the store holds what the agent knows about the user across conversations.
 
 :::python
 ```python
