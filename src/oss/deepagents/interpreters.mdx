@@ -310,6 +310,9 @@ graph LR
 **Use cases:** Triaging support tickets, error logs, user feedback, or any batch of items that need different handling depending on their type.
 
 <Accordion title="Example: classify and act">
+
+**What you configure**
+
 :::python
 ```python
 agent = create_deep_agent(
@@ -369,6 +372,25 @@ const result = await agent.invoke({
 });
 ```
 :::
+
+**What the agent writes**
+
+```javascript
+// The agent has already classified each ticket; this routes every item to
+// the right specialist and collects the handled results.
+const SPECIALIST = { bug: "bug-fixer", feature: "feature-analyst", question: "support-agent" };
+
+const handled = await Promise.all(
+  tickets.map((ticket) =>
+    task({
+      description: `Handle this ${ticket.category}:\n${ticket.text}`,
+      subagentType: SPECIALIST[ticket.category],
+    }),
+  ),
+);
+// ... group handled results by category into a single triage report
+handled;
+```
 </Accordion>
 
 #### Fan-out and synthesize
@@ -389,6 +411,9 @@ graph LR
 **Use cases:** Code review across a directory, analyzing a batch of documents, processing log files, running the same check across many services.
 
 <Accordion title="Example: fan-out and synthesize">
+
+**What you configure**
+
 :::python
 ```python
 from deepagents import create_deep_agent
@@ -430,6 +455,29 @@ const result = await agent.invoke({
 });
 ```
 :::
+
+**What the agent writes**
+
+```javascript
+// One reviewer per file, dispatched in parallel, then findings merged.
+const files = (await tools.glob({ pattern: "src/routes/**/*.ts" }))
+  .split("\n")
+  .filter(Boolean);
+
+const reviews = await Promise.all(
+  files.map((file) =>
+    task({
+      description: `Review ${file} for authentication issues. Cite line numbers.`,
+      subagentType: "reviewer",
+      responseSchema: issuesSchema, // -> { issues: [{ file, line, severity }] }
+    }),
+  ),
+);
+
+const issues = reviews.flatMap((r) => r.issues);
+// ... sort by severity, drop duplicates, summarize the top risks
+issues;
+```
 </Accordion>
 
 #### Adversarial verification
@@ -452,6 +500,9 @@ graph LR
 **Use cases:** Security audits where false positives are costly, compliance checks, any review where you need high confidence in findings.
 
 <Accordion title="Example: adversarial verification">
+
+**What you configure**
+
 :::python
 ```python
 agent = create_deep_agent(
@@ -501,6 +552,31 @@ const result = await agent.invoke({
 });
 ```
 :::
+
+**What the agent writes**
+
+```javascript
+// Pass 1: audit. Pass 2: verify each finding independently; keep only confirmed.
+const { findings } = await task({
+  description: "Audit the payments module for vulnerabilities.",
+  subagentType: "auditor",
+  responseSchema: findingsSchema, // -> { findings: [{ id, file, line, description }] }
+});
+
+const verdicts = await Promise.all(
+  findings.map((f) =>
+    task({
+      description: `Verify ${f.file}:${f.line} (${f.description}). Confirm or refute.`,
+      subagentType: "verifier",
+      responseSchema: verdictSchema, // -> { confirmed: boolean }
+    }),
+  ),
+);
+
+const confirmed = findings.filter((_, i) => verdicts[i]?.confirmed);
+// ... report only the confirmed vulnerabilities
+confirmed;
+```
 </Accordion>
 
 #### Generate and filter
@@ -521,6 +597,9 @@ graph LR
 **Use cases:** Architecture proposals, refactoring strategies, content variations, any task where exploring multiple options before committing produces a better outcome.
 
 <Accordion title="Example: generate and filter">
+
+**What you configure**
+
 :::python
 ```python
 agent = create_deep_agent(
@@ -556,6 +635,25 @@ const result = await agent.invoke({
 });
 ```
 :::
+
+**What the agent writes**
+
+```javascript
+// Generate independent proposals in parallel, then score and keep the best.
+const proposals = await Promise.all(
+  [1, 2, 3].map((n) =>
+    task({
+      description: `Approach ${n}: redesign the orders schema, with tradeoffs.`,
+      subagentType: "architect",
+      responseSchema: designSchema, // -> { design, tradeoffs }
+    }),
+  ),
+);
+
+// ... score each proposal against the requirements
+const best = proposals.sort((a, b) => score(b) - score(a))[0];
+best;
+```
 </Accordion>
 
 #### Tournament
@@ -576,6 +674,9 @@ graph LR
 **Use cases:** Optimization under subjective criteria, style selection, choosing between competing implementations.
 
 <Accordion title="Example: tournament">
+
+**What you configure**
+
 :::python
 ```python
 agent = create_deep_agent(
@@ -625,6 +726,32 @@ const result = await agent.invoke({
 });
 ```
 :::
+
+**What the agent writes**
+
+```javascript
+// Generate variants, then judge pairwise until a single winner remains.
+let bracket = await Promise.all(
+  [1, 2, 3, 4, 5].map((n) =>
+    task({ description: `Rewrite processOrder for readability (variant ${n}).`, subagentType: "writer" }),
+  ),
+);
+
+while (bracket.length > 1) {
+  const winners = [];
+  for (let i = 0; i < bracket.length; i += 2) {
+    if (bracket[i + 1] === undefined) { winners.push(bracket[i]); break; }
+    const { winner } = await task({
+      description: `Pick the more readable:\n\nA:\n${bracket[i]}\n\nB:\n${bracket[i + 1]}`,
+      subagentType: "judge",
+      responseSchema: pickSchema, // -> { winner: "A" | "B" }
+    });
+    winners.push(winner === "A" ? bracket[i] : bracket[i + 1]);
+  }
+  bracket = winners;
+}
+bracket[0]; // the winning rewrite
+```
 </Accordion>
 
 #### Loop until done
@@ -641,6 +768,9 @@ graph LR
 **Use cases:** Exhaustive search, dead code detection, dependency audits, any sweep where you want completeness rather than a fixed number of results.
 
 <Accordion title="Example: loop until done">
+
+**What you configure**
+
 :::python
 ```python
 agent = create_deep_agent(
@@ -676,6 +806,26 @@ const result = await agent.invoke({
 });
 ```
 :::
+
+**What the agent writes**
+
+```javascript
+// Keep dispatching rounds, deduping against what's found, until a round adds nothing.
+const seen = new Set();
+const found = [];
+
+while (true) {
+  const { items } = await task({
+    description: `Find dead code. Already found: ${[...seen].join(", ") || "(none)"}.`,
+    subagentType: "analyzer",
+    responseSchema: itemsSchema, // -> { items: [{ id, file }] }
+  });
+  const fresh = items.filter((i) => !seen.has(i.id));
+  if (fresh.length === 0) break; // converged: nothing new
+  for (const i of fresh) { seen.add(i.id); found.push(i); }
+}
+found;
+```
 </Accordion>
 
 <Warning>
