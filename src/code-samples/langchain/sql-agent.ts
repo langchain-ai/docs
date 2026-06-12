@@ -187,7 +187,7 @@ if (hitlStream.interrupted) {
   console.log("INTERRUPTED:"); // [!code highlight]
   for (const interrupt of hitlStream.interrupts) {
     // [!code highlight]
-    for (const request of interrupt.value.actionRequests) {
+    for (const request of interrupt.payload.actionRequests) {
       // [!code highlight]
       console.log(request.description); // [!code highlight]
     }
@@ -209,7 +209,7 @@ for await (const snapshot of resumeStream.values) {
 if (resumeStream.interrupted) {
   console.log("INTERRUPTED:");
   for (const interrupt of resumeStream.interrupts) {
-    for (const request of interrupt.value.actionRequests) {
+    for (const request of interrupt.payload.actionRequests) {
       console.log(request.description);
     }
   }
