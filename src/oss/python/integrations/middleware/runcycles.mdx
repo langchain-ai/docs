@@ -20,6 +20,7 @@ This guide provides a quick overview for getting started with the [Cycles](https
 - <Icon icon="cpu" size={16}/> Pre-model-call authorization via `wrap_model_call`: gate every LLM turn before spend, returning an `AIMessage` denial so the agent terminates naturally (v0.1.5+).
 - <Icon icon="shield-lock" size={16}/> Pre-tool-call authorization via `wrap_tool_call`: denied calls return a `ToolMessage` so the model can recover gracefully.
 - <Icon icon="wallet" size={16}/> Per-tenant budget enforcement: reserve before tool use, commit on success, release on exception.
+- <Icon icon="calculator" size={16}/> Per-call actual-cost extraction via `cost_fn`: `CyclesModelGate` reads model responses (v0.2.0+) and `CyclesToolGate` reads `(request, result)` for provider-specific tool pricing (v0.3.0+), falling back to `estimate` on extractor failure.
 - <Icon icon="repeat" size={16}/> Fan-out caps via `before_model` with `jump_to: "end"`: stop runaway agents before another model turn.
 - <Icon icon="bolt" size={16}/> Sync and async support: pair with `agent.invoke()` or `agent.ainvoke()`.
 
@@ -208,8 +209,8 @@ This order (fan-out first, then model, then tool) means runaway loops halt befor
 | Mode | Behavior |
 | :--- | :--- |
 | `"decide"` | Calls `client.decide()`. Denies the tool call on a non-allow decision. No reservation. |
-| `"reserve"` | Creates a reservation, runs the tool, commits on success (at the configured `estimate`), releases on exception. |
-| `"decide+reserve"` | Authorizes via `decide()` first, then reserves and commits at the configured `estimate`. Most strict. |
+| `"reserve"` | Creates a reservation, runs the tool, commits on success, releases on exception. Commit amount is `cost_fn(request, result)` when supplied (v0.3.0+), otherwise the configured `estimate`. |
+| `"decide+reserve"` | Authorizes via `decide()` first, then reserves and commits. Most strict; commit amount follows the same `cost_fn` / `estimate` rule. |
 
 Denied calls return a `ToolMessage` containing the denial reason: the underlying tool handler is never invoked, but the model sees the denial like any other tool result and can choose another path.
 
@@ -300,9 +301,9 @@ await agent.ainvoke({"messages": [{"role": "user", "content": "Email alice@examp
 
 A few behaviors worth knowing before pointing the middleware at production traffic.
 
-### `CyclesToolGate` reserve mode commits at `estimate`
+### `CyclesToolGate` actual-cost extraction (v0.3.0+)
 
-`CyclesToolGate` in `"reserve"` and `"decide+reserve"` modes reserves the configured `estimate`, runs the tool, then commits *that same amount* on success, not the tool's actual measured cost. A `cost_fn` parameter analogous to `CyclesModelGate.cost_fn` (v0.2.0+) is on the roadmap for the tool gate; until then, set `estimate` to the worst-case spend per call you're willing to debit, or use `mode="decide"` if you only want policy gating without budget movement.
+`CyclesToolGate` accepts a `cost_fn: Callable[[ToolCallRequest, Any], Amount]`. The middleware calls `cost_fn(request, result)` after the wrapped tool handler returns and uses the returned `Amount` for the commit instead of the configured `estimate`. When unset, behavior is backward-compatible: commits use the configured `estimate`. If the callable raises or returns a non-`Amount`, the gate logs a warning and falls back to `estimate` so a costing bug never erases the tool result. Tool extractors are intentionally user-supplied because tool providers do not expose one shared cost metadata shape; for budget-only gating without cost tracking, set `estimate` to the worst-case spend per call or use `mode="decide"`.
 
 ### `CyclesModelGate` actual-cost extraction (v0.2.0+)
 
@@ -391,11 +392,11 @@ gate = CyclesToolGate(
 
 ### Scope and roadmap
 
-Implemented (v0.2.0+): `wrap_model_call` (`CyclesModelGate`), `wrap_tool_call` (`CyclesToolGate`), and `before_model` (`CyclesFanOutGate`): all three hooks of the LangChain agent governance triad. `CyclesModelGate` and `CyclesToolGate` share the same three modes (`decide` / `reserve` / `decide+reserve`), reservation lifecycle, and `settlement_error_policy`. `CyclesModelGate` additionally supports per-call actual-cost extraction via `cost_fn` (v0.2.0+). `CyclesFanOutGate` is a thinner halt-only middleware: it consults `decide()` per turn and counts turns against `max_turns`, but does not reserve, so it shares only the `idempotency_namespace` plumbing with the other two.
+Implemented across the gates: `wrap_model_call` (`CyclesModelGate`, v0.1.5+), `wrap_tool_call` (`CyclesToolGate`), and `before_model` (`CyclesFanOutGate`): all three hooks of the LangChain agent governance triad. `CyclesModelGate` and `CyclesToolGate` share the same three modes (`decide` / `reserve` / `decide+reserve`), reservation lifecycle, `settlement_error_policy`, and per-call actual-cost extraction via `cost_fn` (`CyclesModelGate` v0.2.0+, `CyclesToolGate` v0.3.0+). `CyclesFanOutGate` is a thinner halt-only middleware: it consults `decide()` per turn and counts turns against `max_turns`, but does not reserve, so it shares only the `idempotency_namespace` plumbing with the other two.
 
 Streaming verified in v0.2.1 — see the Async support section above. `agent.astream(...)` and `agent.astream_events(...)` work without code changes because LangChain aggregates per-chunk responses inside `BaseChatModel.ainvoke`, below the middleware layer.
 
-The multi-agent demo agent shipped in v0.2.2 — see [`examples/multi_agent_fanout.py`](https://github.com/runcycles/langchain-runcycles/blob/main/examples/multi_agent_fanout.py) and the companion [pattern walkthrough](https://github.com/runcycles/langchain-runcycles/blob/main/examples/multi_agent_fanout_writeup.md). For per-tool token-cost capture today on `CyclesToolGate` (no `cost_fn` yet on the tool gate), use the `BaseCallbackHandler` callback handler from `cycles-client-python` alongside the middleware — the two compose cleanly.
+The multi-agent demo agent shipped in v0.2.2 — see [`examples/multi_agent_fanout.py`](https://github.com/runcycles/langchain-runcycles/blob/main/examples/multi_agent_fanout.py) and the companion [pattern walkthrough](https://github.com/runcycles/langchain-runcycles/blob/main/examples/multi_agent_fanout_writeup.md). For a focused tool-side actual-cost example, see [`examples/tool_cost_fn.py`](https://github.com/runcycles/langchain-runcycles/blob/main/examples/tool_cost_fn.py).
 
 ## API reference
 
