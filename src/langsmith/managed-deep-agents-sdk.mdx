@@ -4,10 +4,14 @@ sidebarTitle: SDKs
 description: Use the Python, TypeScript, and React SDKs for Managed Deep Agents.
 ---
 
-The Managed Deep Agents SDKs wrap the `/v1/deepagents` API for creating agents, managing threads, streaming runs, connecting MCP servers, and building React UIs.
+Build, run, and stream Managed Deep Agents from Python, TypeScript, and React. The SDKs wrap the `/v1/deepagents` API for creating agents, managing threads, streaming runs, registering MCP servers, and building React UIs.
+
+For concepts, see the [Managed Deep Agents overview](/langsmith/managed-deep-agents-overview). For an end-to-end walkthrough, follow the [quickstart](/langsmith/managed-deep-agents-quickstart).
 
 <Note>
-The SDK packages are in **public beta**. Managed Deep Agents still requires [preview access](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) on [LangSmith Cloud](/langsmith/cloud) in the US region.
+The SDK packages are in **public beta**. Method signatures and payload fields can change during the beta.
+
+Managed Deep Agents is in **private preview**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
 </Note>
 
 ## Install
@@ -15,6 +19,9 @@ The SDK packages are in **public beta**. Managed Deep Agents still requires [pre
 <CodeGroup>
 
 ```bash Python
+uv add managed-deepagents
+
+# or with pip
 pip install managed-deepagents
 ```
 
@@ -32,7 +39,8 @@ Requirements:
 
 - Python 3.10 or newer for `managed-deepagents`.
 - Node.js 20 or newer for `@langchain/managed-deepagents`.
-- A LangSmith API key for a workspace with Managed Deep Agents access.
+- Managed Deep Agents [private preview access](https://www.langchain.com/langsmith-managed-deep-agents-waitlist).
+- A [LangSmith API key](/langsmith/create-account-api-key) for a workspace with private preview access.
 
 ## Configure a client
 
@@ -66,13 +74,9 @@ const client = new Client({
 
 </CodeGroup>
 
-<Warning>
-Do not expose long-lived LangSmith API keys in browser code. For browser applications, call your own backend or pass a custom `fetch` implementation that proxies requests through your server.
-</Warning>
-
 ## Create an agent
 
-Create-agent requests can use the same top-level `model` and `backend` fields used by the Managed Deep Agents CLI:
+Requests to create an agent can use the same top-level `model` and `backend` fields as the [Managed Deep Agents CLI](/langsmith/managed-deep-agents-cli). Pass `model` as an object with an `id` of `{provider}:{model_id}`. See [supported providers and models](/oss/langchain/models#supported-providers-and-models).
 
 <CodeGroup>
 
@@ -83,7 +87,7 @@ with Client() as client:
     agent = client.agents.create(
         name="research-assistant",
         description="Research assistant that can search the web and summarize sources.",
-        model="openai:gpt-5.5",
+        model={"id": "openai:gpt-5.5"},
         backend={"type": "state"},
         instructions=(
             "You are a careful research assistant. Search for sources, "
@@ -104,7 +108,7 @@ const client = new Client({
 const agent = await client.agents.create({
   name: "research-assistant",
   description: "Research assistant that can search the web and summarize sources.",
-  model: "openai:gpt-5.5",
+  model: { id: "openai:gpt-5.5" },
   backend: { type: "state" },
   instructions:
     "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
@@ -115,9 +119,11 @@ console.log(`Agent ID: ${agent.id}`);
 
 </CodeGroup>
 
+Python methods return dict-like responses, so use `agent["id"]`. TypeScript methods return typed objects, so use `agent.id`.
+
 ## Run and stream
 
-Create a thread before running the agent. Threads preserve conversation and execution state for long-running work.
+Create a thread before running the agent. [Threads](/langsmith/use-threads#understand-threads) preserve conversation and execution state, so you can resume or inspect a run later. Use the `id` returned when you created the agent.
 
 <CodeGroup>
 
@@ -141,12 +147,11 @@ with Client() as client:
         messages=[
             {
                 "role": "user",
-                "content": "Research recent approaches to agent memory and summarize the main tradeoffs.",
+                "content": "Research recent approaches to agent memory and summarize the main trade-offs.",
             }
         ],
         stream_mode=["values", "updates", "messages-tuple"],
         stream_subgraphs=True,
-        user_timezone="America/Los_Angeles",
     ):
         print(event.event, event.data)
 ```
@@ -174,7 +179,7 @@ const stream = langGraphClient.runs.stream(thread.id, agentId, {
       {
         role: "user",
         content:
-          "Research recent approaches to agent memory and summarize the main tradeoffs.",
+          "Research recent approaches to agent memory and summarize the main trade-offs.",
       },
     ],
   },
@@ -189,9 +194,17 @@ for await (const event of stream) {
 
 </CodeGroup>
 
+The `options` object is optional, and both fields default to `false`. Set `test_run` to `true` to mark the thread as a test run that is filtered out of usage and analytics. By default, `skip_memory_write_protection` lets the runtime raise a human-in-the-loop interrupt before the agent writes to long-term memory, so you can approve or reject the write. Set it to `true` to let memory writes proceed immediately, which is useful for headless runs where no human is available to approve the write.
+
+In Python, stream directly with `client.threads.stream(...)`. In TypeScript, get a LangGraph client with `client.getLangGraphClient(...)` and stream with `runs.stream(...)`, which accepts the message list under `input`. Each event exposes an `event` type and a `data` payload. The types you receive depend on `stream_mode`. For the stream modes and event types, see [Stream a run from a thread](/langsmith/managed-deep-agents-invoke#stream-a-run-from-a-thread).
+
 ## Use React `useStream`
 
-The TypeScript SDK includes a LangGraph client adapter for `@langchain/react`. Use `getLangGraphClient()` so `useStream` owns the thread, run, and state projection behavior while the Managed Deep Agents SDK handles routes, headers, and payload fields.
+The TypeScript SDK includes a LangGraph client adapter for `@langchain/react`. Use `getLangGraphClient()` so `useStream` manages thread lifecycle, run submission, and state updates, while the Managed Deep Agents SDK supplies the correct routes, auth headers, and payload format.
+
+<Warning>
+Do not ship your LangSmith API key to the browser. In production React apps, route requests through your backend with a custom `fetch` instead of passing `apiKey` directly.
+</Warning>
 
 ```tsx
 import { Client } from "@langchain/managed-deepagents";
@@ -256,7 +269,7 @@ The SDKs can register MCP servers, complete auth sessions, and discover a regist
 
 ## Handle errors
 
-SDK requests raise SDK-specific errors that include status and response details.
+Requests raise typed errors that include the HTTP status, an error code, and response detail.
 
 <CodeGroup>
 
