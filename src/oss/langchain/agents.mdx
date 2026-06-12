@@ -225,21 +225,15 @@ We've seen how the agent can be called with `invoke` to get a final response. If
 
 :::python
 ```python
-from langchain.messages import AIMessage, HumanMessage
-
 stream = agent.stream_events({
     "messages": [{"role": "user", "content": "Search for AI news and summarize the findings"}]
 }, version="v3")
-for snapshot in stream.values:
-    # Each snapshot contains the full state at that point
-    latest_message = snapshot["messages"][-1]
-    if latest_message.content:
-        if isinstance(latest_message, HumanMessage):
-            print(f"User: {latest_message.content}")
-        elif isinstance(latest_message, AIMessage):
-            print(f"Agent: {latest_message.content}")
-    elif latest_message.tool_calls:
-        print(f"Calling tools: {[tc['name'] for tc in latest_message.tool_calls]}")
+for kind, item in stream.interleave("messages", "tool_calls"):
+    if kind == "messages":
+        for token in item.text:
+            print(token, end="", flush=True)
+    elif kind == "tool_calls":
+        print(f"\nCalling tool: {item.tool_name}({item.input})")
 ```
 :::
 :::js
@@ -254,16 +248,20 @@ const stream = await agent.streamEvents(
   { version: "v3" }
 );
 
-for await (const snapshot of stream.values) {
-  // Each snapshot contains the full state at that point
-  const latestMessage = snapshot.messages.at(-1);
-  if (latestMessage?.content) {
-    console.log(`Agent: ${latestMessage.content}`);
-  } else if (latestMessage?.tool_calls) {
-    const toolCallNames = latestMessage.tool_calls.map((tc) => tc.name);
-    console.log(`Calling tools: ${toolCallNames.join(", ")}`);
-  }
-}
+await Promise.all([
+  (async () => {
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of stream.toolCalls) {
+      console.log(`\nCalling tool: ${call.name}(${JSON.stringify(call.input)})`);
+    }
+  })(),
+]);
 ```
 :::
 

@@ -483,12 +483,13 @@ async function main() {
       { version: "v3" },
     );
 
-    for await (const snapshot of stream.values) {
-      if (snapshot.messages && snapshot.messages.length > 0) {
-        const lastMessage = snapshot.messages[snapshot.messages.length - 1];
-        console.log(lastMessage.toFormattedString());
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
       }
     }
+
+    const finalState = await stream.output;
     // :snippet-end:
 
     const config = { configurable: { thread_id: "1" } };
@@ -501,10 +502,9 @@ async function main() {
       { ...config, version: "v3" },
     );
 
-    for await (const snapshot of hitlStream.values) {
-      if (snapshot.messages && snapshot.messages.length > 0) {
-        const lastMessage = snapshot.messages[snapshot.messages.length - 1];
-        console.log(lastMessage.toFormattedString());
+    for await (const message of hitlStream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
       }
     }
 
@@ -522,10 +522,9 @@ async function main() {
       { ...config, version: "v3" },
     );
 
-    for await (const snapshot of resumeStream.values) {
-      if (snapshot.messages && snapshot.messages.length > 0) {
-        const lastMessage = snapshot.messages[snapshot.messages.length - 1];
-        console.log(lastMessage.toFormattedString());
+    for await (const message of resumeStream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
       }
     }
     // :snippet-end:

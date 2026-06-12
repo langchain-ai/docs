@@ -358,8 +358,11 @@ if __name__ == "__main__":
             {"messages": [{"role": "user", "content": question}]},
             version="v3",
         )
-        for snapshot in stream.values:
-            snapshot["messages"][-1].pretty_print()
+        for message in stream.messages:
+            for token in message.text:
+                print(token, end="", flush=True)
+
+        final_state = stream.output
         # :snippet-end:
 
         # :snippet-start: langgraph-sql-agent-hitl-assemble-py
@@ -404,9 +407,9 @@ if __name__ == "__main__":
             config,
             version="v3",
         )
-        for snapshot in stream.values:
-            if "messages" in snapshot:
-                snapshot["messages"][-1].pretty_print()
+        for message in stream.messages:
+            for token in message.text:
+                print(token, end="", flush=True)
         if stream.interrupted:
             action = stream.interrupts[0]
             print("INTERRUPTED:")
@@ -423,9 +426,9 @@ if __name__ == "__main__":
             config,
             version="v3",
         )
-        for snapshot in stream.values:
-            if "messages" in snapshot:
-                snapshot["messages"][-1].pretty_print()
+        for message in stream.messages:
+            for token in message.text:
+                print(token, end="", flush=True)
         if stream.interrupted:
             action = stream.interrupts[0]
             print("INTERRUPTED:")

@@ -142,10 +142,23 @@ const stream = await agent.streamEvents(
   { messages: [{ role: "user", content: question }] },
   { version: "v3" },
 );
-for await (const snapshot of stream.values) {
-  const message = snapshot.messages.at(-1);
-  console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
-}
+await Promise.all([
+  (async () => {
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of stream.toolCalls) {
+      console.log(`\nTool call: ${call.name}(${JSON.stringify(call.input)})`);
+      console.log(`Tool result: ${await call.output}`);
+    }
+  })(),
+]);
+
+const finalState = await stream.output;
 // :snippet-end:
 
 // :snippet-start: sql-agent-hitl-middleware-js
@@ -178,10 +191,20 @@ const hitlStream = await agent.streamEvents(
   { messages: [{ role: "user", content: question }] },
   { ...config, version: "v3" }, // [!code highlight]
 );
-for await (const snapshot of hitlStream.values) {
-  const message = snapshot.messages.at(-1);
-  console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
-}
+await Promise.all([
+  (async () => {
+    for await (const message of hitlStream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of hitlStream.toolCalls) {
+      console.log(`\nTool call: ${call.name}(${JSON.stringify(call.input)})`);
+    }
+  })(),
+]);
 if (hitlStream.interrupted) {
   // [!code highlight]
   console.log("INTERRUPTED:"); // [!code highlight]
@@ -202,10 +225,20 @@ const resumeStream = await agent.streamEvents(
   new Command({ resume: { decisions: [{ type: "approve" }] } }), // [!code highlight]
   { ...config, version: "v3" },
 );
-for await (const snapshot of resumeStream.values) {
-  const message = snapshot.messages.at(-1);
-  console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
-}
+await Promise.all([
+  (async () => {
+    for await (const message of resumeStream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of resumeStream.toolCalls) {
+      console.log(`\nTool call: ${call.name}(${JSON.stringify(call.input)})`);
+    }
+  })(),
+]);
 if (resumeStream.interrupted) {
   console.log("INTERRUPTED:");
   for (const interrupt of resumeStream.interrupts) {

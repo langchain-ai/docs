@@ -130,30 +130,23 @@ stream = agent.stream_events(
     {"messages": [{"role": "user", "content": query}]},
     version="v3",
 )
-for snapshot in stream.values:
-    snapshot["messages"][-1].pretty_print()
+for kind, item in stream.interleave("messages", "tool_calls"):
+    if kind == "messages":
+        for token in item.text:
+            print(token, end="", flush=True)
+    elif kind == "tool_calls":
+        print(f"\nTool call: {item.tool_name}({item.input})")
+        print(f"Tool result: {item.output}")
+
+final_state = stream.output
 ```
 
 ```
-================================ Human Message =================================
-
-What is task decomposition?
-================================== Ai Message ==================================
-Tool Calls:
-  retrieve_context (call_xTkJr8njRY0geNz43ZvGkX0R)
- Call ID: call_xTkJr8njRY0geNz43ZvGkX0R
-  Args:
-    query: task decomposition
-================================= Tool Message =================================
-Name: retrieve_context
-
-Source: {'source': 'https://lilianweng.github.io/posts/2023-06-23-agent/'}
+Tool call: retrieve_context({'query': 'task decomposition'})
+Tool result: Source: https://lilianweng.github.io/posts/2023-06-23-agent/
 Content: Task decomposition can be done by...
-
-Source: {'source': 'https://lilianweng.github.io/posts/2023-06-23-agent/'}
+Source: https://lilianweng.github.io/posts/2023-06-23-agent/
 Content: Component One: Planning...
-================================== Ai Message ==================================
-
 Task decomposition refers to...
 ```
 :::
@@ -225,11 +218,23 @@ let inputMessage = `What is Task Decomposition?`;
 let agentInputs = { messages: [{ role: "user", content: inputMessage }] };
 
 const stream = await agent.streamEvents(agentInputs, { version: "v3" });
-for await (const snapshot of stream.values) {
-  const lastMessage = snapshot.messages[snapshot.messages.length - 1];
-  prettyPrint(lastMessage);
-  console.log("-----\n");
-}
+await Promise.all([
+  (async () => {
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of stream.toolCalls) {
+      console.log(`\nTool call: ${call.name}(${JSON.stringify(call.input)})`);
+      console.log(`Tool result: ${await call.output}`);
+    }
+  })(),
+]);
+
+const finalState = await stream.output;
 ```
 :::
 
@@ -655,45 +660,27 @@ stream = agent.stream_events(
     {"messages": [{"role": "user", "content": query}]},
     version="v3",
 )
-for snapshot in stream.values:
-    snapshot["messages"][-1].pretty_print()
+for kind, item in stream.interleave("messages", "tool_calls"):
+    if kind == "messages":
+        for token in item.text:
+            print(token, end="", flush=True)
+    elif kind == "tool_calls":
+        print(f"\nTool call: {item.tool_name}({item.input})")
+        print(f"Tool result: {item.output}")
+
+final_state = stream.output
 ```
 ```
-================================ Human Message =================================
-
-What is the standard method for Task Decomposition?
-
-Once you get the answer, look up common extensions of that method.
-================================== Ai Message ==================================
-Tool Calls:
-  retrieve_context (call_d6AVxICMPQYwAKj9lgH4E337)
- Call ID: call_d6AVxICMPQYwAKj9lgH4E337
-  Args:
-    query: standard method for Task Decomposition
-================================= Tool Message =================================
-Name: retrieve_context
-
-Source: {'source': 'https://lilianweng.github.io/posts/2023-06-23-agent/'}
+Tool call: retrieve_context({'query': 'standard method for Task Decomposition'})
+Tool result: Source: https://lilianweng.github.io/posts/2023-06-23-agent/
 Content: Task decomposition can be done...
-
-Source: {'source': 'https://lilianweng.github.io/posts/2023-06-23-agent/'}
+Source: https://lilianweng.github.io/posts/2023-06-23-agent/
 Content: Component One: Planning...
-================================== Ai Message ==================================
-Tool Calls:
-  retrieve_context (call_0dbMOw7266jvETbXWn4JqWpR)
- Call ID: call_0dbMOw7266jvETbXWn4JqWpR
-  Args:
-    query: common extensions of the standard method for Task Decomposition
-================================= Tool Message =================================
-Name: retrieve_context
-
-Source: {'source': 'https://lilianweng.github.io/posts/2023-06-23-agent/'}
+Tool call: retrieve_context({'query': 'common extensions of the standard method for Task Decomposition'})
+Tool result: Source: https://lilianweng.github.io/posts/2023-06-23-agent/
 Content: Task decomposition can be done...
-
-Source: {'source': 'https://lilianweng.github.io/posts/2023-06-23-agent/'}
+Source: https://lilianweng.github.io/posts/2023-06-23-agent/
 Content: Component One: Planning...
-================================== Ai Message ==================================
-
 The standard method for Task Decomposition often used is the Chain of Thought (CoT)...
 ```
 :::
@@ -705,43 +692,38 @@ Once you get the answer, look up common extensions of that method.`;
 let agentInputs = { messages: [{ role: "user", content: inputMessage }] };
 
 const stream = await agent.streamEvents(agentInputs, { version: "v3" });
-for await (const snapshot of stream.values) {
-  const lastMessage = snapshot.messages[snapshot.messages.length - 1];
-  console.log(`[${lastMessage.role}]: ${lastMessage.content}`);
-  console.log("-----\n");
-}
+await Promise.all([
+  (async () => {
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of stream.toolCalls) {
+      console.log(`\nTool call: ${call.name}(${JSON.stringify(call.input)})`);
+      console.log(`Tool result: ${await call.output}`);
+    }
+  })(),
+]);
+
+const finalState = await stream.output;
 ```
 ```
-[human]: What is the standard method for Task Decomposition?
-Once you get the answer, look up common extensions of that method.
------
-
-[ai]:
-Tools:
-- retrieve({"query":"standard method for Task Decomposition"})
------
-
-[tool]: Source: https://lilianweng.github.io/posts/2023-06-23-agent/
+Tool call: retrieve({"query":"standard method for Task Decomposition"})
+Tool result: Source: https://lilianweng.github.io/posts/2023-06-23-agent/
 Content: hard tasks into smaller and simpler steps...
 Source: https://lilianweng.github.io/posts/2023-06-23-agent/
 Content: System message:Think step by step and reason yourself...
------
-
-[ai]:
-Tools:
-- retrieve({"query":"common extensions of Task Decomposition method"})
------
-
-[tool]: Source: https://lilianweng.github.io/posts/2023-06-23-agent/
+Tool call: retrieve({"query":"common extensions of Task Decomposition method"})
+Tool result: Source: https://lilianweng.github.io/posts/2023-06-23-agent/
 Content: hard tasks into smaller and simpler steps...
 Source: https://lilianweng.github.io/posts/2023-06-23-agent/
 Content: be provided by other developers (as in Plugins) or self-defined...
------
 
-[ai]: ### Standard Method for Task Decomposition
-
+### Standard Method for Task Decomposition
 The standard method for task decomposition involves...
------
 ```
 :::
 Note that the agent:
@@ -841,15 +823,13 @@ stream = agent.stream_events(
     {"messages": [{"role": "user", "content": query}]},
     version="v3",
 )
-for snapshot in stream.values:
-    snapshot["messages"][-1].pretty_print()
+for message in stream.messages:
+    for token in message.text:
+        print(token, end="", flush=True)
+
+final_state = stream.output
 ```
 ```
-================================ Human Message =================================
-
-What is task decomposition?
-================================== Ai Message ==================================
-
 Task decomposition is...
 ```
 :::
@@ -860,11 +840,13 @@ let inputMessage = `What is Task Decomposition?`;
 let chainInputs = { messages: [{ role: "user", content: inputMessage }] };
 
 const stream = await agent.streamEvents(chainInputs, { version: "v3" });
-for await (const snapshot of stream.values) {
-  const lastMessage = snapshot.messages[snapshot.messages.length - 1];
-  prettyPrint(lastMessage);
-  console.log("-----\n");
+for await (const message of stream.messages) {
+  for await (const token of message.text) {
+    process.stdout.write(token);
+  }
 }
+
+const finalState = await stream.output;
 ```
 :::
 In the [LangSmith trace](https://smith.langchain.com/public/0322904b-bc4c-4433-a568-54c6b31bbef4/r/9ef1c23e-380e-46bf-94b3-d8bb33df440c) we can see the retrieved context incorporated into the model prompt.

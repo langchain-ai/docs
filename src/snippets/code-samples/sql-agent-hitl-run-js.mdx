@@ -6,10 +6,20 @@ const hitlStream = await agent.streamEvents(
   { messages: [{ role: "user", content: question }] },
   { ...config, version: "v3" }, // [!code highlight]
 );
-for await (const snapshot of hitlStream.values) {
-  const message = snapshot.messages.at(-1);
-  console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
-}
+await Promise.all([
+  (async () => {
+    for await (const message of hitlStream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of hitlStream.toolCalls) {
+      console.log(`\nTool call: ${call.name}(${JSON.stringify(call.input)})`);
+    }
+  })(),
+]);
 if (hitlStream.interrupted) {
   // [!code highlight]
   console.log("INTERRUPTED:"); // [!code highlight]
