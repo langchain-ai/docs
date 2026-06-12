@@ -30,25 +30,6 @@ Use interpreters when the agent needs to:
 - Transform structured data deterministically, such as sorting, grouping, parsing, validating, scoring, or aggregating.
 - Explore a large variable space and return only selected evidence, summaries, or outputs to the model.
 
-```mermaid
-graph LR
-    Model[Model] --> Program[Writes a small program]
-    Program --> Runtime[Interpreter runtime]
-    Runtime --> Tools[Calls tools and updates variables]
-    Runtime --> Result[Yields compact result]
-    Result --> Model
-
-    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
-    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
-    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
-    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68
-
-    class Model trigger
-    class Program,Runtime process
-    class Tools neutral
-    class Result output
-```
-
 Code runs against [**QuickJS**](https://github.com/quickjs-ng/quickjs), a lightweight JavaScript runtime with no access to the host filesystem, network, shell, or clock by default. Explicit bridges decide what the code can reach.
 
 ## Choose the right execution path
@@ -154,37 +135,15 @@ Programmatic tool calling is off until you pass an allowlist. Subagent dispatch 
 
 Programmatic tool calling (PTC) exposes selected agent tools inside the interpreter under the global `tools` namespace. Instead of asking the model to issue one tool call, wait for the result, and then decide the next call, the agent can write code that calls tools in loops, branches, retries, or parallel batches.
 
-This is useful when intermediate tool results are only inputs to the next step. The interpreter can process, filter, or aggregate those results before anything returns to the model context, which can make multi-tool/multi-step workflows more token efficient.
+This helps when intermediate results are only inputs to the next step: the interpreter filters or aggregates them before anything returns to the model, keeping multi-step workflows token efficient. It is model-agnostic, implemented by middleware rather than a provider-specific tool-calling API.
 
-PTC is model-agnostic in Deep Agents. It is implemented by middleware rather than a provider-specific code-execution or tool-calling API.
-
-Tools are opt-in: you pass an explicit allowlist, and nothing is bridged by default. Every tool you expose is an outside capability the interpreter can use, so treat the allowlist as a permission boundary and keep it to the tools the agent actually needs.
-
-### How it works
-
-1. You choose which tools the interpreter can call with the `ptc` allowlist.
-2. The middleware exposes those tools as async JavaScript functions under `tools`.
-3. The agent writes interpreter code that calls those functions with `await`.
-4. The interpreter runs the tool bridge, receives the tool result, and continues executing code.
-5. The model receives the final interpreter output, not every intermediate value.
-
-Each allowlisted tool becomes an async function. Tool names are converted to camel case, but the input object still follows the tool's schema. For example, a tool named `web_search` becomes `tools.webSearch(...)`:
+The middleware exposes each allowlisted tool as an async function under `tools`. The agent calls it with `await`, processes the result in code, and the model sees only the final interpreter output, not every intermediate value. Tool names are converted to camel case while the input object still follows the tool's schema, so a tool named `web_search` becomes `tools.webSearch(...)`:
 
 ```typescript
 const result: string = await tools.webSearch({
   query: "deepagents interpreters",
 });
 ```
-
-### Useful patterns
-
-| **Pattern** | **What the interpreter can do** |
-| --- | --- |
-| Batch processing | Loop over many inputs and call a tool for each one. |
-| Parallel work | Use `Promise.all` for independent calls. |
-| Conditional logic | Choose the next tool call based on earlier results. |
-| Early termination | Stop calling tools once a success condition is met. |
-| Data filtering | Return only relevant rows, snippets, errors, or summaries to the model. |
 
 ### Enable PTC
 
@@ -228,30 +187,13 @@ const results = await Promise.all(
 results.join("\n\n");
 ```
 
-Because this is code, the agent can also handle failures locally:
-
-```javascript
-try {
-  const result = await tools.webSearch({
-    query: "migration breaking changes",
-  });
-  console.log(result);
-} catch (error) {
-  console.log(`Search failed: ${error.message}`);
-}
-```
-
 <Warning>
     PTC calls currently execute through the interpreter bridge and do not go through the normal tool calling path. As a result, `interrupt_on` approval workflows are not enforced per PTC-invoked tool call.
 </Warning>
 
 ## Orchestrate subagents from code
 
-Some tasks don't fit a single agent pass: reviewing every file in a directory, triaging a batch of tickets, auditing a module for security issues. They share one shape: many independent units of work, often combined at the end.
-
-When an agent has [subagents](/oss/deepagents/subagents) and interpreter middleware, the interpreter exposes a built-in `task()` global that dispatches subagents from code. The agent writes a loop that fans the work out, and all of it runs, so orchestration is deterministic rather than the model choosing whether to spawn one subagent at a time.
-
-This is on by default. Configure subagents, add interpreter middleware, and the agent reaches for `task()` whenever the work calls for it. Messages like "review every handler in `src/api/` for auth issues," "categorize the last 50 support tickets," or "generate three refactors and pick the best one" all lead here.
+When an agent has [subagents](/oss/deepagents/subagents) and interpreter middleware, the interpreter exposes a built-in `task()` global that dispatches subagents from code. A task spanning many independent units (reviewing every file in a directory, triaging a batch of tickets) becomes a loop that fans the work out, so it runs deterministically instead of one model-chosen tool call at a time.
 
 ### The `task()` global
 
@@ -276,7 +218,7 @@ const review = await task({
 const critical = review.issues.filter((issue) => issue.severity === "high");
 ```
 
-When you pass `responseSchema`, the resolved value is already a typed JavaScript object; only call `JSON.parse` if a subagent intentionally returned a JSON string. The agent holds results in variables, filters and merges them in code, and returns only a synthesis to the model. Intermediate subagent output stays in the interpreter, not in your conversation context.
+When you pass `responseSchema`, the resolved value is already a typed JavaScript object; only call `JSON.parse` if a subagent intentionally returned a JSON string.
 
 ### Steering orchestration
 
@@ -288,13 +230,9 @@ To shape *what* the agent orchestrates, work through the inputs it already respo
 - **The task message.** Phrasing like "I only want confirmed issues, not maybes" or "be exhaustive" nudges the agent toward verification or an open-ended sweep.
 - **The system prompt.** Use `systemPrompt` (or the agent's instructions) to add standing guidance when you want a consistent strategy across runs.
 
-The built-in guidance covers the mechanics of orchestration. Reach for the inputs above when you want to bias the agent toward a particular strategy for your task.
-
 ### Working with large inputs
 
-The same `task()` mechanism handles inputs too large to reason over in one pass, the approach described in the [Recursive Language Models paper](https://arxiv.org/abs/2512.24601). Keep the large input or working set in interpreter variables (the *variable space*), then let the model write code to inspect it, split it into slices, dispatch a subagent per slice, and stitch the returned results back together.
-
-This separates the variable space from the agent's context. The variable space is everything stored in the interpreter; the context is only what the model processes on its next call. The model decides which slices become subagent tasks, which results need another pass, and what final synthesis returns to the conversation.
+The same `task()` mechanism handles inputs too large to reason over in one pass, the approach described in the [Recursive Language Models paper](https://arxiv.org/abs/2512.24601). Keep the large input or working set in interpreter variables (the *variable space*, distinct from the model's context), then let the model inspect it, split it into slices, dispatch a subagent per slice, and stitch the returned results back together.
 
 ```mermaid
 flowchart TB
