@@ -38,7 +38,7 @@ con.close()
 # :remove-start:
 from langchain.chat_models import init_chat_model
 
-model = init_chat_model("openai:gpt-5.4")
+model = init_chat_model("openai:gpt-5.5")
 # :remove-end:
 
 # :snippet-start: sql-agent-tools-py
@@ -265,7 +265,7 @@ from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 
 # Initialize an LLM
-model = init_chat_model("gpt-5.4")
+model = init_chat_model("gpt-5.5")
 
 # Get the database, store it locally
 url = "https://storage.googleapis.com/benchmarks-artifacts/chinook/Chinook.db"
