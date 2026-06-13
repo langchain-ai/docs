@@ -1,0 +1,213 @@
+---
+title: "Azure Logic Apps integration"
+description: "Integrate with Azure Logic Apps using LangChain Python."
+---
+
+This page covers the Azure Logic Apps integration from `langchain_azure_ai.tools`.
+
+Azure Logic Apps is a cloud service that helps you automate workflows and business processes. You can use the `AzureLogicAppTool` to invoke pre-configured Logic App workflows from your LangChain agents, enabling automation, notifications, data synchronization, and orchestration of multi-step processes.
+
+## Overview
+
+The `AzureLogicAppTool` allows agents to trigger Azure Logic Apps workflows by sending JSON payloads to named triggers. This is useful for automating tasks like sending emails, processing data, calling APIs, or integrating with other Azure and third-party services.
+
+Common use cases:
+
+1. **Email notifications** - Send alerts and notifications via Logic App
+2. **Data synchronization** - Sync data between systems
+3. **Order processing** - Trigger order fulfillment workflows
+4. **API integrations** - Call external APIs through Logic Apps
+5. **Approval workflows** - Start approval processes
+6. **Data transformation** - Process and transform data
+7. **Multi-step automation** - Orchestrate complex business processes
+
+## Setup
+
+Install the integration package and configure your Azure credentials.
+
+### Installation
+
+Install the package with the `tools` extra:
+
+<CodeGroup>
+    ```bash pip
+    pip install -U "langchain-azure-ai[tools]"
+    ```
+    ```bash uv
+    uv add "langchain-azure-ai[tools]"
+    ```
+</CodeGroup>
+
+This extra installs the required `azure-mgmt-logic` dependency.
+
+### Prerequisites
+
+Before using this tool, you need:
+
+1. An Azure subscription
+2. An Azure Logic App with at least one HTTP request trigger
+3. The subscription ID, resource group name, Logic App name, and trigger name
+
+### Credentials
+
+The tool uses `DefaultAzureCredential()` by default, which supports various authentication methods including environment variables, managed identity, and interactive login.
+
+```python Initialize credential icon="shield-lock"
+from azure.identity import DefaultAzureCredential
+
+credential = DefaultAzureCredential()
+```
+
+You can also pass a specific credential explicitly:
+
+```python
+from azure.identity import ManagedIdentityCredential
+
+credential = ManagedIdentityCredential()
+```
+
+## Basic usage
+
+### Instantiate the tool
+
+```python Initialize tool icon="arrows-shuffle"
+from langchain_azure_ai.tools import AzureLogicAppTool
+
+tool = AzureLogicAppTool(
+    subscription_id="<your-subscription-id>",
+    resource_group="<your-resource-group>",
+    logic_app_name="<your-logic-app-name>",
+    trigger_name="<your-trigger-name>",
+)
+```
+
+### Invoke the tool
+
+```python
+import json
+
+# Simple text input
+result = tool.invoke("Send an email notification")
+print(result)
+
+# JSON payload input
+payload = {
+    "email": "user@example.com",
+    "subject": "Test Email",
+    "message": "This is a test message from a Logic App trigger."
+}
+result = tool.invoke(json.dumps(payload))
+print(result)
+```
+
+## Use with an agent
+
+Pass the tool to @[`create_agent`].
+
+```python Agent with Logic Apps icon="robot"
+from azure.identity import DefaultAzureCredential
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+from langchain_azure_ai.tools import AzureLogicAppTool
+
+credential = DefaultAzureCredential()
+tool = AzureLogicAppTool(
+    subscription_id="<your-subscription-id>",
+    resource_group="<your-resource-group>",
+    logic_app_name="notification-workflow",
+    trigger_name="manual_trigger",
+    credential=credential,
+)
+
+agent = create_agent(
+    model=init_chat_model("azure_ai:gpt-4.1", credential=credential),
+    tools=[tool],
+    system_prompt=(
+        "You are a workflow automation assistant. Use the Logic Apps tool to trigger "
+        "workflows for sending notifications, processing data, or integrating with "
+        "other services when users request automation tasks."
+    ),
+)
+```
+
+## Configuration
+
+### Parameters
+
+<Accordion title="Configuration options">
+    <ParamField body="subscription_id" type="str" required>
+        Your Azure subscription ID where the Logic Apps are hosted.
+    </ParamField>
+
+    <ParamField body="resource_group" type="str" required>
+        The Azure Resource Group name where the Logic App is deployed.
+    </ParamField>
+
+    <ParamField body="logic_app_name" type="str" required>
+        The name of the Logic App workflow to invoke.
+    </ParamField>
+
+    <ParamField body="trigger_name" type="str" required>
+        The name of the trigger in the Logic App to invoke. Typically this is `manual_trigger` or `http_request` for HTTP request-based triggers.
+    </ParamField>
+
+    <ParamField body="credential" type="TokenCredential | None" default="None">
+        Optional Azure credential for authentication. If `None`, `DefaultAzureCredential()` is used. Can be any Azure SDK credential such as `ManagedIdentityCredential`, `ClientSecretCredential`, etc.
+    </ParamField>
+
+    <ParamField body="name" type="str" default="azure_logic_app_tool">
+        The name of the tool. Customize this for different Logic Apps or use cases.
+    </ParamField>
+
+    <ParamField body="description" type="str">
+        A description of the tool's purpose. Customize this to help the agent understand when to use this specific Logic App.
+    </ParamField>
+</Accordion>
+
+## Input format
+
+The tool accepts input as either:
+
+1. **Plain text** - Automatically converted to JSON with an `input` key
+2. **JSON string** - Parsed and sent as-is to the Logic App trigger
+
+### Examples
+
+```python
+# Plain text input
+tool.invoke("Process this order")
+# Sent as: {"input": "Process this order"}
+
+# JSON payload
+import json
+payload = {
+    "orderId": "12345",
+    "customerEmail": "customer@example.com",
+    "items": ["item1", "item2"]
+}
+tool.invoke(json.dumps(payload))
+```
+
+## Response format
+
+The tool returns a JSON response indicating success or failure:
+
+```json
+{
+  "result": "Successfully invoked <logic-app-name>."
+}
+```
+
+Or on error:
+
+```json
+{
+  "error": "Error invoking <logic-app-name> (HTTP_STATUS): ERROR_DETAILS"
+}
+```
+
+## API reference
+
+```python
+from langchain_azure_ai.tools import AzureLogicAppTool
+```

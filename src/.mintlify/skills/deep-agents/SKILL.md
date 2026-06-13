@@ -91,7 +91,7 @@ deepagents
 - [Subagents](https://docs.langchain.com/oss/python/deepagents/subagents)—Delegate work to child agents
 - [Sandboxes](https://docs.langchain.com/oss/python/deepagents/sandboxes)—Run code in isolated environments
 - [Code](https://docs.langchain.com/oss/python/deepagents/code/overview)—Deep Agents Code, the terminal agent interface
-- [Deploy](https://docs.langchain.com/langsmith/deploy-managed-deep-agent)—Deploy to production
+- [Deploy](https://docs.langchain.com/langsmith/managed-deep-agents-overview)—Deploy to production
 
 ## API reference
 
