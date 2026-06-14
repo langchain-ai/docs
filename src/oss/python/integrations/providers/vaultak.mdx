@@ -4,13 +4,19 @@
 
 ## Installation
 
-```python
+<CodeGroup>
+```bash pip
 pip install langchain-vaultak
 ```
 
+```bash uv
+uv add langchain-vaultak
+```
+</CodeGroup>
+
 ## Setup
 
-Sign up at [vaultak.com](https://vaultak.com) to get your API key.
+Sign up at [vaultak.com](https://vaultak.com) to get your API key (keys start with `vtk_`).
 
 ## Usage
 
@@ -42,8 +48,150 @@ result = agent_executor.invoke(
 )
 ```
 
+### With LangGraph prebuilt ReAct agent
+
+`create_react_agent` accepts a `config` dict on every `invoke` or `stream` call.
+Pass `VaultakCallbackHandler` in the `callbacks` list and every tool call is intercepted
+before it executes.
+
+```python
+from langchain.chat_models import init_chat_model
+from langchain.tools import tool
+from langchain_vaultak import VaultakCallbackHandler
+from langgraph.prebuilt import create_react_agent
+
+vaultak = VaultakCallbackHandler(
+    api_key="vtk_...",
+    agent_name="my-react-agent",
+    block_on_high_risk=True,
+    risk_threshold=7.0,
+)
+
+model = init_chat_model("gpt-4o", temperature=0)
+
+
+@tool
+def query_database(sql: str) -> str:
+    """Run a read-only SQL query and return the results."""
+    ...
+
+
+@tool
+def send_email(to: str, subject: str, body: str) -> str:
+    """Send an email to the given address."""
+    ...
+
+
+agent = create_react_agent(model, tools=[query_database, send_email])
+
+# Vaultak intercepts every tool call made during this invocation
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Summarise last month's sales and email the report to alice@example.com"}]},
+    config={"callbacks": [vaultak]},
+)
+```
+
+### With LangGraph StateGraph
+
+For custom `StateGraph` workflows, attach Vaultak once at compile time using
+`.with_config()` so every node execution in every run is monitored automatically.
+
+```python
+from typing import Annotated
+from typing_extensions import TypedDict
+
+from langchain.chat_models import init_chat_model
+from langchain.tools import tool
+from langchain_core.messages import BaseMessage
+from langchain_vaultak import VaultakCallbackHandler
+from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
+
+vaultak = VaultakCallbackHandler(
+    api_key="vtk_...",
+    agent_name="order-processing-workflow",
+    block_on_high_risk=True,
+    risk_threshold=7.0,
+)
+
+
+class State(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+
+
+@tool
+def check_inventory(item_id: str) -> dict:
+    """Check stock levels for a product."""
+    ...
+
+
+@tool
+def process_payment(amount: float, card_token: str) -> dict:
+    """Charge a card and return the transaction ID."""
+    ...
+
+
+tools = [check_inventory, process_payment]
+tool_node = ToolNode(tools)
+model = init_chat_model("gpt-4o", temperature=0).bind_tools(tools)
+
+
+def call_model(state: State):
+    return {"messages": [model.invoke(state["messages"])]}
+
+
+def should_continue(state: State):
+    last = state["messages"][-1]
+    return "tools" if last.tool_calls else END
+
+
+builder = StateGraph(State)
+builder.add_node("agent", call_model)
+builder.add_node("tools", tool_node)
+builder.set_entry_point("agent")
+builder.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+builder.add_edge("tools", "agent")
+
+# Attach Vaultak once — every run through this graph is now monitored
+graph = builder.compile().with_config({"callbacks": [vaultak]})
+
+result = graph.invoke(
+    {"messages": [{"role": "user", "content": "Order item #42 and ship to 123 Main St"}]}
+)
+```
+
+<Tip>
+  Prefer `.with_config({"callbacks": [vaultak]})` at compile time for background workers or
+  long-running services. Pass `config={"callbacks": [vaultak]}` per invocation when you need
+  per-request control (e.g. different thresholds per tenant).
+</Tip>
+
+## Configuration reference
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `api_key` | `str` | — | Your Vaultak API key (required) |
+| `agent_name` | `str` | `"langchain-agent"` | Label for this agent in the Vaultak dashboard |
+| `block_on_high_risk` | `bool` | `True` | Raise an exception to halt the agent when risk score exceeds the threshold |
+| `risk_threshold` | `float` | `7.0` | Score (0–10) above which tool calls are blocked |
+| `verbose` | `bool` | `False` | Log every scored action to stdout |
+
+## What gets monitored
+
+| Event | Vaultak action |
+|---|---|
+| Agent / chain starts | Opens a monitoring session |
+| Agent selects a tool | Risk-scores the action (0–10); blocks if above threshold |
+| Tool call starts | Checks against your policy rules |
+| Tool output returned | Scans for PII and masks before it reaches the next node |
+| Tool or LLM error | Sends an alert to your dashboard |
+| Chain error | Triggers automatic rollback |
+| Agent / chain completes | Closes the monitoring session |
+
 ## Links
 
 - [Vaultak documentation](https://docs.vaultak.com)
-- [PyPI package](https://pypi.org/project/langchain-vaultak)
-- [GitHub](https://github.com/samueloladji-beep/langchain-vaultak)
+- [PyPI: `langchain-vaultak`](https://pypi.org/project/langchain-vaultak)
+- [GitHub](https://github.com/vaultak/langchain-vaultak)
+- [Dashboard](https://app.vaultak.com)
