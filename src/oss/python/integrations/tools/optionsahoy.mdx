@@ -1,0 +1,136 @@
+---
+title: "OptionsAhoy integration"
+description: "Integrate with the OptionsAhoy equity-compensation tax tools using LangChain Python."
+---
+
+[OptionsAhoy](https://optionsahoy.com) exposes a set of keyless equity-compensation tax calculators as a [REST](https://en.wikipedia.org/wiki/REST) [API](https://optionsahoy.com/for-agents). The `optionsahoy-langchain` package wraps each calculator as a LangChain @[`StructuredTool`] with a typed argument schema, so an agent can answer questions about incentive stock options (ISOs), the alternative minimum tax (AMT), non-qualified stock options (NSOs), restricted stock units (RSUs), single-stock concentration, protective-put hedges, qualified small business stock (QSBS), and funding a cash goal from equity.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/tools/) | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| [`StructuredTool`](https://python.langchain.com/api_reference/core/tools/langchain_core.tools.structured.StructuredTool.html) | [`optionsahoy-langchain`](https://pypi.org/project/optionsahoy-langchain/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/optionsahoy-langchain?style=flat-square&label=%20) |
+
+### Tool features
+
+| [Returns artifact](/oss/langchain/tools) | Native async | Return data | Pricing |
+| :---: | :---: | :--- | :--- |
+| ❌ | ❌ | Computed tax schedules and breakdowns as structured JSON | Free, no API key |
+
+`get_optionsahoy_tools()` returns one tool per calculator:
+
+| Tool name | Purpose |
+| :--- | :--- |
+| `optionsahoy_amt_iso_optimize` | Schedule incentive stock option (ISO) exercises against the alternative minimum tax (AMT) |
+| `optionsahoy_nso_calculate` | Compute taxes on a non-qualified stock option (NSO) exercise |
+| `optionsahoy_rsu_sell_vs_hold` | Compare selling versus holding vested restricted stock units (RSUs) |
+| `optionsahoy_concentration_analyze` | Analyze single-stock concentration risk |
+| `optionsahoy_protective_put_price` | Price a protective-put or collar hedge |
+| `optionsahoy_qsbs_check` | Check qualified small business stock (QSBS) exclusion eligibility |
+| `optionsahoy_equity_funding_plan` | Plan funding a cash goal from equity |
+
+## Setup
+
+The integration lives in the `optionsahoy-langchain` package, which pulls in the keyless `optionsahoy` client automatically.
+
+<CodeGroup>
+    ```python pip
+    pip install -U optionsahoy-langchain
+    ```
+    ```python uv
+    uv add optionsahoy-langchain
+    ```
+</CodeGroup>
+
+### Credentials
+
+No API key is required to call the OptionsAhoy tools.
+
+It is helpful (but not needed) to set up LangSmith for observability/<Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls. To enable tracing, set your [LangSmith](/langsmith/home) API key:
+
+```python Enable tracing icon="flask"
+import getpass
+import os
+
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Instantiation
+
+`get_optionsahoy_tools()` returns a list of `StructuredTool` instances, one per calculator:
+
+```python Initialize tools icon="robot"
+from langchain_optionsahoy import get_optionsahoy_tools
+
+tools = get_optionsahoy_tools()
+```
+
+To use a custom client (for example, to point at a self-hosted endpoint), pass one in:
+
+```python Custom client icon="gear"
+from langchain_optionsahoy import get_optionsahoy_tools
+from optionsahoy import OptionsAhoyClient
+
+tools = get_optionsahoy_tools(client=OptionsAhoyClient())
+```
+
+## Invocation
+
+### Directly
+
+Each tool accepts the arguments of its underlying calculator. For example, the QSBS eligibility check:
+
+```python Call tool icon="rocket"
+qsbs = next(t for t in tools if t.name == "optionsahoy_qsbs_check")
+
+qsbs.invoke({
+    "acquisitionDate": "2018-01-01",
+    "saleDate": "2026-02-01",
+    "entityType": "us-c-corp",
+    "acquisitionMethod": "original-issuance",
+    "assetCategory": "under-50m",
+    "industry": "tech-software",
+    "activeBusiness": "yes",
+    "adjustedBasis": 10000,
+    "expectedGain": 2000000,
+    "stateCode": "CA",
+    "ordinaryIncome": 250000,
+    "filingStatus": "single",
+})
+```
+
+### Within an agent
+
+Pass the tools to an agent and let the model select and populate them. For this you need a model with tool-calling capabilities.
+
+```python Agent with tools icon="robot"
+# pip install -qU "langchain[anthropic]" to call the model
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=tools,
+)
+
+agent.invoke({
+    "messages": [{
+        "role": "user",
+        "content": (
+            "I have 8000 incentive stock options (ISOs) with a $3 strike, current "
+            "fair market value $40, granted 2022-03-01, still employed. I file "
+            "single in California with $250000 of ordinary income. How many shares "
+            "should I exercise each year to stay efficient under the alternative "
+            "minimum tax (AMT)?"
+        ),
+    }]
+})
+```
+
+For a complete runnable example that binds the tools to a model, runs a manual tool-calling loop, and feeds the tool results back as @[`ToolMessage`] objects, see [`examples/equity_agent.py`](https://github.com/AlvisoOculus/optionsahoy-mcp/blob/main/integrations/python/optionsahoy-langchain/examples/equity_agent.py) in the source repository.
+
+## API reference
+
+For the full list of calculators, their arguments, and return shapes, see the [OptionsAhoy agent documentation](https://optionsahoy.com/for-agents) and the [package source](https://github.com/AlvisoOculus/optionsahoy-mcp/tree/main/integrations/python/optionsahoy-langchain).
