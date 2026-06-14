@@ -265,7 +265,7 @@ When the gate halts, it returns:
 For async agents, pass an `AsyncCyclesClient` and invoke the agent with `.ainvoke()`, `.astream()`, or `.astream_events()`. The middleware automatically uses the async hooks: `awrap_model_call` on `CyclesModelGate`, `awrap_tool_call` on `CyclesToolGate`, and `abefore_model` on `CyclesFanOutGate`.
 
 <Note>
-    `agent.astream(...)` and `agent.astream_events(...)` are fully supported (v0.2.1+). LangChain's `BaseChatModel.ainvoke` consumes the model's streaming generator internally and merges per-chunk `usage_metadata` into the final `AIMessage` before our `awrap_model_call` ever sees it. `CyclesModelGate.cost_fn` fires exactly once per turn — on the aggregated total — and `commit_reservation` debits the actual cost in one shot, not per-chunk. Stream cancellations (consumer disconnect, `asyncio.CancelledError`) trigger `release_reservation` via the gate's `except BaseException:` guard.
+    `agent.astream(...)` and `agent.astream_events(...)` are fully supported (v0.2.1+). In the LangChain versions this was verified against, `BaseChatModel.ainvoke` consumes the model's streaming generator internally and merges per-chunk `usage_metadata` into the final `AIMessage` before our `awrap_model_call` ever sees it, so `CyclesModelGate.cost_fn` fires exactly once per turn — on the aggregated total — and `commit_reservation` debits the actual cost in one shot, not per-chunk. Stream cancellations (consumer disconnect, `asyncio.CancelledError`) trigger `release_reservation` via the gate's `except BaseException:` guard.
 </Note>
 
 ```python Async usage icon="bolt"
@@ -350,9 +350,9 @@ model_gate = CyclesModelGate(
 
 The release path (after a model or tool handler exception) always logs and continues so the original handler exception wins; `settlement_error_policy` applies only to the success-path commit.
 
-### Idempotency keys: deterministic per `tool_call_id`, optionally namespaced
+### Idempotency keys: `CyclesToolGate` deterministic per `tool_call_id`, optionally namespaced
 
-Cycles idempotency keys take the shape `{prefix}-{tool_call_id}` (no random suffix), so a duplicate dispatch (durable workflow replay, middleware retry, process recovery) lands on the *same* reservation rather than creating a second one. If the upstream omits `tool_call_id`, a synthetic `missing-<hex>` id is fabricated and a warning is logged; that fallback path is *not* retry-stable. Conformant LangChain runtimes always supply `id`.
+`CyclesToolGate` idempotency keys take the shape `{prefix}-{tool_call_id}` (no random suffix), so a duplicate dispatch (durable workflow replay, middleware retry, process recovery) lands on the *same* reservation rather than creating a second one. (`CyclesModelGate` and `CyclesFanOutGate` have no stable upstream id, so they use a fresh UUID instead — see the per-class breakdown below.) If the upstream omits `tool_call_id`, a synthetic `missing-<hex>` id is fabricated and a warning is logged; that fallback path is *not* retry-stable. Conformant LangChain runtimes always supply `id`.
 
 <Note>
     `idempotency_namespace` is available in `langchain-runcycles` 0.1.3+. The callable form's `None`-return per-call opt-out is fully type-correct in 0.1.4+.
