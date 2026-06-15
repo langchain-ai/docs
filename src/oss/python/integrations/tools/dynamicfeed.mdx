@@ -1,0 +1,177 @@
+---
+title: Dynamic Feed
+description: Integrate live, provenance-stamped data tools from Dynamic Feed with LangChain and LangGraph.
+---
+
+This guide covers getting started with [Dynamic Feed](https://dynamicfeed.ai) live-data tools in LangChain. For a full listing of all tools, parameters, and API endpoints, see the [Dynamic Feed documentation](https://dynamicfeed.ai/integrations).
+
+## Overview
+
+[Dynamic Feed](https://dynamicfeed.ai) is a live-data API for AI agents — 87 tools across 19 verticals including weather, hazards, CVEs, satellites, sanctions, tides, volcanoes, global macro, and shipping. Every response carries a **provenance envelope** (source, licence, timestamp, age) and is **Ed25519-signed** for tamper-evidence and independent verification.
+
+### Details
+
+| Class | Package | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `DynamicFeedTool` (via `get_tools()`) | [`dynamicfeed-tools`](https://pypi.org/project/dynamicfeed-tools/) | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/dynamicfeed-tools?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/dynamicfeed-tools?style=flat-square&label=%20) |
+
+### Features
+
+- **Keyless-first**: five tools (`nearby_hazards`, `earthquakes`, `reality_check`, `attest`, `receipt`) work with no API key and no signup.
+- **Provenance envelopes**: every datapoint carries `source`, `licence`, `measured_at` / `timestamp`, and `age_seconds`.
+- **Ed25519-signed responses**: tamper-evident proof of what data was returned and when; verify against `GET https://dynamicfeed.ai/.well-known/keys`.
+- **MCP alternative**: the same tools are also served as a keyless Streamable HTTP MCP endpoint at `https://dynamicfeed.ai/mcp` (works with `langchain-mcp-adapters`).
+- 87 tools / 19 verticals: weather, hazards, CVEs, satellites, sanctions, tides, volcanoes, macro, shipping, and more.
+
+---
+
+## Setup
+
+### Credentials
+
+Five tools are fully keyless. For the remaining tools, get a free key in one line — no card required:
+
+```python
+from dynamicfeed_tools import DynamicFeed
+key = DynamicFeed.signup()           # returns a "dyn_..." key instantly
+# or: curl -X POST https://dynamicfeed.ai/signup
+```
+
+Then set the environment variable:
+
+```python
+import os
+os.environ["DYNAMICFEED_API_KEY"] = key   # or export it in your shell
+```
+
+Optionally set up [LangSmith](https://smith.langchain.com/) for tracing:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = "..."
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+```bash
+# client only (sole runtime dep: httpx)
+pip install dynamicfeed-tools
+
+# with the LangChain adapter
+pip install 'dynamicfeed-tools[langchain]'
+```
+
+---
+
+## Instantiation
+
+`get_tools()` returns a list of `StructuredTool`s ready to pass to any LangChain agent or LangGraph graph.
+
+```python
+from dynamicfeed_tools.langchain import get_tools
+
+# keyless — returns the five tools that need no key
+tools = get_tools()
+
+# with a key — returns all ten tools
+tools = get_tools(api_key="dyn_...")           # explicit
+tools = get_tools()                             # or reads DYNAMICFEED_API_KEY from env
+```
+
+Available tools:
+
+| Tool name | What it answers | Key? |
+| --- | --- | --- |
+| `nearby_hazards` | Live hazards within a radius: earthquakes, wildfires, storms, floods | keyless |
+| `earthquakes` | Recent worldwide earthquakes (USGS) with magnitude, depth, impact alert | keyless |
+| `reality_check` | Fact-check a claim against live data; returns verdict + live value + source | keyless |
+| `attest` | Signed parametric trigger: is `wind_kmh >= 120` at this lat/lon right now? | keyless |
+| `receipt` | Ed25519-signed, timestamped record of what an AI was told or asserted | keyless |
+| `current_weather` | Live weather for a city: temperature, wind, humidity, conditions | free key |
+| `weather_forecast` | Up to 16-day daily forecast for a city | free key |
+| `satellites` | Constellation catalog (Starlink, GPS, ISS, …) with altitude and latency | free key |
+| `sanctions_screen` | Screen a name against live US OFAC SDN + UK Sanctions List | free key |
+| `check_vulnerability` | Full OSV.dev advisory lookup for a package + version | free key |
+
+---
+
+## Invocation
+
+### Directly
+
+```python
+tools_by_name = {t.name: t for t in tools}
+
+# keyless — no key needed
+tools_by_name["earthquakes"].invoke({"min_magnitude": 5.0, "limit": 5})
+tools_by_name["reality_check"].invoke({"claim": "the latest Python is 3.12"})
+tools_by_name["nearby_hazards"].invoke({"lat": -33.86, "lon": 151.21, "radius_km": 300})
+```
+
+### As a ToolCall
+
+```python
+model_generated_tool_call = {
+    "args": {"claim": "GitHub is currently down"},
+    "id": "call_1",
+    "name": "reality_check",
+    "type": "tool_call",
+}
+tools_by_name["reality_check"].invoke(model_generated_tool_call)
+```
+
+### Within a LangGraph agent
+
+```python
+from langchain.chat_models import init_chat_model
+from langgraph.prebuilt import create_react_agent
+
+tools = get_tools()   # keyless — or get_tools(api_key="dyn_...") for the full set
+llm = init_chat_model("gpt-4o", model_provider="openai")
+agent = create_react_agent(llm, tools)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Any hazards within 200 km of Sydney right now?"}]}
+)
+```
+
+---
+
+## MCP path (all 87 tools keylessly)
+
+Dynamic Feed also exposes all 87 tools as a keyless Streamable HTTP MCP server at `https://dynamicfeed.ai/mcp`. Use [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) to load them:
+
+```python
+# pip install langchain-mcp-adapters
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+
+async with MultiServerMCPClient(
+    {"dynamicfeed": {"transport": "http", "url": "https://dynamicfeed.ai/mcp"}}
+) as client:
+    tools = await client.get_tools()
+    agent = create_react_agent(llm, tools)
+    result = await agent.ainvoke({"messages": "What earthquakes happened today?"})
+```
+
+---
+
+## Verifying signed responses
+
+Every Dynamic Feed response includes a `signature` field (Ed25519). To verify:
+
+```python
+# pip install dynamicfeed-verify
+from dynamicfeed_verify import verify_envelope
+
+result = tools_by_name["nearby_hazards"].invoke({"lat": -33.86, "lon": 151.21})
+verify_envelope(result)   # raises if tampered; returns True if valid
+```
+
+Public keys live at `GET https://dynamicfeed.ai/.well-known/keys`. The full DF-VERIFY/1 spec is at `https://dynamicfeed.ai/standard`.
+
+---
+
+## API reference
+
+For the full parameter listing, all 87 tools, provenance envelope schema, and signing spec, see the [Dynamic Feed API reference](https://dynamicfeed.ai/integrations).
