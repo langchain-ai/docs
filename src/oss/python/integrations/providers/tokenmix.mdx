@@ -1,0 +1,67 @@
+---
+title: "TokenMix integrations"
+description: "Integrate with TokenMix, an OpenAI-compatible API gateway, using LangChain Python."
+sidebarTitle: "TokenMix"
+---
+
+[TokenMix](https://tokenmix.ai) is an OpenAI-compatible API gateway that exposes DeepSeek, Qwen, Kimi, GLM, MiniMax and other models through a single endpoint (`https://api.tokenmix.ai/v1`) and one API key.
+
+Because the gateway is OpenAI-compatible, you can use it with LangChain through the `langchain-openai` package by pointing `ChatOpenAI` at the TokenMix base URL.
+
+## Installation
+
+```python
+pip install -U langchain-openai
+```
+
+## Environment
+
+To use TokenMix, you'll need an API key from [tokenmix.ai](https://tokenmix.ai). It can be passed in as an init param `api_key` or set as the environment variable `TOKENMIX_API_KEY`:
+
+```python
+import getpass
+import os
+
+if not os.getenv("TOKENMIX_API_KEY"):
+    os.environ["TOKENMIX_API_KEY"] = getpass.getpass("Enter your TokenMix API key: ")
+```
+
+## Example
+
+```python
+import os
+from langchain_openai import ChatOpenAI
+
+# Browse the full model catalog at https://tokenmix.ai/models
+chat = ChatOpenAI(
+    model="deepseek/deepseek-v4-pro",
+    base_url="https://api.tokenmix.ai/v1",
+    api_key=os.environ["TOKENMIX_API_KEY"],
+)
+
+# stream the response back from the model
+for m in chat.stream("Tell me fun things to do in NYC"):
+    print(m.content, end="", flush=True)
+
+# if you don't want to do streaming, you can use the invoke method
+# chat.invoke("Tell me fun things to do in NYC")
+```
+
+Tool calling and structured output work through the standard `ChatOpenAI` interface for models that support them:
+
+```python
+from pydantic import BaseModel, Field
+
+
+class GetWeather(BaseModel):
+    """Get the current weather in a given location."""
+
+    location: str = Field(description="The city and state, e.g. San Francisco, CA")
+
+
+chat_with_tools = chat.bind_tools([GetWeather])
+ai_msg = chat_with_tools.invoke("What is the weather in San Francisco?")
+print(ai_msg.tool_calls)
+```
+
+For the list of available models and pricing, see the [TokenMix models page](https://tokenmix.ai/models). For API details, see the [TokenMix documentation](https://tokenmix.ai/docs).
