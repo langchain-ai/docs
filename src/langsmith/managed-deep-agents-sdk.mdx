@@ -89,7 +89,7 @@ with Client() as client:
     agent = client.agents.create(
         name="research-assistant",
         description="Research assistant that can search the web and summarize sources.",
-        model={"id": "openai:gpt-5.5"},
+        model="openai:gpt-5.5",
         backend={"type": "state"},
         instructions=(
             "You are a careful research assistant. Search for sources, "
@@ -97,7 +97,8 @@ with Client() as client:
         ),
     )
 
-print(f"Agent ID: {agent['id']}")
+agent_id = agent["id"]
+print(f"Agent ID: {agent_id}")
 ```
 
 ```ts TypeScript
@@ -108,13 +109,14 @@ const client = new Client();
 const agent = await client.agents.create({
   name: "research-assistant",
   description: "Research assistant that can search the web and summarize sources.",
-  model: { id: "openai:gpt-5.5" },
+  model: "openai:gpt-5.5",
   backend: { type: "state" },
   instructions:
     "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
 });
 
-console.log(`Agent ID: ${agent.id}`);
+const agentId = agent.id;
+console.log(`Agent ID: ${agentId}`);
 ```
 
 </CodeGroup>
@@ -264,7 +266,7 @@ The SDKs can register MCP servers, complete auth sessions, and discover a regist
 
 ## Handle errors
 
-Requests raise typed errors that include the HTTP status, an error code, and response detail.
+Requests raise typed errors that include the HTTP status and, when the API returns them, an error code and detail.
 
 <CodeGroup>
 
@@ -275,7 +277,9 @@ with Client() as client:
     try:
         client.agents.get("missing-agent")
     except ManagedDeepAgentsAPIError as error:
-        print(error.status_code, error.code, error.detail)
+        # `code` and `detail` can be empty, for example on a 403 permission error.
+        # The raw message is on `error.body`.
+        print(error.status_code, error.code, error.detail, error.body)
 ```
 
 ```ts TypeScript
@@ -287,11 +291,15 @@ try {
   await client.agents.get("missing-agent");
 } catch (error) {
   if (error instanceof ManagedDeepAgentsAPIError) {
-    console.log(error.status, error.code, error.detail);
+    // `code` and `detail` can be undefined, for example on a 403 permission error.
+    // The raw message is on `error.body`.
+    console.log(error.status, error.code, error.detail, error.body);
   }
 }
 ```
 
 </CodeGroup>
+
+When a request is denied for a missing permission, the response is a `403` whose `code` and `detail` are empty and whose reason is returned as plain text. Read it from `error.body` in both SDKs, for example `missing permission mcp-servers:create`.
 
 For endpoint-level request and response schemas, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api-overview).
