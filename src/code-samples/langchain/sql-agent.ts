@@ -129,7 +129,7 @@ Rules:
 import { createAgent } from "langchain";
 
 let agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [executeSql],
   systemPrompt: await getSystemPrompt(),
 });
@@ -152,7 +152,7 @@ import { createAgent, humanInTheLoopMiddleware } from "langchain"; // [!code hig
 import { MemorySaver } from "@langchain/langgraph"; // [!code highlight]
 
 agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [executeSql],
   systemPrompt: await getSystemPrompt(),
   middleware: [

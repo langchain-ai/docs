@@ -4,7 +4,7 @@ import { createDeepAgent, LocalShellBackend } from "deepagents";
 const backend = new LocalShellBackend({ workingDirectory: "." });
 
 const agent = createDeepAgent({
-  model: "openai:gpt-5.4",
+  model: "openai:gpt-5.5",
   backend,
 });
 // :snippet-end:
