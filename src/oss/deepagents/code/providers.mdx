@@ -37,7 +37,7 @@ Deep Agents Code integrates automatically with the [following model providers](#
     /auth
     ```
 
-    For non-interactive runs, CI/CD, or anywhere a TUI isn't available, set the provider's environment variable instead. See [Provider credentials](/oss/deepagents/code/configuration#provider-credentials) for the full key resolution order, the [`DEEPAGENTS_CODE_` prefix](/oss/deepagents/code/configuration#deepagents_code_-prefix) for scoping a key to Deep Agents Code, and the [Provider reference](#provider-reference) for each provider's environment variable.
+    For non-interactive runs, CI/CD, or anywhere a TUI isn't available, store the same key from the shell with [`dcode auth set`](/oss/deepagents/code/configuration#manage-credentials-from-the-shell-dcode-auth) or set the provider's environment variable instead. See [Provider credentials](/oss/deepagents/code/configuration#provider-credentials) for the full key resolution order, the [`DEEPAGENTS_CODE_` prefix](/oss/deepagents/code/configuration#deepagents_code_-prefix) for scoping a key to Deep Agents Code, and the [Provider reference](#provider-reference) for each provider's environment variable.
 
     To configure model parameters, see [Model parameters](#model-parameters).
 
@@ -54,6 +54,7 @@ Using a provider not listed here? See [Arbitrary providers](/oss/deepagents/code
 | Provider | Package | Credential env var | Model profiles |
 | --- | --- | --- | --- |
 | OpenAI | [`langchain-openai`](/oss/integrations/chat/openai) | `OPENAI_API_KEY` | ✅ |
+| OpenAI (Codex) | [`langchain-openai`](/oss/integrations/chat/openai) | None — [sign in with ChatGPT](#sign-in-with-chatgpt) | ✅ |
 | Azure OpenAI | [`langchain-openai`](/oss/integrations/chat/azure_chat_openai) | `AZURE_OPENAI_API_KEY` | ✅ |
 | Anthropic | [`langchain-anthropic`](/oss/integrations/chat/anthropic) | `ANTHROPIC_API_KEY` | ✅ |
 | Google Gemini API | [`langchain-google-genai`](/oss/integrations/chat/google_generative_ai) | `GOOGLE_API_KEY` | ✅ |
@@ -83,6 +84,34 @@ Using a provider not listed here? See [Arbitrary providers](/oss/deepagents/code
 <Tip>
     [Model profiles](/oss/langchain/models#model-profiles) provide model metadata used by the interactive `/model` switcher. If a model is missing from the switcher, pass the model name directly or add it via `config.toml`.
 </Tip>
+
+### Sign in with ChatGPT
+
+The `openai_codex` provider lets you use OpenAI's Codex models with your paid **ChatGPT** subscription instead of an `OPENAI_API_KEY`. You sign in with your ChatGPT account, and it shows up as its own provider in both `/auth` and the `/model` switcher, separate from the API-key-based `openai` provider.
+
+<Steps>
+    <Step title="Start the sign-in">
+        Run `/auth` in any session and select **`openai_codex`**. Because ChatGPT signs you in through your browser, this starts a browser sign-in instead of asking for an API key.
+    </Step>
+
+    <Step title="Authorize in your browser">
+        Deep Agents Code opens your browser to the ChatGPT sign-in page. If it can't open a browser (for example, over SSH), it also shows the sign-in URL on screen so you can copy it to a browser on another device.
+    </Step>
+
+    <Step title="Select a Codex model">
+        Once signed in, the Codex models appear in the `/model` switcher under the `openai_codex` provider. Switch to one directly with its spec:
+
+        ```txt
+        /model openai_codex:gpt-5.5
+        ```
+    </Step>
+</Steps>
+
+Your sign-in persists across sessions. To check your status or sign out, run `/auth`, select `openai_codex`, and choose to re-authenticate or sign out.
+
+<Note>
+    `openai_codex` is separate from `openai`. To use OpenAI models with a standard API key instead, use the regular `openai` provider (e.g. `/model openai:gpt-5.5`).
+</Note>
 
 :::
 
@@ -260,6 +289,22 @@ If you want to use an open weights model, there are two common paths depending o
 
 Use the interactive switcher, or pass the model directly with `/model fireworks:accounts/fireworks/models/deepseek-v4-pro`.
 
+**Baseten** is another cloud provider for open weights models:
+
+<CodeGroup>
+    ```txt In session
+    /install baseten
+    /model
+    ```
+
+    ```bash Shell
+    dcode --install baseten
+    BASETEN_API_KEY="your-api-key" dcode --model baseten:moonshotai/Kimi-K2.6
+    ```
+</CodeGroup>
+
+Use the interactive switcher, or pass the model directly with `/model baseten:moonshotai/Kimi-K2.6`.
+
 <Tip>
     If you want a provider preinstalled at the same time as the CLI itself, use `DEEPAGENTS_CODE_EXTRAS` during the initial install:
 
@@ -274,15 +319,15 @@ Use the interactive switcher, or pass the model directly with `/model fireworks:
 
 ### Set a default model
 
-You can set a persistent default model that will be used for all future CLI launches:
+You can set a persistent default model that applies to all future CLI launches:
 
 * **Via model selector:** Open `/model`, navigate to the desired model, and press `Ctrl+S` to pin it as the default. Pressing `Ctrl+S` again on the current default clears it.
-* **Via command:** `/model --default provider:model` (e.g., `/model --default anthropic:claude-opus-4-7`)
+* **Via command:** `/model --default provider:model` (e.g., `/model --default anthropic:claude-opus-4-8`)
 * **Via config file:** Set `[models].default` in `~/.deepagents/config.toml` (see [Configuration](/oss/deepagents/code/configuration)).
 * **From the shell:**
 
     ```bash
-    dcode --default-model anthropic:claude-opus-4-7
+    dcode --default-model anthropic:claude-opus-4-8
     ```
 
 To view the current default:
@@ -302,7 +347,7 @@ To clear the default:
 * **Via command:** `/model --default --clear`
 * **Via model selector:** Press `Ctrl+S` on the currently pinned default model.
 
-Without a default, Deep Agents Code will default to the most recently used model.
+Without a default, Deep Agents Code uses the most recently used model.
 
 ### Model parameters
 
@@ -315,13 +360,13 @@ Pass extra constructor kwargs to the model—sampling controls, reasoning/thinki
     dcode --model openai:gpt-5.5 --model-params '{"reasoning": {"effort": "high"}}'
 
     # Anthropic extended thinking
-    dcode --model anthropic:claude-opus-4-7 --model-params '{"thinking": {"type": "enabled", "budget_tokens": 10000}, "max_tokens": 16000}'
+    dcode --model anthropic:claude-opus-4-8 --model-params '{"thinking": {"type": "enabled", "budget_tokens": 10000}, "max_tokens": 16000}'
     ```
 
 2. **Mid-session via `/model --model-params`.** Same JSON syntax—swaps params (and optionally the model) without restarting:
 
     ```txt
-    /model --model-params '{"temperature": 0.7}' anthropic:claude-opus-4-7
+    /model --model-params '{"temperature": 0.7}' anthropic:claude-opus-4-8
     /model --model-params '{"num_ctx": 16384}'           # opens selector, applies params to choice
     ```
 

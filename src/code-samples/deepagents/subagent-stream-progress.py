@@ -6,7 +6,7 @@ from deepagents import (
 )
 
 agent = create_deep_agent(
-    model="openai:gpt-5.4",
+    model="openai:gpt-5.5",
     system_prompt=(
         "You are a project coordinator with no research knowledge. "
         "For every user request, you must call the task() tool with "
