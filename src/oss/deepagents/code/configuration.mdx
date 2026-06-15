@@ -19,6 +19,27 @@ Deep Agents Code stores its configuration in the `~/.deepagents/` directory. The
 
 ---
 
+## Inspect configuration
+
+The `dcode config` command group reports what configuration is in effect and where each value comes from, without starting a session. This is useful for confirming that an environment variable or `config.toml` setting is being picked up, and for sharing a redacted snapshot in a bug report.
+
+| Command | Description |
+|---------|-------------|
+| `dcode config show` | Resolve every option against the live environment and `config.toml`, printing the effective value and which source provided it |
+| `dcode config list` (alias `ls`) | List every available option with its type, default, and where it can be set, without resolving values |
+| `dcode config get <key>` | Show the effective value and source for a single option, e.g. `dcode config get interpreter.memory_limit_mb` |
+| `dcode config path` | Show the on-disk config file locations (`config.toml`, project and global `.env`, `hooks.json`, and managed state files) and whether each exists |
+
+Each option resolves from the first source that is set, in this order: a `DEEPAGENTS_CODE_`-prefixed env var, the canonical env var, `config.toml`, then the built-in default.
+
+All four commands accept `--json` for machine-readable output.
+
+<Warning>
+    Provider credentials and other secrets are reported as configured / not configured only—their values are never printed by `config show` or `config get`, so the output is safe to paste into a bug report.
+</Warning>
+
+---
+
 ## Provider credentials
 
 Deep Agents Code needs an API key for each model provider you use. The recommended way to add one is the [`/auth`](#use-%2Fauth-recommended) credential manager. For non-interactive runs, set [environment variables](#environment-variables-ci-and-headless) instead.
@@ -54,6 +75,10 @@ The `/auth` prompt also has an optional **base URL** field. Leave it blank to us
 <Note>
     Keys are scoped to your user account on this machine — Deep Agents Code never transmits them anywhere except to the configured provider's API.
 </Note>
+
+#### Sign in with ChatGPT
+
+Selecting the `openai_codex` provider in `/auth` starts a browser sign-in instead of prompting for an API key, letting you use OpenAI models with a ChatGPT subscription. To re-authenticate or sign out, select `openai_codex` again. See [Sign in with ChatGPT (Codex models)](/oss/deepagents/code/providers) for the full flow.
 
 `/auth` only manages **LLM provider** credentials. Tool credentials such as `TAVILY_API_KEY` (web search) and `LANGSMITH_API_KEY` (tracing) are read from the environment instead — [set them in `~/.deepagents/.env` or your shell](#environment-variables).
 
@@ -161,7 +186,7 @@ DEEPAGENTS_CODE_ANTHROPIC_API_KEY=
 `~/.deepagents/config.toml` lets you customize model providers, set defaults, and pass extra parameters to model constructors. This section covers:
 
 - **Defaults**: pin a [default model](#default-and-recent-model) or [agent](#default-and-recent-agent).
-- **Provider setup**: the [`[models.providers.<name>]` table](#provider-configuration), [constructor params](#model-constructor-params), [profile overrides](#profile-overrides-advanced), and [adding models to the `/model` switcher](#adding-models-to-the-interactive-switcher).
+- **Provider setup**: the [`[models.providers.<name>]` table](#provider-configuration), [constructor params](#model-constructor-params), [retries](#retries), [profile overrides](#profile-overrides-advanced), and [adding models to the `/model` switcher](#adding-models-to-the-interactive-switcher).
 - **Custom endpoints and providers**: [custom base URLs](#custom-base-url), [OpenAI- or Anthropic-compatible APIs](#compatible-apis), and [arbitrary providers](#arbitrary-providers).
 - **Endpoints and gateways**: how [API keys and base URLs resolve together](#endpoints-keys-and-gateways), including through a managed gateway.
 
@@ -286,6 +311,45 @@ The merge is shallow: any key present in the model sub-table replaces the same k
 <Tip>
     For one-off adjustments without editing `config.toml`, pass a JSON object via `--model-params` at launch or mid-session with `/model`. CLI flags take highest priority over the config file. See [Model parameters](/oss/deepagents/code/providers#model-parameters) on the providers page for syntax and provider-specific examples.
 </Tip>
+
+### Retries
+
+Configure retry counts for transient model provider errors with the top-level `[retries]` section. Deep Agents Code passes these values through to provider integrations that accept retry-count constructor kwargs. If you omit this section, the provider SDK default applies.
+
+```toml
+[retries]
+max_retries = 2
+
+[retries.fireworks]
+max_retries = 3
+
+[retries.anthropic]
+max_retries = 0
+```
+
+The global `[retries].max_retries` value applies to all supported providers. A provider-specific table, such as `[retries.fireworks]`, overrides the global value for that provider. Values must be integers greater than or equal to `0`.
+
+Most supported providers receive the retry count as `max_retries`. Some integrations use a different constructor kwarg. For an arbitrary provider, or to override the registered kwarg for a known provider, set `param` in the provider-specific retries table:
+
+```toml
+[retries]
+max_retries = 2
+
+[retries.my_custom]
+param = "retries"
+max_retries = 4
+```
+
+`param` must be a valid Python identifier string, such as `"max_retries"` or `"retries"`. Deep Agents Code ignores unknown providers that do not set `param`, because passing the wrong retry kwarg can break model creation.
+
+`[retries]` is lower precedence than constructor parameters. The complete precedence order is:
+
+1. `--max-retries N`, applied under the provider's resolved retry kwarg
+2. `--model-params` with the provider's retry kwarg, such as `'{"max_retries": N}'` or `'{"retries": N}'`
+3. `[models.providers.<provider>.params]` with the provider's retry kwarg
+4. `[retries.<provider>].max_retries`
+5. `[retries].max_retries`
+6. Provider SDK default
 
 ### Profile overrides (Advanced)
 
