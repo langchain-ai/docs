@@ -29,10 +29,10 @@ Interpreters give the agent a runtime for that work. A loop runs every iteration
     Call selected tools from interpreter code, including loops, retries, branching, and parallel batches.
   </Card>
   <Card title="Subagent orchestration" icon="arrows-split" href="#subagent-orchestration">
-    Dispatch subagents from code for fan-out, verification, and RLM workflows over large inputs.
+    Dispatch subagents from code for fan-out, verification, and recursive workflows over large inputs.
   </Card>
   <Card title="Stateful work" icon="database" href="#how-interpreters-work">
-    Preserve intermediate values in runtime state instead of sending every temporary result back through model context.
+    Keep intermediate values in runtime state without overloading the model context.
   </Card>
   <Card title="Deterministic transforms" icon="code" href="#how-interpreters-work">
     Sort, group, parse, validate, score, aggregate, and explore structured data in code.
@@ -48,7 +48,7 @@ Use interpreters for code inside the agent loop: composing tools, preserving sta
 | One or two simple external calls | Normal tool calling |
 | A small program that loops, branches, retries, or aggregates results | Interpreter |
 | Many selected tool calls that should run from code | Interpreter with [programmatic tool calling (PTC)](#programmatic-tool-calling-ptc) |
-| Many independent units of work, multiple perspectives, or recursive analysis over large inputs | Interpreter with [subagent orchestration](#subagent-orchestration), including [RLM workflows](#rlm-workflows) |
+| Many independent units of work, multiple perspectives, or recursive analysis over large inputs | Interpreter with [subagent orchestration](#subagent-orchestration) |
 | Shell commands, package installs, tests, or full OS filesystem access | [Sandboxes](/oss/deepagents/sandboxes) |
 
 ## Quickstart
@@ -209,6 +209,8 @@ results.join("\n\n");
 
 When an agent has [subagents](/oss/deepagents/subagents) and interpreter middleware, the interpreter exposes a built-in `task()` global that dispatches subagents from code. A task spanning many independent units (reviewing every file in a directory, triaging a batch of tickets) becomes a loop that fans the work out, so it runs deterministically instead of one model-chosen tool call at a time.
 
+Subagent orchestration also supports recursive language model (RLM) workflows, the approach described in the [Recursive Language Models paper](https://arxiv.org/abs/2512.24601): keep the working set in interpreter variables, select slices, call subagents with `task()`, and synthesize the results.
+
 `task()` takes the following inputs:
 
 - `description`: The prompt for the subagent
@@ -237,69 +239,6 @@ const critical = review.issues.filter((issue) => issue.severity === "high");
 ```
 
 When you pass `responseSchema`, the resolved value is already a typed JavaScript object; only call `JSON.parse` if a subagent intentionally returned a JSON string.
-
-### RLM workflows
-
-Recursive language model (RLM) workflows use subagent orchestration over large inputs. The interpreter keeps the working set in variables while the agent selects slices, calls subagents with `task()`, and synthesizes the results. This is the approach described in the [Recursive Language Models paper](https://arxiv.org/abs/2512.24601).
-
-Keep the large input or working set in interpreter variables (the *variable space*, distinct from the model's context), then let the model inspect it, split it into slices, dispatch a subagent per slice, and stitch the returned results back together.
-
-```mermaid
-flowchart TB
-    Model[Model] --> Runtime[Interpreter variable space]
-
-    subgraph Runtime[Interpreter variable space]
-        Data[Long input and working notes]
-        Select{Select next slice}
-        Task[Call subagent]
-        Store[Store subagent result]
-        Stitch[Stitch results in code]
-
-        Data --> Select
-        Select --> Task
-        Task --> Store
-        Store --> Select
-        Store --> Stitch
-    end
-
-    Stitch --> Answer[Compact synthesis]
-    Answer --> Model
-
-    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
-    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
-    classDef decision fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
-    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
-    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68
-
-    class Model trigger
-    class Runtime,Data,Store neutral
-    class Select decision
-    class Task,Stitch process
-    class Answer output
-```
-
-The recursive call runs `task()` over slices of the input. The interpreter calls a subagent for each one, combines their answers, and returns a single synthesized result:
-
-```javascript
-const candidates = notes
-  .filter((note) => note.includes("migration"))
-  .slice(0, 5);
-
-const riskReports = await Promise.all(
-  candidates.map((note) =>
-    task({
-      description: `Analyze this migration note for release risk. Return risks, affected users, and recommended follow-up:\n\n${note}`,
-      subagentType: "general-purpose",
-    }),
-  ),
-);
-
-const releaseSummary = riskReports
-  .map((report, index) => `## Candidate ${index + 1}\n${report}`)
-  .join("\n\n");
-
-releaseSummary;
-```
 
 ### Guide orchestration
 
