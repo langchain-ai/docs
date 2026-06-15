@@ -45,6 +45,9 @@ await Promise.all([
 ]);
 
 const finalState = await stream.output;
+// Tool call: get_weather({"city":"San Francisco"})
+// Tool result: [object ToolMessage]
+// According to the data I have, the weather in San Francisco is always sunny! Would you like current conditions or a short forecast for today or the next few days?
 // :snippet-end:
 
 // :remove-start:
