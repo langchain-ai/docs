@@ -1,9 +1,8 @@
 // :snippet-start: backend-filesystem-js
 import { createDeepAgent, FilesystemBackend } from "deepagents";
 
-// KEEP MODEL
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "openai:gpt-5.5",
   backend: new FilesystemBackend({ rootDir: ".", virtualMode: true }),
 });
 // :snippet-end:

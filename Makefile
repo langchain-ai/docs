@@ -90,18 +90,12 @@ clean:
 # broken-links: Checks for broken links, excluding OpenAPI-generated pages and snippet files
 # (snippets use relative paths that resolve when inlined; /oss/langchain/agents uses redirect)
 # Excluded: /langsmith/agent-server-api/, /api-reference/ (Mintlify-generated at deploy, not in local build)
-# Excluded: ../langchain/agents (snippet preprocessing: /oss/langchain/agents → relative path, resolves when inlined)
+# Excluded: ../langchain/agents, ../langgraph/local-server (snippet preprocessing: /oss/... → relative path, resolves when inlined)
 # python3 normalizes U+00A0 (NBSP) to space so grep works on both macOS and Linux ([[:space:]] treats NBSP differently by locale)
 # Failure: only when filtered output still has indented link lines (real broken links we care about)
 # Run mint, capture output, filter exclusions. Only show output when failing.
 broken-links: build
-	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@4.2.406'"; exit 1; }
-	@mint_version=$$(mint --version 2>/dev/null | tr -d '\n' | xargs); \
-		if [ -n "$$mint_version" ] && [ "$$mint_version" != "4.2.406" ]; then \
-			echo "⚠️  Warning: CI uses mint@4.2.406. You have: $$mint_version"; \
-			echo "   Run 'npm install -g mint@4.2.406' to match CI and avoid local/CI discrepancies."; \
-			echo ""; \
-		fi
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@latest'"; exit 1; }
 	@KATEX_MJS="$$(npm root -g 2>/dev/null)/mint/node_modules/katex/dist/katex.mjs"; \
 		if [ -f "$$KATEX_MJS" ] && grep -q '__VERSION__' "$$KATEX_MJS" 2>/dev/null; then \
 			KATEX_DIR="$$(cd "$$(dirname "$$KATEX_MJS")/.." && pwd)"; \
@@ -109,21 +103,15 @@ broken-links: build
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
 	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
-		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/langsmith/smith-api' | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
-		if echo "$$filtered" | grep -qE '^[[:space:]]+.*/'; then \
+		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/langsmith/smith-api' | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | grep -v '\.\./langgraph/local-server' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
+		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
 		else \
 			echo "✅ No broken links"; \
 		fi
 
 broken-links-with-anchors: build
-	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@4.2.406'"; exit 1; }
-	@mint_version=$$(mint --version 2>/dev/null | tr -d '\n' | xargs); \
-		if [ -n "$$mint_version" ] && [ "$$mint_version" != "4.2.406" ]; then \
-			echo "⚠️  Warning: CI uses mint@4.2.406. You have: $$mint_version"; \
-			echo "   Run 'npm install -g mint@4.2.406' to match CI and avoid local/CI discrepancies."; \
-			echo ""; \
-		fi
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@latest'"; exit 1; }
 	@KATEX_MJS="$$(npm root -g 2>/dev/null)/mint/node_modules/katex/dist/katex.mjs"; \
 		if [ -f "$$KATEX_MJS" ] && grep -q '__VERSION__' "$$KATEX_MJS" 2>/dev/null; then \
 			KATEX_DIR="$$(cd "$$(dirname "$$KATEX_MJS")/.." && pwd)"; \
@@ -131,8 +119,8 @@ broken-links-with-anchors: build
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
 	@cd build && mint broken-links --check-anchors 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
-		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/langsmith/smith-api' | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
-		if echo "$$filtered" | grep -qE '^[[:space:]]+.*/'; then \
+		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/langsmith/smith-api' | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | grep -v '\.\./langgraph/local-server' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
+		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
 		else \
 			echo "✅ No broken links"; \
@@ -140,7 +128,7 @@ broken-links-with-anchors: build
 
 check-openapi: build
 	@echo "Checking openapi spec validity"
-	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.406'"; exit 1; }
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@latest'"; exit 1; }
 	@cd build && output=$$(mint openapi-check langsmith/agent-server-openapi.json) && echo "$$output"
 
 # Extract code snippets from src/code-samples (line-based, Bluehawk-compatible tags)
@@ -154,7 +142,7 @@ code-snippets:
 #   make test-code-samples
 #   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 test-code-samples:
-	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent) || true; fi
+	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent); fi
 	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
 
 # Check that all @[ref] cross-references in source files resolve against link_map.py
