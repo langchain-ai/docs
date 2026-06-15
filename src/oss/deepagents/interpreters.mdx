@@ -18,31 +18,40 @@ Where [sandboxes](/oss/deepagents/sandboxes) are a code-first way for acting on 
 </Note>
 :::
 
-## When to use an interpreter
+## Why use interpreters?
 
-Most agent work alternates between model reasoning and tool calls. A model can fire several tool calls in one turn, but that batch is fixed the moment it's emitted. Nothing can loop, branch on a result, retry a failure, or feed one call's output into the next without another model turn, and every result returns to the model's context. The model also decides how many calls to issue, so asking it to dispatch work across hundreds of items is unreliable, and it tends to cover a sample rather than every one. That breaks down when the agent needs to compose many steps, reason over structured data, or hold intermediate state. An interpreter gives it a runtime to do that work in code. A loop runs every iteration, tools are called from code, intermediate values stay in variables, and only a compact result returns to the model.
+Most agent work alternates between model reasoning and tool calls. A model can fire several tool calls in one turn, but that batch is fixed the moment it is emitted. Nothing can loop, branch on a result, retry a failure, or feed one call's output into the next without another model turn, and every result returns to the model's context. The model also decides how many calls to issue, so asking it to dispatch work across hundreds of items is unreliable, and it tends to cover a sample rather than every one.
 
-Use interpreters when the agent needs to:
+Interpreters give the agent a runtime for that work. A loop runs every iteration, tools are called from code, intermediate values stay in variables, and only a compact result returns to the model.
 
-- Compose multiple tool calls with code, including loops, branching, retries, and concurrency.
-- Coordinate subagents from code by splitting work into focused calls, storing their results, and stitching those results into a final synthesis.
-- Keep intermediate values in runtime state instead of sending every temporary result back through the model context.
-- Transform structured data deterministically, such as sorting, grouping, parsing, validating, scoring, or aggregating.
-- Explore a large variable space and return only selected evidence, summaries, or outputs to the model.
+<CardGroup cols={2}>
+  <Card title="Programmatic tool calling (PTC)" icon="tool" href="#programmatic-tool-calling-ptc">
+    Call selected tools from interpreter code, including loops, retries, branching, and parallel batches.
+  </Card>
+  <Card title="Recursive language models (RLMs)" icon="arrows-split" href="#rlm-workflows">
+    Use subagent orchestration over large inputs by keeping working state in interpreter variables.
+  </Card>
+  <Card title="Stateful work" icon="database" href="#how-interpreters-work">
+    Preserve intermediate values in runtime state instead of sending every temporary result back through model context.
+  </Card>
+  <Card title="Deterministic transforms" icon="code" href="#how-interpreters-work">
+    Sort, group, parse, validate, score, aggregate, and explore structured data in code.
+  </Card>
+</CardGroup>
 
-Code runs against [**QuickJS**](https://github.com/quickjs-ng/quickjs), a lightweight JavaScript runtime with no access to the host filesystem, network, shell, or clock by default. Explicit bridges decide what the code can reach.
+## Choose a pattern
 
-## Choose the right execution path
+Use interpreters for code inside the agent loop: composing tools, preserving state, and controlling what returns to the model. Use [sandboxes](/oss/deepagents/sandboxes) for code against an environment: shell commands, package installs, tests, filesystem edits, and OS-level execution.
 
 | Need | Use |
 | --- | --- |
 | One or two simple external calls | Normal tool calling |
 | A small program that loops, branches, retries, or aggregates results | Interpreter |
-| Many selected tool calls that should run from code | Interpreter with [programmatic tool calling](#programmatic-tool-calling) |
-| Many independent units of work, or multiple perspectives on one task | Interpreter with [subagent orchestration](#orchestrate-subagents-from-code) |
+| Many selected tool calls that should run from code | Interpreter with [programmatic tool calling (PTC)](#programmatic-tool-calling-ptc) |
+| Many independent units of work, multiple perspectives, or recursive analysis over large inputs | Interpreter with [subagent orchestration](#subagent-orchestration), including [RLM workflows](#rlm-workflows) |
 | Shell commands, package installs, tests, or full OS filesystem access | [Sandboxes](/oss/deepagents/sandboxes) |
 
-## Add an interpreter to an agent
+## Quickstart
 
 Install the QuickJS middleware package, then pass interpreter middleware using the `middleware` argument on `create_deep_agent`.
 
@@ -94,9 +103,9 @@ const agent = createDeepAgent({
 ```
 :::
 
-## Run code in the interpreter
+## How interpreters work
 
-The middleware adds an `eval` tool to the agent. The tool runs JavaScript in a persistent context, captures `console.log`, and returns the result of the last expression.
+The middleware adds an `eval` tool to the agent. When useful, the agent writes JavaScript and calls `eval`; you do not call the interpreter directly. The tool runs code in a persistent context, captures `console.log`, and returns the result of the last expression.
 
 The agent can write code like this:
 
@@ -120,18 +129,16 @@ totals;
 By default, interpreter state also persists across turns in the same thread by snapshotting the working state after each agent run, and restoring it before the next run.
 :::
 
-## What interpreter code can reach
-
-By default, interpreter code runs against QuickJS with no access to the host filesystem, network, shell, package manager, or clock. It can compute, hold state, and write to `console.log`, and nothing more.
+Code runs against [**QuickJS**](https://github.com/quickjs-ng/quickjs), a lightweight JavaScript runtime. By default, interpreter code has no access to the host filesystem, network, shell, package manager, or clock. It can compute, hold state, and write to `console.log`, and nothing more.
 
 Two explicit bridges extend that reach:
 
-- **Tools**, through [programmatic tool calling](#programmatic-tool-calling). Expose an allowlist of tools as async functions under the `tools` namespace. These can be the agent's own tools or standalone tools you define and pass in.
-- **Subagents**, through the built-in [`task()` global](#orchestrate-subagents-from-code). Dispatch configured subagents from code and orchestrate them in plain JavaScript.
+- **Tools**, through [programmatic tool calling (PTC)](#programmatic-tool-calling-ptc). Expose an allowlist of tools as async functions under the `tools` namespace. These can be the agent's own tools or standalone tools you define and pass in.
+- **Subagents**, through [subagent orchestration](#subagent-orchestration). Dispatch configured subagents from code and orchestrate them in plain JavaScript.
 
 Programmatic tool calling is off until you [enable it](#enable-ptc). Subagent dispatch is on by default whenever the agent has subagents, and you can turn it off. Nothing else crosses the QuickJS boundary unless you expose it.
 
-## Programmatic tool calling
+## Programmatic tool calling (PTC)
 
 Programmatic tool calling (PTC) exposes selected agent tools inside the interpreter under the global `tools` namespace. Instead of asking the model to issue one tool call, wait for the result, and then decide the next call, the agent can write code that calls tools in loops, branches, retries, or parallel batches.
 
@@ -198,19 +205,17 @@ results.join("\n\n");
 </Warning>
 :::
 
-## Orchestrate subagents from code
+## Subagent orchestration
 
 When an agent has [subagents](/oss/deepagents/subagents) and interpreter middleware, the interpreter exposes a built-in `task()` global that dispatches subagents from code. A task spanning many independent units (reviewing every file in a directory, triaging a batch of tickets) becomes a loop that fans the work out, so it runs deterministically instead of one model-chosen tool call at a time.
 
-### The `task()` global
-
 `task()` takes the following inputs:
 
- - `description`: the prompt for the subagent
- - `subagentType`: which configured subagent to run
- - `responseSchema` (optional): structured output
- 
-a `task()` runs a full agentic loop and resolves to the subagent's result:
+- `description`: The prompt for the subagent
+- `subagentType`: Which configured subagent to run
+- `responseSchema` (optional): Structured output
+
+A `task()` runs a full agentic loop and resolves to the subagent's result:
 
 ```javascript
 const review = await task({
@@ -233,19 +238,11 @@ const critical = review.issues.filter((issue) => issue.severity === "high");
 
 When you pass `responseSchema`, the resolved value is already a typed JavaScript object; only call `JSON.parse` if a subagent intentionally returned a JSON string.
 
-### Steering orchestration
+### RLM workflows
 
-The interpreter middleware ships orchestration guidance in the system prompt, so the agent already knows how to fan out in bounded batches, filter between passes, and synthesize results. You don't hand-write that logic or prompt for it turn by turn.
+Recursive language model (RLM) workflows use subagent orchestration over large inputs. The interpreter keeps the working set in variables while the agent selects slices, calls subagents with `task()`, and synthesizes the results. This is the approach described in the [Recursive Language Models paper](https://arxiv.org/abs/2512.24601).
 
-To shape *what* the agent orchestrates, work through the inputs it already responds to:
-
-- **The subagents you configure.** Their `name` and `description` define the roles available. A `reviewer` paired with a `verifier` invites a two-pass check; a single `analyzer` invites a straight fan-out.
-- **The task message.** Phrasing like "I only want confirmed issues, not maybes" or "be exhaustive" nudges the agent toward verification or an open-ended sweep.
-- **The system prompt.** Use `systemPrompt` (or the agent's instructions) to add standing guidance when you want a consistent strategy across runs.
-
-### Working with large inputs
-
-The `task()` mechanism handles inputs too large to reason over in one pass, the approach described in the [Recursive Language Models paper](https://arxiv.org/abs/2512.24601). Keep the large input or working set in interpreter variables (the *variable space*, distinct from the model's context), then let the model inspect it, split it into slices, dispatch a subagent per slice, and stitch the returned results back together.
+Keep the large input or working set in interpreter variables (the *variable space*, distinct from the model's context), then let the model inspect it, split it into slices, dispatch a subagent per slice, and stitch the returned results back together.
 
 ```mermaid
 flowchart TB
@@ -304,7 +301,17 @@ const releaseSummary = riskReports
 releaseSummary;
 ```
 
-### Orchestration patterns
+### Guide orchestration
+
+The interpreter middleware ships orchestration guidance in the system prompt, so the agent already knows how to fan out in bounded batches, filter between passes, and synthesize results. You don't hand-write that logic or prompt for it turn by turn.
+
+To shape *what* the agent orchestrates, work through the inputs it already responds to:
+
+- **The subagents you configure.** Their `name` and `description` define the roles available. A `reviewer` paired with a `verifier` invites a two-pass check; a single `analyzer` invites a straight fan-out.
+- **The task message.** Phrasing like "I only want confirmed issues, not maybes" or "be exhaustive" nudges the agent toward verification or an open-ended sweep.
+- **The system prompt.** Use `systemPrompt` (or the agent's instructions) to add standing guidance when you want a consistent strategy across runs.
+
+### Patterns
 
 The agent picks a strategy from the shape of the task; these emerge from how it writes interpreter code, not from configuration, and the subagents you make available determine what it can do. Every pattern shares one model: hold work in JS variables, dispatch subagents with `task()`, and combine results in code. The diagrams below show the common shapes, each with a runnable example.
 
@@ -853,7 +860,7 @@ found;
 :::
 
 :::python
-## Snapshots and time travel
+## Persistence
 
 `CodeInterpreterMiddleware` snapshots interpreter state after each agent run and restores it before the next run by default. A snapshot is a serialized copy of the interpreter's in-memory JavaScript state, including globals, variables, functions, and imported modules that exist when the agent finishes running code.
 
@@ -895,7 +902,7 @@ agent = create_deep_agent(
 You can disable cross-turn snapshots with `snapshot_between_turns=False`.
 :::
 
-## Security and limits
+## Security
 
 Interpreters use QuickJS to run untrusted JavaScript with strict default isolation. Treat that as a scoped interpreter runtime, not a full production sandbox backend.
 
@@ -936,7 +943,7 @@ Every tool you expose through PTC is an outside capability that interpreter code
 </Note>
 :::
 
-## Middleware options
+## Configuration
 
 :::python
 `CodeInterpreterMiddleware` accepts the following options:
@@ -949,7 +956,7 @@ Every tool you expose through PTC is an outside capability that interpreter code
 | `tool_name` | `"eval"` | Name of the interpreter tool exposed to the model. |
 | `max_result_chars` | `4000` | Maximum characters returned from result and stdout blocks. |
 | `capture_console` | `True` | Whether `console.log`, `console.warn`, and `console.error` output is captured. |
-| `subagents` | `True` | Expose the built-in `task()` global for [subagent orchestration](#orchestrate-subagents-from-code). Set to `False` to require subagent dispatch through the normal `task` tool path. |
+| `subagents` | `True` | Expose the built-in `task()` global for [subagent orchestration](#subagent-orchestration). Set to `False` to require subagent dispatch through the normal `task` tool path. |
 | `ptc` | `None` | PTC allowlist: list of tool names or `BaseTool` instances. |
 | `snapshot_between_turns` | `True` | Whether interpreter state snapshots persist across agent turns. |
 | `max_snapshot_bytes` | `None` | Maximum serialized snapshot size. Defaults to `memory_limit`. |
@@ -969,5 +976,5 @@ Every tool you expose through PTC is an outside capability that interpreter code
 | `maxResultChars` | `4000` | Maximum characters retained from console output, result, and error strings. |
 | `toolName` | `"eval"` | Name of the interpreter tool exposed to the model. |
 | `captureConsole` | `true` | Whether `console.log`, `console.warn`, and `console.error` output is captured. |
-| `subagents` | `true` | Expose the built-in `task()` global for [subagent orchestration](#orchestrate-subagents-from-code). Set to `false` to require subagent dispatch through the normal `task` tool path. |
+| `subagents` | `true` | Expose the built-in `task()` global for [subagent orchestration](#subagent-orchestration). Set to `false` to require subagent dispatch through the normal `task` tool path. |
 :::
