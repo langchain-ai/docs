@@ -162,7 +162,7 @@ const finalState = await stream.output;
 // :snippet-end:
 
 // :snippet-start: sql-agent-hitl-middleware-js
-import { createAgent, humanInTheLoopMiddleware } from "langchain"; // [!code highlight]
+import { humanInTheLoopMiddleware } from "langchain"; // [!code highlight]
 import { MemorySaver } from "@langchain/langgraph"; // [!code highlight]
 
 agent = createAgent({

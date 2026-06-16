@@ -205,7 +205,7 @@ for await (const message of stream.messages) {
 // :snippet-end:
 
 // :remove-start:
-import { AIMessage, ToolMessage } from "@langchain/core/messages";
+import { ToolMessage } from "@langchain/core/messages";
 
 function isAllowlistError(error: unknown): boolean {
   if (!(error instanceof Error)) {
