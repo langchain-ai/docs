@@ -684,6 +684,16 @@ In distributed systems, context propagation passes trace metadata between servic
 * **Span ID**: A unique identifier for the current span
 * **Sampling Decision**: Indicates whether this trace should be sampled
 
+<Warning>
+**A span whose parent is never sent to LangSmith is dropped.**
+
+The OTel endpoint is asynchronous: it accepts a batch, returns `200`, and materializes runs in the background. When a span's `parentSpanId` references a parent that LangSmith hasn't received yet, the child is buffered and linked once the parent arrives. This works regardless of order — a child can arrive before its parent, in a separate request, and still link correctly.
+
+However, if the parent span is **never** exported to LangSmith, the buffered child expires and never appears as a run — and no error is returned, since the `200` was sent before processing. This commonly happens when only part of a distributed trace reaches LangSmith: the parent is emitted by a service that exports to a different backend, or it's removed by a sampling decision.
+
+To avoid silent loss, make sure every span you want in LangSmith has its ancestors exported to LangSmith as well, within the buffering window. On self-hosted deployments, this window is controlled by `REDIS_RUNS_EXPIRY_SECONDS` (default 12 hours).
+</Warning>
+
 #### Set up distributed tracing with LangChain
 
 To enable distributed tracing across multiple services:
@@ -757,13 +767,3 @@ def service_b_endpoint():
 if __name__ == "__main__":
     app.run(port=5000)
 ```
-
-<Warning>
-**Spans whose parent is never sent to LangSmith are dropped.**
-
-The OTel endpoint is asynchronous: it accepts a batch, returns `200`, and materializes runs in the background. When a span's `parentSpanId` references a parent that LangSmith hasn't received yet, the child is buffered and linked once the parent arrives. This works regardless of order — a child can arrive before its parent, in a separate request, and still link correctly.
-
-However, if the parent span is **never** exported to LangSmith, the buffered child expires and never appears as a run — no error is returned, since the `200` was sent before processing. This can happen when only part of a distributed trace is exported to LangSmith (for example, the parent is emitted by a service that exports to a different backend, or is removed by sampling).
-
-To avoid silent loss, ensure that every span you want in LangSmith has its ancestors exported to LangSmith as well, within the buffering window. On self-hosted deployments, this window is controlled by `REDIS_RUNS_EXPIRY_SECONDS` (default 12 hours).
-</Warning>
