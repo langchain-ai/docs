@@ -1,0 +1,208 @@
+---
+title: "GoodMem integration"
+description: "Integrate with the GoodMem tools using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the GoodMem tools. GoodMem is a long-term memory layer for AI agents that handles embedding, vector search, reranking, and LLM-powered answering server-side. The [`langchain-goodmem`](https://github.com/PAIR-Systems-Inc/goodmem-langchain) and [`langgraph-goodmem`](https://github.com/PAIR-Systems-Inc/goodmem-langgraph) packages expose those operations as tools that drop into any LangChain agent or LangGraph graph.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| `GoodMemCreateMemory`, `GoodMemRetrieveMemories`, and more | [`langchain-goodmem`](https://pypi.org/project/langchain-goodmem/) | ❌ | N/A | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-goodmem?style=flat-square&label=%20) |
+| Same classes from the `langgraph_goodmem` import path | [`langgraph-goodmem`](https://pypi.org/project/langgraph-goodmem/) | ❌ | N/A | ![PyPI - Version](https://img.shields.io/pypi/v/langgraph-goodmem?style=flat-square&label=%20) |
+
+### Tool features
+
+Both packages expose the same set of tools, differing only in import path:
+
+| Tool | Description |
+| :--- | :--- |
+| `GoodMemListEmbedders` | List available embedder models |
+| `GoodMemListSpaces` | List all spaces in your account |
+| `GoodMemGetSpace` | Fetch a single space by ID |
+| `GoodMemCreateSpace` | Create a new space or reuse an existing one |
+| `GoodMemUpdateSpace` | Update name, public-read flag, or labels on a space |
+| `GoodMemDeleteSpace` | Delete a space and cascade-delete its memories |
+| `GoodMemCreateMemory` | Store text or files as memories |
+| `GoodMemListMemories` | Paginate memories within a space |
+| `GoodMemGetMemory` | Fetch a specific memory by ID |
+| `GoodMemRetrieveMemories` | Semantic search with optional reranker and LLM summary |
+| `GoodMemDeleteMemory` | Permanently delete a memory |
+
+## Setup
+
+The tools live in the `langchain-goodmem` package, or `langgraph-goodmem` for LangGraph:
+
+<CodeGroup>
+```bash pip
+pip install -U langchain-goodmem
+```
+
+```bash uv
+uv add langchain-goodmem
+```
+</CodeGroup>
+
+### Credentials
+
+The tools require the GoodMem server URL and an API key. The examples read them from environment variables:
+
+```python Set credentials icon="key"
+import os
+
+os.environ["GOODMEM_BASE_URL"] = "https://localhost:8080"
+os.environ["GOODMEM_API_KEY"] = "your-api-key"
+```
+
+<Note>
+A self-hosted GoodMem server uses HTTPS with a self-signed certificate by default. To connect to one, set `GOODMEM_VERIFY_SSL=false` and pass `goodmem_verify_ssl=False` when you instantiate a tool. Keep the default (`True`) for a server with a trusted certificate.
+</Note>
+
+It is also helpful (but not required) to set up [LangSmith](/langsmith/observability) for observability and <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = "your-langsmith-key"
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Instantiation
+
+Each tool is instantiated with the GoodMem connection settings. Pass them explicitly, or read them from the environment as shown:
+
+```python Instantiate tools icon="robot"
+import os
+
+from langchain_goodmem import (
+    GoodMemCreateMemory,
+    GoodMemCreateSpace,
+    GoodMemRetrieveMemories,
+)
+
+goodmem_kwargs = {
+    "goodmem_base_url": os.environ["GOODMEM_BASE_URL"],
+    "goodmem_api_key": os.environ["GOODMEM_API_KEY"],
+    # Set to False for a self-hosted server with a self-signed certificate.
+    "goodmem_verify_ssl": os.environ.get("GOODMEM_VERIFY_SSL", "true").lower() == "true",
+}
+
+tools = [
+    GoodMemCreateSpace(**goodmem_kwargs),
+    GoodMemCreateMemory(**goodmem_kwargs),
+    GoodMemRetrieveMemories(**goodmem_kwargs),
+]
+```
+
+A space holds related memories and is bound to an embedder. Pass an `embedder_id` to `GoodMemCreateSpace`; list the embedders configured on your server with `GoodMemListEmbedders`, or copy an ID from the GoodMem console.
+
+For LangGraph, import the same classes from `langgraph_goodmem`:
+
+```python LangGraph import icon="robot"
+from langgraph_goodmem import (
+    GoodMemCreateMemory,
+    GoodMemCreateSpace,
+    GoodMemRetrieveMemories,
+)
+```
+
+## Invocation
+
+### Directly
+
+Invoke a tool by passing its arguments as a dictionary. For example, retrieve semantically similar memories from one or more spaces:
+
+```python Call tool icon="rocket"
+retrieve = GoodMemRetrieveMemories(**goodmem_kwargs)
+
+result = retrieve.invoke({
+    "query": "Which framework develops applications with language models?",
+    "space_ids": "space-uuid-1,space-uuid-2",
+    "max_results": 5,
+})
+```
+
+<Note>
+GoodMem chunks and embeds new memories in the background, so a memory is not searchable the instant it is created. `GoodMemRetrieveMemories` polls for up to 60 seconds by default (`wait_for_indexing=True`). A retrieval that runs right after a write can still return partial results while the remaining memories finish indexing.
+</Note>
+
+### As a tool call
+
+You can also invoke a tool with a model-generated `ToolCall`, in which case a @[`ToolMessage`] is returned:
+
+```python ToolCall icon="briefcase"
+model_generated_tool_call = {
+    "args": {
+        "query": "project kickoff notes",
+        "space_ids": "space-uuid-1",
+    },
+    "id": "1",
+    "name": retrieve.name,
+    "type": "tool_call",
+}
+retrieve.invoke(model_generated_tool_call)
+```
+
+### Within a LangChain agent
+
+```python Agent with tools icon="robot"
+# pip install -qU "langchain[anthropic]" to call the model
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=tools,
+)
+
+agent.invoke(
+    {"messages": [{"role": "user", "content": "Save our launch date (March 3) and recall it when I ask."}]}
+)
+```
+
+### Within a LangGraph graph
+
+The `langgraph-goodmem` tools are the same tools under the `langgraph_goodmem` import path, so they also work with @[`create_agent`]. To control the graph yourself, wire them into a `ToolNode`:
+
+```python LangGraph ToolNode icon="robot"
+from langgraph.prebuilt import ToolNode
+
+from langgraph_goodmem import (
+    GoodMemCreateMemory,
+    GoodMemCreateSpace,
+    GoodMemRetrieveMemories,
+)
+
+tools = [
+    GoodMemCreateSpace(**goodmem_kwargs),
+    GoodMemCreateMemory(**goodmem_kwargs),
+    GoodMemRetrieveMemories(**goodmem_kwargs),
+]
+
+# Add this node to a StateGraph so the graph can call the GoodMem tools.
+tool_node = ToolNode(tools)
+```
+
+## Retrieve with reranking and an LLM summary
+
+`GoodMemRetrieveMemories` exposes the full server-side post-processor. Set any of these fields to enable reranking, threshold filtering, chronological re-sort, or an LLM-generated summary (`abstractReply`). Leave them unset for plain semantic search. Reranking and LLM summaries require reranker and LLM models to be configured on your GoodMem server:
+
+```python Retrieve with post-processing icon="wand"
+result = retrieve.invoke({
+    "query": "Which framework develops applications with language models?",
+    "space_ids": "space-uuid-1,space-uuid-2",
+    "max_results": 5,
+    "reranker_id": "reranker-uuid",
+    "llm_id": "llm-uuid",
+    "llm_temperature": 0.2,
+    "relevance_threshold": 0.1,
+    "chronological_resort": False,
+})
+```
+
+## API reference
+
+For the full list of tools, parameters, and configuration options, see the package source:
+
+- `langchain-goodmem`: [GitHub](https://github.com/PAIR-Systems-Inc/goodmem-langchain) and [PyPI](https://pypi.org/project/langchain-goodmem/)
+- `langgraph-goodmem`: [GitHub](https://github.com/PAIR-Systems-Inc/goodmem-langgraph) and [PyPI](https://pypi.org/project/langgraph-goodmem/)
