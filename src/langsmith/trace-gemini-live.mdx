@@ -1,0 +1,207 @@
+---
+title: Trace Gemini Live applications
+sidebarTitle: Gemini Live
+description: Trace Gemini Live voice agents built with the Google Agent Development Kit (ADK) in LangSmith.
+---
+
+The [Gemini Live API](https://ai.google.dev/gemini-api/docs/live-api) enables low-latency, bidirectional voice interactions with Gemini models over a persistent WebSocket connection. This guide shows how to trace a Gemini Live voice agent built with the [Google Agent Development Kit (ADK)](https://google.github.io/adk-docs/streaming/) to LangSmith.
+
+Gemini Live is a speech-to-speech model: it processes audio natively and exchanges a continuous stream of events with your application over a persistent WebSocket connection, rather than making discrete request/response calls. The following sections show those events and how to turn them into a LangSmith trace. For our high-level principles on getting the most out of your voice agent traces, see [Voice tracing fundamentals](/langsmith/trace-voice-fundamentals).
+
+## The ADK Live event model
+
+As the conversation runs, ADK streams a series of events to your application. Each event reports something that happened in the conversation: a chunk of audio, a transcript fragment, a tool call, a turn boundary, or an interruption. Every event has the same shape, and most of its fields are optional, so you determine what an event represents from **which fields are populated**:
+
+| Populated field | Meaning |
+| --- | --- |
+| `content.parts[*].inline_data` | A chunk of agent audio (PCM16 bytes). The agent's voice arrives as a flood of these. |
+| `input_transcription` | A fragment of the *user's* speech transcript. A final event repeats the full utterance with `finished=True`. |
+| `output_transcription` | A fragment of the *agent's* speech transcript. |
+| `content.parts[*].function_call` | The model requested a tool (name and arguments). |
+| `content.parts[*].function_response` | ADK executed the tool and is returning the result to the model. |
+| `turn_complete` | The server finished its half of the exchange. |
+| `interrupted` | The server detected user barge-in over the agent. Flush your speaker buffer. |
+
+## How events map to LangSmith runs
+
+To get the most out of your traces, capture each meaningful event and the data it contains in a single conversation trace, with one span per event:
+
+```text
+conversation                           ← root run (combined audio recording; ls_modality="audio")
+│   metadata: thread_id, model, event_count, duration_s
+│
+├─ input_transcription                 ← a fragment of the user's speech transcript
+├─ output_transcription                ← a fragment of the agent's speech transcript
+├─ function_call: get_weather          ← the model requested the tool
+├─ function_response: get_weather      ← ADK ran the tool; result heading back
+├─ turn_complete                       ← turn boundary
+└─ interrupted                         ← barge-in
+```
+
+## Installation
+
+```bash
+pip install "google-adk>=2.0" google-genai "langsmith>=0.4"
+```
+
+Install `sounddevice` and `numpy` as well if you want to capture local audio and attach the conversation recording.
+
+## Set up your environment
+
+The following steps demonstrate how to trace using the LangSmith SDK. You can also trace using OpenTelemetry directly. See [Trace with OpenTelemetry](/langsmith/trace-with-opentelemetry).
+
+```bash
+export LANGSMITH_API_KEY=...
+export LANGSMITH_TRACING=true
+export LANGSMITH_PROJECT=my-voice-app
+export GOOGLE_API_KEY=...
+```
+
+## Quickstart
+
+<Note>
+This guide focuses on the tracing layer. It assumes you already have a working ADK Live app: the `LlmAgent`, `Runner`, and `LiveRequestQueue` that produce the `run_live` event stream, plus your microphone and speaker I/O. For a complete, runnable implementation of all of that, see the [voice demo repository](https://github.com/langchain-ai/voice-demo/tree/main/src/voice_demo/adk).
+</Note>
+
+### Step 1: Build the RunConfig
+
+```python
+from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.genai import types as genai_types
+
+run_config = RunConfig(
+    response_modalities=["AUDIO"],
+    streaming_mode=StreamingMode.BIDI,
+    input_audio_transcription=genai_types.AudioTranscriptionConfig(),
+    output_audio_transcription=genai_types.AudioTranscriptionConfig(),
+)
+```
+
+<Note>
+**Transcription is opt-in.** You get no transcripts unless you enable input and output transcription in the `RunConfig`. The `finished=True` transcription event carries the complete utterance, so there is no need to accumulate fragments client-side.
+</Note>
+
+### Step 2: Open the conversation root run
+
+Open one run for the whole conversation and mark it as a voice trace with `ls_modality="audio"`, following the [single-trace convention](/langsmith/trace-voice-fundamentals#trace-each-conversation-as-a-single-trace). Keep this run open for the lifetime of the session and finalize it when the session ends.
+
+```python
+from langsmith import RunTree
+
+session = RunTree(
+    name="conversation",
+    run_type="chain",
+    extra={"metadata": {"thread_id": thread_id, "model": MODEL, "ls_modality": "audio"}},
+)
+session.post()
+```
+
+### Step 3: Trace each event
+
+Define a small helper that opens a child run for one event, records its scrubbed payload, and closes it when the block exits. The `scrub` pass replaces raw audio bytes with a placeholder so the spans stay small:
+
+```python
+from contextlib import contextmanager
+
+
+def scrub(obj):
+    """Replace raw audio bytes with a placeholder so spans stay small."""
+    if isinstance(obj, bytes):
+        return f"<{len(obj)} bytes>"
+    if isinstance(obj, dict):
+        return {k: scrub(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [scrub(v) for v in obj]
+    return obj
+
+
+@contextmanager
+def event_span(parent, event, *, name, inbound):
+    """Trace one event as a child run under the conversation root.
+
+    User-to-model events land in `inputs`; model-to-user events land in
+    `outputs`, so the trace reads in the natural direction of flow.
+    """
+    payload = scrub(event.raw.model_dump())
+    child = parent.create_child(
+        name=name,
+        run_type="chain",
+        inputs=payload if inbound else {},
+    )
+    child.post()
+    try:
+        yield child
+    finally:
+        child.end(outputs={} if inbound else payload)
+        child.patch()
+```
+
+Then loop over the events from your app's `run_live` stream, skipping the audio-only chunks and spanning the rest. `runner`, `adk_session`, and `queue` come from your ADK Live app (see the [demo agent](https://github.com/langchain-ai/voice-demo/blob/main/src/voice_demo/adk/agent.py)); `LiveEvent` is the wrapper defined in the note below:
+
+```python
+async for raw_event in runner.run_live(
+    user_id=USER_ID,
+    session_id=adk_session.id,
+    live_request_queue=queue,
+    run_config=run_config,
+):
+    event = LiveEvent(raw_event)
+    if event.is_audio_only:
+        continue  # tracing audio will make your traces very noisy
+
+    with event_span(session, event, name=event.label, inbound=event.is_inbound):
+        ...  # handle the event: capture the transcript, run a tool, and so on
+```
+
+<Note>
+Skip audio-only events, the chunks of agent speech. They arrive in the thousands over a short conversation and would bury the trace, so play them to the speaker but do not span them.
+</Note>
+
+<Note>
+A `LiveEvent` wrapper with helper functions is defined in the [demo repository](https://github.com/langchain-ai/voice-demo/blob/main/src/voice_demo/adk/events.py). Adapt the implementation to your own code.
+</Note>
+
+## Attach audio
+
+<Info>
+Audio rates differ by direction: ADK Live expects 16 kHz PCM16 input and produces 24 kHz output. If your microphone capture is not 16 kHz, resample it on the send path.
+</Info>
+
+To listen to a conversation alongside its transcript, attach a single combined recording of the whole conversation to the root run. Record both sides into one stereo WAV (the user's mic on the left channel, the agent's audio on the right) so interruptions show up as overlap between the channels. Write the user's mic frames as you send them to ADK, and tap the speaker for the agent's audio so audio flushed on barge-in never reaches the recording and the file reflects what the user actually heard.
+
+For the underlying attachment API, see [Upload files with traces](/langsmith/upload-files-with-traces). For the cross-provider rationale, see [Record a single combined audio file](/langsmith/trace-voice-fundamentals#record-a-single-combined-audio-file).
+
+Finalize the root run when the session ends. Wrap the event loop in a `try`/`finally` so the run always closes, even on error:
+
+```python
+try:
+    ...  # the run_live event loop from Step 3
+except Exception as exc:
+    session.error = f"{type(exc).__name__}: {exc}"  # surface failures on the root run
+finally:
+    session.end()
+    session.patch()
+```
+
+The demo repository wraps the full recording flow for each framework, including mic resampling, speaker-tap capture, and stereo WAV reconstruction. For Gemini Live, see the [ADK agent](https://github.com/langchain-ai/voice-demo/blob/main/src/voice_demo/adk/agent.py) and the shared [recording helpers](https://github.com/langchain-ai/voice-demo/blob/main/src/voice_demo/sdk_tracing.py).
+
+## Troubleshooting
+
+- **No transcription configs means empty-looking traces.** This is the most common failure mode. Both `input_audio_transcription` and `output_audio_transcription` must be set on the `RunConfig`.
+- **Don't accumulate transcript fragments.** Use the `finished=True` event's full text; fragments are only for live UI display.
+- **Don't span audio-only events.** A few minutes of conversation produces thousands of them.
+- **Fields co-occur.** Classify by priority, not by assuming one field per event.
+- **Tools run inside ADK.** Do not synthesize your own tool runs. Doing so double-counts what `function_call` and `function_response` already record.
+- **Resample the mic** if your capture isn't 16 kHz (ADK input is 16 kHz, output is 24 kHz).
+- **Mute ADK's startup noise** for a console UI: `logging.getLogger("google_adk").setLevel(logging.ERROR)` suppresses the experimental-feature warning for `run_live` and the MCP-not-installed line.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Voice fundamentals" icon="waveform" href="/langsmith/trace-voice-fundamentals">
+    Core conventions for tracing voice agents.
+  </Card>
+  <Card title="Upload files with traces" icon="paperclip" href="/langsmith/upload-files-with-traces">
+    Attach the conversation audio recording to your trace.
+  </Card>
+</CardGroup>
