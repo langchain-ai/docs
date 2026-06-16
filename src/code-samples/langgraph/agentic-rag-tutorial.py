@@ -143,7 +143,7 @@ def grade_documents(
 
 
 # :snippet-start: agentic-rag-rewrite-question-py
-from langchain_core.messages import HumanMessage
+from langchain.messages import HumanMessage
 REWRITE_PROMPT = (
     "Look at the input and try to reason about the underlying semantic intent / meaning.\n"
     "Here is the initial question:"
