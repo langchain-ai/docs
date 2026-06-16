@@ -298,7 +298,7 @@ The `scripts/` directory holds executable code the agent can run, such as API cl
 - Include helpful error messages
 - Handle edge cases gracefully
 
-Supported languages depend on your agent setup. Common options include Python, Bash, and JavaScript or TypeScript. To execute scripts rather than only read them, see [Execute code with skills](#execute-code-with-skills). Use [sandbox scripts](#sandbox-scripts) when the agent needs a shell, or [interpreter skills](#interpreter-skills) when the agent needs importable helpers in an interpreter.
+Supported languages depend on your agent setup. Common options include Python, Bash, and JavaScript or TypeScript. To execute scripts rather than only read them, see [Execute code with skills](#execute-code-with-skills). Use [sandbox scripts](#sandbox-scripts) when the agent needs a shell.
 
 ### `references/`
 
@@ -418,7 +418,7 @@ This works well when skills live on disk or in a shared backend and you just nee
         Then pass that ordered list as `skills` when creating your agent.
     </Accordion>
 </Note>
-      
+
 ### Namespaced skills
 
 For multi-tenant applications where each user's skill set is managed independently, route `/skills/` to a @[StoreBackend] with a namespace factory. Populate each namespace with only the skills that user should have access to, and the middleware resolves to the correct set at runtime:
@@ -704,10 +704,7 @@ The agent uses `write_file` and `edit_file` to create or update `SKILL.md` and s
 
 Without code execution, skills are passive: the agent reads instructions and follows them using its available tools. Code execution turns skills into active capabilities. A skill can ship a tested script that calls an API, transforms data, validates output, or runs a pipeline — and the agent executes it deterministically rather than regenerating the logic from instructions each time. This is especially valuable for workflows that require exact behavior (data transformations, API integrations, compliance checks) or that depend on libraries the agent cannot use through tool calls alone.
 
-Skills support code execution in two ways:
-
-- [Sandbox scripts](#sandbox-scripts) when the agent needs to install dependencies, run tests, call CLIs, or work with an operating-system filesystem.
-- [Interpreter skills](#interpreter-skills) when the agent needs reusable, importable helpers available from interpreter code.
+Skills execute code through [sandbox scripts](#sandbox-scripts): the agent runs a bundled script when it needs to install dependencies, run tests, call CLIs, or work with an operating-system filesystem.
 
 ### Sandbox scripts
 
@@ -796,128 +793,6 @@ The agent can _read_ scripts from any backend, but to _execute_ them, the agent 
 
 For a complete example that seeds both skills and memories before execution and syncs both back afterward, see [syncing skills and memories with custom middleware](/oss/deepagents/going-to-production#example-syncing-skills-and-memories-with-custom-middleware).
 
-### Interpreter skills
-
-Interpreter skills expose code modules to an [interpreter](/oss/deepagents/interpreters). Regular skills give the agent instructions and context. Interpreter skills also give the agent importable functions it can call from interpreter code.
-
-This lets you package domain-specific logic once and make it available as a deterministic building block. Instead of asking the model to re-create a parser, validator, or aggregation routine from scratch, the agent can import a tested helper and compose it with tools, subagents, and runtime state.
-
-Use interpreter skills for code that should be:
-
-- **Reusable** across prompts, agents, or projects
-- **Deterministic** enough that you want the same behavior every time
-- **Too detailed** to keep in the model context as instructions
-
-To make a skill importable:
-
-<Steps titleSize="h4">
-    <Step title="Add an entrypoint">
-        Add a [`metadata.entrypoint`](#frontmatter-fields) key to the skill's `SKILL.md` [frontmatter](#frontmatter-fields). The value is a JavaScript or TypeScript file path relative to the skill directory.
-    </Step>
-    <Step title="Configure skills normally">
-        Pass the skill source path with the `skills` argument when creating the agent.
-    </Step>
-    <Step title="Use the same backend">
-        Configure the interpreter middleware with the same backend that `SkillsMiddleware` uses to load skill files.
-    </Step>
-    <Step title="Import from interpreter code">
-        The agent imports the helper module with `await import("@/skills/<name>")`.
-    </Step>
-</Steps>
-
-Minimal skill layout:
-
-<Tree>
-  <Tree.Folder name="skills" defaultOpen>
-    <Tree.Folder name="order-helpers" defaultOpen>
-      <Tree.File name="SKILL.md" />
-      <Tree.Folder name="scripts" defaultOpen>
-        <Tree.File name="index.ts" />
-      </Tree.Folder>
-    </Tree.Folder>
-  </Tree.Folder>
-</Tree>
-
-````md
----
-name: order-helpers
-description: Helper functions for normalizing and grouping order records.
-metadata:
-  entrypoint: scripts/index.ts
----
-
-# order-helpers
-
-Use this skill when order records need deterministic cleanup or aggregation.
-
-Import these utilities into the REPL in order to interact with order data:
-
-```typescript
-const { groupByStatus } = await import("@/skills/order-helpers");
-groupByStatus(...);
-```
-````
-
-```typescript
-// skills/order-helpers/scripts/index.ts
-interface Order {
-  id: string;
-  status: string;
-}
-
-export function groupByStatus(orders: Order[]) {
-  return orders.reduce((acc, order) => {
-    acc[order.status] = acc[order.status] ?? [];
-    acc[order.status].push(order);
-    return acc;
-  }, {});
-}
-```
-
-Then configure the agent. Pass interpreter middleware via the `middleware` argument; it is appended to the [default stack](/oss/deepagents/customization#default-stack-main-agent):
-
-:::python
-```python
-from deepagents import create_deep_agent
-from deepagents.backends import StateBackend
-from langchain_quickjs import CodeInterpreterMiddleware
-
-backend = StateBackend()
-
-agent = create_deep_agent(
-    model="openai:gpt-5.5",
-    backend=backend,
-    skills=["/skills/"],
-    middleware=[CodeInterpreterMiddleware(skills_backend=backend)],
-)
-```
-:::
-
-:::js
-```typescript
-import { createDeepAgent, StateBackend } from "deepagents";
-import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
-
-const backend = new StateBackend();
-
-const agent = createDeepAgent({
-  model: "openai:gpt-5.5",
-  backend,
-  skills: ["/skills/"],
-  middleware: [createCodeInterpreterMiddleware({ skillsBackend: backend })],
-});
-```
-:::
-
-The agent can now import the module from interpreter code:
-
-```javascript
-const { groupByStatus } = await import("@/skills/order-helpers");
-
-const grouped = groupByStatus(orders);
-grouped;
-```
-
 ## Troubleshooting
 
 Use [LangSmith](https://smith.langchain.com) traces to debug skill discovery, `read_file` calls on `SKILL.md`, and supporting resource access. Follow the [tracing quickstart](/langsmith/observability-quickstart) to get set up. We recommend you also set up [LangSmith Engine](/langsmith/engine), which monitors your traces, detects issues, and proposes fixes.
@@ -970,17 +845,11 @@ Use [LangSmith](https://smith.langchain.com) traces to debug skill discovery, `r
 
 3. **Sync skills into sandboxes.** If you use [sandbox backends](/oss/deepagents/sandboxes), skill files outside the container are not available until you copy them in. See [Sandbox scripts](#sandbox-scripts) and [syncing skills and memories with custom middleware](/oss/deepagents/going-to-production#example-syncing-skills-and-memories-with-custom-middleware).
 
-### Scripts or imports fail
+### Scripts fail to run
 
-**Problem**: The agent reads a script but cannot run it, or `import("@/skills/<name>")` fails in the interpreter.
+**Problem**: The agent reads a script but cannot run it.
 
-**Solutions**:
-
-1. **Use a sandbox for shell execution.** The agent can read scripts from any backend, but running them requires a [sandbox backend](/oss/deepagents/sandboxes). See [Execute code with skills](#execute-code-with-skills).
-
-2. **Configure interpreter middleware.** [Interpreter skills](#interpreter-skills) require [`metadata.entrypoint`](#frontmatter-fields) in `SKILL.md` [frontmatter](#frontmatter-fields) and interpreter middleware with the same backend that loads skill files.
-
-3. **Match skill and interpreter backends.** If `SkillsMiddleware` and the interpreter use different backends, import paths may not resolve to the files you expect.
+**Solution**: The agent can read scripts from any backend, but running them requires a [sandbox backend](/oss/deepagents/sandboxes). See [Execute code with skills](#execute-code-with-skills).
 
 ### Subagent cannot access a skill
 

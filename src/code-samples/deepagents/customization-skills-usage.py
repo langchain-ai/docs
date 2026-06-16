@@ -5,7 +5,6 @@ from urllib.request import urlopen
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
 from deepagents.backends.utils import create_file_data
-from langchain_quickjs import CodeInterpreterMiddleware
 from langgraph.checkpoint.memory import MemorySaver
 
 checkpointer = MemorySaver()
@@ -24,7 +23,6 @@ agent = create_deep_agent(
     backend=backend,
     skills=["/skills/"],
     checkpointer=checkpointer,
-    middleware=[CodeInterpreterMiddleware(skills_backend=backend)], # for interpreter skills
 )
 
 result = agent.invoke(
@@ -43,7 +41,6 @@ from urllib.request import urlopen
 from deepagents import create_deep_agent
 from deepagents.backends import StoreBackend
 from deepagents.backends.utils import create_file_data
-from langchain_quickjs import CodeInterpreterMiddleware
 from langgraph.store.memory import InMemoryStore
 
 store = InMemoryStore()
@@ -65,7 +62,6 @@ agent = create_deep_agent(
     backend=backend,
     store=store,
     skills=["/skills/"],
-    middleware=[CodeInterpreterMiddleware(skills_backend=backend)],
 )
 
 result = agent.invoke(
@@ -78,7 +74,6 @@ from pathlib import Path
 # :snippet-start: skills-usage-filesystem-py
 from deepagents import create_deep_agent
 from deepagents.backends.filesystem import FilesystemBackend
-from langchain_quickjs import CodeInterpreterMiddleware
 from langgraph.checkpoint.memory import MemorySaver
 
 # Checkpointer is REQUIRED for human-in-the-loop
@@ -103,7 +98,6 @@ agent = create_deep_agent(
         "edit_file": True,
     },
     checkpointer=checkpointer, # Required!
-    middleware=[CodeInterpreterMiddleware(skills_backend=backend)], # for interpreter skills
 )
 
 result = agent.invoke(
