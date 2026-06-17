@@ -32,7 +32,7 @@ For runnable end-to-end examples that combine these filters with the SDK, see [Q
 
 ## Filter query language
 
-LangSmith supports powerful filtering capabilities with a filter query language to permit complex filtering operations when fetching runs. This is especially useful when querying traces programmatically via the SDK or API — for example, in evaluation pipelines, monitoring scripts, or agentic workflows that inspect prior traces.
+LangSmith supports powerful filtering capabilities with a filter query language to permit complex filtering operations when fetching runs. This is especially useful when querying traces programmatically via the SDK or API—for example, in evaluation pipelines, monitoring scripts, or agentic workflows that inspect prior traces.
 
 ### Comparators
 
@@ -41,9 +41,9 @@ The filtering grammar is based on comparator functions applied to fields of the 
 | Comparator | Description                                              | Example |
 | ---------- | -------------------------------------------------------- | ------- |
 | `eq`       | Equal to                                                 | `eq(run_type, "llm")` |
-| `neq`      | Not equal to                                             | `neq(error, null)` |
+| `neq`      | Not equal to                                             | `neq(status, "error")` |
 | `gt`       | Greater than                                             | `gt(latency, "5s")` |
-| `gte`      | Greater than or equal to                                 | `gte(total_tokens, 1000)` |
+| `gte`      | Greater than or equal to                                 | `gte(latency, 1.5)` |
 | `lt`       | Less than                                                | `lt(start_time, "2024-01-01T00:00:00Z")` |
 | `lte`      | Less than or equal to                                    | `lte(feedback_score, 0.5)` |
 | `has`      | Check if the run contains a tag or metadata key-value    | `has(tags, "production")` |
@@ -56,7 +56,7 @@ Use `and` and `or` to combine multiple comparators:
 
 ```text
 and(eq(run_type, "llm"), gt(latency, "2s"))
-or(neq(error, null), and(eq(feedback_key, "score"), lt(feedback_score, 0.5)))
+or(eq(status, "error"), and(eq(feedback_key, "score"), lt(feedback_score, 0.5)))
 ```
 
 ### Filterable fields
@@ -65,13 +65,11 @@ or(neq(error, null), and(eq(feedback_key, "score"), lt(feedback_score, 0.5)))
 | ----------------- | --------------- | ----- |
 | `id`              | string (UUID)   | Run ID |
 | `name`            | string          | Name of the run |
-| `run_type`        | string          | One of `llm`, `chain`, `tool`, `retriever` |
+| `run_type`        | string          | One of `llm`, `chain`, `tool`, `retriever`, `embedding`, `prompt`, `parser` |
+| `status`          | string          | `"success"`, `"error"`, or `"pending"`. Use this to filter errored vs. successful runs. |
 | `start_time`      | ISO 8601 string | e.g. `"2024-01-15T00:00:00Z"` |
 | `end_time`        | ISO 8601 string | |
-| `latency`         | duration string | e.g. `"5s"`, `"1.5s"` |
-| `total_tokens`    | integer         | Total tokens used by the run |
-| `error`           | string or null  | Error message if the run failed; `null` if it succeeded |
-| `execution_order` | integer         | Depth within the trace tree |
+| `latency`         | duration string or number | Seconds — e.g. `"5s"`, `"1.5s"`, or `1.5`. Only the `s` suffix is supported. |
 | `tags`            | list of strings | Use `has(tags, "value")` |
 | `metadata_key`    | string          | Key in the run's metadata dict |
 | `metadata_value`  | string          | Value in the run's metadata dict |
@@ -82,11 +80,8 @@ or(neq(error, null), and(eq(feedback_key, "score"), lt(feedback_score, 0.5)))
 
 - **Strings**: wrap in double or single quotes — `eq(name, "MyChain")` or `eq(name, 'MyChain')`
 - **Timestamps**: ISO 8601 format — `"2024-06-01T00:00:00Z"`
-- **Durations**: string with unit suffix — `"5s"`, `"1.5s"`, `"90s"`
-- **Null**: unquoted — `neq(error, null)`
+- **Durations**: seconds, as either a number or a string with the `s` suffix — `"5s"`, `"1.5s"`, `"90s"`, or `1.5`. Other unit suffixes (`m`, `h`) are not supported.
 - **Lists**: JSON array syntax — `["session_id", "conversation_id"]`
-
----
 
 ## Quick reference examples
 
@@ -104,10 +99,10 @@ eq(name, "my_chain")
 
 ```text
 # Runs that errored
-neq(error, null)
+eq(status, "error")
 
 # Runs that did not error
-eq(error, null)
+eq(status, "success")
 ```
 
 ### Filter by latency
@@ -118,12 +113,6 @@ gt(latency, "5s")
 
 # Runs faster than 1 second
 lt(latency, "1s")
-```
-
-### Filter by token usage
-
-```text
-gte(total_tokens, 1000)
 ```
 
 ### Filter by time range
@@ -180,13 +169,13 @@ search("my search term")
 
 ```text
 # Errors that started after a specific time
-and(gt(start_time, "2024-06-01T00:00:00Z"), neq(error, null))
+and(gt(start_time, "2024-06-01T00:00:00Z"), eq(status, "error"))
 
 # Slow LLM runs with low correctness feedback
 and(gt(latency, "10s"), eq(feedback_key, "correctness"), lt(feedback_score, 0.5))
 
 # Complex: errors OR low score, both starting after a timestamp
-and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))
+and(gt(start_time, "2023-07-15T12:34:56Z"), or(eq(status, "error"), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))
 ```
 
 ### Using trace_filter and tree_filter
