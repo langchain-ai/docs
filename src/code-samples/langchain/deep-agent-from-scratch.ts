@@ -54,6 +54,7 @@ for (let attempt = 0; attempt < 3; attempt += 1) {
 // :remove-end:
 const sandbox = await client.createSandbox({
   name: "langchain-docs",
+  snapshotName: "docs-test-ci",
 });
 // :remove-start:
 process.once("exit", () => {

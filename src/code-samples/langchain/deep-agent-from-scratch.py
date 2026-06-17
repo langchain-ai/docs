@@ -52,7 +52,7 @@ sandbox = None
 
 atexit.register(_delete_named_sandboxes)
 # :remove-end:
-sandbox = client.create_sandbox(name="langchain-docs")
+sandbox = client.create_sandbox(name="langchain-docs", snapshot_name="docs-test-ci")
 backend = LangSmithSandbox(sandbox=sandbox)
 
 agent = create_agent(
