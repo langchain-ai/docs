@@ -24,17 +24,17 @@ The `read_file` tool natively supports binary files (images, PDFs, audio, video)
 Sandboxes and the @[`LocalShellBackend`] also provide an `execute` tool.
 This page explains how to:
 
-- [choose a backend](#specify-a-backend),
-- [route different paths to different backends](#route-to-different-backends),
-- [implement your own virtual filesystem](#use-a-virtual-filesystem) (e.g., S3 or Postgres),
-- [set permissions](#permissions) on filesystem access,
+- [Choose a backend](#specify-a-backend)
+- [Route different paths to different backends](#route-to-different-backends)
+- [Implement a custom backend](#custom-backends)
+- [Set permissions](#permissions) on filesystem access
 :::js
-- [add policy hooks](#add-policy-hooks),
-[work with binary and multimodal files](#multimodal-and-binary-files),
+- [Add policy hooks](#add-policy-hooks)
+- [Work with binary and multimodal files](#multimodal-and-binary-files)
 :::
-- [comply with the backend protocol](#protocol-reference),
+- [Comply with the backend protocol](#protocol-reference)
 :::js
-- and [update existing backends to v2](#update-existing-backends-to-v2).
+- [Update existing backends to v2](#update-existing-backends-to-v2)
 :::
 
 <Tip>
@@ -489,7 +489,7 @@ Notes:
 
 ## Custom backends
 
-Implement a custom backend to connect Deep Agents to any storage system — databases, object stores, remote filesystems, and more. See [community-built backends](/oss/python/integrations/backends) for examples.
+Implement a custom backend to connect Deep Agents to storage systems such as databases, object stores, and remote filesystems. See [community-built backends](/oss/integrations/backends) for examples.
 
 ### Implement the backend protocol
 
@@ -507,7 +507,7 @@ Subclass @[`BackendProtocol`] and implement the following methods:
 
 To also support the `execute` tool (running shell commands), implement @[`SandboxBackendProtocol`] instead, which extends `BackendProtocol` with an `execute` method.
 
-Always return structured result types with an `error` field for failure cases — do not raise exceptions.
+Always return structured result types with an `error` field for failure cases. Do not raise exceptions.
 :::
 
 :::js
@@ -530,10 +530,18 @@ All methods must return structured Result objects with an optional `error` field
 
 <Accordion title="Example: S3-style backend skeleton">
 
+This skeleton maps filesystem paths to object keys. Fill in each method with your storage client's list, read, search, upload, and read-modify-write operations.
+
 :::python
 ```python
 from deepagents.backends.protocol import (
-    BackendProtocol, WriteResult, EditResult, LsResult, ReadResult, GrepResult, GlobResult,
+    BackendProtocol,
+    EditResult,
+    GlobResult,
+    GrepResult,
+    LsResult,
+    ReadResult,
+    WriteResult,
 )
 
 class S3Backend(BackendProtocol):
@@ -545,27 +553,21 @@ class S3Backend(BackendProtocol):
         return f"{self.prefix}{path}"
 
     def ls(self, path: str) -> LsResult:
-        # List objects under _key(path); build FileInfo entries (path, size, modified_at)
         ...
 
     def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
-        # Fetch object; return ReadResult(file_data=...) or ReadResult(error=...)
         ...
 
     def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
-        # Optionally filter server-side; else list and scan content
         ...
 
     def glob(self, pattern: str, path: str | None = None) -> GlobResult:
-        # Apply glob relative to path across keys
         ...
 
     def write(self, file_path: str, content: str) -> WriteResult:
-        # Enforce create-only semantics; return WriteResult(path=file_path, files_update=None)
         ...
 
     def edit(self, file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> EditResult:
-        # Read → replace (respect uniqueness vs replace_all) → write → return occurrences
         ...
 ```
 :::
@@ -574,13 +576,13 @@ class S3Backend(BackendProtocol):
 ```typescript
 import {
   type BackendProtocolV2,
-  type LsResult,
-  type ReadResult,
-  type ReadRawResult,
-  type GrepResult,
-  type GlobResult,
-  type WriteResult,
   type EditResult,
+  type GlobResult,
+  type GrepResult,
+  type LsResult,
+  type ReadRawResult,
+  type ReadResult,
+  type WriteResult,
 } from "deepagents";
 
 class S3Backend implements BackendProtocolV2 {
@@ -593,38 +595,30 @@ class S3Backend implements BackendProtocolV2 {
   }
 
   async ls(path: string): Promise<LsResult> {
-    // List objects under key(path); return { files: [...] }
     ...
   }
 
   async read(filePath: string, offset?: number, limit?: number): Promise<ReadResult> {
-    // Fetch object; return { content, mimeType }
-    // For binary files, return Uint8Array content
     ...
   }
 
   async readRaw(filePath: string): Promise<ReadRawResult> {
-    // Return { data: FileData }
     ...
   }
 
   async grep(pattern: string, path?: string | null, glob?: string | null): Promise<GrepResult> {
-    // Search text files; skip binary; return { matches: [...] }
     ...
   }
 
   async glob(pattern: string, path = "/"): Promise<GlobResult> {
-    // Apply glob relative to path; return { files: [...] }
     ...
   }
 
   async write(filePath: string, content: string): Promise<WriteResult> {
-    // Enforce create-only semantics; return { path: filePath, filesUpdate: null }
     ...
   }
 
   async edit(filePath: string, oldString: string, newString: string, replaceAll?: boolean): Promise<EditResult> {
-    // Read → replace → write → return { path, occurrences }
     ...
   }
 }
