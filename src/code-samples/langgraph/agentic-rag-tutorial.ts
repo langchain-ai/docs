@@ -96,15 +96,35 @@ const gradeModel = new ChatOpenAI({
   model: "gpt-5.4",
   temperature: 0,
 }).withStructuredOutput(gradeDocumentsSchema);
+const gradeFallbackModel = new ChatOpenAI({
+  model: "gpt-5.4",
+  temperature: 0,
+});
 
 const gradeDocuments = async (
   state: typeof State.State,
 ): Promise<"generate" | "rewrite"> => {
-  const score = await gradePrompt.pipe(gradeModel).invoke({
+  const gradingInput = {
     question: state.messages.at(0)?.content,
     context: state.messages.at(-1)?.content,
-  });
-  if (score.binaryScore === "yes") {
+  };
+
+  let binaryScore: string | undefined;
+  try {
+    const score = await gradePrompt.pipe(gradeModel).invoke(gradingInput);
+    binaryScore = score.binaryScore;
+  } catch {
+    const fallbackResponse = await gradePrompt
+      .pipe(gradeFallbackModel)
+      .invoke(gradingInput);
+    const fallbackText =
+      typeof fallbackResponse.content === "string"
+        ? fallbackResponse.content
+        : (fallbackResponse.text ?? "");
+    binaryScore = fallbackText.toLowerCase().includes("yes") ? "yes" : "no";
+  }
+
+  if (binaryScore === "yes") {
     return "generate";
   }
   return "rewrite";
