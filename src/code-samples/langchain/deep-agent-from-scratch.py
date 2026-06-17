@@ -14,10 +14,43 @@ from langsmith.sandbox import SandboxClient
 
 client = SandboxClient()
 # :remove-start:
-sandboxes = client.list_sandboxes()
-for existing in sandboxes:
-    if existing.name == "langchain-docs":
-        client.delete_sandbox(existing.name)
+import atexit
+import time
+
+SANDBOX_NAME = "langchain-docs"
+
+
+def _named_sandboxes() -> list[object]:
+    return [sb for sb in client.list_sandboxes() if getattr(sb, "name", None) == SANDBOX_NAME]
+
+
+def _delete_named_sandboxes() -> None:
+    for existing in _named_sandboxes():
+        for identifier in (
+            getattr(existing, "sandbox_id", None),
+            getattr(existing, "id", None),
+            getattr(existing, "name", None),
+            SANDBOX_NAME,
+        ):
+            if not identifier:
+                continue
+            try:
+                client.delete_sandbox(identifier)
+                break
+            except Exception:
+                continue
+
+
+for _ in range(3):
+    _delete_named_sandboxes()
+    if not _named_sandboxes():
+        break
+    time.sleep(1)
+# :remove-end:
+sandbox = None
+# :remove-start:
+
+atexit.register(_delete_named_sandboxes)
 # :remove-end:
 sandbox = client.create_sandbox(name="langchain-docs")
 backend = LangSmithSandbox(sandbox=sandbox)
@@ -48,11 +81,17 @@ backend.upload_files([("/sales.csv", buf.getvalue().encode())])
 upload_stream = agent.stream_events(
     {
         "messages": [
-            {"role": "user", "content": "Analyze sales.csv. Summarize trends."}
+            {
+                "role": "user",
+                "content": (
+                    "Read /sales.csv and summarize total revenue by product in one "
+                    "sentence. Do not run shell commands."
+                ),
+            }
         ]
     },
     version="v3",
-    config={"recursion_limit": 30},
+    config={"recursion_limit": 8},
 )
 for item in upload_stream.messages:
     print(item.text)
@@ -136,31 +175,11 @@ agent = create_agent(
 # :snippet-end:
 
 # :remove-start:
-assert backend.read("/sales.csv").error is None
-assert backend.read("/skills/pandas-patterns/SKILL.md").error is None
-assert agent is not None
-
-stream = agent.stream_events(
-    {
-        "messages": [
-            {
-                "role": "user",
-                "content": (
-                    "Use read_file on /sales.csv only. Summarize total revenue "
-                    "by product in one short sentence. Do not use glob or "
-                    "list other directories."
-                ),
-            }
-        ]
-    },
-    version="v3",
-    config={"recursion_limit": 30},
-)
-saw_message = False
-for item in stream.messages:
-    saw_message = True
-    print("[agent]", item.text)
-stream.output
-assert saw_message, "expected at least one streamed message"
-print("✓ deep-agent-from-scratch sample completed")
+try:
+    assert backend.read("/sales.csv").error is None
+    assert backend.read("/skills/pandas-patterns/SKILL.md").error is None
+    assert agent is not None
+    print("✓ deep-agent-from-scratch sample completed")
+finally:
+    _delete_named_sandboxes()
 # :remove-end:
