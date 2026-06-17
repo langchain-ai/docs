@@ -252,6 +252,16 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Misspell product names — use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
 - Skip `make lint_prose` — always run it on changed files before committing and fix all violations
 
+### Structure conventions
+
+Match these patterns, drawn from established pages, when authoring new content:
+
+- **Open with definition, then benefit, then task** — start a section (and the page) with a one-sentence statement of what the feature is or does, follow with a sentence on what it enables for the reader, then give the procedure or detail. When a page has a sibling variant (for example, a paid or self-hosted version), link it in the opening lines.
+- **Introduce procedures with a colon lead-in** — precede steps with a phrase such as "To add a channel:", then a numbered list (or the `<Steps>` component) of imperative steps. State a step's result as a follow-on line when it matters ("The Add User modal displays."). Flag optional steps inline with "(Optional)". For long, multi-stage tasks, use `### Step N. <verb>` headings.
+- **Use bold-led definition lists for options** — for parameters, permissions, secrets, or enumerated types, write `- **Term**: Explanation.` and end each explanation with a period.
+- **Link on first mention, and point forward at section ends** — link a feature, class, or term on first mention only, not on repeats. Use the pointer phrasing "For more information, see [Page](/path)". Close substantial pages with a `## See also` list of related links.
+- **State requirements and constraints up front** — put permission, plan tier, or preview requirements before the steps they govern ("Adding MCP servers requires admin permissions."). Write hard constraints as plain facts ("Once an agent identity is set, it cannot be changed.").
+
 ### Model references
 
 Always use the latest generally available (GA) models when referencing LLMs in docstrings and illustrative code snippets. Avoid preview or beta identifiers unless the model has no GA equivalent. Outdated model names signal stale code and confuse users.
