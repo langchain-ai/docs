@@ -528,6 +528,111 @@ To also support the `execute` tool (running shell commands), implement @[`Sandbo
 All methods must return structured Result objects with an optional `error` field — do not throw on missing files or invalid patterns.
 :::
 
+<Accordion title="Example: S3-style backend skeleton">
+
+:::python
+```python
+from deepagents.backends.protocol import (
+    BackendProtocol, WriteResult, EditResult, LsResult, ReadResult, GrepResult, GlobResult,
+)
+
+class S3Backend(BackendProtocol):
+    def __init__(self, bucket: str, prefix: str = ""):
+        self.bucket = bucket
+        self.prefix = prefix.rstrip("/")
+
+    def _key(self, path: str) -> str:
+        return f"{self.prefix}{path}"
+
+    def ls(self, path: str) -> LsResult:
+        # List objects under _key(path); build FileInfo entries (path, size, modified_at)
+        ...
+
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
+        # Fetch object; return ReadResult(file_data=...) or ReadResult(error=...)
+        ...
+
+    def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
+        # Optionally filter server-side; else list and scan content
+        ...
+
+    def glob(self, pattern: str, path: str | None = None) -> GlobResult:
+        # Apply glob relative to path across keys
+        ...
+
+    def write(self, file_path: str, content: str) -> WriteResult:
+        # Enforce create-only semantics; return WriteResult(path=file_path, files_update=None)
+        ...
+
+    def edit(self, file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> EditResult:
+        # Read → replace (respect uniqueness vs replace_all) → write → return occurrences
+        ...
+```
+:::
+
+:::js
+```typescript
+import {
+  type BackendProtocolV2,
+  type LsResult,
+  type ReadResult,
+  type ReadRawResult,
+  type GrepResult,
+  type GlobResult,
+  type WriteResult,
+  type EditResult,
+} from "deepagents";
+
+class S3Backend implements BackendProtocolV2 {
+  constructor(private bucket: string, private prefix: string = "") {
+    this.prefix = prefix.replace(/\/$/, "");
+  }
+
+  private key(path: string): string {
+    return `${this.prefix}${path}`;
+  }
+
+  async ls(path: string): Promise<LsResult> {
+    // List objects under key(path); return { files: [...] }
+    ...
+  }
+
+  async read(filePath: string, offset?: number, limit?: number): Promise<ReadResult> {
+    // Fetch object; return { content, mimeType }
+    // For binary files, return Uint8Array content
+    ...
+  }
+
+  async readRaw(filePath: string): Promise<ReadRawResult> {
+    // Return { data: FileData }
+    ...
+  }
+
+  async grep(pattern: string, path?: string | null, glob?: string | null): Promise<GrepResult> {
+    // Search text files; skip binary; return { matches: [...] }
+    ...
+  }
+
+  async glob(pattern: string, path = "/"): Promise<GlobResult> {
+    // Apply glob relative to path; return { files: [...] }
+    ...
+  }
+
+  async write(filePath: string, content: string): Promise<WriteResult> {
+    // Enforce create-only semantics; return { path: filePath, filesUpdate: null }
+    ...
+  }
+
+  async edit(filePath: string, oldString: string, newString: string, replaceAll?: boolean): Promise<EditResult> {
+    // Read → replace → write → return { path, occurrences }
+    ...
+  }
+}
+```
+:::
+
+</Accordion>
+
 ## Permissions
 
 Use [permissions](/oss/deepagents/permissions) to declaratively control which files and directories the agent can read or write. Permissions apply to the built-in filesystem tools and are evaluated before the backend is called.
