@@ -127,33 +127,24 @@ See the @[`ChatAnthropic`] API reference for details on all available instantiat
         title="Stream"
     >
         ```python
-        for chunk in model.stream(messages):
-            print(chunk.text, end="")
+        stream = model.stream_events(messages, version="v3")
+        for token in stream.text:
+            print(token, end="", flush=True)
         ```
 
-        ```python
-        AIMessageChunk(content="J", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
-        AIMessageChunk(content="'", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
-        AIMessageChunk(content="a", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
-        AIMessageChunk(content="ime", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
-        AIMessageChunk(content=" la", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
-        AIMessageChunk(content=" programm", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
-        AIMessageChunk(content="ation", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
-        AIMessageChunk(content=".", id="run-272ff5f9-8485-402c-b90d-eac8babc5b25")
+        ```text
+        J'aime la programmation.
         ```
 
         To aggregate the full message from the stream:
 
         ```python
-        stream = model.stream(messages)
-        full = next(stream)
-        for chunk in stream:
-            full += chunk
-        full
+        stream = model.stream_events(messages, version="v3")
+        full_message = stream.output
         ```
 
         ```python
-        AIMessageChunk(content="J'aime la programmation.", id="run-b34faef0-882f-4869-a19c-ed2b856e6361")
+        AIMessage(content="J'aime la programmation.", id="run-b34faef0-882f-4869-a19c-ed2b856e6361")
         ```
     </Accordion>
     <Accordion
@@ -163,8 +154,9 @@ See the @[`ChatAnthropic`] API reference for details on all available instantiat
         ai_msg = await model.ainvoke(messages)
 
         # stream
-        async for chunk in model.astream(messages):
-            print(chunk.text, end="")
+        stream = await model.astream_events(messages, version="v3")
+        async for token in stream.text:
+            print(token, end="", flush=True)
 
         # batch
         await model.abatch([messages])
@@ -1044,12 +1036,13 @@ def retrieval_tool(query: str) -> list[dict]:
         "role": "user",
         "content": "How do I request vacation days?",
     }
-    async for step in agent.astream(
+    stream = await agent.astream_events(
         {"messages": [input_message]},
         config,
-        stream_mode="values",
-    ):
-        step["messages"][-1].pretty_print()
+        version="v3",
+    )
+    async for snapshot in stream.values:
+        snapshot["messages"][-1].pretty_print()
     ```
 </Accordion>
 
@@ -1111,14 +1104,18 @@ response = model.invoke([message])
 
 Anthropic supports [caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) of elements of your prompts, including messages, tool definitions, tool results, images and documents. This allows you to reuse large documents, instructions, [few-shot documents](/langsmith/create-few-shot-evaluators), and other data to reduce latency and costs.
 
-There are two ways to enable prompt caching:
+There are two ways to enable prompt caching on direct model calls:
 
-- **[Automatic caching](#automatic-caching)**: Pass `cache_control` at invocation time. The system automatically applies the cache breakpoint to the last cacheable block and moves it forward as conversations grow. Best for multi-turn conversations.
-- **[Explicit cache breakpoints](#explicit-cache-breakpoints)**: Place `cache_control` directly on individual content blocks for fine-grained control over exactly what gets cached.
+- **[Automatic caching](#automatic-caching)**: Pass `cache_control` at invocation time (`model.invoke(..., cache_control=...)`). This is provider/API-level caching: the Anthropic API applies the cache breakpoint to the last cacheable block and moves it forward as conversations grow.
+- **[Explicit cache breakpoints](#explicit-cache-breakpoints)**: Place `cache_control` directly on individual content blocks for fine-grained, direct breakpoint control over exactly what gets cached.
 
 <Warning>
     Only certain Claude models support prompt caching. See the [Claude documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#supported-models) for details.
 </Warning>
+
+<Note>
+    For LangChain agents, prefer [`AnthropicPromptCachingMiddleware`](/oss/integrations/middleware/anthropic#prompt-caching) when you want LangChain to optimize stable system prompt and tool content. The middleware is a LangChain agent/harness optimization and is not the same as the invocation-level `cache_control` shown below, which mirrors the Anthropic API behavior.
+</Note>
 
 ### Automatic caching
 
@@ -2995,11 +2992,9 @@ Message chunks containing token usage will be included during streaming by
 default:
 
 ```python
-stream = model.stream(messages)
-full = next(stream)
-for chunk in stream:
-    full += chunk
-full.usage_metadata
+stream = model.stream_events(messages, version="v3")
+full_message = stream.output
+full_message.usage_metadata
 ```
 
 ```python
