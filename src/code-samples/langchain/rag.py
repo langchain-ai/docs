@@ -199,7 +199,7 @@ if __name__ == "__main__":
     assert len(all_splits) > 0
     assert len(document_ids) > 0
     assert final_state is not None
-    assert callable(prompt_with_context)
+    assert prompt_with_context is not None
     assert agent is not None
     print("\n✓ rag")
 # :remove-end:

@@ -38,9 +38,5 @@ for await (const message of stream.messages) {
 // :snippet-end:
 
 // :remove-start:
-// This test is disabled because it requires an API key and would make actual API calls
-// To run manually:
-//   export ANTHROPIC_API_KEY=your_key
-//   npx tsx src/code-samples/langchain/streaming-reasoning-tokens.ts
 console.log("\n✓ Code sample is syntactically valid");
 // :remove-end:
