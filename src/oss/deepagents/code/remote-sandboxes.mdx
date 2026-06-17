@@ -1,16 +1,20 @@
 ---
 title: Use remote sandboxes
 sidebarTitle: Remote sandboxes
-description: Run Deep Agents Code tool execution in LangSmith, Daytona, Modal, Runloop, Vercel, or AgentCore sandboxes. Install provider extras, set credentials, and use flags and setup scripts.
+description: Run Deep Agents Code tool execution in LangSmith, Daytona, Modal, Runloop, Vercel, AgentCore, or E2B sandboxes. Install provider dependencies, set credentials, and use flags and setup scripts.
 ---
 
 Deep Agents Code uses the [sandbox as tool](/oss/deepagents/sandboxes#sandbox-as-tool-pattern) pattern: the `dcode` process (LLM loop, memory, tool dispatch) runs on your machine, but agent tool calls (`read_file`, `write_file`, `execute`, etc.) target the remote sandbox, not your local filesystem. To get files into the sandbox, use a [setup script](#setup-scripts) or the provider's file transfer APIs (see [Working with files](/oss/deepagents/sandboxes#working-with-files)).
 
 For a deeper look at sandbox architecture, integration patterns, and security best practices, see [Sandboxes](/oss/deepagents/sandboxes).
 
+<Note>
+    Using E2B requires dcode 0.1.19 or newer and `langchain-e2b>=0.0.4`.
+</Note>
+
 <Steps>
     <Step title="Install provider dependency" icon="download">
-        Each provider ships as an optional extra. Install one from within a session with `/install`, or from the shell with `dcode --install`:
+        Some providers ship as optional extras. E2B ships as a third-party package. Install a provider from within a session with `/install`, or from the shell with `dcode --install`:
 
         <Tabs>
             <Tab title="LangSmith">
@@ -71,9 +75,22 @@ For a deeper look at sandbox architecture, integration patterns, and security be
                     ```
                 </CodeGroup>
             </Tab>
+            <Tab title="E2B">
+                <CodeGroup>
+                    ```txt In session
+                    /install langchain-e2b --package
+                    ```
+
+                    ```bash Shell
+                    dcode --install langchain-e2b --package
+                    ```
+                </CodeGroup>
+
+                This installs `langchain-e2b` into the same environment that runs `dcode`, so Deep Agents Code can discover the `e2b` sandbox provider entry point.
+            </Tab>
         </Tabs>
 
-        To install support for every sandbox provider at once, use the `all-sandboxes` extra: `/install all-sandboxes` in a session, or `dcode --install all-sandboxes` from the shell.
+        To install support for every built-in sandbox provider at once, use the `all-sandboxes` extra: `/install all-sandboxes` in a session, or `dcode --install all-sandboxes` from the shell. E2B is provided by the separate `langchain-e2b` package.
     </Step>
 
     <Step title="Set provider credentials" icon="key">
@@ -117,6 +134,13 @@ For a deeper look at sandbox architecture, integration patterns, and security be
                 export AWS_SESSION_TOKEN="session-token"
                 ```
             </Tab>
+            <Tab title="E2B">
+                ```bash
+                export E2B_API_KEY="your-key"
+                ```
+
+                To scope the key to Deep Agents Code only, set `DEEPAGENTS_CODE_E2B_API_KEY`. When both variables are set, `DEEPAGENTS_CODE_E2B_API_KEY` takes precedence.
+            </Tab>
         </Tabs>
     </Step>
 
@@ -152,6 +176,11 @@ For a deeper look at sandbox architecture, integration patterns, and security be
                 dcode --sandbox agentcore
                 ```
             </Tab>
+            <Tab title="E2B">
+                ```bash
+                dcode --sandbox e2b
+                ```
+            </Tab>
         </Tabs>
     </Step>
 </Steps>
@@ -160,7 +189,7 @@ For a deeper look at sandbox architecture, integration patterns, and security be
 
 | Flag | Description |
 |------|-------------|
-| `--sandbox TYPE` | Sandbox provider to use. Built-ins: `langsmith`, `agentcore`, `modal`, `daytona`, `runloop`, `vercel` (default: `none`). [Third-party](#third-party-providers) and [config-declared](#config-declared-providers) providers are also accepted. Pass `--sandbox` with no value to use `[sandboxes].default` from your config |
+| `--sandbox TYPE` | Sandbox provider to use. Built-ins: `langsmith`, `agentcore`, `modal`, `daytona`, `runloop`, `vercel` (default: `none`). [Third-party](#third-party-providers) providers such as `e2b` and [config-declared](#config-declared-providers) providers are also accepted. Pass `--sandbox` with no value to use `[sandboxes].default` from your config |
 | `--sandbox-id ID` | Reuse an existing sandbox by ID instead of creating a new one. Skips creation and cleanup. Only for providers that support reattaching by ID. Refer to your sandbox documentation for more |
 | `--sandbox-snapshot-name NAME` | Use or create a sandbox snapshot. Supported by `langsmith` and `runloop` (and any third-party provider that advertises snapshot support). Cannot be combined with `--sandbox-id` |
 | `--sandbox-setup PATH` | Path to a setup script to run inside the sandbox upon creation |
@@ -175,6 +204,7 @@ Each provider exposes a default working directory inside the sandbox. Setup scri
 | Runloop | `/home/user` |
 | Vercel | `/vercel/sandbox` |
 | AgentCore | `/tmp` |
+| E2B | `/home/user` |
 
 Examples:
 
@@ -190,6 +220,11 @@ dcode --sandbox modal --sandbox-setup ./setup.sh
 
 # Use the provider set as [sandboxes].default in config
 dcode --sandbox
+
+# Install and use the E2B provider package
+dcode --install langchain-e2b --package
+export E2B_API_KEY="your-key"
+dcode --sandbox e2b
 ```
 
 <Note>
@@ -198,7 +233,7 @@ dcode --sandbox
 
 ## Pluggable providers
 
-The six built-in providers above aren't the only options. Deep Agents Code discovers sandbox providers from three sources, so you can use providers shipped by other packages or declare your own without changing Deep Agents Code:
+The built-in providers above are not the only options. Deep Agents Code discovers sandbox providers from three sources, so you can use providers shipped by other packages or declare your own without changing Deep Agents Code:
 
 1. **Built-in providers** — the curated set above, installed as `deepagents-code` extras.
 2. **[Third-party providers](#third-party-providers)** — published by other installed packages via a Python entry point.
@@ -208,22 +243,16 @@ When two sources define the same provider name, **config wins over third-party e
 
 ### Third-party providers
 
-A package can publish a sandbox provider under the `deepagents_code.sandbox_providers` [entry-point group](https://packaging.python.org/en/latest/specifications/entry-points/). Once you install such a package, its provider is available to `--sandbox` automatically—no config needed:
+A package can publish a sandbox provider under the `deepagents_code.sandbox_providers` [entry-point group](https://packaging.python.org/en/latest/specifications/entry-points/). Once you install such a package, its provider is available to `--sandbox` automatically, no config needed:
 
 ```bash
 # Install the package that publishes the provider, then use it
 dcode --sandbox acme
 ```
 
-For example, the `langchain-e2b` package publishes an `e2b` provider (see [sandbox integrations](/oss/integrations/sandboxes)). Install it as a package, set your credentials, then select it:
+The `langchain-e2b` package registers the `e2b` provider in that entry-point group (see [sandbox integrations](/oss/integrations/sandboxes)). After you install the package into the `dcode` environment with `dcode --install langchain-e2b --package`, Deep Agents Code discovers it automatically and accepts `dcode --sandbox e2b`.
 
-```bash
-dcode --install langchain-e2b --package
-export E2B_API_KEY="..."
-dcode --sandbox e2b
-```
-
-If you pass a `--sandbox` name that isn't installed or declared, Deep Agents Code lists the available providers and explains how to install or configure the missing one.
+If you pass a `--sandbox` name that is not installed or declared, Deep Agents Code lists the available providers and explains how to install or configure the missing one.
 
 <Accordion title="Publishing a sandbox provider" icon="package">
     To distribute a provider so users can run `dcode --sandbox <name>` after installing your package, implement a `SandboxProvider` subclass and register it under the `deepagents_code.sandbox_providers` entry-point group.
