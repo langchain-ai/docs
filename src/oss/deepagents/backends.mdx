@@ -491,146 +491,41 @@ Notes:
 
 Implement a custom backend to connect Deep Agents to any storage system — databases, object stores, remote filesystems, and more. See [community-built backends](/oss/python/integrations/backends) for examples.
 
-### Use a virtual filesystem
-
-Project a remote or database filesystem (e.g., S3 or Postgres) into the agent's tools namespace by implementing the backend protocol.
-
-Design guidelines:
-
-- Paths are absolute (`/x/y.txt`). Decide how to map them to your storage keys/rows.
-- Implement `ls` and `glob` efficiently (server-side filtering where available, otherwise local filter).
-- For external persistence (S3, Postgres, etc.), return `files_update=None` (Python) or omit `filesUpdate` (JS) in write/edit results — only in-memory state backends need to return a files update dict.
+### Implement the backend protocol
 
 :::python
-- Use `ls` and `glob` as the method names.
-- Return structured result types with an `error` field for missing files or invalid patterns (do not raise).
+Subclass @[`BackendProtocol`] and implement the following methods:
+
+| Method | Signature | What it does |
+|--------|-----------|--------------|
+| `ls` | `(path: str) -> LsResult` | List files and directories at the given path. |
+| `read` | `(file_path: str, offset: int, limit: int) -> ReadResult` | Return file contents, optionally paginated. |
+| `write` | `(file_path: str, content: str) -> WriteResult` | Create or overwrite a file. |
+| `edit` | `(file_path: str, old_string: str, new_string: str, replace_all: bool) -> EditResult` | Find-and-replace within an existing file. |
+| `glob` | `(pattern: str, path: str | None) -> GlobResult` | Return paths matching a glob pattern. |
+| `grep` | `(pattern: str, path: str | None, glob: str | None) -> GrepResult` | Search file contents for a literal string. |
+
+To also support the `execute` tool (running shell commands), implement @[`SandboxBackendProtocol`] instead, which extends `BackendProtocol` with an `execute` method.
+
+Always return structured result types with an `error` field for failure cases — do not raise exceptions.
 :::
 
 :::js
-- Use `ls` and `glob` as the method names.
-- All query methods (`ls`, `read`, `readRaw`, `grep`, `glob`) must return structured Result objects (e.g., `LsResult`, `ReadResult`) with an optional `error` field.
-- Support binary files in `read()` by returning `Uint8Array` content with the appropriate `mimeType`.
-:::
+Implement @[`BackendProtocolV2`] and provide the following methods:
 
-S3-style outline:
+| Method | Signature | What it does |
+|--------|-----------|--------------|
+| `ls` | `(path: string) => Promise<LsResult>` | List files and directories at the given path. |
+| `read` | `(filePath: string, offset?, limit?) => Promise<ReadResult>` | Return file contents, optionally paginated. Binary files return `Uint8Array` content with a `mimeType`. |
+| `readRaw` | `(filePath: string) => Promise<ReadRawResult>` | Return raw `FileData` (used internally by the framework). |
+| `write` | `(filePath: string, content: string) => Promise<WriteResult>` | Create or overwrite a file. |
+| `edit` | `(filePath: string, oldString: string, newString: string, replaceAll?: boolean) => Promise<EditResult>` | Find-and-replace within an existing file. |
+| `glob` | `(pattern: string, path?: string) => Promise<GlobResult>` | Return paths matching a glob pattern. |
+| `grep` | `(pattern: string, path?, glob?) => Promise<GrepResult>` | Search file contents for a literal string. |
 
-:::python
-```python
-from deepagents.backends.protocol import (
-    BackendProtocol, WriteResult, EditResult, LsResult, ReadResult, GrepResult, GlobResult,
-)
+To also support the `execute` tool (running shell commands), implement @[`SandboxBackendProtocol`] instead, which extends `BackendProtocolV2` with an `execute` method.
 
-class S3Backend(BackendProtocol):
-    def __init__(self, bucket: str, prefix: str = ""):
-        self.bucket = bucket
-        self.prefix = prefix.rstrip("/")
-
-    def _key(self, path: str) -> str:
-        return f"{self.prefix}{path}"
-
-    def ls(self, path: str) -> LsResult:
-        # List objects under _key(path); build FileInfo entries (path, size, modified_at)
-        ...
-
-    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
-        # Fetch object; return ReadResult(file_data=...) or ReadResult(error=...)
-        ...
-
-    def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
-        # Optionally filter server‑side; else list and scan content
-        ...
-
-    def glob(self, pattern: str, path: str | None = None) -> GlobResult:
-        # Apply glob relative to path across keys
-        ...
-
-    def write(self, file_path: str, content: str) -> WriteResult:
-        # Enforce create‑only semantics; return WriteResult(path=file_path, files_update=None)
-        ...
-
-    def edit(self, file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> EditResult:
-        # Read → replace (respect uniqueness vs replace_all) → write → return occurrences
-        ...
-```
-:::
-
-:::js
-```typescript
-import {
-  type BackendProtocolV2,
-  type LsResult,
-  type ReadResult,
-  type ReadRawResult,
-  type GrepResult,
-  type GlobResult,
-  type WriteResult,
-  type EditResult,
-} from "deepagents";
-
-class S3Backend implements BackendProtocolV2 {
-  constructor(private bucket: string, private prefix: string = "") {
-    this.prefix = prefix.replace(/\/$/, "");
-  }
-
-  private key(path: string): string {
-    return `${this.prefix}${path}`;
-  }
-
-  async ls(path: string): Promise<LsResult> {
-    // List objects under key(path); return { files: [...] }
-    ...
-  }
-
-  async read(filePath: string, offset?: number, limit?: number): Promise<ReadResult> {
-    // Fetch object; return { content, mimeType }
-    // For binary files, return Uint8Array content
-    ...
-  }
-
-  async readRaw(filePath: string): Promise<ReadRawResult> {
-    // Return { data: FileData }
-    ...
-  }
-
-  async grep(pattern: string, path?: string | null, glob?: string | null): Promise<GrepResult> {
-    // Search text files; skip binary; return { matches: [...] }
-    ...
-  }
-
-  async glob(pattern: string, path = "/"): Promise<GlobResult> {
-    // Apply glob relative to path; return { files: [...] }
-    ...
-  }
-
-  async write(filePath: string, content: string): Promise<WriteResult> {
-    // Enforce create-only semantics; return { path: filePath, filesUpdate: null }
-    ...
-  }
-
-  async edit(filePath: string, oldString: string, newString: string, replaceAll?: boolean): Promise<EditResult> {
-    // Read → replace → write → return { path, occurrences }
-    ...
-  }
-}
-```
-:::
-
-Postgres-style outline:
-
-:::python
-- Table `files(path text primary key, content text, created_at timestamptz, modified_at timestamptz)`
-- Map tool operations onto SQL:
-  - `ls` uses `WHERE path LIKE $1 || '%'`
-  - `glob` filter in SQL or fetch then apply glob in Python
-  - `grep` can fetch candidate rows by extension or last modified time, then scan lines
-:::
-
-:::js
-- Table `files(path text primary key, content text, mime_type text, created_at timestamptz, modified_at timestamptz)`
-- Map tool operations onto SQL:
-  - `ls` uses `WHERE path LIKE $1 || '%'` → return `LsResult`
-  - `glob` filter in SQL or fetch then apply glob locally → return `GlobResult`
-  - `grep` can fetch candidate rows by extension or last modified time, then scan lines (skip rows where `mime_type` is binary) → return `GrepResult`
+All methods must return structured Result objects with an optional `error` field — do not throw on missing files or invalid patterns.
 :::
 
 ## Permissions
