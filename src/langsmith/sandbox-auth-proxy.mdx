@@ -236,7 +236,7 @@ AWS auth proxy rules currently support access key ID and secret access key crede
 
 ## Authenticate GCP requests
 
-Use a GCP auth rule when sandbox code needs to call Google APIs with Google SDKs or CLIs. The proxy keeps the service account JSON outside the sandbox, then authenticates supported outbound HTTPS requests to matching `googleapis.com` hosts.
+Use a GCP auth rule when sandbox code needs to call Google APIs with Google SDKs or CLIs. The proxy keeps the service account JSON outside the sandbox, then authenticates supported outbound HTTPS requests to Google API hosts matched by the sandbox proxy.
 
 This is useful when agent code needs to inspect GCS objects or call another Google API without exposing service account JSON in sandbox files, environment variables, shell history, or logs. The sandbox receives compatibility credentials so SDK credential detection works, while the proxy authenticates the outbound request with the configured service account.
 
@@ -247,14 +247,12 @@ Do not set real service account JSON as a sandbox environment variable. Configur
 GCP auth rules are different from header injection rules:
 
 - Set `type` to `gcp`.
-- When sending raw `proxy_config`, set `match_hosts` to exact hosts or wildcard suffixes under `googleapis.com`, such as `storage.googleapis.com`, `www.googleapis.com`, or `*.googleapis.com`.
-- Do not set `match_paths`; GCP rules use host-only matching.
-- Do not set `headers`; GCP rules authenticate requests and cannot inject headers.
 - Put credentials under `gcp.service_account_json`.
 - Set `gcp.scopes` to a non-empty list of OAuth scopes.
+- Do not set `match_hosts`, `match_paths`, or `headers`; GCP host matching is built into the proxy.
 - Configure at most one enabled GCP auth rule per sandbox.
 
-The SDK `gcp_auth` and `gcpAuth` helpers set `match_hosts` for GCS by default. Pass `match_hosts` or `matchHosts` only when your sandbox needs to authenticate requests to other Google API hosts.
+The SDK `gcp_auth` and `gcpAuth` helpers also omit host matching because the API and proxy handle it automatically.
 
 ```bash
 curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
@@ -269,10 +267,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
           "name": "gcp",
           "type": "gcp",
           "enabled": true,
-          "match_hosts": [
-            "storage.googleapis.com",
-            "www.googleapis.com"
-          ],
           "gcp": {
             "service_account_json": {
               "type": "workspace_secret",
@@ -340,11 +334,11 @@ await client.createSandbox({
 
 </CodeGroup>
 
-After the sandbox is ready, use Google SDKs or CLIs normally inside the sandbox for requests to the matching `googleapis.com` hosts. The SDK or CLI can discover the compatibility credentials, and the proxy applies the real GCP authentication without exposing service account JSON inside the sandbox.
+After the sandbox is ready, use Google SDKs or CLIs normally inside the sandbox for supported Google API requests. The SDK or CLI can discover the compatibility credentials, and the proxy applies the real GCP authentication without exposing service account JSON inside the sandbox.
 
 ### Use GCS mounts
 
-For GCS mounts, the GCP rule must cover both `storage.googleapis.com` and `www.googleapis.com`. The SDK GCP auth helpers include these hosts by default.
+For GCS mounts, enable a GCP auth rule with a compatible storage OAuth scope. You do not need to list `storage.googleapis.com` or `www.googleapis.com`; the proxy matches Google API hosts automatically.
 
 Use one of these scopes for read-only mounts:
 
