@@ -183,7 +183,8 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
 ```python Python
 from langsmith.sandbox import (
     SandboxClient,
-    aws_auth_proxy_config,
+    aws_auth,
+    proxy_config,
     workspace_secret,
 )
 
@@ -191,9 +192,13 @@ client = SandboxClient()
 
 client.create_sandbox(
     name="aws-sandbox",
-    proxy_config=aws_auth_proxy_config(
-        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
-        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+    proxy_config=proxy_config(
+        rules=[
+            aws_auth(
+                access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+                secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+            )
+        ]
     ),
 )
 ```
@@ -201,7 +206,8 @@ client.create_sandbox(
 ```ts TypeScript
 import {
   SandboxClient,
-  awsAuthProxyConfig,
+  awsAuth,
+  proxyConfig,
   workspaceSecret,
 } from "langsmith/sandbox";
 
@@ -209,9 +215,13 @@ const client = new SandboxClient();
 
 await client.createSandbox({
   name: "aws-sandbox",
-  proxyConfig: awsAuthProxyConfig({
-    accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
-    secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
+  proxyConfig: proxyConfig({
+    rules: [
+      awsAuth({
+        accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
+        secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
+      }),
+    ],
   }),
 });
 ```
@@ -237,12 +247,14 @@ Do not set real service account JSON as a sandbox environment variable. Configur
 GCP auth rules are different from header injection rules:
 
 - Set `type` to `gcp`.
-- Set `match_hosts` to exact hosts or wildcard suffixes under `googleapis.com`, such as `storage.googleapis.com`, `www.googleapis.com`, or `*.googleapis.com`.
+- When sending raw `proxy_config`, set `match_hosts` to exact hosts or wildcard suffixes under `googleapis.com`, such as `storage.googleapis.com`, `www.googleapis.com`, or `*.googleapis.com`.
 - Do not set `match_paths`; GCP rules use host-only matching.
 - Do not set `headers`; GCP rules authenticate requests and cannot inject headers.
 - Put credentials under `gcp.service_account_json`.
 - Set `gcp.scopes` to a non-empty list of OAuth scopes.
 - Configure at most one enabled GCP auth rule per sandbox.
+
+The SDK `gcp_auth` and `gcpAuth` helpers set `match_hosts` for GCS by default. Pass `match_hosts` or `matchHosts` only when your sandbox needs to authenticate requests to other Google API hosts.
 
 ```bash
 curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
@@ -281,61 +293,48 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
 <CodeGroup>
 
 ```python Python
-from langsmith.sandbox import SandboxClient
+from langsmith.sandbox import (
+    SandboxClient,
+    gcp_auth,
+    proxy_config,
+    workspace_secret,
+)
 
 client = SandboxClient()
 
 client.create_sandbox(
     name="gcp-sandbox",
-    proxy_config={
-        "rules": [
-            {
-                "name": "gcp",
-                "type": "gcp",
-                "enabled": True,
-                "match_hosts": [
-                    "storage.googleapis.com",
-                    "www.googleapis.com",
-                ],
-                "gcp": {
-                    "service_account_json": {
-                        "type": "workspace_secret",
-                        "value": "{GCP_SERVICE_ACCOUNT_JSON}",
-                    },
-                    "scopes": [
-                        "https://www.googleapis.com/auth/devstorage.read_only"
-                    ],
-                },
-            }
+    proxy_config=proxy_config(
+        rules=[
+            gcp_auth(
+                service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+                scopes=["https://www.googleapis.com/auth/devstorage.read_only"],
+            )
         ]
-    },
+    ),
 )
 ```
 
 ```ts TypeScript
-import { SandboxClient } from "langsmith/sandbox";
+import {
+  SandboxClient,
+  gcpAuth,
+  proxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
 
 const client = new SandboxClient();
 
 await client.createSandbox({
   name: "gcp-sandbox",
-  proxyConfig: {
+  proxyConfig: proxyConfig({
     rules: [
-      {
-        name: "gcp",
-        type: "gcp",
-        enabled: true,
-        match_hosts: ["storage.googleapis.com", "www.googleapis.com"],
-        gcp: {
-          service_account_json: {
-            type: "workspace_secret",
-            value: "{GCP_SERVICE_ACCOUNT_JSON}",
-          },
-          scopes: ["https://www.googleapis.com/auth/devstorage.read_only"],
-        },
-      },
+      gcpAuth({
+        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+        scopes: ["https://www.googleapis.com/auth/devstorage.read_only"],
+      }),
     ],
-  },
+  }),
 });
 ```
 
@@ -345,7 +344,7 @@ After the sandbox is ready, use Google SDKs or CLIs normally inside the sandbox 
 
 ### Use GCS mounts
 
-For GCS mounts, the GCP rule must cover both `storage.googleapis.com` and `www.googleapis.com`.
+For GCS mounts, the GCP rule must cover both `storage.googleapis.com` and `www.googleapis.com`. The SDK GCP auth helpers include these hosts by default.
 
 Use one of these scopes for read-only mounts:
 
