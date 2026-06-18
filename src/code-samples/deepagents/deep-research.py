@@ -275,27 +275,19 @@ if __name__ == "__main__":
 
 # :snippet-start: deep-research-run-stream-py
 from langchain.messages import HumanMessage
-from langgraph.types import Overwrite
 
 if __name__ == "__main__":
-    for chunk in agent.stream(
+    stream = agent.stream_events(
         {
             "messages": [
                 HumanMessage(content="Compare Python vs JavaScript for web development")
             ]
         },
-        stream_mode="updates",
-    ):
-        for node, update in chunk.items():
-            if not update or not (messages := update.get("messages")):
-                continue
-            msg_list = messages.value if isinstance(messages, Overwrite) else messages
-            for msg in msg_list:
-                if hasattr(msg, "content") and msg.content:
-                    print(msg.content)
-            # :remove-start:
-            assert msg_list is not None
-            # :remove-end:
+        version="v3",
+    )
+    for message in stream.messages:
+        for token in message.text:
+            print(token, end="", flush=True)
         # :remove-start:
         if os.environ.get("CI"):
             break  # Don't wait for full response in CI

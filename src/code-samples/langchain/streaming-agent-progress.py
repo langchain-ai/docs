@@ -13,16 +13,22 @@ agent = create_agent(
     checkpointer=InMemorySaver()
 )
 config = {"configurable": {"thread_id": str(uuid7())}}
-for chunk in agent.stream(  # [!code highlight]
+stream = agent.stream_events(  # [!code highlight]
     {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
     config=config,
-    stream_mode="updates",
-    version="v2",  # [!code highlight]
-):
-    if chunk["type"] == "updates":  # [!code highlight]
-        for step, data in chunk["data"].items():  # [!code highlight]
-            print(f"step: {step}")
-            print(f"content: {data['messages'][-1].content_blocks}")
+    version="v3",  # [!code highlight]
+)
+for kind, item in stream.interleave("messages", "tool_calls"):  # [!code highlight]
+    if kind == "messages":
+        for token in item.text:
+            print(token, end="", flush=True)
+    elif kind == "tool_calls":
+        print(f"\nTool call: {item.tool_name}({item.input})")
+        for delta in item.output_deltas:
+            print(delta, end="", flush=True)
+        print(f"\nTool result: {item.output}")
+
+final_state = stream.output  # [!code highlight]
 # :snippet-end:
 
 # :remove-start:
@@ -32,8 +38,17 @@ if __name__ == "__main__":
         config={"configurable": {"thread_id": str(uuid7())}},
         version="v3",
     )
-    snapshots = list(stream.values)
-    stream.output
-    assert len(snapshots) > 0, snapshots
-    print("✓ streaming agent progress (stream_events v3) emits value snapshots")
+    messages_seen = 0
+    tool_calls_seen = 0
+    for kind, item in stream.interleave("messages", "tool_calls"):
+        if kind == "messages":
+            messages_seen += 1
+            list(item.text)
+        elif kind == "tool_calls":
+            tool_calls_seen += 1
+            list(item.output_deltas)
+    final_state = stream.output
+    assert final_state is not None
+    assert messages_seen > 0, messages_seen
+    print("✓ streaming agent progress (stream_events v3) uses typed projections")
 # :remove-end:
