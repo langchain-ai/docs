@@ -284,14 +284,16 @@ Before writing or updating model references, verify current model IDs against th
 
 **Add a new integration page (Python):**
 
-1. Create `src/oss/python/integrations/<provider>/<component>.mdx`
-2. Add to `src/docs.json` under Open source → Python dropdown → Integrations tab
+1. Create `src/oss/python/integrations/<component>/<provider>.mdx`
+2. Add the page to the component's index page (`src/oss/python/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
 3. Use description format: `"Integrate with the ClassName type using LangChain Python."`
+4. If the provider has an overview page at `src/oss/python/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
 **Add a new integration page (TypeScript):**
 
-1. Create `src/oss/javascript/integrations/<provider>/<component>.mdx`
-2. Add to `src/docs.json` under Open source → TypeScript dropdown → Integrations tab
+1. Create `src/oss/javascript/integrations/<component>/<provider>.mdx`
+2. Add the page to the component's index page (`src/oss/javascript/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
+3. If the provider has an overview page at `src/oss/javascript/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
 **Add a reusable snippet:**
 
