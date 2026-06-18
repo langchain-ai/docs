@@ -1,0 +1,147 @@
+---
+title: Keenable Search
+description: Use the Keenable web-search and page-fetch tools from LangChain Python.
+---
+
+[Keenable](https://keenable.ai) is a web search and page-fetch API built for AI agents. The
+`langchain-keenable` package provides the `KeenableSearch` and `KeenableFetch` tools for using it from
+LangChain.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Package latest |
+| :--- | :--- | :---: | :---: | :---: |
+| [`KeenableSearch`](https://github.com/keenableai/langchain-keenable) | [`langchain-keenable`](https://pypi.org/project/langchain-keenable/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-keenable?style=flat-square&label=%20) |
+| [`KeenableFetch`](https://github.com/keenableai/langchain-keenable) | [`langchain-keenable`](https://pypi.org/project/langchain-keenable/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-keenable?style=flat-square&label=%20) |
+
+### Tool features
+
+| Returns artifact | Native async | Return data |
+| :---: | :---: | :--- |
+| ❌ | ✅ | Title, URL, description, publication date, and index date of each result; full page content for fetch. |
+
+## Setup
+
+The integration lives in the `langchain-keenable` package:
+
+```bash
+pip install -U langchain-keenable
+```
+
+### Credentials
+
+Both search and fetch work without an API key via their keyless public endpoints. To use the
+authenticated endpoints (required for `mode="realtime"`, and for higher rate limits), create an API key
+in the [Keenable console](https://keenable.ai/console) and set it as `KEENABLE_API_KEY`:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("KEENABLE_API_KEY"):
+    os.environ["KEENABLE_API_KEY"] = getpass.getpass("Keenable API key (optional):\n")
+```
+
+It is also helpful (but not needed) to set up [LangSmith](https://smith.langchain.com) for
+observability:
+
+```python
+# os.environ["LANGSMITH_TRACING"] = "true"
+# os.environ["LANGSMITH_API_KEY"] = getpass.getpass()
+```
+
+## Instantiation
+
+```python
+from langchain_keenable import KeenableSearch, KeenableFetch
+
+search = KeenableSearch(
+    # api_key="...",   # optional; falls back to KEENABLE_API_KEY, then the public endpoint
+    # mode="pro",      # default search mode; overridable per invocation
+)
+fetch = KeenableFetch()
+```
+
+Search filters (`site`, `published_after`, `published_before`, `acquired_after`, `acquired_before`,
+`mode`) are passed **per invocation**, not at construction, so an agent can vary them per query.
+
+## Invocation
+
+### Invoke directly with args
+
+```python
+search.invoke({"query": "typescript best practices", "site": "github.com"})
+```
+
+```python
+[
+    {
+        "title": "TypeScript Best Practices 2026",
+        "url": "https://example.com/ts-best-practices",
+        "description": "A comprehensive guide ...",
+        "published_at": "2026-01-15T10:30:00Z",
+        "acquired_at": "2026-01-16T08:12:34Z",
+    },
+]
+```
+
+Read a page found via search:
+
+```python
+fetch.invoke({"url": "https://example.com/ts-best-practices"})
+```
+
+### Invoke with ToolCall
+
+We can also invoke a tool with a model-generated `ToolCall`, in which case a `ToolMessage` will be
+returned:
+
+```python
+model_generated_tool_call = {
+    "args": {"query": "who won the latest f1 grand prix"},
+    "id": "1",
+    "name": search.name,
+    "type": "tool_call",
+}
+search.invoke(model_generated_tool_call)
+```
+
+## Use within an agent
+
+```python
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+llm = init_chat_model("anthropic:claude-sonnet-4-6")
+
+agent = create_agent(llm, [search, fetch])
+
+for step in agent.stream(
+    {"messages": [("human", "What are some recent best practices for writing TypeScript?")]},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+```
+
+## KeenableFetch
+
+`KeenableFetch` is the companion page-fetch tool: give it a URL and it returns the page's main
+content as markdown, so an agent can read a result it found via `KeenableSearch`. Like search, it
+uses the keyless public endpoint when no key is configured, and rejects non-`http(s)` and
+private/internal URLs before sending.
+
+```python
+from langchain_keenable import KeenableFetch
+
+fetch = KeenableFetch()
+page = fetch.invoke({"url": "https://example.com/ts-best-practices"})
+print(page["title"], page["content"])
+```
+
+## API reference
+
+For detailed documentation of all `KeenableSearch` / `KeenableFetch` features and configurations, see the
+[package README](https://github.com/keenableai/langchain-keenable) and the
+[Keenable API reference](https://docs.keenable.ai).
