@@ -32,12 +32,15 @@ rss: true
 - Includes dependency and security maintenance updates.
 
 ### New Features
-- Added opt-in Prometheus metrics scrape support. Set `LSD_PROM_METRICS_ENABLED=true` to expose OTel metrics (run lifecycle, latency, stream, worker gauges) on a dedicated Prometheus scrape endpoint at port `LSD_PROM_METRICS_PORT` (default 9464). Datadog OTLP push continues to work alongside Prometheus when both are configured.
+- Added DeltaChannel-aware pruning that preserves only the minimum ancestor checkpoints needed for state reconstruction, replacing the previous approach that refused to prune threads with active delta channels. Supported across the Postgres, SQLite, DeferredDelete, and in-memory runtimes.
 - Added DeltaChannel-aware pruning for the MongoDB checkpointer, preserving only the minimum ancestor checkpoints and delta-channel blobs needed for state reconstruction.
+- Added opt-in Prometheus metrics scrape support. Set `LSD_PROM_METRICS_ENABLED=true` to expose OTel metrics (run lifecycle, latency, stream, worker gauges) on a dedicated Prometheus scrape endpoint at port `LSD_PROM_METRICS_PORT` (default 9464). Datadog OTLP push continues to work alongside Prometheus when both are configured.
 - Added opt-in Go core rate limits for unary core-api RPCs and Redis stream publish bytes, with Redis-backed GCRA enforcement, shadow/enforce modes, and `LS_RATE_LIMITS` bootstrap config with YAML override.
 - Allow passing custom certificate and key files (`ssl_certfile`, `ssl_keyfile`) to run the dev server over HTTPS.
 
 ### Fixes
+- Fixed protocol v2 runs on JS graphs failing silently. The sidecar rejected `streamEvents` with a 400 due to strict stream-mode validation, the error was swallowed, and runs falsely reported success with 0 nodes executed. Relaxed stream-mode validation at the HTTP boundary and now raise a clear error on non-2xx sidecar responses instead of masking the failure.
+- Fixed protocol v2 event streaming against JS sidecar (remote) graphs, which were incorrectly served through the legacy reconstruction path. Remote graphs now use LangGraphJS's native v3 stream for v2 event-streaming runs, resolving tool calls not rendering, headless interrupts never executing or resuming, and `400: tool_use ids must be unique` errors on the final message after a resume.
 - Delete run now skips checkpoint deletion for threads using DeltaChannel and removes only the run record. Checkpoints that store delta writes later checkpoints depend on are preserved. Use thread prune APIs to reclaim checkpoint storage on delta-channel threads.
 - Fixed Prometheus metrics export and aligned OpenTelemetry exporter configuration.
 </Update>
