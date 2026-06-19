@@ -305,7 +305,7 @@ async function _runExamples() {
   // :snippet-start: deep-research-run-stream-js
   {
     async function main() {
-      for await (const chunk of await agent.stream(
+      const stream = await agent.streamEvents(
         {
           messages: [
             {
@@ -314,17 +314,11 @@ async function _runExamples() {
             },
           ],
         },
-        { streamMode: "updates" },
-      )) {
-        for (const [, update] of Object.entries(chunk)) {
-          const messages = (update as any)?.messages;
-          if (!messages) continue;
-          const msgList = Array.isArray(messages) ? messages : [messages];
-          for (const msg of msgList) {
-            if (msg.content) {
-              console.log(msg.content);
-            }
-          }
+        { version: "v3" },
+      );
+      for await (const message of stream.messages) {
+        for await (const token of message.text) {
+          process.stdout.write(token);
         }
       }
     }

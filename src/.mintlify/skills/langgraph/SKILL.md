@@ -2,7 +2,7 @@
 name: langgraph
 description: Build stateful, durable agent workflows with LangGraph. Use when you need custom graph-based control flow, human-in-the-loop, persistence, or multi-agent orchestration.
 license: MIT
-compatibility: Python 3.10+, Node.js 20+
+compatibility: Python 3.10+, Node.js 22+
 metadata:
   author: langchain-ai
   version: "1.0"

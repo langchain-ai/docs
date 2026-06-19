@@ -7,7 +7,11 @@ import GraphApiUsingTasksOriginalJs from '/snippets/code-samples/graph-api-using
 import GraphApiUsingTasksOriginalPy from '/snippets/code-samples/graph-api-using-tasks-original-py.mdx';
 import GraphApiUsingTasksTaskJs from '/snippets/code-samples/graph-api-using-tasks-task-js.mdx';
 import GraphApiUsingTasksTaskPy from '/snippets/code-samples/graph-api-using-tasks-task-py.mdx';
+import LanggraphGraphApiMultipleSchemasJs from '/snippets/code-samples/langgraph-graph-api-multiple-schemas-js.mdx';
+import LanggraphGraphApiMultipleSchemasPy from '/snippets/code-samples/langgraph-graph-api-multiple-schemas-py.mdx';
 import LanggraphGraphApiResumeV2Py from '/snippets/code-samples/langgraph-graph-api-resume-v2-py.mdx';
+import LanggraphGraphApiStreamPrivateChannelJs from '/snippets/code-samples/langgraph-graph-api-stream-private-channel-js.mdx';
+import LanggraphGraphApiStreamPrivateChannelPy from '/snippets/code-samples/langgraph-graph-api-stream-private-channel-py.mdx';
 
 ## Graphs
 
@@ -153,103 +157,13 @@ Let's look at an example:
 
 :::python
 
-```python
-class InputState(TypedDict):
-    user_input: str
-
-class OutputState(TypedDict):
-    graph_output: str
-
-class OverallState(TypedDict):
-    foo: str
-    user_input: str
-    graph_output: str
-
-class PrivateState(TypedDict):
-    bar: str
-
-def node_1(state: InputState) -> OverallState:
-    # Write to OverallState
-    return {"foo": state["user_input"] + " name"}
-
-def node_2(state: OverallState) -> PrivateState:
-    # Read from OverallState, write to PrivateState
-    return {"bar": state["foo"] + " is"}
-
-def node_3(state: PrivateState) -> OutputState:
-    # Read from PrivateState, write to OutputState
-    return {"graph_output": state["bar"] + " Lance"}
-
-builder = StateGraph(OverallState,input_schema=InputState,output_schema=OutputState)
-builder.add_node("node_1", node_1)
-builder.add_node("node_2", node_2)
-builder.add_node("node_3", node_3)
-builder.add_edge(START, "node_1")
-builder.add_edge("node_1", "node_2")
-builder.add_edge("node_2", "node_3")
-builder.add_edge("node_3", END)
-
-graph = builder.compile()
-graph.invoke({"user_input":"My"})
-# {'graph_output': 'My name is Lance'}
-```
+<LanggraphGraphApiMultipleSchemasPy />
 
 :::
 
 :::js
 
-```typescript
-import { StateSchema, GraphNode } from "@langchain/langgraph";
-import * as z from "zod";
-
-const InputState = new StateSchema({
-  userInput: z.string(),
-});
-
-const OutputState = new StateSchema({
-  graphOutput: z.string(),
-});
-
-const OverallState = new StateSchema({
-  foo: z.string(),
-  userInput: z.string(),
-  graphOutput: z.string(),
-});
-
-const PrivateState = new StateSchema({
-  bar: z.string(),
-});
-
-const graph = new StateGraph({
-  state: OverallState,
-  input: InputState,
-  output: OutputState,
-})
-  .addNode("node1", (state) => {
-    // Write to OverallState
-    return { foo: state.userInput + " name" };
-  })
-  .addNode("node2", (state) => {
-    // Read from OverallState, write to PrivateState
-    return { bar: state.foo + " is" };
-  })
-  .addNode(
-    "node3",
-    (state) => {
-      // Read from PrivateState, write to OutputState
-      return { graphOutput: state.bar + " Lance" };
-    },
-    { input: PrivateState }
-  )
-  .addEdge(START, "node1")
-  .addEdge("node1", "node2")
-  .addEdge("node2", "node3")
-  .addEdge("node3", END)
-  .compile();
-
-await graph.invoke({ userInput: "My" });
-// { graphOutput: 'My name is Lance' }
-```
+<LanggraphGraphApiMultipleSchemasJs />
 
 :::
 
@@ -289,24 +203,18 @@ Input, output, and private schemas constrain what each node _reads_ (its input s
 
 When you stream with `stream_mode="values"`, the graph emits **all** of its state channels by default, including private ones, because values streaming defaults to the full set of state channels rather than the output schema. This is why a private channel like `bar` is hidden by `invoke` but visible while streaming:
 
-```python
-for chunk in graph.stream({"user_input": "My"}, stream_mode="values"):
-    print(chunk)
-# {'user_input': 'My'}
-# {'user_input': 'My', 'foo': 'My name'}
-# {'user_input': 'My', 'foo': 'My name', 'bar': 'My name is'}        # <-- private channel
-# {'user_input': 'My', 'foo': 'My name', 'bar': 'My name is', 'graph_output': 'My name is Lance'}
-```
+<LanggraphGraphApiStreamPrivateChannelPy />
 
 To restrict the streamed values to a specific set of channels (e.g. only the output schema), pass `output_keys`:
 
 ```python
-for chunk in graph.stream(
+stream = graph.stream_events(
     {"user_input": "My"},
-    stream_mode="values",
+    version="v3",
     output_keys=["graph_output"],  # [!code highlight]
-):
-    print(chunk)
+)
+for snapshot in stream.values:
+    print(snapshot)
 # {'graph_output': 'My name is Lance'}
 ```
 
@@ -322,27 +230,17 @@ Input, output, and private schemas constrain what each node _reads_ (its input s
 
 When you stream with `streamMode: "values"`, the graph emits **all** of its state channels by default — including private ones — because values streaming defaults to the full set of state channels rather than the output schema. This is why a private channel like `bar` is hidden by `invoke` but visible while streaming:
 
-```typescript
-for await (const chunk of await graph.stream(
-  { userInput: "My" },
-  { streamMode: "values" }
-)) {
-  console.log(chunk);
-}
-// { userInput: 'My' }
-// { userInput: 'My', foo: 'My name' }
-// { userInput: 'My', foo: 'My name', bar: 'My name is' }            // <-- private channel
-// { userInput: 'My', foo: 'My name', bar: 'My name is', graphOutput: 'My name is Lance' }
-```
+<LanggraphGraphApiStreamPrivateChannelJs />
 
 To restrict the streamed values to a specific set of channels (e.g. only the output schema), pass `outputKeys`:
 
 ```typescript
-for await (const chunk of await graph.stream(
+const stream = await graph.streamEvents(
   { userInput: "My" },
-  { streamMode: "values", outputKeys: ["graphOutput"] }  // [!code highlight]
-)) {
-  console.log(chunk);
+  { version: "v3", outputKeys: ["graphOutput"] }  // [!code highlight]
+);
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
 }
 // { graphOutput: 'My name is Lance' }
 ```
