@@ -9,6 +9,9 @@ import LanggraphInterruptsHitlStreamJs from '/snippets/code-samples/langgraph-in
 import LanggraphInterruptsApprovalPy from '/snippets/code-samples/langgraph-interrupts-approval-py.mdx';
 import LanggraphInterruptsReviewPy from '/snippets/code-samples/langgraph-interrupts-review-py.mdx';
 import LanggraphInterruptsValidatePy from '/snippets/code-samples/langgraph-interrupts-validate-py.mdx';
+import LanggraphInterruptsValidateConditionalEdgePatternPy from '/snippets/code-samples/langgraph-interrupts-validate-conditional-edge-pattern-py.mdx';
+import LanggraphInterruptsValidateConditionalEdgePatternJs from '/snippets/code-samples/langgraph-interrupts-validate-conditional-edge-pattern-js.mdx';
+import LanggraphInterruptsValidateConditionalEdgeJs from '/snippets/code-samples/langgraph-interrupts-validate-conditional-edge-js.mdx';
 import LanggraphInterruptsValidateConditionalEdgePy from '/snippets/code-samples/langgraph-interrupts-validate-conditional-edge-py.mdx';
 
 Interrupts allow you to pause graph execution at specific points and wait for external input before continuing. This enables human-in-the-loop patterns where you need external input to proceed. When an interrupt is triggered, LangGraph saves the graph state using its [persistence](/oss/langgraph/persistence) layer and waits indefinitely until you resume execution.
@@ -802,35 +805,7 @@ The correct pattern:
 3. If the answer is invalid, return the updated `pending_question` so the next invocation re-prompts.
 4. Use `add_conditional_edges` to route back to the node until a valid value is collected.
 
-```python
-from typing import TypedDict
-
-from langgraph.graph import END, START, StateGraph
-from langgraph.types import interrupt
-
-
-class FormState(TypedDict):
-    age: int | None
-    pending_question: str | None
-
-
-def get_age_node(state: FormState):
-    question = state.get("pending_question") or "What is your age?"
-    answer = interrupt(question)  # called exactly once per invocation
-    if isinstance(answer, int) and answer > 0:
-        return {"age": answer, "pending_question": None}
-    return {"pending_question": f"'{answer}' is not a valid age. Please enter a positive number."}
-
-
-def route(state: FormState):
-    return END if state.get("age") is not None else "collect_age"
-
-
-builder = StateGraph(FormState)
-builder.add_node("collect_age", get_age_node)
-builder.add_edge(START, "collect_age")
-builder.add_conditional_edges("collect_age", route)
-```
+<LanggraphInterruptsValidateConditionalEdgePatternPy />
 
 Each resume invokes `get_age_node` exactly once, runs the `interrupt()` call once, and exits. When the answer is invalid, the conditional edge loops back and the next interrupt re-prompts with the updated question. No code runs more than once per resume.
 
@@ -844,23 +819,7 @@ The correct pattern:
 3. If the answer is invalid, return the updated `pendingQuestion` so the next invocation re-prompts.
 4. Use `addConditionalEdges` to route back to the node until a valid value is collected.
 
-```typescript
-import { interrupt } from "@langchain/langgraph";
-
-const getAgeNode: typeof State.Node = (state) => {
-  const question = state.pendingQuestion ?? "What is your age?";
-  const answer = interrupt(question); // called exactly once per invocation
-
-  if (typeof answer === "number" && answer > 0) {
-    return { age: answer, pendingQuestion: null };
-  }
-  return { pendingQuestion: `'${answer}' is not a valid age. Please enter a positive number.` };
-}
-
-// builder.addConditionalEdges("collectAge", (state) =>
-//   state.age !== null ? END : "collectAge"
-// );
-```
+<LanggraphInterruptsValidateConditionalEdgePatternJs />
 
 Each resume invokes `getAgeNode` exactly once, runs the `interrupt()` call once, and exits. When the answer is invalid, the conditional edge loops back and the next interrupt re-prompts with the updated question.
 
@@ -1075,7 +1034,7 @@ async function nodeA(state: State) {
 :::
 
 * 🔴 Do not conditionally skip @[`interrupt`] calls within a node
-* 🔴 Do not loop @[`interrupt`] calls using logic that isn't deterministic across executions — including `while True` validation loops. Use a conditional edge instead (see [Validating human input](#validating-human-input))
+* 🔴 Do not loop @[`interrupt`] calls using logic that isn't deterministic across executions, including `while True` validation loops. Use a conditional edge instead (see [Validating human input](#validating-human-input))
 
 :::python
 <CodeGroup>
