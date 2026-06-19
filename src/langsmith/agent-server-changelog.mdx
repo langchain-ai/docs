@@ -11,6 +11,48 @@ rss: true
 
 [Agent Server](/langsmith/agent-server) is an API platform for creating and managing agent-based applications. It provides built-in persistence, a task queue, and supports deploying, configuring, and running assistants (agentic workflows) at scale. This changelog documents all notable updates, features, and fixes to Agent Server releases.
 
+<Update label="2026-06-18" tags={["agent-server"]}>
+## v0.11.0rc4
+
+### Fixes
+- Fixed HTTP `input.respond` validation for Event Streaming v2 to read pending interrupts from the durable thread row instead of rebuilding thread state, preventing valid HITL resumes from incorrectly returning `no_such_interrupt` after reconnects, redeploys, or thread-state lookup failures.
+- Fixed `input.respond` so optional `update` and `goto` parameters are forwarded into the same `Command` as the resume value.
+</Update>
+
+<Update label="2026-06-18" tags={["agent-server"]}>
+## v0.11.0rc3
+
+### New Features
+- Added `coreApi.runQueueTraceLog` config flag (`LSD_RUN_QUEUE_TRACE_LOG` env var, default `false`) to enable verbose Redis run-queue trace logs.
+</Update>
+
+<Update label="2026-06-17" tags={["agent-server"]}>
+## v0.11.0rc2
+
+### Fixes
+- Loosened the `starlette` lower bound introduced in 0.11.0rc1 back to `>=0.38.6` so `langgraph-api` can be installed alongside environments that pin older Starlette versions. Builds still resolve Starlette to 1.0.1 through the lockfile.
+</Update>
+
+<Update label="2026-06-11" tags={["agent-server"]}>
+## v0.11.0rc1
+
+### General Notes
+- Includes dependency and security maintenance updates.
+
+### New Features
+- Added DeltaChannel-aware pruning that preserves only the minimum ancestor checkpoints needed for state reconstruction, replacing the previous approach that refused to prune threads with active delta channels. Supported across the Postgres, SQLite, DeferredDelete, and in-memory runtimes.
+- Added DeltaChannel-aware pruning for the MongoDB checkpointer, preserving only the minimum ancestor checkpoints and delta-channel blobs needed for state reconstruction.
+- Added opt-in Prometheus metrics scrape support. Set `LSD_PROM_METRICS_ENABLED=true` to expose OTel metrics (run lifecycle, latency, stream, worker gauges) on a dedicated Prometheus scrape endpoint at port `LSD_PROM_METRICS_PORT` (default 9464). Datadog OTLP push continues to work alongside Prometheus when both are configured.
+- Added opt-in Go core rate limits for unary core-api RPCs and Redis stream publish bytes, with Redis-backed GCRA enforcement, shadow/enforce modes, and `LS_RATE_LIMITS` bootstrap config with YAML override.
+- Allow passing custom certificate and key files (`ssl_certfile`, `ssl_keyfile`) to run the dev server over HTTPS.
+
+### Fixes
+- Fixed protocol v2 runs on JS graphs failing silently. The sidecar rejected `streamEvents` with a 400 due to strict stream-mode validation, the error was swallowed, and runs falsely reported success with 0 nodes executed. Relaxed stream-mode validation at the HTTP boundary and now raise a clear error on non-2xx sidecar responses instead of masking the failure.
+- Fixed protocol v2 event streaming against JS sidecar (remote) graphs, which were incorrectly served through the legacy reconstruction path. Remote graphs now use LangGraphJS's native v3 stream for v2 event-streaming runs, resolving tool calls not rendering, headless interrupts never executing or resuming, and `400: tool_use ids must be unique` errors on the final message after a resume.
+- Delete run now skips checkpoint deletion for threads using DeltaChannel and removes only the run record. Checkpoints that store delta writes later checkpoints depend on are preserved. Use thread prune APIs to reclaim checkpoint storage on delta-channel threads.
+- Fixed Prometheus metrics export and aligned OpenTelemetry exporter configuration.
+</Update>
+
 <Update label="2026-06-10" tags={["agent-server"]}>
 ## v0.10.0
 
