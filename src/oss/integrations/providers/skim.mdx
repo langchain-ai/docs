@@ -1,0 +1,87 @@
+# Skim
+
+>[Skim](https://skim402.com) is the x402-native clean reader API for AI agents.
+>Give it a URL and it returns agent-ready Markdown—the article body with nav,
+>ads, and boilerplate stripped—plus structured metadata (title, byline,
+>published date, language, excerpt). There are no accounts and no API keys: each
+>read costs $0.002 in USDC on [Base](https://base.org), paid automatically over
+>the [x402](https://x402.org) protocol from a wallet you control.
+
+## Installation
+
+```bash
+pip install langchain-skim
+```
+
+Skim needs no signup or API key. Reads are paid per call ($0.002 in USDC on Base)
+over the x402 protocol, so you need a Base wallet funded with a little USDC. A
+dollar covers roughly 500 reads. Step-by-step wallet setup for non-crypto-native
+developers: [skim402.com/wallet](https://skim402.com/wallet).
+
+## Configuration
+
+Skim reads the paying wallet's private key from the `SKIM_WALLET_PRIVATE_KEY`
+environment variable. The key never leaves your machine; it only signs payment
+authorizations locally. Use a dedicated wallet, not your personal one.
+
+```python
+import os
+os.environ["SKIM_WALLET_PRIVATE_KEY"] = "0x..."
+```
+
+Or pass the key directly:
+
+```python
+from langchain_skim import SkimReader
+
+tool = SkimReader(private_key="0x...")
+```
+
+## Tool
+
+`SkimReader` implements LangChain's `BaseTool` interface. Give it a URL and it
+returns clean Markdown plus page metadata.
+
+```python
+from langchain_skim import SkimReader
+
+tool = SkimReader()  # reads SKIM_WALLET_PRIVATE_KEY from the environment
+result = tool.invoke({"url": "https://en.wikipedia.org/wiki/HTTP_402"})
+print(result)
+```
+
+### In an agent
+
+```python
+from langchain.agents import create_agent
+from langchain_skim import SkimReader
+
+agent = create_agent(model="claude-sonnet-4-6", tools=[SkimReader()])
+agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Read https://en.wikipedia.org/wiki/HTTP_402 and summarize it.",
+            }
+        ]
+    }
+)
+```
+
+## Key parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `private_key` | `SecretStr` | `$SKIM_WALLET_PRIVATE_KEY` | Base wallet key that signs USDC payment authorizations locally |
+| `max_price_usd` | `float` | `0.01` | Refuse to sign for any read priced above this cap |
+| `include_metadata` | `bool` | `True` | Prepend a YAML frontmatter block of page metadata |
+
+## How payment works
+
+Skim uses the x402 protocol. The first request returns `402 Payment Required`
+with a payment challenge; the x402 client signs an EIP-3009 USDC transfer
+authorization locally and retries with an `X-PAYMENT` header. Skim verifies and
+settles the payment on Base, then returns the content. The `max_price_usd` cap
+bounds what the wallet will sign for, so a misconfigured price can never drain
+the wallet.
