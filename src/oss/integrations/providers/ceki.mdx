@@ -1,0 +1,122 @@
+# Ceki
+
+>[Ceki](https://ceki.me) is a marketplace of real residential Chrome sessions for AI agents.
+>Self mode uses your own Chrome (via the [Ceki extension](https://browser.ceki.me/install)) and is free
+>when host and renter are the same user. Marketplace mode rents Chrome sessions from real users
+>worldwide at $0.01/min, settled in USDC.
+
+>Use this integration on sites you own or have authorization to operate on — your own QA flows,
+>accessibility audits of sites you control, synthetic monitoring, support automation in your own
+>dashboards, and data collection on sites whose Terms of Service permit it.
+
+## Installation
+
+```bash
+pip install langchain-ceki
+```
+
+JavaScript / TypeScript:
+
+```bash
+npm install @ceki/langchain-ceki @langchain/core
+```
+
+Get an API key at [ceki.me](https://ceki.me) — email signup, no KYC.
+
+## Configuration
+
+```python
+import os
+os.environ["CEKI_API_KEY"] = "your-api-key"
+```
+
+Or pass the key directly to the toolkit constructor (see below).
+
+## Toolkit
+
+`CekiToolkit` exposes nine structural tools that drive a real Chrome session via the
+[`ceki-sdk`](https://pypi.org/project/ceki-sdk/). The agent's own model decides which tool to call
+and in what order — there is no server-side natural-language planner and no LLM inside the wrapper.
+
+| Tool | What it does |
+|------|---|
+| `ceki_rent_browser` | Rent a real Chrome session and return its `session_id`. Pass it to every other tool. |
+| `ceki_navigate` | Open a URL. |
+| `ceki_click` | Click at viewport coordinates. |
+| `ceki_type` | Type text into the focused element. |
+| `ceki_scroll` | Scroll by `delta_y` pixels. |
+| `ceki_screenshot` | PNG of the current viewport as base64. |
+| `ceki_snapshot` | Screenshot plus drained chat messages from the host. |
+| `ceki_chat_send` | Send a chat message to the host of the rented session (e.g. to ask for an OTP). |
+| `ceki_stop` | End the session. Always call when done. |
+
+### Basic usage
+
+```python
+import os
+os.environ["CEKI_API_KEY"] = "your-api-key"
+
+from langchain_ceki import CekiToolkit
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+
+toolkit = CekiToolkit(default_rent={"schedule_id": 4242, "mode": "main"})
+tools = toolkit.get_tools()
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a browser agent. Use the Ceki tools to complete the user's task."),
+    ("user", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+agent = create_tool_calling_agent(llm, tools, prompt)
+executor = AgentExecutor(agent=agent, tools=tools)
+
+try:
+    result = await executor.ainvoke({
+        "input": (
+            "Open https://my-app.example.com, sign in with the saved profile, "
+            "and return the dashboard's headline number."
+        ),
+    })
+    print(result["output"])
+finally:
+    await toolkit.aclose()  # ALWAYS — leaving sessions open burns credit
+```
+
+### Sync / async paths
+
+Both `_run` (sync) and `_arun` (async) paths are implemented. The sync path uses an internal
+bridge thread; calling it from inside a running event loop raises with a clear hint to switch
+to `ainvoke`.
+
+## Key parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | `SecretStr` | `$CEKI_API_KEY` | Ceki API key |
+| `api_url` | `str` | `https://api.ceki.me` | API base URL |
+| `default_rent` | `dict` | `{}` | Default `schedule_id` and `mode` for `ceki_rent_browser` |
+
+## Modes
+
+| Mode | Where | Cost |
+|---|---|---|
+| Self | Your own Chrome (after installing the [Ceki extension](https://browser.ceki.me/install)) | Free when host_user == renter_user |
+| Marketplace | Chrome contributed by another user who opted in to host | $0.01/min, USDC |
+| Earn (opt-in) | Your idle Chrome contributed back to the marketplace | 90% of session price |
+
+## Use responsibly
+
+Use only on sites you own or have authorization to operate on — your own apps, your own dashboards,
+public data within site Terms of Service, accessibility audits you're responsible for. The integration
+does not enable anything you wouldn't be allowed to do manually.
+
+## Links
+
+- [Homepage](https://ceki.me)
+- [Source code](https://github.com/Ceki-me/langchain)
+- [PyPI: langchain-ceki](https://pypi.org/project/langchain-ceki/)
+- [npm: @ceki/langchain-ceki](https://www.npmjs.com/package/@ceki/langchain-ceki)
+- [ceki-sdk](https://pypi.org/project/ceki-sdk/)
