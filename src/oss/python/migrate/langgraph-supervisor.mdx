@@ -1,0 +1,238 @@
+---
+title: Migrate from langgraph-supervisor
+sidebarTitle: langgraph-supervisor
+description: Migrate from the langgraph-supervisor package to the subagents pattern with create_agent and tool-wrapped subagents.
+---
+
+The [`langgraph-supervisor`](https://github.com/langchain-ai/langgraph-supervisor-py) package is no longer actively maintained. Instead use the [subagents](/oss/langchain/multi-agent/subagents) pattern: a main agent coordinates specialized workers by calling them as [tools](/oss/langchain/tools).
+
+This guide covers how to migrate from `create_supervisor` to @[`create_agent`], including setups that use @[`interrupt`] and external API callbacks.
+
+## Summary of changes
+
+| langgraph-supervisor | Recommended replacement |
+|--------------------|-------------------------|
+| `create_supervisor` with worker agents as graph nodes | @[`create_agent`] with subagents wrapped as @[`@tool`] functions |
+| Worker agents added as `StateGraph` nodes | Subagents invoked inside tool functions |
+| `output_mode` for message history | Format subagent output in the tool wrapper (see [subagent outputs](/oss/langchain/multi-agent/subagents#subagent-outputs)) |
+| `create_handoff_tool` for custom routing | Custom @[`@tool`] that calls `subagent.invoke(...)` |
+| Nested supervisors (`create_supervisor` of supervisors) | Nested tool calls or a custom @[`StateGraph`] |
+
+## Basic migration
+
+With `langgraph-supervisor`, worker agents were graph nodes and the supervisor routes between them using handoff tools:
+
+```python
+from langgraph_supervisor import create_supervisor
+from langgraph.prebuilt import create_react_agent
+
+research_agent = create_react_agent(
+    model=model,
+    tools=[web_search],
+    name="research_expert",
+    prompt="You are a research expert.",
+)
+
+math_agent = create_react_agent(
+    model=model,
+    tools=[add, multiply],
+    name="math_expert",
+    prompt="You are a math expert.",
+)
+
+workflow = create_supervisor(
+    [research_agent, math_agent],
+    model=model,
+    prompt="Route research questions to research_expert and math to math_expert.",
+)
+app = workflow.compile(checkpointer=checkpointer)
+```
+
+Migrate to the subagents pattern by wrapping each worker as a tool on a main agent:
+
+```python
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langgraph.checkpoint.memory import MemorySaver
+
+research_agent = create_agent(
+    model=model,
+    tools=[web_search],
+    system_prompt="You are a research expert.",
+)
+
+math_agent = create_agent(
+    model=model,
+    tools=[add, multiply],
+    system_prompt="You are a math expert.",
+)
+
+@tool("research_expert", description="Research expert for current events and web lookups.")
+def call_research_agent(query: str) -> str:
+    result = research_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    return result["messages"][-1].content
+
+@tool("math_expert", description="Math expert for calculations.")
+def call_math_agent(query: str) -> str:
+    result = math_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    return result["messages"][-1].content
+
+supervisor = create_agent(
+    model=model,
+    tools=[call_research_agent, call_math_agent],
+    system_prompt=(
+        "Route research questions to research_expert and math to math_expert."
+    ),
+    checkpointer=MemorySaver(),
+)
+```
+
+For a full walkthrough, see [Build a personal assistant with subagents](/oss/langchain/multi-agent/subagents-personal-assistant).
+
+## Migrate interrupt and resume flows
+
+A common `langgraph-supervisor` setup uses @[`interrupt`] inside a worker agent's tool to pause execution until an external service completes:
+
+```python
+# Before: create_supervisor with a subgraph node
+#
+# Supervisor (create_supervisor)
+#   └── ResearchAgent (subgraph node)
+#         └── preview_tool
+#               ├── fire_external_api()      # kicks off async job
+#               ├── result = interrupt(...)  # pauses graph, waits for callback
+#               └── render_results(result)   # runs after resume
+```
+
+With the subagents pattern, the same flow works. @[`interrupt`] inside a subagent tool propagates up through tool-wrapped @[`create_agent`] layers to the outermost graph. Your external callback can still resume with `Command(resume=result)`.
+
+```python
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command, interrupt
+
+@tool
+def preview_tool(document_id: str) -> str:
+    """Run an async enrichment preview and wait for results."""
+    job_id = fire_external_api(document_id)
+    result = interrupt({"job_id": job_id, "status": "pending"})
+    return render_results(result)
+
+research_agent = create_agent(
+    model=model,
+    tools=[preview_tool],
+    system_prompt="You are a research agent.",
+)
+
+@tool("research_agent", description="Research and enrichment tasks.")
+def call_research_agent(query: str) -> str:
+    result = research_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    return result["messages"][-1].content
+
+supervisor = create_agent(
+    model=model,
+    tools=[call_research_agent],
+    system_prompt="Delegate research tasks to research_agent.",
+    checkpointer=MemorySaver(),
+)
+
+config = {"configurable": {"thread_id": "1"}}
+
+# Invoke — preview_tool calls interrupt() and the graph pauses
+response = supervisor.invoke(
+    {"messages": [{"role": "user", "content": "Preview enrichment for doc-123"}]},
+    config=config,
+)
+# response contains __interrupt__
+
+# External service completes and calls back into your app
+supervisor.invoke(Command(resume=external_result), config=config)
+```
+
+### Requirements for interrupt propagation
+
+For @[`interrupt`] to bubble up through nested @[`create_agent`] layers, follow these rules:
+
+1. **Compile only the outermost graph with a checkpointer.** Leave subagents without `checkpointer=...` so they use [per-invocation persistence](/oss/langgraph/use-subgraphs#per-invocation-default) and inherit the parent's checkpointer at runtime.
+2. **Pass `thread_id` in `configurable`.** The outer `invoke()` or `stream_events()` call must include a `thread_id` so the graph can checkpoint and resume.
+3. **Do not catch `GraphInterrupt` in tool wrappers.** Default tool behavior is fine. Custom `try`/`except` blocks around `subagent.invoke(...)` can swallow the interrupt and return partial state instead of propagating it.
+
+These rules apply to arbitrarily nested setups. For example, a custom @[`StateGraph`] outer layer, a middle @[`create_agent`] supervisor, and an inner @[`create_agent`] subagent all follow the same mechanism:
+
+```txt
+Custom StateGraph (outer, with checkpointer)
+  └── prospecting_agent (create_agent, no checkpointer)
+        └── call_powerup_agent tool → powerup_agent.invoke(...)
+              └── powerup_agent (create_agent, no checkpointer)
+                    └── preview_tool → interrupt(...)
+```
+
+When `preview_tool` calls @[`interrupt`], the exception bubbles through both @[`create_agent`] layers and surfaces as `__interrupt__` on the outer @[`StateGraph`]'s invoke result. Your existing `Command(resume=result)` callback path keeps working.
+
+### Troubleshooting
+
+If `subagent.invoke(...)` returns partial state instead of propagating an interrupt, check the following:
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Interrupt does not surface on outer invoke | Subagent compiled with its own `checkpointer=...` | Remove the checkpointer from subagents; compile only the outer graph with one |
+| Graph does not resume after callback | Missing `thread_id` | Pass `{"configurable": {"thread_id": "..."}}` on every invoke |
+| Interrupt swallowed silently | `GraphInterrupt` caught in tool wrapper | Remove custom error handling around `subagent.invoke(...)` |
+| Partial state returned, no `__interrupt__` | Subagent compiled with `checkpointer=False` (stateless mode) | Use the default (`checkpointer=None`) for per-invocation inheritance |
+
+For more on how interrupts propagate through subgraphs, see [Subgraph persistence: Interrupts](/oss/langgraph/use-subgraphs#per-invocation-default) and [Checkpointing and state inspection](/oss/langchain/multi-agent/subagents#checkpointing-and-state-inspection).
+
+## When to use a custom StateGraph instead
+
+Tool-wrapped subagents work for most interrupt and resume flows. Use a custom @[`StateGraph`] with the subagent as a [node](/oss/langgraph/use-subgraphs#call-a-subgraph-inside-a-node) when your external callback path needs to [inspect nested graph state](/oss/langgraph/use-subgraphs#view-subgraph-state) while paused.
+
+Because subagents are called inside tool functions, LangGraph cannot statically discover them. This means @[`get_state`] with `subgraphs=True` does not return subagent state for tool-wrapped agents. If your callback handler needs to read nested state (for example, to look up a `job_id` stored in a subagent's checkpoint), invoke the subagent from a node function in a custom graph instead.
+
+## Migrate nested supervisors
+
+`langgraph-supervisor` supports multi-level hierarchies by compiling supervisors and passing them to another `create_supervisor` call. With the subagents pattern, you have two options:
+
+1. **Flatten to a single supervisor** with one tool per leaf agent. This is the simplest approach when each worker is independent.
+2. **Nest tool calls** when you need intermediate coordination. Wrap a middle-tier agent (itself a @[`create_agent`] with its own subagent tools) as a tool on the top-level supervisor.
+
+```python
+# Middle-tier agent with its own subagents
+billing_team = create_agent(
+    model=model,
+    tools=[call_refunds_agent, call_invoices_agent],
+    system_prompt="Coordinate billing specialists.",
+)
+
+@tool("billing_team", description="Handle billing, refunds, and invoices.")
+def call_billing_team(query: str) -> str:
+    result = billing_team.invoke({"messages": [{"role": "user", "content": query}]})
+    return result["messages"][-1].content
+
+# Top-level supervisor
+top_supervisor = create_agent(
+    model=model,
+    tools=[call_billing_team, call_support_agent],
+    system_prompt="Route billing to billing_team and general support to support_agent.",
+    checkpointer=MemorySaver(),
+)
+```
+
+If you need static subgraph discovery, checkpoint namespaces per tier, or shared state keys between levels, use a custom @[`StateGraph`] with [subgraph nodes](/oss/langgraph/use-subgraphs#add-a-subgraph-as-a-node) instead.
+
+## Migrate message history options
+
+`create_supervisor` exposes `output_mode` to control how worker messages appear in conversation history:
+
+- `full_history`: Include all messages from the worker agent.
+- `last_message`: Include only the worker's final response.
+
+With the subagents pattern, control this in the tool wrapper. Return only the final message for `last_message` behavior, or return a formatted summary of the full conversation for `full_history` behavior. See [Subagent outputs](/oss/langchain/multi-agent/subagents#subagent-outputs) for patterns that pass additional state back to the supervisor.
+
+## See also
+
+- [Subagents](/oss/langchain/multi-agent/subagents): Pattern overview and design decisions
+- [Build a personal assistant with subagents](/oss/langchain/multi-agent/subagents-personal-assistant): Step-by-step supervisor tutorial
+- [Use subgraphs](/oss/langgraph/use-subgraphs): Subgraph persistence, interrupts, and state inspection
+- [Interrupts](/oss/langgraph/interrupts): Pause and resume graph execution
+- [LangGraph v1 migration guide](/oss/migrate/langgraph-v1): Migrate from `create_react_agent` to `create_agent`
