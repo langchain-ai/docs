@@ -1,0 +1,214 @@
+---
+title: "Xpoz integration"
+description: "Integrate with the Xpoz social media tools using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the Xpoz [tools](/oss/langchain/tools). Xpoz provides unified access to Twitter/X, Instagram, Reddit, and TikTok data through a single API. No social media API keys required.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com) | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| [`XpozTwitterSearch`](https://github.com/XPOZpublic/langchain-xpoz) | [`langchain-xpoz`](https://pypi.org/project/langchain-xpoz/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-xpoz?style=flat-square&label=%20) |
+
+### Tool features
+
+| [Returns artifact](/oss/langchain/tools) | Native async | Return data | Pricing |
+| :---: | :---: | :---: | :---: |
+| ❌ | ✅ | Social media posts, user profiles, comments, engagement metrics | Free tier available |
+
+## Setup
+
+To access the Xpoz tools, you need to create a free Xpoz account and install the `langchain-xpoz` integration package.
+
+### Credentials
+
+Get a free access key at [xpoz.ai/get-token](https://xpoz.ai/get-token).
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "XPOZ_API_KEY" not in os.environ:
+    os.environ["XPOZ_API_KEY"] = getpass.getpass("Enter your Xpoz access key: ")
+```
+
+It is also helpful (but not needed) to set up LangSmith for best-in-class observability/<Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls. To enable automated tracing, set your [LangSmith](/langsmith/observability) API key:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The Xpoz tools live in the `langchain-xpoz` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-xpoz
+    ```
+    ```python uv
+    uv add langchain-xpoz
+    ```
+</CodeGroup>
+
+## Instantiation
+
+Xpoz provides 32 tools across four social media platforms. Here are the most commonly used:
+
+```python Initialize tools icon="robot"
+from langchain_xpoz import (
+    XpozTwitterSearch,
+    XpozTwitterUser,
+    XpozInstagramUser,
+    XpozRedditSearch,
+    XpozTiktokSearch,
+)
+
+twitter_search = XpozTwitterSearch()
+twitter_user = XpozTwitterUser()
+instagram_user = XpozInstagramUser()
+reddit_search = XpozRedditSearch()
+tiktok_search = XpozTiktokSearch()
+```
+
+## Invocation
+
+### [Invoke directly with args](/oss/langchain/tools)
+
+Search Twitter for posts about a topic:
+
+```python Call tool icon="rocket"
+twitter_search.invoke({
+    "query": "AI agents",
+    "max_results": 5,
+    "fields": ["text", "author_username", "like_count", "created_at"],
+})
+```
+
+Look up a user profile with specific fields:
+
+```python
+twitter_user.invoke({
+    "identifier": "elonmusk",
+    "fields": ["username", "name", "followers_count", "description"],
+})
+```
+
+### [Invoke with ToolCall](/oss/langchain/tools)
+
+You can also invoke the tool with a model-generated `ToolCall`, in which case a `ToolMessage` will be returned:
+
+```python ToolCall icon="briefcase"
+model_generated_tool_call = {
+    "args": {"identifier": "elonmusk", "fields": ["username", "followers_count"]},
+    "id": "1",
+    "name": "xpoz_twitter_user",
+    "type": "tool_call",
+}
+tool_msg = twitter_user.invoke(model_generated_tool_call)
+print(tool_msg.content)
+```
+
+### Use within an agent
+
+Use Xpoz tools with an agent for social media research. This requires a model with tool-calling capabilities.
+
+```python Agent with tools icon="robot"
+from langchain.agents import create_agent
+from langchain_xpoz import XpozTwitterSearch, XpozInstagramUser, XpozRedditSearch
+
+tools = [
+    XpozTwitterSearch(),
+    XpozInstagramUser(),
+    XpozRedditSearch(),
+]
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=tools,
+)
+
+stream = agent.stream_events({"messages": "What are people saying about LangChain on Twitter and Reddit?"}, version="v3")
+for snapshot in stream.values:
+    snapshot["messages"][-1].pretty_print()
+```
+
+## Available tools
+
+### Twitter/X
+
+| Tool | Description |
+|------|-------------|
+| `XpozTwitterSearch` | Search posts by keywords, hashtags, or phrases |
+| `XpozTwitterUser` | Get a user profile by username or ID |
+| `XpozTwitterUserPosts` | Get posts by a specific user |
+| `XpozTwitterPostComments` | Get replies to a specific tweet |
+| `XpozTwitterSearchUsers` | Search users by name |
+| `XpozTwitterUserConnections` | Get a user's followers or following list |
+| `XpozTwitterUsersByKeywords` | Find users who posted about specific topics |
+| `XpozTwitterCountPosts` | Count posts matching a phrase |
+
+### Instagram
+
+| Tool | Description |
+|------|-------------|
+| `XpozInstagramSearch` | Search posts by keywords |
+| `XpozInstagramUser` | Get a user profile by username or ID |
+| `XpozInstagramUserPosts` | Get posts by a specific user |
+| `XpozInstagramPostComments` | Get comments on a post |
+| `XpozInstagramSearchUsers` | Search users by name |
+| `XpozInstagramUsersByKeywords` | Find users who posted about specific topics |
+
+### Reddit
+
+| Tool | Description |
+|------|-------------|
+| `XpozRedditSearch` | Search posts by keywords, filter by subreddit |
+| `XpozRedditUser` | Get a user profile |
+| `XpozRedditPostWithComments` | Get a post with its comment thread |
+| `XpozRedditSearchComments` | Search comments by keywords |
+| `XpozRedditSearchSubreddits` | Search subreddits by name or topic |
+| `XpozRedditSubreddit` | Get subreddit info with recent posts |
+| `XpozRedditUsersByKeywords` | Find users who posted about specific topics |
+
+### TikTok
+
+| Tool | Description |
+|------|-------------|
+| `XpozTiktokSearch` | Search videos by keywords |
+| `XpozTiktokUser` | Get a creator profile |
+| `XpozTiktokUserPosts` | Get videos by a specific creator |
+| `XpozTiktokPostComments` | Get comments on a video |
+| `XpozTiktokSearchUsers` | Search creators by name |
+| `XpozTiktokPostsByHashtags` | Search videos by hashtags |
+| `XpozTiktokUsersByKeywords` | Find creators who posted about specific topics |
+
+### Tracking and account
+
+| Tool | Description |
+|------|-------------|
+| `XpozGetTrackedItems` | List all tracked keywords, users, hashtags |
+| `XpozAddTrackedItems` | Start tracking items across platforms |
+| `XpozRemoveTrackedItems` | Stop tracking items |
+| `XpozAccountDetails` | Get account plan, usage, and billing info |
+
+## Field selection
+
+All social media tools accept an optional `fields` parameter to select which fields are returned. Without it, only a default minimal set is returned.
+
+```python
+twitter_user.invoke({
+    "identifier": "nasa",
+    "fields": ["username", "name", "followers_count", "description", "verified"],
+})
+```
+
+Field names use `snake_case` (for example, `followers_count`, `like_count`, `author_username`).
+
+## API reference
+
+For the full list of tools and parameters, see the [langchain-xpoz source on GitHub](https://github.com/XPOZpublic/langchain-xpoz).
