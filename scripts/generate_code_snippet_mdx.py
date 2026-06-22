@@ -57,7 +57,7 @@ DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
     ("Anthropic", 'model="anthropic:claude-sonnet-4-6"'),
     ("OpenRouter", 'model="openrouter:anthropic/claude-sonnet-4-6"'),
     ("Fireworks", 'model="fireworks:accounts/fireworks/models/qwen3p5-397b-a17b"'),
-    ("Baseten", 'model="baseten:zai-org/GLM-5"'),
+    ("Baseten", 'model="baseten:zai-org/GLM-5.2"'),
     ("Ollama", 'model="ollama:devstral-2"'),
 ]
 
@@ -67,7 +67,7 @@ DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
     ("Anthropic", 'model: "anthropic:claude-sonnet-4-6"'),
     ("OpenRouter", 'model: "openrouter:anthropic/claude-sonnet-4-6"'),
     ("Fireworks", 'model: "fireworks:accounts/fireworks/models/qwen3p5-397b-a17b"'),
-    ("Baseten", 'model: "baseten:zai-org/GLM-5"'),
+    ("Baseten", 'model: "baseten:zai-org/GLM-5.2"'),
     ("Ollama", 'model: "ollama:devstral-2"'),
 ]
 
