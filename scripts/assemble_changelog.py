@@ -176,11 +176,15 @@ def _eppo_get(path: str, token: str) -> dict | list:
 
 
 def eppo_flag_index(token: str) -> dict[str, dict]:
-    """Fetch all feature flags (with allocations) indexed by their flag key.
+    """Fetch feature flags (with allocations) indexed by their flag key.
 
     Eppo's flag-detail endpoint is keyed by numeric id, not the flag key, so we
-    list all flags once and index by ``key``. Handles either a bare list or a
-    paginated envelope.
+    list flags and index by ``key``. Accepts a bare list or an envelope.
+
+    NOTE: this reads a single page. If the API paginates and a held fragment's
+    flag is on a later page, it surfaces as "Eppo flag not found" (a loud error,
+    never a silent wrong publish). The truncation check below warns when the
+    envelope reports more flags than were returned.
     """
     payload = _eppo_get("feature-flags?include_detailed_allocations=true", token)
     if isinstance(payload, list):
@@ -190,6 +194,13 @@ def eppo_flag_index(token: str) -> dict[str, dict]:
             payload.get("flags") or payload.get("data")
             or payload.get("results") or payload.get("items") or []
         )
+        total = payload.get("total_count") or payload.get("total") or payload.get("count")
+        if isinstance(total, int) and total > len(items):
+            print(
+                f"WARNING: Eppo returned {len(items)} of {total} flags (paginated); "
+                f"some held fragments may falsely report 'flag not found'.",
+                file=sys.stderr,
+            )
     return {f["key"]: f for f in items if isinstance(f, dict) and f.get("key")}
 
 
@@ -226,7 +237,8 @@ def is_fully_rolled_out(flag_json: dict) -> bool:
         if alloc.get("targeting_rules"):
             continue  # only covers targeted tenants; not the general population
         # First catch-all allocation reached: it decides what everyone else gets.
-        if alloc.get("percent_exposure", 1) != 1:
+        # Eppo expresses full exposure as the fraction 1; tolerate 100 (percent).
+        if alloc.get("percent_exposure", 1) not in (1, 100):
             return False  # partial traffic exposure
         served = [w for w in alloc.get("variation_weight", []) if w.get("weight", 0) > 0]
         if len(served) != 1:

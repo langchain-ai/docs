@@ -49,9 +49,12 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TYPE_RE = re.compile(r"^(feat|fix)(\([^)]*\))?!?:", re.IGNORECASE)
 INTERNAL_SCOPE_RE = re.compile(
     r"^(feat|fix)\((sandbox-host|sandbox-router|v21proxy|v21shadow|e2e|stlc|"
-    r"langdev|ci|smith-go|smith-sdks|messages)\)",
+    r"langdev|ci|smith-go|smith-sdks|messages|issuebench)\)",
     re.IGNORECASE,
 )
+# Self-hosted/BYOC/provisioning work has no scope to filter on but is out of
+# scope for the Cloud/Fleet changelog. Matched anywhere in the title.
+TITLE_INTERNAL_RE = re.compile(r"\b(byoc|data[ -]plane|provisioning)\b", re.IGNORECASE)
 PR_NUM_RE = re.compile(r"#(\d+)\s*$")
 
 
@@ -102,7 +105,11 @@ def fetch_merged_prs(since: dt.date, until: dt.date) -> list[dict]:
 
 
 def is_user_facing(title: str) -> bool:
-    return bool(TYPE_RE.match(title)) and not INTERNAL_SCOPE_RE.match(title)
+    return (
+        bool(TYPE_RE.match(title))
+        and not INTERNAL_SCOPE_RE.match(title)
+        and not TITLE_INTERNAL_RE.search(title)
+    )
 
 
 def covered_pr_numbers(fragments_dir: Path) -> set[int]:
@@ -132,10 +139,10 @@ def load_ignore(path: Path | None) -> set[int]:
     if not path:
         return set()
     nums: set[int] = set()
-    for line in path.read_text().splitlines():
-        line = line.split("#", 1)[0].strip() if not line.strip().startswith("#") else ""
-        if line.isdigit():
-            nums.add(int(line))
+    for raw in path.read_text().splitlines():
+        token = raw.split("#", 1)[0].strip()  # drop inline/full-line comments
+        if token.isdigit():
+            nums.add(int(token))
     return nums
 
 
