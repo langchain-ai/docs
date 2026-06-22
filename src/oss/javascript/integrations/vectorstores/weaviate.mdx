@@ -11,33 +11,33 @@ This guide provides a quick overview for getting started with Weaviate [vector s
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/weaviate/) |  Version |
-| :--- | :--- | :---: | :---: |
-| [`WeaviateStore`](https://reference.langchain.com/javascript/langchain-weaviate/WeaviateStore) | [`@langchain/weaviate`](https://npmjs.com/@langchain/weaviate) | ✅ |  ![NPM - Version](https://img.shields.io/npm/v/@langchain/weaviate?style=flat-square&label=%20&) |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/weaviate/) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| [`WeaviateStore`](https://reference.langchain.com/javascript/langchain-weaviate/WeaviateStore) | [`@langchain/weaviate`](https://www.npmjs.com/package/@langchain/weaviate) | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/weaviate?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/weaviate?style=flat-square&label=%20&) |
 
 ## Setup
 
-To use Weaviate vector stores, you'll need to set up a Weaviate instance and install the `@langchain/weaviate` integration package. You should also install the `weaviate-client` package to initialize a client to connect to your instance with, and the `uuid` package if you want to assign indexed documents ids.
+To use Weaviate vector stores, set up a Weaviate instance and install `@langchain/weaviate`, `@langchain/core`, and `weaviate-client` to connect to your deployment.
 
-This guide will also use [OpenAI embeddings](/oss/integrations/embeddings/openai), which require you to install the `@langchain/openai` integration package. You can also use [other supported embeddings models](/oss/integrations/embeddings) if you wish.
+This guide uses [OpenAI embeddings](/oss/integrations/embeddings/openai) as an example. You can use [other supported embeddings models](/oss/integrations/embeddings) instead.
 
 <CodeGroup>
 ```bash npm
-npm install @langchain/weaviate @langchain/core weaviate-client uuid @langchain/openai
+npm install @langchain/weaviate @langchain/core weaviate-client @langchain/openai
 ```
 ```bash yarn
-yarn add @langchain/weaviate @langchain/core weaviate-client uuid @langchain/openai
+yarn add @langchain/weaviate @langchain/core weaviate-client @langchain/openai
 ```
 ```bash pnpm
-pnpm add @langchain/weaviate @langchain/core weaviate-client uuid @langchain/openai
+pnpm add @langchain/weaviate @langchain/core weaviate-client @langchain/openai
 ```
 </CodeGroup>
 
-You'll need to run Weaviate either locally or on a server. See [the Weaviate documentation](https://weaviate.io/developers/weaviate/installation) for more information.
+Run Weaviate locally or on a server. See [the Weaviate documentation](https://weaviate.io/developers/weaviate/installation) for more information.
 
 ### Credentials
 
-Once you've set up your instance, set the following environment variables:
+Set the following environment variables:
 
 ```typescript
 // If running locally, include port e.g. "localhost:8080"
@@ -46,13 +46,13 @@ process.env.WEAVIATE_URL = "YOUR_WEAVIATE_URL";
 process.env.WEAVIATE_API_KEY = "YOUR_API_KEY";
 ```
 
-If you are using OpenAI embeddings for this guide, you'll need to set your OpenAI key as well:
+If you are using OpenAI embeddings for this guide, set your OpenAI key as well:
 
 ```typescript
 process.env.OPENAI_API_KEY = "YOUR_API_KEY";
 ```
 
-If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/home) API key by uncommenting below:
+If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/observability) API key by uncommenting below:
 
 ```typescript
 // process.env.LANGSMITH_TRACING="true"
@@ -72,22 +72,27 @@ In most cases, you should use one of the connection helper functions to connect 
 ```typescript
 import { WeaviateStore } from "@langchain/weaviate";
 import { OpenAIEmbeddings } from "@langchain/openai";
-import weaviate from "weaviate-client";
+import weaviate, {
+  dataType,
+  Filters,
+  generativeParameters,
+  vectorizer,
+} from "weaviate-client";
 
 const embeddings = new OpenAIEmbeddings({
   model: "text-embedding-3-small",
 });
 
-const weaviateClient = weaviate.connectToWeaviateCloud({
-   clusterURL: process.env.WEAVIATE_URL!,
-  options : {
-      authCredentials: new weaviate.ApiKey(process.env.WEAVIATE_API_KEY || ""),
-      headers: {
-        "X-OpenAI-Api-Key": process.env.OPENAI_API_KEY || "",
-        "X-Cohere-Api-Key": process.env.COHERE_API_KEY || "",
-      },
+const weaviateClient = await weaviate.connectToWeaviateCloud(
+  process.env.WEAVIATE_URL!,
+  {
+    authCredentials: new weaviate.ApiKey(process.env.WEAVIATE_API_KEY || ""),
+    headers: {
+      "X-OpenAI-Api-Key": process.env.OPENAI_API_KEY || "",
+      "X-Cohere-Api-Key": process.env.COHERE_API_KEY || "",
     },
-});
+  },
+);
 ```
 
 ### Initiate the vectorStore
@@ -95,7 +100,7 @@ const weaviateClient = weaviate.connectToWeaviateCloud({
 To create a collection, specify at least the collection name. If you don't specify any properties, `auto-schema` creates them.
 
 ```typescript
-const vectorStore = new WeaviateStore(embeddings, {
+let vectorStore = new WeaviateStore(embeddings, {
   client: weaviateClient,
   indexName: "Langchainjs_test",
 });
@@ -104,7 +109,7 @@ const vectorStore = new WeaviateStore(embeddings, {
 To use Weaviate's named vectors, vectorizers, reranker, generative-models etc., use the `schema` property when enabling the vector store. The collection name and other properties in `schema` will take precedence when creating the vector store.
 
 ```typescript
-const vectorStore = new WeaviateStore(embeddings, {
+vectorStore = new WeaviateStore(embeddings, {
   client: weaviateClient,
   schema: {
     name: "Langchainjs_test",
@@ -167,7 +172,7 @@ const uuids = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID(), cr
 await vectorStore.addDocuments(documents, { ids: uuids });
 ```
 
-```python
+```text
 [
   '610f9b92-9bee-473f-a4db-8f2ca6e3442d',
   '995160fa-441e-41a0-b476-cf3785518a0d',
@@ -178,7 +183,7 @@ await vectorStore.addDocuments(documents, { ids: uuids });
 
 ### Delete items from vector store
 
-You can delete by id as by passing a `filter` param:
+You can delete by ID or by passing a `filter` parameter:
 
 ```typescript
 await vectorStore.delete({ ids: [uuids[3]] });
@@ -196,9 +201,7 @@ Performing a simple similarity search can be done as follows. The `Filter` helpe
 See [this page](https://weaviate.io/developers/weaviate/api/graphql/filters) for more on Weaviate filter syntax.
 
 ```typescript
-import { Filters } from "weaviate-client";
-
-const collection = client.collections.use('Langchainjs_test');
+const collection = weaviateClient.collections.use("Langchainjs_test");
 
 const filter = Filters.and(collection.filter.byProperty("source").equal("https://example.com"))
 

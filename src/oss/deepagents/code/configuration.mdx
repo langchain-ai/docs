@@ -8,8 +8,8 @@ Deep Agents Code stores its configuration in the `~/.deepagents/` directory. The
 
 | File | Format | Purpose |
 |------|--------|---------|
-| `config.toml` | TOML | Model defaults, provider settings, constructor params, profile overrides, themes, update settings, MCP trust store |
-| `.env` | Dotenv | Global API keys and secrets |
+| `config.toml` | TOML | Model defaults, provider settings, constructor params, profile overrides, themes, update settings |
+| `.env` | Dotenv | Global API keys, secrets, and other environment variables |
 | `hooks.json` | JSON | External tool subscriptions to Deep Agents Code lifecycle events |
 | `.mcp.json` | JSON | Global MCP server definitions |
 
@@ -17,14 +17,34 @@ Deep Agents Code stores its configuration in the `~/.deepagents/` directory. The
     Files under `~/.deepagents/.state/` hold per-machine Deep Agents Code state and are managed automatically.
 </Note>
 
+---
+
+## Inspect configuration
+
+The `dcode config` command group reports what configuration is in effect and where each value comes from, without starting a session. This is useful for confirming that an environment variable or `config.toml` setting is being picked up, and for sharing a redacted snapshot in a bug report.
+
+| Command | Description |
+|---------|-------------|
+| `dcode config show` | Resolve every option against the live environment and `config.toml`, printing the effective value and which source provided it |
+| `dcode config list` (alias `ls`) | List every available option with its type, default, and where it can be set, without resolving values |
+| `dcode config get <key>` | Show the effective value and source for a single option, e.g. `dcode config get interpreter.memory_limit_mb` |
+| `dcode config path` | Show the on-disk config file locations (`config.toml`, project and global `.env`, `hooks.json`, and managed state files) and whether each exists |
+
+Each option resolves from the first source that is set, in this order: a `DEEPAGENTS_CODE_`-prefixed env var, the canonical env var, `config.toml`, then the built-in default.
+
+All four commands accept `--json` for machine-readable output.
+
+<Warning>
+    Provider credentials and other secrets are reported as configured / not configured only—their values are never printed by `config show` or `config get`, so the output is safe to paste into a bug report.
+</Warning>
+
+---
+
 ## Provider credentials
 
-For every provider, Deep Agents Code checks two credential sources in order:
+Deep Agents Code needs an API key for each model provider you use. The recommended way to add one is the [`/auth`](#use-%2Fauth-recommended) credential manager. For non-interactive runs, manage the same stored keys from the shell with [`dcode auth`](#manage-credentials-from-the-shell-dcode-auth) or set [environment variables](#environment-variables-ci-and-headless) instead.
 
-1. **Stored keys** — entered via `/auth` and persisted locally.
-2. **Environment variables** — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc., plus the same names with a [`DEEPAGENTS_CODE_`](#deepagents_code_-prefix) prefix and any keys loaded from [`.env` files](#environment-variables).
-
-A stored key always wins over an env-var key for the same provider.
+If the same key is set in more than one place, see [Key resolution order](#key-resolution-order) for which one wins.
 
 ### Use `/auth` (recommended)
 
@@ -34,47 +54,162 @@ Open the credential manager from any session:
 /auth
 ```
 
-The manager lists every LLM provider Deep Agents Code knows about, marks the ones that already have a key, and lets you paste, rotate, or clear credentials inline. Each provider renders as one of:
+The manager lists the LLM providers available in your installation, plus non-model services such as Tavily web search, and marks the ones that already have a key set. Select a provider to add or replace its key, or remove one you have already stored. Keys you save here persist across sessions.
 
-| Label | Meaning |
-|-------|---------|
-| `✓ credentials set` | A stored or env-var key is available |
-| `! missing OPENAI_API_KEY` | The named env var is unset and no key is stored — pick the row to paste one |
-| `local provider` | No credentials needed (e.g., local Ollama) |
-| `implicit auth` | Credentials are implicit (e.g., Vertex AI Application Default Credentials) |
-| `custom auth` | A `class_path` provider managing its own auth (mTLS, JWT, custom headers) |
+<Accordion title="Provider row labels" icon="list-check">
+    Each row shows the provider name followed by where its key comes from:
 
-Press Enter on a row to paste a key, or use the row's delete affordance to clear an existing one. Saved keys are written atomically and persist across sessions and `/reload`.
+    | Label | Meaning |
+    |-------|---------|
+    | `[stored]` | A key saved in this manager via `/auth` |
+    | `[env: VARNAME]` | The key comes from environment variable `VARNAME` (the resolved name, such as `DEEPAGENTS_CODE_OPENAI_API_KEY` or `OPENAI_API_KEY`) |
+    | `[missing]` | No key is stored and the env var is unset; select the row to paste one |
+</Accordion>
+
+The `/auth` prompt also has an optional **base URL** field. Leave it blank to use the provider's default endpoint, or set a custom one to use with this key. The base URL is saved alongside the key. See [Endpoints, keys, and gateways](#endpoints-keys-and-gateways) for how endpoints resolve, including with gateways.
+
+<Warning>
+    A stored base URL is not a secret and may be logged; the key paired with it is never logged.
+</Warning>
 
 <Note>
     Keys are scoped to your user account on this machine — Deep Agents Code never transmits them anywhere except to the configured provider's API.
 </Note>
 
-`/auth` only manages **LLM provider** credentials. Tool credentials such as `TAVILY_API_KEY` (web search) and `LANGSMITH_API_KEY` (tracing) are read from the environment instead — [set them in `~/.deepagents/.env` or your shell](#environment-variables).
+#### Sign in with ChatGPT
+
+Selecting the `openai_codex` provider in `/auth` starts a browser sign-in instead of prompting for an API key, letting you use OpenAI models with a ChatGPT subscription. To re-authenticate or sign out, select `openai_codex` again. See [Sign in with ChatGPT (Codex models)](/oss/deepagents/code/providers) for the full flow.
+
+`/auth` manages **LLM provider** credentials and the **Tavily web-search key**. A Tavily key entered here is stored alongside your provider keys and activates web search on the next launch — see [Enable web search with Tavily](#enable-web-search-with-tavily). Other tool credentials such as `LANGSMITH_API_KEY` (tracing) are read from the environment instead — [set them in `~/.deepagents/.env` or your shell](#environment-variables).
+
+### Manage credentials from the shell (`dcode auth`)
+
+The `dcode auth` command group is the scriptable equivalent of the `/auth` manager: it manages the same stored credentials without launching the TUI, which makes it usable for dotfile bootstrap, CI/CD, and setting a key on a remote box over SSH. The subcommands mirror the modal's verbs:
+
+| Command | Description |
+|---------|-------------|
+| `dcode auth list` (alias `ls`) | List every known provider and where its key resolves from |
+| `dcode auth status <provider>` | Print the resolution source for one provider |
+| `dcode auth set <provider>` | Store an API key, read from stdin by default |
+| `dcode auth remove <provider>` (aliases `rm`, `delete`) | Delete a stored credential |
+| `dcode auth path` | Print the resolved path to the credential store (`auth.json`) |
+
+`set` reads the key from **stdin** by default, so it never lands in shell history or `argv`. Pipe the key in, or use `--from-env VAR` to copy it from a process environment variable:
+
+```bash
+# Pipe the key in (stdin)
+echo "$ANTHROPIC_API_KEY" | dcode auth set anthropic
+
+# Copy it from an existing environment variable
+dcode auth set openai --from-env OPENAI_API_KEY
+```
+
+<Note>
+    `set` refuses to run in an interactive terminal so an accidental invocation cannot hang waiting on input — pipe the key via stdin or use `--from-env VAR`. Stored keys go through the same store as `/auth`, so warnings (for example, about file permissions on `auth.json`) are printed to stderr.
+</Note>
+
+Remove a stored key or print the store location:
+
+```bash
+dcode auth remove anthropic
+dcode auth path
+```
+
+<Note>
+    `dcode auth set` manages API keys only. The `openai_codex` provider uses a ChatGPT browser sign-in rather than an API key, so run [`/auth` and select `openai_codex`](#sign-in-with-chatgpt) to sign in instead. `dcode auth remove openai_codex` does sign you out.
+</Note>
 
 ### Environment variables (CI and headless)
 
-For non-interactive runs, CI/CD pipelines, or anywhere a TUI isn't available, export the provider's env var or write it to `~/.deepagents/.env`:
+For non-interactive runs, CI/CD pipelines, or anywhere a TUI isn't available, export the provider's env var in your shell:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENAI_API_KEY="sk-..."
+
+# Prefix with DEEPAGENTS_CODE_ to scope a key to Deep Agents Code only,
+# leaving a shared key used by other CI steps untouched
+export DEEPAGENTS_CODE_OPENAI_API_KEY="sk-..."
 ```
 
-See [Environment variables](#environment-variables) below for loading order, the `DEEPAGENTS_CODE_` prefix, and per-project overrides.
+To keep keys in a file instead, define them in a [`.env` file](#environment-variables).
+
+### Key resolution order
+
+When a provider's key is set in more than one place, Deep Agents Code uses the first of these that is set:
+
+1. **`DEEPAGENTS_CODE_`-prefixed env var** — for example `DEEPAGENTS_CODE_OPENAI_API_KEY` as an inline shell export. The [`DEEPAGENTS_CODE_` prefix](#deepagents_code_-prefix) is the explicit "use this key in Deep Agents Code" override.
+2. **App-stored key** — entered in the `/auth` credential manager.
+3. **Plain provider env var** — for example `OPENAI_API_KEY`, from your shell or `.env` files.
+
+An app-stored key wins over a plain env-var key for the same provider, but a `DEEPAGENTS_CODE_`-prefixed key wins over an app-stored key. The prefix is the way to override an already-stored key for a single run, without clearing it:
+
+```bash
+# With a key already stored via /auth, a plain env var does not override it.
+# dcode still uses the app-stored key for this run:
+OPENAI_API_KEY=sk-xxxx dcode -n "..."
+
+# The DEEPAGENTS_CODE_ prefix does override it, for this run only:
+DEEPAGENTS_CODE_OPENAI_API_KEY=sk-xxxx dcode -n "..."
+```
+
+This layering exists for the common case where your machine already exports a plain provider variable for some other purpose — a shared `OPENAI_API_KEY` used by other tools, scripts, or CI — that you do not want Deep Agents Code to reuse. An app-stored key or a `DEEPAGENTS_CODE_`-prefixed variable gives Deep Agents Code its own value while leaving the unprefixed one untouched for everything else, so the two never mix.
+
+Each provider's API key and its endpoint (`base_url`) resolve as a pair from the same source. See [Endpoints, keys, and gateways](#endpoints-keys-and-gateways).
+
+### Enable web search with Tavily
+
+The built-in `web_search` tool uses [Tavily](https://tavily.com). Deep Agents Code shows a "Web search disabled" notification on startup until you provide a key. You can store the key in the [`/auth`](#use-%2Fauth-recommended) credential manager, where Tavily appears as a non-model service, or set the `TAVILY_API_KEY` environment variable.
+
+
+<Tabs>
+    <Tab title="Use /auth (recommended)">
+        Get a key from [tavily.com](https://tavily.com) (it starts with `tvly-`; the free tier is sufficient for most Deep Agents Code usage), then store it in the credential manager:
+
+        ```txt
+        /auth
+        ```
+
+        Select **Tavily** from the list and paste the key. You can also reach this prompt directly from the "Web search disabled" notification by choosing **Enter API key**.
+    </Tab>
+
+    <Tab title="Set an environment variable">
+        <Steps>
+            <Step title="Get a key">
+                Sign up at [tavily.com](https://tavily.com) and copy the key (it starts with `tvly-`). The free tier is sufficient for most Deep Agents Code usage.
+            </Step>
+
+            <Step title="Add it to your environment">
+                Add the key to `~/.deepagents/.env` so every session picks it up:
+
+                ```bash title="~/.deepagents/.env"
+                TAVILY_API_KEY=tvly-...
+                ```
+
+                Shell exports take precedence over `.env` values (see [Loading order and precedence](#loading-order-and-precedence)). To scope a key to Deep Agents Code only without affecting other tools that read `TAVILY_API_KEY`, use the [`DEEPAGENTS_CODE_` prefix](#deepagents_code_-prefix): `DEEPAGENTS_CODE_TAVILY_API_KEY=tvly-...`.
+            </Step>
+
+            <Step title="Reload or restart">
+                In an existing session, run `/reload` to re-read `.env` files. On the next launch, the "Web search disabled" notification goes away and the agent can call `web_search`.
+            </Step>
+        </Steps>
+    </Tab>
+</Tabs>
+
+---
 
 ## Environment variables
 
-Deep Agents Code loads environment variables from dotenv files so you don't need to `export` API keys in your shell profile or duplicate `.env` files across projects.
+In addition to shell exports, Deep Agents Code reads environment variables from dotenv files, so you can keep API keys out of your shell profile and avoid duplicating `.env` files across projects.
+
+```bash title="~/.deepagents/.env"
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+```
 
 ### Loading order and precedence
 
-Two `.env` files are loaded at startup:
-
-1. **Project `.env`** — the `.env` file in your current working directory (if present)
-2. **Global `~/.deepagents/.env`** — a single shared file that acts as a fallback for all projects
-
-The effective precedence is: **shell environment > project `.env` > global `.env`**. Values already set in the shell are never overwritten—including on `/reload`.
+At startup, Deep Agents Code reads the nearest project `.env`, found by searching the directory you launch from and walking up through its parents (the first `.env` found wins), then `~/.deepagents/.env` as a global fallback for all projects. A project `.env` wins over the global one, and neither overrides a value already set in your shell. Running `/reload` re-reads both `.env` files so you can change keys without restarting, with shell values still taking precedence. This applies to every variable Deep Agents Code reads (for example, `TAVILY_API_KEY` or the `DEEPAGENTS_CODE_*` settings). Provider API keys have additional resolution rules; see [Provider credentials](#provider-credentials).
 
 ### `DEEPAGENTS_CODE_` prefix
 
@@ -83,67 +218,23 @@ All Deep Agents Code-specific environment variables use a `DEEPAGENTS_CODE_` pre
 The prefix also works as an override mechanism for any environment variable Deep Agents Code reads, including third-party credentials. Deep Agents Code checks `DEEPAGENTS_CODE_{NAME}` first, then falls back to `{NAME}`:
 
 ```bash title="~/.deepagents/.env"
-# Override OPENAI_API_KEY only for Deep Agents Code, without affecting other tools
+# Give Deep Agents Code its own value, without affecting other tools
 DEEPAGENTS_CODE_OPENAI_API_KEY=sk-cli-only
 
-# Block a shell-exported key within Deep Agents Code by setting the prefixed var to empty
+# Or set it empty so Deep Agents Code ignores a key exported in your shell
 DEEPAGENTS_CODE_ANTHROPIC_API_KEY=
 ```
-
-On `/reload`, Deep Agents Code re-reads `.env` files and picks up prefixed values, so you can rotate keys without restarting.
-
-### Example
-
-Store API keys once in `~/.deepagents/.env`:
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-LANGSMITH_API_KEY=lsv2_...
-TAVILY_API_KEY=tvly-...
-
-# If OPENAI_API_KEY is already exported in your shell for other tools,
-# use the prefix to give Deep Agents Code its own key without conflict
-DEEPAGENTS_CODE_OPENAI_API_KEY=sk-cli-only-...
-```
-
-Then override per-project where needed by placing a `.env` in the project directory.
-
-### Enable web search with Tavily
-
-The built-in `web_search` tool uses [Tavily](https://tavily.com). Deep Agents Code shows a "Web search disabled — `TAVILY_API_KEY` is not set" notification on startup until you provide a key. Unlike model provider keys, Tavily is **not** managed by `/auth`; it is read directly from the environment.
-
-<Steps>
-    <Step title="Get a key">
-        Sign up at [tavily.com](https://tavily.com) and copy the key (it starts with `tvly-`). The free tier is sufficient for most Deep Agents Code usage.
-    </Step>
-
-    <Step title="Add it to your environment">
-        Add the key to `~/.deepagents/.env` so every session picks it up:
-
-        ```bash title="~/.deepagents/.env"
-        TAVILY_API_KEY=tvly-...
-        ```
-
-        Or export it in your shell for a one-off session:
-
-        ```bash
-        export TAVILY_API_KEY=tvly-...
-        ```
-
-        Shell exports take precedence over `.env` values (see [Loading order and precedence](#loading-order-and-precedence)). To scope a key to Deep Agents Code only without affecting other tools that read `TAVILY_API_KEY`, use the [`DEEPAGENTS_CODE_` prefix](#deepagents_code_-prefix): `DEEPAGENTS_CODE_TAVILY_API_KEY=tvly-...`.
-    </Step>
-
-    <Step title="Reload or restart">
-        In an existing session, run `/reload` to re-read `.env` files. On the next launch, the "Web search disabled" notification goes away and the agent can call `web_search`.
-    </Step>
-</Steps>
 
 ---
 
 ## Config file
 
-`~/.deepagents/config.toml` lets you customize model providers, set defaults, and pass extra parameters to model constructors.
+`~/.deepagents/config.toml` lets you customize model providers, set defaults, and pass extra parameters to model constructors. This section covers:
+
+- **Defaults**: pin a [default model](#default-and-recent-model) or [agent](#default-and-recent-agent).
+- **Provider setup**: the [`[models.providers.<name>]` table](#provider-configuration), [constructor params](#model-constructor-params), [retries](#retries), [profile overrides](#profile-overrides-advanced), and [adding models to the `/model` switcher](#adding-models-to-the-interactive-switcher).
+- **Custom endpoints and providers**: [custom base URLs](#custom-base-url), [OpenAI- or Anthropic-compatible APIs](#compatible-apis), and [arbitrary providers](#arbitrary-providers).
+- **Endpoints and gateways**: how [API keys and base URLs resolve together](#endpoints-keys-and-gateways), including through a managed gateway.
 
 ### Default and recent model
 
@@ -173,6 +264,8 @@ Each provider is a TOML table under `[models.providers]`:
 
 ```toml
 [models.providers.<name>]
+display_name = "My Provider"
+api_key_url = "https://provider.example/keys"
 models = ["gpt-4o"]
 api_key_env = "OPENAI_API_KEY"
 base_url = "https://api.openai.com/v1"
@@ -190,19 +283,43 @@ temperature = 0.7
 Providers have the following configuration options:
 
 <ResponseField name="models" type="string[]" post={["optional"]}>
-    A list of model names to show in the interactive `/model` switcher for this provider. For providers that already ship with model profiles, any names you add here appear alongside the bundled ones, useful for newly released models that haven't been added to the package yet. For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.
+    A list of model names to show in the interactive `/model` switcher for the provider defined as `<name>`. For providers that already ship with model profiles, any names you add here appear in addition to bundled ones (useful for newly released models that haven't been added to the package yet). For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.
 
-    Models listed here **bypass** the profile-based [filtering criteria](/oss/deepagents/code/providers#which-models-appear-in-the-switcher) and always appear in the switcher. This makes it the recommended way to surface models that are excluded because their profile lacks `tool_calling` support or doesn't exist yet.
+    Models listed here **bypass** any applied profile-based [filtering criteria](/oss/deepagents/code/providers#which-models-appear-in-the-switcher), always appearing in the switcher. This makes it the recommended way to surface models that are excluded because their profile lacks `tool_calling` support or doesn't exist yet.
 
     This key is optional. You can always pass any model name directly to `/model` or `--model` regardless of whether it appears in the switcher; the provider validates the name at request time.
 </ResponseField>
 
 <ResponseField name="api_key_env" type="string" post={["optional"]}>
-    The **name** of the environment variable that holds the API key (e.g., `"OPENAI_API_KEY"`), not the key itself. Deep Agents Code reads the credential from this env var at startup to verify access before creating the model. Most chat model packages read from a default env var automatically. See the [Provider reference](/oss/deepagents/code/providers#provider-reference) table for which variable each provider checks.
+    The **name** of the environment variable that holds the API key (e.g., `"OPENAI_API_KEY"`). Deep Agents Code reads the credential from this env var at startup to verify access before creating the model.
+
+    Most chat model packages read from a default env var automatically. See the [Provider reference](/oss/deepagents/code/providers#provider-reference) table for which variable name each built-in provider checks. For a provider not in that table, set `api_key_env` to its variable name (see [Arbitrary providers](#arbitrary-providers)).
+</ResponseField>
+
+<ResponseField name="display_name" type="string" post={["optional"]}>
+    Human-readable provider name shown in auth UI. Use this for arbitrary providers whose config key is optimized for machines (for example, `my_gateway`) but whose UI label should include spaces or brand capitalization.
+</ResponseField>
+
+<ResponseField name="api_key_url" type="string" post={["optional"]}>
+    URL for the provider page where users create or manage API keys. The `/auth` modal links to this page before the API-key input. This value is a URL, not a credential.
 </ResponseField>
 
 <ResponseField name="base_url" type="string" post={["optional"]}>
     Override the base URL used by the provider, if supported. Refer to your provider packages' [reference docs](https://reference.langchain.com/python/integrations/) for more info.
+
+    See [Compatible APIs](#compatible-apis) for pointing a built-in provider at a wire-compatible endpoint, or [Arbitrary providers](#arbitrary-providers) for one configured via `class_path`.
+</ResponseField>
+
+<ResponseField name="base_url_env" type="string" post={["optional"]}>
+    Name of the environment variable that holds this provider's base URL, parallel to `api_key_env`. Reach for this instead of `base_url` when the endpoint comes from the environment rather than a fixed value — for example a gateway URL that differs by machine or CI job — so it can change without editing `config.toml` and can take part in endpoint resolution and key/endpoint pairing (see [Endpoints, keys, and gateways](#endpoints-keys-and-gateways)). It also extends those to providers outside the [built-in set](/oss/deepagents/code/providers#provider-reference); see [Arbitrary providers](#arbitrary-providers).
+
+    If both are set, the static `base_url` wins:
+
+    ```toml
+    [models.providers.example]
+    base_url = "https://fixed.example/v1"   # used
+    base_url_env = "EXAMPLE_BASE_URL"        # ignored while base_url is set
+    ```
 </ResponseField>
 
 <ResponseField name="params" type="object" post={["optional"]}>
@@ -212,7 +329,7 @@ Providers have the following configuration options:
 </ResponseField>
 
 <ResponseField name="profile" type="object" post={["optional"]}>
-    (Advanced) Override fields in the model's runtime [profile](/oss/langchain/models#model-profiles) (e.g., `max_input_tokens`). Flat keys apply to every model from this provider. Model-keyed sub-tables (e.g., `[profile."claude-sonnet-4-5"]`) override individual values for that model only; the merge is shallow (model wins on conflict). These overrides are applied after the model is created, so they take effect for context-limit display, auto-summarization, and any other feature that reads the profile.
+    (Advanced) Override fields in the model's runtime [profile](/oss/langchain/models#model-profiles) (e.g., `max_input_tokens`). Flat keys apply to every model from this provider. Model-keyed sub-tables (e.g., `[profile."claude-sonnet-4-5"]`) override individual values for that model only; the merge is shallow (model wins on conflict). These overrides are applied after the model is created, so they take effect for context-limit display, auto-summarization, and any other feature that reads the profile. See [Profile overrides](#profile-overrides-advanced) for examples and the `--profile-override` flag.
 </ResponseField>
 
 <ResponseField name="class_path" type="string" post={["optional"]}>
@@ -220,22 +337,12 @@ Providers have the following configuration options:
 </ResponseField>
 
 <ResponseField name="enabled" type="boolean" default="true" post={["optional"]}>
-    Whether this provider appears in the `/model` selector. Set to `false` to hide a provider that was auto-discovered from an installed package (e.g., a transitive dependency you don't want cluttering the switcher). You can still use a disabled provider directly via `/model provider:model` or `--model`.
+    Whether this provider appears in the `/model` selector. Set to `false` to hide a provider that was auto-discovered from an installed package (e.g., a transitive dependency you don't want cluttering the model switcher). You can still use a disabled provider directly via `/model provider:model` or `--model`.
 </ResponseField>
 
 ### Model constructor params
 
-Any provider can use the `params` table to pass extra arguments to the model constructor:
-
-```toml
-[models.providers.ollama.params]
-temperature = 0
-num_ctx = 8192
-```
-
-#### Per-model overrides
-
-If a specific model needs different params, add a model-keyed sub-table under `params` to override individual values without duplicating the entire provider config:
+The [`params` field](#provider-configuration) forwards extra arguments to the model constructor. To give one model different values, add a model-keyed sub-table so you do not have to duplicate the whole provider config:
 
 ```toml
 [models.providers.ollama]
@@ -261,9 +368,48 @@ The merge is shallow: any key present in the model sub-table replaces the same k
     For one-off adjustments without editing `config.toml`, pass a JSON object via `--model-params` at launch or mid-session with `/model`. CLI flags take highest priority over the config file. See [Model parameters](/oss/deepagents/code/providers#model-parameters) on the providers page for syntax and provider-specific examples.
 </Tip>
 
+### Retries
+
+Configure retry counts for transient model provider errors with the top-level `[retries]` section. Deep Agents Code passes these values through to provider integrations that accept retry-count constructor kwargs. If you omit this section, the provider SDK default applies.
+
+```toml
+[retries]
+max_retries = 2
+
+[retries.fireworks]
+max_retries = 3
+
+[retries.anthropic]
+max_retries = 0
+```
+
+The global `[retries].max_retries` value applies to all supported providers. A provider-specific table, such as `[retries.fireworks]`, overrides the global value for that provider. Values must be integers greater than or equal to `0`.
+
+Most supported providers receive the retry count as `max_retries`. Some integrations use a different constructor kwarg. For an arbitrary provider, or to override the registered kwarg for a known provider, set `param` in the provider-specific retries table:
+
+```toml
+[retries]
+max_retries = 2
+
+[retries.my_custom]
+param = "retries"
+max_retries = 4
+```
+
+`param` must be a valid Python identifier string, such as `"max_retries"` or `"retries"`. Deep Agents Code ignores unknown providers that do not set `param`, because passing the wrong retry kwarg can break model creation.
+
+`[retries]` is lower precedence than constructor parameters. The complete precedence order is:
+
+1. `--max-retries N`, applied under the provider's resolved retry kwarg
+2. `--model-params` with the provider's retry kwarg, such as `'{"max_retries": N}'` or `'{"retries": N}'`
+3. `[models.providers.<provider>.params]` with the provider's retry kwarg
+4. `[retries.<provider>].max_retries`
+5. `[retries].max_retries`
+6. Provider SDK default
+
 ### Profile overrides (Advanced)
 
-Override fields in the model's runtime profile to change how Deep Agents Code interprets model capabilities. The most common use case is lowering `max_input_tokens` to trigger auto-summarization earlier — useful for testing or for constraining context usage:
+Override fields in the model's runtime profile to change how Deep Agents Code interprets model capabilities. See @[`ModelProfile`] for the full list of overridable fields. The most common use case is lowering `max_input_tokens` to trigger auto-summarization earlier — useful for testing or for constraining context usage:
 
 ```toml
 # Apply to all models from this provider
@@ -284,23 +430,44 @@ max_input_tokens = 8192
 
 Profile overrides are merged into the model's profile after creation. Any feature that reads the profile — context-limit display in the status bar, auto-summarization thresholds, capability checks — will see the overridden values.
 
-#### CLI profile overrides with `--profile-override` (Advanced)
+<Accordion title="CLI profile overrides with --profile-override" icon="terminal">
+    To override model profile fields at runtime without editing the config file, pass a JSON object via `--profile-override`:
 
-To override model profile fields at runtime without editing the config file, pass a JSON object via `--profile-override`:
+    ```bash
+    dcode --profile-override '{"max_input_tokens": 4096}'
 
-```bash
-dcode --profile-override '{"max_input_tokens": 4096}'
+    # Combine with --model
+    dcode --model google_genai:gemini-3.5-flash --profile-override '{"max_input_tokens": 4096}'
 
-# Combine with --model
-dcode --model google_genai:gemini-3.5-flash --profile-override '{"max_input_tokens": 4096}'
+    # In non-interactive mode
+    dcode -n "Summarize this repo" --profile-override '{"max_input_tokens": 4096}'
+    ```
 
-# In non-interactive mode
-dcode -n "Summarize this repo" --profile-override '{"max_input_tokens": 4096}'
+    These are merged on top of config file profile overrides (CLI wins). The priority chain is: model default &lt; config.toml profile &lt; CLI `--profile-override`.
+
+    `--profile-override` values persist across mid-session `/model` hot-swaps — switching models re-applies the override to the new model.
+</Accordion>
+
+### Adding models to the interactive switcher
+
+Some providers (e.g. `langchain-ollama`) don't bundle model profile data (see [Provider reference](/oss/deepagents/code/providers#provider-reference) for full listing). When this is the case, the interactive `/model` switcher won't list models for that provider. You can fill in the gap by defining a `models` list in your config file for the provider:
+
+```toml
+[models.providers.ollama]
+models = ["gemma4", "qwen3.6", "granite4.1:3b"]
 ```
 
-These are merged on top of config file profile overrides (CLI wins). The priority chain is: model default &lt; config.toml profile &lt; CLI `--profile-override`.
+The `/model` switcher will now include an Ollama section with these models listed.
 
-`--profile-override` values persist across mid-session `/model` hot-swaps — switching models re-applies the override to the new model.
+This is entirely optional. You can always switch to any model by specifying its full name directly:
+
+```txt
+/model ollama:qwen3.6:27b
+```
+
+<Note>
+    When `langchain-ollama` is installed and the daemon is reachable, Deep Agents Code auto-discovers locally pulled models and merges them into the switcher—no `models` list required. Run `/reload` to refresh after pulling new models, or set `DEEPAGENTS_CODE_OLLAMA_DISCOVERY=0` to opt out.
+</Note>
 
 ### Custom base URL
 
@@ -344,33 +511,14 @@ models = ["my-model"]
     ```
 </Warning>
 
-### Adding models to the interactive switcher
-
-Some providers (e.g. `langchain-ollama`) don't bundle model profile data (see [Provider reference](/oss/deepagents/code/providers#provider-reference) for full listing). When this is the case, the interactive `/model` switcher won't list models for that provider. You can fill in the gap by defining a `models` list in your config file for the provider:
-
-```toml
-[models.providers.ollama]
-models = ["llama3", "mistral", "codellama"]
-```
-
-The `/model` switcher will now include an Ollama section with these models listed.
-
-This is entirely optional. You can always switch to any model by specifying its full name directly:
-
-```txt
-/model ollama:llama3
-```
-
-<Note>
-    When `langchain-ollama` is installed and the daemon is reachable, Deep Agents Code auto-discovers locally pulled models and merges them into the switcher—no `models` list required. Run `/reload` to refresh after pulling new models, or set `DEEPAGENTS_CODE_OLLAMA_DISCOVERY=0` to opt out.
-</Note>
-
 ### Arbitrary providers
 
-You can use any [LangChain `BaseChatModel`](https://reference.langchain.com/python/langchain_core/language_models/#langchain_core.language_models.BaseChatModel) subclass using `class_path`. Deep Agents Code imports and instantiates the class directly — no built-in provider package required.
+Deep Agents Code works with any tool calling LLM available as a [LangChain `BaseChatModel`](https://reference.langchain.com/python/langchain_core/language_models/#langchain_core.language_models.BaseChatModel). The [built-in providers](/oss/deepagents/code/providers#provider-reference) work out of the box; a less common or in-house model takes a little more setup. Point `class_path` at its `BaseChatModel` subclass and Deep Agents Code imports and instantiates the class directly.
 
 ```toml
 [models.providers.my_custom]
+display_name = "My Custom Provider"
+api_key_url = "https://my-provider.example.com/keys"
 class_path = "my_package.models:MyChatModel"
 api_key_env = "MY_API_KEY"
 base_url = "https://my-endpoint.example.com"
@@ -380,7 +528,9 @@ temperature = 0
 max_tokens = 4096
 ```
 
-`api_key_env` and `base_url` are optional. `class_path` providers are expected to handle their own authentication internally — useful when your model uses custom auth (JWT tokens, proprietary headers, mTLS, etc.) rather than a standard API key:
+`api_key_env` and `base_url` are optional. `display_name` and `api_key_url` customize the provider name and key-acquisition link shown by `/auth`; omit them to fall back to the provider config key and provider setup docs. To read the endpoint from an environment variable instead of hardcoding `base_url`, use [`base_url_env`](#provider-configuration); it then resolves and pairs with the key the same way as for the built-in providers (see [Endpoints, keys, and gateways](#endpoints-keys-and-gateways)).
+
+`class_path` providers are expected to handle their own authentication internally — useful when your model uses custom auth (JWT tokens, proprietary headers, mTLS, etc.) rather than a standard API key:
 
 ```toml
 [models.providers.xyz]
@@ -403,15 +553,16 @@ With this config, switch to the model with `/model xyz:abc-xyz-1` or `--model xy
     max_input_tokens = 128000
     ```
 
-    Set `max_input_tokens` to what your model supports to enable accurate context length tracking and auto-summarization.
+    Although optional, setting `max_input_tokens` to your model's context window is strongly encouraged. Without it, Deep Agents Code cannot show how full the context is, and auto-summarization falls back to a fixed trigger (around 170,000 tokens) instead of a fraction of your model's window. For a model with a smaller window, summarization may not run before you reach the model's hard limit, so requests start failing once the conversation grows.
 </Note>
 
-The provider package must be installed in the same Python environment as `deepagents-code`:
+Because Deep Agents Code imports the `class_path` class at startup, the package that defines it must be importable from the same environment that runs `dcode`. Built-in providers ship as [install extras](/oss/deepagents/code/providers#quickstart), but a custom or in-house package is not one. Install it into the `dcode` environment with the `--package` flag:
 
 ```bash
-# If deepagents-code was installed with uv tool:
-uv tool install deepagents-code --with my_package
+dcode --install my_package --package
 ```
+
+In a session, run `/install my_package --package --force`. Both install the package alongside `dcode`. If the package is missing or cannot be imported, Deep Agents Code skips the provider and its models do not appear in `/model`.
 
 When you switch to `my_custom:my-model-v1` (via `/model` or `--model`), the model name (`my-model-v1`) is passed as the `model` kwarg:
 
@@ -425,9 +576,59 @@ MyChatModel(model="my-model-v1", base_url="...", api_key="...", temperature=0, m
 
 Your provider package may optionally provide model profiles at a `_PROFILES` dict in `<package>.data._profiles` in lieu of defining them under the `models` key. See LangChain [model profiles](https://github.com/langchain-ai/langchain/tree/master/libs/model-profiles) for more info.
 
+### Endpoints, keys, and gateways
+
+An API key and the endpoint it is sent to have to match: the endpoint has to accept that key, or the request will likely fail. Deep Agents Code resolves the key and endpoint together, so overriding one updates the other to match. For example, if you replace a gateway-provisioned key with your own, Deep Agents Code also drops the gateway endpoint, so your key goes to the provider directly instead of to a gateway that would reject it.
+
+#### How `base_url` resolves
+
+Deep Agents Code resolves a provider's endpoint in this order (first match wins):
+
+1. **`base_url` in `config.toml`** for the provider.
+2. **The `DEEPAGENTS_CODE_`-prefixed endpoint variable.**
+3. **The plain endpoint variable** in the environment (for example, `OPENAI_BASE_URL`).
+4. **The endpoint saved with a `/auth` credential.** This step applies the saved endpoint for a provider that has no endpoint variable—such as a provider you add without declaring [`base_url_env`](#provider-configuration). Steps 2-3 have no variable to read for these, so the saved endpoint is used directly here. For a provider that does have an endpoint variable, the saved endpoint already took effect at step 2 or 3 (it is written to that variable), so this step changes nothing. Either way, an endpoint entered in `/auth` applies.
+5. **The provider SDK's own default endpoint**, when none of the above is set.
+
+<Note>
+    Resolved endpoints are delivered to the model as the `base_url` constructor argument.
+</Note>
+
+As with API keys, the [`DEEPAGENTS_CODE_` prefix](#deepagents_code_-prefix) scopes the endpoint to Deep Agents Code without affecting other tools. For any other provider, declare the name with [`base_url_env`](#provider-configuration) and the endpoint resolves and pairs the same way:
+
+```toml
+[models.providers.myprovider]
+api_key_env = "MYPROVIDER_API_KEY"
+base_url_env = "MYPROVIDER_BASE_URL"
+models = ["my-model"]
+```
+
+A literal `base_url` wins over `base_url_env`, so set only the one you need:
+
+```toml
+[models.providers.myprovider]
+base_url = "https://fixed.example/v1"   # used
+base_url_env = "MYPROVIDER_BASE_URL"    # ignored while base_url is set
+```
+
+#### Overrides keep the pair together
+
+When you store a key with `/auth`, the endpoint you enter (or the provider's default, if left blank) is applied together with the key. Storing a key with a blank base URL also clears any endpoint already set in your environment (for example, a gateway `OPENAI_BASE_URL` your shell exports), so your key goes to the provider's default endpoint instead of to that gateway.
+
+```bash title="Scope both the key and the endpoint to Deep Agents Code"
+DEEPAGENTS_CODE_OPENAI_API_KEY=sk-cli-only
+DEEPAGENTS_CODE_OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+#### Managed gateways
+
+On a machine provisioned with a model gateway (for example, the LangSmith gateway), the gateway typically exports a gateway key and the matching endpoint variable (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, or `GOOGLE_GEMINI_BASE_URL`) together. Deep Agents Code uses that pair by default, so no configuration is needed.
+
+To use your own key instead, store it with `/auth` (leave the base URL blank for the provider default, or set it explicitly), or set the `DEEPAGENTS_CODE_` prefixed key and endpoint. Both override the gateway pair without leaving a mismatched endpoint behind.
+
 ---
 
-## Skills extra allowed directories
+## Skill directory allowlist
 
 By default, when Deep Agents Code loads skills it validates that a resolved skill file path stays inside one of the standard [skill directories](/oss/deepagents/code/data-locations#skills). This prevents symlinks inside skill directories from reading arbitrary files outside those roots.
 
@@ -545,27 +746,47 @@ Press `T` in the `/theme` picker to save the highlighted theme for the current t
 
 ## Auto-update
 
-Deep Agents Code can automatically check for and install updates.
+Deep Agents Code automatically checks for and installs updates by default.
+
+To opt out of automatic updates:
 
 <Tabs>
     <Tab title="Config file">
         ```toml
         [update]
-        auto_update = true
+        auto_update = false
         ```
     </Tab>
     <Tab title="Environment variable">
         ```bash
-        export DEEPAGENTS_CODE_AUTO_UPDATE=1
+        export DEEPAGENTS_CODE_AUTO_UPDATE=0
         ```
     </Tab>
 </Tabs>
 
 The environment variable takes precedence over the config file.
 
-When enabled, Deep Agents Code checks PyPI for a newer version at session start and automatically upgrades using the detected install method (uv, Homebrew, or pip). When disabled (default), Deep Agents Code shows an update hint with the appropriate install command instead.
+When enabled (default), Deep Agents Code checks PyPI for a newer version at session start and automatically upgrades. When disabled, Deep Agents Code shows an update hint with the appropriate install command instead.
 
-You can also check for and install updates manually at any time with the `/update` slash command, which bypasses the cache and reports success or failure inline.
+To suppress automatic update checks entirely:
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml
+        [update]
+        check = false
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_NO_UPDATE_CHECK=1
+        ```
+    </Tab>
+</Tabs>
+
+Disabling update checks also prevents automatic update installs at startup.
+
+You can still check for and install updates manually at any time with the `/update` slash command, which runs an on-demand check and reports success or failure inline.
 
 After an upgrade, Deep Agents Code shows a "what's new" banner on the next launch with a link to the changelog.
 
@@ -573,9 +794,25 @@ At session exit, if a newer version was detected during the session, an update b
 
 ---
 
+## Uninstall
+
+To remove the `dcode` and `deepagents-code` binaries and the isolated tool environment, run:
+
+```bash
+uv tool uninstall deepagents-code
+```
+
+The uninstall command does not remove user configuration or session data. Deep Agents Code stores those files under `~/.deepagents/`, including `config.toml`, `hooks.json`, the global `.env`, and `.state/` contents such as saved sessions and credentials. To delete that data as well, run:
+
+```bash
+rm -rf ~/.deepagents
+```
+
+---
+
 ## Managed deployments
 
-The [install script](https://github.com/langchain-ai/deepagents/blob/main/libs/cli/scripts/install.sh) supports running as root, targeting macOS MDM tools (Kandji, Jamf, etc.) that execute scripts in a minimal root environment.
+The [install script](https://github.com/langchain-ai/deepagents/blob/main/libs/code/scripts/install.sh) supports running as root, targeting macOS MDM tools (Kandji, Jamf, etc.) that execute scripts in a minimal root environment.
 
 When `id -u` is `0`, the script:
 
@@ -584,7 +821,46 @@ When `id -u` is `0`, the script:
 
 Non-root installs are unaffected: all root-specific code paths short-circuit when not running as root.
 
-To pre-configure auto-update for managed installs, set `DEEPAGENTS_CODE_AUTO_UPDATE=1` in the user's shell profile or deploy a `config.toml` with `[update] auto_update = true` to `~/.deepagents/config.toml`. To suppress automatic updates and update checks entirely, set `DEEPAGENTS_CODE_NO_UPDATE_CHECK=1`.
+### Pin the install with environment variables
+
+The install script reads environment variables that let you pin a version, select extras, and choose a Python version fleet-wide. Set them on the same line as the piped install:
+
+```bash
+# Pin an exact version for reproducible installs across the fleet
+curl -LsSf https://langch.in/dcode | DEEPAGENTS_CODE_VERSION="0.1.16" bash
+```
+
+<ResponseField name="DEEPAGENTS_CODE_VERSION" type="string" post={["optional"]}>
+    Exact package version to install, e.g. `0.1.0` (or a pre-release such as `0.1.0rc1`). Mutually exclusive with `DEEPAGENTS_CODE_PRERELEASE` — setting both is an error, since an exact pin already selects a single version.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_PRERELEASE" type="string" post={["optional"]}>
+    uv pre-release strategy applied when resolving the latest version: `disallow`, `allow`, `if-necessary`, `explicit`, or `if-necessary-or-explicit`. Mutually exclusive with `DEEPAGENTS_CODE_VERSION`.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_EXTRAS" type="string" post={["optional"]}>
+    Comma-separated pip extras to install, e.g. `ollama`, `ollama,groq`, or `daytona`. See [`pyproject.toml`](https://github.com/langchain-ai/deepagents/blob/main/libs/code/pyproject.toml) for the available extras.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_PYTHON" type="string" default="3.13" post={["optional"]}>
+    Python version to use for the install.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_SKIP_OPTIONAL" type="string" post={["optional"]}>
+    Set to `1` to skip optional tool checks.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_VERBOSE" type="string" post={["optional"]}>
+    Set to `1` to show uv's raw stderr (timing lines, unfiltered package diff) and the quiet-by-default status lines (optional-tool checks, post-install footer). Useful when debugging an install.
+</ResponseField>
+
+<ResponseField name="UV_BIN" type="string" post={["optional"]}>
+    Path to the uv binary. Auto-detected if unset.
+</ResponseField>
+
+Auto-update is enabled by default for managed installs. To opt out, set `DEEPAGENTS_CODE_AUTO_UPDATE=0` in the user's shell profile or deploy a `config.toml` with `[update] auto_update = false` to `~/.deepagents/config.toml`. To suppress automatic updates and update checks entirely, set `DEEPAGENTS_CODE_NO_UPDATE_CHECK=1` or deploy `[update] check = false`.
+
+To route every user's model traffic through a managed gateway (provisioning a gateway key and base URL fleet-wide), see [Managed gateways](#managed-gateways).
 
 ---
 
@@ -593,7 +869,7 @@ To pre-configure auto-update for managed installs, set `DEEPAGENTS_CODE_AUTO_UPD
 All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` prefix. See [`DEEPAGENTS_CODE_` prefix](#deepagents_code_-prefix) for how the prefix also works as an override for third-party credentials.
 
 <ResponseField name="DEEPAGENTS_CODE_AUTO_UPDATE" type="string" post={["optional"]}>
-    Enable automatic Deep Agents Code updates (`1`, `true`, or `yes`).
+    Toggle automatic Deep Agents Code updates. Enabled by default; set to `0`, `false`, `no`, or `off` to opt out.
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_DEBUG" type="string" post={["optional"]}>
@@ -605,15 +881,19 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_EXTRA_SKILLS_DIRS" type="string" post={["optional"]}>
-    Colon-separated paths added to the [skill containment allowlist](#skills-extra-allowed-directories).
+    Colon-separated paths added to the [skill containment allowlist](#skill-directory-allowlist).
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_LANGSMITH_PROJECT" type="string" post={["optional"]}>
-    Override the LangSmith project name for agent traces. See [Trace with LangSmith](/oss/deepagents/code/overview#trace-with-langsmith).
+    Override the LangSmith project name for Deep Agents Code's own agent traces. Shell commands still run with the user's original `LANGSMITH_PROJECT`, so app, test, or script traces can appear in a separate project. See [Trace with LangSmith](/oss/deepagents/code/overview#trace-with-langsmith).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_LANGSMITH_REPLICA_PROJECTS" type="string" post={["optional"]}>
+    A second LangSmith project to *also* write agent traces to. When set and tracing is active, each agent run is dual-written to the primary project (from `DEEPAGENTS_CODE_LANGSMITH_PROJECT`, or `deepagents-code` by default) and this project. Off by default. See [Dual-write traces to a second project](/oss/deepagents/code/overview#trace-with-langsmith).
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_NO_UPDATE_CHECK" type="string" post={["optional"]}>
-    Disable automatic update checking when set.
+    Disable automatic update checking when set. This also prevents automatic update installs at startup.
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_SHELL_ALLOW_LIST" type="string" post={["optional"]}>

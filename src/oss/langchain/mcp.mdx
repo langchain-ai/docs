@@ -448,7 +448,7 @@ client = MultiServerMCPClient(
     }
 )
 tools = await client.get_tools()
-agent = create_agent("openai:gpt-5.4", tools)
+agent = create_agent("openai:gpt-5.5", tools)
 response = await agent.ainvoke({"messages": "what is the weather in nyc?"})
 ```
 :::
@@ -556,6 +556,14 @@ client = MultiServerMCPClient({...})
 tools = await client.get_tools()  # [!code highlight]
 agent = create_agent("claude-sonnet-4-6", tools)
 ```
+
+By default, when an MCP tool fails, the error is passed back to the model as a tool message with `status="error"` instead of raising an exception. This lets the agent read the error and try again. To raise an exception instead, set `handle_tool_errors=False` on `MultiServerMCPClient` or `load_mcp_tools`.
+
+This applies only to tool execution errors (`CallToolResult(isError=True)`). Transport, session, and content-conversion failures always raise.
+
+<Note>
+    Returning MCP tool errors as failed tool messages requires `langchain-mcp-adapters>=0.3.0`. Earlier versions raise a `ToolException`.
+</Note>
 :::
 
 :::js
@@ -569,6 +577,8 @@ const client = new MultiServerMCPClient({...});
 const tools = await client.getTools();  // [!code highlight]
 const agent = createAgent({ model: "claude-sonnet-4-6", tools });
 ```
+
+When an MCP tool execution fails (`CallToolResult` with `isError: true`), `@langchain/mcp-adapters` raises a `ToolException`. Wrap tool calls in a try/catch to handle these errors. Unlike the Python adapter, the TypeScript adapter does not return the error to the model as a failed tool message.
 :::
 
 :::python
@@ -750,7 +760,7 @@ async with client.session("server_name") as session:
 
 ### Tool interceptors
 
-MCP servers run as separate processes—they can't access LangGraph runtime information like the [store](/oss/langgraph/persistence#memory-store), [context](/oss/langchain/context-engineering), or agent state. **Interceptors bridge this gap** by giving you access to this runtime context during MCP tool execution.
+MCP servers run as separate processes—they can't access LangGraph runtime information like the [store](/oss/langgraph/stores), [context](/oss/langchain/context-engineering), or agent state. **Interceptors bridge this gap** by giving you access to this runtime context during MCP tool execution.
 
 Interceptors also provide middleware-like control over tool calls: you can modify requests, implement retries, add headers dynamically, or short-circuit execution entirely.
 
@@ -799,7 +809,7 @@ When MCP tools are used within a LangChain agent (via `create_agent`), intercept
         tool_interceptors=[inject_user_context],
     )
     tools = await client.get_tools()
-    agent = create_agent("gpt-5.4", tools, context_schema=Context)
+    agent = create_agent("gpt-5.5", tools, context_schema=Context)
 
     # Invoke with user context
     result = await agent.ainvoke(
@@ -852,7 +862,7 @@ When MCP tools are used within a LangChain agent (via `create_agent`), intercept
     )
     tools = await client.get_tools()
     agent = create_agent(
-        "gpt-5.4",
+        "gpt-5.5",
         tools,
         context_schema=Context,
         store=InMemoryStore()
@@ -1073,7 +1083,7 @@ client = MultiServerMCPClient(
 
 **Error handling**
 
-Use interceptors to catch tool execution errors and implement retry logic:
+Use interceptors to catch exceptions from tool execution, such as transport or runtime failures, and add retry logic. Tool execution errors (`CallToolResult(isError=True)`) do not raise by default, so exception-catching interceptors never trigger on them. To catch those as exceptions here, set `handle_tool_errors=False`.
 
 ```python Retry on error
 import asyncio

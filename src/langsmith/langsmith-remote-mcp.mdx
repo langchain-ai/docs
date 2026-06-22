@@ -1,25 +1,34 @@
 ---
 title: LangSmith Remote MCP
-description: Connect MCP-compatible clients to LangSmith over OAuth—no API key, no self-hosting, no header configuration.
+description: Connect MCP-compatible clients to LangSmith over OAuth, or authenticate programmatic clients with a LangSmith API key.
 ---
 
 import SaasRegionUrls from '/snippets/langsmith/saas-region-urls.mdx';
 
-The LangSmith Remote MCP is a [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) server hosted by LangSmith. It exposes the same tools as the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server) (conversation history, prompts, runs and traces, datasets, experiments, billing) but with OAuth-based authentication, so MCP-compatible clients connect directly without an API key, a separate deployment, or any header configuration.
+The LangSmith Remote MCP is a [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) server hosted by LangSmith. It exposes the same tools as the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server) (conversation history, prompts, runs and traces, datasets, experiments, billing) without a separate deployment. Interactive MCP clients connect over OAuth with no API key or header configuration; programmatic clients can authenticate with a LangSmith API key via the `X-Api-Key` header.
 
-<Note>
-**LangSmith Cloud (SaaS) only.** The Remote MCP is available on all LangSmith Cloud regions (`api.smith.langchain.com`, `eu.api.smith.langchain.com`, `apac.api.smith.langchain.com`, and `aws.api.smith.langchain.com`). [Self-hosted LangSmith](/langsmith/self-hosted) deployments should continue to use the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server).
-</Note>
+The Remote MCP is available on all LangSmith Cloud regions and on [self-hosted LangSmith](/langsmith/self-hosted) deployments running v0.15 or later. Self-hosted deployments on earlier versions should continue to use the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server).
 
 ## Endpoints
 
+**LangSmith Cloud:**
+
 <SaasRegionUrls prefix="api.smith" suffix="/mcp" />
 
-The server discovers the rest of its OAuth metadata via [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414) at `/.well-known/oauth-authorization-server` on the same host, so a compliant MCP client only needs the URL in the table.
+The server discovers the rest of its OAuth metadata via [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414) at `/.well-known/oauth-authorization-server` on the same host, so a compliant MCP client only needs the URL above.
+
+**Self-hosted LangSmith:**
+
+`https://<your-langsmith-host>/api/mcp`, where `<your-langsmith-host>` is the hostname of your LangSmith instance.
+
 
 ## Authentication
 
-Authentication uses OAuth 2.1 with [Dynamic Client Registration (RFC 7591)](https://datatracker.ietf.org/doc/html/rfc7591). Compatible MCP clients register themselves automatically on first use—there is no client ID to provision and no API key to manage.
+The Remote MCP supports two authentication methods. Use **OAuth** for interactive MCP clients (Claude Code, Cursor, and similar), and an **API key** for programmatic or headless clients that can't complete a browser-based login.
+
+### OAuth
+
+OAuth 2.1 with [Dynamic Client Registration (RFC 7591)](https://datatracker.ietf.org/doc/html/rfc7591) is the default for interactive clients. Compatible MCP clients register themselves automatically on first use—there is no client ID to provision and no API key to manage.
 
 After registration:
 
@@ -29,6 +38,16 @@ After registration:
 4. The access token is automatically refreshed by the client when it expires.
 
 The session is scoped to your LangSmith user and workspace permissions—calls through the MCP server can only view what your account is permitted to view.
+
+### API key
+
+Send a [LangSmith API key](/langsmith/create-account-api-key) in the `X-Api-Key` header on every request. This suits backend services, scripts, and SDKs, for example, the [AI SDK](#ai-sdk), where the interactive OAuth flow is not practical.
+
+Requests are authorized as the user that owns the API key, scoped to that key's workspace and permissions—the same authorization the key has elsewhere in the LangSmith API. Tools that accept a `workspace_id` argument can target a specific workspace; otherwise the key's own workspace is used.
+
+<Note>
+The `X-Api-Key` header is specific to the Remote MCP. The [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server) uses a different header, `LANGSMITH-API-KEY`.
+</Note>
 
 ## Quickstart
 
@@ -49,6 +68,33 @@ Add the server to your project's `.mcp.json` (or run `claude mcp add --transport
 
 Then run `/mcp` and select **langsmith** to complete the OAuth flow. Tools become available as `mcp__langsmith__<tool_name>`.
 
+### Deep Agents Code (`dcode`)
+
+Add the server to your user-level `~/.deepagents/.mcp.json` file to make it available in every Deep Agents Code project, or add it to a project-level `.mcp.json` file for only that project. See the [Deep Agents Code MCP tools docs](/oss/deepagents/code/mcp-tools) for discovery locations and precedence rules.
+
+```json
+{
+  "mcpServers": {
+    "langsmith": {
+      "url": "https://api.smith.langchain.com/mcp",
+      "transport": "http",
+      "auth": "oauth"
+    }
+  }
+}
+```
+
+Then complete the OAuth login flow in one of two ways:
+
+- In the Deep Agents Code TUI, run `/mcp`, select **langsmith**, and follow the login prompt.
+- From your shell, run:
+
+  ```bash
+  dcode mcp login langsmith
+  ```
+
+Launch `dcode`, or restart an active session, to load the LangSmith MCP tools. In an interactive session, run `/mcp` to inspect server status and loaded tools.
+
 ### Cursor
 
 Add to your Cursor `mcp.json`:
@@ -65,9 +111,29 @@ Add to your Cursor `mcp.json`:
 
 Cursor will prompt you to complete the OAuth flow on first use.
 
+### AI SDK
+
+For programmatic use from the [AI SDK](https://ai-sdk.dev/), authenticate with an API key via the `X-Api-Key` header and the built-in `http` (Streamable HTTP) transport:
+
+```ts
+import { createMCPClient } from "@ai-sdk/mcp";
+
+const client = await createMCPClient({
+  transport: {
+    type: "http",
+    url: "https://api.smith.langchain.com/mcp",
+    headers: { "X-Api-Key": process.env.LANGSMITH_API_KEY! },
+  },
+});
+
+const tools = await client.tools();
+```
+
+Pass `tools` directly to `streamText` or `generateText`. The Remote MCP is stateless and responds with JSON over the standard Streamable HTTP transport, so the built-in transport works as-is—you don't need a custom transport.
+
 ### Other clients
 
-Any MCP client supporting the [Streamable HTTP transport](https://spec.modelcontextprotocol.io/specification/2025-03-26/basic/transports/#streamable-http) and OAuth 2.1 with dynamic client registration can connect with just the URL above.
+Any MCP client supporting the [Streamable HTTP transport](https://spec.modelcontextprotocol.io/specification/2025-03-26/basic/transports/#streamable-http) can connect with just the URL above—using OAuth 2.1 with dynamic client registration, or a LangSmith API key in the `X-Api-Key` header.
 
 ## Known client incompatibilities
 
@@ -98,4 +164,6 @@ If a client loses its session (for example, after revoking access in your LangSm
 
 ## Self-hosted LangSmith
 
-The Remote MCP is a SaaS-only feature, hosted alongside LangSmith Cloud—it is not yet available for [self-hosted LangSmith](/langsmith/self-hosted) deployments. To connect MCP clients to a self-hosted instance, run the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server) in your own environment and point its `LANGSMITH_ENDPOINT` at your self-hosted instance.
+[Self-hosted LangSmith](/langsmith/self-hosted) deployments on v0.15 or later expose the Remote MCP at `https://<your-langsmith-host>/api/mcp`. Configuration, authentication, and tool surface are identical to LangSmith Cloud.
+
+For deployments on earlier versions, run the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server) in your own environment and point its `LANGSMITH_ENDPOINT` at your self-hosted instance.

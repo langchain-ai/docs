@@ -24,19 +24,24 @@ The `read_file` tool natively supports binary files (images, PDFs, audio, video)
 Sandboxes and the @[`LocalShellBackend`] also provide an `execute` tool.
 This page explains how to:
 
+- [Choose a backend](#specify-a-backend)
+- [Route different paths to different backends](#route-to-different-backends)
+- [Implement a custom backend](#custom-backends)
+- [Set permissions](#permissions) on filesystem access
+:::js
+- [Add policy hooks](#add-policy-hooks)
+- [Work with binary and multimodal files](#multimodal-and-binary-files)
+:::
+- [Comply with the backend protocol](#protocol-reference)
+:::js
+- [Update existing backends to v2](#update-existing-backends-to-v2)
+:::
 
-- [choose a backend](#specify-a-backend),
-- [route different paths to different backends](#route-to-different-backends),
-- [implement your own virtual filesystem](#use-a-virtual-filesystem) (e.g., S3 or Postgres),
-- [set permissions](#permissions) on filesystem access,
-:::js
-- [add policy hooks](#add-policy-hooks),
-[work with binary and multimodal files](#multimodal-and-binary-files),
-:::
-- [comply with the backend protocol](#protocol-reference),
-:::js
-- and [update existing backends to v2](#update-existing-backends-to-v2).
-:::
+<Tip>
+When you deploy on [LangSmith Deployment](/langsmith/deployment), a store is provisioned automatically. Use [LangSmith](/langsmith/observability) tracing to debug file paths, permission denials, and cross-thread storage. Follow the [observability quickstart](/langsmith/observability-quickstart) to get set up.
+
+We recommend you also set up [LangSmith Engine](/langsmith/engine), which monitors your traces, detects issues, and proposes fixes.
+</Tip>
 
 ## Quickstart
 
@@ -48,7 +53,7 @@ Here are a few prebuilt filesystem backends that you can quickly use with your d
 | [Local filesystem persistence](#filesystembackend-local-disk) | `agent = create_deep_agent(model="google_genai:gemini-3.5-flash", backend=FilesystemBackend(root_dir="/Users/nh/Desktop/"))` <br></br>This gives the deep agent access to your local machine's filesystem. You can specify the root directory that the agent has access to. Note that any provided `root_dir` must be an absolute path. Typically, wrap in a [CompositeBackend](#compositebackend-router) to keep internal agent data (offloaded tool results, conversation history) separate from your project files. |
 | [Durable store (LangGraph store)](#storebackend-langgraph-store) | `agent = create_deep_agent(model="google_genai:gemini-3.5-flash", backend=StoreBackend())` <br></br>This gives the agent access to long-term storage that is _persisted across threads_. This is great for storing longer term memories or instructions that are applicable to the agent over multiple executions. |
 | [Context Hub](#contexthubbackend) | `agent = create_deep_agent(model="google_genai:gemini-3.5-flash", backend=ContextHubBackend("my-agent"))` <br></br>Stores files durably in a LangSmith Hub repo, without provisioning a separate LangGraph store. |
-| [Sandbox](/oss/deepagents/sandboxes) | `agent = create_deep_agent(model="google_genai:gemini-3.5-flash", backend=sandbox)` <br></br>Execute code in isolated environments. Sandboxes provide filesystem tools plus the `execute` tool for running shell commands. Choose from Modal, Daytona, Deno, or local VFS. |
+| [Sandbox](/oss/deepagents/sandboxes) | `agent = create_deep_agent(model="google_genai:gemini-3.5-flash", backend=sandbox)` <br></br>Execute code in isolated environments. Sandboxes provide filesystem tools plus the `execute` tool for running shell commands. Choose from LangSmith, AgentCore, Daytona, Deno, E2B, Modal, Runloop, or local VFS. |
 | [Local shell](#localshellbackend-local-shell) | `agent = create_deep_agent(model="google_genai:gemini-3.5-flash", backend=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}))` <br></br>Filesystem and shell execution directly on the host. No isolation—use only in controlled development environments. See [security considerations](#localshellbackend-local-shell) below. |
 | [Composite](#compositebackend-router) | Thread-scoped by default, `/memories/` persisted across threads. The Composite backend is maximally flexible. You can specify different routes in the filesystem to point towards different backends. See Composite routing below for a ready-to-paste example. |
 
@@ -137,7 +142,8 @@ Use with caution and only in appropriate environments.
 1. Exclude secrets from accessible filesystem paths (especially in CI/CD).
 1. Use a [sandbox backend](/oss/deepagents/sandboxes) for production environments requiring filesystem interaction.
 1. **Always** use `virtual_mode=True` with `root_dir` to enable path-based access restrictions (blocks `..`, `~`, and absolute paths outside root).
-   Note that the default (`virtual_mode=False`) provides no security even with `root_dir` set.
+
+    Note that the default (`virtual_mode=False`) provides no security even with `root_dir` set.
 </Warning>
 
 :::python
@@ -373,11 +379,21 @@ Namespace components must contain only alphanumeric characters, hyphens, undersc
 
 ### ContextHubBackend
 
+<Note>
+**Before you begin:** `ContextHubBackend` requires a Context Hub repo set up in LangSmith. Read the [Context Hub concepts](/langsmith/context-engineering-concepts) page first if you're unfamiliar with agent repos and skill repos.
+</Note>
+
+`ContextHubBackend` stores your agent's filesystem in a LangSmith Context Hub repo. It can use a standalone repo or an agent repo that links out to skill repos.
+
+**Repo structure:** In the Context Hub, an _agent repo_ holds the agent's top-level instructions and configuration (for example, `AGENTS.md`, `tools.json`). It can link to one or more _skill repos_, each packaged as a reusable capability (for example, a `SKILL.md` with instructions for email formatting or code review). When you pass `ContextHubBackend("my-agent")`, the backend mounts the agent repo at the filesystem root; linked skill repos appear as subdirectories under `/skills/`.
+
+This means your agent's context is intentionally spread across repos: one repo per agent, separate repos per skill. That separation lets skills be versioned, shared, and reused across multiple agents independently. If this feels fragmented, see [Linked repos](/langsmith/context-engineering-concepts#linked-repos) for the rationale.
+
 :::python
 <BackendContextHubPy />
 :::
 
-`ContextHubBackend` stores files in a LangSmith Hub repo. Construct it with a repo identifier in `owner/name` or `name` format.
+Construct it with a repo identifier in `owner/name` or `name` format.
 
 <Note>
 Set `LANGSMITH_API_KEY` before using `ContextHubBackend`.
@@ -481,33 +497,61 @@ Notes:
 - For StoreBackend routing, ensure a store is provided via `create_deep_agent(model=..., store=...)` or provisioned by the platform.
 - Deep Agents write internal data (offloaded tool results, conversation history) to the default backend. Use `StateBackend` as the default to keep these artifacts ephemeral and avoid writing them to disk or a persistent store. See the [FilesystemBackend tip](#filesystembackend-local-disk) for a complete example.
 
-## Use a virtual filesystem
+## Custom backends
 
-Build a custom backend to project a remote or database filesystem (e.g., S3 or Postgres) into the tools namespace.
+Implement a custom backend to connect Deep Agents to storage systems such as databases, object stores, and remote filesystems. See [community-built backends](/oss/integrations/backends) for examples.
 
-Design guidelines:
-
-- Paths are absolute (`/x/y.txt`). Decide how to map them to your storage keys/rows.
-- Implement `ls` and `glob` efficiently (server-side filtering where available, otherwise local filter).
-- For external persistence (S3, Postgres, etc.), return `files_update=None` (Python) or omit `filesUpdate` (JS) in write/edit results — only in-memory state backends need to return a files update dict.
+### Implement the backend protocol
 
 :::python
-- Use `ls` and `glob` as the method names.
-- Return structured result types with an `error` field for missing files or invalid patterns (do not raise).
+Subclass @[`BackendProtocol`] and implement the following methods:
+
+| Method | Signature | What it does |
+|--------|-----------|--------------|
+| `ls` | `(path: str) -> LsResult` | List files and directories at the given path. |
+| `read` | `(file_path: str, offset: int, limit: int) -> ReadResult` | Return file contents, optionally paginated. |
+| `write` | `(file_path: str, content: str) -> WriteResult` | Create or overwrite a file. |
+| `edit` | `(file_path: str, old_string: str, new_string: str, replace_all: bool) -> EditResult` | Find-and-replace within an existing file. |
+| `glob` | `(pattern: str, path: str | None) -> GlobResult` | Return paths matching a glob pattern. |
+| `grep` | `(pattern: str, path: str | None, glob: str | None) -> GrepResult` | Search file contents for a literal string. |
+
+To also support the `execute` tool (running shell commands), implement @[`SandboxBackendProtocol`] instead, which extends `BackendProtocol` with an `execute` method.
+
+Always return structured result types with an `error` field for failure cases. Do not raise exceptions.
 :::
 
 :::js
-- Use `ls` and `glob` as the method names.
-- All query methods (`ls`, `read`, `readRaw`, `grep`, `glob`) must return structured Result objects (e.g., `LsResult`, `ReadResult`) with an optional `error` field.
-- Support binary files in `read()` by returning `Uint8Array` content with the appropriate `mimeType`.
+Implement @[`BackendProtocol`] (`BackendProtocolV2`) and provide the following methods:
+
+| Method | Signature | What it does |
+|--------|-----------|--------------|
+| `ls` | `(path: string) => Promise<LsResult>` | List files and directories at the given path. |
+| `read` | `(filePath: string, offset?, limit?) => Promise<ReadResult>` | Return file contents, optionally paginated. Binary files return `Uint8Array` content with a `mimeType`. |
+| `readRaw` | `(filePath: string) => Promise<ReadRawResult>` | Return raw `FileData` (used internally by the framework). |
+| `write` | `(filePath: string, content: string) => Promise<WriteResult>` | Create or overwrite a file. |
+| `edit` | `(filePath: string, oldString: string, newString: string, replaceAll?: boolean) => Promise<EditResult>` | Find-and-replace within an existing file. |
+| `glob` | `(pattern: string, path?: string) => Promise<GlobResult>` | Return paths matching a glob pattern. |
+| `grep` | `(pattern: string, path?, glob?) => Promise<GrepResult>` | Search file contents for a literal string. |
+
+To also support the `execute` tool (running shell commands), implement @[`SandboxBackendProtocol`] instead, which extends `BackendProtocolV2` with an `execute` method.
+
+All methods must return structured Result objects with an optional `error` field — do not throw on missing files or invalid patterns.
 :::
 
-S3-style outline:
+<Accordion title="Example: S3-style backend skeleton">
+
+This skeleton maps filesystem paths to object keys. Fill in each method with your storage client's list, read, search, upload, and read-modify-write operations.
 
 :::python
 ```python
 from deepagents.backends.protocol import (
-    BackendProtocol, WriteResult, EditResult, LsResult, ReadResult, GrepResult, GlobResult,
+    BackendProtocol,
+    EditResult,
+    GlobResult,
+    GrepResult,
+    LsResult,
+    ReadResult,
+    WriteResult,
 )
 
 class S3Backend(BackendProtocol):
@@ -519,27 +563,21 @@ class S3Backend(BackendProtocol):
         return f"{self.prefix}{path}"
 
     def ls(self, path: str) -> LsResult:
-        # List objects under _key(path); build FileInfo entries (path, size, modified_at)
         ...
 
     def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
-        # Fetch object; return ReadResult(file_data=...) or ReadResult(error=...)
         ...
 
     def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
-        # Optionally filter server‑side; else list and scan content
         ...
 
-    def glob(self, pattern: str, path: str = "/") -> GlobResult:
-        # Apply glob relative to path across keys
+    def glob(self, pattern: str, path: str | None = None) -> GlobResult:
         ...
 
     def write(self, file_path: str, content: str) -> WriteResult:
-        # Enforce create‑only semantics; return WriteResult(path=file_path, files_update=None)
         ...
 
     def edit(self, file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> EditResult:
-        # Read → replace (respect uniqueness vs replace_all) → write → return occurrences
         ...
 ```
 :::
@@ -548,13 +586,13 @@ class S3Backend(BackendProtocol):
 ```typescript
 import {
   type BackendProtocolV2,
-  type LsResult,
-  type ReadResult,
-  type ReadRawResult,
-  type GrepResult,
-  type GlobResult,
-  type WriteResult,
   type EditResult,
+  type GlobResult,
+  type GrepResult,
+  type LsResult,
+  type ReadRawResult,
+  type ReadResult,
+  type WriteResult,
 } from "deepagents";
 
 class S3Backend implements BackendProtocolV2 {
@@ -567,61 +605,37 @@ class S3Backend implements BackendProtocolV2 {
   }
 
   async ls(path: string): Promise<LsResult> {
-    // List objects under key(path); return { files: [...] }
     ...
   }
 
   async read(filePath: string, offset?: number, limit?: number): Promise<ReadResult> {
-    // Fetch object; return { content, mimeType }
-    // For binary files, return Uint8Array content
     ...
   }
 
   async readRaw(filePath: string): Promise<ReadRawResult> {
-    // Return { data: FileData }
     ...
   }
 
   async grep(pattern: string, path?: string | null, glob?: string | null): Promise<GrepResult> {
-    // Search text files; skip binary; return { matches: [...] }
     ...
   }
 
   async glob(pattern: string, path = "/"): Promise<GlobResult> {
-    // Apply glob relative to path; return { files: [...] }
     ...
   }
 
   async write(filePath: string, content: string): Promise<WriteResult> {
-    // Enforce create-only semantics; return { path: filePath, filesUpdate: null }
     ...
   }
 
   async edit(filePath: string, oldString: string, newString: string, replaceAll?: boolean): Promise<EditResult> {
-    // Read → replace → write → return { path, occurrences }
     ...
   }
 }
 ```
 :::
 
-Postgres-style outline:
-
-:::python
-- Table `files(path text primary key, content text, created_at timestamptz, modified_at timestamptz)`
-- Map tool operations onto SQL:
-  - `ls` uses `WHERE path LIKE $1 || '%'`
-  - `glob` filter in SQL or fetch then apply glob in Python
-  - `grep` can fetch candidate rows by extension or last modified time, then scan lines
-:::
-
-:::js
-- Table `files(path text primary key, content text, mime_type text, created_at timestamptz, modified_at timestamptz)`
-- Map tool operations onto SQL:
-  - `ls` uses `WHERE path LIKE $1 || '%'` → return `LsResult`
-  - `glob` filter in SQL or fetch then apply glob locally → return `GlobResult`
-  - `grep` can fetch candidate rows by extension or last modified time, then scan lines (skip rows where `mime_type` is binary) → return `GrepResult`
-:::
+</Accordion>
 
 ## Permissions
 
@@ -737,7 +751,7 @@ class PolicyWrapper(BackendProtocol):
         return self.inner.read(file_path, offset=offset, limit=limit)
     def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
         return self.inner.grep(pattern, path, glob)
-    def glob(self, pattern: str, path: str = "/") -> GlobResult:
+    def glob(self, pattern: str, path: str | None = None) -> GlobResult:
         return self.inner.glob(pattern, path)
     def write(self, file_path: str, content: str) -> WriteResult:
         if self._deny(file_path):
@@ -1002,17 +1016,17 @@ Backends must implement @[`BackendProtocol`].
 
 Required methods:
 - `ls(path: str) -> LsResult`
-  - Return entries with at least `path`. Include `is_dir`, `size`, `modified_at` when available. Sort by `path` for deterministic output.
+    - Return entries with at least `path`. Include `is_dir`, `size`, `modified_at` when available. Sort by `path` for deterministic output.
 - `read(file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult`
-  - Return file data on success. On missing file, return `ReadResult(error="Error: File '/x' not found")`.
+    - Return file data on success. On missing file, return `ReadResult(error="Error: File '/x' not found")`.
 - `grep(pattern: str, path: Optional[str] = None, glob: Optional[str] = None) -> GrepResult`
-  - Return structured matches. On error, return `GrepResult(error="...")` (do not raise).
-- `glob(pattern: str, path: str = "/") -> GlobResult`
-  - Return matched files as `FileInfo` entries (empty list if none).
+    - Return structured matches. On error, return `GrepResult(error="...")` (do not raise).
+- `glob(pattern: str, path: Optional[str] = None) -> GlobResult`
+    - Return matched files as `FileInfo` entries (empty list if none).
 - `write(file_path: str, content: str) -> WriteResult`
-  - Create-only. On conflict, return `WriteResult(error=...)`. On success, set `path` and for state backends set `files_update={...}`; external backends should use `files_update=None`.
+    - Create-only. On conflict, return `WriteResult(error=...)`. On success, set `path` and for state backends set `files_update={...}`; external backends should use `files_update=None`.
 - `edit(file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> EditResult`
-  - Enforce uniqueness of `old_string` unless `replace_all=True`. If not found, return error. Include `occurrences` on success.
+    - Enforce uniqueness of `old_string` unless `replace_all=True`. If not found, return error. Include `occurrences` on success.
 
 Supporting types:
 - `LsResult(error, entries)` — `entries` is a `list[FileInfo]` on success, `None` on failure.
@@ -1032,25 +1046,25 @@ Backends implement `BackendProtocolV2`. All query methods return structured Resu
 ### Required methods
 
 - **`ls(path: string) → LsResult`**
-  - List files and directories in the specified directory (non-recursive). Directories have a trailing `/` in their path and `is_dir=true`. Include `is_dir`, `size`, `modified_at` when available.
+    - List files and directories in the specified directory (non-recursive). Directories have a trailing `/` in their path and `is_dir=true`. Include `is_dir`, `size`, `modified_at` when available.
 
 - **`read(filePath: string, offset?: number, limit?: number) → ReadResult`**
-  - Read file content. For text files, content is paginated by line offset/limit (default offset 0, limit 500). For binary files, the full raw `Uint8Array` content is returned with the `mimeType` field set. On missing file, return `{ error: "File '/x' not found" }`.
+    - Read file content. For text files, content is paginated by line offset/limit (default offset 0, limit 500). For binary files, the full raw `Uint8Array` content is returned with the `mimeType` field set. On missing file, return `{ error: "File '/x' not found" }`.
 
 - **`readRaw(filePath: string) → ReadRawResult`**
-  - Read file content as raw `FileData`. Returns the full file data including timestamps.
+    - Read file content as raw `FileData`. Returns the full file data including timestamps.
 
 - **`grep(pattern: string, path?: string | null, glob?: string | null) → GrepResult`**
-  - Search file contents for a literal text pattern. Binary files (determined by MIME type) are skipped. On failure, return `{ error: "..." }`.
+    - Search file contents for a literal text pattern. Binary files (determined by MIME type) are skipped. On failure, return `{ error: "..." }`.
 
 - **`glob(pattern: string, path?: string) → GlobResult`**
-  - Return files matching a glob pattern as `FileInfo` entries.
+    - Return files matching a glob pattern as `FileInfo` entries.
 
 - **`write(filePath: string, content: string) → WriteResult`**
-  - Create-only semantics. On conflict, return `{ error: "..." }`. On success, set `path` and for state backends set `filesUpdate={...}`; external backends should use `filesUpdate=null`.
+    - Create-only semantics. On conflict, return `{ error: "..." }`. On success, set `path` and for state backends set `filesUpdate={...}`; external backends should use `filesUpdate=null`.
 
 - **`edit(filePath: string, oldString: string, newString: string, replaceAll?: boolean) → EditResult`**
-  - Enforce uniqueness of `oldString` unless `replaceAll=true`. If not found, return error. Include `occurrences` on success.
+    - Enforce uniqueness of `oldString` unless `replaceAll=true`. If not found, return error. Include `occurrences` on success.
 
 ### Optional methods
 

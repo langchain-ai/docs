@@ -12,16 +12,17 @@ the agent works through its plan. It's a progress dashboard built on the same
 not just message bubbles.
 
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+import UseStreamTypeInference from '/snippets/oss/use-stream-type-inference.mdx';
 
 <PatternEmbed pattern="deep-agent-todo-list" />
 
 ## How it works
 
-In a LangGraph agent, state isn't limited to messages. You can define **custom
-state keys** that hold arbitrary data. In this case, a `todos` array. As the
-agent executes its plan, it updates each todo's status from `"pending"` to
-`"in_progress"` to `"completed"`. The `useStream` hook exposes these custom
-state values via `stream.values`, and your UI renders them reactively.
+Deep agents include a built-in **`todos` state** that tracks task progress as
+the agent works through its plan. As the agent executes, it updates each
+todo's status from `"pending"` to `"in_progress"` to `"completed"`. The
+@[`useStream`] hook exposes this state via `stream.values.todos`, and your UI
+renders it reactively.
 
 The flow looks like this:
 
@@ -32,41 +33,12 @@ The flow looks like this:
 4. `stream.values.todos` updates in real time as the agent progresses
 5. Your UI re-renders the todo list with current statuses
 
-## Setting up useStream
+## Setting up `useStream`
 
-No special configuration is needed. Point `useStream` at your agent and
+No special configuration is needed. Point @[`useStream`] at your agent and
 read the `todos` from `stream.values`.
 
-:::python
-
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values, including custom state keys like `todos`. In the examples below, replace `typeof myAgent` with your interface name:
-
-```ts
-import type { BaseMessage } from "@langchain/core/messages";
-
-interface TodoItem {
-  title: string;
-  status: "pending" | "in_progress" | "completed";
-  description?: string;
-}
-
-interface AgentState {
-  messages: BaseMessage[];
-  todos: TodoItem[];
-}
-```
-
-:::
-
-:::js
-
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
-
-```ts
-import type { myAgent } from "./agent";
-```
-
-:::
+<UseStreamTypeInference />
 
 <CodeGroup>
 ```tsx React
@@ -126,17 +98,17 @@ const todos = computed(() => stream.values.value?.todos ?? []);
 
   const AGENT_URL = "http://localhost:2024";
 
-  const { messages, values, submit } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "deep_agent_todo_list",
   });
 
-  $: todos = $values?.todos ?? [];
+  const todos = $derived(stream.values?.todos ?? []);
 </script>
 
 <div>
   <TodoList {todos} />
-  {#each $messages as msg (msg.id)}
+  {#each stream.messages as msg (msg.id)}
     <Message message={msg} />
   {/each}
 </div>
@@ -144,7 +116,7 @@ const todos = computed(() => stream.values.value?.todos ?? []);
 
 ```ts Angular
 import { Component, computed } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream } from "@langchain/angular";
 
 const AGENT_URL = "http://localhost:2024";
 
@@ -160,7 +132,7 @@ const AGENT_URL = "http://localhost:2024";
   `,
 })
 export class TodoAgentComponent {
-  stream = useStream<typeof myAgent>({
+  stream = injectStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "deep_agent_todo_list",
   });
@@ -169,25 +141,6 @@ export class TodoAgentComponent {
 }
 ```
 </CodeGroup>
-
-## The Todo interface
-
-Each todo in the array has a simple structure:
-
-```ts
-interface Todo {
-  status: "pending" | "in_progress" | "completed";
-  content: string;
-}
-```
-
-| Property | Description |
-| --- | --- |
-| `status` | The current state of this task. Options: `pending` (not started), `in_progress` (agent is working on it), `completed` (done) |
-| `content` | A human-readable description of what the task involves |
-
-The agent populates this array when it creates its plan, then updates individual
-items as it executes each step.
 
 ## Building the TodoList component
 
@@ -355,72 +308,6 @@ function TodoAgentLayout() {
 Show the todo list only when `todos.length > 0`. Before the agent creates its
 plan, there's nothing to display. Showing an empty component wastes space.
 </Tip>
-
-## Custom state beyond todos
-
-This pattern demonstrates a powerful principle: `stream.values` can expose
-**any custom state** your agent defines, not just messages. The `todos` array is
-just one example. You could use the same approach for:
-
-- **Progress metrics**: `stream.values.progress` with numeric completion data
-- **Generated artifacts**: `stream.values.document` with a structured document
-  the agent is building
-- **Decision logs**: `stream.values.decisions` tracking every choice the agent
-  made
-- **Resource lists**: `stream.values.sources` with links and references the
-  agent found
-
-```ts
-// Any custom state key your agent defines is accessible
-const document = stream.values?.document;
-const sources = stream.values?.sources ?? [];
-const confidence = stream.values?.confidence_score;
-```
-
-<Info>
-Custom state keys are defined in your LangGraph graph's state schema. The
-`useStream` hook automatically includes them in `stream.values` without any additional
-client-side configuration.
-</Info>
-
-## Animating transitions
-
-Todo status transitions happen in real time, and smooth animations make these
-changes feel polished rather than jarring:
-
-```tsx
-function TodoItem({ todo }: { todo: Todo }) {
-  return (
-    <li
-      className={`
-        flex items-start gap-3 rounded-md border px-3 py-2
-        transition-all duration-300 ease-in-out
-        ${getStatusStyles(todo.status)}
-      `}
-    >
-      <span
-        className={`
-          mt-0.5 text-lg leading-none transition-colors duration-300
-          ${getIconStyles(todo.status)}
-        `}
-      >
-        {getStatusIcon(todo.status)}
-      </span>
-      <span
-        className={`
-          text-sm transition-all duration-300
-          ${todo.status === "completed" ? "line-through opacity-60" : ""}
-        `}
-      >
-        {todo.content}
-      </span>
-    </li>
-  );
-}
-```
-
-The `transition-all duration-300` classes ensure that color changes,
-strikethrough, and opacity shifts all animate smoothly.
 
 ## Use cases
 

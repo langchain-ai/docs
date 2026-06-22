@@ -2,7 +2,7 @@
 name: deep-agents
 description: Build batteries-included agents with planning, context management, subagent delegation, and sandboxed execution. Use for complex, multi-step tasks that need built-in capabilities.
 license: MIT
-compatibility: Python 3.10+, Node.js 20+. Requires a model that supports tool calling.
+compatibility: Python 3.10+, Node.js 22+. Requires a model that supports tool calling.
 metadata:
   author: langchain-ai
   version: "1.0"
@@ -91,7 +91,7 @@ deepagents
 - [Subagents](https://docs.langchain.com/oss/python/deepagents/subagents)—Delegate work to child agents
 - [Sandboxes](https://docs.langchain.com/oss/python/deepagents/sandboxes)—Run code in isolated environments
 - [Code](https://docs.langchain.com/oss/python/deepagents/code/overview)—Deep Agents Code, the terminal agent interface
-- [Deploy](https://docs.langchain.com/langsmith/deploy-managed-deep-agent)—Deploy to production
+- [Deploy](https://docs.langchain.com/langsmith/managed-deep-agents-overview)—Deploy to production
 
 ## API reference
 

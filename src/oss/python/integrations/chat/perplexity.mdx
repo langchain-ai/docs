@@ -12,7 +12,7 @@ This page will help you get started with Perplexity [chat models](/oss/langchain
 
 | Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/xai) | Downloads | Version |
 | :--- | :--- | :---: |  :---: | :---: | :---: |
-| [`ChatPerplexity`](https://reference.langchain.com/python/langchain-perplexity/chat_models/ChatPerplexity) | [`langchain-perplexity`](https://reference.langchain.com/python/langchain-perplexity) | beta | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-perplexity?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-perplexity?style=flat-square&label=%20) |
+| [`ChatPerplexity`](https://reference.langchain.com/python/langchain-perplexity/chat_models/ChatPerplexity) | [`langchain-perplexity`](https://reference.langchain.com/python/langchain-perplexity) | beta | [✅](/oss/integrations/chat/perplexity) | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-perplexity?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-perplexity?style=flat-square&label=%20) |
 
 ### Model features
 
@@ -36,7 +36,7 @@ if "PPLX_API_KEY" not in os.environ:
     os.environ["PPLX_API_KEY"] = getpass.getpass("Enter your Perplexity API key: ")
 ```
 
-To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/observability) API key:
 
 ```python
 os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
@@ -87,6 +87,56 @@ response.content
 ```text
 'Here\'s a joke about cats:\n\nWhy did the cat want math lessons from a mermaid?\n\nBecause it couldn\'t find its "core purpose" in life!\n\nRemember, cats are unique and fascinating creatures, and each one has its own special traits and abilities. While some may see them as mysterious or even a bit aloof, they are still beloved pets that bring joy and companionship to their owners. So, if your cat ever seeks guidance from a mermaid, just remember that they are on their own journey to self-discovery!\n'
 ```
+
+## Agent API support (`use_responses_api`)
+
+`ChatPerplexity` can also route requests through Perplexity's [Agent API](https://docs.perplexity.ai/docs/agent-api/quickstart) (the Perplexity-flavored Responses API) by setting `use_responses_api`. This is the same mental model as [`ChatOpenAI.use_responses_api`](https://reference.langchain.com/python/langchain-openai/chat_models/ChatOpenAI): one class, two endpoints, controlled by a single flag.
+
+| Value | Endpoint | Notes |
+| :--- | :--- | :--- |
+| `None` (default) | Auto-detected | Routes to the Agent API when the request uses a built-in Perplexity tool (`web_search`, `fetch_url`, `finance_search`, `people_search`) or includes a Responses-only field (`previous_response_id`, `instructions`, `input`, `include`). Otherwise routes to Chat Completions. |
+| `True` | Agent API | Always uses `client.responses.create()`. |
+| `False` | Chat Completions | Always uses `client.chat.completions.create()`. |
+
+The Agent API gives `ChatPerplexity` access to Perplexity's built-in tools (live web search, URL fetching, finance and people search) and stateful agent fields (`previous_response_id`, `instructions`, `include`) which are not available on Chat Completions. Existing `ChatPerplexity(model="sonar")` callers see no behavior change — the Chat Completions path stays the default for plain text requests.
+
+```python
+from langchain_perplexity import ChatPerplexity
+
+chat = ChatPerplexity(
+    model="openai/gpt-5.5",
+    use_responses_api=True,
+)
+response = chat.invoke("What did Apple announce at WWDC this week?")
+response.content
+```
+
+You can also pass a built-in tool and let auto-detection route the request — no flag needed:
+
+```python
+chat = ChatPerplexity(model="openai/gpt-5.5")
+
+response = chat.invoke(
+    "Summarize the latest LangChain release notes.",
+    tools=[{"type": "web_search"}],
+)
+response.content
+```
+
+When routed through the Agent API, response objects carry richer metadata:
+
+- `usage_metadata` is populated from the Responses-shaped `usage` payload (`input_tokens`, `output_tokens`, `total_tokens`).
+- `response_metadata` carries transport-level fields: `id`, `model`, `status`, and `object`.
+- `additional_kwargs` surfaces Perplexity-specific outputs when present: `citations`, `images`, `related_questions`, `search_results`, `videos`, and `reasoning_steps`.
+- Tool calls returned by the model appear in `response.tool_calls` exactly as they do for `ChatOpenAI`.
+
+<Warning>
+    The Agent API does not accept Chat-Completions-only sampling and control knobs. When `ChatPerplexity` routes through the Agent API (whether explicitly or by auto-detection), the following fields are dropped from the outgoing payload with a `WARNING` log: `temperature`, `top_p`, `top_k`, `stop`, and `metadata`. The class-default `temperature` is suppressed silently because `_default_params` injects it on every call, but a user-supplied `temperature` still warns.
+
+    `tool_choice` is not silently dropped — it raises `ValueError` when routed through the Agent API, since downstream agent loops cannot recover from a missing forced-tool selection.
+</Warning>
+
+See the [Perplexity Agent API model list](https://docs.perplexity.ai/docs/agent-api/models) for the full set of models available through this endpoint (e.g. `openai/gpt-5.5`, `anthropic/claude-sonnet-4-6`, `google/gemini-3-1-pro`).
 
 ## Using perplexity-specific parameters through `ChatPerplexity`
 
@@ -146,8 +196,9 @@ In summary, Aconcagua stands as the tallest mountain in South America at about 6
 ```python
 chat = ChatPerplexity(temperature=0.7, model="sonar")
 
-for chunk in chat.stream("Give me a list of famous tourist attractions in Pakistan"):
-    print(chunk.content, end="", flush=True)
+stream = chat.stream_events("Give me a list of famous tourist attractions in Pakistan", version="v3")
+for token in stream.text:
+    print(token, end="", flush=True)
 ```
 
 ```text

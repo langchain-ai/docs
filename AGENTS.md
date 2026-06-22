@@ -2,7 +2,7 @@
 
 # LangChain Documentation Guidelines
 
-Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`—not Mintlify `build/` output.
+Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`, not Mintlify `build/` output.
 
 ## Critical rules
 
@@ -19,7 +19,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | What | Where/How |
 |------|-----------|
 | LangSmith docs | `src/langsmith/` |
-| Open source docs | `src/oss/` (LangChain, LangGraph, DeepAgents) |
+| Open source docs | `src/oss/` (LangChain, LangGraph, Deep Agents) |
 | Python integrations | `src/oss/python/integrations/` |
 | JS integrations | `src/oss/javascript/integrations/` |
 | Reusable snippets | `src/snippets/` |
@@ -29,7 +29,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Build system | `pipeline/` |
 | Icon library | Tabler — <https://tabler.io/icons> |
 | Mintlify components | <https://mintlify.com/docs/components> |
-| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report issues here](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
+| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report reference docs issues](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 
 ## Project structure
@@ -218,12 +218,13 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Sentence-case headings starting with active verb, not gerund ("Add a tool" not "Adding a tool")
 - American English spelling
 - Oxford commas in lists ("traces, datasets, and experiments")
-- Descriptive link text ("[View the tracing docs](/langsmith/tracing)" not "click [here](/langsmith/tracing)")
+- Descriptive link text ("[View the tracing docs](/langsmith/tracing)" not "click [this link](/langsmith/tracing)")
 - Add cross-links where applicable
 - Use `@[ClassName]` link map for API references
 - Use `:::python`/`:::js` fencing on OSS docs
 - Language tags on all code blocks (use actual language, not `output`)
 - Sort imports in all code snippets (stdlib, third-party, local)
+- Use `.content_blocks` instead of `.content` when accessing message content in LangChain code snippets
 - Test code examples and links before publishing
 
 **Don't:**
@@ -251,6 +252,16 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Misspell product names — use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
 - Skip `make lint_prose` — always run it on changed files before committing and fix all violations
 
+### Structure conventions
+
+Match these patterns, drawn from established pages, when authoring new content:
+
+- **Open with definition, then benefit, then task** — start a section (and the page) with a one-sentence statement of what the feature is or does, follow with a sentence on what it enables for the reader, then give the procedure or detail. When a page has a sibling variant (for example, a paid or self-hosted version), link it in the opening lines.
+- **Introduce procedures with a colon lead-in** — precede steps with a phrase such as "To add a channel:", then a numbered list (or the `<Steps>` component) of imperative steps. State a step's result as a follow-on line when it matters ("The Add User modal displays."). Flag optional steps inline with "(Optional)". For long, multi-stage tasks, use `### Step N. <verb>` headings.
+- **Use bold-led definition lists for options** — for parameters, permissions, secrets, or enumerated types, write `- **Term**: Explanation.` and end each explanation with a period.
+- **Link on first mention, and point forward at section ends** — link a feature, class, or term on first mention only, not on repeats. Use the pointer phrasing "For more information, see [Page](/path)". Close substantial pages with a `## See also` list of related links.
+- **State requirements and constraints up front** — put permission, plan tier, or preview requirements before the steps they govern ("Adding MCP servers requires admin permissions."). Write hard constraints as plain facts ("Once an agent identity is set, it cannot be changed.").
+
 ### Model references
 
 Always use the latest generally available (GA) models when referencing LLMs in docstrings and illustrative code snippets. Avoid preview or beta identifiers unless the model has no GA equivalent. Outdated model names signal stale code and confuse users.
@@ -273,14 +284,16 @@ Before writing or updating model references, verify current model IDs against th
 
 **Add a new integration page (Python):**
 
-1. Create `src/oss/python/integrations/<provider>/<component>.mdx`
-2. Add to `src/docs.json` under Open source → Python dropdown → Integrations tab
+1. Create `src/oss/python/integrations/<component>/<provider>.mdx`
+2. Add the page to the component's index page (`src/oss/python/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
 3. Use description format: `"Integrate with the ClassName type using LangChain Python."`
+4. If the provider has an overview page at `src/oss/python/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
 **Add a new integration page (TypeScript):**
 
-1. Create `src/oss/javascript/integrations/<provider>/<component>.mdx`
-2. Add to `src/docs.json` under Open source → TypeScript dropdown → Integrations tab
+1. Create `src/oss/javascript/integrations/<component>/<provider>.mdx`
+2. Add the page to the component's index page (`src/oss/javascript/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
+3. If the provider has an overview page at `src/oss/javascript/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
 **Add a reusable snippet:**
 

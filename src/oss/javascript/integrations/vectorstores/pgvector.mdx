@@ -9,33 +9,60 @@ description: "Integrate with the PGVectorStore using LangChain JavaScript."
 
 To enable vector search in generic PostgreSQL databases, LangChain.js supports using the [`pgvector`](https://github.com/pgvector/pgvector) Postgres extension.
 
-This guide provides a quick overview for getting started with PGVector [vector stores](/oss/integrations/vectorstores). For detailed documentation of all `PGVectorStore` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-community/vectorstores/pgvector/PGVectorStore).
+This guide provides a quick overview for getting started with PGVector [vector stores](/oss/integrations/vectorstores). For detailed documentation of all `PGVectorStore` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-pgvector/PGVectorStore).
+
+## PGVectorStore vs PGVector: Which one to use?
+
+LangChain has two Postgres vector store integrations. Here's how to choose the right one:
+
+| Feature | PGVector (Legacy) | PGVectorStore (Modern) |
+|---|---|---|
+| Package | `langchain-community` | `langchain-postgres` (Python) / `@langchain/pgvector` (JS) |
+| Maintenance | Community-maintained | Official Partner Package |
+| Connection | Simple connection string | `PGEngine` (better connection pooling) |
+| Search Types | Standard Vector Search | Hybrid Search (Vector + BM25) |
+| Async Support | Limited | Full Native Async |
+| Schema | Fixed table structure | Customizable columns and schemas |
+
+**Use `PGVectorStore` (Modern—recommended) when:**
+- Starting any new project
+- You need Hybrid Search (vector + keyword combined)
+- You want better performance via connection pooling
+- You are building async applications (e.g., FastAPI, async Node.js)
+
+**Use `PGVector` (Legacy) only when:**
+- Maintaining an existing codebase that already uses it
+- Following an older tutorial that has not been updated yet
+
+<Note>
+For all new projects, we recommend using `PGVectorStore` from `langchain-postgres` (Python) or `@langchain/community` (JavaScript).
+</Note>
+
+---
 
 ## Overview
 
 ### Integration details
 
-| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/pgvector/) | Version |
-| :--- | :--- | :---: | :---: |
-| [`PGVectorStore`](https://reference.langchain.com/javascript/langchain-community/vectorstores/pgvector/PGVectorStore) | [`@langchain/community`](https://npmjs.com/@langchain/community) | ✅ | ![NPM - Version](https://img.shields.io/npm/v/@langchain/community?style=flat-square&label=%20&) |
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/pgvector/) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| [`PGVectorStore`](https://reference.langchain.com/javascript/langchain-pgvector/PGVectorStore) | [`@langchain/pgvector`](https://www.npmjs.com/package/@langchain/pgvector) | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/pgvector?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/pgvector?style=flat-square&label=%20&) |
 
 ## Setup
 
-To use PGVector vector stores, you'll need to set up a Postgres instance with the [`pgvector`](https://github.com/pgvector/pgvector) extension enabled. You'll also need to install the `@langchain/community` integration package with the [`pg`](https://www.npmjs.com/package/pg) package as a peer dependency.
+To use PGVector vector stores, set up a Postgres instance with the [`pgvector`](https://github.com/pgvector/pgvector) extension enabled, then install `@langchain/pgvector`, the [`pg`](https://www.npmjs.com/package/pg) driver, and `@langchain/core`.
 
-This guide will also use [OpenAI embeddings](/oss/integrations/embeddings/openai), which require you to install the `@langchain/openai` integration package. You can also use [other supported embeddings models](/oss/integrations/embeddings) if you wish.
-
-We'll also use the [`uuid`](https://www.npmjs.com/package/uuid) package to generate ids in the required format.
+This guide uses [OpenAI embeddings](/oss/integrations/embeddings/openai) as an example. You can use [other supported embeddings models](/oss/integrations/embeddings) instead.
 
 <CodeGroup>
 ```bash npm
-npm install @langchain/community @langchain/openai @langchain/core pg uuid
+npm install @langchain/pgvector @langchain/openai @langchain/core pg
 ```
 ```bash yarn
-yarn add @langchain/community @langchain/openai @langchain/core pg uuid
+yarn add @langchain/pgvector @langchain/openai @langchain/core pg
 ```
 ```bash pnpm
-pnpm add @langchain/community @langchain/openai @langchain/core pg uuid
+pnpm add @langchain/pgvector @langchain/openai @langchain/core pg
 ```
 </CodeGroup>
 
@@ -67,7 +94,7 @@ You can find more information on how to setup pgvector in the [official reposito
 
 ### Credentials
 
-To connect to you Postgres instance, you'll need corresponding credentials. For a full list of supported options, see the [`node-postgres` docs](https://node-postgres.com/apis/client).
+To connect to your Postgres instance, you'll need corresponding credentials. For a full list of supported options, see the [`node-postgres` docs](https://node-postgres.com/apis/client).
 
 If you are using OpenAI embeddings for this guide, you'll need to set your OpenAI key as well:
 
@@ -75,7 +102,7 @@ If you are using OpenAI embeddings for this guide, you'll need to set your OpenA
 process.env.OPENAI_API_KEY = "YOUR_API_KEY";
 ```
 
-If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/home) API key by uncommenting below:
+If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/observability) API key by uncommenting below:
 
 ```typescript
 // process.env.LANGSMITH_TRACING="true"
@@ -92,12 +119,10 @@ To instantiate the vector store, call the `.initialize()` static method. This wi
 </Warning>
 
 ```typescript
-import {
-  PGVectorStore,
-  DistanceStrategy,
-} from "@langchain/community/vectorstores/pgvector";
+import { PGVectorStore } from "@langchain/pgvector";
+import type { DistanceStrategy } from "@langchain/pgvector";
 import { OpenAIEmbeddings } from "@langchain/openai";
-import { PoolConfig } from "pg";
+import type { PoolConfig } from "pg";
 
 const embeddings = new OpenAIEmbeddings({
   model: "text-embedding-3-small",
@@ -286,11 +311,8 @@ Note that you should call `.initialize()` to set up your database at least once 
 
 ```typescript
 import { OpenAIEmbeddings } from "@langchain/openai";
-import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
+import { PGVectorStore } from "@langchain/pgvector";
 import pg from "pg";
-
-// First, follow set-up instructions at
-// https://js.langchain.com/docs/modules/indexes/vector_stores/integrations/pgvector
 
 const reusablePool = new pg.Pool({
   host: "127.0.0.1",
@@ -373,14 +395,10 @@ For more info, see the [Pgvector GitHub repo](https://github.com/pgvector/pgvect
 
 ```typescript
 import { OpenAIEmbeddings } from "@langchain/openai";
-import {
-  DistanceStrategy,
-  PGVectorStore,
-} from "@langchain/community/vectorstores/pgvector";
-import { PoolConfig } from "pg";
+import { PGVectorStore } from "@langchain/pgvector";
+import type { DistanceStrategy } from "@langchain/pgvector";
+import type { PoolConfig } from "pg";
 
-// First, follow set-up instructions at
-// https://js.langchain.com/docs/modules/indexes/vector_stores/integrations/pgvector
 
 const hnswConfig = {
   postgresConnectionOptions: {
@@ -425,7 +443,7 @@ const hnswResults = await hnswPgVectorStore.similaritySearchVectorWithScore(quer
 
 console.log(hnswResults);
 
-await pgvectorStore.end();
+await hnswPgVectorStore.end();
 ```
 
 ## Closing connections
@@ -440,4 +458,4 @@ await vectorStore.end();
 
 ## API reference
 
-For detailed documentation of all `PGVectorStore` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-community/vectorstores/pgvector/PGVectorStore).
+For detailed documentation of all `PGVectorStore` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-pgvector/PGVectorStore).

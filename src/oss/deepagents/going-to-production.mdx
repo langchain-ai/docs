@@ -12,7 +12,6 @@ import DeepagentsProductionInvokePy from '/snippets/code-samples/deepagents-prod
 
 This guide covers considerations for taking a deep agent from a local prototype to a production deployment. It walks through scoping memory, configuring execution environments, adding guardrails, and connecting a frontend.
 
-
 ## Overview
 
 Agents use information from memory and their execution environment to accomplish tasks.
@@ -34,7 +33,11 @@ This page covers:
 
 ![Managed Deep Agents packages your agent configuration, tools, and runtime settings for LangSmith](/oss/images/deepagents/production/deepagents-deploy-config.png)
 
-The recommended path for taking a Deep Agent to production is [Managed Deep Agents](/langsmith/deploy-managed-deep-agent), an API-first hosted runtime for creating, running, and operating deep agents in LangSmith. Managed Deep Agents is currently in private preview ([join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist)). For teams that need custom application code, custom routes, advanced authentication, or full Agent Server APIs, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. A traditional LangSmith Deployment also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
+The recommended path for taking a Deep Agent to production is [Managed Deep Agents](/langsmith/managed-deep-agents-overview), an API-first hosted runtime for creating, running, and operating deep agents in LangSmith. Managed Deep Agents is currently in private preview ([join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist)). For teams that need custom application code, custom routes, advanced authentication, or full Agent Server APIs, you can configure a [LangSmith Deployment](/langsmith/deployment) directly. Either path provisions the infrastructure your agent needs: [threads](/langsmith/use-threads), [runs](/langsmith/runs), a store, and a checkpointer, so you don't have to set these up yourself. A traditional LangSmith Deployment also gives you [authentication](/langsmith/auth), [webhooks](/langsmith/use-webhooks), [cron jobs](/langsmith/cron-jobs), and [observability](/langsmith/observability) out of the box, and can expose your agent via [MCP](/langsmith/server-mcp) or [A2A](/langsmith/server-a2a).
+
+<Tip>
+LangSmith Cloud deployments automatically send traces to a project named after your deployment. Open [LangSmith](https://smith.langchain.com) to debug runs and monitor usage. For hybrid or self-hosted setups, see [LangSmith tracing](/langsmith/data-plane#langsmith-tracing). We recommend you also set up [LangSmith Engine](/langsmith/engine), which monitors your traces, detects issues, and proposes fixes.
+</Tip>
 
 All code snippets on this page use the following `langgraph.json` unless otherwise specified:
 
@@ -229,7 +232,7 @@ When building for production:
 
 ### Durability
 
-Deep Agents run on LangGraph, which provides [durable execution](/oss/langgraph/durable-execution) out of the box. The [persistence](/oss/langgraph/persistence) layer checkpoints state at each step, so a run interrupted by a failure, timeout, or [human-in-the-loop](/oss/langgraph/interrupts) pause resumes from its last recorded state without reprocessing previous steps. For long-running deep agents that spawn many subagents, this means a mid-run failure doesn't lose completed work.
+Deep Agents run on LangGraph, which provides durable execution out of the box. The [persistence](/oss/langgraph/persistence) layer checkpoints state at each step, so a run interrupted by a failure, timeout, or [human-in-the-loop](/oss/langgraph/interrupts) pause resumes from its last recorded state without reprocessing previous steps. For long-running deep agents that spawn many subagents, this means a mid-run failure doesn't lose completed work.
 
 ![Durable execution: when a worker crashes mid-run, another worker picks the run up from the latest checkpoint](/oss/images/deepagents/production/durable-execution.png)
 
@@ -509,7 +512,7 @@ The examples below use an async [graph factory](/langsmith/graph-rebuild) instea
 
 <Tabs>
   <Tab title="Thread-scoped (most common)">
-    Each conversation gets its own sandbox. The [graph factory](/langsmith/graph-rebuild) reads `thread_id` from the run config, so each [thread](/langsmith/use-threads) automatically gets its own isolated environment. The provider's label-based lookup handles deduplication across runs. Cleaned up when the sandbox [TTL](/langsmith/configure-ttl) expires.
+    Each conversation gets its own sandbox. The [graph factory](/langsmith/graph-rebuild) reads `thread_id` from the run config, so each [thread](/langsmith/use-threads) automatically gets its own isolated environment. Named sandbox lookup handles deduplication across runs. Cleaned up when the sandbox [TTL](/langsmith/configure-ttl) expires.
 
 :::python
 <SandboxLifecycleFactoryThreadPy />
@@ -537,7 +540,7 @@ The examples below use an async [graph factory](/langsmith/graph-rebuild) instea
   </Tab>
 </Tabs>
 
-Because the `agent` variable is an async function (not a compiled graph), the server treats it as a [graph factory](/langsmith/graph-rebuild) and calls it on each run, injecting the config. The factory looks up or creates the sandbox via the provider's label-based search and returns a fresh agent graph wired to that sandbox.
+Because the `agent` variable is an async function (not a compiled graph), the server treats it as a [graph factory](/langsmith/graph-rebuild) and calls it on each run, injecting the config. The factory looks up or creates the sandbox by name and returns a fresh agent graph wired to that sandbox.
 
 Once deployed with `langgraph deploy`, invoke the agent from your application code using the SDK. The client-side code is the same regardless of scope. The scoping is handled entirely in the agent factory above, but the behavior differs:
 
@@ -697,8 +700,11 @@ For provider-specific file transfer examples, see [working with files](/oss/deep
 :::python
 ```python agent.py
 from deepagents import create_deep_agent
+from deepagents.backends import CompositeBackend, StoreBackend
+from deepagents.backends.langsmith import LangSmithSandbox
 from langchain.agents.middleware import AgentMiddleware, AgentState
 from langgraph.runtime import Runtime
+from langsmith.sandbox import SandboxClient
 
 
 def _safe_filename(key: str) -> str:
@@ -747,8 +753,12 @@ class SandboxSyncMiddleware(AgentMiddleware):
                 )
 
 
+client = SandboxClient()
+ls_sandbox = client.create_sandbox()
+
+
 backend = CompositeBackend(
-    default=DaytonaSandbox(sandbox=sandbox),
+    default=LangSmithSandbox(sandbox=ls_sandbox),
     routes={
         "/skills/": StoreBackend(
             rt,
@@ -772,8 +782,13 @@ agent = create_deep_agent(
 :::js
 ```typescript src/agent.ts
 import { createMiddleware } from "langchain";
-import { createDeepAgent, CompositeBackend, StoreBackend } from "deepagents";
-import { DaytonaSandbox } from "@langchain/daytona";
+import {
+  createDeepAgent,
+  CompositeBackend,
+  LangSmithSandbox,
+  StoreBackend,
+} from "deepagents";
+import { SandboxClient } from "langsmith/sandbox";
 
 function safeFilename(key: string): string {
   const name = key.split("/").pop()!;
@@ -826,8 +841,11 @@ const createSandboxSyncMiddleware = (backend: CompositeBackend) => {
   });
 };
 
+const client = new SandboxClient();
+const lsSandbox = await client.createSandbox();
+
 const backend = new CompositeBackend(
-  await DaytonaSandbox.fromId(sandbox.id),
+  new LangSmithSandbox({ sandbox: lsSandbox }),
   {
     "/skills/": new StoreBackend({
       namespace: (rt) => ["skills", rt.serverInfo.user.identity],  // [!code highlight]
@@ -953,7 +971,7 @@ agent = create_deep_agent(
         # Retry model calls on rate limits, timeouts, and 5xx errors
         ModelRetryMiddleware(max_retries=3, backoff_factor=2.0, initial_delay=1.0),
         # If the primary model is fully down, fall back to an alternative
-        ModelFallbackMiddleware("gpt-5.4"),
+        ModelFallbackMiddleware("gpt-5.5"),
         # Retry specific tools that hit external APIs (not all tools)
         ToolRetryMiddleware(
             max_retries=2,
@@ -980,7 +998,7 @@ const agent = createAgent({
     // Retry model calls on rate limits, timeouts, and 5xx errors
     modelRetryMiddleware({ maxRetries: 3, backoffFactor: 2.0, initialDelayMs: 1000 }),
     // If the primary model is fully down, fall back to an alternative
-    modelFallbackMiddleware("gpt-5.4"),
+    modelFallbackMiddleware("gpt-5.5"),
     // Retry specific tools that hit external APIs (not all tools)
     toolRetryMiddleware({
       maxRetries: 2,
@@ -1035,11 +1053,11 @@ See @[PIIMiddleware] for the full configuration.
 See @[piiMiddleware] for the full configuration.
 :::
 
-For the complete list of available middleware, see [prebuilt middleware](/oss/langchain/middleware/built-in).
+For the default Deep Agents middleware stack, see [Customization](/oss/deepagents/customization#middleware). For additional LangChain prebuilt middleware (retries, fallbacks, PII detection, and more), see [Prebuilt middleware](/oss/langchain/middleware/built-in).
 
 ## Frontend
 
-Deep Agents use [`useStream`](/oss/langchain/frontend/overview) to connect your UI to the agent backend. `useStream` is a frontend hook (available for React, Vue, Svelte, and Angular) that streams messages, subagent progress, and custom state from your agent in real time.
+Deep Agents use [`useStream`](/oss/langchain/frontend/overview) to connect your UI to the agent backend. @[`useStream`] is a frontend hook (available for React, Vue, Svelte, and Angular) that streams messages, subagent progress, and custom state from your agent in real time.
 
 Locally, `useStream` points at `http://localhost:2024`. In production, point it at your [LangSmith Deployment](/langsmith/deployment) and configure reconnection so users don't lose progress if their connection drops.
 
@@ -1050,13 +1068,9 @@ function App() {
   const stream = useStream<typeof agent>({
     apiUrl: "https://your-deployment.langsmith.dev",
     assistantId: "agent",
-    reconnectOnMount: true,    // Resume stream after page refresh or navigation
-    fetchStateHistory: true,   // Load full thread history on mount
   });
 }
 ```
-
-`reconnectOnMount` picks up an in-progress run automatically. If a user refreshes while the agent is working, they'll see it continue rather than a blank screen. `fetchStateHistory` loads the full conversation history for the thread, so returning users see previous messages.
 
 For deep agent workflows that spawn many subagents, set a high `recursionLimit` when submitting to avoid cutting off long-running executions:
 

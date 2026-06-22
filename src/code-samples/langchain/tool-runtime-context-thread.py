@@ -43,7 +43,7 @@ def get_account_info(runtime: ToolRuntime[UserContext]) -> str:
     return "User not found"
 
 
-model = ChatOpenAI(model="gpt-5.4")
+model = ChatOpenAI(model="gpt-5.5")
 agent = create_agent(
     model,
     tools=[get_account_info],

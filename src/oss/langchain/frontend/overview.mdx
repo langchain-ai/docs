@@ -3,11 +3,24 @@ title: Overview
 description: Build generative UIs with real-time streaming from LangChain agents
 ---
 
-Build rich, interactive frontends for agents created with `createAgent`. These patterns cover everything from basic message rendering to advanced workflows like human-in-the-loop approval and time travel debugging.
+Build rich, interactive frontends for agents created with `createAgent`. These
+patterns cover everything from basic message rendering to advanced workflows
+like human-in-the-loop approval, queued submissions, durable stream rejoin, and
+time travel debugging.
+
+LangChain frontend SDKs are built for **agent applications**, not only
+token-streaming chatbots. The same hook that renders messages also exposes the
+agent's durable thread state, tool-call lifecycle, interrupts, checkpoint
+history, and custom state values, so your UI can become a control plane for
+long-running agent work.
+
+<Note>
+These patterns use the v1 frontend SDK packages. If you are using an earlier version, see the migration guides for [React](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-react/docs/v1-migration.md), [Vue](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-vue/docs/v1-migration.md), [Svelte](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-svelte/docs/v1-migration.md), and [Angular](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-angular/docs/v1-migration.md).
+</Note>
 
 ## Architecture
 
-Every pattern follows the same architecture: a `createAgent` backend streams state to a frontend via the `useStream` hook.
+Every pattern follows the same architecture: a `createAgent` backend streams state to a frontend via the SDK stream API.
 
 ```mermaid
 %%{
@@ -31,7 +44,26 @@ graph LR
   class BACKEND greenHighlight;
 ```
 
-On the backend, `createAgent` produces a compiled LangGraph graph that exposes a streaming API. On the frontend, the `useStream` hook connects to that API and provides reactive state — messages, tool calls, interrupts, history, and more — that you render with any framework.
+On the backend, `createAgent` produces a compiled LangGraph graph that exposes a streaming API. On the frontend, the stream handle connects to that API and provides reactive state — messages, tool calls, interrupts, values, and thread metadata — that you render with any framework.
+
+## Why use the LangChain frontend SDKs?
+
+Most AI UI libraries help you append streamed text to a chat transcript.
+LangChain's SDKs expose the richer runtime semantics that production agents
+need:
+
+| Capability | What it enables in your UI |
+| --- | --- |
+| **Durable threads** | Reload a page, switch devices, or rejoin a run without losing the conversation state. |
+| **Typed agent state** | Render any state key, not just messages: todos, pipeline outputs, citations, sandbox files, metrics, or custom business objects. |
+| **Tool-call lifecycle** | Show pending, completed, and failed tool calls as purpose-built UI cards instead of raw JSON. |
+| **Interrupts** | Pause execution for human approval, edits, or missing information, then resume from the exact point where the agent stopped. |
+| **Checkpoints** | Build edit, retry, branch, audit, and time-travel flows from persisted state snapshots. |
+| **Nested execution** | Visualize deep agents, subagents, and graph nodes without flattening everything into one unreadable stream. |
+| **Framework-native reactivity** | Use the same protocol from React, Vue, Svelte, or Angular while keeping idiomatic hooks, composables, stores, or signals. |
+
+These primitives let you design UIs where users can inspect, steer, pause,
+resume, and fork agent work while it is happening.
 
 <CodeGroup>
 
@@ -41,7 +73,7 @@ from langchain import create_agent
 from langgraph.checkpoint.memory import MemorySaver
 
 agent = create_agent(
-    model="openai:gpt-5.4",
+    model="openai:gpt-5.5",
     tools=[get_weather, search_web],
     checkpointer=MemorySaver(),
 )
@@ -81,7 +113,7 @@ import { createAgent } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
 
 const agent = createAgent({
-  model: "openai:gpt-5.4",
+  model: "openai:gpt-5.5",
   tools: [getWeather, searchWeb],
   checkpointer: new MemorySaver(),
 });
@@ -110,14 +142,67 @@ function Chat() {
 
 </CodeGroup>
 
-`useStream` is available for React, Vue, Svelte, and Angular:
+React, Vue, and Svelte use `useStream`. Angular uses `injectStream`:
 
 ```ts
-import { useStream } from "@langchain/react";   // React
-import { useStream } from "@langchain/vue";      // Vue
-import { useStream } from "@langchain/svelte";   // Svelte
-import { useStream } from "@langchain/angular";  // Angular
+import { useStream } from "@langchain/react";      // React
+import { useStream } from "@langchain/vue";        // Vue
+import { useStream } from "@langchain/svelte";     // Svelte
+import { injectStream } from "@langchain/angular"; // Angular
 ```
+
+## Type inference
+
+Pass a type parameter to @[`useStream`] (or @[`injectStream`] in Angular) for type-safe access to `stream.messages`, `stream.toolCalls`, `stream.interrupt`, `stream.values`, and other reactive state.
+
+:::python
+
+Define a TypeScript interface that matches your agent's state schema and pass it as the type parameter:
+
+```ts
+import type { BaseMessage } from "langchain";
+
+interface AgentState {
+  messages: BaseMessage[];
+}
+
+const stream = useStream<AgentState>({
+  apiUrl: "http://localhost:2024",
+  assistantId: "agent",
+});
+```
+
+Use the graph name from `langgraph.json` as `assistantId`. In the pattern examples throughout this guide, replace `typeof myAgent` with your interface name (for example, `AgentState`).
+
+If your agent exposes custom state keys, extend the interface:
+
+```ts
+import type { BaseMessage, Todo } from "langchain";
+
+interface AgentState {
+  messages: BaseMessage[];
+  todos: Todo[];
+}
+```
+
+:::
+
+:::js
+
+Import your agent and pass `typeof myAgent` as the type parameter. TypeScript infers the state schema from the compiled graph:
+
+```ts
+import type { myAgent } from "./agent";
+
+const stream = useStream<typeof myAgent>({
+  apiUrl: "http://localhost:2024",
+  assistantId: "agent",
+});
+```
+
+Custom state keys are inferred automatically, no manual interface required.
+
+:::
 
 ## Patterns
 
@@ -143,6 +228,9 @@ import { useStream } from "@langchain/angular";  // Angular
 <CardGroup cols={3}>
   <Card title="Tool calling" icon="tool" href="/oss/langchain/frontend/tool-calling">
     Show tool calls as rich, type-safe UI cards with loading and error states.
+  </Card>
+  <Card title="Headless tools" icon="device-desktop" href="/oss/langchain/frontend/headless-tools">
+    Run browser and device APIs on the client while keeping typed tool schemas on the agent.
   </Card>
   <Card title="Human-in-the-loop" icon="user-check" href="/oss/langchain/frontend/human-in-the-loop">
     Pause the agent for human review with approve, reject, and edit workflows.
@@ -171,9 +259,25 @@ import { useStream } from "@langchain/angular";  // Angular
   </Card>
 </CardGroup>
 
+## Choosing a frontend pattern
+
+Start from the UX question your application needs to answer:
+
+| If users need to... | Start with |
+| --- | --- |
+| Understand what the agent is doing | [Tool calling](/oss/langchain/frontend/tool-calling) and [reasoning tokens](/oss/langchain/frontend/reasoning-tokens) |
+| Safely approve sensitive actions | [Human-in-the-loop](/oss/langchain/frontend/human-in-the-loop) |
+| Send work while a run is active | [Message queues](/oss/langchain/frontend/message-queues) |
+| Leave and come back to long-running work | [Join & rejoin streams](/oss/langchain/frontend/join-rejoin) |
+| Edit or retry from an earlier turn | [Branching chat](/oss/langchain/frontend/branching-chat) and [time travel](/oss/langchain/frontend/time-travel) |
+| Render state as an application, not a chat | [Structured output](/oss/langchain/frontend/structured-output), [generative UI](/oss/langchain/frontend/generative-ui), and [Deep Agents frontend patterns](/oss/deepagents/frontend/overview) |
+
 ## Integrations
 
-`useStream` is UI-agnostic. Use it to any component library or generative UI framework.
+The stream API is UI-agnostic. Use it with any component library or generative UI
+framework. Component libraries can own the presentation layer while LangChain's
+SDK owns the agent runtime state, resumability, interrupts, and checkpoint
+semantics underneath.
 
 <CardGroup cols={3}>
   <Card title="AI Elements" icon="package" href="/oss/langchain/frontend/integrations/ai-elements">

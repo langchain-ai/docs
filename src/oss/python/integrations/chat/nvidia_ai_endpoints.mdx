@@ -62,7 +62,7 @@ else:
 
 You can now use your key to access endpoints on the NVIDIA API Catalog.
 
-To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/observability) API key:
 
 ```python
 os.environ["LANGSMITH_TRACING"] = "true"
@@ -91,6 +91,47 @@ llm = ChatNVIDIA(model="mistralai/mixtral-8x7b-instruct-v0.1")
 ```python
 result = llm.invoke("Write a ballad about LangChain.")
 print(result.content)
+```
+
+## Enable thinking mode
+
+Some NVIDIA reasoning models support a configurable thinking mode. Enable thinking for a single request by passing `thinking_mode=True` to `invoke`:
+
+```python
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+
+model = ChatNVIDIA(model="nvidia/nemotron-3-nano-30b-a3b")
+
+response = model.invoke("Solve this step by step: 17 * 23", thinking_mode=True)
+print(response.content_blocks)
+```
+
+Use `with_thinking_mode` when you want a reusable runnable with thinking enabled:
+
+```python
+thinking_model = model.with_thinking_mode(enabled=True)
+response = thinking_model.invoke("Solve this step by step: 17 * 23")
+```
+
+To list models that are known to support thinking mode, call `get_available_models` and inspect `supports_thinking`. This queries the NVIDIA model-listing API, then filters the returned model metadata:
+
+```python
+thinking_models = [
+    model for model in ChatNVIDIA.get_available_models() if model.supports_thinking
+]
+```
+
+`ChatNVIDIA` translates `thinking_mode=True` into the control mechanism required by the selected model. Some models use request parameters, such as `chat_template_kwargs={"enable_thinking": True}`. Other models use prompt-based control, where LangChain appends a model-specific thinking prefix to the system message, or creates a system message if one is not present. If both mechanisms are configured for a model, request parameters take precedence.
+
+Do not pass `thinking_mode=True` when constructing `ChatNVIDIA`. Unknown constructor arguments become raw `model_kwargs`, which are merged directly into the API payload. The thinking-mode translation runs only for invocation kwargs or bound kwargs, so use one of these forms instead:
+
+```python
+response = model.invoke("Solve this step by step: 17 * 23", thinking_mode=True)
+```
+
+```python
+thinking_model = model.with_thinking_mode(enabled=True)
+response = thinking_model.invoke("Solve this step by step: 17 * 23")
 ```
 
 ## Self-host with NVIDIA NIM Microservices
@@ -123,16 +164,18 @@ print(llm.batch(["What's 2*3?", "What's 2*6?"]))
 ```
 
 ```python
-for chunk in llm.stream("How far can a seagull fly in one day?"):
+stream = llm.stream_events("How far can a seagull fly in one day?", version="v3")
+for token in stream.text:
     # Show the token separations
-    print(chunk.content, end="|")
+    print(token, end="|")
 ```
 
 ```python
-async for chunk in llm.astream(
-    "How long does it take for monarch butterflies to migrate?"
-):
-    print(chunk.content, end="|")
+stream = await llm.astream_events(
+    "How long does it take for monarch butterflies to migrate?", version="v3"
+)
+async for token in stream.text:
+    print(token, end="|")
 ```
 
 ## Supported models
@@ -489,8 +532,9 @@ print(result.content)
 Dynamo hints are included in the initial streaming request. Dynamo uses them to select the optimal worker before tokens start flowing.
 
 ```python
-for chunk in llm_critical.stream("Give a one-sentence summary of GPU computing."):
-    print(chunk.content, end="", flush=True)
+stream = llm_critical.stream_events("Give a one-sentence summary of GPU computing.", version="v3")
+for token in stream.text:
+    print(token, end="", flush=True)
 ```
 
 ### Inspect the payload

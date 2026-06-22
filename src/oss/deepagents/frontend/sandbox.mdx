@@ -10,15 +10,21 @@ write, and execute code in an isolated environment, then exposes the sandbox
 filesystem through a custom API server so the frontend can display files in
 real time as the agent works.
 
+This page covers the **three-panel UI** (file tree, code viewer, and chat) and
+the **custom API routes** that expose the sandbox filesystem to it. For sandbox
+providers, lifecycle scoping, seeding files, secrets, deployment, and production
+`useStream` configuration, see [Going to production](/oss/deepagents/going-to-production).
+
 import { PatternEmbed } from "/snippets/pattern-embed.jsx";
+import FrontendSandboxThreadBackendPy from "/snippets/code-samples/frontend-sandbox-thread-backend-py.mdx";
 
 <PatternEmbed pattern="deep-agent-ide" minHeight={700} />
 
 ## Architecture
 
-The sandbox pattern has three layers:
+This setup has three parts:
 
-1. **A deep agent with a sandbox backend:** The agent gets filesystem tools
+1. **Deep agent with a sandbox backend:** The agent gets filesystem tools
    (`read_file`, `write_file`, `edit_file`, `execute`) automatically from the
    sandbox
 
@@ -36,7 +42,7 @@ The sandbox pattern has three layers:
 
 :::
 
-3. **IDE frontend:** A three-panel layout (file tree, code/diff viewer, chat)
+3. **Three-panel frontend:** A file tree, code/diff viewer, and chat panel
    that syncs files in real time as the agent makes changes
 
 ```mermaid
@@ -55,7 +61,7 @@ graph LR
   SANDBOX["Sandbox"]
 
   UI --"useStream()"--> AGENT
-  UI --"/api/sandbox/:threadId/*"--> API
+  UI --"/sandbox/:threadId/*"--> API
   AGENT --"read/write/execute"--> SANDBOX
   API --"ls / read"--> SANDBOX
 
@@ -71,19 +77,15 @@ graph LR
 
 ## Sandbox lifecycle
 
-Before diving into the code, it's important to understand how sandboxes are
-scoped. The scoping strategy determines who shares a sandbox, how long it
-lives, and how it's resolved at runtime.
+Choose how long a sandbox lives and who shares it before wiring the frontend.
+See [Sandbox lifecycle](/oss/deepagents/going-to-production#lifecycle) for thread-scoped
+vs assistant-scoped sandboxes, async [graph factory](/langsmith/graph-rebuild)
+setup, TTL behavior, and SDK invocation examples.
 
-### Thread-scoped sandbox (recommended)
-
-Each LangGraph thread gets its own sandbox. The sandbox ID is stored in the
-thread's metadata and resolved at runtime via `getConfig()`.
-This is the recommended approach for most applications:
-
-- Conversations are isolated — file changes in one thread don't affect another
-- Sandbox state persists across page reloads (same thread = same sandbox)
-- Cleanup is straightforward: when a thread is deleted, its sandbox can be too
+This guide uses **thread-scoped sandboxes** by default. The frontend and
+custom API server both resolve the sandbox from the LangGraph
+[thread](/langsmith/use-threads) ID. That keeps conversations isolated and
+lets page reloads reconnect to the same environment when you [persist the thread ID](#thread-creation).
 
 ```mermaid
 sequenceDiagram
@@ -96,7 +98,7 @@ sequenceDiagram
     FE->>LG: POST /threads
     LG-->>FE: threadId
 
-    FE->>HTTP: GET /api/sandbox/:threadId/tree
+    FE->>HTTP: GET /sandbox/:threadId/tree
     HTTP->>LG: threads.get(threadId) → metadata.sandbox_id
     alt No sandbox yet
         HTTP->>SB: LangSmithSandbox.create()
@@ -112,251 +114,109 @@ sequenceDiagram
     LG->>SB: connect to same sandbox
 ```
 
-### Agent-scoped sandbox
+For [multi-tenant](/oss/deepagents/going-to-production#multi-tenancy) apps,
+scope sandboxes by user or assistant in your backend factory instead. For
+demos without LangGraph threads, pass a client-generated session ID in the
+API URL. The session ID does not persist across browser sessions.
 
-All threads under the same assistant share a single sandbox. Useful for
-persistent project environments where you want changes to carry across
-conversations:
+## Connect the agent and API server
 
-:::python
+Configure the deep agent with a [sandbox backend](/oss/deepagents/sandboxes)
+as described in [Execution environment](/oss/deepagents/going-to-production#execution-environment).
+The agent gets filesystem tools and an `execute` tool automatically; no extra
+tool configuration is needed.
 
-```python
-from langgraph.config import get_config
+Building this UI adds one requirement on top of the production setup: a
+**custom API server** which runs outside the agent graph, so both the agent
+backend and your file-browsing routes must resolve the **same sandbox** for
+each thread. Store the sandbox ID on thread metadata and share a single
+lookup function between them.
 
-def get_sandbox_backend_for_assistant():
-    config = get_config()
-    assistant_id = config.get("metadata", {}).get("assistant_id")
-    return get_or_create_sandbox_for_assistant(assistant_id)
-```
-
-:::
-
-:::js
-
-```ts
-import { getConfig } from "@langchain/langgraph";
-
-function getSandboxBackendForAssistant() {
-  const config = getConfig();
-  const assistantId = config.metadata?.assistant_id;
-  return getOrCreateSandboxForAssistant(assistantId);
-}
-```
-
-:::
-
-### User-scoped sandbox
-
-Each user gets their own sandbox across all threads. Requires custom
-authentication and user identification:
-
-:::python
-
-```python
-from langgraph.config import get_config
-
-def get_sandbox_backend_for_user():
-    config = get_config()
-    user_id = config.get("configurable", {}).get("user_id")
-    return get_or_create_sandbox_for_user(user_id)
-```
-
-:::
+### Resolve the sandbox from thread metadata
 
 :::js
 
-```ts
-import { getConfig } from "@langchain/langgraph";
-
-function getSandboxBackendForUser() {
-  const config = getConfig();
-  const userId = config.configurable?.user_id;
-  return getOrCreateSandboxForUser(userId);
-}
-```
-
-:::
-
-### Session-scoped sandbox (client-side)
-
-For simpler apps without LangGraph threads, the frontend can generate a
-session ID and pass it directly. This approach doesn't persist across
-browser sessions and is best for demos or prototyping:
-
-:::python
-
-```python
-import uuid
-import urllib.parse
-import urllib.request
-
-session_id = str(uuid.uuid4())
-query = urllib.parse.urlencode({"sessionId": session_id})
-urllib.request.urlopen(f"http://localhost:2024/api/sandbox/tree?{query}")
-```
-
-:::
-
-:::js
+Define `getOrCreateSandboxForThread` in a shared module. Both the agent graph
+factory and the custom API routes import it:
 
 ```ts
-const sessionId = crypto.randomUUID();
-fetch(`/api/sandbox/tree?sessionId=${sessionId}`);
-```
+// src/api/utils.ts
+import { Client } from "@langchain/langgraph-sdk";
+import { LangSmithSandbox } from "deepagents";
+import { SandboxClient } from "langsmith/sandbox";
 
-:::
-
-The rest of this guide uses **thread-scoped sandboxes** as the primary example.
-
-## Setting up the agent
-
-### Choose a sandbox provider
-
-:::python
-
-Deep Agents supports multiple [sandbox providers](/oss/integrations/sandboxes). Any provider that implements the `SandboxBackendProtocol` works:
-
-```python
-from deepagents import create_deep_agent
-from deepagents.sandbox import LangSmithSandbox  # or DaytonaSandbox, etc.
-
-sandbox = LangSmithSandbox.create()
-agent = create_deep_agent(model="google_genai:gemini-3.5-flash", backend=sandbox)
-```
-
-:::
-
-:::js
-
-Deep Agents supports multiple sandbox providers. Any provider that implements the `SandboxBackendProtocol` works:
-
-```ts
-import { createDeepAgent, LangSmithSandbox } from "deepagents";
-
-const sandbox = await LangSmithSandbox.create();
-
-export const agent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
-  backend: sandbox,
-  systemPrompt: "You are an expert developer working on a project in /app.",
-});
-```
-
-:::
-
-The agent automatically gets filesystem tools (`read_file`, `write_file`,
-`edit_file`, `ls`, `glob`, `grep`) and an `execute` tool for running shell
-commands. No tool configuration needed.
-
-### Resolve a sandbox per thread
-
-Instead of creating a sandbox at module level (which would be shared across
-all threads and may expire), resolve the sandbox per-thread at runtime. The sandbox reads `thread_id` from the LangGraph config via `getConfig()`:
-
-:::js
-
-```ts
-import { createDeepAgent, LangSmithSandbox } from "deepagents";
-import { getConfig } from "@langchain/langgraph";
-
-async function getOrCreateSandboxForThread(threadId: string): Promise<LangSmithSandbox> {
-  // Check thread metadata for existing sandbox_id
+export async function getOrCreateSandboxForThread(threadId: string) {
   const client = new Client({ apiUrl: "http://localhost:2024" });
   const thread = await client.threads.get(threadId);
   const sandboxId = thread.metadata?.sandbox_id;
 
   if (sandboxId) {
-    // Reconnect to existing sandbox
-    return new LangSmithSandbox({
-      sandbox: await new SandboxClient().getSandbox(sandboxId),
-    });
+    const existing = await new SandboxClient().getSandbox(sandboxId);
+    if (existing.status === "ready") {
+      return new LangSmithSandbox({ sandbox: existing });
+    }
   }
 
-  // Create new sandbox and store ID in thread metadata
   const sandbox = await LangSmithSandbox.create({ templateName: "my-template" });
-  await seedSandbox(sandbox);
+  await seedSandbox(sandbox);  // See File transfers below
   await client.threads.update(threadId, { metadata: { sandbox_id: sandbox.id } });
   return sandbox;
 }
-
-// Create a sandbox that resolves per-thread at runtime
-const sandbox = new LangSmithSandbox({
-  resolve: async () => {
-    const config = getConfig();
-    const threadId = config.configurable?.thread_id;
-    if (!threadId) throw new Error("No thread_id — agent must run on a thread");
-    return getOrCreateSandboxForThread(threadId);
-  },
-});
-
-export const agent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
-  backend: sandbox,
-  systemPrompt: "You are an expert developer working on a project in /app.",
-});
 ```
 
-:::
-
-:::python
-
-```python
-from deepagents import create_deep_agent
-from deepagents.sandbox import LangSmithSandbox
-from langgraph.config import get_config
-
-
-def get_or_create_sandbox_for_thread(thread_id: str) -> LangSmithSandbox:
-    # Look up or create sandbox based on thread_id
-    ...
-
-
-sandbox = LangSmithSandbox(
-    resolve=lambda: get_or_create_sandbox_for_thread(
-        get_config()["configurable"]["thread_id"]
-    ),
-)
-
-agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    backend=sandbox,
-)
-```
-
-:::
-
-### Seed the sandbox
-
-Before the agent runs, populate the sandbox with your project files using
-`uploadFiles`:
-
-<Info>
-  For **LangSmith** sandboxes, the container image and resource limits come from a
-  [sandbox snapshot](/langsmith/sandbox-snapshots). Pass `templateName` when creating
-:::python
-  the sandbox (see `get_or_create_sandbox_for_thread` above). `upload_files` seeds or updates
-:::
-:::js
-  the sandbox (see `getOrCreateSandboxForThread` above). `uploadFiles` seeds or updates
-:::
-  project files at runtime on top of that image.
-</Info>
+Wire the agent as an async [graph factory](/langsmith/graph-rebuild) that reads
+`thread_id` from the run config and passes the resolved backend to
+`createDeepAgent`:
 
 ```ts
-const SEED_FILES: Record<string, string> = {
-  "package.json": JSON.stringify({ name: "my-app", version: "1.0.0" }, null, 2),
-  "src/index.js": 'console.log("Hello");',
-};
+// src/agents/deep-agent-ide.ts
+import { createDeepAgent } from "deepagents";
+import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 
-const encoder = new TextEncoder();
-await sandbox.uploadFiles(
-  Object.entries(SEED_FILES).map(([path, content]) => [`/app/${path}`, encoder.encode(content)]),
-);
+import { getOrCreateSandboxForThread } from "../api/utils.js";
+
+export async function agent(config: LangGraphRunnableConfig) {
+  const threadId = config.configurable?.thread_id;
+  if (!threadId) throw new Error("No thread_id — agent must run on a thread");
+
+  const backend = await getOrCreateSandboxForThread(threadId);
+
+  return createDeepAgent({
+    model: "google_genai:gemini-3.5-flash",
+    backend,
+    systemPrompt: "You are an expert developer working on a project in /app.",
+  });
+}
 ```
 
+:::
+
+:::python
+
+<FrontendSandboxThreadBackendPy />
+
+:::
+
+<Note>
+  Similar to the example in [Going to production](/oss/deepagents/going-to-production#lifecycle), the
+  agent is an async graph factory invoked on each run. Store the sandbox ID on
+  thread metadata so custom `http.app` routes can call the same
+  `getOrCreateSandboxForThread` helper. Going to production uses provider label
+  lookup instead when the LangGraph SDK is the only entry point.
+</Note>
+
+### Seed project files
+
+Before the agent runs, upload starter files with `uploadFiles` /
+`upload_files`. See [File transfers](/oss/deepagents/going-to-production#file-transfers)
+for seeding patterns, provider examples, and syncing
+[memories](/oss/deepagents/memory) or [skills](/oss/deepagents/skills) into
+the sandbox. For LangSmith sandboxes, pass `templateName` from a
+[sandbox snapshot](/langsmith/sandbox-snapshots) when creating the container.
+
 <Tip>
-  Run `sandbox.execute("cd /app && npm install")` after uploading `package.json` to install
-  dependencies before the agent starts.
+  Run `sandbox.execute("cd /app && npm install")` after uploading
+  `package.json` so dependencies are ready before the first agent turn.
 </Tip>
 
 ## Adding the file browsing API
@@ -383,11 +243,9 @@ The sandbox API endpoints use the thread ID as a URL path parameter. This
 ensures the frontend always accesses the correct sandbox for the current
 :::python
 conversation, using the same `get_or_create_sandbox_for_thread` function as the
-:::
-:::js
+::::::js
 conversation, using the same `getOrCreateSandboxForThread` function as the
-:::
-agent's backend:
+:::agent's backend:
 
 :::js
 
@@ -398,7 +256,7 @@ import { getOrCreateSandboxForThread } from "./utils.js";
 
 export const app = new Hono();
 
-app.get("/api/sandbox/:threadId/tree", async (c) => {
+app.get("/sandbox/:threadId/tree", async (c) => {
   const threadId = c.req.param("threadId");
   const rootPath = c.req.query("filePath") || "/app";
 
@@ -424,7 +282,7 @@ app.get("/api/sandbox/:threadId/tree", async (c) => {
   return c.json({ path: rootPath, entries, sandboxId: sandbox.id });
 });
 
-app.get("/api/sandbox/:threadId/file", async (c) => {
+app.get("/sandbox/:threadId/file", async (c) => {
   const threadId = c.req.param("threadId");
   const filePath = c.req.query("filePath");
   if (!filePath) return c.json({ error: "filePath is required" }, 400);
@@ -450,14 +308,14 @@ from utils import get_or_create_sandbox_for_thread
 
 app = FastAPI()
 
-@app.get("/api/sandbox/{thread_id}/tree")
+@app.get("/sandbox/{thread_id}/tree")
 async def list_tree(
     thread_id: str = Path(...),
-    path: str = Query("/app"),
+    filePath: str = Query("/app"),
 ):
     sandbox = await get_or_create_sandbox_for_thread(thread_id)
     result = await sandbox.aexecute(
-        f"find {path} -printf '%y\\t%s\\t%p\\n' 2>/dev/null | sort"
+        f"find {filePath} -printf '%y\\t%s\\t%p\\n' 2>/dev/null | sort"
     )
     entries = []
     for line in result.output.strip().split("\n"):
@@ -470,16 +328,16 @@ async def list_tree(
             "path": full_path,
             "size": int(size_str),
         })
-    return {"path": path, "entries": entries, "sandbox_id": sandbox.id}
+    return {"path": filePath, "entries": entries, "sandboxId": sandbox.id}
 
-@app.get("/api/sandbox/{thread_id}/file")
+@app.get("/sandbox/{thread_id}/file")
 async def read_file(
     thread_id: str = Path(...),
-    path: str = Query(...),
+    filePath: str = Query(...),
 ):
     sandbox = await get_or_create_sandbox_for_thread(thread_id)
-    results = await sandbox.adownload_files([path])
-    return {"path": path, "content": results[0].content.decode()}
+    results = await sandbox.adownload_files([filePath])
+    return {"path": filePath, "content": results[0].content.decode()}
 ```
 
 :::
@@ -499,7 +357,10 @@ async def read_file(
 ### Configure `langgraph.json`
 
 Register both the agent graph and the API server. The `http.app` field tells
-the LangGraph platform to serve your custom routes alongside the default ones:
+the LangGraph platform to serve your custom routes alongside the default ones.
+See [application structure](/oss/langgraph/application-structure) and
+[LangSmith Deployments](/oss/deepagents/going-to-production#langsmith-deployments)
+for the full set of `langgraph.json` options.
 
 :::js
 
@@ -507,7 +368,7 @@ the LangGraph platform to serve your custom routes alongside the default ones:
 {
   "node_version": "22",
   "graphs": {
-    "coding_agent": "./src/agents/my-agent.ts:agent"
+    "deep_agent_ide": "./src/agents/deep-agent-ide.ts:agent"
   },
   "env": ".env",
   "http": {
@@ -523,7 +384,7 @@ the LangGraph platform to serve your custom routes alongside the default ones:
 ```json
 {
   "graphs": {
-    "coding_agent": "./src/agents/my_agent.py:agent"
+    "deep_agent_ide": "./src/agents/my_agent.py:agent"
   },
   "env": ".env",
   "http": {
@@ -546,8 +407,16 @@ local development with `langgraph dev`, that's `http://localhost:2024`.
 ## Building the frontend
 
 The frontend has three panels: a file tree sidebar, a code/diff viewer, and a
-chat panel. It uses `useStream` for the agent conversation and the custom API
+chat panel. It uses @[`useStream`] for the agent conversation and the custom API
 endpoints for file browsing.
+
+For production deployment, point `apiUrl` at your
+[LangSmith Deployment](/langsmith/deployment), and pass a stable
+`thread_id` on each run. See
+[Frontend](/oss/deepagents/going-to-production#frontend) in
+[Going to production](/oss/deepagents/going-to-production) for those settings
+and for [invoking the agent](/oss/deepagents/going-to-production#invoking-the-agent)
+with `thread_id` and runtime `context`.
 
 ### Thread creation
 
@@ -570,7 +439,7 @@ function IDEPreview() {
 
   const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "coding_agent",
+    assistantId: "deep_agent_ide",
     threadId,
     onThreadId: updateThreadId,
   });
@@ -592,7 +461,6 @@ fresh thread (and sandbox):
 
 ```tsx
 function handleNewThread() {
-  stream.switchThread(null);
   updateThreadId(null);
 }
 ```
@@ -608,7 +476,7 @@ const AGENT_URL = "http://localhost:2024";
 
 async function fetchTree(threadId: string): Promise<FileEntry[]> {
   const res = await fetch(
-    `${AGENT_URL}/api/sandbox/${encodeURIComponent(threadId)}/tree?filePath=/app`,
+    `${AGENT_URL}/sandbox/${encodeURIComponent(threadId)}/tree?filePath=/app`,
   );
   const data = await res.json();
   return data.entries.filter((e: FileEntry) => !e.path.includes("node_modules"));
@@ -616,7 +484,7 @@ async function fetchTree(threadId: string): Promise<FileEntry[]> {
 
 async function fetchFile(threadId: string, path: string): Promise<string | null> {
   const res = await fetch(
-    `${AGENT_URL}/api/sandbox/${encodeURIComponent(threadId)}/file?filePath=${encodeURIComponent(path)}`,
+    `${AGENT_URL}/sandbox/${encodeURIComponent(threadId)}/file?filePath=${encodeURIComponent(path)}`,
   );
   const data = await res.json();
   return data.content ?? null;
@@ -641,7 +509,7 @@ const FILE_MUTATING_TOOLS = new Set(["write_file", "edit_file", "execute"]);
 export function IDEPreview() {
   const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "coding_agent",
+    assistantId: "deep_agent_ide",
   });
 
   const processedIds = useRef(new Set<string>());
@@ -669,9 +537,9 @@ export function IDEPreview() {
       processedIds.current.add(id);
 
       if (call.name === "write_file" || call.name === "edit_file") {
-        refreshSingleFile(call.args.path);
+        refreshSingleFile(call.args.path ?? call.args.file_path);
       } else if (call.name === "execute") {
-        refreshAllFiles();
+        refreshTreeAndFiles();
       }
     }
   }, [stream.messages]);
@@ -689,7 +557,7 @@ const processedIds = new Set<string>();
 
 const stream = useStream<typeof myAgent>({
   apiUrl: AGENT_URL,
-  assistantId: "coding_agent",
+  assistantId: "deep_agent_ide",
 });
 
 watch(
@@ -716,16 +584,16 @@ watch(
       processedIds.add(id);
 
       if (call.name === "write_file" || call.name === "edit_file") {
-        refreshSingleFile(call.args.path);
+        refreshSingleFile(call.args.path ?? call.args.file_path);
       } else if (call.name === "execute") {
-        refreshAllFiles();
+        refreshTreeAndFiles();
       }
     }
   },
   { deep: true },
 );
 </script>
-````
+```
 
 ```svelte Svelte
 <script lang="ts">
@@ -735,13 +603,13 @@ watch(
   const FILE_MUTATING_TOOLS = new Set(["write_file", "edit_file", "execute"]);
   const processedIds = new Set<string>();
 
-  const { messages, submit } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "coding_agent",
+    assistantId: "deep_agent_ide",
   });
 
   $effect(() => {
-    const msgs = $messages;
+    const msgs = stream.messages;
     const toolCallMap = new Map();
     for (const msg of msgs) {
       if (AIMessage.isInstance(msg)) {
@@ -763,9 +631,9 @@ watch(
       processedIds.add(id);
 
       if (call.name === "write_file" || call.name === "edit_file") {
-        refreshSingleFile(call.args.path);
+        refreshSingleFile(call.args.path ?? call.args.file_path);
       } else if (call.name === "execute") {
-        refreshAllFiles();
+        refreshTreeAndFiles();
       }
     }
   });
@@ -774,7 +642,7 @@ watch(
 
 ```ts Angular
 import { Component, effect } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream } from "@langchain/angular";
 import { ToolMessage, AIMessage } from "langchain";
 
 const FILE_MUTATING_TOOLS = new Set(["write_file", "edit_file", "execute"]);
@@ -784,9 +652,9 @@ const FILE_MUTATING_TOOLS = new Set(["write_file", "edit_file", "execute"]);
   template: `<!-- ... -->`,
 })
 export class IdePreviewComponent {
-  stream = useStream<typeof myAgent>({
+  stream = injectStream<typeof myAgent>({
     apiUrl: AGENT_URL,
-    assistantId: "coding_agent",
+    assistantId: "deep_agent_ide",
   });
 
   private processedIds = new Set<string>();
@@ -815,9 +683,9 @@ export class IdePreviewComponent {
         this.processedIds.add(id);
 
         if (call.name === "write_file" || call.name === "edit_file") {
-          this.refreshSingleFile(call.args.path);
+          this.refreshSingleFile(call.args.path ?? call.args.file_path);
         } else if (call.name === "execute") {
-          this.refreshAllFiles();
+          this.refreshTreeAndFiles();
         }
       }
     });
@@ -910,36 +778,6 @@ function ChangedFilesSummary({ changedFiles, files, originalFiles, onSelect }) {
 }
 ```
 
-## The three-panel layout
-
-The IDE layout arranges three panels side by side:
-
-| Panel       | Width         | Purpose                                     |
-| ----------- | ------------- | ------------------------------------------- |
-| File tree   | Fixed (208px) | Browse sandbox files, see change indicators |
-| Code / Diff | Flexible      | View file content or unified diff           |
-| Chat        | Fixed (320px) | Interact with the agent                     |
-
-```tsx
-<div className="flex h-screen">
-  <div className="w-52 shrink-0">
-    <FileTree />
-    <ChangedFilesSummary />
-  </div>
-
-  <CodePanel /* flex-1 */ />
-
-  <div className="w-80 shrink-0">
-    <ChatPanel />
-  </div>
-</div>
-```
-
-The file tree shows VS Code-style icons (using
-[`@iconify-json/vscode-icons`](https://www.npmjs.com/package/@iconify-json/vscode-icons))
-and amber dots on modified files. Selecting a modified file automatically
-switches to the diff tab.
-
 ## Use cases
 
 A sandbox is the right choice when:
@@ -955,24 +793,50 @@ A sandbox is the right choice when:
 
 ## Best practices
 
-- **Use thread-scoped sandboxes** for production apps. Store the sandbox ID in
-  thread metadata and resolve it via `getConfig()` at runtime. This avoids
-  module-level state and keeps sandboxes isolated per conversation.
-- **Share `getOrCreateSandboxForThread`** between the agent backend and the
-  API server. Both should resolve the sandbox the same way — via thread
-  metadata — so there's a single source of truth with no in-memory caches.
+Frontend-specific:
+
 - **Persist `threadId` in `sessionStorage`** so page reloads reconnect to the
   same thread and sandbox instead of creating new ones.
-- **Sync files on every relevant tool call**, not just when the run finishes. This
-  makes the IDE feel live. Watch for `write_file`, `edit_file`, and `execute`
+- **Sync files on every relevant tool call**, not just when the run finishes. Watch for `write_file`, `edit_file`, and `execute`
   tool messages and refresh immediately.
 - **Default to diff view for changed files**. When a user clicks a file that
   was modified by the agent, show the diff first — that's what they care about.
 - **Show compact tool results for read-only operations**. Instead of dumping
   the full output of `read_file` in the chat, show a one-liner like
   `Read router.js L1-42`. Reserve the full output display for mutating tools.
-- **Seed the sandbox with a real project**. Starting from an empty sandbox is
-  disorienting. Upload a working starter project so users (and the agent) have
-  context immediately.
 - **Filter `node_modules` from the file tree**. Nobody wants to browse
   thousands of dependency files. Filter them out when fetching the tree.
+
+For backends and sandboxes:
+
+- **Use thread-scoped sandboxes** for production apps. See
+  [Sandbox lifecycle](/oss/deepagents/going-to-production#lifecycle).
+- **Share sandbox resolution** between the agent backend and the API server via
+  thread metadata so both resolve the same environment with no in-memory caches.
+- **Seed the sandbox with a real project**. See
+  [File transfers](/oss/deepagents/going-to-production#file-transfers).
+- **Keep secrets out of the sandbox**. Use the
+  [sandbox auth proxy](/oss/deepagents/going-to-production#managing-secrets)
+  instead of environment variables or file uploads for API keys.
+- **Add guardrails before launch**. Configure
+  [rate limits](/oss/deepagents/going-to-production#rate-limiting),
+  [error handling](/oss/deepagents/going-to-production#handling-errors), and
+  [data privacy](/oss/deepagents/going-to-production#data-privacy) middleware
+  for autonomous coding agents.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Going to production" icon="rocket" href="/oss/deepagents/going-to-production">
+    Deploy the agent with persistent sandboxes, auth, guardrails, and production `useStream` settings.
+  </Card>
+  <Card title="Sandboxes" icon="box" href="/oss/deepagents/sandboxes">
+    Sandbox providers, security model, and file transfer APIs.
+  </Card>
+  <Card title="Frontend overview" icon="layout" href="/oss/deepagents/frontend/overview">
+    Other deep agent UI patterns: subagent streaming, todo lists, and custom state.
+  </Card>
+  <Card title="Application structure" icon="file-code" href="/oss/langgraph/application-structure">
+    Full `langgraph.json` reference, including custom `http.app` routes.
+  </Card>
+</CardGroup>

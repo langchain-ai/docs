@@ -3,7 +3,8 @@ title: Workflows and agents
 sidebarTitle: Workflows + agents
 ---
 
-
+import WorkflowsAgentsToolRuntimeStateContextPy from "/snippets/code-samples/workflows-agents-tool-runtime-state-context-py.mdx";
+import WorkflowsAgentsToolRuntimeStateContextJs from "/snippets/code-samples/workflows-agents-tool-runtime-state-context-js.mdx";
 
 This guide reviews common workflow and agent patterns.
 
@@ -15,7 +16,7 @@ This guide reviews common workflow and agent patterns.
 LangGraph offers several benefits when building agents and workflows, including [persistence](/oss/langgraph/persistence), [streaming](/oss/langgraph/streaming), and support for debugging as well as [deployment](/oss/langgraph/deploy).
 
 <Tip>
-Trace and compare these workflow patterns with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to see how data flows through each step.
+Trace and compare these workflow patterns with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to see how data flows through each step. We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
 </Tip>
 
 ## Setup
@@ -304,8 +305,9 @@ def prompt_chaining_workflow(topic: str):
     return polish_joke(improved_joke).result()
 
 # Invoke
-for step in prompt_chaining_workflow.stream("cats", stream_mode="updates"):
-    print(step)
+stream = prompt_chaining_workflow.stream_events("cats", version="v3")
+for snapshot in stream.values:
+    print(snapshot)
     print("\n")
 ```
 </CodeGroup>
@@ -437,12 +439,9 @@ const workflow = entrypoint(
   }
 );
 
-const stream = await workflow.stream("cats", {
-  streamMode: "updates",
-});
-
-for await (const step of stream) {
-  console.log(step);
+const stream = await workflow.streamEvents("cats", { version: "v3" });
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
 }
 ```
 </CodeGroup>
@@ -576,8 +575,9 @@ def parallel_workflow(topic: str):
     ).result()
 
 # Invoke
-for step in parallel_workflow.stream("cats", stream_mode="updates"):
-    print(step)
+stream = parallel_workflow.stream_events("cats", version="v3")
+for snapshot in stream.values:
+    print(snapshot)
     print("\n")
 ```
 </CodeGroup>
@@ -697,12 +697,9 @@ const workflow = entrypoint(
 );
 
 // Invoke
-const stream = await workflow.stream("cats", {
-  streamMode: "updates",
-});
-
-for await (const step of stream) {
-  console.log(step);
+const stream = await workflow.streamEvents("cats", { version: "v3" });
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
 }
 ```
 </CodeGroup>
@@ -888,8 +885,9 @@ def router_workflow(input_: str):
     return llm_call(input_).result()
 
 # Invoke
-for step in router_workflow.stream("Write me a joke about cats", stream_mode="updates"):
-    print(step)
+stream = router_workflow.stream_events("Write me a joke about cats", version="v3")
+for snapshot in stream.values:
+    print(snapshot)
     print("\n")
 ```
 </CodeGroup>
@@ -1093,12 +1091,9 @@ const workflow = entrypoint(
 );
 
 // Invoke
-const stream = await workflow.stream("Write me a joke about cats", {
-  streamMode: "updates",
-});
-
-for await (const step of stream) {
-  console.log(step);
+const stream = await workflow.streamEvents("Write me a joke about cats", { version: "v3" });
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
 }
 ```
 </CodeGroup>
@@ -1301,12 +1296,9 @@ const workflow = entrypoint(
 );
 
 // Invoke
-const stream = await workflow.stream("Create a report on LLM scaling laws", {
-  streamMode: "updates",
-});
-
-for await (const step of stream) {
-  console.log(step);
+const stream = await workflow.streamEvents("Create a report on LLM scaling laws", { version: "v3" });
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
 }
 ```
 </CodeGroup>
@@ -1654,8 +1646,9 @@ def optimizer_workflow(topic: str):
     return joke
 
 # Invoke
-for step in optimizer_workflow.stream("Cats", stream_mode="updates"):
-    print(step)
+stream = optimizer_workflow.stream_events("Cats", version="v3")
+for snapshot in stream.values:
+    print(snapshot)
     print("\n")
 ```
 </CodeGroup>
@@ -1796,12 +1789,9 @@ const workflow = entrypoint(
 );
 
 // Invoke
-const stream = await workflow.stream("Cats", {
-  streamMode: "updates",
-});
-
-for await (const step of stream) {
-  console.log(step);
+const stream = await workflow.streamEvents("Cats", { version: "v3" });
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
   console.log("\n");
 }
 ```
@@ -1887,7 +1877,7 @@ def llm_call(state: MessagesState):
     }
 
 
-def tool_node(state: dict):
+def tool_node(state: MessagesState):
     """Performs the tool call"""
 
     result = []
@@ -1992,8 +1982,9 @@ def agent(messages: list[BaseMessage]):
 
 # Invoke
 messages = [HumanMessage(content="Add 3 and 4.")]
-for chunk in agent.stream(messages, stream_mode="updates"):
-    print(chunk)
+stream = agent.stream_events(messages, version="v3")
+for snapshot in stream.values:
+    print(snapshot)
     print("\n")
 ```
 </CodeGroup>
@@ -2171,12 +2162,9 @@ const messages = [{
   content: "Add 3 and 4."
 }];
 
-const stream = await agent.stream([messages], {
-  streamMode: "updates",
-});
-
-for await (const step of stream) {
-  console.log(step);
+const stream = await agent.streamEvents([messages], { version: "v3" });
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
 }
 ```
 </CodeGroup>
@@ -2240,5 +2228,38 @@ const calculator = tool(
 
 const toolNode = new ToolNode([search, calculator]);
 ```
+
+:::
+
+#### Access graph state and context from tools
+
+Tools executed by `ToolNode` receive the arguments generated by the model as
+their first argument. To read graph-side data that was not generated by the
+model, use one of these options:
+
+- In Python, read state and run-scoped context from the injected
+  @[`ToolRuntime`] argument.
+- In JavaScript, read state and run-scoped context from the tool's second
+  argument, typed as @[`ToolRuntime`].
+
+<Note>
+Tools can only access the state values passed to the `ToolNode`. When
+`ToolNode` is added directly as a `StateGraph` node, that input is the current
+graph state. If you invoke a `ToolNode` manually from another node, pass the
+full state when tools need custom state fields. For example, `tool_node.invoke(state)`
+or `toolNode.invoke(state, config)` exposes the full state, while passing only
+`{"messages": state["messages"]}` or `{ messages: state.messages }` only exposes
+`messages`.
+</Note>
+
+:::python
+
+<WorkflowsAgentsToolRuntimeStateContextPy />
+
+:::
+
+:::js
+
+<WorkflowsAgentsToolRuntimeStateContextJs />
 
 :::

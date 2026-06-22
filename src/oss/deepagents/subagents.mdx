@@ -5,6 +5,8 @@ description: Learn how to use subagents to delegate work and keep context clean
 
 import SubagentBasicPy from '/snippets/code-samples/subagent-basic-py.mdx';
 import SubagentBasicJs from '/snippets/code-samples/subagent-basic-js.mdx';
+import SubagentStreamProgressPy from '/snippets/code-samples/subagent-stream-progress-py.mdx';
+import SubagentStreamProgressJs from '/snippets/code-samples/subagent-stream-progress-js.mdx';
 
 A deep agent can create subagents to delegate work. You can specify custom subagents in the `subagents` parameter. Subagents are useful for [context quarantine](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html#context-quarantine) (keeping the main agent's context clean) and for providing specialized instructions.
 
@@ -61,7 +63,7 @@ To run an agent without the `task` tool, do two things:
 1. Set `general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)` on the active [harness profile](/oss/deepagents/profiles#harness-profiles).
 2. Pass no synchronous subagents via `subagents=` on `create_deep_agent`.
 
-Deep Agents only attaches `SubAgentMiddleware` (and the `task` tool) when at least one synchronous subagent exists. With neither the default nor a caller-provided one, the agent runs without delegation.
+Deep Agents only attaches @[`SubAgentMiddleware`] (and the `task` tool) when at least one synchronous subagent exists. With neither the default nor a caller-provided one, the agent runs without delegation.
 
 Async subagents are unaffected—they flow through their own middleware and tools, described in [Async subagents](/oss/deepagents/async-subagents).
 
@@ -87,9 +89,9 @@ Define subagents as dictionaries matching the @[`SubAgent`] spec with the follow
 | `description` | `str` | Required. Description of what this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate. |
 | `system_prompt` | `str` | Required. Instructions for the subagent. Custom subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. |
 | `tools` | `list[Callable]` | Optional. Tools the subagent can use. Keep this minimal and include only what's needed.<br></br>Inherits from main agent by default. When specified, overrides the inherited tools entirely. |
-| `model` | `str` \| `BaseChatModel` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5.4'` (using the `'provider:model'` format) or a LangChain chat model object (`init_chat_model("gpt-5.4")` or `ChatOpenAI(model="gpt-5.4")`). |
-| `middleware` | `list[Middleware]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Does not inherit from main agent. |
-| `interrupt_on` | `dict[str, bool]` | Optional. Configure [human-in-the-loop](/oss/deepagents/human-in-the-loop) for specific tools. Subagent value overrides main agent. Requires checkpointer.<br></br>Inherits from main agent by default. Subagent value overrides the default. |
+| `model` | `str` \| `BaseChatModel` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5.5'` (using the `'provider:model'` format) or a LangChain chat model object (`init_chat_model("gpt-5.5")` or `ChatOpenAI(model="gpt-5.5")`). |
+| `middleware` | `list[Middleware]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Does not inherit from the main agent. Appended to the [default subagent stack](/oss/deepagents/customization#default-stack-synchronous-subagents). |
+| `interrupt_on` | `dict[str, bool \| InterruptOnConfig]` | Optional. Configure [human-in-the-loop](/oss/deepagents/human-in-the-loop) for specific tools. Options:`True`, `False`, or an `InterruptOnConfig` with `allowed_decisions`. Requires checkpointer.<br></br>Inherits from main agent by default. Subagent value overrides the default. |
 | `skills` | `list[str]` | Optional. [Skills](/oss/deepagents/skills) source paths. When specified, the subagent will load skills from these directories (e.g., `["/skills/research/", "/skills/web-search/"]`). This allows subagents to have different skill sets than the main agent.<br></br>Does not inherit from main agent. Only the general-purpose subagent inherits the main agent's skills. When a subagent has skills, it runs its own independent @[`SkillsMiddleware`] instance. Skill state is fully isolated—a subagent's loaded skills are not visible to the parent, and vice versa. |
 | `response_format` | `ResponseFormat` | Optional. [Structured output](/oss/langchain/structured-output) schema for the subagent. When set, the parent receives the subagent's result as JSON instead of free-form text. Accepts Pydantic models, `ToolStrategy(...)`, `ProviderStrategy(...)`, or a raw schema type. See [Structured output](#structured-output). |
 | `permissions` | `list[FilesystemPermission]` | Optional. [Filesystem permission rules](/oss/deepagents/permissions) for the subagent. When set, **replaces** the parent agent's permissions entirely.<br></br>Inherits from main agent by default. |
@@ -104,11 +106,17 @@ Define subagents as dictionaries matching the @[`SubAgent`] spec with the follow
 | `description` | `str` | Required. Description of what this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate. |
 | `system_prompt` | `str` | Required. Instructions for the subagent. Custom subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. |
 | `tools` | `list[Callable]` | Optional. Tools the subagent can use. Keep this minimal and include only what's needed.<br></br>Inherits from main agent by default. When specified, overrides the inherited tools entirely. |
-| `model` | `str` \| `BaseChatModel` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5.4'` (using the `'provider:model'` format) or a LangChain chat model object (`await initChatModel("gpt-5.4")` or `new ChatOpenAI({ model: "gpt-5.4" })`). |
-| `middleware` | `list[Middleware]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Does not inherit from main agent. |
-| `interrupt_on` | `dict[str, bool]` | Optional. Configure [human-in-the-loop](/oss/deepagents/human-in-the-loop) for specific tools. Subagent value overrides main agent. Requires checkpointer.<br></br>Inherits from main agent by default. Subagent value overrides the default. |
-| `skills` | `list[str]` | Optional. [Skills](/oss/deepagents/skills) source paths. When specified, the subagent will load skills from these directories (e.g., `["/skills/research/", "/skills/web-search/"]`). This allows subagents to have different skill sets than the main agent.<br></br>Does not inherit from main agent. Only the general-purpose subagent inherits the main agent's skills. When a subagent has skills, it runs its own independent @[`SkillsMiddleware`] instance. Skill state is fully isolated—a subagent's loaded skills are not visible to the parent, and vice versa. |
+| `model` | `str` \| `BaseChatModel` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5.5'` (using the `'provider:model'` format) or a LangChain chat model object (`await initChatModel("gpt-5.5")` or `new ChatOpenAI({ model: "gpt-5.5" })`). |
+| `name` | `string` | Required. Unique identifier for the subagent. The main agent uses this name when calling the `task()` tool. The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents. |
+| `description` | `string` | Required. Description of what this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate. |
+| `systemPrompt ` | `string` | Required. Instructions for the subagent. Custom subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. |
+| `tools` | `StructuredTool[]` | Optional. Tools the subagent can use. Keep this minimal and include only what's needed.<br></br>Inherits from main agent by default. When specified, overrides the inherited tools entirely. |
+| `model` | `LanguageModelLike \| string`| Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5.5'` (using the `'provider:model'` format) or a LangChain chat model object (`await initChatModel("gpt-5.5")` or `new ChatOpenAI({ model: "gpt-5.5" })`). |
+| `middleware` | `AgentMiddleware[]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Does not inherit from the main agent. Appended to the [default subagent stack](/oss/deepagents/customization#default-stack-synchronous-subagents). |
+| `interruptOn` | `Record<string, boolean \| InterruptOnConfig>` | Optional. Configure [human-in-the-loop](/oss/deepagents/human-in-the-loop) for specific tools. Options: `True`, `False`. or an `InterruptOnConfig` with `allowed_decisions`. Requires checkpointer.<br></br>Inherits from main agent by default. Subagent value overrides the default. |
+| `skills` | `string[]` | Optional. [Skills](/oss/deepagents/skills) source paths. When specified, the subagent will load skills from these directories (e.g., `["/skills/research/", "/skills/web-search/"]`). This allows subagents to have different skill sets than the main agent.<br></br>Does not inherit from main agent. Only the general-purpose subagent inherits the main agent's skills. When a subagent has skills, it runs its own independent @[`SkillsMiddleware`] instance. Skill state is fully isolated—a subagent's loaded skills are not visible to the parent, and vice versa. |
 | `responseFormat` | `ResponseFormat` | Optional. [Structured output](/oss/langchain/structured-output) schema for the subagent. When set, the parent receives the subagent's result as JSON instead of free-form text. Accepts Zod schemas, JSON schema objects, `toolStrategy(...)`, or `providerStrategy(...)`. See [Structured output](#structured-output). |
+| `permissions` | `FilesystemPermission[]` | Optional. [Filesystem permission rules](/oss/deepagents/permissions) for the subagent. When set, **replaces** the parent agent's permissions entirely.<br></br>Inherits from main agent by default. |
 
 :::
 
@@ -201,53 +209,83 @@ const agent = createDeepAgent({
 
 ## Streaming
 
-When streaming tracing information agents' names are available as `lc_agent_name` in metadata.
-When reviewing tracing information, you can use this metadata to differentiate which agent the data came from.
+Deep Agents support streaming updates from both the coordinator and every delegated subagent.
 
-The following example creates a deep agent with the name `main-agent` and a subagent with the name `research-agent`:
+:::python
+Use [`stream_events`](/oss/deepagents/event-streaming) to get typed projections—separate iterators for subagents, messages, tool calls, and values—so you can consume each independently.
+:::
+
+:::js
+Use [`streamEvents`](/oss/deepagents/event-streaming) to get typed projections—separate iterators for subagents, messages, tool calls, and values—so you can consume each independently.
+:::
+
+### Stream subagent progress
+
+The simplest pattern is to iterate `stream.subagents` to track each delegated task as it starts, runs, and completes. Each subagent handle exposes `.name`, `.messages`, `.tool_calls`, and `.output`.
+
+:::python
+
+<SubagentStreamProgressPy />
+
+:::
+
+:::js
+
+<SubagentStreamProgressJs />
+
+:::
+
+### LangSmith tracing
+
+As your deep agent runs, all runs executed by a subagent or the coordinator will have the agent name in their metadata under the `lc_agent_name` key—for example, `{'lc_agent_name': 'research-agent'}`. This lets you identify and filter runs by subagent in LangSmith.
+
+![LangSmith Example trace showing the metadata](/oss/images/deepagents/deepagents-langsmith.png)
+
+<Tip>
+Open the run in [LangSmith](https://smith.langchain.com) to compare the coordinator trace with each subagent run. Follow the [observability quickstart](/langsmith/observability-quickstart) to get set up. We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
+</Tip>
+
+## Filter by subagent in LangSmith
+
+Because each subagent's `name` is written to the `lc_agent_name` metadata key on every run it produces, you can use LangSmith's metadata filtering to isolate all runs from a specific subagent — useful for debugging, monitoring, or comparing subagent behavior over time.
+
+### Filter in the LangSmith UI
+
+1. Open your tracing project in [LangSmith](https://smith.langchain.com).
+2. Switch the view to **Runs** on the Tracing project page to see individual spans.
+3. Click **Add filter** and select **Metadata**.
+4. Set the **Key** to `lc_agent_name` and the **Value** to the subagent name (for example, `research-agent`).
+
+This shows only the runs produced by that subagent. You can save the filter as a named view for reuse. For a full reference on filtering options, see [Filter traces](/langsmith/filter-traces-in-application).
+
+### Filter programmatically with the SDK
+
+Use the `has` comparator in the LangSmith filter query language to match runs by metadata key-value pair:
 
 ```python
-import os
-from typing import Literal
-from tavily import TavilyClient
-from deepagents import create_deep_agent
+from langsmith import Client
 
-tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
+client = Client()
 
-def internet_search(
-    query: str,
-    max_results: int = 5,
-    topic: Literal["general", "news", "finance"] = "general",
-    include_raw_content: bool = False,
-):
-    """Run a web search"""
-    return tavily_client.search(
-        query,
-        max_results=max_results,
-        include_raw_content=include_raw_content,
-        topic=topic,
-    )
+runs = client.list_runs(
+    project_name="<your-project>",
+    filter='has(metadata, \'{"lc_agent_name": "research-agent"}\')',
+)
 
-research_subagent = {
-    "name": "research-agent",
-    "description": "Used to research more in depth questions",
-    "system_prompt": "You are a great researcher",
-    "tools": [internet_search],
-    "model": "google_genai:gemini-3.5-flash",  # Optional override, defaults to main agent model
-}
-subagents = [research_subagent]
+for run in runs:
+    print(run.name, run.start_time, run.status)
+```
 
-agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    subagents=subagents,
-    name="main-agent"
+To fetch runs from _any_ named subagent (excluding the main agent), filter for runs that have the `lc_agent_name` key at all:
+
+```python
+runs = client.list_runs(
+    project_name="<your-project>",
+    filter="has(metadata, 'lc_agent_name')",
 )
 ```
 
-As you prompt your deep agent, all agent runs executed by a subagent or deep agent will have the agent name in their metadata.
-In this case the subagent with the name `"research-agent"`, will have `{'lc_agent_name': 'research-agent'}` in any associated agent run metadata:
-
-![LangSmith Example trace showing the metadata](/oss/images/deepagents/deepagents-langsmith.png)
+For the full filter query language reference, see [Trace query syntax](/langsmith/trace-query-syntax).
 
 ## Structured output
 
@@ -341,7 +379,7 @@ For full details on schema types and strategies (tool calling vs. provider-nativ
 
 In addition to any user-defined subagents, every deep agent has access to a `general-purpose` subagent at all times. This subagent:
 
-- Has the same system prompt as the main agent
+- Uses its own [default system prompt with profile overlays applied](/oss/deepagents/customization#prompt-assembly)
 - Has access to all the same tools
 - Uses the same model (unless overridden)
 - Inherits skills from the main agent (when skills are configured)
@@ -364,7 +402,7 @@ agent = create_deep_agent(
             "description": "General-purpose agent for research and multi-step tasks",
             "system_prompt": "You are a general-purpose assistant.",
             "tools": [internet_search],
-            "model": "openai:gpt-5.4",  # Different model for delegated tasks
+            "model": "openai:gpt-5.5",  # Different model for delegated tasks
         },
     ],
 )
@@ -387,7 +425,7 @@ const agent = await createDeepAgent({
       description: "General-purpose agent for research and multi-step tasks",
       systemPrompt: "You are a general-purpose assistant.",
       tools: [internetSearch],
-      model: "openai:gpt-5.4",  // Different model for delegated tasks
+      model: "openai:gpt-5.5",  // Different model for delegated tasks
     },
   ],
 });
@@ -574,7 +612,7 @@ subagents = [
         "description": "Analyzes financial data and market trends",
         "system_prompt": "You are an expert financial analyst...",
         "tools": [get_stock_price, analyze_fundamentals],
-        "model": "openai:gpt-5.4",  # Better for numerical analysis
+        "model": "openai:gpt-5.5",  # Better for numerical analysis
     },
 ]
 ```
@@ -595,7 +633,7 @@ const subagents = [
     description: "Analyzes financial data and market trends",
     systemPrompt: "You are an expert financial analyst...",
     tools: [getStockPrice, analyzeFundamentals],
-    model: "gpt-5.4",  // Better for numerical analysis
+    model: "gpt-5.5",  // Better for numerical analysis
   },
 ];
 ```
@@ -1114,5 +1152,4 @@ const subagents = [
   }
 ];
 ```
-:::
 :::

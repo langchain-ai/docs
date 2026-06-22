@@ -3,11 +3,22 @@ title: Overview
 description: Build UIs that display real-time subagent streams, task progress, and sandbox for Deep Agents
 ---
 
-Build frontends that visualize deep agent workflows in real time. These patterns show how to render subagent progress, task planning, streaming content, and IDE-like sandbox experiences from agents created with `createDeepAgent`.
+Build frontends that visualize deep agent workflows in real time. These patterns
+show how to render subagent progress, task planning, streaming content, and
+IDE-like sandbox experiences from agents created with `createDeepAgent`.
+
+Deep agents are most useful when the UI makes delegation visible. Instead of
+showing a single opaque assistant bubble, the LangChain SDKs expose the
+coordinator, subagent discovery, custom state, and sandbox-backed artifacts so
+users can inspect how a long-running task is being decomposed and completed.
+
+<Note>
+These patterns use the v1 frontend SDK packages. If you are using earlier versions, see the migration guides for [React](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-react/docs/v1-migration.md), [Vue](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-vue/docs/v1-migration.md), [Svelte](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-svelte/docs/v1-migration.md), and [Angular](https://github.com/langchain-ai/langgraphjs/blob/main/libs/sdk-angular/docs/v1-migration.md).
+</Note>
 
 ## Architecture
 
-Deep Agents use a coordinator-worker architecture. The main agent plans tasks and delegates to specialized subagents, each running in isolation. On the frontend, `useStream` surfaces both the coordinator's messages and each subagent's streaming state.
+Deep Agents use a coordinator-worker architecture. The main agent plans tasks and delegates to specialized subagents, each running in isolation. On the frontend, the v1 stream handle surfaces coordinator messages on the root stream and exposes subagent discovery snapshots for scoped subagent views.
 
 ```mermaid
 %%{
@@ -20,11 +31,15 @@ Deep Agents use a coordinator-worker architecture. The main agent plans tasks an
 }%%
 graph LR
   FRONTEND["useStream()"]
+  SELECTORS["selector helpers"]
   BACKEND["createDeepAgent()"]
   SUB1["Subagent A"]
   SUB2["Subagent B"]
 
   BACKEND --"stream"--> FRONTEND
+  FRONTEND --"scope by subagent"--> SELECTORS
+  SELECTORS --> SUB1
+  SELECTORS --> SUB2
   FRONTEND --"submit"--> BACKEND
   BACKEND --"delegate"--> SUB1
   BACKEND --"delegate"--> SUB2
@@ -34,7 +49,7 @@ graph LR
   classDef blueHighlight fill:#E5F4FF,stroke:#006DDD,color:#030710;
   classDef greenHighlight fill:#F6FFDB,stroke:#6E8900,color:#2E3900;
   classDef purpleHighlight fill:#EBD0F0,stroke:#885270,color:#441E33;
-  class FRONTEND blueHighlight;
+  class FRONTEND,SELECTORS blueHighlight;
   class BACKEND greenHighlight;
   class SUB1,SUB2 purpleHighlight;
 ```
@@ -66,7 +81,7 @@ import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
   tools: [getWeather],
-  system: "You are a helpful assistant",
+  systemPrompt: "You are a helpful assistant",
   subagents: [
     {
       name: "researcher",
@@ -78,7 +93,7 @@ const agent = createDeepAgent({
 
 :::
 
-On the frontend, connect with `useStream` the same way as with `createAgent`. Deep agent patterns use additional `useStream` features like `stream.subagents`, `stream.values.todos`, and `filterSubagentMessages` to render subagent-specific UIs.
+On the frontend, connect with @[`useStream`] the same way as with `createAgent`. Pass a [type parameter](/oss/langchain/frontend/overview) for type-safe stream state. Deep agent patterns use `stream.subagents`, selector helpers such as `useMessages(stream, subagent)`, and custom state values like `stream.values.todos` to render subagent-specific UIs.
 
 ```ts
 import { useStream } from "@langchain/react";
@@ -91,9 +106,25 @@ function App() {
 
   // Deep agent state beyond messages
   const todos = stream.values?.todos;
-  const subagents = stream.subagents;
+  const subagents = [...stream.subagents.values()];
 }
 ```
+
+## What the SDK exposes
+
+Deep agent UIs usually need more than the final answer. The frontend SDK gives
+you structured projections for the parts of the run users care about:
+
+| Projection | Use it for |
+| --- | --- |
+| `stream.messages` | The coordinator conversation and final synthesis. |
+| `stream.subagents` | Live discovery of specialist workers, including status and task metadata. |
+| `stream.values` | Shared state such as todos, plans, report sections, sandbox metadata, or any custom key your agent writes. |
+| Tool-call state | Rendering filesystem, search, browser, or domain tools as cards with progress and results. |
+| Interrupts | Pausing delegated work for user approval or missing input without losing the run state. |
+
+This lets you build interfaces that feel closer to an IDE, task board, or
+workflow monitor than a plain chat transcript.
 
 ## Patterns
 
@@ -115,3 +146,7 @@ The [LangChain frontend patterns](/oss/langchain/frontend/overview), including
 markdown messages, tool calling, and human-in-the-loop, all work with deep
 agents too. Deep Agents are built on the same LangGraph runtime, so
 `useStream` provides the same core API.
+
+For lower-level graph visualizations, see the
+[LangGraph frontend patterns](/oss/langgraph/frontend/overview). They show how
+to map graph nodes and state keys directly to UI components.

@@ -18,6 +18,7 @@ Use `ls_` metadata parameters to:
 - **Track model configuration** like temperature, max tokens, and other parameters for experiment comparison.
 - **Filter and analyze traces** by provider or configuration settings
 - **Customize Messages view rendering** for custom agent instrumentation.
+- **Mark interrupted errors** so LangSmith can render interrupted runs separately from other errors.
 - **Improve debugging** by recording exactly which model settings were used for each run.
 
 ## Basic usage example
@@ -72,7 +73,7 @@ For more comprehensive tracking, you can include additional configuration parame
     run_type="llm",
     metadata={
         "ls_provider": "openai",
-        "ls_model_name": "gpt-5.4",
+        "ls_model_name": "gpt-5.5",
         "ls_temperature": 0.7,
         "ls_max_tokens": 4096,
         "ls_stop": ["END"],
@@ -95,7 +96,7 @@ const myConfiguredLlm = traceable(
     run_type: "llm",
     metadata: {
       ls_provider: "openai",
-      ls_model_name: "gpt-5.4",
+      ls_model_name: "gpt-5.5",
       ls_temperature: 0.7,
       ls_max_tokens: 4096,
       ls_stop: ["END"],
@@ -127,6 +128,8 @@ With this setup, you can later filter traces by temperature, compare runs with d
 | [`ls_stop`](#ls_stop) | `string[]` | No | Stop sequences used |
 | [`ls_invocation_params`](#ls_invocation_params) | `object` | No | Additional invocation parameters |
 | [`ls_agent_type`](#ls_agent_type) | `string` | No | Controls how agent runs appear in the Messages view: `"root"`, `"subagent"`, or `"middleware"` |
+| [`ls_message_view_exclude`](#ls_message_view_exclude) | `boolean` | No | Hides the run from the Messages view |
+| [`ls_is_error_interrupt`](#ls_is_error_interrupt) | `boolean` | No | Marks an errored run as interrupted when set to `true` |
 
 \* `ls_provider` and `ls_model_name` must be provided together for cost tracking
 
@@ -175,7 +178,7 @@ When you want [automatic cost tracking](/langsmith/cost-tracking) for custom mod
     run_type="llm",
     metadata={
         "ls_provider": "openai",
-        "ls_model_name": "gpt-5.4"
+        "ls_model_name": "gpt-5.5"
     }
 )
 def my_llm_call(prompt: str):
@@ -195,7 +198,7 @@ def my_llm_call(prompt: str):
 Identifies the specific model. Combined with `ls_provider`, matches against pricing database for automatic cost calculation.
 
 **Common values:**
-- OpenAI: `"gpt-5.4"`, `"gpt-5.4-mini"`, `"gpt-3.5-turbo"`
+- OpenAI: `"gpt-5.5"`, `"gpt-5.4-mini"`, `"gpt-3.5-turbo"`
 - Anthropic: `"claude-3-5-sonnet-20241022"`, `"claude-3-opus-20240229"`
 - Custom: Any model identifier
 
@@ -234,7 +237,7 @@ When you want to track model configuration for experiments or debugging.
 ```python
 metadata={
     "ls_provider": "openai",
-    "ls_model_name": "gpt-5.4",
+    "ls_model_name": "gpt-5.5",
     "ls_temperature": 0.7
 }
 ```
@@ -258,7 +261,7 @@ When you want to track model configuration for experiments or debugging.
 ```python
 metadata={
     "ls_provider": "openai",
-    "ls_model_name": "gpt-5.4",
+    "ls_model_name": "gpt-5.5",
     "ls_max_tokens": 4096
 }
 ```
@@ -282,7 +285,7 @@ When you want to track model configuration for experiments or debugging.
 ```python
 metadata={
     "ls_provider": "openai",
-    "ls_model_name": "gpt-5.4",
+    "ls_model_name": "gpt-5.5",
     "ls_stop": ["END", "STOP", "\n\n"]
 }
 ```
@@ -308,7 +311,7 @@ When you need to track additional configuration beyond the standard parameters.
 ```python
 metadata={
     "ls_provider": "openai",
-    "ls_model_name": "gpt-5.4",
+    "ls_model_name": "gpt-5.5",
     "ls_invocation_params": {
         "top_p": 0.9,
         "frequency_penalty": 0.5,
@@ -344,6 +347,59 @@ For more details, see [Customize the Messages view](/langsmith/view-traces#custo
 **Relationships:**
 - Independent of model identification and cost tracking metadata.
 - Complements the trace parent-child structure by identifying the role a run plays in an agent trace.
+
+### `ls_message_view_exclude`
+
+- **Type:** `boolean` (presence-based)
+- **Required:** No
+
+**What it does:**
+Hides the run from the [Messages view](/langsmith/view-traces#messages-view). Excluded runs still appear in the regular trace view, runs explorer, and metrics.
+
+The filter checks for the **presence of the key**, not truthiness. `{LS_MESSAGE_VIEW_EXCLUDE: False}` still excludes the run. Omit the key entirely to include the run.
+
+**Import the constant:**
+The key is exported as the `LS_MESSAGE_VIEW_EXCLUDE` constant from `langsmith` (Python and JS), whose value is the string `"ls_message_view_exclude"`. Prefer the constant to avoid typos; the literal string still works.
+
+**When to use:**
+For LLM subspans that are not conversational turns, such as classification calls, embedding lookups, safety filters, or routing/guardrail decisions, that you still want visible elsewhere in LangSmith but do not want cluttering the conversation transcript.
+
+**Example:**
+```python
+from langsmith import LS_MESSAGE_VIEW_EXCLUDE, traceable
+
+@traceable(run_type="llm", metadata={LS_MESSAGE_VIEW_EXCLUDE: True})
+def classify_intent(query: str) -> str:
+    return llm.predict(f"Classify: {query}")
+```
+
+For additional code examples across Python and JS contexts (`@traceable`, `trace`, `wrap_openai`, `RunnableConfig`, `wrapAISDK`, `RunTree.createChild`), see [Exclude runs from the Messages view](/langsmith/messages-view-integrations#exclude-runs-from-the-messages-view).
+
+**Relationships:**
+- Independent of model identification and cost tracking metadata.
+- Complements [`ls_agent_type`](#ls_agent_type), which routes messages by role rather than hiding the run entirely.
+
+### `ls_is_error_interrupt`
+
+- **Type:** `boolean`
+- **Required:** No
+
+**What it does:**
+When set to `true` on a run with an error, marks the run status as interrupted instead of error.
+
+**When to use:**
+When your instrumentation can identify that an error represents an interrupted run, such as a user interruption or human-in-the-loop interruption, and you want LangSmith to render it separately from other errors.
+
+**Example:**
+```python
+metadata={
+    "ls_is_error_interrupt": True
+}
+```
+
+**Relationships:**
+- Only affects runs that include an error.
+- Independent of model identification and cost tracking metadata.
 
 ### `ls_run_depth`
 
@@ -459,6 +515,10 @@ These parameters help you track model settings but don't affect LangSmith's core
 - Do not affect LangSmith behavior or cost calculation.
 - Useful for experiment comparison and debugging.
 
+### Interrupt rendering
+
+Set [`ls_is_error_interrupt`](#ls_is_error_interrupt) to `true` when a run error should be rendered as interrupted instead of error. This parameter only affects runs that include an error.
+
 ### Invocation params special case
 
 The `ls_invocation_params` parameter has a dual role as both a tracking field and a fallback mechanism:
@@ -500,7 +560,7 @@ runs = client.list_runs(
 # Filter by specific model
 runs = client.list_runs(
     project_name="my-app",
-    filter='metadata_key = "ls_model_name" AND metadata_value = "gpt-5.4"'
+    filter='metadata_key = "ls_model_name" AND metadata_value = "gpt-5.5"'
 )
 
 # Filter root runs only (top-level traces)
@@ -534,7 +594,7 @@ for await (const run of client.listRuns({
 const runsByModel: any[] = [];
 for await (const run of client.listRuns({
   projectName: "my-app",
-  filter: 'metadata_key = "ls_model_name" AND metadata_value = "gpt-5.4"'
+  filter: 'metadata_key = "ls_model_name" AND metadata_value = "gpt-5.5"'
 })) {
   runsByModel.push(run);
 }
@@ -571,7 +631,7 @@ In the [LangSmith UI](https://smith.langchain.com), use the filter/search bar wi
 
 ```
 metadata_key = 'ls_provider' AND metadata_value = 'openai'
-metadata_key = 'ls_model_name' AND metadata_value = 'gpt-5.4'
+metadata_key = 'ls_model_name' AND metadata_value = 'gpt-5.5'
 metadata_key = 'ls_run_depth' AND metadata_value = 0
 ```
 
