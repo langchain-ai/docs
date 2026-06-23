@@ -1,0 +1,112 @@
+---
+title: "Tigris integrations"
+description: "Persist and branch LangGraph state in Tigris globally-distributed object storage using LangChain Python."
+---
+
+>[Tigris](https://www.tigrisdata.com/) is a globally-distributed, S3-compatible object storage service. Data is stored close to where it is accessed, with strong read-after-write and list consistency within a region and no egress fees.
+
+The Tigris LangGraph integration provides a `BaseCheckpointSaver` that persists agent state directly in a Tigris bucket over the S3 API (sync and async), plus a **zero-copy bucket fork** for instantly branching an agent's entire checkpoint history.
+
+**Key features:**
+- **Zero-copy forking**: `fork()` branches an entire bucket — every thread and checkpoint — in O(1) with no data copy, for parallel evals, what-if exploration, and isolated experiments. Writes to the fork never touch the source.
+- **No database to operate**: state lives in pure object storage; the latest checkpoint is found by a strongly-consistent sorted listing, with no mutable pointer.
+- **Durable and global**: checkpoints are globally replicated with no egress fees.
+- **Sync and async**: `TigrisSaver` (boto3) and `AsyncTigrisSaver` (aioboto3).
+
+## Installation
+
+```bash
+pip install -U langgraph-checkpoint-tigris
+```
+
+## Configuration
+
+Credentials follow the standard AWS resolution chain, and the endpoint defaults to the public Tigris endpoint:
+
+```bash
+export AWS_ACCESS_KEY_ID=your_tigris_access_key
+export AWS_SECRET_ACCESS_KEY=your_tigris_secret_key
+```
+
+<Note>
+Use a **Single-region** or **Multi-region** Tigris bucket. These provide the strong, globally consistent reads, lists, and conditional operations the saver relies on to find the latest checkpoint without a mutable pointer. **Global** and **Dual-region** buckets give only eventual cross-region consistency and can return stale results.
+</Note>
+
+## LangGraph checkpointer
+
+Persist LangGraph state for short-term memory, human-in-the-loop, time travel, and fault-tolerant resume. Call `setup()` once to verify the bucket is reachable.
+
+<Tabs>
+    <Tab title="Sync">
+```python
+from langchain.chat_models import init_chat_model
+from langgraph.graph import StateGraph, MessagesState, START
+from langgraph.checkpoint.tigris import TigrisSaver
+
+model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+with TigrisSaver.from_conn_string("my-bucket") as checkpointer:
+    checkpointer.setup()
+
+    def call_model(state: MessagesState):
+        return {"messages": model.invoke(state["messages"])}
+
+    builder = StateGraph(MessagesState)
+    builder.add_node(call_model)
+    builder.add_edge(START, "call_model")
+    graph = builder.compile(checkpointer=checkpointer)
+
+    config = {"configurable": {"thread_id": "1"}}
+    graph.invoke({"messages": [{"role": "user", "content": "hi! I'm bob"}]}, config)
+    graph.invoke({"messages": [{"role": "user", "content": "what's my name?"}]}, config)
+```
+    </Tab>
+    <Tab title="Async">
+```python
+from langchain.chat_models import init_chat_model
+from langgraph.graph import StateGraph, MessagesState, START
+from langgraph.checkpoint.tigris.aio import AsyncTigrisSaver
+
+model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+async with AsyncTigrisSaver.from_conn_string("my-bucket") as checkpointer:
+    await checkpointer.setup()
+
+    async def call_model(state: MessagesState):
+        return {"messages": await model.ainvoke(state["messages"])}
+
+    builder = StateGraph(MessagesState)
+    builder.add_node(call_model)
+    builder.add_edge(START, "call_model")
+    graph = builder.compile(checkpointer=checkpointer)
+
+    config = {"configurable": {"thread_id": "1"}}
+    await graph.ainvoke({"messages": [{"role": "user", "content": "hi! I'm bob"}]}, config)
+    await graph.ainvoke({"messages": [{"role": "user", "content": "what's my name?"}]}, config)
+```
+    </Tab>
+</Tabs>
+
+### Zero-copy forking
+
+`fork()` creates a new bucket that shares all objects with the source by reference — created instantly, with writes isolated from the source. This branches every thread and checkpoint at once, so you can explore alternative trajectories or run parallel experiments against a real agent's accumulated state without touching production.
+
+```python
+with TigrisSaver.from_conn_string("prod-agent-state") as checkpointer:
+    # Branch the ENTIRE bucket (all threads/checkpoints) instantly.
+    experiment = checkpointer.fork("experiment-run-42")
+    # `experiment` is an isolated TigrisSaver; writes here never affect prod.
+    experiment_graph = builder.compile(checkpointer=experiment)
+```
+
+<Note>
+The source bucket must be snapshot-enabled to be forkable — create it with the `X-Tigris-Enable-Snapshot: true` header or enable snapshots in the Tigris dashboard. Pass `snapshot_version` (a UNIX nanosecond timestamp) to fork from a specific point-in-time snapshot.
+</Note>
+
+To branch a single thread instead of the whole bucket, use `copy_thread` (and `acopy_thread`), which server-side-copies one thread's full checkpoint lineage to a new `thread_id`.
+
+## Resources
+
+- [langgraph-checkpoint-tigris on PyPI](https://pypi.org/project/langgraph-checkpoint-tigris/)
+- [tigrisdata/tigris-langgraph on GitHub](https://github.com/tigrisdata/tigris-langgraph/tree/main/libs/checkpoint-tigris)
+- [Tigris documentation](https://www.tigrisdata.com/docs/)
