@@ -109,24 +109,11 @@ Custom StateGraph (outer, with checkpointer)
 
 When `preview_tool` calls @[`interrupt`], the exception bubbles through both @[`create_agent`] layers and surfaces as `__interrupt__` on the outer @[`StateGraph`]'s invoke result. Your existing `Command(resume=result)` callback path keeps working.
 
-### Troubleshooting
-
-If `subagent.invoke(...)` returns partial state instead of propagating an interrupt, check the following:
-
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| Interrupt does not surface on outer invoke | Subagent compiled with its own `checkpointer=...` | Remove the checkpointer from subagents; compile only the outer graph with one |
-| Graph does not resume after callback | Missing `thread_id` | Pass `{"configurable": {"thread_id": "..."}}` on every invoke |
-| Interrupt swallowed silently | `GraphInterrupt` caught in tool wrapper | Remove custom error handling around `subagent.invoke(...)` |
-| Partial state returned, no `__interrupt__` | Subagent compiled with `checkpointer=False` (stateless mode) | Use the default (`checkpointer=None`) for per-invocation inheritance |
-
 For more on how interrupts propagate through subgraphs, see [Subgraph persistence: Interrupts](/oss/langgraph/use-subgraphs#per-invocation-default) and [Checkpointing and state inspection](/oss/langchain/multi-agent/subagents#checkpointing-and-state-inspection).
 
 ## When to use a custom StateGraph instead
 
-Tool-wrapped subagents work for most interrupt and resume flows. Use a custom @[`StateGraph`] with the subagent as a [node](/oss/langgraph/use-subgraphs#call-a-subgraph-inside-a-node) when your external callback path needs to [inspect nested graph state](/oss/langgraph/use-subgraphs#view-subgraph-state) while paused.
-
-Because subagents are called inside tool functions, LangGraph cannot statically discover them. This means @[`get_state`] with `subgraphs=True` does not return subagent state for tool-wrapped agents. If your callback handler needs to read nested state (for example, to look up a `job_id` stored in a subagent's checkpoint), invoke the subagent from a node function in a custom graph instead.
+Use a custom @[`StateGraph`] when you need to mix deterministic steps with agentic ones. For example, fixed routing, validation, or external API calls alongside @[`create_agent`] nodes.
 
 ## Migrate nested supervisors
 
