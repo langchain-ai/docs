@@ -1,0 +1,179 @@
+---
+title: Managed Deep Agents API reference
+sidebarTitle: API Overview
+description: Common REST commands and generated endpoint references for Managed Deep Agents.
+---
+
+The Managed Deep Agents API creates, updates, connects, and invokes [Managed Deep Agents](/langsmith/managed-deep-agents-overview). Use the [Managed Deep Agents SDKs](/langsmith/managed-deep-agents-sdk) for Python, TypeScript, and React applications. Use the REST API when you need direct control over request payloads. For the recommended end-to-end workflow, see the [quickstart](/langsmith/managed-deep-agents-quickstart).
+
+<Note>
+Managed Deep Agents is in **private beta**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
+</Note>
+
+## Set request defaults
+
+The API uses `/v1/deepagents`:
+
+```bash
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+export LANGSMITH_API_URL="https://api.smith.langchain.com"
+export DEEPAGENTS_BASE_URL="$LANGSMITH_API_URL/v1/deepagents"
+```
+
+Requests require the `X-Api-Key` header:
+
+```txt
+X-Api-Key: <LANGSMITH_API_KEY>
+```
+
+For example, list agents with the base URL and header set above:
+
+```bash
+curl "$DEEPAGENTS_BASE_URL/agents" \
+  -H "X-Api-Key: $LANGSMITH_API_KEY"
+```
+
+A missing `X-Api-Key` header returns `401` with `{"error": "Unauthorized"}`. A key that is invalid or lacks workspace access returns `403` with `{"error": "Forbidden"}`. These auth responses use a flat `{"error": "..."}` body, unlike the structured error body returned by other `4xx` responses. A valid key whose role lacks a required permission also returns `403`, but with a plain-text body naming the missing permission (for example, `missing permission mcp-servers:create`), which the SDK exposes on `error.body`.
+
+## Understand resource groups
+
+| Resource group | Purpose |
+| --- | --- |
+| Agents | Create and manage Managed Deep Agent resources, including runtime and backend configuration. |
+| Threads | Create and manage durable thread state for Managed Deep Agents. |
+| Runs | Start and stream Managed Deep Agent runs on threads. |
+| MCP servers | Register MCP servers and store credentials referenced by agent tools. |
+| MCP tools | List tools exposed by a registered MCP server so clients can build `tools.json` entries. |
+| Auth sessions | Start and poll user OAuth sessions for OAuth MCP servers. |
+
+Managed Deep Agents are not LangSmith Deployments. Creating a Managed Deep Agent creates a Managed Deep Agent resource, a separate LangSmith tracing project, and a Context Hub agent repo for the managed file tree.
+
+## Configure sandboxes
+
+Create-agent and update-agent payloads can include a `backend` object. Use `state` when the agent does not need sandbox-specific backend behavior:
+
+```json
+{
+  "backend": {
+    "type": "state"
+  }
+}
+```
+
+Use `sandbox` when the agent needs a [LangSmith sandbox](/langsmith/sandboxes) for code execution, filesystem work, or long-running tasks. Sandbox backend settings live under `backend.sandbox_config` and are valid only when `backend.type` is `sandbox`:
+
+```json
+{
+  "backend": {
+    "type": "sandbox",
+    "sandbox_config": {
+      "scope": "thread",
+      "policy_ids": ["policy-id"],
+      "idle_ttl_seconds": 900,
+      "delete_after_stop_seconds": 300
+    }
+  }
+}
+```
+
+The `sandbox` object accepts:
+
+| Field | Description |
+| --- | --- |
+| `scope` | Sandbox scope. Use `thread` for one sandbox per thread, or `agent` for one sandbox shared by the agent. |
+| `policy_ids` | Sandbox policy IDs to apply. |
+| `idle_ttl_seconds` | Idle timeout before the sandbox stops, in seconds. |
+| `delete_after_stop_seconds` | Delay before the sandbox is deleted after it stops, in seconds. |
+
+For backend guidance, see [Deploy an agent](/langsmith/managed-deep-agents-deploy#choose-a-backend). For standalone sandbox concepts, see the [LangSmith sandboxes overview](/langsmith/sandboxes).
+
+## Use common REST commands
+
+### Agents
+
+See [Deploy an agent](/langsmith/managed-deep-agents-deploy#create-or-update-an-agent-with-the-sdk-or-api) for the create and update workflow. For deletion behavior, see [Limits and notes](/langsmith/managed-deep-agents-overview#delete-agents).
+
+| Task | Endpoint reference |
+| --- | --- |
+| Create an agent | [`POST /v1/deepagents/agents`](/langsmith/managed-deep-agents-api/agents/create-agent) |
+| List agents | [`GET /v1/deepagents/agents`](/langsmith/managed-deep-agents-api/agents/list-agents) |
+| Get an agent | [`GET /v1/deepagents/agents/{agent_id}`](/langsmith/managed-deep-agents-api/agents/get-agent) |
+| Update an agent | [`PATCH /v1/deepagents/agents/{agent_id}`](/langsmith/managed-deep-agents-api/agents/update-agent) |
+| Delete an agent | [`DELETE /v1/deepagents/agents/{agent_id}`](/langsmith/managed-deep-agents-api/agents/delete-agent) |
+| Clone an agent | [`POST /v1/deepagents/agents/{agent_id}/clone`](/langsmith/managed-deep-agents-api/agents/clone-agent) |
+| Check agent health | [`GET /v1/deepagents/agents/{agent_id}/health`](/langsmith/managed-deep-agents-api/agents/check-agent-health) |
+
+### Threads
+
+See [Run an agent](/langsmith/managed-deep-agents-invoke#create-a-thread) for creating threads and managing the durable state they hold across runs.
+
+| Task | Endpoint reference |
+| --- | --- |
+| List threads | [`GET /v1/deepagents/threads`](/langsmith/managed-deep-agents-api/threads/list-threads) |
+| Create a thread | [`POST /v1/deepagents/threads`](/langsmith/managed-deep-agents-api/threads/create-thread) |
+| Search threads | [`POST /v1/deepagents/threads/search`](/langsmith/managed-deep-agents-api/threads/search-threads) |
+| Count threads | [`GET /v1/deepagents/threads/count`](/langsmith/managed-deep-agents-api/threads/count-threads) |
+| Get a thread | [`GET /v1/deepagents/threads/{thread_id}`](/langsmith/managed-deep-agents-api/threads/get-thread) |
+| Update a thread | [`PATCH /v1/deepagents/threads/{thread_id}`](/langsmith/managed-deep-agents-api/threads/update-thread) |
+| Delete a thread | [`DELETE /v1/deepagents/threads/{thread_id}`](/langsmith/managed-deep-agents-api/threads/delete-thread) |
+| Bulk update threads | [`POST /v1/deepagents/threads/bulk-modify`](/langsmith/managed-deep-agents-api/threads/bulk-update-threads) |
+
+### Runs
+
+See [Run an agent](/langsmith/managed-deep-agents-invoke#stream-a-run-from-a-thread) for starting runs on a thread and streaming their output.
+
+| Task | Endpoint reference |
+| --- | --- |
+| Create a thread and run | [`POST /v1/deepagents/threads/runs`](/langsmith/managed-deep-agents-api/runs/create-thread-and-run) |
+| Start a thread run | [`POST /v1/deepagents/threads/{thread_id}/runs`](/langsmith/managed-deep-agents-api/runs/create-thread-run) |
+| Stream a thread run | [`POST /v1/deepagents/threads/{thread_id}/runs/stream`](/langsmith/managed-deep-agents-api/runs/stream-thread-run) |
+| Resolve an interrupt | [`POST /v1/deepagents/threads/{thread_id}/resolve-interrupt`](/langsmith/managed-deep-agents-api/runs/resolve-interrupt) |
+
+### MCP servers
+
+See [Connect tools](/langsmith/managed-deep-agents-mcp#connect-tools-with-the-sdk-or-api) for registering MCP servers and storing the credentials your agent tools use.
+
+| Task | Endpoint reference |
+| --- | --- |
+| Create an MCP server | [`POST /v1/deepagents/mcp-servers`](/langsmith/managed-deep-agents-api/mcp-servers/create-mcp-server) |
+| List MCP servers | [`GET /v1/deepagents/mcp-servers`](/langsmith/managed-deep-agents-api/mcp-servers/list-mcp-servers) |
+| Get an MCP server | [`GET /v1/deepagents/mcp-servers/{mcp_server_id}`](/langsmith/managed-deep-agents-api/mcp-servers/get-mcp-server) |
+| Update an MCP server | [`PATCH /v1/deepagents/mcp-servers/{mcp_server_id}`](/langsmith/managed-deep-agents-api/mcp-servers/update-mcp-server) |
+| Delete an MCP server | [`DELETE /v1/deepagents/mcp-servers/{mcp_server_id}`](/langsmith/managed-deep-agents-api/mcp-servers/delete-mcp-server) |
+| Register an OAuth provider | [`POST /v1/deepagents/mcp-servers/{mcp_server_id}/oauth-provider`](/langsmith/managed-deep-agents-api/mcp-servers/register-oauth-provider) |
+
+### MCP tools
+
+See [Connect tools](/langsmith/managed-deep-agents-mcp#connect-tools-with-the-sdk-or-api) for listing the tools a registered server exposes and building `tools.json` entries.
+
+| Task | Endpoint reference |
+| --- | --- |
+| List MCP tools | [`GET /v1/deepagents/mcp/tools`](/langsmith/managed-deep-agents-api/mcp-tools/list-mcp-tools) |
+
+### Auth sessions
+
+See [Connect tools](/langsmith/managed-deep-agents-mcp#connect-tools-with-the-sdk-or-api) for running the OAuth flow that authorizes MCP servers.
+
+| Task | Endpoint reference |
+| --- | --- |
+| Start an auth session | [`POST /v1/deepagents/auth-sessions`](/langsmith/managed-deep-agents-api/auth-sessions/start-auth-session) |
+| Get an auth session | [`GET /v1/deepagents/auth-sessions/{session_id}`](/langsmith/managed-deep-agents-api/auth-sessions/get-auth-session) |
+
+## Paginate the agents list
+
+[`GET /v1/deepagents/agents`](/langsmith/managed-deep-agents-api/agents/list-agents) is cursor-paginated. Pass `page_size` (defaults to `20`, maximum `100`) and the opaque `cursor` returned by a previous request. The response wraps results in an `items` array alongside a `next_cursor` field that is `null` on the last page:
+
+```json
+{
+  "items": [],
+  "next_cursor": null
+}
+```
+
+The endpoint also accepts `name` to filter by name substring, `sort_by` (`created_at`, `updated_at`, or `name`, defaults to `updated_at`), and `sort_order` (`asc` or `desc`, defaults to `desc`).
+
+## Understand API stability
+
+Routes are versioned at `/v1/`, but the surface is in private beta and may change in backwards-incompatible ways before general availability. See [API stability](/langsmith/managed-deep-agents-overview#api-stability) for breaking-change communication.
+
+The API does not mirror every LangSmith Deployment endpoint. Endpoint groups such as integrations, triggers, skills, sandboxes, auth providers, and auth tokens are not mirrored.

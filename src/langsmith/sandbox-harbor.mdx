@@ -1,0 +1,132 @@
+---
+title: Run evaluations with Harbor
+sidebarTitle: Harbor
+description: Run Harbor evaluations and rollouts on LangSmith sandboxes with the harbor[langsmith] extra.
+---
+
+[Harbor](https://harborframework.com/docs) is a framework for evaluating and optimizing agents and language models in sandboxed environments, from the creators of [Terminal-Bench](https://www.tbench.ai). Harbor runs each trial in an isolated container, so you can parallelize evaluations and rollouts across many environments at once.
+
+The `langsmith` Harbor environment runs those trials on LangSmith sandboxes. Select it with `-e langsmith` to execute Harbor jobs on LangSmith infrastructure, alongside providers such as AgentCore, Daytona, E2B, and Modal.
+
+## Prerequisites
+
+- A [LangSmith account](https://smith.langchain.com) and an API key.
+- Python with `pip`.
+
+## Install
+
+Install Harbor with the `langsmith` extra:
+
+```bash
+pip install "harbor[langsmith]"
+```
+
+## Authenticate
+
+Harbor authenticates with your LangSmith credentials. Set an API key:
+
+```bash
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+```
+
+`LANGCHAIN_API_KEY` works as well. Alternatively, select a [LangSmith SDK profile](/langsmith/profile-configuration) instead of exporting a key:
+
+```bash
+export LANGSMITH_PROFILE=prod
+```
+
+## Run an evaluation
+
+Run a Harbor job and select the LangSmith environment with `-e langsmith`:
+
+```bash
+harbor run -d "<org/name>" \
+  -m "<model>" \
+  -a "<agent>" \
+  -e langsmith \
+  -n "<n-parallel-trials>"
+```
+
+Harbor creates one LangSmith sandbox per trial, runs the agent and verifier inside it, then tears the sandbox down when the trial finishes.
+
+## Configure the sandbox environment
+
+The LangSmith environment boots each sandbox from a filesystem snapshot. Provide one of the following in your Harbor task:
+
+- **Prebuilt image**: set `[environment].docker_image` in `task.toml`. Harbor reuses or creates a snapshot from that image.
+- **Existing snapshot**: pass `environment.kwargs.snapshot_name` to boot from a [snapshot](/langsmith/sandbox-snapshots) you already created.
+- **Dockerfile**: include an `environment/Dockerfile`. Harbor builds a snapshot from it with the [build-from-Dockerfile flow](/langsmith/sandbox-snapshots#build-a-snapshot-from-a-dockerfile), using the task `environment/` directory as the build context.
+
+Tune the sandbox lifecycle with environment kwargs, passed on the command line with `--ek`:
+
+```bash
+harbor run -d "<org/name>" \
+  -m "<model>" \
+  -a "<agent>" \
+  -e langsmith \
+  -n "<n-parallel-trials>" \
+  --ek idle_ttl_seconds=0 \
+  --ek delete_after_stop_seconds=7200
+```
+
+- `idle_ttl_seconds`: stops an idle sandbox after this many seconds. Set `0` to disable the idle timeout.
+- `delete_after_stop_seconds`: deletes a stopped sandbox after this many seconds.
+
+## Run Deep Agents on LangSmith
+
+Deep Agents runs against the LangSmith environment as a custom Harbor agent. To build and run a Deep Agent, see the [Deep Agents documentation](/oss/deepagents/overview). The Harbor wrapper ships in the [`deepagents-evals` package](https://github.com/langchain-ai/deepagents/tree/main/libs/evals), which exposes `deepagents_harbor:DeepAgentsWrapper` and includes ready-made `make run-terminal-bench-*` targets. Install it in the same environment as Harbor:
+
+```bash
+pip install "harbor[langsmith]"
+
+# From a checkout of langchain-ai/deepagents:
+pip install -e libs/evals
+```
+
+Set your LangSmith and model credentials, then run Harbor with the wrapper:
+
+```bash
+export LANGSMITH_PROFILE=prod
+export LANGSMITH_TRACING=true
+export LANGSMITH_PROJECT=harbor-deepagents
+export ANTHROPIC_API_KEY="<ANTHROPIC_API_KEY>"
+
+harbor run -d "terminal-bench@2.0" \
+  --agent-import-path deepagents_harbor:DeepAgentsWrapper \
+  --model anthropic:claude-opus-4-8 \
+  -e langsmith \
+  -n 10 \
+  -l 10 \
+  --yes \
+  --ek idle_ttl_seconds=0 \
+  --ek delete_after_stop_seconds=7200
+```
+
+Keep API keys in your shell environment rather than in a job config file.
+
+## Use a config file
+
+Capture the same run in a Harbor job config:
+
+```yaml
+jobs_dir: jobs/deepagents-langsmith
+n_attempts: 1
+n_concurrent_trials: 10
+environment:
+  type: langsmith
+  delete: true
+  kwargs:
+    idle_ttl_seconds: 0
+    delete_after_stop_seconds: 7200
+agents:
+  - import_path: deepagents_harbor:DeepAgentsWrapper
+    model_name: anthropic:claude-opus-4-8
+datasets:
+  - name: terminal-bench
+    version: "2.0"
+    n_tasks: 10
+```
+
+## Multi-container tasks
+
+The LangSmith environment supports multi-container tasks. Include an `environment/docker-compose.yaml` file in your task definition to run several containers per trial. See the [Harbor sandbox documentation](https://harborframework.com/docs/run-jobs/cloud-sandboxes) for details.

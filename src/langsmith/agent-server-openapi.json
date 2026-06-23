@@ -40,6 +40,10 @@
     {
       "name": "System",
       "description": "System endpoints for health checks, metrics, and server information."
+    },
+    {
+      "name": "Streaming",
+      "description": "Thread-centric streaming endpoints. Provides a structured command/event surface over SSE+HTTP; WebSocket is also supported at `/threads/{thread_id}/stream/events` (not documented here — OpenAPI 3.1 does not describe WebSocket)."
     }
   ],
   "paths": {
@@ -1614,6 +1618,60 @@
         }
       }
     },
+    "/threads/{thread_id}/stream/events": {
+      "post": {
+        "tags": ["Streaming"],
+        "summary": "Protocol v2 Event Stream (SSE)",
+        "description": "Open a connection-scoped SSE event stream for a thread. The request body is a `ProtocolEventStreamRequest` carrying channel and namespace filters; the server replies with `Content-Type: text/event-stream` and pushes matching `ProtocolEvent` frames for the lifetime of the connection. Closing the connection unsubscribes — no state is persisted server-side.\n\nReconnect: clients pass the last `seq` they received as `since` in the body. Buffered events with `seq > since` are replayed before the stream goes live. The endpoint is POST-only, so browser-native `EventSource` auto-resume (`Last-Event-ID`) does not apply — clients drive resume explicitly via the body.",
+        "operationId": "protocol_thread_events_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Thread Id",
+              "description": "The ID of the thread to observe."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtocolEventStreamRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "Stream of `ProtocolEvent` frames. Each SSE frame uses the event's `method` as the `event:` field and a JSON-encoded `ProtocolEvent` as the `data:` field; `id:` is set to the event's `seq`.\n\n**Example frame:**\n\nid: 42\n\nevent: messages\n\ndata: {\"type\":\"event\",\"event_id\":\"42\",\"seq\":42,\"method\":\"messages\",\"params\":{\"namespace\":[],\"timestamp\":1700000000000,\"data\":{...}}}"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/threads/{thread_id}/runs": {
       "get": {
         "tags": ["Thread Runs"],
@@ -2886,6 +2944,56 @@
       }
     },
     "/runs/crons/{cron_id}": {
+      "get": {
+        "tags": ["Crons"],
+        "summary": "Get Cron",
+        "description": "Get a cron by ID.",
+        "operationId": "get_cron_runs_crons__cron_id__get",
+        "parameters": [
+          {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cron Id"
+            },
+            "name": "cron_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cron"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "tags": ["Crons"],
         "summary": "Update Cron",
@@ -3882,6 +3990,62 @@
           }
         }
       }
+    },
+    "/threads/{thread_id}/commands": {
+      "post": {
+        "tags": ["Streaming"],
+        "summary": "Protocol v2 Command",
+        "description": "Send a single protocol command scoped to a thread. The request body is a `ProtocolCommand` envelope with a `method` (e.g. `run.start`, `input.respond`, `agent.getTree`) and method-specific `params`. The response is either a `ProtocolSuccess` (with method-specific `result`) or a `ProtocolError`.\n\nCommands that create runs (`run.start`, `input.respond`) leave the run executing in the background on the worker queue. Event streaming for that run is observed via a concurrent `POST /threads/{thread_id}/stream/events` connection.\n\nWebSocket clients use the same command envelope in-band on `/threads/{thread_id}/stream/events` and additionally have access to `subscription.subscribe` / `subscription.unsubscribe` over the same connection.",
+        "operationId": "protocol_thread_command_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Thread Id",
+              "description": "The ID of the thread the command applies to."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtocolCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Protocol response — either `ProtocolSuccess` or `ProtocolError`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/ProtocolSuccess" },
+                    { "$ref": "#/components/schemas/ProtocolError" }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed command envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtocolError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4569,6 +4733,11 @@
             "title": "Enabled",
             "description": "Filter by enabled status. If not provided, returns both enabled and disabled crons."
           },
+          "metadata": {
+            "type": "object",
+            "title": "Metadata",
+            "description": "Metadata to filter by. Exact match filter for each KV pair."
+          },
           "limit": {
             "type": "integer",
             "title": "Limit",
@@ -4649,6 +4818,11 @@
             "format": "uuid",
             "title": "Thread Id",
             "description": "The thread ID to search for."
+          },
+          "metadata": {
+            "type": "object",
+            "title": "Metadata",
+            "description": "Metadata to filter by. Exact match filter for each KV pair."
           }
         },
         "type": "object",
@@ -6480,6 +6654,194 @@
           }
         ],
         "title": "RunCreateStreamingStateless"
+      },
+      "ProtocolChannel": {
+        "type": "string",
+        "title": "Protocol Channel",
+        "description": "Subscribable event channel. One of the eight fixed channels or a user-defined `custom:<name>` namespaced custom channel emitted by a stream transformer. `debug` and `checkpoints` were removed from the protocol in `@langchain/protocol@0.0.10` — task-level debug info now flows on the `tasks` channel, and checkpoint pointers ride on `values` events as an attached `checkpoint` envelope.",
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "values",
+              "updates",
+              "messages",
+              "tools",
+              "lifecycle",
+              "input",
+              "tasks",
+              "custom"
+            ]
+          },
+          {
+            "type": "string",
+            "pattern": "^custom:.+$",
+            "description": "User-defined namespaced custom channel."
+          }
+        ]
+      },
+      "ProtocolNamespace": {
+        "type": "array",
+        "items": { "type": "string" },
+        "title": "Protocol Namespace",
+        "description": "Hierarchical path identifying a position in the agent tree. Empty array denotes the root agent; each segment names a nested subgraph."
+      },
+      "ProtocolEventStreamRequest": {
+        "type": "object",
+        "title": "ProtocolEventStreamRequest",
+        "description": "Body of `POST /threads/{thread_id}/stream/events`. Filters the connection-scoped SSE stream.",
+        "required": ["channels"],
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ProtocolChannel" },
+            "minItems": 1,
+            "description": "Channels to subscribe to for the lifetime of this connection."
+          },
+          "namespaces": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ProtocolNamespace" },
+            "description": "Prefix-match filter. An event matches if its namespace starts with any of these prefixes. Omit for all namespaces."
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Max depth below the namespace prefix. Omit for unbounded depth."
+          },
+          "since": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Replay events with `seq` greater than this value before streaming live events."
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProtocolCommand": {
+        "type": "object",
+        "title": "ProtocolCommand",
+        "description": "A client → server command envelope. Known methods: `run.start`, `input.respond`, `subscription.subscribe` (WS only), `subscription.unsubscribe` (WS only), `agent.getTree`.",
+        "required": ["id", "method"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Client-assigned command id; echoed in the response."
+          },
+          "method": {
+            "type": "string",
+            "description": "Command method name (e.g. `run.start`)."
+          },
+          "params": {
+            "type": "object",
+            "description": "Method-specific parameters. See the CDDL spec for per-method shapes.",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProtocolResponseMeta": {
+        "type": "object",
+        "title": "ProtocolResponseMeta",
+        "description": "Optional metadata attached to command responses.",
+        "properties": {
+          "applied_through_seq": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Highest event `seq` observed on the session when this response was generated."
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProtocolSuccess": {
+        "type": "object",
+        "title": "ProtocolSuccess",
+        "description": "Successful command response.",
+        "required": ["type", "id", "result"],
+        "properties": {
+          "type": { "type": "string", "const": "success" },
+          "id": { "type": "integer", "minimum": 0 },
+          "result": {
+            "type": "object",
+            "description": "Method-specific result payload.",
+            "additionalProperties": true
+          },
+          "meta": { "$ref": "#/components/schemas/ProtocolResponseMeta" }
+        },
+        "additionalProperties": true
+      },
+      "ProtocolError": {
+        "type": "object",
+        "title": "ProtocolError",
+        "description": "Error response for a command.",
+        "required": ["type", "id", "error", "message"],
+        "properties": {
+          "type": { "type": "string", "const": "error" },
+          "id": {
+            "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }],
+            "description": "The `id` of the offending command, or null if the envelope was unparseable."
+          },
+          "error": {
+            "type": "string",
+            "enum": [
+              "invalid_argument",
+              "unknown_command",
+              "unknown_error",
+              "no_such_run",
+              "no_such_subscription",
+              "no_such_namespace",
+              "no_such_interrupt",
+              "no_such_checkpoint",
+              "permission_denied",
+              "not_supported"
+            ]
+          },
+          "message": { "type": "string" },
+          "stacktrace": { "type": "string" },
+          "meta": { "$ref": "#/components/schemas/ProtocolResponseMeta" }
+        },
+        "additionalProperties": true
+      },
+      "ProtocolEvent": {
+        "type": "object",
+        "title": "ProtocolEvent",
+        "description": "A server → client event. Sent as JSON over WebSocket, or as the `data:` field of an SSE frame (with `event:` set to `method` and `id:` set to `seq`).",
+        "required": ["type", "method", "params"],
+        "properties": {
+          "type": { "type": "string", "const": "event" },
+          "event_id": {
+            "type": "string",
+            "description": "Unique ID for reconnection (mirrored to SSE `id:`)."
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Monotonic per-session sequence number for ordering and replay."
+          },
+          "method": {
+            "type": "string",
+            "description": "Channel method name (e.g. `messages`, `tools`, `lifecycle`, `custom:my_channel`)."
+          },
+          "params": {
+            "type": "object",
+            "required": ["namespace", "timestamp", "data"],
+            "properties": {
+              "namespace": { "$ref": "#/components/schemas/ProtocolNamespace" },
+              "timestamp": {
+                "type": "integer",
+                "description": "Wall-clock milliseconds since Unix epoch. Use `seq` for ordering."
+              },
+              "data": {
+                "description": "Channel-specific payload. See the CDDL spec for per-channel shapes."
+              },
+              "node": {
+                "type": "string",
+                "description": "Graph node that produced this event (messages, tools)."
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
       }
     },
     "responses": {

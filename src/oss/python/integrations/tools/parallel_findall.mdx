@@ -1,0 +1,204 @@
+---
+title: "Parallel FindAll integration"
+description: "Integrate with the ParallelFindAllTool tool using LangChain Python."
+---
+
+>[Parallel](https://platform.parallel.ai/) is a real-time web search and content extraction platform built for LLMs and AI applications.
+
+`ParallelFindAllTool` calls Parallel's [FindAll API](https://docs.parallel.ai/findall-api/findall-quickstart) for entity discovery. Given a natural-language objective and a list of boolean match conditions, it returns ranked candidates that satisfy every condition.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Package latest |
+| :--- | :--- | :---: | :---: | :---: |
+| @[`ParallelFindAllTool`] | @[`langchain-parallel`] | ❌ | ❌ | <a href="https://pypi.org/project/langchain-parallel/" target="_blank"><img src="https://img.shields.io/pypi/v/langchain-parallel?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
+
+## Setup
+
+The integration lives in the `langchain-parallel` package.
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-parallel
+    ```
+    ```bash uv
+    uv add langchain-parallel
+    ```
+</CodeGroup>
+
+### Credentials
+
+Head to [Parallel](https://platform.parallel.ai) to sign up and generate an API key. Set `PARALLEL_API_KEY` in your environment:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("PARALLEL_API_KEY"):
+    os.environ["PARALLEL_API_KEY"] = getpass.getpass("Parallel API key:\n")
+```
+
+## Instantiation
+
+`generator` is a tool-level setting. Use `"preview"` (free, capped at 10 candidates) for rapid iteration; switch to `"base"` (the default), `"core"`, or `"pro"` for higher-quality runs.
+
+```python
+from langchain_parallel import ParallelFindAllTool
+
+tool = ParallelFindAllTool(generator="preview")
+```
+
+## Invocation
+
+### Quick discovery (preview generator)
+
+The `preview` generator returns in seconds and is capped at 10 candidates. `match_limit` is required; for `preview` it must be in `[5, 10]`.
+
+```python
+from langchain_parallel import FindAllMatchCondition
+
+result = await tool.ainvoke({
+    "objective": "Pure-play public LLM API providers",
+    "entity_type": "company",
+    "match_conditions": [
+        FindAllMatchCondition(
+            name="public_us",
+            description="Company is publicly traded on a US exchange",
+        ),
+        FindAllMatchCondition(
+            name="llm_api_revenue",
+            description="Primary revenue is selling LLM inference via API",
+        ),
+    ],
+    "match_limit": 5,
+})
+
+for c in result["candidates"]:
+    print(c["name"], "—", c["url"])
+```
+
+```text
+Anthropic — https://www.anthropic.com
+OpenAI — https://www.openai.com
+...
+```
+
+### Higher-quality runs
+
+Switch to `"base"`, `"core"`, or `"pro"` for `match_limit` up to 1000. These take minutes; the tool polls until the run hits a terminal status (`completed`, `cancelled`, or `failed`).
+
+```python
+deep = ParallelFindAllTool(generator="core")
+
+result = await deep.ainvoke({
+    "objective": "Independent solar-installer companies based in the EU",
+    "entity_type": "company",
+    "match_conditions": [
+        FindAllMatchCondition(
+            name="eu_hq",
+            description="Headquartered in an EU country",
+        ),
+        FindAllMatchCondition(
+            name="residential_solar_pv",
+            description="Primarily installs residential solar PV",
+        ),
+    ],
+    "match_limit": 50,
+})
+```
+
+### Excluding seen candidates
+
+Pass `exclude_list=[FindAllExcludeEntry(name=..., url=...)]` to drop candidates you've already processed. Both `name` and `url` are required.
+
+```python
+from langchain_parallel import FindAllExcludeEntry
+
+result = await tool.ainvoke({
+    "objective": "Pure-play public LLM API providers",
+    "entity_type": "company",
+    "match_conditions": [
+        FindAllMatchCondition(
+            name="llm_api_revenue",
+            description="Primary revenue is selling LLM inference via API",
+        ),
+    ],
+    "match_limit": 5,
+    "exclude_list": [
+        FindAllExcludeEntry(name="OpenAI", url="https://www.openai.com"),
+        FindAllExcludeEntry(name="Anthropic", url="https://www.anthropic.com"),
+    ],
+})
+```
+
+### Cancellation
+
+`cancel()` aborts an in-flight run by id. The id is returned to the caller that started the run; if you started it with `tool.ainvoke(...)` in a long-running task, capture `findall_id` from the run before awaiting completion.
+
+```python
+# from another task / handler:
+tool.cancel(findall_id)        # sync
+await tool.acancel(findall_id) # async
+```
+
+### Parameters
+
+#### Required
+
+- `objective`: natural-language description of what to find.
+- `entity_type`: short noun describing the candidate class (`"company"`, `"researcher"`, `"product"`, etc.).
+- `match_conditions`: list of `FindAllMatchCondition(name=..., description=...)`. Both fields are required on each.
+- `match_limit`: integer in `[5, 1000]`. The `preview` generator further caps this at 10.
+
+#### Optional
+
+- `exclude_list`: list of `FindAllExcludeEntry(name=..., url=...)` to skip.
+- `webhook`: `FindAllWebhook(url=..., event_types=[...])` to receive run/candidate events.
+- `metadata`: free-form metadata persisted on the run.
+- `timeout`: polling timeout in seconds (default 600).
+
+## Chaining
+
+Bind the tool to any tool-calling chat model and drive an agent with [`create_agent`](/oss/langchain/agents):
+
+```python
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+llm = init_chat_model(model="claude-haiku-4-5", model_provider="anthropic")
+agent = create_agent(model=llm, tools=[tool])
+
+agent.invoke({"messages": [("human", "Find me a few independent EU solar installers.")]})
+```
+
+## Response format
+
+```python
+{
+    "candidates": [
+        {
+            "candidate_id": "cand_abc",
+            "name": "Acme Solar",
+            "url": "https://acmesolar.example",
+            "description": "...",
+            "match_status": "matched",  # or "generated" / "unmatched"
+            "output": {
+                "<condition_name>": {
+                    "type": "match_condition",
+                    "value": True,
+                    "is_matched": True,
+                },
+            },
+            "basis": [...],  # citations + reasoning per output field
+        },
+    ],
+    "run": {...},          # status info
+    "last_event_id": "...",
+}
+```
+
+## API reference
+
+For detailed documentation, head to the @[`ParallelFindAllTool`] API reference or the [Parallel FindAll API guides](https://docs.parallel.ai/findall-api/findall-quickstart).

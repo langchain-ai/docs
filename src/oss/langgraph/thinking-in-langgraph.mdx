@@ -3,6 +3,8 @@ title: Thinking in LangGraph
 description: Learn how to think about building agents with LangGraph
 ---
 
+import LanggraphThinkingHitlV2Py from '/snippets/code-samples/langgraph-thinking-hitl-v2-py.mdx';
+
 When you build an agent with LangGraph, you will first break it apart into discrete steps called **nodes**. Then, you will describe the different decisions and transitions from each of your nodes. Finally, you connect nodes together through a shared **state** that each node can read from and write to.
 
 In this walkthrough, we'll guide you through the thought process of building a customer support email agent with LangGraph.
@@ -55,7 +57,7 @@ flowchart TD
     H --> J[END]
     I --> J[END]
 
-    classDef process fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#1E3A8A
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
     class A,B,C,D,E,F,G,H,I,J process
 ```
 
@@ -295,13 +297,16 @@ Different errors need different handling strategies:
 | Transient errors (network issues, rate limits) | System (automatic) | Retry policy | Temporary failures that usually resolve on retry |
 | LLM-recoverable errors (tool failures, parsing issues) | LLM | Store error in state and loop back | LLM can see the error and adjust its approach |
 | User-fixable errors (missing information, unclear instructions) | Human | Pause with `interrupt()` | Need user input to proceed |
+| Recoverable failure after retries | Developer (declarative) | `error_handler` | Run a compensation/recovery branch after retry exhaustion |
 | Unexpected errors | Developer | Let them bubble up | Unknown issues that need debugging |
 
 <Tabs>
     <Tab title="Transient errors" icon="rotate">
-        Add a retry policy to automatically retry network issues and rate limits:
+        Add a retry policy to automatically retry network issues and rate limits.
 
     :::python
+
+    Combine with `timeout=` to cap each attempt. See [Fault tolerance](/oss/langgraph/fault-tolerance) for the full lifecycle.
 
     ```python
     from langgraph.types import RetryPolicy
@@ -464,6 +469,39 @@ Different errors need different handling strategies:
         throw error;  // Surface unexpected errors
       }
     }
+    ```
+
+    :::
+
+    </Tab>
+
+    <Tab title="Saga / compensation" icon="arrows-exchange">
+        After retries are exhausted, run a recovery function that updates state and routes to a compensation branch.
+
+    :::python
+
+    See [Fault tolerance](/oss/langgraph/fault-tolerance#error-handling) for the full pattern.
+
+    <Note>
+    `error_handler` requires `langgraph>=1.2`.
+    </Note>
+
+    ```python
+    from langgraph.errors import NodeError
+    from langgraph.types import Command, RetryPolicy
+
+    def payment_error_handler(state: State, error: NodeError) -> Command:
+        return Command(
+            update={"status": f"compensated: {error.error}"},
+            goto="finalize",
+        )
+
+    workflow.add_node(
+        "charge_payment",
+        charge_payment,
+        retry_policy=RetryPolicy(max_attempts=3, retry_on=ConnectionError),
+        error_handler=payment_error_handler,
+    )
     ```
 
     :::
@@ -967,35 +1005,7 @@ Let's run our agent with an urgent billing issue that needs human review:
 
 :::python
 
-```python
-# Test with an urgent billing issue
-initial_state = {
-    "email_content": "I was charged twice for my subscription! This is urgent!",
-    "sender_email": "customer@example.com",
-    "email_id": "email_123",
-    "messages": []
-}
-
-# Run with a thread_id for persistence
-config = {"configurable": {"thread_id": "customer_123"}}
-result = app.invoke(initial_state, config)
-# The graph will pause at human_review
-print(f"human review interrupt:{result['__interrupt__']}")
-
-# When ready, provide human input to resume
-from langgraph.types import Command
-
-human_response = Command(
-    resume={
-        "approved": True,
-        "edited_response": "We sincerely apologize for the double charge. I've initiated an immediate refund..."
-    }
-)
-
-# Resume execution
-final_result = app.invoke(human_response, config)
-print(f"Email sent successfully!")
-```
+<LanggraphThinkingHitlV2Py />
 
 :::
 
@@ -1082,7 +1092,7 @@ Or why separate Doc Search from Draft Reply?
 
 The answer involves trade-offs between resilience and observability.
 
-**The resilience consideration:** LangGraph's [durable execution](/oss/langgraph/durable-execution) creates checkpoints at node boundaries. When a workflow resumes after an interruption or failure, it starts from the beginning of the node where execution stopped. Smaller nodes mean more frequent checkpoints, which means less work to repeat if something goes wrong. If you combine multiple operations into one large node, a failure near the end means re-executing everything from the start of that node.
+**The resilience consideration:** LangGraph's [persistence layer](/oss/langgraph/persistence) creates checkpoints at node boundaries. When a workflow resumes after an interruption or failure, it starts from the beginning of the node where execution stopped. Smaller nodes mean more frequent checkpoints, which means less work to repeat if something goes wrong. If you combine multiple operations into one large node, a failure near the end means re-executing everything from the start of that node.
 
 Why we chose this breakdown for the email agent:
 
@@ -1098,7 +1108,7 @@ A different valid approach: You could combine `Read Email` and `Classify Intent`
 
 Application-level concerns: The caching discussion in Step 2 (whether to cache search results) is an application-level decision, not a LangGraph framework feature. You implement caching within your node functions based on your specific requirements—LangGraph doesn't prescribe this.
 
-Performance considerations: More nodes doesn't mean slower execution. LangGraph writes checkpoints in the background by default ([async durability mode](/oss/langgraph/durable-execution#durability-modes)), so your graph continues running without waiting for checkpoints to complete. This means you get frequent checkpoints with minimal performance impact. You can adjust this behavior if needed—use `"exit"` mode to checkpoint only at completion, or `"sync"` mode to block execution until each checkpoint is written.
+Performance considerations: More nodes doesn't mean slower execution. LangGraph writes checkpoints in the background by default ([async durability mode](/oss/langgraph/checkpointers#durability-modes)), so your graph continues running without waiting for checkpoints to complete. This means you get frequent checkpoints with minimal performance impact. You can adjust this behavior if needed—use `"exit"` mode to checkpoint only at completion, or `"sync"` mode to block execution until each checkpoint is written.
 </Accordion>
 
 ### Where to go from here

@@ -57,7 +57,7 @@ if not os.getenv("OPENROUTER_API_KEY"):
     os.environ["OPENROUTER_API_KEY"] = getpass.getpass("Enter your OpenRouter API key: ")
 ```
 
-To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/observability) API key:
 
 ```python
 os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
@@ -105,15 +105,17 @@ ai_msg.content
 ## Streaming
 
 ```python
-for chunk in model.stream("Write a short poem about the sea."):
-    print(chunk.text, end="", flush=True)
+stream = model.stream_events("Write a short poem about the sea.", version="v3")
+for token in stream.text:
+    print(token, end="", flush=True)
 ```
 
 Async streaming is also supported:
 
 ```python
-async for chunk in model.astream("Write a short poem about the sea."):
-    print(chunk.text, end="", flush=True)
+stream = await model.astream_events("Write a short poem about the sea.", version="v3")
+async for token in stream.text:
+    print(token, end="", flush=True)
 ```
 
 ---
@@ -189,7 +191,7 @@ Use `with_structured_output` to generate a structured model response. Specify `m
 from langchain_openrouter import ChatOpenRouter
 from pydantic import BaseModel, Field
 
-model = ChatOpenRouter(model="openai/gpt-5.4")
+model = ChatOpenRouter(model="openai/gpt-5.5")
 
 class Movie(BaseModel):
     """A movie with details."""
@@ -211,7 +213,7 @@ Movie(title='Inception', year=2010, director='Christopher Nolan', rating=8.8)
 
 <Accordion title="Agent response format">
 
-Specify `response_format` with [`ProviderStrategy`](/oss/langchain/agents#providerstrategy) to engage structured output when generating the agent's final response.
+Specify `response_format` with [`ProviderStrategy`](/oss/langchain/structured-output) to engage structured output when generating the agent's final response.
 
 ```python
 from langchain.agents import create_agent
@@ -227,7 +229,7 @@ def weather_tool(location: str) -> str:
     return "Sunny and 75 degrees F."
 
 agent = create_agent(
-    model="openrouter:openai/gpt-5.4",
+    model="openrouter:openai/gpt-5.5",
     tools=[weather_tool],
     response_format=ProviderStrategy(Weather),  # [!code highlight]
 )
@@ -566,13 +568,11 @@ ai_msg.usage_metadata
     Without `cache_control` on message content blocks, the provider will not cache the prompt and these fields will not appear.
 </Note>
 
-When streaming, aggregate token usage from the final chunk:
+When streaming, access token usage from the full output:
 
 ```python
-stream = model.stream("Tell me a joke.")
-full = next(stream)
-for chunk in stream:
-    full += chunk
+stream = model.stream_events("Tell me a joke.", version="v3")
+full = stream.output
 full.usage_metadata
 ```
 
@@ -726,6 +726,47 @@ model = ChatOpenRouter(
     app_title="My App",            # or OPENROUTER_APP_TITLE env var
 )
 ```
+
+---
+
+## Observability and tracing
+
+OpenRouter can broadcast request data to configured observability destinations. `ChatOpenRouter` exposes two related parameters: `session_id` for grouping related requests under a single logical workflow, and `trace` for per-request trace metadata. See the [OpenRouter broadcast docs](https://openrouter.ai/docs/guides/features/broadcast/overview) for details.
+
+### Grouping requests with `session_id`
+
+Pass a `session_id` to associate multiple requests with the same workflow (a conversation, an agent run, a batch job, a CI run, and so on). Maximum 256 characters.
+
+```python
+model = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4.5",
+    session_id="workflow-abc-123",   # or OPENROUTER_SESSION_ID env var
+)
+```
+
+The `OPENROUTER_SESSION_ID` environment variable is read at instantiation when no explicit `session_id` is provided, which lets a process tag every request without threading the value through application code.
+
+You can also override the value per call:
+
+```python
+model.invoke("Summarize the doc", session_id="workflow-abc-123-step-1")
+```
+
+### Adding trace metadata with `trace`
+
+Pass `trace` to attach per-request metadata that OpenRouter forwards to broadcast destinations. Recognized keys are `trace_id`, `trace_name`, `span_name`, `generation_name`, and `parent_span_id`; additional keys are passed through as custom metadata.
+
+```python
+model = ChatOpenRouter(
+    model="anthropic/claude-sonnet-4.5",
+    trace={
+        "trace_id": "trace-789",
+        "span_name": "summarize",
+    },
+)
+```
+
+`session_id` and `trace` are independent — `session_id` groups requests into a logical workflow on the OpenRouter side, while `trace` annotates the individual request.
 
 ---
 
