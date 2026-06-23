@@ -1,0 +1,46 @@
+---
+title: LangSmith Engine on self-hosted
+sidebarTitle: Self-hosted
+description: How LangSmith Engine runs in a self-hosted deployment, how it reaches managed inference over a private link, and what that means for your data.
+---
+
+LangSmith Engine is an agentic feature within LangSmith that monitors your production traces, clusters them into issues, diagnoses each one against your source code, proposes a fix as a PR, and identifies ground truth evals to be added to your datasets.
+
+To do that, Engine works with three kinds of data. Most agentic developer tools use two: your source code, and the model calls they make to reason about it. Engine adds a third: production traces.
+
+- **Code:** your agent's source, which Engine reads to diagnose issues and propose fixes
+- **Traces:** runtime data from your agents, which can include user messages, tool outputs, and PII
+- **Model:** the LLM calls Engine makes to run diagnosis, generate fixes, and write evaluators
+
+In a self-hosted deployment, Engine's orchestration runs inside your VPC as part of LangSmith: reading traces, reading code, and running the detect, fix, and verify loop. The models it calls are the exception: rather than run them locally, Engine reaches a LangChain-managed, zero-data-retention inference service over a private network connection. Traces are the sensitive data type, and the architecture below is built so that trace data never leaves your environment.
+
+## How inference works
+
+Engine's inference is delivered through a LangChain-managed service (LangSmith Intelligence). It is a single-purpose model router that does one thing: serve inference for Engine. It is fully isolated from LangSmith and does not trace, store, or persist any customer data.
+
+The flow:
+
+- Your self-hosted deployment connects to LangSmith Intelligence over a private link (PrivateLink on AWS and Azure, Private Service Connect on GCP)
+- LangSmith Intelligence runs models hosted within your cloud provider's environment — Bedrock, Vertex, or Foundry — so no data leaves your CSP or transits the public internet
+- The service records only request metadata for billing, plus telemetry needed to keep the service reliable
+
+Your traces, code, and model outputs stay in your environment. The only thing crossing the private link is the inference request itself.
+
+{/* TODO: add architecture graphics for Azure / GCP / Bedrock */}
+
+## Model selection and quality
+
+A lot of what makes Engine effective is model selection under the hood. Engine uses different models, tuned differently, for each step of its work — clustering issues, diagnosing root cause against your code, generating a fix, and writing the evaluator that verifies it. We tune these for both quality and token efficiency, upgrade them as better models ship, and are developing our own models for Engine over time.
+
+Managed inference is what makes that possible. A bring-your-own-key setup would tie Engine's behavior to whichever models you have configured, and the tuning and efficiency we've invested in would vary from customer to customer. In our experience the concern behind a BYOK request is usually data control rather than the model itself, and that concern is fully addressed here: your data stays in your VPC, and Engine only sends inference requests out over private link.
+
+## What this means for your data
+
+- **Zero data retention** — the inference service does not store customer data, and we do not use any model that doesn't support ZDR
+- **No training** — we do not train on your data
+- **Private networks only** — all data transit happens over private link, never the public internet
+- **In-CSP** — models run inside your cloud provider's environment, so data never leaves it
+
+## What to expect in review
+
+Bringing Engine into a self-hosted environment involves a subprocessor relationship, a DPA, and an infosec review of how inference is handled. If your team already uses coding agents, this will be familiar; the main addition is the trace data Engine processes. The architecture is built for that review: zero data retention, no training on your data, and all transit on private networks inside your CSP. We can walk your security team through it directly.
