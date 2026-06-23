@@ -2,9 +2,9 @@
 """Assemble weekly LangSmith Cloud + Fleet changelog entries from fragment files.
 
 Reads per-PR changelog fragments from ``langchainplus/.changelog/`` (see that
-directory's ``README.md`` for the schema), filters to the requested surfaces and
-to entries that are ready to publish, groups them by the category map, and
-renders a Mintlify ``<Update>`` block ready to paste into
+directory's ``README.md`` for the schema), keeps the ones ready to publish,
+groups them by the category map (which also routes each component to Cloud or
+Fleet), and renders a Mintlify ``<Update>`` block ready to paste into
 ``src/langsmith/changelog.mdx``.
 
 The weekly agent (see ``.claude/skills/changelog-weekly``) runs this, reviews the
@@ -51,7 +51,6 @@ DEFAULT_FRAGMENTS_DIR = _REPO_ROOT.parent / "langchainplus" / ".changelog"
 EPPO_API_BASE = "https://eppo.cloud/api/v1"
 EPPO_TIMEOUT_SECONDS = 15
 
-VALID_SURFACES = {"cloud", "fleet", "self-hosted"}
 
 
 # --- Fragment model --------------------------------------------------------
@@ -63,9 +62,9 @@ class Fragment:
     title: str
     body: str
     components: list[str]
-    surfaces: list[str]
     flag: str | None
     status: str
+    self_hosted: bool = False
     docs_link: str = ""
     pr: str = ""
     errors: list[str] = field(default_factory=list)
@@ -109,7 +108,7 @@ def load_fragments(fragments_dir: Path) -> list[Fragment]:
 
 def _invalid(path: Path, message: str) -> Fragment:
     return Fragment(
-        path=path, title="", body="", components=[], surfaces=[], flag=None,
+        path=path, title="", body="", components=[], flag=None,
         status="", errors=[message],
     )
 
@@ -120,7 +119,7 @@ def _build_fragment(path: Path, data: dict) -> Fragment:
         title=str(data.get("title") or "").strip(),
         body=str(data.get("body") or "").strip(),
         components=list(data.get("components") or []),
-        surfaces=list(data.get("surfaces") or []),
+        self_hosted=bool(data.get("self_hosted")),
         flag=(data.get("flag") or None),
         status=str(data.get("status") or "").strip().lower(),
         docs_link=str(data.get("docs_link") or "").strip(),
@@ -132,9 +131,6 @@ def _build_fragment(path: Path, data: dict) -> Fragment:
         frag.errors.append("missing `body`")
     if not frag.components:
         frag.errors.append("missing `components`")
-    bad_surfaces = set(frag.surfaces) - VALID_SURFACES
-    if bad_surfaces:
-        frag.errors.append(f"invalid surfaces: {sorted(bad_surfaces)}")
     if frag.status not in {"ready", "held"}:
         frag.errors.append(f"invalid status: {frag.status!r} (want ready|held)")
     if frag.status == "held" and not frag.flag:
@@ -342,7 +338,6 @@ def default_week(today: dt.date) -> tuple[str, str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--fragments-dir", type=Path, default=DEFAULT_FRAGMENTS_DIR)
-    parser.add_argument("--surfaces", default="cloud,fleet", help="comma-separated surfaces to include")
     parser.add_argument("--week-label", default=None, help='e.g. "June 15-19, 2026"')
     parser.add_argument("--rss-date", default=None, help="ISO date for the rss title, e.g. 2026-06-15")
     parser.add_argument("--check-flag", default=None, help="debug: print Eppo JSON + rollout verdict for a flag key")
@@ -367,7 +362,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nis_fully_rolled_out -> {is_fully_rolled_out(flag)}", file=sys.stderr)
         return 0
 
-    want_surfaces = {s.strip() for s in args.surfaces.split(",") if s.strip()}
     fragments = load_fragments(args.fragments_dir)
     category_map = load_category_map(args.fragments_dir)
 
@@ -385,8 +379,6 @@ def main(argv: list[str] | None = None) -> int:
 
     ready, held, errored, promoted = [], [], [], []
     for frag in valid:
-        if not (set(frag.surfaces) & want_surfaces):
-            continue
         status = effective_status(frag, flag_index, bool(token))
         if status == "ready":
             ready.append(frag)
@@ -423,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
     if ready:
         print(render_update_block(ready, category_map, week_label, rss_date))
     else:
-        print("# No ready fragments for surfaces: " + ", ".join(sorted(want_surfaces)), file=sys.stderr)
+        print("# No ready fragments to render.", file=sys.stderr)
     return 0
 
 
