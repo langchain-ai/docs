@@ -24,7 +24,8 @@ jobs:
     # These tests require provider API keys for some samples, so skip on forks.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Scheduled runs execute all ~176 samples sequentially and need more time than PR runs.
+    timeout-minutes: ${{ github.event_name == 'schedule' && 90 || 15 }}
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -141,11 +142,12 @@ jobs:
             make test-code-samples FILES="$FILES"
           fi
 
-  # Creates a Linear issue when the weekly scheduled test fails.
+  # Creates a Linear issue when the weekly scheduled test fails or times out.
   # Required setup: Add LINEAR_API_KEY (repo secret) and LINEAR_TEAM_KEY (repo variable)
   create-linear-ticket:
     needs: test-code-samples
-    if: failure() && github.event_name == 'schedule'
+    # Timeouts mark the job as cancelled, not failure, so check both outcomes.
+    if: (failure() || cancelled()) && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Create Linear issue
@@ -153,9 +155,14 @@ jobs:
         with:
           linear-api-key: ${{ secrets.LINEAR_API_KEY }}
           linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
-          linear-issue-title: "Weekly code samples test failed"
+          linear-issue-title: >-
+            ${{ needs.test-code-samples.result == 'cancelled'
+              && 'Weekly code samples test timed out'
+              || 'Weekly code samples test failed' }}
           linear-issue-description: |
-            The scheduled weekly test of all code samples in `src/code-samples/` failed.
+            The scheduled weekly test of all code samples in `src/code-samples/` did not complete successfully.
+
+            **Outcome:** ${{ needs.test-code-samples.result == 'cancelled' && 'Timed out before all samples finished. Consider increasing the job timeout or optimizing slow samples.' || 'One or more code samples failed.' }}
 
             **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
