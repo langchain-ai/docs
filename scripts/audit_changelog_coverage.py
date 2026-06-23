@@ -135,6 +135,26 @@ def covered_pr_numbers(fragments_dir: Path) -> set[int]:
     return covered
 
 
+def pr_added_fragment(pr_number: int) -> bool:
+    """True if the PR's own diff adds or touches a .changelog/*.yaml fragment.
+
+    This is the primary (going-forward) coverage signal: a fragment authored in
+    the same PR as the change needs no `pr:` field. The `pr:` field is only the
+    fallback for fragments added separately from their source PR (e.g. backfills).
+    """
+    argv = ["gh", "pr", "view", str(pr_number), "--repo", REPO, "--json", "files"]
+    result = subprocess.run(
+        argv, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS, check=False
+    )
+    if result.returncode != 0:
+        return False
+    files = json.loads(result.stdout or "{}").get("files", [])
+    return any(
+        f.get("path", "").startswith(".changelog/") and f.get("path", "").endswith(".yaml")
+        for f in files
+    )
+
+
 def load_ignore(path: Path | None) -> set[int]:
     if not path:
         return set()
@@ -163,6 +183,12 @@ def main(argv: list[str] | None = None) -> int:
     ignored = load_ignore(args.ignore_file)
 
     candidates = [p for p in prs if is_user_facing(p["title"])]
+    # Going-forward coverage: a PR that added a fragment in its own diff is
+    # covered without a `pr:` field. Only check candidates not already covered
+    # (by a fragment's pr: field) or dispositioned, to limit gh calls.
+    for p in candidates:
+        if p["number"] not in covered and p["number"] not in ignored and pr_added_fragment(p["number"]):
+            covered.add(p["number"])
     uncovered = [
         p for p in candidates
         if p["number"] not in covered and p["number"] not in ignored
