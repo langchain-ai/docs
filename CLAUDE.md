@@ -108,7 +108,7 @@ Flat groups (no tabs):
 | Tab | Directory | Groups |
 |-----|-----------|--------|
 | Deep Agents | `src/oss/deepagents/` | Get started, Deployment, Core capabilities, Frontend, Protocols, Code |
-| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend, Advanced usage, Agent development, Deploy with LangSmith |
+| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend, Advanced usage, Agent development, Production |
 | LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs |
 | Integrations* | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Popular Providers, Integrations by component (TS: "General integrations, RAG integrations") |
 | Learn* | `src/oss/` (various) | Tutorials, Conceptual overviews, Additional resources (TS adds: "LangChain Academy") |
