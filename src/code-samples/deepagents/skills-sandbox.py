@@ -3,9 +3,9 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from daytona import Daytona
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StoreBackend
+from deepagents.backends.langsmith import LangSmithSandbox
 from deepagents.backends.utils import create_file_data
 from langchain.agents.middleware import AgentMiddleware, AgentState
 
@@ -13,9 +13,9 @@ from langchain.agents.middleware import AgentMiddleware, AgentState
 from langchain.messages import HumanMessage
 
 # :remove-end:
-from langchain_daytona import DaytonaSandbox
 from langgraph.runtime import Runtime
 from langgraph.store.memory import InMemoryStore
+from langsmith.sandbox import SandboxClient
 
 # Identical skill bundles for every user: one shared store namespace.
 SKILLS_SHARED_NAMESPACE = ("skills", "builtin")
@@ -64,9 +64,9 @@ async def main() -> None:
     store = InMemoryStore()
     await seed_skill_store(store)
 
-    daytona = Daytona()
-    sandbox = daytona.create()
-    sandbox_backend = DaytonaSandbox(sandbox=sandbox)
+    client = SandboxClient()
+    ls_sandbox = client.create_sandbox()
+    sandbox_backend = LangSmithSandbox(sandbox=ls_sandbox)
 
     backend = CompositeBackend(
         default=sandbox_backend,
@@ -107,7 +107,7 @@ async def main() -> None:
             print(getattr(messages[-1], "content", ""))
         # :remove-end:
     finally:
-        sandbox.stop()
+        client.delete_sandbox(ls_sandbox.name)
 
 
 if __name__ == "__main__":

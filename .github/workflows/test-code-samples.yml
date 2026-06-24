@@ -24,7 +24,8 @@ jobs:
     # These tests require provider API keys for some samples, so skip on forks.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Scheduled and manual runs test all samples; PR runs may touch many files in large refactors.
+    timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 90 || 60 }}
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -47,9 +48,9 @@ jobs:
       - name: Get modified code sample paths
         id: files
         run: |
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "run_all=true" >> "$GITHUB_OUTPUT"
-            echo "Weekly run: testing all code samples"
+            echo "Full run: testing all code samples"
           else
             echo "run_all=false" >> "$GITHUB_OUTPUT"
 
@@ -140,25 +141,3 @@ jobs:
             fi
             make test-code-samples FILES="$FILES"
           fi
-
-  # Creates a Linear issue when the weekly scheduled test fails.
-  # Required setup: Add LINEAR_API_KEY (repo secret) and LINEAR_TEAM_KEY (repo variable)
-  create-linear-ticket:
-    needs: test-code-samples
-    if: failure() && github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Create Linear issue
-        uses: ctriolo/action-create-linear-issue@v1.3
-        with:
-          linear-api-key: ${{ secrets.LINEAR_API_KEY }}
-          linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
-          linear-issue-title: "Weekly code samples test failed"
-          linear-issue-description: |
-            The scheduled weekly test of all code samples in `src/code-samples/` failed.
-
-            **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            Please investigate and fix the failing samples.
-          linear-attachment-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          linear-attachment-title: "Failed workflow run"

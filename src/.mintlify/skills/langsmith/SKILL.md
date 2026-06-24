@@ -68,7 +68,7 @@ def my_function(query: str) -> str:
 
 ## Key documentation
 
-- [Overview](https://docs.langchain.com/langsmith/home)—Get started with LangSmith
+- [Overview](https://docs.langchain.com/langsmith/observability)—Get started with LangSmith
 - [Observability quickstart](https://docs.langchain.com/langsmith/observability-quickstart)—Add tracing in minutes
 - [Evaluation quickstart](https://docs.langchain.com/langsmith/evaluation-quickstart)—Run your first evaluation
 - [Prompt engineering quickstart](https://docs.langchain.com/langsmith/prompt-engineering-quickstart)—Iterate on prompts

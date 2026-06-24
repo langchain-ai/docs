@@ -25,6 +25,7 @@ The following middleware work with any LLM provider:
 | [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
 | [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
 | [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
+| [Provider tool search](#provider-tool-search) | Defer tools behind providers' server-side tool search, surfacing them on demand. |
 | [Shell tool](#shell-tool) | Expose a persistent shell session to agents for command execution. |
 | [File search](#file-search) | Provide Glob and Grep search tools over filesystem files. |
 | [Filesystem](#filesystem-middleware) | Provide agents with a filesystem for storing context and long-term memories. |
@@ -48,6 +49,7 @@ The following middleware work with any LLM provider:
 | [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
 | [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
 | [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
+| [Provider tool search](#provider-tool-search) | Defer tools behind providers' server-side tool search, surfacing them on demand. |
 | [Filesystem](#filesystem-middleware) | Provide agents with a filesystem for storing context and long-term memories. |
 | [Subagent middleware](#subagent) | Add the ability to spawn subagents. |
 
@@ -72,7 +74,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import SummarizationMiddleware
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[your_weather_tool, your_calculator_tool],
     middleware=[
         SummarizationMiddleware(
@@ -90,7 +92,7 @@ agent = create_agent(
 import { createAgent, summarizationMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [weatherTool, calculatorTool],
   middleware: [
     summarizationMiddleware({
@@ -117,7 +119,7 @@ const agent = createAgent({
         "max_input_tokens": 100_000,
         # ...
     }
-    model = init_chat_model("gpt-5.4", profile=custom_profile)
+    model = init_chat_model("gpt-5.5", profile=custom_profile)
     ```
 </Tip>
 
@@ -125,21 +127,24 @@ const agent = createAgent({
     Model for generating summaries. Can be a model identifier string (e.g., `'openai:gpt-5.4-mini'`) or a `BaseChatModel` instance. See @[`init_chat_model`][init_chat_model(model)] for more information.
 </ParamField>
 
-<ParamField body="trigger" type="ContextSize | list[ContextSize] | None">
+<ParamField body="trigger" type="ContextSize | TriggerClause | list[ContextSize | TriggerClause] | None">
     Condition(s) for triggering summarization. Can be:
 
-    - A single @[`ContextSize`] tuple (specified condition must be met)
-    - A list of @[`ContextSize`] tuples (any condition must be met - OR logic)
+    - A single @[`ContextSize`] tuple (the specified threshold must be met)
+    - A single @[`TriggerClause`] dict (all specified thresholds must be met - AND logic)
+    - A list mixing either form (any item must be met - OR logic)
 
-    Condition should be one of the following:
+    Supported thresholds are:
 
     - `fraction` (float): Fraction of model's context size (0-1)
     - `tokens` (int): Absolute token count
     - `messages` (int): Message count
 
-    At least one condition must be specified. If not provided, summarization will not trigger automatically.
+    A @[`ContextSize`] tuple expresses exactly one threshold. A @[`TriggerClause`] dict can include one or more thresholds, e.g. `{"tokens": 4000, "messages": 10}`, and all thresholds in the dict must be met (AND).
 
-    See the API reference for @[`ContextSize`] for more information.
+    Each @[`TriggerClause`] dict must specify at least one threshold. If `trigger` is not provided, summarization will not trigger automatically.
+
+    See the API reference for @[`ContextSize`] and @[`TriggerClause`] for more information.
 </ParamField>
 
 <ParamField body="keep" type="ContextSize" default="('messages', 20)">
@@ -249,9 +254,10 @@ const agent = createAgent({
 The summarization middleware monitors message token counts and automatically summarizes older messages when thresholds are reached.
 
 **Trigger conditions** control when summarization runs:
-- Single condition object (specified must be met)
-- Array of conditions (any condition must be met - OR logic)
-- Each condition can use `fraction` (of model's context size), `tokens` (absolute count), or `messages` (message count)
+- A single threshold triggers when that threshold is met
+- A trigger clause with multiple thresholds triggers only when all thresholds are met (AND logic)
+- A list of trigger conditions triggers when any item is met (OR logic)
+- Each threshold can use `fraction` (of model's context size), `tokens` (absolute count), or `messages` (message count)
 
 **Keep condition** control how much context to preserve (specify exactly one):
 - `fraction` - Fraction of model's context size to keep
@@ -266,7 +272,7 @@ from langchain.agents.middleware import SummarizationMiddleware
 
 # Single condition: trigger if tokens >= 4000
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[your_weather_tool, your_calculator_tool],
     middleware=[
         SummarizationMiddleware(
@@ -279,7 +285,7 @@ agent = create_agent(
 
 # Multiple conditions: trigger if number of tokens >= 3000 OR messages >= 6
 agent2 = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[your_weather_tool, your_calculator_tool],
     middleware=[
         SummarizationMiddleware(
@@ -293,9 +299,39 @@ agent2 = create_agent(
     ],
 )
 
-# Using fractional limits
+# AND logic: trigger only when tokens >= 4000 AND messages >= 10
 agent3 = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
+    tools=[your_weather_tool, your_calculator_tool],
+    middleware=[
+        SummarizationMiddleware(
+            model="gpt-5.4-mini",
+            trigger={"tokens": 4000, "messages": 10},
+            keep=("messages", 20),
+        ),
+    ],
+)
+
+# Combine AND and OR: trigger if (tokens >= 5000 AND messages >= 3)
+# OR (tokens >= 3000 AND messages >= 6)
+agent4 = create_agent(
+    model="gpt-5.5",
+    tools=[your_weather_tool, your_calculator_tool],
+    middleware=[
+        SummarizationMiddleware(
+            model="gpt-5.4-mini",
+            trigger=[
+                {"tokens": 5000, "messages": 3},
+                {"tokens": 3000, "messages": 6},
+            ],
+            keep=("messages", 20),
+        ),
+    ],
+)
+
+# Using fractional limits
+agent5 = create_agent(
+    model="gpt-5.5",
     tools=[your_weather_tool, your_calculator_tool],
     middleware=[
         SummarizationMiddleware(
@@ -314,7 +350,7 @@ import { createAgent, summarizationMiddleware } from "langchain";
 
 // Single condition
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [weatherTool, calculatorTool],
   middleware: [
     summarizationMiddleware({
@@ -327,7 +363,7 @@ const agent = createAgent({
 
 // Multiple conditions
 const agent2 = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [weatherTool, calculatorTool],
   middleware: [
     summarizationMiddleware({
@@ -342,7 +378,7 @@ const agent2 = createAgent({
 
 // Using fractional limits
 const agent3 = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [weatherTool, calculatorTool],
   middleware: [
     summarizationMiddleware({
@@ -370,7 +406,7 @@ Pause agent execution for human approval, editing, or rejection of tool calls be
 :::
 
 <Warning>
-    Human-in-the-loop middleware requires a [checkpointer](/oss/langgraph/persistence#checkpoints) to maintain state across interruptions.
+    Human-in-the-loop middleware requires a [checkpointer](/oss/langgraph/checkpointers#checkpoints) to maintain state across interruptions.
 </Warning>
 
 :::python
@@ -389,7 +425,7 @@ def your_send_email_tool(recipient: str, subject: str, body: str) -> str:
     return f"Email sent to {recipient} with subject '{subject}'"
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[your_read_email_tool, your_send_email_tool],
     checkpointer=InMemorySaver(),
     middleware=[
@@ -421,7 +457,7 @@ function sendEmailTool(recipient: string, subject: string, body: string): string
 }
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [readEmailTool, sendEmailTool],
   middleware: [
     humanInTheLoopMiddleware({
@@ -470,7 +506,7 @@ from langchain.agents.middleware import ModelCallLimitMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     checkpointer=InMemorySaver(),  # Required for thread limiting
     tools=[],
     middleware=[
@@ -490,7 +526,7 @@ import { createAgent, modelCallLimitMiddleware } from "langchain";
 import { MemorySaver } from "@langchain/langgraph";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   checkpointer: new MemorySaver(), // Required for thread limiting
   tools: [],
   middleware: [
@@ -566,7 +602,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ToolCallLimitMiddleware
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[search_tool, database_tool],
     middleware=[
         # Global limit
@@ -587,7 +623,7 @@ agent = create_agent(
 import { createAgent, toolCallLimitMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [searchTool, databaseTool],
   middleware: [
     toolCallLimitMiddleware({ threadLimit: 20, runLimit: 10 }),
@@ -688,7 +724,7 @@ database_limiter = ToolCallLimitMiddleware(tool_name="query_database", thread_li
 strict_limiter = ToolCallLimitMiddleware(tool_name="scrape_webpage", run_limit=2, exit_behavior="error")
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[search_tool, database_tool, scraper_tool],
     middleware=[global_limiter, search_limiter, database_limiter, strict_limiter],
 )
@@ -705,7 +741,7 @@ const databaseLimiter = toolCallLimitMiddleware({ toolName: "query_database", th
 const strictLimiter = toolCallLimitMiddleware({ toolName: "scrape_webpage", runLimit: 2, exitBehavior: "error" });
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [searchTool, databaseTool, scraperTool],
   middleware: [globalLimiter, searchLimiter, databaseLimiter, strictLimiter],
 });
@@ -731,7 +767,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ModelFallbackMiddleware
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[],
     middleware=[
         ModelFallbackMiddleware(
@@ -748,7 +784,7 @@ agent = create_agent(
 import { createAgent, modelFallbackMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [],
   middleware: [
     modelFallbackMiddleware(
@@ -816,7 +852,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import PIIMiddleware
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[],
     middleware=[
         PIIMiddleware("email", strategy="redact", apply_to_input=True),
@@ -831,7 +867,7 @@ agent = create_agent(
 import { createAgent, piiMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [],
   middleware: [
     piiMiddleware("email", { strategy: "redact", applyToInput: true }),
@@ -862,7 +898,7 @@ import re
 
 # Method 1: Regex pattern string
 agent1 = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[],
     middleware=[
         PIIMiddleware(
@@ -875,7 +911,7 @@ agent1 = create_agent(
 
 # Method 2: Compiled regex pattern
 agent2 = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[],
     middleware=[
         PIIMiddleware(
@@ -908,7 +944,7 @@ def detect_ssn(content: str) -> list[dict[str, str | int]]:
     return matches
 
 agent3 = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[],
     middleware=[
         PIIMiddleware(
@@ -927,7 +963,7 @@ import { createAgent, piiMiddleware, type PIIMatch } from "langchain";
 
 // Method 1: Regex pattern string
 const agent1 = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [],
   middleware: [
     piiMiddleware("api_key", {
@@ -939,7 +975,7 @@ const agent1 = createAgent({
 
 // Method 2: RegExp object
 const agent2 = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [],
   middleware: [
     piiMiddleware("phone_number", {
@@ -971,7 +1007,7 @@ function detectSSN(content: string): PIIMatch[] {
 }
 
 const agent3 = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [],
   middleware: [
     piiMiddleware("ssn", {
@@ -1115,7 +1151,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import TodoListMiddleware
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[read_file, write_file, run_tests],
     middleware=[TodoListMiddleware()],
 )
@@ -1127,7 +1163,7 @@ agent = create_agent(
 import { createAgent, todoListMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [readFile, writeFile, runTests],
   middleware: [todoListMiddleware()],
 });
@@ -1182,7 +1218,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import LLMToolSelectorMiddleware
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[tool1, tool2, tool3, tool4, tool5, ...],
     middleware=[
         LLMToolSelectorMiddleware(
@@ -1200,7 +1236,7 @@ agent = create_agent(
 import { createAgent, llmToolSelectorMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [tool1, tool2, tool3, tool4, tool5, ...],
   middleware: [
     llmToolSelectorMiddleware({
@@ -1272,7 +1308,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ToolRetryMiddleware
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[search_tool, database_tool],
     middleware=[
         ToolRetryMiddleware(
@@ -1292,7 +1328,7 @@ agent = create_agent(
 import { createAgent, toolRetryMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [searchTool, databaseTool],
   middleware: [
     toolRetryMiddleware({
@@ -1423,7 +1459,7 @@ from langchain.agents.middleware import ToolRetryMiddleware
 
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[search_tool, database_tool, api_tool],
     middleware=[
         ToolRetryMiddleware(
@@ -1449,7 +1485,7 @@ import { z } from "zod";
 
 // Basic usage with default settings (2 retries, exponential backoff)
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [searchTool, databaseTool],
   middleware: [toolRetryMiddleware()],
 });
@@ -1537,7 +1573,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRetryMiddleware
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[search_tool, database_tool],
     middleware=[
         ModelRetryMiddleware(
@@ -1557,7 +1593,7 @@ agent = create_agent(
 import { createAgent, modelRetryMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [searchTool, databaseTool],
   middleware: [
     modelRetryMiddleware({
@@ -1652,7 +1688,7 @@ from langchain.agents.middleware import ModelRetryMiddleware
 
 # Basic usage with default settings (2 retries, exponential backoff)
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[search_tool],
     middleware=[ModelRetryMiddleware()],
 )
@@ -1724,7 +1760,7 @@ import { createAgent, modelRetryMiddleware } from "langchain";
 
 // Basic usage with default settings (2 retries, exponential backoff)
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [searchTool],
   middleware: [modelRetryMiddleware()],
 });
@@ -1810,7 +1846,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import LLMToolEmulator
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[get_weather, search_database, send_email],
     middleware=[
         LLMToolEmulator(),  # Emulate all tools
@@ -1824,7 +1860,7 @@ agent = create_agent(
 import { createAgent, toolEmulatorMiddleware } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [getWeather, searchDatabase, sendEmail],
   middleware: [
     toolEmulatorMiddleware(), // Emulate all tools
@@ -1881,21 +1917,21 @@ def send_email(to: str, subject: str, body: str) -> str:
 
 # Emulate all tools (default behavior)
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[get_weather, send_email],
     middleware=[LLMToolEmulator()],
 )
 
 # Emulate specific tools only
 agent2 = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[get_weather, send_email],
     middleware=[LLMToolEmulator(tools=["get_weather"])],
 )
 
 # Use custom model for emulation
 agent4 = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[get_weather, send_email],
     middleware=[LLMToolEmulator(model="claude-sonnet-4-6")],
 )
@@ -1931,14 +1967,14 @@ const sendEmail = tool(
 
 // Emulate all tools (default behavior)
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [getWeather, sendEmail],
   middleware: [toolEmulatorMiddleware()],
 });
 
 // Emulate specific tools by name
 const agent2 = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [getWeather, sendEmail],
   middleware: [
     toolEmulatorMiddleware({
@@ -1949,7 +1985,7 @@ const agent2 = createAgent({
 
 // Emulate specific tools by passing tool instances
 const agent3 = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [getWeather, sendEmail],
   middleware: [
     toolEmulatorMiddleware({
@@ -1960,7 +1996,7 @@ const agent3 = createAgent({
 
 // Use custom model for emulation
 const agent5 = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [getWeather, sendEmail],
   middleware: [
     toolEmulatorMiddleware({
@@ -1989,7 +2025,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ContextEditingMiddleware, ClearToolUsesEdit
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[],
     middleware=[
         ContextEditingMiddleware(
@@ -2010,7 +2046,7 @@ agent = create_agent(
 import { createAgent, contextEditingMiddleware, ClearToolUsesEdit } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [],
   middleware: [
     contextEditingMiddleware({
@@ -2115,7 +2151,7 @@ from langchain.agents.middleware import ContextEditingMiddleware, ClearToolUsesE
 
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[search_tool, your_calculator_tool, database_tool],
     middleware=[
         ContextEditingMiddleware(
@@ -2139,7 +2175,7 @@ agent = create_agent(
 import { createAgent, contextEditingMiddleware, ClearToolUsesEdit } from "langchain";
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [searchTool, calculatorTool, databaseTool],
   middleware: [
     contextEditingMiddleware({
@@ -2159,6 +2195,147 @@ const agent = createAgent({
 :::
 
 </Accordion>
+
+:::python
+### Provider tool search
+
+Defer selected tools behind model providers' server-side tool search, so the model discovers them on demand instead of receiving every tool schema up front. Provider tool search is useful for:
+
+- Reducing context bloat when using many tools.
+- Improving tool selection accuracy by surfacing only relevant tools.
+
+<Note>
+    Requires a model with server-side tool search support: Anthropic (Claude Sonnet 4+/Opus 4+/Haiku 4.5+) or OpenAI (gpt-5.5+). Other providers raise a `ValueError`.
+</Note>
+
+**API reference:** @[`ProviderToolSearchMiddleware`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ProviderToolSearchMiddleware
+
+agent = create_agent(
+    model="anthropic:claude-opus-4-8",
+    tools=[get_weather, lookup_order],
+    middleware=[
+        ProviderToolSearchMiddleware(searchable_tools=["lookup_order"]),
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="searchable_tools" type="list[str | BaseTool]">
+    Tools to defer behind the provider's tool search, given by name or instance. Deferred tools are withheld from the model until its search surfaces them. Tools constructed with `extras={"defer_loading": True}` are deferred regardless of this option; if `searchable_tools` is omitted, only those pre-marked tools are deferred.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware opts-in all tools included in `searchable_tools` for deferral and search. A tool can also opt into deferral at construction time by setting `extras={"defer_loading": True}`.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ProviderToolSearchMiddleware
+from langchain.tools import tool
+
+
+# Marked `defer_loading` at construction, so it's deferred on its own —
+# no need to list it in `searchable_tools`.
+@tool(extras={"defer_loading": True})
+def send_email(to: str) -> str:
+    """Send an email."""
+    return "sent"
+
+
+agent = create_agent(
+    model="anthropic:claude-opus-4-8",
+    tools=[send_email],
+    middleware=[ProviderToolSearchMiddleware()],
+)
+```
+
+</Accordion>
+:::
+
+:::js
+### Provider tool search
+
+Defer selected tools behind model providers' server-side tool search, so the model discovers them on demand instead of receiving every tool schema up front. Provider tool search is useful for:
+
+- Reducing context bloat when using many tools.
+- Improving tool selection accuracy by surfacing only relevant tools.
+
+<Note>
+    Requires a model with server-side tool search support: Anthropic (Claude Sonnet 4+/Opus 4+/Haiku 4.5+) or OpenAI (gpt-5.5+). Other providers throw an error.
+</Note>
+
+**API reference:** @[`providerToolSearchMiddleware`]
+
+```typescript
+import { createAgent, providerToolSearchMiddleware } from "langchain";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const getWeather = tool(async () => "Sunny, 22C", {
+  name: "get_weather",
+  description: "Get the current weather for a city",
+  schema: z.object({ city: z.string() }),
+});
+
+const lookupOrderStatus = tool(async () => "OUT_FOR_DELIVERY", {
+  name: "lookup_order_status",
+  description: "Look up the current delivery status of a customer order by ID",
+  schema: z.object({ orderId: z.string() }),
+});
+
+const nicheTools = [lookupOrderStatus];
+
+const agent = createAgent({
+  model: "anthropic:claude-opus-4-8",
+  tools: [getWeather, ...nicheTools],
+  middleware: [
+    providerToolSearchMiddleware({ searchableTools: nicheTools }),
+  ],
+});
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="searchableTools" type="(string | StructuredToolInterface)[]">
+    Tools to defer behind the provider's tool search, given by name or instance. Deferred tools are withheld from the model until its search surfaces them. Tools constructed with `extras.defer_loading: true` are deferred regardless of this option; if `searchableTools` is omitted, only those pre-marked tools are deferred.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware opts-in all tools included in the `searchableTools` for deferral and search. A tool can also opt into deferral at construction time by setting `extras.defer_loading: true`
+
+```typescript
+import { createAgent, providerToolSearchMiddleware } from "langchain";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+// Marked `defer_loading` at construction, so it's deferred on its own —
+// no need to list it in `searchableTools`.
+const sendEmail = tool(async () => "sent", {
+  name: "send_email",
+  description: "Send an email",
+  schema: z.object({ to: z.string() }),
+  extras: { defer_loading: true },
+});
+
+const agent = createAgent({
+  model: "anthropic:claude-opus-4-8",
+  tools: [sendEmail],
+  middleware: [providerToolSearchMiddleware()],
+});
+```
+
+</Accordion>
+:::
 
 :::python
 ### Shell tool
@@ -2188,7 +2365,7 @@ from langchain.agents.middleware import (
 )
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[search_tool],
     middleware=[
         ShellToolMiddleware(
@@ -2263,7 +2440,7 @@ from langchain.agents.middleware import (
 
 # Basic shell tool with host execution
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[search_tool],
     middleware=[
         ShellToolMiddleware(
@@ -2275,7 +2452,7 @@ agent = create_agent(
 
 # Docker isolation with startup commands
 agent_docker = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[],
     middleware=[
         ShellToolMiddleware(
@@ -2291,7 +2468,7 @@ agent_docker = create_agent(
 
 # With output redaction (applied post execution)
 agent_redacted = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[],
     middleware=[
         ShellToolMiddleware(
@@ -2322,7 +2499,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import FilesystemFileSearchMiddleware
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[],
     middleware=[
         FilesystemFileSearchMiddleware(
@@ -2369,7 +2546,7 @@ from langchain.messages import HumanMessage
 
 
 agent = create_agent(
-    model="gpt-5.4",
+    model="gpt-5.5",
     tools=[],
     middleware=[
         FilesystemFileSearchMiddleware(
@@ -2542,7 +2719,7 @@ agent = create_agent(
                     "description": "This subagent can get weather in cities.",
                     "system_prompt": "Use the get_weather tool to get the weather in a city.",
                     "tools": [get_weather],
-                    "model": "gpt-5.4",
+                    "model": "gpt-5.5",
                     "middleware": [],
                 }
             ],
@@ -2584,7 +2761,7 @@ const agent = createAgent({
           description: "This subagent can get weather in cities.",
           systemPrompt: "Use the get_weather tool to get the weather in a city.",
           tools: [getWeather],
-          model: "gpt-5.4",
+          model: "gpt-5.5",
           middleware: [],
         },
       ],
@@ -2657,7 +2834,7 @@ const weatherSubagent: SubAgent = {
   description: "This subagent can get weather in cities.",
   systemPrompt: "Use the get_weather tool to get the weather in a city.",
   tools: [getWeather],
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   middleware: [],
 };
 
@@ -2697,6 +2874,9 @@ These middleware are optimized for specific LLM providers. See each provider's d
 :::js
     <Card title="Anthropic" href="/oss/integrations/middleware/anthropic" icon="/images/providers/anthropic-icon.svg" arrow>
         Prompt caching, bash tool, text editor, memory, and file search middleware for Claude models.
+    </Card>
+    <Card title="AWS" href="/oss/integrations/middleware/aws" icon="brand-aws" arrow>
+        Prompt caching middleware for Amazon Bedrock models.
     </Card>
 :::
 </Columns>

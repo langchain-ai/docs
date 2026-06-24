@@ -10,6 +10,7 @@ This page covers:
 
 - [Use filter arguments](#use-filter-arguments): keyword-based filtering using SDK parameters.
 - [Use filter query language](#use-filter-query-language): complex queries using LangSmith's filter syntax.
+- [Query trace trees with child-run predicates](#query-trace-trees-with-child-run-predicates): combine server-side narrowing with local child-run traversal.
 - [Rate limits](#rate-limits): per-tenant limits and best practices for staying within them.
 
 <Note>
@@ -265,7 +266,7 @@ RunQueryParams runIdRun = RunQueryParams.builder()
 
 ## Use filter query language
 
-For more complex queries, you can use the query language described in the [filter query language reference](/langsmith/trace-query-syntax#filter-query-language).
+For more complex queries, you can use the filter query language. The following examples cover the most common patterns. For the full operator and field reference, including all comparators, filterable fields, value formatting rules, and a quick-reference example table, refer to [Trace query syntax: filter query language](/langsmith/trace-query-syntax#filter-query-language).
 
 ### List all root runs in a conversational thread
 
@@ -392,22 +393,22 @@ RunQueryParams runs = RunQueryParams.builder()
 ```
 
 </CodeGroup>
-### List all runs that have "error" not equal to null
+### List all runs where status is not "error"
 
 <CodeGroup>
 
 ```python Python
-client.list_runs(project_name="<your_project>", filter='neq(error, null)')
+client.list_runs(project_name="<your_project>", filter='neq(status, "error")')
 ```
 
 ```typescript TypeScript
-client.listRuns({projectName: "<your_project>", filter: 'neq(error, null)'})
+client.listRuns({projectName: "<your_project>", filter: 'neq(status, "error")'})
 ```
 
 ```java Java
 RunQueryParams runs = RunQueryParams.builder()
     .addSession("<your_project>")
-    .filter("neq(error, null)")
+    .filter("neq(status, \"error\")")
     .build();
 ```
 
@@ -476,28 +477,28 @@ RunQueryParams runs = RunQueryParams.builder()
 
 </CodeGroup>
 
-### List all runs that started after a specific timestamp and either have "error" not equal to null or a "Correctness" feedback score equal to 0
+### List all runs that started after a specific timestamp and either have a non-error status or a "Correctness" feedback score equal to 0
 
 <CodeGroup>
 
 ```python Python
 client.list_runs(
   project_name="<your_project>",
-  filter='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
+  filter='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(status, "error"), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
 )
 ```
 
 ```typescript TypeScript
 client.listRuns({
   projectName: "<your_project>",
-  filter: 'and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
+  filter: 'and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(status, "error"), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
 })
 ```
 
 ```java Java
 RunQueryParams runs = RunQueryParams.builder()
     .addSession("<your_project>")
-    .filter("and(gt(start_time, \"2023-07-15T12:34:56Z\"), or(neq(error, null), and(eq(feedback_key, \"Correctness\"), eq(feedback_score, 0.0))))")
+    .filter("and(gt(start_time, \"2023-07-15T12:34:56Z\"), or(neq(status, \"error\"), and(eq(feedback_key, \"Correctness\"), eq(feedback_score, 0.0))))")
     .build();
 ```
 
@@ -819,6 +820,97 @@ RunQueryParams runs = RunQueryParams.builder()
 
 </CodeGroup>
 
+## Query trace trees with child-run predicates
+
+Use `trace_filter` to match fields on the root run and `tree_filter` to match supported searchable fields on any run in the trace tree. For predicates over arbitrary returned child-run fields, such as nested `inputs`, `outputs`, or `extra` payloads, use the steps below:
+
+1. Narrow candidate root traces server-side with `filter`, `trace_filter`, `tree_filter`, `run_type`, metadata filters, `parent_run_id`, and the `ls_run_depth` [system metadata key](/langsmith/ls-metadata-parameters#ls_run_depth).
+2. Hydrate each candidate root trace with child runs by calling `read_run(..., load_child_runs=True)` in Python or `readRun(..., { loadChildRuns: true })` in TypeScript.
+3. Traverse the hydrated `child_runs` tree locally and apply your predicate to the fields that are not available as server-side filter fields.
+
+The following example (Python 0.8 and JS 0.7) returns root traces that contain a tool run whose output contains a specific value. The server-side `tree_filter` narrows candidates to traces that contain the relevant tool run, and the local predicate checks the hydrated `outputs` payload.
+
+<CodeGroup>
+
+```python Python
+from datetime import datetime, timedelta
+
+from langsmith import Client
+
+client = Client()
+project_name = "<your_project>"
+
+
+def iter_runs(run):
+    yield run
+    for child in run.child_runs or []:
+        yield from iter_runs(child)
+
+
+candidate_roots = client.list_runs(
+    project_name=project_name,
+    is_root=True,
+    start_time=datetime.now() - timedelta(days=7),
+    tree_filter='and(eq(run_type, "tool"), eq(name, "<tool_name>"))',
+    select=["id"],
+)
+
+matching_roots = []
+for candidate in candidate_roots:
+    root = client.read_run(candidate.id, load_child_runs=True)
+    has_matching_child = any(
+        child.id != root.id
+        and child.run_type == "tool"
+        and child.name == "<tool_name>"
+        and "<expected_value>" in str(child.outputs or {})
+        for child in iter_runs(root)
+    )
+    if has_matching_child:
+        matching_roots.append(root)
+```
+
+```typescript TypeScript
+import { Client, Run } from "langsmith";
+
+const client = new Client();
+const projectName = "<your_project>";
+
+function* iterRuns(run: Run): Generator<Run> {
+  yield run;
+  for (const child of run.child_runs ?? []) {
+    yield* iterRuns(child);
+  }
+}
+
+const candidateRoots: Run[] = [];
+for await (const run of client.listRuns({
+  projectName,
+  isRoot: true,
+  startTime: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7),
+  treeFilter: 'and(eq(run_type, "tool"), eq(name, "<tool_name>"))',
+  select: ["id"],
+})) {
+  candidateRoots.push(run);
+}
+
+const matchingRoots: Run[] = [];
+for (const candidate of candidateRoots) {
+  const root = await client.readRun(candidate.id, { loadChildRuns: true });
+  const hasMatchingChild = [...iterRuns(root)].some(
+    (child) =>
+      child.id !== root.id &&
+      child.run_type === "tool" &&
+      child.name === "<tool_name>" &&
+      JSON.stringify(child.outputs ?? {}).includes("<expected_value>"),
+  );
+  if (hasMatchingChild) {
+    matchingRoots.push(root);
+  }
+}
+```
+
+</CodeGroup>
+
 ### Advanced: export flattened trace view with child tool usage
 
 The following Python example demonstrates how to export a flattened view of traces, including information on the tools (from nested runs) used by the agent within each trace.
@@ -1049,4 +1141,4 @@ To avoid hitting rate limits and reduce query time, especially for runs with lar
 - **Avoid full-text search**: `filter='search("...")'` has the strictest rate limits; use structured filters (e.g., `eq()`, `has()`) when possible.
 - **Avoid selecting `child_run_ids`**: this also triggers a stricter rate limit tier.
 
-When you exceed these limits, the API returns a `429 Too Many Requests` response. For general rate limit information, refer to [Administration overview](/langsmith/administration-overview#rate-limits).
+When you exceed these limits, the API returns a `429 Too Many Requests` response. For general rate limit information, refer to [Administration overview](/langsmith/usage-and-billing#rate-limits).

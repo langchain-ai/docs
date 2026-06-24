@@ -17,6 +17,17 @@ from pathlib import Path
 TIMEOUT_SECONDS = 600
 
 
+def print_failure(rel_path: Path, stdout: str, stderr: str) -> None:
+    """Print failure output immediately so CI logs show errors as they occur."""
+    print(f"  ✗ {rel_path}")
+    print(f"--- {rel_path} ---")
+    if stdout:
+        print(stdout)
+    if stderr:
+        print(stderr, file=sys.stderr)
+    print()
+
+
 def is_valid_sample(p: Path, code_samples_dir: Path) -> bool:
     """Check path is a valid code sample (under code-samples, not __pycache__/node_modules)."""
     try:
@@ -198,19 +209,8 @@ def main() -> int:
             passed += 1
             print(f"  ✓ {rel_path}")
         else:
-            failed.append((rel_path, stdout, stderr))
-            print(f"  ✗ {rel_path}")
-
-    # Print errors for failed runs
-    if failed:
-        print()
-        for rel_path, stdout, stderr in failed:
-            print(f"--- {rel_path} ---")
-            if stdout:
-                print(stdout)
-            if stderr:
-                print(stderr, file=sys.stderr)
-            print()
+            failed.append(rel_path)
+            print_failure(rel_path, stdout, stderr)
 
     # Summary
     print("-" * 40)
