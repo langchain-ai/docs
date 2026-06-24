@@ -57,9 +57,9 @@ const vectorStore = new MemoryVectorStore(embeddings);
 // :remove-end:
 
 // :snippet-start: rag-store-documents-js
-const documentIds = await vectorStore.addDocuments(allSplits);
+await vectorStore.addDocuments(allSplits);
 
-console.log(documentIds.slice(0, 3));
+console.log(`Indexed ${allSplits.length} document chunks.`);
 // :snippet-end:
 
 // :snippet-start: rag-retrieve-context-tool-js
