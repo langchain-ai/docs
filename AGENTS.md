@@ -258,6 +258,18 @@ Always use the latest generally available (GA) models when referencing LLMs in d
 
 Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names — they go stale quickly.
 
+### Release stage names
+
+LangSmith ships features through three release stages: alpha, beta, and generally available (GA). See [Release stages](/langsmith/release-stages) for what each stage means.
+
+These are common nouns, not proper nouns. Write them lowercase in prose, including parenthetical and inline status markers:
+
+- Lowercase mid-sentence and in markers: "available in beta", "is in beta", "(beta)", "the feature is in alpha".
+- Capitalize only where normal sentence case requires it: the first word of a sentence or heading ("Beta is optional.", "## Beta").
+- Keep the literal product UI label capitalized when quoting it as a tag: the `Beta` tag, frontmatter `tag: "Beta"`. The same applies to a stage name standing alone as a table cell's only label.
+- Spell out "generally available" on first use, then use "GA". GA is always uppercase.
+- Do not change code identifiers, package version identifiers (`1.0.0b1`), or literal CLI output that contains "Beta".
+
 ## Adding pages
 
 1. Create MDX file with required frontmatter in the correct directory (see navigation map above)
