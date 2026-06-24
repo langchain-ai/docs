@@ -23,26 +23,20 @@ const agent = createAgent({
   tools: [getWeather],
 });
 
-for await (const [token, metadata] of await agent.stream(
+const stream = await agent.streamEvents(
   { messages: [{ role: "user", content: "What is the weather in SF?" }] },
-  { streamMode: "messages" }, // [!code highlight]
-)) {
-  if (!token.contentBlocks) continue;
-  const reasoning = token.contentBlocks.filter((b) => b.type === "reasoning");
-  const text = token.contentBlocks.filter((b) => b.type === "text");
-  if (reasoning.length) {
-    process.stdout.write(`[thinking] ${reasoning[0].reasoning}`);
+  { version: "v3" }, // [!code highlight]
+);
+for await (const message of stream.messages) {
+  for await (const token of message.reasoning) {
+    process.stdout.write(`[thinking] ${token}`);
   }
-  if (text.length) {
-    process.stdout.write(text[0].text);
+  for await (const token of message.text) {
+    process.stdout.write(token);
   }
 }
 // :snippet-end:
 
 // :remove-start:
-// This test is disabled because it requires an API key and would make actual API calls
-// To run manually:
-//   export ANTHROPIC_API_KEY=your_key
-//   npx tsx src/code-samples/langchain/streaming-reasoning-tokens.ts
 console.log("\n✓ Code sample is syntactically valid");
 // :remove-end:

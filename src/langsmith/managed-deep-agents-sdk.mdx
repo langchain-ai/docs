@@ -11,7 +11,7 @@ For concepts, see the [Managed Deep Agents overview](/langsmith/managed-deep-age
 <Note>
 The SDK packages are in **public [beta](/langsmith/release-stages)**. Method signatures and payload fields can change during the beta.
 
-Managed Deep Agents is in **private preview**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
+Managed Deep Agents is in **private beta**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
 </Note>
 
 ## Install
@@ -38,9 +38,9 @@ npm install @langchain/managed-deepagents @langchain/react
 Requirements:
 
 - Python 3.10 or newer for `managed-deepagents`.
-- Node.js 20 or newer for `@langchain/managed-deepagents`.
-- Managed Deep Agents [private preview access](https://www.langchain.com/langsmith-managed-deep-agents-waitlist).
-- A [LangSmith API key](/langsmith/create-account-api-key) for a workspace with private preview access.
+- Node.js 22 or newer for `@langchain/managed-deepagents`.
+- Managed Deep Agents [private beta access](https://www.langchain.com/langsmith-managed-deep-agents-waitlist).
+- A [LangSmith API key](/langsmith/create-account-api-key) for a workspace with private beta access.
 
 ## Configure a client
 
@@ -74,6 +74,8 @@ const client = new Client({
 
 </CodeGroup>
 
+`Client()` and `new Client()` read `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT` from the environment, so the remaining examples on this page construct a client with no arguments.
+
 ## Create an agent
 
 Requests to create an agent can use the same top-level `model` and `backend` fields as the [Managed Deep Agents CLI](/langsmith/managed-deep-agents-cli). Pass `model` as an object with an `id` of `{provider}:{model_id}`. See [supported providers and models](/oss/langchain/models#supported-providers-and-models).
@@ -87,7 +89,7 @@ with Client() as client:
     agent = client.agents.create(
         name="research-assistant",
         description="Research assistant that can search the web and summarize sources.",
-        model={"id": "openai:gpt-5.5"},
+        model="openai:gpt-5.5",
         backend={"type": "state"},
         instructions=(
             "You are a careful research assistant. Search for sources, "
@@ -95,26 +97,26 @@ with Client() as client:
         ),
     )
 
-print(f"Agent ID: {agent['id']}")
+agent_id = agent["id"]
+print(f"Agent ID: {agent_id}")
 ```
 
 ```ts TypeScript
 import { Client } from "@langchain/managed-deepagents";
 
-const client = new Client({
-  apiKey: process.env.LANGSMITH_API_KEY,
-});
+const client = new Client();
 
 const agent = await client.agents.create({
   name: "research-assistant",
   description: "Research assistant that can search the web and summarize sources.",
-  model: { id: "openai:gpt-5.5" },
+  model: "openai:gpt-5.5",
   backend: { type: "state" },
   instructions:
     "You are a careful research assistant. Search for sources, keep notes, and return concise answers with citations.",
 });
 
-console.log(`Agent ID: ${agent.id}`);
+const agentId = agent.id;
+console.log(`Agent ID: ${agentId}`);
 ```
 
 </CodeGroup>
@@ -160,9 +162,7 @@ with Client() as client:
 import { Client } from "@langchain/managed-deepagents";
 
 const agentId = "<agent_id>";
-const client = new Client({
-  apiKey: process.env.LANGSMITH_API_KEY,
-});
+const client = new Client();
 
 const thread = await client.threads.create({
   agent_id: agentId,
@@ -203,7 +203,7 @@ In Python, stream directly with `client.threads.stream(...)`. In TypeScript, get
 The TypeScript SDK includes a LangGraph client adapter for `@langchain/react`. Use `getLangGraphClient()` so `useStream` manages thread lifecycle, run submission, and state updates, while the Managed Deep Agents SDK supplies the correct routes, auth headers, and payload format.
 
 <Warning>
-Do not ship your LangSmith API key to the browser. In production React apps, route requests through your backend with a custom `fetch` instead of passing `apiKey` directly.
+Do not ship your LangSmith API key to the browser. `new Client()` reads `LANGSMITH_API_KEY` from the environment, so avoid exposing it to your client bundle. In production React apps, route requests through your backend with a custom `fetch`.
 </Warning>
 
 ```tsx
@@ -212,18 +212,14 @@ import { useStream } from "@langchain/react";
 
 const agentId = "<agent_id>";
 
-const managedDeepAgents = new Client({
-  // In browser apps, prefer passing a custom fetch that calls your backend.
-  apiKey: process.env.LANGSMITH_API_KEY,
-});
+const managedDeepAgents = new Client();
 
 const client = managedDeepAgents.getLangGraphClient({ agentId });
 
 export function ManagedDeepAgentStream() {
   const stream = useStream({
     client,
-    assistantId: agentId,
-    fetchStateHistory: false,
+    assistantId: agentId
   });
 
   return (
@@ -269,7 +265,7 @@ The SDKs can register MCP servers, complete auth sessions, and discover a regist
 
 ## Handle errors
 
-Requests raise typed errors that include the HTTP status, an error code, and response detail.
+Requests raise typed errors that include the HTTP status and, when the API returns them, an error code and detail.
 
 <CodeGroup>
 
@@ -280,25 +276,29 @@ with Client() as client:
     try:
         client.agents.get("missing-agent")
     except ManagedDeepAgentsAPIError as error:
-        print(error.status_code, error.code, error.detail)
+        # `code` and `detail` can be empty, for example on a 403 permission error.
+        # The raw message is on `error.body`.
+        print(error.status_code, error.code, error.detail, error.body)
 ```
 
 ```ts TypeScript
 import { Client, ManagedDeepAgentsAPIError } from "@langchain/managed-deepagents";
 
-const client = new Client({
-  apiKey: process.env.LANGSMITH_API_KEY,
-});
+const client = new Client();
 
 try {
   await client.agents.get("missing-agent");
 } catch (error) {
   if (error instanceof ManagedDeepAgentsAPIError) {
-    console.log(error.status, error.code, error.detail);
+    // `code` and `detail` can be undefined, for example on a 403 permission error.
+    // The raw message is on `error.body`.
+    console.log(error.status, error.code, error.detail, error.body);
   }
 }
 ```
 
 </CodeGroup>
+
+When a request is denied for a missing permission, the response is a `403` whose `code` and `detail` are empty and whose reason is returned as plain text. Read it from `error.body` in both SDKs, for example `missing permission mcp-servers:create`.
 
 For endpoint-level request and response schemas, see the [Managed Deep Agents API reference](/langsmith/managed-deep-agents-api-overview).

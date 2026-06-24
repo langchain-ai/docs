@@ -90,16 +90,9 @@ Skills require `deepagents>=1.7.0`.
 </Note>
 
 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-    <a href="/oss/integrations/providers/modal" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
-        <img className="block dark:hidden w-5 h-5" src="/images/providers/light/modal.svg" alt="" />
-        <img className="hidden dark:block w-5 h-5" src="/images/providers/dark/modal.svg" alt="" />
-        <span className="font-semibold">Modal</span>
-    </a>
-
-    <a href="/oss/integrations/providers/daytona" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
-        <img className="block dark:hidden w-5 h-5" src="/images/providers/light/daytona.svg" alt="" />
-        <img className="hidden dark:block w-5 h-5" src="/images/providers/dark/daytona.svg" alt="" />
-        <span className="font-semibold">Daytona</span>
+    <a href="/langsmith/sandboxes" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
+        <img className="w-5 h-5" src="/images/brand/docs-favicon.png" alt="" />
+        <span className="font-semibold">LangSmith</span>
     </a>
 
     <a href="/oss/integrations/providers/deno" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
@@ -108,15 +101,22 @@ Skills require `deepagents>=1.7.0`.
         <span className="font-semibold">Deno</span>
     </a>
 
+    <a href="/oss/integrations/providers/daytona" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
+        <img className="block dark:hidden w-5 h-5" src="/images/providers/light/daytona.svg" alt="" />
+        <img className="hidden dark:block w-5 h-5" src="/images/providers/dark/daytona.svg" alt="" />
+        <span className="font-semibold">Daytona</span>
+    </a>
+
+    <a href="/oss/integrations/providers/modal" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
+        <img className="block dark:hidden w-5 h-5" src="/images/providers/light/modal.svg" alt="" />
+        <img className="hidden dark:block w-5 h-5" src="/images/providers/dark/modal.svg" alt="" />
+        <span className="font-semibold">Modal</span>
+    </a>
+
     <a href="/oss/integrations/providers/node-vfs" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
         <img className="block dark:hidden w-5 h-5" src="/images/providers/light/nodejs.svg" alt="" />
         <img className="hidden dark:block w-5 h-5" src="/images/providers/dark/nodejs.svg" alt="" />
         <span className="font-semibold">Node VFS</span>
-    </a>
-
-    <a href="/langsmith/sandboxes" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
-        <img className="w-5 h-5" src="/images/brand/docs-favicon.png" alt="" />
-        <span className="font-semibold">LangSmith</span>
     </a>
 </div>
 :::
@@ -133,7 +133,7 @@ For the full lifecycle table, async [graph factory](/langsmith/graph-rebuild) no
 
 ### Thread-scoped (default)
 
-Each conversation gets its own sandbox. The first run creates it; follow-up turns on the same thread reuse it. When the thread ends or the sandbox TTL expires, the environment goes away. Store the mapping with provider labels or metadata as in the following example so each run resolves to the same sandbox.
+Each conversation gets its own sandbox. The first run creates it; follow-up turns on the same thread reuse it. When the thread ends or the sandbox TTL expires, the environment goes away. Store the mapping with sandbox names or metadata as in the following example so each run resolves to the same sandbox.
 
 <Tip>
 When users can return after idle time, configure a TTL on the sandbox so the provider deletes or archives idle environments automatically.
@@ -224,17 +224,18 @@ Trade-offs:
 :::python
 
 ```python Example
-from daytona import Daytona
 from deepagents import create_deep_agent
+from deepagents.backends.langsmith import LangSmithSandbox
 from dotenv import load_dotenv
-from langchain_daytona import DaytonaSandbox
+from langsmith.sandbox import SandboxClient
 
 
 load_dotenv()
 
-# Can also do this with AgentCore, E2B, Modal, Runloop
-sandbox = Daytona().create()
-backend = DaytonaSandbox(sandbox=sandbox)
+# Can also do this with AgentCore, Daytona, E2B, Modal, Runloop, or Vercel
+client = SandboxClient()
+ls_sandbox = client.create_sandbox()
+backend = LangSmithSandbox(sandbox=ls_sandbox)
 
 agent = create_deep_agent(
     model="google_genai:gemini-3.5-flash",
@@ -254,10 +255,8 @@ try:
         }
     )
     print(result["messages"][-1].content)
-except Exception:
-    # Optional: delete the sandbox proactively on an exception
-    sandbox.stop()
-    raise
+finally:
+    client.delete_sandbox(ls_sandbox.name)
 ```
 
 :::
@@ -266,14 +265,15 @@ except Exception:
 
 ```typescript Example
 import "dotenv/config";
-import { DaytonaSandbox } from "@langchain/daytona";
-import { createDeepAgent } from "deepagents";
+import { createDeepAgent, LangSmithSandbox } from "deepagents";
+import { SandboxClient } from "langsmith/sandbox";
 
-// Can also do this with E2B, Runloop, Modal
-const sandbox = await DaytonaSandbox.create();
+// Can also do this with Deno, Daytona, E2B, Modal, or Runloop
+const client = new SandboxClient();
+const lsSandbox = await client.createSandbox();
 
 const agent = createDeepAgent({
-  backend: sandbox,
+  backend: new LangSmithSandbox({ sandbox: lsSandbox }),
   systemPrompt:
     "You are a coding assistant with sandbox access. You can create and run code in the sandbox.",
 });
@@ -293,10 +293,8 @@ try {
       ? lastMessage.content
       : String(lastMessage.content),
   );
-} catch (err) {
-  // Optional: delete the sandbox proactively on an exception
-  await sandbox.close();
-  throw err;
+} finally {
+  await client.deleteSandbox(lsSandbox.name);
 }
 ```
 

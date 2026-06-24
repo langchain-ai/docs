@@ -1,22 +1,26 @@
 ```python agent.py
-from daytona import CreateSandboxFromSnapshotParams, Daytona
 from deepagents import create_deep_agent
+from deepagents.backends.langsmith import LangSmithSandbox
 from langchain_core.runnables import RunnableConfig
-from langchain_daytona import DaytonaSandbox
+from langsmith.sandbox import SandboxClient
 
-client = Daytona()
+client = SandboxClient()
 
 
 async def agent(config: RunnableConfig):
     assistant_id = config["configurable"]["assistant_id"]  # [!code highlight]
-    try:
-        sandbox = await client.find_one(labels={"assistant_id": assistant_id})
-    except Exception:
-        sandbox = await client.create(
-            CreateSandboxFromSnapshotParams(labels={"assistant_id": assistant_id})
-        )
+    sandbox_name = f"assistant-{assistant_id}"
+    existing = [
+        sb
+        for sb in client.list_sandboxes()
+        if getattr(sb, "name", None) == sandbox_name
+    ]
+    if existing:
+        ls_sandbox = existing[0]
+    else:
+        ls_sandbox = client.create_sandbox(name=sandbox_name)
     return create_deep_agent(
         model="google_genai:gemini-3.5-flash",
-        backend=DaytonaSandbox(sandbox=sandbox)
+        backend=LangSmithSandbox(sandbox=ls_sandbox),
     )
 ```

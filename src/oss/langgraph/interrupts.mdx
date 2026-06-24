@@ -9,6 +9,10 @@ import LanggraphInterruptsHitlStreamJs from '/snippets/code-samples/langgraph-in
 import LanggraphInterruptsApprovalPy from '/snippets/code-samples/langgraph-interrupts-approval-py.mdx';
 import LanggraphInterruptsReviewPy from '/snippets/code-samples/langgraph-interrupts-review-py.mdx';
 import LanggraphInterruptsValidatePy from '/snippets/code-samples/langgraph-interrupts-validate-py.mdx';
+import LanggraphInterruptsValidateConditionalEdgePatternPy from '/snippets/code-samples/langgraph-interrupts-validate-conditional-edge-pattern-py.mdx';
+import LanggraphInterruptsValidateConditionalEdgePatternJs from '/snippets/code-samples/langgraph-interrupts-validate-conditional-edge-pattern-js.mdx';
+import LanggraphInterruptsValidateConditionalEdgeJs from '/snippets/code-samples/langgraph-interrupts-validate-conditional-edge-js.mdx';
+import LanggraphInterruptsValidateConditionalEdgePy from '/snippets/code-samples/langgraph-interrupts-validate-conditional-edge-py.mdx';
 
 Interrupts allow you to pause graph execution at specific points and wait for external input before continuing. This enables human-in-the-loop patterns where you need external input to proceed. When an interrupt is triggered, LangGraph saves the graph state using its [persistence](/oss/langgraph/persistence) layer and waits indefinitely until you resume execution.
 
@@ -785,59 +789,46 @@ This approach is useful when you want the approval logic to live with the tool i
 
 ### Validating human input
 
-Sometimes you need to validate input from humans and ask again if it's invalid. You can do this using multiple @[`interrupt`] calls in a loop.
+Sometimes you need to validate input from humans and re-prompt if the value is invalid. The recommended approach is to call `interrupt()` **once per node invocation**, return from the node with the error message stored in state, and use a **conditional edge** to loop back to the node until a valid value is provided.
+
+<Warning>
+
+**Avoid `while True` + `interrupt()` loops inside a single node.** Because the node re-runs from the beginning on every resume (see [Rules of interrupts](#rules-of-interrupts)), a loop that calls `interrupt()` multiple times causes each resume to replay all previous iterations: the first resume replays 1 iteration, the second replays 2, and so on. The result is exponential re-execution of any code inside the loop body.
+
+</Warning>
 
 :::python
-```python
-from langgraph.types import interrupt
+The correct pattern:
 
-def get_age_node(state: State):
-    prompt = "What is your age?"
+1. Store the re-prompt question in state (e.g. `pending_question`).
+2. In the node, call `interrupt()` **exactly once**, passing the current question from state.
+3. If the answer is invalid, return the updated `pending_question` so the next invocation re-prompts.
+4. Use `add_conditional_edges` to route back to the node until a valid value is collected.
 
-    while True:
-        answer = interrupt(prompt)  # payload surfaces on stream.interrupts when using event streaming
+<LanggraphInterruptsValidateConditionalEdgePatternPy />
 
-        # Validate the input
-        if isinstance(answer, int) and answer > 0:
-            # Valid input - continue
-            break
-        else:
-            # Invalid input - ask again with a more specific prompt
-            prompt = f"'{answer}' is not a valid age. Please enter a positive number."
+Each resume invokes `get_age_node` exactly once, runs the `interrupt()` call once, and exits. When the answer is invalid, the conditional edge loops back and the next interrupt re-prompts with the updated question. No code runs more than once per resume.
 
-    return {"age": answer}
-```
 :::
 
 :::js
-```typescript
-import { interrupt } from "@langchain/langgraph";
+The correct pattern:
 
-const getAgeNode: typeof State.Node = (state) => {
-  let prompt = "What is your age?";
+1. Store the re-prompt question in state (e.g. `pendingQuestion`).
+2. In the node, call `interrupt()` **exactly once**, passing the current question from state.
+3. If the answer is invalid, return the updated `pendingQuestion` so the next invocation re-prompts.
+4. Use `addConditionalEdges` to route back to the node until a valid value is collected.
 
-  while (true) {
-    const answer = interrupt(prompt); // payload surfaces in result.__interrupt__
+<LanggraphInterruptsValidateConditionalEdgePatternJs />
 
-    // Validate the input
-    if (typeof answer === "number" && answer > 0) {
-      // Valid input - continue
-      return { age: answer };
-    } else {
-      // Invalid input - ask again with a more specific prompt
-      prompt = `'${answer}' is not a valid age. Please enter a positive number.`;
-    }
-  }
-}
-```
+Each resume invokes `getAgeNode` exactly once, runs the `interrupt()` call once, and exits. When the answer is invalid, the conditional edge loops back and the next interrupt re-prompts with the updated question.
+
 :::
-
-Each time you resume the graph with invalid input, it will ask again with a clearer message. Once valid input is provided, the node completes and the graph continues.
 
 <Accordion title="Full example">
     :::python
 
-    <LanggraphInterruptsValidatePy />
+    <LanggraphInterruptsValidateConditionalEdgePy />
 
     :::
 
@@ -857,37 +848,36 @@ Each time you resume the graph with invalid input, it will ask again with a clea
 
     const State = new StateSchema({
       age: z.number().nullable(),
+      pendingQuestion: z.string().nullable(),
     });
 
     const builder = new StateGraph(State)
       .addNode("collectAge", (state) => {
-        let prompt = "What is your age?";
+        const question = state.pendingQuestion ?? "What is your age?";
+        const answer = interrupt(question); // called exactly once per invocation
 
-        while (true) {
-          const answer = interrupt(prompt); // payload surfaces in result.__interrupt__
-
-          if (typeof answer === "number" && answer > 0) {
-            return { age: answer };
-          }
-
-          prompt = `'${answer}' is not a valid age. Please enter a positive number.`;
+        if (typeof answer === "number" && answer > 0) {
+          return { age: answer, pendingQuestion: null };
         }
+        return { pendingQuestion: `'${answer}' is not a valid age. Please enter a positive number.` };
       })
       .addEdge(START, "collectAge")
-      .addEdge("collectAge", END);
+      .addConditionalEdges("collectAge", (state) =>
+        state.age !== null ? END : "collectAge"
+      );
 
     const checkpointer = new MemorySaver();
     const graph = builder.compile({ checkpointer });
 
     const config = { configurable: { thread_id: "form-1" } };
-    const first = await graph.invoke({ age: null }, config);
+    const first = await graph.invoke({ age: null, pendingQuestion: null }, config);
     console.log(first.__interrupt__); // -> [{ value: "What is your age?", ... }]
 
-    // Provide invalid data; the node re-prompts
+    // Provide invalid data; the node re-prompts via the conditional edge
     const retry = await graph.invoke(new Command({ resume: "thirty" }), config);
     console.log(retry.__interrupt__); // -> [{ value: "'thirty' is not a valid age...", ... }]
 
-    // Provide valid data; loop exits and state updates
+    // Provide valid data; route returns END and the graph finishes
     const final = await graph.invoke(new Command({ resume: 30 }), config);
     console.log(final.age); // -> 30
     ```
@@ -1044,7 +1034,7 @@ async function nodeA(state: State) {
 :::
 
 * 🔴 Do not conditionally skip @[`interrupt`] calls within a node
-* 🔴 Do not loop @[`interrupt`] calls using logic that isn't deterministic across executions
+* 🔴 Do not loop @[`interrupt`] calls using logic that isn't deterministic across executions, including `while True` validation loops. Use a conditional edge instead (see [Validating human input](#validating-human-input))
 
 :::python
 <CodeGroup>

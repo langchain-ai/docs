@@ -188,11 +188,21 @@ agent = create_agent(
 # :snippet-start: sql-agent-run-agent-py
 question = "Which genre on average has the longest tracks?"
 
-for step in agent.stream(
+stream = agent.stream_events(
     {"messages": [{"role": "user", "content": question}]},
-    stream_mode="values",
-):
-    step["messages"][-1].pretty_print()
+    version="v3",
+)
+for kind, item in stream.interleave("messages", "tool_calls"):
+    if kind == "messages":
+        for token in item.text:
+            print(token, end="", flush=True)
+    elif kind == "tool_calls":
+        print(f"\nTool call: {item.tool_name}({item.input})")
+        for delta in item.output_deltas:
+            print(delta, end="", flush=True)
+        print(f"\nTool result: {item.output}")
+
+final_state = stream.output
 # :snippet-end:
 
 # :snippet-start: sql-agent-hitl-middleware-py
@@ -219,39 +229,43 @@ agent = create_agent(
 question = "Which genre on average has the longest tracks?"
 config = {"configurable": {"thread_id": "1"}} # [!code highlight]
 
-for step in agent.stream(
+stream = agent.stream_events( # [!code highlight]
     {"messages": [{"role": "user", "content": question}]},
     config, # [!code highlight]
-    stream_mode="values",
-):
-    if "__interrupt__" in step: # [!code highlight]
-        print("INTERRUPTED:") # [!code highlight]
-        interrupt = step["__interrupt__"][0] # [!code highlight]
-        for request in interrupt.value["action_requests"]: # [!code highlight]
-            print(request["description"]) # [!code highlight]
-    elif "messages" in step:
-        step["messages"][-1].pretty_print()
-    else:
-        pass
+    version="v3",
+)
+for kind, item in stream.interleave("messages", "tool_calls"):
+    if kind == "messages":
+        for token in item.text:
+            print(token, end="", flush=True)
+    elif kind == "tool_calls":
+        print(f"\nTool call: {item.tool_name}({item.input})")
+if stream.interrupted: # [!code highlight]
+    print("INTERRUPTED:") # [!code highlight]
+    interrupt = stream.interrupts[0] # [!code highlight]
+    for request in interrupt.value["action_requests"]: # [!code highlight]
+        print(request["description"]) # [!code highlight]
 # :snippet-end:
 
 # :snippet-start: sql-agent-hitl-resume-py
 from langgraph.types import Command # [!code highlight]
 
-for step in agent.stream(
+stream = agent.stream_events( # [!code highlight]
     Command(resume={"decisions": [{"type": "approve"}]}), # [!code highlight]
     config,
-    stream_mode="values",
-):
-    if "messages" in step:
-        step["messages"][-1].pretty_print()
-    if "__interrupt__" in step:
-        print("INTERRUPTED:")
-        interrupt = step["__interrupt__"][0]
-        for request in interrupt.value["action_requests"]:
-            print(request["description"])
-    else:
-        pass
+    version="v3",
+)
+for kind, item in stream.interleave("messages", "tool_calls"):
+    if kind == "messages":
+        for token in item.text:
+            print(token, end="", flush=True)
+    elif kind == "tool_calls":
+        print(f"\nTool call: {item.tool_name}({item.input})")
+if stream.interrupted:
+    print("INTERRUPTED:")
+    interrupt = stream.interrupts[0]
+    for request in interrupt.value["action_requests"]:
+        print(request["description"])
 # :snippet-end:
 
 # :snippet-start: sql-agent-studio-py

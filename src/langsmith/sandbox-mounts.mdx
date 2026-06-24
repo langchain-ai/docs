@@ -1,0 +1,443 @@
+---
+title: Sandbox mounts
+sidebarTitle: Mounts
+description: Mount S3 buckets, GCS buckets, and public Git repositories into LangSmith sandboxes.
+---
+
+Sandbox mounts attach external data sources to a sandbox filesystem when the sandbox is created. Use mounts when sandbox code needs direct file access to object storage buckets or public Git repositories without copying the data into the sandbox image.
+
+Mounts are configured through `mount_config` in Python or `mountConfig` in TypeScript. The SDK sends the mount specs to LangSmith and composes the required [auth proxy](/langsmith/sandbox-auth-proxy) rules for provider credentials.
+
+<Note>
+Sandbox mounts require `langsmith[sandbox]>=0.8.16` for Python or `langsmith>=0.7.10` for TypeScript.
+</Note>
+
+<Warning>
+Store cloud credentials as LangSmith workspace secrets before creating a sandbox that mounts S3 or GCS. Do not pass real cloud credentials as sandbox environment variables, command arguments, or files.
+</Warning>
+
+## Configure mount paths
+
+Each mount has an `id`, a `type`, and a `mount_path` / `mountPath`. Mount paths must be absolute paths under `/mnt/mounts`.
+
+Use stable paths that describe the mounted source:
+
+| Source | Example path |
+|--------|--------------|
+| S3 bucket prefix | `/mnt/mounts/customer-data` |
+| GCS bucket prefix | `/mnt/mounts/eval-datasets` |
+| Git repository | `/mnt/mounts/repo` |
+
+Mount IDs can contain ASCII letters, digits, underscores, and hyphens. Do not reuse an ID or mount path within the same sandbox.
+
+## Mount an S3 bucket
+
+S3 mounts require AWS auth. The SDK creates an AWS auth proxy rule from `aws_auth` / `awsAuth`, so the sandbox can access the bucket without seeing the real access keys.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import (
+    SandboxClient,
+    aws_auth,
+    mount_config,
+    s3_mount,
+    workspace_secret,
+)
+
+client = SandboxClient()
+
+mount_cfg = mount_config(
+    auth=[
+        aws_auth(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        )
+    ],
+    mounts=[
+        s3_mount(
+            id="customer_data",
+            mount_path="/mnt/mounts/customer-data",
+            bucket="example-bucket",
+            prefix="datasets/customer-data",
+            region="us-east-1",
+            path_style=False,
+            read_only=True,
+        )
+    ],
+)
+
+with client.sandbox(name="s3-mount-sandbox", mount_config=mount_cfg) as sb:
+    result = sb.run("ls /mnt/mounts/customer-data")
+    print(result.stdout)
+```
+
+```ts TypeScript
+import {
+  SandboxClient,
+  awsAuth,
+  mountConfig,
+  s3Mount,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const mountCfg = mountConfig({
+  auth: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+  ],
+  mounts: [
+    s3Mount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+      region: "us-east-1",
+      pathStyle: false,
+      readOnly: true,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "s3-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/customer-data");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+## Mount a GCS bucket
+
+GCS mounts require GCP auth. Read/write mounts require the `https://www.googleapis.com/auth/devstorage.read_write` or `https://www.googleapis.com/auth/cloud-platform` OAuth scope. Read-only mounts can use `https://www.googleapis.com/auth/devstorage.read_only`.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import (
+    SandboxClient,
+    gcp_auth,
+    gcs_mount,
+    mount_config,
+    workspace_secret,
+)
+
+client = SandboxClient()
+
+mount_cfg = mount_config(
+    auth=[
+        gcp_auth(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            ),
+            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        )
+    ],
+    mounts=[
+        gcs_mount(
+            id="eval_datasets",
+            mount_path="/mnt/mounts/eval-datasets",
+            bucket="example-bucket",
+            prefix="datasets/evals",
+            read_only=False,
+        )
+    ],
+)
+
+with client.sandbox(name="gcs-mount-sandbox", mount_config=mount_cfg) as sb:
+    result = sb.run("ls /mnt/mounts/eval-datasets")
+    print(result.stdout)
+```
+
+```ts TypeScript
+import {
+  SandboxClient,
+  gcpAuth,
+  gcsMount,
+  mountConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const mountCfg = mountConfig({
+  auth: [
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    }),
+  ],
+  mounts: [
+    gcsMount({
+      id: "eval_datasets",
+      mountPath: "/mnt/mounts/eval-datasets",
+      bucket: "example-bucket",
+      prefix: "datasets/evals",
+      readOnly: false,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "gcs-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/eval-datasets");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+## Mount a public Git repository
+
+Public Git mounts do not require AWS or GCP auth. Use an HTTPS remote URL and optionally pin a branch or tag.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient, git_mount, mount_config
+
+client = SandboxClient()
+
+mount_cfg = mount_config(
+    mounts=[
+        git_mount(
+            id="repo",
+            mount_path="/mnt/mounts/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+            ref={"type": "branch", "name": "main"},
+            refresh_interval_seconds=60,
+        )
+    ],
+)
+
+with client.sandbox(name="git-mount-sandbox", mount_config=mount_cfg) as sb:
+    result = sb.run("ls /mnt/mounts/repo")
+    print(result.stdout)
+```
+
+```ts TypeScript
+import { SandboxClient, gitMount, mountConfig } from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const mountCfg = mountConfig({
+  mounts: [
+    gitMount({
+      id: "repo",
+      mountPath: "/mnt/mounts/repo",
+      remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+      ref: { type: "branch", name: "main" },
+      refreshIntervalSeconds: 60,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "git-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/repo");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+Private Git repositories can use low-level `proxy_config` / `proxyConfig` rules when the remote requires proxy-managed auth. There is not yet a high-level private Git auth helper.
+
+## Combine mounts
+
+A sandbox can mount multiple sources. Build one `mount_config` / `mountConfig` with all mount specs, and include provider auth for every bucket provider used by those specs.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import (
+    aws_auth,
+    git_mount,
+    gcp_auth,
+    gcs_mount,
+    mount_config,
+    s3_mount,
+    workspace_secret,
+)
+
+mount_cfg = mount_config(
+    auth=[
+        aws_auth(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        ),
+        gcp_auth(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            ),
+            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
+        ),
+    ],
+    mounts=[
+        s3_mount(
+            id="s3_data",
+            mount_path="/mnt/mounts/s3-data",
+            bucket="example-s3-bucket",
+        ),
+        gcs_mount(
+            id="gcs_data",
+            mount_path="/mnt/mounts/gcs-data",
+            bucket="example-gcs-bucket",
+        ),
+        git_mount(
+            id="repo",
+            mount_path="/mnt/mounts/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+        ),
+    ],
+)
+```
+
+```ts TypeScript
+import {
+  awsAuth,
+  gitMount,
+  gcpAuth,
+  gcsMount,
+  mountConfig,
+  s3Mount,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
+    }),
+  ],
+  mounts: [
+    s3Mount({
+      id: "s3_data",
+      mountPath: "/mnt/mounts/s3-data",
+      bucket: "example-s3-bucket",
+    }),
+    gcsMount({
+      id: "gcs_data",
+      mountPath: "/mnt/mounts/gcs-data",
+      bucket: "example-gcs-bucket",
+    }),
+    gitMount({
+      id: "repo",
+      mountPath: "/mnt/mounts/repo",
+      remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+    }),
+  ],
+});
+```
+
+</CodeGroup>
+
+## Cache bucket mounts
+
+S3 and GCS mounts support optional cache settings. Cache settings tune the local
+VFS cache used by the bucket mount; the bucket remains the source of truth. Use
+cache settings to control local disk usage and writeback timing, not as a
+separate persistence layer. Cache settings do not apply to Git mounts.
+
+| Field | Description |
+|-------|-------------|
+| `max_size_bytes` | Optional maximum size, in bytes, for the local mount cache. Set a positive value to add an explicit cap; omit it to leave the runtime default. |
+| `writeback_seconds` | Optional delay, in seconds, before cached writes are written back to the bucket. The default is `0`. Lower values make writes visible to the bucket sooner; higher values can reduce write traffic for workloads that rewrite the same files. |
+
+For read-only dataset mounts, configure `max_size_bytes` only when you need a
+specific local cache cap. For writable mounts, keep `writeback_seconds` low when
+another process needs to read the objects from S3 or GCS soon after the sandbox
+writes them.
+
+<CodeGroup>
+
+```python Python
+s3_mount(
+    id="customer_data",
+    mount_path="/mnt/mounts/customer-data",
+    bucket="example-bucket",
+    cache={
+        "max_size_bytes": 2 * 1024**3,
+        "writeback_seconds": 5,
+    },
+)
+```
+
+```ts TypeScript
+s3Mount({
+  id: "customer_data",
+  mountPath: "/mnt/mounts/customer-data",
+  bucket: "example-bucket",
+  cache: {
+    max_size_bytes: 2 * 1024 ** 3,
+    writeback_seconds: 5,
+  },
+});
+```
+
+</CodeGroup>
+
+The same cache settings can be used on GCS mounts:
+
+<CodeGroup>
+
+```python Python
+gcs_mount(
+    id="eval_datasets",
+    mount_path="/mnt/mounts/eval-datasets",
+    bucket="example-bucket",
+    cache={
+        "max_size_bytes": 2 * 1024**3,
+        "writeback_seconds": 5,
+    },
+)
+```
+
+```ts TypeScript
+gcsMount({
+  id: "eval_datasets",
+  mountPath: "/mnt/mounts/eval-datasets",
+  bucket: "example-bucket",
+  cache: {
+    max_size_bytes: 2 * 1024 ** 3,
+    writeback_seconds: 5,
+  },
+});
+```
+
+</CodeGroup>
+
+## Limits
+
+- Mounts are attached when the sandbox is created. Create a new sandbox to change mounts.
+- Configure each cloud provider's credentials in one auth surface per sandbox. If mount auth supplies AWS or GCP credentials, do not also add an auth proxy rule for the same provider.
+- Git refs can be omitted or set to a branch or tag. Commit refs are not supported.
+- Git mounts do not support `read_only` / `readOnly` or cache settings.

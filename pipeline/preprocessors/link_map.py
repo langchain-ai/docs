@@ -202,6 +202,9 @@ LINK_MAPS: list[LinkMap] = [
             "ParallelEnrichment": "langchain-parallel/tasks/ParallelEnrichment",
             "ParallelMonitor": "langchain-parallel/monitors/ParallelMonitor",
             "SourcePolicy": "langchain-parallel/_types/SourcePolicy",
+            # langchain-redis
+            "langchain-redis": "langchain-redis/",
+            "RedisVectorStore": "langchain-redis/vectorstores/RedisVectorStore",
             # langchain-tavily
             "langchain-tavily": "langchain-tavily/",
             "TavilySearch": "langchain-tavily/tavily_search/TavilySearch",
@@ -645,6 +648,7 @@ LINK_MAPS: list[LinkMap] = [
             "humanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
             "HITLRequest": "langchain/index/HITLRequest",
             "AnthropicPromptCachingMiddleware": "langchain/index/anthropicPromptCachingMiddleware",
+            "BedrockPromptCachingMiddleware": "langchain/index/bedrockPromptCachingMiddleware",
             "SummarizationMiddleware": "langchain/index/summarizationMiddleware",
             "createMiddleware": "langchain/index/createMiddleware",
             "AgentMiddleware": "langchain/index/AgentMiddleware",
