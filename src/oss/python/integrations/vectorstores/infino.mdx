@@ -3,13 +3,15 @@ title: "Infino integration"
 description: "Integrate with the Infino vector store using LangChain Python."
 ---
 
-This guide provides a quick overview for getting started with the Infino [vector store](/oss/integrations/vectorstores#overview). For a detailed listing of all `InfinoVectorStore` features, parameters, and configurations, head to the [PyPI package page](https://pypi.org/project/langchain-infino/).
+[Infino](https://github.com/infino-ai/infino) is a retrieval engine that runs vector, full-text (BM25), hybrid (RRF), and SQL search over **one copy** of your data in Apache Parquet on object storage — no separate vector database and search cluster to provision, sync, or keep consistent.
 
-[Infino](https://github.com/infino-ai/infino) runs SQL, full-text (BM25), vector, and hybrid (RRF) retrieval over one copy of your data in Apache Parquet on object storage. `InfinoVectorStore` surfaces that whole retrieval surface, not just `similarity_search`.
+Most "vector database" integrations expose only the vector slice of their engine. `InfinoVectorStore` surfaces the whole surface: semantic search *and* exact-keyword BM25 *and* their fusion, from a single in-process engine. The payoff shows up below in [Vector vs. BM25 vs. hybrid](#vector-vs-bm25-vs-hybrid) — where pure-vector search misses an exact error code and hybrid retrieval catches it.
+
+This guide covers getting started. For the full API, see the [PyPI package page](https://pypi.org/project/langchain-infino/) and the [source repository](https://github.com/infino-ai/langchain-infino).
 
 ## Setup
 
-Infino runs in-process, so there are no credentials or API keys for the engine itself. You only need an embeddings provider — Infino never embeds; you bring a LangChain `Embeddings` object and the integration supplies the vectors.
+Infino runs **in-process** — there is no server to deploy and no engine credentials. You only need an embeddings provider: Infino never embeds; you bring a LangChain `Embeddings` object and the integration supplies the vectors.
 
 ### Credentials
 
@@ -47,21 +49,21 @@ The LangChain Infino integration lives in the `langchain-infino` package:
 
 ## Instantiation
 
-A connection is a local path or an `s3://` URI for durable storage (`memory://` is ephemeral). Use `from_texts` to create and populate a table; pass `[]` to start empty. The embedding dimension must match the table's declared `dim` and lie in the engine's supported range `[16, 4096]`.
+A connection is a local path or an `s3://` URI for durable storage (`memory://` is ephemeral — handy for tests). Use `from_texts` to create and populate a table; pass `[]` to start empty. The embedding dimension must match the table's declared `dim` and lie in the engine's supported range `[16, 4096]`.
 
 ```python Initialize vector store icon="database"
 import infino
 from langchain_infino import InfinoVectorStore
 from langchain_openai import OpenAIEmbeddings
 
-connection = infino.connect("./data")
+connection = infino.connect("./data")  # or "s3://my-bucket/kb", or "memory://"
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")  # 1536-dim
 
 vector_store = InfinoVectorStore.from_texts(
     [],
     embeddings,
     connection=connection,
-    table_name="docs",
+    table_name="support_kb",
     dim=1536,
 )
 ```
@@ -72,17 +74,27 @@ vector_store = InfinoVectorStore.from_texts(
 
 ### Add items
 
-`add_documents` returns the ids. Caller-supplied ids are upserted; omitted ids are generated.
+We'll use a small support knowledge base — a realistic mix of natural-language prose and exact identifiers (error codes, plan names, API endpoints). The same corpus drives every example below. `add_documents` returns the ids; caller-supplied ids are upserted (re-adding an id overwrites it), omitted ids are generated.
 
 ```python Add documents icon="folder-plus"
 from langchain_core.documents import Document
 
-document_1 = Document(page_content="foo", metadata={"source": "https://example.com"})
-document_2 = Document(page_content="bar", metadata={"source": "https://example.com"})
-document_3 = Document(page_content="baz", metadata={"source": "https://example.com"})
-documents = [document_1, document_2, document_3]
+documents = [
+    Document(page_content="Reset your password from the Account → Security settings page.",
+             metadata={"source": "docs"}),
+    Document(page_content="Error E-4042 means your upload exceeded the 2 GB file size limit.",
+             metadata={"source": "kb"}),
+    Document(page_content="The Q3 outage was caused by a misconfigured load balancer.",
+             metadata={"source": "postmortem"}),
+    Document(page_content="The Pro plan includes priority support and unlimited seats.",
+             metadata={"source": "pricing"}),
+    Document(page_content="To export your data in bulk, call the bulk_export API endpoint.",
+             metadata={"source": "docs"}),
+    Document(page_content="Customers on the legacy Starter tier keep grandfathered pricing.",
+             metadata={"source": "pricing"}),
+]
 
-vector_store.add_documents(documents=documents, ids=["1", "2", "3"])
+vector_store.add_documents(documents=documents, ids=[f"doc-{i}" for i in range(len(documents))])
 ```
 
 ### Update items
@@ -90,54 +102,59 @@ vector_store.add_documents(documents=documents, ids=["1", "2", "3"])
 `add_documents` is an idempotent upsert: re-adding an id overwrites it in place.
 
 ```python Update document by ID icon="pencil"
-updated_document = Document(
-    page_content="qux", metadata={"source": "https://another-example.com"}
+revised = Document(
+    page_content="Error E-4042 means your upload exceeded the 5 GB file size limit.",
+    metadata={"source": "kb"},
 )
-
-vector_store.add_documents(documents=[updated_document], ids=["1"])
+vector_store.add_documents(documents=[revised], ids=["doc-1"])
 ```
 
 ### Delete items
 
 ```python Delete documents by IDs icon="trash"
-vector_store.delete(ids=["3"])
+vector_store.delete(ids=["doc-2"])
 ```
 
 ---
 
 ## Query vector store
 
-Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
-
 ### Directly
 
-Performing a simple similarity search can be done as follows:
+A similarity search encodes your query into an embedding and returns the nearest documents. Note there's no shared keyword between the query and the answer — semantic search bridges "login credentials" → "password":
 
 ```python Similarity search icon="folders"
-results = vector_store.similarity_search(
-    query="thud", k=1, filter={"source": "https://another-example.com"}
-)
+results = vector_store.similarity_search("how do I change my login credentials", k=2)
 for doc in results:
     print(f"* {doc.page_content} [{doc.metadata}]")
 ```
 
-If you want to execute a similarity search and receive the corresponding scores you can run:
+```text
+* Reset your password from the Account → Security settings page. [{'source': 'docs'}]
+* To export your data in bulk, call the bulk_export API endpoint. [{'source': 'docs'}]
+```
+
+To get the corresponding scores back, use `similarity_search_with_score`:
 
 ```python Similarity search with scores icon="star-half"
-results = vector_store.similarity_search_with_score(query="thud", k=1)
+results = vector_store.similarity_search_with_score("upgrade for more seats", k=1)
 for doc, score in results:
     print(f"* [SIM={score:3f}] {doc.page_content} [{doc.metadata}]")
 ```
 
-Vector distance is *smaller is nearer*. To get a normalized `[0, 1]` relevance (higher = better) for the `cosine`, `l2`, and `l2sq` metrics, use `similarity_search_with_relevance_scores`.
+```text
+* [SIM=0.412879] The Pro plan includes priority support and unlimited seats. [{'source': 'pricing'}]
+```
+
+Vector distance is *smaller is nearer*. For a normalized `[0, 1]` relevance (higher = better) under the `cosine`, `l2`, and `l2sq` metrics, use `similarity_search_with_relevance_scores`.
 
 ### By turning into retriever
 
-You can also transform the vector store into a retriever for easier usage in your chains.
+Transform the store into a retriever for use in your chains and agents:
 
 ```python Create retriever icon="robot"
 retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 1})
-retriever.invoke("thud")
+retriever.invoke("how do I change my login credentials")
 ```
 
 ---
@@ -155,65 +172,75 @@ retriever.invoke("thud")
 
 ---
 
-## Infino-specific functionality
+## Vector vs. BM25 vs. hybrid
 
-Infino is a single engine for SQL, BM25, vector, and hybrid retrieval, so the store exposes more than the vector slice.
+This is where one engine over one copy of your data pays off. Consider a user searching for the exact error code **`E-4042`**. Embeddings are weak on rare tokens like error codes, so pure-vector search drifts to topically-related docs and can miss the exact match. BM25 nails the literal token. Hybrid (RRF) fuses both rankings, so you get semantic recall *and* exact-match precision — without a second datastore.
 
-### <Icon icon="filter" size={16}/> Metadata filtering
+```python Same query, three retrieval modes icon="scale-balanced"
+query = "E-4042 upload failed"
 
-Promote the keys you want to filter on to real scalar columns at table creation; everything else round-trips losslessly through a JSON catch-all but isn't filterable. Filtering supports equality, `$eq` / `$ne` / `$gt` / `$gte` / `$lt` / `$lte`, `$in` / `$nin`, and `$and` / `$or` / `$not`.
+# Semantic only — may miss the rare exact token.
+vector = vector_store.similarity_search(query, k=1)
+
+# Lexical only — locks onto the exact code.
+bm25 = vector_store.as_bm25_retriever(k=1).invoke(query)
+
+# Fused (RRF) — semantic recall + exact-match precision, one SQL call.
+hybrid = vector_store.as_hybrid_retriever(k=1).invoke(query)
+
+for label, docs in [("vector", vector), ("bm25", bm25), ("hybrid", hybrid)]:
+    print(f"{label:>7}: {docs[0].page_content}")
+```
+
+```text
+ vector: The Q3 outage was caused by a misconfigured load balancer.
+   bm25: Error E-4042 means your upload exceeded the 2 GB file size limit.
+ hybrid: Error E-4042 means your upload exceeded the 2 GB file size limit.
+```
+
+`as_bm25_retriever(mode="and")` requires all query terms; `"or"` (default) matches any.
+
+---
+
+## Metadata filtering
+
+Promote the keys you want to filter on to real scalar columns at table creation — those become filterable; everything else round-trips losslessly through a JSON catch-all but isn't filterable. Filtering supports equality, `$eq` / `$ne` / `$gt` / `$gte` / `$lt` / `$lte`, `$in` / `$nin`, and `$and` / `$or` / `$not`.
 
 ```python Filterable metadata columns icon="filter"
 import pyarrow as pa
 
 store = InfinoVectorStore.from_texts(
-    ["a paper on optimizers", "a paper on transformers"],
+    [d.page_content for d in documents],
     embeddings,
     connection=connection,
-    table_name="papers",
+    table_name="support_kb_filtered",
     dim=1536,
-    metadata_columns=[
-        pa.field("category", pa.large_utf8(), nullable=False),
-        pa.field("year", pa.int64(), nullable=False),
-    ],
-    metadatas=[{"category": "ml", "year": 2024}, {"category": "ml", "year": 2023}],
+    metadata_columns=[pa.field("source", pa.large_utf8(), nullable=False)],
+    metadatas=[d.metadata for d in documents],
 )
 
-store.similarity_search("optimizers", k=4, filter={"year": {"$gte": 2024}})
+# Only search pricing docs.
+store.similarity_search("what does the paid plan include", k=2, filter={"source": "pricing"})
+
+# Boolean combinations.
 store.similarity_search(
-    "optimizers", k=4, filter={"$or": [{"category": "ml"}, {"year": {"$lt": 2000}}]}
+    "account help", k=3, filter={"$or": [{"source": "docs"}, {"source": "kb"}]}
 )
 ```
 
-### <Icon icon="magnifying-glass" size={16}/> Text-pushdown pre-filter
+### Text-pushdown pre-filter
 
-For a *text* predicate, push it into the kNN instead of post-filtering the top-k. The engine prunes to rows matching the full-text terms **before** ranking, so exactly `k` nearest *matching* rows come back. It is reachable from any retriever via `search_kwargs`.
+For a *text* predicate, push it into the kNN instead of post-filtering the top-k. The engine prunes to rows matching the full-text terms **before** ranking, so exactly `k` nearest *matching* rows come back — no over-fetch, no under-return. Reachable from any retriever via `search_kwargs`:
 
 ```python Text pushdown icon="magnifying-glass"
-store.similarity_search("cancel my plan", k=10, filter_query="subscription billing")
+store.similarity_search("how do I cancel", k=5, filter_query="plan pricing")
 ```
 
-### <Icon icon="git-merge" size={16}/> Hybrid (RRF) retrieval
+---
 
-BM25 and vector search fused by reciprocal-rank fusion in a single SQL call — no separate reranking round-trip.
+## Self-query
 
-```python Hybrid retriever icon="git-merge"
-retriever = store.as_hybrid_retriever(k=4)
-retriever.invoke("neural network training")
-```
-
-### <Icon icon="font" size={16}/> BM25 retrieval
-
-Pure lexical ranking over the FTS-indexed text column. `mode="and"` requires all query terms; `"or"` (default) matches any.
-
-```python BM25 retriever icon="font"
-retriever = store.as_bm25_retriever(k=4, mode="and")
-retriever.invoke("gradient descent")
-```
-
-### <Icon icon="wand-magic-sparkles" size={16}/> Self-query
-
-`InfinoTranslator` plugs into LangChain's `SelfQueryRetriever`, lowering an LLM's structured query to a SQL `WHERE` over the declared metadata columns — the full comparison and boolean surface, not a reduced DSL.
+`InfinoTranslator` plugs into LangChain's `SelfQueryRetriever`, lowering an LLM's structured query into a SQL `WHERE` over the declared metadata columns — the full comparison and boolean surface, not a reduced DSL. See the [self-query docs](/oss/integrations/retrievers/self_query) for the `metadata_field_info` setup.
 
 ```python Self-query icon="wand-magic-sparkles"
 from langchain_classic.retrievers import SelfQueryRetriever
@@ -222,22 +249,24 @@ from langchain_infino import InfinoTranslator
 retriever = SelfQueryRetriever.from_llm(
     llm,
     store,
-    document_contents="research papers",
+    document_contents="support knowledge base articles",
     metadata_field_info=metadata_field_info,
     structured_query_translator=InfinoTranslator(),
 )
-retriever.invoke("ML papers since 2023")
+retriever.invoke("pricing articles about the Pro plan")
 ```
 
-### <Icon icon="database" size={16}/> SQL-native search
+---
 
-The escape hatch for anything the typed methods don't cover — joins, custom `WHERE`, or the `vector_search` / `hybrid_search` table functions. Project the store's columns and the rows map back to `Document`s.
+## SQL-native search
+
+The escape hatch for anything the typed methods don't cover — joins, custom `WHERE`, or the `vector_search` / `hybrid_search` table functions directly. Project the store's columns and the rows map back to `Document`s:
 
 ```python SQL escape hatch icon="database"
-qv = ",".join(map(str, embeddings.embed_query("fox")))
-store.search_by_sql(f"""
+qv = ",".join(map(str, embeddings.embed_query("upload error")))
+vector_store.search_by_sql(f"""
     SELECT doc_id, page_content, _metadata_json, score
-    FROM hybrid_search('docs', 'page_content', 'fox', 'embedding', '{qv}', 10)
+    FROM hybrid_search('support_kb', 'page_content', 'E-4042', 'embedding', '{qv}', 5)
     ORDER BY score DESC
 """)
 ```
