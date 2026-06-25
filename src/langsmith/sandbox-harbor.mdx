@@ -74,29 +74,42 @@ harbor run -d "<org/name>" \
 
 ## Run Deep Agents on LangSmith
 
-Deep Agents runs against the LangSmith environment as a custom Harbor agent. To build and run a Deep Agent, see the [Deep Agents documentation](/oss/deepagents/overview). The Harbor wrapper ships in the [`deepagents-evals` package](https://github.com/langchain-ai/deepagents/tree/main/libs/evals), which exposes `deepagents_harbor:DeepAgentsWrapper` and includes ready-made `make run-terminal-bench-*` targets. Install it in the same environment as Harbor:
+Deep Agents runs against the LangSmith environment through Harbor's built-in `langgraph` agent. To build and run a Deep Agent, see the [Deep Agents documentation](/oss/deepagents/overview). The previous `deepagents_harbor:DeepAgentsWrapper` import path is no longer available.
+
+From a checkout of [`langchain-ai/deepagents`](https://github.com/langchain-ai/deepagents), install the eval dependencies and stage the local Deep Agents packages for the LangGraph sandbox install:
 
 ```bash
-pip install "harbor[langsmith]"
-
-# From a checkout of langchain-ai/deepagents:
-pip install -e libs/evals
+cd libs/evals
+uv sync --group test
+make stage-harbor-local-deps
 ```
 
-Set your LangSmith and model credentials, then run Harbor with the wrapper:
+Set your LangSmith and model credentials, then run Harbor with the LangGraph project:
 
 ```bash
 export LANGSMITH_PROFILE=prod
 export LANGSMITH_TRACING=true
 export LANGSMITH_PROJECT=harbor-deepagents
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
 export ANTHROPIC_API_KEY="<ANTHROPIC_API_KEY>"
 
-harbor run -d "terminal-bench@2.0" \
-  --agent-import-path deepagents_harbor:DeepAgentsWrapper \
+uv run harbor run \
+  --agent langgraph \
+  --agent-kwarg project_path=deepagents_harbor/langgraph_project \
+  --agent-kwarg config=langgraph.json \
+  --agent-kwarg graph=deepagent \
+  --agent-env 'ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}' \
+  --agent-env 'LANGSMITH_API_KEY=${LANGSMITH_API_KEY}' \
+  --agent-env 'LANGSMITH_TRACING=true' \
+  --dataset terminal-bench/terminal-bench-2 \
   --model anthropic:claude-opus-4-8 \
-  -e langsmith \
   -n 10 \
   -l 10 \
+  --jobs-dir harbor-jobs/terminal-bench \
+  --env langsmith \
+  --plugin langsmith \
+  --plugin-kwarg dataset_name=terminal-bench/terminal-bench-2 \
+  --plugin-kwarg experiment_name=harbor-deepagents \
   --yes \
   --ek idle_ttl_seconds=0 \
   --ek delete_after_stop_seconds=7200
@@ -106,10 +119,10 @@ Keep API keys in your shell environment rather than in a job config file.
 
 ## Use a config file
 
-Capture the same run in a Harbor job config:
+Capture the reusable job inputs in a Harbor job config:
 
 ```yaml
-jobs_dir: jobs/deepagents-langsmith
+jobs_dir: harbor-jobs/terminal-bench
 n_attempts: 1
 n_concurrent_trials: 10
 environment:
@@ -119,11 +132,18 @@ environment:
     idle_ttl_seconds: 0
     delete_after_stop_seconds: 7200
 agents:
-  - import_path: deepagents_harbor:DeepAgentsWrapper
+  - name: langgraph
     model_name: anthropic:claude-opus-4-8
+    env:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY}
+      LANGSMITH_TRACING: "true"
+    kwargs:
+      project_path: deepagents_harbor/langgraph_project
+      config: langgraph.json
+      graph: deepagent
 datasets:
-  - name: terminal-bench
-    version: "2.0"
+  - name: terminal-bench/terminal-bench-2
     n_tasks: 10
 ```
 
