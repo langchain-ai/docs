@@ -256,25 +256,23 @@ async def on_assistants(
         detail="User lacks the required permissions.",
     )
 
-@auth.on.store
-async def scope_store(ctx: Auth.types.AuthContext, value: Auth.types.on.store.value):
-    """Isolate store data per user by rewriting namespaces."""
-    namespace = tuple(value["namespace"]) if value.get("namespace") else ()
-    if not namespace or namespace[0] != ctx.user.identity:
-        namespace = (ctx.user.identity, *namespace)
-    value["namespace"] = namespace
+# Assumes you organize information in store like (user_id, resource_type, resource_id)
+@auth.on.store()
+async def authorize_store(ctx: Auth.types.AuthContext, value: dict):
+    # The "namespace" field for each store item is a tuple you can think of as the directory of an item.
+    namespace: tuple = value["namespace"]
+    assert namespace[0] == ctx.user.identity, "Not authorized"
 ```
-
-For a full guide on store isolation, including agent code patterns and testing, see [Isolate store per user](/langsmith/store-auth).
 
 Notice that instead of one global handler, you now have specific handlers for:
 
 1. Creating threads
 2. Reading threads
 3. Accessing assistants
-4. Scoping store data
 
-The first three of these match specific **actions** on each resource (see [resource actions](/langsmith/auth#resource-specific-handlers)), while `@auth.on.assistants` matches _any_ action on the `assistants` resource and `@auth.on.store` matches all store operations. For each request, LangGraph will run the most specific handler that matches the resource and action being accessed. This means that these handlers will run rather than the broadly scoped "`@auth.on`" handler.
+The first three of these match specific **actions** on each resource (see [resource actions](/langsmith/auth#resource-specific-handlers)), while the last one (`@auth.on.assistants`) matches _any_ action on the `assistants` resource. For each request, LangGraph will run the most specific handler that matches the resource and action being accessed. This means that these handlers will run rather than the broadly scoped "`@auth.on`" handler.
+
+Store authorization works differently from threads and assistants. For store isolation patterns and tradeoffs, see [Isolate store per user](/langsmith/store-auth).
 
 Try adding the following test code to your test file:
 
