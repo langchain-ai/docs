@@ -648,6 +648,7 @@ LINK_MAPS: list[LinkMap] = [
             "humanInTheLoopMiddleware": "langchain/middleware/humanInTheLoopMiddleware",
             "HITLRequest": "langchain/index/HITLRequest",
             "AnthropicPromptCachingMiddleware": "langchain/index/anthropicPromptCachingMiddleware",
+            "BedrockPromptCachingMiddleware": "langchain/index/bedrockPromptCachingMiddleware",
             "SummarizationMiddleware": "langchain/index/summarizationMiddleware",
             "createMiddleware": "langchain/index/createMiddleware",
             "AgentMiddleware": "langchain/index/AgentMiddleware",
