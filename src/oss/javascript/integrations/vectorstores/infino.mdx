@@ -1,0 +1,152 @@
+---
+title: "InfinoVectorStore integration"
+description: "Integrate with the InfinoVectorStore using LangChain JavaScript."
+---
+
+[Infino](https://github.com/infino-ai/infino) is a fast, embedded retrieval engine that runs SQL, full-text (BM25), vector, and hybrid (RRF) search over a single copy of your data on object storage — no separate search cluster or vector store to keep in sync.
+
+This guide helps you get started with the Infino [vector store](/oss/integrations/vectorstores). For detailed documentation of all `InfinoVectorStore` features and configurations, see the [package README](https://www.npmjs.com/package/@infino-ai/langchain-infino).
+
+## Overview
+
+### Integration details
+
+| Class | Package | [PY support](https://pypi.org/project/langchain-infino/) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| `InfinoVectorStore` | [`@infino-ai/langchain-infino`](https://www.npmjs.com/package/@infino-ai/langchain-infino) | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@infino-ai/langchain-infino?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@infino-ai/langchain-infino?style=flat-square&label=%20&) |
+
+## Setup
+
+Infino is embedded — there is no server to run and no account or API key for the engine itself. Install the integration, the Infino engine binding, `@langchain/core`, and an embeddings provider (this guide uses [OpenAI embeddings](/oss/integrations/embeddings/openai)):
+
+<CodeGroup>
+```bash npm
+npm install @infino-ai/langchain-infino @infino-ai/infino @langchain/core @langchain/openai
+```
+```bash yarn
+yarn add @infino-ai/langchain-infino @infino-ai/infino @langchain/core @langchain/openai
+```
+```bash pnpm
+pnpm add @infino-ai/langchain-infino @infino-ai/infino @langchain/core @langchain/openai
+```
+</CodeGroup>
+
+<Note>
+Infino runs in a Node.js runtime (the engine is a native addon — not the Edge runtime or the browser). Use a local path for development, or an `s3://` / `gs://` / `az://` URI to persist on object storage.
+</Note>
+
+## Instantiation
+
+Infino never embeds — you bring a LangChain `Embeddings` object and the store supplies the vectors. Create and populate a table with `fromDocuments` / `fromTexts` (the vector column's `dim` must match your embeddings model). Declare any metadata keys you want to filter on as `metadataColumns`:
+
+```typescript
+import { connect } from "@infino-ai/infino";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { InfinoVectorStore } from "@infino-ai/langchain-infino";
+
+const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
+
+// A local path or an s3://bucket/prefix for durable storage.
+const connection = connect("./data");
+
+const vectorStore = await InfinoVectorStore.fromDocuments(
+  [
+    { pageContent: "Infino runs search on object storage.", metadata: { source: "docs" } },
+    { pageContent: "One engine for SQL, BM25, and vectors.", metadata: { source: "docs" } },
+  ],
+  embeddings,
+  {
+    connection,
+    tableName: "docs",
+    dim: 1536, // must match text-embedding-3-small
+    metadataColumns: { source: "large_utf8" }, // promoted, filterable columns
+  },
+);
+```
+
+To open an existing table instead, construct the store directly:
+
+```typescript
+const vectorStore = new InfinoVectorStore(embeddings, {
+  connection,
+  tableName: "docs",
+  dim: 1536,
+  metadataColumns: { source: "large_utf8" },
+});
+```
+
+## Manage vector store
+
+### Add items to vector store
+
+```typescript
+import type { Document } from "@langchain/core/documents";
+
+const documents: Document[] = [
+  { pageContent: "The lazy dog sleeps.", metadata: { source: "blog" } },
+  { pageContent: "Refunds return to the original payment method.", metadata: { source: "help" } },
+];
+
+const ids = await vectorStore.addDocuments(documents);
+```
+
+Re-adding with existing `ids` upserts (overwrites) the matching rows.
+
+### Delete items from vector store
+
+```typescript
+await vectorStore.delete({ ids: [ids[ids.length - 1]] });
+```
+
+## Query vector store
+
+### Query directly
+
+```typescript
+const results = await vectorStore.similaritySearch("search on S3", 2);
+
+for (const doc of results) {
+  console.log(doc.pageContent, doc.metadata);
+}
+```
+
+Filter by metadata — compiled to a SQL `WHERE` over the promoted `metadataColumns`. Operators: `$eq`, `$ne`, `$gt` / `$gte` / `$lt` / `$lte`, `$in` / `$nin`, and `$and` / `$or` / `$not`:
+
+```typescript
+const filtered = await vectorStore.similaritySearch("search", 2, {
+  source: { $eq: "docs" },
+});
+```
+
+### Hybrid and keyword search
+
+Infino exposes its full retrieval surface, not just vectors:
+
+```typescript
+// BM25 + vector, fused with reciprocal-rank fusion (RRF):
+const hybrid = await vectorStore.hybridSearch("search on object storage", 4);
+
+// Lexical BM25 over the text column:
+const lexical = await vectorStore.bm25Search("object storage", 4);
+```
+
+### Query by turning into retriever
+
+```typescript
+const retriever = vectorStore.asRetriever({ k: 2 });
+const retrieved = await retriever.invoke("search on object storage");
+```
+
+### Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+- [Build a RAG app with LangChain](/oss/langchain/rag).
+- [Agentic RAG](/oss/langgraph/agentic-rag)
+- [Retrieval docs](/oss/langchain/retrieval)
+
+---
+
+## API reference
+
+For detailed documentation of all `InfinoVectorStore` features and configurations, head to the [package README](https://www.npmjs.com/package/@infino-ai/langchain-infino).
