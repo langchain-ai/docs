@@ -5,7 +5,7 @@ description: "Integrate with the Infino vector store using LangChain Python."
 
 [Infino](https://github.com/infino-ai/infino) is a retrieval engine that runs vector, full-text (BM25), hybrid (RRF), and SQL search over **one copy** of your data in Apache Parquet on object storage — no separate vector database and search cluster to provision, sync, or keep consistent.
 
-Most "vector database" integrations expose only the vector slice of their engine. `InfinoVectorStore` surfaces the whole surface: semantic search *and* exact-keyword BM25 *and* their fusion, from a single in-process engine. The payoff shows up below in [Vector vs. BM25 vs. hybrid](#vector-vs-bm25-vs-hybrid) — where pure-vector search misses an exact error code and hybrid retrieval catches it.
+Most "vector database" integrations expose only the vector slice of their engine. `InfinoVectorStore` surfaces the whole surface: semantic search *and* exact-keyword BM25 *and* their fusion, from a single in-process engine. The payoff shows up below in [Vector vs. BM25 vs. hybrid](#vector-vs-bm25-vs-hybrid) — where lexical search alone misses a paraphrased question, and hybrid retrieval recovers it while still guaranteeing exact-identifier matches.
 
 This guide covers getting started. For the full API, see the [PyPI package page](https://pypi.org/project/langchain-infino/) and the [source repository](https://github.com/infino-ai/langchain-infino).
 
@@ -49,14 +49,14 @@ The LangChain Infino integration lives in the `langchain-infino` package:
 
 ## Instantiation
 
-A connection is a local path or an `s3://` URI for durable storage (`memory://` is ephemeral — handy for tests). Use `from_texts` to create and populate a table; pass `[]` to start empty. The embedding dimension must match the table's declared `dim` and lie in the engine's supported range `[16, 4096]`.
+A connection is a local path or an `s3://` URI for durable storage. (`memory://` is also available but is read-mostly — it doesn't back the delete/update path, so use durable storage for the examples below.) Use `from_texts` to create and populate a table; pass `[]` to start empty. The embedding dimension must match the table's declared `dim` and lie in the engine's supported range `[16, 4096]`.
 
 ```python Initialize vector store icon="database"
 import infino
 from langchain_infino import InfinoVectorStore
 from langchain_openai import OpenAIEmbeddings
 
-connection = infino.connect("./data")  # or "s3://my-bucket/kb", or "memory://"
+connection = infino.connect("./data")  # local path, or "s3://my-bucket/kb"
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")  # 1536-dim
 
 vector_store = InfinoVectorStore.from_texts(
@@ -131,7 +131,7 @@ for doc in results:
 
 ```text
 * Reset your password from the Account → Security settings page. [{'source': 'docs'}]
-* To export your data in bulk, call the bulk_export API endpoint. [{'source': 'docs'}]
+* Customers on the legacy Starter tier keep grandfathered pricing. [{'source': 'pricing'}]
 ```
 
 To get the corresponding scores back, use `similarity_search_with_score`:
@@ -143,7 +143,7 @@ for doc, score in results:
 ```
 
 ```text
-* [SIM=0.412879] The Pro plan includes priority support and unlimited seats. [{'source': 'pricing'}]
+* [SIM=0.583733] The Pro plan includes priority support and unlimited seats. [{'source': 'pricing'}]
 ```
 
 Vector distance is *smaller is nearer*. For a normalized `[0, 1]` relevance (higher = better) under the `cosine`, `l2`, and `l2sq` metrics, use `similarity_search_with_relevance_scores`.
@@ -174,28 +174,43 @@ retriever.invoke("how do I change my login credentials")
 
 ## Vector vs. BM25 vs. hybrid
 
-This is where one engine over one copy of your data pays off. Consider a user searching for the exact error code **`E-4042`**. Embeddings are weak on rare tokens like error codes, so pure-vector search drifts to topically-related docs and can miss the exact match. BM25 nails the literal token. Hybrid (RRF) fuses both rankings, so you get semantic recall *and* exact-match precision — without a second datastore.
+This is where one engine over one copy of your data pays off — the two retrieval modes have complementary blind spots, and hybrid (RRF) covers both in a single SQL call, with no second datastore to sync.
 
-```python Same query, three retrieval modes icon="scale-balanced"
-query = "E-4042 upload failed"
+Helper to compare all three modes on a query:
 
-# Semantic only — may miss the rare exact token.
-vector = vector_store.similarity_search(query, k=1)
+```python Compare retrieval modes icon="scale-balanced"
+def compare(query):
+    modes = {
+        "vector": vector_store.similarity_search(query, k=1),
+        "bm25": vector_store.as_bm25_retriever(k=1).invoke(query),
+        "hybrid": vector_store.as_hybrid_retriever(k=1).invoke(query),
+    }
+    for label, docs in modes.items():
+        print(f"{label:>7}: {docs[0].page_content if docs else '<no match>'}")
+```
 
-# Lexical only — locks onto the exact code.
-bm25 = vector_store.as_bm25_retriever(k=1).invoke(query)
+**A paraphrased question with no shared keywords.** Lexical search has nothing to match on, so BM25 returns nothing; semantic search still finds the answer, and hybrid recovers it:
 
-# Fused (RRF) — semantic recall + exact-match precision, one SQL call.
-hybrid = vector_store.as_hybrid_retriever(k=1).invoke(query)
-
-for label, docs in [("vector", vector), ("bm25", bm25), ("hybrid", hybrid)]:
-    print(f"{label:>7}: {docs[0].page_content}")
+```python Paraphrase icon="comment"
+compare("how do I change my login credentials")
 ```
 
 ```text
- vector: The Q3 outage was caused by a misconfigured load balancer.
-   bm25: Error E-4042 means your upload exceeded the 2 GB file size limit.
- hybrid: Error E-4042 means your upload exceeded the 2 GB file size limit.
+ vector: Reset your password from the Account → Security settings page.
+   bm25: <no match>
+ hybrid: Reset your password from the Account → Security settings page.
+```
+
+**An exact identifier.** Embeddings can blur rare tokens like error codes; BM25 *guarantees* the literal match. Here all three agree — and hybrid means you never have to choose which mode to run:
+
+```python Exact identifier icon="hashtag"
+compare("E-4042")
+```
+
+```text
+ vector: Error E-4042 means your upload exceeded the 5 GB file size limit.
+   bm25: Error E-4042 means your upload exceeded the 5 GB file size limit.
+ hybrid: Error E-4042 means your upload exceeded the 5 GB file size limit.
 ```
 
 `as_bm25_retriever(mode="and")` requires all query terms; `"or"` (default) matches any.
@@ -264,11 +279,21 @@ The escape hatch for anything the typed methods don't cover — joins, custom `W
 
 ```python SQL escape hatch icon="database"
 qv = ",".join(map(str, embeddings.embed_query("upload error")))
-vector_store.search_by_sql(f"""
+results = vector_store.search_by_sql(f"""
     SELECT doc_id, page_content, _metadata_json, score
     FROM hybrid_search('support_kb', 'page_content', 'E-4042', 'embedding', '{qv}', 5)
     ORDER BY score DESC
 """)
+for doc in results:
+    print(f"* {doc.page_content}")
+```
+
+```text
+* Error E-4042 means your upload exceeded the 5 GB file size limit.
+* To export your data in bulk, call the bulk_export API endpoint.
+* Reset your password from the Account → Security settings page.
+* The Pro plan includes priority support and unlimited seats.
+* Customers on the legacy Starter tier keep grandfathered pricing.
 ```
 
 ---
