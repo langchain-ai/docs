@@ -1,8 +1,8 @@
 # :snippet-start: mcp-multimodal-tool-content-py
-async def access_multimodal_tool_content() -> None:
-    from langchain.agents import create_agent
-    from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain.agents import create_agent
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
+async def access_multimodal_tool_content():
     client = MultiServerMCPClient({})
     tools = await client.get_tools()
     agent = create_agent("claude-sonnet-4-6", tools)
