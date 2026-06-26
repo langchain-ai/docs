@@ -1,4 +1,4 @@
-// :snippet-start: rag-full-snippet-setup-js
+// :snippet-start: rag-full-snippet-agent-setup-js
 import * as cheerio from "cheerio";
 import { Document } from "@langchain/core/documents";
 import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
@@ -7,14 +7,10 @@ import { createAgent, tool } from "langchain";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import * as z from "zod";
 
-// === IMPORTANT: SETUP REMINDER FOR BEGINNERS ===
-// This full example includes setup for embeddings, vector store, and model so it can run
-// as-is. In production, configure these components based on your provider choices.
-
 // Below is a minimal helper for demonstration purposes.
 async function loadWebPage(
   url: string,
-  selector: string = "body",
+  selector: string = ".post-title, .post-header, .post-content",
 ): Promise<Document[]> {
   const response = await fetch(url);
   const html = await response.text();
@@ -31,7 +27,6 @@ async function buildRagAgent() {
   // Load and chunk contents of blog
   const docs = await loadWebPage(
     "https://lilianweng.github.io/posts/2023-06-23-agent/",
-    "p",
   );
 
   const splitter = new RecursiveCharacterTextSplitter({
@@ -81,7 +76,7 @@ async function buildRagAgent() {
 }
 // :snippet-end:
 
-// :snippet-start: rag-full-snippet-run-js
+// :snippet-start: rag-full-snippet-agent-run-js
 async function runRagAgent(agent: ReturnType<typeof createAgent>) {
   const inputMessage = "What is Task Decomposition?";
   const agentInputs = { messages: [{ role: "user", content: inputMessage }] };
@@ -121,7 +116,7 @@ function isAllowlistError(error: unknown): boolean {
 
 async function main() {
   if (!process.env.OPENAI_API_KEY) {
-    console.log("[rag-full-snippet] Skipping (OPENAI_API_KEY required).");
+    console.log("[rag-full-snippet-agent] Skipping (OPENAI_API_KEY required).");
     process.exit(0);
   }
 
@@ -131,11 +126,11 @@ async function main() {
     if (!finalState) {
       throw new Error("Expected final stream state");
     }
-    console.log("\n✓ RAG full snippet runs");
+    console.log("\n✓ rag-full-snippet-agent");
   } catch (error) {
     if (isAllowlistError(error)) {
       console.log(
-        `[rag-full-snippet] Skipping due to restricted gateway: ${error}`,
+        `[rag-full-snippet-agent] Skipping due to restricted gateway: ${error}`,
       );
       process.exit(0);
     }
