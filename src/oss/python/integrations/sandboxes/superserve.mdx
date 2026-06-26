@@ -1,0 +1,103 @@
+---
+title: "SuperserveSandbox integration"
+description: "Integrate with the SuperserveSandbox sandbox backend using LangChain Python."
+---
+
+[Superserve](https://www.superserve.ai) provides persistent Firecracker microVM sandboxes that pause and resume in milliseconds. See the [Superserve docs](https://docs.superserve.ai) for signup, authentication, and platform details.
+
+## Installation
+
+<CodeGroup>
+
+```bash pip
+pip install langchain-superserve
+```
+
+```bash uv
+uv add langchain-superserve
+```
+
+</CodeGroup>
+
+## Authentication
+
+Set your Superserve API key:
+
+```bash
+export SUPERSERVE_API_KEY="ss_live_..."
+```
+
+## Create a sandbox
+
+In Python, you create the sandbox using the Superserve SDK, then wrap it with the [deepagents backend](/oss/deepagents/backends).
+
+The backend synthesizes the file tools (`ls`, `read`, `edit`, `glob`) using in-sandbox `python3`, so launch from a Python-equipped template such as `superserve/python-3.11`. `execute`, `grep`, and file upload/download work on any template.
+
+```python
+from superserve import Sandbox
+from langchain_superserve import SuperserveSandbox
+
+sandbox = Sandbox.create(from_template="superserve/python-3.11")
+backend = SuperserveSandbox(sandbox=sandbox)
+
+try:
+    result = backend.execute("echo hello")
+    print(result.output)
+finally:
+    sandbox.kill()
+```
+
+## Use with Deep Agents
+
+```python
+from superserve import Sandbox
+from deepagents import create_deep_agent
+from langchain_anthropic import ChatAnthropic
+from langchain_superserve import SuperserveSandbox
+
+sandbox = Sandbox.create(from_template="superserve/python-3.11")
+backend = SuperserveSandbox(sandbox=sandbox)
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-6"),
+    system_prompt="You are a coding assistant with sandbox access.",
+    backend=backend,
+)
+
+try:
+    result = agent.invoke(
+        {
+            "messages": [
+                {"role": "user", "content": "Create a hello world Python script and run it"}
+            ]
+        }
+    )
+finally:
+    sandbox.kill()
+```
+
+## Use with Deep Agents Code
+
+`langchain-superserve` also publishes a Superserve sandbox provider for [Deep Agents Code](/oss/deepagents/code/remote-sandboxes), so `dcode` can run agent tool calls inside a Superserve sandbox. Install the package into the `dcode` environment, set your API key, then select the provider:
+
+<Note>
+    Using Superserve with Deep Agents Code requires `dcode` 0.1.19 or newer.
+</Note>
+
+```bash
+dcode --install langchain-superserve --package
+export SUPERSERVE_API_KEY="ss_live_..."
+dcode --sandbox superserve
+```
+
+The provider defaults to the `superserve/python-3.11` template; override it with `SUPERSERVE_TEMPLATE`. Deep Agents Code manages the sandbox lifecycle for you.
+
+## Superserve extras
+
+Superserve sandboxes are persistent: they can be paused when idle and resumed in milliseconds, and they support proxy-brokered secret binding so real credentials never enter the sandbox. Manage these capabilities through the [Superserve SDK](https://docs.superserve.ai) on the sandbox you pass in.
+
+## Cleanup
+
+You are responsible for managing the sandbox lifecycle via the Superserve SDK. When you are done, kill the sandbox (or pause it to resume later).
+
+See also: [Sandboxes](/oss/deepagents/sandboxes).
