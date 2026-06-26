@@ -20,16 +20,6 @@ This page covers how to:
 
 **Before you start:** exports may take some time depending on data volume, and LangSmith limits how many exports can run concurrently. Bulk exports have a 72-hour runtime timeout—refer to [Automatic retry behavior](/langsmith/data-export-monitor#automatic-retry-behavior) for details. Once launched, LangSmith handles orchestration and [resilience of the export process](/langsmith/data-export-monitor#failure-modes-and-retry-policy) automatically.
 
-<Note>
-**Cloud limit: 200 max active bulk exports per workspace**
-
-On [LangSmith cloud](/langsmith/cloud), each workspace can have at most 200 active (non-terminal) bulk exports at a time. Exports in `CREATED` or `RUNNING` state count toward this limit. Exports in a terminal state (`COMPLETED`, `FAILED`, `CANCELLED`, or `TIMEDOUT`) do not count.
-
-If your workspace reaches the limit, new export requests will be rejected until existing active exports finish or are [cancelled](/langsmith/data-export-monitor#stop-an-export). To increase this limit, contact support via [support.langchain.com](https://support.langchain.com).
-
-[Self-hosted LangSmith](/langsmith/self-hosted) does not have this limit by default.
-</Note>
-
 ## 1. Create a destination
 
 The destination tells LangSmith where to write your exported data. Before making this request, you will need:
@@ -142,8 +132,7 @@ On [LangSmith cloud](/langsmith/cloud), each `all_experiments` export includes a
 Requires LangSmith Helm version >= `0.10.42` (application version >= `0.10.109`)
 </Note>
 
-Scheduled exports collect runs periodically and export to the configured destination.
-To create a scheduled export, include `interval_hours` and omit `end_time`:
+Scheduled exports collect runs periodically and export to the configured destination. To create a scheduled export, include `interval_hours` and omit `end_time`:
 
 ```bash
 curl --request POST \
@@ -166,6 +155,18 @@ curl --request POST \
 - Spawned exports run at `end_time + 10 minutes` to account for runs submitted with `end_time` in the recent past.
 - Spawned exports have the `source_bulk_export_id` attribute filled. If desired, they must be cancelled separately—cancelling the source export **does not** cancel already-spawned exports.
 - To stop a scheduled export, [cancel it](/langsmith/data-export-monitor#stop-an-export).
+
+<Note>
+**LangSmith Cloud limit: 200 scheduled bulk exports per workspace**
+
+On [LangSmith cloud](/langsmith/cloud), each workspace can have at most 200 active **scheduled** (recurring) bulk exports at a time. That is, exports configured with an `interval_hours` value. The limit caps the number of **schedules**, not the number of times they run: a schedule that has produced thousands of historical export runs still counts as one.
+
+One-off (non-recurring) bulk exports are not subject to this limit.
+
+If your workspace reaches the limit, new scheduled export requests will be rejected with a `429` until you [cancel](/langsmith/data-export-monitor#stop-an-export) an existing schedule. To raise the limit, contact support via [support.langchain.com](https://support.langchain.com).
+
+[Self-hosted LangSmith](/langsmith/self-hosted) does not enforce this limit by default.
+</Note>
 
 **Example**
 
