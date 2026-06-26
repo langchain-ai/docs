@@ -1,0 +1,56 @@
+```python
+import uuid
+
+from deepagents.backends.utils import create_file_data
+from langchain.messages import ToolMessage
+from langchain.tools import ToolRuntime, tool
+from langgraph.types import Command
+
+
+def make_search_documentation_tool(vector_store):
+    """Create a tool that searches the vector store and offloads chunks to the filesystem."""
+
+    @tool(parse_docstring=True)
+    def search_documentation(query: str, runtime: ToolRuntime) -> Command:
+        """Search LangChain documentation and save matching chunks to the agent filesystem.
+
+        Args:
+            query: Natural language search query.
+
+        Returns:
+            File paths where retrieved chunks were saved under /retrieved/.
+        """
+        retrieved_docs = vector_store.similarity_search(query, k=4)
+        batch_id = uuid.uuid4().hex[:8]
+        file_updates: dict[str, dict] = {}
+        saved_paths: list[str] = []
+
+        for index, doc in enumerate(retrieved_docs, start=1):
+            path = f"/retrieved/{batch_id}/chunk_{index}.md"
+            content = (
+                f"# Source: {doc.metadata.get('source', 'unknown')}\n\n"
+                f"{doc.page_content}"
+            )
+            file_updates[path] = create_file_data(content)
+            saved_paths.append(path)
+
+        return Command(
+            update={
+                "files": file_updates,
+                "messages": [
+                    ToolMessage(
+                        content=(
+                            f"Saved {len(saved_paths)} documentation chunks:\n"
+                            + "\n".join(saved_paths)
+                        ),
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ],
+            }
+        )
+
+    return search_documentation
+
+
+search_documentation = make_search_documentation_tool(vector_store)
+```

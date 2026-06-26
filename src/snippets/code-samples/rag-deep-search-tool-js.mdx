@@ -1,0 +1,60 @@
+```ts
+import { tool, ToolMessage, type ToolRuntime } from "langchain";
+import { Command } from "@langchain/langgraph";
+import type { FileData } from "deepagents";
+import * as z from "zod";
+
+function createFileData(content: string): FileData {
+  const now = new Date().toISOString();
+  return {
+    content,
+    mimeType: "text/plain",
+    created_at: now,
+    modified_at: now,
+  };
+}
+
+function makeSearchDocumentationTool(vectorStore: {
+  similaritySearch: (query: string, k: number) => Promise<
+    Array<{ pageContent: string; metadata: Record<string, string> }>
+  >;
+}) {
+  return tool(
+    async ({ query }, runtime: ToolRuntime) => {
+      const retrievedDocs = await vectorStore.similaritySearch(query, 4);
+      const batchId = crypto.randomUUID().slice(0, 8);
+      const fileUpdates: Record<string, FileData> = {};
+      const savedPaths: string[] = [];
+
+      retrievedDocs.forEach((doc, index) => {
+        const path = `/retrieved/${batchId}/chunk_${index + 1}.md`;
+        const content = `# Source: ${doc.metadata.source ?? "unknown"}\n\n${doc.pageContent}`;
+        fileUpdates[path] = createFileData(content);
+        savedPaths.push(path);
+      });
+
+      return new Command({
+        update: {
+          files: fileUpdates,
+          messages: [
+            new ToolMessage({
+              content: `Saved ${savedPaths.length} documentation chunks:\n${savedPaths.join("\n")}`,
+              tool_call_id: runtime.toolCallId,
+            }),
+          ],
+        },
+      });
+    },
+    {
+      name: "search_documentation",
+      description:
+        "Search LangChain documentation and save matching chunks to the agent filesystem.",
+      schema: z.object({
+        query: z.string().describe("Natural language search query."),
+      }),
+    },
+  );
+}
+
+const searchDocumentation = makeSearchDocumentationTool(vectorStore);
+```

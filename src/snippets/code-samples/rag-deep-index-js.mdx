@@ -1,0 +1,63 @@
+```ts
+import { Document } from "@langchain/core/documents";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
+
+const DOCS_BASE = "https://docs.langchain.com";
+
+// Curated LangChain OSS pages for this tutorial. Expand this list or filter
+// llms.txt URLs to index more of the site.
+const DOC_PATHS = [
+  "oss/javascript/langchain/rag",
+  "oss/javascript/langchain/agents",
+  "oss/javascript/langchain/tools",
+  "oss/javascript/langchain/models",
+  "oss/javascript/langchain/retrieval",
+  "oss/javascript/langchain/knowledge-base",
+  "oss/javascript/langchain/middleware",
+  "oss/javascript/deepagents/overview",
+  "oss/javascript/deepagents/subagents",
+  "oss/javascript/deepagents/backends",
+  "oss/javascript/langgraph/overview",
+  "oss/javascript/langgraph/quickstart",
+];
+
+async function loadLangchainDocs(
+  docPaths: string[] = DOC_PATHS,
+): Promise<Document[]> {
+  const docs: Document[] = [];
+  for (const path of docPaths) {
+    const url = `${DOCS_BASE}/${path}.md`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) continue;
+      const text = await response.text();
+      docs.push(
+        new Document({
+          pageContent: text,
+          metadata: { source: `${DOCS_BASE}/${path}` },
+        }),
+      );
+    } catch {
+      continue;
+    }
+  }
+  return docs;
+}
+
+const docs = await loadLangchainDocs();
+console.log(`Loaded ${docs.length} documentation pages.`);
+
+const textSplitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 1000,
+  chunkOverlap: 200,
+});
+const allSplits = await textSplitter.splitDocuments(docs);
+console.log(`Split documentation into ${allSplits.length} chunks.`);
+
+const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
+const vectorStore = new MemoryVectorStore(embeddings);
+await vectorStore.addDocuments(allSplits);
+console.log(`Indexed ${allSplits.length} chunks.`);
+```
