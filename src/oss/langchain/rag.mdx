@@ -45,13 +45,12 @@ These applications use a technique known as Retrieval Augmented Generation, or [
 This tutorial will guide you through building an app that answers questions about a long unstructured text:
 
 1. **[Indexing content](#index-your-content)**: Creating a pipeline for ingesting data from a source and indexing it.
-2. **[Retrieval and generation](#retrieve-content-and-generate-answers)**: The actual RAG process, which takes the user query at run time and retrieves the relevant data from the index, then passes that data to the model.
-    - **Building a RAG [agent](#create-a-rag-agent)**: Use a general-purpose implementation to search the indexed content and pass the relevant content to an LLM.
-    - **A two-step RAG [chain](#create-a-rag-chain)**: Use a single LLM call per query. This is a fast and effective method for simple queries.
+2. **[RAG agent](#rag-agent)**: A general-purpose implementation that searches indexed content and passes relevant context to an LLM.
+3. **[RAG chain](#rag-chain)**: A two-step implementation that uses a single LLM call per query. This is a fast and effective method for simple queries.
 
 The tutorial uses the [LLM Powered Autonomous Agents](https://lilianweng.github.io/posts/2023-06-23-agent/) blog post by Lilian Weng as an example.
 
-See [Full code](#full-code) for a consolidated implementation you can copy and run.
+Use [LangSmith](/langsmith/observability) to [trace](/langsmith/trace-with-langchain) retrieval and generation as you work through the tutorial.
 
 ## Setup
 
@@ -89,8 +88,7 @@ For more details, see our [Installation guide](/oss/langchain/install).
 </Step>
 <Step title="Set up LangSmith" id="set-up-langsmith">
 
-Many of the applications you build with LangChain contain multiple steps with multiple invocations of LLM calls. As these applications get more complex, it becomes crucial to be able to inspect what exactly is going on inside your chain or agent. The best way to do this is with [LangSmith](/langsmith/observability).
-
+RAG applications run indexing, retrieval, and generation in sequence. When you run the examples in this tutorial, [LangSmith](/langsmith/observability) logs a trace for each query so you can inspect retrieval, tool calls, and model responses.
 After you [sign up for LangSmith](https://smith.langchain.com), set your environment variables to start logging traces:
 
 ```shell
@@ -122,21 +120,20 @@ In the indexing step, you'll take the source content and convert _chunks_ of it 
 
 Indexing commonly works in four steps:
 
-1. **Load**: Load your data sources into @[`Document`] objects.
-2. **Split**: Use [text splitters](/oss/integrations/splitters) to break large `Document`s into smaller chunks. This is useful both for indexing data and passing it to a model, as large chunks are harder to search over and either do not fit in a model's finite context window or use more tokens than necessary.
-3. **Embed**: [Embeddings](/oss/integrations/embeddings) models convert each chunk into a numeric vector that captures its meaning, enabling similarity search over your content.
-4. **Store**: Use a [VectorStore](/oss/integrations/vectorstores) to index chunks and their embeddings for retrieval.
+1. **[Load](#load-documents)**: Load your data sources into @[`Document`] objects.
+2. **[Split](#split-documents)**: Use [text splitters](/oss/integrations/splitters) to break large `Document`s into smaller chunks. This is useful both for indexing data and passing it to a model, as large chunks are harder to search over and either do not fit in a model's finite context window or use more tokens than necessary.
+3. **[Embed](#select-an-embeddings-model)**: [Embeddings](/oss/integrations/embeddings) models convert each chunk into a numeric vector that captures its meaning, enabling similarity search over your content.
+4. **[Store](#store-chunks-and-embeddings-in-vectorstore)**: Use a [VectorStore](/oss/integrations/vectorstores) to index chunks and their embeddings for retrieval.
 
 ![index_diagram](/images/rag_indexing.png)
 
 In the following steps, you will set up the components you need for ingesting your source content.
 
 <Note>
-    If you have completed the [semantic search tutorial](/oss/langchain/knowledge-base), you can use the function to execute a search from it and skip to [Retrieve and generate answers](#retrieve-content-and-generate-answers).
+    If you have completed the [semantic search tutorial](/oss/langchain/knowledge-base), you can use the function to execute a search from it and skip to [RAG agent](#rag-agent).
 </Note>
 
-<Steps>
-<Step title="Load documents" id="load-documents">
+### Load documents
 
 Start by loading the blog post contents into a list of @[Document] objects.
 
@@ -190,8 +187,7 @@ Building agents with LLM (large language model) as its core controller is...
 ```
 :::
 
-</Step>
-<Step title="Split documents" id="split-documents">
+### Split documents
 
 The loaded document is long, which makes it too large to fit into the context window of many models.
 Even for those models that could fit the full post in their context window, models can struggle to find information in very long inputs.
@@ -217,9 +213,7 @@ Split blog post into 64 sub-documents.
 ```
 :::
 
-</Step>
-
-<Step title="Select an embeddings model" id="select-embeddings-model">
+### Select an embeddings model
 
 An [embedding](/oss/integrations/embeddings) is a numeric vector that captures the meaning of each chunk of your blog post. An @[Embeddings] model converts those chunks into vectors so that similar meanings land close together in vector space, enabling you to retrieve relevant sections when a user asks a question.
 
@@ -232,9 +226,7 @@ You can choose from many different [embedding integrations](/oss/integrations/em
 <EmbeddingsTabsJS />
 :::
 
-</Step>
-<Step title="Store chunks and embeddings in VectorStore" id="select-vector-store">
-
+### Store chunks and embeddings in VectorStore
 
 A [`VectorStore`](/oss/integrations/vectorstores) persists document chunks and their embeddings, enabling similarity search to retrieve relevant sections when a user asks a question.
 You can choose from many different [vector store integrations](/oss/integrations/vectorstores/) which all use the same @[Interface][VectorStore].
@@ -269,32 +261,20 @@ Indexed 64 document chunks.
 ```
 :::
 
-</Step>
-</Steps>
+This completes the **Indexing** portion of the tutorial. You now have a queryable vector store containing the chunked contents of the blog post.
 
-This completes the **Indexing** portion of the tutorial.
-At this point you have a queryable vector store containing the chunked contents of the blog post.
-In the next step, you'll learn how to retrieve snippets of the blog post that are relevant when given a user question.
-
-## Retrieve content and generate answers
-
-RAG applications commonly work as follows:
+The next step is retrieval and generation: given a user question at run time, pull relevant chunks from the index and pass them to a model to produce an answer. RAG applications commonly implement that flow in two stages:
 
 1. **Retrieve**: Given a user input, relevant splits are retrieved from storage using a [Retriever](/oss/integrations/retrievers).
 2. **Generate**: A [model](/oss/langchain/models) produces an answer using a prompt that includes both the question and the retrieved data.
 
 ![retrieval_diagram](/images/rag_retrieval_generation.png)
 
-Now that you have indexed the data, you will create an [agent](/oss/langchain/agents) that takes a user question, searches for documents relevant to that question, passes the retrieved documents and initial question to a model, and returns an answer.
-The agent functions as your orchestration framework to implement the retrieval and generation steps.
+This tutorial walks through two implementations of that flow: a [RAG agent](#rag-agent) that calls a search tool when needed, and a [RAG chain](#rag-chain) that always retrieves once and answers in a single model call.
 
-This tutorial guides you through two implementations:
-1. A RAG [agent](#create-a-rag-agent) that executes searches with a search tool. This is a good general-purpose implementation.
-2. A two-step RAG [chain](#create-a-rag-chain) that uses just a single LLM call per query. This is a fast and effective method for simple queries.
+## RAG agent
 
-### Create a RAG agent
-
-The first RAG agent you will create is a minimal [agent](/oss/langchain/agents) with a tool that retrieves information.
+The following steps show you how to build a minimal [agent](/oss/langchain/agents) with a retrieval tool that wraps your vector store. The agent decides when to search for documents relevant to a user question, passes retrieved documents and the user question to a model, and returns an answer.
 
 <Steps>
 <Step title="Create the retrieval tool" id="create-retrieval-tool">
@@ -409,7 +389,7 @@ When your agent runs it:
 2. Receives the answer and generates a second query to search for common extensions of it.
 3. Answers the question after receiving all necessary context.
 
-You can see the full sequence of steps, along with latency and other metadata, in this example [LangSmith trace](https://smith.langchain.com/public/7b42d478-33d2-4631-90a4-7cb731681e88/r).
+If you enabled LangSmith in [Setup](#set-up-langsmith), open [LangSmith](https://smith.langchain.com), select your **default** project, and open the trace for this run in the **Traces** tab. Inspect each retrieval and model call in the [Details view](/langsmith/view-traces#details-view). You can also compare your trace with this example [LangSmith trace](https://smith.langchain.com/public/7b42d478-33d2-4631-90a4-7cb731681e88/r).
 
 <Tip>
     You can add a deeper level of control and customization using the [LangGraph](/oss/langgraph/overview) framework directly. LangGraph is the framework LangChain is built upon.
@@ -419,9 +399,37 @@ You can see the full sequence of steps, along with latency and other metadata, i
 </Step>
 </Steps>
 
-### Create a RAG chain
+<Accordion title="Full code">
 
-In the [RAG agent](#create-a-rag-agent) you created, you allow the LLM to use its discretion in generating a [tool call](/oss/langchain/models#tool-calling) to help answer user queries. This is a good general-purpose solution, but comes with some trade-offs:
+This example is self-contained: it loads the blog post, indexes the content, and runs a query. Copy the setup and run blocks together.
+
+:::python
+<RagFullSnippetAgentSetupPy />
+
+<RagFullSnippetAgentRunPy />
+
+```text
+Tool call: retrieve_context({'query': 'task decomposition'})
+Tool result: Source: https://lilianweng.github.io/posts/2023-06-23-agent/
+Content: Task decomposition can be done by...
+Source: https://lilianweng.github.io/posts/2023-06-23-agent/
+Content: Component One: Planning...
+Task decomposition refers to...
+```
+:::
+:::js
+<RagFullSnippetAgentSetupJs />
+
+<RagFullSnippetAgentRunJs />
+:::
+
+If you enabled LangSmith in [Setup](#set-up-langsmith), open [LangSmith](https://smith.langchain.com), select your **default** project, and open the trace for this run in the **Traces** tab. You can also compare your trace with this example [LangSmith trace](https://smith.langchain.com/public/a117a1f8-c96c-4c16-a285-00b85646118e/r). For more on tracing LangChain apps, see [Trace with LangChain](/langsmith/trace-with-langchain).
+
+</Accordion>
+
+## RAG chain
+
+In the [RAG agent](#rag-agent) you created, you allow the LLM to use its discretion in generating a [tool call](/oss/langchain/models#tool-calling) to help answer user queries. This is a good general-purpose solution, but comes with some trade-offs:
 
 | ✅ Benefits                                                                 | ⚠️ Drawbacks                                                                 |
 |-----------------------------------------------------------------------------|----------------------------------------------------------------------------|
@@ -462,57 +470,13 @@ Task decomposition is...
 <RagRunChainJs />
 :::
 
-In the associated [LangSmith trace](https://smith.langchain.com/public/0322904b-bc4c-4433-a568-54c6b31bbef4/r/9ef1c23e-380e-46bf-94b3-d8bb33df440c), you can see the retrieved context incorporated into the model prompt.
+If you enabled LangSmith in [Setup](#set-up-langsmith), open [LangSmith](https://smith.langchain.com), select your **default** project, and open the trace for this run in the **Traces** tab. Inspect how retrieved context is passed to the model in the [Details view](/langsmith/view-traces#details-view). You can also compare your trace with this example [LangSmith trace](https://smith.langchain.com/public/0322904b-bc4c-4433-a568-54c6b31bbef4/r/9ef1c23e-380e-46bf-94b3-d8bb33df440c) or the multi-step [agent trace](https://smith.langchain.com/public/7b42d478-33d2-4631-90a4-7cb731681e88/r).
 
 This is a fast and effective method for simple queries in constrained settings, when you almost always want to run user queries through semantic search to pull additional context.
 
-## Security: indirect prompt injection
+<Accordion title="Full code">
 
-<Warning>
-RAG applications are susceptible to **indirect prompt injection**. Retrieved documents may contain text that resembles instructions (e.g., "respond in JSON format" or "ignore previous instructions"). Because the retrieved context shares the same context window as your system prompt, the model may inadvertently follow instructions embedded in the data rather than your intended prompt.
-
-For example, the blog post indexed in this tutorial contains text describing an [Auto-GPT](https://lilianweng.github.io/posts/2023-06-23-agent/#case-studies) JSON response format. If a user query retrieves that chunk, the model may output JSON instead of a natural-language answer.
-</Warning>
-
-To mitigate this:
-
-1. **Use defensive prompts**: Explicitly instruct the model to treat retrieved context as data only and to ignore any instructions within it. The prompts in this tutorial include such instructions.
-2. **Wrap context with delimiters**: Use clear structural markers (e.g., XML tags like `<context>...</context>`) to separate retrieved data from instructions, making it easier for the model to distinguish between them.
-3. **Validate responses**: Check that the model's output matches the expected format (e.g., plain text) and handle unexpected formats gracefully.
-
-No mitigation is foolproof — this is an inherent limitation of current LLM architectures where instructions and data share the same context window. For more on this topic, see research on [prompt injection](https://simonwillison.net/series/prompt-injection/).
-
-## Full code
-
-Each example below is self-contained: it loads the blog post, indexes the content, and runs a query. Copy the setup and run blocks together.
-
-<Accordion title="RAG agent">
-
-:::python
-<RagFullSnippetAgentSetupPy />
-
-<RagFullSnippetAgentRunPy />
-
-```text
-Tool call: retrieve_context({'query': 'task decomposition'})
-Tool result: Source: https://lilianweng.github.io/posts/2023-06-23-agent/
-Content: Task decomposition can be done by...
-Source: https://lilianweng.github.io/posts/2023-06-23-agent/
-Content: Component One: Planning...
-Task decomposition refers to...
-```
-:::
-:::js
-<RagFullSnippetAgentSetupJs />
-
-<RagFullSnippetAgentRunJs />
-:::
-
-Check out the [LangSmith trace](https://smith.langchain.com/public/a117a1f8-c96c-4c16-a285-00b85646118e/r) for this agent example.
-
-</Accordion>
-
-<Accordion title="Two-step RAG chain">
+This example is self-contained: it loads the blog post, indexes the content, and runs a query. Copy the setup and run blocks together.
 
 :::python
 <RagFullSnippetChainSetupPy />
@@ -529,10 +493,25 @@ Task decomposition is...
 <RagFullSnippetChainRunJs />
 :::
 
-Check out the [LangSmith trace](https://smith.langchain.com/public/0322904b-bc4c-4433-a568-54c6b31bbef4/r/9ef1c23e-380e-46bf-94b3-d8bb33df440c) for this chain example.
+If you enabled LangSmith in [Setup](#set-up-langsmith), open [LangSmith](https://smith.langchain.com), select your **default** project, and open the trace for this run in the **Traces** tab. You can also compare your trace with this example [LangSmith trace](https://smith.langchain.com/public/0322904b-bc4c-4433-a568-54c6b31bbef4/r/9ef1c23e-380e-46bf-94b3-d8bb33df440c). For more on tracing LangChain apps, see [Trace with LangChain](/langsmith/trace-with-langchain).
 
 </Accordion>
 
+## Security considerations
+
+<Warning>
+RAG applications are susceptible to **indirect prompt injection**. Retrieved documents may contain text that resembles instructions (e.g., "respond in JSON format" or "ignore previous instructions"). Because the retrieved context shares the same context window as your system prompt, the model may inadvertently follow instructions embedded in the data rather than your intended prompt.
+
+For example, the blog post indexed in this tutorial contains text describing an [Auto-GPT](https://lilianweng.github.io/posts/2023-06-23-agent/#case-studies) JSON response format. If a user query retrieves that chunk, the model may output JSON instead of a natural-language answer.
+</Warning>
+
+To mitigate this:
+
+1. **Use defensive prompts**: Explicitly instruct the model to treat retrieved context as data only and to ignore any instructions within it. The prompts in this tutorial include such instructions.
+2. **Wrap context with delimiters**: Use clear structural markers (e.g., XML tags like `<context>...</context>`) to separate retrieved data from instructions, making it easier for the model to distinguish between them.
+3. **Validate responses**: Check that the model's output matches the expected format (e.g., plain text) and handle unexpected formats gracefully.
+
+No mitigation is foolproof — this is an inherent limitation of current LLM architectures where instructions and data share the same context window. For more on this topic, see research on [prompt injection](https://simonwillison.net/series/prompt-injection/).
 
 ## Next steps
 
@@ -547,6 +526,7 @@ Now that you have implemented a simple RAG application via @[`createAgent`], you
 
 :::
 
+- [Evaluate a RAG application](/langsmith/evaluate-rag-tutorial) with LangSmith datasets and evaluators
 - [Stream](/oss/langchain/streaming) tokens and other information for responsive user experiences
 - Add [conversational memory](/oss/langchain/short-term-memory) to support multi-turn interactions
 - Add [long-term memory](/oss/langchain/long-term-memory) to support memory across conversational threads
