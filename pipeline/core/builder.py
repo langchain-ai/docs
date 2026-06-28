@@ -775,6 +775,7 @@ class DocumentationBuilder:
             "index.mdx",
             "use-these-docs.mdx",
             "playground.mdx",
+            "build-overview.mdx",
         }:
             return True
 
