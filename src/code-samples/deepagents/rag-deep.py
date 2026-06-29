@@ -7,10 +7,6 @@ import sys
 if not os.environ.get("OPENAI_API_KEY"):
     print("[rag-deep] Skipping (OPENAI_API_KEY required).")
     sys.exit(0)
-
-if not os.environ.get("GOOGLE_API_KEY"):
-    print("[rag-deep] Skipping (GOOGLE_API_KEY required for agent run).")
-    sys.exit(0)
 # :remove-end:
 
 # :snippet-start: rag-deep-index-py
@@ -25,8 +21,8 @@ DOCS_BASE = "https://docs.langchain.com"
 # Curated LangChain OSS pages for this tutorial. Expand this list or parse
 # URLs from https://docs.langchain.com/llms.txt to index more of the site.
 DOC_PATHS = [
-    "oss/python/deepagents/rag",
     "oss/python/langchain/agents",
+    "oss/python/deepagents/rag",
     "oss/python/langchain/tools",
     "oss/python/langchain/models",
     "oss/python/langchain/retrieval",
@@ -235,5 +231,6 @@ assert len(docs) > 0
 assert len(all_splits) > 0
 assert search_documentation is not None
 assert agent is not None
+assert hasattr(agent, "invoke")
 print("✓ rag-deep")
 # :remove-end:

@@ -5,6 +5,11 @@ if (!process.env.OPENAI_API_KEY) {
 }
 // :remove-end:
 
+// :remove-start:
+import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
+import { OpenAIEmbeddings } from "@langchain/openai";
+// :remove-end:
+
 // :snippet-start: rag-deep-index-js
 import "dotenv/config";
 
@@ -16,8 +21,8 @@ const DOCS_BASE = "https://docs.langchain.com";
 // Curated LangChain OSS pages for this tutorial. Expand this list or filter
 // llms.txt URLs to index more of the site.
 const DOC_PATHS = [
-  "oss/javascript/deepagents/rag",
   "oss/javascript/langchain/agents",
+  "oss/javascript/deepagents/rag",
   "oss/javascript/langchain/tools",
   "oss/javascript/langchain/models",
   "oss/javascript/langchain/retrieval",
@@ -241,6 +246,9 @@ if (allSplits.length === 0) {
 }
 if (!searchDocumentation || !agent) {
   throw new Error("Expected search tool and agent to be defined");
+}
+if (!agent.invoke) {
+  throw new Error("agent.invoke not defined");
 }
 console.log("✓ rag-deep");
 // :remove-end:
