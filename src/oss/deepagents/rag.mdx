@@ -4,9 +4,21 @@ sidebarTitle: RAG agent
 description: Build a documentation Q&A agent that retrieves LangChain docs into a vector store, offloads chunks to the filesystem, and delegates analysis to subagents
 ---
 
+import EmbeddingsTabsPy from '/snippets/embeddings-tabs-py.mdx';
+import EmbeddingsTabsJS from '/snippets/embeddings-tabs-js.mdx';
 import RagDeepIndexPy from '/snippets/code-samples/rag-deep-index-py.mdx';
 import RagDeepIndexJs from '/snippets/code-samples/rag-deep-index-js.mdx';
+import RagDeepLoadDocumentsPy from '/snippets/code-samples/rag-deep-load-documents-py.mdx';
+import RagDeepLoadDocumentsJs from '/snippets/code-samples/rag-deep-load-documents-js.mdx';
+import RagDeepPrintDocumentsPreviewPy from '/snippets/code-samples/rag-deep-print-documents-preview-py.mdx';
+import RagDeepPrintDocumentsPreviewJs from '/snippets/code-samples/rag-deep-print-documents-preview-js.mdx';
+import RagDeepSplitDocumentsPy from '/snippets/code-samples/rag-deep-split-documents-py.mdx';
+import RagDeepSplitDocumentsJs from '/snippets/code-samples/rag-deep-split-documents-js.mdx';
+import RagDeepStoreDocumentsPy from '/snippets/code-samples/rag-deep-store-documents-py.mdx';
+import RagDeepStoreDocumentsJs from '/snippets/code-samples/rag-deep-store-documents-js.mdx';
 import RagDeepBaselinePy from '/snippets/code-samples/rag-deep-baseline-py.mdx';
+import VectorstoreTabsPy from '/snippets/vectorstore-tabs-py.mdx';
+import VectorstoreTabsJS from '/snippets/vectorstore-tabs-js.mdx';
 import RagDeepBaselineJs from '/snippets/code-samples/rag-deep-baseline-js.mdx';
 import RagDeepSearchToolPy from '/snippets/code-samples/rag-deep-search-tool-py.mdx';
 import RagDeepSearchToolJs from '/snippets/code-samples/rag-deep-search-tool-js.mdx';
@@ -52,7 +64,7 @@ The rest of this tutorial builds an agent that indexes LangChain documentation, 
 
 1. **Index**: Load the LangChain documentation into a vector store.
 2. **Search**: Build a custom tool that runs vector similarity search and writes each retrieved chunk to the agent filesystem.
-3. **Analyze*: Delegate file analysis to a subagent that reads the file and returns a focused summary.
+3. **Analyze**: Delegate file analysis to a subagent that reads the file and returns a focused summary.
 4. **Synthesize**: Use the main agent to get the final answer from subagent reports.
 
 ## Prerequisites
@@ -78,7 +90,7 @@ cd docs-rag-agent
 
 <CodeGroup>
 ```bash pip wrap
-pip install deepagents langchain langchain-openai langchain-text-splitters requests
+pip install deepagents langchain langchain-openai langchain-text-splitters requests numpy
 ```
 
 ```bash uv wrap
@@ -194,6 +206,17 @@ If you are building a production agent, we also recommend you set up [LangSmith 
 
 ## Index LangChain documentation
 
+In the indexing step, you'll take the source content and convert _chunks_ of it into numerical representations. This numerical representation captures the semantic meaning of the chunk. Storing a mapping of these numerical representations and the document chunks in a `VectorStore` allows you to efficiently retrieve relevant content when a user sends a query based on its own numerical representation.
+
+Indexing commonly works in four steps:
+
+1. **[Load](#load-documents)**: Load your data sources into @[`Document`] objects.
+2. **[Split](#split-documents)**: Use [text splitters](/oss/integrations/splitters) to break large `Document`s into smaller chunks. This is useful both for indexing data and passing it to a model, as large chunks are harder to search over and either do not fit in a model's finite context window or use more tokens than necessary.
+3. **[Embed](#select-an-embeddings-model)**: [Embeddings](/oss/integrations/embeddings) models convert each chunk into a numeric vector that captures its meaning, enabling similarity search over your content.
+4. **[Store](#store-chunks-and-embeddings-in-vectorstore)**: Use a [VectorStore](/oss/integrations/vectorstores) to index chunks and their embeddings for retrieval.
+
+![index_diagram](/images/rag_indexing.png)
+
 In the indexing step, fetch documentation pages, split them into chunks, embed the chunks, and store them in a `VectorStore`. The agent searches this index at runtime; it does not re-fetch the full site on every question.
 
 LangChain publishes markdown at `https://docs.langchain.com/{path}.md`. This tutorial indexes a curated list of open source documentation paths. You can expand `DOC_PATHS` or parse URLs from [llms.txt](https://docs.langchain.com/llms.txt) to cover more pages.
@@ -210,17 +233,152 @@ Create `agent.ts`:
 <RagDeepIndexJs />
 :::
 
-When you run the indexing code, you see output similar to:
+### Load documents
+
+Start by loading LangChain documentation pages into a list of @[Document] objects.
+
+:::python
+Use `requests` to fetch each page as markdown from `https://docs.langchain.com/{path}.md`. The curated `DOC_PATHS` list selects which pages to index.
+
+<RagDeepLoadDocumentsPy />
+
+If you run this code it prints:
 
 ```text
 Loaded 14 documentation pages.
+```
+
+You can also review the page content itself:
+
+<RagDeepPrintDocumentsPreviewPy />
+
+```text
+Total characters: 589579
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.langchain.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Build a RAG agent with LangChain
+```
+:::
+:::js
+Use `fetch` to retrieve markdown from `https://docs.langchain.com/{path}.md` for each path in `DOC_PATHS`.
+
+<RagDeepLoadDocumentsJs />
+
+If you run this code it prints:
+
+```text
+Loaded 14 documentation pages.
+```
+
+You can also review the page content itself:
+
+<RagDeepPrintDocumentsPreviewJs />
+
+```text
+Total characters: 553117
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.langchain.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Build a RAG agent with LangChain
+
+One of the most powerful LLM-based applications are sophisticated question-answering (Q\&A) chatbots which augment LLMs by providing it with structured access to a set of data.
+This might be private data, recent data, or data that is not part of the training data the LLM is trained
+```
+:::
+
+### Split documents
+
+The loaded documentation is long, which makes it too large to fit into the context window of many models.
+Even for those models that could fit the full corpus in their context window, models can struggle to find information in very long inputs.
+
+For ease of use, split the @[`Document`] objects into chunks. These chunks will be used for embedding and vector storage in the next steps.
+
+Use the `RecursiveCharacterTextSplitter` to recursively split the documents using common separators like new lines, until each chunk is the appropriate size.
+`RecursiveCharacterTextSplitter` is the recommended `TextSplitter` for generic text use cases.
+
+:::python
+
+<RagDeepSplitDocumentsPy />
+
+```text
 Split documentation into 782 chunks.
+```
+
+If you want to learn more about text splitters, check out the [`TextSplitter` interface](https://reference.langchain.com/python/langchain-text-splitters/base/TextSplitter) and [text splitter integrations](/oss/integrations/splitters/).
+
+:::
+:::js
+
+<RagDeepSplitDocumentsJs />
+
+```text
+Split documentation into 722 chunks.
+```
+
+:::
+
+### Select an embeddings model
+
+An [embedding](/oss/integrations/embeddings) is a numeric vector that captures the meaning of each documentation chunk. An @[Embeddings] model converts those chunks into vectors so that similar meanings land close together in vector space, enabling you to retrieve relevant sections when a user asks a question.
+
+You can choose from many different [embedding integrations](/oss/integrations/embeddings/) which all use the same @[Interface][Embeddings]:
+
+:::python
+<EmbeddingsTabsPy />
+:::
+:::js
+<EmbeddingsTabsJS />
+:::
+
+### Store chunks and embeddings in VectorStore
+
+A [`VectorStore`](/oss/integrations/vectorstores) persists document chunks and their embeddings, enabling similarity search to retrieve relevant sections when a user asks a question.
+You can choose from many different [vector store integrations](/oss/integrations/vectorstores/) which all use the same @[Interface][VectorStore].
+Use the embeddings model that you selected in the previous step to configure your `VectorStore`:
+
+:::python
+<VectorstoreTabsPy />
+:::
+:::js
+<VectorstoreTabsJS />
+:::
+
+Then, embed and store all document splits using the `vector_store` you initialized above:
+
+:::python
+<RagDeepStoreDocumentsPy />
+
+When run, this outputs:
+
+```text
 Indexed 782 chunks.
 ```
+:::
+:::js
+<RagDeepStoreDocumentsJs />
+
+When you run the indexing code, you see output similar to:
+
+```text
+Indexed 722 chunks.
+```
+:::
 
 <Tip>
     Indexing runs once at startup in this tutorial. In production, persist the vector store to disk or a hosted vector database and refresh it on a schedule when documentation changes.
 </Tip>
+
+This completes the **Indexing** portion of the tutorial. You now have a queryable vector store containing chunked LangChain documentation.
+
+The next step is to build a Deep Agent that searches this index at run time, offloads retrieved chunks to the filesystem, and delegates analysis to subagents. See [Build the agent](#build-the-agent). To think of it in RAG terms:
+
+1. **Retrieve**: Given a user input, relevant splits are retrieved from storage using a [Retriever](/oss/integrations/retrievers).
+2. **Generate**: A [model](/oss/langchain/models) produces an answer using a prompt that includes both the question and the retrieved data.
+
+![retrieval_diagram](/images/rag_retrieval_generation.png)
 
 ## Build the agent
 
@@ -419,7 +577,19 @@ For more on this topic, see the [security section](/oss/langchain/rag#security-c
 
 ## Next steps
 
-- Compare this pattern with [Build a RAG agent with LangChain](/oss/langchain/rag) for a single-agent retrieval loop
-- Read [Context engineering](/oss/deepagents/context-engineering) for offloading and subagent isolation strategies
+
+:::python
+
+Now that you have implemented a simple RAG application via @[`create_deep_agent`], you can incorporate new features and go deeper:
+
+:::
+:::js
+
+Now that you have implemented a simple RAG application via @[`createDeepAgent`], you can incorporate new features and go deeper:
+
+:::
+
+
 - [Evaluate a RAG application](/langsmith/evaluate-rag-tutorial) with LangSmith datasets and evaluators
-- Deploy your agent with [LangSmith Deployment](/langsmith/deployment)
+- Read [Context engineering](/oss/deepagents/context-engineering) for offloading and subagent isolation strategies
+- Deploy your application with [LangSmith Deployment](/langsmith/deployment)

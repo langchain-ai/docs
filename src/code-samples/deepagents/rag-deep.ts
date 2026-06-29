@@ -9,9 +9,7 @@ if (!process.env.OPENAI_API_KEY) {
 import "dotenv/config";
 
 import { Document } from "@langchain/core/documents";
-import { OpenAIEmbeddings } from "@langchain/openai";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
 
 const DOCS_BASE = "https://docs.langchain.com";
 
@@ -33,7 +31,9 @@ const DOC_PATHS = [
   "oss/javascript/langgraph/overview",
   "oss/javascript/langgraph/quickstart",
 ];
+// :snippet-end:
 
+// :snippet-start: rag-deep-load-documents-js
 async function loadLangchainDocs(
   docPaths: string[] = DOC_PATHS,
 ): Promise<Document[]> {
@@ -59,17 +59,29 @@ async function loadLangchainDocs(
 
 const docs = await loadLangchainDocs();
 console.log(`Loaded ${docs.length} documentation pages.`);
+// :snippet-end:
 
+// :snippet-start: rag-deep-print-documents-preview-js
+const totalChars = docs.reduce((sum, doc) => sum + doc.pageContent.length, 0);
+console.log(`Total characters: ${totalChars}`);
+console.log(docs[0].pageContent.slice(0, 500));
+// :snippet-end:
+
+// :snippet-start: rag-deep-split-documents-js
 const textSplitter = new RecursiveCharacterTextSplitter({
   chunkSize: 1000,
   chunkOverlap: 200,
 });
 const allSplits = await textSplitter.splitDocuments(docs);
 console.log(`Split documentation into ${allSplits.length} chunks.`);
+// :snippet-end:
 
-// KEEP MODEL
+// :remove-start:
 const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
 const vectorStore = new MemoryVectorStore(embeddings);
+// :remove-end:
+
+// :snippet-start: rag-deep-store-documents-js
 await vectorStore.addDocuments(allSplits);
 console.log(`Indexed ${allSplits.length} chunks.`);
 // :snippet-end:

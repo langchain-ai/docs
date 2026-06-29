@@ -40,8 +40,9 @@ DOC_PATHS = [
     "oss/python/langgraph/overview",
     "oss/python/langgraph/quickstart",
 ]
+# :snippet-end:
 
-
+# :snippet-start: rag-deep-load-documents-py
 def load_langchain_docs(doc_paths: list[str] | None = None) -> list[Document]:
     """Fetch LangChain documentation pages as Documents."""
     paths = doc_paths or DOC_PATHS
@@ -62,14 +63,26 @@ def load_langchain_docs(doc_paths: list[str] | None = None) -> list[Document]:
 
 docs = load_langchain_docs()
 print(f"Loaded {len(docs)} documentation pages.")
+# :snippet-end:
 
+# :snippet-start: rag-deep-print-documents-preview-py
+total_chars = sum(len(doc.page_content) for doc in docs)
+print(f"Total characters: {total_chars}")
+print(docs[0].page_content[:500])
+# :snippet-end:
+
+# :snippet-start: rag-deep-split-documents-py
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 all_splits = text_splitter.split_documents(docs)
 print(f"Split documentation into {len(all_splits)} chunks.")
+# :snippet-end:
 
-# KEEP MODEL
+# :remove-start:
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 vector_store = InMemoryVectorStore(embedding=embeddings)
+# :remove-end:
+
+# :snippet-start: rag-deep-store-documents-py
 vector_store.add_documents(documents=all_splits)
 print(f"Indexed {len(all_splits)} chunks.")
 # :snippet-end:
