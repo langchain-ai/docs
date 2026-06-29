@@ -1,0 +1,69 @@
+---
+title: "SafePrompt"
+sidebarTitle: "SafePrompt"
+description: "Validate prompts for prompt injection before they reach your model, via the SafePrompt API"
+---
+
+[SafePrompt](https://safeprompt.dev) is a prompt-injection detection API. The `@safeprompt.dev/langchain` package adds a callback handler that validates every prompt flowing through a chain or agent before it reaches the model, catching jailbreaks, system-prompt extraction, data-exfiltration attempts, and indirect injection from tool or retrieval output at the input boundary. It is provider-agnostic: because it validates the input, it works the same whether you call OpenAI, Anthropic, Google, or an open-weights model.
+
+## Setup
+
+<CodeGroup>
+    ```bash npm
+    npm install @safeprompt.dev/langchain
+    ```
+
+    ```bash yarn
+    yarn add @safeprompt.dev/langchain
+    ```
+
+    ```bash pnpm
+    pnpm add @safeprompt.dev/langchain
+    ```
+</CodeGroup>
+
+`@langchain/core` is a peer dependency.
+
+### Authentication
+
+Get a free API key (100,000 validations per month, no credit card) at [safeprompt.dev](https://safeprompt.dev).
+
+```bash
+export SAFEPROMPT_API_KEY=your_api_key
+```
+
+## Usage
+
+Add the callback handler anywhere LangChain accepts callbacks. When SafePrompt flags a prompt, the handler throws `SafePromptBlockedError` before the model is invoked, and the error carries the structured result so you can log it or return a safe fallback.
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+import { PromptTemplate } from "@langchain/core/prompts";
+import {
+  SafePromptCallbackHandler,
+  SafePromptBlockedError,
+} from "@safeprompt.dev/langchain";
+
+const chain = PromptTemplate.fromTemplate("Answer: {input}").pipe(
+  new ChatOpenAI({ model: "gpt-4o-mini" })
+);
+
+try {
+  const res = await chain.invoke(
+    { input: userInput },
+    { callbacks: [new SafePromptCallbackHandler({ apiKey: process.env.SAFEPROMPT_API_KEY })] }
+  );
+  console.log(res.content);
+} catch (err) {
+  if (err instanceof SafePromptBlockedError) {
+    // err.result.threats -> ["jailbreak_instruction_override", "extraction_system_prompt", ...]
+    console.error("Blocked for safety:", err.result.threats);
+  }
+}
+```
+
+## Resources
+
+- [SafePrompt website](https://safeprompt.dev)
+- [Documentation](https://docs.safeprompt.dev)
+- [npm package](https://www.npmjs.com/package/@safeprompt.dev/langchain)
