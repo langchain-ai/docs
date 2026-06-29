@@ -1,14 +1,14 @@
 ---
-title: Programmatic subagents
+title: Dynamic subagents
 description: Use interpreters to dispatch and orchestrate Deep Agents subagents from code
 ---
 
-Programmatic subagents let an agent dispatch [subagents](/oss/deepagents/subagents) from interpreter code. Instead of asking the model to choose one subagent call at a time, the agent can use JavaScript loops, branches, and parallel batches to route work across configured subagents and synthesize the results.
+Dynamic subagents let an agent dispatch [subagents](/oss/deepagents/subagents) from interpreter code. Instead of asking the model to choose one subagent call at a time, the agent can use JavaScript loops, branches, and parallel batches to route work across configured subagents and synthesize the results.
 
 Use this pattern when work spans many independent units, needs multiple perspectives, or benefits from recursive analysis. For general interpreter setup, see [Interpreters](/oss/deepagents/interpreters).
 
 <Warning>
-    Programmatic subagents use the interpreter runtime, which is in [**beta**](/oss/versioning). APIs and lifecycle behavior may change between releases.
+    Dynamic subagents use the interpreter runtime, which is in [**beta**](/oss/versioning). APIs and lifecycle behavior may change between releases.
 </Warning>
 
 :::python
@@ -16,6 +16,108 @@ Use this pattern when work spans many independent units, needs multiple perspect
     Interpreters require `langchain-quickjs>=0.1.0` and Python `>=3.11`.
 </Note>
 :::
+
+## Quickstart
+
+Dynamic subagents require two things: subagents to dispatch work to, and a code interpreter, a secure, lightweight runtime where the model writes and executes orchestration code. Deep Agents includes an optional code interpreter based on QuickJS. Install the QuickJS middleware package, then pass interpreter middleware through the `middleware` argument on `create_deep_agent`.
+
+:::python
+<CodeGroup>
+```bash pip
+pip install -U "deepagents[quickjs]"
+```
+
+```bash uv
+uv add "deepagents[quickjs]"
+```
+</CodeGroup>
+
+```python
+from deepagents import create_deep_agent
+from langchain_quickjs import CodeInterpreterMiddleware
+
+agent = create_deep_agent(
+    model="openai:gpt-5.5",
+    middleware=[CodeInterpreterMiddleware()],
+)
+```
+:::
+
+:::js
+<CodeGroup>
+```bash npm
+npm install deepagents @langchain/quickjs
+```
+
+```bash pnpm
+pnpm add deepagents @langchain/quickjs
+```
+
+```bash yarn
+yarn add deepagents @langchain/quickjs
+```
+</CodeGroup>
+
+```typescript
+import { createDeepAgent } from "deepagents";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
+
+const agent = createDeepAgent({
+  model: "openai:gpt-5.5",
+  middleware: [createCodeInterpreterMiddleware()],
+});
+```
+:::
+
+Deep Agents ships with a general-purpose subagent built in, so basic fan-out works without extra configuration. For specialized work, configure custom subagents with their own names, descriptions, and system prompts; the names and descriptions are how the agent knows which role to reach for. See [Subagents](/oss/deepagents/subagents) for configuration.
+
+To trigger dynamic subagents, prompt the agent with the word "workflow":
+
+:::python
+```python
+result = await agent.ainvoke({
+    "messages": [{"role": "user", "content": "Run a workflow that reviews every file in src/routes/ and summarizes the top risks."}]
+})
+```
+:::
+
+:::js
+```typescript
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "Run a workflow that reviews every file in src/routes/ and summarizes the top risks." }],
+});
+```
+:::
+
+<Tip>
+    **The word "workflow" is a useful trigger.** The interpreter system prompt treats "workflow" as a signal to organize work through the interpreter, dispatching subagents with `task()` from code rather than grinding through items one model-chosen tool call at a time. Phrasing a request as a "workflow" is a deliberate lever you can pull to opt into dynamic orchestration. For a single, direct delegation, phrase the request plainly instead.
+</Tip>
+
+### Use with a coding agent
+
+The fastest way to try dynamic subagents is with `dcode`, the LangChain terminal coding agent built on a Deep Agent. It ships with the code interpreter enabled, so dynamic subagents works out of the box with nothing to wire up.
+
+Install `dcode`:
+
+```bash
+curl -LsSf https://langch.in/dcode | bash
+```
+
+Run it:
+
+```bash
+dcode
+```
+
+To trigger dynamic subagents, ask for a "workflow". Instead of grinding through the work itself or managing fan-out through its native `task` tool, the agent writes an orchestration script that calls the built-in `task()` global and runs it in the code interpreter. For example: "Run a workflow to review every file in src/ for SQL injection."
+
+As subagents spawn, `dcode` shows them live in the dynamic subagents panel, grouped into phases by dispatch.
+
+<Frame>
+  ![The dcode dynamic subagents panel showing spawned subagents grouped into phases by dispatch](/oss/images/deepagents/dcode-dynamic-subagents-panel.png)
+</Frame>
+
+`dcode` is the fastest way to try this, but you can also use dynamic subagents in the coding agent of your choice over [ACP](/oss/deepagents/acp) (for example, Zed).
 
 ## How it works
 
@@ -51,16 +153,6 @@ const critical = review.issues.filter((issue) => issue.severity === "high");
 ```
 
 When you pass `responseSchema`, the resolved value is already a typed JavaScript object; only call `JSON.parse` if a subagent intentionally returned a JSON string.
-
-## Guide orchestration
-
-The interpreter middleware ships orchestration guidance in the system prompt, so the agent already knows how to fan out in bounded batches, filter between passes, and synthesize results. You do not hand-write that logic or prompt for it turn by turn.
-
-To shape what the agent orchestrates, work through the inputs it already responds to:
-
-- **The subagents you configure.** Their `name` and `description` define the roles available. A `reviewer` paired with a `verifier` invites a two-pass check; a single `analyzer` invites a straight fan-out.
-- **The task message.** Phrasing like "I only want confirmed issues, not maybes" or "be exhaustive" nudges the agent toward verification or an open-ended sweep.
-- **The system prompt.** Use `systemPrompt` (or the agent's instructions) to add standing guidance when you want a consistent strategy across runs.
 
 ## Patterns
 
@@ -610,7 +702,7 @@ found;
 </Warning>
 :::
 
-## Disable programmatic subagents
+## Disable dynamic subagents
 
 Subagent dispatch is on by default whenever the agent has subagents. Disable it if you want subagents to be available only through the normal `task` tool path.
 
