@@ -108,6 +108,9 @@ Deep Agents Code has the following built-in capabilities:
     | `compact_conversation` | Summarize older messages, offload originals to backend storage, and replace them in context with the summary | Mixed<sup>2</sup> |
     | `write_todos` | Create and manage task lists for complex work | - |
     | `get_current_thread_id` | Return the current thread ID for LangSmith or MCP tooling | - |
+    | `get_rubric` | Inspect the active acceptance criteria and latest grading status | - |
+    | `get_goal` | Inspect the active goal, status, criteria, and prior note | - |
+    | `update_goal` | Mark the active goal complete or blocked with evidence | - |
 
     <sup>1</sup>: Potentially destructive operations require user approval before execution. To bypass human approval, you can toggle auto-approve (shift+tab) or start with the option:
 
@@ -125,6 +128,33 @@ Deep Agents Code has the following built-in capabilities:
 
     <sup>3</sup>: When async subagents are configured via the `[async_subagents]` section in `config.toml` (see [Async subagents](/oss/deepagents/async-subagents)), additional tools become available: `start_async_task`, `update_async_task`, and `cancel_async_task` (all approval-gated), plus `check_async_task` and `list_async_tasks`.
 </Accordion>
+
+## Goals and rubrics
+
+Use a goal when you know the outcome you want, but want Deep Agents Code to propose the acceptance criteria before work begins. Goals are useful for open-ended work: the agent turns an objective into a concrete definition of done, then iterates until those criteria are satisfied.
+
+```text
+/goal add OAuth refresh handling
+```
+
+The TUI drafts acceptance criteria and shows an inline review prompt. You can accept the criteria, edit them directly, or reject them with feedback to regenerate. After you accept the criteria, the goal becomes active, the criteria become the sticky rubric for the thread, and the accepted goal is submitted to the agent.
+
+Use a rubric when you already know the acceptance criteria and want them to act as a quality gate for the agent's work.
+
+```text
+/rubric set tests pass; no unrelated files changed; help text is updated
+/rubric next only change the auth callback; do not refactor unrelated code
+/rubric file acceptance.md
+```
+
+A sticky rubric applies to future turns until cleared. A next-turn rubric applies only to the next submitted task.
+
+Headless runs cannot pause for goal review. Use `--rubric` for non-interactive tasks where criteria are already known:
+
+```bash
+dcode -n "implement OAuth refresh handling" --rubric "tests pass; no unrelated files changed"
+dcode -n "implement OAuth refresh handling" --rubric @acceptance.md
+```
 
 ## Command reference
 
@@ -162,6 +192,9 @@ dcode --startup-cmd "git diff --stat" -n "Review these changes"
         | `-m`, `--message TEXT` | Initial prompt to auto-submit when the session starts (interactive mode) |
         | `--skill NAME`         | Invoke a skill at startup |
         | `--startup-cmd CMD`    | Shell command to run at startup, before the first prompt. Output is rendered in the transcript for your reference but is **not** added to the agent's message history. To hand command output to the agent, pipe it in via stdin instead (e.g., `git diff \| dcode -n "Review these changes"`). Non-zero exits and timeouts warn but do not abort; non-interactive mode applies a 60s timeout. |
+        | `--rubric TEXT\|@PATH` | Acceptance criteria for rubric grading. Accepts literal text or `@path` to read a file. Requires `-n` or piped stdin |
+        | `--rubric-model MODEL` | Model the rubric grader uses. Defaults to the main agent model. Requires `-n` or piped stdin |
+        | `--rubric-max-iterations N` | Grader iterations per rubric attempt before stopping. Requires `-n` or piped stdin |
         | `-n`, `--non-interactive TEXT` | Run a single task non-interactively and exit. Shell is disabled unless `--shell-allow-list` is set |
         | `--max-turns N`        | Cap agentic turns in non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Cap turn count with `--max-turns`](#non-interactive-mode-and-piping) |
         | `--timeout SECONDS`    | Hard wall-clock timeout for non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Cap wall-clock time with `--timeout`](#non-interactive-mode-and-piping) |
@@ -242,6 +275,8 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
         - `/model` - Switch models or open the interactive model selector.
         - `/agents` - Hot-swap between pre-configured agents without relaunching. See [Command reference](/oss/deepagents/code/overview#command-reference) for details
         - `/auth` - Manage stored API keys for model providers and services (such as Tavily web search). See [Provider credentials](/oss/deepagents/code/configuration#provider-credentials) for details
+        - `/goal <objective>` - Draft acceptance criteria from an objective, review them inline, then run the accepted goal. Use `/goal show` to inspect the current goal and `/goal clear` to clear it
+        - `/rubric` (alias `/criteria`) - Set explicit acceptance criteria for rubric grading. Use `/rubric set <criteria>`, `/rubric next <criteria>`, `/rubric file <path>`, `/rubric show`, `/rubric clear`, or `/rubric model <provider:model>` to set the rubric grader model
         - `/remember [context]` - Review conversation and update memory and skills. Optionally pass additional context
         - `/skill:<name> [args]` - Directly invoke a skill by name. The skill's `SKILL.md` instructions are injected into the prompt along with any arguments you provide
         - `/skill-creator [task]` - Guide for creating effective agent skills
