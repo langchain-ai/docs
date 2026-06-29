@@ -16,7 +16,7 @@ const DOCS_BASE = "https://docs.langchain.com";
 // Curated LangChain OSS pages for this tutorial. Expand this list or filter
 // llms.txt URLs to index more of the site.
 const DOC_PATHS = [
-  "oss/javascript/langchain/rag",
+  "oss/javascript/deepagents/rag",
   "oss/javascript/langchain/agents",
   "oss/javascript/langchain/tools",
   "oss/javascript/langchain/models",
