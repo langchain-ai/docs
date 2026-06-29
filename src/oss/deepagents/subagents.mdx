@@ -207,6 +207,140 @@ const agent = createDeepAgent({
 ```
 :::
 
+## Dynamic subagents
+
+By default, the main agent delegates to subagents through `task` tool calls (it can issue several in a single turn to run them in parallel). With an [interpreter](/oss/deepagents/interpreters) attached, the agent can instead dispatch subagents **from code**—using loops, branches, and parallel batches to fan work out across many items and synthesize the results programmatically. This is called [dynamic subagents](/oss/deepagents/dynamic-subagents).
+
+Reach for dynamic subagents when work spans many independent units (reviewing every file in a directory, triaging a batch of tickets), needs multiple perspectives, or benefits from recursive analysis.
+
+<Warning>
+    Dynamic subagents use the interpreter runtime, which is in [**beta**](/oss/versioning). APIs and lifecycle behavior may change between releases.
+</Warning>
+
+### Enable dynamic subagents
+
+Dynamic subagents become available as soon as the agent has both subagents and the interpreter middleware. Install the QuickJS interpreter package, then add `CodeInterpreterMiddleware` to your agent.
+
+:::python
+<CodeGroup>
+```bash pip
+pip install -U "deepagents[quickjs]"
+```
+
+```bash uv
+uv add "deepagents[quickjs]"
+```
+</CodeGroup>
+
+```python
+from deepagents import create_deep_agent
+from langchain_quickjs import CodeInterpreterMiddleware
+
+agent = create_deep_agent(
+    model="openai:gpt-5.5",
+    subagents=[{
+        "name": "reviewer",
+        "description": "Reviews code for security issues, citing lines and severity",
+        "system_prompt": "You are a security-focused code reviewer. Report issues with line numbers and severity.",
+    }],
+    middleware=[CodeInterpreterMiddleware()],
+)
+```
+
+<Note>
+    Dynamic subagent dispatch is on by default whenever the agent has subagents and the interpreter middleware. Pass `CodeInterpreterMiddleware(subagents=False)` to require dispatch through the normal `task` tool path. Interpreters require `langchain-quickjs>=0.1.0` and Python `>=3.11`.
+</Note>
+:::
+
+:::js
+<CodeGroup>
+```bash npm
+npm install deepagents @langchain/quickjs
+```
+
+```bash pnpm
+pnpm add deepagents @langchain/quickjs
+```
+
+```bash yarn
+yarn add deepagents @langchain/quickjs
+```
+</CodeGroup>
+
+```typescript
+import { createDeepAgent } from "deepagents";
+import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
+
+const agent = createDeepAgent({
+  model: "openai:gpt-5.5",
+  subagents: [{
+    name: "reviewer",
+    description: "Reviews code for security issues, citing lines and severity",
+    systemPrompt: "You are a security-focused code reviewer. Report issues with line numbers and severity.",
+  }],
+  middleware: [createCodeInterpreterMiddleware()],
+});
+```
+
+<Note>
+    Dynamic subagent dispatch is on by default whenever the agent has subagents and the interpreter middleware. Pass `createCodeInterpreterMiddleware({ subagents: false })` to require dispatch through the normal `task` tool path.
+</Note>
+:::
+
+### Trigger dynamic orchestration
+
+Dynamic dispatch is implicit: the agent decides to fan work out from code based on the shape of the task, not a per-call flag.
+
+<Tip>
+    **The word "workflow" is a useful trigger.** The built-in interpreter system prompt treats a "workflow" as a signal to organize work through the interpreter—dispatching subagents with `task()` from code. Phrasing a request as a "workflow" is a deliberate lever you can pull to opt into dynamic orchestration: include it when you want the agent to fan work out from code. For a single, direct delegation, phrase the request plainly instead.
+</Tip>
+
+For example, phrasing the request as a "workflow" opts into fan-out from code:
+
+:::python
+```python
+result = await agent.ainvoke({
+    "messages": [{"role": "user", "content": "Run a workflow that reviews every file in src/routes/ and summarizes the top risks."}]
+})
+```
+:::
+
+:::js
+```typescript
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "Run a workflow that reviews every file in src/routes/ and summarizes the top risks." }],
+});
+```
+:::
+
+For configuration, advanced orchestration patterns, and safety notes, see [Dynamic subagents](/oss/deepagents/dynamic-subagents).
+
+### Use with a coding agent
+
+The fastest way to try dynamic subagents is with `dcode`, the LangChain terminal coding agent built on a Deep Agent. It ships with the code interpreter enabled, so dynamic subagents works out of the box with nothing to wire up.
+
+Install `dcode`:
+
+```bash
+curl -LsSf https://langch.in/dcode | bash
+```
+
+Run it:
+
+```bash
+dcode
+```
+
+To trigger dynamic subagents, ask for a "workflow". Instead of grinding through the work itself or managing fan-out through its native `task` tool, the agent writes an orchestration script that calls the built-in `task()` global and runs it in the code interpreter. For example: "Run a workflow to review every file in src/ for SQL injection."
+
+As subagents spawn, `dcode` shows them live in the dynamic subagents panel, grouped into phases by dispatch.
+
+<Frame>
+  ![The dcode dynamic subagents panel showing spawned subagents grouped into phases by dispatch](/oss/images/deepagents/dcode-dynamic-subagents-panel.png)
+</Frame>
+
+`dcode` is the fastest way to try this, but you can also use dynamic subagents in the coding agent of your choice over [ACP](/oss/deepagents/acp) (for example, Zed).
+
 ## Streaming
 
 Deep Agents support streaming updates from both the coordinator and every delegated subagent.
