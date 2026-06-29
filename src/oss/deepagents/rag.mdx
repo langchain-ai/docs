@@ -6,6 +6,8 @@ description: Build a documentation Q&A agent that retrieves LangChain docs into 
 
 import RagDeepIndexPy from '/snippets/code-samples/rag-deep-index-py.mdx';
 import RagDeepIndexJs from '/snippets/code-samples/rag-deep-index-js.mdx';
+import RagDeepBaselinePy from '/snippets/code-samples/rag-deep-baseline-py.mdx';
+import RagDeepBaselineJs from '/snippets/code-samples/rag-deep-baseline-js.mdx';
 import RagDeepSearchToolPy from '/snippets/code-samples/rag-deep-search-tool-py.mdx';
 import RagDeepSearchToolJs from '/snippets/code-samples/rag-deep-search-tool-js.mdx';
 import RagDeepAgentPy from '/snippets/code-samples/rag-deep-agent-py.mdx';
@@ -13,23 +15,45 @@ import RagDeepAgentJs from '/snippets/code-samples/rag-deep-agent-js.mdx';
 import RagDeepRunPy from '/snippets/code-samples/rag-deep-run-py.mdx';
 import RagDeepRunJs from '/snippets/code-samples/rag-deep-run-js.mdx';
 
-This guide shows how to build a [Retrieval Augmented Generation (RAG)](/oss/langchain/retrieval/) application with [Deep Agents](/oss/deepagents) instead of a single LangChain agent loop. The pattern mirrors the [LangChain RAG tutorial](/oss/langchain/rag), but uses Deep Agents capabilities to keep the orchestrator context clean:
 
-1. **Index** LangChain documentation into a vector store.
-2. **Search** with a custom tool that runs vector similarity search and writes each retrieved chunk to the agent [filesystem](/oss/deepagents/backends).
-3. **Analyze** by delegating each chunk file to a [subagent](/oss/deepagents/subagents) that reads the file and returns a focused summary.
-4. **Synthesize** a final answer in the main agent from subagent reports.
+One of the most powerful LLM-based applications are sophisticated question-answering (Q&A) chatbots which augment LLMs by providing it with structured access to a set of data.
+This might be private data, recent data, or data that is not part of the training data the LLM is trained on.
+These applications use a technique known as Retrieval Augmented Generation, or [RAG](/oss/langchain/retrieval/).
 
-This tutorial uses [docs.langchain.com](https://docs.langchain.com) as the corpus. For a simpler RAG agent without subagents or filesystem offloading, see [Build a RAG agent with LangChain](/oss/langchain/rag).
+This guide shows how to build a Retrieval Augmented Generation (RAG) application with [Deep Agents](/oss/deepagents). You index [docs.langchain.com](https://docs.langchain.com), retrieve relevant chunks at query time, offload them to the agent [filesystem](/oss/deepagents/backends), and delegate analysis to [subagents](/oss/deepagents/subagents) so the orchestrator context stays clean.
 
-### Key concepts
+For a simpler RAG agent without subagents or filesystem offloading, see [Build a RAG agent with LangChain](/oss/langchain/rag).
 
-This tutorial covers:
+## Why retrieval matters
 
-- [Vector indexing](/oss/langchain/rag#index-your-content) with LangChain document loaders and embeddings
-- Custom [tools](/oss/langchain/tools) that update agent state with @[`Command`]
-- [Subagents](/oss/deepagents/subagents) for context-isolated chunk analysis
-- The default [StateBackend](/oss/deepagents/backends#statebackend) filesystem for retrieved chunks
+A language model on its own does not have access to your documentation. Ask it about a specific API that changed recently, and it answers from training data: often plausible, sometimes wrong, and never grounded in your source of truth.
+
+You can pass some of the documentation into the prompt, but, aside from token usage, you are then limited by the context window.
+
+This tutorial uses one question throughout:
+
+> How do I stream intermediate tool results from a subagent?
+
+Pass that question to a [Deep Agent](/oss/deepagents/overview) with no custom tools and no access to the documentation corpus, to see what the model comes up with:
+
+:::python
+<RagDeepBaselinePy />
+:::
+
+:::js
+<RagDeepBaselineJs />
+:::
+
+Without retrieval, the agent cannot look up current LangChain documentation. Responses tend to be generic, may omit guidance such as [subagent streaming](/oss/deepagents/frontend/subagent-streaming), or include outdated information.
+
+The rest of this tutorial builds an agent that indexes LangChain documentation, retrieves evidence with a vector search tool, analyzes each chunk in parallel subagents, and answers the **same question** in [Run the agent](#run-the-agent) with citations to the docs.
+
+### What you will build
+
+1. **Index**: Load the LangChain documentation into a vector store.
+2. **Search**: Build a custom tool that runs vector similarity search and writes each retrieved chunk to the agent filesystem.
+3. **Analyze*: Delegate file analysis to a subagent that reads the file and returns a focused summary.
+4. **Synthesize**: Use the main agent to get the final answer from subagent reports.
 
 ## Prerequisites
 
@@ -37,7 +61,6 @@ API keys for:
 
 - A chat model provider (Anthropic, OpenAI, or Google)
 - OpenAI (or another [embeddings integration](/oss/integrations/embeddings)) for indexing
-- [LangSmith](https://smith.langchain.com) for tracing (optional)
 
 ## Setup
 
@@ -60,7 +83,7 @@ pip install deepagents langchain langchain-openai langchain-text-splitters reque
 
 ```bash uv wrap
 uv init
-uv add deepagents langchain langchain-openai langchain-text-splitters requests
+uv add deepagents langchain langchain-openai langchain-text-splitters requests numpy
 uv sync
 ```
 </CodeGroup>
@@ -72,9 +95,32 @@ uv sync
 export OPENAI_API_KEY="your_openai_api_key"
 export ANTHROPIC_API_KEY="your_anthropic_api_key"   # If using Claude
 export GOOGLE_API_KEY="your_google_api_key"         # If using Gemini
-export LANGSMITH_API_KEY="your_langsmith_api_key"   # Optional
-export LANGSMITH_TRACING="true"                     # Optional
 ```
+
+</Step>
+<Step title="Set up LangSmith" id="set-up-langsmith">
+
+RAG applications run retrieval and generation in sequence. When you run the examples in this tutorial, [LangSmith](/langsmith/observability) logs a trace for each query so you can inspect retrieval, tool calls, and model responses.
+After you [sign up for LangSmith](https://smith.langchain.com), set your environment variables to start logging traces:
+
+```shell
+export LANGSMITH_TRACING="true"
+export LANGSMITH_API_KEY="..."
+```
+
+Or, set them in Python:
+
+```python
+import getpass
+import os
+
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass()
+```
+
+<Tip>
+If you are building a production agent, we also recommend you set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
+</Tip>
 
 </Step>
 </Steps>
@@ -90,22 +136,57 @@ cd docs-rag-agent
 ```
 
 </Step>
-<Step title="Install dependencies">
+<Step title="Initialize the project">
 
 ```bash npm wrap
-npm install deepagents langchain @langchain/openai @langchain/textsplitters @langchain/classic
+npm init -y
+npm pkg set type=module
 ```
 
 </Step>
+<Step title="Install dependencies">
+
+```bash npm wrap
+npm install deepagents langchain @langchain/core @langchain/openai @langchain/anthropic @langchain/google-genai @langchain/textsplitters @langchain/classic dotenv zod tsx
+```
+
+Install the matching `@langchain/<provider>` package for the model you select in the code examples below (Google, OpenAI, and Anthropic are included above).
+
+</Step>
 <Step title="Set API keys">
+
+Export keys in your shell, or create a `.env` file in the project directory. The code loads `.env` automatically with `import "dotenv/config"` (added in the indexing step below).
 
 ```bash
 export OPENAI_API_KEY="your_openai_api_key"
 export ANTHROPIC_API_KEY="your_anthropic_api_key"   # If using Claude
 export GOOGLE_API_KEY="your_google_api_key"         # If using Gemini
-export LANGSMITH_API_KEY="your_langsmith_api_key"   # Optional
-export LANGSMITH_TRACING="true"                     # Optional
 ```
+
+Or in `.env`:
+
+```bash
+OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
+GOOGLE_API_KEY=your_google_api_key
+```
+
+Use the environment variable that matches the model provider in your code (`ANTHROPIC_API_KEY` for Claude, `GOOGLE_API_KEY` for Gemini, `OPENAI_API_KEY` for OpenAI).
+
+</Step>
+<Step title="Set up LangSmith" id="set-up-langsmith">
+
+RAG applications run retrieval and generation in sequence. When you run the examples in this tutorial, [LangSmith](/langsmith/observability) logs a trace for each query so you can inspect retrieval, tool calls, and model responses.
+After you [sign up for LangSmith](https://smith.langchain.com), set your environment variables to start logging traces:
+
+```shell
+export LANGSMITH_TRACING="true"
+export LANGSMITH_API_KEY="..."
+```
+
+<Tip>
+If you are building a production agent, we also recommend you set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
+</Tip>
 
 </Step>
 </Steps>
@@ -118,13 +199,13 @@ In the indexing step, fetch documentation pages, split them into chunks, embed t
 LangChain publishes markdown at `https://docs.langchain.com/{path}.md`. This tutorial indexes a curated list of open source documentation paths. You can expand `DOC_PATHS` or parse URLs from [llms.txt](https://docs.langchain.com/llms.txt) to cover more pages.
 
 :::python
-Create `index.py` (or add this block to `agent.py` before building the agent):
+Create `agent.py`:
 
 <RagDeepIndexPy />
 :::
 
 :::js
-Create `index.ts` (or add this block to `agent.ts` before building the agent):
+Create `agent.ts`:
 
 <RagDeepIndexJs />
 :::
@@ -132,9 +213,9 @@ Create `index.ts` (or add this block to `agent.ts` before building the agent):
 When you run the indexing code, you see output similar to:
 
 ```text
-Loaded 12 documentation pages.
-Split documentation into 842 chunks.
-Indexed 842 chunks.
+Loaded 14 documentation pages.
+Split documentation into 782 chunks.
+Indexed 782 chunks.
 ```
 
 <Tip>
@@ -144,11 +225,11 @@ Indexed 842 chunks.
 ## Build the agent
 
 :::python
-Create `agent.py` in your project directory:
+Add this code to `agent.py`:
 :::
 
 :::js
-Create `agent.ts` in your project directory:
+Add this code to `agent.ts`:
 :::
 
 <Steps>
@@ -299,17 +380,23 @@ The main agent keeps the `search_documentation` tool. The `chunk-analyst` subage
 
 ## Run the agent
 
+Run the RAG agent with the example query:
+
 :::python
 <RagDeepRunPy />
 :::
 
 :::js
+```bash
+npx tsx agent.ts
+```
+
 <RagDeepRunJs />
 :::
 
-When the agent runs, it typically:
+When the agent runs, it:
 
-1. Calls `search_documentation` with a query about retrieval tools or subagents.
+1. Calls `search_documentation` with a query about subagent streaming.
 2. Receives file paths such as `/retrieved/a1b2c3d4/chunk_1.md`.
 3. Launches one or more `task()` calls to `chunk-analyst`, each scoped to a single chunk file.
 4. Synthesizes a final answer with links to the relevant documentation pages.
