@@ -4,6 +4,17 @@ description: Run lightweight code inside Deep Agents to compose tools, orchestra
 tag: "Beta"
 ---
 
+import InterpretersQuickstartPy from '/snippets/code-samples/interpreters-quickstart-py.mdx';
+import InterpretersQuickstartJs from '/snippets/code-samples/interpreters-quickstart-js.mdx';
+import InterpretersTotalsEvalJs from '/snippets/code-samples/interpreters-totals-eval-js.mdx';
+import InterpretersPtcCallEvalJs from '/snippets/code-samples/interpreters-ptc-call-eval-js.mdx';
+import InterpretersEnablePtcPy from '/snippets/code-samples/interpreters-enable-ptc-py.mdx';
+import InterpretersEnablePtcJs from '/snippets/code-samples/interpreters-enable-ptc-js.mdx';
+import InterpretersPtcParallelEvalJs from '/snippets/code-samples/interpreters-ptc-parallel-eval-js.mdx';
+import InterpretersTaskFanoutEvalJs from '/snippets/code-samples/interpreters-task-fanout-eval-js.mdx';
+import InterpretersPersistenceDefaultPy from '/snippets/code-samples/interpreters-persistence-default-py.mdx';
+import InterpretersPersistenceCheckpointerPy from '/snippets/code-samples/interpreters-persistence-checkpointer-py.mdx';
+
 Interpreters give agents a programmable, **in-memory** workspace inside the agent loop. The agent writes code to complete a task, and the runtime executes it and returns only the relevant results. Intermediate results do not become part of the model context.
 
 Where [sandboxes](/oss/deepagents/sandboxes) are a code-first way for acting on an environment (such as running commands, installing dependencies, and editing files), interpreters are a code-first way for composing tools, preserving state, and deciding what information should return to the model.
@@ -80,15 +91,7 @@ uv add "deepagents[quickjs]"
 ```
 </CodeGroup>
 
-```python
-from deepagents import create_deep_agent
-from langchain_quickjs import CodeInterpreterMiddleware
-
-agent = create_deep_agent(
-    model="openai:gpt-5.5",
-    middleware=[CodeInterpreterMiddleware()],
-)
-```
+<InterpretersQuickstartPy />
 :::
 
 :::js
@@ -106,15 +109,7 @@ yarn add deepagents @langchain/quickjs
 ```
 </CodeGroup>
 
-```typescript
-import { createDeepAgent } from "deepagents";
-import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
-
-const agent = createDeepAgent({
-  model: "openai:gpt-5.5",
-  middleware: [createCodeInterpreterMiddleware()],
-});
-```
+<InterpretersQuickstartJs />
 :::
 
 ## How interpreters work
@@ -123,21 +118,7 @@ The middleware adds an `eval` tool to the agent. When useful, the agent writes J
 
 The agent can write code like this:
 
-```javascript
-const rows = [
-  { team: "alpha", score: 8 },
-  { team: "beta", score: 13 },
-  { team: "alpha", score: 21 },
-];
-
-const totals = rows.reduce((acc, row) => {
-  acc[row.team] = (acc[row.team] ?? 0) + row.score;
-  console.log(`${row.team} score: ${acc[row.team]}`)
-  return acc;
-}, {});
-
-totals;
-```
+<InterpretersTotalsEvalJs />
 
 :::python
 By default (`mode="thread"`), interpreter state persists across turns in the same thread. See [Persistence](#persistence) for `mode` options and the snapshot lifecycle.
@@ -160,53 +141,23 @@ This helps when intermediate results are only inputs to the next step: the inter
 
 The middleware exposes each allowlisted tool as an async function under `tools`. The agent calls it with `await`, processes the result in code, and the model sees only the final interpreter output, not every intermediate value. Tool names are converted to camelCase while the input object still follows the tool's schema, so a tool named `web_search` becomes `tools.webSearch(...)`:
 
-```typescript
-const result: string = await tools.webSearch({
-  query: "deepagents interpreters",
-});
-```
+<InterpretersPtcCallEvalJs />
 
 ### Enable PTC
 
 Enable PTC with an explicit allowlist:
 
 :::python
-```python
-from deepagents import create_deep_agent
-from langchain_quickjs import CodeInterpreterMiddleware
-
-agent = create_deep_agent(
-    model="openai:gpt-5.5",
-    middleware=[CodeInterpreterMiddleware(ptc=["web_search"])],
-)
-```
+<InterpretersEnablePtcPy />
 :::
 
 :::js
-```typescript
-import { createDeepAgent } from "deepagents";
-import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
-
-const agent = createDeepAgent({
-  model: "openai:gpt-5.5",
-  middleware: [createCodeInterpreterMiddleware({ ptc: ["web_search"] })],
-});
-```
+<InterpretersEnablePtcJs />
 :::
 
 After PTC is enabled, the agent can call the allowlisted tool from interpreter code. This example searches several topics in parallel and combines the results before returning to the model:
 
-```javascript
-const topics = ["retrieval", "memory", "evaluation"];
-
-const results = await Promise.all(
-  topics.map((topic) =>
-    tools.webSearch({ query: `${topic} best practices 2025` }),
-  ),
-);
-
-results.join("\n\n");
-```
+<InterpretersPtcParallelEvalJs />
 
 :::python
 <Warning>
@@ -231,20 +182,7 @@ Use dynamic subagents for:
 - **Verification**: Send findings to independent verifier subagents and keep only confirmed results.
 - **Recursive workflows**: Keep a working set in interpreter variables, select slices, call subagents, and refine the result.
 
-```javascript
-const paths = ["src/auth.ts", "src/routes/api.ts"];
-
-const reviews = await Promise.all(
-  paths.map((path) =>
-    task({
-      description: `Review ${path} for authentication issues`,
-      subagentType: "reviewer",
-    }),
-  ),
-);
-
-reviews.join("\n\n");
-```
+<InterpretersTaskFanoutEvalJs />
 
 :::python
 ## Persistence
@@ -270,33 +208,11 @@ Snapshots preserve interpreter memory, not outside-world effects. If interpreter
 
 Cross-turn persistence does not require a checkpointer:
 
-```python
-from deepagents import create_deep_agent
-from langchain_quickjs import CodeInterpreterMiddleware
-
-agent = create_deep_agent(
-    model="openai:gpt-5.5",
-    middleware=[
-        CodeInterpreterMiddleware(
-            mode="thread",  # Default
-        )
-    ],
-)
-```
+<InterpretersPersistenceDefaultPy />
 
 Because interpreter snapshots are stored in graph state, a [checkpointer](/oss/langgraph/checkpointers) also captures them in checkpoint history. Add one when you need durable threads or [time travel](/oss/langgraph/use-time-travel):
 
-```python
-from deepagents import create_deep_agent
-from langchain_quickjs import CodeInterpreterMiddleware
-from langgraph.checkpoint.memory import MemorySaver
-
-agent = create_deep_agent(
-    model="openai:gpt-5.5",
-    checkpointer=MemorySaver(),
-    middleware=[CodeInterpreterMiddleware(mode="thread")],
-)
-```
+<InterpretersPersistenceCheckpointerPy />
 
 Set `mode="turn"` to persist interpreter state only within a turn, or `mode="call"` for a fresh REPL on every `eval`.
 :::
