@@ -16,17 +16,13 @@ Agent Server splits metrics into two sets:
 - **Deployment UI metrics**: Surfaced in the LangSmith Deployment UI and exposed on the Agent Server Prometheus scrape endpoint (`GET /metrics`, `format=prometheus`) by default.
 - **Internal metrics**: Operational and debugging metrics used by LangChain operators. Sent to Datadog when configured. On Prometheus, internal metrics appear only when you opt in.
 
-| Backend | Default metric set | Enable |
-|---------|-------------------|--------|
-| **Prometheus** (scrape `GET /metrics`) | Deployment UI metrics only | Always available when the OTel Prometheus exporter is installed |
-| **Prometheus** (all metrics) | Deployment UI + internal metrics | Set `EXPOSE_INTERNAL_METRICS_PROMETHEUS=true` |
+| Backend | Metric set | Enable |
+|---------|------------|--------|
+| **Prometheus** (scrape `GET /metrics`) | Deployment UI metrics by default. Set `EXPOSE_INTERNAL_METRICS_PROMETHEUS=true` to also expose internal metrics on the same endpoint. | Available when the OTel Prometheus exporter is installed |
 | **Datadog** (OTLP push) | Internal metrics only | Set `LSD_DD_API_KEY` (or `CUSTOM_LSD_DD_API_KEY`). Metrics push to `https://{LSD_DD_ENDPOINT}/v1/metrics` (default endpoint: `otlp.us5.datadoghq.com`). |
 
-Prometheus and Datadog can run at the same time. Prometheus receives the Deployment UI set (or the full set when `EXPOSE_INTERNAL_METRICS_PROMETHEUS=true` is set). Datadog receives the internal complement so UI metrics are not duplicated in both backends.
+Prometheus and Datadog can run at the same time. Datadog receives the internal complement so UI metrics are not duplicated in both backends.
 
-<Note>
-Every metric has a tier (`CRITICAL`, `INFO`, `DEBUG`, or `DEEP_DEBUG`). Deployment UI metrics bypass `METRIC_MAX_EMITTING_TIER` filtering and always emit, regardless of tier. Internal metrics respect the tier gate and are omitted when their tier exceeds the configured maximum.
-</Note>
 
 ## Metric tiers
 
@@ -56,8 +52,6 @@ To also expose internal metrics on the same endpoint, set:
 EXPOSE_INTERNAL_METRICS_PROMETHEUS=true
 ```
 
-Record-time tier filtering still applies: internal metrics above `METRIC_MAX_EMITTING_TIER` are not recorded and never appear on either backend.
-
 ### Datadog
 
 To push internal metrics to Datadog instead of (or alongside) Prometheus:
@@ -66,11 +60,6 @@ To push internal metrics to Datadog instead of (or alongside) Prometheus:
 2. Optionally set `LSD_DD_ENDPOINT` (default: `otlp.us5.datadoghq.com`) or the legacy alias `CUSTOM_LSD_DD_API_KEY` / `CUSTOM_LSD_DD_ENDPOINT`.
 
 Datadog receives only internal metrics. Continue scraping `/metrics` for Deployment UI metrics in Prometheus or Grafana.
-
-### Optional tuning
-
-- **`METRIC_PREFIX`**: Prefix for all metric names (default: `lg_api_`).
-- **`METRIC_MAX_EMITTING_TIER`**: Highest metric tier to record for internal metrics. Defaults to `2` (INFO) in production and `1` (CRITICAL) in `dev` / `dev_free` deployments. Tiers are `1` CRITICAL, `2` INFO, `3` DEBUG, `4` DEEP_DEBUG.
 
 ## Deployment UI metrics
 
