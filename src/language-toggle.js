@@ -160,15 +160,18 @@
     return true;
   }
 
-  // Record the intended switch the instant a language dropdown item is clicked,
-  // before Mintlify navigates (the destination URL does not encode the target
-  // language, and the navigation may be a full page reload).
+  // Handle a language dropdown click the instant it happens, before Mintlify
+  // navigates (the destination URL does not encode the target language, and the
+  // navigation may be a full page reload).
   document.addEventListener(
     "click",
     function (e) {
       const targetLang = e.target && clickTargetLanguage(e.target);
       if (!targetLang) return;
 
+      // Record the intended switch as a fallback: this survives a full page
+      // reload and is applied on the next load if the fast path below does not
+      // run (e.g. the source is the shared, language-agnostic landing page).
       writePending(
         JSON.stringify({
           src: location.pathname + location.hash,
@@ -176,6 +179,20 @@
           ts: Date.now(),
         }),
       );
+
+      // Fast path: if the current page has a resolvable equivalent, go straight
+      // there and skip the intermediate landing-page load (avoids a visible
+      // flash). The capture-phase listener runs before Mintlify's own click
+      // handler, so suppressing propagation prevents its navigation.
+      const srcLang = getPathLanguage(location.pathname);
+      if (srcLang && srcLang !== targetLang) {
+        const equivalent = getEquivalentPath(location.pathname, targetLang);
+        if (equivalent && equivalent !== location.pathname) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          location.assign(equivalent + location.hash);
+        }
+      }
     },
     true,
   );
