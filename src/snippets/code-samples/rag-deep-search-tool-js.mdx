@@ -1,44 +1,27 @@
 ```ts
-import { tool, ToolMessage, type ToolRuntime } from "langchain";
-import { Command } from "@langchain/langgraph";
-import type { FileData } from "deepagents";
+import { StateBackend } from "deepagents";
+import { tool } from "langchain";
 import * as z from "zod";
 
-function createFileData(content: string): FileData {
-  const now = new Date().toISOString();
-  return {
-    content,
-    mimeType: "text/plain",
-    created_at: now,
-    modified_at: now,
-  };
-}
+const backend = new StateBackend();
 
 const searchDocumentation = tool(
-  async ({ query }, runtime: ToolRuntime) => {
+  async ({ query }) => {
     const retrievedDocs = await vectorStore.similaritySearch(query, 4);
     const batchId = crypto.randomUUID().slice(0, 8);
-    const fileUpdates: Record<string, FileData> = {};
+    const uploads: Array<[string, Uint8Array]> = [];
     const savedPaths: string[] = [];
+    const encoder = new TextEncoder();
 
     retrievedDocs.forEach((doc, index) => {
       const path = `/retrieved/${batchId}/chunk_${index + 1}.md`;
       const content = `# Source: ${doc.metadata.source ?? "unknown"}\n\n${doc.pageContent}`;
-      fileUpdates[path] = createFileData(content);
+      uploads.push([path, encoder.encode(content)]);
       savedPaths.push(path);
     });
 
-    return new Command({
-      update: {
-        files: fileUpdates,
-        messages: [
-          new ToolMessage({
-            content: `Saved ${savedPaths.length} documentation chunks:\n${savedPaths.join("\n")}`,
-            tool_call_id: runtime.toolCallId,
-          }),
-        ],
-      },
-    });
+    backend.uploadFiles(uploads);
+    return `Saved ${savedPaths.length} documentation chunks:\n${savedPaths.join("\n")}`;
   },
   {
     name: "search_documentation",

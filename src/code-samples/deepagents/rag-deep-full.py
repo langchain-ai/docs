@@ -1,16 +1,23 @@
-"""Deep Agents RAG tutorial: index docs, search tool, agent, and run."""
+"""Complete Deep Agents RAG tutorial script."""
 
 # :remove-start:
 import os
 import sys
 
 if not os.environ.get("OPENAI_API_KEY"):
-    print("[rag-deep] Skipping (OPENAI_API_KEY required).")
+    print("[rag-deep-full] Skipping (OPENAI_API_KEY required).")
     sys.exit(0)
 # :remove-end:
 
-# :snippet-start: rag-deep-index-py
+# :snippet-start: rag-deep-full-py
+import uuid
+
 import requests
+from deepagents import create_deep_agent
+from deepagents.backends import StateBackend
+from langchain.chat_models import init_chat_model
+from langchain.messages import HumanMessage
+from langchain.tools import tool
 from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import OpenAIEmbeddings
@@ -18,8 +25,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 DOCS_BASE = "https://docs.langchain.com"
 
-# Curated LangChain OSS pages for this tutorial. Expand this list or parse
-# URLs from https://docs.langchain.com/llms.txt to index more of the site.
 DOC_PATHS = [
     "oss/python/langchain/agents",
     "oss/python/deepagents/rag",
@@ -36,9 +41,8 @@ DOC_PATHS = [
     "oss/python/langgraph/overview",
     "oss/python/langgraph/quickstart",
 ]
-# :snippet-end:
 
-# :snippet-start: rag-deep-load-documents-py
+
 def load_langchain_docs(doc_paths: list[str] | None = None) -> list[Document]:
     """Fetch LangChain documentation pages as Documents."""
     paths = doc_paths or DOC_PATHS
@@ -59,35 +63,15 @@ def load_langchain_docs(doc_paths: list[str] | None = None) -> list[Document]:
 
 docs = load_langchain_docs()
 print(f"Loaded {len(docs)} documentation pages.")
-# :snippet-end:
 
-# :snippet-start: rag-deep-print-documents-preview-py
-total_chars = sum(len(doc.page_content) for doc in docs)
-print(f"Total characters: {total_chars}")
-print(docs[0].page_content[:500])
-# :snippet-end:
-
-# :snippet-start: rag-deep-split-documents-py
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 all_splits = text_splitter.split_documents(docs)
 print(f"Split documentation into {len(all_splits)} chunks.")
-# :snippet-end:
 
-# :remove-start:
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 vector_store = InMemoryVectorStore(embedding=embeddings)
-# :remove-end:
-
-# :snippet-start: rag-deep-store-documents-py
 vector_store.add_documents(documents=all_splits)
 print(f"Indexed {len(all_splits)} chunks.")
-# :snippet-end:
-
-# :snippet-start: rag-deep-search-tool-py
-import uuid
-
-from deepagents.backends import StateBackend
-from langchain.tools import tool
 
 backend = StateBackend()
 
@@ -121,9 +105,8 @@ def search_documentation(query: str) -> str:
         f"Saved {len(saved_paths)} documentation chunks:\n"
         + "\n".join(saved_paths)
     )
-# :snippet-end:
 
-# :remove-start:
+
 RAG_WORKFLOW_INSTRUCTIONS = """# Documentation Q&A workflow
 
 Answer questions about LangChain using the indexed documentation corpus.
@@ -165,11 +148,6 @@ Your role is to coordinate chunk analysis by delegating to the chunk-analyst sub
 - Wait for all chunk-analyst results before writing the final answer.
 - Merge overlapping facts and deduplicate source URLs.
 - Prefer concrete steps and code-oriented guidance from the documentation."""
-# :remove-end:
-
-# :snippet-start: rag-deep-agent-py
-from deepagents import create_deep_agent
-from langchain.chat_models import init_chat_model
 
 max_concurrent_analysts = 3
 
@@ -201,10 +179,6 @@ agent = create_deep_agent(
     system_prompt=INSTRUCTIONS,
     subagents=[chunk_analyst_subagent],
 )
-# :snippet-end:
-
-# :snippet-start: rag-deep-run-py
-from langchain.messages import HumanMessage
 
 EXAMPLE_QUERY = "How do I stream intermediate tool results from a subagent?"
 
@@ -224,5 +198,5 @@ assert len(all_splits) > 0
 assert search_documentation is not None
 assert agent is not None
 assert hasattr(agent, "invoke")
-print("✓ rag-deep")
+print("✓ rag-deep-full")
 # :remove-end:

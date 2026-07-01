@@ -1,25 +1,24 @@
 // :remove-start:
 if (!process.env.OPENAI_API_KEY) {
-  console.log("[rag-deep] Skipping (OPENAI_API_KEY required).");
+  console.log("[rag-deep-full] Skipping (OPENAI_API_KEY required).");
   process.exit(0);
 }
 // :remove-end:
 
-// :remove-start:
-import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
-import { OpenAIEmbeddings } from "@langchain/openai";
-// :remove-end:
-
-// :snippet-start: rag-deep-index-js
+// :snippet-start: rag-deep-full-js
 import "dotenv/config";
 
 import { Document } from "@langchain/core/documents";
+import { HumanMessage } from "@langchain/core/messages";
+import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
+import { OpenAIEmbeddings } from "@langchain/openai";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import { createDeepAgent, StateBackend } from "deepagents";
+import { tool } from "langchain";
+import * as z from "zod";
 
 const DOCS_BASE = "https://docs.langchain.com";
 
-// Curated LangChain OSS pages for this tutorial. Expand this list or filter
-// llms.txt URLs to index more of the site.
 const DOC_PATHS = [
   "oss/javascript/langchain/agents",
   "oss/javascript/deepagents/rag",
@@ -36,9 +35,7 @@ const DOC_PATHS = [
   "oss/javascript/langgraph/overview",
   "oss/javascript/langgraph/quickstart",
 ];
-// :snippet-end:
 
-// :snippet-start: rag-deep-load-documents-js
 async function loadLangchainDocs(
   docPaths: string[] = DOC_PATHS,
 ): Promise<Document[]> {
@@ -64,37 +61,18 @@ async function loadLangchainDocs(
 
 const docs = await loadLangchainDocs();
 console.log(`Loaded ${docs.length} documentation pages.`);
-// :snippet-end:
 
-// :snippet-start: rag-deep-print-documents-preview-js
-const totalChars = docs.reduce((sum, doc) => sum + doc.pageContent.length, 0);
-console.log(`Total characters: ${totalChars}`);
-console.log(docs[0].pageContent.slice(0, 500));
-// :snippet-end:
-
-// :snippet-start: rag-deep-split-documents-js
 const textSplitter = new RecursiveCharacterTextSplitter({
   chunkSize: 1000,
   chunkOverlap: 200,
 });
 const allSplits = await textSplitter.splitDocuments(docs);
 console.log(`Split documentation into ${allSplits.length} chunks.`);
-// :snippet-end:
 
-// :remove-start:
 const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
 const vectorStore = new MemoryVectorStore(embeddings);
-// :remove-end:
-
-// :snippet-start: rag-deep-store-documents-js
 await vectorStore.addDocuments(allSplits);
 console.log(`Indexed ${allSplits.length} chunks.`);
-// :snippet-end:
-
-// :snippet-start: rag-deep-search-tool-js
-import { StateBackend } from "deepagents";
-import { tool } from "langchain";
-import * as z from "zod";
 
 const backend = new StateBackend();
 
@@ -125,9 +103,7 @@ const searchDocumentation = tool(
     }),
   },
 );
-// :snippet-end:
 
-// :remove-start:
 const RAG_WORKFLOW_INSTRUCTIONS = `# Documentation Q&A workflow
 
 Answer questions about LangChain using the indexed documentation corpus.
@@ -169,10 +145,6 @@ Your role is to coordinate chunk analysis by delegating to the chunk-analyst sub
 - Wait for all chunk-analyst results before writing the final answer.
 - Merge overlapping facts and deduplicate source URLs.
 - Prefer concrete steps and code-oriented guidance from the documentation.`;
-// :remove-end:
-
-// :snippet-start: rag-deep-agent-js
-import { createDeepAgent } from "deepagents";
 
 const maxConcurrentAnalysts = 3;
 
@@ -200,10 +172,6 @@ const agent = createDeepAgent({
   systemPrompt: instructions,
   subagents: [chunkAnalystSubagent],
 });
-// :snippet-end:
-
-// :snippet-start: rag-deep-run-js
-import { HumanMessage } from "@langchain/core/messages";
 
 const EXAMPLE_QUERY =
   "How do I stream intermediate tool results from a subagent?";
@@ -234,5 +202,5 @@ if (!searchDocumentation || !agent) {
 if (!agent.invoke) {
   throw new Error("agent.invoke not defined");
 }
-console.log("✓ rag-deep");
+console.log("✓ rag-deep-full");
 // :remove-end:
