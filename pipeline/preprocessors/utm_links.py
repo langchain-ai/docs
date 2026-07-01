@@ -4,6 +4,7 @@ Tags conversion-oriented links (signup, Fleet onboarding) with UTM parameters.
 Functional links (settings, hub, projects, traces) are left untouched.
 """
 
+import contextlib
 import re
 from pathlib import Path
 from urllib.parse import urlencode, urlparse, urlunparse
@@ -27,12 +28,13 @@ _CODE_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 
 
 def _file_path_to_utm_content(file_path: Path) -> str:
-    """Derive utm_content from file path (e.g. src/langsmith/home.mdx -> langsmith-home)."""
+    """Derive utm_content from file path.
+
+    For example, src/langsmith/home.mdx becomes langsmith-home.
+    """
     parts = file_path.with_suffix("").parts
-    try:
+    with contextlib.suppress(ValueError):
         parts = parts[parts.index("src") + 1 :]
-    except ValueError:
-        pass
     return "-".join(parts) or "home"
 
 
