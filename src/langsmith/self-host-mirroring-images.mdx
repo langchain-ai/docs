@@ -247,7 +247,11 @@ cosign verify-attestation \
   docker.io/langchain/langsmith-backend:<tag>
 ```
 
-The index-level query returns one verified statement per architecture. To inspect a specific architecture's SBOM, resolve the child digests first and verify each one.
+The command returns one verified statement per architecture. A successful verification gives the same guarantees as the image signature: the attestation was produced by the stable-branch release workflow, and its claims are logged in the [Rekor](https://docs.sigstore.dev/rekor/overview/) transparency log.
+
+### Fetching SBOMs
+
+To feed an SBOM into a vulnerability scanner or SBOM management tool, extract the verified SPDX document to a file. Because the index carries one statement per architecture, resolve a single architecture's child digest first so you get one SPDX document rather than one per architecture.
 
 List the per-architecture digests for a tag:
 
@@ -256,34 +260,7 @@ docker buildx imagetools inspect --raw docker.io/langchain/langsmith-backend:<ta
   | jq -r '.manifests[] | select(.platform.os == "linux") | .digest + "  " + .platform.architecture'
 ```
 
-Verify the SBOM attestation on one of those digests:
-
-```bash
-cosign verify-attestation \
-  --type spdxjson \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
-  docker.io/langchain/langsmith-backend@<digest>
-```
-
-A successful verification gives the same guarantees as the image signature: the attestation was produced by the stable-branch release workflow, and its claims are logged in the [Rekor](https://docs.sigstore.dev/rekor/overview/) transparency log.
-
-To extract the SPDX document itself, decode the verified attestation payload:
-
-```bash
-cosign verify-attestation \
-  --type spdxjson \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
-  docker.io/langchain/langsmith-backend@<digest> \
-  | jq -r '.payload' | base64 -d | jq '.predicate'
-```
-
-The decoded predicate is a standard SPDX 2.3 document listing every package in that image.
-
-### Fetching SBOMs
-
-To feed an SBOM into a vulnerability scanner or SBOM management tool, save the verified predicate to a file. Resolve a single architecture's child digest first (see above) so you get one SPDX document rather than one per architecture:
+Then verify that digest and save the decoded predicate — a standard SPDX 2.3 document listing every package in the image — to a file:
 
 ```bash
 cosign verify-attestation \
