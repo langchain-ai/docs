@@ -28,17 +28,17 @@ import RagDeepRunPy from '/snippets/code-samples/rag-deep-run-py.mdx';
 import RagDeepRunJs from '/snippets/code-samples/rag-deep-run-js.mdx';
 
 
-One of the most powerful LLM-based applications are sophisticated question-answering (Q&A) chatbots which augment LLMs by providing it with structured access to a set of data.
+One of the most powerful LLM-based applications are sophisticated question-answering (Q&A) chatbots which augment LLMs by providing it with inference-time access to a set of data.
 This might be private data, recent data, or data that is not part of the training data the LLM is trained on.
 These applications use a technique known as Retrieval Augmented Generation, or [RAG](/oss/langchain/retrieval/).
 
-This guide shows how to build a Retrieval Augmented Generation (RAG) application with [Deep Agents](/oss/deepagents). You index [docs.langchain.com](https://docs.langchain.com), retrieve relevant chunks at query time, offload them to the agent [filesystem](/oss/deepagents/backends), and delegate analysis to [subagents](/oss/deepagents/subagents) so the orchestrator context stays clean.
+This guide shows how to build a Retrieval Augmented Generation (RAG) application with [Deep Agents](/oss/deepagents). You index a subset of [docs.langchain.com](https://docs.langchain.com), retrieve relevant chunks at query time, offload them to the agent [filesystem](/oss/deepagents/backends), and delegate analysis to [subagents](/oss/deepagents/subagents) so the orchestrator context stays clean.
 
 ## Why retrieval matters
 
 A language model on its own does not have access to your documentation. Ask it about a specific API that changed recently, and it answers from training data: often plausible, sometimes wrong, and never grounded in your source of truth.
 
-You can pass some of the documentation into the prompt, but, aside from token usage, you are then limited by the context window.
+Even when documentation is available, you generally cannot just fit it all into the context window. You therefore must select only the passages relevant to a given question, which in itself is a non-trivial task.
 
 This tutorial uses one question throughout:
 
@@ -88,12 +88,12 @@ cd docs-rag-agent
 
 <CodeGroup>
 ```bash pip wrap
-pip install deepagents langchain langchain-openai langchain-text-splitters requests numpy
+pip install deepagents "langchain[openai]" langchain-text-splitters requests numpy
 ```
 
 ```bash uv wrap
 uv init
-uv add deepagents langchain langchain-openai langchain-text-splitters requests numpy
+uv add deepagents langchain "langchain[openai]" langchain-text-splitters requests numpy
 uv sync
 ```
 </CodeGroup>
@@ -231,6 +231,10 @@ Create `agent.ts`:
 <RagDeepIndexJs />
 :::
 
+<Note>
+For a more detailed tutorial on indexing, see [Semantic search](/oss/langchain/knowledge-base).
+</Note>
+
 ### Load documents
 
 Start by loading LangChain documentation pages into a list of @[Document] objects.
@@ -289,8 +293,8 @@ This might be private data, recent data, or data that is not part of the trainin
 
 ### Split documents
 
-The loaded documentation is long, which makes it too large to fit into the context window of many models.
-Even for those models that could fit the full corpus in their context window, models can struggle to find information in very long inputs.
+The loaded documentation is long with over 100k tokens total, which makes it too large to fit into the context window of many models.
+Even for those models that could fit the full corpus in their context window, models can struggle to find information in very long inputs. Using the context window for large amounts of content is also nottoken efficient.
 
 For ease of use, split the @[`Document`] objects into chunks. These chunks will be used for embedding and vector storage in the next steps.
 
@@ -565,11 +569,9 @@ If you enabled LangSmith in [Setup](#setup), open [LangSmith](https://smith.lang
 RAG applications are susceptible to **indirect prompt injection**. Retrieved documentation may contain text that resembles instructions. Because retrieved chunks share the context window with your system prompt, models may follow instructions embedded in documentation rather than your intended prompt.
 </Warning>
 
-To mitigate this:
+No prompt or delimiter strategy fully prevents indirect prompt injection. The orchestrator and subagent prompts in this tutorial ask the model to treat retrieved content as data only, and the search tool prefixes chunks with a `# Source:` header so analysts can distinguish metadata from body content. These patterns can help in some cases, but they do not provide reliable protection.
 
-1. **Use defensive prompts**: Instruct the orchestrator and subagents to treat retrieved content as data only, as shown in the prompts above.
-2. **Wrap context with delimiters**: The search tool stores chunks with a `# Source:` header so analysts can distinguish metadata from body content.
-3. **Validate responses**: Check that answers cite expected documentation paths and reject unexpected output formats when integrating into a product UI.
+Validate agent outputs before surfacing them to users. Check that answers cite expected documentation paths and that claims match the retrieved source material.
 
 For more on this topic, see research on [prompt injection](https://simonwillison.net/series/prompt-injection/).
 
