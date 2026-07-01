@@ -4,9 +4,20 @@ description: Run lightweight code inside Deep Agents to compose tools, orchestra
 tag: "Beta"
 ---
 
-Interpreters give agents a programmable workspace where they can explore data, coordinate tool calls, and keep intermediate work out of the model context. The agent writes code to express its intent, then an **in-memory** runtime executes that code and returns the relevant results.
+import InterpretersQuickstartPy from '/snippets/code-samples/interpreters-quickstart-py.mdx';
+import InterpretersQuickstartJs from '/snippets/code-samples/interpreters-quickstart-js.mdx';
+import InterpretersTotalsEvalJs from '/snippets/code-samples/interpreters-totals-eval-js.mdx';
+import InterpretersPtcCallEvalJs from '/snippets/code-samples/interpreters-ptc-call-eval-js.mdx';
+import InterpretersEnablePtcPy from '/snippets/code-samples/interpreters-enable-ptc-py.mdx';
+import InterpretersEnablePtcJs from '/snippets/code-samples/interpreters-enable-ptc-js.mdx';
+import InterpretersPtcParallelEvalJs from '/snippets/code-samples/interpreters-ptc-parallel-eval-js.mdx';
+import InterpretersTaskFanoutEvalJs from '/snippets/code-samples/interpreters-task-fanout-eval-js.mdx';
+import InterpretersPersistenceDefaultPy from '/snippets/code-samples/interpreters-persistence-default-py.mdx';
+import InterpretersPersistenceCheckpointerPy from '/snippets/code-samples/interpreters-persistence-checkpointer-py.mdx';
 
-Where [sandboxes](/oss/deepagents/sandboxes) are a code-first way for acting on an environment (such as running commands, installing dependencies, and editing files), interpreters are a code-first way for acting inside the agent loop: composing tools, preserving state, and deciding what information should return to the model.
+Interpreters give agents a programmable, **in-memory** workspace inside the agent loop. The agent writes code to complete a task, and the runtime executes it and returns only the relevant results. Intermediate results do not become part of the model context.
+
+Where [sandboxes](/oss/deepagents/sandboxes) are a code-first way for acting on an environment (such as running commands, installing dependencies, and editing files), interpreters are a code-first way for composing tools, preserving state, and deciding what information should return to the model.
 
 <Warning>
     Interpreters are in [**beta**](/oss/versioning). APIs and lifecycle behavior may change between releases.
@@ -14,15 +25,21 @@ Where [sandboxes](/oss/deepagents/sandboxes) are a code-first way for acting on 
 
 :::python
 <Note>
-    Interpreters require `langchain-quickjs>=0.1.0` and Python `>=3.11`.
+    Interpreters require `langchain-quickjs>=0.2.0` and Python `>=3.11`.
+</Note>
+:::
+
+:::js
+<Note>
+    Interpreters require `@langchain/quickjs`.
 </Note>
 :::
 
 ## Why use interpreters?
 
-Most agent work alternates between model reasoning and tool calls. A model can fire several tool calls in one turn, but that batch is fixed the moment it is emitted. Nothing can loop, branch on a result, retry a failure, or feed one call's output into the next without another model turn, and every result returns to the model's context. The model also decides how many calls to issue, so asking it to dispatch work across hundreds of items is unreliable, and it tends to cover a sample rather than every one.
+Most agent work alternates between model reasoning and tool calls. A model can fire several tool calls in one turn, but that batch is fixed the moment it is emitted. Nothing can loop, branch on a result, retry a failure, or feed one call's output into the next without another model turn, and every result returns to the model's context. The model also decides how many calls to issue, so asking it to dispatch work across hundreds of items is unreliable, and it tends to cover a sample rather than every item.
 
-Interpreters give the agent a runtime for that work. A loop runs every iteration, tools are called from code, intermediate values stay in variables, and only a compact result returns to the model.
+Interpreters move that orchestration into code so the model reasons about *what* to do, not every intermediate step.
 
 <CardGroup cols={2}>
   <Card title="Programmatic tool calling (PTC)" icon="tool" href="#programmatic-tool-calling-ptc">
@@ -35,25 +52,33 @@ Interpreters give the agent a runtime for that work. A loop runs every iteration
     Keep intermediate values in runtime state without overloading the model context.
   </Card>
   <Card title="Deterministic transforms" icon="code" href="#how-interpreters-work">
-    Sort, group, parse, validate, score, aggregate, and explore structured data in code.
+    Sort, group, parse, validate, score, and aggregate structured data without another model turn.
   </Card>
 </CardGroup>
 
 ## Choose a pattern
 
-Use interpreters for code inside the agent loop: composing tools, preserving state, and controlling what returns to the model. Use [sandboxes](/oss/deepagents/sandboxes) for code against an environment: shell commands, package installs, tests, filesystem edits, and OS-level execution.
+Use interpreters for code inside the agent loop: composing tools, preserving state, and controlling what returns to the model.
+
+Use [sandboxes](/oss/deepagents/sandboxes) for code against an environment: shell commands, package installs, tests, filesystem edits, and OS-level execution.
 
 | Need | Use |
 | --- | --- |
 | One or two simple external calls | Normal tool calling |
-| A small program that loops, branches, retries, or aggregates results | Interpreter |
-| Many selected tool calls that should run from code | Interpreter with [programmatic tool calling (PTC)](#programmatic-tool-calling-ptc) |
+| Pure in-memory JavaScript: loops, branches, retries, or data transforms (no external tools) | Interpreter |
+| Many external tool calls orchestrated from code (requires [PTC](#programmatic-tool-calling-ptc)) | Interpreter with [programmatic tool calling (PTC)](#programmatic-tool-calling-ptc) |
 | Many independent units of work, multiple perspectives, or recursive analysis over large inputs | Interpreter with [dynamic subagents](/oss/deepagents/dynamic-subagents) |
 | Shell commands, package installs, tests, or full OS filesystem access | [Sandboxes](/oss/deepagents/sandboxes) |
 
 ## Quickstart
 
+:::python
 Install the QuickJS middleware package, then pass interpreter middleware using the `middleware` argument on `create_deep_agent`.
+:::
+
+:::js
+Install the QuickJS middleware package, then pass interpreter middleware using the `middleware` argument on `createDeepAgent`.
+:::
 
 :::python
 <CodeGroup>
@@ -66,15 +91,7 @@ uv add "deepagents[quickjs]"
 ```
 </CodeGroup>
 
-```python
-from deepagents import create_deep_agent
-from langchain_quickjs import CodeInterpreterMiddleware
-
-agent = create_deep_agent(
-    model="openai:gpt-5.5",
-    middleware=[CodeInterpreterMiddleware()],
-)
-```
+<InterpretersQuickstartPy />
 :::
 
 :::js
@@ -92,51 +109,29 @@ yarn add deepagents @langchain/quickjs
 ```
 </CodeGroup>
 
-```typescript
-import { createDeepAgent } from "deepagents";
-import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
-
-const agent = createDeepAgent({
-  model: "openai:gpt-5.5",
-  middleware: [createCodeInterpreterMiddleware()],
-});
-```
+<InterpretersQuickstartJs />
 :::
 
 ## How interpreters work
 
-The middleware adds an `eval` tool to the agent. When useful, the agent writes JavaScript and calls `eval`; you do not call the interpreter directly. The tool runs code in a persistent context, captures `console.log`, and returns the result of the last expression.
+The middleware adds an `eval` tool to the agent. When useful, the agent writes JavaScript and calls `eval`; you do not call the interpreter directly. The tool runs code in a QuickJS context whose variables can persist between `eval` calls, depending on the persistence `mode`. It captures `console.log`, `console.warn`, and `console.error`, and returns the result of the last expression.
 
 The agent can write code like this:
 
-```javascript
-const rows = [
-  { team: "alpha", score: 8 },
-  { team: "beta", score: 13 },
-  { team: "alpha", score: 21 },
-];
-
-const totals = rows.reduce((acc, row) => {
-  acc[row.team] = (acc[row.team] ?? 0) + row.score;
-  console.log(`${row.team} score: ${acc[row.team]}`)
-  return acc;
-}, {});
-
-totals;
-```
+<InterpretersTotalsEvalJs />
 
 :::python
-By default, interpreter state also persists across turns in the same thread by snapshotting the working state after each agent run, and restoring it before the next run.
+By default (`mode="thread"`), interpreter state persists across turns in the same thread. See [Persistence](#persistence) for `mode` options and the snapshot lifecycle.
 :::
 
-Code runs against [**QuickJS**](https://github.com/quickjs-ng/quickjs), a lightweight JavaScript runtime. By default, interpreter code has no access to the host filesystem, network, shell, package manager, or clock. It can compute, hold state, and write to `console.log`, and nothing more.
+Code runs against [**QuickJS**](https://github.com/quickjs-ng/quickjs), a lightweight JavaScript runtime. By default, interpreter code has no access to the host filesystem, network, shell, package manager, or clock. It can compute, hold state, and write to `console.log`, `console.warn`, or `console.error`, and nothing more.
 
 Two explicit bridges extend that reach:
 
-- **Tools**, through [programmatic tool calling (PTC)](#programmatic-tool-calling-ptc). Expose an allowlist of tools as async functions under the `tools` namespace. These can be the agent's own tools or standalone tools you define and pass in.
-- **Subagents**, through [dynamic subagents](/oss/deepagents/dynamic-subagents). Dispatch configured subagents from code and orchestrate them in plain JavaScript.
+- **Tools**, through [programmatic tool calling (PTC)](#programmatic-tool-calling-ptc). Provide an allowlist of tools as async functions under the `tools` namespace. These can be the agent's own tools or standalone tools you define and pass in.
+- **Subagents**, through [dynamic subagents](/oss/deepagents/dynamic-subagents). When the agent has subagents configured, the interpreter exposes a `task()` global for dispatching them from code.
 
-Programmatic tool calling is off until you [enable it](#enable-ptc). Subagent dispatch is on by default whenever the agent has subagents, and you can turn it off. Nothing else crosses the QuickJS boundary unless you expose it.
+Programmatic tool calling is off until you [enable it](#enable-ptc). Subagent dispatch through `task()` is on by default whenever the agent has subagents, and you can turn it off. Nothing else crosses the QuickJS boundary.
 
 ## Programmatic tool calling (PTC)
 
@@ -144,55 +139,25 @@ Programmatic tool calling (PTC) exposes selected agent tools inside the interpre
 
 This helps when intermediate results are only inputs to the next step: the interpreter filters or aggregates them before anything returns to the model, keeping multi-step workflows token-efficient. It is model-agnostic, implemented by middleware rather than a provider-specific tool-calling API.
 
-The middleware exposes each allowlisted tool as an async function under `tools`. The agent calls it with `await`, processes the result in code, and the model sees only the final interpreter output, not every intermediate value. Tool names are converted to camel case while the input object still follows the tool's schema, so a tool named `web_search` becomes `tools.webSearch(...)`:
+The middleware exposes each allowlisted tool as an async function under `tools`. The agent calls it with `await`, processes the result in code, and the model sees only the final interpreter output, not every intermediate value. Tool names are converted to camelCase while the input object still follows the tool's schema, so a tool named `web_search` becomes `tools.webSearch(...)`:
 
-```typescript
-const result: string = await tools.webSearch({
-  query: "deepagents interpreters",
-});
-```
+<InterpretersPtcCallEvalJs />
 
 ### Enable PTC
 
 Enable PTC with an explicit allowlist:
 
 :::python
-```python
-from deepagents import create_deep_agent
-from langchain_quickjs import CodeInterpreterMiddleware
-
-agent = create_deep_agent(
-    model="openai:gpt-5.5",
-    middleware=[CodeInterpreterMiddleware(ptc=["web_search"])],
-)
-```
+<InterpretersEnablePtcPy />
 :::
 
 :::js
-```typescript
-import { createDeepAgent } from "deepagents";
-import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
-
-const agent = createDeepAgent({
-  model: "openai:gpt-5.5",
-  middleware: [createCodeInterpreterMiddleware({ ptc: ["web_search"] })],
-});
-```
+<InterpretersEnablePtcJs />
 :::
 
 After PTC is enabled, the agent can call the allowlisted tool from interpreter code. This example searches several topics in parallel and combines the results before returning to the model:
 
-```javascript
-const topics = ["retrieval", "memory", "evaluation"];
-
-const results = await Promise.all(
-  topics.map((topic) =>
-    tools.webSearch({ query: `${topic} best practices 2025` }),
-  ),
-);
-
-results.join("\n\n");
-```
+<InterpretersPtcParallelEvalJs />
 
 :::python
 <Warning>
@@ -207,7 +172,9 @@ results.join("\n\n");
 
 ## Dynamic subagents
 
-Dynamic subagents let the interpreter dispatch configured [subagents](/oss/deepagents/subagents) from code using the built-in `task()` global. A task that spans many independent units, such as reviewing every file in a directory or triaging a batch of tickets, becomes a loop that fans work out and synthesizes the results.
+The following overview below covers when to use dynamic subagents and a minimal `task()` pattern. For configuration, orchestration examples, workflow triggers, and safety notes, see [Dynamic subagents](/oss/deepagents/dynamic-subagents).
+
+Dynamic subagents let the interpreter dispatch configured [subagents](/oss/deepagents/subagents) from code using the built-in `task()` global. A task that spans many independent units, such as reviewing every file in a directory or triaging a batch of tickets, becomes a loop that fans out work and synthesizes the results.
 
 Use dynamic subagents for:
 
@@ -215,49 +182,39 @@ Use dynamic subagents for:
 - **Verification**: Send findings to independent verifier subagents and keep only confirmed results.
 - **Recursive workflows**: Keep a working set in interpreter variables, select slices, call subagents, and refine the result.
 
-For configuration, examples, orchestration patterns, and safety notes, see [Dynamic subagents](/oss/deepagents/dynamic-subagents).
+<InterpretersTaskFanoutEvalJs />
 
 :::python
 ## Persistence
 
-`CodeInterpreterMiddleware` snapshots interpreter state after each agent run and restores it before the next run by default. A snapshot is a serialized copy of the interpreter's in-memory JavaScript state, including globals, variables, functions, and imported modules that exist when the agent finishes running code.
+Control cross-turn state with the `mode` parameter on `CodeInterpreterMiddleware`:
 
-Across conversation turns, the lifecycle is:
+- **`"thread"`** (default): State persists across `eval` calls and across agent turns. The middleware snapshots interpreter state after each agent turn and restores it before the next turn.
+- **`"turn"`**: State persists across multiple `eval` calls within one agent turn, then resets on the next turn.
+- **`"call"`**: Each `eval` call runs in a fresh REPL with no carry-over from prior calls.
 
-1. A turn starts, and `CodeInterpreterMiddleware` restores the latest interpreter snapshot for the thread.
-2. The agent calls `eval`, and the code can read or mutate interpreter variables.
-3. The agent run finishes, and the middleware snapshots the updated interpreter state into graph state.
-4. The next turn starts from that restored interpreter state instead of an empty runtime.
+With `mode="thread"`, a snapshot is a serialized copy of the interpreter's in-memory JavaScript state, including globals, variables, functions, and imported modules that exist when the agent finishes running code. Across conversation turns, the lifecycle is:
 
-Within a single agent run, repeated `eval` calls use the live interpreter context object. The middleware does not snapshot and restore between those calls; it snapshots the context when the run completes so it can be restored on a later turn or checkpoint replay.
+1. A turn starts, and the middleware restores the latest interpreter snapshot for the thread.
+2. The agent calls `eval` one or more times. Those calls share one live context; the middleware does not snapshot between them.
+3. The turn finishes, and the middleware writes an updated snapshot to graph state.
+4. The next turn resumes from that snapshot instead of an empty runtime.
 
 <Note>
-    Between conversation turns, snapshots only retain values that can be reasonably serialized. Use them for data, not for live runtime objects. Functions, classes, and other unserializable values are restored as unaccessible artifacts. If interpreter code accesses one after restore, the eval tool will throw an error like `Value for 'fn' was not restored because it is not serializable (type: function).`
+    Snapshots retain serializable data only. Functions, classes, and other unserializable runtime objects become inaccessible artifacts after restore. Accessing one throws an error like `Value for 'fn' was not restored because it is not serializable (type: function).`
 </Note>
 
 Snapshots preserve interpreter memory, not outside-world effects. If interpreter code calls a tool through PTC, restoring a prior interpreter snapshot does not undo side effects from that tool call. It only restores the interpreter variables that recorded or processed the result.
 
-When the graph uses a checkpointer, this pairs with [LangGraph time travel](/oss/langgraph/use-time-travel). Restoring a graph checkpoint can restore the interpreter snapshot stored in graph state, so you can return to an earlier agent context and interpreter state while debugging or replaying.
+Cross-turn persistence does not require a checkpointer:
 
-```python
-from deepagents import create_deep_agent
-from langchain_quickjs import CodeInterpreterMiddleware
-from langgraph.checkpoint.memory import MemorySaver
+<InterpretersPersistenceDefaultPy />
 
-checkpointer = MemorySaver()
+Because interpreter snapshots are stored in graph state, a [checkpointer](/oss/langgraph/checkpointers) also captures them in checkpoint history. Add one when you need durable threads or [time travel](/oss/langgraph/use-time-travel):
 
-agent = create_deep_agent(
-    model="openai:gpt-5.5",
-    checkpointer=checkpointer,
-    middleware=[
-        CodeInterpreterMiddleware(
-            snapshot_between_turns=True,  # Default
-        )
-    ],
-)
-```
+<InterpretersPersistenceCheckpointerPy />
 
-You can disable cross-turn snapshots with `snapshot_between_turns=False`.
+Set `mode="turn"` to persist interpreter state only within a turn, or `mode="call"` for a fresh REPL on every `eval`.
 :::
 
 ## Security
@@ -271,7 +228,7 @@ Every tool you expose through PTC is an outside capability that interpreter code
 | --- | --- | --- |
 | JavaScript execution | Yes | Add interpreter middleware |
 | Top-level `await` | Yes | Use promises in interpreter code |
-| `console.log` capture | Yes | Disable with `capture_console=False` |
+| `console.log`, `warn`, `error` capture | Yes | Disable with `capture_console=False` |
 | Agent tools | No | Add a PTC allowlist |
 | Filesystem access | No | Add the [built-in filesystem tools](/oss/deepagents/overview#virtual-filesystem-access) via the PTC allowlist |
 | Network access | No | Expose a specific network tool through PTC |
@@ -283,7 +240,7 @@ Every tool you expose through PTC is an outside capability that interpreter code
 | --- | --- | --- |
 | JavaScript execution | Yes | Add interpreter middleware |
 | Top-level `await` | Yes | Use promises in interpreter code |
-| `console.log` capture | Yes | Disable with `captureConsole: false` |
+| `console.log`, `warn`, `error` capture | Yes | Disable with `captureConsole: false` |
 | Agent tools | No | Add a PTC allowlist |
 | Filesystem access | No | Add the [built-in filesystem tools](/oss/deepagents/overview#virtual-filesystem-access) via the PTC allowlist |
 | Network access | No | Expose a specific network tool through PTC |
@@ -301,6 +258,14 @@ Every tool you expose through PTC is an outside capability that interpreter code
 </Note>
 :::
 
+:::js
+<Note>
+    **How code execution works**
+
+    Interpreter code runs in a WASM-sandboxed QuickJS runtime via [QuickJS-Emscripten](https://github.com/justjake/quickjs-emscripten), not in the host Node.js process. Treat interpreters as a capability-scoped execution layer: bridge only the tools and subagents the agent needs, and keep the PTC allowlist narrow.
+</Note>
+:::
+
 ## Configuration
 
 :::python
@@ -308,16 +273,16 @@ Every tool you expose through PTC is an outside capability that interpreter code
 
 | Kwarg | Default | Purpose |
 | --- | --- | --- |
-| `memory_limit` | `64 * 1024 * 1024` <br/>(64 MB) | QuickJS heap memory limit in bytes. |
-| `timeout` | `5.0` | Per-eval timeout in seconds. |
-| `max_ptc_calls` | `256` | Maximum `tools.*` calls per eval. Use `None` only in trusted environments. |
+| `memory_limit` | `64 * 1024 * 1024` <br/>(64 MB) | Cap QuickJS heap memory per thread. |
+| `timeout` | `5.0` | Timeout limit in seconds for each `eval` call. |
 | `tool_name` | `"eval"` | Name of the interpreter tool exposed to the model. |
-| `max_result_chars` | `4000` | Maximum characters returned from result and stdout blocks. |
-| `capture_console` | `True` | Whether `console.log`, `console.warn`, and `console.error` output is captured. |
-| `subagents` | `True` | Expose the built-in `task()` global for [dynamic subagents](/oss/deepagents/dynamic-subagents). Set to `False` to require subagent dispatch through the normal `task` tool path. |
-| `ptc` | `None` | PTC allowlist: list of tool names or `BaseTool` instances. |
-| `snapshot_between_turns` | `True` | Whether interpreter state snapshots persist across agent turns. |
-| `max_snapshot_bytes` | `None` | Maximum serialized snapshot size. Defaults to `memory_limit`. |
+| `capture_console` | `True` | Capture `console.log`, `console.warn`, and `console.error` in the tool response. Set to `False` to discard console output. |
+| `max_result_chars` | `4000` | Truncate result, error, and stdout text returned to the model to a maximum character count. |
+| `ptc` | `None` | Allowlist of tool names or `BaseTool` instances exposed as `tools.*` inside the interpreter. Omit to disable. See [Enable PTC](#enable-ptc). |
+| `max_ptc_calls` | `256` | Maximum `tools.*` calls allowed per `eval`. Set to `None` only in trusted environments. See [Programmatic tool calling (PTC)](#programmatic-tool-calling-ptc) and [Security](#security). |
+| `subagents` | `True` | Expose the built-in `task()` global when the agent has subagents. Set to `False` to require dispatch through the normal `task` tool. See [Dynamic subagents](#dynamic-subagents). |
+| `mode` | `"thread"` | Control interpreter persistence: `"thread"` (across turns), `"turn"` (within one turn), or `"call"` (fresh REPL per `eval`). See [Persistence](#persistence). |
+| `max_snapshot_bytes` | `None` | Drop snapshots larger than this byte limit. Defaults to `memory_limit`. See [Persistence](#persistence). |
 :::
 
 :::js
@@ -325,14 +290,14 @@ Every tool you expose through PTC is an outside capability that interpreter code
 
 | Option | Default | Purpose |
 | --- | --- | --- |
-| `ptc` | omitted | PTC allowlist: array of tool names or `StructuredToolInterface` instances. |
-| `memoryLimitBytes` | `64 * 1024 * 1024` <br/>(64 MB) | QuickJS memory limit in bytes. |
-| `maxStackSizeBytes` | `320 * 1024` | QuickJS stack size limit in bytes. |
-| `executionTimeoutMs` | `5000` | Per-eval timeout in milliseconds. Negative values disable the timeout. |
-| `systemPrompt` | `null` | Override the built-in interpreter system prompt. |
-| `maxPtcCalls` | `256` | Maximum `tools.*` calls per eval. Use `null` only in trusted environments. |
-| `maxResultChars` | `4000` | Maximum characters retained from console output, result, and error strings. |
+| `memoryLimitBytes` | `64 * 1024 * 1024` <br/>(64 MB) | Cap QuickJS heap memory per session. |
+| `maxStackSizeBytes` | `320 * 1024` | Cap QuickJS stack size per session. |
+| `executionTimeoutMs` | `5000` | Timeout limit in milliseconds for each `eval` call. Negative values disable the timeout. |
 | `toolName` | `"eval"` | Name of the interpreter tool exposed to the model. |
-| `captureConsole` | `true` | Whether `console.log`, `console.warn`, and `console.error` output is captured. |
-| `subagents` | `true` | Expose the built-in `task()` global for [dynamic subagents](/oss/deepagents/dynamic-subagents). Set to `false` to require subagent dispatch through the normal `task` tool path. |
+| `captureConsole` | `true` | Capture `console.log`, `console.warn`, and `console.error` in the tool response. Set to `false` to discard console output. |
+| `maxResultChars` | `4000` | Truncate result, error, and console output returned to the model to a maximum character count. |
+| `systemPrompt` | `null` | Custom system prompt for the interpreter tool. Defaults to the built-in prompt when `null`. |
+| `ptc` | omitted | Allowlist of tool names or `StructuredToolInterface` instances exposed as `tools.*` inside the interpreter. Omit to disable. See [Enable PTC](#enable-ptc). |
+| `maxPtcCalls` | `256` | Maximum `tools.*` calls allowed per `eval`. Set to `null` only in trusted environments. See [Programmatic tool calling (PTC)](#programmatic-tool-calling-ptc) and [Security](#security). |
+| `subagents` | `true` | Expose the built-in `task()` global when the agent has subagents. Set to `false` to require dispatch through the normal `task` tool. See [Dynamic subagents](#dynamic-subagents). |
 :::

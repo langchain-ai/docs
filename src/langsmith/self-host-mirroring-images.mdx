@@ -235,7 +235,23 @@ cosign download attestation docker.io/langchain/langsmith-backend:<tag>
 
 ### Verifying SBOM attestations
 
-Released images also carry signed SPDX software bill of materials (SBOM) attestations, one per architecture in the image index. The attestations are attached to the per-architecture child digests rather than to the multi-architecture tag, so `cosign verify-attestation` against a bare tag reports `no matching attestations`. Resolve the child digests first, then verify each one.
+Released images also carry signed SPDX software bill of materials (SBOM) attestations, one per architecture in the image index.
+
+On `0.15.12` and later, the per-architecture SBOMs are also attached to the multi-architecture index digest, so you can verify against a bare tag directly:
+
+```bash
+cosign verify-attestation \
+  --type spdxjson \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
+  docker.io/langchain/langsmith-backend:<tag>
+```
+
+The command returns one verified statement per architecture. A successful verification gives the same guarantees as the image signature: the attestation was produced by the stable-branch release workflow, and its claims are logged in the [Rekor](https://docs.sigstore.dev/rekor/overview/) transparency log.
+
+### Fetching SBOMs
+
+To feed an SBOM into a vulnerability scanner or SBOM management tool, extract the verified SPDX document to a file. Because the index carries one statement per architecture, resolve a single architecture's child digest first so you get one SPDX document rather than one per architecture.
 
 List the per-architecture digests for a tag:
 
@@ -244,19 +260,7 @@ docker buildx imagetools inspect --raw docker.io/langchain/langsmith-backend:<ta
   | jq -r '.manifests[] | select(.platform.os == "linux") | .digest + "  " + .platform.architecture'
 ```
 
-Verify the SBOM attestation on one of those digests:
-
-```bash
-cosign verify-attestation \
-  --type spdxjson \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
-  docker.io/langchain/langsmith-backend@<digest>
-```
-
-A successful verification gives the same guarantees as the image signature: the attestation was produced by the stable-branch release workflow, and its claims are logged in the [Rekor](https://docs.sigstore.dev/rekor/overview/) transparency log.
-
-To extract the SPDX document itself, decode the verified attestation payload:
+Then verify that digest and save the decoded predicate — a standard SPDX 2.3 document listing every package in the image — to a file:
 
 ```bash
 cosign verify-attestation \
@@ -264,7 +268,11 @@ cosign verify-attestation \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
   docker.io/langchain/langsmith-backend@<digest> \
-  | jq -r '.payload' | base64 -d | jq '.predicate'
+  | jq -r '.payload' | base64 -d | jq '.predicate' > langsmith-backend.spdx.json
 ```
 
-The decoded predicate is a standard SPDX 2.3 document listing every package in that image.
+You can pass the resulting `langsmith-backend.spdx.json` directly to scanners such as [Grype](https://github.com/anchore/grype) (`grype sbom:langsmith-backend.spdx.json`) or [Trivy](https://trivy.dev/) (`trivy sbom langsmith-backend.spdx.json`).
+
+<Note>
+Extracting the SBOM through `cosign verify-attestation`, rather than `cosign download attestation`, ensures you only ever consume an SBOM whose signature and signing identity have been verified.
+</Note>
