@@ -2,15 +2,18 @@
  * Language Toggle Script
  *
  * Enables smart navigation when switching between Python and TypeScript docs.
- * When a user clicks the language dropdown, this redirects them to the equivalent
- * page in the target language (preserving the section hash) instead of the default
- * overview page.
+ * When a user picks the other language from the dropdown, this redirects them to
+ * the equivalent page (preserving the section hash) instead of the default
+ * overview/landing page for that language.
  *
- * How it works:
- * 1. Click listener detects language toggle clicks and stores current URL+hash
- * 2. History API interception (pushState/replaceState) and popstate/hashchange
- *    listeners detect when Mintlify's client-side routing changes the path
- * 3. On path change, check if we're switching languages and redirect to equivalent page
+ * Notes on the implementation:
+ * - Mintlify auto-injects every .js file in the repo as custom JS, so this runs
+ *   on every page without a <script> tag in docs.json.
+ * - Switching the language dropdown can trigger a full page reload, which wipes
+ *   in-memory state. The "page we came from" is therefore persisted in
+ *   sessionStorage so it survives the navigation.
+ * - The dropdown items render as `<p class="nav-dropdown-item-title">Python</p>`
+ *   inside `nav-dropdown-item-*` containers.
  */
 
 (function () {
@@ -19,13 +22,24 @@
   const PYTHON_PREFIX = "/oss/python/";
   const JS_PREFIX = "/oss/javascript/";
 
-  // Selector for language dropdown items (Python/TypeScript links)
-  const LANGUAGE_TOGGLE_SELECTOR = "[data-dropdown-item]";
+  // sessionStorage key holding the last language-specific page (path + hash).
+  const STORAGE_KEY = "lc-language-toggle-prev";
 
-  let previousUrl = null;
+  // Matches any part of a language dropdown item (icon, text, or title).
+  const LANGUAGE_TOGGLE_SELECTOR = '[class*="nav-dropdown-item"]';
 
   /**
-   * Convert a path from one language to another
+   * Detect which language a path belongs to.
+   * Returns "python", "javascript", or null.
+   */
+  function getPathLanguage(path) {
+    if (path.startsWith(PYTHON_PREFIX)) return "python";
+    if (path.startsWith(JS_PREFIX)) return "javascript";
+    return null;
+  }
+
+  /**
+   * Convert a path from one language to another.
    * e.g., /oss/javascript/foo → /oss/python/foo
    */
   function getEquivalentPath(sourcePath, targetLang) {
@@ -38,77 +52,84 @@
     return null;
   }
 
-  /**
-   * Detect which language a path belongs to
-   * Returns "python", "javascript", or null
-   */
-  function getPathLanguage(path) {
-    if (path.startsWith(PYTHON_PREFIX)) return "python";
-    if (path.startsWith(JS_PREFIX)) return "javascript";
-    return null;
+  function readPrevious() {
+    try {
+      return sessionStorage.getItem(STORAGE_KEY);
+    } catch (e) {
+      // sessionStorage can throw in private-mode Safari; degrade gracefully.
+      return null;
+    }
   }
 
-  /**
-   * Store current URL (path + hash) in memory
-   * Only stores language-specific pages
-   */
-  function updateCurrent() {
-    const lang = getPathLanguage(location.pathname);
-    if (lang) {
-      previousUrl = location.pathname + location.hash;
+  function writePrevious(value) {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, value);
+    } catch (e) {
+      /* ignore */
     }
   }
 
   /**
-   * Check if we should redirect to an equivalent page in a different language
-   * This runs after every path change detected by the MutationObserver
+   * Persist the current page (path + hash) when it is a language-specific page.
+   * Stored so a later language switch can find its equivalent, even across a
+   * full page reload.
+   */
+  function storeCurrent() {
+    if (getPathLanguage(location.pathname)) {
+      writePrevious(location.pathname + location.hash);
+    }
+  }
+
+  /**
+   * If we just landed on a language page whose language differs from the stored
+   * page, redirect to the equivalent page in the current language.
    */
   function checkRedirect() {
     const currentLang = getPathLanguage(location.pathname);
     if (!currentLang) return;
 
-    if (!previousUrl) {
-      updateCurrent();
+    const previous = readPrevious();
+    if (!previous) {
+      storeCurrent();
       return;
     }
 
-    // Split path and hash (e.g., "/oss/python/foo#bar" → ["/oss/python/foo", "bar"])
-    const [prevPath, prevHash = ""] = previousUrl.split("#");
+    // Split path and hash (e.g. "/oss/python/foo#bar" → "/oss/python/foo", "bar")
+    const hashIndex = previous.indexOf("#");
+    const prevPath = hashIndex === -1 ? previous : previous.slice(0, hashIndex);
+    const prevHash = hashIndex === -1 ? "" : previous.slice(hashIndex + 1);
     const prevLang = getPathLanguage(prevPath);
 
-    // Only redirect if we're switching between languages
+    // Only redirect if we are switching between languages.
     if (prevLang && prevLang !== currentLang) {
       const equivalentPath = getEquivalentPath(prevPath, currentLang);
 
       if (equivalentPath && equivalentPath !== location.pathname) {
-        // Clear previous URL before redirect to prevent redirect loops
-        previousUrl = null;
-
-        // Redirect with the hash from the previous page
-        location.replace(equivalentPath + (prevHash ? "#" + prevHash : ""));
+        const target = equivalentPath + (prevHash ? "#" + prevHash : "");
+        // Store the destination first so the post-redirect load does not loop.
+        writePrevious(target);
+        location.replace(target);
         return;
       }
     }
 
-    // If no redirect needed, store current location for next navigation
-    updateCurrent();
+    // No redirect needed: remember the current page for the next switch.
+    storeCurrent();
   }
 
-  // Store current URL when language toggle is clicked
-  // This captures the hash before Mintlify's client-side routing changes the page
+  // Capture the page we are leaving the instant a language dropdown item is
+  // clicked, before Mintlify navigates (which may be a full page reload).
   document.addEventListener(
     "click",
     function (e) {
-      const toggle = e.target.closest(LANGUAGE_TOGGLE_SELECTOR);
-      if (toggle) {
-        updateCurrent();
+      if (e.target.closest && e.target.closest(LANGUAGE_TOGGLE_SELECTOR)) {
+        storeCurrent();
       }
     },
     true,
   );
 
-  // Watch for URL changes via History API (used by Mintlify's client-side routing)
-  // This is more efficient than MutationObserver - only fires on actual URL changes
+  // Watch for URL changes from Mintlify's client-side routing.
   let lastPath = location.pathname;
 
   function onPathChange() {
@@ -118,26 +139,29 @@
     }
   }
 
-  // Handle back/forward navigation
+  // Handle back/forward navigation.
   window.addEventListener("popstate", onPathChange);
 
-  // Handle hash changes (when user clicks anchor links)
-  window.addEventListener("hashchange", onPathChange);
+  // Keep the stored hash fresh as the reader scrolls through sections.
+  window.addEventListener("hashchange", function () {
+    storeCurrent();
+    onPathChange();
+  });
 
-  // Intercept pushState/replaceState calls
+  // Intercept History API calls used by client-side routing.
   const originalPushState = history.pushState;
   const originalReplaceState = history.replaceState;
 
-  history.pushState = function (...args) {
-    originalPushState.apply(this, args);
+  history.pushState = function () {
+    originalPushState.apply(this, arguments);
     onPathChange();
   };
 
-  history.replaceState = function (...args) {
-    originalReplaceState.apply(this, args);
+  history.replaceState = function () {
+    originalReplaceState.apply(this, arguments);
     onPathChange();
   };
 
-  // Run initial check in case user landed here via language toggle
+  // Run an initial check in case the reader arrived here via a language switch.
   checkRedirect();
 })();
