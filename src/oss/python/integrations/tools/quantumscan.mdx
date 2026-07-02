@@ -1,0 +1,118 @@
+---
+title: "QuantumScan integration"
+description: "Integrate with the QuantumScan tool using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the QuantumScan [tool](/oss/langchain/tools). QuantumScan gives an agent a way to check a smart contract or a repository **before** acting on it — verifying a contract isn't a honeypot/drainer before signing a transaction, or scanning a repo for post-quantum-cryptography-vulnerable algorithms.
+
+## Overview
+
+### Details
+
+| Class | Package |  Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: |  :---: | :---: |
+| [QuantumScanTool](https://github.com/quantumscan-io/langchain-quantumscan) | [langchain-quantumscan](https://pypi.org/project/langchain-quantumscan/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-quantumscan?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-quantumscan?style=flat-square&label=%20) |
+
+### Features
+
+- `ScanContractTool` — verify an Ethereum smart contract is safe to sign a transaction with (honeypot, drainer, rug-pull, uncapped-mint detection) before the agent acts, not after
+- `QuantumScanTool` — submit a GitHub/GitLab/Bitbucket repository for post-quantum cryptography vulnerability scanning
+- `GetScanResultTool` — poll a scan for its risk score and CBOM (Cryptography Bill of Materials)
+- `CheckPqcRiskTool` — instantly check whether a named algorithm (RSA, ECDSA, Ed25519, ML-KEM, ...) is quantum-vulnerable, no scan needed
+- No API key required for the free tier (10 calls/day per IP); everything calls a hosted MCP endpoint, no server to run
+
+---
+
+## Setup
+
+The free tier works with zero configuration. For higher rate limits, get a free API key at [quantumscan.io](https://quantumscan.io).
+
+### Credentials
+
+```python Set API key icon="key"
+import os
+
+os.environ["QUANTUMSCAN_API_KEY"] = "qs_..."  # optional — free tier works without this
+```
+
+### Installation
+
+The QuantumScan tools live in the `langchain-quantumscan` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-quantumscan
+    ```
+    ```python uv
+    uv add langchain-quantumscan
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+```python Initialize tool instances icon="robot"
+from langchain_quantumscan import get_quantumscan_tools
+
+tools = get_quantumscan_tools()  # [QuantumScanTool, GetScanResultTool, CheckPqcRiskTool, ScanContractTool]
+```
+
+Or instantiate the one you need directly:
+
+```python
+from langchain_quantumscan import ScanContractTool
+
+tool = ScanContractTool()
+```
+
+---
+
+## Invocation
+
+### Directly
+
+```python Call tool icon="rocket"
+tool.invoke({"contract_address": "0x...", "network": 1})
+```
+
+### As a ToolCall
+
+```python ToolCall icon="briefcase"
+model_generated_tool_call = {
+    "args": {"contract_address": "0x...", "network": 1},
+    "id": "1",
+    "name": tool.name,
+    "type": "tool_call",
+}
+tool.invoke(model_generated_tool_call)
+```
+
+### Within an agent
+
+```python Agent with tool icon="robot"
+from langchain.agents import create_agent
+from langchain_quantumscan import get_quantumscan_tools
+
+tools = get_quantumscan_tools()
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=tools,
+)
+
+agent.invoke(
+    {"messages": [{"role": "user", "content": "Is 0x... safe to send a transaction to?"}]}
+)
+```
+
+---
+
+## Why this exists
+
+Autonomous agents that sign transactions are the highest-value target for honeypots and drainers, and by construction can't "notice" a scam the way a human reviewing a contract would. `ScanContractTool` gives an agent a way to check before signing, not just discover the loss after the transaction is already on-chain.
+
+---
+
+## API reference
+
+For detailed documentation of all QuantumScan tools and the underlying MCP endpoint, head to the [GitHub repository](https://github.com/quantumscan-io/langchain-quantumscan).
