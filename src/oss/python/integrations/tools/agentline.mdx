@@ -1,0 +1,221 @@
+--- 
+title: "AgentLine Toolkit"
+description: "Integrate with AgentLine to give your AI agents real phone numbers for making calls, reading SMS, managing webhooks, and provisioning numbers."
+---
+
+import DetailsTable from "@site/src/components/DetailsTable";
+
+<DetailsTable
+  data={{
+    Class: "`langchain_agentline.AgentLineToolkit`",
+    Package: "`langchain-agentline`",
+    Serializable: "Yes",
+    "JS support": "No",
+  }}
+/>
+
+export const Install = () => (
+  <a href="https://pypi.org/project/langchain-agentline/">
+    <img
+      src="https://img.shields.io/pypi/v/langchain-agentline?style=flat-square"
+      alt="PyPI version"
+    />
+  </a>
+);
+
+<Install />
+
+## Overview
+
+[AgentLine](https://agentline.cloud) gives AI agents real phone numbers. Your LangChain agents can make outbound phone calls, have natural voice conversations, read inbound SMS messages, set up webhooks for real-time events, and provision phone numbers — all through a real US phone number.
+
+**Costs:** calls at $0.10/min, phone numbers $2.00 one-time.
+
+### Available tools
+
+| Category | Tool | Description |
+|---|---|---|
+| **Calls** | `agentline_make_call` | Make an outbound phone call with an AI voice agent |
+| | `agentline_get_calls` | List calls and filter by status or agent |
+| | `agentline_get_transcript` | Fetch full call transcripts by call ID |
+| | `agentline_hangup_call` | Hang up an active call |
+| **SMS** | `agentline_get_messages` | Read inbound SMS messages |
+| **Numbers** | `agentline_provision_number` | Provision (buy) a new phone number ($2) |
+| | `agentline_get_numbers` | List all phone numbers in your account |
+| **Agents** | `agentline_list_agents` | List configured agents and their phone numbers |
+| **Webhooks** | `agentline_set_webhook` | Set a webhook URL for real-time events |
+| | `agentline_list_webhooks` | List all configured webhooks |
+| | `agentline_delete_webhook` | Remove a webhook for an agent |
+| **Billing** | `agentline_get_balance` | Check account balance |
+
+:::note
+Outbound SMS sending and WhatsApp messaging are not currently supported by the AgentLine API. Only inbound SMS reading and outbound voice calls are available at this time.
+:::
+
+## Features
+
+| Feature | Supported |
+|---|---|
+| Outbound voice calls | ✅ |
+| Call transcripts | ✅ |
+| Call hangup | ✅ |
+| Inbound SMS reading | ✅ |
+| Phone number provisioning | ✅ |
+| Webhook management | ✅ |
+| Balance checking | ✅ |
+| Multiple agents | ✅ |
+| Outbound SMS/MMS | ❌ |
+| WhatsApp | ❌ |
+
+## Setup
+
+### Credentials
+
+Get your API key from the [AgentLine dashboard](https://agentline.cloud). Set it as an environment variable:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("AGENTLINE_API_KEY"):
+    os.environ["AGENTLINE_API_KEY"] = getpass.getpass("Enter your AgentLine API key: ")
+```
+
+You can also pass the key directly to the toolkit:
+
+```python
+from langchain_agentline import AgentLineToolkit
+
+toolkit = AgentLineToolkit(api_key="sk_live_your_key")
+```
+
+### Installation
+
+```bash
+pip install -U langchain-agentline
+```
+
+## Instantiation
+
+### Using the toolkit (recommended)
+
+```python
+from langchain_agentline import AgentLineToolkit
+
+toolkit = AgentLineToolkit()
+tools = toolkit.get_tools()
+```
+
+### Select specific tools
+
+```python
+toolkit = AgentLineToolkit(
+    selected_tools=[
+        "agentline_make_call",
+        "agentline_get_calls",
+        "agentline_get_balance",
+    ]
+)
+tools = toolkit.get_tools()
+```
+
+### Individual tools
+
+```python
+from langchain_agentline import AgentLineCallTool, AgentLineProvisionNumberTool
+
+call_tool = AgentLineCallTool()
+provision_tool = AgentLineProvisionNumberTool()
+```
+
+## Invocation
+
+### Direct invocation
+
+```python
+# Make a call
+call_tool = AgentLineCallTool()
+result = call_tool.invoke({
+    "agent_id": "agt_abc123",
+    "to_number": "+15551234567",
+    "initial_greeting": "Hi, I'm calling to confirm your appointment at 3pm.",
+})
+
+# Provision a number
+provision_tool = AgentLineProvisionNumberTool()
+number = provision_tool.invoke({
+    "agent_id": "agt_abc123",
+    "area_code": "415",
+})
+
+# Set up a webhook
+webhook_tool = AgentLineSetWebhookTool()
+webhook_tool.invoke({
+    "agent_id": "agt_abc123",
+    "url": "https://myapp.com/webhooks/agentline",
+    "secret": "my_webhook_secret",
+})
+
+# Check balance before making calls
+balance_tool = AgentLineGetBalanceTool()
+balance = balance_tool.invoke({})
+
+# Get transcript after a call completes
+transcript_tool = AgentLineGetTranscriptTool()
+transcript = transcript_tool.invoke({"call_id": "cal_xyz789"})
+```
+
+### Within a LangGraph agent
+
+```python
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+
+from langchain_agentline import AgentLineToolkit
+
+toolkit = AgentLineToolkit()
+tools = toolkit.get_tools()
+
+agent = create_react_agent(ChatOpenAI(model="gpt-4o"), tools)
+
+# Ask the agent to provision a number and make a call
+result = agent.invoke({
+    "messages": [
+        {"role": "user", "content": "Get me a new 415 area code number for agent agt_abc123, then call +15559876543 to introduce our service."}
+    ]
+})
+
+# Set up a webhook for real-time events
+result = agent.invoke({
+    "messages": [
+        {"role": "user", "content": "Set up a webhook for agent agt_abc123 pointing to https://myapp.com/hooks with secret 'abc123'"}
+    ]
+})
+
+# Check messages and get transcripts
+result = agent.invoke({
+    "messages": [
+        {"role": "user", "content": "Check if I have new messages, and show me the transcript of my most recent call."}
+    ]
+})
+```
+
+:::tip
+Before making calls, use `agentline_get_balance` to check you have enough credit, and `agentline_list_agents` to find your agent IDs. You'll need an agent configured in the AgentLine dashboard.
+:::
+
+## Webhook events
+
+When a webhook is configured, AgentLine sends these events as POST requests:
+
+| Event type | Description |
+|---|---|
+| `call.received` | An inbound call was received |
+| `call.completed` | A call finished (includes transcript) |
+| `sms.received` | An SMS message was received |
+
+Each event includes `event_id`, `agent_id`, `event_type`, and a `payload` with the details.
+
+## API reference
+
+For full API details, see the [AgentLine API documentation](https://docs.agentline.cloud).
