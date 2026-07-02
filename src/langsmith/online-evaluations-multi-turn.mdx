@@ -10,7 +10,19 @@ You can use multi-turn evaluations to measure:
 2. Semantic Outcome: What actually happened, did the task succeed.
 3. Trajectory: How the conversation unfolded, including trajectory of tool calls.
 
-<Note> Running multi-turn online evals will auto-upgrade each trace within a thread to [extended data retention](/langsmith/administration-overview#data-retention-auto-upgrades). This upgrade will impact trace pricing, but ensures that traces meeting your evaluation criteria (typically those most valuable for analysis) are preserved for investigation. </Note>
+<Note> Running multi-turn online evals will auto-upgrade each trace within a thread to [extended data retention](/langsmith/usage-and-billing#data-retention-auto-upgrades). This upgrade will impact trace pricing, but ensures that traces meeting your evaluation criteria (typically those most valuable for analysis) are preserved for investigation. </Note>
+
+## How it works
+
+Multi-turn online evaluators follow this evaluation lifecycle:
+
+1. **Trace ingestion**: Each turn in a conversation is traced as a separate run and associated with a thread using a shared thread ID.
+2. **Idle time detection**: After the last trace in a thread is ingested, LangSmith waits for the configured idle time to elapse. This idle period signals that the conversation is complete and ready for evaluation.
+3. **Message assembly**: LangSmith collects the `messages` from each trace in the thread and assembles them into a single conversation history. If each trace contains only the latest message, LangSmith stitches messages together across turns. If each trace contains the full history, LangSmith uses that directly. Because consecutive traces in a thread often resend prior history, LangSmith deduplicates overlapping messages so each one appears only once. The result is a single list of messages in OpenAI chat format (`{"role": ..., "content": ...}`), which is what the `all_messages` variable in your prompt resolves to.
+4. **LLM-as-a-judge evaluation**: The assembled conversation is passed to your configured LLM-as-a-judge prompt. The evaluator scores the full thread based on your criteria: semantic intent, outcome, or trajectory.
+5. **Feedback recording**: The evaluator writes feedback to LangSmith using the feedback key you configured, associated with the thread.
+
+This lifecycle means that multi-turn evaluators run once per completed thread, not once per trace. Use [run-level online evaluators](/langsmith/online-evaluations-llm-as-judge) if you want per-trace evaluation.
 
 ## Prerequisites
 
@@ -41,9 +53,9 @@ When first testing your evaluator, use a short idle time so you can see results 
 Select the provider and model you want to use for your evaluator. Threads tend to get long, so you should use a model with a higher context window in order to avoid running into limits. For example, OpenAI's GPT-5.4 mini or Gemini 2.5 Flash are good options as they both have 1M+ token context windows.
 
 7. **Configure your LLM-as-a-judge prompt.**<br />
-Define what you want to evaluate. This prompt will be used to evaluate the thread. You can also configure which parts of the `messages` list are passed to the evaluator to control the content it receives:
-    - All messages: Send the full message list.
-    - Human and AI pairs: Send only user and assistant messages (excluding system messages, tool calls, etc.).
+Define what you want to evaluate. This prompt will be used to evaluate the thread. You can also configure which parts of the assembled conversation are passed to the evaluator through the `all_messages` variable to control the content it receives:
+    - All messages: Send the full conversation as a list of JSON message objects in OpenAI chat format (`{"role": ..., "content": ...}`), with each message rendered as indented JSON and separated by a blank line.
+    - Human and AI pairs: Send only user and assistant messages, formatted as `<user>...</user>` and `<assistant>...</assistant>` and excluding system messages, tool calls, and other roles.
     - First human and last AI: Send only the first user message and the last assistant reply.
 
 9. **Set up your feedback configuration**.<br />

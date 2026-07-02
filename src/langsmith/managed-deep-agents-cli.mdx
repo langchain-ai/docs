@@ -1,0 +1,470 @@
+---
+title: Managed Deep Agents CLI reference
+sidebarTitle: CLI reference
+description: Reference for Managed Deep Agents CLI commands, project files, and deploy behavior.
+---
+
+The `deepagents` CLI, installed from the `deepagents-cli` package, provides deployment tooling for [Managed Deep Agents](/langsmith/managed-deep-agents-overview). Use it to scaffold local agent projects, deploy them to LangSmith, manage Managed Deep Agent resources, and register MCP servers.
+
+<Note>
+Managed Deep Agents is in **private beta**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
+</Note>
+
+For the fastest end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart). For workflow guides, see [Connect tools](/langsmith/managed-deep-agents-mcp), [Deploy an agent](/langsmith/managed-deep-agents-deploy), and [Run an agent](/langsmith/managed-deep-agents-invoke).
+
+## Requirements
+
+<Note>
+    Managed Deep Agents requires `deepagents-cli>=0.2.2`.
+</Note>
+
+Install `deepagents-cli` with `uv` (preferred) or `pip`:
+
+<CodeGroup>
+
+```bash uv
+uv tool install "deepagents-cli>=0.2.2"
+```
+
+```bash pip
+pip install -U "deepagents-cli>=0.2.2"
+```
+
+</CodeGroup>
+
+To upgrade an existing `uv` install, run `uv tool upgrade deepagents-cli`.
+
+The CLI reads `LANGSMITH_API_KEY`. To create a key, see [Create an API key](/langsmith/create-account-api-key). To override the default endpoint, set `LANGSMITH_ENDPOINT`.
+
+```bash
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+```
+
+Project `.env` files can set API keys. Project `.env` files cannot set endpoint, proxy, or TLS environment variables for managed API requests. Set those overrides in your shell or in `~/.deepagents/.env`.
+
+## Command overview
+
+| Command | Use |
+| --- | --- |
+| `deepagents --help` | Show CLI help. |
+| `deepagents --version` | Show the installed `deepagents-cli` version. |
+| `deepagents init [name]` | Scaffold a new Managed Deep Agents project. |
+| `deepagents deploy` | Create or update a Managed Deep Agent from local project files. |
+| `deepagents agents list` | List Managed Deep Agents in the workspace. |
+| `deepagents agents get <agent_id>` | Inspect one Managed Deep Agent. |
+| `deepagents agents delete <agent_id>` | Delete one Managed Deep Agent. |
+| `deepagents mcp-servers list` | List registered workspace MCP servers. |
+| `deepagents mcp-servers add` | Register a workspace MCP server. |
+| `deepagents mcp-servers get <server>` | Inspect one MCP server with header values redacted. |
+| `deepagents mcp-servers tools <server>` | List a server's tools and print a `tools.json` snippet. |
+| `deepagents mcp-servers update <server>` | Update an MCP server URL, headers, or auth type. |
+| `deepagents mcp-servers delete <server>` | Delete one MCP server. |
+| `deepagents mcp-servers connect <server>` | Complete OAuth for an OAuth MCP server. |
+
+Bare `deepagents` invocations do not start an interactive REPL. Install and run [Deep Agents Code](/oss/deepagents/code/overview) for interactive coding sessions.
+
+## Initialize projects
+
+Use `deepagents init` to create a project directory:
+
+```bash
+deepagents init my-agent
+```
+
+If you omit the project name, the CLI prompts for it:
+
+```bash
+deepagents init
+```
+
+| Argument or flag | Use |
+| --- | --- |
+| `name` | Project directory name. If omitted, the CLI prompts for a name. |
+| `--force` | Overwrite files in an existing project directory. |
+| `-h`, `--help` | Show command help. |
+
+The `init` command creates the following files in the project directory:
+
+| File or directory | Description |
+| --- | --- |
+| `agent.json` | Agent metadata, model, backend, permissions, and optional target `agent_id`. See the [agent.json](#agent-json) section. |
+| `AGENTS.md` | Main agent instructions. See the [AGENTS.md](#agents-md) section. |
+| `tools.json` | Empty tool configuration. Add MCP-backed tools after registering a server. See the [tools.json](#tools-json) section. |
+| `skills/example-skill/` | Example skill directory. Edit, replace, or delete it. See the [skills](#skills) section. |
+| `subagents/researcher/` | Example subagent directory. Edit, replace, or delete it. See the [subagents](#subagents) section. |
+| `.gitignore` | Excludes local `.env` files. |
+
+## Deploy projects
+
+Run `deepagents deploy` from a project directory:
+
+```bash
+deepagents deploy
+```
+
+The first deploy creates a Managed Deep Agent. Later deploys update the same agent. Deploy state is user-local and stored outside your project, so files committed to the repository do not change which agent you deploy to.
+
+By default, deploy uploads the project, polls the agent health endpoint, and prints the agent name, ID, short revision, agent URL, and a post-deploy MCP health check. Use `--detach` to skip polling and exit immediately after create or update.
+
+| Flag | Use |
+| --- | --- |
+| `--dir DIR` | Project directory. Defaults to the current working directory. |
+| `--dry-run` | Print the agent payload and managed file tree without sending a request. |
+| `--detach` | Exit after create or update without polling the agent health endpoint. |
+| `--reset` | Discard local deploy state and create a fresh agent. Cannot be used when `agent.json` declares `agent_id`. |
+| `--yes` | Confirm target-agent updates without prompting. |
+| `-h`, `--help` | Show command help. |
+
+`deepagents deploy --dry-run` prints JSON with:
+
+| Field | Description |
+| --- | --- |
+| `agent_payload` | The create or update payload for the Managed Deep Agent resource. |
+| `directory_files` | The managed file tree that deploy syncs to Context Hub. |
+
+### Target existing agents
+
+For shared repositories or intentional updates to an existing Managed Deep Agent, declare the target in `agent.json`:
+
+```json
+{
+  "name": "my-agent",
+  "agent_id": "agent-uuid",
+  "model": "openai:gpt-5.5",
+  "backend": {
+    "type": "state"
+  }
+}
+```
+
+On first use, the CLI asks you to confirm before updating that remote agent. Use `--yes` to skip the prompt.
+
+### Validate the project before deploy
+
+Deploy fails before sending a request when the project is malformed. Common validation rules include:
+
+- `agent.json` and `AGENTS.md` are required.
+- `agent.json` must contain a non-empty `name`.
+- `backend.sandbox_config` requires `backend.type` to be `sandbox`.
+- `backend.sandbox_config.scope` must be `thread` or `agent`.
+- `backend.sandbox_config.policy_ids` must be an array of strings.
+- `backend.sandbox_config.idle_ttl_seconds` and `backend.sandbox_config.delete_after_stop_seconds` must be integers.
+- Symlinks are not allowed in deploy project inputs.
+- `tools.json` must contain a `tools` array.
+- Each tool in `tools.json` must include `name` and `mcp_server_url`.
+- Skill files require YAML frontmatter with `name` and `description`.
+- Subagent directories require `agent.json` and `AGENTS.md`.
+- Legacy `deepagents.toml` and `mcp.json` files produce migration hints instead of being deployed.
+
+Before deploying, the CLI also validates referenced MCP server URLs. If a server URL is not registered, deploy fails with a command hint to add it. If an OAuth server is registered but the caller cannot invoke it, deploy fails with a hint to run `deepagents mcp-servers connect <id|name|url>`.
+
+## Manage agents
+
+List agents:
+
+```bash
+deepagents agents list
+```
+
+The command prints tab-separated rows with agent ID, agent name, and update time:
+
+```text
+e2de7a35-9dda-462b-b982-9e57051993bc\tmy-agent\t2026-06-01T12:00:00Z
+```
+
+Inspect an agent:
+
+```bash
+deepagents agents get <agent_id>
+```
+
+Include managed files in the response:
+
+```bash
+deepagents agents get <agent_id> --include-files
+```
+
+| Flag | Use |
+| --- | --- |
+| `--include-files` | Include managed files in the response. |
+| `-h`, `--help` | Show command help. |
+
+Delete an agent:
+
+```bash
+deepagents agents delete <agent_id>
+```
+
+The delete command asks for confirmation. Skip the prompt with `--yes`:
+
+```bash
+deepagents agents delete <agent_id> --yes
+```
+
+| Flag | Use |
+| --- | --- |
+| `--yes` | Skip the confirmation prompt. |
+| `-h`, `--help` | Show command help. |
+
+## Manage MCP servers
+
+For a practical setup guide, see [Connect tools](/langsmith/managed-deep-agents-mcp).
+
+| Command | Use |
+| --- | --- |
+| `deepagents mcp-servers list` | List MCP server IDs, names, and URLs. |
+| `deepagents mcp-servers add --url URL` | Register a static-header MCP server. |
+| `deepagents mcp-servers add --url URL --auth-type oauth` | Register an OAuth MCP server. |
+| `deepagents mcp-servers get <server>` | Print one MCP server as JSON with header values redacted. |
+| `deepagents mcp-servers tools <server>` | List a server's tools and print a `tools.json` snippet. |
+| `deepagents mcp-servers update <server>` | Update server URL, headers, or auth type. |
+| `deepagents mcp-servers delete <server>` | Delete one MCP server. |
+| `deepagents mcp-servers connect <server>` | Start or reuse OAuth authorization for one MCP server. |
+
+Commands that take `<server>` accept an MCP server ID, exact name, or URL. Non-ID values are resolved against `deepagents mcp-servers list`; URL matching ignores case and trailing slashes. If a name or URL matches more than one server, re-run the command with the server ID.
+
+### Add MCP servers
+
+Register a static-header server:
+
+```bash
+deepagents mcp-servers add \
+  --url https://example.com/mcp \
+  --name my-tools \
+  --header Authorization="Bearer <token>"
+```
+
+| Flag | Use |
+| --- | --- |
+| `--url URL` | MCP server URL. Required. |
+| `--name NAME` | Display name. Defaults to the URL hostname. |
+| `--header KEY=VALUE` | Static credential header. Repeat for multiple headers. |
+| `--auth-type headers` | Static-header auth. This is the default. |
+| `--auth-type oauth` | OAuth auth. Cannot be combined with `--header`. |
+| `--connect` | Start OAuth connection after creating an OAuth MCP server. Requires `--auth-type oauth`. |
+| `--no-tools` | Skip best-effort tool listing after registration. |
+
+Register an OAuth MCP server:
+
+```bash
+deepagents mcp-servers add \
+  --url https://example.com/mcp \
+  --name github-tools \
+  --auth-type oauth \
+  --connect
+```
+
+OAuth `add` supports the same OAuth flags as [`connect`](/langsmith/managed-deep-agents-cli#connect-oauth-mcp-servers): `--scope`, `--force-new`, `--timeout`, and `--no-browser`.
+
+### List MCP server tools
+
+List a registered server's tools:
+
+```bash
+deepagents mcp-servers tools <id|name|url>
+```
+
+The command prints each tool name and the first line of its description, then prints a paste-ready `tools.json` snippet. For OAuth servers, connect first so the MCP server record includes the caller's `oauth_provider_id`.
+
+### Update MCP servers
+
+Update a server URL or headers:
+
+```bash
+deepagents mcp-servers update <id|name|url> \
+  --url https://new.example.com/mcp \
+  --header Authorization="Bearer <token>"
+```
+
+| Flag | Use |
+| --- | --- |
+| `--url URL` | Replace the server URL. |
+| `--header KEY=VALUE` | Replace stored headers with the provided header set. Repeat for multiple headers. |
+| `--clear-headers` | Clear stored headers. Cannot be combined with `--header`. |
+| `--auth-type headers` | Set the auth type to static headers. |
+
+The command requires at least one change flag.
+
+Delete an MCP server:
+
+```bash
+deepagents mcp-servers delete <id|name|url>
+```
+
+The delete command asks for confirmation. Skip the prompt with `--yes`:
+
+```bash
+deepagents mcp-servers delete <id|name|url> --yes
+```
+
+### Connect OAuth MCP servers
+
+Start or reuse OAuth authorization:
+
+```bash
+deepagents mcp-servers connect <id|name|url>
+```
+
+| Flag | Use |
+| --- | --- |
+| `--scope SCOPE` | OAuth scope to request. Repeat for multiple scopes. |
+| `--force-new` | Create a fresh OAuth session instead of reusing an existing token. |
+| `--timeout SECONDS` | Seconds to wait for OAuth completion. Use `0` to skip polling. Defaults to `300`. |
+| `--no-browser` | Print the verification URL without opening a browser. |
+
+If authorization is pending, the CLI prints the verification URL. When `--timeout 0` is set, the CLI starts authorization and exits. Re-run `deepagents mcp-servers connect <id|name|url>` later to complete or reuse the connection.
+
+## Project file reference
+
+Managed Deep Agents projects use this layout:
+
+```text
+my-agent/
+  agent.json
+  AGENTS.md
+  tools.json
+  skills/<name>/SKILL.md
+  skills/<name>/<file>
+  subagents/<name>/agent.json
+  subagents/<name>/AGENTS.md
+  subagents/<name>/tools.json
+  subagents/<name>/skills/<skill-name>/SKILL.md
+```
+
+### agent.json
+
+`agent.json` configures the Managed Deep Agent resource:
+
+```json
+{
+  "name": "my-agent",
+  "description": "A managed deep agent.",
+  "model": "openai:gpt-5.5",
+  "backend": {
+    "type": "state"
+  }
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `name` | Required non-empty agent name. |
+| `description` | Optional agent description. |
+| `agent_id` | Optional existing Managed Deep Agent ID to update. |
+| `model` | Optional shorthand model identifier in `{provider}:{model_id}` form. |
+| `runtime` | Optional API-shaped runtime object. Use either `model` or `runtime`, not both. |
+| `backend` | Optional backend configuration. |
+| `permissions` | Optional identity, visibility, and tenant access settings. |
+| `extras` | Optional extra metadata passed through to the API. |
+
+### Configure the backend
+
+Managed Deep Agents projects generated by `deepagents-cli>=0.2.2` use the `state` backend. Use a [LangSmith sandbox](/langsmith/sandboxes) backend when the agent needs an isolated environment for code execution, filesystem work, or long-running tasks.
+
+| Backend type | Use for |
+| --- | --- |
+| `state` | Use no sandbox-specific backend behavior. |
+| `sandbox` with `sandbox_config.scope: "thread"` | Scope LangSmith sandbox resources to each thread. |
+| `sandbox` with `sandbox_config.scope: "agent"` | Scope LangSmith sandbox resources to the agent. |
+
+Sandbox backends can include optional sandbox settings:
+
+```json
+{
+  "backend": {
+    "type": "sandbox",
+    "sandbox_config": {
+      "scope": "thread",
+      "policy_ids": ["policy-id"],
+      "idle_ttl_seconds": 900,
+      "delete_after_stop_seconds": 300
+    }
+  }
+}
+```
+
+`backend.sandbox_config` is valid only when `backend.type` is `sandbox`. For standalone sandbox features such as snapshots, service URLs, permissions, CLI commands, and SDK usage, see the [LangSmith sandboxes overview](/langsmith/sandboxes).
+
+| Field | Description |
+| --- | --- |
+| `scope` | Sandbox scope. Use `thread` for one sandbox per thread or `agent` for one sandbox shared by the agent. |
+| `policy_ids` | Array of sandbox policy IDs. |
+| `idle_ttl_seconds` | Integer idle timeout. |
+| `delete_after_stop_seconds` | Integer deletion delay after stop. |
+
+### Configure permissions
+
+The optional `permissions` field in `agent.json` sets identity, visibility, and tenant access. Supported values are:
+
+| Field | Values |
+| --- | --- |
+| `identity` | `personal`, `shared` |
+| `visibility` | `tenant`, `user` |
+| `tenant_access_level` | `read`, `run`, `write` |
+
+### AGENTS.md
+
+`AGENTS.md` contains the main agent instructions. The CLI sends this content as the agent system prompt and stores it in the managed file tree.
+
+### tools.json
+
+`tools.json` configures MCP-backed tools. `deepagents init` creates this file with an empty `tools` array. Add tool entries after registering an MCP server:
+
+```json
+{
+  "tools": [
+    {
+      "name": "example_tool",
+      "mcp_server_url": "https://example.com/mcp",
+      "mcp_server_name": "my-tools",
+      "display_name": "example_tool"
+    }
+  ],
+  "interrupt_config": {
+    "https://example.com/mcp::example_tool": true
+  }
+}
+```
+
+Each tool requires `name` and `mcp_server_url`. `mcp_server_name` and `display_name` are optional. `interrupt_config` is optional and must be an object when present. Key each interrupt entry by `"{mcp_server_url}::{tool_name}"`. Additional `::{mcp_server_name}` components are accepted for compatibility.
+
+### skills
+
+Each skill lives under `skills/<name>/SKILL.md` and requires YAML frontmatter:
+
+```mdx
+---
+name: summarize
+description: Summarize text into a one-paragraph summary.
+---
+
+# Summarize
+
+Given a text, produce a one-paragraph summary.
+```
+
+The CLI recursively includes all other files in the skill directory, excluding hidden paths.
+
+### subagents
+
+Each subagent lives under `subagents/<name>/` and requires:
+
+| File | Description |
+| --- | --- |
+| `agent.json` | Subagent metadata. Supports `description` and `model`. |
+| `AGENTS.md` | Subagent instructions. |
+| `tools.json` | Optional MCP-backed tools for the subagent. |
+| `skills/` | Optional subagent-local skills. |
+
+Example subagent `agent.json`:
+
+```json
+{
+  "description": "Researches a topic.",
+  "model": "openai:gpt-5.5"
+}
+```
+
+The legacy `model_id` key is still accepted in local subagent files, but new projects should use `model`. The REST API `SubagentSpec` uses `model_id`.
+
+Subagent names come from directory names. Names are checked case insensitively for duplicates.

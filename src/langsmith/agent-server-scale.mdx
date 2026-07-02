@@ -1,17 +1,19 @@
 ---
-title: Configure LangSmith Agent Server for scale
-sidebarTitle: Configure Agent Server for scale
+title: Configure Agent Server for scale
+sidebarTitle: Agent Server scaling
+icon: "box-multiple"
+description: Tune the Agent Server for self-hosted deployments—write load, read load, and example Helm configurations for different load patterns.
 ---
 
-The default configuration for LangSmith Agent Server is designed to handle substantial read and write load across a variety of different workloads. By following the best practices outlined below, you can tune your Agent Server to perform optimally for your specific workload. This page describes scaling considerations for the Agent Server and provides examples to help configure your deployment.
+The default configuration for the LangSmith Agent Server is designed to handle substantial read and write load across a variety of different workloads. By following the best practices outlined below, you can tune your Agent Server to perform optimally for your specific workload. This page describes scaling considerations for the Agent Server on self-hosted deployments and provides example configurations.
 
 <Tip>
 If you're not yet familiar with how API servers and queue workers operate at the container level, read the [runtime architecture](/langsmith/agent-server#runtime-architecture) overview first.
 </Tip>
 
-For some example self-hosted configurations, refer to the [Example Agent Server configurations for scale](#example-self-hosted-agent-server-configurations) section.
+For [Cloud](/langsmith/cloud-platform-features#scaling), the platform autoscales automatically and the Helm configurations below do not apply.
 
-## Scaling for write load
+## Write load
 
 Write load is primarily driven by the following factors:
 
@@ -29,11 +31,9 @@ The following components are primarily responsible for handling write load:
 - Redis: Handles the storage of ephemeral data about on-going runs.
 - Postgres: Handles the storage of all data, including run, thread, assistant, cron job, checkpointing and long term memory.
 
-### Best practices for scaling the write path
+### Tune `N_JOBS_PER_WORKER` based on assistant characteristics
 
-#### Change `N_JOBS_PER_WORKER` based on assistant characteristics
-
-The default value of [`N_JOBS_PER_WORKER`](/langsmith/env-var#n_jobs_per_worker) is 10. You can change this value to scale the maximum number of runs that can be executed at a time by a single queue worker based on the characteristics of your assistant.
+The default value of [`N_JOBS_PER_WORKER`](/langsmith/env-var-self-hosted) is 10. You can change this value to scale the maximum number of runs that can be executed at a time by a single queue worker based on the characteristics of your assistant.
 
 Some general guidelines for changing `N_JOBS_PER_WORKER`:
 
@@ -42,11 +42,12 @@ Some general guidelines for changing `N_JOBS_PER_WORKER`:
 
 There is no upper limit to `N_JOBS_PER_WORKER`. However, queue workers are greedy when fetching new runs, which means they will try to pick up as many runs as they have available jobs and begin executing them immediately. Setting `N_JOBS_PER_WORKER` too high in environments with bursty traffic can lead to uneven worker utilization and increased run execution times.
 
-#### Avoid synchronous blocking operations
+### Avoid synchronous blocking operations
 
 Avoid synchronous blocking operations in your code and prefer asynchronous operations. Long synchronous operations can block the main event loop, causing longer request and run execution times and potential timeouts.
 
 For example, consider an application that needs to sleep for 1 second. Instead of using synchronous code like this:
+
 ```python
 import time
 
@@ -55,6 +56,7 @@ def my_function():
 ```
 
 Prefer asynchronous code like this:
+
 ```python
 import asyncio
 
@@ -64,9 +66,9 @@ async def my_function():
 
 If an assistant requires synchronous blocking operations, run those in `asyncio.to_thread()` or equivalent.
 
-#### Minimize redundant checkpointing
+### Minimize redundant checkpointing
 
-Minimize redundant checkpointing by setting [`durability`](/oss/langgraph/durable-execution#durability-modes) to the minimum value necessary to ensure your data is durable.
+Minimize redundant checkpointing by setting [`durability`](/oss/langgraph/checkpointers#durability-modes) to the minimum value necessary to ensure your data is durable.
 
 The default durability mode is `"async"`, meaning checkpoints are written after each step asynchronously. If an assistant needs to persist only the final state of the run, `durability` can be set to `"exit"`, storing only the final state of the run. This can be set when creating the run:
 
@@ -82,50 +84,47 @@ run = await client.runs.create(
 )
 ```
 
-#### Self-hosted
+### Enable queue workers
 
-<Note>
-These settings are only required for [self-hosted](/langsmith/self-hosted) deployments. By default, [cloud](/langsmith/cloud) deployments already have these best practices enabled.
-</Note>
-
-##### Enable the use of queue workers <a name="enable-the-use-of-queue-workers"></a>
-
-By default, the API server manages the queue and does not use queue workers. You can enable the use of queue workers by setting the `queue.enabled` configuration to `true`.
+By default, the API server manages the queue and does not use queue workers. Enable queue workers by setting `queue.enabled` to `true`:
 
 ```yaml
 queue:
   enabled: true
 ```
 
-This will allow the API server to offload the queue management to the queue workers, significantly reducing the load on the API server and allowing it to focus on handling requests.
+This offloads queue management from the API server to dedicated queue workers, reducing load on the API server and allowing it to focus on handling requests.
 
-#### Support a number of jobs equal to expected throughput
+### Size jobs for expected throughput
 
 The more runs you execute in parallel, the more jobs you will need to handle the load. There are two main parameters to scale the available jobs:
 
 - `number_of_queue_workers`: The number of queue workers provisioned.
-- `N_JOBS_PER_WORKER`: The number of runs that a single queue work can execute at a time. Defaults to 10.
+- `N_JOBS_PER_WORKER`: The number of runs that a single queue worker can execute at a time. Defaults to 10.
 
 You can calculate the available jobs with the following equation:
+
 ```
-available_jobs = number_of_queue_workers * `N_JOBS_PER_WORKER`
+available_jobs = number_of_queue_workers * N_JOBS_PER_WORKER
 ```
 
 Throughput is then the number of runs that can be executed per second by the available jobs:
+
 ```
 throughput_per_second = available_jobs / average_run_execution_time_seconds
 ```
 
 Therefore, the minimum number of queue workers you should provision to support your expected steady state throughput is:
+
 ```
-number_of_queue_workers = throughput_per_second * average_run_execution_time_seconds / `N_JOBS_PER_WORKER`
+number_of_queue_workers = throughput_per_second * average_run_execution_time_seconds / N_JOBS_PER_WORKER
 ```
 
-##### Configure autoscaling for bursty workloads <a name="configure-autoscaling-for-bursty-workloads-write"></a>
+### Configure autoscaling for bursty write workloads
 
-Autoscaling is disabled by default, but should be configured for bursty workloads. Using the same calculations as the [previous section](#support-a-number-of-jobs-equal-to-expected-throughput), you can determine the maximum number of queue workers you should allow the autoscaler to scale to based on maximum expected throughput.
+Autoscaling is disabled by default, but should be configured for bursty workloads. Using the same calculations as the previous section, you can determine the maximum number of queue workers you should allow the autoscaler to scale to based on maximum expected throughput.
 
-## Scaling for read load
+## Read load
 
 Read load is primarily driven by the following factors:
 
@@ -140,39 +139,31 @@ The following components are primarily responsible for handling read load:
 - Postgres: Handles the storage of all data, including run, thread, assistant, cron job, checkpointing and long term memory.
 - Redis: Handles the storage of ephemeral data about on-going runs, including streaming messages from queue workers to api servers.
 
-### Best practices for scaling the read path
-
-#### Use filtering to reduce the number of resources returned per request
+### Use filtering to reduce results per request
 
 [Agent Server](/langsmith/agent-server) provides a search API for each resource type. These APIs implement pagination by default and offer many filtering options. Use filtering to reduce the number of resources returned per request and improve performance.
 
-#### Set a TTLs to automatically delete old data
+### Set TTLs to automatically delete old data
 
 Set a [TTL on threads](/langsmith/configure-ttl) to automatically clean up old data. Runs and checkpoints are automatically deleted when the associated thread is deleted.
 
-#### Avoid polling and use /join to monitor the state of a run
+### Avoid polling; use `/join` to monitor a run
 
 Avoid polling the state of a run by using the `/join` API endpoint. This method returns the final state of the run once the run is complete.
 
 If you need to monitor the output of a run in real-time, use the `/stream` API endpoint. This method streams the run output including the final state of the run.
 
-#### Self-hosted
+### Configure autoscaling for bursty read workloads
 
-<Note>
-These settings are only required for [self-hosted](/langsmith/self-hosted) deployments. By default, [cloud](/langsmith/cloud) deployments already have these best practices enabled.
-</Note>
+Autoscaling is disabled by default, but should be configured for bursty workloads. Determine the maximum number of API servers you should allow the autoscaler to scale to based on maximum expected throughput.
 
-##### Configure autoscaling for bursty workloads <a name="configure-autoscaling-for-bursty-workloads-read"></a>
-
-Autoscaling is disabled by default, but should be configured for bursty workloads. You can determine the maximum number of api servers you should allow the autoscaler to scale to based on maximum expected throughput. The default for [cloud](/langsmith/cloud) deployments is a maximum of 10 API servers.
-
-## Example self-hosted Agent Server configurations
+## Example configurations
 
 <Note>
 The exact optimal configuration depends on your application complexity, request patterns, and data requirements. Use the following examples in combination with the information in the previous sections and your specific usage to update your deployment configuration as needed. If you have any questions, contact support via [support.langchain.com](https://support.langchain.com).
 </Note>
 
-The following table provides an overview comparing different LangSmith Agent Server configurations for various load patterns (read requests per second / write requests per second) and standard assistant characteristics (average run execution time of 1 second, moderate CPU and memory usage):
+The following table provides an overview comparing different Agent Server configurations for various load patterns (read requests per second / write requests per second) and standard assistant characteristics (average run execution time of 1 second, moderate CPU and memory usage):
 
 |  | **[Low / low](#low-reads-low-writes)** | **[Low / high](#low-reads-high-writes)** | **[High / low](#high-reads-low-writes)** | [Medium / medium](#medium-reads-medium-writes) | [High / high](#high-reads-high-writes) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -184,17 +175,17 @@ The following table provides an overview comparing different LangSmith Agent Ser
 | **Redis resources** | 2 Gi (default) | 2 Gi (default) | 2 Gi (default) | 2 Gi (default) | 2 Gi (default) |
 | **Postgres resources** | 2 CPU<br />8 Gi (default) | 4 CPU<br />16 Gi memory | 4 CPU<br />16 Gi | 4 CPU<br />16 Gi memory | 8 CPU<br />32 Gi memory |
 
-The following sample configurations enable each of these setups. Load levels are defined as:
+Load levels in the examples are defined as:
 
 - Low means approximately 5 requests per second
 - Medium means approximately 50 requests per second
 - High means approximately 500 requests per second
 
-### Low reads, low writes <a name="low-reads-low-writes"></a>
+### Low reads, low writes
 
 The default [LangSmith Deployment](/langsmith/deployment) configuration will handle this load. No custom resource configuration is needed here.
 
-### Low reads, high writes <a name="low-reads-high-writes"></a>
+### Low reads, high writes
 
 You have a high volume of write requests (500 per second) being processed by your deployment, but relatively few read requests (5 per second).
 
@@ -242,7 +233,7 @@ postgres:
       memory: "32Gi"
 ```
 
-### High reads, low writes <a name="high-reads-low-writes"></a>
+### High reads, low writes
 
 You have a high volume of read requests (500 per second) but relatively few write requests (5 per second).
 
@@ -289,7 +280,7 @@ postgres:
   readReplicas: 2
 ```
 
-### Medium reads, medium writes <a name="medium-reads-medium-writes"></a>
+### Medium reads, medium writes
 
 This is a balanced configuration that should handle moderate read and write loads (50 read/50 write requests per second).
 
@@ -334,7 +325,7 @@ postgres:
       memory: "32Gi"
 ```
 
-### High reads, high writes <a name="high-reads-high-writes"></a>
+### High reads, high writes
 
 You have high volumes of both read and write requests (500 read/500 write requests per second).
 

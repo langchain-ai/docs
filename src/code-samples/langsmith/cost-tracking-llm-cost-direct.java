@@ -1,0 +1,87 @@
+///usr/bin/env jbang "$0" "$@" ; exit $?
+//DEPS com.langchain.smith:langsmith-java:0.1.0-alpha.25
+
+// :snippet-start: cost-tracking-llm-cost-direct-java
+// :codegroup-tab: Java
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.tracing.RunTree;
+import com.langchain.smith.tracing.RunType;
+import com.langchain.smith.tracing.TraceConfig;
+import com.langchain.smith.tracing.Tracing;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
+class CostTrackingLlmCostDirect {
+  public static void main(String[] args) throws InterruptedException {
+    // :remove-start:
+    if (System.getenv("LANGSMITH_API_KEY") == null
+        || System.getenv("LANGSMITH_API_KEY").isBlank()) {
+      System.out.println(
+          "[cost-tracking-llm-cost-direct] Skipping (LANGSMITH_API_KEY is not set).");
+      return;
+    }
+    // :remove-end:
+    LangsmithClient langsmith = LangsmithOkHttpClient.fromEnv();
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+
+    try {
+      List<Map<String, String>> messages =
+          Arrays.asList(
+              message("system", "You are a helpful assistant."),
+              message("user", "I'd like to book a table for two."));
+
+      Map<String, Object> metadata = new HashMap<>();
+      metadata.put("ls_provider", "my_provider");
+      metadata.put("ls_model_name", "my_model");
+
+      Function<List<Map<String, String>>, Map<String, String>> chatModel =
+          Tracing.traceFunction(
+              inputMessages -> {
+                Map<String, Object> inputCostDetails = new HashMap<>();
+                inputCostDetails.put("cache_read", 2.3e-7);
+
+                Map<String, Object> usageMetadata = new HashMap<>();
+                usageMetadata.put("input_cost", 1.1e-6);
+                usageMetadata.put("input_cost_details", inputCostDetails);
+                usageMetadata.put("output_cost", 5.0e-6);
+
+                RunTree run = Tracing.getCurrentRunTree();
+                if (run != null) {
+                  run.getMetadata().put("usage_metadata", usageMetadata);
+                }
+
+                return message(
+                    "assistant", "Sure, what time would you like to book the table for?");
+              },
+              TraceConfig.builder()
+                  .name("chat_model")
+                  .runType(RunType.LLM)
+                  .client(langsmith)
+                  .executor(executor)
+                  .metadata(metadata)
+                  .build());
+
+      chatModel.apply(messages);
+    } finally {
+      executor.shutdown();
+      if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+        throw new IllegalStateException("Timed out waiting for LangSmith traces to submit");
+      }
+    }
+  }
+
+  private static Map<String, String> message(String role, String content) {
+    Map<String, String> message = new HashMap<>();
+    message.put("role", role);
+    message.put("content", content);
+    return message;
+  }
+}
+// :snippet-end:

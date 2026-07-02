@@ -2,7 +2,7 @@
 name: langchain
 description: Build agents with a prebuilt architecture and integrations for any model or tool. Use when creating tool-calling agents, switching model providers, or adding structured output.
 license: MIT
-compatibility: Python 3.10+, Node.js 20+
+compatibility: Python 3.10+, Node.js 22+
 metadata:
   author: langchain-ai
   version: "1.0"
@@ -59,7 +59,7 @@ def get_weather(city: str) -> str:
     return f"It's always sunny in {city}!"
 
 agent = create_agent(
-    model="openai:gpt-5.4",
+    model="openai:gpt-5.5",
     tools=[get_weather],
     system_prompt="You are a helpful assistant",
 )
@@ -75,9 +75,9 @@ result = agent.invoke(
 from langchain.chat_models import init_chat_model
 
 # Switch providers by changing the string
-model = init_chat_model("openai:gpt-5.4")
-model = init_chat_model("anthropic:claude-opus-4-6")
-model = init_chat_model("google_genai:gemini-2.5-flash-lite")
+model = init_chat_model("openai:gpt-5.5")
+model = init_chat_model("anthropic:claude-opus-4-8")
+model = init_chat_model("google_genai:gemini-3.5-flash")
 ```
 
 ### Define a tool
@@ -96,7 +96,7 @@ def search(query: str) -> str:
 1. **Snake_case tool names**—Tool function names must be valid Python identifiers. Use `get_weather`, not `get-weather`.
 2. **Reserved parameters**—Do not name tool parameters `type`, `name`, or `description` as these conflict with the tool schema.
 3. **Provider packages**—Models live in separate packages (e.g., `langchain-openai`). The base `langchain` package does not include providers.
-4. **Model string format**—Use `"provider:model-name"` format with `init_chat_model()` (e.g., `"openai:gpt-5.4"`).
+4. **Model string format**—Use `"provider:model-name"` format with `init_chat_model()` (e.g., `"openai:gpt-5.5"`).
 
 ## Key documentation
 

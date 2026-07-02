@@ -12,7 +12,7 @@ const addContextMiddleware = createMiddleware({
 });
 
 const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   systemPrompt: "You are a helpful assistant.",
   middleware: [addContextMiddleware],
 });
@@ -20,7 +20,7 @@ const agent = createAgent({
 
 // :remove-start:
 import { FakeListChatModel } from "@langchain/core/utils/testing";
-import type { BaseMessage } from "@langchain/core/messages";
+import type { BaseMessage } from "langchain";
 
 function flattenMessageContent(content: unknown): string {
   if (typeof content === "string") return content;

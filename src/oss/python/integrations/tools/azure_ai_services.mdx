@@ -1,187 +1,372 @@
 ---
-title: "Azure AI services toolkit integration"
-description: "Integrate with the Azure AI services toolkit using LangChain Python."
+title: "Microsoft Foundry Tools (formerly Azure AI Services) tools integration"
+description: "Integrate with Microsoft Foundry Tools (formerly Azure AI Services) using LangChain Python."
 ---
 
-This toolkit is used to interact with the `Azure AI Services API` to achieve some multimodal capabilities.
+Microsoft Foundry Tools (formerly known as Azure AI Services) wrap Azure AI service APIs for agent tool use. These tools live in the `langchain-azure-ai` package, are exported from `langchain_azure_ai.tools`, and can be instantiated individually or loaded together with `AzureAIServicesToolkit`.
 
-Currently There are five tools bundled in this toolkit:
+Use these tools when you want LangChain agents to analyze documents, images, or healthcare text with Azure-managed services.
 
-- **AzureAiServicesImageAnalysisTool**: used to extract caption, objects, tags, and text from images.
-- **AzureAiServicesDocumentIntelligenceTool**: used to extract text, tables, and key-value pairs from documents.
-- **AzureAiServicesSpeechToTextTool**: used to transcribe speech to text.
-- **AzureAiServicesTextToSpeechTool**: used to synthesize text to speech.
-- **AzureAiServicesTextAnalyticsForHealthTool**: used to extract healthcare entities.
+## Overview
 
-First, you need to set up an Azure account and create an AI Services resource. You can follow the [Azure AI Services multi-service resource instructions](https://learn.microsoft.com/en-us/azure/ai-services/multi-service-resource) to create a resource.
+| Tool | Description |
+|------------|-------------|
+| [`AzureAIContentUnderstandingTool`](#azureaicontentunderstandingtool) | Extract structured content from documents, images, audio, and video. |
+| [`AzureAIDocumentIntelligenceTool`](#azureaidocumentintelligencetool) | Parse documents into OCR text, tables, and key-value pairs. |
+| [`AzureAIImageAnalysisTool`](#azureaiimageanalysistool) | Run OCR, captions, tagging, object detection, and related image analysis. |
+| [`AzureAISpeechToTextTool`](#azureaispeechtotexttool) | Transcribe audio files to text with language support. |
+| [`AzureAITextToSpeechTool`](#azureaitexttospeechtool) | Convert text to synthesized speech audio with multi-language support. |
+| [`AzureAITextAnalyticsHealthTool`](#azureaitextanalyticshealthtool) | Extract medical entities from healthcare text. |
 
-Then, you need to get the endpoint, key and region of your resource, and set them as environment variables. You can find them in the "Keys and Endpoint" page of your resource.
+### Features
 
-```python
-pip install -qU  azure-ai-formrecognizer > /dev/null
-pip install -qU  azure-cognitiveservices-speech > /dev/null
-pip install -qU  azure-ai-textanalytics > /dev/null
-pip install -qU  azure-ai-vision-imageanalysis > /dev/null
-pip install -qU langchain-community
+- Shared authentication and endpoint handling across all service tools.
+- Support for Azure AI Foundry project endpoints and direct service endpoints.
+- Individual tools for multimodal extraction, document parsing, image analysis, speech-to-text transcription, text-to-speech synthesis, and healthcare text analysis.
+- `AzureAIServicesToolkit` for loading all service tools at once.
+- Automatic audio source detection (local files and remote URLs) for transcription.
+- Multi-language speech recognition and synthesis with BCP-47 language codes.
+- WAV file generation for synthesized speech output.
+
+## Setup
+
+Install the integration package, configure either an Azure AI Foundry project endpoint or a direct Azure AI Services endpoint, and provide a credential.
+
+### Installation
+
+Install the package with the `tools` extra:
+
+<CodeGroup>
+    ```bash pip
+    pip install -U "langchain-azure-ai[tools]"
+    ```
+    ```bash uv
+    uv add "langchain-azure-ai[tools]"
+    ```
+</CodeGroup>
+
+This extra installs the service-specific dependencies used by these tools, including `azure-ai-documentintelligence`, `azure-ai-vision-imageanalysis`, `azure-cognitiveservices-speech`, and `azure-ai-textanalytics`. The base package includes `azure-ai-contentunderstanding`.
+
+### Credentials
+
+Pass either `DefaultAzureCredential()` or an API-key string through the `credential` argument. If you use a Foundry project endpoint, use a Microsoft Entra ID credential such as `DefaultAzureCredential()`.
+
+```python Initialize credential icon="shield-lock"
+from azure.identity import DefaultAzureCredential
+
+credential = DefaultAzureCredential()
 ```
 
-```python
-import os
+### Configure endpoints
 
-os.environ["OPENAI_API_KEY"] = "sk-"
-os.environ["AZURE_AI_SERVICES_KEY"] = ""
-os.environ["AZURE_AI_SERVICES_ENDPOINT"] = ""
-os.environ["AZURE_AI_SERVICES_REGION"] = ""
+The service tools support two endpoint styles:
+
+- An Azure AI Foundry project endpoint via `project_endpoint` or `AZURE_AI_PROJECT_ENDPOINT`
+- A direct Azure AI Services endpoint via `endpoint` or `AZURE_AI_INFERENCE_ENDPOINT`
+
+If both are available, prefer `project_endpoint` because it resolves the backing service endpoint automatically for Foundry-based workflows.
+
+```bash Configure endpoint icon="key"
+export AZURE_AI_PROJECT_ENDPOINT="https://<resource>.services.ai.azure.com/api/projects/<project>"
 ```
 
-## Create the toolkit
+### Instantiate a tool
 
-```python
-from langchain_community.agent_toolkits import AzureAiServicesToolkit
+If `AZURE_AI_PROJECT_ENDPOINT` is already set, you can usually omit `project_endpoint` during instantiation.
 
-toolkit = AzureAiServicesToolkit()
+```python Initialize tool icon="arrows-shuffle"
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.tools import AzureAIContentUnderstandingTool
+
+tool = AzureAIContentUnderstandingTool(
+    credential=DefaultAzureCredential(),
+)
+
+result = tool.invoke(
+    {"source": "https://example.com/invoice.pdf", "source_type": "url"}
+)
+print(result)
 ```
 
-```python
-[tool.name for tool in toolkit.get_tools()]
+## Use with an agent
+
+Pass one or more tools to @[`create_agent`].
+
+```python Agent with tools icon="robot"
+from azure.identity import DefaultAzureCredential
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+from langchain_azure_ai.tools import (
+    AzureAIDocumentIntelligenceTool,
+    AzureAIImageAnalysisTool,
+)
+
+credential = DefaultAzureCredential()
+tools = [
+    AzureAIDocumentIntelligenceTool(credential=credential),
+    AzureAIImageAnalysisTool(credential=credential),
+]
+
+agent = create_agent(
+    model=init_chat_model("azure_ai:gpt-4.1", credential=credential),
+    tools=tools,
+    system_prompt=(
+        "You are a document and image analysis assistant. Use tools when the "
+        "user asks you to inspect files or images."
+    ),
+)
 ```
 
-```python
-['azure_ai_services_document_intelligence',
- 'azure_ai_services_image_analysis',
- 'azure_ai_services_speech_to_text',
- 'azure_ai_services_text_to_speech',
- 'azure_ai_services_text_analytics_for_health']
-```
+## Use the toolkit
 
-## Use within an Agent
+Use `AzureAIServicesToolkit` to get all services tools with a shared credential and endpoint configuration.
 
 ```python
-from langchain_classic import hub
-from langchain.agents import AgentExecutor, create_structured_chat_agent
-from langchain_openai import OpenAI
-```
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.tools import AzureAIServicesToolkit
 
-```python
-llm = OpenAI(temperature=0)
+toolkit = AzureAIServicesToolkit(credential=DefaultAzureCredential())
 tools = toolkit.get_tools()
-prompt = hub.pull("hwchase17/structured-chat-agent")
-agent = create_structured_chat_agent(llm, tools, prompt)
+```
 
-agent_executor = AgentExecutor(
-    agent=agent, tools=tools, verbose=True, handle_parsing_errors=True
+## Tools
+
+### AzureAIContentUnderstandingTool
+
+`AzureAIContentUnderstandingTool` extracts structured content from documents, images, audio, and video. It returns markdown-like extracted content and can also surface structured fields from the selected analyzer.
+
+The tool defaults to `analyzer_id="prebuilt-documentSearch"`. You can switch analyzers for other modalities, such as `prebuilt-audioSearch` or `prebuilt-videoSearch`, and you can provide `model_deployments` when your analyzer depends on custom model deployment names.
+
+```python
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.tools import AzureAIContentUnderstandingTool
+
+tool = AzureAIContentUnderstandingTool(
+    credential=DefaultAzureCredential(),
+    analyzer_id="prebuilt-documentSearch",
 )
-```
 
-```python
-agent_executor.invoke(
-    {
-        "input": "What can I make with these ingredients? "
-        + "https://images.openai.com/blob/9ad5a2ab-041f-475f-ad6a-b51899c50182/ingredients.png"
-    }
+result = tool.invoke(
+    {"source": "https://example.com/contract.pdf", "source_type": "url"}
 )
+print(result)
 ```
 
-```text
-> Entering new AgentExecutor chain...
+<Accordion title="Configuration options">
+    <ParamField body="source" type="str">
+        The input to analyze. Pass a public URL, local file path, or base64-encoded payload.
+    </ParamField>
 
-Thought: I need to use the azure_ai_services_image_analysis tool to analyze the image of the ingredients.
-Action:
-\`\`\`
-{
-  "action": "azure_ai_services_image_analysis",
-  "action_input": "https://images.openai.com/blob/9ad5a2ab-041f-475f-ad6a-b51899c50182/ingredients.png"
-}
-\`\`\`
-Caption: a group of eggs and flour in bowls
-Objects: Egg, Egg, Food
-Tags: dairy, ingredient, indoor, thickening agent, food, mixing bowl, powder, flour, egg, bowl
-Action:
-\`\`\`
-{
-  "action": "Final Answer",
-  "action_input": "You can make a cake or other baked goods with these ingredients."
-}
-\`\`\`
+    <ParamField body="source_type" type="Literal['url', 'path', 'base64']" default="url">
+        Controls how the tool interprets `source`.
+    </ParamField>
 
+    <ParamField body="analyzer_id" type="str" default="prebuilt-documentSearch">
+        The Content Understanding analyzer to run.
+    </ParamField>
 
+    <ParamField body="model_deployments" type="dict[str, str] | None">
+        Optional mapping from model names to deployment names when a custom analyzer needs them.
+    </ParamField>
+</Accordion>
 
-> Finished chain.
-```
+### AzureAIDocumentIntelligenceTool
 
-```text
-{'input': 'What can I make with these ingredients? https://images.openai.com/blob/9ad5a2ab-041f-475f-ad6a-b51899c50182/ingredients.png',
- 'output': 'You can make a cake or other baked goods with these ingredients.'}
-```
+`AzureAIDocumentIntelligenceTool` extracts OCR text, tables, and key-value pairs from documents. It is a good fit for invoices, forms, receipts, contracts, and other document-heavy workflows where the agent needs structured output instead of raw text only.
+
+The tool defaults to `model_id="prebuilt-layout"`. Its public input schema accepts `url`, `path`, and `base64` sources.
 
 ```python
-tts_result = agent_executor.invoke({"input": "Tell me a joke and read it out for me."})
-audio_file = tts_result.get("output")
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.tools import AzureAIDocumentIntelligenceTool
+
+tool = AzureAIDocumentIntelligenceTool(
+    credential=DefaultAzureCredential(),
+    model_id="prebuilt-layout",
+)
+
+result = tool.invoke(
+    {"source": "https://example.com/invoice.pdf", "source_type": "url"}
+)
+print(result)
 ```
 
-```text
-> Entering new AgentExecutor chain...
+<Accordion title="Configuration options">
+    <ParamField body="source" type="str">
+        The document input. Pass a public URL, local file path, or base64-encoded payload.
+    </ParamField>
 
-Thought: I can use the Azure AI Services Text to Speech API to convert text to speech.
-Action:
-\`\`\`
-{
-  "action": "azure_ai_services_text_to_speech",
-  "action_input": "Why don't scientists trust atoms? Because they make up everything."
-}
-\`\`\`
-/tmp/tmpe48vamz0.wav
+    <ParamField body="source_type" type="Literal['url', 'path', 'base64']" default="url">
+        Controls how the tool interprets `source`.
+    </ParamField>
 
+    <ParamField body="model_id" type="str" default="prebuilt-layout">
+        The Document Intelligence model to run.
+    </ParamField>
+</Accordion>
 
-> Finished chain.
-```
+### AzureAIImageAnalysisTool
+
+`AzureAIImageAnalysisTool` analyzes images and returns a JSON-formatted summary with captions, OCR text, tags, objects, people, and smart crops when those features are enabled.
+
+By default, the tool enables a broad set of visual features, including `TAGS`, `OBJECTS`, `CAPTION`, `DENSE_CAPTIONS`, `READ`, `SMART_CROPS`, and `PEOPLE`.
 
 ```python
-from IPython import display
+from azure.identity import DefaultAzureCredential
+from azure.ai.vision.imageanalysis.models import VisualFeatures
+from langchain_azure_ai.tools import AzureAIImageAnalysisTool
 
-audio = display.Audio(data=audio_file, autoplay=True, rate=22050)
-display.display(audio)
+tool = AzureAIImageAnalysisTool(
+    credential=DefaultAzureCredential(),
+    visual_features=[
+        VisualFeatures.CAPTION,
+        VisualFeatures.READ,
+        VisualFeatures.TAGS,
+    ],
+)
+
+result = tool.invoke(
+    {"source": "https://example.com/whiteboard.png", "source_type": "url"}
+)
+print(result)
 ```
+
+<Accordion title="Configuration options">
+    <ParamField body="source" type="str">
+        The image input. Pass a public URL, local file path, or base64-encoded payload.
+    </ParamField>
+
+    <ParamField body="source_type" type="Literal['url', 'path', 'base64']">
+        Controls how the tool interprets `source`.
+    </ParamField>
+
+    <ParamField body="visual_features" type="list[VisualFeatures] | None">
+        Optional list of image-analysis features to request. If omitted, the tool uses its default feature set.
+    </ParamField>
+</Accordion>
+
+### AzureAITextAnalyticsHealthTool
+
+`AzureAITextAnalyticsHealthTool` extracts healthcare entities from medical text. It is useful for clinical notes, patient summaries, intake forms, and research workflows where the agent needs medical entities rather than free-form summarization.
+
+The tool accepts a plain-text `query` and can be configured with optional `language` and `country_hint` defaults.
 
 ```python
-sample_input = """
-The patient is a 54-year-old gentleman with a history of progressive angina over the past several months.
-The patient had a cardiac catheterization in July of this year revealing total occlusion of the RCA and 50% left main disease ,
-with a strong family history of coronary artery disease with a brother dying at the age of 52 from a myocardial infarction and
-another brother who is status post coronary artery bypass grafting. The patient had a stress echocardiogram done on July , 2001 ,
-which showed no wall motion abnormalities , but this was a difficult study due to body habitus. The patient went for six minutes with
-minimal ST depressions in the anterior lateral leads , thought due to fatigue and wrist pain , his anginal equivalent. Due to the patient's
-increased symptoms and family history and history left main disease with total occasional of his RCA was referred for revascularization with open heart surgery.
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.tools import AzureAITextAnalyticsHealthTool
 
-List all the diagnoses.
-"""
+tool = AzureAITextAnalyticsHealthTool(
+    credential=DefaultAzureCredential(),
+    language="en",
+    country_hint="us",
+)
 
-agent_executor.invoke({"input": sample_input})
+result = tool.invoke(
+    "The patient reports chest pain and was prescribed aspirin after the visit."
+)
+print(result)
 ```
 
-```text
-> Entering new AgentExecutor chain...
+<Accordion title="Configuration options">
+    <ParamField body="query" type="str">
+        The healthcare text to analyze.
+    </ParamField>
 
-Thought: The patient has a history of progressive angina, a strong family history of coronary artery disease, and a previous cardiac catheterization revealing total occlusion of the RCA and 50% left main disease.
-Action:
-\`\`\`
-{
-  "action": "azure_ai_services_text_analytics_for_health",
-  "action_input": "The patient is a 54-year-old gentleman with a history of progressive angina over the past several months. The patient had a cardiac catheterization in July of this year revealing total occlusion of the RCA and 50% left main disease, with a strong family history of coronary artery disease with a brother dying at the age of 52 from a myocardial infarction and another brother who is status post coronary artery bypass grafting. The patient had a stress echocardiogram done on July, 2001, which showed no wall motion abnormalities, but this was a difficult study due to body habitus. The patient went for six minutes with minimal ST depressions in the anterior lateral leads, thought due to fatigue and wrist pain, his anginal equivalent. Due to the patient's increased symptoms and family history and history left main disease with total occasional of his RCA was referred for revascularization with open heart surgery."
-The text contains the following healthcare entities: 54-year-old is a healthcare entity of type Age, gentleman is a healthcare entity of type Gender, progressive angina is a healthcare entity of type Diagnosis, past several months is a healthcare entity of type Time, cardiac catheterization is a healthcare entity of type ExaminationName, July of this year is a healthcare entity of type Time, total is a healthcare entity of type ConditionQualifier, occlusion is a healthcare entity of type SymptomOrSign, RCA is a healthcare entity of type BodyStructure, 50 is a healthcare entity of type MeasurementValue, % is a healthcare entity of type MeasurementUnit, left main disease is a healthcare entity of type Diagnosis, family is a healthcare entity of type FamilyRelation, coronary artery disease is a healthcare entity of type Diagnosis, brother is a healthcare entity of type FamilyRelation, dying is a healthcare entity of type Diagnosis, 52 is a healthcare entity of type Age, myocardial infarction is a healthcare entity of type Diagnosis, brother is a healthcare entity of type FamilyRelation, coronary artery bypass grafting is a healthcare entity of type TreatmentName, stress echocardiogram is a healthcare entity of type ExaminationName, July, 2001 is a healthcare entity of type Time, wall motion abnormalities is a healthcare entity of type SymptomOrSign, body habitus is a healthcare entity of type SymptomOrSign, six minutes is a healthcare entity of type Time, minimal is a healthcare entity of type ConditionQualifier, ST depressions in the anterior lateral leads is a healthcare entity of type SymptomOrSign, fatigue is a healthcare entity of type SymptomOrSign, wrist pain is a healthcare entity of type SymptomOrSign, anginal is a healthcare entity of type SymptomOrSign, increased is a healthcare entity of type Course, symptoms is a healthcare entity of type SymptomOrSign, family is a healthcare entity of type FamilyRelation, left main disease is a healthcare entity of type Diagnosis, occasional is a healthcare entity of type Course, RCA is a healthcare entity of type BodyStructure, revascularization is a healthcare entity of type TreatmentName, open heart surgery is a healthcare entity of type TreatmentName
-Action:
-\`\`\`
-{
-  "action": "Final Answer",
-  "action_input": "The patient's diagnoses include progressive angina, total occlusion of the RCA, 50% left main disease, coronary artery disease, myocardial infarction, and a family history of coronary artery disease."
-}
+    <ParamField body="language" type="str | None">
+        Optional default language for the input text.
+    </ParamField>
 
+    <ParamField body="country_hint" type="str | None">
+        Optional country hint used by the underlying Text Analytics client.
+    </ParamField>
+</Accordion>
 
+### AzureAISpeechToTextTool
 
-> Finished chain.
+`AzureAISpeechToTextTool` transcribes audio files to text using the Azure AI Speech service. It supports a wide range of audio formats and can handle both local files and remote audio URLs.
+
+The tool automatically detects whether the input is a local file path or a remote URL, and handles downloading remote files as needed. It is useful for workflows where the agent needs to convert spoken audio into written text.
+
+```python
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.tools import AzureAISpeechToTextTool
+
+tool = AzureAISpeechToTextTool(
+    credential=DefaultAzureCredential(),
+    endpoint="https://eastus.api.cognitive.microsoft.com/",
+    speech_language="en-US",
+)
+
+result = tool.invoke("path/to/audio.wav")
+print(result)
 ```
 
-```text
-{'input': "\nThe patient is a 54-year-old gentleman with a history of progressive angina over the past several months.\nThe patient had a cardiac catheterization in July of this year revealing total occlusion of the RCA and 50% left main disease ,\nwith a strong family history of coronary artery disease with a brother dying at the age of 52 from a myocardial infarction and\nanother brother who is status post coronary artery bypass grafting. The patient had a stress echocardiogram done on July , 2001 ,\nwhich showed no wall motion abnormalities , but this was a difficult study due to body habitus. The patient went for six minutes with\nminimal ST depressions in the anterior lateral leads , thought due to fatigue and wrist pain , his anginal equivalent. Due to the patient's\nincreased symptoms and family history and history left main disease with total occasional of his RCA was referred for revascularization with open heart surgery.\n\nList all the diagnoses.\n",
- 'output': "The patient's diagnoses include progressive angina, total occlusion of the RCA, 50% left main disease, coronary artery disease, myocardial infarction, and a family history of coronary artery disease."}
+<Accordion title="Configuration options">
+    <ParamField body="query" type="str">
+        Path to a local audio file or a URL pointing to an audio file. Supports WAV, MP3, OGG, FLAC, and other common audio formats.
+    </ParamField>
+
+    <ParamField body="speech_language" type="str" default="en-US">
+        The language of the speech in BCP-47 format (e.g., `"en-US"`, `"es-ES"`, `"fr-FR"`). Defaults to `"en-US"`.
+    </ParamField>
+
+    <ParamField body="endpoint" type="str">
+        The Azure AI Speech service endpoint. For example, `https://eastus.api.cognitive.microsoft.com/`. Can be set via `AZURE_AI_INFERENCE_ENDPOINT` environment variable or resolved from `AZURE_AI_PROJECT_ENDPOINT`.
+    </ParamField>
+
+    <ParamField body="credential" type="str | TokenCredential">
+        The credentials to use. Either a subscription key string or any `TokenCredential` such as `DefaultAzureCredential`.
+    </ParamField>
+</Accordion>
+
+### AzureAITextToSpeechTool
+
+`AzureAITextToSpeechTool` converts text to spoken audio using the Azure AI Speech service. It synthesizes the provided text and returns a local WAV audio file path containing the synthesized speech.
+
+The tool supports multi-language synthesis with BCP-47 language codes and is useful for workflows where the agent needs to generate audio narration, voice-over content, or audio notifications from text.
+
+```python
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.tools import AzureAITextToSpeechTool
+
+tool = AzureAITextToSpeechTool(
+    credential=DefaultAzureCredential(),
+    endpoint="https://eastus.api.cognitive.microsoft.com/",
+    speech_language="en-US",
+)
+
+result = tool.invoke("Hello, this is a test of text to speech synthesis.")
+print(result)  # Returns path to generated WAV file
+```
+
+<Accordion title="Configuration options">
+    <ParamField body="query" type="str">
+        The text to convert to speech.
+    </ParamField>
+
+    <ParamField body="speech_language" type="str" default="en-US">
+        The language of the synthesized speech in BCP-47 format (e.g., `"en-US"`, `"es-ES"`, `"fr-FR"`). Defaults to `"en-US"`.
+    </ParamField>
+
+    <ParamField body="endpoint" type="str">
+        The Azure AI Speech service endpoint. For example, `https://eastus.api.cognitive.microsoft.com/`. Can be set via `AZURE_AI_INFERENCE_ENDPOINT` environment variable or resolved from `AZURE_AI_PROJECT_ENDPOINT`.
+    </ParamField>
+
+    <ParamField body="credential" type="str | TokenCredential">
+        The credentials to use. Either a subscription key string or any `TokenCredential` such as `DefaultAzureCredential`.
+    </ParamField>
+</Accordion>
+
+## API reference
+
+```python
+from langchain_azure_ai.tools import (
+    AzureAIServicesToolkit,
+    AzureAIContentUnderstandingTool,
+    AzureAIDocumentIntelligenceTool,
+    AzureAIImageAnalysisTool,
+    AzureAISpeechToTextTool,
+    AzureAITextToSpeechTool,
+    AzureAITextAnalyticsHealthTool,
+)
 ```

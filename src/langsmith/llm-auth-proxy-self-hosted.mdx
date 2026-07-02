@@ -18,6 +18,8 @@ Use the LLM auth proxy when you need to:
 - Inject provider-specific API keys or auth headers without exposing them to end users.
 - Transform request or response bodies (for example, converting between OpenAI format and a custom gateway format).
 
+For OAuth2 `client_credentials` specifically, [OAuth client credentials on a model configuration](/langsmith/model-configurations#oauth-client-credentials) is a per-configuration self-service alternative that workspace admins can set up without standing up the auth proxy. Routing is mutually exclusive at the configuration level—a configuration with OAuth enabled does not pass through the auth proxy.
+
 ## How it works
 
 Each request from LangSmith passes through the following steps in the proxy:
@@ -48,8 +50,8 @@ Both the `ext_authz` service and the transformer are customer-deployed component
 - The URL of your upstream LLM provider or gateway (the destination the proxy will forward requests to)
 
 <Note>
-The auth proxy currently supports the [Playground](/langsmith/prompt-engineering-concepts), [Evals](/langsmith/evaluation), [Fleet](/langsmith/fleet), [Polly](/langsmith/polly), and [Insights](/langsmith/insights) features.
-Playground and Evals are available in v0.13.33+. Polly and Insights are available in v0.13.39+.
+The auth proxy currently supports the [Playground](/langsmith/prompt-engineering-concepts), [Evals](/langsmith/evaluation), [Fleet](/langsmith/fleet), [Chat](/langsmith/chat), and [Insights](/langsmith/insights) features.
+Playground and Evals are available in v0.13.33+. Chat and Insights are available in v0.13.39+.
 </Note>
 
 ## 1. Configure JWT signing (self-hosted LangSmith only)
@@ -124,7 +126,7 @@ This setting has no effect on Personal organizations.
 </Tab>
 <Tab title="SaaS">
 
-Contact [LangChain support](mailto:support@langchain.dev) to enable LLM Auth Proxy for your organization.
+Contact technical support via the [Support Portal](https://support.langchain.com) to enable LLM Auth Proxy for your organization.
 
 </Tab>
 </Tabs>
@@ -680,6 +682,32 @@ authProxy:
       - ".internal.corp"
 ```
 
+### Deploy without a public ingress
+
+When the auth proxy does not have a public ingress and is only reachable through internal Kubernetes networking, LangSmith services must be configured to allow outbound requests to private IP addresses. Without these settings, the built-in SSRF protection blocks requests to private IPs.
+
+Add the following environment variables to your [LangSmith `values.yaml`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml):
+
+- **`SSRF_ALLOW_K8S_INTERNAL`** — required on all services that make LLM calls. Add this to `commonEnv` for services that support it or to each service's `extraEnv` for services that do not support `commonEnv`.
+- **`SSRF_ALLOW_PRIVATE_IPS_PLAYGROUND`** — required on the `playground` service only. Add this to `playground.deployment.extraEnv`.
+
+```yaml
+# Allow all LLM-calling services to reach the auth proxy on private IPs
+commonEnv:
+  SSRF_ALLOW_K8S_INTERNAL: "true"
+
+# Allow the playground service to reach the auth proxy on private IPs
+playground:
+  deployment:
+    extraEnv:
+      - name: SSRF_ALLOW_K8S_INTERNAL
+        value: "true"
+      - name: SSRF_ALLOW_PRIVATE_IPS_PLAYGROUND
+        value: "true"
+```
+
+If `commonEnv` does not apply to all required services in your deployment, set `SSRF_ALLOW_K8S_INTERNAL` individually via `extraEnv` on each service that makes LLM calls.
+
 ### Other options
 
 For ingress, autoscaling, resource limits, and other configuration options, see the [Helm chart README](https://github.com/langchain-ai/helm/tree/main/charts/langsmith-auth-proxy#readme).
@@ -773,7 +801,15 @@ Yes. Multiple organizations can point to the same auth proxy instance via their 
 
 <Accordion title="Can the LangSmith to auth proxy connection use HTTP instead of HTTPS?">
 Yes, but only in self-hosted, and we generally recommend placing the auth proxy behind a dedicated ingress so communication uses HTTPS. To allow HTTP, add `LLM_AUTH_PROXY_ACCEPT_HTTP` to `commonEnv` and `playground.deployment.extraEnv` in your [LangSmith `values.yaml`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml).
-To enable HTTP traffic to the auth proxy for [Polly and Insights](/langsmith/deploy-self-hosted-full-platform#enable-fleet-insights-and-polly), set this environment variable in the respective `extraEnv` sections: `config.polly.agent.extraEnv` and `config.insights.agent.extraEnv`.
+To enable HTTP traffic to the auth proxy for [Chat and Insights](/langsmith/deploy-self-hosted-full-platform#enable-fleet-insights-and-chat), set this environment variable in the respective `extraEnv` sections: `config.polly.agent.extraEnv` (for Chat, which was formerly called Polly) and `config.insights.agent.extraEnv`.
+</Accordion>
+
+<Accordion title="Does the auth proxy work without a public ingress?">
+Yes. When the auth proxy is only reachable through internal Kubernetes networking (no public ingress), add `SSRF_ALLOW_K8S_INTERNAL` to all services that make LLM calls and both `SSRF_ALLOW_K8S_INTERNAL` and `SSRF_ALLOW_PRIVATE_IPS_PLAYGROUND` to the `playground` service. See [Deploy without a public ingress](#deploy-without-a-public-ingress) for configuration details.
+</Accordion>
+
+<Accordion title="When should I use the LLM auth proxy versus OAuth client credentials on a model configuration?">
+Use the LLM auth proxy when authentication needs custom logic beyond OAuth2 `client_credentials`. For example, exchanging the LangSmith JWT for a provider-specific token, injecting GCP or AWS identity, or rewriting request and response bodies. Use [OAuth client credentials on a model configuration](/langsmith/model-configurations#oauth-client-credentials) when each workspace or team needs needs self-service control over its own OAuth2 `client_credentials` against a custom gateway. Both can coexist within the same organization; routing is per-configuration.
 </Accordion>
 
 ## Helm chart reference

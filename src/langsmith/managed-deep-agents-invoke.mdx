@@ -1,0 +1,413 @@
+---
+title: Run a Managed Deep Agent
+sidebarTitle: Run an agent
+description: Create threads and stream runs for a Managed Deep Agent.
+---
+
+Running a [Managed Deep Agent](/langsmith/managed-deep-agents-overview) involves creating a thread, starting a run, and streaming output. [Deploy the agent](/langsmith/managed-deep-agents-deploy) first, then invoke it with the SDKs or REST API.
+
+For a shorter end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart).
+
+<Note>
+Managed Deep Agents is in **private beta**, available on [LangSmith Cloud](/langsmith/cloud) in the US region only. [Join the waitlist](https://www.langchain.com/langsmith-managed-deep-agents-waitlist) to request access.
+</Note>
+
+## Set up
+
+Install the SDK for your runtime:
+
+<CodeGroup>
+
+```bash Python
+uv add managed-deepagents
+
+# Or with pip:
+pip install managed-deepagents
+```
+
+```bash TypeScript
+npm install @langchain/managed-deepagents
+```
+
+</CodeGroup>
+
+Set request defaults:
+
+```bash
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+export LANGSMITH_API_URL="https://api.smith.langchain.com"
+export DEEPAGENTS_BASE_URL="$LANGSMITH_API_URL/v1/deepagents"
+```
+
+The SDKs read `LANGSMITH_API_KEY` by default. REST requests require the `X-Api-Key` header:
+
+```txt
+X-Api-Key: <LANGSMITH_API_KEY>
+```
+
+## Find the agent ID
+
+Find the agent ID with the CLI, an SDK, or the REST API.
+
+<Tabs>
+  <Tab title="CLI">
+
+Requires `deepagents-cli`. See [Install a client](/langsmith/managed-deep-agents-quickstart#install-a-client).
+
+List agents:
+
+```bash
+deepagents agents list
+```
+
+Inspect one agent:
+
+```bash
+deepagents agents get <agent_id>
+```
+
+  </Tab>
+  <Tab title="SDK">
+
+List agents and read the `id` of the agent you want:
+
+<CodeGroup>
+
+```python Python
+from managed_deepagents import Client
+
+with Client() as client:
+    agents = client.agents.list()
+
+print("Existing agents:")
+for item in agents["items"]:
+    print(f"  {item['id']}  {item['name']}")
+```
+
+```ts TypeScript
+import { Client } from "@langchain/managed-deepagents";
+
+const client = new Client();
+
+const agents = await client.agents.list();
+
+console.log("Existing agents:");
+for (const item of agents.items ?? []) {
+  console.log(`  ${item.id}  ${item.name}`);
+}
+```
+
+</CodeGroup>
+
+Inspect one agent:
+
+<CodeGroup>
+
+```python Python
+import json
+
+from managed_deepagents import Client
+
+agent_id = "<agent_id>"
+
+with Client() as client:
+    # include_files=True returns file and skill contents, not just metadata.
+    agent = client.agents.get(agent_id, include_files=True)
+
+print(json.dumps(agent, indent=2))
+```
+
+```ts TypeScript
+import { Client } from "@langchain/managed-deepagents";
+
+const client = new Client();
+
+const agentId = "<agent_id>";
+
+// includeFiles: true returns file and skill contents, not just metadata.
+const agent = await client.agents.get(agentId, { includeFiles: true });
+
+console.log(JSON.stringify(agent, null, 2));
+```
+
+</CodeGroup>
+
+  </Tab>
+  <Tab title="API">
+
+List agents with `GET /v1/deepagents/agents`, then read the `id` of the agent you want:
+
+```bash
+curl --request GET \
+  --url "$DEEPAGENTS_BASE_URL/agents" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY"
+```
+
+To inspect a single agent, call [`GET /v1/deepagents/agents/{agent_id}`](/langsmith/managed-deep-agents-api/agents/get-agent).
+
+  </Tab>
+</Tabs>
+
+## Create threads and stream runs
+
+You can create threads and stream runs with the SDK or REST API. Currently, there is no CLI command for running Managed Deep Agents.
+
+After completing [Set up](#set-up), export the agent ID you retrieved in [Find the agent ID](#find-the-agent-id):
+
+```bash
+export AGENT_ID="<agent_id>"
+```
+
+The examples below reuse these variables:
+
+<Tabs>
+  <Tab title="Python SDK">
+
+```python
+import os
+
+from managed_deepagents import Client
+
+agent_id = os.environ["AGENT_ID"]
+client = Client()
+```
+
+  </Tab>
+  <Tab title="TypeScript SDK">
+
+```ts
+import { Client } from "@langchain/managed-deepagents";
+
+const agentId = process.env.AGENT_ID!;
+const client = new Client();
+```
+
+  </Tab>
+  <Tab title="cURL">
+
+```bash
+# The cURL examples below reuse the shell variables exported above.
+# No additional setup is required.
+```
+
+  </Tab>
+</Tabs>
+
+### Create a thread
+
+Create a thread before running the agent. Threads preserve conversation and execution state for long-running work.
+
+The `options` object is optional, and both fields default to `false`. Set `test_run` to `true` to mark the thread as a test run that is filtered out of usage and analytics. By default, `skip_memory_write_protection` lets the runtime raise a human-in-the-loop interrupt before the agent writes to long-term memory, so you can approve or reject the write. Set it to `true` to let memory writes proceed immediately, which is useful for headless runs where no human is available to approve the write. For the full field reference, see the [API reference](/langsmith/managed-deep-agents-api-overview).
+
+<Tabs>
+  <Tab title="Python SDK">
+
+```python
+thread = client.threads.create(
+    agent_id=agent_id,
+    options={
+        "test_run": False,
+        "skip_memory_write_protection": False,
+    },
+)
+thread_id = thread["id"]
+print(f"Thread ID: {thread_id}")
+```
+
+  </Tab>
+  <Tab title="TypeScript SDK">
+
+```ts
+const thread = await client.threads.create({
+  agent_id: agentId,
+  options: {
+    test_run: false,
+    skip_memory_write_protection: false,
+  },
+});
+const threadId = thread.id;
+console.log(`Thread ID: ${threadId}`);
+```
+
+  </Tab>
+  <Tab title="cURL">
+
+```bash
+curl --request POST \
+  --url "$DEEPAGENTS_BASE_URL/threads" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY" \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "agent_id": "'"$AGENT_ID"'",
+    "options": {
+      "test_run": false,
+      "skip_memory_write_protection": false
+    }
+  }'
+```
+
+Set the returned thread ID before streaming:
+
+```bash
+export THREAD_ID="<thread_id>"
+```
+
+  </Tab>
+</Tabs>
+
+### Stream a run from a thread
+
+Start work on the thread and stream the result:
+
+<Tabs>
+  <Tab title="Python SDK">
+
+```python
+for event in client.threads.stream(
+    thread_id,
+    agent_id=agent_id,
+    messages=[
+        {
+            "role": "user",
+            "content": "Research recent approaches to agent memory and summarize the main trade-offs.",
+        }
+    ],
+    stream_mode=["values", "updates", "messages-tuple"],
+    stream_subgraphs=True,
+    user_timezone="America/Los_Angeles",
+):
+    print(event.event, event.data)
+```
+
+  </Tab>
+  <Tab title="TypeScript SDK">
+
+```ts
+const langGraphClient = client.getLangGraphClient({ agentId });
+const stream = langGraphClient.runs.stream(threadId, agentId, {
+  input: {
+    messages: [
+      {
+        role: "user",
+        content:
+          "Research recent approaches to agent memory and summarize the main trade-offs.",
+      },
+    ],
+  },
+  streamMode: ["values", "updates", "messages-tuple"],
+  streamSubgraphs: true,
+});
+
+for await (const event of stream) {
+  console.log(event.event, event.data);
+}
+```
+
+  </Tab>
+  <Tab title="cURL">
+
+```bash
+curl --request POST \
+  --url "$DEEPAGENTS_BASE_URL/threads/$THREAD_ID/runs/stream" \
+  --header "X-Api-Key: $LANGSMITH_API_KEY" \
+  --header 'Accept: text/event-stream' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "agent_id": "'"$AGENT_ID"'",
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Research recent approaches to agent memory and summarize the main trade-offs."
+        }
+      ]
+    },
+    "stream_mode": ["values", "updates", "messages-tuple"],
+    "stream_subgraphs": true,
+    "user_timezone": "America/Los_Angeles"
+  }'
+```
+
+  </Tab>
+</Tabs>
+
+The endpoint streams Server-Sent Events (`text/event-stream`). With the stream mode (`stream_mode`, `streamMode`) shown, you receive incremental `updates` and `messages-tuple` events as the agent works, followed by a final `values` event with the run's full state, including the agent's response. Set `stream_subgraphs` (`streamSubgraphs`) to `true` to also stream events from subgraphs, such as subagents. The optional `user_timezone` sets the caller's IANA timezone so the agent reasons about dates in local time, defaulting to the agent's configured timezone or `UTC`.
+
+<Note>
+The Python SDK and cURL examples accept a per-run `user_timezone`. The TypeScript example streams through the LangGraph client adapter, which has no per-run timezone field, so the agent uses its configured timezone. To set the timezone per run from TypeScript, use the REST endpoint shown in the cURL tab and pass `user_timezone` in the request body.
+</Note>
+
+The cURL example prints raw SSE lines. Parse its `data:` payloads as JSON to drive a UI. The Python and TypeScript SDK examples yield decoded events with `event.event` and `event.data`.
+
+Choose a stream mode:
+
+| Stream mode | Use for |
+| --- | --- |
+| `values` | Full state snapshots after steps. |
+| `updates` | Incremental state updates as the agent works. |
+| `messages-tuple` | Token-level message output for chat UIs. Emits a `messages` event whose payload is a `[chunk, metadata]` tuple. |
+
+### Stream with React `useStream`
+
+The previous Python SDK and TypeScript SDK examples stream route-level events. The following React `useStream` example exposes LangGraph projections such as `stream.messages`, `stream.values`, and output state for chat UIs.
+
+For React applications, use the TypeScript SDK's LangGraph client adapter with `@langchain/react`:
+
+<Warning>
+Do not ship your LangSmith API key to the browser. In production React apps, route requests through your backend with a custom `fetch` instead of passing `apiKey` directly.
+</Warning>
+
+```tsx
+import { Client } from "@langchain/managed-deepagents";
+import { useStream } from "@langchain/react";
+
+const agentId = "<agent_id>";
+
+const managedDeepAgents = new Client();
+
+const client = managedDeepAgents.getLangGraphClient({ agentId });
+
+export function ManagedDeepAgentStream() {
+  const stream = useStream({
+    client,
+    assistantId: agentId
+  });
+
+  return (
+    <section>
+      <button
+        type="button"
+        disabled={stream.isLoading}
+        onClick={() => {
+          void stream.submit({
+            messages: [
+              { role: "user", content: "Write a short status update." },
+            ],
+          });
+        }}
+      >
+        Run agent
+      </button>
+
+      {stream.messages.map((message, index) => (
+        <p key={message.id ?? index}>{String(message.content)}</p>
+      ))}
+    </section>
+  );
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="SDK reference" icon="book" href="/langsmith/managed-deep-agents-sdk">
+    SDK configuration details for the Python and TypeScript clients.
+  </Card>
+  <Card title="API reference" icon="api" href="/langsmith/managed-deep-agents-api-overview">
+    Route-level request and response details.
+  </Card>
+</CardGroup>
+
+<Note>
+If a request fails, confirm that your API key is valid, that the workspace has [private beta access](https://www.langchain.com/langsmith-managed-deep-agents-waitlist), and that you are calling the supported region. For response status codes and error shapes, see the [API reference](/langsmith/managed-deep-agents-api-overview).
+</Note>
