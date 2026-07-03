@@ -56,7 +56,7 @@ DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
     ("OpenAI", 'model="openai:gpt-5.5"'),
     ("Anthropic", 'model="anthropic:claude-sonnet-4-6"'),
     ("OpenRouter", 'model="openrouter:z-ai/glm-5.2"'),
-    ("Fireworks", 'model="fireworks:accounts/fireworks/models/kimi-k2p7-code"'),
+    ("Fireworks", 'model="fireworks:accounts/fireworks/models/glm-5p2"'),
     ("Baseten", 'model="baseten:zai-org/GLM-5.2"'),
     ("Ollama", 'model="ollama:north-mini-code-1.0"'),
 ]
@@ -66,7 +66,7 @@ DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
     ("OpenAI", 'model: "openai:gpt-5.5"'),
     ("Anthropic", 'model: "anthropic:claude-sonnet-4-6"'),
     ("OpenRouter", 'model: "openrouter:openrouter:z-ai/glm-5.2"'),
-    ("Fireworks", 'model: "fireworks:accounts/fireworks/models/kimi-k2p7-code"'),
+    ("Fireworks", 'model: "fireworks:accounts/fireworks/models/glm-5p2"'),
     ("Baseten", 'model: "baseten:zai-org/GLM-5.2"'),
     ("Ollama", 'model: "ollama:north-mini-code-1.0"'),
 ]
