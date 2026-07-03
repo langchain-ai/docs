@@ -1,0 +1,109 @@
+---
+title: Command reference
+sidebarTitle: CLI reference
+description: Deep Agents Code command-line flags and management subcommands
+---
+
+Example usage:
+
+```bash
+# Use a specific agent configuration
+dcode --agent mybot
+
+# Use a specific model (provider:model format or auto-detect)
+dcode --model anthropic:claude-opus-4-8
+dcode --model gpt-5.5
+
+# Auto-approve tool usage (skip human-in-the-loop prompts)
+dcode -y
+
+# list directory contents, then summarize directory as first prompt—the command runs first, then the prompt is submitted
+# the prompt does NOT have access to the command output
+dcode --startup-cmd "ls -la" -m "Summarize what's in this directory"
+
+# Non-interactive with startup command: show git status before the task runs
+# the task does NOT have access to the command output
+dcode --startup-cmd "git diff --stat" -n "Review these changes"
+```
+
+## Command-line options
+
+| Option                 | Description                                                 |
+|------------------------|-------------------------------------------------------------|
+| `-a`, `--agent NAME`   | Use named agent with separate memory. Overrides `[agents].recent` in `config.toml`. Default: `agent` (or the most recently used agent if `[agents].recent` is set) |
+| `-M`, `--model MODEL`  | Use a specific model (`provider:model`)                    |
+| `--model-params JSON`  | Extra kwargs to pass to the model as a JSON string (e.g., `'{"temperature": 0.7}'`) |
+| `--max-retries N`      | Override the max retries for transient model errors |
+| `--default-model [MODEL]` | Set the [default model](/oss/deepagents/code/providers#set-a-default-model) (omit `MODEL` to view the current default) |
+| `--clear-default-model` | Clear the [default model](/oss/deepagents/code/providers#set-a-default-model) |
+| `-r`, `--resume [ID]`  | Resume a session: `-r` for most recent, `-r <ID>` for a specific thread |
+| `-m`, `--message TEXT` | Initial prompt to auto-submit when the session starts (interactive mode) |
+| `--skill NAME`         | Invoke a skill at startup |
+| `--startup-cmd CMD`    | Shell command to run at startup, before the first prompt. Output is rendered in the transcript for your reference but is **not** added to the agent's message history. To hand command output to the agent, pipe it in via stdin instead (e.g., `git diff \| dcode -n "Review these changes"`). Non-zero exits and timeouts warn but do not abort; non-interactive mode applies a 60s timeout. |
+| `--rubric TEXT\|@PATH` | Acceptance criteria for rubric grading. Accepts literal text or `@path` to read a file. Requires `-n` or piped stdin |
+| `--rubric-model MODEL` | Model the rubric grader uses. Defaults to the main agent model. Requires `-n` or piped stdin |
+| `--rubric-max-iterations N` | Grader iterations per rubric attempt before stopping. Requires `-n` or piped stdin |
+| `-n`, `--non-interactive TEXT` | Run a single task non-interactively and exit. Shell is disabled unless `--shell-allow-list` is set |
+| `--max-turns N`        | Cap agentic turns in non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Non-interactive mode and piping](/oss/deepagents/code/quickstart#non-interactive-mode-and-piping) |
+| `--timeout SECONDS`    | Hard wall-clock timeout for non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Non-interactive mode and piping](/oss/deepagents/code/quickstart#non-interactive-mode-and-piping) |
+| `-q`, `--quiet`        | Clean output for piping—only the agent's response goes to stdout. Requires `-n` or piped stdin |
+| `--no-stream`          | Buffer the full response and write to stdout at once instead of streaming. Requires `-n` or piped stdin |
+| `--stdin`              | Read input from stdin explicitly instead of auto-detection. Errors clearly when stdin is unavailable or is a TTY |
+| `-y`, `--auto-approve` | Auto-approve all tool calls without prompting (disables human-in-the-loop). Toggle with `Shift+Tab` during an interactive session |
+| `-S`, `--shell-allow-list LIST` | Comma-separated shell commands to auto-approve, `'recommended'` for safe defaults, or `'all'` to allow any command. Applies to both `-n` and interactive modes |
+| `--json`               | Emit machine-readable JSON from management subcommands (`agents`, `threads`, `skills`, `update`). Output envelope: `{"schema_version": 1, "command": "...", "data": ...}` |
+| `--sandbox TYPE`       | Remote sandbox for code execution: `none` (default), `langsmith`, `agentcore`, `daytona`, `modal`, `runloop`, `e2b`. LangSmith is included; AgentCore, Daytona, Modal, and Runloop require extras; E2B requires `langchain-e2b` installed as a package |
+| `--sandbox-id ID`      | Reuse an existing sandbox (skips creation and cleanup)      |
+| `--sandbox-snapshot-name NAME` | Sandbox snapshot name to use or create (LangSmith only) |
+| `--sandbox-setup PATH` | Path to setup script to run in sandbox after creation       |
+| `--mcp-config PATH`    | Add an explicit MCP config as the highest-precedence source (merged with auto-discovered configs) |
+| `--no-mcp`             | Disable all MCP tool loading                                |
+| `--trust-project-mcp`  | Trust project-level MCP configs with stdio servers (skip approval prompt) |
+| `--interpreter`        | Enable the JS interpreter (`js_eval`) middleware on the main agent when it has been disabled in config. `js_eval` is enabled by default. |
+| `--interpreter-tools VALUE` | PTC allowlist for `js_eval`: `safe`, `all`, or a comma-separated list of tool names. Default: no PTC (pure REPL) |
+| `--profile-override JSON` | Override model profile fields as a JSON string (e.g., `'{"max_input_tokens": 4096}'`). Merged on top of config file profile overrides |
+| `--acp`                | Run as an ACP server over stdio instead of launching the interactive UI |
+| `--update`             | Check for and install updates, then exit                    |
+| `--auto-update`        | Toggle automatic updates on or off, then exit               |
+| `--install NAME`       | Install an optional extra (e.g., `quickjs`, `daytona`, `fireworks`), then exit. Add `--package` to treat `NAME` as a custom provider package installed via `uv --with` rather than an extra (see [arbitrary providers](/oss/deepagents/code/config-file#arbitrary-providers)), and `--yes` to skip confirmation prompts |
+| `-v`, `--version`      | Display version                                             |
+| `-h`, `--help`         | Show help                                                   |
+
+## CLI commands
+
+| Command                              | Description                            |
+|--------------------------------------|----------------------------------------|
+| `dcode help`                    | Show help                              |
+| `dcode agents list`             | List all agents (alias: `ls`)          |
+| `dcode agents reset --agent NAME` | Clear agent memory and reset to default. Supports `--dry-run` |
+| `dcode agents reset --agent NAME --target SOURCE` | Copy memory from another agent |
+| `dcode update`                  | Check for and install Deep Agents Code updates |
+| `dcode doctor`                  | Run diagnostics without launching a session |
+| `dcode skills list [--project]`           | List all skills (alias: `ls`) |
+| `dcode skills create NAME [--project]`    | Create a new skill with template `SKILL.md`. Idempotent—re-creating an existing skill prints an informational message instead of an error |
+| `dcode skills info NAME [--project]`      | Show detailed information about a skill |
+| `dcode skills delete NAME [--project] [-f]` | Delete a skill and its contents. Supports `--dry-run` |
+| `dcode threads list [--agent NAME] [--limit N]` | List sessions (alias: `ls`). Default limit: 20. `-n` is a short flag for `--limit`. Additional flags: `--sort {created,updated}`, `--branch TEXT` (filter by git branch), `--cwd [PATH]` (filter by working directory; bare flag uses current directory), `-v`/`--verbose` (show all columns including branch, created time, and initial prompt), `-r`/`--relative` (relative timestamps) |
+| `dcode threads delete ID`       | Delete a session. Supports `--dry-run` |
+| `dcode mcp login NAME [--mcp-config PATH]` | Run the OAuth login flow for an MCP server marked `auth: "oauth"`. See [MCP tools](/oss/deepagents/code/mcp-tools#oauth-login) |
+| `dcode mcp config`              | Show MCP config discovery paths        |
+| `dcode config show`             | Show every config option's effective value and the source it resolves from. See [Inspect configuration](/oss/deepagents/code/configuration#inspect-configuration) |
+| `dcode config list`             | List all available config options with their type, default, and where each can be set (alias: `ls`) |
+| `dcode config get KEY`          | Show the effective value and source for one option (e.g. `interpreter.memory_limit_mb`) |
+| `dcode config path`             | Show config file locations and whether each exists |
+| `dcode auth list`               | List known providers and where each credential resolves from |
+| `dcode auth status <provider>`  | Show the credential source for one provider |
+| `dcode auth set <provider>`     | Store a provider credential from stdin or `--from-env` |
+| `dcode auth remove <provider>`  | Remove a stored provider credential |
+| `dcode auth path`               | Show the credential store path |
+
+All management subcommands support `--json` for machine-readable output. See [command-line options](#command-line-options) for details.
+
+Destructive commands (`agents reset`, `skills delete`, `threads delete`) support `--dry-run` to preview what would happen without making changes. In JSON mode, `--dry-run` returns the same envelope with a `dry_run: true` field.
+
+## See also
+
+- [Quickstart](/oss/deepagents/code/quickstart)
+- [Configuration](/oss/deepagents/code/configuration)
+- [Config file](/oss/deepagents/code/config-file)
+- [Provider credentials](/oss/deepagents/code/credentials)
