@@ -1,7 +1,7 @@
 ---
-title: Build a RAG agent with Deep Agents
-sidebarTitle: RAG agent
-description: Build a documentation Q&A agent that retrieves LangChain docs into a vector store, offloads chunks to the filesystem, and delegates analysis to subagents
+title: RAG with Deep Agents
+sidebarTitle: RAG
+description: RAG patterns for Deep Agents, including skills-guided retrieval, rubric grading, and a tutorial that indexes LangChain docs, offloads chunks to the filesystem, and delegates analysis to subagents
 ---
 
 import EmbeddingsTabsPy from '/snippets/embeddings-tabs-py.mdx';
@@ -34,7 +34,26 @@ One of the most powerful LLM-based applications are sophisticated question-answe
 This might be private data, recent data, or data that is not part of the training data the LLM is trained on.
 These applications use a technique known as Retrieval Augmented Generation, or [RAG](/oss/langchain/retrieval/).
 
-This guide shows how to build a Retrieval Augmented Generation (RAG) application with [Deep Agents](/oss/deepagents). You index a subset of [docs.langchain.com](https://docs.langchain.com), retrieve relevant chunks at query time, offload them to the agent [filesystem](/oss/deepagents/backends), and delegate analysis to [subagents](/oss/deepagents/subagents) so the orchestrator context stays clean.
+[Deep Agents](/oss/deepagents/overview) gives you primitives for RAG: custom retrieval tools, a [filesystem backend](/oss/deepagents/backends), [subagents](/oss/deepagents/subagents), [skills](/oss/deepagents/skills), and [grading rubrics](/oss/deepagents/rubric). You can combine them in different ways depending on your corpus size, latency requirements, and how strictly answers must be grounded in source data.
+
+This guide introduces several RAG patterns and walks through one end-to-end example: a documentation Q&A agent that indexes a subset of [docs.langchain.com](https://docs.langchain.com), retrieves relevant chunks at query time, offloads them to the filesystem, and delegates analysis to subagents so the orchestrator context stays clean.
+
+## RAG patterns
+
+When you build RAG with Deep Agents, you orchestrate retrieval, analysis, and synthesis in several ways:
+
+- **Skills-guided retrieval**: The user asks a question. The agent loads a relevant skill that describes how to search your corpus (which index to use, query formulation, citation format). The agent calls your retrieval tool following that guidance, then synthesizes an answer.
+- **Rubric-checked grounding**: The user asks a question. The agent retrieves evidence and drafts an answer. A grader sub-agent, configured with `RubricMiddleware`, evaluates whether the response is grounded in the retrieved source material. The agent revises until the rubric passes or an iteration cap is reached.
+- **Todo-driven investigation**: The user asks a question. The agent uses the [planning tool](/oss/deepagents/overview#task-planning) to create a todo list of documentation pages or search queries to investigate. It retrieves results for each item, then synthesizes a response from the collected evidence.
+- **Retrieve, offload, and delegate**: The user asks a question. The agent retrieves matching chunks and writes them to the filesystem backend rather than keeping full text in the orchestrator context. Subagents read, search, and summarize individual files in parallel. For large documents, the agent can paginate through files with built-in search tools or run a [code interpreter](/oss/deepagents/code/overview) to produce tables, timelines, or visuals from source data.
+
+:::python
+<Note>
+Grading rubrics require `deepagents>=0.6.5` and are currently in [beta](/langsmith/release-stages).
+</Note>
+:::
+
+This tutorial implements the **retrieve, offload, and delegate** pattern. The same primitives appear in the other patterns: skills often wrap retrieval workflows, rubrics can grade any of these flows, and todo planning helps break complex questions into focused searches.
 
 ## Why retrieval matters
 
@@ -58,7 +77,7 @@ Pass that question to a [Deep Agent](/oss/deepagents/overview) with no custom to
 
 Without retrieval, the agent cannot look up current LangChain documentation. Responses tend to be generic, may omit guidance such as [subagent streaming](/oss/deepagents/frontend/subagent-streaming), or include outdated information.
 
-The rest of this tutorial builds an agent that indexes LangChain documentation, retrieves evidence with a vector search tool, analyzes each chunk in parallel subagents, and answers the **same question** in [Run the agent](#run-the-agent) with citations to the docs.
+The example in this tutorial indexes LangChain documentation, retrieves evidence with a vector search tool, analyzes each chunk in parallel subagents, and answers a question with citations to the docs.
 
 ### What you will build
 
@@ -604,16 +623,17 @@ Save as `agent.ts` and run with `npx tsx agent.ts`:
 
 :::python
 
-Now that you have implemented a simple RAG application via @[`create_deep_agent`], you can incorporate new features and go deeper:
+You implemented one RAG pattern with @[`create_deep_agent`]. Combine it with other Deep Agents capabilities or try a different pattern from [RAG patterns](#rag-patterns):
 
 :::
 :::js
 
-Now that you have implemented a simple RAG application via @[`createDeepAgent`], you can incorporate new features and go deeper:
+You implemented one RAG pattern with @[`createDeepAgent`]. Combine it with other Deep Agents capabilities or try a different pattern from [RAG patterns](#rag-patterns):
 
 :::
 
-
+- Add [Skills](/oss/deepagents/skills) to package retrieval workflows and domain-specific search guidance
+- Use [Grading rubrics](/oss/deepagents/rubric) to verify answers are grounded in retrieved source material
 - [Evaluate a RAG application](/langsmith/evaluate-rag-tutorial) with LangSmith datasets and evaluators
 - Read [Context engineering](/oss/deepagents/context-engineering) for offloading and subagent isolation strategies
 - Deploy your application with [LangSmith Deployment](/langsmith/deployment)
