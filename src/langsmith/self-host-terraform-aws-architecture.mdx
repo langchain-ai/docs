@@ -95,7 +95,7 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 
 ### ElastiCache Redis
 
-- Default size: `cache.m5.large`, private subnets, TLS port 6379.
+- Default size: `cache.m6g.xlarge`, private subnets, TLS port 6379.
 - Trace ingestion queue, pub/sub, short-lived cache.
 - Secret flow: SSM `/langsmith/{base_name}/redis-auth-token` → ESO → `langsmith-config`.
 
@@ -114,16 +114,16 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 
 ## Cluster infrastructure
 
-The `k8s-bootstrap` Terraform module installs the cluster-level services that LangSmith depends on:
+Two Terraform modules install the cluster-level services LangSmith depends on. The `eks` module installs the AWS-integration controllers through `eks-blueprints-addons`; the `k8s-bootstrap` module installs the workload dependencies and the optional ingress gateways (see [Ingress options](#ingress-options)):
 
-| Service | Namespace | IRSA | Purpose |
-|---|---|---|---|
-| `aws-load-balancer-controller` | `kube-system` | Yes | Provisions the AWS ALB from Kubernetes Ingress objects. Deleting the Ingress deprovisions the ALB and assigns a new DNS name on recreate, which breaks DNS records and OIDC redirect URIs. |
-| `cluster-autoscaler` | `kube-system` | Yes | Scales EC2 node groups based on pod scheduling pressure. |
-| `ebs-csi-driver` | `kube-system` | Yes | Provisions EBS volumes for PersistentVolumeClaims (used by ClickHouse). |
-| KEDA | `keda` | No | Kubernetes Event-driven Autoscaling. Scales `queue` and `ingest-queue` on Redis queue depth. Required for the LangSmith Deployment add-on. |
-| cert-manager | `cert-manager` | Optional (Route 53 IRSA when `letsencrypt`) | Automates TLS certificate issuance. Installed always; active for Let's Encrypt only. |
-| External Secrets Operator | `external-secrets` | Yes | Syncs SSM parameters into the `langsmith-config` Kubernetes Secret. |
+| Service | Installed by | Namespace | IRSA | Purpose |
+|---|---|---|---|---|
+| `aws-load-balancer-controller` | `eks` | `kube-system` | Yes | Provisions the AWS ALB from Kubernetes Ingress objects. Deleting the Ingress deprovisions the ALB and assigns a new DNS name on recreate, which breaks DNS records and OIDC redirect URIs. |
+| `cluster-autoscaler` | `eks` | `kube-system` | Yes | Scales EC2 node groups based on pod scheduling pressure. |
+| `ebs-csi-driver` | `eks` | `kube-system` | Yes | Provisions EBS volumes for PersistentVolumeClaims (used by ClickHouse). |
+| KEDA | `k8s-bootstrap` | `keda` | No | Kubernetes Event-driven Autoscaling. Scales `queue` and `ingest-queue` on Redis queue depth. Required for the LangSmith Deployment add-on. |
+| cert-manager | `k8s-bootstrap` | `cert-manager` | Optional (Route 53 IRSA for DNS-01) | Automates TLS certificate issuance. Installed only when `tls_certificate_source = letsencrypt` or `create_cert_manager_irsa = true`. |
+| External Secrets Operator | `k8s-bootstrap` | `external-secrets` | Yes | Syncs SSM parameters into the `langsmith-config` Kubernetes Secret. |
 
 ## IRSA roles
 
@@ -132,7 +132,7 @@ IRSA replaces static credentials. The EKS cluster's OIDC issuer is the trust anc
 | Role | Defined in | Used by | Permissions |
 |---|---|---|---|
 | `langsmith_irsa_role` | `modules/eks` | `backend`, `platform-backend`, `queue`, `ingest-queue`, host-backend, listener | `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:ListBucket` on the LangSmith bucket |
-| `aws_iam_role.eso` | `aws/infra/main.tf` | ESO controller | `ssm:GetParameter`, `ssm:GetParameters` on `/langsmith/*` |
+| `aws_iam_role.eso` | `aws/infra/main.tf` | ESO controller | `ssm:GetParameter`, `ssm:GetParameters`, `ssm:GetParametersByPath` on `/langsmith/*` |
 
 ## Network topology
 
@@ -150,6 +150,8 @@ Internet
 ```
 
 ### Envoy Gateway — opt-in
+
+With the Terraform default (`enable_envoy_gateway = true`), the pre-provisioned ALB stays in front and binds to the Envoy service on port 8080 through a `TargetGroupBinding`, as shown in the [ingress options](#ingress-options) table. The standalone Network Load Balancer path below is an overlay variant (`helm/values/examples/langsmith-values-ingress-envoy-gateway.yaml`) in which the NLB terminates TLS directly:
 
 ```txt
 Internet
@@ -183,7 +185,7 @@ Four mutually exclusive ingress options ship with the modules. The choice determ
 |---|---|---|---|---|
 | ALB (AWS LBC) | _default_ | No | `ALB → frontend NodePort` | Default. Single-namespace deployments, POC, simplest TLS via ACM. |
 | NGINX Ingress | `enable_nginx_ingress = true` | No | `ALB → TGB → NGINX controller → frontend ClusterIP` | When NGINX is the standard ingress in your organization. |
-| Envoy Gateway | `enable_envoy_gateway = true` | Yes | `ALB → TGB → Envoy proxy:10080 → HTTPRoute → services` | Cross-namespace HTTPRoute routing. Recommended for split dataplane on new AWS deployments. |
+| Envoy Gateway | `enable_envoy_gateway = true` | Yes | `ALB → TGB → Envoy service:8080 → HTTPRoute → services` | Cross-namespace HTTPRoute routing. Recommended for split dataplane on new AWS deployments. |
 | Istio | `enable_istio_gateway = true` | Yes | `ALB → TGB → istio-ingressgateway:80 → VirtualService → services` | Clusters with Istio already installed, or when an mTLS mesh is required. |
 
 ### Why ALB cannot support split dataplane
@@ -212,13 +214,13 @@ The `tls_certificate_source` variable controls the certificate strategy:
 |---|---|---|
 | `none` | HTTP only, no certificate | Any |
 | `acm` | HTTPS:443 with HTTP→HTTPS redirect. ACM certificate, auto-provisioned or BYO. | ALB, NGINX |
-| `letsencrypt` | HTTPS via cert-manager + Let's Encrypt DNS-01 (Route 53 IRSA) | Istio, Envoy |
+| `letsencrypt` | HTTPS via cert-manager and Let's Encrypt, using an HTTP-01 challenge solved through the ALB | ALB |
 
 ### Why ACM versus cert-manager
 
 ACM certificates are non-exportable. AWS attaches them directly to the ALB, which makes ACM the right choice when TLS terminates at the ALB. ACM cannot be used when TLS terminates inside the cluster (Istio Gateway, Envoy Gateway) because those gateways require the certificate material as a Kubernetes Secret.
 
-cert-manager handles in-cluster TLS for Istio and Envoy. The `letsencrypt` value is a reference implementation: it installs cert-manager and a Let's Encrypt ACME `ClusterIssuer`. In production, swap the `ClusterIssuer` for any cert-manager-compatible issuer.
+The `letsencrypt` source is a reference implementation for the ALB path: it installs cert-manager with a Let's Encrypt HTTP-01 `ClusterIssuer` bound to the ALB ingress class. For in-cluster TLS on Istio or Envoy, set `create_cert_manager_irsa = true` instead, which uses a DNS-01 `ClusterIssuer` validated through Route 53. HTTP-01 (via ALB) and DNS-01 (via Route 53) are mutually exclusive. In production, swap the `ClusterIssuer` for any cert-manager-compatible issuer.
 
 | Issuer | When to use |
 |---|---|
@@ -296,7 +298,7 @@ These constraints were validated during the April 2026 gateway permutation test 
 | 3 | `name_prefix` length | Maximum 15 characters. Names like `dz-nginx-tst` (12 characters) are valid. |
 | 4 | Istio port | Istio 1.23+ ingressgateway listens on port 80 via `NET_BIND_SERVICE`, not port 8080. ALB TGB health check and security group rules must target port 80. |
 | 5 | NGINX TGB port | NGINX ingress-nginx controller pods listen on port 80. The TargetGroupBinding target type is `ip`. |
-| 6 | Envoy proxy port | Envoy proxy pods listen on port 10080 (not 80) when running as non-root. The TGB `servicePort` must be 10080. |
+| 6 | Envoy Gateway port | The Envoy Gateway proxy is exposed on a Kubernetes service at port 8080. The ALB TargetGroupBinding `servicePort` must be 8080, with target type `ip`. |
 | 7 | Destroy order | Always run `terraform destroy` first and let Terraform handle namespace and Helm release lifecycle. Pre-deleting namespaces causes the `helm_release` resource to time out because Helm cannot uninstall cleanly into a terminating namespace. |
 | 8 | Stuck terminating namespaces | KEDA's stale `external.metrics.k8s.io/v1beta1` API group causes `NamespaceDeletionDiscoveryFailure`. Fix: `kubectl delete apiservice v1beta1.external.metrics.k8s.io` before re-running `terraform destroy`. |
 
