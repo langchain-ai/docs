@@ -17,8 +17,6 @@ Deep Agents Code stores its configuration in the `~/.deepagents/` directory. The
     Files under `~/.deepagents/.state/` hold per-machine Deep Agents Code state and are managed automatically.
 </Note>
 
----
-
 ## Inspect configuration
 
 The `dcode config` command group reports what configuration is in effect and where each value comes from, without starting a session. This is useful for confirming that an environment variable or `config.toml` setting is being picked up, and for sharing a redacted snapshot in a bug report.
@@ -38,11 +36,9 @@ All four commands accept `--json` for machine-readable output.
     Provider credentials and other secrets are reported as configured / not configured only—their values are never printed by `config show` or `config get`, so the output is safe to paste into a bug report.
 </Warning>
 
----
-
 ## Provider credentials
 
-Deep Agents Code needs an API key for each model provider you use. The recommended way to add one is the [`/auth`](#use-%2Fauth-recommended) credential manager. For non-interactive runs, set [environment variables](#environment-variables-ci-and-headless) instead.
+Deep Agents Code needs an API key for each model provider you use. The recommended way to add one is the [`/auth`](#use-%2Fauth-recommended) credential manager. For non-interactive runs, manage the same stored keys from the shell with [`dcode auth`](#manage-credentials-from-the-shell-dcode-auth) or set [environment variables](#environment-variables-ci-and-headless) instead.
 
 If the same key is set in more than one place, see [Key resolution order](#key-resolution-order) for which one wins.
 
@@ -54,7 +50,7 @@ Open the credential manager from any session:
 /auth
 ```
 
-The manager lists the LLM providers available in your installation and marks the ones that already have a key set. Select a provider to add or replace its key, or remove one you have already stored. Keys you save here persist across sessions.
+The manager lists installed LLM provider and whether they have an environment key set, surfaces known providers that you can add from within the app, and includes non-model services such as Tavily web search. Select a provider to add or replace its key, install support for an uninstalled provider, or remove one you have already stored. Keys you add persist across sessions.
 
 <Accordion title="Provider row labels" icon="list-check">
     Each row shows the provider name followed by where its key comes from:
@@ -76,7 +72,48 @@ The `/auth` prompt also has an optional **base URL** field. Leave it blank to us
     Keys are scoped to your user account on this machine — Deep Agents Code never transmits them anywhere except to the configured provider's API.
 </Note>
 
-`/auth` only manages **LLM provider** credentials. Tool credentials such as `TAVILY_API_KEY` (web search) and `LANGSMITH_API_KEY` (tracing) are read from the environment instead — [set them in `~/.deepagents/.env` or your shell](#environment-variables).
+#### Sign in with ChatGPT
+
+Selecting the `openai_codex` provider in `/auth` starts a browser sign-in instead of prompting for an API key, letting you use OpenAI models with a ChatGPT subscription. To re-authenticate or sign out, select `openai_codex` again. See [Sign in with ChatGPT (Codex models)](/oss/deepagents/code/providers) for the full flow.
+
+`/auth` manages LLM provider credentials, the Tavily web-search key, and LangSmith tracing. Enter a Tavily key to [activate web search] (#enable-web-search-with-tavily) on the next launch. Enter a LangSmith key to enable tracing. Keys are also read from the environment, you can [set them in `~/.deepagents/.env` or your shell](#environment-variables).
+
+### Manage credentials from the shell (`dcode auth`)
+
+The `dcode auth` command group is the scriptable equivalent of the `/auth` manager: it manages the same stored credentials without launching the TUI, which makes it usable for dotfile bootstrap, CI/CD, and setting a key on a remote box over SSH. The subcommands mirror the modal's verbs:
+
+| Command | Description |
+|---------|-------------|
+| `dcode auth list` (alias `ls`) | List every known provider and where its key resolves from |
+| `dcode auth status <provider>` | Print the resolution source for one provider |
+| `dcode auth set <provider>` | Store an API key, read from stdin by default |
+| `dcode auth remove <provider>` (aliases `rm`, `delete`) | Delete a stored credential |
+| `dcode auth path` | Print the resolved path to the credential store (`auth.json`) |
+
+`set` reads the key from **stdin** by default, so it never lands in shell history or `argv`. Pipe the key in, or use `--from-env VAR` to copy it from a process environment variable:
+
+```bash
+# Pipe the key in (stdin)
+echo "$ANTHROPIC_API_KEY" | dcode auth set anthropic
+
+# Copy it from an existing environment variable
+dcode auth set openai --from-env OPENAI_API_KEY
+```
+
+<Note>
+    `set` refuses to run in an interactive terminal so an accidental invocation cannot hang waiting on input — pipe the key via stdin or use `--from-env VAR`. Stored keys go through the same store as `/auth`, so warnings (for example, about file permissions on `auth.json`) are printed to stderr.
+</Note>
+
+Remove a stored key or print the store location:
+
+```bash
+dcode auth remove anthropic
+dcode auth path
+```
+
+<Note>
+    `dcode auth set` manages API keys only. The `openai_codex` provider uses a ChatGPT browser sign-in rather than an API key, so run [`/auth` and select `openai_codex`](#sign-in-with-chatgpt) to sign in instead. `dcode auth remove openai_codex` does sign you out.
+</Note>
 
 ### Environment variables (CI and headless)
 
@@ -118,35 +155,41 @@ Each provider's API key and its endpoint (`base_url`) resolve as a pair from the
 
 ### Enable web search with Tavily
 
-The built-in `web_search` tool uses [Tavily](https://tavily.com). Deep Agents Code shows a "Web search disabled — `TAVILY_API_KEY` is not set" notification on startup until you provide a key. Unlike model provider keys, Tavily is **not** managed by `/auth`; it is read directly from the environment.
+The built-in `web_search` tool uses [Tavily](https://tavily.com). Deep Agents Code shows a "Web search disabled" notification on startup until you provide a key. You can store the key in the [`/auth`](#use-%2Fauth-recommended) credential manager, where Tavily appears as a non-model service, or set the `TAVILY_API_KEY` environment variable.
 
-<Steps>
-    <Step title="Get a key">
-        Sign up at [tavily.com](https://tavily.com) and copy the key (it starts with `tvly-`). The free tier is sufficient for most Deep Agents Code usage.
-    </Step>
+<Tabs>
+    <Tab title="Use /auth (recommended)">
+        Get a key from [tavily.com](https://tavily.com) (it starts with `tvly-`; the free tier is sufficient for most Deep Agents Code usage), then store it in the credential manager:
 
-    <Step title="Add it to your environment">
-        Add the key to `~/.deepagents/.env` so every session picks it up:
-
-        ```bash title="~/.deepagents/.env"
-        TAVILY_API_KEY=tvly-...
+        ```txt
+        /auth
         ```
 
-        Or export it in your shell for a one-off session:
+        Select **Tavily** from the list and paste the key. You can also reach this prompt directly from the "Web search disabled" notification by choosing **Enter API key**.
+    </Tab>
 
-        ```bash
-        export TAVILY_API_KEY=tvly-...
-        ```
+    <Tab title="Set an environment variable">
+        <Steps>
+            <Step title="Get a key">
+                Sign up at [tavily.com](https://tavily.com) and copy the key (it starts with `tvly-`). The free tier is sufficient for most Deep Agents Code usage.
+            </Step>
 
-        Shell exports take precedence over `.env` values (see [Loading order and precedence](#loading-order-and-precedence)). To scope a key to Deep Agents Code only without affecting other tools that read `TAVILY_API_KEY`, use the [`DEEPAGENTS_CODE_` prefix](#deepagents_code_-prefix): `DEEPAGENTS_CODE_TAVILY_API_KEY=tvly-...`.
-    </Step>
+            <Step title="Add it to your environment">
+                Add the key to `~/.deepagents/.env` so every session picks it up:
 
-    <Step title="Reload or restart">
-        In an existing session, run `/reload` to re-read `.env` files. On the next launch, the "Web search disabled" notification goes away and the agent can call `web_search`.
-    </Step>
-</Steps>
+                ```bash title="~/.deepagents/.env"
+                TAVILY_API_KEY=tvly-...
+                ```
 
----
+                Shell exports take precedence over `.env` values (see [Loading order and precedence](#loading-order-and-precedence)). To scope a key to Deep Agents Code only without affecting other tools that read `TAVILY_API_KEY`, use the [`DEEPAGENTS_CODE_` prefix](#deepagents_code_-prefix): `DEEPAGENTS_CODE_TAVILY_API_KEY=tvly-...`.
+            </Step>
+
+            <Step title="Reload or restart">
+                In an existing session, run `/reload` to re-read `.env` files. On the next launch, the "Web search disabled" notification goes away and the agent can call `web_search`.
+            </Step>
+        </Steps>
+    </Tab>
+</Tabs>
 
 ## Environment variables
 
@@ -160,6 +203,10 @@ OPENAI_API_KEY=sk-...
 ### Loading order and precedence
 
 At startup, Deep Agents Code reads the nearest project `.env`, found by searching the directory you launch from and walking up through its parents (the first `.env` found wins), then `~/.deepagents/.env` as a global fallback for all projects. A project `.env` wins over the global one, and neither overrides a value already set in your shell. Running `/reload` re-reads both `.env` files so you can change keys without restarting, with shell values still taking precedence. This applies to every variable Deep Agents Code reads (for example, `TAVILY_API_KEY` or the `DEEPAGENTS_CODE_*` settings). Provider API keys have additional resolution rules; see [Provider credentials](#provider-credentials).
+
+<Warning>
+    Running `dcode` inside an untrusted project directory exposes you to project-controlled files. A malicious `.env`, `Makefile`, or build script in that directory can influence the agent's process environment and what it runs. Treat any directory you would not run arbitrary scripts in as untrusted, and use a [remote sandbox](/oss/deepagents/code/remote-sandboxes) for untrusted repositories.
+</Warning>
 
 ### `DEEPAGENTS_CODE_` prefix
 
@@ -214,6 +261,8 @@ Each provider is a TOML table under `[models.providers]`:
 
 ```toml
 [models.providers.<name>]
+display_name = "My Provider"
+api_key_url = "https://provider.example/keys"
 models = ["gpt-4o"]
 api_key_env = "OPENAI_API_KEY"
 base_url = "https://api.openai.com/v1"
@@ -242,6 +291,14 @@ Providers have the following configuration options:
     The **name** of the environment variable that holds the API key (e.g., `"OPENAI_API_KEY"`). Deep Agents Code reads the credential from this env var at startup to verify access before creating the model.
 
     Most chat model packages read from a default env var automatically. See the [Provider reference](/oss/deepagents/code/providers#provider-reference) table for which variable name each built-in provider checks. For a provider not in that table, set `api_key_env` to its variable name (see [Arbitrary providers](#arbitrary-providers)).
+</ResponseField>
+
+<ResponseField name="display_name" type="string" post={["optional"]}>
+    Human-readable provider name shown in auth UI. Use this for arbitrary providers whose config key is optimized for machines (for example, `my_gateway`) but whose UI label should include spaces or brand capitalization.
+</ResponseField>
+
+<ResponseField name="api_key_url" type="string" post={["optional"]}>
+    URL for the provider page where users create or manage API keys. The `/auth` modal links to this page before the API-key input. This value is a URL, not a credential.
 </ResponseField>
 
 <ResponseField name="base_url" type="string" post={["optional"]}>
@@ -457,6 +514,8 @@ Deep Agents Code works with any tool calling LLM available as a [LangChain `Base
 
 ```toml
 [models.providers.my_custom]
+display_name = "My Custom Provider"
+api_key_url = "https://my-provider.example.com/keys"
 class_path = "my_package.models:MyChatModel"
 api_key_env = "MY_API_KEY"
 base_url = "https://my-endpoint.example.com"
@@ -466,7 +525,7 @@ temperature = 0
 max_tokens = 4096
 ```
 
-`api_key_env` and `base_url` are optional. To read the endpoint from an environment variable instead of hardcoding `base_url`, use [`base_url_env`](#provider-configuration); it then resolves and pairs with the key the same way as for the built-in providers (see [Endpoints, keys, and gateways](#endpoints-keys-and-gateways)).
+`api_key_env` and `base_url` are optional. `display_name` and `api_key_url` customize the provider name and key-acquisition link shown by `/auth`; omit them to fall back to the provider config key and provider setup docs. To read the endpoint from an environment variable instead of hardcoding `base_url`, use [`base_url_env`](#provider-configuration); it then resolves and pairs with the key the same way as for the built-in providers (see [Endpoints, keys, and gateways](#endpoints-keys-and-gateways)).
 
 `class_path` providers are expected to handle their own authentication internally — useful when your model uses custom auth (JWT tokens, proprietary headers, mTLS, etc.) rather than a standard API key:
 
@@ -684,27 +743,47 @@ Press `T` in the `/theme` picker to save the highlighted theme for the current t
 
 ## Auto-update
 
-Deep Agents Code can automatically check for and install updates.
+Deep Agents Code automatically checks for and installs updates by default.
+
+To opt out of automatic updates:
 
 <Tabs>
     <Tab title="Config file">
         ```toml
         [update]
-        auto_update = true
+        auto_update = false
         ```
     </Tab>
     <Tab title="Environment variable">
         ```bash
-        export DEEPAGENTS_CODE_AUTO_UPDATE=1
+        export DEEPAGENTS_CODE_AUTO_UPDATE=0
         ```
     </Tab>
 </Tabs>
 
 The environment variable takes precedence over the config file.
 
-When enabled, Deep Agents Code checks PyPI for a newer version at session start and automatically upgrades using the detected install method (uv, Homebrew, or pip). When disabled (default), Deep Agents Code shows an update hint with the appropriate install command instead.
+When enabled (default), Deep Agents Code checks PyPI for a newer version at session start and automatically upgrades. When disabled, Deep Agents Code shows an update hint with the appropriate install command instead.
 
-You can also check for and install updates manually at any time with the `/update` slash command, which bypasses the cache and reports success or failure inline.
+To suppress automatic update checks entirely:
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml
+        [update]
+        check = false
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_NO_UPDATE_CHECK=1
+        ```
+    </Tab>
+</Tabs>
+
+Disabling update checks also prevents automatic update installs at startup.
+
+You can still check for and install updates manually at any time with the `/update` slash command, which runs an on-demand check and reports success or failure inline.
 
 After an upgrade, Deep Agents Code shows a "what's new" banner on the next launch with a link to the changelog.
 
@@ -739,7 +818,44 @@ When `id -u` is `0`, the script:
 
 Non-root installs are unaffected: all root-specific code paths short-circuit when not running as root.
 
-To pre-configure auto-update for managed installs, set `DEEPAGENTS_CODE_AUTO_UPDATE=1` in the user's shell profile or deploy a `config.toml` with `[update] auto_update = true` to `~/.deepagents/config.toml`. To suppress automatic updates and update checks entirely, set `DEEPAGENTS_CODE_NO_UPDATE_CHECK=1`.
+### Pin the install with environment variables
+
+The install script reads environment variables that let you pin a version, select extras, and choose a Python version fleet-wide. Set them on the same line as the piped install:
+
+```bash
+# Pin an exact version for reproducible installs across the fleet
+curl -LsSf https://langch.in/dcode | DEEPAGENTS_CODE_VERSION="0.1.16" bash
+```
+
+<ResponseField name="DEEPAGENTS_CODE_VERSION" type="string" post={["optional"]}>
+    Exact package version to install, e.g. `0.1.0` (or a pre-release such as `0.1.0rc1`). Mutually exclusive with `DEEPAGENTS_CODE_PRERELEASE` — setting both is an error, since an exact pin already selects a single version.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_PRERELEASE" type="string" post={["optional"]}>
+    uv pre-release strategy applied when resolving the latest version: `disallow`, `allow`, `if-necessary`, `explicit`, or `if-necessary-or-explicit`. Mutually exclusive with `DEEPAGENTS_CODE_VERSION`.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_EXTRAS" type="string" post={["optional"]}>
+    Comma-separated pip extras to install, e.g. `ollama`, `ollama,groq`, or `daytona`. See [`pyproject.toml`](https://github.com/langchain-ai/deepagents/blob/main/libs/code/pyproject.toml) for the available extras.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_PYTHON" type="string" default="3.13" post={["optional"]}>
+    Python version to use for the install.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_SKIP_OPTIONAL" type="string" post={["optional"]}>
+    Set to `1` to skip optional tool checks.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_VERBOSE" type="string" post={["optional"]}>
+    Set to `1` to show uv's raw stderr (timing lines, unfiltered package diff) and the quiet-by-default status lines (optional-tool checks, post-install footer). Useful when debugging an install.
+</ResponseField>
+
+<ResponseField name="UV_BIN" type="string" post={["optional"]}>
+    Path to the uv binary. Auto-detected if unset.
+</ResponseField>
+
+Auto-update is enabled by default for managed installs. To opt out, set `DEEPAGENTS_CODE_AUTO_UPDATE=0` in the user's shell profile or deploy a `config.toml` with `[update] auto_update = false` to `~/.deepagents/config.toml`. To suppress automatic updates and update checks entirely, set `DEEPAGENTS_CODE_NO_UPDATE_CHECK=1` or deploy `[update] check = false`.
 
 To route every user's model traffic through a managed gateway (provisioning a gateway key and base URL fleet-wide), see [Managed gateways](#managed-gateways).
 
@@ -750,7 +866,7 @@ To route every user's model traffic through a managed gateway (provisioning a ga
 All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` prefix. See [`DEEPAGENTS_CODE_` prefix](#deepagents_code_-prefix) for how the prefix also works as an override for third-party credentials.
 
 <ResponseField name="DEEPAGENTS_CODE_AUTO_UPDATE" type="string" post={["optional"]}>
-    Enable automatic Deep Agents Code updates (`1`, `true`, or `yes`).
+    Toggle automatic Deep Agents Code updates. Enabled by default; set to `0`, `false`, `no`, or `off` to opt out.
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_DEBUG" type="string" post={["optional"]}>
@@ -769,8 +885,12 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
     Override the LangSmith project name for Deep Agents Code's own agent traces. Shell commands still run with the user's original `LANGSMITH_PROJECT`, so app, test, or script traces can appear in a separate project. See [Trace with LangSmith](/oss/deepagents/code/overview#trace-with-langsmith).
 </ResponseField>
 
+<ResponseField name="DEEPAGENTS_CODE_LANGSMITH_REPLICA_PROJECTS" type="string" post={["optional"]}>
+    A second LangSmith project to *also* write agent traces to. When set and tracing is active, each agent run is dual-written to the primary project (from `DEEPAGENTS_CODE_LANGSMITH_PROJECT`, or `deepagents-code` by default) and this project. Off by default. See [Dual-write traces to a second project](/oss/deepagents/code/overview#trace-with-langsmith).
+</ResponseField>
+
 <ResponseField name="DEEPAGENTS_CODE_NO_UPDATE_CHECK" type="string" post={["optional"]}>
-    Disable automatic update checking when set.
+    Disable automatic update checking when set. This also prevents automatic update installs at startup.
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_SHELL_ALLOW_LIST" type="string" post={["optional"]}>
@@ -996,3 +1116,47 @@ Hooks follow the same trust model as Git hooks or shell aliases — any user who
 <Warning>
     Only add hooks from sources you trust. A hook has the same permissions as your user account.
 </Warning>
+
+## Run diagnostics with `dcode doctor`
+
+Use `dcode doctor` when Deep Agents Code is not starting correctly, a provider or MCP server does not connect, tracing is misconfigured, or an install or update looks wrong. It runs diagnostics without launching a session and summarizes the current runtime state.
+
+```bash
+# Show diagnostics in the terminal
+dcode doctor
+```
+
+Output
+```text
+  Diagnostics ✓
+  ├ deepagents-code: 0.1.30
+  ├ deepagents (SDK): 0.7.0a3
+  ├ Commit hash: e4709c2
+  ├ Python: 3.13.11
+  ├ Platform: darwin-arm64
+  ├ Install method: uv
+  └ Path: /Users/naomi/.local/share/uv/tools/deepagents-code
+
+  Updates ✓
+  ├ Update checks: enabled
+  ├ Auto-updates: enabled
+  ├ Latest version: up to date
+  └ Last checked: 21m ago
+
+  Tracing ✓
+  ├ Tracing: enabled
+  ├ Credentials: configured
+  ├ Project: shared-deepagents
+  └ Endpoint: https://api.smith.langchain.com
+
+  Configuration ✓
+  ├ Data directory: /Users/naomi/.deepagents (exists)
+  └ Config file: /Users/naomi/.deepagents/config.toml (exists)
+
+  Tip: Run `dcode config show` or `dcode config get <key>` to drill into config details.
+       Run `dcode --version` (or `dcode -v`) for dependency versions.
+```
+
+<Tip>
+    Pair `dcode doctor` with `dcode config show` when you need both a high-level health check and the exact source of a specific setting.
+</Tip>

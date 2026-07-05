@@ -1,25 +1,25 @@
 ```typescript src/agent.ts
-import { Daytona } from "@daytonaio/sdk";
-import { DaytonaSandbox } from "@langchain/daytona";
-import { createDeepAgent } from "deepagents";
+import { createDeepAgent, LangSmithSandbox } from "deepagents";
+import { SandboxClient } from "langsmith/sandbox";
 import type { LangGraphRunnableConfig } from "@langchain/langgraph";
 
-const client = new Daytona();
+const client = new SandboxClient();
 
 export async function agent(config: LangGraphRunnableConfig) {
   const threadId = config.configurable?.thread_id as string;  // [!code highlight]
-  let sandbox;
-  try {
-    sandbox = await client.findOne({ labels: { thread_id: threadId } });
-  } catch {
-    sandbox = await client.create({
-      labels: { thread_id: threadId },
-      autoDeleteInterval: 3600, // TTL: clean up when idle
-    });
-  }
+  const sandboxName = `thread-${threadId}`;
+  const existing = (await client.listSandboxes()).filter(
+    (sb) => sb.name === sandboxName,
+  );
+  const lsSandbox =
+    existing[0] ??
+    (await client.createSandbox({
+      name: sandboxName,
+      idleTtlSeconds: 3600, // TTL: clean up when idle
+    }));
   return createDeepAgent({
     model: "google_genai:gemini-3.5-flash",
-    backend: await DaytonaSandbox.fromId(sandbox.id),
+    backend: new LangSmithSandbox({ sandbox: lsSandbox }),
   });
 }
 ```

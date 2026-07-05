@@ -12,6 +12,7 @@
 """
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -159,19 +160,49 @@ def check_pages_exist(docs: dict, src_dir: Path) -> list[str]:
     return missing
 
 
-def main() -> int:
-    if len(sys.argv) != 3:
+def _print_usage() -> None:
+    print(
+        "Usage: check_removed_pages_redirects.py <base_docs.json> <head_docs.json>\n"
+        "       check_removed_pages_redirects.py --base-ref <ref> <head_docs.json>",
+        file=sys.stderr,
+    )
+
+
+def _load_base_docs_from_ref(base_ref: str, head_path: Path) -> dict | None:
+    try:
+        output = subprocess.check_output(
+            ["git", "show", f"{base_ref}:{head_path.as_posix()}"],
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
         print(
-            "Usage: check_removed_pages_redirects.py <base_docs.json> <head_docs.json>",
+            f"Error: could not read {head_path} from base ref {base_ref}: "
+            f"{exc.stderr.strip()}",
             file=sys.stderr,
         )
+        return None
+
+    return json.loads(output)
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    base_ref: str | None = None
+    base_path: Path | None = None
+
+    if len(args) == 2 and args[0] == "--base-ref":
+        _print_usage()
         return 2
 
-    base_path = Path(sys.argv[1])
-    head_path = Path(sys.argv[2])
-
-    if not base_path.exists():
-        print(f"Error: Base docs.json not found at {base_path}", file=sys.stderr)
+    if len(args) == 3 and args[0] == "--base-ref":
+        base_ref = args[1]
+        head_path = Path(args[2])
+    elif len(args) == 2:
+        base_path = Path(args[0])
+        head_path = Path(args[1])
+    else:
+        _print_usage()
         return 2
 
     if not head_path.exists():
@@ -181,8 +212,17 @@ def main() -> int:
     # src_dir: parent of docs.json (e.g. src/ when head_path is src/docs.json)
     src_dir = head_path.parent
 
-    with open(base_path) as f:
-        base_docs = json.load(f)
+    if base_ref is not None:
+        base_docs = _load_base_docs_from_ref(base_ref, head_path)
+        if base_docs is None:
+            return 2
+    else:
+        if base_path is None or not base_path.exists():
+            print(f"Error: Base docs.json not found at {base_path}", file=sys.stderr)
+            return 2
+        with open(base_path) as f:
+            base_docs = json.load(f)
+
     with open(head_path) as f:
         head_docs = json.load(f)
 

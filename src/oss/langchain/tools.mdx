@@ -353,7 +353,7 @@ def save_user_info(user_id: str, user_info: dict[str, Any], runtime: ToolRuntime
     store.put(("users",), user_id, user_info)
     return "Successfully saved user info."
 
-model = ChatOpenAI(model="gpt-5.4")
+model = ChatOpenAI(model="gpt-5.5")
 
 store = InMemoryStore()
 agent = create_agent(
@@ -426,7 +426,7 @@ const saveUserInfo = tool(
 );
 
 const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-5.4" }),
+  model: new ChatOpenAI({ model: "gpt-5.5" }),
   tools: [getUserInfo, saveUserInfo],
   store,
 });
@@ -665,7 +665,7 @@ For agent-level migrations (for example `create_react_agent` and custom state), 
 
 In LangChain, tools are used by agents (for example via @[`create_agent`]) and tool error handling is configured through [middleware](/oss/langchain/middleware).
 
-For LangGraph workflows, tool execution is handled by @[`ToolNode`]. See [ToolNode](/oss/langgraph/workflows-agents#toolnode).
+For LangGraph workflows, tool execution is handled by @[`ToolNode`]. See [ToolNode](/oss/langgraph/workflows-agents#toolnode) for Graph API usage, including how tools can access the current graph state and run-scoped context.
 
 ### Tool return values
 
@@ -722,6 +722,52 @@ Behavior:
 - Like string returns, this does not directly update graph state.
 
 Use this when downstream reasoning benefits from explicit fields instead of free-form text.
+
+#### Return multimodal content
+
+Tools are not limited to plain text. When the model supports multimodal tool results, the tool can return [standard content blocks](/oss/langchain/messages#standard-content-blocks) so the model receives text, images, and other media in one tool result.
+
+:::python
+```python
+from langchain.tools import tool
+
+
+@tool
+def capture_screenshot() -> list[dict]:
+    """Capture a screenshot of the current page."""
+    return [
+        {"type": "text", "text": "Screenshot of the current page:"},
+        {"type": "image", "url": "https://example.com/page.png"},
+    ]
+```
+:::
+
+:::js
+```typescript
+import { tool } from "langchain";
+import { z } from "zod";
+
+const captureScreenshot = tool(
+  async () => [
+    { type: "text", text: "Screenshot of the current page:" },
+    { type: "image", url: "https://example.com/page.png" },
+  ],
+  {
+    name: "capture_screenshot",
+    description: "Capture a screenshot of the current page.",
+    schema: z.object({}),
+  }
+);
+```
+:::
+
+Behavior:
+
+- The return value is converted to a `ToolMessage` with multimodal `content`.
+- Use `message.content_blocks` to read the normalized block list after the tool runs.
+- The model must support the modalities you return. Check your [model's capabilities](/oss/integrations/chat) before returning images, audio, or video.
+
+For block types and provider-specific requirements, see [Multimodal messages](/oss/langchain/messages#multimodal). MCP tools that return images or mixed content are converted the same way; see [Multimodal tool content](/oss/langchain/mcp#multimodal-tool-content).
 
 #### Return a Command
 
@@ -860,7 +906,7 @@ There are two approaches depending on whether tools are known ahead of time:
             return handler(request)
 
         agent = create_agent(
-            model="gpt-5.4",
+            model="gpt-5.5",
             tools=[public_search, private_search, advanced_search],
             middleware=[state_based_tools]
         )
@@ -948,7 +994,7 @@ There are two approaches depending on whether tools are known ahead of time:
             return handler(request)
 
         agent = create_agent(
-            model="gpt-5.4",
+            model="gpt-5.5",
             tools=[search_tool, analysis_tool, export_tool],
             middleware=[store_based_tools],
             context_schema=Context,
@@ -1055,7 +1101,7 @@ There are two approaches depending on whether tools are known ahead of time:
             return handler(request)
 
         agent = create_agent(
-            model="gpt-5.4",
+            model="gpt-5.5",
             tools=[read_data, write_data, delete_data],
             middleware=[context_based_tools],
             context_schema=Context

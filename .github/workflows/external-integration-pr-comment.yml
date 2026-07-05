@@ -1,0 +1,133 @@
+# Post a patience comment on PRs from external contributors that add
+# new integration docs pages.
+#
+# NOTE: Uses `pull_request_target` so it can comment on PRs from forks.
+# The script only reads changed files from the GitHub API and checks org
+# membership — no untrusted code is executed.
+
+name: External Integration PR Comment
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review, synchronize]
+
+jobs:
+  integration-comment:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    if: ${{ !github.event.pull_request.draft }}
+
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.ORG_MEMBERSHIP_APP_ID }}
+          private-key: ${{ secrets.ORG_MEMBERSHIP_APP_PRIVATE_KEY }}
+
+      - name: Comment on external new integration PRs
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+
+            if (pr.user.type === 'Bot') {
+              console.log(`Skipping bot author ${author}`);
+              return;
+            }
+
+            const integrationPrefixes = [
+              'src/oss/python/integrations/',
+              'src/oss/javascript/integrations/',
+            ];
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const newIntegrationFiles = files.filter((file) => {
+              if (file.status !== 'added') return false;
+              if (!integrationPrefixes.some((prefix) => file.filename.startsWith(prefix))) {
+                return false;
+              }
+              const basename = file.filename.split('/').pop();
+              if (basename === 'TEMPLATE.mdx') return false;
+              return true;
+            });
+
+            if (newIntegrationFiles.length === 0) {
+              console.log('No new integration files added; skipping comment');
+              return;
+            }
+
+            console.log(
+              `Found ${newIntegrationFiles.length} new integration file(s): ` +
+              newIntegrationFiles.map((f) => f.filename).join(', ')
+            );
+
+            const internalBots = new Set(['open-swe[bot]']);
+            let isExternal;
+
+            if (internalBots.has(author)) {
+              isExternal = false;
+            } else {
+              try {
+                const membership = await github.rest.orgs.getMembershipForUser({
+                  org: 'langchain-ai',
+                  username: author,
+                });
+                isExternal = membership.data.state !== 'active';
+              } catch (error) {
+                if (error.status === 404) {
+                  isExternal = true;
+                } else {
+                  console.error('Error checking membership:', error);
+                  isExternal = true;
+                }
+              }
+            }
+
+            if (!isExternal) {
+              console.log(`Author ${author} is internal; skipping comment`);
+              return;
+            }
+
+            const marker = '<!-- external-integration-contribution -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+
+            if (comments.some((comment) => comment.body.includes(marker))) {
+              console.log('Comment already posted; skipping');
+              return;
+            }
+
+            const body = [
+              marker,
+              `Thanks for contributing a new integration docs page, @${author}!`,
+              '',
+              'We receive a large number of PRs and review them as quickly as we can. Please bear with us as we work through the queue.',
+              '',
+              'If you have already tagged a maintainer on this PR, do not tag them again.',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pr.number,
+              body,
+            });
+
+            console.log(`Posted external integration comment on PR #${pr.number}`);

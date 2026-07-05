@@ -1,0 +1,123 @@
+---
+title: Trace Gemini Live applications
+sidebarTitle: Gemini Live
+tag: Beta
+description: Trace Gemini Live voice agents built with the Google Agent Development Kit (ADK) in LangSmith.
+---
+
+<Note>
+This integration is in beta, so its API may change.
+</Note>
+
+Gemini Live is a speech-to-speech model that ADK streams to your app as `run_live` events. The integration captures each conversation as a single LangSmith trace, with a span for every meaningful event (transcripts, tool calls, turn boundaries, and interruptions).
+
+Trace your [Gemini Live](https://ai.google.dev/gemini-api/docs/live-api) voice agents, built with the [Google Agent Development Kit (ADK)](https://google.github.io/adk-docs/streaming/), to LangSmith with the LangSmith ADK integration. For high-level conventions, see [Voice tracing fundamentals](/langsmith/trace-voice-fundamentals).
+
+<Note>
+The ADK Live integration requires `langsmith[google-adk-live]>=0.9.7` (separate from the `langsmith[google-adk]` batch integration).
+</Note>
+
+To trace text agents, tools, and multi-agent workflows built with ADK, see [Trace Google ADK applications](/langsmith/trace-with-google-adk).
+
+## Install
+
+<CodeGroup>
+
+```bash pip
+pip install "langsmith[google-adk-live]" google-genai
+```
+
+```bash uv
+uv add "langsmith[google-adk-live]" google-genai
+```
+
+</CodeGroup>
+
+## Set environment variables
+
+```bash .env
+LANGSMITH_API_KEY=<your-langsmith-api-key>
+LANGSMITH_TRACING=true
+LANGSMITH_PROJECT=<your-desired-langsmith-project>
+GOOGLE_API_KEY=<your-google-api-key>
+```
+
+## Set up tracing
+
+Import `LangSmithGoogleADKLivePlugin` and register it on your `Runner`. It runs alongside your own `run_live` loop, so your loop only handles audio playback, barge-ins, and UI updates:
+
+```python
+from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.adk.runners import Runner
+from google.genai import types as genai_types
+from langsmith.integrations.google_adk_live import LangSmithGoogleADKLivePlugin
+
+plugin = LangSmithGoogleADKLivePlugin(project_name="gemini-live-voice")
+
+runner = Runner(
+    app_name="voice-app",
+    agent=root_agent,
+    session_service=session_service,
+    plugins=[plugin],
+)
+
+run_config = RunConfig(
+    response_modalities=["AUDIO"],
+    streaming_mode=StreamingMode.BIDI,
+    input_audio_transcription=genai_types.AudioTranscriptionConfig(),
+    output_audio_transcription=genai_types.AudioTranscriptionConfig(),
+)
+
+async for event in runner.run_live(
+    user_id=user_id,
+    session_id=adk_session.id,
+    live_request_queue=queue,
+    run_config=run_config,
+):
+    ...  # play audio, handle barge-in, update the UI
+```
+
+<Note>
+Transcription is opt-in. To show transcripts, set both `input_audio_transcription` and `output_audio_transcription` on the `RunConfig`.
+</Note>
+
+<Note>
+On a graceful end (the live request queue closing), ADK sends its `after_run` callback and the plugin finalizes the trace for you.
+
+On a cancelled run, such as a console app that stops `run_live` on Ctrl-C, ADK may not send that callback, so call `plugin.finalize(session_id=adk_session.id)` during teardown. Otherwise, you lose the trace and the audio attachment built at finalize. The call is idempotent, so it does nothing if ADK's callback already ran.
+</Note>
+
+## Group a conversation into a thread
+
+Each conversation is captured as its own trace with its own thread ID. To supply your own ID, for example to group the conversation with related interactions in a LangSmith [thread](/langsmith/threads), pass a `thread_id_provider` to the plugin:
+
+```python
+plugin = LangSmithGoogleADKLivePlugin(
+    project_name="gemini-live-voice",
+    thread_id_provider=lambda: thread_id,
+)
+```
+
+A single plugin instance is shared across every `run_live` call and it resolves the thread ID once, at the start of each conversation. The default keeps concurrent conversations separate. If you pass a `thread_id_provider` on a server handling concurrent conversations, it returns the ID for the current conversation rather than a fixed value; for example, by reading a `ContextVar` set at the start of each run.
+
+## Record the conversation audio
+
+If you feed your microphone and playback audio to the plugin, it attaches a single stereo recording (user left, agent right) to the trace:
+
+```python
+plugin.record_user_audio(mic_chunk)      # user mic PCM16
+plugin.record_agent_audio(played_chunk)  # agent PCM16 as played
+```
+
+To accurately reflect what is heard, record the user's microphone capture before resampling it for ADK and tap the speaker for the agent's audio. Feed both channels at the same sample rate (the plugin's `sample_rate` is 24 kHz by default). For the underlying attachment API, see [Upload files with traces](/langsmith/upload-files-with-traces).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Voice fundamentals" icon="waveform" href="/langsmith/trace-voice-fundamentals">
+    Core conventions for tracing voice agents.
+  </Card>
+  <Card title="Upload files with traces" icon="paperclip" href="/langsmith/upload-files-with-traces">
+    Attach the conversation audio recording to your trace.
+  </Card>
+</CardGroup>

@@ -178,6 +178,10 @@ For non-LangChain applications or custom instrumentation, you can trace your app
 
 4. View the trace in your LangSmith dashboard ([example](https://smith.langchain.com/public/4f2890b1-f105-44aa-a6cf-c777dcc27a37/r)).
 
+<Note>
+If your spans reference a parent from another service or process, see [Context propagation in distributed tracing](#context-propagation-in-distributed-tracing) for how parent–child linking works and when a span can be dropped.
+</Note>
+
 ## Send traces to an alternate provider
 
 While LangSmith is the default destination for OpenTelemetry traces, you can also configure OpenTelemetry to send traces to other observability platforms.
@@ -256,6 +260,10 @@ When sending traces to LangSmith via OpenTelemetry, the following attributes are
 | ------------------------------ | ---------------- | ---------------------------------------------------------------------------- |
 | `langsmith.trace.name`         | Run name         | Overrides the span name for the run                                          |
 | `langsmith.span.kind`          | [Run type](/langsmith/run-data-format#run-types) | Values: `llm`, `chain`, `tool`, `retriever`, `embedding`, `prompt`, `parser` |
+| `langsmith.trace.id`           | Trace ID         | The trace (root run) the span belongs to; set to attach to an existing trace |
+| `langsmith.span.id`            | Run ID           | This span's run ID (a UUID); overrides the ID derived from the OTLP span ID   |
+| `langsmith.span.parent_id`     | Parent run ID    | Nests the span under an existing run by its run ID                            |
+| `langsmith.span.dotted_order`  | Dotted order     | Position in the trace tree: `<parent.dotted_order>.<timestamp><span.id>`. See [`dotted_order`](https://docs.langchain.com/langsmith/run-data-format#what-is-dotted_order). |
 | `langsmith.trace.session_id`   | Session ID       | Session identifier for related traces                                        |
 | `langsmith.trace.session_name` | Session name     | Name of the session                                                          |
 | `langsmith.span.tags`          | Tags             | Custom tags attached to the span (comma-separated)                           |
@@ -458,6 +466,46 @@ You do not need to set OTEL environment variables or exporters. `configure()` wi
 </Note>
 
 Here is an [example](https://smith.langchain.com/public/d6d47eeb-511e-4fda-ad17-2caa7bd7150b/r) of what the resulting trace looks like in LangSmith.
+
+### Link OpenTelemetry spans to a LangSmith SDK trace
+
+Native OTLP `parentSpanId` can't reference an existing LangSmith run: an OTLP span ID is 8 bytes, while LangSmith run IDs are full UUIDs. To attach an OpenTelemetry span to a run created elsewhere (for example, a LangChain-SDK run), set the `langsmith.*` attributes with the parent's full UUIDs. They override the IDs derived from the native OTLP span, so the span nests under the existing run in the same trace.
+
+```python
+import uuid
+from datetime import datetime, timezone
+
+from langsmith import get_current_run_tree, traceable
+from opentelemetry import trace
+
+tracer = trace.get_tracer("my-harness")
+
+
+def emit_otel_child(parent):
+    """Emit an OTel span that nests under an existing LangSmith run."""
+    child_id = uuid.uuid4()
+    start = datetime.now(timezone.utc)
+    # dotted_order = parent's dotted_order, a dot, then this span's timestamp + id
+    dotted = f"{parent.dotted_order}.{start.strftime('%Y%m%dT%H%M%S%fZ')}{child_id}"
+
+    with tracer.start_as_current_span("otel-child") as span:
+        span.set_attribute("langsmith.trace.id", str(parent.trace_id))           # same trace
+        span.set_attribute("langsmith.span.parent_id", str(parent.id))           # nest under parent
+        span.set_attribute("langsmith.span.id", str(child_id))                   # this span's run id
+        span.set_attribute("langsmith.span.dotted_order", dotted)                # position in the tree
+        span.set_attribute("langsmith.trace.session_name", parent.session_name)  # same project
+        # ... your instrumented work here ...
+
+
+@traceable
+def my_agent():
+    parent = get_current_run_tree()  # the LangSmith run to nest under
+    emit_otel_child(parent)
+```
+
+<Note>
+`langsmith.span.dotted_order` encodes the span's position in the trace tree. Build it from the parent's [`dotted_order`](https://docs.langchain.com/langsmith/run-data-format#what-is-dotted_order), a dot, then this span's timestamp followed by its `langsmith.span.id`.
+</Note>
 
 ### Add an attachment to a trace
 
@@ -683,6 +731,16 @@ In distributed systems, context propagation passes trace metadata between servic
 * **Trace ID**: A unique identifier for the entire trace
 * **Span ID**: A unique identifier for the current span
 * **Sampling Decision**: Indicates whether this trace should be sampled
+
+<Warning>
+**A span whose parent is never sent to LangSmith is dropped.**
+
+The OTel endpoint is asynchronous: it accepts a batch, returns `200`, and materializes runs in the background. When a span's `parentSpanId` references a parent that LangSmith hasn't received yet, the child is buffered and linked once the parent arrives. This works regardless of order; a child can arrive before its parent, in a separate request, and still link correctly.
+
+However, if the parent span is **never** exported to LangSmith, the buffered child expires and never appears as a run. LangSmith will not return an error, because the `200` was sent before processing. This commonly happens when only part of a distributed trace reaches LangSmith: the parent is emitted by a service that exports to a different backend, or it's removed by a sampling decision.
+
+To avoid silent loss, make sure every span you want in LangSmith also has its ancestors exported to LangSmith within the buffering window. On self-hosted deployments, this window is controlled by `REDIS_RUNS_EXPIRY_SECONDS` (default 12 hours).
+</Warning>
 
 #### Set up distributed tracing with LangChain
 

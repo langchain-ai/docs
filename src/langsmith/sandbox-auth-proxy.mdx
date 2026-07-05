@@ -183,7 +183,8 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
 ```python Python
 from langsmith.sandbox import (
     SandboxClient,
-    aws_auth_proxy_config,
+    aws_auth,
+    proxy_config,
     workspace_secret,
 )
 
@@ -191,9 +192,13 @@ client = SandboxClient()
 
 client.create_sandbox(
     name="aws-sandbox",
-    proxy_config=aws_auth_proxy_config(
-        access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
-        secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+    proxy_config=proxy_config(
+        rules=[
+            aws_auth(
+                access_key_id=workspace_secret("AWS_ACCESS_KEY_ID"),
+                secret_access_key=workspace_secret("AWS_SECRET_ACCESS_KEY"),
+            )
+        ]
     ),
 )
 ```
@@ -201,7 +206,8 @@ client.create_sandbox(
 ```ts TypeScript
 import {
   SandboxClient,
-  awsAuthProxyConfig,
+  awsAuth,
+  proxyConfig,
   workspaceSecret,
 } from "langsmith/sandbox";
 
@@ -209,9 +215,13 @@ const client = new SandboxClient();
 
 await client.createSandbox({
   name: "aws-sandbox",
-  proxyConfig: awsAuthProxyConfig({
-    accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
-    secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
+  proxyConfig: proxyConfig({
+    rules: [
+      awsAuth({
+        accessKeyId: workspaceSecret("AWS_ACCESS_KEY_ID"),
+        secretAccessKey: workspaceSecret("AWS_SECRET_ACCESS_KEY"),
+      }),
+    ],
   }),
 });
 ```
@@ -223,6 +233,108 @@ After the sandbox is ready, use AWS SDKs or CLIs normally inside the sandbox. Th
 <Note>
 AWS auth proxy rules currently support access key ID and secret access key credentials. They do not include a session token or assume-role configuration.
 </Note>
+
+## Authenticate GCP requests
+
+Use a GCP auth rule when sandbox code needs to call Google APIs with Google SDKs or CLIs. The proxy keeps the service account JSON outside the sandbox, then authenticates supported outbound HTTPS requests to Google API hosts matched by the sandbox proxy.
+
+This is useful when agent code needs to inspect GCS objects or call another Google API without exposing service account JSON in sandbox files, environment variables, shell history, or logs. The sandbox receives compatibility credentials so SDK credential detection works, while the proxy authenticates the outbound request with the configured service account.
+
+<Warning>
+Do not set real service account JSON as a sandbox environment variable. Configure it as a `workspace_secret` or `opaque` proxy value. Plaintext GCP credential values are rejected.
+</Warning>
+
+GCP auth rules are different from header injection rules:
+
+- Set `type` to `gcp`.
+- Put credentials under `gcp.service_account_json`.
+- Set `gcp.scopes` to a non-empty list of OAuth scopes.
+- The proxy matches Google API hosts automatically and authenticates those requests with the configured service account.
+- Configure at most one enabled GCP auth rule per sandbox.
+
+The SDK `gcp_auth` and `gcpAuth` helpers build this same rule shape.
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "gcp-sandbox",
+    "wait_for_ready": true,
+    "proxy_config": {
+      "rules": [
+        {
+          "name": "gcp",
+          "type": "gcp",
+          "enabled": true,
+          "gcp": {
+            "service_account_json": {
+              "type": "workspace_secret",
+              "value": "{GCP_SERVICE_ACCOUNT_JSON}"
+            },
+            "scopes": [
+              "https://www.googleapis.com/auth/devstorage.read_only"
+            ]
+          }
+        }
+      ]
+    }
+  }'
+```
+
+### Configure GCP auth via SDK
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import (
+    SandboxClient,
+    gcp_auth,
+    proxy_config,
+    workspace_secret,
+)
+
+client = SandboxClient()
+
+client.create_sandbox(
+    name="gcp-sandbox",
+    proxy_config=proxy_config(
+        rules=[
+            gcp_auth(
+                service_account_json=workspace_secret("GCP_SERVICE_ACCOUNT_JSON"),
+                scopes=["https://www.googleapis.com/auth/devstorage.read_only"],
+            )
+        ]
+    ),
+)
+```
+
+```ts TypeScript
+import {
+  SandboxClient,
+  gcpAuth,
+  proxyConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+await client.createSandbox({
+  name: "gcp-sandbox",
+  proxyConfig: proxyConfig({
+    rules: [
+      gcpAuth({
+        serviceAccountJson: workspaceSecret("GCP_SERVICE_ACCOUNT_JSON"),
+        scopes: ["https://www.googleapis.com/auth/devstorage.read_only"],
+      }),
+    ],
+  }),
+});
+```
+
+</CodeGroup>
+
+After the sandbox is ready, use Google SDKs or CLIs normally inside the sandbox for supported Google API requests. The SDK or CLI can discover the compatibility credentials, and the proxy applies the real GCP authentication without exposing service account JSON inside the sandbox.
 
 ## Single API example
 
