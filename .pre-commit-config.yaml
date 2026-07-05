@@ -1,0 +1,60 @@
+# Pre-commit hooks run by prek (https://github.com/j178/prek).
+#
+# prek is installed via mise (see .mise.toml). To wire hooks into git:
+#
+#   mise install
+#   prek install --hook-type pre-commit --hook-type pre-push
+#
+# To run the expensive broken-links build manually (mirrors the
+# `make broken-links-with-anchors` CI check):
+#
+#   prek run --hook-stage manual broken-links-with-anchors --all-files
+#
+# CI and Make targets that this file guards against:
+#   - .github/workflows/check-removed-pages-redirects.yml
+#   - .github/workflows/lint-prose.yml
+#   - .github/workflows/_check-links.yml (via the manual hook)
+
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+
+repos:
+  - repo: local
+    hooks:
+      - id: check-removed-pages-redirects
+        name: docs.json - removed pages have redirects
+        description: >-
+          Mirrors the check-removed-pages-redirects GitHub workflow. Verifies
+          that any page removed from src/docs.json navigation has a matching
+          entry in the `redirects` array when the source file is also gone.
+        entry: mise exec -- python scripts/check_removed_pages_redirects.py --base-ref origin/main src/docs.json
+        language: system
+        pass_filenames: false
+        files: ^src/docs\.json$
+        stages: [pre-commit, pre-push]
+
+      - id: vale
+        name: Vale prose lint (changed docs)
+        description: >-
+          Mirrors the lint-prose GitHub workflow. Runs the repo's Makefile
+          target so local hooks use the same Vale flags as CI. Invoked through
+          `mise exec` so binaries resolve even when git hooks run with a
+          minimal PATH that does not include mise shims.
+        entry: bash -c 'mise exec -- make lint_prose FILES="$*"' --
+        language: system
+        files: ^src/.*\.mdx?$
+        stages: [pre-commit, pre-push]
+
+      - id: broken-links-with-anchors
+        name: mint broken-links (full build, manual stage)
+        description: >-
+          Runs `make broken-links-with-anchors`, which builds the site with
+          Mintlify and validates every internal link and anchor. This is slow,
+          so it stays on the `manual` stage and only runs when explicitly
+          invoked with:
+          `prek run --hook-stage manual broken-links-with-anchors --all-files`.
+        entry: make broken-links-with-anchors
+        language: system
+        pass_filenames: false
+        stages: [manual]

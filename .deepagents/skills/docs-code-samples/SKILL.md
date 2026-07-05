@@ -60,13 +60,23 @@ src/
 
 **More than one snippet in one file**: A single code sample file can contain more than one named snippet using different `:snippet-start: snippet-name` and `:snippet-end:` pairs. Each snippet must have a unique name. Shared imports, helpers, and `:remove-start:` test harness code live once in the file; only the fenced regions between snippet tags appear in the generated MDX snippets.
 
+**When to split TypeScript samples into separate files**: Python samples can usually keep multiple snippets in one file because later definitions overwrite earlier ones at module scope. TypeScript and JavaScript cannot: `make test-code-samples` runs the entire `.ts` file, and every snippet's code executes in the same module scope. Split into separate `.ts` files when snippets would collide, for example:
+
+- Duplicate `import` bindings (for example two snippets both `import { interrupt } from "@langchain/langgraph"`)
+- Duplicate `const` / `let` / `class` / `function` declarations with the same name (for example two snippets both declare `const State = ...`)
+- Two self-contained snippets that each need their own imports and top-level setup
+
+Keep related snippets in one Python file when possible. For TypeScript, use one file per independently runnable snippet when imports or top-level bindings would conflict. Name sibling files clearly, for example `langgraph-interrupts-validate-conditional-edge-pattern.ts` and `langgraph-interrupts-validate-conditional-edge.ts`. Put shared test-only setup in `:remove-start:` blocks inside each file rather than importing between sample files.
+
+Within a single TypeScript file, `:remove-start:` blocks and snippet regions share the same module scope when `make test-code-samples` runs the file. Do not import the same binding in both places. Keep imports that appear in the docs snippet inside the snippet; limit `:remove-start:` imports to symbols used only by the test harness (for example `Command`, `MemorySaver`) that the snippet does not import.
+
 ## Step-by-step instructions
 
 ### 1. Create the code sample file
 
 Place the file under `src/code-samples/` in the folder for the product: `langchain/`, `langgraph/`, `deepagents/`, or `langsmith/` (for example, `src/code-samples/langgraph/langgraph-sql-agent.py` for LangGraph docs).
 
-Use a descriptive filename, for example, `return-a-string.py`, `return-a-string.ts`, or `traceable-pipeline.java`. When a doc page needs several code blocks for the same feature, add them as multiple snippets in one file (for example, `rubric-configure.py` with `rubric-configure-py` and `rubric-invoke-py`) instead of creating `rubric-configure.py` and `rubric-invoke.py`.
+Use a descriptive filename, for example, `return-a-string.py`, `return-a-string.ts`, or `traceable-pipeline.java`. When a doc page needs several code blocks for the same feature, add them as multiple snippets in one Python file (for example, `rubric-configure.py` with `rubric-configure-py` and `rubric-invoke-py`) instead of creating `rubric-configure.py` and `rubric-invoke.py`. For TypeScript, use one file per snippet when module-scope imports or bindings would conflict (see **When to split TypeScript samples into separate files** above).
 
 ### 2. Add snippet delineators
 
@@ -238,7 +248,7 @@ To support additional languages, add config entries in that script.
 
 ## Guidelines
 
-- **Collocate related snippets** in one code sample file per doc page or feature when possible. Import each generated MDX snippet separately in the MDX file (for example, `<RubricConfigurePy />` then `<RubricInvokePy />` from the same source file).
+- **Collocate related snippets** in one code sample file per doc page or feature when possible (Python and Java). Import each generated MDX snippet separately in the MDX file (for example, `<RubricConfigurePy />` then `<RubricInvokePy />` from the same source file). For TypeScript, split into separate `.ts` files when snippets duplicate imports or top-level bindings; still import each generated MDX snippet in the MDX file the same way.
 - Do not mock LangChain internals (for example `unittest.mock.patch` on `init_chat_model` helpers) so that imports resolve real chat model instances. Do not use fake chat models in docs code samples (for example `GenericFakeChatModel`, `FakeListChatModel`, or other `langchain_core` testing fakes). Wire a real chat model (for example `ChatOpenAI`) so snippets match what readers run; `make test-code-samples` requires a valid API key when the sample calls the model.
 - Do not change `pyproject.toml` when making code sample changes.
 - Always run `make test-code-samples FILES="path/to/your/file.py"` before `make code-snippets` to ensure new samples pass.

@@ -68,7 +68,7 @@ while (true) {
     break;
   }
 
-  const interruptInfo = stream.interrupts[0].value;
+  const interruptInfo = stream.interrupts[0].payload;
   const userResponse = await getUserInput(interruptInfo);
   streamInput = new Command({ resume: userResponse });
 }

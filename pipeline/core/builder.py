@@ -164,8 +164,17 @@ class DocumentationBuilder:
             url = match.group(2)  # The URL
             post = match.group(3)  # Everything after the URL
 
-            # Only rewrite absolute /oss/ paths that don't contain 'images'
-            if url.startswith("/oss/") and "images" not in url:
+            # Only rewrite absolute /oss/ paths that don't contain 'images'.
+            # Skip paths that already specify a language (e.g. links from
+            # unversioned langsmith pages to /oss/python/... or
+            # /oss/javascript/...), otherwise the language is inserted a second
+            # time and produces broken URLs like /oss/python/python/...
+            if (
+                url.startswith("/oss/")
+                and "images" not in url
+                and not url.startswith("/oss/python/")
+                and not url.startswith("/oss/javascript/")
+            ):
                 parts = url.split("/")
                 # Insert full language name after "oss"
                 parts.insert(2, self.language_url_names[target_language])
@@ -775,6 +784,7 @@ class DocumentationBuilder:
             "index.mdx",
             "use-these-docs.mdx",
             "playground.mdx",
+            "build-overview.mdx",
         }:
             return True
 

@@ -1,4 +1,5 @@
 """Tests for the UTM link preprocessor."""
+# ruff: noqa: D101,D102,D103
 
 from pathlib import Path
 
