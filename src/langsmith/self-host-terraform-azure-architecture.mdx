@@ -56,7 +56,7 @@ redis_source      = "in-cluster"
 clickhouse_source = "in-cluster"
 ```
 
-For the full all-in-cluster walkthrough (Front Door TLS, all-in-cluster DBs), see `BUILDING_LIGHT_LANGSMITH.md` in the [Azure module repo](https://github.com/langchain-ai/terraform/blob/main/modules/azure/BUILDING_LIGHT_LANGSMITH.md).
+For the full all-in-cluster walkthrough (NGINX with Let's Encrypt HTTP-01 TLS, all-in-cluster DBs), see `BUILDING_LIGHT_LANGSMITH.md` in the [Azure module repo](https://github.com/langchain-ai/terraform/blob/main/modules/azure/BUILDING_LIGHT_LANGSMITH.md).
 
 ### Production (external managed services)
 
@@ -99,10 +99,10 @@ All subnets are private. Postgres and Redis are accessible only from within the 
 
 | Service | Purpose | Port | HPA | Workload Identity |
 |---|---|---|---|---|
-| `langsmith-frontend` | React UI | 3000 | 1 to 10 | No |
+| `langsmith-frontend` | React UI | 3000 | 2 to 10 | No |
 | `langsmith-backend` | Main API (traces, runs, projects, API keys, feedback) | 1984 | 3 to 10 | Yes (Blob) |
-| `langsmith-platform-backend` | Org and user management, auth, billing, settings | 1986 | 1 to 10 | Yes (Blob) |
-| `langsmith-playground` | LLM prompt playground UI | 3001 | 1 to 10 | No |
+| `langsmith-platform-backend` | Org and user management, auth, billing, settings | 1986 | 2 to 10 | Yes (Blob) |
+| `langsmith-playground` | LLM prompt playground UI | 3001 | 1 to 5 | No |
 | `langsmith-queue` | Trace ingestion worker (Redis → ClickHouse + Blob) | — | 3 to 10 + KEDA | Yes |
 | `langsmith-ingest-queue` | Dedicated high-throughput ingestion worker | — | 3 to 10 + KEDA | Yes |
 | `langsmith-ace-backend` | Async compute (dataset runs, evaluations, background jobs) | — | 1 to 5 | No |
@@ -141,7 +141,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 
 **Insights/Clio:** No static pods. Deploys lazily as a dynamic LangGraph deployment via the operator on first UI invocation. Reads `insights_encryption_key` from `langsmith-config-secret`. Never rotate this key — it permanently breaks existing Insights data.
 
-**Polly:** Runs as a dynamic LangGraph deployment. Resource limits 2 CPU / 4 Gi request, 4 CPU / 8 Gi limit, scales 1 to 5 replicas. Reads `polly_encryption_key` from `langsmith-config-secret`. Same rotation warning as Insights.
+**Polly:** Runs as a dynamic LangGraph deployment, operator-managed. Reads `polly_encryption_key` from `langsmith-config-secret`. Same rotation warning as Insights.
 
 ## Azure managed services
 
@@ -158,7 +158,7 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 ### Azure Managed Redis
 
 - Trace ingestion queue, pub/sub, short-lived cache.
-- Redis ≥ 5 required.
+- Azure Managed Redis manages the engine version; there is no version variable to set.
 - Each LangSmith installation must use its own dedicated Redis. Shared instances cause deployment tasks to route incorrectly.
 - Private VNet only (`subnet-redis`), TLS port 10000.
 - Secret: `langsmith-redis-secret`, created by the `k8s-bootstrap` Terraform module.
@@ -232,11 +232,14 @@ The pod panics on startup — the ServiceAccount has no registered federated cre
 Infrastructure stage
 
   ./setup-env.sh   (read-only against Key Vault — never writes to KV directly)
-    First run:  prompts for postgres password, license key, admin password.
+    First run:  prompts for postgres password, license key, admin password, admin email.
                 Generates api_key_salt, jwt_secret, Fernet keys locally.
                 Key Vault does not exist yet → writes to local dot-files + secrets.auto.tfvars.
-    Subsequent: Key Vault exists → reads all secrets from KV → writes to secrets.auto.tfvars.
-                No prompts, no generation, no KV writes.
+    Subsequent: Key Vault exists → reads the six generated secrets (api_key_salt,
+                jwt_secret, four Fernet keys) from KV. Re-prompts for postgres password,
+                license key, admin password, and admin email unless LANGSMITH_PG_PASSWORD,
+                LANGSMITH_LICENSE_KEY, LANGSMITH_ADMIN_PASSWORD, and LANGSMITH_ADMIN_EMAIL
+                are set. Writes secrets.auto.tfvars. No generation, no KV writes.
     Output:     secrets.auto.tfvars  (gitignored, chmod 600)
                 Terraform picks this up automatically — no shell session coupling.
 
@@ -247,7 +250,8 @@ Infrastructure stage
 
 Application stage
 
-  ./setup-env.sh   (re-run on any machine to refresh secrets.auto.tfvars from Key Vault)
+  ./setup-env.sh   (re-run on any machine — reads generated secrets from Key Vault,
+                    re-prompts for user-provided ones unless LANGSMITH_* env vars are set)
 
   kubectl create secret generic langsmith-config-secret
     Reads:  Key Vault secrets + Terraform outputs (postgres/redis URLs, blob account)
@@ -259,7 +263,7 @@ Application stage
     No secrets inline in any YAML file.
 ```
 
-**Key rule:** `secrets.auto.tfvars` is never committed. It is regenerated from Key Vault on any machine by running `./setup-env.sh`. Terraform is the sole writer to Key Vault; `setup-env.sh` only reads from it after the first apply.
+**Key rule:** `secrets.auto.tfvars` is never committed. Running `./setup-env.sh` on any machine restores it: the generated secrets come from Key Vault, and the user-provided secrets are re-prompted unless supplied through the `LANGSMITH_*` environment variables. Terraform is the sole writer to Key Vault; `setup-env.sh` only reads from it after the first apply.
 
 ## Ingress options
 
@@ -268,7 +272,7 @@ Application stage
 | `nginx` _(default)_ | `ingress_controller = "nginx"` | Yes | NGINX via Helm, standard Kubernetes Ingress. |
 | `istio-addon` | `ingress_controller = "istio-addon"` | Yes | AKS managed Istio service mesh. Use `istio_addon_revision` to pin revision. |
 | `istio` | `ingress_controller = "istio"` | Yes | Self-managed Istio via Helm. Full control over revision and config. |
-| `agic` | `ingress_controller = "agic"` | Yes | Azure Application Gateway v2 + AGIC Helm chart. Native L7 WAF. HTTP-only or dns01 + custom domain. |
+| `agic` | `ingress_controller = "agic"` | Yes | Azure Application Gateway v2 + AKS-managed `ingress_application_gateway` add-on. Native L7 WAF. HTTP-only or dns01 + custom domain. |
 | `envoy-gateway` | `ingress_controller = "envoy-gateway"` | Yes | Gateway API native. Uses `envoyproxy/gateway-helm`. |
 | `none` | `ingress_controller = "none"` | — | Bring your own ingress. |
 
@@ -291,11 +295,11 @@ Four sizing profiles are available.
 
 | Pool | VM Size | vCPU | RAM | Min | Max | Purpose |
 |---|---|---|---|---|---|---|
-| default | `Standard_D8s_v3` | 8 | 32 GB | 3 | 10 | Core LangSmith, system pods |
+| default | `Standard_D8s_v3` | 8 | 32 GB | 1 | 10 | Core LangSmith, system pods (set min 3 for production) |
 | large | `Standard_D16s_v3` | 16 | 64 GB | 0 | 2 | ClickHouse (in-cluster), LGP agent pods |
 
 <Note>
-ClickHouse (when in-cluster) requests 2 to 4 CPU and 8 to 15 GB RAM depending on profile. With [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse), the `large` pool is only needed for LGP operator-spawned agent pods.
+ClickHouse (when in-cluster) requests 1 to 4 CPU and 2 to 16 GB RAM depending on profile. With [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse), the `large` pool is only needed for LGP operator-spawned agent pods.
 </Note>
 
 ## Optional modules
@@ -305,6 +309,6 @@ Each module is count-controlled (`0` disabled, `1` enabled). Enable any combinat
 | Module | Variable | Use case |
 |---|---|---|
 | `waf` | `create_waf = true` | Azure WAF policy (OWASP 3.2 + bot protection). Attach to Application Gateway. |
-| `diagnostics` | `create_diagnostics = true` | Log Analytics workspace + diagnostic settings for AKS, Key Vault, Blob. Recommended for production observability. |
-| `bastion` | `create_bastion = true` | Azure Bastion (Standard tier). Browser-based SSH to node VMs without a public IP. |
+| `diagnostics` | `create_diagnostics = true` | Log Analytics workspace + diagnostic settings for AKS, Key Vault, and PostgreSQL. Recommended for production observability. |
+| `bastion` | `create_bastion = true` | Jump VM with a static public IP for private AKS access via `az ssh vm` and Entra ID SSH. |
 | `dns` | `create_dns_zone = true` | Azure DNS zone + A record. Required for DNS-01 cert issuance with a custom domain. |

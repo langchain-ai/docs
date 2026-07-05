@@ -187,7 +187,7 @@ kubectl delete certificate langsmith-tls -n langsmith
 
 **Symptom:** `kubectl describe certificate langsmith-tls -n langsmith` shows `clusterissuers.cert-manager.io "letsencrypt-prod" not found`.
 
-**Cause:** Older versions of the `k8s-bootstrap` module did not create the `ClusterIssuer`. Current versions do; `make deploy` also applies it via `kubectl apply` (since `kubernetes_manifest` requires a live cluster API during plan).
+**Cause:** For `tls_certificate_source = "letsencrypt"` (HTTP-01), the `letsencrypt-prod` ClusterIssuer is created by `apply-cluster-issuers.sh`, which `make deploy` runs via `kubectl apply`. The Terraform `k8s-bootstrap` module does not create the HTTP-01 issuer; it creates the issuer only for `dns01`. Running `helm upgrade` directly instead of `make deploy` skips the issuer.
 
 **Fix — apply manually:**
 
@@ -275,9 +275,8 @@ config:
 
 ```bash
 cat > helm/values/langsmith-values-insights.yaml << 'EOF'
-config:
-  insights:
-    enabled: true
+insights:
+  enabled: true
 EOF
 make deploy
 ```
@@ -419,12 +418,12 @@ make destroy
 
 ### `listener` pods OOMKilled
 
-**Cause:** `langsmith-values-sizing-dev.yaml` sets `listener.deployment.resources.limits.memory: 512Mi`. With Deployments enabled, the listener exceeds this.
+**Cause:** The listener memory limit is set by the sizing overlay under `listener.deployment.resources`. On the `dev` profile that limit is `2Gi`, which sustained Deployments load can exceed.
 
-**Fix:** The `langsmith-values-agent-deploys.yaml` overlay correctly sets `4Gi`. Re-run `make init-values` to regenerate overlays.
+**Fix:** Raise the limit under `listener.deployment.resources` (the key the chart reads), either by moving to a larger sizing profile or by adding the override to a values file that loads after the sizing overlay, then re-run `make init-values` and `make deploy`.
 
 <Note>
-The chart uses `listener.deployment.resources` for container limits, not `listener.resources`. Setting `listener.resources` in an overlay is silently ignored.
+The chart reads `listener.deployment.resources` for container limits, not the flat `listener.resources`. The `langsmith-values-agent-deploys.yaml` example sets `listener.resources`, which the chart silently ignores, so that value does not change the limit.
 </Note>
 
 ### Stale HPA scales `listener` or `host-backend` to max replicas
@@ -581,9 +580,9 @@ kubectl get crd | grep langchain
 ### Key Vault and Kubernetes Secrets
 
 ```bash
-make keyvault list
-make keyvault validate
-make keyvault diff
+./infra/scripts/manage-keyvault.sh list
+./infra/scripts/manage-keyvault.sh validate
+./infra/scripts/manage-keyvault.sh diff
 
 kubectl get secrets -n langsmith
 kubectl get secret langsmith-config-secret -n langsmith -o jsonpath='{.data}' | jq 'keys'

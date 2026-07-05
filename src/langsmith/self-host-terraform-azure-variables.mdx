@@ -82,7 +82,7 @@ Reference for every input variable exposed by the [Azure Terraform modules](http
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `keyvault_name` | `langsmith-kv<identifier>` | no | Key Vault name. Must be globally unique, 3 to 24 characters. Override to avoid naming conflicts. |
+| `keyvault_name` | `""` | no | Key Vault name. Must be globally unique, 3 to 24 characters. When empty, `main.tf` computes `langsmith-kv<identifier>`. Override to avoid naming conflicts. |
 | `keyvault_purge_protection` | `true` | no | Enable purge protection. Set `false` for dev/test to allow immediate name reuse after destroy. |
 | `keyvault_default_action` | `Allow` | no | Default action for the Key Vault data-plane firewall. `Allow` keeps the first apply (which creates secrets via the data plane) working. Production sets `Deny` and populates `keyvault_allowed_ips`. |
 | `keyvault_allowed_ips` | `[]` | no | Public IPs or CIDRs allowed through the Key Vault firewall when `keyvault_default_action = "Deny"`. The AKS subnet is allowlisted automatically via the `Microsoft.KeyVault` service endpoint. |
@@ -148,6 +148,8 @@ Reference for every input variable exposed by the [Azure Terraform modules](http
 
 `make setup-env` writes these to `secrets.auto.tfvars` and Terraform stores them in Azure Key Vault. Never set these inline in `terraform.tfvars`.
 
+`make setup-env` also manages `postgres_admin_password` and `langsmith_admin_email`, documented in the [PostgreSQL](#postgresql) and [LangSmith application](#langsmith-application) sections. This table lists only the sensitive variables that do not appear elsewhere in this reference.
+
 | Variable | Description |
 |---|---|
 | `langsmith_license_key` | LangSmith enterprise license key. |
@@ -158,3 +160,35 @@ Reference for every input variable exposed by the [Azure Terraform modules](http
 | `langsmith_agent_builder_encryption_key` | Fernet key for Agent Builder. Must never change. |
 | `langsmith_insights_encryption_key` | Fernet key for Insights. Must never change. |
 | `langsmith_polly_encryption_key` | Fernet key for Polly. Must never change. |
+
+## App module variables (Terraform path)
+
+The Terraform path (`make init-app` then `make apply-app`) manages the LangSmith Helm release, its Kubernetes Secret, and the Workload Identity ServiceAccount in Terraform state instead of through the Helm shell scripts. Its variables live in `app/terraform.tfvars`. Use this path as an alternative to `make init-values && make deploy`. See the [Azure deployment guide](/langsmith/self-host-terraform-azure-deploy) for when to choose it.
+
+`make init-app` auto-populates the infrastructure passthrough variables (`subscription_id`, `resource_group_name`, `cluster_name`, `keyvault_name`, `storage_account_name`, `storage_container_name`, `workload_identity_client_id`, `langsmith_namespace`, `tls_certificate_source`, `ingress_controller`, and `dns_label`) from the infra module outputs. Each defaults to `null` and fails at plan time with a precondition error naming what is missing. Override them only when running the app module against infrastructure you provisioned separately.
+
+Set the following in `app/terraform.tfvars`:
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `sizing` | `production` | no | Resource sizing profile: `production`, `production-large`, `dev`, or `none` (chart defaults). |
+| `postgres_source` | `external` | no | `external` (Azure Database for PostgreSQL) or `in-cluster` (Helm). Mirror the infra value. |
+| `redis_source` | `external` | no | `external` (Azure Managed Redis) or `in-cluster` (Helm). Mirror the infra value. |
+| `hostname` | `null` | no | LangSmith hostname. Auto-detected from `dns_label` when unset. |
+| `admin_email` | `admin@example.com` | no | Initial org admin email address. |
+| `release_name` | `langsmith` | no | Helm release name. |
+| `chart_version` | `""` | no | LangSmith Helm chart version. Empty uses the latest. |
+| `helm_timeout` | `1200` | no | Helm install and upgrade timeout in seconds. |
+| `helm_force_update` | `false` | no | Force a Helm upgrade on every apply, even when values are unchanged. |
+| `enable_agent_deploys` | `false` | no | Enable LangGraph Platform Deployments. |
+| `enable_agent_builder` | `false` | no | Enable Agent Builder. Requires `enable_agent_deploys = true`. |
+| `enable_insights` | `false` | no | Enable Insights. Requires external ClickHouse. |
+| `enable_polly` | `false` | no | Enable Polly AI evaluation and monitoring. Requires `enable_agent_deploys = true`. |
+| `enable_usage_telemetry` | `false` | no | Enable extended usage telemetry reporting. |
+| `tls_enabled_for_deploys` | `null` | no | Whether agent deployment endpoints use HTTPS. Auto-detected from `tls_certificate_source` when unset. |
+| `clickhouse_host` | `""` | when `enable_insights` | ClickHouse hostname or endpoint. |
+| `clickhouse_port` | `8123` | no | ClickHouse HTTP port. |
+| `clickhouse_database` | `default` | no | ClickHouse database name. |
+| `clickhouse_username` | `default` | no | ClickHouse username. |
+| `clickhouse_password` | `""` | no | ClickHouse password. Set for authenticated ClickHouse. |
+| `clickhouse_tls` | `true` | no | Enable TLS for the ClickHouse connection. |

@@ -16,7 +16,7 @@ The deployment runs in two stages: infrastructure (Terraform provisions AKS, Pos
 |---|---|---|
 | Azure CLI (`az`) | 2.50 | Authenticate, query Azure resources, manage AKS credentials |
 | Terraform | 1.5 | Run the infrastructure modules |
-| `kubectl` | 1.28 | Inspect the AKS cluster |
+| `kubectl` | latest | Inspect the AKS cluster |
 | Helm | 3.12 | Install and manage the LangSmith chart |
 
 ```bash
@@ -102,7 +102,7 @@ Provisioning the Azure cloud foundation takes 15 to 20 minutes on a clean subscr
 | AKS Cluster | `azurerm_kubernetes_cluster` | Kubernetes, all workloads run here |
 | Ingress Controller | Helm | External load balancer + TLS termination (nginx by default) |
 | PostgreSQL Flexible Server | `azurerm_postgresql_flexible_server` | Org config, run metadata (external tier) |
-| Redis Cache Premium | `azurerm_redis_cache` | Trace ingestion queue, pub/sub (external tier) |
+| Azure Managed Redis | `azapi_resource` (Microsoft.Cache/redisEnterprise) | Trace ingestion queue, pub/sub (external tier) |
 | Blob Storage | `azurerm_storage_account` | Raw trace objects, always required |
 | Managed Identity | `azurerm_user_assigned_identity` | Workload Identity for pod-to-Blob auth |
 | Azure Key Vault | `azurerm_key_vault` | Stores all LangSmith secrets |
@@ -179,7 +179,7 @@ make setup-env
 `setup-env.sh` writes `infra/secrets.auto.tfvars` (gitignored, `chmod 600`). Terraform picks this file up automatically, no shell exports needed.
 
 - **First run:** prompts for PostgreSQL password, LangSmith license key, admin password, and admin email. Generates `api_key_salt`, `jwt_secret`, and four Fernet encryption keys locally.
-- **Subsequent runs:** reads everything silently from Azure Key Vault.
+- **Subsequent runs:** reads the six generated secrets (`api_key_salt`, `jwt_secret`, and the four Fernet keys) from Azure Key Vault. Re-prompts for the PostgreSQL password, license key, admin password, and admin email unless `LANGSMITH_PG_PASSWORD`, `LANGSMITH_LICENSE_KEY`, `LANGSMITH_ADMIN_PASSWORD`, and `LANGSMITH_ADMIN_EMAIL` are set in the environment.
 
 <Warning>
 Never commit `secrets.auto.tfvars`. It is gitignored. Regenerate on any machine by running `make setup-env`.
@@ -201,7 +201,7 @@ make apply   # ~15 to 20 min on first run
 ```
 
 <Note>
-Skip `make plan` on a fresh deploy. `kubernetes_manifest` resources require a live cluster API during plan, which does not exist yet. `make apply` handles resource ordering in three internal stages: Azure resources → AKS → Kubernetes bootstrap.
+Skip `make plan` on a fresh deploy. `kubernetes_manifest` resources require a live cluster API during plan, which does not exist yet. `make apply` handles resource ordering in three internal stages: Azure infrastructure including AKS → Kubernetes bootstrap (namespace, secrets, cert-manager, KEDA) → ClusterIssuer and remaining manifests.
 </Note>
 
 ### Cluster credentials and Kubernetes Secrets
@@ -224,7 +224,7 @@ kubectl get nodes
 # Bootstrap components, all Running
 kubectl get pods -n cert-manager     # 3 pods
 kubectl get pods -n keda             # 3 pods
-kubectl get pods -n ingress-nginx    # 1 pod (if using nginx)
+kubectl get pods -n ingress-nginx    # 2 pods (if using nginx)
 
 # NGINX LoadBalancer, save the EXTERNAL-IP
 kubectl get svc ingress-nginx-controller -n ingress-nginx
@@ -267,7 +267,7 @@ make init-values
 - `config.initialOrgAdminEmail`, the first org admin account.
 - `config.existingSecretName: langsmith-config-secret`, secrets reference.
 - `config.blobStorage`, storage account name + container + Workload Identity client ID.
-- Workload Identity annotations for 5 ServiceAccounts (backend, platform-backend, queue, ingest-queue, host-backend).
+- Workload Identity annotations for 8 ServiceAccounts (backend, platform-backend, queue, ingest-queue, host-backend, listener, agent-builder-tool-server, agent-builder-trigger-server).
 - Ingress + TLS block (cert-manager annotation, TLS secret name).
 - Postgres and Redis external secret references (when `postgres_source = "external"` / `redis_source = "external"`).
 
@@ -334,7 +334,7 @@ make apply-app
 Feature flags in `app/terraform.tfvars`:
 
 ```hcl
-sizing                = "production"   # minimum | dev | production | production-large
+sizing                = "production"   # dev | production | production-large | none
 enable_agent_deploys  = true           # LangSmith Deployment add-on
 enable_agent_builder  = true           # Agent Builder add-on (requires agent_deploys)
 enable_insights       = true           # Insights / ClickHouse add-on
@@ -393,7 +393,7 @@ az keyvault secret show \
 `make deploy` applies Helm values files in this order (last file wins on conflicts):
 
 ```txt
-1. helm/values/values.yaml                              ← Azure base (NGINX, Blob WI, no Istio)
+1. helm/values/values.yaml                              ← base values (chart defaults)
 2. helm/values/values-overrides.yaml                    ← hostname, WI client-id, auth, postgres/redis
 3. helm/values/langsmith-values-sizing-<profile>.yaml   ← resource requests + HPA settings
 4. (add-on files when enable_* flags are set)
@@ -511,7 +511,7 @@ make init-values    # appends langsmith-values-agent-builder.yaml to values chai
 make deploy         # rolling update, ~10 min for bootstrap Job to complete
 ```
 
-`make init-values` appends the Agent Builder add-on overlay (`langsmith-values-agent-builder.yaml`) to the values chain. The overlay enables the Agent Builder UI and supporting services, sets `backend.agentBootstrap: true` (the post-install job that registers Agent Builder as a LangSmith Deployment and creates the required ConfigMap), and sets conservative agent worker pod resources (1 CPU / 1 Gi) instead of the chart's default 4 CPU / 8 Gi.
+`make init-values` appends the Agent Builder add-on overlay (`langsmith-values-agent-builder.yaml`) to the values chain. The overlay enables the Agent Builder UI and supporting services, sets `backend.agentBootstrap.enabled: true` (the post-install job that registers Agent Builder as a LangSmith Deployment and creates the required ConfigMap), and sets conservative agent worker pod resources (1 to 2 CPU, 512 MiB to 1 GiB memory) instead of the chart's default 4 to 8 GiB memory.
 
 Verify:
 
@@ -547,7 +547,7 @@ Both `langsmith-agent-builder-tool-server` and `langsmith-agent-builder-trigger-
 Two features, both of which require LangSmith Deployment. They are independent of each other; enable either one without the other.
 
 - **Insights:** AI-powered trace analytics (Clio). Surfaces patterns and anomalies in LangSmith traces. Clio deploys as a dynamic LangGraph deployment through the operator on first UI invocation. Adds no new static pods.
-- **Polly:** AI-powered evaluation and monitoring agent. Runs as a dynamic LangGraph deployment. Sets resource limits for the Polly worker (2 CPU / 4 Gi request, 4 CPU / 8 Gi limit, scales 1 to 5 replicas).
+- **Polly:** AI-powered evaluation and monitoring agent. Runs as a dynamic LangGraph deployment, operator-managed. The overlay enables Polly (top-level `polly.enabled: true`); the operator manages its resources.
 
 No `terraform apply` needed; just `make init-values && make deploy`.
 
@@ -574,7 +574,7 @@ make deploy         # rolling update, ~5 min
 
 `make init-values` appends the add-on overlays based on `clickhouse_source` in `terraform.tfvars`:
 
-- `clickhouse_source = "in-cluster"`, generates a minimal overlay (`config.insights.enabled: true` only). The Helm chart manages ClickHouse internally.
+- `clickhouse_source = "in-cluster"`, generates a minimal overlay (top-level `insights.enabled: true` only). The Helm chart manages ClickHouse internally.
 - `clickhouse_source = "external"`, generates a full overlay with `clickhouse.external.enabled: true` and a `langsmith-clickhouse` secret reference. Create this secret with the ClickHouse host and credentials before deploying.
 
 <Warning>
@@ -626,11 +626,11 @@ Set `ingress_controller` in `terraform.tfvars` before `make apply`. For the full
 | `nginx` _(default)_ | `ingress-nginx` Helm chart with Azure LB | Standard deployments. Simplest setup. |
 | `istio-addon` | AKS Service Mesh add-on (Azure-managed Istio) | Azure-managed Istio mesh, multi-dataplane, mTLS. |
 | `istio` | `istio-base` + `istiod` + `istio-ingressgateway` | Self-managed Istio. Full mesh and sidecar injection. |
-| `agic` | Azure Application Gateway v2 + AGIC Helm chart | Enterprise Azure, native L7 WAF, HTTP-only or dns01 + custom domain. |
+| `agic` | Azure Application Gateway v2 + AKS-managed `ingress_application_gateway` add-on | Enterprise Azure, native L7 WAF, HTTP-only or dns01 + custom domain. |
 | `envoy-gateway` | `gateway-helm` OCI chart, Kubernetes Gateway API | Gateway API native, modern alternative to Ingress. |
 
 <Warning>
-`letsencrypt` (HTTP-01) only works with `nginx`, `istio` (self-managed), and `envoy-gateway`. `istio-addon` and `agic` do not create an IngressClass, so the ACME solver cannot receive traffic. For those controllers, use `dns01` with a custom domain, or `none` for HTTP-only.
+`letsencrypt` (HTTP-01) only works with `nginx`, `istio` (self-managed), and `envoy-gateway`. `istio-addon` does not create an IngressClass, so the ACME solver cannot receive traffic. With `agic`, the Application Gateway rewrites the ACME challenge path, so the HTTP-01 solver fails. For both, use `dns01` with a custom domain, or `none` for HTTP-only.
 </Warning>
 
 ## DNS and TLS
