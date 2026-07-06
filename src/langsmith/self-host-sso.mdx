@@ -434,6 +434,79 @@ The exact scope name (`groups`, `roles`, etc.) depends on your IdP. Check your I
 
 Per-provider SSO Groups Sync settings are stored on the SSO provider record and toggled via the [LangSmith UI](https://smith.langchain.com) or [API](/langsmith/reference) (not via Helm values). Once your IdP emits the groups claim, configure SSO Groups Sync from the UI in **Settings** → **Members and roles** → **SSO Configuration** → **SSO Groups Sync**. Or, via the API as described in the [main SSO Groups Sync documentation](/langsmith/user-management#sso-groups-sync-alternative). The claim name configured in the **Groups claim field** must match the claim emitted by your IdP.
 
+#### Emit the groups claim from Microsoft Entra ID
+
+For OIDC on self-hosted, add the groups claim through the App Registration Manifest. Skip the **Token configuration** > **Add groups claim** flow, which does not support display names for cloud-only security groups.
+
+<Warning>
+Set the top-level `groupMembershipClaims` property to `"ApplicationGroup"`. Other values change behavior in ways that are hard to diagnose:
+
+- Missing or `"None"`: no groups appear in the token.
+- `"SecurityGroup"` or `"All"`: groups appear, but the `cloud_displayname` value is silently ignored and the token contains group object IDs instead of names.
+- `"ApplicationGroup"`: groups resolve to display names, but only for groups explicitly assigned to the Enterprise Application under **Users and groups**.
+
+The `cloud_displayname` value is only supported for single-tenant applications.
+</Warning>
+
+In **App registrations** > your app > **Manifest**, merge the following into the manifest, keeping any existing `optionalClaims.idToken` entries such as `email`:
+
+```json
+"groupMembershipClaims": "ApplicationGroup",
+"optionalClaims": {
+  "idToken": [
+    {
+      "name": "email",
+      "source": null,
+      "essential": false,
+      "additionalProperties": []
+    },
+    {
+      "name": "groups",
+      "source": null,
+      "essential": false,
+      "additionalProperties": ["cloud_displayname"]
+    }
+  ],
+  "accessToken": [],
+  "saml2Token": []
+}
+```
+
+Then, in **Enterprise applications** > your app > **Users and groups**, assign every group that maps to a LangSmith role. Groups that are not assigned to the Enterprise Application do not appear in the token.
+
+#### Create Microsoft Entra ID groups for SSO Groups Sync
+
+Groups used for SSO Groups Sync must follow the [group naming convention](/langsmith/user-management#group-naming-convention) documented on the main user management page (for example, `LS:Organization Admins`, `LS:Organization User:Production:Editor`). Group names are case-sensitive and must match the convention exactly.
+
+To create a group in Microsoft Entra ID:
+
+1. In the Microsoft Entra admin center, go to **Groups** > **New group**.
+2. Set **Group type** to `Security`.
+3. Set **Membership type** to `Assigned` (dynamic membership is not supported).
+4. Set **Group name** to a value that matches the naming convention.
+5. Add members, then click **Create**.
+
+Group membership changes take effect on each user's next login.
+
+#### Verify the groups claim in the token
+
+After completing IdP-side configuration, verify that the OIDC ID token contains the expected groups claim:
+
+1. Sign out of LangSmith, then sign back in via SSO.
+2. In your browser's developer tools, go to **Application** > **Cookies** and locate the OAuth session cookie.
+3. Decode the ID token with a JWT decoder (for example, [jwt.io](https://jwt.io)) and confirm the `groups` claim contains display names, not object IDs:
+
+```json
+{
+  "groups": [
+    "LS:Organization Admins",
+    "LS:Organization User:Production:Editor"
+  ]
+}
+```
+
+If the claim contains UUIDs instead of names, revisit the `groupMembershipClaims` value in the manifest and confirm the groups are assigned to the Enterprise Application under **Users and groups**.
+
 ## PKCE flow (deprecated)
 
 We recommend running with a `Client Secret` if possible (previously we didn't support this). However, if your IdP does not support this, you can use the `Authorization Code with PKCE` flow.
