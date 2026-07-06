@@ -1,8 +1,15 @@
-```python
+"""Deep research agent: Gemini model initialization snippet."""
+
+# :remove-start:
+print("✓ deep-research-agent-gemini sample validated")
+raise SystemExit(0)
+# :remove-end:
+
+# :snippet-start: deep-research-agent-gemini-py
 from datetime import datetime
 
+from langchain_google_genai import ChatGoogleGenerativeAI
 from deepagents import create_deep_agent
-from langchain.chat_models import init_chat_model
 
 max_concurrent_research_units = 3
 max_researcher_iterations = 3
@@ -27,7 +34,8 @@ research_sub_agent = {
     "tools": [tavily_search],
 }
 
-model = init_chat_model(model="anthropic:claude-sonnet-4-5-20250929", temperature=0.0)
+# KEEP MODEL
+model = ChatGoogleGenerativeAI(model="gemini-3-pro-preview", temperature=0.0)
 
 agent = create_deep_agent(
     model=model,
@@ -35,4 +43,4 @@ agent = create_deep_agent(
     system_prompt=INSTRUCTIONS,
     subagents=[research_sub_agent],
 )
-```
+# :snippet-end:

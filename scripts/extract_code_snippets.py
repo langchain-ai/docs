@@ -6,7 +6,7 @@ This tool only looks for comment-line markers, so glob patterns and other string
 
 Supported markers (same as this repo's Bluehawk usage):
 
-- Optional prefix lines inside a snippet body, consumed by ``generate_code_snippet_mdx.py`` (not shown in docs): ``# :codegroup-tab: <Title>`` or ``// :codegroup-tab: <Title>`` for Mintlify ``<CodeGroup>`` tab labels; optionally the next line ``:codegroup-fence-mods: expandable wrap`` for long blocks.
+- Optional prefix lines inside a snippet body, consumed by ``generate_code_snippet_mdx.py`` (not shown in docs): ``# :codegroup-tab: <Title>`` or ``// :codegroup-tab: <Title>`` for Mintlify ``<CodeGroup>`` tab labels; optionally ``# :codegroup-fence-mods: expandable wrap`` (or ``//``) on the next line after a tab, or as the first line when there is no tab, for long blocks.
 
 - ``# :snippet-start: <id>`` / ``# :snippet-end:`` (Python)
 - ``// :snippet-start: <id>`` / ``// :snippet-end:`` (TypeScript, Java)
