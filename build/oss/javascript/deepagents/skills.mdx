@@ -9,6 +9,20 @@ import SkillsSandboxPy from '/snippets/code-samples/skills-sandbox-py.mdx';
 import SkillsSandboxJs from '/snippets/code-samples/skills-sandbox-js.mdx';
 import BackendReadonlySkillsPy from '/snippets/code-samples/backend-readonly-skills-py.mdx';
 import BackendReadonlySkillsJs from '/snippets/code-samples/backend-readonly-skills-js.mdx';
+import SkillsCreateAgentPy from '/snippets/code-samples/skills-create-agent-py.mdx';
+import SkillsCreateAgentJs from '/snippets/code-samples/skills-create-agent-js.mdx';
+import SkillsInvokePy from '/snippets/code-samples/skills-invoke-py.mdx';
+import SkillsInvokeJs from '/snippets/code-samples/skills-invoke-js.mdx';
+import SkillsDynamicListsPy from '/snippets/code-samples/skills-dynamic-lists-py.mdx';
+import SkillsDynamicListsJs from '/snippets/code-samples/skills-dynamic-lists-js.mdx';
+import SkillsNamespacedPy from '/snippets/code-samples/skills-namespaced-py.mdx';
+import SkillsNamespacedJs from '/snippets/code-samples/skills-namespaced-js.mdx';
+import SkillsSubagentsPy from '/snippets/code-samples/skills-subagents-py.mdx';
+import SkillsSubagentsJs from '/snippets/code-samples/skills-subagents-js.mdx';
+import SkillsApprovalPy from '/snippets/code-samples/skills-approval-py.mdx';
+import SkillsApprovalJs from '/snippets/code-samples/skills-approval-js.mdx';
+import SkillsPersonalWritablePy from '/snippets/code-samples/skills-personal-writable-py.mdx';
+import SkillsPersonalWritableJs from '/snippets/code-samples/skills-personal-writable-js.mdx';
 
 Skills package domain expertise, such as workflows, best practices, scripts, reference docs, and templates, into reusable directories. The agent gets a summary of the contents on startup and discovers and reads the contained files only when relevant.
 
@@ -107,17 +121,7 @@ Pass the path to your top-level skills directory in the `skills` argument when c
 
 
 
-```typescript
-import { createDeepAgent, FilesystemBackend } from "deepagents";
-
-const backend = new FilesystemBackend({ rootDir: process.cwd() });
-
-const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
-  backend,
-  skills: ["/skills/"],
-});
-```
+<SkillsCreateAgentJs />
 
 
 This example uses `FilesystemBackend` to load skills from disk. For other storage options, including loading skills from remote sources, see [Backends and remote skill loading](#backends-and-remote-skill-loading).
@@ -146,12 +150,7 @@ Send a task to the agent with `invoke()`. At startup, the agent loads each skill
 
 
 
-```typescript
-const result = await agent.invoke(
-  { messages: [{ role: "user", content: "What is LangGraph?" }] },
-  { configurable: { thread_id: "1" } },
-);
-```
+<SkillsInvokeJs />
 
 
 </Step>
@@ -333,22 +332,7 @@ The simplest approach is to construct the `skills` array before creating the age
 
 
 
-```typescript
-import { createDeepAgent } from "deepagents";
-
-const SKILLS_BY_ROLE: Record<string, string[]> = {
-  engineering: ["/skills/code-review/", "/skills/testing/", "/skills/deployment/"],
-  data: ["/skills/sql-analysis/", "/skills/visualization/", "/skills/data-pipeline/"],
-  support: ["/skills/ticket-triage/", "/skills/runbook/"],
-};
-
-function createAgentForUser(userRole: string) {
-  return createDeepAgent({
-    model: "anthropic:claude-sonnet-4-6",
-    skills: SKILLS_BY_ROLE[userRole] ?? [],
-  });
-}
-```
+<SkillsDynamicListsJs />
 
 
 This works well when skills live on disk or in a shared backend and you just need to control which ones the agent sees. The skills themselves are not duplicated — you maintain one copy and vary the paths passed to each run.
@@ -382,30 +366,7 @@ For multi-tenant applications where each user's skill set is managed independent
 
 
 
-```typescript
-import {
-  createDeepAgent,
-  CompositeBackend,
-  StateBackend,
-  StoreBackend,
-} from "deepagents";
-
-const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
-  skills: ["/skills/"],
-  backend: new CompositeBackend({
-    default: new StateBackend(),
-    routes: {
-      "/skills/": new StoreBackend({
-        namespace: (ctx) => [
-          ctx.assistantId ?? "default",
-          ctx.config?.configurable?.user_id ?? "anonymous",
-        ],
-      }),
-    },
-  }),
-});
-```
+<SkillsNamespacedJs />
 
 
 This pattern is useful when different users or tenants need fully independent skill libraries that can be updated separately. For a managed solution that handles skill access, sharing, and workspace-level visibility out of the box, see [Fleet skills](/langsmith/fleet/skills).
@@ -421,21 +382,7 @@ Skill state is fully isolated: the main agent's skills are not visible to subage
 
 
 
-```typescript
-const researchSubagent = {
-  name: "researcher",
-  description: "Research assistant with specialized skills",
-  systemPrompt: "You are a researcher.",
-  tools: [webSearch],
-  skills: ["/skills/research/", "/skills/web-search/"],  // Subagent-specific skills
-};
-
-const agent = await createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
-  skills: ["/skills/main/"],  // Main agent and GP subagent get these
-  subagents: [researchSubagent],  // Researcher gets only its own skills
-});
-```
+<SkillsSubagentsJs />
 
 
 For more information on subagent configuration and skills inheritance, see [Subagents](/oss/javascript/deepagents/subagents).
@@ -484,23 +431,7 @@ If agents may write to skill files but you want a human in the loop first, use e
 
 
 
-```typescript
-import { MemorySaver } from "@langchain/langgraph";
-import { createDeepAgent } from "deepagents";
-
-const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
-  skills: ["/skills/personal/"],
-  permissions: [
-    {
-      operations: ["write"],
-      paths: ["/skills/**"],
-      mode: "interrupt",
-    },
-  ],
-  checkpointer: new MemorySaver(), // Required to pause and resume
-});
-```
+<SkillsApprovalJs />
 
 
 Alternatively, configure `interrupt_on={"write_file": True, "edit_file": True}` to require approval for all filesystem writes, not only skills paths. See [Human-in-the-loop](/oss/javascript/deepagents/human-in-the-loop) for handling and resuming interrupts.
@@ -517,40 +448,7 @@ By default, agents can write to skill files if the backend permits it and no per
 
 
 
-```typescript
-import {
-  createDeepAgent,
-  CompositeBackend,
-  StateBackend,
-  StoreBackend,
-} from "deepagents";
-
-const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
-  backend: new CompositeBackend({
-    default: new StateBackend(),
-    routes: {
-      "/skills/shared/": new StoreBackend({
-        namespace: (rt) => ["curated-skills", rt.context.orgId],
-      }),
-      "/skills/personal/": new StoreBackend({
-        namespace: (ctx) => [
-          "user-skills",
-          ctx.config?.configurable?.user_id ?? "anonymous",
-        ],
-      }),
-    },
-  }),
-  skills: ["/skills/shared/", "/skills/personal/"],
-  permissions: [
-    {
-      operations: ["write"],
-      paths: ["/skills/shared/**"],
-      mode: "deny",
-    },
-  ],
-});
-```
+<SkillsPersonalWritableJs />
 
 
 The agent uses `write_file` and `edit_file` to create or update `SKILL.md` and supporting files under the writable path. To capture general learnings outside the skills format, route a separate path such as `/memories/` to another writable backend. See [Backends](/oss/javascript/deepagents/backends) for routing and store setup.
