@@ -177,6 +177,29 @@ assert len(correct_permissions) == 3
 assert len(incorrect_permissions) == 3
 # :remove-end:
 
+# :snippet-start: permissions-interrupt-py
+from deepagents import FilesystemPermission, create_deep_agent
+from langgraph.checkpoint.memory import InMemorySaver
+
+agent = create_deep_agent(
+    model=model,
+    permissions=[
+        # Pause for approval before writing anything under /secrets.
+        FilesystemPermission(
+            operations=["write"],
+            paths=["/secrets/**"],
+            mode="interrupt",
+        ),
+    ],
+    # Interrupt mode requires a checkpointer to pause and resume.
+    checkpointer=InMemorySaver(),
+)
+# :snippet-end:
+
+# :remove-start:
+assert agent is not None
+# :remove-end:
+
 # :snippet-start: permissions-subagent-py
 agent = create_deep_agent(
     model=model,
