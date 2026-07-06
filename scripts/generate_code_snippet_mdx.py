@@ -1,6 +1,6 @@
 """Generate MDX snippet files from extracted code snippet files.
 
-Reads .snippet.*.py, .snippet.*.ts, .snippet.*.java, and .snippet.*.kt files from src/code-samples-generated/
+Reads .snippet.*.py, .snippet.*.ts, .snippet.*.java, .snippet.*.kt, .snippet.*.go, and .snippet.*.sh files from src/code-samples-generated/
 (produced by ``scripts/extract_code_snippets.py``, Bluehawk-compatible layout).
 and creates corresponding MDX files in src/snippets/code-samples/ for use in docs.
 
@@ -56,7 +56,7 @@ DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
     ("OpenAI", 'model="openai:gpt-5.5"'),
     ("Anthropic", 'model="anthropic:claude-sonnet-4-6"'),
     ("OpenRouter", 'model="openrouter:z-ai/glm-5.2"'),
-    ("Fireworks", 'model="fireworks:accounts/fireworks/models/kimi-k2p7-code"'),
+    ("Fireworks", 'model="fireworks:accounts/fireworks/models/glm-5p2"'),
     ("Baseten", 'model="baseten:zai-org/GLM-5.2"'),
     ("Ollama", 'model="ollama:north-mini-code-1.0"'),
 ]
@@ -66,7 +66,7 @@ DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
     ("OpenAI", 'model: "openai:gpt-5.5"'),
     ("Anthropic", 'model: "anthropic:claude-sonnet-4-6"'),
     ("OpenRouter", 'model: "openrouter:openrouter:z-ai/glm-5.2"'),
-    ("Fireworks", 'model: "fireworks:accounts/fireworks/models/kimi-k2p7-code"'),
+    ("Fireworks", 'model: "fireworks:accounts/fireworks/models/glm-5p2"'),
     ("Baseten", 'model: "baseten:zai-org/GLM-5.2"'),
     ("Ollama", 'model: "ollama:north-mini-code-1.0"'),
 ]
@@ -255,12 +255,21 @@ def main() -> None:
         ("*.snippet.*.ts", "ts", "ts"),
         ("*.snippet.*.java", "java", "java"),
         ("*.snippet.*.kt", "kotlin", "kotlin"),
+        ("*.snippet.*.go", "go", "go"),
+        ("*.snippet.*.sh", "bash", "bash"),
     ]
 
-    lang_suffix = {"python": "-py", "ts": "-js", "java": "-java", "kotlin": "-kt"}
+    lang_suffix = {
+        "python": "-py",
+        "ts": "-js",
+        "java": "-java",
+        "kotlin": "-kt",
+        "go": "-go",
+        "bash": "-sh",
+    }
 
     for glob_pattern, language, fence_lang in snippet_configs:
-        for snippet_file in generated_dir.glob(glob_pattern):
+        for snippet_file in generated_dir.rglob(glob_pattern):
             snippet_name = ".".join(snippet_file.stem.split(".")[2:])
             expected_suffix = lang_suffix[language]
             if not snippet_name.endswith(expected_suffix):
@@ -270,7 +279,10 @@ def main() -> None:
             mdx_content = format_snippet_mdx(
                 content, language=language, fence_lang=fence_lang
             )
-            mdx_path = snippets_dir / f"{snippet_name}.mdx"
+            rel_parent = snippet_file.parent.relative_to(generated_dir)
+            out_subdir = snippets_dir / rel_parent
+            out_subdir.mkdir(parents=True, exist_ok=True)
+            mdx_path = out_subdir / f"{snippet_name}.mdx"
             mdx_path.write_text(mdx_content, encoding="utf-8")
             print(f"Generated {mdx_path.relative_to(repo_root)}")
 
