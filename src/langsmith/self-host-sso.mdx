@@ -19,11 +19,11 @@ You may upgrade a [basic auth](/langsmith/self-host-basic-auth) installation to 
 LangSmith does not support moving from SSO to basic auth mode in self-hosted at the moment. We also do not support moving from OAuth Mode with client secret to OAuth mode without a client secret and vice versa. Finally, we do not support having both basic auth and OAuth at the same time. Ensure you disable the basic auth configuration when enabling OAuth.
 </Warning>
 
-## With client secret (Recommended)
+By default, LangSmith Self-Hosted supports the `Authorization Code` flow with `Client Secret`. In this version of the flow, your client secret is stored security in LangSmith (not on the frontend) and used for authentication and establishing auth sessions. For an alternative flow, refer to [PKCE flow (deprecated)](#pkce-flow-deprecated).
 
-By default, LangSmith Self-Hosted supports the `Authorization Code` flow with `Client Secret`. In this version of the flow, your client secret is stored security in LangSmith (not on the frontend) and used for authentication and establishing auth sessions.
+<div id="with-client-secret-recommended"></div>
 
-### Prerequisites
+## Prerequisites
 
 * You must be self-hosted and on an Enterprise plan.
 * Your IdP must support the `Authorization Code` flow with `Client Secret`.
@@ -34,7 +34,7 @@ By default, LangSmith Self-Hosted supports the `Authorization Code` flow with `C
 LangSmith SSO is only supported over `https`.
 </Note>
 
-### Configuration
+## Configuration
 
 * You will need to set the callback URL in your IdP to `https://<host>/api/v1/oauth/custom-oidc/callback`, where `host` is the domain or IP you have provisioned for your LangSmith instance. This is where your IdP will redirect the user after they have authenticated.
 * To terminate the IdP session on logout (so users must re-authenticate), register your LangSmith URL (e.g., `https://<host>`) as a **post-logout redirect URI** (sometimes called "Sign-out redirect URI") in your IdP, then set `OAUTH_IDP_LOGOUT_ENABLED=true` in your environment (via `commonEnv` in Helm or your `.env` file in Docker Compose).
@@ -69,117 +69,7 @@ OAUTH_SCOPES=email,profile,openid
 
 </CodeGroup>
 
-### Session length controls
-
-<Note>
-All of the environment variables in this section are for the `platform-backend` service and can be added using `platformBackend.deployment.extraEnv` in Helm.
-</Note>
-
-* By default, session length is controlled by the expiration of the identity token returned by the identity provider
-* Most setups should use refresh tokens to enable session length extension beyond the identity token expiration up to `OAUTH_SESSION_MAX_SEC`, which may require including the `offline_access` scope by adding to `oauthScopes` (Helm) or `OAUTH_SCOPES` (Docker)
-* `OAUTH_SESSION_MAX_SEC` (default 1 day) can be overridden to a maximum of one week (`604800`)
-* For identity provider setups that don't support refresh tokens, setting `OAUTH_OVERRIDE_TOKEN_EXPIRY="true"` will take `OAUTH_SESSION_MAX_SEC` as the session length, ignoring the identity token expiration
-
-### Scope encoding for strict identity providers
-
-By default, LangSmith encodes the spaces between `oauthScopes` in the authorization request as `+` (the `application/x-www-form-urlencoded` convention). Most identity providers accept this, but some (for example, CA SiteMinder) do not decode `+` as a space and reject the login with an `invalid_scope` error. If your IdP rejects multi-scope logins for this reason, set `urlEncodeScopeSpaces: true` (Helm) or `OAUTH_URL_ENCODE_SCOPE_SPACES=true` (Docker) to encode the spaces as `%20` instead — the encoding accepted by all OIDC-compliant providers. This applies only to `authType: mixed` with an OAuth client secret, and defaults to off.
-
-<CodeGroup>
-
-```yaml Helm
-config:
-  authType: mixed
-  hostname: https://langsmith.example.com
-  oauth:
-    enabled: true
-    oauthClientId: <YOUR CLIENT ID>
-    oauthClientSecret: <YOUR CLIENT SECRET>
-    oauthIssuerUrl: <YOUR DISCOVERY URL>
-    oauthScopes: "email,profile,openid"
-    urlEncodeScopeSpaces: true
-```
-
-```bash Docker
-# In your .env file
-AUTH_TYPE=mixed
-LANGSMITH_URL=https://langsmith.example.com
-OAUTH_CLIENT_ID=your-client-id
-OAUTH_CLIENT_SECRET=your-client-secret
-OAUTH_ISSUER_URL=https://your-issuer-url
-OAUTH_SCOPES=email,profile,openid
-OAUTH_URL_ENCODE_SCOPE_SPACES=true
-```
-
-</CodeGroup>
-
-### Override sub claim
-
-In some scenarios, it may be necessary to override which claim is used as the `sub` claim from your identity provider.
-For example, in SCIM, the resolved `sub` claim and SCIM `externalId` must match in order for login to succeed.
-If there are restrictions on the source attribute of the `sub` claim and/or the SCIM `externalId`, set the `ISSUER_SUB_CLAIM_OVERRIDES` environment variable to select which OIDC JWT claim is used as the `sub`.
-
-If an issuer URL **starts with** one of the URLs in this configuration, the `sub` claim is taken from the field name specified.
-For example, with the following configuration, a token with the issuer `https://idp.yourdomain.com/application/uuid` would use the `customClaim` value as the `sub`:
-
-```
-ISSUER_SUB_CLAIM_OVERRIDES='{"https://idp.yourdomain.com": "customClaim"}'
-```
-
-If unset, the default value for this configuration uses the `oid` claim when Azure Entra ID is used as the identity provider:
-
-```
-ISSUER_SUB_CLAIM_OVERRIDES='{"https://login.microsoftonline.com/": "oid", "https://sts.windows.net/": "oid", "https://login.microsoftonline.us/": "oid", "https://login.partner.microsoftonline.cn/": "oid"}'
-```
-
-### SSO Groups Sync
-
-<Note>
-SSO Groups Sync on self-hosted requires LangSmith chart version **0.15.0-rc.3** (application version **0.15.2rc1**) or later.
-</Note>
-
-[SSO Groups Sync](/langsmith/user-management#sso-groups-sync-alternative) lets LangSmith assign org and workspace roles from a group membership claim on the OIDC token, as a simpler alternative to [SCIM](/langsmith/user-management#set-up-scim-for-your-organization). On self-hosted, you must configure the IdP to include groups in the OIDC ID token before LangSmith can read them.
-
-**IdP-side configuration (varies by provider):**
-
-1. Configure your IdP application to emit a group membership claim in the OIDC ID token. The source attribute and the resulting claim name vary by IdP. Common examples include `groups`, `roles`, or a custom claim name. LangSmith does not dictate the source attribute.
-2. Depending on your IdP, you may need to add an additional scope (commonly `groups`) to `oauthScopes` to receive the claim. Check your IdP's documentation for the required scope and any additional configuration needed to include group memberships in the token.
-3. Group names must follow the [SCIM naming convention](/langsmith/user-management#group-naming-convention) (e.g., `LS:Organization Admin`, `LS:Organization User:prod:Editor`). The separator is shared with SCIM via [`scim_group_name_separator`](/langsmith/user-management#configure-custom-separator).
-
-**Helm configuration:**
-
-If your IdP requires an additional OIDC scope to include groups in the token (commonly `groups`), add it to `oauthScopes`:
-
-<CodeGroup>
-
-```yaml Helm
-config:
-  authType: mixed
-  hostname: https://langsmith.example.com
-  oauth:
-    enabled: true
-    oauthClientId: <YOUR CLIENT ID>
-    oauthClientSecret: <YOUR CLIENT SECRET>
-    oauthIssuerUrl: <YOUR DISCOVERY URL>
-    oauthScopes: "email,profile,openid,groups"
-```
-
-```bash Docker
-# In your .env file
-AUTH_TYPE=mixed
-LANGSMITH_URL=https://langsmith.example.com
-OAUTH_CLIENT_ID=your-client-id
-OAUTH_CLIENT_SECRET=your-client-secret
-OAUTH_ISSUER_URL=https://your-issuer-url
-OAUTH_SCOPES=email,profile,openid,groups
-```
-
-</CodeGroup>
-
-The exact scope name (`groups`, `roles`, etc.) depends on your IdP. Check your IdP's OIDC documentation.
-
-**LangSmith-side configuration:**
-
-Per-provider SSO Groups Sync settings are stored on the SSO provider record and toggled via the [LangSmith UI](https://smith.langchain.com) or [API](/langsmith/reference) (not via Helm values). Once your IdP emits the groups claim, configure SSO Groups Sync from the UI in **Settings** → **Members and roles** → **SSO Configuration** → **SSO Groups Sync**. Or, via the API as described in the [main SSO Groups Sync documentation](/langsmith/user-management#sso-groups-sync-alternative). The claim name configured in the **Groups claim field** must match the claim emitted by your IdP.
+## Provider setup
 
 ### Google workspace IdP setup
 
@@ -351,7 +241,121 @@ OAUTH_SCOPES=email,profile,openid
 
 Users can sign in using the **Login via SSO** button on the LangSmith homepage.
 
-## Without client secret (PKCE) (Deprecated)
+## Advanced options
+
+### Session length controls
+
+<Note>
+All of the environment variables in this section are for the `platform-backend` service and can be added using `platformBackend.deployment.extraEnv` in Helm.
+</Note>
+
+* By default, session length is controlled by the expiration of the identity token returned by the identity provider
+* Most setups should use refresh tokens to enable session length extension beyond the identity token expiration up to `OAUTH_SESSION_MAX_SEC`, which may require including the `offline_access` scope by adding to `oauthScopes` (Helm) or `OAUTH_SCOPES` (Docker)
+* `OAUTH_SESSION_MAX_SEC` (default 1 day) can be overridden to a maximum of one week (`604800`)
+* For identity provider setups that don't support refresh tokens, setting `OAUTH_OVERRIDE_TOKEN_EXPIRY="true"` will take `OAUTH_SESSION_MAX_SEC` as the session length, ignoring the identity token expiration
+
+### Scope encoding for strict identity providers
+
+By default, LangSmith encodes the spaces between `oauthScopes` in the authorization request as `+` (the `application/x-www-form-urlencoded` convention). Most identity providers accept this, but some (for example, CA SiteMinder) do not decode `+` as a space and reject the login with an `invalid_scope` error. If your IdP rejects multi-scope logins for this reason, set `urlEncodeScopeSpaces: true` (Helm) or `OAUTH_URL_ENCODE_SCOPE_SPACES=true` (Docker) to encode the spaces as `%20` instead — the encoding accepted by all OIDC-compliant providers. This applies only to `authType: mixed` with an OAuth client secret, and defaults to off.
+
+<CodeGroup>
+
+```yaml Helm
+config:
+  authType: mixed
+  hostname: https://langsmith.example.com
+  oauth:
+    enabled: true
+    oauthClientId: <YOUR CLIENT ID>
+    oauthClientSecret: <YOUR CLIENT SECRET>
+    oauthIssuerUrl: <YOUR DISCOVERY URL>
+    oauthScopes: "email,profile,openid"
+    urlEncodeScopeSpaces: true
+```
+
+```bash Docker
+# In your .env file
+AUTH_TYPE=mixed
+LANGSMITH_URL=https://langsmith.example.com
+OAUTH_CLIENT_ID=your-client-id
+OAUTH_CLIENT_SECRET=your-client-secret
+OAUTH_ISSUER_URL=https://your-issuer-url
+OAUTH_SCOPES=email,profile,openid
+OAUTH_URL_ENCODE_SCOPE_SPACES=true
+```
+
+</CodeGroup>
+
+### Override sub claim
+
+In some scenarios, it may be necessary to override which claim is used as the `sub` claim from your identity provider.
+For example, in SCIM, the resolved `sub` claim and SCIM `externalId` must match in order for login to succeed.
+If there are restrictions on the source attribute of the `sub` claim and/or the SCIM `externalId`, set the `ISSUER_SUB_CLAIM_OVERRIDES` environment variable to select which OIDC JWT claim is used as the `sub`.
+
+If an issuer URL **starts with** one of the URLs in this configuration, the `sub` claim is taken from the field name specified.
+For example, with the following configuration, a token with the issuer `https://idp.yourdomain.com/application/uuid` would use the `customClaim` value as the `sub`:
+
+```
+ISSUER_SUB_CLAIM_OVERRIDES='{"https://idp.yourdomain.com": "customClaim"}'
+```
+
+If unset, the default value for this configuration uses the `oid` claim when Azure Entra ID is used as the identity provider:
+
+```
+ISSUER_SUB_CLAIM_OVERRIDES='{"https://login.microsoftonline.com/": "oid", "https://sts.windows.net/": "oid", "https://login.microsoftonline.us/": "oid", "https://login.partner.microsoftonline.cn/": "oid"}'
+```
+
+### SSO Groups Sync
+
+<Note>
+SSO Groups Sync on self-hosted requires LangSmith chart version **0.15.0-rc.3** (application version **0.15.2rc1**) or later.
+</Note>
+
+[SSO Groups Sync](/langsmith/user-management#sso-groups-sync-alternative) lets LangSmith assign org and workspace roles from a group membership claim on the OIDC token, as a simpler alternative to [SCIM](/langsmith/user-management#set-up-scim-for-your-organization). On self-hosted, you must configure the IdP to include groups in the OIDC ID token before LangSmith can read them.
+
+**IdP-side configuration (varies by provider):**
+
+1. Configure your IdP application to emit a group membership claim in the OIDC ID token. The source attribute and the resulting claim name vary by IdP. Common examples include `groups`, `roles`, or a custom claim name. LangSmith does not dictate the source attribute.
+2. Depending on your IdP, you may need to add an additional scope (commonly `groups`) to `oauthScopes` to receive the claim. Check your IdP's documentation for the required scope and any additional configuration needed to include group memberships in the token.
+3. Group names must follow the [SCIM naming convention](/langsmith/user-management#group-naming-convention) (e.g., `LS:Organization Admin`, `LS:Organization User:prod:Editor`). The separator is shared with SCIM via [`scim_group_name_separator`](/langsmith/user-management#configure-custom-separator).
+
+**Helm configuration:**
+
+If your IdP requires an additional OIDC scope to include groups in the token (commonly `groups`), add it to `oauthScopes`:
+
+<CodeGroup>
+
+```yaml Helm
+config:
+  authType: mixed
+  hostname: https://langsmith.example.com
+  oauth:
+    enabled: true
+    oauthClientId: <YOUR CLIENT ID>
+    oauthClientSecret: <YOUR CLIENT SECRET>
+    oauthIssuerUrl: <YOUR DISCOVERY URL>
+    oauthScopes: "email,profile,openid,groups"
+```
+
+```bash Docker
+# In your .env file
+AUTH_TYPE=mixed
+LANGSMITH_URL=https://langsmith.example.com
+OAUTH_CLIENT_ID=your-client-id
+OAUTH_CLIENT_SECRET=your-client-secret
+OAUTH_ISSUER_URL=https://your-issuer-url
+OAUTH_SCOPES=email,profile,openid,groups
+```
+
+</CodeGroup>
+
+The exact scope name (`groups`, `roles`, etc.) depends on your IdP. Check your IdP's OIDC documentation.
+
+**LangSmith-side configuration:**
+
+Per-provider SSO Groups Sync settings are stored on the SSO provider record and toggled via the [LangSmith UI](https://smith.langchain.com) or [API](/langsmith/reference) (not via Helm values). Once your IdP emits the groups claim, configure SSO Groups Sync from the UI in **Settings** → **Members and roles** → **SSO Configuration** → **SSO Groups Sync**. Or, via the API as described in the [main SSO Groups Sync documentation](/langsmith/user-management#sso-groups-sync-alternative). The claim name configured in the **Groups claim field** must match the claim emitted by your IdP.
+
+## PKCE flow (deprecated)
 
 We recommend running with a `Client Secret` if possible (previously we didn't support this). However, if your IdP does not support this, you can use the `Authorization Code with PKCE` flow.
 
