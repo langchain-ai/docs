@@ -1,0 +1,143 @@
+---
+title: "ChatAppleFoundationModels integration"
+description: "Integrate with the ChatAppleFoundationModels chat model using LangChain Python."
+---
+
+[Apple Foundation Models](https://developer.apple.com/documentation/foundationmodels) gives applications direct access to the on-device large language model that powers Apple Intelligence. Generation runs entirely on the Neural Engine, with no network call and no API key.
+
+`ChatAppleFoundationModels` wraps the unofficial [`apple-foundation-models`](https://github.com/btucker/apple-foundation-models-py) Python bindings for this framework as a standard LangChain chat model.
+
+<Tip>
+    **API Reference**
+
+    For detailed documentation of all features and configuration options, head to the [`ChatAppleFoundationModels` source](https://github.com/rajanshxrma/langchain-apple-foundation-models).
+</Tip>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| [`ChatAppleFoundationModels`](https://github.com/rajanshxrma/langchain-apple-foundation-models) | [`langchain-apple-foundation-models`](https://pypi.org/project/langchain-apple-foundation-models/) | ✅ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-apple-foundation-models?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-apple-foundation-models?style=flat-square&label=%20) |
+
+### Model features
+
+| [Tool calling](/oss/langchain/tools/) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | Native async | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: |:----------------------------------------------------:| :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+
+## Setup
+
+Requires macOS 26 or later on Apple Silicon, with Apple Intelligence enabled in System Settings.
+
+No API key, no account, and no LangSmith tracing setup is required to run the model itself. Generation happens on-device.
+
+### Installation
+
+The LangChain Apple Foundation Models integration lives in the `langchain-apple-foundation-models` package:
+
+```python
+pip install -qU langchain-apple-foundation-models
+```
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+```python
+from langchain_apple_foundation_models import ChatAppleFoundationModels
+
+llm = ChatAppleFoundationModels(
+    temperature=0,
+    max_tokens=1024,
+)
+```
+
+## Invocation
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = llm.invoke(messages)
+ai_msg
+```
+
+```text
+AIMessage(content='Je adore la programmation.', additional_kwargs={}, response_metadata={'finish_reason': 'stop', 'is_structured': False}, id='lc_run--019f38b8-078e-7291-b70b-c76609cd65f8-0', tool_calls=[], invalid_tool_calls=[])
+```
+
+```python
+print(ai_msg.content)
+```
+
+```text
+Je adore la programmation.
+```
+
+<Note>
+    Multi-turn history is owned by the on-device session, not replayed from the LangChain message list. Each `ChatAppleFoundationModels` instance lazily creates one on-device session and reuses it across calls within that instance. Pass the full conversation as a fresh list of messages per call rather than manually managing history externally.
+</Note>
+
+## Tool calling
+
+`ChatAppleFoundationModels` supports the standard `bind_tools` interface. Details on creating custom tools are available in [Customize tool properties](/oss/langchain/tools#customize-tool-properties). Below, a tool is created using the @[`@tool`] decorator on a normal Python function.
+
+```python
+from langchain_core.tools import tool
+from langchain_apple_foundation_models import ChatAppleFoundationModels
+
+
+@tool
+def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    return f"The weather in {city} is sunny and 72F."
+
+
+llm_with_tools = llm.bind_tools([get_weather])
+ai_msg = llm_with_tools.invoke("What's the weather in Austin?")
+ai_msg
+```
+
+```text
+AIMessage(content='The weather in Austin is sunny with a temperature of 72 degrees Fahrenheit.', additional_kwargs={}, response_metadata={'finish_reason': 'tool_calls', 'is_structured': False}, id='lc_run--019f38b8-5236-79e2-92ba-88cd83d354a2-0', tool_calls=[{'name': 'get_weather', 'args': {'city': 'Austin'}, 'id': '4A7CA026-B677-4A13-A24B-67B31F2DB0A2', 'type': 'tool_call'}], invalid_tool_calls=[])
+```
+
+The underlying on-device session executes the tool call and folds the result back into the final response in a single `invoke` call, rather than requiring a manual second round trip.
+
+## Structured output
+
+Use `with_structured_output` for JSON-schema or Pydantic-constrained generation:
+
+```python
+from langchain_apple_foundation_models import ChatAppleFoundationModels
+
+schema = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "color": {"type": "string"},
+    },
+    "required": ["name", "color"],
+}
+
+structured_llm = llm.with_structured_output(schema)
+structured_llm.invoke("Give me a fruit and its typical color.")
+```
+
+```text
+{'name': 'orange', 'color': 'orange'}
+```
+
+<Note>
+    The on-device model's constrained decoding occasionally fails to produce schema-conformant output on a single attempt, a characteristic of the smaller on-device model rather than transient infrastructure flakiness. `with_structured_output` retries once internally before raising.
+</Note>
+
+## API reference
+
+For detailed documentation of all `ChatAppleFoundationModels` features and configurations, head to the [API reference](https://github.com/rajanshxrma/langchain-apple-foundation-models).
