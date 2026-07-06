@@ -1,0 +1,133 @@
+---
+title: "Sourcey integration"
+description: "Integrate with the Sourcey retriever using LangChain Python."
+---
+
+[Sourcey](https://sourcey.com) already emits the files this retriever needs.
+
+Use `SourceyRetriever` to retrieve from a published Sourcey docs site. It
+reads `search-index.json`, uses `llms-full.txt` when present, and returns
+`Document` objects with canonical page URLs in `metadata["source"]`.
+
+## Setup
+
+Install the package:
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-sourcey
+```
+
+```bash uv
+uv add langchain-sourcey
+```
+</CodeGroup>
+
+No API key is required.
+
+## Instantiation
+
+`site_url` should point at the root of a published Sourcey docs build.
+
+```python
+from langchain_sourcey import SourceyRetriever
+
+retriever = SourceyRetriever(
+    site_url="https://sourcey.com/docs",
+    top_k=3,
+)
+```
+
+## Usage
+
+```python
+docs = retriever.invoke("mcp integration")
+
+for doc in docs:
+    print(doc.metadata["title"])
+    print(doc.metadata["source"])
+```
+
+## Use in a chain
+
+Install a chat model package. This example uses OpenAI:
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-openai
+```
+
+```bash uv
+uv add langchain-openai
+```
+</CodeGroup>
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+
+from langchain_sourcey import SourceyRetriever
+
+retriever = SourceyRetriever(site_url="https://sourcey.com/docs", top_k=3)
+
+prompt = ChatPromptTemplate.from_template(
+    """Answer the question using the documentation context below.
+
+{context}
+
+Question: {question}"""
+)
+
+chain = (
+    RunnablePassthrough.assign(context=(lambda x: x["question"]) | retriever)
+    | prompt
+    | ChatOpenAI(model="gpt-4.1-mini")
+    | StrOutputParser()
+)
+
+chain.invoke({"question": "How does Sourcey document MCP servers?"})
+```
+
+## Returned metadata
+
+Each `Document` includes metadata fields useful for citation and debugging:
+
+- `source`: canonical page URL used for citations
+- `matched_url`: original matched URL, including anchors when relevant
+- `matched_title`: matched search entry title
+- `title`: hydrated page title
+- `path`: Sourcey output path
+- `anchor`: matched fragment, if any
+- `tab`: Sourcey tab label
+- `category`: Sourcey search category
+- `site_url`: docs root used for retrieval
+- `score`: retriever ranking score
+
+## Sourcey site requirements
+
+For clean retrieval, the published Sourcey site should:
+
+- publish `search-index.json`
+- publish `llms-full.txt`
+- set `siteUrl` in `sourcey.config.ts` so returned citations are canonical
+
+If `llms-full.txt` is not available, `SourceyRetriever` falls back to
+extracting text from the matched HTML page.
+
+## More
+
+- Sourcey guide: [Using Sourcey with LangChain](https://sourcey.com/docs/guides/guide-langchain-retriever)
+- Package: [langchain-sourcey on PyPI](https://pypi.org/project/langchain-sourcey/)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/retrievers/sourcey.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

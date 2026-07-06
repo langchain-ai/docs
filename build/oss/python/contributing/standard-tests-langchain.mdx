@@ -1,0 +1,187 @@
+---
+title: Using standard tests
+sidebarTitle: Standard tests
+---
+
+**Standard tests ensure your integration works as expected.**
+
+When creating either a custom class for yourself or to publish in a LangChain integration, it is necessary to add tests to ensure it works as expected. LangChain provides a comprehensive [set of tests](https://pypi.org/project/langchain-tests/) for each integration type for you. This guide will show you how to add LangChain's standard test suite to each integration type.
+
+## Setup
+
+First, install the required dependencies:
+
+<CardGroup cols={2}>
+    <Card title="langchain-core" icon="cube" href="https://github.com/langchain-ai/langchain/tree/master/libs/core#readme" arrow>
+        Defines the interfaces we want to import to define our custom components
+    </Card>
+
+    <Card title="langchain-tests" icon="flask" href="https://github.com/langchain-ai/langchain/tree/master/libs/standard-tests#readme" arrow>
+        Provides the standard tests and `pytest` plugins necessary to run them
+    </Card>
+</CardGroup>
+
+
+
+<Warning>
+    Because added tests in new versions of `langchain-tests` can break your CI/CD pipelines, we recommend pinning to the latest version of [`langchain-tests`](https://pypi.org/project/langchain-tests/#history) to avoid unexpected changes.
+</Warning>
+
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-core
+    pip install -U langchain-tests
+    ```
+    ```bash uv
+    uv add langchain-core
+    uv add langchain-tests
+    ```
+</CodeGroup>
+
+
+
+
+There are 2 namespaces in the `langchain-tests` package:
+
+<AccordionGroup>
+    <Accordion title="Unit tests" icon="settings">
+        **Location**: `langchain_tests.unit_tests`
+
+
+
+        Designed to test the component in isolation and without access to external services
+
+        [View API reference](https://reference.langchain.com/python/langchain_tests/unit_tests)
+    </Accordion>
+
+    <Accordion title="Integration tests" icon="network">
+        **Location**: `langchain_tests.integration_tests`
+
+
+
+        Designed to test the component with access to external services (in particular, the external service that the component is designed to interact with)
+
+        [View API reference](https://reference.langchain.com/python/langchain_tests/integration_tests)
+    </Accordion>
+</AccordionGroup>
+
+Both types of tests are implemented as [`pytest`](https://docs.pytest.org/en/stable/) class-based test suites.
+
+
+## Implementing standard tests
+
+Depending on your integration type, you will need to implement either or both unit and integration tests.
+
+By subclassing the standard test suite for your integration type, you get the full collection of standard tests for that type. For a test run to be successful, the a given test should pass only if the model supports the capability being tested. Otherwise, the test should be skipped.
+
+Because different integrations offer unique sets of features, most standard tests provided by LangChain are **opt-in by default** to prevent false positives. Consequently, you will need to override properties to indicate which features your integration supports - see the below example for an illustration.
+
+```python tests/integration_tests/test_standard.py
+# Indicate that a chat model supports image inputs
+
+class TestChatParrotLinkStandard(ChatModelIntegrationTests):
+    # ... other required properties
+
+    @property
+    def supports_image_inputs(self) -> bool:
+        return True  # (The default is False)
+```
+
+
+
+<Note>
+    You should organize tests in these subdirectories relative to the root of your package:
+    - `tests/unit_tests` for unit tests
+    - `tests/integration_tests` for integration tests
+</Note>
+
+To see the complete list of configurable capabilities and their defaults, visit the [API reference](https://reference.langchain.com/python/langchain_tests) for standard tests.
+
+
+
+
+Here are some example implementations of standard tests from popular integrations:
+
+<Tabs>
+    <Tab title="Unit tests">
+        <Columns cols={3}>
+            <Card title="ChatOpenAI" href="https://github.com/langchain-ai/langchain/blob/master/libs/partners/openai/tests/unit_tests/chat_models/test_base_standard.py" arrow>Unit tests</Card>
+            <Card title="ChatAnthropic" href="https://github.com/langchain-ai/langchain/blob/master/libs/partners/anthropic/tests/unit_tests/test_standard.py" arrow>Unit tests</Card>
+            <Card title="ChatGenAI" href="https://github.com/langchain-ai/langchain-google/blob/main/libs/genai/tests/unit_tests/test_standard.py" arrow>Unit tests</Card>
+        </Columns>
+    </Tab>
+    <Tab title="Integration tests">
+        <Columns cols={3}>
+            <Card title="ChatOpenAI" href="https://github.com/langchain-ai/langchain/blob/master/libs/partners/openai/tests/integration_tests/chat_models/test_base_standard.py" arrow>Integration tests</Card>
+            <Card title="ChatAnthropic" href="https://github.com/langchain-ai/langchain/blob/master/libs/partners/anthropic/tests/integration_tests/test_standard.py" arrow>Integration tests</Card>
+            <Card title="ChatGenAI" href="https://github.com/langchain-ai/langchain-google/blob/main/libs/genai/tests/integration_tests/test_standard.py" arrow>Integration tests</Card>
+        </Columns>
+    </Tab>
+    <Tab title="Sandbox integration tests">
+        Ensure your integration passes the standard test suite.
+        See the [Daytona integration](https://github.com/langchain-ai/deepagents/blob/main/libs/partners/daytona/tests/integration_tests/test_integration.py) as an example.
+
+        <Card title="Daytona" href="https://github.com/langchain-ai/deepagents/blob/main/libs/partners/daytona/tests/integration_tests/test_integration.py" arrow>Sandbox Integration tests</Card>
+    </Tab>
+</Tabs>
+
+
+
+## Sandbox integrations
+
+Deep Agents sandbox integrations use `SandboxIntegrationTests` from `langchain_tests.integration_tests`.
+Subclass it and provide a `sandbox` fixture that yields a `SandboxBackendProtocol` instance.
+Use the [Daytona integration tests](https://github.com/langchain-ai/deepagents/blob/main/libs/partners/daytona/tests/integration_tests/test_integration.py) as a reference implementation.
+See [Contributing a sandbox integration](/oss/python/contributing/integrations-langchain) for publishing guidelines.
+
+
+
+
+
+---
+
+## Running tests
+
+If bootstrapping an integration from a template, a `Makefile` is provided that includes targets for running unit and integration tests:
+
+```bash
+make test
+make integration_test
+```
+
+Otherwise, if you follow the recommended directory structure, you can run tests with:
+
+```bash
+# Run all tests
+uv run --group test pytest tests/unit_tests/
+uv run --group test --group test_integration pytest -n auto tests/integration_tests/
+
+# For certain unit tests, you may need to set certain flags and environment variables:
+TIKTOKEN_CACHE_DIR=tiktoken_cache uv run --group test pytest --disable-socket --allow-unix-socket tests/unit_tests/
+
+# Run a specific test file
+uv run --group test pytest tests/integration_tests/test_chat_models.py
+
+# Run a specific test function in a file
+uv run --group test pytest tests/integration_tests/test_chat_models.py::test_chat_completions
+
+# Run a specific test function within a class
+uv run --group test pytest tests/integration_tests/test_chat_models.py::TestChatParrotLinkIntegration::test_chat_completions
+```
+
+
+## Troubleshooting
+
+For a full list of the standard test suites that are available, as well as information on which tests are included and how to troubleshoot common issues, see the [Standard Tests API Reference](https://reference.langchain.com/python/langchain_tests).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/contributing/standard-tests-langchain.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

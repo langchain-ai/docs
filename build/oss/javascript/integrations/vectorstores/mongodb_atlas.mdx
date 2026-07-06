@@ -1,0 +1,403 @@
+---
+title: "MongoDB Atlas integration"
+description: "Integrate with the MongoDB Atlas vector store using LangChain JavaScript."
+---
+
+<Tip>
+**Compatibility**: Only available on Node.js.
+
+You can still create API routes that use MongoDB with Next.js by setting the `runtime` variable to `nodejs` like so:
+
+`export const runtime = "nodejs";`
+
+For more information, see [Edge runtimes in the Next.js documentation](https://nextjs.org/docs/app/building-your-application/rendering/edge-and-nodejs-runtimes).
+</Tip>
+
+This guide provides a quick overview for getting started with MongoDB Atlas [vector stores](/oss/javascript/integrations/vectorstores). For detailed documentation of all `MongoDBAtlasVectorSearch` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-mongodb/MongoDBAtlasVectorSearch).
+
+## Overview
+
+### Integration details
+
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/mongodb_atlas/) |  Version |
+| :--- | :--- | :---: | :---: |
+| [`MongoDBAtlasVectorSearch`](https://reference.langchain.com/javascript/langchain-mongodb/MongoDBAtlasVectorSearch) | [`@langchain/mongodb`](https://www.npmjs.com/package/@langchain/mongodb) | ✅ | ![NPM - Version](https://img.shields.io/npm/v/@langchain/mongodb?style=flat-square&label=%20&) |
+
+## Setup
+
+To use MongoDB Atlas vector stores, you'll need to configure a MongoDB Atlas cluster and install the `@langchain/mongodb` integration package.
+
+### Initial Cluster Configuration
+
+To create a MongoDB Atlas cluster, navigate to the [MongoDB Atlas website](https://www.mongodb.com/products/platform/atlas-database) and create an account if you don't already have one.
+
+Create and name a cluster when prompted, then find it under `Database`. Select `Browse Collections` and create either a blank collection or one from the provided sample data.
+
+**Note:** The cluster must be MongoDB 7.0 or higher for manual embedding mode. Automated embedding mode requires [MongoDB 8.2 or higher](https://www.mongodb.com/docs/atlas/atlas-vector-search/crud-embeddings/create-embeddings-automatic/?interface=driver&language=nodejs).
+
+### Creating a Vector Search Index
+
+After configuring your cluster, create a vector search index on your collection. You can do this either on [Atlas](https://www.mongodb.com/docs/atlas/atlas-vector-search/tutorials/vector-search-quick-start/), [Compass](https://www.mongodb.com/docs/compass/indexes/create-vector-search-index/), or [MongoDB Shell](https://www.mongodb.com/docs/atlas/atlas-vector-search/tutorials/vector-search-quick-start/?deployment-type=atlas&embedding=byo&interface=mongosh). The index definition depends on which embedding mode you use.
+
+**Manual embedding** (MongoDB 7.0+): you embed documents client-side and store the vectors in a field. Use the following definition, adjusting `numDimensions` to match your embeddings model.
+
+```json
+{
+  "name": "index_name",
+  "type": "vectorSearch",
+  "definition": {
+    "fields": [
+      {
+        "numDimensions": 1536,
+        "path": "embedding",
+        "similarity": "euclidean",
+        "type": "vector"
+      }
+    ]
+  }
+}
+```
+
+**Automated embedding** (MongoDB 8.2+): MongoDB generates embeddings server-side using [Voyage AI models](https://www.mongodb.com/products/platform/ai-search-and-retrieval/models). Use the `autoEmbed` field type and specify the model:
+
+```json
+{
+  "name": "index_name",
+  "type": "vectorSearch",
+  "definition": {
+    "fields": [
+      {
+        "type": "autoEmbed",
+        "modality": "text",
+        "path": "textContent",
+        "model": "voyage-4"
+      }
+    ]
+  }
+}
+```
+
+By default, the vector store reads from a text field named `text` and (in manual mode) writes vectors to a field named `embedding`. Set `textKey` and `embeddingKey` to match your index.
+
+```typescript
+const vectorStore = new MongoDBAtlasVectorSearch(
+  embeddings,                  // omit in auto embedding mode
+  {
+    collection,
+    indexName: "index_name",
+    textKey: "textContent",    // document field where raw text is stored
+    embeddingKey: "embedding", // matches "path" (omit in auto embedding mode)
+  }
+);
+```
+
+Proceed to build the index.
+
+### Embeddings
+
+In **manual embedding mode**, you provide an embeddings model and embed documents client-side. This guide uses [OpenAI embeddings](/oss/javascript/integrations/embeddings/openai) as an example. You can also use [other supported embeddings models](/oss/javascript/integrations/embeddings).
+
+In **automated embedding mode**, MongoDB Atlas handles embedding generation server-side. No client-side embeddings package is required.
+
+### Installation
+
+<Tabs>
+  <Tab title="Manual embedding">
+    Install the core package plus an embeddings provider:
+
+    <CodeGroup>
+    ```bash npm
+    npm install @langchain/mongodb mongodb @langchain/core @langchain/openai
+    ```
+    ```bash yarn
+    yarn add @langchain/mongodb mongodb @langchain/core @langchain/openai
+    ```
+    ```bash pnpm
+    pnpm add @langchain/mongodb mongodb @langchain/core @langchain/openai
+    ```
+    </CodeGroup>
+  </Tab>
+  <Tab title="Automated embedding">
+    Only the core package and MongoDB driver are required:
+
+    <CodeGroup>
+    ```bash npm
+    npm install @langchain/mongodb mongodb @langchain/core
+    ```
+    ```bash yarn
+    yarn add @langchain/mongodb mongodb @langchain/core
+    ```
+    ```bash pnpm
+    pnpm add @langchain/mongodb mongodb @langchain/core
+    ```
+    </CodeGroup>
+  </Tab>
+</Tabs>
+
+### Credentials
+
+Once you've done the above, set the `MONGODB_ATLAS_URI` environment variable from the `Connect` button in Mongo's dashboard. You'll also need your DB name and collection name:
+
+```typescript
+process.env.MONGODB_ATLAS_URI = "your-atlas-URL";
+process.env.MONGODB_ATLAS_COLLECTION_NAME = "your-atlas-collection-name";
+process.env.MONGODB_ATLAS_DB_NAME = "your-atlas-db-name";
+```
+
+If you are using manual embedding mode with OpenAI, set your OpenAI key as well:
+
+```typescript
+process.env.OPENAI_API_KEY = "YOUR_API_KEY";
+```
+
+In automated embedding mode, no additional API key is required — MongoDB Atlas handles embedding generation using the model configured in your index.
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/observability) API key by uncommenting below:
+
+```typescript
+// process.env.LANGSMITH_TRACING="true"
+// process.env.LANGSMITH_API_KEY="your-api-key"
+```
+
+## Instantiation
+
+Once you've set up your cluster and index, initialize your vector store. The constructor accepts two forms depending on whether you use manual or automated embedding.
+
+<Tabs>
+  <Tab title="Manual embedding">
+    Pass an embeddings instance as the first argument:
+
+    ```typescript
+    import { MongoDBAtlasVectorSearch } from "@langchain/mongodb";
+    import { OpenAIEmbeddings } from "@langchain/openai";
+    import { MongoClient } from "mongodb";
+
+    const client = new MongoClient(process.env.MONGODB_ATLAS_URI!);
+    const collection = client
+      .db(process.env.MONGODB_ATLAS_DB_NAME)
+      .collection(process.env.MONGODB_ATLAS_COLLECTION_NAME);
+
+    const embeddings = new OpenAIEmbeddings({
+      model: "text-embedding-3-small",
+    });
+
+    const vectorStore = new MongoDBAtlasVectorSearch(embeddings, {
+      collection,
+      indexName: "vector_index", // Defaults to "default"
+      textKey: "text",           // Defaults to "text"
+      embeddingKey: "embedding", // Defaults to "embedding"
+    });
+    ```
+  </Tab>
+  <Tab title="Automated embedding">
+    Pass only the configuration object (no embeddings argument is needed).
+
+    ```typescript
+    import { MongoDBAtlasVectorSearch } from "@langchain/mongodb";
+    import { MongoClient } from "mongodb";
+
+    const client = new MongoClient(process.env.MONGODB_ATLAS_URI!);
+    const collection = client
+      .db(process.env.MONGODB_ATLAS_DB_NAME)
+      .collection(process.env.MONGODB_ATLAS_COLLECTION_NAME);
+
+    const vectorStore = new MongoDBAtlasVectorSearch({
+      collection,
+      indexName: "default", // Must match the index name in your Atlas cluster
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Manage vector store
+
+### Add items to vector store
+
+You can now add documents to your vector store:
+
+```typescript
+import type { Document } from "@langchain/core/documents";
+
+const document1: Document = {
+  pageContent: "The powerhouse of the cell is the mitochondria",
+  metadata: { source: "https://example.com" }
+};
+
+const document2: Document = {
+  pageContent: "Buildings are made out of brick",
+  metadata: { source: "https://example.com" }
+};
+
+const document3: Document = {
+  pageContent: "Mitochondria are made out of lipids",
+  metadata: { source: "https://example.com" }
+};
+
+const document4: Document = {
+  pageContent: "The 2024 Olympics are in Paris",
+  metadata: { source: "https://example.com" }
+}
+
+const documents = [document1, document2, document3, document4];
+
+await vectorStore.addDocuments(documents, { ids: ["1", "2", "3", "4"] });
+```
+
+<Note>
+After adding documents, there is a delay before they become queryable. In automated embedding mode this delay is longer because MongoDB must generate embeddings server-side after insertion. Wait until the Atlas search index reports that documents are indexed before querying.
+</Note>
+
+Adding a document with the same `id` as an existing document will update the existing one.
+
+### Delete items from vector store
+
+```typescript
+await vectorStore.delete({ ids: ["4"] });
+```
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
+
+### Query directly
+
+Performing a simple similarity search can be done as follows:
+
+```typescript
+const similaritySearchResults = await vectorStore.similaritySearch("biology", 2);
+
+for (const doc of similaritySearchResults) {
+  console.log(`* ${doc.pageContent} [${JSON.stringify(doc.metadata, null)}]`);
+}
+```
+
+```text
+* The powerhouse of the cell is the mitochondria [{"_id":"1","source":"https://example.com"}]
+* Mitochondria are made out of lipids [{"_id":"3","source":"https://example.com"}]
+```
+
+### Filtering
+
+MongoDB Atlas supports pre-filtering of results on other fields. They require you to define which metadata fields you plan to filter on by updating the index you created initially. Here's an example:
+
+```json
+{
+  "fields": [
+    {
+      "numDimensions": 1024,
+      "path": "embedding",
+      "similarity": "euclidean",
+      "type": "vector"
+    },
+    {
+      "path": "source",
+      "type": "filter"
+    }
+  ]
+}
+```
+
+Above, the first item in `fields` is the vector index, and the second item is the metadata property you want to filter on. The name of the property is the value of the `path` key. Therefore the above index allows us to search on a metadata field named `source`.
+
+Then, in your code you can use [MQL Query Operators](https://www.mongodb.com/docs/manual/reference/mql/query-predicates/#alphabetical-list-of-operators) for filtering.
+
+The below example illustrates this:
+
+```typescript
+const filter = {
+  preFilter: {
+    source: {
+      $eq: "https://example.com",
+    },
+  },
+}
+
+const filteredResults = await vectorStore.similaritySearch("biology", 2, filter);
+
+for (const doc of filteredResults) {
+  console.log(`* ${doc.pageContent} [${JSON.stringify(doc.metadata, null)}]`);
+}
+```
+
+```text
+* The powerhouse of the cell is the mitochondria [{"_id":"1","source":"https://example.com"}]
+* Mitochondria are made out of lipids [{"_id":"3","source":"https://example.com"}]
+```
+
+### Returning scores
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+```typescript
+const similaritySearchWithScoreResults = await vectorStore.similaritySearchWithScore("biology", 2, filter)
+
+for (const [doc, score] of similaritySearchWithScoreResults) {
+  console.log(`* [SIM=${score.toFixed(3)}] ${doc.pageContent} [${JSON.stringify(doc.metadata)}]`);
+}
+```
+
+```text
+* [SIM=0.374] The powerhouse of the cell is the mitochondria [{"_id":"1","source":"https://example.com"}]
+* [SIM=0.370] Mitochondria are made out of lipids [{"_id":"3","source":"https://example.com"}]
+```
+
+### Query by turning into retriever
+
+You can also transform the vector store into a [retriever](/oss/javascript/langchain/retrieval) for easier usage in your chains.
+
+```typescript
+const retriever = vectorStore.asRetriever({
+  // Optional filter
+  filter: filter,
+  k: 2,
+});
+await retriever.invoke("biology");
+```
+
+```javascript
+[
+  Document {
+    pageContent: 'The powerhouse of the cell is the mitochondria',
+    metadata: { _id: '1', source: 'https://example.com' },
+    id: undefined
+  },
+  Document {
+    pageContent: 'Mitochondria are made out of lipids',
+    metadata: { _id: '3', source: 'https://example.com' },
+    id: undefined
+  }
+]
+```
+
+### Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+- [Build a RAG app with LangChain](/oss/javascript/langchain/rag).
+- [Agentic RAG](/oss/javascript/langgraph/agentic-rag)
+- [Retrieval docs](/oss/javascript/langchain/retrieval)
+
+## Closing connections
+
+Make sure you close the client instance when you are finished to avoid excessive resource consumption:
+
+```typescript
+await client.close();
+```
+
+---
+
+## API reference
+
+For detailed documentation of all `MongoDBAtlasVectorSearch` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-mongodb/MongoDBAtlasVectorSearch).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/vectorstores/mongodb_atlas.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

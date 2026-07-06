@@ -1,0 +1,289 @@
+---
+title: Mirror images for your LangSmith installation
+sidebarTitle: Mirror images for your installation
+---
+
+By default, LangSmith will pull images from our public Docker registry. However, if you are running LangSmith in an environment that does not have internet access, or if you would like to use a private Docker registry, you can mirror the images to your own registry and then configure your LangSmith installation to use those images.
+
+## Requirements
+
+* Authenticated access to a Docker registry that your Kubernetes cluster/machine has access to.
+* Docker installed on your local machine or a machine that has access to the Docker registry.
+* A Kubernetes cluster where you can run LangSmith.
+
+## Mirroring the images
+
+For your convenience, we have provided a script that will mirror the images for you. You can find the script in the [LangSmith Helm Chart repository](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/scripts/mirror_langsmith_images.sh)
+
+To use the script, you will need to run the script with the following command specifying your registry and platform:
+
+```bash
+bash mirror_images.sh <your-registry> [<platform>]
+```
+
+Where `<your-registry>` is the URL of your Docker registry (e.g. `myregistry.com`) and `<platform>` is the platform you are using (e.g. `linux/amd64`, `linux/arm64`, etc.). If you do not specify a platform, it will default to `linux/amd64`.
+
+For example, if your registry is `myregistry.com`, your platform is `linux/arm64`, and you want to use the latest version of the images, you would run:
+
+```bash
+bash mirror_langsmith_images.sh --registry myregistry --platform linux/arm64 --version 0.10.66
+```
+
+Note that this script will assume that you have Docker installed and that you are authenticated to your registry. It will also push the images to the specified registry with the same repository/tag as the original images.
+
+Alternatively, you can pull, mirror, and push the images manually. The images that you will need to mirror are found in the `values.yaml` file of the LangSmith Helm Chart. These can be found here: [LangSmith Helm Chart values.yaml](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml#L14)
+
+Here is an example of how to mirror the images using Docker:
+
+```bash
+# Pull the images from the public registry
+docker pull langchain/langsmith-backend:latest
+docker tag langchain/langsmith-backend:latest <your-registry>/langsmith-backend:latest
+docker push <your-registry>/langsmith-backend:latest
+```
+
+You will need to repeat this for each image that you want to mirror.
+
+## Configuration
+
+Once the images are mirrored, you will need to configure your LangSmith installation to use the mirrored images. You can do this by modifying the `values.yaml` file for your LangSmith Helm Chart installation. Replace tag with the version you want to use, e.g. `0.10.66` for the latest version at the time of writing.
+
+```yaml
+images:
+  imagePullSecrets: [] # Add your image pull secrets here if needed
+  registry: "" # Set this to your registry URL if you mirrored all images to the same registry using our script. Then you can remove the repository prefix from the images below.
+  aceBackendImage:
+    repository: "(your-registry)/langchain/langsmith-ace-backend"
+    pullPolicy: IfNotPresent
+    tag: "0.10.66"
+  backendImage:
+    repository: "(your-registry)/langchain/langsmith-backend"
+    pullPolicy: IfNotPresent
+    tag: "0.10.66"
+  frontendImage:
+    repository: "(your-registry)/langchain/langsmith-frontend"
+    pullPolicy: IfNotPresent
+    tag: "0.10.66"
+  hostBackendImage:
+    repository: "(your-registry)/langchain/hosted-langserve-backend"
+    pullPolicy: IfNotPresent
+    tag: "0.10.66"
+  operatorImage:
+    repository: "(your-registry)/langchain/langgraph-operator"
+    pullPolicy: IfNotPresent
+    tag: "6cc83a8"
+  platformBackendImage:
+    repository: "(your-registry)/langchain/langsmith-go-backend"
+    pullPolicy: IfNotPresent
+    tag: "0.10.66"
+  playgroundImage:
+    repository: "(your-registry)/langchain/langsmith-playground"
+    pullPolicy: IfNotPresent
+    tag: "0.10.66"
+  postgresImage:
+    repository: "(your-registry)/postgres"
+    pullPolicy: IfNotPresent
+    tag: "14.7"
+  redisImage:
+    repository: "(your-registry)/redis"
+    pullPolicy: IfNotPresent
+    tag: "7"
+  clickhouseImage:
+    repository: "(your-registry)/clickhouse/clickhouse-server"
+    pullPolicy: Always
+    tag: "24.8"
+```
+
+## Additional images for Fleet and Insights
+
+If you are using Fleet or Insights, the LangGraph operator dynamically creates Redis and PostgreSQL (pgvector) pods for each deployment. These pods use images defined in operator templates that require separate configuration.
+
+You must mirror these additional images:
+- `docker.io/redis:7`
+- `docker.io/pgvector/pgvector:pg15`
+
+Then override the operator templates in your `values.yaml` to use your mirrored images:
+
+```yaml
+operator:
+  templates:
+    redis: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ${service_name}
+        namespace: ${namespace}
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: ${service_name}
+        template:
+          metadata:
+            labels:
+              app: ${service_name}
+          spec:
+            enableServiceLinks: false
+            containers:
+            - name: redis
+              image: (your-registry)/redis:7
+              ports:
+              - containerPort: 6379
+                name: redis
+              livenessProbe:
+                exec:
+                  command:
+                  - redis-cli
+                  - ping
+                initialDelaySeconds: 30
+                periodSeconds: 10
+              readinessProbe:
+                tcpSocket:
+                  port: 6379
+                initialDelaySeconds: 10
+                periodSeconds: 5
+    db: |
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: ${service_name}
+      spec:
+        serviceName: ${service_name}
+        selector:
+          matchLabels:
+            app: ${service_name}
+        persistentVolumeClaimRetentionPolicy:
+          whenDeleted: Delete
+          whenScaled: Retain
+        template:
+          metadata:
+            labels:
+              app: ${service_name}
+          spec:
+            containers:
+            - name: postgres
+              image: (your-registry)/pgvector/pgvector:pg15
+              ports:
+              - containerPort: 5432
+              command: ["docker-entrypoint.sh"]
+              args:
+                - postgres
+                - -c
+                - max_connections=${max_connections}
+              env:
+              - name: PGDATA
+                value: /var/lib/postgresql/data/pgdata
+              volumeMounts:
+              - name: postgres-data
+                mountPath: /var/lib/postgresql/data
+            enableServiceLinks: false
+        volumeClaimTemplates:
+        - metadata:
+            name: postgres-data
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: "${storage_gi}Gi"
+```
+
+Replace `(your-registry)` with your registry URL. The template variables (`${service_name}`, `${namespace}`, `${max_connections}`, `${storage_gi}`) are replaced by the operator at runtime and must be kept as-is.
+
+Once configured, you will need to update your LangSmith installation. You can follow our upgrade guide here: [Upgrading LangSmith](/langsmith/self-host-upgrades). If your upgrade is successful, your LangSmith instance should now be using the mirrored images from your Docker registry.
+
+## Verifying image signatures
+
+<Note>
+Image signatures are available **starting with v15** (LangSmith app version `0.15.x` and later). Earlier releases on the `v14-stable` and older channels are not signed and cannot be verified with the steps below.
+</Note>
+
+Stable-channel LangSmith images on `docker.io/langchain/*` are signed at release time using keyless [Sigstore/Cosign](https://docs.sigstore.dev/cosign/overview/) from the release workflow. The signing identity is bound to a specific GitHub Actions workflow, run, and commit, so the signature attests not just that the image is authentic but that it was produced by the stable-branch release pipeline running in `langchain-ai/langchainplus`. You can verify a signature before pulling or mirroring an image, and again after mirroring to confirm the digest you mirrored matches what we signed.
+
+Install `cosign` ([installation guide](https://docs.sigstore.dev/cosign/system_config/installation/)), then verify any tag:
+
+```bash
+cosign verify \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
+  docker.io/langchain/langsmith-backend:<tag>
+```
+
+A successful verification confirms:
+
+- The cosign claims on the signature are valid.
+- The certificate chains to the Sigstore root and is logged in the [Rekor](https://docs.sigstore.dev/rekor/overview/) transparency log.
+- The signing certificate was issued to the stable-branch release workflow via GitHub Actions OIDC.
+
+The same command works against any of the released images by substituting the repository (`langsmith-frontend`, `langsmith-go-backend`, `agent-builder-deep-agent`, `langsmith-clio`, `langsmith-polly`, `agent-builder-tool-server`, `agent-builder-trigger-server`, `hosted-langserve-backend`, `langsmith-playground`, `langsmith-ace-backend`, plus their `*-fips` variants).
+
+### Pinning to a specific release
+
+For stricter verification — for example, pinning to a single stable branch or a specific commit — drop the regex and supply the exact certificate identity. Each signature's certificate also carries the workflow run ID and commit SHA as Subject Alternative Name extensions, so you can constrain to a specific release:
+
+```bash
+cosign verify \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity 'https://github.com/langchain-ai/langchainplus/.github/workflows/release_self_hosted_on_version_bump.yaml@refs/heads/v15-stable' \
+  docker.io/langchain/langsmith-backend:0.15.9
+```
+
+To inspect the certificate's claims (workflow run, commit, runner), download the attestation and decode the embedded certificate:
+
+```bash
+cosign download attestation docker.io/langchain/langsmith-backend:<tag>
+```
+
+### Verifying SBOM attestations
+
+Released images also carry signed SPDX software bill of materials (SBOM) attestations, one per architecture in the image index.
+
+The per-architecture SBOMs are also attached to the multi-architecture index digest, so you can verify against a bare tag directly:
+
+```bash
+cosign verify-attestation \
+  --type spdxjson \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
+  docker.io/langchain/langsmith-backend:<tag>
+```
+
+The command returns one verified statement per architecture. A successful verification gives the same guarantees as the image signature: the attestation was produced by the stable-branch release workflow, and its claims are logged in the [Rekor](https://docs.sigstore.dev/rekor/overview/) transparency log.
+
+### Fetching SBOMs
+
+To feed an SBOM into a vulnerability scanner or SBOM management tool, extract the verified SPDX document to a file. Because the index carries one statement per architecture, resolve a single architecture's child digest first so you get one SPDX document rather than one per architecture.
+
+List the per-architecture digests for a tag:
+
+```bash
+docker buildx imagetools inspect --raw docker.io/langchain/langsmith-backend:<tag> \
+  | jq -r '.manifests[] | select(.platform.os == "linux") | .digest + "  " + .platform.architecture'
+```
+
+Then verify that digest and save the decoded predicate — a standard SPDX 2.3 document listing every package in the image — to a file:
+
+```bash
+cosign verify-attestation \
+  --type spdxjson \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
+  docker.io/langchain/langsmith-backend@<digest> \
+  | jq -r '.payload' | base64 -d | jq '.predicate' > langsmith-backend.spdx.json
+```
+
+You can pass the resulting `langsmith-backend.spdx.json` directly to scanners such as [Grype](https://github.com/anchore/grype) (`grype sbom:langsmith-backend.spdx.json`) or [Trivy](https://trivy.dev/) (`trivy sbom langsmith-backend.spdx.json`).
+
+<Note>
+Extracting the SBOM through `cosign verify-attestation`, rather than `cosign download attestation`, ensures you only ever consume an SBOM whose signature and signing identity have been verified.
+</Note>
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-mirroring-images.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

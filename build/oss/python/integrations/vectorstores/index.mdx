@@ -1,0 +1,909 @@
+---
+title: "Vector store integrations"
+sidebarTitle: "Vector stores"
+description: "Integrate with vector stores using LangChain Python."
+---
+
+import LangchainCommunityUnmaintained from '/snippets/oss/langchain-community-unmaintained.mdx';
+
+## Overview
+
+A vector stores [embedded](/oss/python/integrations/embeddings) data and performs similarity search.
+
+```mermaid
+flowchart LR
+
+    subgraph "📥 Indexing phase (store)"
+        A[📄 Documents] --> B[🔢 Embedding model]
+        B --> C[🔘 Embedding vectors]
+        C --> D[(Vector store)]
+    end
+
+    subgraph "📤 Query phase (retrieval)"
+        E[❓ Query text] --> F[🔢 Embedding model]
+        F --> G[🔘 Query vector]
+        G --> H[🔍 Similarity search]
+        H --> D
+        D --> I[📄 Top-k results]
+    end
+
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    class A,B,C,D,E,F,G,H,I process
+```
+
+### Interface
+
+LangChain provides a unified interface for vector stores, allowing you to:
+
+- `add_documents` - Add documents to the store.
+- `delete` - Remove stored documents by ID.
+- `similarity_search` - Query for semantically similar documents.
+
+This abstraction lets you switch between different implementations without altering your application logic.
+
+### Initialization
+
+To initialize a vector store, provide it with an embedding model:
+
+```python
+from langchain_core.vectorstores import InMemoryVectorStore
+vector_store = InMemoryVectorStore(embedding=SomeEmbeddingModel())
+```
+
+### Adding documents
+
+Add [`Document`](https://reference.langchain.com/python/langchain-core/documents/base/Document) objects (holding `page_content` and optional metadata) like so:
+
+```python
+vector_store.add_documents(documents=[doc1, doc2], ids=["id1", "id2"])
+```
+
+### Deleting documents
+
+Delete by specifying IDs:
+
+```python
+vector_store.delete(ids=["id1"])
+```
+
+### Similarity search
+
+Issue a semantic query using `similarity_search`, which returns the closest embedded documents:
+
+```python
+similar_docs = vector_store.similarity_search("your query here")
+```
+
+Many vector stores support parameters like:
+
+* `k` — number of results to return
+* `filter` — conditional filtering based on metadata
+
+### Similarity metrics & indexing
+
+Embedding similarity may be computed using:
+
+* **Cosine similarity**
+* **Euclidean distance**
+* **Dot product**
+
+Efficient search often employs indexing methods such as HNSW (Hierarchical Navigable Small World), though specifics depend on the vector store.
+
+### Metadata filtering
+
+Filtering by metadata (e.g., source, date) can refine search results:
+
+```python
+vector_store.similarity_search(
+  "query",
+  k=3,
+  filter={"source": "tweets"}
+)
+```
+
+<important>
+Support for metadata-based filtering varies between implementations.
+Check the documentation of your chosen vector store for details.
+</important>
+
+
+## Top integrations
+
+**Select embedding model:**
+
+<AccordionGroup>
+<Accordion title="OpenAI">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-openai
+```
+
+```bash uv
+uv add langchain-openai
+```
+</CodeGroup>
+```python
+import getpass
+import os
+
+if not os.environ.get("OPENAI_API_KEY"):
+  os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")
+
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+```
+</Accordion>
+<Accordion title="Azure">
+```bash
+pip install -qU langchain-azure-ai
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("AZURE_OPENAI_API_KEY"):
+  os.environ["AZURE_OPENAI_API_KEY"] = getpass.getpass("Enter API key for Azure: ")
+
+from langchain_openai import AzureOpenAIEmbeddings
+
+embeddings = AzureOpenAIEmbeddings(
+    azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+    azure_deployment=os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"],
+    openai_api_version=os.environ["AZURE_OPENAI_API_VERSION"],
+)
+```
+</Accordion>
+<Accordion title="Google Gemini">
+```bash
+pip install -qU langchain-google-genai
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("GOOGLE_API_KEY"):
+  os.environ["GOOGLE_API_KEY"] = getpass.getpass("Enter API key for Google Gemini: ")
+
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
+embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+```
+</Accordion>
+<Accordion title="Google Vertex">
+```bash
+pip install -qU langchain-google-vertexai
+```
+```python
+from langchain_google_vertexai import VertexAIEmbeddings
+
+embeddings = VertexAIEmbeddings(model="text-embedding-005")
+```
+</Accordion>
+<Accordion title="AWS">
+```bash
+pip install -qU langchain-aws
+```
+```python
+from langchain_aws import BedrockEmbeddings
+
+embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0")
+```
+</Accordion>
+<Accordion title="HuggingFace">
+```bash
+pip install -qU langchain-huggingface
+```
+```python
+from langchain_huggingface import HuggingFaceEmbeddings
+
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+```
+</Accordion>
+<Accordion title="Ollama">
+```bash
+pip install -qU langchain-ollama
+```
+```python
+from langchain_ollama import OllamaEmbeddings
+
+embeddings = OllamaEmbeddings(model="llama3")
+```
+</Accordion>
+<Accordion title="Cohere">
+```bash
+pip install -qU langchain-cohere
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("COHERE_API_KEY"):
+  os.environ["COHERE_API_KEY"] = getpass.getpass("Enter API key for Cohere: ")
+
+from langchain_cohere import CohereEmbeddings
+
+embeddings = CohereEmbeddings(model="embed-english-v3.0")
+```
+</Accordion>
+<Accordion title="Mistral AI">
+```bash
+pip install -qU langchain-mistralai
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("MISTRALAI_API_KEY"):
+  os.environ["MISTRALAI_API_KEY"] = getpass.getpass("Enter API key for MistralAI: ")
+
+from langchain_mistralai import MistralAIEmbeddings
+
+embeddings = MistralAIEmbeddings(model="mistral-embed")
+```
+</Accordion>
+<Accordion title="Nomic">
+```bash
+pip install -qU langchain-nomic
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("NOMIC_API_KEY"):
+  os.environ["NOMIC_API_KEY"] = getpass.getpass("Enter API key for Nomic: ")
+
+from langchain_nomic import NomicEmbeddings
+
+embeddings = NomicEmbeddings(model="nomic-embed-text-v1.5")
+```
+</Accordion>
+<Accordion title="NVIDIA">
+```bash
+pip install -qU langchain-nvidia-ai-endpoints
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("NVIDIA_API_KEY"):
+  os.environ["NVIDIA_API_KEY"] = getpass.getpass("Enter API key for NVIDIA: ")
+
+from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
+
+embeddings = NVIDIAEmbeddings(model="NV-Embed-QA")
+```
+</Accordion>
+<Accordion title="Voyage AI">
+```bash
+pip install -qU langchain-voyageai
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("VOYAGE_API_KEY"):
+  os.environ["VOYAGE_API_KEY"] = getpass.getpass("Enter API key for Voyage AI: ")
+
+from langchain-voyageai import VoyageAIEmbeddings
+
+embeddings = VoyageAIEmbeddings(model="voyage-3")
+```
+</Accordion>
+<Accordion title="IBM watsonx">
+```bash
+pip install -qU langchain-ibm
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("WATSONX_APIKEY"):
+  os.environ["WATSONX_APIKEY"] = getpass.getpass("Enter API key for IBM watsonx: ")
+
+from langchain_ibm import WatsonxEmbeddings
+
+embeddings = WatsonxEmbeddings(
+    model_id="ibm/slate-125m-english-rtrvr",
+    url="https://us-south.ml.cloud.ibm.com",
+    project_id="<WATSONX PROJECT_ID>",
+)
+```
+</Accordion>
+<Accordion title="Fake">
+```bash
+pip install -qU langchain-core
+```
+```python
+from langchain_core.embeddings import DeterministicFakeEmbedding
+
+embeddings = DeterministicFakeEmbedding(size=4096)
+```
+</Accordion>
+<Accordion title="xAI">
+```bash
+pip install -qU langchain-xai
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("XAI_API_KEY"):
+  os.environ["XAI_API_KEY"] = getpass.getpass("Enter API key for xAI: ")
+
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model("grok-2", model_provider="xai")
+```
+</Accordion>
+<Accordion title="Perplexity">
+```bash
+pip install -qU langchain-perplexity
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("PPLX_API_KEY"):
+  os.environ["PPLX_API_KEY"] = getpass.getpass("Enter API key for Perplexity: ")
+
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model("llama-3.1-sonar-small-128k-online", model_provider="perplexity")
+```
+</Accordion>
+<Accordion title="DeepSeek">
+```bash
+pip install -qU langchain-deepseek
+```
+```python
+import getpass
+import os
+
+if not os.environ.get("DEEPSEEK_API_KEY"):
+  os.environ["DEEPSEEK_API_KEY"] = getpass.getpass("Enter API key for DeepSeek: ")
+
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model("deepseek-chat", model_provider="deepseek")
+```
+</Accordion>
+</AccordionGroup>
+
+**Select vector store:**
+
+<AccordionGroup>
+<Accordion title="In-memory">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-core
+```
+
+```bash uv
+uv add langchain-core
+```
+</CodeGroup>
+```python
+from langchain_core.vectorstores import InMemoryVectorStore
+
+vector_store = InMemoryVectorStore(embeddings)
+```
+</Accordion>
+
+<Accordion title="Amazon OpenSearch">
+
+```bash pip
+pip install -qU boto3
+```
+
+```python
+from opensearchpy import RequestsHttpConnection
+
+service = "es"  # must set the service as 'es'
+region = "us-east-2"
+credentials = boto3.Session(
+    aws_access_key_id="xxxxxx", aws_secret_access_key="xxxxx"
+).get_credentials()
+awsauth = AWS4Auth("xxxxx", "xxxxxx", region, service, session_token=credentials.token)
+
+vector_store = OpenSearchVectorSearch.from_documents(
+    docs,
+    embeddings,
+    opensearch_url="host url",
+    http_auth=awsauth,
+    timeout=300,
+    use_ssl=True,
+    verify_certs=True,
+    connection_class=RequestsHttpConnection,
+    index_name="test-index",
+)
+```
+
+</Accordion>
+<Accordion title="Astra DB">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-astradb
+```
+
+```bash uv
+uv add langchain-astradb
+```
+</CodeGroup>
+```python
+from langchain_astradb import AstraDBVectorStore
+
+vector_store = AstraDBVectorStore(
+    embedding=embeddings,
+    api_endpoint=ASTRA_DB_API_ENDPOINT,
+    collection_name="astra_vector_langchain",
+    token=ASTRA_DB_APPLICATION_TOKEN,
+    namespace=ASTRA_DB_NAMESPACE,
+)
+```
+</Accordion>
+<Accordion title="Azure Cosmos DB NoSQL">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-azure-cosmosdb azure-cosmos
+```
+
+```bash uv
+uv add langchain-azure-cosmosdb azure-cosmos
+```
+</CodeGroup>
+
+```python
+from langchain_azure_cosmosdb import AzureCosmosDBNoSqlVectorSearch
+
+vector_search = AzureCosmosDBNoSqlVectorSearch.from_documents(
+    documents=docs,
+    embedding=openai_embeddings,
+    cosmos_client=cosmos_client,
+    database_name=database_name,
+    container_name=container_name,
+    vector_embedding_policy=vector_embedding_policy,
+    full_text_policy=full_text_policy,
+    indexing_policy=indexing_policy,
+    cosmos_container_properties=cosmos_container_properties,
+    cosmos_database_properties={},
+    full_text_search_enabled=True,
+)
+```
+</Accordion>
+<Accordion title="Azure Cosmos DB Mongo vCore">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-azure-ai pymongo
+```
+
+```bash uv
+uv add pymongo
+```
+</CodeGroup>
+
+```python
+from langchain_azure_ai.vectorstores.azure_cosmos_db_mongo_vcore import (
+    AzureCosmosDBMongoVCoreVectorSearch,
+)
+
+vectorstore = AzureCosmosDBMongoVCoreVectorSearch.from_documents(
+    docs,
+    openai_embeddings,
+    collection=collection,
+    index_name=INDEX_NAME,
+)
+```
+</Accordion>
+<Accordion title="Chroma">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-chroma
+```
+
+```bash uv
+uv add langchain-chroma
+```
+</CodeGroup>
+```python
+from langchain_chroma import Chroma
+
+vector_store = Chroma(
+    collection_name="example_collection",
+    embedding_function=embeddings,
+    persist_directory="./chroma_langchain_db",  # Where to save data locally, remove if not necessary
+)
+```
+</Accordion>
+<Accordion title="CockroachDB">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-cockroachdb
+```
+
+```bash uv
+uv add langchain-cockroachdb
+```
+</CodeGroup>
+```python
+from langchain_cockroachdb import AsyncCockroachDBVectorStore, CockroachDBEngine
+
+CONNECTION_STRING = "cockroachdb://user:pass@host:26257/db?sslmode=verify-full"
+
+engine = CockroachDBEngine.from_connection_string(CONNECTION_STRING)
+await engine.ainit_vectorstore_table(
+    table_name="vectors",
+    vector_dimension=1536,
+)
+
+vector_store = AsyncCockroachDBVectorStore(
+    engine=engine,
+    embeddings=embeddings,
+    collection_name="vectors",
+)
+```
+</Accordion>
+<Accordion title="Elasticsearch">
+
+Install the package and start Elasticsearch locally using the [start-local](https://github.com/elastic/start-local) script:
+
+```bash
+pip install -qU langchain-elasticsearch
+curl -fsSL https://elastic.co/start-local | sh
+```
+
+This creates an `elastic-start-local` folder. To start Elasticsearch:
+
+```bash
+cd elastic-start-local
+./start.sh
+```
+
+Elasticsearch will be available at `http://localhost:9200`. The password for the `elastic` user and API key are stored in the `.env` file in the `elastic-start-local` folder.
+
+```python
+from langchain_elasticsearch import ElasticsearchStore
+
+vector_store = ElasticsearchStore(
+    index_name="langchain-demo",
+    embedding=embeddings,
+    es_url="http://localhost:9200",
+)
+```
+
+</Accordion>
+<Accordion title="Milvus">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-milvus
+```
+
+```bash uv
+uv add langchain-milvus
+```
+</CodeGroup>
+```python
+from langchain_milvus import Milvus
+
+URI = "./milvus_example.db"
+
+vector_store = Milvus(
+    embedding_function=embeddings,
+    connection_args={"uri": URI},
+    index_params={"index_type": "FLAT", "metric_type": "L2"},
+)
+```
+</Accordion>
+<Accordion title="MongoDB">
+```bash
+pip install -qU langchain-mongodb
+```
+```python
+from langchain_mongodb import MongoDBAtlasVectorSearch
+
+vector_store = MongoDBAtlasVectorSearch(
+    embedding=embeddings,
+    collection=MONGODB_COLLECTION,
+    index_name=ATLAS_VECTOR_SEARCH_INDEX_NAME,
+    relevance_score_fn="cosine",
+)
+```
+</Accordion>
+<Accordion title="PGVector">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-postgres
+```
+
+```bash uv
+uv add langchain-postgres
+```
+</CodeGroup>
+```python
+from langchain_postgres import PGVector
+
+vector_store = PGVector(
+    embeddings=embeddings,
+    collection_name="my_docs",
+    connection="postgresql+psycopg://..."
+)
+```
+</Accordion>
+<Accordion title="PGVectorStore">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-postgres
+```
+
+```bash uv
+uv add langchain-postgres
+```
+</CodeGroup>
+```python
+from langchain_postgres import PGEngine, PGVectorStore
+
+pg_engine = PGEngine.from_connection_string(
+    url="postgresql+psycopg://..."
+)
+
+vector_store = PGVectorStore.create_sync(
+    engine=pg_engine,
+    table_name='test_table',
+    embedding_service=embedding
+)
+```
+</Accordion>
+<Accordion title="Pinecone">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-pinecone
+```
+
+```bash uv
+uv add langchain-pinecone
+```
+</CodeGroup>
+```python
+from langchain_pinecone import PineconeVectorStore
+from pinecone import Pinecone
+
+pc = Pinecone(api_key=...)
+index = pc.Index(index_name)
+
+vector_store = PineconeVectorStore(embedding=embeddings, index=index)
+```
+</Accordion>
+<Accordion title="Qdrant">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-qdrant
+```
+
+```bash uv
+uv add langchain-qdrant
+```
+</CodeGroup>
+```python
+from qdrant_client.models import Distance, VectorParams
+from langchain_qdrant import QdrantVectorStore
+from qdrant_client import QdrantClient
+
+client = QdrantClient(":memory:")
+
+vector_size = len(embeddings.embed_query("sample text"))
+
+if not client.collection_exists("test"):
+    client.create_collection(
+        collection_name="test",
+        vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE)
+    )
+vector_store = QdrantVectorStore(
+    client=client,
+    collection_name="test",
+    embedding=embeddings,
+)
+```
+</Accordion>
+<Accordion title="Redis">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-redis
+```
+
+```bash uv
+uv add langchain-redis
+```
+</CodeGroup>
+```python
+import os
+from langchain_redis import RedisConfig, RedisVectorStore
+
+config = RedisConfig(
+    index_name="my_vectors",
+    redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
+    distance_metric="COSINE"
+)
+
+vector_store = RedisVectorStore(embeddings=embeddings, config=config)
+```
+</Accordion>
+<Accordion title="Oracle AI Database">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-oracledb
+```
+
+```bash uv
+uv add langchain-oracledb
+```
+
+<LangchainCommunityUnmaintained />
+
+</CodeGroup>
+```python
+import oracledb
+from langchain_oracledb.vectorstores import OracleVS
+from langchain_oracledb.vectorstores.oraclevs import create_index
+from langchain_community.vectorstores.utils import DistanceStrategy
+
+username = "<username>"
+password = "<password>"
+dsn = "<hostname>:<port>/<service_name>"
+
+connection = oracledb.connect(user=username, password=password, dsn=dsn)
+
+vector_store = OracleVS(
+    client=connection,
+    embedding_function=embedding_model,
+    table_name="VECTOR_SEARCH_DEMO",
+    distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE
+)
+```
+</Accordion>
+<Accordion title="turbopuffer">
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-turbopuffer
+```
+
+```bash uv
+uv add langchain-turbopuffer
+```
+</CodeGroup>
+```python
+from langchain_turbopuffer import TurbopufferVectorStore
+from turbopuffer import Turbopuffer
+
+tpuf = Turbopuffer(region="gcp-us-central1")
+ns = tpuf.namespace("langchain-test")
+
+vector_store = TurbopufferVectorStore(embedding=embeddings, namespace=ns)
+```
+</Accordion>
+
+<Accordion title="Valkey">
+
+<CodeGroup>
+```bash pip
+pip install -qU "langchain-aws[valkey]"
+```
+
+```bash uv
+uv add langchain-aws --extra valkey
+```
+</CodeGroup>
+```python
+from langchain_aws.vectorstores import ValkeyVectorStore
+
+vector_store = ValkeyVectorStore(
+    embedding=embeddings,
+    valkey_url="valkey://localhost:6379",
+    index_name="my_index"
+)
+```
+</Accordion>
+</AccordionGroup>
+
+| Vectorstore | Delete by ID | Filtering | Search by Vector | Search with score | Async | Passes Standard Tests | Multi Tenancy | IDs in add Documents |
+|------------|-------------|-----------|-----------------|------------------|--------|---------------------|---------------|-------------------|
+| [`AstraDBVectorStore`](/oss/python/integrations/vectorstores/astradb) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [`AzureCosmosDBNoSqlVectorStore`](/oss/python/integrations/vectorstores/azure_cosmos_db_no_sql) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| [`AzureCosmosDBMongoVCoreVectorStore`](/oss/python/integrations/vectorstores/azure_cosmos_db_mongo_vcore) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| [`AsyncCockroachDBVectorStore`](/oss/python/integrations/vectorstores/cockroachdb) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [`CouchbaseSearchVectorStore`](/oss/python/integrations/vectorstores/couchbase) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| [`DatabricksVectorSearch`](/oss/python/integrations/vectorstores/databricks_vector_search) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
+| [`ElasticsearchStore`](/oss/python/integrations/vectorstores/elasticsearch) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ |
+| [`InMemoryVectorStore`](https://reference.langchain.com/python/langchain-core/vectorstores/in_memory/InMemoryVectorStore) | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ |
+| [`LambdaDB`](/oss/python/integrations/vectorstores/lambdadb) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| [`Milvus`](/oss/python/integrations/vectorstores/milvus) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [`Moorcheh`](/oss/python/integrations/vectorstores/moorcheh) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [`MongoDBAtlasVectorSearch`](/oss/python/integrations/vectorstores/mongodb_atlas) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [`openGauss`](/oss/python/integrations/vectorstores/opengauss) | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| [`PineconeVectorStore`](/oss/python/integrations/vectorstores/pinecone) | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ |
+| [`QdrantVectorStore`](/oss/python/integrations/vectorstores/qdrant) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| [`RedisVectorStore`](/oss/python/integrations/vectorstores/redis) | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| [`Weaviate`](/oss/python/integrations/vectorstores/weaviate) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| [`SQLServer`](/oss/python/integrations/vectorstores/sqlserver) | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| [`ValkeyVectorStore`](/oss/python/integrations/vectorstores/valkey) | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| [`ZeusDB`](/oss/python/integrations/vectorstores/zeusdb) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+| [`Oracle AI Database`](/oss/python/integrations/vectorstores/oracle) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+
+## All vector stores
+
+<Columns cols={3}>
+<Card title="Activeloop Deep Lake" icon="link" href="/oss/python/integrations/vectorstores/activeloop_deeplake" arrow="true" cta="View guide"/>
+<Card title="Alibaba Cloud MySQL" icon="link" href="/oss/python/integrations/vectorstores/alibabacloud_mysql" arrow="true" cta="View guide"/>
+<Card title="Astra DB Vector Store" icon="link" href="/oss/python/integrations/vectorstores/astradb" arrow="true" cta="View guide"/>
+<Card title="Azure Cosmos DB Mongo vCore" icon="link" href="/oss/python/integrations/vectorstores/azure_cosmos_db_mongo_vcore" arrow="true" cta="View guide"/>
+<Card title="Azure Cosmos DB No SQL" icon="link" href="/oss/python/integrations/vectorstores/azure_cosmos_db_no_sql" arrow="true" cta="View guide"/>
+<Card title="Azure Database for PostgreSQL - Flexible Server" icon="link" href="/oss/python/integrations/vectorstores/azure_db_for_postgresql" arrow="true" cta="View guide"/>
+<Card title="CockroachDB" icon="link" href="/oss/python/integrations/vectorstores/cockroachdb" arrow="true" cta="View guide"/>
+<Card title="Couchbase" icon="link" href="/oss/python/integrations/vectorstores/couchbase" arrow="true" cta="View guide"/>
+<Card title="Databricks" icon="link" href="/oss/python/integrations/vectorstores/databricks_vector_search" arrow="true" cta="View guide"/>
+<Card title="IBM Db2" icon="link" href="/oss/python/integrations/vectorstores/db2" arrow="true" cta="View guide"/>
+<Card title="Amazon Document DB" icon="link" href="/oss/python/integrations/vectorstores/documentdb" arrow="true" cta="View guide"/>
+<Card title="Elasticsearch" icon="link" href="/oss/python/integrations/vectorstores/elasticsearch" arrow="true" cta="View guide"/>
+<Card title="Gel" icon="link" href="/oss/python/integrations/vectorstores/gel" arrow="true" cta="View guide"/>
+<Card title="Google AlloyDB" icon="link" href="/oss/python/integrations/vectorstores/google_alloydb" arrow="true" cta="View guide"/>
+<Card title="Google BigQuery Vector Search" icon="link" href="/oss/python/integrations/vectorstores/google_bigquery_vector_search" arrow="true" cta="View guide"/>
+<Card title="Google Cloud SQL for MySQL" icon="link" href="/oss/python/integrations/vectorstores/google_cloud_sql_mysql" arrow="true" cta="View guide"/>
+<Card title="Google Cloud SQL for PostgreSQL" icon="link" href="/oss/python/integrations/vectorstores/google_cloud_sql_pg" arrow="true" cta="View guide"/>
+<Card title="Firestore" icon="link" href="/oss/python/integrations/vectorstores/google_firestore" arrow="true" cta="View guide"/>
+<Card title="Google Memorystore for Redis" icon="link" href="/oss/python/integrations/vectorstores/google_memorystore_redis" arrow="true" cta="View guide"/>
+<Card title="Google Spanner" icon="link" href="/oss/python/integrations/vectorstores/google_spanner" arrow="true" cta="View guide"/>
+<Card title="Google Bigtable" icon="link" href="/oss/python/integrations/vectorstores/google_bigtable" arrow="true" cta="View guide"/>
+<Card title="Google Vertex AI Feature Store" icon="link" href="/oss/python/integrations/vectorstores/google_vertex_ai_feature_store" arrow="true" cta="View guide"/>
+<Card title="Google Vertex AI Vector Search" icon="link" href="/oss/python/integrations/vectorstores/google_vertex_ai_vector_search" arrow="true" cta="View guide"/>
+<Card title="Kinetica" icon="link" href="/oss/python/integrations/vectorstores/kinetica" arrow="true" cta="View guide"/>
+<Card title="LambdaDB" icon="link" href="/oss/python/integrations/vectorstores/lambdadb" arrow="true" cta="View guide"/>
+<Card title="Lindorm" icon="link" href="/oss/python/integrations/vectorstores/lindorm" arrow="true" cta="View guide"/>
+<Card title="Amazon MemoryDB" icon="link" href="/oss/python/integrations/vectorstores/memorydb" arrow="true" cta="View guide"/>
+<Card title="Milvus" icon="link" href="/oss/python/integrations/vectorstores/milvus" arrow="true" cta="View guide"/>
+<Card title="Moorcheh" icon="link" href="/oss/python/integrations/vectorstores/moorcheh" arrow="true" cta="View guide"/>
+<Card title="MongoDB Atlas" icon="link" href="/oss/python/integrations/vectorstores/mongodb_atlas" arrow="true" cta="View guide"/>
+<Card title="Oceanbase" icon="link" href="/oss/python/integrations/vectorstores/oceanbase" arrow="true" cta="View guide"/>
+<Card title="openGauss" icon="link" href="/oss/python/integrations/vectorstores/opengauss" arrow="true" cta="View guide"/>
+<Card title="Oracle AI Database" icon="link" href="/oss/python/integrations/vectorstores/oracle" arrow="true" cta="View guide"/>
+<Card title="PGVectorStore" icon="link" href="/oss/python/integrations/vectorstores/pgvectorstore" arrow="true" cta="View guide"/>
+<Card title="Pinecone" icon="link" href="/oss/python/integrations/vectorstores/pinecone" arrow="true" cta="View guide"/>
+<Card title="Pinecone (sparse)" icon="link" href="/oss/python/integrations/vectorstores/pinecone_sparse" arrow="true" cta="View guide"/>
+<Card title="Qdrant" icon="link" href="/oss/python/integrations/vectorstores/qdrant" arrow="true" cta="View guide"/>
+<Card title="Redis" icon="link" href="/oss/python/integrations/vectorstores/redis" arrow="true" cta="View guide"/>
+<Card title="SAP HANA Cloud Vector Engine" icon="link" href="/oss/python/integrations/vectorstores/sap_hanavector" arrow="true" cta="View guide"/>
+<Card title="SQLServer" icon="link" href="/oss/python/integrations/vectorstores/sqlserver" arrow="true" cta="View guide"/>
+<Card title="SurrealDB" icon="link" href="/oss/python/integrations/vectorstores/surrealdb" arrow="true" cta="View guide"/>
+<Card title="Teradata VectorStore" icon="link" href="/oss/python/integrations/vectorstores/teradata" arrow="true" cta="View guide"/>
+<Card title="Valkey" icon="link" href="/oss/python/integrations/vectorstores/valkey" arrow="true" cta="View guide"/>
+<Card title="VDMS" icon="link" href="/oss/python/integrations/vectorstores/vdms" arrow="true" cta="View guide"/>
+<Card title="veDB for MySQL" icon="link" href="/oss/python/integrations/vectorstores/vedb_for_mysql" arrow="true" cta="View guide"/>
+<Card title="Volcengine RDS for MySQL" icon="link" href="/oss/python/integrations/vectorstores/volcengine_mysql" arrow="true" cta="View guide"/>
+<Card title="Weaviate" icon="link" href="/oss/python/integrations/vectorstores/weaviate" arrow="true" cta="View guide"/>
+<Card title="YDB" icon="link" href="/oss/python/integrations/vectorstores/ydb" arrow="true" cta="View guide"/>
+<Card title="ZeusDB" icon="link" href="/oss/python/integrations/vectorstores/zeusdb" arrow="true" cta="View guide"/>
+</Columns>
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/vectorstores/index.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
