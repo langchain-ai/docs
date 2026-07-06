@@ -11,8 +11,10 @@ Supported markers (same as this repo's Bluehawk usage):
 - ``# :snippet-start: <id>`` / ``# :snippet-end:`` (Python)
 - ``// :snippet-start: <id>`` / ``// :snippet-end:`` (TypeScript, Java)
 - ``// :snippet-start: <id>`` / ``// :snippet-end:`` (Kotlin)
-- ``# :remove-start:`` / ``# :remove-end:`` inside Python snippet bodies
-- ``// :remove-start:`` / ``// :remove-end:`` inside TypeScript/Java snippet bodies
+- ``// :snippet-start: <id>`` / ``// :snippet-end:`` (Go)
+- ``# :snippet-start: <id>`` / ``# :snippet-end:`` (bash)
+- ``# :remove-start:`` / ``# :remove-end:`` inside Python/bash snippet bodies
+- ``// :remove-start:`` / ``// :remove-end:`` inside TypeScript/Java/Kotlin/Go snippet bodies
 
 Output files match Bluehawk: ``<source-basename>.snippet.<snippet-id>.<ext>`` in
 ``src/code-samples-generated/``.
@@ -23,7 +25,7 @@ or via ``make code-snippets``.
 Optional environment variable:
 
 - ``CODE_SNIPPET_SOURCES``: space-separated repo-relative paths under ``src/code-samples/``
-  (``.py``, ``.ts``, ``.java``, ``.kt``). When set, only those files are extracted; existing
+  (``.py``, ``.ts``, ``.java``, ``.kt``, ``.go``, ``.sh``). When set, only those files are extracted; existing
   generated snippet files for those stems are replaced. Other stems in
   ``src/code-samples-generated/`` are left unchanged. Use ``make code-snippets-langsmith``
   for the LangSmith JVM subset.
@@ -81,10 +83,10 @@ def extract_snippets(
     language: str,
 ) -> list[tuple[str, str]]:
     """Return (snippet_id, body) for each ``:snippet-start:`` block in *text*."""
-    if language == "python":
+    if language in ("python", "bash", "shell", "sh"):
         start_re, end_re = _RE_SNIP_START_PY, _RE_SNIP_END_PY
         rs, re_ = _RE_REMOVE_START_PY, _RE_REMOVE_END_PY
-    elif language in ("ts", "typescript", "javascript", "java", "kotlin"):
+    elif language in ("ts", "typescript", "javascript", "java", "kotlin", "go"):
         start_re, end_re = _RE_SNIP_START_TS, _RE_SNIP_END_TS
         rs, re_ = _RE_REMOVE_START_TS, _RE_REMOVE_END_TS
     else:
@@ -138,6 +140,14 @@ def _iter_source_files(root: Path) -> list[Path]:
         if "node_modules" in path.parts:
             continue
         out.append(path)
+    for path in sorted(root.rglob("*.go")):
+        if "node_modules" in path.parts:
+            continue
+        out.append(path)
+    for path in sorted(root.rglob("*.sh")):
+        if "node_modules" in path.parts:
+            continue
+        out.append(path)
     return out
 
 
@@ -150,7 +160,11 @@ def _language_for_path(path: Path) -> str:
         return "java"
     if path.suffix == ".kt":
         return "kotlin"
-    msg = f"expected .py, .ts, .java, or .kt, got {path.suffix!r}"
+    if path.suffix == ".go":
+        return "go"
+    if path.suffix == ".sh":
+        return "bash"
+    msg = f"expected .py, .ts, .java, .kt, .go, or .sh, got {path.suffix!r}"
     raise ValueError(msg)
 
 
@@ -162,11 +176,13 @@ def _normalize_newlines(s: str) -> str:
     return s
 
 
-def _delete_snippet_outputs_for_source(out_dir: Path, source_path: Path) -> None:
+def _delete_snippet_outputs_for_source(out_dir: Path, source_path: Path, code_samples: Path) -> None:
     """Remove previously generated snippet files for one source file stem."""
     stem = source_path.stem
     ext = source_path.suffix.lstrip(".")
-    for p in out_dir.glob(f"{stem}.snippet.*.{ext}"):
+    rel = source_path.relative_to(code_samples)
+    search_dir = out_dir / rel.parts[-2] if len(rel.parts) > 2 else out_dir
+    for p in search_dir.glob(f"{stem}.snippet.*.{ext}"):
         if p.is_file():
             p.unlink()
 
@@ -188,8 +204,8 @@ def _resolve_partial_sources(repo_root: Path, code_samples: Path) -> list[Path] 
         except ValueError as e:
             msg = f"CODE_SNIPPET_SOURCES must be under {code_samples}: {part}"
             raise ValueError(msg) from e
-        if path.suffix not in (".py", ".ts", ".java", ".kt"):
-            msg = f"CODE_SNIPPET_SOURCES must be .py, .ts, .java, or .kt: {part}"
+        if path.suffix not in (".py", ".ts", ".java", ".kt", ".go", ".sh"):
+            msg = f"CODE_SNIPPET_SOURCES must be .py, .ts, .java, .kt, .go, or .sh: {part}"
             raise ValueError(msg)
         out.append(path)
     return out
@@ -213,13 +229,13 @@ def main() -> int:
         return 1
 
     if partial_sources is None:
-        for p in list(out_dir.iterdir()):
-            if p.suffix in (".py", ".ts", ".java", ".kt") and p.is_file():
+        for p in out_dir.rglob("*"):
+            if p.suffix in (".py", ".ts", ".java", ".kt", ".go", ".sh") and p.is_file():
                 p.unlink()
         paths_to_process = _iter_source_files(code_samples)
     else:
         for src in partial_sources:
-            _delete_snippet_outputs_for_source(out_dir, src)
+            _delete_snippet_outputs_for_source(out_dir, src, code_samples)
         paths_to_process = partial_sources
 
     written: list[Path] = []
@@ -237,7 +253,10 @@ def main() -> int:
             return 1
         for snippet_id, body in pairs:
             body = _normalize_newlines(body)
-            out_path = out_dir / f"{path.stem}.snippet.{snippet_id}.{path.suffix.lstrip('.')}"
+            rel = path.relative_to(code_samples)
+            out_subdir = out_dir / rel.parts[-2] if len(rel.parts) > 2 else out_dir
+            out_subdir.mkdir(parents=True, exist_ok=True)
+            out_path = out_subdir / f"{path.stem}.snippet.{snippet_id}.{path.suffix.lstrip('.')}"
             out_path.write_text(body, encoding="utf-8", newline="\n")
             written.append(out_path)
 

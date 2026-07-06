@@ -1,0 +1,20 @@
+
+// :snippet-start: runs-query-selecting-fields-after-js
+// :codegroup-tab: After
+import { Client } from "langsmith";
+
+const client = new Client();
+const project = await client.projects
+  .list({ name: "default", limit: 1 })
+  .then((page) => page.getPaginatedItems()[0]);
+// must explicitly list every field needed; default returns only id
+for await (const run of client.runs.query({
+  project_ids: [project.id],
+  selects: ["ID", "NAME", "RUN_TYPE", "STATUS", "START_TIME", "INPUTS", "ERROR"],
+})) {
+  console.log(run.id, run.name, run.run_type, run.status, run.start_time, run.inputs, run.error);
+  // :remove-start:
+  break;
+  // :remove-end:
+}
+// :snippet-end:
