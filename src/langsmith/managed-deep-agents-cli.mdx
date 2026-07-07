@@ -5,6 +5,8 @@ description: Reference for mda commands, project files, and deploy behavior.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
+import ManagedDeepAgentsProjectLayout from '/snippets/langsmith/managed-deep-agents-project-layout.mdx';
+import ManagedDeepAgentsRuntimeOwnership from '/snippets/langsmith/managed-deep-agents-runtime-ownership.mdx';
 
 The `mda` CLI tests and deploys code-first [Managed Deep Agents](/langsmith/managed-deep-agents-overview). It is included with the `managed-deepagents` npm and Python packages.
 
@@ -155,54 +157,21 @@ Deploy runs these steps:
 9. Poll the revision until it reaches `DEPLOYED` unless `--no-wait` is set.
 10. Reconcile the managed LangSmith cron jobs for schedules unless `--no-wait` is set.
 
-On success, the CLI prints the LangSmith deployment dashboard URL.
+On success, the CLI prints the LangSmith deployment dashboard URL. For secrets routing and deploy tips, see [Deploy an agent](/langsmith/managed-deep-agents-deploy).
 
 ## Project file reference
 
 Managed Deep Agents projects use a code-first layout:
 
-```text
-my-agent/
-  agent.py | agent.ts | agent.tsx
-  instructions.md
-  .env
-  .gitignore
-  skills/<name>/SKILL.md
-  schedules/<name>.py | schedules/<name>.ts
-  connectors/mcp.py | connectors/mcp.ts
-  sandbox/__init__.py | sandbox/index.ts
-  sandbox/setup.sh
-  tools/
-  middleware/
-```
+<ManagedDeepAgentsProjectLayout />
 
 Only a project-root `agent.ts`, `agent.tsx`, or `agent.py` is required. The CLI detects the first available entry in that order.
 
 ### Agent entry
 
-The agent entry must export a named `agent` definition.
+The agent entry must export a named `agent` definition created with `define_deep_agent` or `defineDeepAgent`. For a minimal example, see the [quickstart](/langsmith/managed-deep-agents-quickstart#edit-the-agent).
 
-<CodeGroup>
-
-```python Python
-from managed_deepagents import define_deep_agent
-
-agent = define_deep_agent(
-    model="openai:gpt-5.5",
-)
-```
-
-```ts TypeScript
-import { defineDeepAgent } from "managed-deepagents";
-
-export const agent = defineDeepAgent({
-  model: "openai:gpt-5.5",
-});
-```
-
-</CodeGroup>
-
-The definition accepts the Deep Agents `createDeepAgent` configuration surface except managed keys. The managed runtime owns `backend`, `store`, `checkpointer`, `memory`, `skills`, and the system prompt. Use `disableMemory` or `disable_memory` to disable only the managed agent memory.
+The definition accepts the Deep Agents `createDeepAgent` configuration surface except managed keys. Setting a managed key is an error.
 
 ### Authored tools and middleware
 
@@ -228,76 +197,21 @@ Managed memory lives in the same Context Hub repo as the deployed instructions a
 
 Declare remote MCP servers in `connectors/mcp.ts` or `connectors/mcp.py`. The module must export a named `mcp` declaration.
 
-<CodeGroup>
-
-```python Python
-from managed_deepagents.connectors import define_mcp_servers
-
-mcp = define_mcp_servers(
-    mcp_servers={
-        "docs": {
-            "transport": "http",
-            "url": "https://docs.example.com/mcp",
-        },
-    },
-)
-```
-
-```ts TypeScript
-import { defineMcpServers } from "managed-deepagents";
-
-export const mcp = defineMcpServers({
-  mcpServers: {
-    docs: {
-      transport: "http",
-      url: "https://docs.example.com/mcp",
-    },
-  },
-});
-```
-
-</CodeGroup>
-
 Connectors support remote `http` and `sse` MCP servers. Stdio MCP servers are rejected. When connectors are present, `mda` injects `@langchain/mcp-adapters` or `langchain-mcp-adapters` into the compiled build and appends loaded MCP tools to authored tools.
+
+For examples, server options, and connector defaults, see [Connect MCP tools](/langsmith/managed-deep-agents-mcp).
 
 ### Schedules
 
 Declare managed cron schedules under `schedules/`. Each direct child schedule file must export a named `schedule` declaration from `defineSchedule(...)` or `define_schedule(...)`.
 
-Deploy extracts schedule declarations from static literals, arrays, objects, and top-level literal constants. After the deployment reaches `DEPLOYED`, `mda deploy` replaces the existing managed LangSmith cron jobs with the current local schedule declarations. For examples, see [Schedules](/langsmith/managed-deep-agents-schedules).
+Deploy extracts schedule declarations from static literals, arrays, objects, and top-level literal constants. After the deployment reaches `DEPLOYED`, `mda deploy` replaces the existing managed LangSmith cron jobs with the current local schedule declarations. For examples and constraints, see [Schedules](/langsmith/managed-deep-agents-schedules).
 
 ### Sandbox
 
-To configure a managed sandbox, export `sandbox` from `sandbox/index.ts` for TypeScript or `sandbox/__init__.py` for Python.
+To configure a managed sandbox, export `sandbox` from `sandbox/index.ts` for TypeScript or `sandbox/__init__.py` for Python. Sandboxes are scoped per thread. `sandbox/setup.sh`, when present, runs once when a new managed sandbox is provisioned for a thread.
 
-<CodeGroup>
-
-```python Python
-from managed_deepagents import define_sandbox
-from deepagents.backends import LangSmithSandbox
-
-sandbox = define_sandbox(
-    LangSmithSandbox,
-    scope="thread",
-    idle_ttl_seconds=600,
-    default_timeout=600,
-)
-```
-
-```ts TypeScript
-import { defineSandbox } from "managed-deepagents";
-import { LangSmithSandbox } from "deepagents";
-
-export const sandbox = defineSandbox(LangSmithSandbox, {
-  scope: "thread",
-  idleTtlSeconds: 600,
-  defaultTimeout: 600,
-});
-```
-
-</CodeGroup>
-
-Sandboxes are scoped per thread. `sandbox/setup.sh`, when present, runs once when a new managed sandbox is provisioned for a thread.
+For configuration examples and lifecycle behavior, see [Configure a sandbox](/langsmith/managed-deep-agents-deploy#configure-a-sandbox).
 
 ### Ignored paths
 
@@ -311,7 +225,7 @@ It also skips `.env` and `.env.*` files when copying files into the compiled bui
 
 ## Agent definition reference
 
-`define_deep_agent` and `defineDeepAgent` accept the full Deep Agents `create_deep_agent` configuration surface except the managed keys. Set author-owned fields to configure behavior. Setting a managed key is an error.
+`define_deep_agent` and `defineDeepAgent` accept the full Deep Agents `create_deep_agent` configuration surface except the managed keys. Set author-owned fields to configure behavior.
 
 ### Author-set fields
 
@@ -332,22 +246,18 @@ It also skips `.env` and `.env.*` files when copying files into the compiled bui
 
 ### Managed fields
 
-The managed runtime owns these fields. Configure the equivalent through the project instead of the agent definition.
-
-| Field | Owner | Configure through |
-| --- | --- | --- |
-| `backend`, `store`, `checkpointer` | Managed runtime | Not configurable. |
-| `memory` | Managed runtime | Context Hub `memories/AGENTS.md`. |
-| `skills` | Managed runtime | `skills/**` in the project. |
-| `system_prompt` / `systemPrompt` | Managed runtime | `instructions.md` in the project. |
+<ManagedDeepAgentsRuntimeOwnership />
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
+| `project root ... is not a directory` | Pass a directory path to `mda dev` or `mda deploy`. |
 | `no agent entry file found` | Add `agent.ts`, `agent.tsx`, or `agent.py` at the project root. |
 | `mda dev` cannot find `uv` | For Python projects, install `uv` so `mda dev` can resolve the local LangGraph dev server. |
+| `No LangSmith API key found` | Set `LANGSMITH_API_KEY` or add it to the project `.env`. |
 | Deploy fails with 401 or 403 | Confirm the API key belongs to a workspace with beta access. |
 | Deploy reports a missing model provider API key | Add the provider key, such as `OPENAI_API_KEY`, to `.env`, export it in your shell, or configure it as a LangSmith workspace secret. |
 | Deploy reports a Context Hub conflict | The Context Hub repo changed during deploy. Re-run `mda deploy`. |
 | The build exceeds 200 MB | Remove generated artifacts or large files from the project before deploying. |
+| Deployment reaches `BUILD_FAILED` or `DEPLOY_FAILED` | Open the printed deployment URL in LangSmith and inspect the revision logs. |
