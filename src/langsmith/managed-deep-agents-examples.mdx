@@ -5,6 +5,7 @@ description: An annotated Managed Deep Agents project that uses tools, middlewar
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
+import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
 This page walks through a complete Managed Deep Agents project: a customer-support agent that looks up data with a tool, redacts PII and logs an audit line with middleware, pauses for review before sensitive actions, runs a daily check-in on a schedule, loads a research skill on demand, and works in a managed sandbox. Use it as a reference for how the pieces fit together.
 
@@ -29,11 +30,11 @@ support-agent/
   sandbox/setup.sh                     # Seeds workspace reference files
 ```
 
-For the packaging rules behind this layout, see [How Managed Deep Agents work](/langsmith/managed-deep-agents-how-it-works#compilation).
+For the packaging rules behind this layout, see [How Managed Deep Agents work](/langsmith/managed-deep-agents-how-it-works#compilation) and the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference).
 
 ## Compose the agent
 
-The agent entry imports the authored tool and middleware, then declares the model, middleware order, and which tools pause for human review. The managed runtime owns backend, store, checkpointer, memory, skills, and the system prompt, so none are set here.
+The agent entry is the wiring diagram for the project. It imports the authored tool and middleware, then declares the model, middleware order, and which tools pause for human review. The managed runtime owns backend, store, checkpointer, memory, skills, and the system prompt, so none are set here.
 
 <CodeGroup>
 
@@ -100,217 +101,24 @@ You are a helpful, careful customer-support Deep Agent.
 - When an action would send an email, pause for human review before sending.
 ```
 
-## Add an authored tool
+## Capabilities by file
 
-The `query_db` tool runs a read-only lookup. Authored tools live in `tools/` and are imported into the agent entry. For more, see [Custom tools](/langsmith/managed-deep-agents-tools).
+Each project file maps to a feature guide. Follow the linked page for full examples and configuration options.
 
-<CodeGroup>
-
-```python tools/query_db.py
-from langchain.tools import tool
-
-
-@tool(parse_docstring=True)
-def query_db(query: str) -> str:
-    """Run a read-only SQL query against the application database.
-
-    Args:
-        query: A read-only SQL query to execute.
-    """
-    # In a real agent this would run against your database.
-    return f"Ran query: {query}"
-```
-
-```ts tools/query-db.ts
-import { tool } from "langchain";
-import { z } from "zod";
-
-export const queryDB = tool(
-  async ({ query }) => {
-    // In a real agent this would run against your database.
-    return `Ran query: ${query}`;
-  },
-  {
-    name: "query_db",
-    description: "Run a read-only SQL query against the application database.",
-    schema: z.object({
-      query: z.string().describe("A read-only SQL query to execute."),
-    }),
-  },
-);
-```
-
-</CodeGroup>
-
-## Add middleware
-
-The `audit` middleware logs a line before every model call. Middleware order is explicit in the `middleware` array, so the PII redaction runs before the audit log. For more, see [Custom middleware](/langsmith/managed-deep-agents-middleware).
-
-<CodeGroup>
-
-```python middleware/audit.py
-from langchain.agents.middleware import AgentState, before_model
-from langgraph.runtime import Runtime
-
-
-def audit_middleware():
-    @before_model
-    def audit(state: AgentState, runtime: Runtime) -> dict | None:
-        print(f"[audit] model call with {len(state['messages'])} messages")
-        return None
-
-    return audit
-```
-
-```ts middleware/audit.ts
-import { createMiddleware } from "langchain";
-
-export function auditMiddleware() {
-  return createMiddleware({
-    name: "audit",
-    beforeModel: (state) => {
-      console.log(`[audit] model call with ${state.messages.length} messages`);
-      return undefined;
-    },
-  });
-}
-```
-
-</CodeGroup>
-
-## Connect an MCP server
-
-The connector declares a remote MCP server. Managed Deep Agents loads its tools at runtime and appends them to the authored tools. For more, see [Connect MCP tools](/langsmith/managed-deep-agents-mcp).
-
-<CodeGroup>
-
-```python connectors/mcp.py
-from managed_deepagents.connectors import define_mcp_servers
-
-mcp = define_mcp_servers(
-    mcp_servers={
-        "langchainDocs": {
-            "transport": "http",
-            "url": "https://docs.langchain.com/mcp",
-        },
-    },
-)
-```
-
-```ts connectors/mcp.ts
-import { defineMcpServers } from "managed-deepagents";
-
-export const mcp = defineMcpServers({
-  mcpServers: {
-    langchainDocs: {
-      transport: "http",
-      url: "https://docs.langchain.com/mcp",
-    },
-  },
-});
-```
-
-</CodeGroup>
-
-## Run on a schedule
-
-The schedule triggers a daily run at 9am Pacific with a prompt. For thread behavior and constraints, see [Schedules](/langsmith/managed-deep-agents-schedules).
-
-<CodeGroup>
-
-```python schedules/daily_check_in.py
-from managed_deepagents import define_schedule
-
-schedule = define_schedule(
-    cron="0 9 * * *",
-    timezone="America/Los_Angeles",
-    prompt="How are you doing today?",
-)
-```
-
-```ts schedules/daily-check-in.ts
-import { defineSchedule } from "managed-deepagents";
-
-export const schedule = defineSchedule({
-  cron: "0 9 * * *",
-  timezone: "America/Los_Angeles",
-  prompt: "How are you doing today?",
-});
-```
-
-</CodeGroup>
-
-## Add a skill
-
-A skill is an on-demand procedure the agent loads when it applies. It is a `SKILL.md` file under `skills/` with a name and description in frontmatter. Deploy syncs `skills/**` to Context Hub.
-
-```markdown skills/research/SKILL.md
----
-name: research
-description: Gather and synthesize context before answering complex questions.
----
-
-# Research
-
-Use this skill when a task needs more than a direct answer.
-
-1. Identify what information is missing.
-2. Use `query_db` to look up relevant records.
-3. Summarize findings before responding to the user.
-```
-
-## Configure a sandbox
-
-The sandbox gives the agent an isolated environment for shell commands and filesystem work. `sandbox/setup.sh` runs once when a new sandbox is provisioned. For scope and lifecycle, see [How Managed Deep Agents work](/langsmith/managed-deep-agents-how-it-works#sandboxes).
-
-<CodeGroup>
-
-```python sandbox/__init__.py
-from managed_deepagents import define_sandbox
-from deepagents.backends import LangSmithSandbox
-
-sandbox = define_sandbox(
-    LangSmithSandbox,
-    scope="thread",
-    idle_ttl_seconds=600,
-    default_timeout=600,
-)
-```
-
-```ts sandbox/index.ts
-import { defineSandbox } from "managed-deepagents";
-import { LangSmithSandbox } from "deepagents";
-
-export const sandbox = defineSandbox(LangSmithSandbox, {
-  scope: "thread",
-  idleTtlSeconds: 600,
-  defaultTimeout: 600,
-});
-```
-
-</CodeGroup>
+| File | Capability | Guide |
+| --- | --- | --- |
+| `tools/query_db.py` or `query-db.ts` | Read-only database lookup tool | [Custom tools](/langsmith/managed-deep-agents-tools) |
+| `middleware/audit.py` or `audit.ts` | Audit logging before model calls | [Custom middleware](/langsmith/managed-deep-agents-middleware) |
+| `connectors/mcp.py` or `mcp.ts` | LangChain docs MCP server | [Connect MCP tools](/langsmith/managed-deep-agents-mcp) |
+| `schedules/daily_check_in.py` or `daily-check-in.ts` | Daily 9am Pacific cron run | [Schedules](/langsmith/managed-deep-agents-schedules) |
+| `skills/research/SKILL.md` | On-demand research procedure | [Deploy an agent](/langsmith/managed-deep-agents-deploy#configure-instructions-skills-and-memory) |
+| `sandbox/` | Managed LangSmith sandbox | [Configure a sandbox](/langsmith/managed-deep-agents-deploy#configure-a-sandbox) |
 
 ## Run and deploy the project
 
-Install dependencies, test locally, then deploy:
+<ManagedDeepAgentsTestAndDeploy />
 
-<CodeGroup>
-
-```bash uv
-uv sync
-mda dev .
-mda deploy .
-```
-
-```bash npm
-npm install
-mda dev .
-mda deploy .
-```
-
-</CodeGroup>
-
-`mda dev` starts the project in LangSmith Studio. `mda deploy` compiles the project, syncs instructions and skills to Context Hub, uploads the build, and reconciles the daily schedule once the deployment is live.
+`mda deploy` compiles the project, syncs instructions and skills to Context Hub, uploads the build, and reconciles the daily schedule once the deployment is live.
 
 ## See also
 
