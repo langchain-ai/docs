@@ -4,6 +4,27 @@ sidebarTitle: Configuration
 description: Configure Deep Agents Code with config.toml, hooks, and MCP servers
 ---
 
+import ConfigurationHooksHandlerPy from '/snippets/code-samples/code/configuration-hooks-handler-py.mdx';
+import ConfigurationArbitraryProviderKwargsPy from '/snippets/code-samples/code/configuration-arbitrary-provider-kwargs-py.mdx';
+import ConfigurationAuthSetSh from '/snippets/code-samples/code/configuration-auth-set-sh.mdx';
+import ConfigurationAuthRemoveSh from '/snippets/code-samples/code/configuration-auth-remove-sh.mdx';
+import ConfigurationProviderEnvSh from '/snippets/code-samples/code/configuration-provider-env-sh.mdx';
+import ConfigurationKeyResolutionSh from '/snippets/code-samples/code/configuration-key-resolution-sh.mdx';
+import ConfigurationDotenvTavilySh from '/snippets/code-samples/code/configuration-dotenv-tavily-sh.mdx';
+import ConfigurationDotenvGlobalSh from '/snippets/code-samples/code/configuration-dotenv-global-sh.mdx';
+import ConfigurationDotenvPrefixSh from '/snippets/code-samples/code/configuration-dotenv-prefix-sh.mdx';
+import ConfigurationProfileOverrideSh from '/snippets/code-samples/code/configuration-profile-override-sh.mdx';
+import ConfigurationInstallPackageSh from '/snippets/code-samples/code/configuration-install-package-sh.mdx';
+import ConfigurationGatewayEndpointSh from '/snippets/code-samples/code/configuration-gateway-endpoint-sh.mdx';
+import ConfigurationSkillsExtraDirsSh from '/snippets/code-samples/code/configuration-skills-extra-dirs-sh.mdx';
+import ConfigurationUninstallSh from '/snippets/code-samples/code/configuration-uninstall-sh.mdx';
+import ConfigurationRemoveDataSh from '/snippets/code-samples/code/configuration-remove-data-sh.mdx';
+import ConfigurationManagedInstallSh from '/snippets/code-samples/code/configuration-managed-install-sh.mdx';
+import ConfigurationExternalEditorSh from '/snippets/code-samples/code/configuration-external-editor-sh.mdx';
+import ConfigurationDoctorSh from '/snippets/code-samples/code/configuration-doctor-sh.mdx';
+import ConfigurationAutoUpdateSh from '/snippets/code-samples/code/configuration-auto-update-sh.mdx';
+import ConfigurationNoUpdateCheckSh from '/snippets/code-samples/code/configuration-no-update-check-sh.mdx';
+
 Deep Agents Code stores its configuration in the `~/.deepagents/` directory. The main config files are:
 
 | File | Format | Purpose |
@@ -92,13 +113,7 @@ The `dcode auth` command group is the scriptable equivalent of the `/auth` manag
 
 `set` reads the key from **stdin** by default, so it never lands in shell history or `argv`. Pipe the key in, or use `--from-env VAR` to copy it from a process environment variable:
 
-```bash
-# Pipe the key in (stdin)
-echo "$ANTHROPIC_API_KEY" | dcode auth set anthropic
-
-# Copy it from an existing environment variable
-dcode auth set openai --from-env OPENAI_API_KEY
-```
+<ConfigurationAuthSetSh />
 
 <Note>
     `set` refuses to run in an interactive terminal so an accidental invocation cannot hang waiting on input — pipe the key via stdin or use `--from-env VAR`. Stored keys go through the same store as `/auth`, so warnings (for example, about file permissions on `auth.json`) are printed to stderr.
@@ -106,10 +121,7 @@ dcode auth set openai --from-env OPENAI_API_KEY
 
 Remove a stored key or print the store location:
 
-```bash
-dcode auth remove anthropic
-dcode auth path
-```
+<ConfigurationAuthRemoveSh />
 
 <Note>
     `dcode auth set` manages API keys only. The `openai_codex` provider uses a ChatGPT browser sign-in rather than an API key, so run [`/auth` and select `openai_codex`](#sign-in-with-chatgpt) to sign in instead. `dcode auth remove openai_codex` does sign you out.
@@ -430,15 +442,7 @@ Profile overrides are merged into the model's profile after creation. Any featur
 <Accordion title="CLI profile overrides with --profile-override" icon="terminal">
     To override model profile fields at runtime without editing the config file, pass a JSON object via `--profile-override`:
 
-    ```bash
-    dcode --profile-override '{"max_input_tokens": 4096}'
-
-    # Combine with --model
-    dcode --model google_genai:gemini-3.5-flash --profile-override '{"max_input_tokens": 4096}'
-
-    # In non-interactive mode
-    dcode -n "Summarize this repo" --profile-override '{"max_input_tokens": 4096}'
-    ```
+    <ConfigurationProfileOverrideSh />
 
     These are merged on top of config file profile overrides (CLI wins). The priority chain is: model default &lt; config.toml profile &lt; CLI `--profile-override`.
 
@@ -555,20 +559,16 @@ With this config, switch to the model with `/model xyz:abc-xyz-1` or `--model xy
 
 Because Deep Agents Code imports the `class_path` class at startup, the package that defines it must be importable from the same environment that runs `dcode`. Built-in providers ship as [install extras](/oss/deepagents/code/providers#quickstart), but a custom or in-house package is not one. Install it into the `dcode` environment with the `--package` flag:
 
-```bash
-dcode --install my_package --package
-```
+<ConfigurationInstallPackageSh />
 
 In a session, run `/install my_package --package --force`. Both install the package alongside `dcode`. If the package is missing or cannot be imported, Deep Agents Code skips the provider and its models do not appear in `/model`.
 
 When you switch to `my_custom:my-model-v1` (via `/model` or `--model`), the model name (`my-model-v1`) is passed as the `model` kwarg:
 
-```python
-MyChatModel(model="my-model-v1", base_url="...", api_key="...", temperature=0, max_tokens=4096)
-```
+<ConfigurationArbitraryProviderKwargsPy />
 
 <Warning>
-    `class_path` executes arbitrary Python code from your config file. This has the same trust model as `pyproject.toml` build scripts — you control your own machine.
+    `class_path` executes arbitrary Python code from your config file. This has the same trust model as `pyproject.toml` build scripts—you control your own machine.
 </Warning>
 
 Your provider package may optionally provide model profiles at a `_PROFILES` dict in `<package>.data._profiles` in lieu of defining them under the `models` key. See LangChain [model profiles](https://github.com/langchain-ai/langchain/tree/master/libs/model-profiles) for more info.
@@ -1080,18 +1080,7 @@ No additional fields.
 <Accordion title="Python handler">
 Write a handler script that reads the JSON payload from stdin:
 
-```python title="my_handler.py"
-import json
-import sys
-
-payload = json.load(sys.stdin)
-event = payload["event"]
-
-if event == "session.start":
-    print(f"Session started: {payload['thread_id']}", file=sys.stderr)
-elif event == "permission.request":
-    print(f"Approval needed for: {payload['tool_names']}", file=sys.stderr)
-```
+<ConfigurationHooksHandlerPy />
 
 ```json title="~/.deepagents/hooks.json"
 {
@@ -1121,10 +1110,7 @@ Hooks follow the same trust model as Git hooks or shell aliases — any user who
 
 Use `dcode doctor` when Deep Agents Code is not starting correctly, a provider or MCP server does not connect, tracing is misconfigured, or an install or update looks wrong. It runs diagnostics without launching a session and summarizes the current runtime state.
 
-```bash
-# Show diagnostics in the terminal
-dcode doctor
-```
+<ConfigurationDoctorSh />
 
 Output
 ```text
