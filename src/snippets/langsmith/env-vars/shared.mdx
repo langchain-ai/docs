@@ -1,10 +1,68 @@
+## `BG_JOB_ISOLATED_LOOPS`
+
+Set `BG_JOB_ISOLATED_LOOPS` to `True` to execute background runs in an isolated event loop separate from the serving API event loop.
+
+<Warning>
+Enabling this flag does not remove the underlying problem. It moves synchronous blocking work off the serving API's event loop so health checks stop failing, but the blocking code continues to run on the background loop and **will** continue to cause issues in production, like degraded throughput, tail-latency spikes, starved workers, or connection pool exhaustion (see the pool-size caveat below), and poor scaling under load.
+
+To properly resolve those issues, use native async drivers and async code throughout your agent. That means async HTTP clients like `httpx` or `aiohttp` (though we recommend caching the clients to avoid CPU overhead loading the SSL context), async database drivers like `asyncpg` or `psycopg[async]`, and async model SDK's. For unavoidable synchronous libraries, wrap the specific call in `asyncio.to_thread(...)` or `loop.run_in_executor(...)` instead of enabling this flag for the whole deployment.
+</Warning>
+
+This environment variable should be set to `True` if the implementation of a graph/node contains synchronous code. In this situation, the synchronous code will block the serving API event loop, which may cause the API to be unavailable. A symptom of an unavailable API is continuous application restarts due to failing health checks.
+
+<Warning>
+When `BG_JOB_ISOLATED_LOOPS` is enabled, each background worker runs in its own thread with a **separate Postgres connection pool**. The per-worker pool size is `LANGGRAPH_POSTGRES_POOL_MAX_SIZE // N_JOBS_PER_WORKER`. For example, with `LANGGRAPH_POSTGRES_POOL_MAX_SIZE=20` and `N_JOBS_PER_WORKER=15`, each worker gets a pool of only 1 connection. Small per-worker pools are more susceptible to connection failures because a single stale connection represents a large fraction of the pool. If you enable isolated loops, ensure `LANGGRAPH_POSTGRES_POOL_MAX_SIZE` is large enough to provide at least a few connections per worker.
+</Warning>
+
+Defaults to `False`.
+
+## `BG_JOB_MAX_RETRIES`
+
+Maximum number of times a background run will be retried after a retriable failure (e.g. transient database errors, server shutdown cancellations). When a run fails with a retriable error, it is placed back in the queue and resumed from the last checkpointed step. If the run exceeds the maximum number of retries, it is marked as failed.
+
+Defaults to `3`.
+
+## `BG_JOB_SHUTDOWN_GRACE_PERIOD_SECS`
+
+Specifies, in seconds, how long the server will wait for background jobs to finish after the queue receives a shutdown signal. After this period, the server will force termination. Defaults to `180` seconds. The maximum value is `3600` seconds. Set this to ensure jobs have enough time to complete cleanly during shutdown. Added in `langgraph-api==0.2.16`.
+
+## `BG_JOB_TIMEOUT_SECS`
+
+The timeout of a background run can be increased. However, the infrastructure for a Cloud deployment enforces a 1 hour timeout limit for API requests. This means the connection between client and server will timeout after 1 hour. This is not configurable.
+
+A background run can execute for longer than 1 hour, but a client must reconnect to the server (e.g. join stream via `POST /threads/{thread_id}/runs/{run_id}/stream`) to retrieve output from the run if the run is taking longer than 1 hour.
+
+Defaults to `86400`.
+
+## `CORS_ALLOW_ORIGINS`
+
+Set `CORS_ALLOW_ORIGINS` to specify allowed origins.
+- Example for allowing a single origin: `CORS_ALLOW_ORIGINS=https://example.com`
+- Example for allowing multiple origins: `CORS_ALLOW_ORIGINS=https://example.com,https://app.example.com`
+
+For advanced CORS configuration, see [how to add custom CORS configuration](/langsmith/cli#customizing-http-middleware-and-headers).
+
+Defaults to `*` (all origins).
+
+## `DD_API_KEY`
+
+Specify `DD_API_KEY` (your [Datadog API Key](https://docs.datadoghq.com/account_management/api-app-keys/)) to automatically enable Datadog tracing for the deployment. Specify other [`DD_*` environment variables](https://ddtrace.readthedocs.io/en/stable/configuration.html) to configure the tracing instrumentation.
+
+If `DD_API_KEY` is specified, the application process is wrapped in the [`ddtrace-run` command](https://ddtrace.readthedocs.io/en/stable/installation_quickstart.html). Other `DD_*` environment variables, such as `DD_SITE`, `DD_ENV`, `DD_SERVICE`, and `DD_TRACE_ENABLED`, are typically needed to properly configure the tracing instrumentation. See [`DD_*` environment variables](https://ddtrace.readthedocs.io/en/stable/configuration.html) for more details.
+
+To send logs to Datadog, also set `DD_LOGS_ENABLED=true`. Set `DD_LOG_INJECTION=true` to include trace and span identifiers in logs for trace correlation. You can enable `DD_TRACE_DEBUG=true` and set `DD_LOG_LEVEL=debug` to troubleshoot.
+
+<Note>
+Enabling `DD_API_KEY` (and thus `ddtrace-run`) can override or interfere with other auto-instrumentation solutions (such as OpenTelemetry) that you may have instrumented into your application code.
+</Note>
+
 ## `LANGGRAPH_POSTGRES_POOL_MAX_SIZE`
 
 Beginning with langgraph-api version `0.2.12`, the maximum size of the Postgres connection pool (per replica) can be controlled using the `LANGGRAPH_POSTGRES_POOL_MAX_SIZE` environment variable. By setting this variable, you can determine the upper bound on the number of simultaneous connections the server will establish with the Postgres database.
 
 For example, if a deployment is scaled up to 10 replicas and `LANGGRAPH_POSTGRES_POOL_MAX_SIZE` is configured to `150`, then up to `1500` connections to Postgres can be established. This is particularly useful for deployments where database resources are limited (or more available) or where you need to tune connection behavior for performance or scaling reasons.
 
-When `BG_JOB_ISOLATED_LOOPS` is enabled, the pool is not shared. Instead, each background worker thread creates its own pool with a maximum size of `LANGGRAPH_POSTGRES_POOL_MAX_SIZE / N_JOBS_PER_WORKER`. Keep this in mind when lowering the pool size. A value that works well for a shared pool may result in very small per-worker pools under isolated loops.
+When [`BG_JOB_ISOLATED_LOOPS`](#bg_job_isolated_loops) is enabled, the pool is not shared. Instead, each background worker thread creates its own pool with a maximum size of `LANGGRAPH_POSTGRES_POOL_MAX_SIZE / N_JOBS_PER_WORKER`. Keep this in mind when lowering the pool size. A value that works well for a shared pool may result in very small per-worker pools under isolated loops.
 
 Defaults to `150` connections.
 
