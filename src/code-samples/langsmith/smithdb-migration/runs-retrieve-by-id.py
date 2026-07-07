@@ -10,9 +10,8 @@ async def find_run(project_id: str):
 async def get_project_id():
     from langsmith import Client as AsyncClient
     client = AsyncClient()
-    async for project in client.projects.list(name="default", limit=1):
-        return project.id
-    return None
+    project = await client.aread_project(project_name="default")
+    return project.id
 
 # :snippet-start: runs-retrieve-by-id-before-py
 # :codegroup-tab: Before
@@ -36,8 +35,7 @@ from langsmith import Client
 
 async def main():
     client = Client()
-    async for project in client.projects.list(name="default", limit=1):
-        break
+    project = await client.aread_project(project_name="default")
     run_id = "<run-id>"
     start_time="2026-06-01T12:00:00Z"
     # :remove-start:
