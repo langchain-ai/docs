@@ -1,7 +1,7 @@
 ---
 title: Use remote sandboxes
 sidebarTitle: Remote sandboxes
-description: Run Deep Agents Code tool execution in LangSmith, Daytona, Modal, Runloop, Vercel, or AgentCore sandboxes. Install provider extras, set credentials, and use flags and setup scripts.
+description: Run Deep Agents Code tool execution in LangSmith, AgentCore, Daytona, Modal, Runloop, or Vercel sandboxes. Install provider extras, set credentials, and use flags and setup scripts.
 ---
 
 Deep Agents Code uses the [sandbox as tool](/oss/deepagents/sandboxes#sandbox-as-tool-pattern) pattern: the `dcode` process (LLM loop, memory, tool dispatch) runs on your machine, but agent tool calls (`read_file`, `write_file`, `execute`, etc.) target the remote sandbox, not your local filesystem. To get files into the sandbox, use a [setup script](#setup-scripts) or the provider's file transfer APIs (see [Working with files](/oss/deepagents/sandboxes#working-with-files)).
@@ -15,6 +15,17 @@ For a deeper look at sandbox architecture, integration patterns, and security be
         <Tabs>
             <Tab title="LangSmith">
                 Included by default when installing `deepagents-code`. No extra installation needed.
+            </Tab>
+            <Tab title="AgentCore">
+                <CodeGroup>
+                    ```txt In session
+                    /install agentcore
+                    ```
+
+                    ```bash Shell
+                    dcode --install agentcore
+                    ```
+                </CodeGroup>
             </Tab>
             <Tab title="Daytona">
                 <CodeGroup>
@@ -60,17 +71,6 @@ For a deeper look at sandbox architecture, integration patterns, and security be
                     ```
                 </CodeGroup>
             </Tab>
-            <Tab title="AgentCore">
-                <CodeGroup>
-                    ```txt In session
-                    /install agentcore
-                    ```
-
-                    ```bash Shell
-                    dcode --install agentcore
-                    ```
-                </CodeGroup>
-            </Tab>
         </Tabs>
 
         To install support for every sandbox provider at once, use the `all-sandboxes` extra: `/install all-sandboxes` in a session, or `dcode --install all-sandboxes` from the shell.
@@ -81,6 +81,16 @@ For a deeper look at sandbox architecture, integration patterns, and security be
             <Tab title="LangSmith">
                 ```bash
                 export LANGSMITH_API_KEY="your-key"
+                ```
+            </Tab>
+            <Tab title="AgentCore">
+                ```bash
+                export AWS_ACCESS_KEY_ID="your-key"
+                export AWS_SECRET_ACCESS_KEY="your-secret"
+                export AWS_REGION="us-west-2"
+
+                # Only when using temporary/STS credentials:
+                export AWS_SESSION_TOKEN="session-token"
                 ```
             </Tab>
             <Tab title="Daytona">
@@ -107,16 +117,6 @@ For a deeper look at sandbox architecture, integration patterns, and security be
 
                 When running on Vercel, [OIDC](https://vercel.com/docs/oidc) credentials are used automatically instead.
             </Tab>
-            <Tab title="AgentCore">
-                ```bash
-                export AWS_ACCESS_KEY_ID="your-key"
-                export AWS_SECRET_ACCESS_KEY="your-secret"
-                export AWS_REGION="us-west-2"
-
-                # Only when using temporary/STS credentials:
-                export AWS_SESSION_TOKEN="session-token"
-                ```
-            </Tab>
         </Tabs>
     </Step>
 
@@ -125,6 +125,11 @@ For a deeper look at sandbox architecture, integration patterns, and security be
             <Tab title="LangSmith">
                 ```bash
                 dcode --sandbox langsmith
+                ```
+            </Tab>
+            <Tab title="AgentCore">
+                ```bash
+                dcode --sandbox agentcore
                 ```
             </Tab>
             <Tab title="Daytona">
@@ -147,11 +152,6 @@ For a deeper look at sandbox architecture, integration patterns, and security be
                 dcode --sandbox vercel
                 ```
             </Tab>
-            <Tab title="AgentCore">
-                ```bash
-                dcode --sandbox agentcore
-                ```
-            </Tab>
         </Tabs>
     </Step>
 </Steps>
@@ -160,7 +160,7 @@ For a deeper look at sandbox architecture, integration patterns, and security be
 
 | Flag | Description |
 |------|-------------|
-| `--sandbox TYPE` | Sandbox provider to use. Built-ins: `langsmith`, `agentcore`, `modal`, `daytona`, `runloop`, `vercel` (default: `none`). [Third-party](#third-party-providers) and [config-declared](#config-declared-providers) providers are also accepted. Pass `--sandbox` with no value to use `[sandboxes].default` from your config |
+| `--sandbox TYPE` | Sandbox provider to use. Built-ins: `langsmith`, `agentcore`, `daytona`, `modal`, `runloop`, `vercel` (default: `none`). [Third-party](#third-party-providers) and [config-declared](#config-declared-providers) providers are also accepted. Pass `--sandbox` with no value to use `[sandboxes].default` from your config |
 | `--sandbox-id ID` | Reuse an existing sandbox by ID instead of creating a new one. Skips creation and cleanup. Only for providers that support reattaching by ID. Refer to your sandbox documentation for more |
 | `--sandbox-snapshot-name NAME` | Use or create a sandbox snapshot. Supported by `langsmith` and `runloop` (and any third-party provider that advertises snapshot support). Cannot be combined with `--sandbox-id` |
 | `--sandbox-setup PATH` | Path to a setup script to run inside the sandbox upon creation |
@@ -170,17 +170,17 @@ Each provider exposes a default working directory inside the sandbox. Setup scri
 | Provider | Working directory |
 |----------|-------------------|
 | LangSmith | `/root` |
+| AgentCore | `/tmp` |
 | Daytona | `/home/daytona` |
 | Modal | `/workspace` |
 | Runloop | `/home/user` |
 | Vercel | `/vercel/sandbox` |
-| AgentCore | `/tmp` |
 
 Examples:
 
 ```bash
-# Create a new Daytona sandbox
-dcode --sandbox daytona
+# Create a new LangSmith sandbox
+dcode --sandbox langsmith
 
 # Reuse an existing sandbox (skips creation and cleanup)
 dcode --sandbox runloop --sandbox-id dbx_abc123
@@ -213,6 +213,14 @@ A package can publish a sandbox provider under the `deepagents_code.sandbox_prov
 ```bash
 # Install the package that publishes the provider, then use it
 dcode --sandbox acme
+```
+
+For example, the `langchain-e2b` package publishes an `e2b` provider (see [sandbox integrations](/oss/integrations/sandboxes)). Install it as a package, set your credentials, then select it:
+
+```bash
+dcode --install langchain-e2b --package
+export E2B_API_KEY="..."
+dcode --sandbox e2b
 ```
 
 If you pass a `--sandbox` name that isn't installed or declared, Deep Agents Code lists the available providers and explains how to install or configure the missing one.

@@ -138,17 +138,31 @@ let agent = createAgent({
 // :snippet-start: sql-agent-run-agent-js
 let question = "Which genre, on average, has the longest tracks?";
 
-for await (const step of await agent.stream(
+const stream = await agent.streamEvents(
   { messages: [{ role: "user", content: question }] },
-  { streamMode: "values" },
-)) {
-  const message = step.messages.at(-1);
-  console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
-}
+  { version: "v3" },
+);
+await Promise.all([
+  (async () => {
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of stream.toolCalls) {
+      console.log(`\nTool call: ${call.name}(${JSON.stringify(call.input)})`);
+      console.log(`Tool result: ${await call.output}`);
+    }
+  })(),
+]);
+
+const finalState = await stream.output;
 // :snippet-end:
 
 // :snippet-start: sql-agent-hitl-middleware-js
-import { createAgent, humanInTheLoopMiddleware } from "langchain"; // [!code highlight]
+import { humanInTheLoopMiddleware } from "langchain"; // [!code highlight]
 import { MemorySaver } from "@langchain/langgraph"; // [!code highlight]
 
 agent = createAgent({
@@ -173,23 +187,33 @@ agent = createAgent({
 question = "Which genre, on average, has the longest tracks?";
 const config = { configurable: { thread_id: "1" } }; // [!code highlight]
 
-for await (const step of await agent.stream(
+const hitlStream = await agent.streamEvents(
   { messages: [{ role: "user", content: question }] },
-  { ...config, streamMode: "values" }, // [!code highlight]
-)) {
-  if ("__interrupt__" in step) {
-    // [!code highlight]
-    console.log("INTERRUPTED:"); // [!code highlight]
-    for (const interrupt of step.__interrupt__) {
-      // [!code highlight]
-      for (const request of interrupt.value.actionRequests) {
-        // [!code highlight]
-        console.log(request.description); // [!code highlight]
+  { ...config, version: "v3" }, // [!code highlight]
+);
+await Promise.all([
+  (async () => {
+    for await (const message of hitlStream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
       }
     }
-  } else if (step.messages) {
-    const message = step.messages.at(-1);
-    console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
+  })(),
+  (async () => {
+    for await (const call of hitlStream.toolCalls) {
+      console.log(`\nTool call: ${call.name}(${JSON.stringify(call.input)})`);
+    }
+  })(),
+]);
+if (hitlStream.interrupted) {
+  // [!code highlight]
+  console.log("INTERRUPTED:"); // [!code highlight]
+  for (const interrupt of hitlStream.interrupts) {
+    // [!code highlight]
+    for (const request of interrupt.payload.actionRequests) {
+      // [!code highlight]
+      console.log(request.description); // [!code highlight]
+    }
   }
 }
 // :snippet-end:
@@ -197,20 +221,29 @@ for await (const step of await agent.stream(
 // :snippet-start: sql-agent-hitl-resume-js
 import { Command } from "@langchain/langgraph"; // [!code highlight]
 
-for await (const step of await agent.stream(
+const resumeStream = await agent.streamEvents(
   new Command({ resume: { decisions: [{ type: "approve" }] } }), // [!code highlight]
-  { ...config, streamMode: "values" },
-)) {
-  if (step.messages) {
-    const message = step.messages.at(-1);
-    console.log(`${message.role}: ${JSON.stringify(message.content, null, 2)}`);
-  }
-  if ("__interrupt__" in step) {
-    console.log("INTERRUPTED:");
-    for (const interrupt of step.__interrupt__) {
-      for (const request of interrupt.value.actionRequests) {
-        console.log(request.description);
+  { ...config, version: "v3" },
+);
+await Promise.all([
+  (async () => {
+    for await (const message of resumeStream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
       }
+    }
+  })(),
+  (async () => {
+    for await (const call of resumeStream.toolCalls) {
+      console.log(`\nTool call: ${call.name}(${JSON.stringify(call.input)})`);
+    }
+  })(),
+]);
+if (resumeStream.interrupted) {
+  console.log("INTERRUPTED:");
+  for (const interrupt of resumeStream.interrupts) {
+    for (const request of interrupt.payload.actionRequests) {
+      console.log(request.description);
     }
   }
 }

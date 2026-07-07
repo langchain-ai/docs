@@ -394,6 +394,185 @@ function MultiActionReview({
 }
 ```
 
+## Custom interrupt forms
+
+The [resume flow](#the-resume-flow) uses `humanInTheLoopMiddleware`, which wraps a tool with a
+generic approve / reject / edit / respond card. Sometimes a single set of
+buttons is not enough: booking a flight, approving a refund, and reviewing a
+social post each need a *different* form, with their own fields, validation, and
+copy. For that, raise the `interrupt()` **from inside the tool** and let the
+payload describe the exact form the UI should render. Each tool can surface a
+completely different interface.
+
+<PatternEmbed pattern="hitl-interrupt-forms" />
+
+### Describe the form in the interrupt payload
+
+`interrupt()` accepts any JSON-serializable value, which allows you to provide a "card"
+that the frontend knows how to render, for example, a form type, a title, the context the
+human is reviewing, and the fields to collect. `interrupt()` is generic over its
+input and return types (`interrupt<I, R>(value: I): R`) so you can type both
+the card you send (`InterruptCard`) and the value the user resolves with
+(`ReviewDecision`). Export those types so the frontend can import them and stay
+in sync:
+
+```ts
+import { createAgent, tool } from "langchain";
+import { interrupt } from "@langchain/langgraph";
+import { z } from "zod";
+
+export interface FormField {
+  name: string;
+  label: string;
+  type: "select" | "checkbox" | "textarea" | "currency";
+  options?: string[];
+  default?: unknown;
+}
+
+/** What the user resolves the interrupt with. */
+export interface ReviewDecision {
+  approved: boolean;
+  /** Edited / collected form values the tool should act on. */
+  values?: Record<string, unknown>;
+}
+
+/** The form spec ("card") an interrupt hands to the frontend. */
+export interface InterruptCard {
+  formType: "flight-booking" | "refund-approval" | "content-review";
+  tool: string;
+  title: string;
+  context: Record<string, unknown>;
+  fields: FormField[];
+  /** Populated by the frontend when it commits the resolved card to state. */
+  resolved?: boolean;
+  decision?: ReviewDecision;
+}
+
+const bookFlight = tool(
+  async ({ origin, destination, date, passengers }) => {
+    // Pause the tool and hand the frontend a typed form spec; the typed return
+    // is whatever the UI resolves the interrupt with.
+    const decision = interrupt<InterruptCard, ReviewDecision>({
+      formType: "flight-booking",
+      tool: "book_flight",
+      title: "Confirm flight booking",
+      context: { origin, destination, date, passengers },
+      fields: [
+        {
+          name: "seatClass",
+          label: "Seat class",
+          type: "select",
+          options: ["Economy", "Premium Economy", "Business"],
+          default: "Economy",
+        },
+        { name: "insurance", label: "Add trip insurance", type: "checkbox", default: false },
+      ],
+    });
+
+    if (!decision.approved) {
+      return `Booking cancelled. No flight from ${origin} to ${destination} was reserved.`;
+    }
+
+    // Run the real (possibly slow) work with the values the human confirmed.
+    const seatClass = String(decision.values?.seatClass ?? "Economy");
+    return `Flight booked from ${origin} to ${destination} in ${seatClass}.`;
+  },
+  {
+    name: "book_flight",
+    description: "Book a flight. Requires human confirmation of trip details.",
+    schema: z.object({
+      origin: z.string(),
+      destination: z.string(),
+      date: z.string(),
+      passengers: z.number().int().min(1),
+    }),
+  },
+);
+```
+
+Give each tool a distinct `formType` (e.g. `"refund-approval"`,
+`"content-review"`) so the frontend can switch on it and render the matching
+form.
+
+### Render a different form per tool
+
+On the client, the card arrives as `stream.interrupt.value`. Import the
+`InterruptCard` and `ReviewDecision` types from your agent module so the form
+and the payload stay in sync, switch on `formType` to pick the right form, and
+feed `fields` into your inputs:
+
+```tsx
+import { useStream } from "@langchain/react";
+import type { InterruptCard, ReviewDecision } from "./agent";
+
+function Chat() {
+  const stream = useStream<typeof myAgent>({
+    apiUrl: AGENT_URL,
+    assistantId: "hitl_interrupt_forms",
+  });
+
+  const card = stream.interrupt?.value as InterruptCard | undefined;
+
+  return (
+    <div>
+      {stream.messages.map((msg) => (
+        <Message key={msg.id} message={msg} />
+      ))}
+      {card && <InterruptForm card={card} onResolve={handleResolve} />}
+    </div>
+  );
+}
+
+// `InterruptForm` renders a flight / refund / content card based on
+// `card.formType`, collects `card.fields`, and calls `onResolve` with the
+// user's decision and edited values.
+```
+
+### Keep the card on screen with `respond(decision, { update })`
+
+When you resolve a plain interrupt, the card disappears the instant the
+interrupt clears and only the tool result comes back. That means a rich review card
+would vanish mid-run. To keep it on screen, resolve the interrupt **and** commit
+a message carrying the card to state in the *same* superstep using
+@[`useStream`]'s `respond`:
+
+```tsx
+import { AIMessage } from "langchain";
+
+function handleResolve(decision: ReviewDecision) {
+  // Snapshot the card with the decision baked in so it renders read-only.
+  const resolvedCard = { ...card, resolved: true, decision };
+  const cardMessage = new AIMessage({
+    content: `Review ${decision.approved ? "approved" : "declined"}.`,
+    response_metadata: { cards: resolvedCard },
+  });
+
+  // Resume the interrupt AND push the card into state atomically. Maps to
+  // LangGraph's `Command(resume, update)`: one checkpoint, no extra state write.
+  stream.respond(decision, { update: { messages: [cardMessage] } });
+}
+```
+
+`respond(response, { update })` applies the `update` **optimistically**: the
+card paints immediately and is reconciled by ID once the resumed run echoes the
+same message back. The backend never re-emits the card, so it stays rendered
+without a flicker while the (potentially slow) tool runs. Render the resolved
+card by reading it back off the message:
+
+```tsx
+{stream.messages.map((msg) => {
+  const card = (msg.response_metadata as { cards?: InterruptCard })?.cards;
+  if (card) return <InterruptForm key={msg.id} card={card} readOnly />;
+  return <Message key={msg.id} message={msg} />;
+})}
+```
+
+<Tip>
+Because the resolved card lives in the message history, it survives refreshes
+and is visible to every component reading the thread and the human's decision
+becomes part of the durable transcript, not just transient UI state.
+</Tip>
+
 ## Best practices
 
 Keep these guidelines in mind when implementing HITL workflows:

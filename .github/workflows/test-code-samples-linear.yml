@@ -1,0 +1,40 @@
+---
+name: Test Code Samples Linear Ticket
+
+permissions:
+  contents: read
+
+# Filed separately so PR runs of "Test Code Samples" do not show a skipped
+# create-linear-ticket check on every pull request.
+on:
+  workflow_run:
+    workflows: ["Test Code Samples"]
+    types: [completed]
+
+jobs:
+  create-linear-ticket:
+    if: >-
+      github.event.workflow_run.event == 'schedule' &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.conclusion == 'cancelled')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Linear issue
+        uses: ctriolo/action-create-linear-issue@v1.3
+        with:
+          linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+          linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
+          linear-issue-title: >-
+            ${{ github.event.workflow_run.conclusion == 'cancelled'
+              && 'Weekly code samples test timed out'
+              || 'Weekly code samples test failed' }}
+          linear-issue-description: |
+            The scheduled weekly test of all code samples in `src/code-samples/` did not complete successfully.
+
+            **Outcome:** ${{ github.event.workflow_run.conclusion == 'cancelled' && 'Timed out before all samples finished. Consider increasing the job timeout or optimizing slow samples.' || 'One or more code samples failed.' }}
+
+            **Workflow run:** ${{ github.event.workflow_run.html_url }}
+
+            Please investigate and fix the failing samples.
+          linear-attachment-url: ${{ github.event.workflow_run.html_url }}
+          linear-attachment-title: "Failed workflow run"
