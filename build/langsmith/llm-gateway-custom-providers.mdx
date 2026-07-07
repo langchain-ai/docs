@@ -1,0 +1,69 @@
+---
+title: Custom model providers
+description: Route requests through the LLM Gateway to any OpenAI-compatible endpoint, such as a self-hosted open-source model served through an inference server.
+---
+
+<Note>
+**Private beta:** The LLM Gateway is in private [beta](/langsmith/release-stages). Sign up for [the waitlist](https://www.langchain.com/langsmith-llm-gateway-waitlist) to get access.
+</Note>
+
+In addition to the [built-in providers](/langsmith/llm-gateway#supported-providers), the LLM Gateway can proxy requests to **any OpenAI-compatible endpoint**, such as a self-hosted open-source model served through an inference server (vLLM, Ollama, and similar).
+
+## How it works
+
+A custom provider is defined by an **OpenAI Compatible Endpoint** [model configuration](/langsmith/model-configurations) that you save under **Settings → Model configurations** in the [LangSmith UI](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-llm-gateway-custom-providers). The gateway uses the following options from the configuration:
+
+- A **base URL**: the upstream endpoint the gateway forwards requests to.
+- A **model name**: injected into each request so callers don't have to specify it.
+- An **API key**: stored as a [workspace secret](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets), never sent by the client.
+
+You then address the saved configuration by name through the `https://gateway.smith.langchain.com/providers/{configName}` route. When a request comes in, the gateway looks up the configuration, resolves the secret, and proxies the call to the configured upstream URL.
+
+<Note>
+`{configName}` is the configuration name from your workspace [model configuration](/langsmith/model-configurations). If the name contains characters that aren't URL-safe (such as `/` or spaces), URL-encode them in the path. For example, a configuration named `meta-llama/Llama-3.1-8B-Instruct` becomes `https://gateway.smith.langchain.com/providers/meta-llama%2FLlama-3.1-8B-Instruct/v1/chat/completions`.
+</Note>
+
+## 1. Create a custom provider configuration
+
+1. Add the upstream endpoint's API key as a workspace secret under **Settings → Integrations → Provider Secrets**. Give it a descriptive name (for example, `MY_PROVIDER_API_KEY`).
+1. Go to **Settings → Model configurations** and create a configuration with **OpenAI Compatible Endpoint** as the provider.
+1. Set the **Base URL** to your upstream endpoint (for example, `https://my-inference-server.example.com/v1`) and the **Model Name** to the model identifier the endpoint expects.
+1. Set the **API Key Name** to the secret you created.
+1. Save the configuration with a **name**. This name is what you'll use in the gateway route.
+
+<Note>
+Each configuration pins a single model, since the gateway overrides the request body's `model` with the configured value. To serve multiple models from the same endpoint, create one configuration per model (each with its own name and `/providers/{configName}` route).
+</Note>
+
+## 2. Make a call
+
+Call the saved configuration by name. The route is `https://gateway.smith.langchain.com/providers/{configName}`, where `{configName}` is the configuration name you saved in **Settings → Model configurations** (`my-custom-endpoint` in the following examples).
+
+```bash
+curl https://gateway.smith.langchain.com/providers/my-custom-endpoint/v1/chat/completions \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"messages":[{"role":"user","content":"ping"}]}'
+```
+
+The gateway overrides the request body's `model` field with the model name from the saved configuration, so the value you pass from the client is ignored.
+
+## Supported endpoints
+
+Custom providers use the same allowlist as the built-in OpenAI provider: `POST /v1/chat/completions` (including streaming), `POST /v1/responses`, and the `GET /v1/models` listing endpoints. Any other path returns `501 Not Implemented`.
+
+## Next steps
+
+- [Spend policies](/langsmith/llm-gateway-spend-policies): apply cost limits to custom providers.
+- [PII and secrets redaction](/langsmith/llm-gateway-redaction): redact sensitive data before it reaches your endpoint.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/llm-gateway-custom-providers.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

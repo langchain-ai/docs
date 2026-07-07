@@ -1,0 +1,249 @@
+---
+title: "MongoDB Atlas Integration"
+description: "Integrate with the MongoDB Atlas Vector Store using LangChain Python."
+---
+
+import LangchainCommunityUnmaintained from '/snippets/oss/langchain-community-unmaintained.mdx';
+
+This notebook covers how to use MongoDB Vector Search with LangChain. It also showcases the MongoDB Atlas Embedding and Reranking API for accessing Voyage AI's state-of-the-art embedding models and rerankers.
+
+>[MongoDB Atlas](https://www.mongodb.com/docs/atlas/) is a fully-managed cloud database available in AWS, Azure, and GCP.  It supports native Vector Search, full text search (BM25), and hybrid search on your MongoDB document data.
+
+>[MongoDB Vector Search](https://www.mongodb.com/products/platform/atlas-vector-search) allows to store your embeddings in MongoDB documents, create a vector search index, and perform KNN search with an approximate nearest neighbor algorithm (`Hierarchical Navigable Small Worlds`). It uses the [$vectorSearch MQL Stage](https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-overview/).
+
+>[MongoDB Atlas Embedding and Reranking API](https://www.mongodb.com/docs/atlas/atlas-vector-search/ai-integrations/langchain/) enables access to Voyage AI models via MongoDB Atlas.
+
+Note: The `MongoDBAtlasVectorSearch` interface is compatible with MongoDB Vector Search in the Community Edition.
+
+## Setup
+
+To use MongoDB Atlas, you must first deploy a cluster. To get started, [sign up for free to Atlas](https://www.mongodb.com/cloud/atlas/register).
+
+In order to use Voyage AI embedding and reranking models, you will need to create a model API key. [Generate your API key](https://www.mongodb.com/docs/voyageai/management/api-keys/?llm-provider=anthropic#std-label-voyage-manage-api-keys), and get access to 200 million free tokens on the latest models.
+
+First, start by installing the following libraries to follow this notebook.
+
+<LangchainCommunityUnmaintained />
+
+```python
+!pip install -qU langchain-mongodb langchain-voyageai langchain-community
+```
+
+Replace the placeholder values in the following code cell with your Atlas Cluster connection string and your Model API Key.
+
+```python
+import os
+from pymongo import MongoClient
+from langchain_mongodb import MongoDBAtlasVectorSearch
+from langchain_mongodb.retrievers import MongoDBAtlasHybridSearchRetriever
+from langchain_voyageai import VoyageAIEmbeddings, VoyageAIRerank
+from langchain_community.document_loaders import WikipediaLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# Setup credentials
+MONGODB_ATLAS_URI = "YOUR_ATLAS_CONNECTION_STRING_HERE"
+MONGODB_ATLAS_MODEL_API_KEY = "YOUR_ATLAS_MODEL_API_KEY"
+os.environ["VOYAGE_API_KEY"] = MONGODB_ATLAS_MODEL_API_KEY
+
+client = MongoClient(MONGODB_ATLAS_URI)
+db_name = "langchain_db"
+collection_name = "vector_store_example"
+atlas_collection = client[db_name][collection_name]
+vector_index_name = "vector_index"
+```
+
+## Insert data
+We load documents, generate embeddings via the Atlas-hosted Voyage AI model, and programmatically create the Vector Search index.
+
+```python
+# Load sample data
+loader = WikipediaLoader(query="MongoDB", load_max_docs=2)
+data = loader.load()
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+docs = text_splitter.split_documents(data)
+
+# Initialize Embeddings (Voyage AI hosted on Atlas)
+embeddings = VoyageAIEmbeddings(model="voyage-4-lite")
+
+# Initialize Vector Store
+vector_store = MongoDBAtlasVectorSearch(
+    collection=atlas_collection,
+    embedding=embeddings,
+    index_name=vector_index_name
+)
+```
+
+## Create vector index
+
+```python
+# Create the vector search index with specific filters for optimized metadata searching
+vector_store.create_vector_search_index(
+    dimensions=1024,
+    wait_until_complete=45 # waits 45 seconds for index readiness
+)
+```
+
+[OPTIONAL] Alternative to the `vector_store.create_vector_search_index` command above, you can also create the vector search index using the Atlas UI with the following index definition:
+
+```json  theme={"theme":{"light":"catppuccin-latte","dark":"catppuccin-mocha"}}
+{
+  "fields":[
+    {
+      "type": "vector",
+      "path": "embedding",
+      "numDimensions": 1024,
+      "similarity": "cosine"
+    }
+  ]
+}
+```
+
+```python
+# Ingest documents
+vector_store.add_documents(docs)
+```
+
+## Query vector store
+
+### Semantic search
+Find the most relevant documents based on semantic similarity.
+
+```python
+query = "What is MongoDB Atlas?"
+results = vector_store.similarity_search(query, k=3)
+
+for doc in results:
+    print(f"* {doc.page_content[:100]}...")
+```
+
+### Semantic search with score
+
+Retrieve documents along with their relevance scores.
+
+```python
+results_with_score = vector_store.similarity_search_with_score(query, k=3)
+
+for doc, score in results_with_score:
+    print(f"Score: {score:.4f} | Content: {doc.page_content[:80]}...")
+```
+
+### Semantic search with filtering
+
+First, let's update the vector search index by providing the field to filter on.
+
+```python
+# Create the vector search index with specific filters for optimized metadata searching
+vector_store.create_vector_search_index(
+    dimensions=1024,
+    wait_until_complete=60,
+    update=True,
+    filters=["source"]
+)
+```
+
+Narrow down results using metadata filters. Note that Atlas Vector Search requires explicit operators like `$eq`.
+
+```python
+# Use a source known to exist in our loaded docs
+sample_source = "https://en.wikipedia.org/wiki/MongoDB"
+
+filtered_results = vector_store.similarity_search(
+    query,
+    k=3,
+    pre_filter={"source": {"$eq": sample_source}}
+)
+
+print(f"Retrieved {len(filtered_results)} documents matching source: {sample_source}")
+```
+
+### Hybrid search
+
+Combining Vector Search with Full-Text Search (Keyword) using Reciprocal Rank Fusion (RRF).
+
+```python
+from langchain_mongodb.index import create_fulltext_search_index
+
+# Use helper method to create the search index
+create_fulltext_search_index(
+   collection = atlas_collection,
+    wait_until_complete=60,
+   field = "text",
+   index_name = "search_index"
+)
+```
+
+```python
+# Requires a standard Search Index named 'default' on the collection
+retriever = MongoDBAtlasHybridSearchRetriever(
+    vectorstore=vector_store,
+    search_index_name="search_index",
+    fulltext_penalty = 50,
+    vector_penalty = 50,
+    top_k=5
+)
+
+hybrid_docs = retriever.invoke("database-as-a-service")
+for doc in hybrid_docs:
+   print("Title: " + doc.metadata["title"])
+   print("Plot: " + doc.page_content)
+   print("Search score: {}".format(doc.metadata["fulltext_score"]))
+   print("Vector Search score: {}".format(doc.metadata["vector_score"]))
+   print("Total score: {}\n".format(doc.metadata["fulltext_score"] + doc.metadata["vector_score"]))
+```
+
+### Vector search and reranking
+
+A two-stage process: broad recall followed by high-precision reranking to ensure maximum relevance.
+
+```python
+from langchain_classic.retrievers.contextual_compression import ContextualCompressionRetriever
+
+# 1. Define the base retriever to fetch a broad pool
+base_retriever = vector_store.as_retriever(search_kwargs={"k": 20})
+
+# 2. Initialize the Atlas-hosted Voyage AI Reranker
+reranker = VoyageAIRerank(model="rerank-2.5-lite", top_k=3)
+
+# 3. Create the Compression Retriever
+compression_retriever = ContextualCompressionRetriever(
+    base_compressor=reranker,
+    base_retriever=base_retriever
+)
+
+print("--- Reranked Results ---")
+final_docs = compression_retriever.invoke("Explain how MongoDB stores vectors")
+for doc in final_docs:
+    print(f"Relevance Score: {doc.metadata['relevance_score']:.4f} | {doc.page_content[:100]}...")
+```
+
+### Retrieval-Augmented Generation (RAG)
+
+For guides on how to use the MongoDB Vector Store integration with LangChain for Retrieval-Augmented Generation (RAG), see the following tutorials:
+
+- [Retrieval docs](/oss/python/langchain/retrieval)
+- [Build a RAG app with LangChain](/oss/python/langchain/rag)
+- [Agentic RAG](/oss/python/langgraph/agentic-rag)
+- [Basic RAG](https://www.mongodb.com/docs/atlas/ai-integrations/langchain/get-started/#answer-questions-on-your-data)
+- [RAG with Hybrid Search](https://www.mongodb.com/docs/atlas/ai-integrations/langchain/hybrid-search/#pass-results-to-a-rag-pipeline)
+
+## Other notes
+
+> * More documentation can be found at [MongoDB's LangChain Docs](https://www.mongodb.com/docs/atlas/ai-integrations/langchain/).
+> * This feature is Generally Available and ready for production deployments.
+
+---
+
+## API reference
+
+For detailed documentation of all `MongoDBAtlasVectorSearch` features and configurations head to the [API reference](https://reference.langchain.com/python/langchain-mongodb/vectorstores/MongoDBAtlasVectorSearch).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/vectorstores/mongodb_atlas.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

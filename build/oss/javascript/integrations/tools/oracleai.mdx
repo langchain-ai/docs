@@ -1,0 +1,165 @@
+---
+title: "OracleSummary integration"
+sidebarTitle: "Tools"
+description: "Integrate with the OracleSummary tool using LangChain JavaScript."
+---
+
+<Tip>
+**Compatibility**: Only available on Node.js.
+</Tip>
+
+Oracle AI Database supports AI workloads where you query data by **meaning** (semantics), not just keywords. It combines **semantic search over unstructured content** with **relational filtering over business data** in a single system—so you can build retrieval workflows (like RAG) without introducing a separate vector database and fragmenting data across multiple platforms.
+
+This guide demonstrates how to generate document summaries using `OracleSummary` from the Oracle AI Vector Search LangChain integration.
+
+> **Why summarization here?**
+> Summaries are a practical way to compress long documents into retrieval-friendly content (previews, metadata, or condensed context) while keeping governance and operational guarantees close to the data.
+
+If you are just starting with Oracle Database, consider exploring the [free Oracle 26 AI](https://www.oracle.com/database/free/#resources). For background on user administration, refer to the official [Oracle guide](https://docs.oracle.com/en/database/oracle/oracle-database/26/dbseg/configuring-privilege-and-role-authorization.html#GUID-16473474-7F47-4E40-A592-01836E7D911C).
+
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | [PY support](https://python.langchain.com/docs/integrations/tools/oracleai) |
+| :--- | :--- | :---: | :---: |
+| `OracleSummary` | [`@oracle/langchain-oracledb`](https://www.npmjs.com/package/@oracle/langchain-oracledb) | ✅ | ✅ |
+
+## Setup
+
+To access OracleSummary, install the `@oracle/langchain-oracledb` helpers (with `@langchain/core`) and make sure the [Oracle Database driver](https://node-oracledb.readthedocs.io/en/latest/) prerequisites are satisfied for your environment.
+
+### Credentials
+
+Set credentials (or use a secrets manager) for the Oracle user that owns your summarization configuration:
+
+```bash
+export ORACLE_USER=testuser
+export ORACLE_PASSWORD=testuser
+export ORACLE_DSN="localhost:1521/free"
+```
+
+If you plan to call third-party providers such as OCI Generative AI or Hugging Face, create credentials inside Oracle Database first (for example `OCI_CRED`, `HF_CRED`) using the PL/SQL helpers documented in the [Oracle AI Vector Search guide](https://www.oracle.com/pls/topic/lookup?ctx=dblatest&id=GUID-EC9DDB58-6A15-4B36-BA66-ECBA20D2CE57).
+
+### Installation
+
+<CodeGroup>
+```bash npm
+npm install @oracle/langchain-oracledb @langchain/core
+```
+```bash yarn
+yarn add @oracle/langchain-oracledb @langchain/core
+```
+```bash pnpm
+pnpm add @oracle/langchain-oracledb @langchain/core
+```
+</CodeGroup>
+
+## Instantiate the tool
+
+```typescript
+import oracledb from "oracledb";
+import { OracleSummary } from "@oracle/langchain-oracledb";
+
+const connection = await oracledb.getConnection({
+  user: process.env.ORACLE_USER,
+  password: process.env.ORACLE_PASSWORD,
+  connectionString: process.env.ORACLE_DSN,
+});
+
+const summary = new OracleSummary(
+  connection,
+  {
+    provider: "database",
+    glevel: "S",
+    numParagraphs: 1,
+    language: "english",
+  },
+  process.env.HTTP_PROXY, // optional
+);
+```
+
+The third constructor argument is an optional proxy string. Supply it only when outbound requests must traverse an HTTP proxy (for example, when invoking Hugging Face endpoints).
+
+## Summarize text with in-database models
+
+Run ONNX summarization models directly in Oracle Database to keep data on the same host as your transactional workloads.
+
+```typescript
+const result = await summary.getSummary(
+  "Oracle Database combines relational and vector workloads so you can build secure RAG pipelines.",
+);
+
+console.log(result); // => concise summary text
+```
+
+## Use managed providers
+
+Switch the `provider` parameter to route summarization requests through [OCI Generative AI](https://docs.oracle.com/en-us/iaas/Content/generative-ai/home.htm) or Hugging Face. Provide the credential name you registered in Oracle Database and, if required, a proxy string.
+
+```typescript
+const ociSummary = new OracleSummary(
+  connection,
+  {
+    provider: "ocigenai",
+    credential_name: "OCI_CRED",
+    url: "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/summarizeText",
+    model: "cohere.command",
+  },
+  process.env.HTTP_PROXY,
+);
+
+const hfSummary = new OracleSummary(connection, {
+  provider: "huggingface",
+  credential_name: "HF_CRED",
+  url: "https://api-inference.huggingface.co/models/",
+  model: "facebook/bart-large-cnn",
+  wait_for_model: "true",
+});
+```
+
+## Chain with LangChain tools
+
+You can wrap `OracleSummary` in a custom LangChain tool or runnable to integrate it with agent tool-calling.
+
+```typescript
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const summarizeTool = tool(
+  async ({ text }: { text: string }) => summary.getSummary(text),
+  {
+    name: "oracle_summary",
+    description: "Summarize Oracle-sourced documents.",
+    schema: z.object({
+      text: z.string().describe("Full text to summarize"),
+    }),
+  },
+);
+
+const toolSummary = await summarizeTool.invoke({ text });
+```
+
+## Next steps
+
+- Load content with [`OracleDocLoader`](/oss/javascript/integrations/document_loaders/file_loaders/oracleai)
+- Chunk and normalize with [`OracleTextSplitter`](/oss/javascript/integrations/document_loaders/file_loaders/oracleai#chunk-documents)
+- Generate embeddings using [`OracleEmbeddings`](/oss/javascript/integrations/embeddings/oracleai) and store them in [`OracleVS`](/oss/javascript/integrations/vectorstores/oracleai)
+
+---
+
+## API reference
+
+For detailed documentation of all `OracleSummary` parameters and return types, see the [Oracle LangChain Oracle DB repository](https://github.com/oracle/langchain-oracle/tree/main/libs/js/langchain-oracledb).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/tools/oracleai.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

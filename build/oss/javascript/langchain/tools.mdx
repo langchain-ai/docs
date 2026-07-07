@@ -1,0 +1,742 @@
+---
+title: Tools
+---
+
+import ToolReturnValuesPy from '/snippets/code-samples/tool-return-values-py.mdx';
+import ToolReturnValuesJs from '/snippets/code-samples/tool-return-values-js.mdx';
+import ToolReturnObjectPy from '/snippets/code-samples/tool-return-object-py.mdx';
+import ToolReturnObjectJs from '/snippets/code-samples/tool-return-object-js.mdx';
+import ToolReturnCommandPy from '/snippets/code-samples/tool-return-command-py.mdx';
+import ToolReturnCommandJs from '/snippets/code-samples/tool-return-command-js.mdx';
+import ToolReturnDirectPy from '/snippets/code-samples/tool-return-direct-py.mdx';
+import ToolReturnDirectJs from '/snippets/code-samples/tool-return-direct-js.mdx';
+import ToolUpdateStatePy from '/snippets/code-samples/tool-update-state-py.mdx';
+import ToolErrorHandlingPy from '/snippets/code-samples/tool-error-handling-py.mdx';
+import ToolErrorHandlingJs from '/snippets/code-samples/tool-error-handling-js.mdx';
+import ToolRuntimeContextThreadJs from '/snippets/code-samples/tool-runtime-context-thread-js.mdx';
+import ToolRuntimeContextThreadPy from '/snippets/code-samples/tool-runtime-context-thread-py.mdx';
+
+Tools extend what [agents](/oss/javascript/langchain/agents) can do—letting them fetch real-time data, execute code, query external databases, and take actions in the world.
+
+Under the hood, tools are callable functions with well-defined inputs and outputs that get passed to a [chat model](/oss/javascript/langchain/models). The model decides when to invoke a tool based on the conversation context, and what input arguments to provide.
+
+<Tip>
+For details on how models handle tool calls, see [Tool calling](/oss/javascript/langchain/models#tool-calling). Trace tool calls and debug errors with [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=oss-langchain-tools). Follow the [tracing quickstart](/langsmith/trace-with-langchain) to get set up.
+
+We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
+</Tip>
+
+## Create tools
+
+### Basic tool definition
+
+
+
+The simplest way to create a tool is by importing the `tool` function from the `langchain` package. You can use [zod](https://zod.dev/) to define the tool's input schema:
+
+```ts
+import * as z from "zod"
+import { tool } from "langchain"
+
+const searchDatabase = tool(
+  ({ query, limit }) => `Found ${limit} results for '${query}'`,
+  {
+    name: "search_database",
+    description: "Search the customer database for records matching the query.",
+    schema: z.object({
+      query: z.string().describe("Search terms to look for"),
+      limit: z.number().describe("Maximum number of results to return"),
+    }),
+  }
+);
+```
+
+
+
+<Note>
+    **Server-side tool use:** Some chat models feature built-in tools (web search, code interpreters) that are executed server-side. See [Server-side tool use](#server-side-tool-use) for details.
+</Note>
+
+<Warning>
+    Prefer `snake_case` for tool names (e.g., `web_search` instead of `Web Search`). Some model providers have issues with or reject names containing spaces or special characters with errors. Sticking to alphanumeric characters, underscores, and hyphens helps to improve compatibility across providers.
+</Warning>
+
+
+
+## Access context
+
+Tools are most powerful when they can access runtime information like conversation history, user data, and persistent memory. This section covers how to access and update this information from within your tools.
+
+
+
+### Context
+
+Context provides immutable configuration data that is passed at invocation time. Use it for user IDs, session details, or application-specific settings that shouldn't change during a conversation.
+
+<Note>
+While `thread_id` (passed via `config={"configurable": {"thread_id": ...}}`) scopes the *conversation*: message history and checkpoints, `context` carries *per-run* data your tools and middleware read at invocation time. In production you typically pass both together: a stable `thread_id` per conversation, and a `context` object on every invoke.
+</Note>
+
+
+
+Tools can access an agent's runtime context through the `config` parameter. Pass `context` alongside a `thread_id` so the conversation is persisted across turns:
+
+<ToolRuntimeContextThreadJs />
+
+
+
+### Long-term memory (Store)
+
+The [`BaseStore`](https://reference.langchain.com/javascript/langchain-core/stores/BaseStore) provides persistent storage that survives across conversations. Unlike state (short-term memory), data saved to the store remains available in future sessions.
+
+
+
+Access the store through `config.store`. The store uses a namespace/key pattern to organize data:
+
+```ts expandable
+import * as z from "zod";
+import { createAgent, tool } from "langchain";
+import { InMemoryStore } from "@langchain/langgraph";
+import { ChatOpenAI } from "@langchain/openai";
+
+const store = new InMemoryStore();
+
+// Access memory
+const getUserInfo = tool(
+  async ({ user_id }) => {
+    const value = await store.get(["users"], user_id);
+    console.log("get_user_info", user_id, value);
+    return value;
+  },
+  {
+    name: "get_user_info",
+    description: "Look up user info.",
+    schema: z.object({
+      user_id: z.string(),
+    }),
+  }
+);
+
+// Update memory
+const saveUserInfo = tool(
+  async ({ user_id, name, age, email }) => {
+    console.log("save_user_info", user_id, name, age, email);
+    await store.put(["users"], user_id, { name, age, email });
+    return "Successfully saved user info.";
+  },
+  {
+    name: "save_user_info",
+    description: "Save user info.",
+    schema: z.object({
+      user_id: z.string(),
+      name: z.string(),
+      age: z.number(),
+      email: z.string(),
+    }),
+  }
+);
+
+const agent = createAgent({
+  model: new ChatOpenAI({ model: "gpt-5.5" }),
+  tools: [getUserInfo, saveUserInfo],
+  store,
+});
+
+// First session: save user info
+await agent.invoke({
+  messages: [
+    {
+      role: "user",
+      content: "Save the following user: userid: abc123, name: Foo, age: 25, email: foo@langchain.dev",
+    },
+  ],
+});
+
+// Second session: get user info
+const result = await agent.invoke({
+  messages: [
+    { role: "user", content: "Get user info for user with id 'abc123'" },
+  ],
+});
+
+console.log(result);
+// Here is the user info for user with ID "abc123":
+// - Name: Foo
+// - Age: 25
+// - Email: foo@langchain.dev
+```
+
+
+
+### Stream writer
+
+Stream real-time updates from tools during execution. This is useful for providing progress feedback to users during long-running operations.
+
+
+
+Use `config.writer` to emit custom updates:
+
+```ts
+import * as z from "zod";
+import { tool, ToolRuntime } from "langchain";
+
+const getWeather = tool(
+  ({ city }, config: ToolRuntime) => {
+    const writer = config.writer;
+
+    // Stream custom updates as the tool executes
+    if (writer) {
+      writer(`Looking up data for city: ${city}`);
+      writer(`Acquired data for city: ${city}`);
+    }
+
+    return `It's always sunny in ${city}!`;
+  },
+  {
+    name: "get_weather",
+    description: "Get weather for a given city.",
+    schema: z.object({
+      city: z.string(),
+    }),
+  }
+);
+```
+
+
+
+### Execution info
+
+Access thread ID, run ID, and retry state from within a tool via `runtime.execution_info`:
+
+
+
+```ts
+import { tool } from "langchain";
+import * as z from "zod";
+
+const logExecutionContext = tool(
+  async (_input, runtime) => {
+    const info = runtime.executionInfo;
+    console.log(`Thread: ${info.threadId}, Run: ${info.runId}`);  // [!code highlight]
+    console.log(`Attempt: ${info.nodeAttempt}`);
+    return "done";
+  },
+  {
+    name: "log_execution_context",
+    description: "Log execution identity information.",
+    schema: z.object({}),
+  }
+);
+```
+
+
+
+
+<Note>
+Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`).
+</Note>
+
+
+### Server info
+
+When your tool runs on LangGraph Server, access the assistant ID, graph ID, and authenticated user via `runtime.server_info`:
+
+
+
+```ts
+import { tool } from "langchain";
+import * as z from "zod";
+
+const getAssistantScopedData = tool(
+  async (_input, runtime) => {
+    const server = runtime.serverInfo;
+    if (server != null) {
+      console.log(`Assistant: ${server.assistantId}, Graph: ${server.graphId}`);  // [!code highlight]
+      if (server.user != null) {
+        console.log(`User: ${server.user.identity}`);  // [!code highlight]
+      }
+    }
+    return "done";
+  },
+  {
+    name: "get_assistant_scoped_data",
+    description: "Fetch data scoped to the current assistant.",
+    schema: z.object({}),
+  }
+);
+```
+
+`serverInfo` is `null` when the tool is not running on LangGraph Server.
+
+
+
+
+<Note>
+Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`).
+</Note>
+
+
+
+
+## Tool execution
+
+In LangChain, tools are used by agents (for example via [`create_agent`](https://reference.langchain.com/javascript/langchain/index/createAgent)) and tool error handling is configured through [middleware](/oss/javascript/langchain/middleware).
+
+For LangGraph workflows, tool execution is handled by [`ToolNode`](https://reference.langchain.com/javascript/langchain-langgraph/prebuilt/ToolNode). See [ToolNode](/oss/javascript/langgraph/workflows-agents#toolnode) for Graph API usage, including how tools can access the current graph state and run-scoped context.
+
+### Tool return values
+
+You can choose different return values for your tools:
+
+- Return a `string` for human-readable results.
+- Return an `object` for structured results the model should parse.
+- Return a `Command` with optional message when you need to write to state.
+
+#### Return a string
+
+Return a string when the tool should provide plain text for the model to read and use in its next response.
+
+
+
+<ToolReturnValuesJs />
+
+
+
+Behavior:
+
+- The return value is converted to a `ToolMessage`.
+- The model sees that text and decides what to do next.
+- No agent state fields are changed unless the model or another tool does so later.
+
+Use this when the result is naturally human-readable text.
+
+#### Return an object
+
+Return an object (for example, a `dict`) when your tool produces structured data that the model should inspect.
+
+
+
+<ToolReturnObjectJs />
+
+
+
+Behavior:
+
+- The object is serialized and sent back as tool output.
+- The model can read specific fields and reason over them.
+- Like string returns, this does not directly update graph state.
+
+Use this when downstream reasoning benefits from explicit fields instead of free-form text.
+
+#### Return multimodal content
+
+Tools are not limited to plain text. When the model supports multimodal tool results, the tool can return [standard content blocks](/oss/javascript/langchain/messages#standard-content-blocks) so the model receives text, images, and other media in one tool result.
+
+
+
+```typescript
+import { tool } from "langchain";
+import { z } from "zod";
+
+const captureScreenshot = tool(
+  async () => [
+    { type: "text", text: "Screenshot of the current page:" },
+    { type: "image", url: "https://example.com/page.png" },
+  ],
+  {
+    name: "capture_screenshot",
+    description: "Capture a screenshot of the current page.",
+    schema: z.object({}),
+  }
+);
+```
+
+
+Behavior:
+
+- The return value is converted to a `ToolMessage` with multimodal `content`.
+- Use `message.content_blocks` to read the normalized block list after the tool runs.
+- The model must support the modalities you return. Check your [model's capabilities](/oss/javascript/integrations/chat) before returning images, audio, or video.
+
+For block types and provider-specific requirements, see [Multimodal messages](/oss/javascript/langchain/messages#multimodal). MCP tools that return images or mixed content are converted the same way; see [Multimodal tool content](/oss/javascript/langchain/mcp#multimodal-tool-content).
+
+#### Return a Command
+
+Return a [`Command`](https://reference.langchain.com/javascript/langchain-langgraph/index/Command) when the tool needs to update graph state (for example, setting user preferences or app state).
+You can return a `Command` with or without including a `ToolMessage`.
+If the model needs to see that the tool succeeded (for example, to confirm a preference change), include a `ToolMessage` in the update, using `runtime.tool_call_id` for the `tool_call_id` parameter.
+
+
+
+<ToolReturnCommandJs />
+
+
+
+Behavior:
+
+- The command updates state using `update`.
+- Updated state is available to subsequent steps in the same run.
+- Use reducers for fields that may be updated by parallel tool calls.
+
+Use this when the tool is not just returning data, but also mutating agent state.
+
+#### Return directly from a tool
+
+Set return direct on a tool to short-circuit the agent loop: the agent returns the tool's output to the caller immediately, without sending it back through the model for further processing.
+
+
+
+<ToolReturnDirectJs />
+
+
+
+Behavior:
+
+- The tool executes normally and its output is wrapped in a `ToolMessage`.
+- The agent stops looping and returns the tool's output as the final response, bypassing any additional model call.
+- If the model calls multiple tools in a single turn, `return_direct` takes effect only when **all** called tools have `return_direct=True`.
+
+Use this when:
+
+- The tool's output is the complete, user-ready answer (for example, a lookup that returns a ready-to-display result).
+- You want to avoid an extra model call when no additional reasoning is needed.
+- You need deterministic, unmodified output — the model cannot rephrase, summarize, or act on the tool result.
+
+<Warning>
+    Because the model does not process the tool's output, `return_direct=True` is not suitable for tools whose results require further reasoning, summarization, or chaining with other tool calls.
+</Warning>
+
+### Error handling
+
+Handle tool errors using LangChain agent [middleware](/oss/javascript/langchain/middleware) to retry failed tool calls or return custom error messages:
+
+
+
+<ToolErrorHandlingJs />
+
+
+
+### State injection
+
+Tools access graph state through [`ToolRuntime`](https://reference.langchain.com/javascript/langchain/index/Runtime). See [Access context](#access-context) for state, context, store, and streaming APIs.
+
+
+
+For more details on accessing state, context, and long-term memory from tools, see [Access context](#access-context).
+
+## Dynamic tool selection
+
+With dynamic tools, the set of tools available to the agent is modified at runtime rather than defined all upfront. Not every tool is appropriate for every situation. Too many tools may overwhelm the model (overload context) and increase errors; too few limit capabilities. Dynamic tool selection enables adapting the available toolset based on authentication state, user permissions, feature flags, or conversation stage.
+
+There are two approaches depending on whether tools are known ahead of time:
+
+<Tabs>
+  <Tab title="Filtering pre-registered tools">
+
+    When all possible tools are known at agent creation time, you can pre-register them and dynamically filter which ones are exposed to the model based on state, permissions, or context.
+
+    <Tabs>
+      <Tab title="State">
+        Enable advanced tools only after certain conversation milestones:
+
+
+
+        ```typescript
+        import { createMiddleware, tool } from "langchain";
+        import { createDeepAgent } from "deepagents";
+
+        const stateBasedTools = createMiddleware({
+            name: "StateBasedTools",
+            wrapModelCall: (request, handler) => {
+                // Read from State: check authentication and conversation length
+                const state = request.state as typeof request.state & {
+                    authenticated?: boolean;
+                };
+                const isAuthenticated = state.authenticated ?? false;
+                const messageCount = state.messages.length;
+
+                let filteredTools = request.tools;
+
+                // Only enable sensitive tools after authentication
+                if (!isAuthenticated) {
+                    filteredTools = request.tools.filter(
+                        (t: any) => typeof t.name === "string" && t.name.startsWith("public_"),
+                    );
+                } else if (messageCount < 5) {
+                    filteredTools = request.tools.filter(
+                        (t: any) => typeof t.name === "string" && t.name !== "advanced_search",
+                    );
+                }
+
+                return handler({ ...request, tools: filteredTools });
+            },
+        });
+
+        const agent = await createDeepAgent({
+            model: "claude-sonnet-4-20250514",
+            tools: tools,
+            middleware: [stateBasedTools] as any,
+        });
+        ```
+
+
+      </Tab>
+
+      <Tab title="Store">
+        Filter tools based on user preferences or feature flags in Store:
+
+
+
+        ```typescript
+        import { createMiddleware } from "langchain";
+        import { createDeepAgent, StoreBackend } from "deepagents";
+        import * as z from "zod";
+        import { InMemoryStore } from "@langchain/langgraph";
+
+        const contextSchema = z.object({
+          userId: z.string(),
+        });
+
+        const storeBasedTools = createMiddleware({
+          name: "StoreBasedTools",
+          contextSchema,
+          wrapModelCall: async (request, handler) => {
+            const userId =
+              (request.runtime?.context as { userId?: string } | undefined)?.userId ??
+                "user-123";
+
+            // Read from Store: get user's enabled features
+            const runtimeStore = request.runtime?.store as InMemoryStore | undefined;
+            const rawFlags = (await runtimeStore?.get(
+              ["features"],
+              userId as string,
+            )) as unknown;
+            const featureFlags = rawFlags as FeatureFlags | undefined;
+
+            let filteredTools = request.tools;
+
+            if (featureFlags) {
+              const enabledFeatures = featureFlags.enabledTools || [];
+              filteredTools = request.tools.filter((t) =>
+                enabledFeatures.includes(t.name as string)
+              );
+            }
+
+            return handler({ ...request, tools: filteredTools });
+          },
+        });
+
+        const agent = await createDeepAgent({
+          model: "claude-sonnet-4-20250514",
+          backend: new StoreBackend(),
+          store,
+          checkpointer,
+          tools,
+          middleware: [storeBasedTools] as any,
+        });
+        ```
+
+
+      </Tab>
+
+      <Tab title="Runtime Context">
+        Filter tools based on user permissions from Runtime Context:
+
+
+
+        ```typescript
+        import * as z from "zod";
+        import { createMiddleware } from "langchain";
+        import { createDeepAgent } from "deepagents";
+
+        const contextSchema = z.object({
+          userRole: z.string(),
+        });
+
+        const contextBasedTools = createMiddleware({
+          name: "ContextBasedTools",
+          contextSchema,
+          wrapModelCall: (request, handler) => {
+            // Read from Runtime Context: get user role
+            const userRole = request.runtime.context.userRole;
+
+            let filteredTools = request.tools;
+
+            if (userRole === "admin") {
+              // Admins get all tools
+            } else if (userRole === "editor") {
+              filteredTools = request.tools.filter((t) => t.name !== "delete_data");
+            } else {
+              filteredTools = request.tools.filter(
+                (t) => (t.name as string).startsWith("read_"),
+              );
+            }
+
+            return handler({ ...request, tools: filteredTools });
+          },
+        });
+
+        const agent = await createDeepAgent({
+          model: "claude-sonnet-4-20250514",
+          store,
+          checkpointer,
+          tools,
+          middleware: [contextBasedTools] as any,
+        });
+        ```
+
+
+      </Tab>
+    </Tabs>
+
+    This approach is best when:
+    - All possible tools are known at compile/startup time
+    - You want to filter based on permissions, feature flags, or conversation state
+    - Tools are static but their availability is dynamic
+
+    See [Dynamically selecting tools](/oss/javascript/langchain/middleware/custom#dynamically-selecting-tools) for more examples.
+
+  </Tab>
+
+  <Tab title="Runtime tool registration">
+
+    When tools are discovered or created at runtime (e.g., loaded from an MCP server, generated based on user data, or fetched from a remote registry), you need to both register the tools and handle their execution dynamically.
+
+    This requires two middleware hooks:
+    1. `wrap_model_call` - Add the dynamic tools to the request
+    2. `wrap_tool_call` - Handle execution of the dynamically added tools
+
+
+
+    ```typescript
+    import { createAgent, createMiddleware, tool } from "langchain";
+    import * as z from "zod";
+
+    // A tool that will be added dynamically at runtime
+    const calculateTip = tool(
+      ({ billAmount, tipPercentage = 20 }) => {
+        const tip = billAmount * (tipPercentage / 100);
+        return `Tip: $${tip.toFixed(2)}, Total: $${(billAmount + tip).toFixed(2)}`;
+      },
+      {
+        name: "calculate_tip",
+        description: "Calculate the tip amount for a bill",
+        schema: z.object({
+          billAmount: z.number().describe("The bill amount"),
+          tipPercentage: z.number().default(20).describe("Tip percentage"),
+        }),
+      }
+    );
+
+    const dynamicToolMiddleware = createMiddleware({
+      name: "DynamicToolMiddleware",
+      wrapModelCall: (request, handler) => {
+        // Add dynamic tool to the request
+        // This could be loaded from an MCP server, database, etc.
+        return handler({
+          ...request,
+          tools: [...request.tools, calculateTip],
+        });
+      },
+      wrapToolCall: (request, handler) => {
+        // Handle execution of the dynamic tool
+        if (request.toolCall.name === "calculate_tip") {
+          return handler({ ...request, tool: calculateTip });
+        }
+        return handler(request);
+      },
+    });
+
+    const agent = createAgent({
+      model: "gpt-4o",
+      tools: [getWeather], // Only static tools registered here
+      middleware: [dynamicToolMiddleware],
+    });
+
+    // The agent can now use both getWeather AND calculateTip
+    const result = await agent.invoke({
+      messages: [{ role: "user", content: "Calculate a 20% tip on $85" }],
+    });
+    ```
+
+
+
+    This approach is best when:
+    - Tools are discovered at runtime (e.g., from an MCP server)
+    - Tools are generated dynamically based on user data or configuration
+    - You're integrating with external tool registries
+
+    <Note>
+    The `wrap_tool_call` hook is required for runtime-registered tools because the agent needs to know how to execute tools that weren't in the original tool list. Without it, the agent won't know how to invoke the dynamically added tool.
+    </Note>
+
+  </Tab>
+</Tabs>
+
+## Headless tools
+
+Some tools should run **where your user's app runs** (typically the browser), not inside the process. **Headless tools** are tool definitions, which include the name, description, and argument schema, that you register on the **server** with your agent. The **implementation** is registered only on the **client** and executed after a short interrupt/resume handshake.
+
+This is different from ordinary tools whose function body runs on the server, and from [server-side tool use](#server-side-tool-use) where the model provider executes built-in tools remotely.
+
+### When to use headless tools
+
+Use them when the work depends on the **environment, device, or UI** that only exists on the client. For example:
+
+- **Browser APIs:** Geolocation, IndexedDB, Clipboard, Canvas 2D, file pickers, Battery API, etc.
+- **Privacy and locality:** Data stays on the device (for example, local “memory” in IndexedDB).
+- **Latency:** No extra server round trip for purely local operations.
+- **Structured, safe effects:** Prefer many small, typed tools (for example one tool per canvas primitive) instead of sending arbitrary code to `eval`.
+
+### How the pattern works
+
+In both runtimes, the model sees a normal tool it can call, but the actual execution happens outside the server process.
+
+
+
+1. **Define** the tool with `tool({ name, description, schema })` from `langchain`, metadata and validation only, no server-side runner.
+2. **Attach** the real behavior with `.implement(async (args) => { ... })`, which returns a **headless tool implementation** (definition + `execute` function).
+3. **Register** the definition from step 1 with `createAgent` or your graph so the model sees the tool in its usual tool-calling loop.
+4. **Pass** the implementation from step 2 to your streaming hook's `tools` option.
+
+<Info>
+    Put **tool definitions** (`tool({ name, description, schema })`) and **implementations** (`.implement(...)`) in **separate modules**. Import the shared definition file from your server agent and from your frontend so names and schemas stay aligned; keep client-only execute logic in implementation modules the server never loads.
+</Info>
+
+
+When the model issues a tool call for one of these tools, the run **interrupts** instead of executing the tool locally. Your app can inspect the payload, perform the action in the right environment (for example a browser, another service, or a human review step), then **resume** the graph with the tool result. When you use the supported JS SDK hooks, they can detect headless-tool interrupts, run the matching client implementation, and submit the resume command for you.
+
+Use the optional **`onTool`** callback to observe lifecycle events (`start`, `success`, `error`) for UI feedback such as spinners or toasts.
+
+<Card
+    title="Headless tools frontend pattern"
+    href="/oss/javascript/langchain/frontend/headless-tools"
+    icon="device-desktop"
+    arrow="true"
+    horizontal
+>
+    See an end-to-end example of schema-only tools executed in the client with `useStream`.
+</Card>
+
+## Prebuilt tools
+
+LangChain provides a large collection of prebuilt tools and toolkits for common tasks like web search, code interpretation, database access, and more. These ready-to-use tools can be directly integrated into your agents without writing custom code.
+
+See the [tools and toolkits](/oss/javascript/integrations/tools) integration page for a complete list of available tools organized by category.
+
+## Server-side tool use
+
+Some chat models feature built-in tools that are executed server-side by the model provider. These include capabilities like web search and code interpreters that don't require you to define or host the tool logic.
+
+Refer to the individual [chat model integration pages](/oss/javascript/integrations/providers) and the [tool calling documentation](/oss/javascript/langchain/models#server-side-tool-use) for details on enabling and using these built-in tools.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/tools.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

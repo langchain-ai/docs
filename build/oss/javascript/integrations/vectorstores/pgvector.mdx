@@ -1,0 +1,472 @@
+---
+title: "PGVectorStore integration"
+description: "Integrate with the PGVectorStore using LangChain JavaScript."
+---
+
+<Tip>
+**Compatibility**: Only available on Node.js.
+</Tip>
+
+To enable vector search in generic PostgreSQL databases, LangChain.js supports using the [`pgvector`](https://github.com/pgvector/pgvector) Postgres extension.
+
+This guide provides a quick overview for getting started with PGVector [vector stores](/oss/javascript/integrations/vectorstores). For detailed documentation of all `PGVectorStore` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-pgvector/PGVectorStore).
+
+## PGVectorStore vs PGVector: Which one to use?
+
+LangChain has two Postgres vector store integrations. Here's how to choose the right one:
+
+| Feature | PGVector (Legacy) | PGVectorStore (Modern) |
+|---|---|---|
+| Package | `langchain-community` | `langchain-postgres` (Python) / `@langchain/pgvector` (JS) |
+| Maintenance | Community-maintained | Official Partner Package |
+| Connection | Simple connection string | `PGEngine` (better connection pooling) |
+| Search Types | Standard Vector Search | Hybrid Search (Vector + BM25) |
+| Async Support | Limited | Full Native Async |
+| Schema | Fixed table structure | Customizable columns and schemas |
+
+**Use `PGVectorStore` (Modern—recommended) when:**
+- Starting any new project
+- You need Hybrid Search (vector + keyword combined)
+- You want better performance via connection pooling
+- You are building async applications (e.g., FastAPI, async Node.js)
+
+**Use `PGVector` (Legacy) only when:**
+- Maintaining an existing codebase that already uses it
+- Following an older tutorial that has not been updated yet
+
+<Note>
+For all new projects, we recommend using `PGVectorStore` from `langchain-postgres` (Python) or `@langchain/community` (JavaScript).
+</Note>
+
+---
+
+## Overview
+
+### Integration details
+
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/pgvector/) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| [`PGVectorStore`](https://reference.langchain.com/javascript/langchain-pgvector/PGVectorStore) | [`@langchain/pgvector`](https://www.npmjs.com/package/@langchain/pgvector) | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/pgvector?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/pgvector?style=flat-square&label=%20&) |
+
+## Setup
+
+To use PGVector vector stores, set up a Postgres instance with the [`pgvector`](https://github.com/pgvector/pgvector) extension enabled, then install `@langchain/pgvector`, the [`pg`](https://www.npmjs.com/package/pg) driver, and `@langchain/core`.
+
+This guide uses [OpenAI embeddings](/oss/javascript/integrations/embeddings/openai) as an example. You can use [other supported embeddings models](/oss/javascript/integrations/embeddings) instead.
+
+<CodeGroup>
+```bash npm
+npm install @langchain/pgvector @langchain/openai @langchain/core pg
+```
+```bash yarn
+yarn add @langchain/pgvector @langchain/openai @langchain/core pg
+```
+```bash pnpm
+pnpm add @langchain/pgvector @langchain/openai @langchain/core pg
+```
+</CodeGroup>
+
+### Setting up an instance
+
+There are many ways to connect to Postgres depending on how you've set up your instance. Here's one example of a local setup using a prebuilt Docker image provided by the `pgvector` team.
+
+Create a file with the below content named docker-compose.yml:
+
+```yaml
+# Run this command to start the database:
+# docker compose up
+services:
+  db:
+    hostname: 127.0.0.1
+    image: pgvector/pgvector:pg16
+    ports:
+      - 5432:5432
+    restart: always
+    environment:
+      - POSTGRES_DB=api
+      - POSTGRES_USER=myuser
+      - POSTGRES_PASSWORD=ChangeMe
+```
+
+And then in the same directory, run `docker compose up` to start the container.
+
+You can find more information on how to setup pgvector in the [official repository](https://github.com/pgvector/pgvector/).
+
+### Credentials
+
+To connect to your Postgres instance, you'll need corresponding credentials. For a full list of supported options, see the [`node-postgres` docs](https://node-postgres.com/apis/client).
+
+If you are using OpenAI embeddings for this guide, you'll need to set your OpenAI key as well:
+
+```typescript
+process.env.OPENAI_API_KEY = "YOUR_API_KEY";
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/observability) API key by uncommenting below:
+
+```typescript
+// process.env.LANGSMITH_TRACING="true"
+// process.env.LANGSMITH_API_KEY="your-api-key"
+```
+
+## Instantiation
+
+To instantiate the vector store, call the `.initialize()` static method. This will automatically check for the presence of a table, given by `tableName` in the passed `config`. If it is not there, it will create it with the required columns.
+
+<Warning>
+**Security**: User-generated data such as usernames should not be used as input for table and column names.
+**This may lead to SQL Injection!**
+</Warning>
+
+```typescript
+import { PGVectorStore } from "@langchain/pgvector";
+import type { DistanceStrategy } from "@langchain/pgvector";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import type { PoolConfig } from "pg";
+
+const embeddings = new OpenAIEmbeddings({
+  model: "text-embedding-3-small",
+});
+
+// Sample config
+const config = {
+  postgresConnectionOptions: {
+    type: "postgres",
+    host: "127.0.0.1",
+    port: 5433,
+    user: "myuser",
+    password: "ChangeMe",
+    database: "api",
+  } as PoolConfig,
+  tableName: "testlangchainjs",
+  columns: {
+    idColumnName: "id",
+    vectorColumnName: "vector",
+    contentColumnName: "content",
+    metadataColumnName: "metadata",
+  },
+  // supported distance strategies: cosine (default), innerProduct, or euclidean
+  distanceStrategy: "cosine" as DistanceStrategy,
+};
+
+const vectorStore = await PGVectorStore.initialize(
+  embeddings,
+  config
+);
+```
+
+## Manage vector store
+
+### Add items to vector store
+
+```typescript
+import type { Document } from "@langchain/core/documents";
+
+const document1: Document = {
+  pageContent: "The powerhouse of the cell is the mitochondria",
+  metadata: { source: "https://example.com" }
+};
+
+const document2: Document = {
+  pageContent: "Buildings are made out of brick",
+  metadata: { source: "https://example.com" }
+};
+
+const document3: Document = {
+  pageContent: "Mitochondria are made out of lipids",
+  metadata: { source: "https://example.com" }
+};
+
+const document4: Document = {
+  pageContent: "The 2024 Olympics are in Paris",
+  metadata: { source: "https://example.com" }
+}
+
+const documents = [document1, document2, document3, document4];
+
+const ids = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
+
+await vectorStore.addDocuments(documents, { ids: ids });
+```
+
+### Delete items from vector store
+
+```typescript
+const id4 = ids[ids.length - 1];
+
+await vectorStore.delete({ ids: [id4] });
+```
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
+
+### Query directly
+
+Performing a simple similarity search can be done as follows:
+
+```typescript
+const filter = { source: "https://example.com" };
+
+const similaritySearchResults = await vectorStore.similaritySearch("biology", 2, filter);
+
+for (const doc of similaritySearchResults) {
+  console.log(`* ${doc.pageContent} [${JSON.stringify(doc.metadata, null)}]`);
+}
+```
+
+```text
+* The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
+* Mitochondria are made out of lipids [{"source":"https://example.com"}]
+```
+
+The above filter syntax supports exact match, but the following are also supported:
+
+#### Using the `in` operator
+
+```json
+{
+  "field": {
+    "in": ["value1", "value2"],
+  }
+}
+```
+
+#### Using the `notIn` operator
+
+```json
+{
+  "field": {
+    "notIn": ["value1", "value2"],
+  }
+}
+```
+
+#### Using the `arrayContains` operator
+
+```json
+{
+  "field": {
+    "arrayContains": ["value1", "value2"],
+  }
+}
+```
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+```typescript
+const similaritySearchWithScoreResults = await vectorStore.similaritySearchWithScore("biology", 2, filter)
+
+for (const [doc, score] of similaritySearchWithScoreResults) {
+  console.log(`* [SIM=${score.toFixed(3)}] ${doc.pageContent} [${JSON.stringify(doc.metadata)}]`);
+}
+```
+
+```text
+* [SIM=0.835] The powerhouse of the cell is the mitochondria [{"source":"https://example.com"}]
+* [SIM=0.852] Mitochondria are made out of lipids [{"source":"https://example.com"}]
+```
+
+### Query by turning into retriever
+
+You can also transform the vector store into a [retriever](/oss/javascript/langchain/retrieval) for easier usage in your chains.
+
+```typescript
+const retriever = vectorStore.asRetriever({
+  // Optional filter
+  filter: filter,
+  k: 2,
+});
+await retriever.invoke("biology");
+```
+
+```javascript
+[
+  Document {
+    pageContent: 'The powerhouse of the cell is the mitochondria',
+    metadata: { source: 'https://example.com' },
+    id: undefined
+  },
+  Document {
+    pageContent: 'Mitochondria are made out of lipids',
+    metadata: { source: 'https://example.com' },
+    id: undefined
+  }
+]
+```
+
+### Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+- [Build a RAG app with LangChain](/oss/javascript/langchain/rag).
+- [Agentic RAG](/oss/javascript/langgraph/agentic-rag)
+- [Retrieval docs](/oss/javascript/langchain/retrieval)
+
+## Advanced: reusing connections
+
+You can reuse connections by creating a pool, then creating new `PGVectorStore` instances directly via the constructor.
+
+Note that you should call `.initialize()` to set up your database at least once to set up your tables properly before using the constructor.
+
+```typescript
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { PGVectorStore } from "@langchain/pgvector";
+import pg from "pg";
+
+const reusablePool = new pg.Pool({
+  host: "127.0.0.1",
+  port: 5433,
+  user: "myuser",
+  password: "ChangeMe",
+  database: "api",
+});
+
+const originalConfig = {
+  pool: reusablePool,
+  tableName: "testlangchainjs",
+  collectionName: "sample",
+  collectionTableName: "collections",
+  columns: {
+    idColumnName: "id",
+    vectorColumnName: "vector",
+    contentColumnName: "content",
+    metadataColumnName: "metadata",
+  },
+};
+
+// Set up the DB.
+// Can skip this step if you've already initialized the DB.
+// await PGVectorStore.initialize(new OpenAIEmbeddings(), originalConfig);
+const pgvectorStore = new PGVectorStore(new OpenAIEmbeddings(), originalConfig);
+
+await pgvectorStore.addDocuments([
+  { pageContent: "what's this", metadata: { a: 2 } },
+  { pageContent: "Cat drinks milk", metadata: { a: 1 } },
+]);
+
+const results = await pgvectorStore.similaritySearch("water", 1);
+
+console.log(results);
+
+/*
+  [ Document { pageContent: 'Cat drinks milk', metadata: { a: 1 } } ]
+*/
+
+const pgvectorStore2 = new PGVectorStore(new OpenAIEmbeddings(), {
+  pool: reusablePool,
+  tableName: "testlangchainjs",
+  collectionTableName: "collections",
+  collectionName: "some_other_collection",
+  columns: {
+    idColumnName: "id",
+    vectorColumnName: "vector",
+    contentColumnName: "content",
+    metadataColumnName: "metadata",
+  },
+});
+
+const results2 = await pgvectorStore2.similaritySearch("water", 1);
+
+console.log(results2);
+
+/*
+  []
+*/
+
+await reusablePool.end();
+```
+
+## Create HNSW index
+
+By default, the extension performs a sequential scan search, with 100% recall. You might consider creating an HNSW index for approximate nearest neighbor (ANN) search to speed up `similaritySearchVectorWithScore` execution time. To create the HNSW index on your vector column, use the `createHnswIndex()` method.
+
+The method parameters include:
+
+- `dimensions`: Defines the number of dimensions in your vector data type, up to 2000. For example, use 1536 for OpenAI's text-embedding-ada-002 and Amazon's amazon.titan-embed-text-v1 models.
+
+- `m?`: The max number of connections per layer (16 by default). Index build time improves with smaller values, while higher values can speed up search queries.
+
+- `efConstruction?`: The size of the dynamic candidate list for constructing the graph (64 by default). A higher value can potentially improve the index quality at the cost of index build time.
+
+- `distanceFunction?`: The distance function name you want to use, is automatically selected based on the distanceStrategy.
+
+For more info, see the [Pgvector GitHub repo](https://github.com/pgvector/pgvector?tab=readme-ov-file#hnsw) and the [HNSW paper from Malkov Yu A. and Yashunin D. A.. 2020. Efficient and robust approximate nearest neighbor search using hierarchical navigable small world graphs](https://arxiv.org/pdf/1603.09320)
+
+```typescript
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { PGVectorStore } from "@langchain/pgvector";
+import type { DistanceStrategy } from "@langchain/pgvector";
+import type { PoolConfig } from "pg";
+
+
+const hnswConfig = {
+  postgresConnectionOptions: {
+    type: "postgres",
+    host: "127.0.0.1",
+    port: 5433,
+    user: "myuser",
+    password: "ChangeMe",
+    database: "api",
+  } as PoolConfig,
+  tableName: "testlangchainjs",
+  columns: {
+    idColumnName: "id",
+    vectorColumnName: "vector",
+    contentColumnName: "content",
+    metadataColumnName: "metadata",
+  },
+  // supported distance strategies: cosine (default), innerProduct, or euclidean
+  distanceStrategy: "cosine" as DistanceStrategy,
+};
+
+const hnswPgVectorStore = await PGVectorStore.initialize(
+  new OpenAIEmbeddings(),
+  hnswConfig
+);
+
+// create the index
+await hnswPgVectorStore.createHnswIndex({
+  dimensions: 1536,
+  efConstruction: 64,
+  m: 16,
+});
+
+await hnswPgVectorStore.addDocuments([
+  { pageContent: "what's this", metadata: { a: 2, b: ["tag1", "tag2"] } },
+  { pageContent: "Cat drinks milk", metadata: { a: 1, b: ["tag2"] } },
+]);
+
+const model = new OpenAIEmbeddings();
+const query = await model.embedQuery("water");
+const hnswResults = await hnswPgVectorStore.similaritySearchVectorWithScore(query, 1);
+
+console.log(hnswResults);
+
+await hnswPgVectorStore.end();
+```
+
+## Closing connections
+
+Make sure you close the connection when you are finished to avoid excessive resource consumption:
+
+```typescript
+await vectorStore.end();
+```
+
+---
+
+## API reference
+
+For detailed documentation of all `PGVectorStore` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-pgvector/PGVectorStore).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/vectorstores/pgvector.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

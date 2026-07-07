@@ -1,0 +1,152 @@
+---
+title: "SpiceDB integrations"
+description: "Integrate with SpiceDB using LangChain Python."
+---
+
+> [SpiceDB](https://authzed.com/spicedb) is an open-source, graph-based authorization system inspired by Google Zanzibar. It provides fine-grained, relationship-based access control for your applications.
+
+## Installation and setup
+
+Install the Python SDK:
+
+<CodeGroup>
+```bash pip
+pip install langchain-spicedb
+```
+
+```bash uv
+uv add langchain-spicedb
+```
+</CodeGroup>
+
+Optional extras are available for specific framework support:
+
+<CodeGroup>
+```bash pip
+pip install langchain-spicedb[langchain]
+pip install langchain-spicedb[langgraph]
+pip install langchain-spicedb[all]
+```
+
+```bash uv
+uv add langchain-spicedb --extra langchain
+uv add langchain-spicedb --extra langgraph
+uv add langchain-spicedb --extra all
+```
+</CodeGroup>
+
+You also need a running SpiceDB instance. For local development:
+
+```bash
+docker run --rm -p 50051:50051 authzed/spicedb serve \
+    --grpc-preshared-key "sometoken" \
+    --grpc-no-tls
+```
+
+<Accordion title="Define your schema and permissions">
+
+Create a SpiceDB schema that defines your authorization model:
+
+```python
+from authzed.api.v1 import Client, WriteSchemaRequest
+from grpcutil import insecure_bearer_token_credentials
+
+client = Client("localhost:50051", insecure_bearer_token_credentials("sometoken"))
+
+schema = """
+definition user {}
+
+definition article {
+    relation viewer: user
+    permission view = viewer
+}
+"""
+
+await client.WriteSchema(WriteSchemaRequest(schema=schema))
+```
+
+Create relationships between users and resources:
+
+```python
+from authzed.api.v1 import (
+    WriteRelationshipsRequest,
+    RelationshipUpdate,
+    Relationship,
+    ObjectReference,
+    SubjectReference,
+)
+
+# Alice can view article:doc1
+relationship = Relationship(
+    resource=ObjectReference(object_type="article", object_id="doc1"),
+    relation="viewer",
+    subject=SubjectReference(
+        object=ObjectReference(object_type="user", object_id="alice")
+    ),
+)
+
+await client.WriteRelationships(
+    WriteRelationshipsRequest(
+        updates=[
+            RelationshipUpdate(
+                operation=RelationshipUpdate.OPERATION_CREATE,
+                relationship=relationship,
+            )
+        ]
+    )
+)
+```
+
+</Accordion>
+
+## Retriever
+
+The `SpiceDBRetriever` wraps any LangChain retriever with SpiceDB authorization filtering, removing documents the user does not have permission to access.
+
+```python
+from langchain_spicedb import SpiceDBRetriever
+```
+
+For a detailed walkthrough, see the [SpiceDB Retriever](/oss/python/integrations/retrievers/spicedb) page.
+
+## Tools
+
+The `SpiceDBPermissionTool` and `SpiceDBBulkPermissionTool` enable agents to check SpiceDB permissions before taking actions.
+
+```python
+from langchain_spicedb import SpiceDBPermissionTool, SpiceDBBulkPermissionTool
+```
+
+For a detailed walkthrough, see the [SpiceDB Tools](/oss/python/integrations/tools/spicedb) page.
+
+## Runnables
+
+`SpiceDBAuthFilter` is an LCEL-compatible Runnable for authorization in chains. `SpiceDBAuthLambda` is a lightweight wrapper for use with `RunnableLambda`.
+
+```python
+from langchain_spicedb import SpiceDBAuthFilter, SpiceDBAuthLambda
+```
+
+## LangGraph nodes
+
+Factory functions and classes for adding authorization as a node in LangGraph workflows:
+
+```python
+from langchain_spicedb import create_auth_node, AuthorizationNode, RAGAuthState
+```
+
+## Related resources
+
+- [SpiceDB Documentation](https://authzed.com/docs)
+- [SpiceDB GitHub](https://github.com/authzed/spicedb)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/providers/spicedb.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

@@ -1,0 +1,397 @@
+---
+title: "Azure Cosmos DB for NoSQL integration"
+description: "Integrate with the Azure Cosmos DB for NoSQL vector store using LangChain JavaScript."
+---
+
+> [Azure Cosmos DB for NoSQL](https://learn.microsoft.com/azure/cosmos-db/nosql/) provides support for querying items with flexible schemas and native support for JSON. It now offers vector indexing and search. This feature is designed to handle high-dimensional vectors, enabling efficient and accurate vector search at any scale. You can now store vectors directly in the documents alongside your data. Each document in your database can contain not only traditional schema-free data, but also high-dimensional vectors as other properties of the documents.
+
+Learn how to leverage the vector search capabilities of Azure Cosmos DB for NoSQL from [this page](https://learn.microsoft.com/azure/cosmos-db/nosql/vector-search). If you don't have an Azure account, you can [create a free account](https://azure.microsoft.com/free/) to get started.
+
+## Setup
+
+You'll first need to install the [`@langchain/azure-cosmosdb`](https://www.npmjs.com/package/@langchain/azure-cosmosdb) package:
+
+<Tip>
+See [this section for general instructions on installing LangChain packages](/oss/javascript/langchain/install).
+</Tip>
+
+```bash npm
+npm install @langchain/azure-cosmosdb @langchain/core
+```
+You'll also need to have an Azure Cosmos DB for NoSQL instance running. You can deploy a free version on Azure Portal without any cost, following [this guide](https://learn.microsoft.com/azure/cosmos-db/nosql/quickstart-portal).
+
+Once you have your instance running, make sure you have the connection string. You can find them in the Azure Portal, under the "Settings / Keys" section of your instance. Then you need to set the following environment variables:
+
+```bash .env example
+# Use connection string to authenticate
+AZURE_COSMOSDB_NOSQL_CONNECTION_STRING=
+
+# Use managed identity to authenticate
+AZURE_COSMOSDB_NOSQL_ENDPOINT=
+```
+
+### Using Azure Managed identity
+
+If you're using Azure Managed Identity, you can configure the credentials like this:
+
+```typescript
+import { AzureCosmosDBNoSQLVectorStore } from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+// Create Azure Cosmos DB vector store
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  // Or use environment variable AZURE_COSMOSDB_NOSQL_ENDPOINT
+  endpoint: "https://my-cosmosdb.documents.azure.com:443/",
+
+  // Database and container must already exist
+  databaseName: "my-database",
+  containerName: "my-container",
+});
+```
+
+<Info>
+**When using Azure Managed Identity and role-based access control, you must ensure that the database and container have been created beforehand. RBAC does not provide permissions to create databases and containers. You can get more information about the permission model in the [Azure Cosmos DB documentation](https://learn.microsoft.com/azure/cosmos-db/how-to-setup-rbac#permission-model).**
+
+
+</Info>
+
+### Security considerations when using filters
+
+<Warning>
+**Using filters with user-provided input can be a security risk if the data is not sanitized properly. Follow the recommendation below to prevent potential security issues.**
+
+
+</Warning>
+
+Allowing raw user input to be concatenated into SQL-like clauses - such as `WHERE ${userFilter}` - introduces a critical risk of SQL injection attacks, potentially exposing unintended data or compromising your system's integrity. To mitigate this, always use Azure Cosmos DB's parameterized query mechanism, passing in `@param` placeholders, which cleanly separates the query logic from user-provided input.
+
+Here is an example of unsafe code:
+
+```typescript
+import { AzureCosmosDBNoSQLVectorStore } from "@langchain/azure-cosmosdb";
+
+const store = new AzureCosmosDBNoSQLVectorStore(embeddings, {});
+
+// Unsafe: user-controlled input injected into the query
+const userId = req.query.userId; // e.g. "123' OR 1=1"
+const unsafeQuerySpec = {
+  query: `SELECT * FROM c WHERE c.metadata.userId = '${userId}'`,
+};
+
+await store.delete({ filter: unsafeQuerySpec });
+```
+If the attacker provides `123 OR 1=1`, then the query becomes `SELECT * FROM c WHERE c.metadata.userId = '123' OR 1=1`, which forces the condition to always be true, causing it to bypass the intended filter and delete all documents.
+
+To prevent this injection risk, you define a placeholder like `@userId` and Cosmos DB binds the user input separately as a parameter, ensuring it is treated strictly as data and not executable query logic as shown below.
+
+```typescript
+import { SqlQuerySpec } from "@azure/cosmos";
+
+const safeQuerySpec: SqlQuerySpec = {
+  query: "SELECT * FROM c WHERE c.metadata.userId = @userId",
+  parameters: [{ name: "@userId", value: userId }],
+};
+
+await store.delete({ filter: safeQuerySpec });
+```
+
+Now, if the attacker enters `123 OR 1=1`, the input will be treated as a literal string value to match, and not as part of the query structure.
+
+Please refer to the official documentation on [parameterized queries in Azure Cosmos DB for NoSQL](https://learn.microsoft.com/azure/cosmos-db/nosql/query/parameterized-queries) for more usage examples and best practices.
+
+## Usage example
+
+Below is an example that indexes documents from a file in Azure Cosmos DB for NoSQL, runs a vector search query, and finally uses a chain to answer a question in natural language
+based on the retrieved documents.
+
+```typescript
+import { AzureCosmosDBNoSQLVectorStore } from "@langchain/azure-cosmosdb";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
+import { createStuffDocumentsChain } from "@langchain/classic/chains/combine_documents";
+import { createRetrievalChain } from "@langchain/classic/chains/retrieval";
+import { TextLoader } from "@langchain/classic/document_loaders/fs/text";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+
+// Load documents from file
+const loader = new TextLoader("./state_of_the_union.txt");
+const rawDocuments = await loader.load();
+const splitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 1000,
+  chunkOverlap: 0,
+});
+const documents = await splitter.splitDocuments(rawDocuments);
+
+// Create Azure Cosmos DB vector store
+const store = await AzureCosmosDBNoSQLVectorStore.fromDocuments(
+  documents,
+  new OpenAIEmbeddings(),
+  {
+    databaseName: "langchain",
+    containerName: "documents",
+  }
+);
+
+// Performs a similarity search
+const resultDocuments = await store.similaritySearch(
+  "What did the president say about Ketanji Brown Jackson?"
+);
+
+console.log("Similarity search results:");
+console.log(resultDocuments[0].pageContent);
+/*
+  Tonight. I call on the Senate to: Pass the Freedom to Vote Act. Pass the John Lewis Voting Rights Act. And while you’re at it, pass the Disclose Act so Americans can know who is funding our elections.
+
+  Tonight, I’d like to honor someone who has dedicated his life to serve this country: Justice Stephen Breyer—an Army veteran, Constitutional scholar, and retiring Justice of the United States Supreme Court. Justice Breyer, thank you for your service.
+
+  One of the most serious constitutional responsibilities a President has is nominating someone to serve on the United States Supreme Court.
+
+  And I did that 4 days ago, when I nominated Circuit Court of Appeals Judge Ketanji Brown Jackson. One of our nation’s top legal minds, who will continue Justice Breyer’s legacy of excellence.
+*/
+
+// Use the store as part of a chain
+const model = new ChatOpenAI({ model: "gpt-3.5-turbo-1106" });
+const questionAnsweringPrompt = ChatPromptTemplate.fromMessages([
+  [
+    "system",
+    "Answer the user's questions based on the below context:\n\n{context}",
+  ],
+  ["human", "{input}"],
+]);
+
+const combineDocsChain = await createStuffDocumentsChain({
+  llm: model,
+  prompt: questionAnsweringPrompt,
+});
+
+const chain = await createRetrievalChain({
+  retriever: store.asRetriever(),
+  combineDocsChain,
+});
+
+const res = await chain.invoke({
+  input: "What is the president's top priority regarding prices?",
+});
+
+console.log("Chain response:");
+console.log(res.answer);
+/*
+  The president's top priority is getting prices under control.
+*/
+
+// Clean up
+await store.delete();
+```
+
+## Advanced search options
+
+All search types are accessed through the unified `similaritySearch` and `similaritySearchWithScore` methods using the `searchType` parameter in the filter options. Search types are available as constants from `AzureCosmosDBNoSQLSearchType`:
+
+Available search types:
+
+- `AzureCosmosDBNoSQLSearchType.Vector` (default): Standard vector similarity search
+- `AzureCosmosDBNoSQLSearchType.VectorScoreThreshold`: Vector search with minimum score filter
+- `AzureCosmosDBNoSQLSearchType.FullTextSearch`: Full-text search using FullTextContains (preview)
+- `AzureCosmosDBNoSQLSearchType.FullTextRanking`: Full-text search with BM25 ranking (preview)
+- `AzureCosmosDBNoSQLSearchType.Hybrid`: Hybrid vector + full-text search using RRF (preview)
+- `AzureCosmosDBNoSQLSearchType.HybridScoreThreshold`: Hybrid search with score threshold (preview)
+
+You can also set a default search type when creating the store using the `defaultSearchType` configuration option, so you don't have to specify it in every query:
+
+```typescript
+import {
+  AzureCosmosDBNoSQLVectorStore,
+  AzureCosmosDBNoSQLSearchType,
+} from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+  defaultSearchType: AzureCosmosDBNoSQLSearchType.VectorScoreThreshold,
+});
+```
+
+### Vector search with score threshold
+
+Filter results based on a minimum similarity score:
+
+```typescript
+import {
+  AzureCosmosDBNoSQLVectorStore,
+  AzureCosmosDBNoSQLSearchType,
+} from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+});
+
+// Only return results with similarity score >= 0.8
+const results = await store.similaritySearchWithScore(
+  "What is the capital of France?",
+  10,
+  {
+    searchType: AzureCosmosDBNoSQLSearchType.VectorScoreThreshold,
+    threshold: 0.8,
+  }
+);
+
+for (const [doc, score] of results) {
+  console.log(`Score: ${score}, Content: ${doc.pageContent}`);
+}
+```
+
+### Maximal Marginal Relevance (MMR) search
+
+MMR search balances relevance with diversity in the results:
+
+```typescript
+import { AzureCosmosDBNoSQLVectorStore } from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+});
+
+const results = await store.maxMarginalRelevanceSearch("machine learning", {
+  k: 5, // Number of results to return
+  fetchK: 20, // Number of candidates to consider
+  lambda: 0.5, // 0 = max diversity, 1 = max relevance
+});
+```
+
+## Full-text and hybrid search (preview)
+
+<Warning>
+Full-text and hybrid search are preview features in Azure Cosmos DB. You need to configure your container with a full-text policy and appropriate indexing to use these features. See the [Azure Cosmos DB documentation](https://learn.microsoft.com/azure/cosmos-db/gen-ai/full-text-search) for setup instructions.
+</Warning>
+
+To use full-text or hybrid search, enable it when creating the store:
+
+```typescript
+import {
+  AzureCosmosDBNoSQLVectorStore,
+  AzureCosmosDBNoSQLSearchType,
+} from "@langchain/azure-cosmosdb";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+const store = new AzureCosmosDBNoSQLVectorStore(new OpenAIEmbeddings(), {
+  databaseName: "langchain",
+  containerName: "documents",
+  fullTextSearchEnabled: true,
+  fullTextPolicy: {
+    defaultLanguage: "en-US",
+    fullTextPaths: [{ path: "/text", language: "en-US" }],
+  },
+  indexingPolicy: {
+    indexingMode: "consistent",
+    automatic: true,
+    includedPaths: [{ path: "/*" }],
+    excludedPaths: [{ path: "/_etag/?" }],
+    vectorIndexes: [{ path: "/vector", type: "quantizedFlat" }],
+    fullTextIndexes: [{ path: "/text" }],
+  },
+});
+```
+
+### Full-text search
+
+```typescript
+// Full-text search using FullTextContains in the filter clause
+const fullTextResults = await store.similaritySearch("", 10, {
+  searchType: AzureCosmosDBNoSQLSearchType.FullTextSearch,
+  filterClause: "WHERE FullTextContains(c.text, 'artificial intelligence')",
+});
+```
+
+### Full-text ranking
+
+```typescript
+// Full-text ranking with BM25 scoring
+const rankingResults = await store.similaritySearch("", 10, {
+  searchType: AzureCosmosDBNoSQLSearchType.FullTextRanking,
+  fullTextRankFilter: [
+    { searchField: "text", searchText: "artificial intelligence" },
+  ],
+});
+```
+
+### Hybrid search
+
+Hybrid search combines vector similarity with full-text search using Reciprocal Rank Fusion (RRF):
+
+```typescript
+// Hybrid search combining vector and full-text results
+const hybridResults = await store.similaritySearchWithScore(
+  "machine learning",
+  10,
+  {
+    searchType: AzureCosmosDBNoSQLSearchType.Hybrid,
+    fullTextRankFilter: [
+      { searchField: "text", searchText: "machine learning" },
+    ],
+  }
+);
+
+// Hybrid search with score threshold
+const filteredResults = await store.similaritySearchWithScore(
+  "machine learning",
+  10,
+  {
+    searchType: AzureCosmosDBNoSQLSearchType.HybridScoreThreshold,
+    fullTextRankFilter: [
+      { searchField: "text", searchText: "machine learning" },
+    ],
+    threshold: 0.5,
+  }
+);
+```
+
+## Utility methods
+
+### Delete documents
+
+```typescript
+// Delete specific documents by ID
+await store.delete({ ids: ["document-id-123"] });
+
+// Delete documents matching a filter
+await store.delete({
+  filter: {
+    query: "SELECT * FROM c WHERE c.metadata.category = @category",
+    parameters: [{ name: "@category", value: "old" }],
+  },
+});
+
+// Delete all documents
+await store.delete();
+```
+
+### Access the underlying container
+
+```typescript
+// Get direct access to the Cosmos DB container for advanced operations
+const container = store.getContainer();
+const { resources } = await container.items
+  .query("SELECT * FROM c WHERE c.metadata.category = 'tech'")
+  .fetchAll();
+```
+
+## Related
+
+- Vector store [conceptual guide](/oss/javascript/integrations/vectorstores)
+- Vector store [how-to guides](/oss/javascript/integrations/vectorstores)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/vectorstores/azure_cosmosdb_nosql.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
