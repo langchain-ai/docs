@@ -1,0 +1,142 @@
+---
+title: "OracleDocLoader integration"
+description: "Integrate with the OracleDocLoader document loader using LangChain JavaScript."
+---
+
+<Tip>
+**Compatibility**: Only available on Node.js.
+</Tip>
+
+Oracle Database supports document-centric AI workflows by combining semantic search over unstructured content with relational queries over business data in a single system. This makes it easier to build retrieval workflows (like RAG) without splitting data and vectors across multiple databases.
+
+> **Why in-database document processing?**
+> You can apply Oracle Database capabilities—security, transactions, scalability, and high availability—to the same pipeline that loads, chunks, and stores content for AI search and retrieval.
+
+If you are just starting with Oracle Database, consider exploring the [free Oracle AI Database 26ai](https://www.oracle.com/database/free/#resources), which provides a simple way to get set up. While working with the database, it’s often advisable to avoid using the `SYSTEM` user for application workloads; instead, create a dedicated user with the minimum required privileges. For background on user administration, refer to the official [Oracle Database Guide](https://docs.oracle.com/en/database/oracle/oracle-database/26/dbseg/configuring-privilege-and-role-authorization.html#GUID-16473474-7F47-4E40-A592-01836E7D911C).
+
+
+## Overview
+
+### Integration details
+
+| Class | Package | Compatibility | Local | [PY support](https://python.langchain.com/docs/integrations/document_loaders/oracleai) |
+| :--- | :--- | :---: | :---: | :---: |
+| `OracleDocLoader` | [`@oracle/langchain-oracledb`](https://www.npmjs.com/package/@oracle/langchain-oracledb) | Node-only | ✅ | ✅ |
+| `OracleTextSplitter` | [`@oracle/langchain-oracledb`](https://www.npmjs.com/package/@oracle/langchain-oracledb) | Node-only | ✅ | ✅ |
+
+### Load documents
+
+Users have the flexibility to load documents from either the Oracle Database, a file system, or both, by appropriately configuring the loader parameters. For comprehensive details on these parameters, please consult the [Oracle AI Vector Search Guide](https://docs.oracle.com/en/database/oracle/oracle-database/23/arpls/dbms_vector_chain1.html#GUID-73397E89-92FB-48ED-94BB-1AD960C4EA1F).
+
+A significant advantage of utilizing OracleDocLoader is its capability to process over 150 distinct file formats, eliminating the need for multiple loaders for different document types. For a complete list of the supported formats, please refer to the [Oracle Text Supported Document Formats](https://docs.oracle.com/en/database/oracle/oracle-database/23/ccref/oracle-text-supported-document-formats.html).
+
+## Setup
+
+To use OracleDocLoader install the `@oracle/langchain-oracledb` helpers (with `@langchain/core`) and make sure the Oracle Database driver prerequisites are met. Refer to the [guide](https://node-oracledb.readthedocs.io/en/latest/) for comprehensive information about the Oracle Database driver.
+
+### Credentials
+
+Set environment variables (or use another secrets manager) for the Oracle user that owns the source data.
+
+```bash
+export ORACLE_USER=testuser
+export ORACLE_PASSWORD=testuser
+export ORACLE_DSN="localhost:1521/free"
+```
+
+### Installation
+
+<CodeGroup>
+```bash npm
+npm install @oracle/langchain-oracledb @langchain/core
+```
+```bash yarn
+yarn add @oracle/langchain-oracledb @langchain/core
+```
+```bash pnpm
+pnpm add @oracle/langchain-oracledb @langchain/core
+```
+</CodeGroup>
+
+## Instantiation
+
+```typescript
+import oracledb from "oracledb";
+import { OracleDocLoader } from "@oracle/langchain-oracledb";
+
+const connection = await oracledb.getConnection({
+  user: process.env.ORACLE_USER,
+  password: process.env.ORACLE_PASSWORD,
+  connectionString: process.env.ORACLE_DSN,
+});
+
+const loader = new OracleDocLoader(connection, {
+  owner: "TESTUSER",
+  tablename: "DEMO_TAB",
+  colname: "DATA",
+});
+
+// Remember to close the connection (or pool) when your application shuts down.
+// await connection.close();
+```
+
+## Load from Oracle Database
+
+```typescript
+const docs = await loader.load();
+console.log(`Loaded ${docs.length} documents`);
+console.log(docs[0]?.pageContent.slice(0, 120));
+```
+
+## Load from files or directories
+
+Switch the loader parameters to ingest local content. `OracleDocLoader` automatically handles more than 150 file formats; see the [Oracle Text supported formats](https://www.oracle.com/pls/topic/lookup?ctx=dblatest&id=GUID-2EC9C942-0989-4FEE-909A-3575349AC706) for the full list.
+
+```typescript
+const fileLoader = new OracleDocLoader(connection, {
+  file: "/path/to/sample.pdf",
+});
+
+const directoryLoader = new OracleDocLoader(connection, {
+  dir: "/path/to/documents",
+});
+```
+
+## Chunk documents
+
+The documents may vary in size, ranging from small to very large. Users often prefer to chunk their documents into smaller sections to facilitate the generation of embeddings. A wide array of customization options is available for this splitting process. For comprehensive details regarding these parameters, please consult the [Oracle AI Vector Search Guide](https://docs.oracle.com/en/database/oracle/oracle-database/23/arpls/dbms_vector_chain1.html#GUID-4E145629-7098-4C7C-804F-FC85D1F24240).
+
+```typescript
+import { OracleTextSplitter } from "@oracle/langchain-oracledb";
+
+const splitter = new OracleTextSplitter(connection, {
+  split: "chars",
+  max: 500,
+  normalize: "all",
+});
+
+const chunks = await splitter.splitText(docs[0].pageContent);
+console.log(`Generated ${chunks.length} chunks`);
+```
+
+## Next steps
+
+- Build a retrieval pipeline with [`OracleVS`](/oss/javascript/integrations/vectorstores/oracleai)
+- Generate embeddings using [`OracleEmbeddings`](/oss/javascript/integrations/embeddings/oracleai)
+
+---
+
+## API reference
+
+For detailed documentation of all `OracleDocLoader` and `OracleTextSplitter` features and configuration options head to the [Oracle LangChain Oracle DB repository](https://github.com/oracle/langchain-oracle/tree/main/libs/js/langchain-oracledb).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/document_loaders/file_loaders/oracleai.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

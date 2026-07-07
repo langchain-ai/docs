@@ -1,0 +1,152 @@
+---
+title: "Cross encoder reranker integration"
+description: "Rerank retrieved documents with open-source cross-encoder models using LangChain Python."
+---
+
+import LangchainCommunityUnmaintained from '/snippets/oss/langchain-community-unmaintained.mdx';
+
+A cross-encoder scores each `(query, document)` pair directly rather than comparing independent embeddings, which produces more accurate ordering at the cost of one extra inference per document. Applying a reranker on top of vector search (retrieve top-20 via embeddings, rerank down to top-5) is one of the highest-impact quality improvements for a RAG pipeline, and it runs locally on CPU for free when you use a small cross-encoder from Hugging Face.
+
+This guide shows how to combine `HuggingFaceCrossEncoder` with LangChain's `CrossEncoderReranker` and `ContextualCompressionRetriever`. The pattern works with any [cross-encoder model on Hugging Face](https://huggingface.co/models?pipeline_tag=text-ranking), including `BAAI/bge-reranker-*`, `mixedbread-ai/mxbai-rerank-*`, `Alibaba-NLP/gte-multilingual-reranker-*`, `Qwen/Qwen3-Reranker-*`, and the classic `cross-encoder/ms-marco-*` family.
+
+## Setup
+
+```shell
+pip install -qU langchain-huggingface langchain-community langchain-classic faiss-cpu
+```
+
+## Build a base retriever
+
+Start with a standard vector store retriever. Retrieve a relatively large `k`; the reranker will narrow it down.
+
+<LangchainCommunityUnmaintained />
+
+```python
+from langchain_community.document_loaders import TextLoader
+from langchain_community.vectorstores import FAISS
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+documents = TextLoader("../../how_to/state_of_the_union.txt").load()
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+texts = text_splitter.split_documents(documents)
+
+embeddings = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-m3",
+    encode_kwargs={"normalize_embeddings": True},
+)
+retriever = FAISS.from_documents(texts, embeddings).as_retriever(
+    search_kwargs={"k": 20}
+)
+```
+
+## Rerank with a cross-encoder
+
+`CrossEncoderReranker` wraps any cross-encoder and plugs into `ContextualCompressionRetriever`.
+
+```python
+from langchain_classic.retrievers.contextual_compression import ContextualCompressionRetriever
+from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+
+cross_encoder = HuggingFaceCrossEncoder(model_name="BAAI/bge-reranker-v2-m3")
+reranker = CrossEncoderReranker(model=cross_encoder, top_n=3)
+
+compression_retriever = ContextualCompressionRetriever(
+    base_compressor=reranker,
+    base_retriever=retriever,
+)
+
+compressed_docs = compression_retriever.invoke("What is the plan for the economy?")
+for i, doc in enumerate(compressed_docs, 1):
+    print(f"Document {i}:\n{doc.page_content}\n")
+```
+
+## Picking a cross-encoder
+
+| Model | Size | Notes |
+|---|---|---|
+| `cross-encoder/ms-marco-MiniLM-L6-v2` | 22M | Fastest; English only, 2022-era baseline |
+| `BAAI/bge-reranker-v2-m3` | 568M | Multilingual, strong default for most workloads |
+| `mixedbread-ai/mxbai-rerank-large-v2` | 1.5B | Top-tier English quality, GPU recommended |
+| `Alibaba-NLP/gte-multilingual-reranker-base` | 306M | Multilingual, 8192-token context |
+| `Qwen/Qwen3-Reranker-0.6B` | 595M | Instruction-aware, multilingual |
+
+`HuggingFaceCrossEncoder` auto-selects the best available device (CUDA > MPS > CPU). To pin to a specific device, pass `model_kwargs={"device": "cpu"}` or similar.
+
+## Deploying to SageMaker
+
+You can also host a cross-encoder on a SageMaker endpoint and use `SagemakerEndpointCrossEncoder`. Here is a sample `inference.py` that loads the model on the fly (no `model.tar.gz` artifacts required). See [this walkthrough](https://huggingface.co/blog/kchoe/deploy-any-huggingface-model-to-sagemaker) for step-by-step guidance.
+
+```python
+import json
+import logging
+from typing import List
+
+import torch
+from sagemaker_inference import encoder
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+PAIRS = "pairs"
+SCORES = "scores"
+
+
+class CrossEncoder:
+    def __init__(self) -> None:
+        self.device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
+        logging.info(f"Using device: {self.device}")
+        model_name = "BAAI/bge-reranker-v2-m3"
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        self.model = self.model.to(self.device)
+
+    def __call__(self, pairs: List[List[str]]) -> List[float]:
+        with torch.inference_mode():
+            inputs = self.tokenizer(
+                pairs,
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+                max_length=512,
+            )
+            inputs = inputs.to(self.device)
+            scores = (
+                self.model(**inputs, return_dict=True)
+                .logits.view(
+                    -1,
+                )
+                .float()
+            )
+
+        return scores.detach().cpu().tolist()
+
+
+def model_fn(model_dir: str) -> CrossEncoder:
+    try:
+        return CrossEncoder()
+    except Exception:
+        logging.exception(f"Failed to load model from: {model_dir}")
+        raise
+
+
+def transform_fn(
+    cross_encoder: CrossEncoder, input_data: bytes, content_type: str, accept: str
+) -> bytes:
+    payload = json.loads(input_data)
+    model_output = cross_encoder(**payload)
+    output = {SCORES: model_output}
+    return encoder.encode(output, accept)
+```
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/document_transformers/cross_encoder_reranker.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

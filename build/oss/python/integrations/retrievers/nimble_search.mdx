@@ -1,0 +1,209 @@
+---
+title: Nimble Search
+---
+
+>[Nimble's Search API](https://docs.nimbleway.com/nimble-sdk/search-api) provides real-time web search by browsing the live web with headless browsers rather than querying prebuilt indexes. This retriever handles JavaScript rendering, dynamic content, and complex navigation flows—making it suitable for RAG applications that need access to current web data, including content behind pagination, filters, and client-side rendering.
+
+We can use this as a [retriever](/oss/python/langchain/retrieval). It will show functionality specific to this integration. After going through, it may be useful to explore [relevant use-case pages](/oss/python/langchain/rag) to learn how to use this retriever as part of a larger chain.
+
+### Installation
+
+<CodeGroup>
+```bash pip
+pip install -U langchain-nimble
+```
+```bash uv
+uv add langchain-nimble
+```
+</CodeGroup>
+
+We also need to set our Nimble API key. You can obtain an API key by signing up at [Nimble](https://www.nimbleway.com/).
+
+```python
+import getpass
+import os
+
+if not os.environ.get("NIMBLE_API_KEY"):
+    os.environ["NIMBLE_API_KEY"] = getpass.getpass("Nimble API key:\n")
+```
+
+## Usage
+
+Now we can instantiate our retriever:
+
+```python
+from langchain_nimble import NimbleSearchRetriever
+
+# Basic retriever
+retriever = NimbleSearchRetriever(k=5)
+```
+
+## Use within a chain
+
+We can easily combine this retriever into a RAG chain for question-answering:
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+
+# Create a RAG prompt
+prompt = ChatPromptTemplate.from_template(
+    """Answer the question based only on the provided context.
+If you cannot answer based on the context, say so.
+
+Context: {context}
+
+Question: {question}
+
+Answer:"""
+)
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+# Configure retriever for comprehensive results
+retriever = NimbleSearchRetriever(
+    k=5,
+    deep_search=True,
+    parsing_type="markdown",
+    include_domains=["wikipedia.org", "britannica.com", ".edu", ".gov"]
+)
+
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+# Build the RAG chain
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+```
+
+```python
+# Ask a question
+response = chain.invoke("What are the key differences between renewable and non-renewable energy sources?")
+print(response)
+```
+
+```output
+Based on the provided context, here are the key differences between renewable and non-renewable energy sources:
+
+**Renewable Energy Sources:**
+- Naturally replenished on a human timescale (solar, wind, hydro, geothermal, biomass)
+- Sustainable and virtually inexhaustible
+- Generally produce little to no greenhouse gas emissions
+- Lower environmental impact
+- Costs have decreased significantly in recent years
+
+**Non-Renewable Energy Sources:**
+- Finite resources that cannot be replenished quickly (coal, oil, natural gas, nuclear)
+- Will eventually be depleted
+- Combustion releases significant greenhouse gases and pollutants
+- Major contributor to climate change
+- Currently still provide the majority of global energy but declining in competitiveness
+
+The context indicates that renewable energy is increasingly becoming cost-competitive with fossil fuels while offering environmental benefits.
+```
+
+## Advanced configuration
+
+The retriever supports extensive configuration for different use cases:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `k` | int | 10 | Maximum number of results to return (1-20) |
+| `deep_search` | bool | True | **Deep mode** (default) for full content extraction, or **Fast mode** (False) for SERP-only results |
+| `topic` | str | "general" | Optimize search for specific content types: "general", "news", or "location" |
+| `include_answer` | bool | False | Generate AI-powered summary answer alongside search results |
+| `include_domains` | list[str] | None | Whitelist specific domains (e.g., ["wikipedia.org", ".edu"]) |
+| `exclude_domains` | list[str] | None | Blacklist specific domains to filter out |
+| `start_date` | str | None | Filter results after date (YYYY-MM-DD or YYYY) |
+| `end_date` | str | None | Filter results before date (YYYY-MM-DD or YYYY) |
+| `parsing_type` | str | "markdown" | Output format: "plain_text", "markdown", or "simplified_html" |
+| `locale` | str | "en" | Search locale (e.g., "en-US") |
+| `country` | str | "US" | Country code for localized results (e.g., "US") |
+| `api_key` | str | env var | Nimble API key (defaults to NIMBLE_API_KEY environment variable) |
+
+**Example with advanced configuration:**
+
+```python
+from langchain_nimble import NimbleSearchRetriever
+
+# Retriever optimized for academic research
+retriever = NimbleSearchRetriever(
+    k=10,
+    deep_search=True,
+    topic="general",
+    include_domains=["arxiv.org", "nature.com", "science.org"],
+    start_date="2025-01-01",
+    parsing_type="markdown"
+)
+
+docs = retriever.invoke("recent advances in quantum computing")
+```
+
+## Best Practices
+
+### Fast mode vs Deep mode
+
+- **Deep mode** (`deep_search=True`, default):
+  - Full content extraction from web pages
+  - Ideal for RAG applications requiring complete content
+  - Best for detailed research and building knowledge bases
+  - Handles JavaScript rendering and dynamic content
+
+- **Fast mode** (`deep_search=False`):
+  - Quick SERP-only results with titles and snippets
+  - Optimized for performance-sensitive applications
+  - Best for high-volume queries where speed is critical
+  - Lower cost per query
+
+### Filtering strategies
+
+**Domain filtering:**
+
+- Use `include_domains` for focused research (academic, government, trusted sources)
+- Use `exclude_domains` to filter out forums, social media, or unreliable sources
+- Combine both for precise control over source quality
+
+**Date filtering:**
+
+- Set `start_date` and `end_date` for time-sensitive queries
+- Essential for recent news, current events, or dated information
+- Formats: "YYYY-MM-DD" (specific) or "YYYY" (year-only)
+
+**Topic routing:**
+
+- Use `topic="news"` to optimize for current events and news articles
+- Use `topic="location"` to optimize for local business and geographic queries
+- Use `topic="general"` or omit for standard web search
+
+### Performance optimization
+
+1. **Choose the right mode**: Use **Fast mode** (`deep_search=False`) for high-volume queries where speed matters; **Deep mode** (default) for comprehensive content extraction
+2. **Tune result count**: Start with smaller `k` values and increase as needed
+3. **Use async**: Leverage `ainvoke()` for concurrent queries
+4. **Cache strategically**: Consider caching frequent queries
+5. **Filter wisely**: Domain and date filters reduce noise and improve relevance
+
+---
+
+## API reference
+
+For detailed documentation of all `NimbleSearchRetriever` features and configurations, visit the [Nimble API documentation](https://docs.nimbleway.com/nimble-sdk/search-api).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/retrievers/nimble_search.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
