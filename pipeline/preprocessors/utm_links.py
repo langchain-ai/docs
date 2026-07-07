@@ -4,6 +4,7 @@ Tags conversion-oriented links (signup, Fleet onboarding) with UTM parameters.
 Functional links (settings, hub, projects, traces) are left untouched.
 """
 
+import contextlib
 import re
 from pathlib import Path
 from urllib.parse import urlencode, urlparse, urlunparse
@@ -20,19 +21,20 @@ _UTM_BASE = {
 # Markdown links to smith.langchain.com: [text](url) or [text](url "title")
 _MD_LINK_RE = re.compile(
     r"\[(?P<text>[^\]]*)\]"
-    r"\((?P<url>https://smith\.langchain\.com[^)\s]*)(?:\s+\"[^\"]*\")?\)"
+    r"\((?P<url>https://smith\.langchain\.com[^)\s]*)(?P<title>\s+\"[^\"]*\")?\)"
 )
 
 _CODE_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 
 
 def _file_path_to_utm_content(file_path: Path) -> str:
-    """Derive utm_content from file path (e.g. src/langsmith/home.mdx -> langsmith-home)."""
+    """Derive utm_content from file path.
+
+    For example, src/langsmith/home.mdx becomes langsmith-home.
+    """
     parts = file_path.with_suffix("").parts
-    try:
+    with contextlib.suppress(ValueError):
         parts = parts[parts.index("src") + 1 :]
-    except ValueError:
-        pass
     return "-".join(parts) or "home"
 
 
@@ -59,7 +61,9 @@ def add_utm_to_cta_links(content: str, file_path: Path) -> str:
         url = match.group("url")
         if not _is_cta_url(url):
             return match.group(0)
-        return match.group(0).replace(url, _add_utm(url, utm_content), 1)
+        text = match.group("text")
+        title = match.group("title") or ""
+        return f"[{text}]({_add_utm(url, utm_content)}{title})"
 
     lines = content.splitlines(keepends=True)
     result: list[str] = []
