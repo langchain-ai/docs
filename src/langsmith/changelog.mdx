@@ -18,23 +18,118 @@ If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/sel
 <Tabs>
 <Tab title="LangSmith Cloud">
 
-<Update label="June 20-28, 2026" rss={{ title: "2026-06-20 - Cloud update" }}>
+<Update label="June 29 - July 3, 2026" rss={{ title: "2026-06-29 - Cloud update" }}>
 
 ## Observability and evaluations
 
+### Datasets and experiments
+
+- Model, prompt, and tool chips in the [Experiments](/langsmith/analyze-an-experiment) table config cells now lay out from real measurements for accurate truncation, and the +N overflow badge is a clickable dropdown whose entries expose the same actions (filter, group by, open in playground, and details) as a chip's own menu.
+- Expanding the run tree for repetition runs in [experiment comparison](/langsmith/compare-experiment-results) views now works reliably when a repetition root has a `project ID` but no `session ID`.
+- [Evaluators](/langsmith/evaluators) linked to Hub prompts now load correctly for flat and playground-shaped prompt commits, fixing crashes when editing existing evaluators.
+- Code evaluator upload now accepts Python entrypoints annotated with PEP 604 union return types (for example `-> dict | None`).
+- `POST /v2/datasets/{dataset_id}/experiment-runs` is the supported public API for paginated experiment comparison. Legacy dataset comparison helpers are removed from the public OpenAPI spec and generated SDKs; existing HTTP routes continue to work for LangSmith UI clients.
+- Each example's dataset splits now render as chips in the dataset Examples table, laid out from real measurements with a clickable +N overflow menu when an example belongs to more splits than fit the column.
+- The [experiment comparison](/langsmith/compare-experiment-results) view now offers an optional, reorderable "Splits (latest)" column that shows each example's current dataset split assignments as chips, reflecting live membership rather than the as-of-run snapshot.
+- [Evaluators](/langsmith/evaluators) spend charts on project and dataset evaluator tabs keep their desktop layout on narrow screens and scroll horizontally instead of compressing the chart and stat cards.
+- The [experiment comparison](/langsmith/compare-experiment-results) and group-by views now show each example's current dataset split rather than the split it had when the experiment ran, so you can tell whether failures already belong to a split without re-running the experiment.
+- LangSmith now caps reusable [evaluators](/langsmith/evaluators) per workspace to prevent unbounded resource growth. Contact support if your workspace needs a higher limit.
+- Creating [dataset examples](/langsmith/manage-datasets) from [source runs](/langsmith/manage-datasets) now correctly fetches run inputs and outputs backed by SmithDB, and no longer fails the whole request if one of several source runs cannot be found.
+- Custom code evaluators that time out or fail on a run now record an error on that run instead of silently leaving it without feedback, so partial evaluation failures are visible on the experiment.
+- The Open source run action on an example page now reads session and start time from dedicated example fields populated at creation, enabling reliable navigation to the source trace on SmithDB.
+
 ### Tracing
 
-- Adding feedback or reviewer notes from the UI no longer upgrades short-lived traces to extended retention.
+- LangSmith now enforces user-defined monthly trace limits scoped to individual projects and users. New traces that exceed a configured limit are rejected, while patches and feedback for already-accepted traces continue to flow through.
+- The tracing and evaluation onboarding quickstarts now show the correct `LANGSMITH_ENDPOINT` for bring-your-own-cloud data plane workspaces instead of the shared multi-tenant endpoint.
+- Sharing, viewing, or unsharing any run in a trace now operates on the trace root, so every run in a shared trace is publicly viewable, and public run links open the selected run within the shared trace.
+- Projects with existing traces no longer incorrectly display the onboarding screen when filtered or scoped to a time window with no recent runs. The project run-count check now looks back 30 days instead of the previous one-hour window.
+- Bulk export compression now defaults to zstandard (zstd) for improved performance. Self-hosted environments retain the gzip default via the `FF_BULK_EXPORT_DEFAULT_COMPRESSION` environment variable.
+- LangSmith now returns clearer 409 Conflict messages when duplicate run create or update payloads are submitted. The message indicates whether the duplicate was a run create or run update request when possible.
+- LangSmith [MCP tools](/langsmith/langsmith-mcp-server) that fetch runs or thread history now accept `project UUIDs` in addition to project names, making trace URL investigations faster and less error-prone.
+- OpenTelemetry resource attributes (set via `OTEL_RESOURCE_ATTRIBUTES`) now appear on traces as metadata namespaced under otel.resource.*, so you can attach details like user IDs without changing how your tracer emits spans.
+- Vercel AI SDK traces sent over raw OpenTelemetry now render in the Messages view. Previously these traces showed an empty Messages tab because no format adapter claimed them.
+- Thread stats requests that opt into streaming now return the main stats first and add feedback stats when they are ready.
+- When a runs query times out, the runs table now shows a timeout banner for better responsiveness.
+- LangSmith now preserves traces in multipart ingestion batches when one run has oversized inputs or outputs. Oversized input and output fields are replaced with a placeholder instead of rejecting the entire batch.
+
+### Engine
+
+- When an Engine project reaches its monthly spend limit, the Next Run status chip and project spend card now show a clear "Monthly spend limit reached" state with a button that takes you straight to raising the limit.
+- LangSmith exposes Engine issue listing and retrieval through hosted [MCP tools](/langsmith/langsmith-mcp-server) and generated SDK methods. Agents and API clients can fetch issue details directly by `issue ID` or filter issues by project, status, severity, tag, and update time.
+- A new Engine board callout points you to the trace-scope setting, where you can restrict Engine's reviews to runs matching a run name or metadata value.
+- Self-hosted Engine deployments can route Anthropic-compatible model calls through Gateway or an LSI-compatible endpoint by setting `ENGINE_ANTHROPIC_BASE_URL`.
+
+### Prompts and playground
+
+- Self-hosted [Playground](/langsmith/playground-model-providers) and evaluator outbound model calls now honor proxy environment variables while preserving SSRF validation on every request.
+- When you save a prompt to an application from the playground, LangSmith keeps the workspace application filter on All Applications instead of switching the rest of the UI to that application.
+- Typing a workspace member's name or email in the [Context Hub](/langsmith/context-hub) search box now also returns the prompts and resources they created.
+- The playground now includes Claude Sonnet 5, Claude Fable 5, and Claude Opus 4.8 in the Anthropic, Bedrock, and Vertex AI model selectors. New Anthropic playground sessions default to Claude Sonnet 5.
+
+### Feedback
+
+- Editing the score on evaluator-generated feedback (for example from the experiment comparison view) now saves correctly instead of failing with "Failed to add feedback correction".
+- Adding feedback or reviewer notes from the LangSmith UI no longer upgrades short-lived traces to extended retention. Long-lived traces are unchanged.
+- Feedback statistics queries now route through the official ClickHouse client, resolving query failures and improving compatibility with ClickHouse 25.x.
+
+### Monitoring and alerting
+
+- Alert chart previews now handle relative date ranges consistently, preventing failures when loading 14-day or 30-day previews.
+- [Dashboards](/langsmith/dashboards) chart tooltips and axes now show up to eight fractional digits (previously two), so very small costs and rates no longer round down to zero.
+- Time-series charts on custom dashboards now leave gaps for missing data points instead of plotting them as zero, and lines connect across those gaps so trends remain readable.
+
+### Automations
+
+- Applying a prebuilt evaluator without a filter now defaults to running on root runs only, matching manually created evaluators. Previously it ran on every nested run in a trace.
+- Turning an online evaluator or automation on or off now saves for any role that can edit rules, instead of silently reverting for members without the retention-configuration permission.
+
+## Deployment
+
+- Self-hosted deployments can now request CPU and memory above the previous Cloud limits of 8/16 cores and 32/16 GB, bounded only by your cluster capacity. Lower bounds, multiple-of-128 granularity, and Redis memory ordering are still enforced.
+- Custom Slack app triggers can now opt in to let third-party bots trigger an agent. Enable the allow bot triggers toggle on a registration to accept events from external bots; echoes from your own and other LangSmith-registered bots are still dropped to prevent loops.
+- Agents now skip unreachable or misconfigured non-default MCP servers immediately instead of retrying them, removing a slow round-trip from the tool-loading step and cutting time-to-first-token.
+- Standby (uptime) minutes for LangGraph Platform deployments could be billed more than once when replicas reported overlapping intervals across separate usage-reporting runs. Reporting now deduplicates each minute across runs so it is billed at most once.
 
 ## Sandboxes
 
-- [Sandbox registries](/langsmith/sandbox-snapshots#private-registries) now support pulling private container images alongside existing sandbox and snapshot operations.
+- Sandbox command output is now re-chunked into bounded single WebSocket frames, so clients that do not reassemble continuation frames (including the Go SDK) can read large streamed or replayed output without truncated JSON.
+- S3 sandbox mounts now default `endpoint_url` to https://s3.amazonaws.com when it is not provided, so the field is no longer required when mounting standard AWS S3 buckets.
+- [Sandboxes](/langsmith/sandboxes) can now burst CPU up to 2x their requested allocation when the host has spare capacity, and you can request fractional (sub-core) vCPU down to 0.05.
+- When creating a sandbox, you can now configure Git, S3, and GCS filesystem mounts, including mount paths, Git remotes, bucket settings, and cache options. Configured mounts appear in the sandbox table and detail view.
+- The LangSmith SDKs now support creating, listing, updating, and deleting sandbox registries for pulling private container images, alongside the existing sandbox and snapshot operations.
+- Sandbox snapshot builds can now request an XFS root filesystem for sandbox-host based environments.
+- Sandbox creation no longer fails intermittently with "sandbox not ready" errors when an underlying host is disrupted. Affected capacity now retries the contended resource lock and recovers automatically instead of leaving the pool degraded.
+- Sandbox host startup now validates the full version directory before reuse, so a missing initrd no longer causes create-time failures after a partial or stale install.
+- Creating a sandbox snapshot from a Docker image now records the image's tag (e.g. ubuntu:24.04 becomes the 24.04 tag), and creating a sandbox from a snapshot name without a tag resolves the latest tag, mirroring Docker.
+- Self-hosted LangSmith installations now show the [Sandboxes](/langsmith/sandboxes) navigation item and use the instance-level sandbox flag to open the Sandboxes page.
 
-## Admin and billing
+## Administration
 
-## Fixes
+- A new Project and user limits tab on the enterprise Usage configuration page lets you set monthly trace-count limits scoped to a specific project or user. Add, edit, and delete limits from the page.
+- Anonymous organizations now show an "Anonymity mode is on" banner on the members page, and the usage breakdown hides the group-by-user option for non-internal viewers.
+- New API keys now default to a finite expiration date instead of requiring a custom value. When an organization enforces a shorter maximum, the form defaults to that maximum instead.
+- You can now fetch a single workspace directly via GET /api/v1/workspaces/{workspace_id} instead of listing all workspaces and filtering client-side.
+- Org and workspace admins can now edit the role of a pending member invite directly from the Members settings page, without needing to cancel and re-send the invite.
+- The Usage limits page now shows each workspace's configured total and extended (long-lived) trace limits, including caps that were previously hidden while the spend limit displayed "Unlimited".
+- The batch workspace invite endpoint no longer returns a 409 error when inviting users who are already pending org invitees or active org members. Those users are added directly to the workspace without requiring a new org invite.
+- The role selector in the edit pending member invite dialog now uses a scrollable select, matching the invite flow. This ensures all custom roles are accessible when many workspace roles are defined.
+- Self-hosted deployments can now encode spaces in the OIDC authorization request as %20 instead of +, so single sign-on works with identity providers that reject the default + encoding of the scope list. Enable it by setting OAUTH_URL_ENCODE_SCOPE_SPACES=true.
+- Billing upgrade dialogs now stay within the viewport and scroll when payment or business details make the form taller than the screen.
+- Non-admin callers with manage-members permission can no longer assign restricted roles to workspace members or invite users with restricted roles to the workspace.
+- Filter the organization's service keys and personal access tokens by workspace on the API keys settings page.
+- Users without workspaces:manage permission cannot use restricted roles for invites, role changes, or user deletions in the UI.
+- Adding existing active or pending organization members to a workspace no longer fails when organization-level invites are disabled. Disabled org invites continue to block new organization invitees.
+- The Roles settings page now scrolls correctly when an organization has more roles than fit on screen.
+- Organization admins can once again edit the role of and remove other organization admins from the Organization Members settings page. Organization Operators, who share the same admin-level permissions but should not manage other admins, are now correctly prevented from editing, removing, or promoting members to Organization Admin.
 
-- Duplicate run create or update payloads now return clearer 409 Conflict messages that indicate whether the duplicate was a create or an update request when possible.
+### LLM Gateway
+
+- LLM gateway data protection policies can now configure whether a guard pipeline timeout allows the request through or blocks it. Existing policies default to allowing requests on timeout.
+- The LLM gateway now supports POST /openai/v1/responses/compact (and the legacy /responses/compact), routing it through the chat-shape responses handler.
+- Guard policies now let you choose which PII rule categories to detect, with separate faster rule-based and slower model-based detection options, instead of a single on/off PII toggle.
+- Gateway guard secret redaction now detects additional token formats, including SendGrid API tokens, Google OAuth access tokens, JWTs, Slack webhook URLs, and legacy LangSmith keys.
+- The [LLM Gateway](/langsmith/llm-gateway) policies page now lets you sort each section by spend limit or usage percentage, and filter down to a specific workspace, user, or API key.
 
 </Update>
 
