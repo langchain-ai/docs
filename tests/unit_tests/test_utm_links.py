@@ -101,3 +101,16 @@ class TestAddUtmToCTALinks:
     def test_no_links_unchanged(self) -> None:
         md = "# Heading\n\nSome text.\n"
         assert add_utm_to_cta_links(md, self.fp) == md
+
+    def test_display_text_matches_url_only_href_rewritten(self) -> None:
+        md = "[https://smith.langchain.com](https://smith.langchain.com)\n"
+        result = add_utm_to_cta_links(md, self.fp)
+        assert result.startswith("[https://smith.langchain.com](")
+        assert "utm_source=docs" in result
+        assert result.count("utm_source") == 1
+
+    def test_title_preserved(self) -> None:
+        md = '[LS](https://smith.langchain.com "LangSmith")\n'
+        result = add_utm_to_cta_links(md, self.fp)
+        assert '"LangSmith"' in result
+        assert "utm_source=docs" in result
