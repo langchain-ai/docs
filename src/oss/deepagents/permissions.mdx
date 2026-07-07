@@ -37,7 +37,13 @@ Control which files and directories an agent can read or write to using declarat
 </Note>
 :::
 
+:::python
+Permissions only apply to the built-in filesystem tools (`ls`, `read_file`, `glob`, `grep`, `write_file`, `edit_file`, `delete`). Custom tools and MCP tools that access the filesystem are not covered. Permissions also do not apply to [sandbox backends](/oss/deepagents/sandboxes), which support arbitrary command execution via the `execute` tool.
+:::
+
+:::js
 Permissions only apply to the built-in filesystem tools (`ls`, `read_file`, `glob`, `grep`, `write_file`, `edit_file`). Custom tools and MCP tools that access the filesystem are not covered. Permissions also do not apply to [sandbox backends](/oss/deepagents/sandboxes), which support arbitrary command execution via the `execute` tool.
+:::
 
 <Tip>
 Use `permissions` when you need **path-based allow/deny rules** on the built-in filesystem tools. Use [backend policy hooks](/oss/deepagents/backends#add-policy-hooks) when you need custom validation logic (rate limiting, audit logging, content inspection) or need to control custom tools.
@@ -69,7 +75,7 @@ Each `FilesystemPermission` has three fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `operations` | `list["read" \| "write"]` | Operations this rule applies to. `"read"` covers `ls`, `read_file`, `glob`, `grep`. `"write"` covers `write_file`, `edit_file`. |
+| `operations` | `list["read" \| "write"]` | Operations this rule applies to. `"read"` covers `ls`, `read_file`, `glob`, `grep`. `"write"` covers `write_file`, `edit_file`, `delete`. |
 | `paths` | `list[str]` | Glob patterns for matching file paths (e.g., `["/workspace/**"]`). Supports `**` for recursive matching and `{a,b}` for alternation. |
 | `mode` | `"allow" \| "deny" \| "interrupt"` | Whether to allow, deny, or pause for human approval on matching operations. Defaults to `"allow"`. See [Pause for human approval](#pause-for-human-approval). |
 
@@ -101,14 +107,18 @@ Paths must be absolute (start with `/`) and cannot contain `..` or `~`. Invalid 
 The `"interrupt"` mode requires `deepagents>=0.6.8`.
 </Note>
 
-Set `mode="interrupt"` to pause for human approval instead of allowing or denying a matching operation outright. When the agent calls a built-in write tool (`write_file`, `edit_file`) on a path that matches an interrupt-mode rule, `create_deep_agent` raises a human-in-the-loop interrupt rather than running the tool, and a reviewer can approve, edit, or reject the call.
+Set `mode="interrupt"` to pause for human approval instead of allowing or denying a matching operation outright. When the agent calls a built-in write tool (`write_file`, `edit_file`, `delete`) on a path that matches an interrupt-mode rule, `create_deep_agent` raises a human-in-the-loop interrupt rather than running the tool, and a reviewer can approve, edit, or reject the call.
 
 <PermissionsInterruptPy />
 
 Interrupt-mode rules are wired into the agent's human-in-the-loop middleware automatically and merge with any `interrupt_on` you pass, so you handle and resume them the same way as tool-call interrupts. See [Human-in-the-loop](/oss/deepagents/human-in-the-loop) for the resume flow.
 
+<Note>
+Deleting a directory is all-or-nothing: `delete` checks the `write` permission on the target and every descendant path, and refuses the entire operation if any of them is denied, rather than removing part of the tree.
+</Note>
+
 <Tip>
-Anchor interrupt patterns with a literal leading segment (for example, `/secrets/**` or `/projects/*/secrets/**`). Bulk tools (`ls`, `glob`, `grep`) fire the interrupt when their search subtree could overlap the rule's anchored prefix, so a fully unanchored pattern like `/**/secrets` conservatively over-fires.
+Anchor interrupt patterns with a literal leading segment (for example, `/secrets/**` or `/projects/*/secrets/**`). Bulk tools (`ls`, `glob`, `grep`, and `delete` on a directory) fire the interrupt when their search subtree could overlap the rule's anchored prefix, so a fully unanchored pattern like `/**/secrets` conservatively over-fires.
 </Tip>
 
 :::
