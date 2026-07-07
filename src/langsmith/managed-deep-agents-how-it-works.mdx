@@ -6,7 +6,7 @@ description: How the mda CLI compiles a project, what a deploy creates, and how 
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 
-Managed Deep Agents turns a local [project directory](/langsmith/managed-deep-agents-overview#structure-your-agent-project) into a hosted LangGraph deployment. Understanding what the `mda` CLI compiles, what a deploy creates, and which parts the runtime owns helps you reason about behavior, secrets, and state.
+Managed Deep Agents turns a local [project directory](/langsmith/managed-deep-agents-overview#structure-your-agent-project) into a hosted LangGraph deployment. Knowing what the `mda` CLI compiles, what a deploy creates, and which parts the runtime owns helps you reason about behavior, secrets, and state.
 
 <Note>
 <ManagedDeepAgentsPrivateBetaNote />
@@ -14,50 +14,25 @@ Managed Deep Agents turns a local [project directory](/langsmith/managed-deep-ag
 
 ## Compilation
 
-`mda dev` and `mda deploy` compile the project into a `.mda/build` directory. The compiler:
-
-- **Copies project files verbatim.** Your `agent` entry, `tools/`, `middleware/`, and other imported modules are copied without rewriting, so imports behave the same as in a normal Python or TypeScript project.
-- **Generates a managed LangGraph entrypoint.** The build wraps your named `agent` export in a managed entry and its LangGraph configuration, so the runtime can serve the agent without custom server code.
-- **Injects managed dependencies when needed.** When `connectors/mcp.*` declares MCP servers, the compiler adds `@langchain/mcp-adapters` or `langchain-mcp-adapters` to the build and appends the loaded MCP tools to your authored tools.
-- **Excludes generated, dependency, and secret paths.** The loader skips `node_modules`, `.git`, `.mda`, `.deepagents`, `memories`, `dist`, and `build`, and does not copy `.env` or `.env.*` into the archive.
-
-`mda dev` starts the language-specific LangGraph dev server from `.mda/build` and stages the project `.env` into `.mda/build/.env` for local credentials. `mda deploy` uploads the compiled build instead. For the ignored-path list and dev server commands, see the [CLI reference](/langsmith/managed-deep-agents-cli#project-file-reference).
+`mda dev` and `mda deploy` compile your project into a runnable LangGraph app in a `.mda/build` directory. Your agent entry and the modules it imports are copied without rewriting, so imports behave the same as in a normal Python or TypeScript project. The build leaves out secrets and generated files such as `.env` and `node_modules`. For the full ignored-path list, see the [CLI reference](/langsmith/managed-deep-agents-cli#project-file-reference).
 
 ## Deploy lifecycle
 
-`mda deploy` validates the project, syncs deploy-owned context to [Context Hub](#context-hub), uploads the compiled source, triggers a hosted build, and reconciles cron schedules once the deployment is live.
+You author and test your project locally, then deploy it to LangSmith with one command.
 
 ```mermaid
-flowchart TD
-    A[Local project directory] -->|mda dev| B[Compile to .mda/build]
-    B --> C[Local LangGraph dev server in LangSmith Studio]
-    A -->|mda deploy| D[Validate project and resolve keys]
-    D --> E[Sync instructions and skills to Context Hub]
-    E --> F[Compile to .mda/build]
-    F --> G[Archive and upload source]
-    G --> H[Trigger remote build]
-    H --> I[Revision reaches DEPLOYED]
-    I --> J[Reconcile cron schedules]
+flowchart LR
+    A["Author your project"] --> B["Test locally with mda dev"]
+    B --> C["Deploy with mda deploy"]
+    C --> D["Runs on LangSmith"]
 
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710;
-    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900;
     classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33;
-    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68;
-    class A neutral;
-    class B,C,D,E,F,G,H process;
-    class I output;
-    class J trigger;
+    class A,B,C process;
+    class D output;
 ```
 
-Deploy routes local inputs to different managed surfaces:
-
-- **`instructions.md` and `skills/**`** sync to the deployment's Context Hub repo.
-- **`memories/**`** is left untouched, so runtime-created memory is preserved.
-- **Non-reserved `.env` values** (model provider keys, MCP tokens, database URLs) are forwarded as hosted deployment secrets. The `.env` file itself is never archived. For the list of reserved keys, see [Authentication](/langsmith/managed-deep-agents-cli#authentication).
-- **Project source files** are archived from `.mda/build` and uploaded for the hosted build.
-- **`schedules/**`** becomes LangSmith cron jobs after the deployment reaches `DEPLOYED`.
-
-When you pass `--no-wait`, the CLI triggers the build and exits before the deployment reaches `DEPLOYED`, so schedule reconciliation is skipped for that invocation. After you deploy, you can find the deployment page, traces, and Context Hub repo in LangSmith. For more details, see [Created resources](/langsmith/managed-deep-agents-overview#created-resources). [Deploy an agent](/langsmith/managed-deep-agents-deploy) and the [CLI reference](/langsmith/managed-deep-agents-cli#deploy-projects) document every command flag and the full step list.
+`mda dev` runs the compiled app in LangSmith Studio so you can test it. `mda deploy` validates the project, syncs deploy-owned context to Context Hub, uploads the build, triggers a hosted build, and reconciles any cron schedules once the deployment is live. For the full step list, secret handling, and flags, see [Deploy an agent](/langsmith/managed-deep-agents-deploy) and the [CLI reference](/langsmith/managed-deep-agents-cli#deploy-projects).
 
 ## What the managed runtime owns
 
@@ -75,13 +50,13 @@ For the full field list, see the [agent definition reference](/langsmith/managed
 
 ## Context Hub
 
-Each deployment has a [Context Hub](/langsmith/use-the-context-hub) agent repo that stores deploy-owned context and runtime-created memory:
+Each deployment has a [Context Hub](/langsmith/use-the-context-hub) repo that stores deploy-owned context and runtime-created memory:
 
-- **`/instructions.md`** holds the managed system prompt. Deploy overwrites it from the local `instructions.md`.
-- **`/skills/**`** holds deploy-owned skills. Deploy syncs every UTF-8 file under the local `skills/**` and deletes deployed skills that no longer exist locally.
-- **`/memories/AGENTS.md`** holds durable agent memory. Deploy creates this file when memory is enabled, and preserves existing memory instead of overwriting it.
+- **`/instructions.md`**: the managed system prompt, synced from your project on deploy.
+- **`/skills/**`**: deploy-owned skills, synced from your project on deploy.
+- **`/memories/AGENTS.md`**: durable agent memory, written by the agent at runtime.
 
-Because instructions and skills are deploy-owned, edit them in the project and redeploy. Because memory is runtime-owned, the agent reads and writes it during runs and deploy leaves it in place.
+Edit instructions and skills in your project and redeploy. Memory is runtime-owned, so deploy preserves it instead of overwriting it.
 
 ## Threads and memory
 
@@ -91,12 +66,7 @@ Scheduled runs choose their thread behavior explicitly. An ephemeral thread is c
 
 ## Sandboxes
 
-A [sandbox](/langsmith/sandboxes) gives the agent an isolated environment for code execution and filesystem work. Configure one by exporting `sandbox` from `sandbox/index.ts` or `sandbox/__init__.py`.
-
-- **Scope.** Sandboxes are scoped per thread, so each durable thread or conversation gets its own sandbox.
-- **Lifecycle.** Options such as `idle_ttl_seconds` and `default_timeout` control how long a sandbox is retained and how long commands can run.
-- **Provisioning.** When `sandbox/setup.sh` exists, Managed Deep Agents runs it once when a new managed sandbox is provisioned. Use it to install packages, seed files, or prepare workspace state.
-- **Local development.** During `mda dev`, the runtime tries the configured provider and falls back to a local temp-directory sandbox when provider credentials are unavailable. The local fallback is intended only for development.
+A [sandbox](/langsmith/sandboxes) gives the agent an isolated environment for code execution and filesystem work. Configure one by exporting `sandbox` from `sandbox/index.ts` or `sandbox/__init__.py`, and use `sandbox/setup.sh` to provision it the first time it is created. Each thread gets its own sandbox. For configuration options, see [Configure a sandbox](/langsmith/managed-deep-agents-deploy#configure-a-sandbox).
 
 ## See also
 
