@@ -18,15 +18,15 @@ func main() {
 ctx := context.Background()
 client := langsmith.NewClient()
 
-page, err := client.Datasets.ExperimentRuns.New(ctx, datasetID, langsmith.DatasetExperimentRunNewParams{
+page, err := client.Datasets.ExperimentRuns.Query(ctx, datasetID, langsmith.DatasetExperimentRunQueryParams{
 	ExperimentIDs: langsmith.F([]string{experimentID}),
 	PageSize:      langsmith.F(int64(20)),
-	Selects: langsmith.F([]langsmith.DatasetExperimentRunNewParamsSelect{
-		langsmith.DatasetExperimentRunNewParamsSelectID,
-		langsmith.DatasetExperimentRunNewParamsSelectName,
-		langsmith.DatasetExperimentRunNewParamsSelectStatus,
-		langsmith.DatasetExperimentRunNewParamsSelectInputsPreview,
-		langsmith.DatasetExperimentRunNewParamsSelectOutputsPreview,
+	Selects: langsmith.F([]langsmith.DatasetExperimentRunQueryParamsSelect{
+		langsmith.DatasetExperimentRunQueryParamsSelectID,
+		langsmith.DatasetExperimentRunQueryParamsSelectName,
+		langsmith.DatasetExperimentRunQueryParamsSelectStatus,
+		langsmith.DatasetExperimentRunQueryParamsSelectInputsPreview,
+		langsmith.DatasetExperimentRunQueryParamsSelectOutputsPreview,
 	}),
 })
 // :remove-start:

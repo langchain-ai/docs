@@ -7,7 +7,7 @@
 // :codegroup-tab: After
 import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
-import com.langchain.smith.models.datasets.experimentruns.ExperimentRunCreateParams
+import com.langchain.smith.models.datasets.experimentruns.ExperimentRunQueryParams
 
 // :remove-start:
 fun main() {
@@ -18,16 +18,16 @@ val datasetId = "00000000-0000-0000-0000-000000000000"
 val experimentId = "00000000-0000-0000-0000-000000000001"
 // :remove-end:
 val client: LangsmithClient = LangsmithOkHttpClient.fromEnv()
-val page = client.datasets().experimentRuns().create(
+val page = client.datasets().experimentRuns().query(
     datasetId,
-    ExperimentRunCreateParams.builder()
+    ExperimentRunQueryParams.builder()
         .addExperimentId(experimentId)
         .pageSize(20L)
-        .addSelect(ExperimentRunCreateParams.Select.ID)
-        .addSelect(ExperimentRunCreateParams.Select.NAME)
-        .addSelect(ExperimentRunCreateParams.Select.STATUS)
-        .addSelect(ExperimentRunCreateParams.Select.INPUTS_PREVIEW)
-        .addSelect(ExperimentRunCreateParams.Select.OUTPUTS_PREVIEW)
+        .addSelect(ExperimentRunQueryParams.Select.ID)
+        .addSelect(ExperimentRunQueryParams.Select.NAME)
+        .addSelect(ExperimentRunQueryParams.Select.STATUS)
+        .addSelect(ExperimentRunQueryParams.Select.INPUTS_PREVIEW)
+        .addSelect(ExperimentRunQueryParams.Select.OUTPUTS_PREVIEW)
         .build()
 )
 val examplesWithRuns = page.items()

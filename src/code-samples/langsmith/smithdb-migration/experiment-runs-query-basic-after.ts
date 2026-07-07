@@ -10,7 +10,7 @@ const client = new Client();
 // :remove-start:
 if (false) {
 // :remove-end:
-const page = await client.datasets.experimentRuns.create(datasetId, {
+const page = await client.datasets.experimentRuns.query(datasetId, {
   experiment_ids: [experimentId],
   page_size: 20,
   selects: ["ID", "NAME", "STATUS", "INPUTS_PREVIEW", "OUTPUTS_PREVIEW"],

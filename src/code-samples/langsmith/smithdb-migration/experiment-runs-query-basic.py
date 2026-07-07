@@ -8,7 +8,7 @@ if False:
 
     async def main():
         client = Client()
-        examples_with_runs = await client.datasets.runs.create(
+        examples_with_runs = await client.datasets.runs.query(
             dataset_id,
             session_ids=[experiment_id],
             limit=20,
@@ -26,7 +26,7 @@ if False:
 
     async def main():
         client = Client()
-        page = await client.datasets.experiment_runs.create(
+        page = await client.datasets.experiment_runs.query(
             dataset_id,
             experiment_ids=[experiment_id],
             page_size=20,

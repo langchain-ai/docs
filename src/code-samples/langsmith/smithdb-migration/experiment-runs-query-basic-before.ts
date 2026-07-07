@@ -10,7 +10,7 @@ const client = new Client();
 // :remove-start:
 if (false) {
 // :remove-end:
-const examplesWithRuns = await client.datasets.runs.create(datasetId, {
+const examplesWithRuns = await client.datasets.runs.query(datasetId, {
   session_ids: [experimentId],
   limit: 20,
   preview: true,
