@@ -1,0 +1,189 @@
+---
+title: Valkey
+---
+
+>[Valkey](https://valkey.io/) is an open source, high-performance key/value datastore that supports workloads such as caching, message queues, and can act as a primary database. Valkey can run as either a standalone daemon or in a cluster, with options for replication and high availability.
+
+This page covers how to use the Valkey vector store with [Amazon ElastiCache for Valkey](https://aws.amazon.com/elasticache/valkey/) or [Amazon MemoryDB for Valkey](https://aws.amazon.com/memorydb/).
+
+## Setup
+
+Install the required dependencies:
+
+<CodeGroup>
+    ```bash pip
+    pip install "langchain-aws[valkey]"
+    ```
+
+    ```bash uv
+    uv add langchain-aws --extra valkey
+    ```
+</CodeGroup>
+
+<Note>
+The Valkey integration requires `langchain-aws>=1.5.0`. If you're using an earlier version, install the dependency directly:
+```bash
+pip install langchain-aws valkey-glide-sync
+```
+</Note>
+
+## Basic Usage
+
+### With Bedrock Embeddings
+
+```python
+from langchain_aws import BedrockEmbeddings
+from langchain_aws.vectorstores import ValkeyVectorStore
+
+# Initialize embeddings
+embeddings = BedrockEmbeddings(
+    model_id="amazon.titan-embed-text-v1",
+    region_name="us-east-1"
+)
+
+# Create vector store from texts
+vectorstore = ValkeyVectorStore.from_texts(
+    texts=["Valkey is fast", "Valkey supports vector search"],
+    embedding=embeddings,
+    valkey_url="valkey://localhost:6379",
+    index_name="my_index"
+)
+
+# Perform similarity search
+results = vectorstore.similarity_search("fast database", k=2)
+for doc in results:
+    print(doc.page_content)
+```
+
+### With Ollama Embeddings
+
+```python
+from langchain_ollama import OllamaEmbeddings
+from langchain_aws.vectorstores import ValkeyVectorStore
+
+# Initialize Ollama embeddings
+embeddings = OllamaEmbeddings(
+    model="nomic-embed-text",
+    base_url="http://localhost:11434"
+)
+
+# Create vector store
+vectorstore = ValkeyVectorStore(
+    embedding=embeddings,
+    valkey_url="valkey://localhost:6379",
+    index_name="my_index",
+    vector_schema={
+        "name": "content_vector",
+        "algorithm": "FLAT",
+        "dims": 768,  # nomic-embed-text dimension
+        "distance_metric": "COSINE",
+        "datatype": "FLOAT32",
+    }
+)
+
+# Add texts
+vectorstore.add_texts(
+    texts=["Document 1", "Document 2"],
+    metadatas=[{"source": "doc1"}, {"source": "doc2"}]
+)
+
+# Search
+results = vectorstore.similarity_search("query", k=2)
+```
+
+## Connection URLs
+
+ValkeyVectorStore supports various connection URL formats:
+
+```python
+# Standalone
+valkey_url = "valkey://localhost:6379"
+
+# With authentication
+valkey_url = "valkey://username:password@host:6379"
+
+# SSL/TLS
+valkey_url = "valkeyss://host:6379"
+
+# SSL with authentication
+valkey_url = "valkeyss://username:password@host:6379"
+```
+
+## AWS ElastiCache for Valkey
+
+```python
+from langchain_aws import BedrockEmbeddings
+from langchain_aws.vectorstores import ValkeyVectorStore
+
+embeddings = BedrockEmbeddings()
+
+# Connect to ElastiCache cluster
+vectorstore = ValkeyVectorStore(
+    embedding=embeddings,
+    valkey_url="valkeyss://my-cluster.cache.amazonaws.com:6379",
+    index_name="my_index"
+)
+
+# Add documents
+vectorstore.add_texts(
+    texts=["Document 1", "Document 2"],
+    metadatas=[{"source": "doc1"}, {"source": "doc2"}]
+)
+```
+
+## Metadata Filtering
+
+```python
+from langchain_aws.vectorstores.valkey.filters import ValkeyTag, ValkeyNum
+
+# Add documents with metadata
+vectorstore.add_texts(
+    texts=["AI article from 2024", "ML paper from 2023"],
+    metadatas=[
+        {"category": "ai", "year": 2024},
+        {"category": "ml", "year": 2023}
+    ]
+)
+
+# Search with filters
+filter_expr = (ValkeyTag("category") == "ai") & (ValkeyNum("year") >= 2024)
+results = vectorstore.similarity_search(
+    "artificial intelligence",
+    k=5,
+    filter=str(filter_expr)
+)
+```
+
+## Custom Vector Schema
+
+```python
+from langchain_aws.vectorstores import ValkeyVectorStore
+
+vectorstore = ValkeyVectorStore(
+    embedding=embeddings,
+    valkey_url="valkey://localhost:6379",
+    index_name="my_index",
+    vector_schema={
+        "name": "content_vector",
+        "algorithm": "HNSW",  # or "FLAT"
+        "dims": 1536,
+        "distance_metric": "COSINE",  # or "L2", "IP"
+        "datatype": "FLOAT32",
+    }
+)
+```
+
+## API Reference
+
+For detailed API documentation, see [`ValkeyVectorStore`](https://reference.langchain.com/python/langchain-aws/vectorstores/valkey/base/ValkeyVectorStore).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/vectorstores/valkey.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

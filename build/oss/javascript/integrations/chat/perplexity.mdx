@@ -1,0 +1,202 @@
+---
+title: "ChatPerplexity integration"
+description: "Integrate with the ChatPerplexity chat model using LangChain JavaScript."
+---
+
+This guide will help you get started with Perplexity [chat models](/oss/javascript/langchain/models). For detailed documentation of all `ChatPerplexity` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-perplexity/ChatPerplexity).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/perplexity) | Downloads | Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| [`ChatPerplexity`](https://reference.langchain.com/javascript/langchain-perplexity/ChatPerplexity) | [`@langchain/perplexity`](https://www.npmjs.com/package/@langchain/perplexity) | beta | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/perplexity?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/perplexity?style=flat-square&label=%20&) |
+
+### Model features
+
+See the links in the table headers below for guides on how to use specific features.
+
+| [Tool calling](/oss/javascript/langchain/tools) | [Structured output](/oss/javascript/langchain/structured-output) | [Image input](/oss/javascript/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/javascript/langchain/streaming/) | [Token usage](/oss/javascript/langchain/models#token-usage) | [Logprobs](/oss/javascript/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ |
+
+Note that at the time of writing, Perplexity only supports structured outputs on certain usage tiers.
+
+## Setup
+
+To access Perplexity models you'll need to create a Perplexity account, get an API key, and install the `@langchain/perplexity` integration package.
+
+### Credentials
+
+Head to the [Perplexity API key dashboard](https://www.perplexity.ai/account/api/keys) to sign up and generate an API key. Once you've done this set the `PERPLEXITY_API_KEY` environment variable:
+
+```bash
+export PERPLEXITY_API_KEY="your-api-key"
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/observability) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain Perplexity integration lives in the `@langchain/perplexity` package:
+
+<CodeGroup>
+```bash npm
+npm install @langchain/perplexity @langchain/core
+```
+```bash yarn
+yarn add @langchain/perplexity @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/perplexity @langchain/core
+```
+</CodeGroup>
+
+## Instantiation
+
+Now you can instantiate the model:
+
+```typescript
+import { ChatPerplexity } from "@langchain/perplexity";
+
+const llm = new ChatPerplexity({
+  model: "openai/gpt-5.5",
+  temperature: 0,
+  maxTokens: undefined,
+  timeout: undefined,
+  maxRetries: 2,
+  // other params...
+});
+```
+
+## Invocation
+
+```typescript
+const aiMsg = await llm.invoke([
+  {
+    role: "system",
+    content: "You are a helpful assistant that translates English to French. Translate the user sentence.",
+  },
+  {
+    role: "user",
+    content: "I love programming.",
+  },
+]);
+aiMsg;
+```
+
+```text
+AIMessage {
+  "id": "run-71853938-aa30-4861-9019-f12323c09f9a",
+  "content": "J'adore la programmation.",
+  "additional_kwargs": {
+    "citations": [
+      "https://careersatagoda.com/blog/why-we-love-programming/",
+      "https://henrikwarne.com/2012/06/02/why-i-love-coding/",
+      "https://forum.freecodecamp.org/t/i-love-programming-but/497502",
+      "https://ilovecoding.org",
+      "https://thecodinglove.com"
+    ]
+  },
+  "response_metadata": {
+    "tokenUsage": {
+      "promptTokens": 20,
+      "completionTokens": 9,
+      "totalTokens": 29
+    }
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": []
+}
+```
+
+```typescript
+console.log(aiMsg.content);
+```
+
+```text
+J'adore la programmation.
+```
+
+## Agent API support (`useResponsesApi`)
+
+`ChatPerplexity` can also route requests through Perplexity's [Agent API](https://docs.perplexity.ai/docs/agent-api/quickstart) (the Perplexity-flavored Responses API) by setting `useResponsesApi`. This mirrors [`ChatOpenAI`'s Responses pattern](https://reference.langchain.com/javascript/langchain-openai/): one class, two endpoints, controlled by a single option.
+
+| Value | Endpoint | Notes |
+| :--- | :--- | :--- |
+| `undefined` (default) | Auto-detected | Routes to the Agent API when the request uses a built-in Perplexity tool (`web_search`, `fetch_url`, `finance_search`, `people_search`) or includes a Responses-only field (`previousResponseId`, `instructions`, `input`, `include`). Otherwise routes to Chat Completions. |
+| `true` | Agent API | Always uses `client.responses.create()`. |
+| `false` | Chat Completions | Always uses `client.chat.completions.create()`. |
+
+The Agent API gives `ChatPerplexity` access to Perplexity's built-in tools (live web search, URL fetching, finance and people search) and stateful agent fields (`previousResponseId`, `instructions`, `include`) which are not available on Chat Completions. Existing `new ChatPerplexity({ model: "sonar" })` callers see no behavior change — the Chat Completions path stays the default for plain text requests.
+
+```typescript
+import { ChatPerplexity } from "@langchain/perplexity";
+
+const chat = new ChatPerplexity({
+  model: "openai/gpt-5.5",
+  useResponsesApi: true,
+});
+
+const response = await chat.invoke("What did Apple announce at WWDC this week?");
+console.log(response.content);
+```
+
+You can also bind a built-in tool and let auto-detection route the request — no option needed:
+
+```typescript
+import { ChatPerplexity } from "@langchain/perplexity";
+
+const chat = new ChatPerplexity({ model: "openai/gpt-5.5" });
+
+const response = await chat.invoke(
+  "Summarize the latest LangChain release notes.",
+  { tools: [{ type: "web_search" }] },
+);
+console.log(response.content);
+```
+
+When routed through the Agent API, response objects carry richer metadata:
+
+- `usage_metadata` is populated from the Responses-shaped `usage` payload (`input_tokens`, `output_tokens`, `total_tokens`).
+- `response_metadata` carries transport-level fields (`id`, `model`, `status`, `object`) along with Perplexity-specific search outputs when present: `citations`, `images`, `related_questions`, and `search_results`.
+- `additional_kwargs.responses_output` holds the raw Agent API output items.
+- Tool calls returned by the model surface on `response.tool_calls` exactly as they do for `ChatOpenAI`.
+
+<Note>
+    The `_toResponsesPayload` translation passes `temperature`, `topP`, and `toolChoice` straight through to the Agent API. Chat-Completions-only knobs that are not native Responses fields (for example `topK`, `stop`, `metadata`) are forwarded under `extra_body`.
+</Note>
+
+See the [Perplexity Agent API model list](https://docs.perplexity.ai/docs/agent-api/models) for the full set of models available through this endpoint (e.g. `openai/gpt-5.5`, `anthropic/claude-sonnet-4-6`, `google/gemini-3-1-pro`).
+
+## Related integrations
+
+The `@langchain/perplexity` package also includes search components that do not use the chat API:
+
+- [`PerplexitySearchRetriever`](/oss/javascript/integrations/retrievers/perplexity_search): returns `Document` objects from the Perplexity Search API for RAG pipelines
+- [`PerplexitySearchResults`](/oss/javascript/integrations/tools/perplexity_search): agent tool that returns JSON search results
+
+See the [Perplexity provider overview](/oss/javascript/integrations/providers/perplexity) for setup on all three components.
+
+---
+
+## API reference
+
+For detailed documentation of all `ChatPerplexity` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-perplexity/ChatPerplexity).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/chat/perplexity.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

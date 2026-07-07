@@ -1,0 +1,239 @@
+---
+title: Find and fix your agent's failures with LangSmith Engine
+sidebarTitle: Find and fix issues
+description: Automatically detect and resolve recurring issues in your tracing project using LangSmith Engine.
+---
+
+The LangSmith Engine turns your traces into a continuous improvement workflow. It surfaces recurring issues, diagnoses their root cause, and guides you through fixing them and preventing them from coming back.
+
+Each issue moves through a closed loop: a recurring failure is detected in your traces → the root cause is diagnosed → a fix is proposed → an evaluator is deployed to catch regressions → if the issue resurfaces after being closed, it is automatically reopened.
+
+For each issue, LangSmith Engine surfaces the relevant traces, proposes a fix, generates a custom evaluator to prevent regressions, and creates custom ground truth [dataset examples](/langsmith/manage-datasets) from the production trace inputs for offline evaluation.
+
+## What you can do
+
+<CardGroup cols={2}>
+  <Card title="Build: Open a pull request" icon="git-pull-request" href="#open-a-pull-request">
+    Apply the proposed fix by opening a pull request in your connected repository.
+  </Card>
+  <Card title="Test: Add offline examples to a dataset" icon="database" href="#add-offline-examples">
+    Generate custom ground truth dataset examples from production traces for offline evaluation.
+  </Card>
+  <Card title="Monitor: Create an online evaluator" icon="chart-line" href="#create-an-evaluator">
+    Deploy a custom evaluator to catch regressions in future traces.
+  </Card>
+</CardGroup>
+
+## Set up LangSmith Engine
+
+Setting up LangSmith Engine is a two-step process: an [Organization Admin](/langsmith/rbac#organization-admin) first enables Engine for the workspace, then any user can configure Engine for each tracing project.
+
+### Enable Engine for your organization
+
+<Note>You must be an [**Organization Admin**](/langsmith/rbac#organization-admin) to enable Engine. To find your admins, open **Settings**, select **Members** under **Access and Security**, and look for members with the **Organization Admin** role.</Note>
+
+<Steps>
+  <Step title="Open Engine enablement">
+    In the [LangSmith console](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-engine), click **Settings** in the bottom-left corner, then select **Engine enablement** under **Engine**.
+  </Step>
+  <Step title="Toggle Enable Engine">
+    Toggle **Enable Engine** on and acknowledge the AI features terms of use:
+
+    > LangSmith AI features, powered by LangChain-managed inference, bring intelligence to your observability workflow. With LangSmith AI enabled, your team can surface issues faster, run smarter evaluations, and build more reliable LLM applications. By enabling this feature, your organization's trace data will be processed using LangChain-managed LLM keys. Subject to our Terms of Service.
+  </Step>
+</Steps>
+
+Once Engine is enabled, any team member in your organization can set it up for their tracing projects.
+
+<Tip>
+  If you want to turn off Engine, toggle the same setting to off. This will stop all automatic runs of Engine and discontinue future billing in your account.
+</Tip>
+
+### Understand LCU costs
+
+Engine charges in **LangChain Compute Units (LCUs)**, a normalized unit of work combining compute, storage, memory, and LLM spend. The more traces, deep thought, and work needed, the more LCUs Engine consumes. LCUs cost **$1.50 USD each**.
+
+Engine runs in two phases:
+
+| Phase | Trigger | Typical LCU usage |
+|---|---|---|
+| **Initialization** | First time you enable Engine on a project | 30–40 LCUs |
+| **Recurring scans** | Every 6 hours automatically | 10–15 LCUs |
+
+Actual usage varies based on trace volume and complexity.
+
+On initialization, Engine audits past traces, clusters and prioritizes issues by severity, and proposes fixes to your prompts or code (if a repository is connected). Recurring scans surface new improvements not previously found.
+
+### Set spend limits and monitor usage
+
+Organization Admins can set spend limits at two levels:
+
+- **Org-wide limit**: Open **Settings**, select **Engine enablement** under **Engine**, then enter a value under **Monthly LCU spend limit**.
+- **Per-project limit**: Open the **Engine** tab in a tracing project, click the **Engine settings** gear icon, and set a limit under **Monthly LCU spend limit**.
+
+You can enter limits in LCU or USD (1 LCU = $1.50). When a limit is reached, LangSmith pauses new Engine runs until the limit is raised or the next monthly billing period begins.
+
+Leave the limit blank to allow unlimited Engine spend. To stop Engine entirely, use the **Enable Engine** toggle in **Settings > Engine enablement**.
+
+To monitor usage, you can view your organization's monthly LCU spend on the **Engine enablement** page in **Settings**, or view per-project spend in the **Engine settings** panel for each tracing project.
+
+### Set up Engine for a tracing project
+
+<Steps>
+  <Step title="Open the Engine tab">
+    In the [LangSmith console](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-engine), navigate to **Tracing** in the UI sidebar, select a project, then click the **Engine** tab in the project navigation.
+  </Step>
+  <Step title="Connect a code repository (optional)">
+    Although optional, connecting a GitHub repository is recommended. LangSmith Engine uses your source code to diagnose problems, generate higher-quality fixes, and open pull requests directly from issues. Under **Connect your agent's code repository**, select a repository. Only repositories the GitHub app can access are shown. Click **Manage app access →** to update permissions. You can update the **Code repository** at any time from [**Engine settings**](#configure-langsmith-engine).
+  </Step>
+  <Step title="Select priority categories (optional)">
+    Under **What matters most to you?**, select categories to prioritize for your review (for example, **Tool Call Failures** or **Latency**). Click **+ Add something specific** to describe a custom concern. You can update **Priorities** at any time from the [**Engine settings**](#configure-langsmith-engine).
+  </Step>
+  <Step title="Start analyzing">
+    Click **Start Analyzing**. LangSmith Engine can take up to 20 minutes to analyze your project’s traces and begin making suggestions. While you wait, you can [set up notifications](#get-notified-about-new-issues) in the settings panel to be alerted in Slack or via webhook when issues of different priority levels are found.
+  </Step>
+  <Step title="Review the agent overview document">
+    Before surfacing issues, LangSmith Engine generates an agent overview document describing your project's purpose, architecture, and key metrics based on your traces. Review and edit the document, then click **Accept & Continue** to proceed. If the overview is inaccurate, edit it before continuing, since LangSmith Engine uses it as context for all analysis, so accuracy here affects the quality of detected issues. You can update it at any time from [**Engine settings**](#configure-langsmith-engine).
+  </Step>
+</Steps>
+
+<Frame caption="Setup dialog">
+  <img
+    className="block dark:hidden"
+    src="/langsmith/images/langsmith-engine-setup-light.png"
+    alt="Setup dialog showing the code repository field and category selections for prioritizing issue types"
+  />
+  <img
+    className="hidden dark:block"
+    src="/langsmith/images/langsmith-engine-setup-dark.png"
+    alt="Setup dialog showing the code repository field and category selections for prioritizing issue types"
+  />
+</Frame>
+
+## Browse and filter issues
+
+Once setup is complete, the **Engine** tab displays a list of automatically detected issues in the left panel. Each entry shows a title, a short description, the number of contributing traces, and how recently the issue was observed.
+
+At the top of the list, you can click:
+
+- **Filter issues** icon to filter by **Priority**, **Status** and **Tags**.
+- **Sort issues** icon to sort by **Severity**, **Last Updated**, and **Created**.
+- **Engine settings** gear icon to [configure LangSmith Engine](#configure-langsmith-engine).
+
+Click any issue to display its details in the right panel.
+
+If no issues appear after setup completes, LangSmith Engine found no recurring patterns in the analyzed traces. Try checking back after more traces have been collected.
+
+## Review an issue
+
+Click any issue in the list to open its detail panel. At the top, a diagnosis describes the problem and its impact.
+
+The **Linked traces** section lists the traces that support the diagnosis. Click any trace to open its detail panel. For more information, see [Manage a trace](/langsmith/manage-trace). Click [**Add offline examples**](#add-offline-examples) at the bottom right of this section to generate custom ground truth [dataset examples](/langsmith/manage-datasets) from the production trace inputs for offline evaluation.
+
+The **Proposed Fix** section describes the issue and suggests how to address it, which may include specific code or prompt changes if a repository is connected.
+
+The **Suggested Evaluator** section provides a ready-to-use evaluator you can deploy to catch the issue in future traces. If the evaluator fires after you close an issue, the issue is automatically reopened to indicate the problem persists.
+
+The **Offline Examples** section proposes dataset examples generated from the production trace inputs that triggered the issue, for use in offline evaluation.
+
+## Take action on an issue
+
+### Change priority
+
+Select **Low**, **Medium** or **High** from the priority dropdown to update an issue's priority. You can optionally provide a reason, which feeds back into LangSmith Engine to help improve its analysis over time.
+
+### Create an evaluator
+
+1. Click **Create Evaluator** to deploy the suggested evaluator for the issue.
+2. Configure the name, run filters, and sampling rate. Edit the code directly in the built-in editor if needed.
+3. Enable **Apply to past runs** to see how many historical traces the evaluator would have flagged before deploying.
+
+For more information, see [Evaluators](/langsmith/evaluators).
+
+### Add offline examples
+
+1. Click **Add offline examples** at the bottom of the **Linked traces** list to open the **Add as offline example** dialog.
+2. Review each trace. The dialog shows the input, the wrong output the agent produced, and the proposed expected output as a custom ground truth example.
+3. Click **Add to Dataset** to add them directly, or click **Edit in annotation queue** to review them first.
+4. In the annotation queue, each example shows the run inputs alongside reference outputs proposed by LangSmith Engine, structured as named [assertions](/langsmith/assertions) generated from trace analysis. Each assertion is a short claim describing what a correct answer should or shouldn't include. Edit the assertions as needed, add new ones with **+ Add assertion**, then click **Add to Dataset & Continue** to work through each example.
+
+For more information, refer to [Manage datasets](/langsmith/manage-datasets), [Use annotation queues](/langsmith/annotation-queues), and [Use assertions](/langsmith/assertions), .
+
+### Copy the issue prompt
+
+Click the **Copy Fix Context** copy icon to save a prompt with the issue details to your clipboard. You can then use it with an LLM or coding assistant to help resolve the issue.
+
+### Open a pull request
+
+Click **Open PR** to open a GitHub pull request in your connected repository with the proposed fix applied. Once a pull request is open, the button changes to **View PR**. LangSmith Engine can propose code changes to any connected repository, including agents built with [Deep Agents](/oss/python/deepagents/overview), [LangChain](/oss/python/langchain/overview), and [LangGraph](/oss/python/langgraph/overview).
+
+### Resolve or ignore an issue
+
+Click **Resolve** to mark an issue as fixed, or **Ignore** to dismiss it as not real or not worth fixing. You can optionally provide a reason for either action.
+
+### Reopen an issue
+
+To reopen a previously closed issue, open the issue detail view and click **Reopen**.
+
+## List issues via the CLI
+
+You can list issues programmatically using the [LangSmith CLI](/langsmith/cli).
+
+```bash
+# List issues for a project
+langsmith project issues list --project <project-name>
+```
+
+## Get notified about new issues
+
+LangSmith Engine can notify you when it opens a new issue, links a new trace to an existing issue, or fails to complete a run. Deliver these notifications to a **Slack channel**, an **HTTP webhook endpoint**, or both. Each destination has its own event types and minimum priority level, so you can route urgent issues to a paging webhook while sending every issue to a Slack channel.
+
+Manage notification destinations from the **Engine Settings** panel: open the **Engine** tab for a tracing project, click the **Engine settings** gear icon, and under **Notifications** click **+ Add destination**.
+
+### Notify a Slack channel
+
+<Steps>
+  <Step title="Connect a Slack workspace">
+    Connecting a Slack workspace is an organization-level action you perform once, not per project. Connecting or disconnecting a workspace requires the `organization:manage` permission. In the [LangSmith console](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-engine), open **Settings**, go to your organization's **General** settings, and under **Slack** click **Connect Slack**. Authorize the LangSmith app in Slack. You can connect more than one Slack workspace to an organization.
+  </Step>
+  <Step title="Add a Slack destination">
+    On the **Engine** tab of a tracing project, click the **Engine settings** gear icon, then click **Add destination**. Set the **Deliver to** field to **Slack**, then choose the workspace and channel under **Channel**.
+  </Step>
+  <Step title="Choose events and priority">
+    Under **Notify when**, select which [event types](/langsmith/engine-webhooks#event-types) post a message to the channel. Under **Minimum priority**, choose the lowest [severity](/langsmith/engine-webhooks#severity-filtering) that triggers a notification. Click **Add destination** to save.
+  </Step>
+</Steps>
+
+LangSmith automatically joins the public channel you select. To post to a private channel, invite the LangSmith app to that channel in Slack first.
+
+Each Slack message includes the issue title, description, and severity, a **View issue** link back to LangSmith, and (for issue events) a chart of the issue's recurrence over time. If a workspace's connection becomes invalid—for example, the app is removed from Slack—its destinations stop delivering until you reconnect it from your organization's **General** settings.
+
+### Send to a webhook
+
+To forward Engine events to your own incident-management, paging, or chat tooling, add a destination and set the **Deliver to** field to **Webhook**. Enter a URL and, optionally, custom headers. Webhook deliveries are signed so you can verify their authenticity. For the full event payload reference, signing-secret verification, and delivery semantics, see [Engine webhook events](/langsmith/engine-webhooks).
+
+## Configure LangSmith Engine
+
+<Note>
+LangSmith Engine uses **LangChain-managed inference** exclusively. Bring Your Own Key (BYOK) is not supported; you cannot supply your own provider API keys for Engine.
+</Note>
+
+Within a tracing project, click the **Engine settings** gear icon on the **Engine** tab to open the **Edit Engine Settings** panel. From here you can configure:
+
+- **Agent Overview**: Edit your agent overview document to keep LangSmith Engine's understanding of your project accurate as your application evolves.
+- **Priorities**: Areas LangSmith Engine should pay extra attention to when scanning traces. Changes take effect on the next scan.
+- **Code repository**: Update the connected GitHub repository or subfolder.
+- **Notifications**: Add Slack channel or webhook destinations that receive a notification when LangSmith Engine detects a new issue. Set a minimum priority level per destination to control which issues trigger a notification. See [Get notified about new issues](#get-notified-about-new-issues).
+- **Pause Engine**: LangSmith Engine scans your traces every 6 hours by default. Click **Pause** to suspend scanning or **Resume** to resume scanning.
+- **Delete all issues**: This action cannot be undone. All issues and settings will be permanently removed.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/engine.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
