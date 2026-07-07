@@ -6,7 +6,7 @@ description: Create and deploy your first Managed Deep Agent with the mda CLI.
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 
-Deploy a hosted Deep Agent without setting up infrastructure. This quickstart scaffolds a code-first project, edits the managed system prompt, runs the agent locally, and deploys it with `mda`.
+Deploy a hosted Deep Agent without setting up infrastructure. This quickstart scaffolds a code-first project, runs the agent locally, edits the managed system prompt, and deploys it with `mda`. To build a fuller agent step by step, follow the [tutorial](/langsmith/managed-deep-agents-tutorial).
 
 For the full deploy workflow and all CLI flags, see [Deploy an agent](/langsmith/managed-deep-agents-deploy) and the [CLI reference](/langsmith/managed-deep-agents-cli).
 
@@ -20,35 +20,41 @@ Before you start, make sure you have:
 
 - An organization with Managed Deep Agents [private beta access](https://www.langchain.com/langsmith-managed-deep-agents-waitlist).
 - A [LangSmith API key](/langsmith/create-account-api-key).
-- Python for Python projects or Node.js and npm for TypeScript projects.
+- Python and `uv` for Python projects, or Node.js and npm for TypeScript projects.
 - An API key for your model provider of choice.
 
-## Understand the project layout
+## Run your first agent locally
 
-Managed Deep Agents are deployed from a local directory. The path you pass to `mda` is the project root, and MDA reads that filesystem layout to compile and package the agent.
+A Managed Deep Agent is a [project directory](/langsmith/managed-deep-agents-overview#your-agent-is-a-directory) with a required agent entry (`agent.py`, `agent.ts`, or `agent.tsx`). To scaffold a project and chat with the agent locally:
 
-```text
-my-agent/
-  agent.py | agent.ts | agent.tsx       # Required: exports the named agent
-  instructions.md                       # Optional: managed system prompt
-  pyproject.toml | package.json         # Recommended: project dependencies
-  .env                                  # Recommended: deploy auth and runtime secrets; not archived
-  skills/<name>/SKILL.md                # Optional: deploy-owned skills
-  tools/                                # Optional: conventional authored tools
-  middleware/                           # Optional: conventional middleware
-  connectors/mcp.py | connectors/mcp.ts # Optional: MCP connector declarations
-  sandbox/__init__.py | sandbox/index.ts # Optional: managed sandbox config
-  sandbox/setup.sh                      # Optional: sandbox provisioning script
+<CodeGroup>
+
+```bash pip
+pip install --pre managed-deepagents
+mda init research-assistant
+cd research-assistant
+# Add LANGSMITH_API_KEY and your model provider key to .env
+uv sync
+mda dev .
 ```
 
-The only required MDA file is one root agent entry: `agent.py`, `agent.ts`, or `agent.tsx`. It must export a named `agent` definition created with `define_deep_agent` or `defineDeepAgent`. Other files are optional, but `instructions.md`, `skills/**`, `connectors/mcp.*`, and `sandbox/` have managed meanings when present.
+```bash npm
+npm install -g managed-deepagents@dev
+mda init research-assistant
+cd research-assistant
+# Add LANGSMITH_API_KEY and your model provider key to .env
+npm install
+mda dev .
+```
 
-When you run `mda dev`, the CLI compiles the project into `.mda/build` and starts LangGraph from that build directory. When you run `mda deploy`, it reads `LANGSMITH_API_KEY` from `.env` to authenticate, forwards non-reserved `.env` values such as model provider keys as hosted deployment secrets, syncs `instructions.md` and `skills/**` to Context Hub, preserves runtime memory in Context Hub, archives `.mda/build`, uploads it, and starts a hosted deployment build. The root `.env` file is never included in the uploaded source archive.
+</CodeGroup>
+
+`mda dev` compiles the project and starts a local LangGraph dev server in LangSmith Studio, where you can send the agent a message. The steps below expand each part, then deploy the agent to LangSmith.
 
 ## Create and deploy an agent
 
 <Steps>
-  <Step title="Install the package" id="install-the-cli">
+  <Step title="Install the package" id="install-the-package">
 
 Install `managed-deepagents` for the language you want to author in. Both packages include the `mda` CLI.
 
@@ -63,6 +69,8 @@ npm install -g managed-deepagents@dev
 ```
 
 </CodeGroup>
+
+For Python, the `pip` command installs the `mda` CLI. After you scaffold a project, run `uv sync` inside that project to install the dependencies from its generated `pyproject.toml`.
 
   </Step>
 
@@ -133,7 +141,7 @@ export const agent = defineDeepAgent({
 
 </CodeGroup>
 
-The managed runtime owns `backend`, `store`, `checkpointer`, `memory`, `skills`, and the system prompt. Do not set those fields in the agent definition.
+The managed runtime owns `backend`, `store`, `checkpointer`, `memory`, `skills`, and the system prompt. Do not set those fields in the agent definition. For the full list of author-set and managed fields, see the [agent definition reference](/langsmith/managed-deep-agents-cli#agent-definition-reference).
 
 The generated model uses OpenAI. If you use another provider, change the model identifier and set the API key required by that provider in `.env`, your shell environment, or LangSmith workspace secrets.
 
@@ -150,19 +158,18 @@ You are a careful research assistant. Search for sources, keep notes, and return
 concise answers with citations.
 ```
 
-`mda build` and `mda dev` embed this file into the generated local entry module. `mda deploy` syncs it to Context Hub and the deployed runtime reads it from there.
+`mda dev` embeds this file into the generated local entry module. `mda deploy` syncs it to Context Hub and the deployed runtime reads it from there.
 
   </Step>
 
   <Step title="Run locally" id="run-locally">
 
-Install the project dependencies, then start the local LangGraph dev server:
+Install the generated project dependencies, then start the local LangGraph dev server:
 
 <CodeGroup>
 
-```bash pip
-pip install -e .
-pip install -U "langgraph-cli[inmem]"
+```bash uv
+uv sync
 mda dev .
 ```
 
@@ -173,7 +180,7 @@ mda dev .
 
 </CodeGroup>
 
-For TypeScript projects, `mda dev` runs `npx --yes @langchain/langgraph-cli dev`. For Python projects, it runs `langgraph dev`.
+For TypeScript projects, `mda dev` runs `npx --yes @langchain/langgraph-cli dev`. For Python projects, it uses `uv` to resolve and run the local LangGraph dev server automatically. You do not need to install `langgraph-cli[inmem]` yourself.
 
 `mda dev` loads the project `.env` file from the compiled local build so model provider keys and connector tokens are available during local development.
 
@@ -204,6 +211,12 @@ Open the printed URL in LangSmith to inspect build status, revisions, and traces
 ## Next steps
 
 <CardGroup cols={2}>
+  <Card title="Tutorial" icon="book" href="/langsmith/managed-deep-agents-tutorial">
+    Build a scheduled research agent with tools, memory, and a cron schedule.
+  </Card>
+  <Card title="How it works" icon="settings" href="/langsmith/managed-deep-agents-how-it-works">
+    Understand compilation, the deploy lifecycle, and Context Hub.
+  </Card>
   <Card title="Custom tools" icon="tool" href="/langsmith/managed-deep-agents-tools">
     Add authored LangChain tools from your project source.
   </Card>
@@ -213,13 +226,16 @@ Open the printed URL in LangSmith to inspect build status, revisions, and traces
   <Card title="Connect MCP tools" icon="plug" href="/langsmith/managed-deep-agents-mcp">
     Declare remote MCP servers with Managed Deep Agents connectors.
   </Card>
+  <Card title="Schedules" icon="calendar" href="/langsmith/managed-deep-agents-schedules">
+    Run agents on managed cron schedules.
+  </Card>
   <Card title="Deploy an agent" icon="upload" href="/langsmith/managed-deep-agents-deploy">
-    Walk through build, local dev, deploy, Context Hub, and sandbox behavior.
+    Walk through local dev, deploy, Context Hub, and sandbox behavior.
+  </Card>
+  <Card title="Examples" icon="apps" href="/langsmith/managed-deep-agents-examples">
+    Explore a complete project that uses every primitive.
   </Card>
   <Card title="CLI reference" icon="terminal" href="/langsmith/managed-deep-agents-cli">
     Look up `mda` commands, flags, and project file rules.
-  </Card>
-  <Card title="LangSmith sandboxes" icon="box" href="/langsmith/sandboxes">
-    Learn how sandboxes provide isolated execution environments.
   </Card>
 </CardGroup>
