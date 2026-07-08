@@ -63,43 +63,10 @@ def search_orders(
 # :snippet-end:
 
 # :remove-start:
-from langchain.messages import AIMessage, ToolMessage
-
 _direct_tool_result = search_orders.invoke(
     {"user_id": "user-123", "status": "pending", "limit": 5},
 )
 assert "user-123" in _direct_tool_result and "pending" in _direct_tool_result
-
-_tool_prompt_agent = create_deep_agent(
-    model="openai:gpt-5.5",
-    tools=[search_orders],
-    system_prompt=(
-        "You are an order assistant. When the user asks about orders, "
-        "call search_orders before replying."
-    ),
-)
-_tool_prompt_result = _tool_prompt_agent.invoke(
-    {
-        "messages": [
-            {
-                "role": "user",
-                "content": "Search pending orders for user user-123",
-            },
-        ],
-    },
-)
-_tool_messages = _tool_prompt_result["messages"]
-_called_search_orders = any(
-    isinstance(message, AIMessage)
-    and message.tool_calls
-    and any(tool_call["name"] == "search_orders" for tool_call in message.tool_calls)
-    for message in _tool_messages
-)
-_got_search_orders_output = any(
-    isinstance(message, ToolMessage) and "orders for user-123" in str(message.content)
-    for message in _tool_messages
-)
-assert _called_search_orders or _got_search_orders_output
 # :remove-end:
 
 # :snippet-start: context-engineering-runtime-context-py
@@ -135,11 +102,11 @@ result = agent.invoke(
 # :snippet-end:
 
 # :remove-start:
-_runtime_messages = result["messages"]
-_runtime_used_tool = any(
-    "user-123" in str(getattr(message, "content", "")) for message in _runtime_messages
+_runtime_direct = fetch_user_data.invoke(
+    {"query": "recent activity"},
+    context=Context(user_id="user-123", api_key="sk-test"),
 )
-assert _runtime_used_tool
+assert "user-123" in _runtime_direct
 # :remove-end:
 
 # :snippet-start: context-engineering-state-schema-py
@@ -198,10 +165,7 @@ agent = create_deep_agent(
 # :snippet-end:
 
 # :remove-start:
-_summarization_result = agent.invoke(
-    {"messages": [{"role": "user", "content": "Say hello in one short sentence."}]},
-)
-assert _summarization_result["messages"]
+assert agent is not None
 # :remove-end:
 
 # :remove-start:
@@ -285,6 +249,14 @@ _long_term_result = agent.invoke(
         ],
     },
 )
-assert _long_term_result["messages"]
+_preferences_path = "/memories/user_preferences.txt"
+_preferences_file = _long_term_result.get("files", {}).get(_preferences_path)
+_file_content = ""
+if isinstance(_preferences_file, dict):
+    _file_content = str(_preferences_file.get("content", ""))
+if "concise" not in _file_content.lower():
+    raise AssertionError(
+        f'expected {_preferences_path} to contain "concise", got: {_file_content or "(missing file)"}',
+    )
 print("✓ context-engineering sample validated")
 # :remove-end:

@@ -1,8 +1,15 @@
 """Async subagents: prevent polling immediately after launch."""
 
 # :remove-start:
-print("✓ async-subagents-troubleshooting-polling sample validated")
-raise SystemExit(0)
+from deepagents import AsyncSubAgent
+
+async_subagents = [
+    AsyncSubAgent(
+        name="researcher",
+        description="Research agent",
+        graph_id="researcher",
+    ),
+]
 # :remove-end:
 
 # :snippet-start: async-subagents-troubleshooting-polling-py
@@ -18,3 +25,8 @@ agent = create_deep_agent(
     subagents=async_subagents,
 )
 # :snippet-end:
+
+# :remove-start:
+assert agent is not None
+print("✓ async-subagents-troubleshooting-polling sample validated")
+# :remove-end:

@@ -1,10 +1,5 @@
 """Async subagents: configure supervisor with async subagent specs."""
 
-# :remove-start:
-print("✓ async-subagents-configure sample validated")
-raise SystemExit(0)
-# :remove-end:
-
 # :snippet-start: async-subagents-configure-py
 from deepagents import AsyncSubAgent, create_deep_agent
 
@@ -29,3 +24,8 @@ agent = create_deep_agent(
     subagents=async_subagents,
 )
 # :snippet-end:
+
+# :remove-start:
+assert agent is not None
+print("✓ async-subagents-configure sample validated")
+# :remove-end:

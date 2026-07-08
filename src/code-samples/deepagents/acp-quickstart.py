@@ -1,10 +1,5 @@
 """ACP: expose a deep agent over stdio."""
 
-# :remove-start:
-print("✓ acp-quickstart sample validated")
-raise SystemExit(0)
-# :remove-end:
-
 # :snippet-start: acp-quickstart-py
 # :codegroup-fence-mods: icon="server"
 import asyncio
@@ -32,3 +27,15 @@ async def main() -> None:
 if __name__ == "__main__":
     asyncio.run(main())
 # :snippet-end:
+
+# :remove-start:
+# Validate construction without blocking on stdio.
+_agent = create_deep_agent(
+    model="google_genai:gemini-3.5-flash",
+    system_prompt="You are a helpful coding assistant",
+    checkpointer=MemorySaver(),
+)
+_server = AgentServerACP(_agent)
+assert _server is not None
+print("✓ acp-quickstart sample validated")
+# :remove-end:

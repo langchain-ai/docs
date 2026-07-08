@@ -1,8 +1,3 @@
-// :remove-start:
-console.log("✓ async-subagents-configure sample validated");
-process.exit(0);
-// :remove-end:
-
 // :snippet-start: async-subagents-configure-js
 import { createDeepAgent, type AsyncSubAgent } from "deepagents";
 
@@ -21,9 +16,15 @@ const asyncSubagents: AsyncSubAgent[] = [
   },
 ];
 
-// KEEP MODEL
 const agent = createDeepAgent({
   model: "google_genai:gemini-3.5-flash",
   subagents: [...asyncSubagents],
 });
 // :snippet-end:
+
+// :remove-start:
+if (!agent) {
+  throw new Error("agent not created");
+}
+console.log("✓ async-subagents-configure sample validated");
+// :remove-end:

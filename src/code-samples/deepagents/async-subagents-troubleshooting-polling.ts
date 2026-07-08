@@ -1,6 +1,13 @@
 // :remove-start:
-console.log("✓ async-subagents-troubleshooting-polling sample validated");
-process.exit(0);
+import { type AsyncSubAgent } from "deepagents";
+
+const asyncSubagents: AsyncSubAgent[] = [
+  {
+    name: "researcher",
+    description: "Research agent",
+    graphId: "researcher",
+  },
+];
 // :remove-end:
 
 // :snippet-start: async-subagents-troubleshooting-polling-js
@@ -16,3 +23,10 @@ const agent = createDeepAgent({
   subagents: [...asyncSubagents],
 });
 // :snippet-end:
+
+// :remove-start:
+if (!agent) {
+  throw new Error("agent not created");
+}
+console.log("✓ async-subagents-troubleshooting-polling sample validated");
+// :remove-end:
