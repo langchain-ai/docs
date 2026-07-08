@@ -12,6 +12,10 @@ agent = create_deep_agent(
 )
 # :snippet-end:
 
+# :remove-start:
+assert agent is not None
+# :remove-end:
+
 # :snippet-start: context-engineering-memory-py
 agent = create_deep_agent(
     model="google_genai:gemini-3.5-flash",
@@ -19,12 +23,20 @@ agent = create_deep_agent(
 )
 # :snippet-end:
 
+# :remove-start:
+assert agent is not None
+# :remove-end:
+
 # :snippet-start: context-engineering-skills-py
 agent = create_deep_agent(
     model="google_genai:gemini-3.5-flash",
     skills=["/skills/research/", "/skills/web-search/"],
 )
 # :snippet-end:
+
+# :remove-start:
+assert agent is not None
+# :remove-end:
 
 # :snippet-start: context-engineering-tool-prompts-py
 from langchain.tools import tool
@@ -49,6 +61,46 @@ def search_orders(
     # Implementation here
     return f"orders for {user_id} with status {status} (limit {limit})"
 # :snippet-end:
+
+# :remove-start:
+from langchain.messages import AIMessage, ToolMessage
+
+_direct_tool_result = search_orders.invoke(
+    {"user_id": "user-123", "status": "pending", "limit": 5},
+)
+assert "user-123" in _direct_tool_result and "pending" in _direct_tool_result
+
+_tool_prompt_agent = create_deep_agent(
+    model="openai:gpt-5.5",
+    tools=[search_orders],
+    system_prompt=(
+        "You are an order assistant. When the user asks about orders, "
+        "call search_orders before replying."
+    ),
+)
+_tool_prompt_result = _tool_prompt_agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Search pending orders for user user-123",
+            },
+        ],
+    },
+)
+_tool_messages = _tool_prompt_result["messages"]
+_called_search_orders = any(
+    isinstance(message, AIMessage)
+    and message.tool_calls
+    and any(tool_call["name"] == "search_orders" for tool_call in message.tool_calls)
+    for message in _tool_messages
+)
+_got_search_orders_output = any(
+    isinstance(message, ToolMessage) and "orders for user-123" in str(message.content)
+    for message in _tool_messages
+)
+assert _called_search_orders or _got_search_orders_output
+# :remove-end:
 
 # :snippet-start: context-engineering-runtime-context-py
 from dataclasses import dataclass
@@ -82,6 +134,14 @@ result = agent.invoke(
 )
 # :snippet-end:
 
+# :remove-start:
+_runtime_messages = result["messages"]
+_runtime_used_tool = any(
+    "user-123" in str(getattr(message, "content", "")) for message in _runtime_messages
+)
+assert _runtime_used_tool
+# :remove-end:
+
 # :snippet-start: context-engineering-state-schema-py
 from deepagents import DeepAgentState, create_deep_agent
 from langchain.tools import ToolRuntime, tool
@@ -113,6 +173,14 @@ result = agent.invoke(
 )
 # :snippet-end:
 
+# :remove-start:
+_state_messages = result["messages"]
+assert any(
+    "https://example.com/report" in str(getattr(message, "content", ""))
+    for message in _state_messages
+)
+# :remove-end:
+
 # :snippet-start: context-engineering-summarization-tool-py
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
@@ -130,6 +198,13 @@ agent = create_deep_agent(
 # :snippet-end:
 
 # :remove-start:
+_summarization_result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Say hello in one short sentence."}]},
+)
+assert _summarization_result["messages"]
+# :remove-end:
+
+# :remove-start:
 def web_search(query: str) -> str:
     """Search the web."""
     return f"Results for: {query}"
@@ -145,6 +220,37 @@ research_subagent = {
     "tools": [web_search],
 }
 # :snippet-end:
+
+# :remove-start:
+from langchain.messages import AIMessage
+
+_research_agent = create_deep_agent(
+    model="openai:gpt-5.5",
+    system_prompt=(
+        "You are a coordinator. For every request, call task() with "
+        "subagent_type set to researcher."
+    ),
+    subagents=[research_subagent],
+)
+_research_result = _research_agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Research recent advances in quantum computing.",
+            },
+        ],
+    },
+)
+_research_messages = _research_result["messages"]
+_delegated_research = any(
+    isinstance(message, AIMessage)
+    and message.tool_calls
+    and any(tool_call["name"] == "task" for tool_call in message.tool_calls)
+    for message in _research_messages
+)
+assert _delegated_research
+# :remove-end:
 
 # :snippet-start: context-engineering-long-term-memory-py
 from deepagents import create_deep_agent
@@ -169,10 +275,16 @@ agent = create_deep_agent(
 # :snippet-end:
 
 # :remove-start:
-assert agent is not None
-assert search_orders.name == "search_orders"
-assert fetch_user_data.name == "fetch_user_data"
-assert result is not None
-assert research_subagent["name"] == "researcher"
+_long_term_result = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Remember that I prefer concise responses.",
+            },
+        ],
+    },
+)
+assert _long_term_result["messages"]
 print("✓ context-engineering sample validated")
 # :remove-end:

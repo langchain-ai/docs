@@ -34,6 +34,25 @@ const result = await agent.invoke(
 // :snippet-end:
 
 // :remove-start:
-if (!agent || !result) throw new Error("agent invoke failed");
+const directResult = await fetchUserData.invoke(
+  { query: "recent activity" },
+  { context: { userId: "user-123", apiKey: "sk-test" } },
+);
+if (!directResult.includes("user-123")) {
+  throw new Error(`unexpected tool output: ${directResult}`);
+}
+
+const messages = result.messages ?? [];
+const usedRuntimeContext = messages.some((message) => {
+  const text =
+    typeof message.content === "string"
+      ? message.content
+      : JSON.stringify(message.content);
+  return text.includes("user-123");
+});
+if (!usedRuntimeContext) {
+  throw new Error("expected agent response to use runtime context");
+}
+
 console.log("✓ context-engineering-runtime-context sample validated");
 // :remove-end:

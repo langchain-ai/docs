@@ -18,6 +18,28 @@ const agent = await createDeepAgent({
 // :snippet-end:
 
 // :remove-start:
-if (!agent) throw new Error("agent not created");
+const result = await agent.invoke({
+  messages: [
+    {
+      role: "user",
+      content: "Remember that I prefer concise responses.",
+    },
+  ],
+});
+const preferencesPath = "/memories/user_preferences.txt";
+const preferencesFile = result.files?.[preferencesPath];
+const fileContent =
+  preferencesFile &&
+  typeof preferencesFile === "object" &&
+  "content" in preferencesFile
+    ? String(preferencesFile.content)
+    : "";
+
+if (!fileContent.toLowerCase().includes("concise")) {
+  throw new Error(
+    `expected ${preferencesPath} to contain "concise", got: ${fileContent || "(missing file)"}`,
+  );
+}
+
 console.log("✓ context-engineering-long-term-memory sample validated");
 // :remove-end:
