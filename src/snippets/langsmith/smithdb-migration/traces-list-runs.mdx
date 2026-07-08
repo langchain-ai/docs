@@ -1,0 +1,220 @@
+import SmithdbTracesListRunsBasicBeforePy from '/snippets/code-samples/smithdb-migration/traces-list-runs-basic-before-py.mdx';
+import SmithdbTracesListRunsBasicAfterPy from '/snippets/code-samples/smithdb-migration/traces-list-runs-basic-after-py.mdx';
+import SmithdbTracesListRunsBasicBeforeJs from '/snippets/code-samples/smithdb-migration/traces-list-runs-basic-before-js.mdx';
+import SmithdbTracesListRunsBasicAfterJs from '/snippets/code-samples/smithdb-migration/traces-list-runs-basic-after-js.mdx';
+import SmithdbTracesListRunsBasicBeforeGo from '/snippets/code-samples/smithdb-migration/traces-list-runs-basic-before-go.mdx';
+import SmithdbTracesListRunsBasicAfterGo from '/snippets/code-samples/smithdb-migration/traces-list-runs-basic-after-go.mdx';
+import SmithdbTracesListRunsBasicBeforeKt from '/snippets/code-samples/smithdb-migration/traces-list-runs-basic-before-kt.mdx';
+import SmithdbTracesListRunsBasicAfterKt from '/snippets/code-samples/smithdb-migration/traces-list-runs-basic-after-kt.mdx';
+import SmithdbTracesListRunsBasicBeforeSh from '/snippets/code-samples/smithdb-migration/traces-list-runs-basic-before-sh.mdx';
+import SmithdbTracesListRunsBasicAfterSh from '/snippets/code-samples/smithdb-migration/traces-list-runs-basic-after-sh.mdx';
+import SmithdbTracesListRunsFilterBeforePy from '/snippets/code-samples/smithdb-migration/traces-list-runs-filter-before-py.mdx';
+import SmithdbTracesListRunsFilterAfterPy from '/snippets/code-samples/smithdb-migration/traces-list-runs-filter-after-py.mdx';
+import SmithdbTracesListRunsFilterBeforeJs from '/snippets/code-samples/smithdb-migration/traces-list-runs-filter-before-js.mdx';
+import SmithdbTracesListRunsFilterAfterJs from '/snippets/code-samples/smithdb-migration/traces-list-runs-filter-after-js.mdx';
+import SmithdbTracesListRunsFilterBeforeGo from '/snippets/code-samples/smithdb-migration/traces-list-runs-filter-before-go.mdx';
+import SmithdbTracesListRunsFilterAfterGo from '/snippets/code-samples/smithdb-migration/traces-list-runs-filter-after-go.mdx';
+import SmithdbTracesListRunsFilterBeforeKt from '/snippets/code-samples/smithdb-migration/traces-list-runs-filter-before-kt.mdx';
+import SmithdbTracesListRunsFilterAfterKt from '/snippets/code-samples/smithdb-migration/traces-list-runs-filter-after-kt.mdx';
+import SmithdbTracesListRunsFilterBeforeSh from '/snippets/code-samples/smithdb-migration/traces-list-runs-filter-before-sh.mdx';
+import SmithdbTracesListRunsFilterAfterSh from '/snippets/code-samples/smithdb-migration/traces-list-runs-filter-after-sh.mdx';
+
+## Traces: list runs
+
+Returns runs for a trace ID within min/max start time. Optional `filter`; repeatable `selects` to select fields to return.
+
+### Main changes
+
+#### Method name
+
+<Tabs>
+  <Tab title="Python">
+    | Before | After |
+    |--------|-------|
+    | `client.list_runs(trace_id=...)` (generic) | `client.traces.list_runs()` |
+  </Tab>
+  <Tab title="TypeScript">
+    | Before | After |
+    |--------|-------|
+    | `client.listRuns({ traceId })` (generic) | `client.traces.listRuns()` |
+  </Tab>
+  <Tab title="Java">
+    | Before | After |
+    |--------|-------|
+    | `client.runs().query()` (generic, `.trace(traceId)`) | `client.traces().listRuns()` |
+  </Tab>
+  <Tab title="Go">
+    | Before | After |
+    |--------|-------|
+    | `client.Runs.Query()` (generic, `Trace: traceID`) | `client.Traces.ListRuns()` |
+  </Tab>
+  <Tab title="cURL">
+    | Before | After |
+    |--------|-------|
+    | `POST /api/v1/runs/query` (`trace` field) | `GET /v2/traces/{trace_id}/runs` |
+  </Tab>
+</Tabs>
+
+This is the closest thing to a "boring" migration in this set—`list_runs(trace_id=...)` already fetched a trace's runs directly, no client-side grouping required. What changes is the lookup itself: `traces.list_runs` requires `project_id` and a `start_time` window, which SmithDB uses to route directly to the partition holding the trace instead of scanning for it.
+
+#### Query parameters
+
+<Tabs>
+  <Tab title="Python">
+    <Warning>
+    `traces.list_runs` requires `project_id`, which `list_runs(trace_id=...)` did not need. `min_start_time`/`max_start_time` are individually optional but must be passed together when either is set.
+    </Warning>
+
+    | Before (`list_runs`) | After (`traces.list_runs`) | Notes |
+    |---|---|---|
+    | `trace_id`/`trace` | `trace_id` (path param) | Unchanged in spirit |
+    | *(not available)* | `project_id` | **Required**—SmithDB partition key |
+    | `filter` | `filter` | Same syntax |
+    | *(not available)* | `min_start_time` + `max_start_time` | New; must be passed together if either is set |
+    | `select` | `selects` | Same 44-value enum as `traces.query` |
+  </Tab>
+  <Tab title="TypeScript">
+    Same mapping as Python, `snake_case` field names.
+  </Tab>
+  <Tab title="Java">
+    `listRuns(traceId, params)` takes `projectId` (required), `filter`, `minStartTime`, `maxStartTime`, `selects` (44-value enum).
+  </Tab>
+  <Tab title="Go">
+    `ListRuns(ctx, traceID, params)` takes `ProjectID` (required), `Filter`, `MinStartTime`, `MaxStartTime`, `Selects`.
+  </Tab>
+  <Tab title="cURL">
+    `GET /v2/traces/{trace_id}/runs` query params: `project_id` (required), `filter`, `min_start_time`, `max_start_time`, `selects` (repeatable)—all `snake_case`.
+  </Tab>
+</Tabs>
+
+#### Response fields
+
+<Tabs>
+  <Tab title="Python">
+    The response (`TraceListRunsResponse`) has a single `items` field: a list of `Run` objects in `start_time` order, same shape as the Runs: query response above.
+  </Tab>
+  <Tab title="TypeScript">
+    Same shape as Python.
+  </Tab>
+  <Tab title="Java">
+    `TraceListRunsResponse.items()` returns `Optional<List<Run>>`.
+  </Tab>
+  <Tab title="Go">
+    `TraceListRunsResponse.Items` is `[]Run`.
+  </Tab>
+  <Tab title="cURL">
+    JSON response has a single `items` array field.
+  </Tab>
+</Tabs>
+
+### Examples
+
+#### List a trace's runs
+
+<Tabs>
+  <Tab title="Python">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesListRunsBasicBeforePy />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesListRunsBasicAfterPy />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="TypeScript">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesListRunsBasicBeforeJs />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesListRunsBasicAfterJs />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Java">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesListRunsBasicBeforeKt />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesListRunsBasicAfterKt />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Go">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesListRunsBasicBeforeGo />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesListRunsBasicAfterGo />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="cURL">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesListRunsBasicBeforeSh />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesListRunsBasicAfterSh />
+  </Tab>
+</Tabs>
+  </Tab>
+</Tabs>
+
+#### Filter to a run subset within the trace
+
+<Tabs>
+  <Tab title="Python">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesListRunsFilterBeforePy />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesListRunsFilterAfterPy />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="TypeScript">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesListRunsFilterBeforeJs />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesListRunsFilterAfterJs />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Java">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesListRunsFilterBeforeKt />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesListRunsFilterAfterKt />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Go">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesListRunsFilterBeforeGo />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesListRunsFilterAfterGo />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="cURL">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesListRunsFilterBeforeSh />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesListRunsFilterAfterSh />
+  </Tab>
+</Tabs>
+  </Tab>
+</Tabs>
