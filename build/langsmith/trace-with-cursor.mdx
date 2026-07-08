@@ -1,0 +1,190 @@
+---
+title: Trace Cursor sessions
+sidebarTitle: Cursor
+description: Capture Cursor agent turns, tool calls, model metadata, token usage, attachments, and subagents in LangSmith.
+---
+
+Trace [Cursor](https://cursor.com/) agent sessions in LangSmith using [Cursor hooks](https://cursor.com/docs/agent/hooks). Each turn becomes one trace, grouped into a thread per Cursor conversation, which captures prompts, model responses, tool calls, token usage, and subagent activity. Use the traces to debug agent behavior, audit tool calls, track token spend per turn, and compare Cursor runs.
+
+The plugin source is available at [`langchain-ai/langsmith-cursor-plugins`](https://github.com/langchain-ai/langsmith-cursor-plugins).
+
+## Prerequisites
+
+Before setting up tracing, ensure you have:
+
+- [Cursor](https://cursor.com/) installed.
+- [Node.js](https://nodejs.org/) 22.13 or later. The hooks use the built-in `node:sqlite` module to recover attachments from Cursor's local database.
+- A [LangSmith API key](/langsmith/create-account-api-key).
+
+## Install and enable the plugin
+
+Install the plugin directly from the GitHub repository in Cursor's settings:
+
+1. Open **Cursor → Settings → Plugins**.
+2. Paste `https://github.com/langchain-ai/langsmith-cursor-plugins` into the plugin link field.
+3. Confirm to add **LangSmith Tracing for Cursor**.
+
+This is the recommended path: it installs the hooks with no clone or build step, since the repository ships a precompiled bundle.
+
+<Warning>
+Fully restart Cursor after installing so it reloads `hooks.json`.
+</Warning>
+
+### Alternative: install from a local clone
+
+Install the hooks from a local clone of [`langsmith-cursor-plugins`](https://github.com/langchain-ai/langsmith-cursor-plugins). This writes `~/.cursor/hooks.json` for all Cursor projects:
+
+```bash
+node scripts/install.mjs
+```
+
+To scope the hooks to a single project instead, run the installer from the project directory:
+
+```bash
+node scripts/install.mjs --project
+```
+
+To preview the hook configuration without writing it, run:
+
+```bash
+node scripts/install.mjs --print
+```
+
+The installer merges its entries with any existing `hooks.json`. The committed `bundle/` means these commands run without `pnpm install` or `pnpm build` — those are only needed when contributing changes to the TypeScript source.
+
+Restart Cursor after installing so it reloads `hooks.json`.
+
+## Configure tracing
+
+Tracing is disabled until both `enabled` (or `TRACE_TO_LANGSMITH=true`) and an API key are set. Configure credentials with [environment variables](#environment-variables), a [JSON config file](#config-file), or both.
+
+### Environment variables
+
+Every `LANGSMITH_CURSOR_*` variable also accepts the shorter `LANGSMITH_*` form. When both are set, `LANGSMITH_CURSOR_*` takes precedence.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TRACE_TO_LANGSMITH` | `false` | Set to `"true"` to enable tracing. |
+| `LANGSMITH_CURSOR_API_KEY` | - | LangSmith API key. Falls back to `LANGSMITH_API_KEY`. |
+| `LANGSMITH_CURSOR_ENDPOINT` | `https://api.smith.langchain.com` | LangSmith API URL. Falls back to `LANGSMITH_ENDPOINT`. |
+| `LANGSMITH_CURSOR_PROJECT` | `cursor` | LangSmith project name. Falls back to `LANGSMITH_PROJECT`. |
+| `LANGSMITH_CURSOR_METADATA` | - | JSON object merged into root trace metadata. |
+| `LANGSMITH_CURSOR_RUNS_ENDPOINTS` | - | JSON array of replica destinations. |
+| `LANGSMITH_CURSOR_ATTACHMENTS` | `true` | Set to `"false"` to disable attachment enrichment. |
+| `LANGSMITH_CURSOR_DB_PATH` | platform default | Override the Cursor `state.vscdb` path used for attachments. |
+| `LANGSMITH_CURSOR_STATE_FILE` | `~/.cursor/langsmith-state.json` | Override the on-disk event-buffer state file. |
+| `LANGSMITH_CURSOR_LOG_FILE` | `~/.cursor/langsmith-hook.log` | Override the hook log file. |
+| `LANGSMITH_CURSOR_DEBUG` | `false` | Set to `"true"` to enable verbose hook logging. |
+
+Add the variables to your shell configuration file (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`):
+
+```bash
+export TRACE_TO_LANGSMITH="true"
+export LANGSMITH_CURSOR_API_KEY="<your-langsmith-api-key>"
+export LANGSMITH_CURSOR_PROJECT="cursor"
+```
+
+To verify hook activity, tail the log file:
+
+```bash
+tail -f ~/.cursor/langsmith-hook.log
+```
+
+### Config file
+
+Use `~/.cursor/langsmith.json` for global defaults or `./.cursor/langsmith.json` for project-level settings. Settings resolve in this order, with later sources overriding earlier ones: defaults, global config, project config, environment variables.
+
+```json
+{
+  "enabled": true,
+  "api_key": "<your-langsmith-api-key>",
+  "api_url": "https://api.smith.langchain.com",
+  "project": "cursor"
+}
+```
+
+| Field | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `TRACE_TO_LANGSMITH` | `false` | Set to `true` to enable tracing. |
+| `api_key` | `LANGSMITH_CURSOR_API_KEY`, `LANGSMITH_API_KEY` | - | LangSmith API key. |
+| `api_url` | `LANGSMITH_CURSOR_ENDPOINT`, `LANGSMITH_ENDPOINT` | `https://api.smith.langchain.com` | LangSmith API URL. |
+| `project` | `LANGSMITH_CURSOR_PROJECT`, `LANGSMITH_PROJECT` | `cursor` | LangSmith project name. |
+| `metadata` | `LANGSMITH_CURSOR_METADATA`, `LANGSMITH_METADATA` | - | Object merged into root trace metadata. |
+| `replicas` | `LANGSMITH_CURSOR_RUNS_ENDPOINTS`, `LANGSMITH_RUNS_ENDPOINTS` | - | Additional LangSmith destinations to replicate traces to. |
+| `attachments` | `LANGSMITH_CURSOR_ATTACHMENTS` | `true` | Set to `false` to skip enriching turns with image and file attachment bytes from Cursor's local database. |
+| `cursor_db_path` | `LANGSMITH_CURSOR_DB_PATH` | platform default | Override the Cursor `state.vscdb` path used for attachments. |
+
+Keep config files that include API keys out of version control.
+
+## What gets traced
+
+The plugin listens to Cursor hooks and assembles one trace per agent turn:
+
+- **Turns**: each turn becomes its own trace, grouped into a thread using `thread_id` = Cursor's `conversation_id`. The trace nests the model run and any tool or subagent runs underneath the turn.
+- **Token usage**: per-turn `usage_metadata` on the model run.
+- **Model and provider**: `ls_model_name` and `ls_provider`, normalized from Cursor's model label to a canonical provider id (for example, `claude-4.6-sonnet` becomes `claude-sonnet-4-6`). Auto mode reports `default` with provider `cursor`.
+- **Tool calls**: tool runs for both successful calls and failures, with inputs and outputs.
+- **Attachments**: image and file attachments recovered from Cursor's local database and rendered inline on the user message. Set `attachments` to `false` to skip this step.
+- **Subagents**: each subagent appears as a nested chain run with its own tool calls underneath, linked to the parent turn.
+
+<Note>
+The plugin does not compute cost locally. Because `ls_model_name` is normalized to a canonical id and `usage_metadata` carries the token breakdown, LangSmith's server-side model price table renders cost in the UI. Auto mode reports `default`, which LangSmith cannot price.
+</Note>
+
+<Warning>
+The plugin uploads Cursor conversation data, including prompts, model responses, tool inputs and outputs, and recovered attachments. Do not enable tracing for sessions that contain data you do not want stored in LangSmith.
+</Warning>
+
+### Trace metadata
+
+Every run carries the shared `coding-agent-v1` metadata contract on `run.extra.metadata`, which lets traces from any coding agent (Claude Code, Codex, Cursor) be identified and grouped with the same stable keys.
+
+| Scope | Keys |
+| --- | --- |
+| Always present | `ls_agent_kind` (`"coding_agent"`), `ls_integration` (`"cursor"`), `ls_agent_runtime` (`"Cursor"`), `ls_trace_schema_version` (`"coding-agent-v1"`), `thread_id` (= Cursor's `conversation_id`). |
+| Present where known | `ls_integration_version`, `ls_agent_runtime_version` (Cursor's `cursor_version`), `turn_id` (= Cursor's `generation_id`), `turn_number`, `repository_url`, `repository_provider`, `repository_name`, `git_branch`, `git_commit_sha`, `cwd`. |
+| Contextual | `local_username`, `user_email` (provisional). |
+| Subagent runs only | `ls_subagent_id`, `ls_subagent_type`. |
+| Tool runs only | `ls_tool_name` (only emitted when the run name differs from the native tool name). |
+| Model and tool runs only | `ls_provider`, `ls_model_name`, `ls_invocation_params`, `usage_metadata`. |
+
+Cursor's hooks do not expose stable sources for `user_id`, `sandbox_type`, or `approval_policy`, so those keys are omitted.
+
+## View traces in LangSmith
+
+Open the configured LangSmith project (default `cursor`) and complete a Cursor turn. The plugin uploads one trace per turn with this structure:
+
+```
+Cursor Turn N (chain)
+├── <provider> (llm)   model and provider, token usage, assistant text
+├── Read / Shell / ... (tool)
+└── Task (tool)        subagent (type and task)
+```
+
+To group related turns, filter on `thread_id` in the **Threads** tab of the project.
+
+## Known limitations
+
+- **Subagent token usage**: Cursor does not expose a per-subagent usage breakdown via hooks or its local database, so a subagent's `Task` run carries its tool calls but no token counts.
+
+## Troubleshooting
+
+If traces do not appear in LangSmith:
+
+- Confirm `TRACE_TO_LANGSMITH=true` or `"enabled": true` is set in a config file the Cursor process can see.
+- Confirm `LANGSMITH_CURSOR_API_KEY` or `LANGSMITH_API_KEY` is set and valid.
+- Confirm Cursor was fully restarted after the hooks were installed.
+- Tail the hook log for errors: `tail -f ~/.cursor/langsmith-hook.log`.
+- Enable verbose logging with `LANGSMITH_CURSOR_DEBUG=true` and re-check the log.
+- If runs land in the wrong project, set `LANGSMITH_CURSOR_PROJECT` or the `project` config key.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/trace-with-cursor.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

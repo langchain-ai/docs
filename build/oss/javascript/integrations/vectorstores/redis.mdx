@@ -1,0 +1,495 @@
+---
+title: "RedisVectorStore integration"
+description: "Integrate with the RedisVectorStore using LangChain JavaScript."
+---
+
+<Tip>
+**Compatibility**: Only available on Node.js.
+</Tip>
+
+[Redis](https://redis.io/) is a fast open source, in-memory data store. As part of the [Redis Stack](https://redis.io/docs/latest/operate/oss_and_stack/install/install-stack/), [RediSearch](https://redis.io/docs/latest/develop/interact/search-and-query/) is the module that enables vector similarity semantic search, as well as many other types of searching.
+
+This guide provides a quick overview for getting started with Redis [vector stores](/oss/javascript/integrations/vectorstores). For detailed documentation of all `RedisVectorStore` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-redis/RedisVectorStore).
+
+## Overview
+
+### Integration details
+
+| Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/redis/) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| [`RedisVectorStore`](https://reference.langchain.com/javascript/langchain-redis/RedisVectorStore) | [`@langchain/redis`](https://www.npmjs.com/package/@langchain/redis) | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/redis?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/redis?style=flat-square&label=%20&) |
+
+## Setup
+
+To use Redis vector stores, set up a Redis Stack instance with RediSearch enabled and install `@langchain/redis` and `@langchain/core`. Install the [`redis`](https://www.npmjs.com/package/redis) Node.js client when you pass your own `createClient` instance to `RedisVectorStore`.
+
+This guide uses [OpenAI embeddings](/oss/javascript/integrations/embeddings/openai) as an example. You can use [other supported embeddings models](/oss/javascript/integrations/embeddings) instead.
+
+<CodeGroup>
+```bash npm
+npm install @langchain/redis @langchain/core redis @langchain/openai
+```
+```bash yarn
+yarn add @langchain/redis @langchain/core redis @langchain/openai
+```
+```bash pnpm
+pnpm add @langchain/redis @langchain/core redis @langchain/openai
+```
+</CodeGroup>
+
+You can set up a Redis instance locally with Docker by following [these instructions](https://redis.io/docs/latest/operate/oss_and_stack/install/install-stack/docker/#redisredis-stack).
+
+### Credentials
+
+Set the `REDIS_URL` environment variable:
+
+```typescript
+process.env.REDIS_URL = "your-redis-url";
+```
+
+If you are using OpenAI embeddings for this guide, set your OpenAI key as well:
+
+```typescript
+process.env.OPENAI_API_KEY = "YOUR_API_KEY";
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/observability) API key by uncommenting below:
+
+```typescript
+// process.env.LANGSMITH_TRACING="true"
+// process.env.LANGSMITH_API_KEY="your-api-key"
+```
+
+## Instantiation
+
+```typescript
+import { RedisVectorStore } from "@langchain/redis";
+import { OpenAIEmbeddings } from "@langchain/openai";
+
+import { createClient } from "redis";
+
+const embeddings = new OpenAIEmbeddings({
+  model: "text-embedding-3-small",
+});
+
+const client = createClient({
+  url: process.env.REDIS_URL ?? "redis://localhost:6379",
+});
+await client.connect();
+
+const vectorStore = new RedisVectorStore(embeddings, {
+  redisClient: client,
+  indexName: "langchainjs-testing",
+});
+```
+
+## Manage vector store
+
+### Add items to vector store
+
+```typescript
+import type { Document } from "@langchain/core/documents";
+
+const document1: Document = {
+  pageContent: "The powerhouse of the cell is the mitochondria",
+  metadata: { type: "example" },
+};
+
+const document2: Document = {
+  pageContent: "Buildings are made out of brick",
+  metadata: { type: "example" },
+};
+
+const document3: Document = {
+  pageContent: "Mitochondria are made out of lipids",
+  metadata: { type: "example" },
+};
+
+const document4: Document = {
+  pageContent: "The 2024 Olympics are in Paris",
+  metadata: { type: "example" },
+};
+
+const documents = [document1, document2, document3, document4];
+
+await vectorStore.addDocuments(documents);
+```
+
+Top-level document ids are currently not supported, but you can delete documents by providing their IDs directly to the vector store.
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
+
+### Query directly
+
+Performing a simple similarity search can be done as follows:
+
+```typescript
+const similaritySearchResults = await vectorStore.similaritySearch(
+  "biology",
+  2
+);
+
+for (const doc of similaritySearchResults) {
+  console.log(`* ${doc.pageContent} [${JSON.stringify(doc.metadata, null)}]`);
+}
+```
+
+Filtering will currently look for any metadata key containing the provided string.
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+```typescript
+const similaritySearchWithScoreResults =
+  await vectorStore.similaritySearchWithScore("biology", 2);
+
+for (const [doc, score] of similaritySearchWithScoreResults) {
+  console.log(
+    `* [SIM=${score.toFixed(3)}] ${doc.pageContent} [${JSON.stringify(
+      doc.metadata
+    )}]`
+  );
+}
+```
+
+```text
+* [SIM=0.835] The powerhouse of the cell is the mitochondria [{"type":"example"}]
+* [SIM=0.852] Mitochondria are made out of lipids [{"type":"example"}]
+```
+
+### Query by turning into retriever
+
+You can also transform the vector store into a [retriever](/oss/javascript/langchain/retrieval) for easier usage in your chains.
+
+```typescript
+const retriever = vectorStore.asRetriever({
+  k: 2,
+});
+await retriever.invoke("biology");
+```
+
+```javascript
+[
+  Document {
+    pageContent: 'The powerhouse of the cell is the mitochondria',
+    metadata: { type: 'example' },
+    id: undefined
+  },
+  Document {
+    pageContent: 'Mitochondria are made out of lipids',
+    metadata: { type: 'example' },
+    id: undefined
+  }
+]
+```
+
+### Usage for retrieval-augmented generation
+
+For guides on how to use this vector store for retrieval-augmented generation (RAG), see the following sections:
+
+- [Build a RAG app with LangChain](/oss/javascript/langchain/rag).
+- [Agentic RAG](/oss/javascript/langgraph/agentic-rag)
+- [Retrieval docs](/oss/javascript/langchain/retrieval)
+
+## Deleting documents
+
+You can delete documents from the vector store in two ways:
+
+### Delete all documents
+
+You can delete an entire index and all its documents with the following command:
+
+```typescript
+await vectorStore.delete({ deleteAll: true });
+```
+
+### Delete specific documents by ID
+
+You can also delete specific documents by providing their IDs. Note that the configured key prefix will be automatically added to the IDs you provide:
+
+```typescript
+// The key prefix will be automatically added to each ID
+await vectorStore.delete({ ids: ["doc1", "doc2", "doc3"] });
+```
+
+## Closing connections
+
+Make sure you close the client connection when you are finished to avoid excessive resource consumption:
+
+```typescript
+await client.disconnect();
+```
+
+## Advanced features
+
+### Custom schema and metadata filtering
+
+The Redis vector store supports custom schema definitions for metadata fields, enabling more efficient filtering and searching. This feature allows you to define specific field types and validation rules for your metadata.
+
+#### Defining a custom schema
+
+You can define a custom schema when creating your vector store to specify field types, validation rules, and indexing options:
+
+```typescript
+import { RedisVectorStore } from "@langchain/redis";
+import type { RedisVectorStoreConfig } from "@langchain/redis";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { SchemaFieldTypes } from "redis";
+import { createClient } from "redis";
+
+const embeddings = new OpenAIEmbeddings({
+  model: "text-embedding-3-small",
+});
+
+const client = createClient({
+  url: process.env.REDIS_URL ?? "redis://localhost:6379",
+});
+await client.connect();
+
+// Define custom schema for metadata fields
+const customSchema:RedisVectorStoreConfig["customSchema"] = {
+  userId: {
+    type: SchemaFieldTypes.TEXT,
+    required: true,
+    SORTABLE: true,
+  },
+  category: {
+    type: SchemaFieldTypes.TAG,
+    SORTABLE: true,
+    SEPARATOR: ",",
+  },
+  score: {
+    type: SchemaFieldTypes.NUMERIC,
+    SORTABLE: true,
+  },
+  tags: {
+    type: SchemaFieldTypes.TAG,
+    SEPARATOR: ",",
+    CASESENSITIVE: true,
+  },
+  description: {
+    type: SchemaFieldTypes.TEXT,
+    NOSTEM: true,
+    WEIGHT: 2.0,
+  },
+};
+
+const vectorStoreWithSchema = new RedisVectorStore(embeddings, {
+  redisClient: client,
+  indexName: "langchainjs-custom-schema",
+  customSchema,
+});
+```
+
+#### Schema field types
+
+The custom schema supports three main field types:
+
+- **TEXT**: Full-text searchable fields with optional stemming, weighting, and sorting
+- **TAG**: Categorical fields for exact matching, with support for multiple values and custom separators
+- **NUMERIC**: Numeric fields supporting range queries and sorting
+
+#### Field configuration options
+
+Each field can be configured with various options:
+
+- `required`: Whether the field must be present in metadata (default: false)
+- `SORTABLE`: Enable sorting on this field (default: undefined)
+- `SEPARATOR`: For TAG fields, specify the separator for multiple values (default: ",")
+- `CASESENSITIVE`: For TAG fields, enable case-sensitive matching (Redis expects `true`, not boolean)
+- `NOSTEM`: For TEXT fields, disable stemming (Redis expects `true`, not boolean)
+- `WEIGHT`: For TEXT fields, specify search weight (default: 1.0)
+
+#### Adding documents with schema validation
+
+When using a custom schema, documents are automatically validated against the defined schema:
+
+```typescript
+import type { Document } from "@langchain/core/documents";
+
+const documentsWithMetadata: Document[] = [
+  {
+    pageContent: "Advanced JavaScript techniques for modern web development",
+    metadata: {
+      userId: "user123",
+      category: "programming",
+      score: 95,
+      tags: ["javascript", "web-development", "frontend"],
+      description: "Comprehensive guide to JavaScript best practices",
+    },
+  },
+  {
+    pageContent: "Machine learning fundamentals and applications",
+    metadata: {
+      userId: "user456",
+      category: "ai",
+      score: 88,
+      tags: ["machine-learning", "python", "data-science"],
+      description: "Introduction to ML concepts and practical applications",
+    },
+  },
+  {
+    pageContent: "Database optimization strategies for high performance",
+    metadata: {
+      userId: "user789",
+      category: "database",
+      score: 92,
+      tags: ["database", "optimization", "performance"],
+      description: "Advanced techniques for database performance tuning",
+    },
+  },
+];
+
+// This will validate each document's metadata against the custom schema
+await vectorStoreWithSchema.addDocuments(documentsWithMetadata);
+```
+
+#### Advanced similarity search with metadata filtering
+
+The custom schema enables powerful metadata filtering capabilities using the `similaritySearchVectorWithScoreAndMetadata` method:
+
+```typescript
+// Search with TAG filtering
+const tagFilterResults =
+  await vectorStoreWithSchema.similaritySearchVectorWithScoreAndMetadata(
+    await embeddings.embedQuery("programming tutorial"),
+    3,
+    {
+      category: "programming", // Exact tag match
+      tags: ["javascript", "frontend"], // Multiple tag OR search
+    }
+  );
+
+console.log("Tag filter results:");
+for (const [doc, score] of tagFilterResults) {
+  console.log(`* [SIM=${score.toFixed(3)}] ${doc.pageContent}`);
+  console.log(`  Metadata: ${JSON.stringify(doc.metadata)}`);
+}
+```
+
+```typescript
+// Search with NUMERIC range filtering
+const numericFilterResults =
+  await vectorStoreWithSchema.similaritySearchVectorWithScoreAndMetadata(
+    await embeddings.embedQuery("high quality content"),
+    5,
+    {
+      score: { min: 90, max: 100 }, // Score between 90 and 100
+      category: ["programming", "ai"], // Multiple categories
+    }
+  );
+
+console.log("Numeric filter results:");
+for (const [doc, score] of numericFilterResults) {
+  console.log(`* [SIM=${score.toFixed(3)}] ${doc.pageContent}`);
+  console.log(
+    `  Score: ${doc.metadata.score}, Category: ${doc.metadata.category}`
+  );
+}
+```
+
+```typescript
+// Search with TEXT field filtering
+const textFilterResults =
+  await vectorStoreWithSchema.similaritySearchVectorWithScoreAndMetadata(
+    await embeddings.embedQuery("development guide"),
+    3,
+    {
+      description: "comprehensive guide", // Text search in description field
+      score: { min: 85 }, // Minimum score of 85
+    }
+  );
+
+console.log("Text filter results:");
+for (const [doc, score] of textFilterResults) {
+  console.log(`* [SIM=${score.toFixed(3)}] ${doc.pageContent}`);
+  console.log(`  Description: ${doc.metadata.description}`);
+}
+```
+
+#### Numeric range query options
+
+For numeric fields, you can specify various range queries:
+
+```txt
+// Exact value match
+{ score: 95 }
+
+// Range with both min and max
+{ score: { min: 80, max: 100 } }
+
+// Only minimum value
+{ score: { min: 90 } }
+
+// Only maximum value
+{ score: { max: 95 } }
+```
+
+#### Error handling and validation
+
+The custom schema provides automatic validation with helpful error messages:
+
+```typescript
+try {
+  // This will fail validation - missing required userId field
+  const invalidDoc: Document = {
+    pageContent: "Some content without required metadata",
+    metadata: {
+      category: "test",
+      // Missing required userId field
+    },
+  };
+
+  await vectorStoreWithSchema.addDocuments([invalidDoc]);
+} catch (error) {
+  console.log("Validation error:", error.message);
+  // Output: "Required metadata field 'userId' is missing"
+}
+
+try {
+  // This will fail validation - wrong type for score field
+  const wrongTypeDoc: Document = {
+    pageContent: "Content with wrong metadata type",
+    metadata: {
+      userId: "user123",
+      score: "not-a-number", // Should be number, not string
+    },
+  };
+
+  await vectorStoreWithSchema.addDocuments([wrongTypeDoc]);
+} catch (error) {
+  console.log("Type validation error:", error.message);
+  // Output: "Metadata field 'score' must be a number, got string"
+}
+```
+
+#### Performance benefits
+
+Using custom schema provides several performance advantages:
+
+1. **Indexed Metadata Fields**: Individual metadata fields are indexed separately, enabling fast filtering
+2. **Type-Optimized Queries**: Numeric and tag fields use optimized query structures
+3. **Reduced Data Transfer**: Only relevant fields are returned in search results
+4. **Better Query Planning**: Redis can optimize queries based on field types and indexes
+
+#### Backward compatibility
+
+The custom schema feature is fully backward compatible. Existing Redis vector stores without custom schemas will continue to work exactly as before. You can gradually migrate to custom schemas for new indexes or when rebuilding existing ones.
+
+---
+
+## API reference
+
+For detailed documentation of all `RedisVectorStore` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-redis/RedisVectorStore).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/vectorstores/redis.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

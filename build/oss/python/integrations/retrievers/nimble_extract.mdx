@@ -1,0 +1,213 @@
+---
+title: Nimble Extract
+---
+
+>[Nimble's Extract API](https://docs.nimbleway.com/nimble-sdk/extract-api) extracts rendered content from specific URLs by browsing them with headless browsers rather than relying on cached or API-limited data. This retriever handles JavaScript rendering, dynamic content, and complex navigation flows—making it suitable for RAG applications that need access to specific web pages, including content behind pagination, filters, and client-side rendering.
+
+We can use this as a [retriever](/oss/python/langchain/retrieval). It will show functionality specific to this integration. After going through, it may be useful to explore [relevant use-case pages](/oss/python/langchain/rag) to learn how to use this retriever as part of a larger chain.
+
+### Installation
+
+<CodeGroup>
+```bash pip
+pip install -U langchain-nimble
+```
+```bash uv
+uv add langchain-nimble
+```
+</CodeGroup>
+
+We also need to set our Nimble API key. You can obtain an API key by signing up at [Nimble](https://www.nimbleway.com/).
+
+```python
+import getpass
+import os
+
+if not os.environ.get("NIMBLE_API_KEY"):
+    os.environ["NIMBLE_API_KEY"] = getpass.getpass("Nimble API key:\n")
+```
+
+## Usage
+
+Now we can instantiate our retriever:
+
+```python
+from langchain_nimble import NimbleExtractRetriever
+
+# Basic retriever - requires URLs to extract
+retriever = NimbleExtractRetriever()
+```
+
+## Use within a chain
+
+We can easily combine this retriever into a RAG chain for extracting and analyzing specific web content:
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+
+# Create a RAG prompt
+prompt = ChatPromptTemplate.from_template(
+    """Analyze the extracted content from the provided URLs.
+Answer the question based only on the extracted content.
+If you cannot answer based on the content, say so.
+
+Content: {content}
+
+Question: {question}
+
+Answer:"""
+)
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+# Configure retriever for content extraction
+retriever = NimbleExtractRetriever(
+    parsing_type="markdown",
+    wait=3000
+)
+
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+# Example: Extract and analyze content from LangChain documentation
+urls = [
+    "https://python.langchain.com/docs/concepts/retrievers/",
+    "https://python.langchain.com/docs/concepts/tools/",
+    "https://python.langchain.com/docs/tutorials/agents/"
+]
+
+# Create a custom runnable that passes URLs to retriever
+def get_docs(question):
+    # In a real scenario, URLs might be determined by previous steps
+    return retriever.invoke(urls)
+
+
+# Build the RAG chain
+chain = (
+    {
+        "content": lambda _: get_docs(_) | format_docs,
+        "question": RunnablePassthrough()
+    }
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+```
+
+```python
+# Ask a question about the extracted content
+response = chain.invoke("What are the key differences between retrievers and tools in LangChain?")
+print(response)
+```
+
+```output
+Based on the extracted LangChain documentation, here are the key differences:
+
+**Retrievers:**
+- Interface for document retrieval based on unstructured queries
+- Primary use case is RAG (Retrieval Augmented Generation)
+- Returns documents from various sources like vector stores
+- Focuses on semantic search and information retrieval
+- Core component for question-answering systems
+
+**Tools:**
+- Interface for agents to interact with external systems
+- Enables actions beyond text generation (API calls, calculations, web search)
+- Used by agents to extend capabilities dynamically
+- Supports both synchronous and asynchronous execution
+- Can be chained together for complex workflows
+
+**Agents:**
+- High-level orchestrators that use tools to accomplish tasks
+- Make decisions about which tools to use and when
+- Can combine multiple tools to solve complex problems
+- Tutorial shows how to build agent workflows with tool integration
+
+The documentation emphasizes that retrievers are specialized for information retrieval, while tools provide broader action capabilities for agents.
+```
+
+## Advanced configuration
+
+The retriever supports extensive configuration for URL extraction:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `parsing_type` | str | "plain_text" | Output format: "plain_text", "markdown", or "simplified_html" |
+| `driver` | str | "vx6" | Browser driver version: "vx6" (fast), "vx8" (balanced), or "vx10" (comprehensive) |
+| `wait` | int | None | Milliseconds to wait for page load (0-60000) |
+| `render` | bool | True | Enable JavaScript rendering |
+| `locale` | str | "en" | Page locale preference (e.g., "en-US") |
+| `country` | str | "US" | Country code for localized content (e.g., "US") |
+| `api_key` | str | env var | Nimble API key (defaults to NIMBLE_API_KEY environment variable) |
+
+**Example with advanced configuration:**
+
+```python
+from langchain_nimble import NimbleExtractRetriever
+
+# Retriever optimized for JavaScript-heavy documentation sites
+retriever = NimbleExtractRetriever(
+    parsing_type="markdown",
+    driver="vx10",  # Use comprehensive driver for complex SPAs
+    wait=5000,  # Wait up to 5 seconds for full page render
+    render=True,  # Enable JavaScript rendering
+    locale="en-US",
+    country="US"
+)
+
+# Extract content from specific LangChain documentation pages
+docs = retriever.invoke([
+    "https://python.langchain.com/docs/concepts/chat_models/",
+    "https://python.langchain.com/docs/concepts/prompts/"
+])
+```
+
+## Best Practices
+
+### Driver selection
+
+- **vx6** (default): Fast extraction for standard websites
+- **vx8**: Balanced performance for moderately complex sites
+- **vx10**: Comprehensive rendering for JavaScript-heavy SPAs and complex dynamic content
+
+### Page load configuration
+
+- **No wait** (`wait=None`): Default for most modern websites
+- **Short wait** (`wait=1000-2000`): For pages with lazy loading or deferred content
+- **Longer wait** (`wait=5000+`): For slow-loading SPAs or heavy JavaScript that need time to fully render
+
+### Output format selection
+
+- **Plain text** (default): Fast extraction of raw text content
+- **Markdown**: Best for RAG - preserves structure with headers, lists, code blocks
+- **HTML**: When you need to preserve detailed styling or structure information
+
+### Performance optimization
+
+1. **Tune wait times**: Only use when necessary—fast sites don't need wait times
+2. **Batch related URLs**: Extract multiple pages from same domain in parallel
+3. **Choose right format**: Markdown for RAG, plain_text for simpler processing
+4. **Use async**: Leverage `ainvoke()` for concurrent URL extraction
+5. **Validate content**: Check that pages load successfully before processing
+
+---
+
+## API reference
+
+For detailed documentation of all `NimbleExtractRetriever` features and configurations, visit the [Nimble API documentation](https://docs.nimbleway.com/nimble-sdk/search-api/extract-api-quick-start).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/retrievers/nimble_extract.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

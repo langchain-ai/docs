@@ -1,0 +1,329 @@
+---
+title: "ChatOllama integration"
+description: "Integrate with the ChatOllama chat model using LangChain JavaScript."
+---
+
+[Ollama](https://ollama.ai/) allows you to run open-source Large Language Models (LLMs), such as Llama 3.1, locally.
+
+Ollama bundles model weights, configuration, and data into a single package, defined by a Modelfile. It optimizes setup and configuration details, including GPU usage.
+
+This guide will help you getting started with `ChatOllama` [chat models](/oss/javascript/langchain/models). For detailed documentation of all `ChatOllama` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-ollama/ChatOllama).
+
+## Overview
+
+### Integration details
+
+Ollama allows you to use a wide range of models with different capabilities. Some of the fields in the details table below only apply to a subset of models that Ollama offers.
+
+For a complete list of supported models and model variants, see the [Ollama model library](https://ollama.com/search) and search by tag.
+
+| Class | Package | Serializable | [PY support](https://python.langchain.com/docs/integrations/chat/ollama) | Downloads | Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| [`ChatOllama`](https://reference.langchain.com/javascript/langchain-ollama/ChatOllama) | [`@langchain/ollama`](https://www.npmjs.com/package/@langchain/ollama) | beta | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/ollama?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/ollama?style=flat-square&label=%20&) |
+
+### Model features
+
+See the links in the table headers below for guides on how to use specific features.
+
+| [Tool calling](/oss/javascript/langchain/tools) | [Structured output](/oss/javascript/langchain/structured-output) | [Image input](/oss/javascript/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/javascript/langchain/streaming/) | [Token usage](/oss/javascript/langchain/models#token-usage) | [Logprobs](/oss/javascript/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
+
+## Setup
+
+Follow [these instructions](https://github.com/ollama/ollama) to set up and run a local Ollama instance. Then, download the `@langchain/ollama` package.
+
+### Credentials
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/observability) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain ChatOllama integration lives in the `@langchain/ollama` package:
+
+<CodeGroup>
+```bash npm
+npm install @langchain/ollama @langchain/core
+```
+```bash yarn
+yarn add @langchain/ollama @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/ollama @langchain/core
+```
+</CodeGroup>
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+```typescript
+import { ChatOllama } from "@langchain/ollama"
+
+const llm = new ChatOllama({
+    model: "llama3",
+    temperature: 0,
+    maxRetries: 2,
+    // other params...
+})
+```
+
+## Invocation
+
+```typescript
+const aiMsg = await llm.invoke([
+    [
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ],
+    ["human", "I love programming."],
+])
+aiMsg
+```
+
+```text
+AIMessage {
+  "content": "Je adore le programmation.\n\n(Note: \"programmation\" is the feminine form of the noun in French, but if you want to use the masculine form, it would be \"le programme\" instead.)",
+  "additional_kwargs": {},
+  "response_metadata": {
+    "model": "llama3",
+    "created_at": "2024-08-01T16:59:17.359302Z",
+    "done_reason": "stop",
+    "done": true,
+    "total_duration": 6399311167,
+    "load_duration": 5575776417,
+    "prompt_eval_count": 35,
+    "prompt_eval_duration": 110053000,
+    "eval_count": 43,
+    "eval_duration": 711744000
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 35,
+    "output_tokens": 43,
+    "total_tokens": 78
+  }
+}
+```
+
+```typescript
+console.log(aiMsg.content)
+```
+
+```text
+Je adore le programmation.
+
+(Note: "programmation" is the feminine form of the noun in French, but if you want to use the masculine form, it would be "le programme" instead.)
+```
+
+## Tools
+
+Ollama now offers support for native tool calling [for a subset of their available models](https://ollama.com/search?c=tools). The example below demonstrates how you can invoke a tool from an Ollama model.
+
+```typescript
+import { tool } from "@langchain/core/tools";
+import { ChatOllama } from "@langchain/ollama";
+import * as z from "zod";
+
+const weatherTool = tool((_) => "Da weather is weatherin", {
+  name: "get_current_weather",
+  description: "Get the current weather in a given location",
+  schema: z.object({
+    location: z.string().describe("The city and state, e.g. San Francisco, CA"),
+  }),
+});
+
+// Define the model
+const llmForTool = new ChatOllama({
+  model: "llama3-groq-tool-use",
+});
+
+// Bind the tool to the model
+const llmWithTools = llmForTool.bindTools([weatherTool]);
+
+const resultFromTool = await llmWithTools.invoke(
+  "What's the weather like today in San Francisco? Ensure you use the 'get_current_weather' tool."
+);
+
+console.log(resultFromTool);
+```
+
+```text
+AIMessage {
+  "content": "",
+  "additional_kwargs": {},
+  "response_metadata": {
+    "model": "llama3-groq-tool-use",
+    "created_at": "2024-08-01T18:43:13.2181Z",
+    "done_reason": "stop",
+    "done": true,
+    "total_duration": 2311023875,
+    "load_duration": 1560670292,
+    "prompt_eval_count": 177,
+    "prompt_eval_duration": 263603000,
+    "eval_count": 30,
+    "eval_duration": 485582000
+  },
+  "tool_calls": [
+    {
+      "name": "get_current_weather",
+      "args": {
+        "location": "San Francisco, CA"
+      },
+      "id": "c7a9d590-99ad-42af-9996-41b90efcf827",
+      "type": "tool_call"
+    }
+  ],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 177,
+    "output_tokens": 30,
+    "total_tokens": 207
+  }
+}
+```
+
+## Structured output
+
+Ollama natively supports [structured output](https://docs.ollama.com/capabilities/structured-outputs) for all models, allowing you to force the model to return a specific format by calling `.withStructuredOutput()`.
+
+```typescript
+import { ChatOllama } from "@langchain/ollama";
+import { z } from "zod";
+
+// Define the schema
+const Country = z.object({
+  name: z.string(),
+  capital: z.string(),
+  languages: z.array(z.string()),
+});
+
+// Define the model
+const llm = new ChatOllama({
+  model: "llama3.1",
+  temperature: 0,
+});
+
+// Pass the schema to enforce a specific output format
+const structuredLlm = llm.withStructuredOutput(Country);
+
+const result = await structuredLlm.invoke("Tell me about Canada.");
+console.log(result);
+```
+
+```output
+{
+  name: 'Canada',
+  capital: 'Ottawa',
+  languages: [ 'English', 'French' ]
+}
+```
+
+If you prefer to use structured output via tool calling, pass the `method: "functionCalling"` option:
+
+```typescript
+import { ChatOllama } from "@langchain/ollama";
+import { z } from "zod";
+
+// Define the schema
+const Sentence = z.object({
+  nouns: z.array(z.string()),
+});
+
+// Define the model
+const llm = new ChatOllama({
+  model: "llama3.1",
+  temperature: 0,
+});
+
+// Use structured output via tool calling
+const structuredLlm = llm.withStructuredOutput(Sentence, { method: "functionCalling" });
+
+const result = await structuredLlm.invoke("Extract all nouns: A cat named Luna who is 5 years old and loves playing with yarn. She has grey fur");
+console.log(result);
+```
+
+```output
+{ nouns: [ 'cat', 'Luna', 'years', 'yarn', 'fur' ] }
+```
+
+## Multimodal models
+
+Ollama supports open source multimodal models like [LLaVA](https://ollama.ai/library/llava) in versions 0.1.15 and up.
+You can pass images as part of a message's `content` field to [multimodal-capable](/oss/javascript/langchain/messages#multimodal) models like this:
+
+```typescript
+import { ChatOllama } from "@langchain/ollama";
+import { HumanMessage } from "@langchain/core/messages";
+import * as fs from "node:fs/promises";
+
+const imageData = await fs.readFile("../../../../../examples/hotdog.jpg");
+const llmForMultiModal = new ChatOllama({
+  model: "llava",
+  baseUrl: "http://127.0.0.1:11434",
+});
+const multiModalRes = await llmForMultiModal.invoke([
+  new HumanMessage({
+    content: [
+      {
+        type: "text",
+        text: "What is in this image?",
+      },
+      {
+        type: "image_url",
+        image_url: `data:image/jpeg;base64,${imageData.toString("base64")}`,
+      },
+    ],
+  }),
+]);
+console.log(multiModalRes);
+```
+
+```text
+AIMessage {
+  "content": " The image shows a hot dog in a bun, which appears to be a footlong. It has been cooked or grilled to the point where it's browned and possibly has some blackened edges, indicating it might be slightly overcooked. Accompanying the hot dog is a bun that looks toasted as well. There are visible char marks on both the hot dog and the bun, suggesting they have been cooked directly over a source of heat, such as a grill or broiler. The background is white, which puts the focus entirely on the hot dog and its bun. ",
+  "additional_kwargs": {},
+  "response_metadata": {
+    "model": "llava",
+    "created_at": "2024-08-01T17:25:02.169957Z",
+    "done_reason": "stop",
+    "done": true,
+    "total_duration": 5700249458,
+    "load_duration": 2543040666,
+    "prompt_eval_count": 1,
+    "prompt_eval_duration": 1032591000,
+    "eval_count": 127,
+    "eval_duration": 2114201000
+  },
+  "tool_calls": [],
+  "invalid_tool_calls": [],
+  "usage_metadata": {
+    "input_tokens": 1,
+    "output_tokens": 127,
+    "total_tokens": 128
+  }
+}
+```
+
+---
+
+## API reference
+
+For detailed documentation of all `ChatOllama` features and configurations head to the [API reference](https://reference.langchain.com/javascript/langchain-ollama/ChatOllama).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/chat/ollama.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
