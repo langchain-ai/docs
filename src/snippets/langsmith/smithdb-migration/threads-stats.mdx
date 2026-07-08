@@ -1,0 +1,234 @@
+import SmithdbThreadsStatsBasicBeforePy from '/snippets/code-samples/smithdb-migration/threads-stats-basic-before-py.mdx';
+import SmithdbThreadsStatsBasicAfterPy from '/snippets/code-samples/smithdb-migration/threads-stats-basic-after-py.mdx';
+import SmithdbThreadsStatsBasicBeforeJs from '/snippets/code-samples/smithdb-migration/threads-stats-basic-before-js.mdx';
+import SmithdbThreadsStatsBasicAfterJs from '/snippets/code-samples/smithdb-migration/threads-stats-basic-after-js.mdx';
+import SmithdbThreadsStatsBasicBeforeGo from '/snippets/code-samples/smithdb-migration/threads-stats-basic-before-go.mdx';
+import SmithdbThreadsStatsBasicAfterGo from '/snippets/code-samples/smithdb-migration/threads-stats-basic-after-go.mdx';
+import SmithdbThreadsStatsBasicBeforeKt from '/snippets/code-samples/smithdb-migration/threads-stats-basic-before-kt.mdx';
+import SmithdbThreadsStatsBasicAfterKt from '/snippets/code-samples/smithdb-migration/threads-stats-basic-after-kt.mdx';
+import SmithdbThreadsStatsBasicBeforeSh from '/snippets/code-samples/smithdb-migration/threads-stats-basic-before-sh.mdx';
+import SmithdbThreadsStatsBasicAfterSh from '/snippets/code-samples/smithdb-migration/threads-stats-basic-after-sh.mdx';
+import SmithdbThreadsStatsFirstStartTimeBeforePy from '/snippets/code-samples/smithdb-migration/threads-stats-first-start-time-before-py.mdx';
+import SmithdbThreadsStatsFirstStartTimeAfterPy from '/snippets/code-samples/smithdb-migration/threads-stats-first-start-time-after-py.mdx';
+import SmithdbThreadsStatsFirstStartTimeBeforeJs from '/snippets/code-samples/smithdb-migration/threads-stats-first-start-time-before-js.mdx';
+import SmithdbThreadsStatsFirstStartTimeAfterJs from '/snippets/code-samples/smithdb-migration/threads-stats-first-start-time-after-js.mdx';
+import SmithdbThreadsStatsFirstStartTimeBeforeGo from '/snippets/code-samples/smithdb-migration/threads-stats-first-start-time-before-go.mdx';
+import SmithdbThreadsStatsFirstStartTimeAfterGo from '/snippets/code-samples/smithdb-migration/threads-stats-first-start-time-after-go.mdx';
+import SmithdbThreadsStatsFirstStartTimeBeforeKt from '/snippets/code-samples/smithdb-migration/threads-stats-first-start-time-before-kt.mdx';
+import SmithdbThreadsStatsFirstStartTimeAfterKt from '/snippets/code-samples/smithdb-migration/threads-stats-first-start-time-after-kt.mdx';
+import SmithdbThreadsStatsFirstStartTimeBeforeSh from '/snippets/code-samples/smithdb-migration/threads-stats-first-start-time-before-sh.mdx';
+import SmithdbThreadsStatsFirstStartTimeAfterSh from '/snippets/code-samples/smithdb-migration/threads-stats-first-start-time-after-sh.mdx';
+
+## Threads: stats
+
+Compute aggregate stats for a single thread (turn count, latency percentiles, token/cost sums, and detail breakdowns) within a project.
+
+### Main changes
+
+#### Method name
+
+<Tabs>
+  <Tab title="Python">
+    | Before | After |
+    |--------|-------|
+    | `client.get_run_stats()` | `client.threads.stats()` |
+  </Tab>
+  <Tab title="TypeScript">
+    | Before | After |
+    |--------|-------|
+    | `client.getRunStats()` | `client.threads.stats()` |
+  </Tab>
+  <Tab title="Java">
+    The generic stats endpoint exists in all 4 languages (there's no dedicated thread-stats method, but the escape hatch is a real, working one—unlike `threads.query`/`threads.list_traces`).
+
+    | Before | After |
+    |--------|-------|
+    | `client.runs().stats()` (generic, filtered by `thread_id`) | `client.threads().stats()` |
+  </Tab>
+  <Tab title="Go">
+    | Before | After |
+    |--------|-------|
+    | `client.Runs.Stats()` (generic, filtered by `thread_id`) | `client.Threads.Stats()` |
+  </Tab>
+  <Tab title="cURL">
+    | Before | After |
+    |--------|-------|
+    | `POST /api/v1/runs/stats` (`filter=eq(thread_id, ...)`) | `GET /v2/threads/{thread_id}/stats` |
+  </Tab>
+</Tabs>
+
+#### Query parameters
+
+<Tabs>
+  <Tab title="Python">
+    v1's `RunStatsQueryParams` has 23 generic filter/grouping params—only `filter` + `is_root` + `project_ids` are actually used to scope stats to one thread. v2 takes `thread_id` (path) + `session_id` + `selects` (required, at least one value, from a 17-value enum).
+
+    | Before (`get_run_stats`) | After (`threads.stats`) | Notes |
+    |---|---|---|
+    | `project_ids` | `session_id` | v2 takes a single project UUID, not a list |
+    | `filter=eq(thread_id, ...)` + `is_root=True` | `thread_id` (path param) | v2 scopes by path, not filter |
+    | *(returns everything)* | `selects` | v2 requires an explicit, non-empty select list |
+  </Tab>
+  <Tab title="TypeScript">
+    Same mapping as Python: `getRunStats({ projectIds, filter, isRoot })` → `threads.stats(threadId, { session_id, selects })`.
+  </Tab>
+  <Tab title="Java">
+    `runs().stats()` takes a 23-field `RunStatsQueryParams` (only `session`, `filter`, `isRoot` used here). `threads().stats(threadId, params)` takes `sessionId` and `selects` (required, 17-value enum).
+  </Tab>
+  <Tab title="Go">
+    `Runs.Stats()` takes the same 23-field `RunStatsQueryParams`. `Threads.Stats(ctx, threadID, params)` takes `SessionID` and `Selects` (required, 17-value enum).
+  </Tab>
+  <Tab title="cURL">
+    `GET /v2/threads/{thread_id}/stats` query params: `session_id` (required), `selects` (repeatable, required)—all `snake_case`.
+  </Tab>
+</Tabs>
+
+#### Response fields
+
+<Tabs>
+  <Tab title="Python">
+    | v1 `RunStats` field | v2 `ThreadStatsResponse` field | Notes |
+    |---|---|---|
+    | `run_count` | `turns` | Renamed |
+    | `latency_p50` | `latency_p50_seconds` | Renamed, unit made explicit |
+    | `latency_p99` | `latency_p99_seconds` | Renamed |
+    | `last_run_start_time` | `last_start_time` | Renamed |
+    | `prompt_tokens`, `completion_tokens`, `total_tokens` | Unchanged | Same names |
+    | `prompt_cost`, `completion_cost`, `total_cost` | Unchanged | Same names |
+    | `*_token_details`, `*_cost_details` | Unchanged | Same names |
+    | `feedback_stats` | Unchanged | Same name |
+    | *(needed a second `runs/query` call sorted ascending)* | `first_start_time` | New: no longer needs a second API call |
+    | *(not available)* | `last_end_time` | New |
+    | `first_token_p50`/`first_token_p99`, `median_tokens`, token-count percentiles, `run_facets`, `error_rate`, `streaming_rate`, `cost_p50`/`cost_p99` | *(removed)* | v1-only, no v2 equivalent |
+
+    <Note>v1's stats response is a union of a flat shape and a grouped-by-key map (when `group_by`/`groups` are set). Only the flat variant matters here, since scoping to a single thread never uses grouping.</Note>
+  </Tab>
+  <Tab title="TypeScript">
+    Same field mapping as Python.
+  </Tab>
+  <Tab title="Java">
+    Same field mapping. `RunStatsResponse.runStats()` reliably decodes to the flat `RunStats` variant for a non-grouped query in the current Java binding.
+  </Tab>
+  <Tab title="Go">
+    Same field mapping—but the Go binding's `RunStatsResponseUnion` can misdecode a flat (non-grouped) response as the grouped-map variant, a known ambiguity between `RunStatsResponseRunStats` and `RunStatsResponseMap`. Handle both cases defensively with a type switch, as shown below.
+  </Tab>
+  <Tab title="cURL">
+    JSON response fields match Python `snake_case`.
+  </Tab>
+</Tabs>
+
+### Examples
+
+#### Compute stats for a thread
+
+<Warning>
+`threads.stats` aggregates are computed by an eventually-consistent background job. A call right after a thread's last run can succeed with some selected fields still unpopulated.
+</Warning>
+
+<Tabs>
+  <Tab title="Python">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbThreadsStatsBasicBeforePy />
+  </Tab>
+  <Tab title="After">
+    <SmithdbThreadsStatsBasicAfterPy />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="TypeScript">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbThreadsStatsBasicBeforeJs />
+  </Tab>
+  <Tab title="After">
+    <SmithdbThreadsStatsBasicAfterJs />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Java">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbThreadsStatsBasicBeforeKt />
+  </Tab>
+  <Tab title="After">
+    <SmithdbThreadsStatsBasicAfterKt />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Go">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbThreadsStatsBasicBeforeGo />
+  </Tab>
+  <Tab title="After">
+    <SmithdbThreadsStatsBasicAfterGo />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="cURL">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbThreadsStatsBasicBeforeSh />
+  </Tab>
+  <Tab title="After">
+    <SmithdbThreadsStatsBasicAfterSh />
+  </Tab>
+</Tabs>
+  </Tab>
+</Tabs>
+
+#### The old two-call workaround for `first_start_time`
+
+<Tabs>
+  <Tab title="Python">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbThreadsStatsFirstStartTimeBeforePy />
+  </Tab>
+  <Tab title="After">
+    <SmithdbThreadsStatsFirstStartTimeAfterPy />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="TypeScript">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbThreadsStatsFirstStartTimeBeforeJs />
+  </Tab>
+  <Tab title="After">
+    <SmithdbThreadsStatsFirstStartTimeAfterJs />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Java">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbThreadsStatsFirstStartTimeBeforeKt />
+  </Tab>
+  <Tab title="After">
+    <SmithdbThreadsStatsFirstStartTimeAfterKt />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Go">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbThreadsStatsFirstStartTimeBeforeGo />
+  </Tab>
+  <Tab title="After">
+    <SmithdbThreadsStatsFirstStartTimeAfterGo />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="cURL">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbThreadsStatsFirstStartTimeBeforeSh />
+  </Tab>
+  <Tab title="After">
+    <SmithdbThreadsStatsFirstStartTimeAfterSh />
+  </Tab>
+</Tabs>
+  </Tab>
+</Tabs>

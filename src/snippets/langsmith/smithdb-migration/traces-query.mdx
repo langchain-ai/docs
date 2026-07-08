@@ -1,0 +1,261 @@
+import SmithdbTracesQueryTotalsBeforePy from '/snippets/code-samples/smithdb-migration/traces-query-totals-before-py.mdx';
+import SmithdbTracesQueryTotalsAfterPy from '/snippets/code-samples/smithdb-migration/traces-query-totals-after-py.mdx';
+import SmithdbTracesQueryTotalsBeforeJs from '/snippets/code-samples/smithdb-migration/traces-query-totals-before-js.mdx';
+import SmithdbTracesQueryTotalsAfterJs from '/snippets/code-samples/smithdb-migration/traces-query-totals-after-js.mdx';
+import SmithdbTracesQueryTotalsBeforeGo from '/snippets/code-samples/smithdb-migration/traces-query-totals-before-go.mdx';
+import SmithdbTracesQueryTotalsAfterGo from '/snippets/code-samples/smithdb-migration/traces-query-totals-after-go.mdx';
+import SmithdbTracesQueryTotalsBeforeKt from '/snippets/code-samples/smithdb-migration/traces-query-totals-before-kt.mdx';
+import SmithdbTracesQueryTotalsAfterKt from '/snippets/code-samples/smithdb-migration/traces-query-totals-after-kt.mdx';
+import SmithdbTracesQueryTotalsBeforeSh from '/snippets/code-samples/smithdb-migration/traces-query-totals-before-sh.mdx';
+import SmithdbTracesQueryTotalsAfterSh from '/snippets/code-samples/smithdb-migration/traces-query-totals-after-sh.mdx';
+import SmithdbTracesQueryFiltersBeforePy from '/snippets/code-samples/smithdb-migration/traces-query-filters-before-py.mdx';
+import SmithdbTracesQueryFiltersAfterPy from '/snippets/code-samples/smithdb-migration/traces-query-filters-after-py.mdx';
+import SmithdbTracesQueryFiltersBeforeJs from '/snippets/code-samples/smithdb-migration/traces-query-filters-before-js.mdx';
+import SmithdbTracesQueryFiltersAfterJs from '/snippets/code-samples/smithdb-migration/traces-query-filters-after-js.mdx';
+import SmithdbTracesQueryFiltersBeforeGo from '/snippets/code-samples/smithdb-migration/traces-query-filters-before-go.mdx';
+import SmithdbTracesQueryFiltersAfterGo from '/snippets/code-samples/smithdb-migration/traces-query-filters-after-go.mdx';
+import SmithdbTracesQueryFiltersBeforeKt from '/snippets/code-samples/smithdb-migration/traces-query-filters-before-kt.mdx';
+import SmithdbTracesQueryFiltersAfterKt from '/snippets/code-samples/smithdb-migration/traces-query-filters-after-kt.mdx';
+import SmithdbTracesQueryFiltersBeforeSh from '/snippets/code-samples/smithdb-migration/traces-query-filters-before-sh.mdx';
+import SmithdbTracesQueryFiltersAfterSh from '/snippets/code-samples/smithdb-migration/traces-query-filters-after-sh.mdx';
+
+## Traces: query
+
+Returns a list of traces (root runs) for a single tracing project. Each item carries the trace's root run plus optional trace-wide aggregates (`total_tokens`, `total_cost`, `first_token_time`) under `trace_aggregates`, so clients never have to merge by `trace_id`.
+
+Traces are scanned within a `start_time` window: `min_start_time` defaults to 24 hours before the request, `max_start_time` defaults to the request time. Set either explicitly to widen or narrow the window.
+
+Supports filters (`trace_filter`, `tree_filter`) and field projection (`selects`).
+
+### Main changes
+
+#### Method name
+
+<Tabs>
+  <Tab title="Python">
+    | Before | After |
+    |--------|-------|
+    | `client.list_runs(is_root=True)` (generic, no dedicated wrapper) | `client.traces.query()` |
+  </Tab>
+  <Tab title="TypeScript">
+    | Before | After |
+    |--------|-------|
+    | `client.listRuns({ isRoot: true })` (generic) | `client.traces.query()` |
+  </Tab>
+  <Tab title="Java">
+    | Before | After |
+    |--------|-------|
+    | `client.runs().query()` (generic, `isRoot(true)`) | `client.traces().query()` |
+  </Tab>
+  <Tab title="Go">
+    | Before | After |
+    |--------|-------|
+    | `client.Runs.Query()` (generic, `IsRoot: true`) | `client.Traces.Query()` |
+  </Tab>
+  <Tab title="cURL">
+    | Before | After |
+    |--------|-------|
+    | `POST /api/v1/runs/query` (`is_root=true`) | `POST /v2/traces/query` |
+  </Tab>
+</Tabs>
+
+This isn't a "no predecessor" case—it's "no dedicated wrapper." `list_runs(is_root=True)` already does most of the job of listing traces; what changes is where trace-wide totals live (see the example below).
+
+#### Query parameters
+
+<Tabs>
+  <Tab title="Python">
+    <Note>
+    `min_start_time` defaults to **24 hours ago** and `max_start_time` defaults to the request time when omitted—narrower than `list_runs`, which returned all historical root runs with no time filter.
+    </Note>
+
+    | Before (`list_runs`) | After (`traces.query`) | Notes |
+    |---|---|---|
+    | `project_id`/`project_ids` | `project_id` | Unchanged in spirit |
+    | `filter` (evaluated against runs) | `trace_filter` | Now explicitly scoped to root runs only—`is_root=true` is implied |
+    | *(not available)* | `tree_filter` | New: matches any run anywhere in the tree |
+    | *(not available)* | `trace_ids` | New: fast-path restriction to known trace UUIDs |
+    | `start_time` (no default) | `min_start_time` | Defaults to 24h ago—see note above |
+    | *(not available)* | `max_start_time` | Defaults to request time |
+    | `select` | `selects` | Routes to `trace_aggregates` (`total_tokens`/`total_cost`/`first_token_time`) or `root_run` (everything else) |
+  </Tab>
+  <Tab title="TypeScript">
+    Same mapping as Python, `snake_case` field names.
+  </Tab>
+  <Tab title="Java">
+    `RunQueryParams` (23 fields) → `TraceQueryParams`: `projectId`, `traceFilter`, `treeFilter`, `traceIds`, `minStartTime` (defaults 24h ago), `maxStartTime` (defaults now), `selects` (44-value enum), `pageSize`, `cursor`.
+  </Tab>
+  <Tab title="Go">
+    Same mapping—`RunQueryParams` → `TraceQueryParams` with `ProjectID`, `TraceFilter`, `TreeFilter`, `TraceIDs`, `MinStartTime`, `MaxStartTime`, `Selects`, `PageSize`, `Cursor`.
+  </Tab>
+  <Tab title="cURL">
+    `POST /v2/traces/query` body fields: `project_id`, `trace_filter`, `tree_filter`, `trace_ids`, `min_start_time`, `max_start_time`, `selects`, `page_size`, `cursor`—all `snake_case`.
+  </Tab>
+</Tabs>
+
+#### Response fields
+
+<Tabs>
+  <Tab title="Python">
+    Each returned `Trace` has `root_run` (a `Run`, same shape as the Runs: query response above, gated by `selects`) and `trace_aggregates`, omitted entirely when no aggregate field was selected.
+
+    | Before (v1 root `Run` field) | After (v2 `Trace` field) | Notes |
+    |---|---|---|
+    | `run.id`, `.name`, `.run_type`, `.status`, ... | `trace.root_run.id`, `.name`, `.run_type`, `.status`, ... | Same `Run` shape as Runs: query, gated by `selects` |
+    | `run.total_tokens` | *(not available on `root_run`)* | Moved to `trace_aggregates` |
+    | `run.total_cost` | *(not available on `root_run`)* | Moved to `trace_aggregates` |
+    | *(not available)* | `trace.trace_aggregates.total_tokens` | Summed across every run in the trace |
+    | *(not available)* | `trace.trace_aggregates.total_cost` | Summed across every run in the trace |
+    | *(not available)* | `trace.trace_aggregates.first_token_time` | New: first LLM token timestamp anywhere in the trace |
+  </Tab>
+  <Tab title="TypeScript">
+    Same shape and field mapping as Python.
+  </Tab>
+  <Tab title="Java">
+    `Trace` has 2 fields: `rootRun` (`Optional<Run>`) and `traceAggregates` (`Optional<TraceAggregates>`). `TraceAggregates` has `totalCost`, `totalTokens`, `firstTokenTime`.
+
+    | Before (v1 root `RunSchema` field) | After (v2 `Trace` field) | Notes |
+    |---|---|---|
+    | `run.totalTokens()`, `.name()`, `.runType()`, `.status()`, ... | `trace.rootRun().totalTokens()`, `.name()`, ... | Same `RunSchema` shape as Runs: query, gated by `selects` |
+    | `run.totalTokens()` | *(not available on `rootRun`)* | Moved to `traceAggregates` |
+    | `run.totalCost()` | *(not available on `rootRun`)* | Moved to `traceAggregates` |
+    | *(not available)* | `trace.traceAggregates().totalTokens()` | Summed across every run in the trace |
+    | *(not available)* | `trace.traceAggregates().totalCost()` | Summed across every run in the trace |
+    | *(not available)* | `trace.traceAggregates().firstTokenTime()` | New: first LLM token timestamp anywhere in the trace |
+  </Tab>
+  <Tab title="Go">
+    Same 2-field `Trace` struct, `PascalCase`. Check for an absent `TraceAggregates` via `trace.TraceAggregates.JSON.RawJSON() == ""`, since it's a value type, not a pointer.
+
+    | Before (v1 root `Run` field) | After (v2 `Trace` field) | Notes |
+    |---|---|---|
+    | `run.TotalTokens` | *(not available on `RootRun`)* | Moved to `TraceAggregates` |
+    | `run.TotalCost` | *(not available on `RootRun`)* | Moved to `TraceAggregates` |
+    | *(not available)* | `trace.TraceAggregates.TotalTokens` | Summed across every run in the trace |
+    | *(not available)* | `trace.TraceAggregates.TotalCost` | Summed across every run in the trace |
+    | *(not available)* | `trace.TraceAggregates.FirstTokenTime` | New: first LLM token timestamp anywhere in the trace |
+  </Tab>
+  <Tab title="cURL">
+    JSON response fields match Python `snake_case`.
+
+    | Before (v1 root run field) | After (v2 `trace` field) | Notes |
+    |---|---|---|
+    | `run.total_tokens` | *(not available on `root_run`)* | Moved to `trace_aggregates` |
+    | `run.total_cost` | *(not available on `root_run`)* | Moved to `trace_aggregates` |
+    | *(not available)* | `trace.trace_aggregates.total_tokens` | Summed across every run in the trace |
+    | *(not available)* | `trace.trace_aggregates.total_cost` | Summed across every run in the trace |
+    | *(not available)* | `trace.trace_aggregates.first_token_time` | New: first LLM token timestamp anywhere in the trace |
+  </Tab>
+</Tabs>
+
+### Examples
+
+#### Trace-wide totals move off the root run
+
+<Tabs>
+  <Tab title="Python">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesQueryTotalsBeforePy />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesQueryTotalsAfterPy />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="TypeScript">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesQueryTotalsBeforeJs />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesQueryTotalsAfterJs />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Java">
+    <Note>The Before example reads `totalTokens` only—`totalCost` is omitted because reading it on the v1 `RunSchema` type triggers a known deserialization bug in the current Java binding (it expects a string, the API returns a number).</Note>
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesQueryTotalsBeforeKt />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesQueryTotalsAfterKt />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Go">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesQueryTotalsBeforeGo />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesQueryTotalsAfterGo />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="cURL">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesQueryTotalsBeforeSh />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesQueryTotalsAfterSh />
+  </Tab>
+</Tabs>
+  </Tab>
+</Tabs>
+
+#### `trace_filter` (root-only) vs `trace_ids` fast-path
+
+<Tabs>
+  <Tab title="Python">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesQueryFiltersBeforePy />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesQueryFiltersAfterPy />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="TypeScript">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesQueryFiltersBeforeJs />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesQueryFiltersAfterJs />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Java">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesQueryFiltersBeforeKt />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesQueryFiltersAfterKt />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="Go">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesQueryFiltersBeforeGo />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesQueryFiltersAfterGo />
+  </Tab>
+</Tabs>
+  </Tab>
+  <Tab title="cURL">
+<Tabs sync={false}>
+  <Tab title="Before">
+    <SmithdbTracesQueryFiltersBeforeSh />
+  </Tab>
+  <Tab title="After">
+    <SmithdbTracesQueryFiltersAfterSh />
+  </Tab>
+</Tabs>
+  </Tab>
+</Tabs>
