@@ -1,0 +1,46 @@
+```python
+# Skip internal middleware steps - only show meaningful node names
+INTERESTING_NODES = {"model_request", "tools"}
+
+last_source = ""
+mid_line = False  # True when we've written tokens without a trailing newline
+
+for chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "Analyze the impact of remote work on team productivity"}]},
+    stream_mode=["updates", "messages", "custom"],
+    subgraphs=True,
+    version="v2",
+):
+    is_subagent = any(s.startswith("tools:") for s in chunk["ns"])
+    source = "subagent" if is_subagent else "main"
+
+    if chunk["type"] == "updates":
+        for node_name in chunk["data"]:
+            if node_name not in INTERESTING_NODES:
+                continue
+            if mid_line:
+                print()
+                mid_line = False
+            print(f"[{source}] step: {node_name}")
+
+    elif chunk["type"] == "messages":
+        token, metadata = chunk["data"]
+        if token.content:
+            # Print a header when the source changes
+            if source != last_source:
+                if mid_line:
+                    print()
+                    mid_line = False
+                print(f"\n[{source}] ", end="")
+                last_source = source
+            print(token.content, end="", flush=True)
+            mid_line = True
+
+    elif chunk["type"] == "custom":
+        if mid_line:
+            print()
+            mid_line = False
+        print(f"[{source}] custom event:", chunk["data"])
+
+print()
+```
