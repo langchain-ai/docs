@@ -26,39 +26,35 @@ Azure Kubernetes Service (AKS) is supported by the base LangSmith chart, but sel
 The following diagram shows the logical components added when you enable Sandboxes in a self-hosted LangSmith deployment.
 
 ```mermaid
-flowchart TB
-    browser["Browser"]
-    sdk["Client Application<br/>(LangSmith SDK)"]
-
-    browser -->|"Bearer token"| lb["Load Balancer"]
-    sdk -->|"API key"| lb
-
-    subgraph customer["Customer VPC / Cloud"]
+flowchart LR
+    subgraph clients["Clients"]
         direction TB
-        lb
-
-        subgraph app["LangSmith Application<br/>(Kubernetes cluster)"]
-            direction LR
-            frontend["Frontend<br/>(nginx)"]
-            platform["Platform Backend"]
-            runtime["Sandbox Runtime<br/>(requires KVM-capable nodes)"]
-            sandboxes["Running Sandboxes"]
-            juicefs["JuiceFS Volume"]
-
-            frontend --> platform
-            platform --> runtime
-            runtime --> sandboxes
-            runtime --> juicefs
-            sandboxes --> juicefs
-        end
-
-        storage["Storage Services<br/>Redis metadata store<br/>S3 or GCS bucket"]
-
-        lb --> frontend
-        juicefs --> storage
+        browser["Browser"]
+        sdk["Client Application<br/>(SDK)"]
+        service_urls["Service URLs<br/>(optional)"]
     end
 
-    service_urls["Optional service URLs"] -.-> lb
+    browser -->|"Bearer token"| lb["Load Balancer<br/>(Customer VPC / Cloud)"]
+    sdk -->|"API key"| lb
+    service_urls -.-> lb
+
+    subgraph app["LangSmith Application<br/>(Kubernetes release)"]
+        direction LR
+        frontend["Frontend<br/>(nginx)"]
+        platform["Platform Backend"]
+        runtime["Sandbox Runtime<br/>(KVM-capable nodes)"]
+        sandboxes["Running Sandboxes"]
+
+        frontend --> platform
+        platform --> runtime
+        runtime --> sandboxes
+    end
+
+    storage["Storage Services<br/>JuiceFS volume + Redis metadata<br/>S3 or GCS bucket"]
+
+    lb --> frontend
+    runtime --> storage
+    sandboxes --> storage
 ```
 
 In the Helm-rendered Kubernetes resources, **Sandbox Runtime** corresponds to the `sandbox-host` Deployment.
