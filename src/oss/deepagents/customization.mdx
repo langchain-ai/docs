@@ -48,22 +48,18 @@ import CustomizationMemoryFilesystemJs from '/snippets/code-samples/customizatio
 import CustomizationProfilesPy from '/snippets/code-samples/customization-profiles-py.mdx';
 import CustomizationStructuredOutputPy from '/snippets/code-samples/customization-structured-output-py.mdx';
 import CustomizationStructuredOutputJs from '/snippets/code-samples/customization-structured-output-js.mdx';
+import CustomizationOverviewPy from '/snippets/code-samples/customization-overview-py.mdx';
+import CustomizationOverviewJs from '/snippets/code-samples/customization-overview-js.mdx';
+import CustomizationMcpPy from '/snippets/code-samples/customization-mcp-py.mdx';
+import CustomizationMcpJs from '/snippets/code-samples/customization-mcp-js.mdx';
+import CustomizationPromptAssemblyPy from '/snippets/code-samples/customization-prompt-assembly-py.mdx';
+import CustomizationGpSubagentProfilePy from '/snippets/code-samples/customization-gp-subagent-profile-py.mdx';
 
 Build the harness around your goal. `create_deep_agent` gives you a production-ready foundation: connect it to your data, shape its behavior, and add the capabilities your use case needs.
 
 :::python
 
-```python
-from deepagents import create_deep_agent
-
-agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
-    system_prompt="You are a helpful assistant.",
-    tools=[search, fetch_url],
-    memory=["./AGENTS.md"],
-    skills=["./skills/"],
-)
-```
+<CustomizationOverviewPy />
 
 | Parameter | What it does |
 |---|---|
@@ -75,7 +71,7 @@ agent = create_deep_agent(
 | [`backend=`](#backends) | Filesystem backend (StateBackend by default) |
 | [`permissions=`](/oss/deepagents/permissions) | Path-level access control for the filesystem |
 | [`subagents=`](#subagents) | Custom subagents for delegated tasks |
-| [`middleware=`](#middleware) | Extra middleware appended to the [default stack](#default-stack-main-agent) |
+| [`middleware=`](#middleware) | Extra middleware merged into the [default stack](#default-stack-main-agent); an instance whose `.name` matches a default replaces it in place, anything else lands after the last core middleware entry and before the profile, prompt-caching, and memory |
 | [`interrupt_on=`](#human-in-the-loop) | Pause before tool calls for human approval |
 | [`response_format=`](#structured-output) | Structured output schema |
 | [`state_schema=`](/oss/deepagents/context-engineering#custom-state-schema) | Custom graph state schema |
@@ -93,17 +89,7 @@ For the full parameter list, see the @[`create_deep_agent`] API reference. To co
 
 `createDeepAgent` ships with a pre-assembled harness: filesystem, summarization, subagents, and prompt caching by default. The parameters below let you define the agent's persona, connect it to your data and tools, and extend the [default middleware stack](#default-stack-main-agent) with additional middleware.
 
-```typescript
-import { createDeepAgent } from "deepagents";
-
-const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
-  systemPrompt: "You are a helpful assistant.",
-  tools: [search, fetchUrl],
-  memory: ["./AGENTS.md"],
-  skills: ["./skills/"],
-});
-```
+<CustomizationOverviewJs />
 
 | Parameter | What it does |
 |---|---|
@@ -174,34 +160,7 @@ Install `langchain-mcp-adapters` to connect to MCP servers:
 pip install langchain-mcp-adapters
 ```
 
-```python
-import asyncio
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from deepagents import create_deep_agent
-
-async def main():
-    async with MultiServerMCPClient(
-        {
-            "my_server": {
-                "transport": "http",
-                "url": "http://localhost:8000/mcp",
-            }
-        }
-    ) as client:
-        tools = await client.get_tools()
-
-        agent = create_deep_agent(
-            model="openai:gpt-5.5",
-            tools=tools,
-        )
-
-        result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": "Use the MCP server to help me."}]},
-            config={"configurable": {"thread_id": "1"}},
-        )
-
-asyncio.run(main())
-```
+<CustomizationMcpPy />
 :::
 
 :::js
@@ -211,28 +170,7 @@ Install `@langchain/mcp-adapters` to connect to MCP servers:
 npm install @langchain/mcp-adapters
 ```
 
-```ts
-import { MultiServerMCPClient } from "@langchain/mcp-adapters";
-import { createDeepAgent } from "deepagents";
-
-const client = new MultiServerMCPClient({
-    my_server: {
-        transport: "http",
-        url: "http://localhost:8000/mcp",
-    },
-});
-
-const tools = await client.getTools();
-
-const agent = await createDeepAgent({
-    model: "openai:gpt-5.5",
-    tools,
-});
-
-const result = await agent.invoke({
-    messages: [{ role: "user", content: "Use the MCP server to help me." }],
-});
-```
+<CustomizationMcpJs />
 :::
 
 For detailed configuration options including stdio servers, OAuth authentication, tool filtering, and stateful sessions, see the full [MCP guide](/oss/langchain/mcp).
@@ -288,18 +226,7 @@ Assembled shapes (✓ = field is set, - = field is unset):
 
 Worked example—built-in profiles (Anthropic, OpenAI) ship only a `system_prompt_suffix`, so a typical call lands in the `str` + `-` + `✓` row:
 
-```python
-agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
-    system_prompt="You are a customer-support agent for ACME Corp.",
-)
-# Final = USER + BASE + SUFFIX
-#       = "You are a customer-support agent for ACME Corp."
-#         + "\n\n"
-#         + BASE_AGENT_PROMPT
-#         + "\n\n"
-#         + <Claude-specific guidance>
-```
+<CustomizationPromptAssemblyPy />
 
 <Note>
     Passing a `SystemMessage` (rather than a string) triggers a different concatenation path: the right-hand assembly (`BASE`-or-`CUSTOM` plus any `SUFFIX`) is appended as an additional text content block onto the message's existing `content_blocks`. The same logical ordering applies (caller blocks first), and any `cache_control` markers on the caller's blocks are preserved—useful for placing explicit Anthropic prompt-cache breakpoints.
@@ -323,18 +250,7 @@ agent = create_deep_agent(
 
         The two override fields can both carry a base-prompt replacement, but they are not interchangeable. `general_purpose_subagent.system_prompt` is general-purpose-specific configuration; `base_system_prompt` is a global override that primarily targets the main agent. When both are set, the **general-purpose-specific intent wins for the general-purpose subagent** so a user tuning both fields never sees their GP override silently dropped:
 
-        ```python
-        register_harness_profile(
-            "anthropic",
-            HarnessProfile(
-                base_system_prompt="You are ACME's support orchestrator.",  # main agent
-                general_purpose_subagent=GeneralPurposeSubagentProfile(
-                    system_prompt="You are a research subagent. Cite sources.",  # GP subagent
-                ),
-                system_prompt_suffix="Always think step by step.",
-            ),
-        )
-        ```
+        <CustomizationGpSubagentProfilePy />
 
         | Stack | Final system prompt |
         | ----- | ------------------- |
@@ -350,7 +266,7 @@ agent = create_deep_agent(
 Deep Agents support any [middleware](/oss/langchain/middleware/overview), including the built-in middleware listed below, prebuilt middleware from LangChain, provider-specific middleware, and custom middleware you write yourself.
 
 :::python
-Pass middleware to the `middleware` argument of `create_deep_agent`. Custom middleware is appended after @[`PatchToolCallsMiddleware`] in the [default stack](#default-stack-main-agent).
+Pass middleware to the `middleware` argument of `create_deep_agent`. Each instance is merged into the [default stack](#default-stack-main-agent) by matching its `.name` against the defaults already in the stack: a match replaces the default instance in place, and anything that does not match is inserted after @[`PatchToolCallsMiddleware`]. See [Override a default middleware instance](#override-a-default-middleware-instance).
 :::
 
 :::js
@@ -372,14 +288,14 @@ From first to last:
 5. @[`SummarizationMiddleware`]: Condenses message history to stay within context limits when conversations grow long (via @[create_summarization_middleware]).
 6. @[`PatchToolCallsMiddleware`]: Repairs dangling tool calls in message history when a run resumes after an interruption or receives malformed tool-call arguments. Runs **before** Anthropic prompt caching and the tail stack below.
 7. @[`AsyncSubAgentMiddleware`]: Only when you configure async subagents.
-8. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is appended here (after Patch, before the tail stack).
+8. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is merged after Patch but before the rest of the stack. An instance whose `.name` matches one of the defaults above replaces that default in place instead of duplicating it; anything else lands here. See [Override a default middleware instance](#override-a-default-middleware-instance).
 9. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
 10. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
-11. @[`AnthropicPromptCachingMiddleware`]: Always registered; it no-ops on non-Anthropic models (`unsupported_model_behavior="ignore"`). Runs **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
+11. **Prompt caching** (@[`AnthropicPromptCachingMiddleware`] and @[`BedrockPromptCachingMiddleware`]): Both are always registered and run **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model. Each no-ops on models it does not support (`unsupported_model_behavior="ignore"`), so the Anthropic middleware applies on Anthropic models and the Bedrock middleware on AWS Bedrock models with cache support.
 12. @[`MemoryMiddleware`]: Only when you pass `memory`.
 
     <Note>
-    `MemoryMiddleware` is placed **after** profile extras and Anthropic prompt caching so updates to injected memory are less likely to invalidate the Anthropic cache prefix. The same ordering concern is called out in the `create_deep_agent` implementation comments.
+    `MemoryMiddleware` is placed **after** profile extras and the prompt caching middleware so updates to injected memory are less likely to invalidate the cache prefix. The same ordering concern is called out in the `create_deep_agent` implementation comments.
     </Note>
 
 13. `HumanInTheLoopMiddleware`: Only when you pass `interrupt_on`. Pauses for human approval or input at configured tool calls.
@@ -398,11 +314,11 @@ From first to last:
 8. **Your middleware argument**: Optional middleware you pass as the `middleware` argument is appended here (after Patch, before the tail stack).
 9. **Harness profile extras**: Provider-specific middleware from the resolved model profile, if any.
 10. **Excluded-tool filtering**: When the harness profile lists excluded tools, middleware removes those tools from the agent.
-11. @[`AnthropicPromptCachingMiddleware`]: Automatically added when you are using an Anthropic model. Runs **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
+11. **Prompt caching** (@[`AnthropicPromptCachingMiddleware`] and @[`BedrockPromptCachingMiddleware`]): Added automatically for Anthropic models and Amazon Bedrock Converse models, respectively. Both run **after** Patch and after your middleware so the cached prefix matches what is actually sent to the model.
 12. @[`MemoryMiddleware`]: Only when you pass `memory`.
 
     <Note>
-    `MemoryMiddleware` is placed **after** profile extras and Anthropic prompt caching so updates to injected memory are less likely to invalidate the Anthropic cache prefix. The same ordering concern is called out in the `createDeepAgent` implementation comments.
+    `MemoryMiddleware` is placed **after** profile extras and the prompt caching middleware so updates to injected memory are less likely to invalidate the cache prefix. The same ordering concern is called out in the `createDeepAgent` implementation comments.
     </Note>
 
 13. `HumanInTheLoopMiddleware`: Only when you pass `interruptOn`. Pauses for human approval or input at configured tool calls.
@@ -413,7 +329,7 @@ From first to last:
 
 :::python
 
-The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `create_deep_agent` builds in code. It matches the main agent in broad shape (todo list, filesystem, summarization, Patch, profile extras, Anthropic caching, optional permissions) but differs in two ways:
+The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `create_deep_agent` builds in code. It matches the main agent in broad shape (todo list, filesystem, summarization, Patch, profile extras, Anthropic and Bedrock caching, optional permissions) but differs in two ways:
 
 - **Skills run after** @[`PatchToolCallsMiddleware`] on these inner agents (on the main agent, skills run **before** filesystem middleware when `skills` is set).
 - There is **no** @[`SubAgentMiddleware`] inside a subagent graph (only the parent agent exposes the `task` tool).
@@ -424,7 +340,7 @@ When a declarative subagent sets `interrupt_on`, that value is forwarded to `cre
 
 :::js
 
-The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `createDeepAgent` builds in code. It matches the main agent in broad shape (todo list, filesystem, summarization, Patch, profile extras, Anthropic caching, optional permissions) but differs in two ways:
+The built-in **general-purpose** subagent and each declarative synchronous `SubAgent` graph use a stack that `createDeepAgent` builds in code. It matches the main agent in broad shape (todo list, filesystem, summarization, Patch, profile extras, Anthropic and Bedrock caching, optional permissions) but differs in two ways:
 
 - **Skills run after** @[`PatchToolCallsMiddleware`] on these inner agents (on the main agent, skills run **before** filesystem middleware when `skills` is set).
 - There is **no** @[`SubAgentMiddleware`] inside a subagent graph (only the parent agent exposes the `task` tool).
@@ -502,6 +418,148 @@ Mutation in place, such as modifying `state.x` in `beforeAgent`, mutating a shar
 
 If you must use mutation in custom middleware, consider what happens when subagents, parallel tools, or concurrent agent invocations run at the same time.
 </Warning>
+
+### Override a default middleware instance
+
+:::python
+<Note>
+Overriding a default middleware by matching `.name` requires `deepagents>=0.7.0a3`.
+</Note>
+
+Pass a middleware instance whose `.name` matches an entry in the [default stack](#default-stack-main-agent), such as @[`SummarizationMiddleware`], to replace that default in place instead of appending a duplicate. Any middleware you pass whose `.name` does **not** match a default is not replaced, it lands after the last core middleware entry and before the profile, prompt-caching, and memory. See [Default stack (main agent)](#default-stack-main-agent) for the full ordering.
+
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import StateBackend
+from deepagents.middleware import SummarizationMiddleware
+
+backend = StateBackend()
+model = "openai:gpt-5.5"
+
+custom_summarization = SummarizationMiddleware(
+    model=model,
+    backend=backend,
+    summary_prompt="Your custom summary prompt here.",
+)
+
+agent = create_deep_agent(
+    model=model,
+    middleware=[custom_summarization],  # replaces the default SummarizationMiddleware
+)
+```
+
+<Note>
+An override **replaces** the default middleware instance, it is not merged with it. That means your replacement must be fully configured with any settings it needs. This is especially important for `FilesystemMiddleware`: if you override it, you must pass the `backend` (and `permissions`, if applicable) directly to your custom instance, since it won't inherit the `backend=` and `permissions=` passed to `create_deep_agent()`. To restrict the available filesystem tools, pass a `tools` allowlist to your custom @[`FilesystemMiddleware`] instance; see [Virtual filesystem access](/oss/deepagents/overview#virtual-filesystem-access) for the "Restricting filesystem tools" example.
+
+</Note>
+
+The general-purpose subagent, which Deep Agents adds automatically, inherits overrides for its default middleware from the main agent, without carrying over middleware that's specific to the main agent.
+
+Declarative subagents defined via `subagents=` do not inherit the main agent's middleware customization. Pass the override directly in that subagent's own [`middleware`](/oss/deepagents/subagents#subagent-dictionary-based) field to apply it there; that field is matched against the subagent's own default stack, the same way `middleware=` is matched against the main agent's.
+
+#### Examples
+
+<AccordionGroup>
+    <Accordion title="Adjust when summarization triggers" icon="adjustments">
+        Override @[`SummarizationMiddleware`] with custom `trigger` and `keep` thresholds to compact conversation history earlier or later than the default, and control how many recent messages survive each compaction.
+
+        ```python
+        from deepagents import create_deep_agent
+        from deepagents.backends import StateBackend
+        from deepagents.middleware import SummarizationMiddleware
+
+        backend = StateBackend()
+        model = "anthropic:claude-sonnet-4-6"
+
+        agent = create_deep_agent(
+            model=model,
+            middleware=[
+                SummarizationMiddleware(
+                    model=model,
+                    backend=backend,
+                    trigger=("tokens", 100000),  # summarize once the conversation exceeds 100k tokens
+                    keep=("messages", 20),  # keep the most recent 20 messages verbatim
+                ),
+            ],
+        )
+        ```
+
+        `trigger` also accepts `("fraction", ...)` for a percentage of the model's context window, and a list of thresholds combines them with OR semantics. See the @[`SummarizationMiddleware`] reference for the full set of options.
+    </Accordion>
+    <Accordion title="Update the prompt cache TTL" icon="clock">
+        Override @[`AnthropicPromptCachingMiddleware`] to extend the cache lifetime beyond the default `5m` TTL, useful for agents with long gaps between turns. See [Prompt caching](/oss/deepagents/overview#prompt-caching) for how caching is applied by default.
+
+        ```python
+        from deepagents import create_deep_agent
+        from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+
+        agent = create_deep_agent(
+            model="anthropic:claude-sonnet-4-6",
+            middleware=[
+                AnthropicPromptCachingMiddleware(ttl="1h"),  # replaces the default 5m TTL
+            ],
+        )
+        ```
+    </Accordion>
+    <Accordion title="Customize the filesystem instructions in the system prompt" icon="file-text">
+        Override @[`FilesystemMiddleware`] with a `system_prompt` to replace the filesystem-specific instructions it appends to the system prompt in place of the dynamically generated default.
+
+        ```python
+        from deepagents import create_deep_agent
+        from deepagents.backends import StateBackend
+        from deepagents.middleware import FilesystemMiddleware
+
+        backend = StateBackend()
+
+        agent = create_deep_agent(
+            model="anthropic:claude-sonnet-4-6",
+            backend=backend,
+            middleware=[
+                FilesystemMiddleware(
+                    backend=backend,
+                    system_prompt="Use the virtual filesystem to track long-running work. Write intermediate results to files instead of repeating them in messages.",
+                ),
+            ],
+        )
+        ```
+
+        As with any @[`FilesystemMiddleware`] override, pass the same `backend` (and `permissions`, if applicable) used elsewhere, since the override is not merged with the default.
+    </Accordion>
+    <Accordion title="Customize the task tool description" icon="message">
+        Override @[`SubAgentMiddleware`] with a `task_description` to replace the `task` tool's description, for example to steer the model on when to delegate. The override replaces the default stack outright, so redeclare the same `backend` and `subagents` passed to `create_deep_agent`. The auto-added [general-purpose subagent](/oss/deepagents/subagents#the-general-purpose-subagent) is not included unless you add an equivalent entry yourself.
+
+        ```python
+        from deepagents import create_deep_agent
+        from deepagents.backends import StateBackend
+        from deepagents.middleware import SubAgentMiddleware
+
+        backend = StateBackend()
+        model = "anthropic:claude-sonnet-4-6"
+        researcher = {
+            "name": "researcher",
+            "description": "Researches a topic and returns findings.",
+            "system_prompt": "You are a researcher.",
+            "model": model,
+            "tools": [search],
+        }
+
+        agent = create_deep_agent(
+            model=model,
+            subagents=[researcher],
+            middleware=[
+                SubAgentMiddleware(
+                    backend=backend,
+                    subagents=[researcher],
+                    task_description="Delegate research to the `researcher` subagent only for multi-step lookups.",
+                ),
+            ],
+        )
+        ```
+
+        `task_description` also supports an `available_agents` template placeholder that is filled in with the subagent name and description list; see the @[`SubAgentMiddleware`] reference for details. For a narrower change that only rewords the `task` tool description without replacing the subagent stack, use a [harness profile](/oss/deepagents/profiles#harness-profiles)'s `tool_description_overrides` instead; see [Profiles](#profiles).
+    </Accordion>
+</AccordionGroup>
+:::
 
 ### Interpreters
 
