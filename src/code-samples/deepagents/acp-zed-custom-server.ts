@@ -1,0 +1,12 @@
+// :snippet-start: acp-zed-custom-server-js
+// server.ts
+import { startServer } from "deepagents-acp";
+
+await startServer({
+  agents: {
+    name: "my-agent",
+    description: "My custom coding agent",
+    skills: ["./skills/"],
+  },
+});
+// :snippet-end:
