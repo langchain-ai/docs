@@ -8,12 +8,12 @@ if False:
 
     async def main():
         client = Client()
-        results = client.get_experiment_results(
-            project_id=experiment_id,
+        examples_with_runs = await client.datasets.runs.create(
+            dataset_id,
+            session_ids=[experiment_id],
             limit=20,
             preview=True,
         )
-        examples_with_runs = list(results["examples_with_runs"])
     # :snippet-end:
 
 # :remove-start:
