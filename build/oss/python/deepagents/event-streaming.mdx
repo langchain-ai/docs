@@ -4,6 +4,21 @@ description: Stream subagents, messages, tool calls, and final output from Deep 
 tag: "Beta"
 ---
 
+import EventStreamingSubagentsPy from '/snippets/code-samples/event-streaming-subagents-py.mdx';
+import EventStreamingSubagentsJs from '/snippets/code-samples/event-streaming-subagents-js.mdx';
+import EventStreamingLifecyclePy from '/snippets/code-samples/event-streaming-lifecycle-py.mdx';
+import EventStreamingLifecycleJs from '/snippets/code-samples/event-streaming-lifecycle-js.mdx';
+import EventStreamingMessagesPy from '/snippets/code-samples/event-streaming-messages-py.mdx';
+import EventStreamingMessagesJs from '/snippets/code-samples/event-streaming-messages-js.mdx';
+import EventStreamingToolCallsPy from '/snippets/code-samples/event-streaming-tool-calls-py.mdx';
+import EventStreamingToolCallsJs from '/snippets/code-samples/event-streaming-tool-calls-js.mdx';
+import EventStreamingNestedPy from '/snippets/code-samples/event-streaming-nested-py.mdx';
+import EventStreamingNestedJs from '/snippets/code-samples/event-streaming-nested-js.mdx';
+import EventStreamingInterleavePy from '/snippets/code-samples/event-streaming-interleave-py.mdx';
+import EventStreamingConcurrentJs from '/snippets/code-samples/event-streaming-concurrent-js.mdx';
+import EventStreamingRawProtocolPy from '/snippets/code-samples/event-streaming-raw-protocol-py.mdx';
+import EventStreamingRawProtocolJs from '/snippets/code-samples/event-streaming-raw-protocol-js.mdx';
+
 This page covers streaming concerns specific to Deep Agents—most importantly, streaming from delegated subagents via `stream.subagents`. For general agent streaming (`stream.messages`, `stream.values`, tool calls, custom updates), see [LangChain Event Streaming](/oss/python/langchain/event-streaming).
 
 ## Stream subagents
@@ -12,17 +27,7 @@ Deep Agents add a subagent projection on top of LangGraph streaming. Use `stream
 
 Each handle's `name` is the sub-agent's configured name: the `subagent_type` the coordinator passes when it calls the `task` tool. Deep Agents binds that name to the delegated run, so the same label you defined in your subagent specs is what you filter and route on in the stream.
 
-```py
-stream = agent.stream_events({
-    "messages": [{"role": "user", "content": "Write me a haiku about the sea"}],
-}, version="v3")
-
-for subagent in stream.subagents:
-    print(subagent.name, subagent.path, subagent.status)
-
-    for message in subagent.messages:
-        print(message.text)
-```
+<EventStreamingSubagentsPy />
 
 
 
@@ -51,27 +56,7 @@ Python uses snake_case projection names such as `tool_calls`. Each subagent stre
 
 Use `stream.subagents` when you only need to show which subagents started and finished. You do not need to subscribe to message or value streams unless you access those projections on an individual subagent.
 
-```py
-stream = agent.stream_events(input, version="v3")
-
-running = 0
-completed = 0
-failed = 0
-
-for subagent in stream.subagents:
-    running += 1
-    print(f"{subagent.name}: started")
-
-    try:
-        _ = subagent.output
-        running -= 1
-        completed += 1
-        print(f"{subagent.name}: completed")
-    except Exception:
-        running -= 1
-        failed += 1
-        print(f"{subagent.name}: failed")
-```
+<EventStreamingLifecyclePy />
 
 
 
@@ -81,16 +66,7 @@ for subagent in stream.subagents:
 
 Deep Agents can emit messages from the coordinator agent and from delegated subagents. Use `stream.messages` for top-level messages and `subagent.messages` for each delegated subagent.
 
-```py
-stream = agent.stream_events(input, version="v3")
-
-for message in stream.messages:
-    print("[coordinator]", message.text)
-
-for subagent in stream.subagents:
-    for message in subagent.messages:
-        print(f"[{subagent.name}]", message.text)
-```
+<EventStreamingMessagesPy />
 
 
 
@@ -99,24 +75,7 @@ for subagent in stream.subagents:
 
 Deep Agents expose tool calls at each level of the agent tree. Use the top-level `stream.tool_calls` for coordinator tools and each `subagent.tool_calls` for delegated work.
 
-```py
-stream = agent.stream_events(input, version="v3")
-
-for call in stream.tool_calls:
-    print("[coordinator tool]", call.tool_name, call.input)
-    print(call.completed, call.error)
-
-for subagent in stream.subagents:
-    for call in subagent.tool_calls:
-        print(f"[{subagent.name} tool]", call.tool_name, call.input)
-        for delta in call.output_deltas:
-            print(delta, end="", flush=True)
-
-        if call.completed and call.error is None:
-            print(call.output)
-        elif call.error is not None:
-            print(call.error)
-```
+<EventStreamingToolCallsPy />
 
 
 
@@ -125,20 +84,7 @@ for subagent in stream.subagents:
 
 You can recurse into a subagent stream to observe nested subagents, messages, and tool calls.
 
-```py
-stream = agent.stream_events(input, version="v3")
-
-for subagent in stream.subagents:
-    print(f"subagent {subagent.name}: {subagent.status}")
-
-    for tool_call in subagent.tool_calls:
-        print(f"{tool_call.tool_name}({tool_call.input})")
-        for delta in tool_call.output_deltas:
-            print(delta, end="", flush=True)
-
-    for nested in subagent.subagents:
-        print(f"nested subagent {nested.name}: {nested.status}")
-```
+<EventStreamingNestedPy />
 
 
 
@@ -168,40 +114,14 @@ await asyncio.gather(consume_coordinator(), consume_subagents())
 
 For synchronous code, use `stream.interleave(...)` instead:
 
-```py
-stream = agent.stream_events(input, version="v3")
-
-for name, item in stream.interleave("messages", "subagents"):
-    if name == "messages":
-        print("[coordinator]", item.text)
-    else:
-        for message in item.messages:
-            print(f"[{item.name}]", message.text)
-```
+<EventStreamingInterleavePy />
 
 
 
 
 When you need exact arrival order across the coordinator and all subagents, iterate raw protocol events and use `namespace` to identify the source:
 
-```py
-stream = agent.stream_events(input, version="v3")
-
-for event in stream:
-    if event.get("method") != "messages":
-        continue
-
-    payload = event["params"]["data"][0]
-    if not isinstance(payload, dict):
-        continue
-    if payload.get("event") != "content-block-delta":
-        continue
-
-    block = payload.get("delta") or {}
-    if block.get("type") == "text-delta":
-        source = "subagent" if event["params"]["namespace"] else "coordinator"
-        print(f"[{source}] {block['text']}")
-```
+<EventStreamingRawProtocolPy />
 
 
 

@@ -3,6 +3,17 @@ title: Async subagents
 description: Launch background subagents that run concurrently while the supervisor continues interacting with the user
 ---
 
+import AsyncSubagentsConfigurePy from '/snippets/code-samples/async-subagents-configure-py.mdx';
+import AsyncSubagentsConfigureJs from '/snippets/code-samples/async-subagents-configure-js.mdx';
+import AsyncSubagentsHttpTransportPy from '/snippets/code-samples/async-subagents-http-transport-py.mdx';
+import AsyncSubagentsHybridPy from '/snippets/code-samples/async-subagents-hybrid-py.mdx';
+import AsyncSubagentsHybridJs from '/snippets/code-samples/async-subagents-hybrid-js.mdx';
+import AsyncSubagentsDescriptionsGoodPy from '/snippets/code-samples/async-subagents-descriptions-good-py.mdx';
+import AsyncSubagentsDescriptionsBadPy from '/snippets/code-samples/async-subagents-descriptions-bad-py.mdx';
+import AsyncSubagentsDescriptionsJs from '/snippets/code-samples/async-subagents-descriptions-js.mdx';
+import AsyncSubagentsTroubleshootingPollingPy from '/snippets/code-samples/async-subagents-troubleshooting-polling-py.mdx';
+import AsyncSubagentsTroubleshootingPollingJs from '/snippets/code-samples/async-subagents-troubleshooting-polling-js.mdx';
+
 Async subagents let a supervisor agent launch background tasks that return immediately, so the supervisor can continue interacting with the user while subagents work concurrently. The supervisor can check progress, send follow-up instructions, or cancel tasks at any point.
 
 This builds on [subagents](/oss/python/deepagents/subagents), which run synchronously and block the supervisor until completion. Use async subagents when tasks are long-running, parallelizable, or need mid-flight steering.
@@ -44,29 +55,7 @@ Async subagents communicate with any server that implements the [Agent Protocol]
 
 Define async subagents as a list of [`AsyncSubAgent`](https://reference.langchain.com/python/deepagents/middleware/async_subagents/AsyncSubAgent) specs, each pointing to an Agent Protocol server:
 
-```python
-from deepagents import AsyncSubAgent, create_deep_agent
-
-async_subagents = [
-    AsyncSubAgent(
-        name="researcher",
-        description="Research agent for information gathering and synthesis",
-        graph_id="researcher",
-        # No url → ASGI transport (co-deployed in the same deployment)
-    ),
-    AsyncSubAgent(
-        name="coder",
-        description="Coding agent for code generation and review",
-        graph_id="coder",
-        # url="https://coder-deployment.langsmith.dev"  # Optional: HTTP transport for remote
-    ),
-]
-
-agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    subagents=async_subagents,
-)
-```
+<AsyncSubagentsConfigurePy />
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -158,14 +147,7 @@ ASGI transport eliminates network latency and requires no additional auth config
 
 Add a `url` field to switch to HTTP transport, where SDK calls go over the network to a remote Agent Protocol server:
 
-```python
-AsyncSubAgent(
-    name="researcher",
-    description="Research agent",
-    graph_id="researcher",
-    url="https://my-research-deployment.langsmith.dev",
-)
-```
+<AsyncSubagentsHttpTransportPy />
 
 
 
@@ -188,23 +170,7 @@ Supervisor on one server, subagents on another via HTTP transport. Use when suba
 
 In a hybrid deployment, some subagents are co-deployed via ASGI, others remote via HTTP:
 
-```python
-async_subagents = [
-    AsyncSubAgent(
-        name="researcher",
-        description="Research agent",
-        graph_id="researcher",
-        # No url → ASGI (co-deployed)
-    ),
-    AsyncSubAgent(
-        name="coder",
-        description="Coding agent",
-        graph_id="coder",
-        url="https://coder-deployment.langsmith.dev",
-        # url present → HTTP (remote)
-    ),
-]
-```
+<AsyncSubagentsHybridPy />
 
 
 
@@ -223,21 +189,10 @@ langgraph dev --n-jobs-per-worker 10
 
 The supervisor uses descriptions to decide which subagent to launch. Be specific and action-oriented:
 
-```python
-# Good
-AsyncSubAgent(
-    name="researcher",
-    description="Conducts in-depth research using web search. Use for questions requiring multiple searches and synthesis.",
-    graph_id="researcher",
-)
-
-# Bad
-AsyncSubAgent(
-    name="helper",
-    description="helps with stuff",
-    graph_id="helper",
-)
-```
+<CodeGroup>
+    <AsyncSubagentsDescriptionsGoodPy />
+    <AsyncSubagentsDescriptionsBadPy />
+</CodeGroup>
 
 
 
@@ -254,16 +209,7 @@ When using LangGraph-based deployments, every async subagent run is a standard L
 
 **Solution**: The middleware injects system prompt rules to prevent this. If polling persists, reinforce the behavior in your supervisor's system prompt:
 
-```python
-agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    system_prompt="""...your instructions...
-
-    After launching an async subagent, ALWAYS return control to the user.
-    Never call check_async_task immediately after launch.""",
-    subagents=async_subagents,
-)
-```
+<AsyncSubagentsTroubleshootingPollingPy />
 
 
 
