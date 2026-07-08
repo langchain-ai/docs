@@ -170,7 +170,7 @@ chunk_analyst_subagent = {
     "system_prompt": CHUNK_ANALYST_INSTRUCTIONS,
 }
 
-model = init_chat_model(model="google_genai:gemini-3.5-flash", temperature=0.0)
+model = init_chat_model(model="google_genai:gemini-3.5-flash")
 
 agent = create_deep_agent(
     model=model,
