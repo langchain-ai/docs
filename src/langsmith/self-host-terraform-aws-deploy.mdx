@@ -8,7 +8,34 @@ Provision the AWS cloud foundation and install LangSmith with the public Terrafo
 
 The deployment runs in two stages: infrastructure (Terraform provisions VPC, EKS, RDS, ElastiCache, S3, IAM) and application (Helm installs the LangSmith chart against the cluster). Add-ons are enabled with a flag and a redeploy.
 
-![LangSmith on AWS Terraform deployment flow](/images/self-hosted-terraform/aws-deployment-flow.png)
+```mermaid actions={false}
+graph LR
+    Start["setup-env.sh<br/>secrets to SSM"]
+    TF["Pass 1<br/>terraform apply"]
+    Infra["VPC · EKS · RDS<br/>ElastiCache · S3 · ALB · IAM"]
+    Bootstrap["k8s-bootstrap<br/>ESO · KEDA · cert-manager"]
+    Deploy["Pass 2 · deploy.sh<br/>writes ARNs + hostname, ESO syncs secrets"]
+    Helm["helm install<br/>langsmith chart"]
+    First{"First<br/>deploy?"}
+    Running["LangSmith running<br/>all pods healthy"]
+
+    Start --> TF --> Infra
+    Infra -->|EKS ready| Bootstrap --> Deploy --> Helm --> First
+    First -->|no| Running
+    First -->|yes, re-run with resolved hostname| Helm
+
+    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef neutral fill:#F2FAFF,stroke:#40668D,stroke-width:2px,color:#2F4B68
+    classDef decision fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
+    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
+
+    class Start trigger
+    class TF,Bootstrap,Deploy,Helm process
+    class Infra neutral
+    class First decision
+    class Running output
+```
 
 ## Prerequisites
 
