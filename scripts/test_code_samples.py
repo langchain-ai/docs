@@ -54,8 +54,10 @@ def collect_files_to_test(
             if not path.exists():
                 print(f"Warning: {path} not found, skipping")
                 continue
-            if path.suffix not in (".py", ".ts", ".java", ".kt"):
-                print(f"Warning: {path} not .py, .ts, .java, or .kt, skipping")
+            if path.suffix not in (".py", ".ts", ".java", ".kt", ".go", ".sh"):
+                print(
+                    f"Warning: {path} not .py, .ts, .java, .kt, .go, or .sh, skipping"
+                )
                 continue
             if code_samples_dir.resolve() not in path.parents:
                 print(f"Warning: {path} not under src/code-samples/, skipping")
@@ -66,8 +68,12 @@ def collect_files_to_test(
                 lang = "ts"
             elif path.suffix == ".java":
                 lang = "java"
-            else:
+            elif path.suffix == ".kt":
                 lang = "kotlin"
+            elif path.suffix == ".go":
+                lang = "go"
+            else:
+                lang = "bash"
             result.append((path, lang))
         return result
 
@@ -92,11 +98,23 @@ def collect_files_to_test(
         for p in code_samples_dir.rglob("*.kt")
         if is_valid_sample(p, code_samples_dir)
     )
+    go_files = sorted(
+        p
+        for p in code_samples_dir.rglob("*.go")
+        if is_valid_sample(p, code_samples_dir)
+    )
+    sh_files = sorted(
+        p
+        for p in code_samples_dir.rglob("*.sh")
+        if is_valid_sample(p, code_samples_dir)
+    )
     return (
         [(p, "python") for p in py_files]
         + [(p, "ts") for p in ts_files]
         + [(p, "java") for p in java_files]
         + [(p, "kotlin") for p in kt_files]
+        + [(p, "go") for p in go_files]
+        + [(p, "bash") for p in sh_files]
     )
 
 
@@ -114,7 +132,7 @@ def main() -> int:
     if total == 0:
         if os.environ.get("FILES"):
             print(
-                "No valid files to test. Check that paths exist under src/code-samples/ and use .py or .ts"
+                "No valid files to test. Check that paths exist under src/code-samples/ and use .py, .ts, .java, .kt, .go, or .sh"
             )
         else:
             print("No code samples found in src/code-samples/")
@@ -151,6 +169,34 @@ def main() -> int:
                 # TypeScript: run from code-samples dir so langchain resolve works
                 result = subprocess.run(
                     ["npx", "tsx", str(file_path.relative_to(code_samples_dir))],
+                    check=False,
+                    cwd=str(code_samples_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=TIMEOUT_SECONDS,
+                    env=env,
+                )
+                success = result.returncode == 0
+                stdout = result.stdout or ""
+                stderr = result.stderr or ""
+            elif lang == "go":
+                # Go: run from code-samples dir so the shared go.mod resolves deps
+                result = subprocess.run(
+                    ["go", "run", str(file_path.relative_to(code_samples_dir))],
+                    check=False,
+                    cwd=str(code_samples_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=TIMEOUT_SECONDS,
+                    env=env,
+                )
+                success = result.returncode == 0
+                stdout = result.stdout or ""
+                stderr = result.stderr or ""
+            elif lang == "bash":
+                # Shell/cURL samples: run from code-samples dir for consistency with ts/go
+                result = subprocess.run(
+                    ["bash", str(file_path.relative_to(code_samples_dir))],
                     check=False,
                     cwd=str(code_samples_dir),
                     capture_output=True,

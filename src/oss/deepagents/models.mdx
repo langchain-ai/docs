@@ -4,6 +4,13 @@ description: Configure model providers and parameters for Deep Agents
 ---
 
 import EvalCategoryMatrix from '/snippets/deepagents-eval-category-matrix.mdx';
+import ModelsConfigureParamsInitChatModelPy from '/snippets/code-samples/models-configure-params-init-chat-model-py.mdx';
+import ModelsConfigureParamsProviderPackagePy from '/snippets/code-samples/models-configure-params-provider-package-py.mdx';
+import ModelsConfigureParamsInitChatModelJs from '/snippets/code-samples/models-configure-params-init-chat-model-js.mdx';
+import ModelsConfigureParamsProviderPackageJs from '/snippets/code-samples/models-configure-params-provider-package-js.mdx';
+import ModelsProviderProfilesPy from '/snippets/code-samples/models-provider-profiles-py.mdx';
+import ModelsRuntimeConfigurablePy from '/snippets/code-samples/models-runtime-configurable-py.mdx';
+import ModelsRuntimeConfigurableJs from '/snippets/code-samples/models-runtime-configurable-js.mdx';
 
 Deep Agents work with any [LangChain chat model](/oss/langchain/models) that supports [tool calling](/oss/langchain/models#tool-calling).
 
@@ -58,52 +65,15 @@ To configure model-specific parameters, use @[`init_chat_model`] or instantiate 
 
 :::python
 <CodeGroup>
-    ```python init_chat_model
-    from langchain.chat_models import init_chat_model
-    from deepagents import create_deep_agent
-
-    model = init_chat_model(
-        model="google_genai:gemini-3.5-flash",
-        thinking_level="medium",  # [!code highlight]
-    )
-    agent = create_deep_agent(model=model)
-    ```
-
-    ```python Provider package
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    from deepagents import create_deep_agent
-
-    model = ChatGoogleGenerativeAI(
-        model="gemini-3.1-pro-preview",
-        thinking_level="medium",  # [!code highlight]
-    )
-    agent = create_deep_agent(model=model)
-    ```
+    <ModelsConfigureParamsInitChatModelPy />
+    <ModelsConfigureParamsProviderPackagePy />
 </CodeGroup>
 :::
 
 :::js
 <CodeGroup>
-    ```typescript initChatModel
-    import { initChatModel } from "langchain/chat_models/universal";
-    import { createDeepAgent } from "deepagents";
-
-    const model = await initChatModel("google_genai:gemini-3.5-flash", {
-        reasoningEffort: "medium",  // [!code highlight]
-    });
-    const agent = createDeepAgent({ model });
-    ```
-
-    ```typescript Provider package
-    import { ChatGoogle } from "@langchain/google";
-    import { createDeepAgent } from "deepagents";
-
-    const model = new ChatGoogle({
-        model: "gemini-3.1-pro-preview",
-        reasoningEffort: "medium",  // [!code highlight]
-    });
-    const agent = createDeepAgent({ model });
-    ```
+    <ModelsConfigureParamsInitChatModelJs />
+    <ModelsConfigureParamsProviderPackageJs />
 </CodeGroup>
 :::
 
@@ -120,22 +90,9 @@ You can register at two levels, and both can coexist:
 - **Provider level** — a bare provider key like `"openai"` applies to every model from the `openai` provider.
 - **Model level** — a `provider:model` key like `"openai:gpt-5.4"` applies only to that specific model, and merges on top of any matching provider-level profile.
 
-```python
-from deepagents import ProviderProfile, register_provider_profile
-
-# Provider-wide default: every openai model gets temperature=0.
-register_provider_profile(
-    "openai",
-    ProviderProfile(init_kwargs={"temperature": 0}),
-)
-
-# Model-level override: gpt-5.5 additionally gets a specific reasoning effort.
-# Inherits temperature=0 from the provider-level profile above.
-register_provider_profile(
-    "openai:gpt-5.5",
-    ProviderProfile(init_kwargs={"reasoning_effort": "medium"}),
-)
-```
+:::python
+<ModelsProviderProfilesPy />
+:::
 
 See [Profiles](/oss/deepagents/profiles) for the full field list, merge semantics, and plugin packaging.
 
@@ -151,72 +108,11 @@ If your application lets users choose a model (for example using a dropdown in t
 
 Pass the user's model selection through [runtime context](/oss/langchain/models#dynamic-model-selection), then use a `wrap_model_call` middleware to override the model on each invocation using the @[`@wrap_model_call`] decorator:
 
-```python
-from dataclasses import dataclass
-from langchain.chat_models import init_chat_model
-from langchain.agents.middleware import wrap_model_call, ModelRequest, ModelResponse
-from deepagents import create_deep_agent
-from typing import Callable
-
-
-@dataclass
-class Context:
-    model: str
-
-@wrap_model_call
-def configurable_model(
-    request: ModelRequest,
-    handler: Callable[[ModelRequest], ModelResponse],
-) -> ModelResponse:
-    model_name = request.runtime.context.model
-    model = init_chat_model(model_name)
-    return handler(request.override(model=model))
-
-agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    middleware=[configurable_model],
-    context_schema=Context,
-)
-
-# Invoke with the user's model selection
-result = agent.invoke(
-    {"messages": [{"role": "user", "content": "Hello!"}]},
-    context=Context(model="openai:gpt-5.5"),
-)
-```
+<ModelsRuntimeConfigurablePy />
 :::
 
 :::js
-```typescript
-import { initChatModel, createMiddleware } from "langchain";
-import { createDeepAgent } from "deepagents";
-import * as z from "zod";
-
-const contextSchema = z.object({
-  model: z.string(),
-});
-
-const configurableModel = createMiddleware({
-  name: "ConfigurableModel",
-  wrapModelCall: async (request, handler) => {
-    const modelName = request.runtime.context.model;
-    const model = await initChatModel(modelName);
-    return handler({ ...request, model });
-  },
-});
-
-const agent = await createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
-  middleware: [configurableModel],
-  contextSchema,
-});
-
-// Invoke with the user's model selection
-const result = await agent.invoke(
-  { messages: [{ role: "user", content: "Hello!" }] },
-  { context: { model: "openai:gpt-5.5" } },
-);
-```
+<ModelsRuntimeConfigurableJs />
 :::
 
 <Tip>

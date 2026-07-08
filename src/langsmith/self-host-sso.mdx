@@ -3,45 +3,42 @@ title: Set up SSO with OAuth2.0 and OIDC
 sidebarTitle: Set up SSO with OAuth2.0 & OIDC
 ---
 
-LangSmith Self-Hosted provides SSO via OAuth2.0 and OIDC. This will delegate authentication to your Identity Provider (IdP) to manage access to LangSmith.
+LangSmith [Self-Hosted](/langsmith/self-hosted) provides SSO via OAuth2.0 and OIDC, which delegates authentication to your Identity Provider (IdP) to manage access to LangSmith.
 
-Our implementation supports almost anything that is OIDC compliant, with a few exceptions. Once configured, you will see a login screen like this:
+The LangSmith implementation supports any provider that is OIDC compliant. Once configured, you will see a login screen that prompts to **Log in via SSO**.
 
-![LangSmith UI with OAuth SSO](/langsmith/images/langsmith-ui-sso.png)
+By default, LangSmith Self-Hosted supports the `Authorization Code` flow with `Client Secret`. In this version of the flow, your client secret is stored securely in LangSmith (not on the frontend) and used for authentication and establishing auth sessions.
 
-## Overview
+<div id="with-client-secret-recommended"></div>
+
+## Considerations
+
+- You may upgrade a [`basic` auth](/langsmith/self-host-basic-auth) installation to `oauth` mode, but not a [`none` auth](/langsmith/authentication-methods#none) installation.
+    - Upgrade a `basic` auth installation by removing the [`basic` auth configuration parameters](/langsmith/self-host-basic-auth#configuration) and adding the [OAuth with client secret configuration parameters](#configuration). Users may then log in via OAuth **only**. To maintain access post-upgrade, **you must have access to log in via OAuth using an email address that previously logged in via basic auth.**
+- LangSmith does **not** support:
+    - Moving from SSO to `basic` auth mode in self-hosted.
+    - Moving from OAuth Mode with client secret to OAuth mode without a client secret and vice versa.
+    - Having both `basic` auth and OAuth at the same time. Ensure you disable the `basic` auth configuration when enabling OAuth.
+
+## Prerequisites
+
+You must have the following to complete the [Provider setup](#provider-setup):
+
+- [Self-hosted](/langsmith/self-hosted) and on an [Enterprise plan](/langsmith/pricing-plans).
+- An IdP that supports the `Authorization Code` flow with `Client Secret`.
+- An IdP that supports using an external discovery/issuer URL. LangSmith uses this to fetch the necessary routes and keys for your IdP.
+- The `OIDC`, `email`, and `profile` scopes. LangSmith uses these to fetch the necessary user information and email for your users.
 
 <Note>
-You may upgrade a [basic auth](/langsmith/self-host-basic-auth) installation to this mode, but not a [none auth](/langsmith/authentication-methods#none) installation. In order to upgrade, simply remove the basic auth configuration and add the required configuration parameters as shown below. Users may then login via OAuth *only*. **In order to maintain access post-upgrade, you must have access to login via OAuth using an email address that previously logged in via basic auth.**
-</Note>
-
-<Warning>
-LangSmith does not support moving from SSO to basic auth mode in self-hosted at the moment. We also do not support moving from OAuth Mode with client secret to OAuth mode without a client secret and vice versa. Finally, we do not support having both basic auth and OAuth at the same time. Ensure you disable the basic auth configuration when enabling OAuth.
-</Warning>
-
-## With client secret (Recommended)
-
-By default, LangSmith Self-Hosted supports the `Authorization Code` flow with `Client Secret`. In this version of the flow, your client secret is stored security in LangSmith (not on the frontend) and used for authentication and establishing auth sessions.
-
-### Prerequisites
-
-* You must be self-hosted and on an Enterprise plan.
-* Your IdP must support the `Authorization Code` flow with `Client Secret`.
-* Your IdP must support using an external discovery/issuer URL. We will use this to fetch the necessary routes and keys for your IdP.
-* You must provide the `OIDC`, `email`, and `profile` scopes to LangSmith. We use these to fetch the necessary user information and email for your users.
-<Note>
-
 LangSmith SSO is only supported over `https`.
 </Note>
 
-### Configuration
+## Configuration
 
-* You will need to set the callback URL in your IdP to `https://<host>/api/v1/oauth/custom-oidc/callback`, where `host` is the domain or IP you have provisioned for your LangSmith instance. This is where your IdP will redirect the user after they have authenticated.
-* To terminate the IdP session on logout (so users must re-authenticate), register your LangSmith URL (e.g., `https://<host>`) as a **post-logout redirect URI** (sometimes called "Sign-out redirect URI") in your IdP, then set `OAUTH_IDP_LOGOUT_ENABLED=true` in your environment (via `commonEnv` in Helm or your `.env` file in Docker Compose).
-* You will need to provide the `oauthClientId`, `oauthClientSecret`, `hostname`, and `oauthIssuerUrl` in your `values.yaml` file. This is where you will configure your LangSmith instance.
-* If you have **not** already configured Oauth with client secret or if you only have personal orgs, you must provide an email address to assign as the initial org admin for the newly provisioned SSO org. If you are upgrading from basic auth, your existing org will be reused instead.
-
-<CodeGroup>
+- You will need to set the callback URL in your IdP to `https://<host>/api/v1/oauth/custom-oidc/callback`, where `host` is the domain or IP you have provisioned for your LangSmith instance. This is where your IdP will redirect the user after they have authenticated.
+- To terminate the IdP session on logout (so users must re-authenticate), register your LangSmith URL (e.g., `https://<host>`) as a **post-logout redirect URI** (sometimes called "Sign-out redirect URI") in your IdP, then set `OAUTH_IDP_LOGOUT_ENABLED=true` in your environment via `commonEnv` in Helm.
+- You will need to provide the `oauthClientId`, `oauthClientSecret`, `hostname`, and `oauthIssuerUrl` in your `values.yaml` file. This is where you will configure your LangSmith instance.
+- If you have **not** already configured OAuth with client secret or if you only have personal orgs, you must provide an email address to assign as the `initialOrgAdminEmail` for the newly provisioned SSO org. If you are upgrading from [basic auth](/langsmith/self-host-basic-auth), LangSmith will reuse your existing org instead.
 
 ```yaml Helm
 config:
@@ -56,130 +53,71 @@ config:
     oauthScopes: "email,profile,openid"
 ```
 
-```bash Docker
-# In your .env file
-AUTH_TYPE=mixed
-INITIAL_ORG_ADMIN_EMAIL=test@email.com
-LANGSMITH_URL=https://langsmith.example.com
-OAUTH_CLIENT_ID=your-client-id
-OAUTH_CLIENT_SECRET=your-client-secret
-OAUTH_ISSUER_URL=https://your-issuer-url
-OAUTH_SCOPES=email,profile,openid
-```
+## Provider setup
 
-</CodeGroup>
+### Microsoft Entra ID IdP setup
 
-### Session length controls
+Configure Microsoft Entra ID as a single sign-on provider using OAuth2.0 and OIDC. For additional information, refer to Microsoft's [OpenID Connect documentation](https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc).
 
 <Note>
-All of the environment variables in this section are for the `platform-backend` service and can be added using `platformBackend.deployment.extraEnv` in Helm.
+Registering the application in Microsoft Entra ID requires the `Application Administrator` or `Cloud Application Administrator` role, or higher, in your tenant.
 </Note>
 
-* By default, session length is controlled by the expiration of the identity token returned by the identity provider
-* Most setups should use refresh tokens to enable session length extension beyond the identity token expiration up to `OAUTH_SESSION_MAX_SEC`, which may require including the `offline_access` scope by adding to `oauthScopes` (Helm) or `OAUTH_SCOPES` (Docker)
-* `OAUTH_SESSION_MAX_SEC` (default 1 day) can be overridden to a maximum of one week (`604800`)
-* For identity provider setups that don't support refresh tokens, setting `OAUTH_OVERRIDE_TOKEN_EXPIRY="true"` will take `OAUTH_SESSION_MAX_SEC` as the session length, ignoring the identity token expiration
+#### Step 1. Register the application
 
-### Scope encoding for strict identity providers
+1. In the [Microsoft Entra admin center](https://entra.microsoft.com/), go to **Applications** > **App registrations** > **New registration**.
+2. Set **Name** to a value that identifies the application, for example, `LangSmith Self-Hosted`.
+3. Set **Supported account types** to **Accounts in this organizational directory only (Single tenant)**.
+4. Under **Redirect URI**, select **Web** as the platform and enter `https://<host>/api/v1/oauth/custom-oidc/callback`, where `<host>` is the domain of your LangSmith instance.
+5. Click **Register**.
 
-By default, LangSmith encodes the spaces between `oauthScopes` in the authorization request as `+` (the `application/x-www-form-urlencoded` convention). Most identity providers accept this, but some (for example, CA SiteMinder) do not decode `+` as a space and reject the login with an `invalid_scope` error. If your IdP rejects multi-scope logins for this reason, set `urlEncodeScopeSpaces: true` (Helm) or `OAUTH_URL_ENCODE_SCOPE_SPACES=true` (Docker) to encode the spaces as `%20` instead — the encoding accepted by all OIDC-compliant providers. This applies only to `authType: mixed` with an OAuth client secret, and defaults to off.
+From the app's **Overview** page, record the following values for use in Helm configuration:
 
-<CodeGroup>
+- **Application (client) ID**: used as `oauthClientId`.
+- **Directory (tenant) ID**: used to construct the issuer URL.
+- **OIDC issuer URL**: `https://login.microsoftonline.com/<tenant-id>/v2.0`, used as `oauthIssuerUrl`.
+
+#### Step 2. Create a client secret
+
+1. In the app registration, go to **Certificates & secrets** > **Client secrets** > **New client secret**.
+2. Enter a description, choose an expiration, then click **Add**.
+3. Copy the secret **Value** immediately. Microsoft Entra ID hides this value after you leave the page. Use it as `oauthClientSecret`.
+
+Store the Client ID, Client Secret, and Issuer URL in your secret store before configuring Helm.
+
+#### Step 3. Add the email optional claim
+
+Without this step, LangSmith blocks login with the error `Your identity provider did not provide an email address`.
+
+1. In the app registration, go to **Token configuration** > **Add optional claim**.
+2. Select **ID** as the token type.
+3. Check `email`, then click **Add**.
+4. When prompted, accept the request to grant the Microsoft Graph `email` permission.
+
+#### Step 4. Configure LangSmith
+
+Apply the values from the previous steps to your Helm configuration:
 
 ```yaml Helm
 config:
   authType: mixed
   hostname: https://langsmith.example.com
+  initialOrgAdminEmail: test@email.com # Set this if required
   oauth:
     enabled: true
-    oauthClientId: <YOUR CLIENT ID>
-    oauthClientSecret: <YOUR CLIENT SECRET>
-    oauthIssuerUrl: <YOUR DISCOVERY URL>
+    oauthClientId: "<APPLICATION (CLIENT) ID>"
+    oauthClientSecret: "<CLIENT SECRET VALUE>"
+    oauthIssuerUrl: "https://login.microsoftonline.com/<TENANT ID>/v2.0"
     oauthScopes: "email,profile,openid"
-    urlEncodeScopeSpaces: true
 ```
 
-```bash Docker
-# In your .env file
-AUTH_TYPE=mixed
-LANGSMITH_URL=https://langsmith.example.com
-OAUTH_CLIENT_ID=your-client-id
-OAUTH_CLIENT_SECRET=your-client-secret
-OAUTH_ISSUER_URL=https://your-issuer-url
-OAUTH_SCOPES=email,profile,openid
-OAUTH_URL_ENCODE_SCOPE_SPACES=true
-```
-
-</CodeGroup>
-
-### Override sub claim
-
-In some scenarios, it may be necessary to override which claim is used as the `sub` claim from your identity provider.
-For example, in SCIM, the resolved `sub` claim and SCIM `externalId` must match in order for login to succeed.
-If there are restrictions on the source attribute of the `sub` claim and/or the SCIM `externalId`, set the `ISSUER_SUB_CLAIM_OVERRIDES` environment variable to select which OIDC JWT claim is used as the `sub`.
-
-If an issuer URL **starts with** one of the URLs in this configuration, the `sub` claim is taken from the field name specified.
-For example, with the following configuration, a token with the issuer `https://idp.yourdomain.com/application/uuid` would use the `customClaim` value as the `sub`:
-
-```
-ISSUER_SUB_CLAIM_OVERRIDES='{"https://idp.yourdomain.com": "customClaim"}'
-```
-
-If unset, the default value for this configuration uses the `oid` claim when Azure Entra ID is used as the identity provider:
-
-```
-ISSUER_SUB_CLAIM_OVERRIDES='{"https://login.microsoftonline.com/": "oid", "https://sts.windows.net/": "oid", "https://login.microsoftonline.us/": "oid", "https://login.partner.microsoftonline.cn/": "oid"}'
-```
-
-### SSO Groups Sync
+For details about `initialOrgAdminEmail`, refer to the [general configuration section](#configuration).
 
 <Note>
-SSO Groups Sync on self-hosted requires LangSmith chart version **0.15.0-rc.3** (application version **0.15.2rc1**) or later.
+Microsoft Entra ID's `oid` claim is used as the OIDC `sub` claim by default. For details, refer to [Override sub claim](#override-sub-claim).
 </Note>
 
-[SSO Groups Sync](/langsmith/user-management#sso-groups-sync-alternative) lets LangSmith assign org and workspace roles from a group membership claim on the OIDC token, as a simpler alternative to [SCIM](/langsmith/user-management#set-up-scim-for-your-organization). On self-hosted, you must configure the IdP to include groups in the OIDC ID token before LangSmith can read them.
-
-**IdP-side configuration (varies by provider):**
-
-1. Configure your IdP application to emit a group membership claim in the OIDC ID token. The source attribute and the resulting claim name vary by IdP. Common examples include `groups`, `roles`, or a custom claim name. LangSmith does not dictate the source attribute.
-2. Depending on your IdP, you may need to add an additional scope (commonly `groups`) to `oauthScopes` to receive the claim. Check your IdP's documentation for the required scope and any additional configuration needed to include group memberships in the token.
-3. Group names must follow the [SCIM naming convention](/langsmith/user-management#group-naming-convention) (e.g., `LS:Organization Admin`, `LS:Organization User:prod:Editor`). The separator is shared with SCIM via [`scim_group_name_separator`](/langsmith/user-management#configure-custom-separator).
-
-**Helm configuration:**
-
-If your IdP requires an additional OIDC scope to include groups in the token (commonly `groups`), add it to `oauthScopes`:
-
-<CodeGroup>
-
-```yaml Helm
-config:
-  authType: mixed
-  hostname: https://langsmith.example.com
-  oauth:
-    enabled: true
-    oauthClientId: <YOUR CLIENT ID>
-    oauthClientSecret: <YOUR CLIENT SECRET>
-    oauthIssuerUrl: <YOUR DISCOVERY URL>
-    oauthScopes: "email,profile,openid,groups"
-```
-
-```bash Docker
-# In your .env file
-AUTH_TYPE=mixed
-LANGSMITH_URL=https://langsmith.example.com
-OAUTH_CLIENT_ID=your-client-id
-OAUTH_CLIENT_SECRET=your-client-secret
-OAUTH_ISSUER_URL=https://your-issuer-url
-OAUTH_SCOPES=email,profile,openid,groups
-```
-
-</CodeGroup>
-
-The exact scope name (`groups`, `roles`, etc.) depends on your IdP. Check your IdP's OIDC documentation.
-
-**LangSmith-side configuration:**
-
-Per-provider SSO Groups Sync settings are stored on the SSO provider record and toggled via the [LangSmith UI](https://smith.langchain.com) or [API](/langsmith/reference) (not via Helm values). Once your IdP emits the groups claim, configure SSO Groups Sync from the UI in **Settings** → **Members and roles** → **SSO Configuration** → **SSO Groups Sync**. Or, via the API as described in the [main SSO Groups Sync documentation](/langsmith/user-management#sso-groups-sync-alternative). The claim name configured in the **Groups claim field** must match the claim emitted by your IdP.
+To assign org and workspace roles from Microsoft Entra ID groups on login, refer to [SSO Groups Sync](#sso-groups-sync).
 
 ### Google workspace IdP setup
 
@@ -263,8 +201,6 @@ This method of configuration is required in order to use SCIM with Okta.
 1. Click **Save**.
 1. Configure LangSmith to use this OAuth application (see [general configuration section](#configuration) for details about `initialOrgAdminEmail`):
 
-<CodeGroup>
-
 ```yaml Helm
 config:
   authType: mixed
@@ -277,19 +213,6 @@ config:
     oauthIssuerUrl: "https://company-7422949.okta.com" # the URL of your Okta instance
     oauthScopes: "email,profile,openid"
 ```
-
-```bash Docker
-# In your .env file
-AUTH_TYPE=mixed
-INITIAL_ORG_ADMIN_EMAIL=test@email.com # Set this if required
-LANGSMITH_URL=https://langsmith.example.com # the domain of your instance (note no trailing slash)
-OAUTH_CLIENT_ID="Client ID" # (starts with `0o`)
-OAUTH_CLIENT_SECRET="Client secret"
-OAUTH_ISSUER_URL="https://company-7422949.okta.com" # the URL of your Okta instance
-OAUTH_SCOPES=email,profile,openid
-```
-
-</CodeGroup>
 
 <Info>For details on SCIM setup, refer to [Set up SCIM for your organization](/langsmith/user-management#set-up-scim-for-your-organization).</Info>
 
@@ -319,8 +242,6 @@ SCIM is not compatible with this method of configuration. Refer to [**Via Okta I
 1. (Recommended) Under **General > Login > Email verification experience** fill in the **Callback URI** with the LangSmith URL, e.g., `https://langsmith.yourdomain.com`.
 1. Configure LangSmith to use this OAuth application (see [general configuration section](#configuration) for details about `initialOrgAdminEmail`):
 
-<CodeGroup>
-
 ```yaml Helm
 config:
   authType: mixed
@@ -334,30 +255,212 @@ config:
     oauthScopes: "email,profile,openid"
 ```
 
-```bash Docker
-# In your .env file
-AUTH_TYPE=mixed
-INITIAL_ORG_ADMIN_EMAIL=test@email.com # Set this if required
-LANGSMITH_URL=https://langsmith.example.com # the domain of your instance (note no trailing slash)
-OAUTH_CLIENT_ID="Client ID" # (starts with `0o`)
-OAUTH_CLIENT_SECRET="Client secret"
-OAUTH_ISSUER_URL="https://company-7422949.okta.com" # the URL of your Okta instance
-OAUTH_SCOPES=email,profile,openid
-```
-
-</CodeGroup>
-
 #### SP-initiated SSO
 
 Users can sign in using the **Login via SSO** button on the LangSmith homepage.
 
-## Without client secret (PKCE) (Deprecated)
+## Advanced options
 
-We recommend running with a `Client Secret` if possible (previously we didn't support this). However, if your IdP does not support this, you can use the `Authorization Code with PKCE` flow.
+### Session length controls
 
-This flow does *not* require a `Client Secret`. For the alternative workflow, refer to [With client secret](#with-client-secret-recommended).
+<Note>
+All of the environment variables in this section are for the `platform-backend` service and can be added using `platformBackend.deployment.extraEnv` in Helm.
+</Note>
+
+* By default, session length is controlled by the expiration of the identity token returned by the identity provider
+* Most setups should use refresh tokens to enable session length extension beyond the identity token expiration up to `OAUTH_SESSION_MAX_SEC`, which may require including the `offline_access` scope by adding to `oauthScopes` in Helm
+* `OAUTH_SESSION_MAX_SEC` (default 1 day) can be overridden to a maximum of one week (`604800`)
+* For identity provider setups that don't support refresh tokens, setting `OAUTH_OVERRIDE_TOKEN_EXPIRY="true"` will take `OAUTH_SESSION_MAX_SEC` as the session length, ignoring the identity token expiration
+
+### Scope encoding for strict identity providers
+
+By default, LangSmith encodes the spaces between `oauthScopes` in the authorization request as `+` (the `application/x-www-form-urlencoded` convention). Most identity providers accept this, but some (for example, CA SiteMinder) do not decode `+` as a space and reject the login with an `invalid_scope` error. If your IdP rejects multi-scope logins for this reason, set `urlEncodeScopeSpaces: true` in Helm to encode the spaces as `%20` instead, which is the encoding accepted by all OIDC-compliant providers. This applies only to `authType: mixed` with an OAuth client secret, and defaults to off.
+
+```yaml Helm
+config:
+  authType: mixed
+  hostname: https://langsmith.example.com
+  oauth:
+    enabled: true
+    oauthClientId: <YOUR CLIENT ID>
+    oauthClientSecret: <YOUR CLIENT SECRET>
+    oauthIssuerUrl: <YOUR DISCOVERY URL>
+    oauthScopes: "email,profile,openid"
+    urlEncodeScopeSpaces: true
+```
+
+### Override sub claim
+
+In some scenarios, it may be necessary to override which claim is used as the `sub` claim from your identity provider.
+For example, in SCIM, the resolved `sub` claim and SCIM `externalId` must match in order for login to succeed.
+If there are restrictions on the source attribute of the `sub` claim and/or the SCIM `externalId`, set the `ISSUER_SUB_CLAIM_OVERRIDES` environment variable to select which OIDC JWT claim is used as the `sub`.
+
+If an issuer URL **starts with** one of the URLs in this configuration, the `sub` claim is taken from the field name specified.
+For example, with the following configuration, a token with the issuer `https://idp.yourdomain.com/application/uuid` would use the `customClaim` value as the `sub`:
+
+```
+ISSUER_SUB_CLAIM_OVERRIDES='{"https://idp.yourdomain.com": "customClaim"}'
+```
+
+If unset, the default value for this configuration uses the `oid` claim when Azure Entra ID is used as the identity provider:
+
+```
+ISSUER_SUB_CLAIM_OVERRIDES='{"https://login.microsoftonline.com/": "oid", "https://sts.windows.net/": "oid", "https://login.microsoftonline.us/": "oid", "https://login.partner.microsoftonline.cn/": "oid"}'
+```
+
+### SSO Groups Sync
+
+<Note>
+SSO Groups Sync on self-hosted requires LangSmith chart version **0.15.0-rc.3** (application version **0.15.2rc1**) or later.
+</Note>
+
+[SSO Groups Sync](/langsmith/user-management#sso-groups-sync-alternative) lets LangSmith assign org and workspace roles from a group membership claim on the OIDC token, as a simpler alternative to [SCIM](/langsmith/user-management#set-up-scim-for-your-organization). On self-hosted, you must configure the IdP to include groups in the OIDC ID token before LangSmith can read them.
+
+**IdP-side configuration (varies by provider):**
+
+1. Configure your IdP application to emit a group membership claim in the OIDC ID token. The source attribute and the resulting claim name vary by IdP. Common examples include `groups`, `roles`, or a custom claim name. LangSmith does not dictate the source attribute.
+1. Depending on your IdP, you may need to add an additional scope (commonly `groups`) to `oauthScopes` to receive the claim. Check your IdP's documentation for the required scope and any additional configuration needed to include group memberships in the token.
+1. Group names must follow the [SCIM naming convention](/langsmith/user-management#group-naming-convention) (e.g., `LS:Organization Admin`, `LS:Organization User:prod:Editor`). The separator is shared with SCIM via [`scim_group_name_separator`](/langsmith/user-management#configure-custom-separator).
+
+**Helm configuration:**
+
+If your IdP requires an additional OIDC scope to include groups in the token (commonly `groups`), add it to `oauthScopes`:
+
+```yaml Helm
+config:
+  authType: mixed
+  hostname: https://langsmith.example.com
+  oauth:
+    enabled: true
+    oauthClientId: <YOUR CLIENT ID>
+    oauthClientSecret: <YOUR CLIENT SECRET>
+    oauthIssuerUrl: <YOUR DISCOVERY URL>
+    oauthScopes: "email,profile,openid,groups"
+```
+
+The exact scope name (`groups`, `roles`, etc.) depends on your IdP. Check your IdP's OIDC documentation.
+
+**LangSmith-side configuration:**
+
+Per-provider SSO Groups Sync settings are stored on the SSO provider record and toggled via the [LangSmith UI](https://smith.langchain.com) or [API](/langsmith/reference) (not via Helm values).
+
+<Tabs>
+<Tab title="UI">
+Once your IdP emits the groups claim, configure SSO Groups Sync from the UI in **Settings** → **Members and roles** → **SSO Configuration** → **SSO Groups Sync**. The claim name configured in the **Groups claim field** must match the claim emitted by your IdP.
+</Tab>
+<Tab title="API">
+
+To configure SSO Groups Sync via the API, first `GET` the current SSO settings to retrieve the provider `id`, then `PATCH` using that `id`:
+
+```bash
+# 1. Fetch the current SSO settings (and the id required for PATCH)
+curl -s "$SELF_HOSTED_LANGSMITH_ENDPOINT/api/v1/orgs/current/sso-settings" \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" | jq .
+
+# 2. PATCH using the id returned above
+curl -s -X PATCH "$SELF_HOSTED_LANGSMITH_ENDPOINT/api/v1/orgs/current/sso-settings/<id>" \
+  -H "X-Api-Key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sso_groups_enabled": true,
+    "sso_groups_claim_field": "groups",
+    "sso_groups_required": true,
+    "sso_groups_role_sync_enabled": true
+  }' | jq .
+```
+
+<Warning>
+`DELETE` is also available on this resource but is not covered here. `DELETE` removes the SSO provider entirely and locks out login if the org has **Login via SSO only** enabled, or if no other authentication providers (for example, social login) are configured.
+</Warning>
+</Tab>
+</Tabs>
+
+#### Emit the groups claim from Microsoft Entra ID
+
+For OIDC on self-hosted, add the groups claim through the App Registration Manifest. Skip the **Token configuration** > **Add groups claim** flow, which does not support display names for cloud-only security groups.
+
+<Warning>
+Set the top-level `groupMembershipClaims` property to `"ApplicationGroup"`. Other values change behavior in ways that are hard to diagnose:
+
+- Missing or `"None"`: no groups appear in the token.
+- `"SecurityGroup"` or `"All"`: groups appear, but the `cloud_displayname` value is silently ignored and the token contains group object IDs instead of names.
+- `"ApplicationGroup"`: groups resolve to display names, but only for groups explicitly assigned to the Enterprise Application under **Users and groups**.
+
+The `cloud_displayname` value is only supported for single-tenant applications.
+</Warning>
+
+In **App registrations** > your app > **Manifest**, merge the following into the manifest, keeping any existing `optionalClaims.idToken` entries such as `email`:
+
+```json
+"groupMembershipClaims": "ApplicationGroup",
+"optionalClaims": {
+  "idToken": [
+    {
+      "name": "email",
+      "source": null,
+      "essential": false,
+      "additionalProperties": []
+    },
+    {
+      "name": "groups",
+      "source": null,
+      "essential": false,
+      "additionalProperties": ["cloud_displayname"]
+    }
+  ],
+  "accessToken": [],
+  "saml2Token": []
+}
+```
+
+Then, in **Enterprise applications** > your app > **Users and groups**, assign every group that maps to a LangSmith role. Groups that are not assigned to the Enterprise Application do not appear in the token.
+
+#### Create Microsoft Entra ID groups for SSO Groups Sync
+
+Groups used for SSO Groups Sync must follow the [group naming convention](/langsmith/user-management#group-naming-convention) documented on the main user management page (for example, `LS:Organization Admins`, `LS:Organization User:Production:Editor`). Group names are case-sensitive and must match the convention exactly.
+
+To create a group in Microsoft Entra ID:
+
+1. In the Microsoft Entra admin center, go to **Groups** > **New group**.
+1. Set **Group type** to `Security`.
+1. Set **Membership type** to `Assigned` (dynamic membership is not supported).
+1. Set **Group name** to a value that matches the naming convention.
+1. Add members, then click **Create**.
+
+Group membership changes take effect on each user's next login.
+
+#### Verify the groups claim in the token
+
+After completing IdP-side configuration, verify that the OIDC ID token contains the expected groups claim:
+
+1. Sign out of LangSmith, then sign back in via SSO.
+1. In your browser's developer tools, go to **Application** > **Cookies** and locate the OAuth session cookie.
+1. Decode the ID token with a JWT decoder (for example, [jwt.io](https://jwt.io)) and confirm the `groups` claim contains display names, not object IDs:
+
+```json
+{
+  "groups": [
+    "LS:Organization Admins",
+    "LS:Organization User:Production:Editor"
+  ]
+}
+```
+
+If the claim contains UUIDs instead of names, revisit the `groupMembershipClaims` value in the manifest and confirm the groups are assigned to the Enterprise Application under **Users and groups**.
+
+## PKCE flow (deprecated)
+
+We recommend running with a [`Client Secret`](#provider-setup). However, if your IdP does not support this, you can use the `Authorization Code with PKCE` flow.
+
+<Warning>
+The PKCE workflow is **deprecated** and will be removed in a future release of LangSmith Self-hosted.
+</Warning>
 
 ### Requirements
+
+<Note>
+This flow does **not** require a `Client Secret`.
+</Note>
 
 There are a couple of requirements for using OAuth SSO with LangSmith:
 
@@ -367,8 +470,6 @@ There are a couple of requirements for using OAuth SSO with LangSmith:
 * You will need to set the callback URL in your IdP to `http://<host>/oauth-callback`, where host is the domain or IP you have provisioned for your LangSmith instance. This is where your IdP will redirect the user after they have authenticated.
 * You will need to provide the `oauthClientId` and `oauthIssuerUrl` in your `values.yaml` file. This is where you will configure your LangSmith instance.
 
-<CodeGroup>
-
 ```yaml Helm
 config:
   oauth:
@@ -376,12 +477,3 @@ config:
     oauthClientId: <YOUR CLIENT ID>
     oauthIssuerUrl: <YOUR DISCOVERY URL>
 ```
-
-```bash Docker
-# In your .env file
-AUTH_TYPE=oauth
-OAUTH_CLIENT_ID=your-client-id
-OAUTH_ISSUER_URL=https://your-issuer-url
-```
-
-</CodeGroup>
