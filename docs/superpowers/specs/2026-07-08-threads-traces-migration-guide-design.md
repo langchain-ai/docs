@@ -42,6 +42,8 @@ Old (v1) equivalents, also now exact: the generic run-query params (`RunQueryPar
 
 **Resolved (2026-07-08):** re-read the Go `RunSchema` struct directly from GitHub HEAD (`run.go:696,722,734`) — `CompletionCost`/`PromptCost`/`TotalCost` are genuinely `float64` (`json:"total_cost" api:"nullable"`), not a subagent-summary error. So this is a real, if minor, cross-language codegen inconsistency (same OpenAPI field, Go decodes it as a float, Java's stricter codegen keeps it a `String`) — not a documentation bug. The existing `Runs: query` Go tab's "Unchanged" note for `run.TotalCost` is correct as shipped; the Java tab's `String`→`Double` note is also correct. No change needed to either table.
 
+**Implementation fact (Python async):** `Client.threads`/`Client.traces` (`python/langsmith/client.py:1491,1497`) return `AsyncThreadsResource`/`AsyncTracesResource` — async-only, even on the synchronous `Client`. Every Python "After" example must wrap in `async def main(): ... asyncio.run(main())`, use `await client.aread_project(...)` to resolve the project, `async for` to consume paginated calls (`query`, `list_traces`), and `await` eager calls (`stats`, `list_runs`) — matching the existing `runs-retrieve-by-id-after.py`/`runs-query-fetch-by-id-after.py` convention exactly. "Before" (v1) examples stay plain sync, since `list_threads`/`read_thread`/`get_run_stats`/`list_runs` are genuinely sync-only methods. **Decision: no `<Note>` callout about this quirk in the rendered guide** — user declined; just get every example's async/await right.
+
 ## Goals
 
 1. Five new sections in the migration guide, one per method, each following the **exact existing structure** used by `Runs: query`/`Runs: retrieve`: `## <Resource>: <method>` → `### Main changes` (`#### Method name`, `#### Query parameters`, `#### Response fields`, each a per-language `<Tabs>` block with Before/After tables) → `### Examples` (Before/After code tabs).
@@ -142,13 +144,11 @@ Note for implementation: v1's stats response is actually a union of two shapes (
 
 ## New example in `Runs: query`
 
-Append one new example to the existing `### Examples` list in `runs-query.mdx` (currently 9 examples), after the last one:
+Append two new examples to the existing `### Examples` list in `runs-query.mdx` (currently 9 examples), after the last one:
 
-**Heading:** `#### Reconstruct a trace instead of grouping by trace_id`
+**Example 1 — `#### List root runs as traces`:** the plain mechanical swap, no aggregation involved — Before: `client.list_runs(is_root=True)`; After: `client.traces.query(...)`. The on-ramp: "if you're listing root runs to represent traces, this is the dedicated method for it."
 
-**Before:** the `is_root=True` root-run query + per-trace N+1 `list_runs(trace_id=...)` query workaround (already drafted in the reverted prototype — reusable as-is).
-
-**After:** switches to `client.traces.query(...)` — a deliberate resource switch, not a `runs.query` variant, since that's the whole point.
+**Example 2 — `#### Get trace-wide totals without extra queries`:** the actual payoff — Before: the `is_root=True` root-run query plus a per-trace N+1 `list_runs(trace_id=...)` query to sum descendant tokens/cost (already drafted in the reverted prototype — reusable as-is); After: one `client.traces.query(...)` call with `trace_aggregates` already computed. Both examples deliberately switch resource from `runs` to `traces` in the After tab — not a `runs.query` variant, since that's the whole point.
 
 **Discoverability hook:** immediately after the code tabs, a `<Tip>` callout: *"See [Traces: query](#traces-query) and [Traces: list runs](#traces-list-runs) below for the full set of trace-oriented methods."* — plain kebab-case slugs (lowercase, spaces to hyphens, punctuation stripped) match the anchor convention already used elsewhere in this docs repo, e.g. `administration-overview.mdx`'s `## Personal Access Tokens (PATs)` → `#personal-access-tokens-pats` and `add-auth-server.mdx`'s `[above](#setup-auth-provider)`. So `#traces-query`/`#traces-list-runs` should be correct for headings `## Traces: query`/`## Traces: list runs`. **User will verify empirically against the local docs preview once these headings actually exist in the file** — reminder for implementation: confirm the live anchors before finalizing this callout, don't just trust the convention.
 
