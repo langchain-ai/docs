@@ -40,7 +40,7 @@ Go and Java never had hand-rolled thread/stats convenience methods (confirmed: n
 
 Old (v1) equivalents, also now exact: the generic run-query params (`RunQueryParams`/`RunQueryV1Params`, byte-identical to each other in both Go and Java) have **24 fields**; the generic run-stats params (`RunStatsQueryParams`) have **23 fields**, more than the "~15" this plan originally estimated — the extra ones (`group_by`, `groups`, `include_details`, `data_source_type`, `execution_order`, `search_filter`, `skip_pagination`, `use_experimental_search`) exist but are irrelevant to scoping stats to one thread. The v1 stats response (`RunStats`/`RunStatsResponseRunStats`) has **28 fields**, independently confirmed identical between Go and Java — this corroborates the original `smith-backend/app/schemas.py` finding from a second, SDK-only source, so that citation is no longer load-bearing (kept below for the original context, but the Go/Java structs are now the primary source).
 
-One unresolved discrepancy from the audit: Java's old `RunSchema.completionCost`/`promptCost`/`totalCost` are typed `String`, while the Go agent reported the equivalent Go `RunSchema` fields as `float64`. The already-shipped `Runs: query` Java tab in this guide already documents this exact `String`→`Double` transition for `run.totalCost()` — so the Java content needs no change — but the Go tab currently says "Unchanged" for `run.TotalCost`, which conflicts with a `String`-typed v1 source. Flagged as an open item below rather than resolved, since resolving it means re-reading the Go `RunSchema` struct tag directly rather than trusting a subagent summary.
+**Resolved (2026-07-08):** re-read the Go `RunSchema` struct directly from GitHub HEAD (`run.go:696,722,734`) — `CompletionCost`/`PromptCost`/`TotalCost` are genuinely `float64` (`json:"total_cost" api:"nullable"`), not a subagent-summary error. So this is a real, if minor, cross-language codegen inconsistency (same OpenAPI field, Go decodes it as a float, Java's stricter codegen keeps it a `String`) — not a documentation bug. The existing `Runs: query` Go tab's "Unchanged" note for `run.TotalCost` is correct as shipped; the Java tab's `String`→`Double` note is also correct. No change needed to either table.
 
 ## Goals
 
@@ -80,7 +80,7 @@ One unresolved discrepancy from the audit: Java's old `RunSchema.completionCost`
 - TS's v1 `ListThreadsItem`: *claims* `total_tokens`, `total_cost`, `latency_p50`, `latency_p99`, `feedback_stats` — but the implementation hardcodes them to `0`/`null`, never computes them (`js/src/client.ts:3308-3314`). **Call this out as a real v1 bug being fixed**, not a rename — v2 actually computes these.
 - v2's `ThreadListItem` never embeds the full run list (that's what `threads.list_traces` is for) but adds real `feedback_stats`, `latency_p50`/`latency_p99`, cost/token sums with per-category `_details`, `first_trace_id`/`last_trace_id`, `first_inputs`/`last_outputs` previews, `last_error`, `num_errored_turns`.
 
-**Examples:** 1 example — "List threads in a project" (Before: `list_threads`/`listThreads`, generic grouping for Go/Java; After: `threads.query`).
+**Examples:** 2 examples — "List threads in a project" (Before: `list_threads`/`listThreads`, generic grouping for Go/Java; After: `threads.query`), plus a second showing `filter` narrowing threads by a root-run attribute (e.g. `eq(status, "error")`).
 
 ### Threads: list traces
 
@@ -90,7 +90,7 @@ One unresolved discrepancy from the audit: Java's old `RunSchema.completionCost`
 
 **Response fields:** v1 returns full `Run` objects (iterator); v2 returns lightweight `ThreadTraceListItem` — preview fields instead of full `inputs`/`outputs`, no embedded child runs. Reuse the same "Response fields" framing pattern as `Runs: query`'s Python tab (`selects` controls what's populated).
 
-**Examples:** 1 example — "List a thread's traces."
+**Examples:** 2 examples — "List a thread's traces," plus a second showing `selects` picking specific fields (e.g. token/cost totals) instead of the `trace_id`-only default.
 
 ### Threads: stats
 
@@ -118,7 +118,7 @@ This table doubles as the single best piece of evidence that `threads.stats` is 
 
 Note for implementation: v1's stats response is actually a union of two shapes (a flat `RunStats` and a grouped-by-key map variant, used when `group_by`/`groups` params are set). Only the flat variant is relevant here, since scoping to a single thread never uses grouping — no need to document the grouped variant in this section.
 
-**Examples:** 1 example — "Compute stats for a thread," with a `<Warning>` about `threads.stats` aggregates being eventually consistent (per the `langsmith-sdk` PR #3164 description).
+**Examples:** 2 examples — "Compute stats for a thread" (with a `<Warning>` about `threads.stats` aggregates being eventually consistent, per the `langsmith-sdk` PR #3164 description), plus a second contrasting the old two-call `get_run_stats`-plus-`first_start_time`-lookup workaround against the single new call, leaning on the field-mapping table above.
 
 ### Traces: query
 
@@ -128,7 +128,7 @@ Note for implementation: v1's stats response is actually a union of two shapes (
 
 **Response fields:** `root_run` (same shape as `Runs: query`'s response fields table — reuse/reference it) + new `trace_aggregates` (`total_tokens`, `total_cost`, `first_token_time` summed across the *whole* trace, not just the root run — the reason this method exists).
 
-**Examples:** 1-2 examples — at minimum "List traces with trace-wide totals" (Before: root run query + N+1 per-trace sum; After: `traces.query` with `trace_aggregates`).
+**Examples:** 2 examples — "List traces with trace-wide totals" (Before: root run query + N+1 per-trace sum; After: `traces.query` with `trace_aggregates`), plus a second showing `trace_filter`/`trace_ids` narrowing (root-run-only filter vs the fast-path UUID list).
 
 ### Traces: list runs
 
@@ -138,7 +138,7 @@ Note for implementation: v1's stats response is actually a union of two shapes (
 
 **Response fields:** `{items: [...]}` list of `Run` — same shape as `Runs: query`'s response fields table.
 
-**Examples:** 1 example — "List a trace's runs."
+**Examples:** 2 examples — "List a trace's runs," plus a second showing `filter` narrowing to a run subset within the trace (e.g. `eq(run_type, "llm")`).
 
 ## New example in `Runs: query`
 
@@ -150,7 +150,7 @@ Append one new example to the existing `### Examples` list in `runs-query.mdx` (
 
 **After:** switches to `client.traces.query(...)` — a deliberate resource switch, not a `runs.query` variant, since that's the whole point.
 
-**Discoverability hook:** immediately after the code tabs, a `<Tip>` callout: *"See [Traces: query](#traces-query) and [Traces: list runs](#traces-list-runs) below for the full set of trace-oriented methods."* — anchor links need verification against Mintlify's actual heading-slug rules before use (flagged as a risk in an earlier round of this same guide; confirm during implementation rather than guess).
+**Discoverability hook:** immediately after the code tabs, a `<Tip>` callout: *"See [Traces: query](#traces-query) and [Traces: list runs](#traces-list-runs) below for the full set of trace-oriented methods."* — plain kebab-case slugs (lowercase, spaces to hyphens, punctuation stripped) match the anchor convention already used elsewhere in this docs repo, e.g. `administration-overview.mdx`'s `## Personal Access Tokens (PATs)` → `#personal-access-tokens-pats` and `add-auth-server.mdx`'s `[above](#setup-auth-provider)`. So `#traces-query`/`#traces-list-runs` should be correct for headings `## Traces: query`/`## Traces: list runs`. **User will verify empirically against the local docs preview once these headings actually exist in the file** — reminder for implementation: confirm the live anchors before finalizing this callout, don't just trust the convention.
 
 ## File/pipeline changes (mechanical, same pattern as the reverted prototype)
 
@@ -177,17 +177,18 @@ This has a concrete consequence for placeholder IDs (`<thread-id>`, `<trace-id>`
 
 **Commands to run during implementation** (not yet run — this plan doesn't touch code): `make test-code-samples FILES="<new files>"` scoped to just the new/changed files first, then a full `make test-code-samples` pass before considering the work done, matching how this repo already gates content.
 
-**Open dependency, not blocking plan approval:** these tests require `LANGSMITH_API_KEY` pointed at a live backend with a real "default" project containing actual threads/traces/runs data (matching what every existing example in this guide already assumes). Whether that's available in the implementation environment or only in CI needs to be confirmed before claiming the new examples are "tested" rather than merely "written to the tested convention."
+**Resolved:** user will provide a `LANGSMITH_API_KEY` pointed at a live backend with real threads/traces/runs data under a "default" project — no longer a blocking dependency.
 
 ## Validation
 
 - `make check-cross-refs` (catches broken imports/links — already caught one bad link in the reverted prototype).
 - `markdownlint` on changed/new files.
-- Manual read-through per section against the fact tables above before considering it done — after the 2026-07-08 schema audit (GitHub HEAD, SDK repos only), every field list in this plan is now source-confirmed except the one open item below.
+- Manual read-through per section against the fact tables above before considering it done — every field list in this plan is now source-confirmed against GitHub HEAD (SDK repos only).
 - **All examples must be tested through the docs repo's existing snippet-testing framework** — see the "Example testing" section above.
 
-## Open items to confirm during implementation (not blocking plan approval)
+## Open items (all resolved 2026-07-08, kept for the record)
 
-1. Whether the Go `Runs: query` tab's existing "Unchanged" note for `run.TotalCost` is accurate, given the schema audit's (unconfirmed-by-direct-source) claim that Go's old `RunSchema.CompletionCost`/`PromptCost`/`TotalCost` are `float64` while Java's equivalent old fields are `String` (and the existing Java tab already documents that as a `String`→`Double` change). Needs a direct read of the Go `RunSchema` struct tags before writing the Go `Traces: query`/`Traces: list runs` response-fields tables, since those reuse the `Runs: query` Go table by reference.
-2. Mintlify anchor-slug behavior for the `<Tip>` cross-link in `Runs: query` — needs verification, not assumption, before shipping literal `#threads-query`-style anchors.
-3. Final count of examples per new section (plan assumes 1-2 each; existing `Runs: query` has 9 — new sections don't need to match that density, but should not be thinner than `Runs: retrieve`'s 2).
+1. ~~Go `run.TotalCost` typing~~ — resolved: confirmed `float64` directly from `run.go:696,722,734` at GitHub HEAD; the existing Go tab's "Unchanged" note is correct, no change needed.
+2. ~~Mintlify anchor-slug behavior~~ — convention identified (plain kebab-case, matching other pages in this repo); user will do the final empirical check against the local preview once the new headings exist. **Reminder for implementation: don't skip this check.**
+3. ~~Example count per new section~~ — resolved: 2 examples each (see per-section plans above).
+4. ~~Test credentials~~ — resolved: user will provide `LANGSMITH_API_KEY` for a backend with real thread/trace/run data.
