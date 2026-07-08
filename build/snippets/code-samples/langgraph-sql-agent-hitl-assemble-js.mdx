@@ -1,0 +1,32 @@
+```ts
+import { Command, MemorySaver } from "@langchain/langgraph";
+
+const shouldContinueWithHuman: ConditionalEdgeRouter<
+  typeof MessagesState,
+  "run_query"
+> = (state) => {
+  const messages = state.messages;
+  const lastMessage = messages[messages.length - 1];
+  if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {
+    return END;
+  } else {
+    return "run_query";
+  }
+};
+
+const builderWithHuman = new StateGraph(MessagesState)
+  .addNode("list_tables", listTables)
+  .addNode("call_get_schema", callGetSchema)
+  .addNode("get_schema", getSchemaNode)
+  .addNode("generate_query", generateQuery)
+  .addNode("run_query", runQueryNodeWithInterrupt)
+  .addEdge(START, "list_tables")
+  .addEdge("list_tables", "call_get_schema")
+  .addEdge("call_get_schema", "get_schema")
+  .addEdge("get_schema", "generate_query")
+  .addConditionalEdges("generate_query", shouldContinueWithHuman)
+  .addEdge("run_query", "generate_query");
+
+const checkpointer = new MemorySaver(); // [!code highlight]
+const agentWithHuman = builderWithHuman.compile({ checkpointer }); // [!code highlight]
+```

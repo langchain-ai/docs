@@ -1,0 +1,342 @@
+---
+title: Event streaming
+description: Stream real-time updates from LangChain agent runs
+---
+
+LangChain agents are built on LangGraph, so they support the same streaming stack with agent-focused projections for messages, tool calls, state, and custom updates.
+
+For most application and frontend use cases, use **Event Streaming** through `stream_events(..., version="v3")`. Event Streaming returns a run object with typed projections, so each projection can be consumed independently instead of parsing stream-mode tuples.
+
+
+
+```ts
+import { createAgent, tool } from "langchain";
+import * as z from "zod";
+
+const getWeather = tool(
+  async ({ city }) => `It's always sunny in ${city}!`,
+  {
+    name: "get_weather",
+    description: "Get weather for a city.",
+    schema: z.object({ city: z.string() }),
+  }
+);
+
+const agent = createAgent({
+  model: "gpt-5-nano",
+  tools: [getWeather],
+});
+
+const stream = await agent.streamEvents(
+  { messages: [{ role: "user", content: "What is the weather in SF?" }] },
+  { version: "v3" }
+);
+
+for await (const message of stream.messages) {
+  for await (const delta of message.text) {
+    process.stdout.write(delta);
+  }
+}
+
+const finalState = await stream.output;
+```
+
+
+## What you can stream
+
+
+
+| Projection | Use |
+| ---------- | --- |
+| `for event in stream` | Raw protocol events with full envelope and access to every channel. |
+| `stream.messages` | Model message streams, one per LLM call. |
+| `message.text` | Text deltas and final text for a message. |
+| `message.reasoning` | Reasoning deltas for models that expose reasoning content. |
+| `message.toolCalls` | Tool-call argument chunks and finalized tool calls. |
+| `message.output` | Final message object after the model call completes. |
+| `message.usage` | Token usage metadata when the provider returns it. |
+| `stream.values` | Agent state snapshots. |
+| `stream.output` | Final agent state. |
+| `stream.subgraphs` | Nested graph runs (sub-agents and plain subgraphs). |
+| `stream.extensions` | Custom transformer projections. |
+| `stream.toolCalls` | Tool execution lifecycle, inputs, output deltas, final output, and errors. |
+
+
+
+
+`stream.messages` yields message streams. Each message stream exposes `.text`, `.reasoning`, `.toolCalls`, `.output`, and `.usage`. Async projections can be iterated for live deltas or awaited for final values.
+
+
+## Agent messages
+
+Use `stream.messages` when you want model output from each LLM call.
+
+
+
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+for await (const message of stream.messages) {
+  process.stdout.write(`[${message.node}] `);
+  for await (const delta of message.text) {
+    process.stdout.write(delta);
+  }
+
+  const fullMessage = await message.output;
+  console.log(fullMessage.content);
+
+  const usage = await message.usage;
+  if (usage) {
+    console.log(usage);
+  }
+}
+```
+
+
+`message.output` gives you the finalized AI message, including provider-specific content blocks. In TypeScript, use `message.usage` when you only need token counts or other usage metadata; in Python, read usage from `message.output.usage_metadata`.
+
+## Reasoning content
+
+Reasoning content uses the same shape as text content, but it is available only when the selected model emits reasoning blocks.
+
+
+
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+for await (const message of stream.messages) {
+  for await (const delta of message.reasoning) {
+    process.stdout.write(`[thinking] ${delta}`);
+  }
+
+  for await (const delta of message.text) {
+    process.stdout.write(delta);
+  }
+}
+```
+
+
+See the [reasoning guide](/oss/javascript/langchain/models#reasoning) and your provider's integration page for model configuration details.
+
+## Tool calls
+
+There are two useful tool-call projections:
+
+- `message.tool_calls` streams tool-call argument chunks while the model is producing the tool call.
+- `stream.tool_calls` streams the lifecycle of tool execution after the tool call starts.
+
+
+
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+await Promise.all([
+  (async () => {
+    for await (const message of stream.messages) {
+      for await (const chunk of message.toolCalls) {
+        console.log("tool call chunk", chunk);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of stream.toolCalls) {
+      console.log(call.name, call.input);
+      console.log(await call.output, await call.error);
+    }
+  })(),
+]);
+```
+
+
+## Streaming sub-agents
+
+When a `create_agent` call invokes another named `create_agent` (via a wrapping tool, typically), the inner agent's events flow at a nested namespace. The `name=` you pass to `create_agent` identifies that inner agent in the stream, so you can filter and label per agent.
+
+
+
+Named sub-agents surface as handles on `stream.subgraphs`, alongside any plain subgraphs. Each handle exposes the inner agent's `.messages`, `.values`, `.toolCalls`, and `.output`; filter on `subagent.name` (the `name=` you passed) to act on a specific agent.
+
+```ts
+import { createAgent, tool } from "langchain";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ city }) => `It's always sunny in ${city}!`,
+  { name: "get_weather", schema: z.object({ city: z.string() }) }
+);
+
+const weatherAgent = createAgent({
+  model: "openai:gpt-5.5",
+  tools: [getWeather],
+  name: "weather_agent",
+});
+
+const callWeather = tool(
+  async ({ query }) => {
+    const result = await weatherAgent.invoke({
+      messages: [{ role: "user", content: query }],
+    });
+    return result.messages.at(-1)?.text ?? "";
+  },
+  { name: "call_weather", schema: z.object({ query: z.string() }) }
+);
+
+const supervisor = createAgent({
+  model: "openai:gpt-5.5",
+  tools: [callWeather],
+  name: "supervisor",
+});
+
+const stream = await supervisor.streamEvents(
+  { messages: [{ role: "user", content: "What's the weather in Boston?" }] },
+  { version: "v3" }
+);
+
+for await (const subagent of stream.subgraphs) {
+  if (subagent.name !== "weather_agent") continue;
+  process.stdout.write(`${subagent.name}: `);
+  for await (const message of subagent.messages) {
+    for await (const token of message.text) {
+      process.stdout.write(token);
+    }
+  }
+  process.stdout.write("\n");
+}
+```
+
+
+Plain `StateGraph` subgraphs invoked from a tool also surface on `stream.subgraphs` — set `name=` on `.compile(name=...)` to get a label in `subagent.graph_name`.
+
+
+
+Named sub-agents share the `stream.subgraphs` projection with plain subgraphs; the filter you write into your loop is what separates them.
+
+
+## State and final output
+
+Use `stream.values` for state snapshots and `stream.output` for the final agent state.
+
+
+
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
+}
+
+const finalState = await stream.output;
+```
+
+
+## Multiple projections
+
+
+
+Use concurrent consumers when you want multiple projections in JavaScript:
+
+```ts
+const stream = await agent.streamEvents(input, { version: "v3" });
+
+await Promise.all([
+  (async () => {
+    for await (const message of stream.messages) {
+      console.log(await message.text);
+    }
+  })(),
+  (async () => {
+    for await (const call of stream.toolCalls) {
+      console.log(call.name, call.input);
+    }
+  })(),
+]);
+```
+
+
+To access channels that aren't exposed as typed projections, or to inspect the full event envelope, iterate raw protocol events:
+
+
+
+```ts
+for await (const event of stream) {
+  console.log(event.method, event.params.namespace, event.params.data);
+}
+```
+
+
+## Custom updates
+
+Use custom stream transformers when your application needs a projection that is not built in, such as retrieval progress, artifacts, or domain-specific events.
+
+
+
+```ts
+const stream = await agent.streamEvents(input, {
+  version: "v3",
+  transformers: [toolActivityTransformer],
+});
+
+for await (const activity of stream.extensions.toolActivity) {
+  console.log(activity);
+}
+```
+
+
+### Register transformers on middleware
+
+
+
+<Note>Middleware-registered transformers require `langchain@1.4.3` or later.</Note>
+
+
+Middleware can declare stream transformer factories alongside its hooks and tools. The factory shape differs between languages:
+
+
+
+Pass `streamTransformers` to `createMiddleware` as a tuple of factories. Each factory has the shape `() => StreamTransformer<any>` (zero arguments) and is invoked once per scope. Returning a fresh transformer per call keeps each subgraph isolated.
+
+```ts
+import { createAgent, createMiddleware } from "langchain";
+
+const toolActivityMiddleware = createMiddleware({
+  name: "ToolActivityMiddleware",
+  streamTransformers: [toolActivityTransformer],
+});
+
+const agent = createAgent({
+  model: "gpt-5-nano",
+  tools: [getWeather],
+  middleware: [toolActivityMiddleware],
+});
+```
+
+
+
+
+At compile time, `createAgent` merges middleware-registered factories with anything passed to its own `streamTransformers` option. The final order on the compiled graph is:
+
+1. The built-in `ToolCallTransformer`.
+2. Middleware-registered factories, in middleware order.
+3. Caller-supplied `streamTransformers` from `createAgent`.
+
+This keeps the built-in tool-call projection in front of consumer transformers and gives caller-supplied entries the final word.
+
+
+See [Build your own projection](/oss/javascript/langgraph/event-streaming#build-your-own-projection) for the transformer contract.
+
+## Related
+
+- [Streaming](/oss/javascript/langchain/streaming) covers low-level Pregel stream modes.
+- [Build your own projection](/oss/javascript/langgraph/event-streaming#build-your-own-projection) covers writing application-specific projections.
+- [Frontend streaming patterns](/oss/javascript/langchain/frontend/overview) shows UI use cases built on streamed state.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/event-streaming.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

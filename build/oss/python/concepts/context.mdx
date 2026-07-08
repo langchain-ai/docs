@@ -1,0 +1,212 @@
+---
+title: Context overview
+sidebarTitle: Context
+---
+
+**Context engineering** is the practice of building dynamic systems that provide the right information and tools, in the right format, so that an AI application can accomplish a task. Context can be characterized along two key dimensions:
+
+1. By **mutability**:
+   * **Static context**: Immutable data that doesn't change during execution (e.g., user metadata, database connections, tools)
+   * **Dynamic context**: Mutable data that evolves as the application runs (e.g., conversation history, intermediate results, tool call observations)
+2. By **lifetime**:
+   * **Runtime context**: Data scoped to a single run or invocation
+   * **Cross-conversation context**: Data that persists across multiple conversations or sessions
+
+<Tip>
+    Runtime context refers to local context: data and dependencies your code needs to run. It does **not** refer to:
+
+    * The LLM context, which is the data passed into the LLM's prompt.
+    * The "context window", which is the maximum number of tokens that can be passed to the LLM.
+
+    Runtime context is a form of dependency injection and can be used to optimize the LLM context. It lets to provide dependencies (like database connections, user IDs, or API clients) to your tools and nodes at runtime rather than hardcoding them. For example, you can use user metadata in the runtime context to fetch user preferences and feed them into the context window.
+
+
+
+
+</Tip>
+
+LangGraph provides three ways to manage context, which combines the mutability and lifetime dimensions:
+
+| Context type                                                                                | Description                                            | Mutability | Lifetime           | Access method                           |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ---------- | ------------------ | --------------------------------------- |
+| [**Static runtime context**](#static-runtime-context)                                       | User metadata, tools, db connections passed at startup | Static     | Single run         | `context` argument to `invoke`/`stream` |
+| [**Dynamic runtime context (state)**](#dynamic-runtime-context)                             | Mutable data that evolves during a single run          | Dynamic    | Single run         | LangGraph state object                  |
+| [**Dynamic cross-conversation context (store)**](#dynamic-cross-conversation-context)       | Persistent data shared across conversations            | Dynamic    | Cross-conversation | LangGraph store                         |
+
+## Static runtime context
+
+**Static runtime context** represents immutable data like user metadata, tools, and database connections that are passed to an application at the start of a run via the `context` argument to `invoke`/`stream`. This data does not change during execution.
+
+```python
+@dataclass
+class ContextSchema:
+    user_name: str
+
+graph.invoke(
+    {"messages": [{"role": "user", "content": "hi!"}]},
+    context={"user_name": "John Smith"}  # [!code highlight]
+)
+```
+
+<Tabs>
+    <Tab title="Agent prompt">
+    ```python
+    from dataclasses import dataclass
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import dynamic_prompt, ModelRequest
+
+
+    @dataclass
+    class ContextSchema:
+        user_name: str
+
+    @dynamic_prompt  # [!code highlight]
+    def personalized_prompt(request: ModelRequest) -> str:  # [!code highlight]
+        user_name = request.runtime.context.user_name
+        return f"You are a helpful assistant. Address the user as {user_name}."
+
+    agent = create_agent(
+        model="claude-sonnet-4-6",
+        tools=[get_weather],
+        middleware=[personalized_prompt],
+        context_schema=ContextSchema
+    )
+
+    agent.invoke(
+        {"messages": [{"role": "user", "content": "what is the weather in sf"}]},
+        context=ContextSchema(user_name="John Smith")  # [!code highlight]
+    )
+```
+
+    See [Agents](/oss/python/langchain/agents) for details.
+    </Tab>
+    <Tab title="Workflow node">
+    ```python
+    from langgraph.runtime import Runtime
+
+    def node(state: State, runtime: Runtime[ContextSchema]):  # [!code highlight]
+        user_name = runtime.context.user_name
+        ...
+```
+
+    * See [the Graph API](/oss/python/langgraph/use-graph-api#add-runtime-configuration) for details.
+    </Tab>
+    <Tab title="In a tool">
+    ```python
+    from langchain.tools import tool, ToolRuntime
+
+    @tool
+    def get_user_email(runtime: ToolRuntime[ContextSchema]) -> str:
+        """Retrieve user information based on user ID."""
+        # simulate fetching user info from a database
+        email = get_user_email_from_db(runtime.context.user_name)  # [!code highlight]
+        return email
+```
+
+    See the [tool calling guide](/oss/python/langchain/tools#context) for details.
+    </Tab>
+</Tabs>
+
+<Tip>
+    The `Runtime` object can be used to access static context and other utilities like the active store and stream writer.
+    See the [`Runtime`](https://reference.langchain.com/python/langgraph/runtime/Runtime) documentation for details.
+</Tip>
+
+
+
+
+## Dynamic runtime context
+
+**Dynamic runtime context** represents mutable data that can evolve during a single run and is managed through the LangGraph state object. This includes conversation history, intermediate results, and values derived from tools or LLM outputs. In LangGraph, the state object acts as [short-term memory](/oss/python/concepts/memory) during a run.
+
+<Tabs>
+    <Tab title="In an agent">
+    Example shows how to incorporate state into an agent **prompt**.
+
+    State can also be accessed by the agent's **tools**, which can read or update the state as needed. See [tool calling guide](/oss/python/langchain/tools#short-term-memory-state) for details.
+
+
+
+    ```python
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import dynamic_prompt, ModelRequest
+    from langchain.agents import AgentState
+
+
+    class CustomState(AgentState):  # [!code highlight]
+        user_name: str
+
+    @dynamic_prompt  # [!code highlight]
+    def personalized_prompt(request: ModelRequest) -> str:  # [!code highlight]
+        user_name = request.state.get("user_name", "User")
+        return f"You are a helpful assistant. User's name is {user_name}"
+
+    agent = create_agent(
+        model="claude-sonnet-4-6",
+        tools=[...],
+        state_schema=CustomState,  # [!code highlight]
+        middleware=[personalized_prompt],  # [!code highlight]
+    )
+
+    agent.invoke({
+        "messages": "hi!",
+        "user_name": "John Smith"
+    })
+    ```
+
+
+
+    </Tab>
+    <Tab title="In a workflow">
+    ```python
+    from typing_extensions import TypedDict
+    from langchain.messages import AnyMessage
+    from langgraph.graph import StateGraph
+
+    class CustomState(TypedDict):  # [!code highlight]
+        messages: list[AnyMessage]
+        extra_field: int
+
+    def node(state: CustomState):  # [!code highlight]
+        messages = state["messages"]
+        ...
+        return {  # [!code highlight]
+            "extra_field": state["extra_field"] + 1  # [!code highlight]
+        }
+
+    builder = StateGraph(State)
+    builder.add_node(node)
+    builder.set_entry_point("node")
+    graph = builder.compile()
+    ```
+
+
+
+    </Tab>
+</Tabs>
+
+<Tip>
+    **Turning on memory**
+    Please see the [memory guide](/oss/python/langgraph/add-memory) for more details on how to enable memory. This is a powerful feature that allows you to persist the agent's state across multiple invocations. Otherwise, the state is scoped only to a single run.
+</Tip>
+
+## Dynamic cross-conversation context
+
+**Dynamic cross-conversation context** represents persistent, mutable data that spans across multiple conversations or sessions and is managed through the LangGraph store. This includes user profiles, preferences, and historical interactions. The LangGraph store acts as [long-term memory](/oss/python/concepts/memory#long-term-memory) across multiple runs. This can be used to read or update persistent facts (e.g., user profiles, preferences, prior interactions).
+
+## Learn more
+
+- [Memory conceptual overview](/oss/python/concepts/memory)
+- [Short-term memory in LangChain](/oss/python/langchain/short-term-memory)
+- [Memory in LangGraph](/oss/python/langgraph/add-memory)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/concepts/context.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
