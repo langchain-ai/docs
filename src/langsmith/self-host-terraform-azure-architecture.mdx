@@ -44,7 +44,7 @@ AKS Cluster
 └── cert-manager  (Let's Encrypt TLS)
 
 Azure
-├── Azure Blob Storage  (trace payloads — always external)
+├── Azure Blob Storage  (trace payloads, always external)
 └── Azure Key Vault     (secrets)
 ```
 
@@ -64,13 +64,13 @@ For the full all-in-cluster walkthrough (NGINX with Let's Encrypt HTTP-01 TLS, a
 AKS Cluster
 ├── langsmith namespace
 │   ├── frontend, backend, platform-backend, playground, queue, ingest-queue, ace-backend
-│   └── clickhouse (in-cluster — use LangChain Managed for production scale)
+│   └── clickhouse (in-cluster; use LangChain Managed for production scale)
 └── ingress-nginx + cert-manager
 
 Azure Managed Services
 ├── Azure DB for PostgreSQL Flexible Server (private VNet)
 ├── Azure Managed Redis (private VNet)
-├── Azure Blob Storage (Workload Identity — no static keys)
+├── Azure Blob Storage (Workload Identity, no static keys)
 └── Azure Key Vault
 ```
 
@@ -81,7 +81,7 @@ Azure Managed Services
 ```txt
 langsmith-vnet<identifier>
 └── subnet-0    (AKS nodes only)
-    No Postgres/Redis subnets — chart-managed pods handle both
+    No Postgres/Redis subnets; chart-managed pods handle both
 ```
 
 ### Production
@@ -112,6 +112,10 @@ All subnets are private. Postgres and Redis are accessible only from within the 
 In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). For production use [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse) or a self-managed external cluster.
 </Warning>
 
+<Note>
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for self-hosted deployments starting with self-hosted version 0.16.0 (see [deployment support](/langsmith/smithdb-sdk-migration#deployment-support)). These Terraform modules provision ClickHouse, so the guidance above applies to current deployments.
+</Note>
+
 ### One-time jobs
 
 | Job | Purpose |
@@ -139,7 +143,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 
 ## Insights and Polly add-on
 
-**Insights/Clio:** No static pods. Deploys lazily as a dynamic LangGraph deployment via the operator on first UI invocation. Reads `insights_encryption_key` from `langsmith-config-secret`. Never rotate this key — it permanently breaks existing Insights data.
+**Insights/Clio:** No static pods. Deploys lazily as a dynamic LangGraph deployment via the operator on first UI invocation. Reads `insights_encryption_key` from `langsmith-config-secret`. Never rotate this key: it permanently breaks existing Insights data.
 
 **Polly:** Runs as a dynamic LangGraph deployment, operator-managed. Reads `polly_encryption_key` from `langsmith-config-secret`. Same rotation warning as Insights.
 
@@ -184,7 +188,7 @@ AKS OIDC issuer
   → Federated credential on Azure Managed Identity (one per Kubernetes ServiceAccount)
   → Kubernetes ServiceAccount annotated with azure.workload.identity/client-id
   → Pod labeled with azure.workload.identity/use: "true"
-  → Azure AD issues a short-lived token — no storage keys in any Secret or env var
+  → Azure AD issues a short-lived token; no storage keys in any Secret or env var
 ```
 
 Workload Identity is centralized in `modules/k8s-cluster/` alongside the managed identity and OIDC issuer, which avoids circular dependencies and simplifies adding new ServiceAccounts.
@@ -224,14 +228,14 @@ WorkloadIdentityCredential authentication failed.
   AADSTS700213: No matching federated identity record found for presented assertion subject
 ```
 
-The pod panics on startup — the ServiceAccount has no registered federated credential so Azure AD rejects the token exchange.
+The pod panics on startup: the ServiceAccount has no registered federated credential so Azure AD rejects the token exchange.
 
 ## Secret flow
 
 ```txt
 Infrastructure stage
 
-  ./setup-env.sh   (read-only against Key Vault — never writes to KV directly)
+  ./setup-env.sh   (read-only against Key Vault; never writes to KV directly)
     First run:  prompts for postgres password, license key, admin password, admin email.
                 Generates api_key_salt, jwt_secret, Fernet keys locally.
                 Key Vault does not exist yet → writes to local dot-files + secrets.auto.tfvars.
@@ -241,21 +245,21 @@ Infrastructure stage
                 LANGSMITH_LICENSE_KEY, LANGSMITH_ADMIN_PASSWORD, and LANGSMITH_ADMIN_EMAIL
                 are set. Writes secrets.auto.tfvars. No generation, no KV writes.
     Output:     secrets.auto.tfvars  (gitignored, chmod 600)
-                Terraform picks this up automatically — no shell session coupling.
+                Terraform picks this up automatically; no shell session coupling.
 
   terraform apply
     Reads:  terraform.tfvars (non-sensitive config)
-            secrets.auto.tfvars (sensitive values — sole input for KV secret creation)
+            secrets.auto.tfvars (sensitive values; sole input for KV secret creation)
     Creates: Azure Key Vault + all secrets as KV secrets (Terraform is the sole KV writer)
 
 Application stage
 
-  ./setup-env.sh   (re-run on any machine — reads generated secrets from Key Vault,
+  ./setup-env.sh   (re-run on any machine; reads generated secrets from Key Vault,
                     re-prompts for user-provided ones unless LANGSMITH_* env vars are set)
 
   kubectl create secret generic langsmith-config-secret
     Reads:  Key Vault secrets + Terraform outputs (postgres/redis URLs, blob account)
-    Writes: K8s secrets — langsmith-config-secret, langsmith-postgres-secret,
+    Writes: K8s secrets: langsmith-config-secret, langsmith-postgres-secret,
                           langsmith-redis-secret
 
   helm upgrade --install langsmith ...
@@ -288,7 +292,7 @@ Four sizing profiles are available.
 |---|---|---|
 | `minimum` | Cost parking, CI smoke tests, single-user demos | `sizing_profile = "minimum"` in `terraform.tfvars` |
 | `dev` | Developer use, integration tests, POCs | `sizing_profile = "dev"` |
-| `production` | Real traffic — multi-replica + HPA | `sizing_profile = "production"` _(recommended)_ |
+| `production` | Real traffic, multi-replica + HPA | `sizing_profile = "production"` _(recommended)_ |
 | `production-large` | ~50 users, ~1000 traces/sec | `sizing_profile = "production-large"` |
 
 ### AKS node pools

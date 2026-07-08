@@ -12,27 +12,11 @@ LangSmith on AWS deploys in two stages with one optional add-on. The infrastruct
 
 <img src="/images/self-hosted-terraform/aws-architecture.png" alt="LangSmith on AWS service layout" />
 
-```txt
-LangSmith Deployment add-on  (enable_deployments = true)
-  host-backend, listener, operator
-  Per deployed graph: api-server, queue, redis, postgres (operator-managed)
-  Requires: KEDA (installed alongside infrastructure via k8s-bootstrap)
-
-LangSmith application
-  backend, frontend, playground, queue, ace-backend, clickhouse
-  Storage: RDS PostgreSQL (metadata) + S3 (trace blobs via VPC endpoint)
-  Ingress: AWS ALB | NGINX | Envoy Gateway | Istio
-
-AWS infrastructure
-  VPC + private/public subnets + single NAT gateway
-  EKS cluster + managed node group + cluster autoscaler
-  RDS PostgreSQL (private subnets)
-  ElastiCache Redis (private subnets)
-  S3 bucket + VPC Gateway Endpoint (no public route)
-  ALB controller + EBS CSI driver + metrics server
-  k8s-bootstrap: KEDA, ESO, optional Envoy Gateway
-  Optional: Network Firewall, WAF, CloudTrail, ALB access logs
-```
+| Stage | Layer | What it adds |
+|---|---|---|
+| Infrastructure | AWS infrastructure | VPC + private/public subnets + single NAT gateway, EKS cluster + managed node group + cluster autoscaler, RDS PostgreSQL, ElastiCache Redis, S3 bucket + VPC Gateway Endpoint, ALB controller + EBS CSI driver + metrics server, k8s-bootstrap (KEDA, ESO, optional Envoy Gateway). Optional: Network Firewall, WAF, CloudTrail, ALB access logs. |
+| Application | LangSmith application | backend, frontend, playground, queue, ace-backend, clickhouse. Storage: RDS PostgreSQL (metadata) + S3 (trace blobs via VPC endpoint). Ingress: ALB, NGINX, Envoy Gateway, or Istio. |
+| Add-on (`enable_deployments = true`) | LangSmith Deployment | host-backend, listener, operator. Per deployed graph: api-server, queue, redis, postgres (operator-managed). Requires KEDA (installed alongside infrastructure via k8s-bootstrap). |
 
 ## Component to storage mapping
 
@@ -62,6 +46,10 @@ These pods run on every deployment. All write logs and metrics; the busier compo
 <Warning>
 In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). For production use [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse) or a self-managed external cluster.
 </Warning>
+
+<Note>
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for self-hosted deployments starting with self-hosted version 0.16.0 (see [deployment support](/langsmith/smithdb-sdk-migration#deployment-support)). These Terraform modules provision ClickHouse, so the guidance above applies to current deployments.
+</Note>
 
 ### One-time jobs
 
@@ -122,7 +110,7 @@ Two Terraform modules install the cluster-level services LangSmith depends on. T
 | `cluster-autoscaler` | `eks` | `kube-system` | Yes | Scales EC2 node groups based on pod scheduling pressure. |
 | `ebs-csi-driver` | `eks` | `kube-system` | Yes | Provisions EBS volumes for PersistentVolumeClaims (used by ClickHouse). |
 | KEDA | `k8s-bootstrap` | `keda` | No | Kubernetes Event-driven Autoscaling. Scales `queue` and `ingest-queue` on Redis queue depth. Required for the LangSmith Deployment add-on. |
-| cert-manager | `k8s-bootstrap` | `cert-manager` | Optional (Route 53 IRSA for DNS-01) | Automates TLS certificate issuance. Installed only when `tls_certificate_source = letsencrypt` or `create_cert_manager_irsa = true`. |
+| cert-manager | `k8s-bootstrap` | `cert-manager` | Optional | Automates TLS certificate issuance, using Route 53 IRSA for the DNS-01 challenge. Installed only when `tls_certificate_source = letsencrypt` or `create_cert_manager_irsa = true`. |
 | External Secrets Operator | `k8s-bootstrap` | `external-secrets` | Yes | Syncs SSM parameters into the `langsmith-config` Kubernetes Secret. |
 
 ## IRSA roles
@@ -136,31 +124,70 @@ IRSA replaces static credentials. The EKS cluster's OIDC issuer is the trust anc
 
 ## Network topology
 
-### Default — ALB ingress
+### Default ALB ingress
 
-```txt
-Internet
-  → AWS Application Load Balancer (port 80 or 443, TLS via ACM or Let's Encrypt)
-    → EKS Cluster (private subnets)
-      • kube-system: aws-load-balancer-controller, cluster-autoscaler, ebs-csi-driver, keda
-      • langsmith:   backend, frontend, playground, queue, clickhouse
-                     redis (in-cluster) OR ElastiCache (private subnet)
-                     RDS PostgreSQL (private subnet)
-                     S3 bucket (VPC Gateway Endpoint, no public route)
+```mermaid
+graph TD
+    Internet(["Internet"])
+    ALB["AWS Application Load Balancer<br/>port 80/443, TLS via ACM or Let's Encrypt"]
+
+    subgraph EKS["EKS cluster (private subnets)"]
+        KubeSystem["kube-system<br/>aws-load-balancer-controller, cluster-autoscaler,<br/>ebs-csi-driver, keda"]
+        LangSmith["langsmith<br/>backend, frontend, playground, queue, clickhouse"]
+    end
+
+    RDS[("RDS PostgreSQL<br/>private subnet")]
+    Cache[("ElastiCache Redis<br/>private subnet, or in-cluster")]
+    S3[("S3 bucket<br/>VPC Gateway Endpoint, no public route")]
+
+    Internet -->|HTTPS| ALB
+    ALB --> LangSmith
+    LangSmith --> RDS
+    LangSmith --> Cache
+    LangSmith --> S3
+
+    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
+
+    class Internet trigger
+    class ALB,KubeSystem,LangSmith process
+    class RDS,Cache,S3 output
 ```
 
-### Envoy Gateway — opt-in
+### Envoy Gateway (opt-in)
 
 With the Terraform default (`enable_envoy_gateway = true`), the pre-provisioned ALB stays in front and binds to the Envoy service on port 8080 through a `TargetGroupBinding`, as shown in the [ingress options](#ingress-options) table. The standalone Network Load Balancer path below is an overlay variant (`helm/values/examples/langsmith-values-ingress-envoy-gateway.yaml`) in which the NLB terminates TLS directly:
 
-```txt
-Internet
-  → AWS Network Load Balancer (NLB, ACM TLS termination at 443)
-    → envoy-gateway-system: Envoy proxy (GatewayClass: eg, Gateway: langsmith-gateway)
-      → langsmith namespace:        backend, frontend, playground, queue, clickhouse, ...
-      → langsmith-agents namespace (optional dataplane): langgraph-dataplane listener + operator + agent pods
-         (HTTPRoute attaches to shared langsmith-gateway via allowedRoutes: All)
+```mermaid
+graph TD
+    Internet(["Internet"])
+    NLB["AWS Network Load Balancer<br/>ACM TLS termination at 443"]
+
+    subgraph EGS["envoy-gateway-system"]
+        Envoy["Envoy proxy<br/>GatewayClass: eg, Gateway: langsmith-gateway"]
+    end
+
+    LangSmith["langsmith namespace<br/>backend, frontend, playground, queue, clickhouse"]
+    Agents["langsmith-agents namespace (optional dataplane)<br/>langgraph-dataplane listener, operator, agent pods"]
+
+    Internet -->|HTTPS| NLB
+    NLB --> Envoy
+    Envoy -->|HTTPRoute| LangSmith
+    Envoy -->|HTTPRoute| Agents
+
+    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef decision fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
+    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
+
+    class Internet trigger
+    class NLB process
+    class Envoy decision
+    class LangSmith,Agents output
 ```
+
+Both `langsmith` and `langsmith-agents` attach to the shared `langsmith-gateway` through an `HTTPRoute` with `allowedRoutes: All`.
 
 ### Egress path with Network Firewall
 
@@ -181,7 +208,7 @@ Pod-to-pod, pod-to-RDS, and pod-to-ElastiCache traffic uses the local VPC route 
 
 Four mutually exclusive ingress options ship with the modules. The choice determines whether split dataplane (agent pods in a separate namespace) is supported.
 
-| Option | Variable | Split dataplane | Traffic path | When to use |
+| Option | Variable | Split | Traffic path | When to use |
 |---|---|---|---|---|
 | ALB (AWS LBC) | _default_ | No | `ALB → frontend NodePort` | Default. Single-namespace deployments, POC, simplest TLS via ACM. |
 | NGINX Ingress | `enable_nginx_ingress = true` | No | `ALB → TGB → NGINX controller → frontend ClusterIP` | When NGINX is the standard ingress in your organization. |
@@ -274,7 +301,7 @@ vpc ─► firewall (optional, create_firewall = true)
 | Network Firewall | `create_firewall` | `false` | FQDN-based egress filtering. Allows only domains in `firewall_allowed_fqdns` (TLS SNI + HTTP Host). Requires `create_vpc = true`. Cost ≈ `$0.40/hr/endpoint + $0.065/GB processed`. |
 | ALB access logs | `alb_access_logs_enabled` | `false` | Traffic analysis and compliance |
 | CloudTrail | `create_cloudtrail` | `false` | API call logging. Skip if an organization trail already exists. |
-| WAF | `create_waf` | `false` | WAFv2 Web ACL — OWASP Top 10, IP reputation, known bad inputs |
+| WAF | `create_waf` | `false` | WAFv2 Web ACL: OWASP Top 10, IP reputation, known bad inputs |
 
 ## Default resource sizes
 
