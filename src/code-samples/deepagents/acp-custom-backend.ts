@@ -5,17 +5,18 @@ import { CompositeBackend, FilesystemBackend, StateBackend } from "deepagents";
 const server = new DeepAgentsServer({
   agents: {
     name: "custom-agent",
-    backend: new CompositeBackend({
-      routes: [
-        {
-          prefix: "/workspace",
-          backend: new FilesystemBackend({ rootDir: "./workspace" }),
-        },
-        { prefix: "/", backend: new StateBackend() },
-      ],
+    backend: new CompositeBackend(new StateBackend(), {
+      "/workspace/": new FilesystemBackend({ rootDir: "./workspace" }),
     }),
   },
 });
+// :snippet-end:
+// :remove-start:
+if (!server) {
+  throw new Error("server not created");
+}
+console.log("✓ acp-custom-backend sample validated");
+process.exit(0);
+// :remove-end:
 
 await server.start();
-// :snippet-end:

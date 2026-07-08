@@ -2,7 +2,7 @@
 import { createDeepAgent } from "deepagents";
 
 const agent = await createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google-genai:gemini-3.5-flash",
   skills: ["/skills/research/", "/skills/web-search/"],
 });
 // :snippet-end:

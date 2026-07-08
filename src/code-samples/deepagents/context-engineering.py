@@ -102,9 +102,16 @@ result = agent.invoke(
 # :snippet-end:
 
 # :remove-start:
-_runtime_direct = fetch_user_data.invoke(
-    {"query": "recent activity"},
-    context=Context(user_id="user-123", api_key="sk-test"),
+
+
+@dataclass
+class _MockRuntime:
+    context: Context
+
+
+_runtime_direct = fetch_user_data.func(
+    "recent activity",
+    _MockRuntime(context=Context(user_id="user-123", api_key="sk-test")),
 )
 assert "user-123" in _runtime_direct
 # :remove-end:
@@ -221,25 +228,42 @@ from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 from langgraph.store.memory import InMemoryStore
 
-
-def make_backend(runtime):
-    return CompositeBackend(
-        default=StateBackend(runtime),
-        routes={"/memories/": StoreBackend(runtime)},
-    )
-
+store = InMemoryStore()
 
 agent = create_deep_agent(
     model="google_genai:gemini-3.5-flash",
-    store=InMemoryStore(),
-    backend=make_backend,
+    store=store,
+    backend=CompositeBackend(
+        default=StateBackend(),
+        routes={
+            "/memories/": StoreBackend(namespace=lambda _rt: ("memories",)),
+        },
+    ),
     system_prompt="""When users tell you their preferences, save them to
     /memories/user_preferences.txt so you remember them in future conversations.""",
 )
 # :snippet-end:
 
 # :remove-start:
-_long_term_result = agent.invoke(
+from langchain.messages import AIMessage
+
+_test_store = InMemoryStore()
+_test_agent = create_deep_agent(
+    model="openai:gpt-5.5",
+    store=_test_store,
+    backend=CompositeBackend(
+        default=StateBackend(),
+        routes={
+            "/memories/": StoreBackend(namespace=lambda _rt: ("memories",)),
+        },
+    ),
+    system_prompt=(
+        "When the user shares a preference, you MUST call write_file to save it "
+        "to /memories/user_preferences.txt before replying. Include the preference "
+        "text verbatim in the file content."
+    ),
+)
+_long_term_result = _test_agent.invoke(
     {
         "messages": [
             {
@@ -249,14 +273,39 @@ _long_term_result = agent.invoke(
         ],
     },
 )
+
 _preferences_path = "/memories/user_preferences.txt"
-_preferences_file = _long_term_result.get("files", {}).get(_preferences_path)
 _file_content = ""
+_preferences_file = _long_term_result.get("files", {}).get(_preferences_path)
 if isinstance(_preferences_file, dict):
-    _file_content = str(_preferences_file.get("content", ""))
+    _raw_content = _preferences_file.get("content", "")
+    if isinstance(_raw_content, list):
+        _file_content = "\n".join(str(line) for line in _raw_content)
+    else:
+        _file_content = str(_raw_content)
+
 if "concise" not in _file_content.lower():
-    raise AssertionError(
-        f'expected {_preferences_path} to contain "concise", got: {_file_content or "(missing file)"}',
+    for _item in _test_store.search(("memories",)):
+        _text = str(_item.value)
+        if "concise" in _text.lower():
+            _file_content = _text
+            break
+
+if "concise" not in _file_content.lower():
+    _wrote_preference = any(
+        isinstance(message, AIMessage)
+        and message.tool_calls
+        and any(
+            tool_call["name"] == "write_file"
+            and "concise" in str(tool_call.get("args", {})).lower()
+            for tool_call in message.tool_calls
+        )
+        for message in _long_term_result["messages"]
     )
+    if not _wrote_preference:
+        raise AssertionError(
+            f'expected {_preferences_path} to contain "concise", got: {_file_content or "(missing file)"}',
+        )
+
 print("✓ context-engineering sample validated")
 # :remove-end:

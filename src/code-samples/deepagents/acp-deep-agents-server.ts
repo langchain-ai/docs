@@ -22,5 +22,12 @@ const server = new DeepAgentsServer({
   debug: true,
 });
 
+// :remove-start:
+if (!server) {
+  throw new Error("server not created");
+}
+console.log("✓ acp-deep-agents-server sample validated");
+process.exit(0);
+// :remove-end:
 await server.start();
 // :snippet-end:

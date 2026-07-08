@@ -8,7 +8,7 @@ import {
 import { InMemoryStore } from "@langchain/langgraph-checkpoint";
 
 const agent = await createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google-genai:gemini-3.5-flash",
   store: new InMemoryStore(),
   backend: new CompositeBackend(new StateBackend(), {
     "/memories/": new StoreBackend(),
