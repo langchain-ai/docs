@@ -1,0 +1,96 @@
+---
+title: "Synoppy integration"
+description: "Integrate with the Synoppy web-data tools using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the [Synoppy](https://synoppy.com) tools.
+
+[Synoppy](https://synoppy.com) is one API for web data, built for agents. Instead of wiring together a search API, a scraper, and an enrichment service, your agent gets **one key** for reading any URL to clean markdown, searching the live web, crawling a site for RAG, extracting structured JSON, and more. The `langchain-synoppy` package exposes all nine endpoints as LangChain tools.
+
+## Overview
+
+### Details
+
+| Class | Package | JS support | Version |
+| :--- | :--- | :---: | :---: |
+| `get_synoppy_tools` | [`langchain-synoppy`](https://pypi.org/project/langchain-synoppy/) | ✅ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-synoppy?style=flat-square&label=%20) |
+
+### Tools
+
+| Tool | What it does |
+| :--- | :--- |
+| `synoppy_read` | Any URL → clean, LLM-ready markdown (nav/ads stripped) |
+| `synoppy_search` | Live web search → ranked results with clean source URLs |
+| `synoppy_crawl` | Crawl a site → markdown per page (RAG ingest) |
+| `synoppy_map` | Every URL on a domain |
+| `synoppy_extract` | Any page → structured JSON from a prompt |
+| `synoppy_classify` | Company → NAICS/SIC codes, or your own labels |
+| `synoppy_enrich` | Domain or email → brand profile (logo, colors, fonts, socials) |
+| `synoppy_images` | Every image on a page, with alt text |
+| `synoppy_screenshot` | Any URL → PNG, for vision models |
+
+Every tool returns a compact result plus `creditsUsed`, and returns `{"error", "code"}` on failure so the model can recover. One key, pooled credits, **free to start (1,000 credits, no card)**.
+
+## Setup
+
+To use the Synoppy tools you'll need a Synoppy account, an API key, and the `langchain-synoppy` package.
+
+### Credentials
+
+Create a free key at [synoppy.com/dashboard](https://synoppy.com/dashboard), then:
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "SYNOPPY_API_KEY" not in os.environ:
+    os.environ["SYNOPPY_API_KEY"] = getpass.getpass("Enter your Synoppy API key: ")
+```
+
+### Installation
+
+```python pip
+pip install -U langchain-synoppy
+```
+
+## Instantiation
+
+`get_synoppy_tools` returns the nine endpoints as LangChain `StructuredTool`s:
+
+```python
+from langchain_synoppy import get_synoppy_tools
+
+tools = get_synoppy_tools(api_key=os.environ["SYNOPPY_API_KEY"])
+[t.name for t in tools]
+```
+
+## Invocation
+
+Invoke a single tool directly — each returns a compact JSON string plus `creditsUsed`:
+
+```python
+read = next(t for t in tools if t.name == "synoppy_read")
+read.invoke({"url": "https://example.com"})
+```
+
+## Use within an agent
+
+Attach the tools to any tool-calling model, or drop them into an agent that runs the tool loop for you:
+
+```python
+from langchain.chat_models import init_chat_model
+from langgraph.prebuilt import create_react_agent
+
+llm = init_chat_model("gpt-4o", model_provider="openai")
+agent = create_react_agent(llm, tools)
+
+agent.invoke(
+    {"messages": [("user", "Find the top Hacker News story, read it, and summarize it in 3 bullets.")]}
+)
+```
+
+## API reference
+
+- Package: [`langchain-synoppy`](https://pypi.org/project/langchain-synoppy/)
+- Synoppy API docs: [synoppy.com/docs](https://synoppy.com/docs)
+- Get a free key: [synoppy.com/dashboard](https://synoppy.com/dashboard)
