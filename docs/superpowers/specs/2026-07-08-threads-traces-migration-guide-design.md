@@ -28,6 +28,20 @@ This is LSDK-305: add them to `docs/src/langsmith/smithdb-sdk-migration.mdx`, fo
 
 Go and Java never had hand-rolled thread/stats convenience methods (confirmed: no `ListThreads`/`GetRunStats`/`ReadThread` or camelCase equivalents anywhere in either repo) — only Python and TypeScript did. So for the first 3 methods, Python/TS tabs get a real method-to-method migration table; Go/Java tabs fall back to the same generic-`list_runs`-plus-manual-reconstruction story that all 4 languages share for the last 2 methods.
 
+**Schema audit (2026-07-08):** every field list in this plan was independently re-verified against each SDK repo's GitHub HEAD — `langsmith-sdk` (Python/TS, self-verified byte-for-byte against local clone, zero drift), `langsmith-go`, and `langsmith-java` (both via dedicated subagents using `gh api .../contents/<path>`, no local clone read). `langchainplus`/`langchainplus-2` was excluded from this pass per instruction. Headline result: **all 4 languages' v2 request/response schemas are field-for-field identical** (same Stainless generation, same OpenAPI spec, only naming convention differs: `snake_case` wire/Python/TS, `camelCase` Go/Java getters, `PascalCase` Go struct fields). Exact confirmed field counts:
+
+| Method | Request fields | Response fields |
+|---|---|---|
+| `threads.query` | 6 (`cursor`, `filter`, `max_start_time`, `min_start_time`, `page_size`, `project_id`) | `ThreadListItem`: 19 |
+| `threads.list_traces` | 5 + 21-value select enum | `ThreadTraceListItem`: 21 |
+| `threads.stats` | 2 (`session_id`, `selects`) + 17-value select enum | `ThreadStatsResponse`: 17 |
+| `traces.query` | 9 + 44-value select enum | `Trace` (2 fields) + `TraceAggregates` (3 fields) |
+| `traces.list_runs` | 6 (incl. `accept`→header) + same 44-value enum | `TraceListRunsResponse`: 1 field (`items: Run[]`) |
+
+Old (v1) equivalents, also now exact: the generic run-query params (`RunQueryParams`/`RunQueryV1Params`, byte-identical to each other in both Go and Java) have **24 fields**; the generic run-stats params (`RunStatsQueryParams`) have **23 fields**, more than the "~15" this plan originally estimated — the extra ones (`group_by`, `groups`, `include_details`, `data_source_type`, `execution_order`, `search_filter`, `skip_pagination`, `use_experimental_search`) exist but are irrelevant to scoping stats to one thread. The v1 stats response (`RunStats`/`RunStatsResponseRunStats`) has **28 fields**, independently confirmed identical between Go and Java — this corroborates the original `smith-backend/app/schemas.py` finding from a second, SDK-only source, so that citation is no longer load-bearing (kept below for the original context, but the Go/Java structs are now the primary source).
+
+One unresolved discrepancy from the audit: Java's old `RunSchema.completionCost`/`promptCost`/`totalCost` are typed `String`, while the Go agent reported the equivalent Go `RunSchema` fields as `float64`. The already-shipped `Runs: query` Java tab in this guide already documents this exact `String`→`Double` transition for `run.totalCost()` — so the Java content needs no change — but the Go tab currently says "Unchanged" for `run.TotalCost`, which conflicts with a `String`-typed v1 source. Flagged as an open item below rather than resolved, since resolving it means re-reading the Go `RunSchema` struct tag directly rather than trusting a subagent summary.
+
 ## Goals
 
 1. Five new sections in the migration guide, one per method, each following the **exact existing structure** used by `Runs: query`/`Runs: retrieve`: `## <Resource>: <method>` → `### Main changes` (`#### Method name`, `#### Query parameters`, `#### Response fields`, each a per-language `<Tabs>` block with Before/After tables) → `### Examples` (Before/After code tabs).
@@ -54,7 +68,7 @@ Go and Java never had hand-rolled thread/stats convenience methods (confirmed: n
 | cURL: `POST /api/v1/runs/query` (`is_root=true`, manual grouping) | `POST /v2/threads/query` |
 
 **Query parameters — key differences (Python/TS tabs, real mapping):**
-- `project_id` XOR `project_name` (v1) → `project_id` only (v2); resolve name via `read_project` first, same pattern as `Runs: query`.
+- `project_id` XOR `project_name` (v1) → `project_id` only (v2); resolve name via `aread_project` first, same pattern as `Runs: query`.
 - `start_time` (single-sided, defaults to 1 day ago) → `min_start_time`/`max_start_time` (v2 has **no default** — must pass explicitly, opposite direction from the `Runs: query` warning about the 24h default).
 - `offset`+`limit` (v1 offset pagination) → `cursor`+`page_size` (v2 cursor pagination).
 - `filter` (v1, evaluated against runs) → `filter` (v2, evaluated against each thread's root run) — same syntax, different evaluation target worth calling out.
@@ -72,7 +86,7 @@ Go and Java never had hand-rolled thread/stats convenience methods (confirmed: n
 
 **Method name:** Python `client.read_thread()` / TS `client.readThread()` → `client.threads.list_traces()` / `client.threads.listTraces()`. Go/Java: generic `list_runs`-with-`thread_id`-filter fallback → `Threads.ListTraces()` / `threads().listTraces()`.
 
-**Query parameters:** `read_thread`'s `is_root` (default `True`, can be set `False` to get descendant runs too) has no v2 equivalent — `list_traces` always returns traces (root runs) only, matching its name. `order` (asc/desc) — check whether v2 has an equivalent; if not, note as `(not available)`. `select` (v1 arbitrary run field list) → `selects` (v2 `ThreadTraceSelectField` enum, uppercase).
+**Query parameters:** `read_thread`'s `is_root` (default `True`, can be set `False` to get descendant runs too) has no v2 equivalent — `list_traces` always returns traces (root runs) only, matching its name. **Confirmed via the schema audit**: `read_thread`'s `order` (asc/desc) has no v2 equivalent either — `ThreadListTracesParams` has exactly 5 fields (`project_id`, `cursor`, `filter`, `page_size`, `selects`) across Python/Go/Java, no sort/order field at all — mark as `(not available)`, no longer an open item. `select` (v1 arbitrary run field list) → `selects` (v2 `ThreadTraceSelectField`, 21-value uppercase enum, confirmed identical across all 4 languages).
 
 **Response fields:** v1 returns full `Run` objects (iterator); v2 returns lightweight `ThreadTraceListItem` — preview fields instead of full `inputs`/`outputs`, no embedded child runs. Reuse the same "Response fields" framing pattern as `Runs: query`'s Python tab (`selects` controls what's populated).
 
@@ -82,9 +96,9 @@ Go and Java never had hand-rolled thread/stats convenience methods (confirmed: n
 
 **Method name:** the generic stats endpoint exists in all 4 languages (confirmed: Go `RunService.Stats`, Java `RunService.stats`, alongside Python `client.get_run_stats()` / TS `client.getRunStats()`) → `client.threads.stats()` / `Threads.Stats()` / `threads().stats()`. So, like `traces.query`/`traces.list_runs`, all 4 language tabs get a real (if generic) Before method — no `(not available)` needed anywhere in this table after all.
 
-**Query parameters:** v1 takes ~15 generic filter params (`id`, `trace`, `parent_run`, `run_type`, `project_names`/`project_ids`, `reference_example_ids`, `start_time`, `end_time`, `error`, `query`, `filter`, `trace_filter`, `tree_filter`, `is_root`, `data_source_type`) — only `filter`+`is_root`+`project_ids` are actually used to scope to one thread. v2 takes `thread_id` (path) + `session_id` + `selects` (required, at least one value). Frame the mapping narratively rather than a full 15-row table, since only 3 of those params matter for this use case.
+**Query parameters:** v1's `RunStatsQueryParams` has **23 generic filter/grouping params** (confirmed via Go/Java schema audit — larger than this plan's original "~15" estimate): `id`, `trace`, `parent_run`, `run_type`, `session`/`project_ids`, `reference_example`, `start_time`, `end_time`, `error`, `query`, `filter`, `trace_filter`, `tree_filter`, `is_root`, `data_source_type`, `execution_order`, `search_filter`, `select`, `skip_pagination`, `use_experimental_search`, plus 3 grouping-only params with no relevance here (`group_by`, `groups`, `include_details`) and a Go-only `skip_prev_cursor`. Only `filter`+`is_root`+`session`/`project_ids` are actually used to scope to one thread. v2 takes `thread_id` (path) + `session_id` + `selects` (required, at least one value, confirmed identical 17-value enum across all 4 languages). Frame the mapping narratively rather than a full 23-row table, since only 3 of those v1 params matter for this use case.
 
-**Response fields — confirmed via `smith-backend/app/schemas.py:760` `RunStats`:**
+**Response fields — confirmed via `smith-backend/app/schemas.py:760` `RunStats`, independently corroborated by Go's `RunStatsResponseRunStats` and Java's `RunStats` (identical 28-field set in both, verified against GitHub HEAD, no `langchainplus` dependency):**
 
 | v1 `RunStats` field | v2 `ThreadStatsResponse` field | Notes |
 |---|---|---|
@@ -102,13 +116,15 @@ Go and Java never had hand-rolled thread/stats convenience methods (confirmed: n
 
 This table doubles as the single best piece of evidence that `threads.stats` is a real improvement, not just a rename — worth leading the section's example with the "used to need two API calls for `first_start_time`" fact.
 
+Note for implementation: v1's stats response is actually a union of two shapes (a flat `RunStats` and a grouped-by-key map variant, used when `group_by`/`groups` params are set). Only the flat variant is relevant here, since scoping to a single thread never uses grouping — no need to document the grouped variant in this section.
+
 **Examples:** 1 example — "Compute stats for a thread," with a `<Warning>` about `threads.stats` aggregates being eventually consistent (per the `langsmith-sdk` PR #3164 description).
 
 ### Traces: query
 
 **Method name:** `client.list_runs(is_root=True)` (generic, all 4 languages) → `client.traces.query()`.
 
-**Query parameters:** real mapping exists here too (this isn't "no predecessor," it's "no dedicated wrapper") — `session`/`project_id(s)` unchanged in spirit, `filter` → `trace_filter` (now explicitly scoped to root runs only), new: `tree_filter`, `trace_ids` fast-path, `selects` routing to `trace_aggregates` vs `root_run`. `min_start_time` defaults to 24h ago (a real behavior change from v1's no-default full scan — same warning pattern as `Runs: query`).
+**Query parameters:** real mapping exists here too (this isn't "no predecessor," it's "no dedicated wrapper") — `session`/`project_id(s)` unchanged in spirit, `filter` → `trace_filter` (now explicitly scoped to root runs only), new: `tree_filter`, `trace_ids` fast-path, `selects` routing to `trace_aggregates` vs `root_run` (confirmed: v2's request has exactly 9 fields, `selects` uses a 44-value enum, identical across all 4 languages). `min_start_time` defaults to 24h ago (a real behavior change from v1's no-default full scan — same warning pattern as `Runs: query`).
 
 **Response fields:** `root_run` (same shape as `Runs: query`'s response fields table — reuse/reference it) + new `trace_aggregates` (`total_tokens`, `total_cost`, `first_token_time` summed across the *whole* trace, not just the root run — the reason this method exists).
 
@@ -118,7 +134,7 @@ This table doubles as the single best piece of evidence that `threads.stats` is 
 
 **Method name:** `client.list_runs(trace_id=...)` (generic) → `client.traces.list_runs()`.
 
-**Query parameters:** closest thing to a "boring" migration in this set — `trace_id` unchanged (now path param), `project_id` newly required (SmithDB partition key), `min_start_time`/`max_start_time` newly required together (also partition-routing), `filter`/`selects` same shape as `Runs: query`.
+**Query parameters:** closest thing to a "boring" migration in this set — `trace_id` unchanged (now path param), `project_id` newly required (SmithDB partition key), `min_start_time`/`max_start_time` newly required together (also partition-routing), `filter`/`selects` same shape as `Runs: query` (confirmed: v2 request has 6 fields including `accept`→header, `selects` uses the same 44-value enum as `traces.query`).
 
 **Response fields:** `{items: [...]}` list of `Run` — same shape as `Runs: query`'s response fields table.
 
@@ -143,14 +159,35 @@ Append one new example to the existing `### Examples` list in `runs-query.mdx` (
 - 5 new resource snippets under `docs/src/snippets/langsmith/smithdb-migration/` (`threads-query.mdx`, `threads-list-traces.mdx`, `threads-stats.mdx`, `traces-query.mdx`, `traces-list-runs.mdx`), imported into `docs/src/langsmith/smithdb-sdk-migration.mdx` after `Runs: retrieve`.
 - One new example block added directly into the existing `runs-query.mdx`, plus its 2 new code-sample files (5 languages × before/after, or 4 + combined Python = 9 files, matching the existing per-example file count in that section).
 
+## Example testing
+
+**All new examples must pass the docs repo's existing snippet-testing framework — same rigor as every existing example, no exceptions.**
+
+`make test-code-samples` (`scripts/test_code_samples.py`) executes every raw file under `src/code-samples/` directly against a real LangSmith backend: Python via `uv run python`, TypeScript via `npx tsx`, Go via `go run`, Java/Kotlin via `jbang`, bash via `bash`. This means every code sample — both Before and After — must be a genuinely runnable program, not illustrative pseudo-code. `FILES="..."` scopes a run to specific files.
+
+This has a concrete consequence for placeholder IDs (`<thread-id>`, `<trace-id>`, etc.), verified by reading two existing examples end-to-end (`runs-query-fetch-by-id` and `runs-retrieve-by-id`) at GitHub HEAD:
+
+- **Lazy/paginated methods** (`threads.query`, `threads.list_traces`, `traces.query` — all return a paginator/generator that makes no HTTP request until iterated): a placeholder ID is safe to leave in the rendered snippet, *as long as the visible code never iterates the result*. This is exactly what `runs-query-fetch-by-id-before.py` already does — `client.list_runs(id=["<run-id-1>", "<run-id-2>"])` is called but never consumed, so the generator body never runs and no real request is sent.
+- **Eager/point-lookup methods** (`threads.stats`, `traces.list_runs` — both return a plain response object immediately, no laziness) do issue a real HTTP request the moment they're called. A literal placeholder ID would make that request fail in CI. The existing `runs-retrieve-by-id` example (itself an eager point-lookup, `client.runs.retrieve(run_id, ...)`) solves this with `:remove-start:`/`:remove-end:` marker blocks: the *rendered* snippet shows a clean `run_id = "<run-id>"` placeholder, but the *executed* file has a hidden block immediately after it that resolves a real ID (query the "default" project, then query for a real run, take its ID) and overwrites the placeholder before the real call runs. This pattern is already implemented across all 5 languages: `runs-retrieve-by-id-after.py`/`.ts`/`.go`/`.sh` (and presumably `.kt` — not fetched, but the `:remove-start:`/`:remove-end:` marker syntax is documented in `scripts/extract_code_snippets.py` as supported for Kotlin too).
+
+**Applying this to the new sections:**
+- `Threads: query`, `Threads: list traces`, `Traces: query` examples can use placeholder IDs directly, following the `runs-query-fetch-by-id` pattern — construct, don't consume, where a placeholder is involved.
+- `Threads: stats` and `Traces: list runs` examples need a hidden resolution block per language, mirroring `runs-retrieve-by-id` exactly: resolve the "default" project, then issue one real (paginated, actually-iterated-in-the-hidden-block) call to `threads.query`/`traces.query` to get one real `thread_id`/`trace_id`, then substitute it in before the real `stats`/`list_runs` call. This adds a small bootstrap block to those two sections' examples that isn't shown to the reader — expected overhead, not a shortcut to avoid.
+- The new `Runs: query` cross-reference example (trace reconstruction) should follow whichever pattern matches its own Before/After calls — the Before (`is_root=True` root-run query, consumed) and After (`traces.query`, consumed to demonstrate `trace_aggregates`) both need real, iterated results to be a meaningful example, so this one needs live data to exist in the test project, same requirement as every other consumed-and-printed example already in the file (e.g. `runs-query-list-all`).
+
+**Commands to run during implementation** (not yet run — this plan doesn't touch code): `make test-code-samples FILES="<new files>"` scoped to just the new/changed files first, then a full `make test-code-samples` pass before considering the work done, matching how this repo already gates content.
+
+**Open dependency, not blocking plan approval:** these tests require `LANGSMITH_API_KEY` pointed at a live backend with a real "default" project containing actual threads/traces/runs data (matching what every existing example in this guide already assumes). Whether that's available in the implementation environment or only in CI needs to be confirmed before claiming the new examples are "tested" rather than merely "written to the tested convention."
+
 ## Validation
 
 - `make check-cross-refs` (catches broken imports/links — already caught one bad link in the reverted prototype).
 - `markdownlint` on changed/new files.
-- Manual read-through per section against the fact tables above before considering it done — the `order` param on `list_traces` (open item below) is the one mapping not yet double-checked against source line-by-line the way everything else in this plan was.
+- Manual read-through per section against the fact tables above before considering it done — after the 2026-07-08 schema audit (GitHub HEAD, SDK repos only), every field list in this plan is now source-confirmed except the one open item below.
+- **All examples must be tested through the docs repo's existing snippet-testing framework** — see the "Example testing" section above.
 
 ## Open items to confirm during implementation (not blocking plan approval)
 
-1. Whether `threads.list_traces` v2 has an `order` equivalent to v1 `read_thread`'s `order` param — not yet checked.
+1. Whether the Go `Runs: query` tab's existing "Unchanged" note for `run.TotalCost` is accurate, given the schema audit's (unconfirmed-by-direct-source) claim that Go's old `RunSchema.CompletionCost`/`PromptCost`/`TotalCost` are `float64` while Java's equivalent old fields are `String` (and the existing Java tab already documents that as a `String`→`Double` change). Needs a direct read of the Go `RunSchema` struct tags before writing the Go `Traces: query`/`Traces: list runs` response-fields tables, since those reuse the `Runs: query` Go table by reference.
 2. Mintlify anchor-slug behavior for the `<Tip>` cross-link in `Runs: query` — needs verification, not assumption, before shipping literal `#threads-query`-style anchors.
 3. Final count of examples per new section (plan assumes 1-2 each; existing `Runs: query` has 9 — new sections don't need to match that density, but should not be thinner than `Runs: retrieve`'s 2).
