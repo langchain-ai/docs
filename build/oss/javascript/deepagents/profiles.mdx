@@ -1,0 +1,199 @@
+---
+title: Profiles
+description: Package per-provider and per-model defaults that Deep Agents applies when a model is selected
+tag: "Beta"
+---
+
+
+
+**Harness profiles** let you package configuration that Deep Agents applies whenever a given provider or specific model is selected: system-prompt tweaks, tool description overrides, excluded tools or middleware, extra middleware, and general-purpose subagent edits. They are the main way to tune how the harness behaves for a particular model without changing your `createDeepAgent` call site. Use `HarnessProfileOptions` to build profiles; use `parseHarnessProfileConfig` when [loading or saving YAML/JSON files](#load-profiles-from-config-files). Deep Agents ships built-in harness profiles for OpenAI and Anthropic (Claude) models.
+
+<Note>
+  Provider profiles (for controlling model-construction kwargs) and the plugin registration system are Python-only features. The TypeScript SDK supports harness profiles only.
+</Note>
+
+
+## Harness profiles
+
+
+
+A harness profile describes prompt-assembly, tool-visibility, middleware, and default-subagent adjustments that `createDeepAgent` applies after the chat model has been constructed:
+
+```typescript
+import { registerHarnessProfile } from "deepagents";
+
+registerHarnessProfile("openai:gpt-5.5", {
+  systemPromptSuffix: "Respond in under 100 words.",
+  excludedTools: ["execute"],
+  excludedMiddleware: ["SummarizationMiddleware"],
+  generalPurposeSubagent: { enabled: false },
+});
+```
+
+
+
+
+<ResponseField name="baseSystemPrompt" type="string">
+    Replace the base Deep Agents system prompt (`CUSTOM` in [Prompt assembly](/oss/javascript/deepagents/customization#prompt-assembly)).
+</ResponseField>
+
+<ResponseField name="systemPromptSuffix" type="string">
+    Append text to the assembled base prompt (`SUFFIX` in [Prompt assembly](/oss/javascript/deepagents/customization#prompt-assembly)); applied to the main agent, declarative subagents, and the auto-added general-purpose subagent.
+</ResponseField>
+
+<ResponseField name="toolDescriptionOverrides" type="Record<string, string>">
+    Override individual tool descriptions, keyed by tool name.
+</ResponseField>
+
+<ResponseField name="excludedTools" type="string[]">
+    Remove specific harness-level tools from the tool set. Matched by tool name, applied as a post-injection filter so it catches both user-provided and middleware-provided tools.
+</ResponseField>
+
+<ResponseField name="excludedMiddleware" type="string[]">
+    Strip specific middleware from the assembled stack. Matched against each middleware's `.name` property. Cannot include required scaffolding names (`FilesystemMiddleware`, `SubAgentMiddleware`).
+</ResponseField>
+
+<ResponseField name="extraMiddleware" type="AgentMiddleware[] | (() => AgentMiddleware[])">
+    Additional middleware appended to the stack after user middleware. Can be a static array or a zero-arg factory that returns fresh instances per agent construction.
+</ResponseField>
+
+<ResponseField name="generalPurposeSubagent" type="GeneralPurposeSubagentConfig">
+    Disable, rename, or re-prompt the general-purpose subagent (`enabled`, `description`, `systemPrompt`).
+</ResponseField>
+
+
+
+
+<Note>
+    Caller-supplied `systemPrompt` always sits at the front of the assembled prompt, and `systemPromptSuffix` always sits at the end—regardless of which model is selected. The same overlay rules apply to subagents: each subagent re-runs profile resolution against its own model. See [Prompt assembly](/oss/javascript/deepagents/customization#prompt-assembly) for the full per-case breakdown (main agent, subagents, and the general-purpose subagent).
+</Note>
+
+
+
+
+<Warning>
+    Listing `FilesystemMiddleware` or `SubAgentMiddleware` in `excludedMiddleware` throws at construction time — they are required scaffolding. To hide their tools from the model without removing the middleware, use `excludedTools` instead.
+</Warning>
+
+
+<Accordion
+    title="Lookup order for preconfigured model instances"
+>
+    When you pass a preconfigured chat model instance instead of a `provider:model` string, the harness synthesizes the canonical `provider:identifier` key from the instance and looks it up in this order:
+
+    1. Exact `provider:identifier` match
+    2. Identifier-only (only when the identifier already contains `:`)
+    3. Provider-only fallback
+</Accordion>
+
+
+## Registration keys
+
+Both profile types use the same key format:
+
+- **Provider-level** — a bare provider name like `"openai"` applies to every model from that provider.
+- **Model-level** — a fully qualified `provider:model` key like `"openai:gpt-5.5"` applies only to that specific model.
+
+When both a provider-level and a model-level profile exist, they are merged at resolution time. Unset model-level fields inherit from the provider-level profile; explicit model-level values override them.
+
+Re-registering under an existing key merges the new profile on top of the prior one—it does not replace it. See [Merge semantics](#merge-semantics) for the per-field rules.
+
+
+
+<Note>
+    There is no wildcard key that matches every provider. To apply the same overrides everywhere—say, dropping `TodoListMiddleware` regardless of which model is selected—register the profile under each provider key you use. Profiles are intended for adjustments that depend on the model being selected. Global adjustments that should apply regardless of model should be made on the `createDeepAgent` call site.
+</Note>
+
+
+## Merge semantics
+
+
+
+| Field | Merge behavior |
+| --- | --- |
+| `baseSystemPrompt`, `systemPromptSuffix` | New value wins when set; otherwise inherits |
+| `toolDescriptionOverrides` | Mappings merge per key; new value wins on a shared key |
+| `excludedTools`, `excludedMiddleware` | Set union |
+| `extraMiddleware` | Merged by name: new instance replaces existing at its position, novel entries append |
+| `generalPurposeSubagent` | Merged field-wise (unset fields inherit) |
+
+
+
+
+## Provider profiles
+
+
+
+Provider profiles (for controlling model-construction kwargs like `temperature`) are a Python-only feature and are not available in the TypeScript SDK.
+
+
+## Load profiles from config files
+
+
+
+For YAML/JSON-backed workflows, use `parseHarnessProfileConfig`. It validates and builds a `HarnessProfile` from a plain object with camelCase keys. Runtime-only state — `extraMiddleware` instances — cannot be represented in JSON/YAML and must be set programmatically.
+
+
+
+
+```yaml
+# profile.yaml
+baseSystemPrompt: You are helpful.
+systemPromptSuffix: Respond briefly.
+excludedTools:
+  - execute
+  - grep
+excludedMiddleware:
+  - SummarizationMiddleware
+generalPurposeSubagent:
+  enabled: false
+```
+
+
+
+
+```typescript
+import { readFileSync } from "fs";
+import YAML from "yaml";
+import { parseHarnessProfileConfig, registerHarnessProfile } from "deepagents";
+
+const raw = YAML.parse(readFileSync("profile.yaml", "utf-8"));
+registerHarnessProfile("openai", parseHarnessProfileConfig(raw));
+```
+
+To serialize a profile back to JSON/YAML, use `serializeProfile`:
+
+```typescript
+import { serializeProfile } from "deepagents";
+
+const data = serializeProfile(profile); // JSON-compatible object
+```
+
+Profiles with non-empty `extraMiddleware` cannot be serialized — `serializeProfile` throws if middleware instances are present.
+
+
+## Ship a profile as a plugin
+
+
+
+The plugin registration system (via package entry points) is a Python-only feature. In TypeScript, call `registerHarnessProfile` directly at application startup or in your package's initialization code.
+
+
+## Related
+
+- [Harness Overview](/oss/javascript/deepagents/overview) — harness capabilities overview
+- [Models](/oss/javascript/deepagents/models) — configure model providers and parameters
+
+
+- [Customization](/oss/javascript/deepagents/customization) — full `createDeepAgent` configuration surface
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/deepagents/profiles.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

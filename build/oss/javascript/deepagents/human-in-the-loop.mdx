@@ -1,0 +1,412 @@
+---
+title: Human-in-the-loop
+description: Learn how to configure human approval for sensitive tool operations
+---
+
+import HitlBasicConfigPy from '/snippets/code-samples/hitl-basic-config-py.mdx';
+import HitlBasicConfigJs from '/snippets/code-samples/hitl-basic-config-js.mdx';
+import HitlConditionalInterruptsPy from '/snippets/code-samples/hitl-conditional-interrupts-py.mdx';
+import HitlDecisionTypesTable from '/snippets/oss/hitl-decision-types-table.mdx';
+
+Some tool operations may be sensitive and require human approval before execution. Deep Agents support human-in-the-loop workflows through LangGraph's interrupt capabilities. You can configure which tools require approval using the `interrupt_on` parameter. When `interrupt_on` is set, `HumanInTheLoopMiddleware` is added to the [default middleware stack](/oss/javascript/deepagents/customization#default-stack-main-agent). If a run is cancelled or interrupted before a tool returns a result, [`PatchToolCallsMiddleware`](https://reference.langchain.com/javascript/deepagents/middleware/createPatchToolCallsMiddleware) in the same stack repairs the message history automatically.
+
+```mermaid
+graph LR
+    Agent[Agent] --> Check{Interrupt?}
+    Check --> |no| Execute[Execute]
+    Check --> |yes| Human{Human}
+
+    Human --> |approve| Execute
+    Human --> |edit| Execute
+    Human --> |reject| ToolMessage[ToolMessage]
+    Human --> |respond| ToolMessage
+
+    Execute --> Agent
+    ToolMessage --> Agent
+
+    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef decision fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
+    classDef alert fill:#F8E8E6,stroke:#B27D75,stroke-width:2px,color:#634643
+
+    class Agent trigger
+    class Check,Human decision
+    class Execute process
+    class ToolMessage process
+```
+
+## Basic configuration
+
+The `interrupt_on` parameter accepts a dictionary mapping tool names to interrupt configurations. Each tool can be configured with:
+
+- **`True`**: Enable interrupts with default behavior (approve, edit, reject, respond allowed)
+- **`False`**: Disable interrupts for this tool
+- **`InterruptOnConfig`**: Custom configuration. Set `allowed_decisions` to control review options.
+
+
+
+
+<HitlBasicConfigJs />
+
+
+## Decision types
+
+The `allowed_decisions` list controls what actions a human can take when reviewing a tool call:
+
+<HitlDecisionTypesTable />
+
+Use `reject` when the human denies a proposed action. Use `respond` only when the human is acting as the tool, such as answering an `ask_user` prompt. Do not use `respond` to deny side-effecting tools, because its message may be treated by the model as a successful tool result.
+
+<Tip>
+When **editing** tool arguments, make changes conservatively. Significant modifications to the original arguments may cause the model to re-evaluate its approach and potentially execute the tool multiple times or take unexpected actions.
+</Tip>
+
+You can customize which decisions are available for each tool:
+
+
+
+```typescript
+const interruptOn = {
+  // Sensitive operations: allow all options
+  delete_file: { allowedDecisions: ["approve", "edit", "reject"] },
+
+  // Moderate risk: approval or rejection only
+  write_file: { allowedDecisions: ["approve", "reject"] },
+
+  // Must approve (no rejection allowed)
+  critical_operation: { allowedDecisions: ["approve"] },
+};
+```
+
+
+
+
+## Handle interrupts
+
+When an interrupt is triggered, the agent pauses execution and returns control. Check for interrupts in the result and handle them accordingly. If the user rejects an action, include a clear `message` that tells the agent the tool was not executed and what to do next.
+
+
+
+```typescript
+import { v7 as uuid7 } from "uuid";
+import { Command } from "@langchain/langgraph";
+
+// Create config with thread_id for state persistence
+const config = { configurable: { thread_id: uuid7() } };
+
+// Invoke the agent
+let result = await agent.invoke({
+  messages: [{ role: "user", content: "Delete the file temp.txt" }],
+}, config);
+
+// Check if execution was interrupted
+if (result.__interrupt__) {
+  // Extract interrupt information
+  const interrupts = result.__interrupt__[0].value;
+  const actionRequests = interrupts.actionRequests;
+  const reviewConfigs = interrupts.reviewConfigs;
+
+  // Create a lookup map from tool name to review config
+  const configMap = Object.fromEntries(
+    reviewConfigs.map((cfg) => [cfg.actionName, cfg])
+  );
+
+  // Display the pending actions to the user
+  for (const action of actionRequests) {
+    const reviewConfig = configMap[action.name];
+    console.log(`Tool: ${action.name}`);
+    console.log(`Arguments: ${JSON.stringify(action.args)}`);
+    console.log(`Allowed decisions: ${reviewConfig.allowedDecisions}`);
+  }
+
+  // Get user decisions (one per actionRequest, in order)
+  const decisions = [
+    {
+      type: "reject",
+      message: "User rejected deleting temp.txt. Do not retry deletion.",
+    }
+  ];
+
+  // Resume execution with decisions
+  result = await agent.invoke(
+    new Command({ resume: { decisions } }),
+    config  // Must use the same config!
+  );
+}
+
+// Process final result
+console.log(result.messages[result.messages.length - 1].content);
+```
+
+
+## Multiple tool calls
+
+When the agent calls multiple tools that require approval, all interrupts are batched together in a single interrupt. You must provide decisions for each one in order.
+
+
+
+```typescript
+const config = { configurable: { thread_id: uuid7() } };
+
+let result = await agent.invoke({
+  messages: [{
+    role: "user",
+    content: "Delete temp.txt and send an email to admin@example.com"
+  }]
+}, config);
+
+if (result.__interrupt__) {
+  const interrupts = result.__interrupt__[0].value;
+  const actionRequests = interrupts.actionRequests;
+
+  // Two tools need approval
+  console.assert(actionRequests.length === 2);
+
+  // Provide decisions in the same order as actionRequests
+  const decisions = [
+    { type: "approve" },  // First tool: delete_file
+    {
+      type: "reject",
+      message: "User rejected this action. Do not retry this tool call.",
+    }  // Second tool: send_email
+  ];
+
+  result = await agent.invoke(
+    new Command({ resume: { decisions } }),
+    config
+  );
+}
+```
+
+
+## Rejection messages
+
+When a reviewer returns a `reject` decision, Deep Agents skip the tool call and send rejection feedback back to the agent. If you omit `message`, the default feedback tells the model that the tool was not executed and not to retry the same tool call unless the user asks.
+
+For sensitive or side-effecting tools, pass a domain-specific `message` with the decision. Be explicit about whether the agent should abandon the action, ask a follow-up question, or try a safer alternative.
+
+
+
+```typescript
+const decisions = [
+  {
+    type: "reject",
+    message: "User rejected deleting this file. Do not retry deletion. Ask which file to archive instead.",
+  },
+];
+```
+
+
+## Edit tool arguments
+
+When `"edit"` is in the allowed decisions, you can modify the tool arguments before execution:
+
+
+
+```typescript
+if (result.__interrupt__) {
+  const interrupts = result.__interrupt__[0].value;
+  const actionRequest = interrupts.actionRequests[0];
+
+  // Original args from the agent
+  console.log(actionRequest.args);  // { to: "everyone@company.com", ... }
+
+  // User decides to edit the recipient
+  const decisions = [{
+    type: "edit",
+    editedAction: {
+      name: actionRequest.name,  // Must include the tool name
+      args: { to: "team@company.com", subject: "...", body: "..." }
+    }
+  }];
+
+  result = await agent.invoke(
+    new Command({ resume: { decisions } }),
+    config
+  );
+}
+```
+
+
+## Subagent interrupts
+
+When using subagents, you can use interrupts [on tool calls](#interrupts-on-tool-calls) and [within tool calls](#interrupts-within-tool-calls).
+
+### Interrupts on tool calls
+
+Each subagent can have its own `interrupt_on` configuration that overrides the main agent's settings:
+
+
+
+```typescript
+const agent = createDeepAgent({
+  tools: [deleteFile, readFile],
+  interruptOn: {
+    delete_file: true,
+    read_file: false,
+  },
+  subagents: [{
+    name: "file-manager",
+    description: "Manages file operations",
+    systemPrompt: "You are a file management assistant.",
+    tools: [deleteFile, readFile],
+    interruptOn: {
+      // Override: require approval for reads in this subagent
+      delete_file: true,
+      read_file: true,  // Different from main agent!
+    }
+  }],
+  checkpointer
+});
+```
+
+
+When a subagent triggers an interrupt, the handling is the same—check for `interrupts` on the result and resume with `Command`.
+
+### Interrupts within tool calls
+
+Subagent tools can call `interrupt()` directly to pause execution and await approval:
+
+
+
+```typescript
+import { createAgent, tool } from "langchain";
+import { ChatOpenAI } from "@langchain/openai";
+import { HumanMessage } from "@langchain/core/messages";
+import { MemorySaver, Command, interrupt } from "@langchain/langgraph";
+import { createDeepAgent } from "deepagents";
+import { z } from "zod";
+
+const requestApproval = tool(
+  async ({ actionDescription }: { actionDescription: string }) => {
+    const approval = interrupt({
+      type: "approval_request",
+      action: actionDescription,
+      message: `Please approve or reject: ${actionDescription}`,
+    }) as { approved?: boolean; reason?: string };
+
+    if (approval.approved) {
+      return `Action '${actionDescription}' was APPROVED. Proceeding...`;
+    } else {
+      return `Action '${actionDescription}' was REJECTED. Reason: ${
+        approval.reason || "No reason provided"
+      }`;
+    }
+  },
+  {
+    name: "request_approval",
+    description: "Request human approval before proceeding with an action.",
+    schema: z.object({
+      actionDescription: z
+        .string()
+        .describe("The action that requires approval"),
+    }),
+  }
+);
+
+async function main() {
+  const checkpointer = new MemorySaver();
+  const model = new ChatOpenAI({
+    model: "gpt-4o-mini",
+    maxTokens: 4096,
+  });
+
+  const compiledSubagent = createAgent({
+    model: model,
+    tools: [requestApproval],
+    name: "approval-agent",
+  });
+
+  const parentAgent = await createDeepAgent({
+    checkpointer: checkpointer,
+    subagents: [
+      {
+        name: "approval-agent",
+        description: "An agent that can request approvals",
+        runnable: compiledSubagent as any,
+      },
+    ],
+  });
+
+  const threadId = "test_interrupt_directly";
+  const config = { configurable: { thread_id: threadId } };
+
+  console.log("Invoking agent - sub-agent will use request_approval tool...");
+
+  let result = await parentAgent.invoke(
+    {
+      messages: [
+        new HumanMessage({
+          content:
+            "Use the task tool to launch the approval-agent sub-agent. " +
+            "Tell it to use the request_approval tool to request approval for 'deploying to production'.",
+        }),
+      ],
+    },
+    config
+  );
+
+  if (result.__interrupt__) {
+    const interruptValue = result.__interrupt__[0].value as {
+      type?: string;
+      action?: string;
+      message?: string;
+    };
+    console.log("\nInterrupt received!");
+    console.log(`  Type: ${interruptValue.type}`);
+    console.log(`  Action: ${interruptValue.action}`);
+    console.log(`  Message: ${interruptValue.message}`);
+
+    console.log("\nResuming with Command(resume={'approved': true})...");
+    const result2 = await parentAgent.invoke(
+      new Command({ resume: { approved: true } }),
+      config
+    );
+
+    if (!result2.__interrupt__) {
+      console.log("\nExecution completed!");
+      // Find the tool response
+      const toolMsgs = result2.messages?.filter((m) => m.type === "tool") || [];
+      if (toolMsgs.length > 0) {
+        const lastToolMsg = toolMsgs[toolMsgs.length - 1];
+        console.log(`  Tool result: ${lastToolMsg.content}`);
+      }
+    } else {
+      console.log("\nAnother interrupt occurred");
+    }
+  } else {
+    console.log(
+      "\n  No interrupt - the model may not have called request_approval"
+    );
+  }
+}
+
+main().catch(console.error);
+```
+
+When run, this produces the following output:
+
+```text
+Invoking agent - sub-agent will use request_approval tool...
+
+Interrupt received!
+  Type: approval_request
+  Action: deploying to production
+  Message: Please approve or reject: deploying to production
+
+Resuming with Command(resume={'approved': true})...
+
+Execution completed!
+  Tool result: Approval for "deploying to production" has been granted. You can proceed with the deployment.
+```
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/deepagents/human-in-the-loop.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

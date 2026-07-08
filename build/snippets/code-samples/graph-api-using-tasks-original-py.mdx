@@ -1,0 +1,34 @@
+```python
+from typing import NotRequired
+
+import requests
+from langchain_core.utils.uuid import uuid7
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
+from typing_extensions import TypedDict
+
+
+class State(TypedDict):
+    url: str
+    result: NotRequired[str]
+
+
+def call_api(state: State):
+    """Example node that makes an API request."""
+    result = requests.get(state["url"]).text[:100]  # [!code highlight]
+    return {"result": result}
+
+
+builder = StateGraph(State)
+builder.add_node("call_api", call_api)
+builder.add_edge(START, "call_api")
+builder.add_edge("call_api", END)
+
+checkpointer = InMemorySaver()
+graph = builder.compile(checkpointer=checkpointer)
+
+thread_id = str(uuid7())
+config = {"configurable": {"thread_id": thread_id}}
+
+graph.invoke({"url": "https://www.example.com"}, config)
+```

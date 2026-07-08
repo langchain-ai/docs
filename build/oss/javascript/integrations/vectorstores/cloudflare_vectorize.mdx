@@ -1,0 +1,154 @@
+---
+title: "Cloudflare vectorize integration"
+description: "Integrate with the Cloudflare vectorize vector store using LangChain JavaScript."
+---
+
+If you're deploying your project in a Cloudflare worker, you can use [Cloudflare Vectorize](https://developers.cloudflare.com/vectorize/) with LangChain.js.
+It's a powerful and convenient option that's built directly into Cloudflare.
+
+## Setup
+
+<Tip>
+**Compatibility**
+
+Cloudflare Vectorize is currently in open beta, and requires a Cloudflare account on a paid plan to use.
+</Tip>
+
+After [setting up your project](https://developers.cloudflare.com/vectorize/get-started/intro/#prerequisites),
+create an index by running the following Wrangler command:
+
+```bash
+$ npx wrangler vectorize create <index_name> --preset @cf/baai/bge-small-en-v1.5
+```
+
+You can see a full list of options for the `vectorize` command [in the official documentation](https://developers.cloudflare.com/workers/wrangler/commands/#vectorize).
+
+You'll then need to update your `wrangler.toml` file to include an entry for `[[vectorize]]`:
+
+```toml
+[[vectorize]]
+binding = "VECTORIZE_INDEX"
+index_name = "<index_name>"
+```
+
+Finally, you'll need to install the LangChain Cloudflare integration package:
+
+<Tip>
+See [this section for general instructions on installing LangChain packages](/oss/javascript/langchain/install).
+</Tip>
+
+<CodeGroup>
+```bash npm
+npm install @langchain/cloudflare @langchain/core
+```
+```bash yarn
+yarn add @langchain/cloudflare @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/cloudflare @langchain/core
+```
+</CodeGroup>
+
+## Usage
+
+Below is an example worker that adds documents to a vectorstore, queries it, or clears it depending on the path used. It also uses [Cloudflare Workers AI Embeddings](/oss/javascript/integrations/embeddings/cloudflare_ai).
+
+<Note>
+If running locally, be sure to run wrangler as `npx wrangler dev --remote`!
+</Note>
+
+```toml
+name = "langchain-test"
+main = "worker.ts"
+compatibility_date = "2024-01-10"
+
+[[vectorize]]
+binding = "VECTORIZE_INDEX"
+index_name = "langchain-test"
+
+[ai]
+binding = "AI"
+```
+
+```typescript
+// @ts-nocheck
+
+import type {
+  VectorizeIndex,
+  Fetcher,
+  Request,
+} from "@cloudflare/workers-types";
+
+import {
+  CloudflareVectorizeStore,
+  CloudflareWorkersAIEmbeddings,
+} from "@langchain/cloudflare";
+
+export interface Env {
+  VECTORIZE_INDEX: VectorizeIndex;
+  AI: Fetcher;
+}
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const { pathname } = new URL(request.url);
+    const embeddings = new CloudflareWorkersAIEmbeddings({
+      binding: env.AI,
+      model: "@cf/baai/bge-small-en-v1.5",
+    });
+    const store = new CloudflareVectorizeStore(embeddings, {
+      index: env.VECTORIZE_INDEX,
+    });
+    if (pathname === "/") {
+      const results = await store.similaritySearch("hello", 5);
+      return Response.json(results);
+    } else if (pathname === "/load") {
+      // Upsertion by id is supported
+      await store.addDocuments(
+        [
+          {
+            pageContent: "hello",
+            metadata: {},
+          },
+          {
+            pageContent: "world",
+            metadata: {},
+          },
+          {
+            pageContent: "hi",
+            metadata: {},
+          },
+        ],
+        { ids: ["id1", "id2", "id3"] }
+      );
+
+      return Response.json({ success: true });
+    } else if (pathname === "/clear") {
+      await store.delete({ ids: ["id1", "id2", "id3"] });
+      return Response.json({ success: true });
+    }
+
+    return Response.json({ error: "Not Found" }, { status: 404 });
+  },
+};
+```
+
+You can also pass a `filter` parameter to filter by previously loaded metadata.
+See [the official documentation](https://developers.cloudflare.com/vectorize/learning/metadata-filtering/)
+for information on the required format.
+
+## Related
+
+- Vector store [conceptual guide](/oss/javascript/integrations/vectorstores)
+- Vector store [how-to guides](/oss/javascript/integrations/vectorstores)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/vectorstores/cloudflare_vectorize.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
