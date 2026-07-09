@@ -1,0 +1,103 @@
+---
+title: LangSmith Engine security
+sidebarTitle: Security
+description: How LangSmith Engine handles your data, the GitHub and model subprocessor controls that govern its access, and its compliance posture.
+---
+
+LangSmith Engine is an AI agent built into LangSmith that improves the agents you build. Engine reviews the trace data already in LangSmith, surfaces and prioritizes issues, and opens pull requests with suggested fixes, proposed prompt changes, and evaluations. For a product overview, see [Engine](/langsmith/engine-overview).
+
+Engine is opt-in, advisory, and never trains on your data, and it runs under LangSmith's SOC 2 Type II and ISO 27001 controls. This page describes how Engine handles your data, the controls that govern its GitHub and model access, and its compliance posture for Engine in LangSmith Cloud. For how Engine runs in a self-hosted deployment, see [Engine on self-hosted](/langsmith/engine-self-hosted).
+
+Engine is delivered as part of LangSmith and inherits LangSmith's security and compliance posture, with additional controls covering the AI inference layer described in the following sections. Engine is never on by default and can only be enabled by an [Organization Admin](/langsmith/rbac#organization-admin), for organizations on any plan. For LangSmith's platform-level controls, including data encryption and regional handling, see the [Regions FAQ](/langsmith/regions-faq) and the [LangChain Trust Center](https://trust.langchain.com/).
+
+## What data Engine uses
+
+Engine operates on data you have already chosen to share with LangChain: the trace data you send to LangSmith and, separately, the GitHub repository content you grant through the LangChain-managed GitHub App (see [GitHub integration](#github-integration)). Enabling Engine introduces no other customer data sources. The following table summarizes what Engine reads, where it lives, and what it enables.
+
+| **Data source** | **What Engine reads** | **Storage and persistence** | **Enables** |
+|---|---|---|---|
+| LangSmith workspace content | Trace data and other workspace content you have stored in LangSmith, such as prompts and evaluators. | Within your LangSmith tenant. [Trace retention](/langsmith/usage-and-billing#data-retention) is 14 days (base) or 400 days (extended), chosen per project. The durations are not configurable. | Issue detection, prioritization, and evaluation proposals. |
+| GitHub repository | Source code and repository context from the repositories you connect (see [GitHub integration](#github-integration)). | Processed inside an isolated, LangChain-managed sandbox for the duration of each analysis run, then discarded. | Pull request authoring with proposed code fixes. |
+| Model provider (inference) | Only the content required for each analysis task. | Zero data retention with every Engine model provider (see [Model subprocessors](#model-subprocessors)). | Engine reasoning and generation. |
+
+<Note>
+  Engine's read scope may expand over time. This page is updated to reflect material changes. Last reviewed June 25, 2026.
+</Note>
+
+Trace content sent to Engine can include user messages, tool outputs, and PII, and this content is sent to model subprocessors under zero data retention for each analysis task. To remove sensitive fields before traces reach LangSmith, use [client-side masking](/langsmith/mask-inputs-outputs).
+
+Engine outputs are advisory. It surfaces issues, proposes pull requests, and recommends evaluation assets such as evaluators and dataset examples. Your engineers and your branch-protection and review policies decide what ships.
+
+## GitHub integration
+
+Engine connects to your source code through a LangChain-managed GitHub App. Only GitHub.com is supported. GitLab, Bitbucket, and other version control providers are not yet supported.
+
+The App is scoped to:
+
+- **Read access** on the repositories you select at installation.
+- **Write access** to open pull requests from new branches it creates. Pushes to existing branches are governed by your branch protection rules.
+
+Access uses GitHub's standard App model: every action runs through a short-lived installation token that expires after one hour, cannot exceed the permissions granted at installation, and cannot reach repositories you did not select. Tokens are minted per analysis run rather than held as a standing credential.
+
+Source code is read only by Engine's automated analysis and is not browsed by LangChain personnel in normal operation. For each run, the selected repository is cloned into an isolated, network-restricted sandbox, used only for that run, and deleted when the run completes (within an hour at most if a run is interrupted). Engine's own operational traces of the analysis are masked by default.
+
+You can revoke Engine's access to GitHub at any time by uninstalling the App from your GitHub organization.
+
+## Model subprocessors
+
+Engine's model subprocessors (currently OpenAI, Anthropic, Fireworks, and Baseten) all operate under zero data retention and are contractually prohibited from using customer data to train or fine-tune their models. The [LangChain Trust Center](https://trust.langchain.com/) publishes the authoritative subprocessor list.
+
+Engine does not support bring-your-own-key (BYOK).
+
+## Key security controls
+
+Engine adds the following controls on top of LangSmith's baseline:
+
+- **Explicit opt-in**: Engine is never on by default and can only be enabled by an Organization Admin.
+- **Advisory outputs, human at the helm**: Engine does not auto-merge, auto-deploy, or take destructive actions on your systems. Every proposed change is a pull request that follows your branch-protection, review, and merge policies. Proposed prompt changes are written to a separate proposal record in LangSmith and do not modify any prompt until an authorized user explicitly applies them. In both paths, a human decides what ships.
+- **Zero data retention with every Engine model provider**: Prompts and completions are not persisted by the inference vendor.
+- **No use of customer data to train or fine-tune any model**: This restriction is written into each provider contract.
+- **Logical tenant isolation**: Engine's access to your data is scoped to your LangSmith tenant. Cross-tenant access is prevented by application-level controls, consistent with LangSmith Cloud's tenancy model. Each analysis run executes inside its own isolated sandbox.
+- **Auditability**: Engine surfaces its work as GitHub pull requests, with supporting context in the issue list on the [Engine tab](/langsmith/engine). Code changes flow through your branch-protection, review, and automated build controls, so your software development lifecycle remains the system of record for what ships.
+- **Client-side PII scrubbing**: LangSmith's [client libraries](/langsmith/mask-inputs-outputs) can remove sensitive content from traces before they are sent to LangSmith. Recommended for customers handling regulated data.
+- **Model selection managed by LangChain**: LangChain selects the specific model used for each Engine task across these subprocessors, and may change selections within that set without separate notification. Adding any new subprocessor follows the standard subprocessor-change notification process.
+- **Revocation and deletion**: You can revoke GitHub access at any time by uninstalling the App, and remove Engine's findings with **Delete all issues** in [Engine settings](/langsmith/engine#configure-langsmith-engine). Trace data follows your LangSmith [retention and purging](/langsmith/data-purging-compliance) settings.
+
+## Compliance posture
+
+Engine operates under LangSmith's control environment, which is audited annually under SOC 2 Type II and certified to ISO 27001. Engine's model subprocessors are listed on the [LangChain Trust Center](https://trust.langchain.com/), which is the authoritative source for procurement and data protection impact assessments.
+
+## Inherent AI risks and mitigations
+
+The following risks are inherent to AI-assisted code generation. LangChain mitigates each in product, and your code-review workflow provides a second layer of defense.
+
+- **Incorrect or hallucinated suggestions**: All Engine output flows through your normal pull-request review and automated checks before any code lands.
+- **Prompt injection via trace content**: Trace data can include adversarial content reflected from external sources, for example, web-tool outputs. Any suggestion Engine produces from such traces still passes through human pull-request review before code lands. Treat traces from untrusted sources with care.
+- **Out-of-scope decisions**: Engine reasons over traces and connected repositories only. Issues that depend on context Engine cannot see, for example, business-rule changes in a ticketing system, remain a human responsibility.
+
+## See also
+
+- [Engine](/langsmith/engine-overview)
+- [Configure Engine](/langsmith/engine)
+- [Engine on self-hosted](/langsmith/engine-self-hosted)
+- [Engine webhooks](/langsmith/engine-webhooks)
+- [Prevent logging of sensitive data in traces](/langsmith/mask-inputs-outputs)
+- [Data purging for compliance](/langsmith/data-purging-compliance)
+- [Audit logs](/langsmith/audit-logs)
+- [Regions FAQ](/langsmith/regions-faq)
+- [LangChain Trust Center](https://trust.langchain.com/)
+
+## Contact
+
+For security questions, contact [trust@langchain.dev](mailto:trust@langchain.dev).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/engine-security.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
