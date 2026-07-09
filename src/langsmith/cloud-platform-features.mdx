@@ -32,7 +32,7 @@ The control plane offers two deployment types: `Serverless` and `Dedicated`. Eac
 
 <Warning>
 **Immutable deployment type**
-Once a deployment is created, the deployment type cannot be changed.
+Once a deployment is created, the deployment type cannot be changed. You can still change its [size](#sizes).
 </Warning>
 
 ### Serverless
@@ -71,12 +71,8 @@ For self-hosted deployments, see [custom PostgreSQL configuration](/langsmith/se
 
 ## Scaling
 
-Cloud deployments autoscale automatically; you do not configure queue workers, replicas, or pool sizes directly. `Dedicated` deployments autoscale across replicas based on three metrics:
+Cloud deployments autoscale automatically; you do not configure queue workers, replicas, or pool sizes directly. A `Dedicated` deployment adds and removes replicas based on CPU utilization, memory utilization, and the number of pending runs, up to the maximum for its size. Each metric is evaluated independently, and the deployment scales to satisfy whichever requires the most replicas. [Queue workers](/langsmith/agent-server#runtime-architecture) scale on pending run count while [API servers](/langsmith/agent-server#runtime-architecture) scale on CPU and memory, so read traffic does not slow run submission and vice versa. Scale-down is delayed to avoid thrashing under bursty load.
 
-- **CPU utilization** — autoscaler targets 75%.
-- **Memory utilization** — autoscaler targets 75%.
-- **Pending runs** — autoscaler targets 10 pending runs per container.
-
-Each metric is computed independently and the scaling action follows the metric that requires the largest number of containers. Scale-down actions wait 30 minutes before taking effect to avoid thrashing under bursty load. [Queue workers](/langsmith/agent-server#runtime-architecture) scale on pending run count while [API servers](/langsmith/agent-server#runtime-architecture) scale on CPU and memory, so read traffic does not slow down run submission and vice versa.
+Autoscaling changes the number of replicas, but the CPU and memory available to each replica are fixed by the deployment's [size](#sizes). If a deployment is under sustained CPU or memory pressure, upgrade it to a larger size. A size change rolls out as a new revision with no downtime; the deployment type cannot be changed.
 
 Application-level scaling levers (durability modes, async patterns, avoiding synchronous blocking, using `/join` instead of polling) apply to Cloud the same as to self-hosted. See [Scaling on self-hosted](/langsmith/agent-server-scale) for the underlying concepts; the Helm and resource configurations there do not apply to Cloud.
