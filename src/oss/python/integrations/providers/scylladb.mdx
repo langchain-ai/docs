@@ -1,0 +1,120 @@
+---
+title: "ScyllaDB integrations"
+description: "Integrate with ScyllaDB for LangGraph checkpointing using Python."
+---
+
+> [ScyllaDB](https://www.scylladb.com/) is a high-performance, distributed NoSQL database.
+> It delivers sub-millisecond latency at massive scale,
+> making it well-suited for AI workloads that require fast, reliable state persistence.
+
+ScyllaDB's high-availability, multi-region support, and
+built-in TTL capabilities make it a strong choice for persisting LangGraph agent state in
+production environments.
+
+## Installation
+
+Install the package:
+
+<CodeGroup>
+```bash pip
+pip install langgraph-checkpoint-scylladb
+```
+
+```bash uv
+uv add langgraph-checkpoint-scylladb
+```
+</CodeGroup>
+
+## Run ScyllaDB locally
+
+Start ScyllaDB using Docker:
+
+```bash
+docker run --name scylladb -d \
+  -p 9042:9042 \
+  scylladb/scylla --smp 1 --memory 512M
+```
+
+Wait for ScyllaDB to be ready:
+
+```bash
+docker exec -it scylladb nodetool status
+```
+
+## LangGraph checkpointer
+
+The ScyllaDB checkpointer persists LangGraph execution state and enables agents to
+resume from any checkpoint.
+
+### Sync usage
+
+```python
+from cassandra.auth import PlainTextAuthProvider
+from cassandra.cluster import Cluster, ExecutionProfile, EXEC_PROFILE_DEFAULT
+from cassandra.policies import DCAwareRoundRobinPolicy
+from langgraph.checkpoint.scylladb import ScyllaDBSaver
+
+profile = ExecutionProfile(
+    load_balancing_policy=DCAwareRoundRobinPolicy(local_dc="AWS_US_EAST_1"),
+)
+cluster = Cluster(
+    contact_points=["node-0.example.scylla.cloud"],
+    port=9042,
+    auth_provider=PlainTextAuthProvider("scylla", "secret"),
+    execution_profiles={EXEC_PROFILE_DEFAULT: profile},
+)
+session = cluster.connect()
+
+checkpointer = ScyllaDBSaver(session, keyspace="langgraph")
+checkpointer.setup()
+
+compiled = graph.compile(checkpointer=checkpointer)
+
+compiled.invoke(
+    {"input": "hello"},
+    config={"configurable": {"thread_id": "demo-thread"}},
+)
+```
+
+### Async usage (via connection string)
+
+```python
+from langgraph.checkpoint.scylladb import ScyllaDBSaver
+
+SCYLLADB_URI = "scylladb://scylla:secret@node-0.example.scylla.cloud:9042/langgraph?dc=AWS_US_EAST_1"
+
+async with ScyllaDBSaver.from_conn_string(SCYLLADB_URI) as checkpointer:
+    await checkpointer.setup()
+    compiled = graph.compile(checkpointer=checkpointer)
+    await compiled.ainvoke(
+        {"input": "hello"},
+        config={"configurable": {"thread_id": "demo-thread"}},
+    )
+```
+
+The connection string format is:
+
+```
+scylladb://<user>:<password>@<host>:<port>/<keyspace>?dc=<datacenter>
+```
+
+The `dc` query parameter is required for ScyllaDB Cloud.
+
+### TTL support
+
+Checkpoints can be automatically expired by passing `ttl` (seconds):
+
+```python
+checkpointer = ScyllaDBSaver(session, keyspace="langgraph", ttl=3600)
+
+# or via from_conn_string
+async with ScyllaDBSaver.from_conn_string(SCYLLADB_URI, ttl=3600) as checkpointer:
+    ...
+```
+
+## Resources
+
+- [`langgraph-checkpoint-scylladb` on PyPI](https://pypi.org/project/langgraph-checkpoint-scylladb/)
+- [scylladb/langchain-scylladb on GitHub](https://github.com/scylladb/langchain-scylladb/tree/main/libs/langgraph-checkpoint-scylladb)
+- [ScyllaDB Cloud](https://cloud.scylladb.com)
+- [ScyllaDB documentation](https://docs.scylladb.com)
