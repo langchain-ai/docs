@@ -1,0 +1,155 @@
+---
+title: Permissions
+description: Control filesystem access with declarative permission rules for Deep Agents
+---
+
+import PermissionsBasicPy from '/snippets/code-samples/permissions-basic-py.mdx';
+import PermissionsBasicJs from '/snippets/code-samples/permissions-basic-js.mdx';
+import PermissionsIsolateWorkspacePy from '/snippets/code-samples/permissions-isolate-workspace-py.mdx';
+import PermissionsIsolateWorkspaceJs from '/snippets/code-samples/permissions-isolate-workspace-js.mdx';
+import PermissionsProtectFilesPy from '/snippets/code-samples/permissions-protect-files-py.mdx';
+import PermissionsProtectFilesJs from '/snippets/code-samples/permissions-protect-files-js.mdx';
+import PermissionsReadOnlyMemoryPy from '/snippets/code-samples/permissions-read-only-memory-py.mdx';
+import PermissionsReadOnlyMemoryJs from '/snippets/code-samples/permissions-read-only-memory-js.mdx';
+import PermissionsDenyAllPy from '/snippets/code-samples/permissions-deny-all-py.mdx';
+import PermissionsDenyAllJs from '/snippets/code-samples/permissions-deny-all-js.mdx';
+import PermissionsRuleOrderingPy from '/snippets/code-samples/permissions-rule-ordering-py.mdx';
+import PermissionsRuleOrderingJs from '/snippets/code-samples/permissions-rule-ordering-js.mdx';
+import PermissionsSubagentPy from '/snippets/code-samples/permissions-subagent-py.mdx';
+import PermissionsSubagentJs from '/snippets/code-samples/permissions-subagent-js.mdx';
+import PermissionsCompositeBackendPy from '/snippets/code-samples/permissions-composite-backend-py.mdx';
+import PermissionsCompositeBackendJs from '/snippets/code-samples/permissions-composite-backend-js.mdx';
+import PermissionsCompositeBackendInvalidPy from '/snippets/code-samples/permissions-composite-backend-invalid-py.mdx';
+import PermissionsInterruptPy from '/snippets/code-samples/permissions-interrupt-py.mdx';
+import PermissionsCompositeBackendInvalidJs from '/snippets/code-samples/permissions-composite-backend-invalid-js.mdx';
+
+Control which files and directories an agent can read or write to using declarative permission rules. Pass a list of rules to `permissions=` and the agent's built-in filesystem tools respect them.
+
+<Note>
+    Permissions require `deepagents>=0.5.2`.
+</Note>
+
+
+
+
+Permissions only apply to the built-in filesystem tools (`ls`, `read_file`, `glob`, `grep`, `write_file`, `edit_file`, `delete`). Custom tools and MCP tools that access the filesystem are not covered. Permissions also do not apply to [sandbox backends](/oss/python/deepagents/sandboxes), which support arbitrary command execution via the `execute` tool.
+
+
+
+
+<Tip>
+Use `permissions` when you need **path-based allow/deny rules** on the built-in filesystem tools. Use [backend policy hooks](/oss/python/deepagents/backends#add-policy-hooks) when you need custom validation logic (rate limiting, audit logging, content inspection) or need to control custom tools.
+</Tip>
+
+## Basic usage
+
+Pass a list of [`FilesystemPermission`](https://reference.langchain.com/python/deepagents/middleware/permissions/FilesystemPermission) rules to [`create_deep_agent`](https://reference.langchain.com/python/deepagents/graph/create_deep_agent). Rules are evaluated in declaration order. The first matching rule wins. If no rule matches, the operation is allowed.
+
+<PermissionsBasicPy />
+
+
+
+
+
+## Rule structure
+
+Each `FilesystemPermission` has three fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `operations` | `list["read" \| "write"]` | Operations this rule applies to. `"read"` covers `ls`, `read_file`, `glob`, `grep`. `"write"` covers `write_file`, `edit_file`, `delete`. |
+| `paths` | `list[str]` | Glob patterns for matching file paths (e.g., `["/workspace/**"]`). Supports `**` for recursive matching and `{a,b}` for alternation. |
+| `mode` | `"allow" \| "deny" \| "interrupt"` | Whether to allow, deny, or pause for human approval on matching operations. Defaults to `"allow"`. See [Pause for human approval](#pause-for-human-approval). |
+
+Rules use first-match-wins evaluation: the first rule whose `operations` and `paths` match the current call determines the outcome. If no rule matches, the call is **allowed** (permissive default).
+
+
+
+
+
+## Pause for human approval
+
+<Note>
+The `"interrupt"` mode requires `deepagents>=0.6.8`.
+</Note>
+
+Set `mode="interrupt"` to pause for human approval instead of allowing or denying a matching operation outright. When the agent calls a built-in write tool (`write_file`, `edit_file`, `delete`) on a path that matches an interrupt-mode rule, `create_deep_agent` raises a human-in-the-loop interrupt rather than running the tool, and a reviewer can approve, edit, or reject the call.
+
+<PermissionsInterruptPy />
+
+Interrupt-mode rules are wired into the agent's human-in-the-loop middleware automatically and merge with any `interrupt_on` you pass, so you handle and resume them the same way as tool-call interrupts. See [Human-in-the-loop](/oss/python/deepagents/human-in-the-loop) for the resume flow.
+
+<Note>
+Deleting a directory is all-or-nothing: `delete` checks the `write` permission on the target and every descendant path, and refuses the entire operation if any of them is denied, rather than removing part of the tree.
+</Note>
+
+<Tip>
+Anchor interrupt patterns with a literal leading segment (for example, `/secrets/**` or `/projects/*/secrets/**`). Bulk tools (`ls`, `glob`, `grep`, and `delete` on a directory) fire the interrupt when their search subtree could overlap the rule's anchored prefix, so a fully unanchored pattern like `/**/secrets` conservatively over-fires.
+</Tip>
+
+
+
+## Examples
+
+### Isolate to a workspace directory
+
+Allow reads and writes only under `/workspace/` and deny everything else:
+
+<PermissionsIsolateWorkspacePy />
+
+### Protect specific files
+
+<PermissionsProtectFilesPy />
+
+### Read-only memory
+
+Allow the agent to read memory files but prevent it from modifying them. This is useful for organization-wide policies or shared knowledge bases that should only be updated by application code. See [read-only vs writable memory](/oss/python/deepagents/memory#read-only-vs-writable-memory) for more context.
+
+<PermissionsReadOnlyMemoryPy />
+
+### Deny all access
+
+Block all reads and writes. This is a restrictive baseline you can layer more specific allow rules on top of:
+
+<PermissionsDenyAllPy />
+
+### Rule ordering
+
+Because of first-match-wins, rule order matters. Place more specific rules before broader ones:
+
+<PermissionsRuleOrderingPy />
+
+
+
+
+
+## Subagent permissions
+
+[Subagents](/oss/python/deepagents/subagents) inherit the parent agent's permissions by default. To give a subagent different permissions, set the `permissions` field in its spec. This **replaces** the parent's rules entirely.
+
+<PermissionsSubagentPy />
+
+
+
+
+
+## Composite backends
+
+When using a [`CompositeBackend`](https://reference.langchain.com/python/deepagents/backends/composite/CompositeBackend) with a sandbox default, every permission path must be scoped under a known route prefix. Sandboxes support arbitrary command execution, so path-based restrictions alone cannot prevent filesystem access through shell commands. Scoping permissions to route-specific [backends](/oss/python/deepagents/backends) avoids this conflict.
+
+<PermissionsCompositeBackendPy />
+
+Permissions that include paths outside any route raise `NotImplementedError`:
+
+<PermissionsCompositeBackendInvalidPy />
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/deepagents/permissions.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

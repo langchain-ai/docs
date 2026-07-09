@@ -1,0 +1,203 @@
+---
+title: "AgentMail Toolkit"
+description: "Integrate with the AgentMail toolkit using LangChain Python."
+---
+
+[AgentMail](https://agentmail.to) is an inbox-as-an-API platform for AI agents. The `langchain-agentmail` package provides LangChain tools for sending messages, replying inside a thread, managing drafts, downloading attachments, and labeling—all wired to a real AgentMail inbox.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com) | Version |
+|:------|:--------| :---: | :---: | :---: |
+| `AgentMailToolkit` | [`langchain-agentmail`](https://pypi.org/project/langchain-agentmail/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-agentmail?style=flat-square&label=%20) |
+
+### Available tools
+
+| Tool | Description |
+|:-----|:------------|
+| `AgentMailListInboxesTool` | List inboxes on the account |
+| `AgentMailCreateInboxTool` | Create a new inbox |
+| `AgentMailListThreadsTool` | List threads inside an inbox |
+| `AgentMailGetThreadTool` | Fetch a thread with its messages |
+| `AgentMailListMessagesTool` | List messages inside an inbox |
+| `AgentMailGetMessageTool` | Fetch a single message with its body |
+| `AgentMailSendTool` | Send a new email from an inbox |
+| `AgentMailReplyTool` | Reply inside an existing thread |
+| `AgentMailUpdateMessageLabelsTool` | Add or remove labels on a message |
+| `AgentMailCreateDraftTool` | Stage a draft (with optional `send_at` for scheduled delivery) |
+| `AgentMailUpdateDraftTool` | Revise an existing draft |
+| `AgentMailSendDraftTool` | Send a previously created draft |
+| `AgentMailDeleteDraftTool` | Permanently delete a draft |
+| `AgentMailGetAttachmentTool` | Get a presigned download URL for a message attachment |
+
+## Setup
+
+Install the package:
+
+```bash
+pip install -qU langchain-agentmail
+```
+
+### Credentials
+
+You need an AgentMail API key. Sign up at [agentmail.to](https://agentmail.to) to get one.
+
+```python
+import getpass
+import os
+
+if not os.environ.get("AGENTMAIL_API_KEY"):
+    os.environ["AGENTMAIL_API_KEY"] = getpass.getpass("AgentMail API key:\n")
+```
+
+## Instantiation
+
+Use the toolkit to get all tools at once:
+
+```python
+from langchain_agentmail import AgentMailToolkit
+
+toolkit = AgentMailToolkit.from_api_key()
+tools = toolkit.get_tools()
+```
+
+You can also instantiate individual tools directly:
+
+```python
+from langchain_agentmail import AgentMailSendTool, AgentMailReplyTool
+
+send = AgentMailSendTool()
+reply = AgentMailReplyTool()
+```
+
+## Invocation
+
+### Invoke directly with args
+
+```python
+from langchain_agentmail import AgentMailSendTool
+
+tool = AgentMailSendTool()
+result = tool.invoke({
+    "inbox_id": "ib_abc123",
+    "to": "alice@example.com",
+    "subject": "Hello from LangChain",
+    "text": "This message was sent through langchain-agentmail.",
+})
+print(result)
+```
+
+### Invoke with ToolCall
+
+```python
+model_generated_tool_call = {
+    "args": {
+        "inbox_id": "ib_abc123",
+        "to": "alice@example.com",
+        "subject": "Follow up",
+        "text": "Just checking in.",
+    },
+    "id": "1",
+    "name": "agentmail_send_message",
+    "type": "tool_call",
+}
+tool_msg = tool.invoke(model_generated_tool_call)
+print(tool_msg.content)
+```
+
+## Use within an agent
+
+```python
+from langchain_agentmail import AgentMailToolkit
+from langchain.chat_models import init_chat_model
+from langgraph.prebuilt import create_react_agent
+
+model = init_chat_model(model="claude-sonnet-4-6", model_provider="anthropic")
+
+toolkit = AgentMailToolkit.from_api_key()
+agent = create_react_agent(model, toolkit.get_tools())
+
+response = agent.invoke({
+    "messages": [(
+        "user",
+        "Check my inbox for anything new. Summarize the most recent thread in 2 sentences.",
+    )]
+})
+```
+
+## Drafts
+
+The draft tools let an agent compose iteratively, revise, and ship—useful when a model wants to stage a message and confirm before sending, or schedule delivery via `send_at`:
+
+```python
+from langchain_agentmail import (
+    AgentMailCreateDraftTool,
+    AgentMailUpdateDraftTool,
+    AgentMailSendDraftTool,
+)
+
+created = AgentMailCreateDraftTool().invoke({
+    "inbox_id": "ib_abc123",
+    "to": "alice@example.com",
+    "subject": "Draft v1",
+    "text": "First pass — will be revised before sending.",
+})
+
+# `created` is a JSON string; parse to get the draft_id
+import json
+draft_id = json.loads(created)["draft_id"]
+
+AgentMailUpdateDraftTool().invoke({
+    "inbox_id": "ib_abc123",
+    "draft_id": draft_id,
+    "subject": "Draft v2 — ready",
+    "text": "Revised body. Sending now.",
+})
+
+AgentMailSendDraftTool().invoke({
+    "inbox_id": "ib_abc123",
+    "draft_id": draft_id,
+})
+```
+
+## Attachments
+
+Outbound attachments can be passed as base64 file content or as a public URL. Inbound attachments are fetched via presigned download URLs:
+
+```python
+import base64
+from langchain_agentmail import AgentMailSendTool, SendAttachmentSpec
+
+AgentMailSendTool().invoke({
+    "inbox_id": "ib_abc123",
+    "to": "alice@example.com",
+    "subject": "Report attached",
+    "text": "See the attached file.",
+    "attachments": [
+        SendAttachmentSpec(
+            filename="report.txt",
+            content_type="text/plain",
+            content=base64.b64encode(b"hello").decode(),
+        )
+    ],
+})
+```
+
+---
+
+## API reference
+
+For detailed documentation of the AgentMail API, visit [docs.agentmail.to](https://docs.agentmail.to). The Python package source lives at [github.com/agentmail-to/langchain-agentmail](https://github.com/agentmail-to/langchain-agentmail).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/tools/agentmail.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
