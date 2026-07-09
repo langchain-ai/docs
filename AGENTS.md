@@ -119,6 +119,13 @@ Flat groups (no tabs):
 
 See [Contributing to documentation](/oss/contributing/documentation) for setup instructions.
 
+### Command-line tools
+
+Two distinct binaries drive local work. Do not assume `mint` is the only command just because the `Makefile` targets shell out to it: `docs` is a first-class, preferred entry point installed separately via Python:
+
+- **`docs`**: The primary CLI, a Python console script (`docs = "pipeline.cli:main"` in `pyproject.toml`) installed into the virtualenv by `uv sync` (the first step of `make install`). Provides `docs dev`, `docs build`, `docs migrate`, and `docs mv`. The `make` targets wrap this CLI. If `docs` is not found after `make install`, relaunch your shell (or activate the venv) so `.venv/bin/docs` lands on `PATH`.
+- **`mint`**: Mintlify's CLI, a separate global npm binary (`npm install -g mint@latest`). The build targets shell out to it for `mint dev`, `mint broken-links`, and `mint export`.
+
 ## Frontmatter
 
 Every MDX file requires:

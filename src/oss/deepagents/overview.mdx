@@ -172,6 +172,33 @@ The backends support the following file system operations:
     Removing @[`FilesystemMiddleware`] itself via `excluded_middleware` is intentionally rejected—it is required scaffolding in the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent). Use `excluded_tools` to hide only the model-visible tool surface and leave the middleware in place. To remove the `task` tool, see [Running without subagents](/oss/deepagents/subagents#running-without-subagents).
 </Accordion>
 
+:::python
+<Accordion title="Restricting filesystem tools" icon="filter">
+    <Note>
+    The `tools` allowlist on `FilesystemMiddleware` requires `deepagents>=0.7.0a4`.
+    </Note>
+
+    To expose only a subset of the filesystem tools listed above, instead of hiding them all, pass a `tools` allowlist to @[`FilesystemMiddleware`] and provide the instance through `middleware=`. Any built-in filesystem tool left out of the list is removed from both the model's tool list and the middleware's dynamic system prompt section.
+
+    ```python
+    from deepagents import create_deep_agent
+    from deepagents.middleware import FilesystemMiddleware
+
+    # Read-only agent: write_file, edit_file, delete, and execute are never shown
+    agent = create_deep_agent(
+        model="claude-sonnet-4-6",
+        middleware=[
+            FilesystemMiddleware(backend=backend, tools=["read_file", "ls", "glob", "grep"]),
+        ],
+    )
+    ```
+
+    `read_file` must always be included in the list—omitting it raises `ValueError` when the agent is created. The `execute` and `delete` tools are also dropped from the tool surface whenever the configured backend doesn't support them, whether or not you include them in `tools`. Custom tools you add through `create_deep_agent`'s own `tools=` argument are never affected by this allowlist.
+
+    Passing your own @[`FilesystemMiddleware`] instance this way replaces the default one for the main agent and the general-purpose subagent inherits the same restriction. See [Override a default middleware instance](/oss/deepagents/customization#override-a-default-middleware-instance) for more information. Declarative subagents don't inherit it: include a `FilesystemMiddleware(tools=...)` instance in that subagent's own `middleware` field to restrict it independently.
+</Accordion>
+:::
+
 The virtual filesystem is used by several other harness capabilities such as skills, memory, code execution, and context management.
 You can also use the file system when building custom tools and middleware for Deep Agents.
 

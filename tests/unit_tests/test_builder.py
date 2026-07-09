@@ -33,6 +33,8 @@ def test_builder_initialization() -> None:
             ".jpg",
             ".jpeg",
             ".gif",
+            ".mp4",
+            ".webm",
             ".yml",
             ".yaml",
             ".css",
