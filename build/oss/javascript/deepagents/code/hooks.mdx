@@ -1,0 +1,226 @@
+---
+title: Hooks
+sidebarTitle: Hooks
+description: Subscribe external commands to Deep Agents Code lifecycle events with hooks.json
+---
+
+Hooks let external programs react to Deep Agents Code lifecycle events. Configure commands in `~/.deepagents/hooks.json` and it pipes a JSON payload to each matching command's stdin whenever an event fires.
+
+Hooks run fire-and-forget in a background thread. They never block Deep Agents Code and failures are logged without interrupting your session.
+
+## Setup
+
+Create `~/.deepagents/hooks.json`:
+
+```json
+{
+  "hooks": [
+    {
+      "command": ["bash", "-c", "cat >> ~/deepagents-events.log"],
+      "events": ["session.start", "session.end"]
+    }
+  ]
+}
+```
+
+Now every time a session starts or ends, Deep Agents Code appends the event payload to `~/deepagents-events.log`.
+
+## Hook configuration
+
+The config file contains a single `hooks` array. Each entry has:
+
+<ResponseField name="command" type="list[str]" required>
+    Command and arguments to run. No shell expansion: use `["bash", "-c", "..."]` if needed.
+</ResponseField>
+
+<ResponseField name="events" type="list[str]" post={["optional"]}>
+    Event names to subscribe to. Omit or leave empty to receive **all** events.
+</ResponseField>
+
+```json
+{
+  "hooks": [
+    {
+      "command": ["python3", "my_handler.py"],
+      "events": ["session.start", "task.complete"]
+    },
+    {
+      "command": ["bash", "log_everything.sh"]
+    }
+  ]
+}
+```
+
+The second hook above has no `events` filter, so it receives every event Deep Agents Code emits.
+
+## Payload format
+
+Each hook command receives a JSON object on stdin with an `"event"` key plus event-specific fields:
+
+```json
+{
+  "event": "session.start",
+  "thread_id": "abc123"
+}
+```
+
+## Events reference
+
+### `session.start`
+
+Fired when an agent session begins (both interactive and non-interactive modes).
+
+<ResponseField name="thread_id" type="string" required>
+    The session thread identifier.
+</ResponseField>
+
+### `session.end`
+
+Fired when a session exits.
+
+<ResponseField name="thread_id" type="string" required>
+    The session thread identifier.
+</ResponseField>
+
+### `user.prompt`
+
+Fired in interactive mode when the user submits a chat message.
+
+No additional fields.
+
+### `input.required`
+
+Fired when the agent requires human input (human-in-the-loop interrupt).
+
+No additional fields.
+
+### `permission.request`
+
+Fired before the approval dialog when one or more tool calls need user permission.
+
+<ResponseField name="tool_names" type="list[str]" required>
+    Names of the tools requesting approval.
+</ResponseField>
+
+### `tool.error`
+
+Fired when a tool call returns an error.
+
+<ResponseField name="tool_names" type="list[str]" required>
+    Names of the tool(s) that errored.
+</ResponseField>
+
+### `task.complete`
+
+Fired when the agent finishes its current task (the streaming loop ends without further interrupts).
+
+<ResponseField name="thread_id" type="string" required>
+    The session thread identifier.
+</ResponseField>
+
+### `context.compact`
+
+Fired before Deep Agents Code compacts (summarizes) the conversation context.
+
+No additional fields.
+
+## Execution model
+
+- **Background thread**: Hook subprocesses run in a thread via `asyncio.to_thread` so the main event loop is never blocked.
+- **Concurrent dispatch**: When multiple hooks match an event, they run concurrently in a thread pool.
+- **5-second timeout**: Each command has a 5-second timeout. Commands that exceed this are killed.
+- **Fire-and-forget**: Errors are caught per-hook and logged at debug/warning level. A failing hook never crashes or stalls Deep Agents Code.
+- **Lazy loading**: The config file is read once on the first event dispatch and cached for the rest of the session.
+- **No shell expansion**: Commands are executed directly (not through a shell). Wrap in `["bash", "-c", "..."]` if you need shell features like pipes or variable expansion.
+
+## Hook examples
+
+<Accordion title="Log all events to a file">
+```json
+{
+  "hooks": [
+    {
+      "command": ["bash", "-c", "jq -c . >> ~/.deepagents/hook-events.jsonl"],
+      "events": []
+    }
+  ]
+}
+```
+</Accordion>
+
+<Accordion title="Desktop notification on task completion (macOS)">
+```json
+{
+  "hooks": [
+    {
+      "command": [
+        "bash", "-c",
+        "osascript -e 'display notification \"Agent finished\" with title \"Deep Agents\"'"
+      ],
+      "events": ["task.complete"]
+    }
+  ]
+}
+```
+</Accordion>
+
+<Accordion title="Python handler">
+Write a handler script that reads the JSON payload from stdin:
+
+```python title="my_handler.py"
+import json
+import sys
+
+
+def handle_hook_payload(payload: dict) -> None:
+    event = payload["event"]
+    if event == "session.start":
+        print(f"Session started: {payload['thread_id']}", file=sys.stderr)
+    elif event == "permission.request":
+        print(f"Approval needed for: {payload['tool_names']}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    handle_hook_payload(json.load(sys.stdin))
+```
+
+```json title="~/.deepagents/hooks.json"
+{
+  "hooks": [
+    {
+      "command": ["python3", "my_handler.py"],
+      "events": ["session.start", "permission.request"]
+    }
+  ]
+}
+```
+</Accordion>
+
+## Security considerations
+
+Hooks follow the same trust model as Git hooks or shell aliases — any user who can write to `~/.deepagents/hooks.json` can execute arbitrary commands. This is by design:
+
+- **No command injection**: Payload data flows only to stdin as JSON, never to command-line arguments. `json.dumps` handles escaping.
+- **No shell by default**: Commands run with `shell=False`, preventing shell injection.
+- **Malformed config**: Invalid JSON or unexpected types produce logged warnings, not security issues.
+
+<Warning>
+    Only add hooks from sources you trust. A hook has the same permissions as your user account.
+</Warning>
+
+## See also
+
+- [Configuration](/oss/javascript/deepagents/code/configuration)
+- [Data locations](/oss/javascript/deepagents/code/configuration#data-locations)
+- [CLI reference](/oss/javascript/deepagents/code/cli-reference)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/deepagents/code/hooks.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
