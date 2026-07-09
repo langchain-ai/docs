@@ -9,20 +9,27 @@ Provision the AWS cloud foundation and install LangSmith with the public Terrafo
 The deployment runs in two stages: infrastructure (Terraform provisions VPC, EKS, RDS, ElastiCache, S3, IAM) and application (Helm installs the LangSmith chart against the cluster). Add-ons are enabled with a flag and a redeploy.
 
 ```mermaid actions={false}
-graph LR
-    Start["setup-env.sh<br/>secrets to SSM"]
-    TF["Pass 1<br/>terraform apply"]
-    Infra["VPC · EKS · RDS<br/>ElastiCache · S3 · ALB · IAM"]
-    Bootstrap["k8s-bootstrap<br/>ESO · KEDA · cert-manager"]
-    Deploy["Pass 2 · deploy.sh<br/>writes ARNs + hostname, ESO syncs secrets"]
-    Helm["helm install<br/>langsmith chart"]
-    First{"First<br/>deploy?"}
-    Running["LangSmith running<br/>all pods healthy"]
-
-    Start --> TF --> Infra
-    Infra -->|EKS ready| Bootstrap --> Deploy --> Helm --> First
-    First -->|no| Running
-    First -->|yes, re-run with resolved hostname| Helm
+%%{init: {'flowchart': {'nodeSpacing': 25, 'rankSpacing': 30}}}%%
+graph TB
+    subgraph stage1["Set up infrastructure"]
+        direction LR
+        Start["setup-env.sh<br/>secrets to SSM"]
+        TF["terraform apply"]
+        Infra["VPC · EKS · RDS<br/>ElastiCache · S3 · ALB<br/>IAM"]
+        Bootstrap["k8s-bootstrap<br/>ESO · KEDA<br/>cert-manager"]
+        Start --> TF --> Infra -->|EKS ready| Bootstrap
+    end
+    subgraph stage2["Deploy the application"]
+        direction LR
+        Deploy["deploy.sh<br/>ARNs + hostname<br/>ESO syncs secrets"]
+        Helm["helm install<br/>langsmith chart"]
+        First{"First<br/>deploy?"}
+        Running["LangSmith running<br/>all pods healthy"]
+        Deploy --> Helm --> First
+        First -->|no| Running
+        First -->|yes, re-run| Helm
+    end
+    stage1 --> stage2
 
     classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
@@ -35,6 +42,9 @@ graph LR
     class Infra neutral
     class First decision
     class Running output
+
+    style stage1 fill:none,stroke:#40668D,stroke-width:1px
+    style stage2 fill:none,stroke:#40668D,stroke-width:1px
 ```
 
 ## Prerequisites
@@ -116,7 +126,7 @@ Two non-AWS items must be ready before `terraform apply`:
 
 ### Cluster sizing reference
 
-Capacity has two independent levers:
+Two independent settings control capacity:
 
 - **Infrastructure capacity** sets instance types and node counts directly through the infra variables `eks_managed_node_groups`, `postgres_instance_type`, and `redis_instance_type`. The module defaults are one `m5.4xlarge` node group (min 3, max 10), `db.t3.large` for RDS, and `cache.m6g.xlarge` for ElastiCache.
 - **`sizing_profile`** selects the Helm sizing overlay (pod resource requests and limits). `init-values.sh` and `deploy.sh` read it; Terraform does not.

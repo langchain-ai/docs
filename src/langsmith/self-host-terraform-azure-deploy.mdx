@@ -9,17 +9,25 @@ Provision the Azure cloud foundation and install LangSmith with the public Terra
 The deployment runs in two stages: infrastructure (Terraform provisions AKS, Postgres, Redis, Blob Storage, Key Vault, cert-manager, KEDA, ingress) and application (Helm installs the LangSmith chart against the cluster). Three add-ons (LangSmith Deployment, Agent Builder, Insights and Polly) are enabled with flags and a redeploy.
 
 ```mermaid actions={false}
-graph LR
-    Start["make setup-env<br/>secrets to secrets.auto.tfvars"]
-    TF["Pass 1<br/>terraform apply (3 stages)"]
-    Infra["AKS · PostgreSQL · Redis<br/>Blob · Key Vault · Managed Identity"]
-    Bootstrap["Bootstrap workloads<br/>cert-manager · KEDA · ingress-nginx"]
-    Secrets["make kubeconfig + k8s-secrets<br/>Key Vault to langsmith-config-secret"]
-    Deploy["Pass 2 · make init-values + deploy<br/>helm install langsmith"]
-    DNS["deploy.sh sets dns_label<br/>+ Let's Encrypt cert"]
-    Running["LangSmith running<br/>all pods healthy"]
-
-    Start --> TF --> Infra --> Bootstrap --> Secrets --> Deploy --> DNS --> Running
+%%{init: {'flowchart': {'nodeSpacing': 25, 'rankSpacing': 30}}}%%
+graph TB
+    subgraph stage1["Set up infrastructure"]
+        direction LR
+        Start["make setup-env<br/>secrets to secrets.auto.tfvars"]
+        TF["terraform apply<br/>(3 stages)"]
+        Infra["AKS · PostgreSQL · Redis<br/>Blob · Key Vault<br/>Managed Identity"]
+        Bootstrap["Bootstrap workloads<br/>cert-manager · KEDA<br/>ingress-nginx"]
+        Start --> TF --> Infra -->|AKS ready| Bootstrap
+    end
+    subgraph stage2["Deploy the application"]
+        direction LR
+        Secrets["make kubeconfig + k8s-secrets<br/>Key Vault to<br/>langsmith-config-secret"]
+        Deploy["make init-values + deploy<br/>helm install langsmith"]
+        DNS["deploy.sh sets dns_label<br/>+ Let's Encrypt cert"]
+        Running["LangSmith running<br/>all pods healthy"]
+        Secrets --> Deploy --> DNS --> Running
+    end
+    stage1 --> stage2
 
     classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
@@ -30,6 +38,9 @@ graph LR
     class TF,Bootstrap,Secrets,Deploy,DNS process
     class Infra neutral
     class Running output
+
+    style stage1 fill:none,stroke:#40668D,stroke-width:1px
+    style stage2 fill:none,stroke:#40668D,stroke-width:1px
 ```
 
 ## Prerequisites
@@ -696,7 +707,7 @@ create_dns_zone        = true
 6. `make status` shows exactly what NS and A records to add at each stage.
 
 <Note>
-**Why NS records, not CNAME:** cert-manager must write TXT records to the zone to prove ownership. That requires Azure DNS to be authoritative for the subdomain, and NS delegation grants that authority. A CNAME only aliases traffic and does not transfer DNS authority; the DNS-01 challenge will fail.
+**Why NS records, not CNAME:** cert-manager must write TXT records to the zone to prove ownership. That requires Azure DNS to be authoritative for the subdomain, and NS delegation grants that authority. A CNAME only aliases traffic and does not transfer DNS authority; the DNS-01 challenge fails.
 </Note>
 
 ## Next steps

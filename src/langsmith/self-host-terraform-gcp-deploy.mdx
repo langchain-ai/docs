@@ -9,17 +9,25 @@ Provision the GCP cloud foundation and install LangSmith with the public Terrafo
 The deployment runs in two stages: infrastructure (Terraform provisions VPC, GKE, Cloud SQL, Memorystore, GCS, Workload Identity) and application (the LangSmith chart, installed with the deploy script or the Terraform `app` layer). Add-ons are enabled with a flag and a redeploy.
 
 ```mermaid actions={false}
-graph LR
-    Start["setup-env.sh<br/>secrets to Secret Manager"]
-    TF["Pass 1<br/>terraform apply"]
-    Infra["VPC · GKE · Cloud SQL<br/>Memorystore · GCS · Workload Identity"]
-    Bootstrap["Bootstrap workloads<br/>cert-manager · KEDA · Envoy Gateway"]
-    Deploy["Pass 2 · make init-values + deploy<br/>helm install langsmith"]
-    DNS["Point DNS A record<br/>at Gateway IP"]
-    Cert["cert-manager issues<br/>Let's Encrypt cert"]
-    Running["LangSmith running<br/>all pods healthy"]
-
-    Start --> TF --> Infra --> Bootstrap --> Deploy --> DNS --> Cert --> Running
+%%{init: {'flowchart': {'nodeSpacing': 25, 'rankSpacing': 30}}}%%
+graph TB
+    subgraph stage1["Set up infrastructure"]
+        direction LR
+        Start["setup-env.sh<br/>secrets to Secret Manager"]
+        TF["terraform apply"]
+        Infra["VPC · GKE · Cloud SQL<br/>Memorystore · GCS<br/>Workload Identity"]
+        Bootstrap["Bootstrap workloads<br/>cert-manager · KEDA<br/>Envoy Gateway"]
+        Start --> TF --> Infra -->|GKE ready| Bootstrap
+    end
+    subgraph stage2["Deploy the application"]
+        direction LR
+        Deploy["make init-values + deploy<br/>helm install langsmith"]
+        DNS["Point DNS A record<br/>at Gateway IP"]
+        Cert["cert-manager issues<br/>Let's Encrypt cert"]
+        Running["LangSmith running<br/>all pods healthy"]
+        Deploy --> DNS --> Cert --> Running
+    end
+    stage1 --> stage2
 
     classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
@@ -30,6 +38,9 @@ graph LR
     class TF,Bootstrap,Deploy,Cert process
     class Infra neutral
     class Running output
+
+    style stage1 fill:none,stroke:#40668D,stroke-width:1px
+    style stage2 fill:none,stroke:#40668D,stroke-width:1px
 ```
 
 ## Prerequisites
@@ -210,7 +221,7 @@ enable_langsmith_deployment = true
 See the [GCP variables reference](/langsmith/self-host-terraform-gcp-variables) for every input variable.
 
 <Tip>
-Configure a remote state backend before applying. Copy `infra/backend.tf.example` to `infra/backend.tf` and point it at a GCS bucket you control. Local state is fragile and easily lost during directory restructuring.
+Configure a remote state backend before applying. Copy `infra/backend.tf.example` to `infra/backend.tf` and point it at a GCS bucket you control. Local state is fragile and can be lost during directory restructuring.
 </Tip>
 
 ### Load secrets into Secret Manager
