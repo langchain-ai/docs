@@ -8,9 +8,7 @@ const filterStr =
   'and(gt(start_time, "2023-07-15T12:34:56Z"),' +
   ' or(neq(status, "error"),' +
   '    and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))';
-const project = await client.projects
-  .list({ name: "default", limit: 1 })
-  .then((page) => page.getPaginatedItems()[0]);
+const project = await client.readProject({ projectName: "default" });
 const runs = client.runs.query({
   project_ids: [project.id],
   filter: filterStr,

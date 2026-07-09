@@ -76,6 +76,7 @@ install:
 	uv sync --all-groups
 	npm install
 	npm install -g mint@latest
+	@echo "If the docs command is not available, relaunch your shell so it picks up the docs binary."
 
 clean:
 	@echo "Cleaning build artifacts..."

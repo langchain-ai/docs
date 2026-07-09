@@ -26,8 +26,7 @@ async def main():
         ' or(neq(status, "error"),'
         '    and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
     )
-    async for project in client.projects.list(name="default", limit=1):
-        break
+    project = await client.aread_project(project_name="default")
     runs = client.runs.query(project_ids=[str(project.id)], filter=filter_str)
 
 
