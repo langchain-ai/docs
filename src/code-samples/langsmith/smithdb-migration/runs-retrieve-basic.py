@@ -3,7 +3,7 @@ import asyncio
 
 async def find_run(project_id: str):
     client = Client()
-    async for run in client.runs.query(project_ids=[project_id], selects=["ID", "START_TIME"]):
+    async for run in client.runs.query(project_ids=[str(project_id)], selects=["ID", "START_TIME"]):
         return run
     return None
 
