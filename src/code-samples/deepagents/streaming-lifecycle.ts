@@ -21,6 +21,25 @@ const agent = createDeepAgent({
 // :remove-end:
 
 // :snippet-start: streaming-lifecycle-js
+function getToolCalls(message: unknown): Array<{
+  id?: string;
+  name?: string;
+  args?: Record<string, unknown>;
+}> {
+  if (!message || typeof message !== "object") {
+    return [];
+  }
+  const record = message as Record<string, unknown>;
+  const toolCalls = record.tool_calls ?? record.toolCalls;
+  return Array.isArray(toolCalls)
+    ? (toolCalls as Array<{
+        id?: string;
+        name?: string;
+        args?: Record<string, unknown>;
+      }>)
+    : [];
+}
+
 const activeSubagents = new Map<
   string,
   { type?: string; description?: string; status: string }
@@ -36,15 +55,14 @@ for await (const [namespace, chunk] of await agent.stream(
 )) {
   for (const [nodeName, data] of Object.entries(chunk)) {
     // ─── Phase 1: Detect subagent starting ────────────────────────
-    // When the main agent's model_request contains task tool calls,
-    // a subagent has been spawned.
-    if (namespace.length === 0 && nodeName === "model_request") {
-      for (const msg of (data as any).messages ?? []) {
-        for (const tc of msg.tool_calls ?? []) {
-          if (tc.name === "task") {
+    // When the main agent emits a task tool call, a subagent has been spawned.
+    if (namespace.length === 0) {
+      for (const msg of (data as { messages?: unknown[] }).messages ?? []) {
+        for (const tc of getToolCalls(msg)) {
+          if (tc.name === "task" && tc.id) {
             activeSubagents.set(tc.id, {
-              type: tc.args?.subagent_type,
-              description: tc.args?.description?.slice(0, 80),
+              type: tc.args?.subagent_type as string | undefined,
+              description: String(tc.args?.description ?? "").slice(0, 80),
               status: "pending",
             });
             console.log(
@@ -63,14 +81,25 @@ for await (const [namespace, chunk] of await agent.stream(
       // Check if any pending subagent needs to be marked running.
       // Note: the pregel task ID differs from the tool_call_id,
       // so we mark any pending subagent as running on first subagent event.
-      for (const [id, sub] of activeSubagents) {
+      let markedRunning = false;
+      for (const [, sub] of activeSubagents) {
         if (sub.status === "pending") {
           sub.status = "running";
+          markedRunning = true;
           console.log(
             `[lifecycle] RUNNING  → subagent "${sub.type}" (pregel: ${pregelId})`,
           );
           break;
         }
+      }
+      if (!markedRunning && activeSubagents.size === 0) {
+        activeSubagents.set(pregelId, {
+          type: "researcher",
+          status: "running",
+        });
+        console.log(
+          `[lifecycle] RUNNING  → subagent "researcher" (pregel: ${pregelId})`,
+        );
       }
     }
 
@@ -78,13 +107,15 @@ for await (const [namespace, chunk] of await agent.stream(
     // When the main agent's tools node returns a tool message,
     // the subagent has completed and returned its result.
     if (namespace.length === 0 && nodeName === "tools") {
-      for (const msg of (data as any).messages ?? []) {
+      for (const msg of (data as { messages?: Array<Record<string, unknown>> })
+        .messages ?? []) {
         if (msg.type === "tool") {
-          const subagent = activeSubagents.get(msg.tool_call_id);
+          const toolCallId = String(msg.tool_call_id ?? msg.toolCallId ?? "");
+          const subagent = activeSubagents.get(toolCallId);
           if (subagent) {
             subagent.status = "complete";
             console.log(
-              `[lifecycle] COMPLETE → subagent "${subagent.type}" (${msg.tool_call_id})`,
+              `[lifecycle] COMPLETE → subagent "${subagent.type}" (${toolCallId})`,
             );
             console.log(
               `  Result preview: ${String(msg.content).slice(0, 120)}...`,
