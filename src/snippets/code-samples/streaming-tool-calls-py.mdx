@@ -1,4 +1,6 @@
 ```python
+from langchain.messages import AIMessageChunk, ToolMessage
+
 for chunk in agent.stream(
     {"messages": [{"role": "user", "content": "Research recent quantum computing advances"}]},
     stream_mode="messages",
@@ -13,7 +15,7 @@ for chunk in agent.stream(
         source = next((s for s in chunk["ns"] if s.startswith("tools:")), "main") if is_subagent else "main"
 
         # Tool call chunks (streaming tool invocations)
-        if token.tool_call_chunks:
+        if isinstance(token, AIMessageChunk) and token.tool_call_chunks:
             for tc in token.tool_call_chunks:
                 if tc.get("name"):
                     print(f"\n[{source}] Tool call: {tc['name']}")
@@ -22,11 +24,15 @@ for chunk in agent.stream(
                     print(tc["args"], end="", flush=True)
 
         # Tool results
-        if token.type == "tool":
+        if isinstance(token, ToolMessage):
             print(f"\n[{source}] Tool result [{token.name}]: {str(token.content)[:150]}")
 
         # Regular AI content (skip tool call messages)
-        if token.type == "ai" and token.content and not token.tool_call_chunks:
+        if (
+            isinstance(token, AIMessageChunk)
+            and token.content
+            and not token.tool_call_chunks
+        ):
             print(token.content, end="", flush=True)
 
 print()
