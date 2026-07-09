@@ -28,6 +28,8 @@ def agent():
             get_thread_id_from_config()
         ),
     )
+
+
 # :snippet-end:
 
 # :remove-start:

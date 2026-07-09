@@ -1,0 +1,409 @@
+---
+title: Config file
+sidebarTitle: config.toml
+description: Configure model providers, defaults, retries, and gateways in config.toml
+---
+
+`~/.deepagents/config.toml` lets you customize model providers, set defaults, and pass extra parameters to model constructors. For environment variables and inspection commands, see [Configuration](/oss/deepagents/code/configuration). This page covers:
+
+- **Defaults**: pin a [default model](#default-and-recent-model) or [agent](#default-and-recent-agent).
+- **Provider setup**: the [`[models.providers.<name>]` table](#provider-configuration), [constructor params](#model-constructor-params), [retries](#retries), [profile overrides](#profile-overrides-advanced), and [adding models to the `/model` switcher](#adding-models-to-the-interactive-switcher).
+- **Custom endpoints and providers**: [custom base URLs](#custom-base-url), [OpenAI- or Anthropic-compatible APIs](#compatible-apis), and [arbitrary providers](#arbitrary-providers).
+- **Endpoints and gateways**: how [API keys and base URLs resolve together](#endpoints-keys-and-gateways), including through a managed gateway.
+
+## Default and recent model
+
+```toml
+[models]
+default = "ollama:qwen3:4b"             # your intentional long-term preference
+recent = "google_genai:gemini-3.5-flash"   # last /model switch (written automatically)
+```
+
+`[models].default` always takes priority over `[models].recent`. The `/model` command only writes to `[models].recent`, so your configured default is never overwritten by mid-session switches. To remove the default, use `/model --default --clear` or delete the `default` key from the config file.
+
+## Default and recent agent
+
+```toml
+[agents]
+default = "backend-dev"  # your intentional long-term preference (Ctrl+S in /agents picker)
+recent = "frontend-dev"  # last /agents switch (written automatically)
+```
+
+`[agents].default` always takes priority over `[agents].recent`. Selecting an agent in the `/agents` picker with `Enter` writes to `recent`; pressing `Ctrl+S` on the highlighted row pins it as `default`. Pressing `Ctrl+S` again on the same row clears the default.
+
+Explicit `-a`/`--agent` always overrides both, and `-r`/`--resume` bypasses both so the thread's original agent is restored. See [Command reference](/oss/deepagents/code/cli-reference#command-line-options) for related flags.
+
+## Provider configuration
+
+Each provider is a TOML table under `[models.providers]`:
+
+```toml
+[models.providers.<name>]
+display_name = "My Provider"
+api_key_url = "https://provider.example/keys"
+models = ["gpt-4o"]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://api.openai.com/v1"
+class_path = "my_package.models:MyChatModel"
+enabled = true
+
+[models.providers.<name>.params]
+temperature = 0
+max_tokens = 4096
+
+[models.providers.<name>.params."gpt-4o"]
+temperature = 0.7
+```
+
+Providers have the following configuration options:
+
+<ResponseField name="models" type="string[]" post={["optional"]}>
+    A list of model names to show in the interactive `/model` switcher for the provider defined as `<name>`. For providers that already ship with model profiles, any names you add here appear in addition to bundled ones (useful for newly released models that haven't been added to the package yet). For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.
+
+    Models listed here **bypass** any applied profile-based [filtering criteria](/oss/deepagents/code/providers#which-models-appear-in-the-switcher), always appearing in the switcher. This makes it the recommended way to surface models that are excluded because their profile lacks `tool_calling` support or doesn't exist yet.
+
+    This key is optional. You can always pass any model name directly to `/model` or `--model` regardless of whether it appears in the switcher; the provider validates the name at request time.
+</ResponseField>
+
+<ResponseField name="api_key_env" type="string" post={["optional"]}>
+    The **name** of the environment variable that holds the API key (e.g., `"OPENAI_API_KEY"`). Deep Agents Code reads the credential from this env var at startup to verify access before creating the model.
+
+    Most chat model packages read from a default env var automatically. See the [Provider reference](/oss/deepagents/code/providers#provider-reference) table for which variable name each built-in provider checks. For a provider not in that table, set `api_key_env` to its variable name (see [Arbitrary providers](#arbitrary-providers)).
+</ResponseField>
+
+<ResponseField name="display_name" type="string" post={["optional"]}>
+    Human-readable provider name shown in auth UI. Use this for arbitrary providers whose config key is optimized for machines (for example, `my_gateway`) but whose UI label should include spaces or brand capitalization.
+</ResponseField>
+
+<ResponseField name="api_key_url" type="string" post={["optional"]}>
+    URL for the provider page where users create or manage API keys. The `/auth` modal links to this page before the API-key input. This value is a URL, not a credential.
+</ResponseField>
+
+<ResponseField name="base_url" type="string" post={["optional"]}>
+    Override the base URL used by the provider, if supported. Refer to your provider packages' [reference docs](https://reference.langchain.com/python/integrations/) for more info.
+
+    See [Compatible APIs](#compatible-apis) for pointing a built-in provider at a wire-compatible endpoint, or [Arbitrary providers](#arbitrary-providers) for one configured via `class_path`.
+</ResponseField>
+
+<ResponseField name="base_url_env" type="string" post={["optional"]}>
+    Name of the environment variable that holds this provider's base URL, parallel to `api_key_env`. Reach for this instead of `base_url` when the endpoint comes from the environment rather than a fixed value — for example a gateway URL that differs by machine or CI job — so it can change without editing `config.toml` and can take part in endpoint resolution and key/endpoint pairing (see [Endpoints, keys, and gateways](#endpoints-keys-and-gateways)). It also extends those to providers outside the [built-in set](/oss/deepagents/code/providers#provider-reference); see [Arbitrary providers](#arbitrary-providers).
+
+    If both are set, the static `base_url` wins:
+
+    ```toml
+    [models.providers.example]
+    base_url = "https://fixed.example/v1"   # used
+    base_url_env = "EXAMPLE_BASE_URL"        # ignored while base_url is set
+    ```
+</ResponseField>
+
+<ResponseField name="params" type="object" post={["optional"]}>
+    Extra keyword arguments forwarded to the model constructor. Flat keys (e.g., `temperature = 0`) apply to every model from this provider. Model-keyed sub-tables (e.g., `[params."gpt-4o"]`) override individual values for that model only; the merge is shallow (model wins on conflict).
+
+    Do not put credentials (e.g., `api_key`) in `params`. Use [`api_key_env`](#provider-configuration) to point at an environment variable instead.
+</ResponseField>
+
+<ResponseField name="profile" type="object" post={["optional"]}>
+    (Advanced) Override fields in the model's runtime [profile](/oss/langchain/models#model-profiles) (e.g., `max_input_tokens`). Flat keys apply to every model from this provider. Model-keyed sub-tables (e.g., `[profile."claude-sonnet-4-5"]`) override individual values for that model only; the merge is shallow (model wins on conflict). These overrides are applied after the model is created, so they take effect for context-limit display, auto-summarization, and any other feature that reads the profile. See [Profile overrides](#profile-overrides-advanced) for examples and the `--profile-override` flag.
+</ResponseField>
+
+<ResponseField name="class_path" type="string" post={["optional"]}>
+    Used for [arbitrary model](#arbitrary-providers) providers. Fully-qualified Python class in `module.path:ClassName` format. When set, Deep Agents Code imports and instantiates this class directly for provider `<name>`. The class must be a `BaseChatModel` subclass.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean" default="true" post={["optional"]}>
+    Whether this provider appears in the `/model` selector. Set to `false` to hide a provider that was auto-discovered from an installed package (e.g., a transitive dependency you don't want cluttering the model switcher). You can still use a disabled provider directly via `/model provider:model` or `--model`.
+</ResponseField>
+
+## Model constructor params
+
+The [`params` field](#provider-configuration) forwards extra arguments to the model constructor. To give one model different values, add a model-keyed sub-table so you do not have to duplicate the whole provider config:
+
+```toml
+[models.providers.ollama]
+models = ["qwen3:4b", "llama3"]
+
+[models.providers.ollama.params]
+temperature = 0
+num_ctx = 8192
+
+[models.providers.ollama.params."qwen3:4b"]
+temperature = 0.5
+num_ctx = 4000
+```
+
+With this configuration:
+
+* `ollama:qwen3:4b` gets `{temperature: 0.5, num_ctx: 4000}` — model overrides win.
+* `ollama:llama3` gets `{temperature: 0, num_ctx: 8192}` — no override, provider-level params only.
+
+The merge is shallow: any key present in the model sub-table replaces the same key from the provider-level params, while keys only at the provider level are preserved.
+
+<Tip>
+    For one-off adjustments without editing `config.toml`, pass a JSON object via `--model-params` at launch or mid-session with `/model`. CLI flags take highest priority over the config file. See [Model parameters](/oss/deepagents/code/providers#model-parameters) on the providers page for syntax and provider-specific examples.
+</Tip>
+
+## Retries
+
+Configure retry counts for transient model provider errors with the top-level `[retries]` section. Deep Agents Code passes these values through to provider integrations that accept retry-count constructor kwargs. If you omit this section, the provider SDK default applies.
+
+```toml
+[retries]
+max_retries = 2
+
+[retries.fireworks]
+max_retries = 3
+
+[retries.anthropic]
+max_retries = 0
+```
+
+The global `[retries].max_retries` value applies to all supported providers. A provider-specific table, such as `[retries.fireworks]`, overrides the global value for that provider. Values must be integers greater than or equal to `0`.
+
+Most supported providers receive the retry count as `max_retries`. Some integrations use a different constructor kwarg. For an arbitrary provider, or to override the registered kwarg for a known provider, set `param` in the provider-specific retries table:
+
+```toml
+[retries]
+max_retries = 2
+
+[retries.my_custom]
+param = "retries"
+max_retries = 4
+```
+
+`param` must be a valid Python identifier string, such as `"max_retries"` or `"retries"`. Deep Agents Code ignores unknown providers that do not set `param`, because passing the wrong retry kwarg can break model creation.
+
+`[retries]` is lower precedence than constructor parameters. The complete precedence order is:
+
+1. `--max-retries N`, applied under the provider's resolved retry kwarg
+2. `--model-params` with the provider's retry kwarg, such as `'{"max_retries": N}'` or `'{"retries": N}'`
+3. `[models.providers.<provider>.params]` with the provider's retry kwarg
+4. `[retries.<provider>].max_retries`
+5. `[retries].max_retries`
+6. Provider SDK default
+
+## Profile overrides (Advanced)
+
+Override fields in the model's runtime profile to change how Deep Agents Code interprets model capabilities. See @[`ModelProfile`] for the full list of overridable fields. The most common use case is lowering `max_input_tokens` to trigger auto-summarization earlier — useful for testing or for constraining context usage:
+
+```toml
+# Apply to all models from this provider
+[models.providers.anthropic.profile]
+max_input_tokens = 4096
+```
+
+Per-model sub-tables work the same way as `params` — the model-level value wins on conflict:
+
+```toml
+[models.providers.anthropic.profile]
+max_input_tokens = 4096
+
+# This model gets a higher limit
+[models.providers.anthropic.profile."claude-sonnet-4-5"]
+max_input_tokens = 8192
+```
+
+Profile overrides are merged into the model's profile after creation. Any feature that reads the profile — context-limit display in the status bar, auto-summarization thresholds, capability checks — will see the overridden values.
+
+<Accordion title="CLI profile overrides with --profile-override" icon="terminal">
+    To override model profile fields at runtime without editing the config file, pass a JSON object via `--profile-override`:
+
+    ```bash
+    dcode --profile-override '{"max_input_tokens": 4096}'
+
+    # Combine with --model
+    dcode --model google_genai:gemini-3.5-flash --profile-override '{"max_input_tokens": 4096}'
+
+    # In non-interactive mode
+    dcode -n "Summarize this repo" --profile-override '{"max_input_tokens": 4096}'
+    ```
+
+    These are merged on top of config file profile overrides (CLI wins). The priority chain is: model default &lt; config.toml profile &lt; CLI `--profile-override`.
+
+    `--profile-override` values persist across mid-session `/model` hot-swaps — switching models re-applies the override to the new model.
+</Accordion>
+
+## Adding models to the interactive switcher
+
+Some providers (e.g. `langchain-ollama`) don't bundle model profile data (see [Provider reference](/oss/deepagents/code/providers#provider-reference) for full listing). When this is the case, the interactive `/model` switcher won't list models for that provider. You can fill in the gap by defining a `models` list in your config file for the provider:
+
+```toml
+[models.providers.ollama]
+models = ["gemma4", "qwen3.6", "granite4.1:3b"]
+```
+
+The `/model` switcher will now include an Ollama section with these models listed.
+
+This is entirely optional. You can always switch to any model by specifying its full name directly:
+
+```txt
+/model ollama:qwen3.6:27b
+```
+
+<Note>
+    When `langchain-ollama` is installed and the daemon is reachable, Deep Agents Code auto-discovers locally pulled models and merges them into the switcher—no `models` list required. Run `/reload` to refresh after pulling new models, or set `DEEPAGENTS_CODE_OLLAMA_DISCOVERY=0` to opt out.
+</Note>
+
+## Custom base URL
+
+Some provider packages accept a `base_url` to override the default endpoint. For example, `langchain-ollama` defaults to `http://localhost:11434` via the underlying `ollama` client. To point it elsewhere, set `base_url` in your configuration:
+
+```toml
+[models.providers.ollama]
+base_url = "http://your-host-here:port"
+```
+
+Refer to your provider's reference documentation for compatibility information and additional considerations.
+
+## Compatible APIs
+
+For providers that expose APIs that are wire-compatible with OpenAI or Anthropic, you can use the existing `langchain-openai` or `langchain-anthropic` packages by pointing `base_url` at the provider's endpoint:
+
+```toml
+[models.providers.openai]
+base_url = "https://api.example.com/v1"
+api_key_env = "EXAMPLE_API_KEY"
+models = ["my-model"]
+```
+
+```toml
+[models.providers.anthropic]
+base_url = "https://api.example.com"
+api_key_env = "EXAMPLE_API_KEY"
+models = ["my-model"]
+```
+
+<Note>
+    Any features added on top of the official spec by the provider will not be captured. If the provider offers a dedicated LangChain integration package, prefer that instead.
+</Note>
+
+<Warning>
+    The OpenAI provider defaults to the [Responses API](https://platform.openai.com/docs/api-reference/responses), which most OpenAI-compatible gateways do not implement. If your provider only supports the Chat Completions API, invocation will likely fail. Disable the Responses API explicitly:
+
+    ```toml
+    [models.providers.openai.params]
+    use_responses_api = false
+    ```
+</Warning>
+
+## Arbitrary providers
+
+Deep Agents Code works with any tool calling LLM available as a [LangChain `BaseChatModel`](https://reference.langchain.com/python/langchain_core/language_models/#langchain_core.language_models.BaseChatModel). The [built-in providers](/oss/deepagents/code/providers#provider-reference) work out of the box; a less common or in-house model takes a little more setup. Point `class_path` at its `BaseChatModel` subclass and Deep Agents Code imports and instantiates the class directly.
+
+```toml
+[models.providers.my_custom]
+display_name = "My Custom Provider"
+api_key_url = "https://my-provider.example.com/keys"
+class_path = "my_package.models:MyChatModel"
+api_key_env = "MY_API_KEY"
+base_url = "https://my-endpoint.example.com"
+
+[models.providers.my_custom.params]
+temperature = 0
+max_tokens = 4096
+```
+
+`api_key_env` and `base_url` are optional. `display_name` and `api_key_url` customize the provider name and key-acquisition link shown by `/auth`; omit them to fall back to the provider config key and provider setup docs. To read the endpoint from an environment variable instead of hardcoding `base_url`, use [`base_url_env`](#provider-configuration); it then resolves and pairs with the key the same way as for the built-in providers (see [Endpoints, keys, and gateways](#endpoints-keys-and-gateways)).
+
+`class_path` providers are expected to handle their own authentication internally — useful when your model uses custom auth (JWT tokens, proprietary headers, mTLS, etc.) rather than a standard API key:
+
+```toml
+[models.providers.xyz]
+class_path = "abc.integrations.deepagents:DeepAgentsXYZChat"
+models = ["abc-xyz-1"]
+
+[models.providers.xyz.params]
+bypass_auth = true
+temperature = 0
+```
+
+With this config, switch to the model with `/model xyz:abc-xyz-1` or `--model xyz:abc-xyz-1`.
+
+<Note>
+    Deep Agents Code requires **tool calling** support. If your custom model supports tool calling but Deep Agents Code doesn't know about it, declare it in the provider profile:
+
+    ```toml
+    [models.providers.xyz.profile]
+    tool_calling = true
+    max_input_tokens = 128000
+    ```
+
+    Although optional, setting `max_input_tokens` to your model's context window is strongly encouraged. Without it, Deep Agents Code cannot show how full the context is, and auto-summarization falls back to a fixed trigger (around 170,000 tokens) instead of a fraction of your model's window. For a model with a smaller window, summarization may not run before you reach the model's hard limit, so requests start failing once the conversation grows.
+</Note>
+
+Because Deep Agents Code imports the `class_path` class at startup, the package that defines it must be importable from the same environment that runs `dcode`. Built-in providers ship as [install extras](/oss/deepagents/code/providers#quickstart), but a custom or in-house package is not one. Install it into the `dcode` environment with the `--package` flag:
+
+```bash
+dcode --install my_package --package
+```
+
+In a session, run `/install my_package --package --force`. Both install the package alongside `dcode`. If the package is missing or cannot be imported, Deep Agents Code skips the provider and its models do not appear in `/model`.
+
+When you switch to `my_custom:my-model-v1` (via `/model` or `--model`), the model name (`my-model-v1`) is passed as the `model` kwarg:
+
+```python
+MyChatModel(model="my-model-v1", base_url="...", api_key="...", temperature=0, max_tokens=4096)
+```
+
+<Warning>
+    `class_path` executes arbitrary Python code from your config file. This has the same trust model as `pyproject.toml` build scripts—you control your own machine.
+</Warning>
+
+Your provider package may optionally provide model profiles at a `_PROFILES` dict in `<package>.data._profiles` in lieu of defining them under the `models` key. See LangChain [model profiles](https://github.com/langchain-ai/langchain/tree/master/libs/model-profiles) for more info.
+
+## Endpoints, keys, and gateways
+
+An API key and the endpoint it is sent to have to match: the endpoint has to accept that key, or the request will likely fail. Deep Agents Code resolves the key and endpoint together, so overriding one updates the other to match. For example, if you replace a gateway-provisioned key with your own, Deep Agents Code also drops the gateway endpoint, so your key goes to the provider directly instead of to a gateway that would reject it.
+
+### How `base_url` resolves
+
+Deep Agents Code resolves a provider's endpoint in this order (first match wins):
+
+1. **`base_url` in `config.toml`** for the provider.
+2. **The `DEEPAGENTS_CODE_`-prefixed endpoint variable.**
+3. **The plain endpoint variable** in the environment (for example, `OPENAI_BASE_URL`).
+4. **The endpoint saved with a `/auth` credential.** This step applies the saved endpoint for a provider that has no endpoint variable—such as a provider you add without declaring [`base_url_env`](#provider-configuration). Steps 2-3 have no variable to read for these, so the saved endpoint is used directly here. For a provider that does have an endpoint variable, the saved endpoint already took effect at step 2 or 3 (it is written to that variable), so this step changes nothing. Either way, an endpoint entered in `/auth` applies.
+5. **The provider SDK's own default endpoint**, when none of the above is set.
+
+<Note>
+    Resolved endpoints are delivered to the model as the `base_url` constructor argument.
+</Note>
+
+As with API keys, the [`DEEPAGENTS_CODE_` prefix](/oss/deepagents/code/configuration#deepagents_code_-prefix) scopes the endpoint to Deep Agents Code without affecting other tools. For any other provider, declare the name with [`base_url_env`](#provider-configuration) and the endpoint resolves and pairs the same way:
+
+```toml
+[models.providers.myprovider]
+api_key_env = "MYPROVIDER_API_KEY"
+base_url_env = "MYPROVIDER_BASE_URL"
+models = ["my-model"]
+```
+
+A literal `base_url` wins over `base_url_env`, so set only the one you need:
+
+```toml
+[models.providers.myprovider]
+base_url = "https://fixed.example/v1"   # used
+base_url_env = "MYPROVIDER_BASE_URL"    # ignored while base_url is set
+```
+
+### Overrides keep the pair together
+
+When you store a key with `/auth`, the endpoint you enter (or the provider's default, if left blank) is applied together with the key. Storing a key with a blank base URL also clears any endpoint already set in your environment (for example, a gateway `OPENAI_BASE_URL` your shell exports), so your key goes to the provider's default endpoint instead of to that gateway.
+
+```bash title="Scope both the key and the endpoint to Deep Agents Code"
+DEEPAGENTS_CODE_OPENAI_API_KEY=sk-cli-only
+DEEPAGENTS_CODE_OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+### Managed gateways
+
+On a machine provisioned with a model gateway (for example, the LangSmith gateway), the gateway typically exports a gateway key and the matching endpoint variable (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, or `GOOGLE_GEMINI_BASE_URL`) together. Deep Agents Code uses that pair by default, so no configuration is needed.
+
+To use your own key instead, store it with `/auth` (leave the base URL blank for the provider default, or set it explicitly), or set the `DEEPAGENTS_CODE_` prefixed key and endpoint. Both override the gateway pair without leaving a mismatched endpoint behind.
+
+## See also
+
+- [Configuration](/oss/deepagents/code/configuration)
+- [Provider credentials](/oss/deepagents/code/credentials)
+- [Providers](/oss/deepagents/code/providers)
+- [CLI reference](/oss/deepagents/code/cli-reference)

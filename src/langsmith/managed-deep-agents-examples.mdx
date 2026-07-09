@@ -1,0 +1,127 @@
+---
+title: Managed Deep Agents example project
+sidebarTitle: Examples
+description: An annotated Managed Deep Agents project that uses tools, middleware, connectors, schedules, skills, and a sandbox.
+---
+
+import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
+import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
+
+This page walks through a complete Managed Deep Agents project: a customer-support agent that looks up data with a tool, redacts PII and logs an audit line with middleware, pauses for review before sensitive actions, runs a daily check-in on a schedule, loads a research skill on demand, and works in a managed sandbox. Use it as a reference for how the pieces fit together.
+
+<Note>
+<ManagedDeepAgentsPrivateBetaNote />
+</Note>
+
+## Project structure
+
+Every capability lives in a file whose location determines its role:
+
+```text
+support-agent/
+  agent.py | agent.ts                  # Composes model, tools, middleware, interrupts
+  instructions.md                      # Support-agent system prompt
+  tools/query_db.py | query-db.ts      # Read-only database lookup tool
+  middleware/audit.py | audit.ts       # Logs an audit line before each model call
+  connectors/mcp.py | mcp.ts           # LangChain docs MCP server
+  schedules/daily_check_in.py | daily-check-in.ts  # Daily 9am cron run
+  skills/research/SKILL.md             # On-demand research procedure
+  sandbox/index.ts | __init__.py       # Managed LangSmith sandbox
+  sandbox/setup.sh                     # Seeds workspace reference files
+```
+
+For the packaging rules behind this layout, see [How Managed Deep Agents work](/langsmith/managed-deep-agents-how-it-works#compilation) and the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference).
+
+## Compose the agent
+
+The agent entry is the wiring diagram for the project. It imports the authored tool and middleware, then declares the model, middleware order, and which tools pause for human review. The managed runtime owns backend, store, checkpointer, memory, skills, and the system prompt, so none are set here.
+
+<CodeGroup>
+
+```python agent.py
+from managed_deepagents import define_deep_agent
+from langchain.agents.middleware import PIIMiddleware
+
+from middleware.audit import audit_middleware
+from tools.query_db import query_db
+
+agent = define_deep_agent(
+    model="openai:gpt-5.5",
+    tools=[query_db],
+    middleware=[
+        PIIMiddleware("email", strategy="redact"),
+        audit_middleware(),
+    ],
+    interrupt_on={"query_db": True},
+)
+```
+
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
+import { piiMiddleware } from "langchain";
+
+import { auditMiddleware } from "./middleware/audit";
+import { queryDB } from "./tools/query-db";
+
+export const agent = defineDeepAgent({
+  model: "openai:gpt-5.5",
+  tools: [queryDB],
+  middleware: [
+    piiMiddleware("email", { strategy: "redact" }),
+    auditMiddleware(),
+  ],
+  interruptOn: {
+    query_db: true,
+  },
+});
+```
+
+</CodeGroup>
+
+`interrupt_on` (Python) and `interruptOn` (TypeScript) pause the run before the `query_db` tool executes, so a human can approve the call. For decision types and how to respond to interrupts, see [Human-in-the-loop](/langsmith/managed-deep-agents-middleware#human-in-the-loop). For the full list of fields, see the [agent definition reference](/langsmith/managed-deep-agents-cli#agent-definition-reference).
+
+## Write the instructions
+
+`instructions.md` holds the managed system prompt. It sets the agent's role, references the tools and sandbox workspace, and states memory rules:
+
+```markdown instructions.md
+# Support Agent
+
+You are a helpful, careful customer-support Deep Agent.
+
+## Role
+
+- Answer customer questions about their account and orders.
+- Use the `query_db` tool to look up data instead of guessing.
+
+## Behavior
+
+- Be concise and friendly.
+- Never expose internal database identifiers to the customer.
+- When an action would send an email, pause for human review before sending.
+```
+
+## Capabilities by file
+
+Each project file maps to a feature guide. Follow the linked page for full examples and configuration options.
+
+| File | Capability | Guide |
+| --- | --- | --- |
+| `tools/query_db.py` or `query-db.ts` | Read-only database lookup tool | [Custom tools](/langsmith/managed-deep-agents-tools) |
+| `middleware/audit.py` or `audit.ts` | Audit logging before model calls | [Custom middleware](/langsmith/managed-deep-agents-middleware) |
+| `connectors/mcp.py` or `mcp.ts` | LangChain docs MCP server | [Connect MCP tools](/langsmith/managed-deep-agents-mcp) |
+| `schedules/daily_check_in.py` or `daily-check-in.ts` | Daily 9am Pacific cron run | [Schedules](/langsmith/managed-deep-agents-schedules) |
+| `skills/research/SKILL.md` | On-demand research procedure | [Deploy an agent](/langsmith/managed-deep-agents-deploy#configure-instructions-skills-and-memory) |
+| `sandbox/` | Managed LangSmith sandbox | [Configure a sandbox](/langsmith/managed-deep-agents-deploy#configure-a-sandbox) |
+
+## Run and deploy the project
+
+<ManagedDeepAgentsTestAndDeploy />
+
+`mda deploy` compiles the project, syncs instructions and skills to Context Hub, uploads the build, and reconciles the daily schedule once the deployment is live.
+
+## See also
+
+- [Quickstart](/langsmith/managed-deep-agents-quickstart): create and deploy a first agent.
+- [Tutorial](/langsmith/managed-deep-agents-tutorial): build an agent step by step.
+- [How Managed Deep Agents work](/langsmith/managed-deep-agents-how-it-works): compilation, deploy lifecycle, and Context Hub.
