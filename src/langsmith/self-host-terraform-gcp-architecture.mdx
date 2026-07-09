@@ -4,7 +4,17 @@ sidebarTitle: Architecture
 description: Platform layers, services, Workload Identity, networking, and module dependencies for LangSmith self-hosted on GKE.
 ---
 
-This page documents what the [GCP Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/gcp) provision and how the modules wire the resulting deployment together.
+Understand what the [GCP Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/gcp) provision and how the pieces fit together, so you can size, secure, and customize your LangSmith deployment before running `make apply`.
+
+Use this page as a reference while planning a rollout or troubleshooting an existing one. It covers:
+
+- Platform layers and deployment tiers (light versus production).
+- Module descriptions and dependencies.
+- Networking, Workload Identity, and traffic flow.
+- Add-ons: LangSmith Deployment, Fleet, Insights, and Polly.
+- GCP managed services and Secret Manager integration.
+
+If you are ready to install, start with the [deployment walkthrough](/langsmith/self-host-terraform-gcp-deploy).
 
 ## Platform layers
 
@@ -108,7 +118,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 </Warning>
 
 <Note>
-[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for self-hosted deployments starting with self-hosted version 0.16.0 (see [deployment support](/langsmith/smithdb-sdk-migration#deployment-support)). These Terraform modules provision ClickHouse, so the guidance above applies to current deployments.
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [deployment support](/langsmith/smithdb-sdk-migration#deployment-support)). These Terraform modules provision ClickHouse, so the guidance in the previous sections applies to current deployments.
 </Note>
 
 ### One-time jobs
@@ -153,7 +163,7 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 - The shipped Helm values use native GCS mode (`engine: GCS`, `apiURL: https://storage.googleapis.com`), authenticated through Workload Identity with no HMAC keys.
 - An S3-compatible mode (`engine: S3`) is also supported, shown in `helm/values/examples/langsmith-values.yaml`. It requires HMAC keys: create one under Cloud Storage → Settings → Interoperability and pass them to Helm via `config.blobStorage.accessKey` and `config.blobStorage.accessKeySecret`.
 - Lifecycle rules: `ttl_s/` prefix (14 days default), `ttl_l/` prefix (400 days default).
-- Always required.
+- The GCS bucket is always required, regardless of tier.
 
 ### Secret Manager (optional module)
 
@@ -169,7 +179,7 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 | cert-manager | `cert-manager` | `k8s-bootstrap` module when `tls_certificate_source = "letsencrypt"` or `install_cert_manager = true` | Let's Encrypt TLS |
 
 <Note>
-The `Gateway` resource is managed by Terraform; the `HTTPRoute` is managed by Helm. Do not delete the Gateway resource manually. GCP releases the external IP when the Gateway is deleted, and a new IP is issued on recreate.
+The `Gateway` resource is managed by Terraform; the `HTTPRoute` is managed by Helm. Do not delete the Gateway resource manually. GCP releases the external IP when the Gateway is deleted, then issues a new IP on recreate.
 </Note>
 
 ## Workload Identity

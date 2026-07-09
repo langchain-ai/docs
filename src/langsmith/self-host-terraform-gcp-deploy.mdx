@@ -4,11 +4,16 @@ sidebarTitle: Deploy
 description: End-to-end walkthrough for provisioning LangSmith self-hosted on GCP GKE using the LangChain Terraform modules.
 ---
 
-Provision the GCP cloud foundation and install LangSmith with the public Terraform modules at [github.com/langchain-ai/terraform/tree/main/modules/gcp](https://github.com/langchain-ai/terraform/tree/main/modules/gcp). Plan for 35 to 45 minutes end to end on a clean project.
+Deploy LangSmith to GCP with the public [Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/gcp). Managing the deployment as code lets you version, review, and reproduce your LangSmith environment across projects instead of clicking through the Google Cloud console.
 
-The deployment runs in two stages: infrastructure (Terraform provisions VPC, GKE, Cloud SQL, Memorystore, GCS, Workload Identity) and application (the LangSmith chart, installed with the deploy script or the Terraform `app` layer). Add-ons are enabled with a flag and a redeploy.
+The install runs in two stages:
 
-```mermaid
+1. **Infrastructure**: Terraform provisions VPC, GKE, Cloud SQL, Memorystore, GCS, and Workload Identity.
+2. **Application**: the LangSmith chart, installed with the deploy script or the Terraform `app` layer.
+
+After the base install, enable optional add-ons by setting flags and redeploying.
+
+```mermaid actions={false}
 %%{init: {'flowchart': {'nodeSpacing': 25, 'rankSpacing': 30}}}%%
 graph TB
     subgraph stage1["Set up infrastructure"]
@@ -113,7 +118,11 @@ gcloud auth application-default login
 
 You also need a LangSmith license key ([contact sales](https://www.langchain.com/contact-sales)) and a domain or subdomain that resolves to GCP.
 
-## Rapid path
+## Quickstart
+
+<Tip>
+For a condensed cheat sheet of `make` targets, required variables, and common constraints, see the [GCP quick reference](/langsmith/self-host-terraform-gcp-quick-reference).
+</Tip>
 
 For the fastest path from zero to a running LangSmith instance, run these commands in order:
 
@@ -150,13 +159,11 @@ kubectl get gateway -n langsmith \
   -o jsonpath='{.items[0].status.addresses[0].value}'
 ```
 
-The sections below cover each phase in detail.
+The following sections cover each phase in detail.
 
 ## Provision infrastructure
 
-Provisioning the GCP cloud foundation takes 25 to 35 minutes on a clean project. Do not interrupt the apply.
-
-### What gets provisioned
+Terraform provisions the following GCP resources:
 
 | Resource | Purpose |
 |---|---|
@@ -248,6 +255,10 @@ make preflight
 
 ### Apply
 
+<Note>
+Provisioning the GCP cloud foundation takes 25 to 35 minutes on a clean project. Do not interrupt the apply.
+</Note>
+
 ```bash
 make init
 make plan
@@ -287,7 +298,13 @@ cert-manager, KEDA, and the LangSmith namespace secrets should all be in place.
 
 ## Deploy LangSmith
 
-Three paths are supported. Pick one.
+Use one of the three supported deployment paths:
+
+| Path | Command | When to use |
+|---|---|---|
+| [Script-driven Helm deploy _(recommended)_](#script-driven-helm-deploy-recommended) | `make init-values && make deploy` | Interactive output, kubeconfig refresh, preflight checks. Best for first-time deploys and day-2 re-deploys. |
+| [Terraform-managed Helm release](#terraform-managed-helm-release) | `make init-app && make apply-app` | Helm release managed in Terraform state alongside infrastructure. Best for GitOps and CI/CD pipelines. |
+| [Manual Helm install](#manual-helm-install) | `helm upgrade --install langsmith langchain/langsmith ...` | Direct `helm` usage without the wrapper scripts. Best for teams with existing Helm tooling. |
 
 ### Script-driven Helm deploy (recommended)
 
@@ -306,6 +323,8 @@ make deploy
 
 Expect 8 to 12 minutes for the chart to install and pods to become ready.
 
+If you completed the script-driven deploy, skip to [Verify and configure DNS](#verify-and-configure-dns). The following two paths are alternatives to the script-driven deploy.
+
 ### Terraform-managed Helm release
 
 Keep the entire deployment under Terraform. The `app` layer wraps the same chart and layered values files as the deploy script, managed as a `helm_release` resource.
@@ -321,6 +340,8 @@ make apply-app    # terraform apply the Helm release
 Set app-layer inputs in `app/terraform.tfvars` (`admin_email` is required; `hostname`, `chart_version`, `sizing`, and the `enable_*` flags are optional). The `app` layer uses its own variable names: `sizing` (not `sizing_profile`) and `enable_agent_deploys` (not `enable_deployments`). `make init-app` populates the infra-derived inputs (cluster, bucket, Workload Identity annotation) into `app/infra.auto.tfvars.json`.
 
 The release is applied with `wait = false` because operator-spawned agents can take 10+ minutes on a cold cluster; a passing `terraform apply` means the release was accepted, not that every pod is ready.
+
+If you completed the Terraform-managed Helm release, skip to [Verify and configure DNS](#verify-and-configure-dns). The following path is an alternative.
 
 ### Manual Helm install
 
@@ -454,7 +475,11 @@ kubectl get pods -n keda
 
 ### Fleet
 
-Fleet is the current form of the feature formerly called Agent Builder, deployed as a standalone service. Enable it with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require LangSmith Deployment. Terraform provisions a dedicated `fleet` database on Cloud SQL and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing Cloud SQL and Memorystore instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
+<Note>
+Fleet is the current form of the feature formerly called Agent Builder, deployed as a standalone service (chart v0.15+).
+</Note>
+
+You can enable Fleet with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require LangSmith Deployment. Terraform provisions a dedicated `fleet` database on Cloud SQL and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing Cloud SQL and Memorystore instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
 
 <Note>
 Fleet requires the LangSmith Helm chart `>=0.15.0` and the Agent Builder or Fleet entitlement in your license.

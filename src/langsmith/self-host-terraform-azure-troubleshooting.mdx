@@ -10,9 +10,11 @@ This page documents common issues, fixes, and diagnostic commands for LangSmith 
 Before upgrading, review the [LangSmith self-hosted changelog](/langsmith/self-hosted-changelog) for breaking changes and required variable updates. Run `az aks get-credentials --name <cluster> --resource-group <rg>` before running any `kubectl` commands.
 </Tip>
 
+For a copy-paste reference of the `kubectl`, `helm`, and `az` calls used throughout this page, skip to [Diagnostic commands](#diagnostic-commands).
+
 ## Infrastructure stage
 
-### `K8sVersionNotSupported` — version is LTS-only
+### `K8sVersionNotSupported`: version is LTS-only
 
 **Symptom**
 
@@ -36,14 +38,14 @@ Remove or update any `kubernetes_version` pin in `terraform.tfvars`, then `make 
 
 ### vCPU quota exceeded
 
-**Symptom — autoscaler backoff (pods Pending):**
+**Symptom (autoscaler backoff, pods Pending):**
 
 ```
 Warning  FailedScheduling     pod/langsmith-backend-xxx  0/1 nodes are available: 1 Too many pods.
 Normal   NotTriggerScaleUp    pod/langsmith-backend-xxx  pod didn't trigger scale-up: 2 in backoff after failed scale-up
 ```
 
-**Symptom — node pool rotation:**
+**Symptom (node pool rotation):**
 
 ```
 Error: creating temporary Agent Pool ... "code": "ErrCode_InsufficientVCPUQuota",
@@ -99,21 +101,21 @@ Error: updating Key Vault "langsmith-kv-dz":
 once Purge Protection has been Enabled it's not possible to disable it
 ```
 
-**Cause:** When a Key Vault is deleted via `terraform destroy`, Azure soft-deletes it for 90 days. The next `terraform apply` with the same name silently recovers the old Key Vault — including its original `purge_protection_enabled = true`. Purge protection is one-way (enabled → cannot be disabled).
+**Cause:** When a Key Vault is deleted via `terraform destroy`, Azure soft-deletes it for 90 days. The next `terraform apply` with the same name silently recovers the old Key Vault, including its original `purge_protection_enabled = true`. Purge protection is one-way (enabled → cannot be disabled).
 
-**Fix — accept purge protection (test environments):**
+**Fix (accept purge protection, test environments):**
 
 ```hcl
 keyvault_purge_protection = true
 ```
 
-**Fix — need `purge_protection = false`:**
+**Fix (`purge_protection = false` required):**
 
 ```bash
 # 1. Remove KV from Terraform state (does not delete from Azure)
 terraform -chdir=infra state rm module.keyvault.azurerm_key_vault.langsmith
 
-# 2. Permanently purge the soft-deleted KV (irreversible!)
+# 2. Permanently purge the soft-deleted KV (irreversible)
 az keyvault purge --name langsmith-kv<identifier> --location eastus
 
 # 3. Re-apply
@@ -151,7 +153,7 @@ terraform apply
 
 ## Application stage
 
-### `dns_label` subdomain not resolving — TLS cert stuck pending
+### `dns_label` subdomain not resolving: TLS cert stuck pending
 
 **Symptom:** `nslookup langsmith-demo.eastus.cloudapp.azure.com` returns NXDOMAIN. The cert-manager ACME challenge cannot complete; TLS certificate stays `READY: False`.
 
@@ -171,11 +173,11 @@ nslookup <dns_label>.eastus.cloudapp.azure.com
 kubectl delete certificate langsmith-tls -n langsmith
 ```
 
-### `istio-addon` — port 80/443 timeout, TLS handshake reset
+### `istio-addon`: port 80/443 timeout, TLS handshake reset
 
 **Symptom:** Site unreachable after `make deploy` with `ingress_controller = "istio-addon"`. Port 80 times out, port 443 resets. ACME challenge stays `pending`.
 
-**Cause — three compounding issues:**
+**Causes (three compounding issues):**
 
 1. **Wrong gateway label.** Kubernetes Ingress with `ingressClassName: istio` targets pods with label `istio: ingressgateway`. The AKS managed external gateway uses `istio: aks-istio-ingressgateway-external`.
 2. **`ClusterIssuer` created with `class: nginx`.** The ACME HTTP-01 solver ingress gets class `nginx`, not `istio`.
@@ -189,7 +191,7 @@ kubectl delete certificate langsmith-tls -n langsmith
 
 **Cause:** For `tls_certificate_source = "letsencrypt"` (HTTP-01), the `letsencrypt-prod` ClusterIssuer is created by `apply-cluster-issuers.sh`, which `make deploy` runs via `kubectl apply`. The Terraform `k8s-bootstrap` module does not create the HTTP-01 issuer; it creates the issuer only for `dns01`. Running `helm upgrade` directly instead of `make deploy` skips the issuer.
 
-**Fix — apply manually:**
+**Manual fix:**
 
 ```bash
 kubectl apply -f - <<EOF
@@ -212,7 +214,7 @@ EOF
 kubectl delete certificate langsmith-tls -n langsmith
 ```
 
-### `database "langsmith" does not exist` — backend pods crashlooping
+### `database "langsmith" does not exist`: backend pods crashlooping
 
 **Symptom:** Backend pods crash immediately: `FATAL: database "langsmith" does not exist`.
 
@@ -285,7 +287,7 @@ make deploy
 
 **Symptom:** Polly chat widget shows connection error. Browser console: `POST http://localhost:8123/threads net::ERR_FAILED` and CORS error.
 
-**Cause A — Frontend started before `langsmith-polly-config` was created.** The bootstrap job creates the ConfigMap with `VITE_POLLY_DEPLOYMENT_URL` after Polly is registered. Env vars from ConfigMap load at pod start, not dynamically.
+**Cause A, frontend started before `langsmith-polly-config` was created.** The bootstrap job creates the ConfigMap with `VITE_POLLY_DEPLOYMENT_URL` after Polly is registered. Env vars from ConfigMap load at pod start, not dynamically.
 
 **Fix**
 
@@ -295,7 +297,7 @@ kubectl exec -n langsmith deploy/langsmith-frontend -- env | grep POLLY
 # expect: VITE_POLLY_DEPLOYMENT_URL=https://<hostname>/lgp/smith-polly-<hash>
 ```
 
-**Cause B — `LANGCHAIN_ENDPOINT` set in `polly.agent.extraEnv`.** `LANGCHAIN_ENDPOINT` is reserved. Setting it causes the bootstrap job to fail with `400 Bad Request: 'LANGCHAIN_ENDPOINT' is reserved`. Polly is never created.
+**Cause B, `LANGCHAIN_ENDPOINT` set in `polly.agent.extraEnv`.** `LANGCHAIN_ENDPOINT` is reserved. Setting it causes the bootstrap job to fail with `400 Bad Request: 'LANGCHAIN_ENDPOINT' is reserved`. Polly is never created.
 
 **Fix:** Remove the `polly.agent.extraEnv` block entirely. The operator injects `LANGCHAIN_ENDPOINT` automatically.
 
@@ -308,7 +310,7 @@ kubectl exec -n langsmith deploy/langsmith-frontend -- env | grep POLLY
 ```yaml
 config:
   deployment:
-    enabled: true          # required — url alone is not enough
+    enabled: true          # required; url alone is not enough
     url: "https://<your-hostname>"
 ```
 
@@ -441,7 +443,7 @@ make deploy
 
 ## AGIC (Application Gateway Ingress Controller)
 
-### AGIC pod CrashLoopBackOff — 403 on AGW GET
+### AGIC pod CrashLoopBackOff: 403 on AGW GET
 
 **Symptom:** `ingress-appgw-deployment` is CrashLoopBackOff. Logs: `ErrorApplicationGatewayForbidden: does not have authorization to perform action Microsoft.Network/applicationGateways/read`.
 
@@ -456,7 +458,7 @@ kubectl delete pod -n kube-system -l app=ingress-azure
 
 For manual role assignments (Reader on RG, Contributor on AGW, Network Contributor on VNet), see the [TROUBLESHOOTING.md source](https://github.com/langchain-ai/terraform/blob/main/modules/azure/TROUBLESHOOTING.md#agic-pod-crashloopbackoff--403-on-agw-get).
 
-### AGIC — `ApplicationGatewayInsufficientPermissionOnSubnet`
+### AGIC: `ApplicationGatewayInsufficientPermissionOnSubnet`
 
 **Cause:** AGIC add-on identity missing Network Contributor on the VNet.
 
@@ -473,7 +475,7 @@ az role assignment create --role "Network Contributor" --scope "$VNET_ID" \
 kubectl rollout restart deployment/ingress-appgw-deployment -n kube-system
 ```
 
-### AGIC — `SecretNotFound` for TLS secret
+### AGIC: `SecretNotFound` for TLS secret
 
 **Cause:** AGIC saw the Ingress before cert-manager issued the TLS certificate.
 
@@ -484,7 +486,7 @@ kubectl get certificate langsmith-tls -n langsmith   # verify cert is ready
 kubectl annotate ingress langsmith-ingress -n langsmith touch="$(date +%s)" --overwrite
 ```
 
-### AGIC — `ingressClassName: azure/application-gateway` rejected
+### AGIC rejects `ingressClassName: azure/application-gateway`
 
 **Cause:** The legacy annotation `kubernetes.io/ingress.class: azure/application-gateway` (with slash) is not a valid `ingressClassName`. AKS creates the `IngressClass` as `azure-application-gateway` (hyphen).
 
@@ -502,7 +504,7 @@ kubectl annotate ingress langsmith-ingress -n langsmith touch="$(date +%s)" --ov
 2. `istio` IngressClass resource missing.
 3. `meshConfig.ingressClass` not set to `istio`.
 
-**Fix:** All three are automated — `meshConfig` is set in the istiod Helm release (Terraform), `deploy.sh` creates the IngressClass. Manual fix: create the IngressClass and restart istiod.
+**Fix:** All three are automated. `meshConfig` is set in the istiod Helm release (Terraform), and `deploy.sh` creates the IngressClass. Manual fix: create the IngressClass and restart istiod.
 
 ### Istio HTTPS returns "no peer certificate available"
 

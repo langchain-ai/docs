@@ -4,7 +4,17 @@ sidebarTitle: Architecture
 description: Platform layers, services, Workload Identity, networking, ingress options, and module dependencies for LangSmith self-hosted on AKS.
 ---
 
-This page documents what the [Azure Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/azure) provision and how the modules wire the resulting deployment together.
+Understand what the [Azure Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/azure) provision and how the pieces fit together, so you can size, secure, and customize your LangSmith deployment before running `make apply`.
+
+Use this page as a reference while planning a rollout or troubleshooting an existing one. It covers:
+
+- Platform layers and deployment tiers (light versus production).
+- Application deployment paths (Helm versus Terraform).
+- Networking, Workload Identity, and secret flow.
+- Add-ons: LangSmith Deployment, Agent Builder, Insights, and Polly.
+- Ingress controllers, resource sizing, and optional modules.
+
+If you are ready to install, start with the [deployment walkthrough](/langsmith/self-host-terraform-azure-deploy).
 
 ## Platform layers
 
@@ -93,7 +103,7 @@ langsmith-vnet<identifier>
 └── subnet-redis          (Azure Managed Redis)
 ```
 
-All subnets are private. Postgres and Redis are accessible only from within the VNet via private DNS resolution. No public endpoints.
+All subnets are private. Postgres and Redis have no public endpoints; both are accessible only from within the VNet via private DNS resolution.
 
 ## Application core services
 
@@ -113,7 +123,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 </Warning>
 
 <Note>
-[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for self-hosted deployments starting with self-hosted version 0.16.0 (see [deployment support](/langsmith/smithdb-sdk-migration#deployment-support)). These Terraform modules provision ClickHouse, so the guidance above applies to current deployments.
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [deployment support](/langsmith/smithdb-sdk-migration#deployment-support)). These Terraform modules provision ClickHouse, so the guidance in the previous sections applies to current deployments.
 </Note>
 
 ### One-time jobs
@@ -219,7 +229,7 @@ Every pod that reads blob storage env vars must have:
 
 All federated credentials are registered in `modules/k8s-cluster/main.tf` under `service_accounts_for_workload_identity`. Adding a new pod that accesses blob storage requires adding its ServiceAccount name to that list and running `terraform apply -target=module.aks`.
 
-### What breaks without it
+If a pod's ServiceAccount has no registered federated credential, Azure AD rejects the token exchange and the pod panics on startup:
 
 ```txt
 panic: blob-storage health-check failed: get container properties failed:
@@ -227,8 +237,6 @@ DefaultAzureCredential: failed to acquire a token.
 WorkloadIdentityCredential authentication failed.
   AADSTS700213: No matching federated identity record found for presented assertion subject
 ```
-
-The pod panics on startup: the ServiceAccount has no registered federated credential so Azure AD rejects the token exchange.
 
 ## Secret flow
 

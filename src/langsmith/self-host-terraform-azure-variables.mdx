@@ -4,7 +4,14 @@ sidebarTitle: Variables
 description: Complete reference of Terraform variables for LangSmith self-hosted on Azure AKS.
 ---
 
-Reference for every input variable exposed by the [Azure Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/azure). Set non-sensitive variables in `infra/terraform.tfvars`. For sensitive variables (license key, passwords, encryption keys), `make setup-env` writes them to `infra/secrets.auto.tfvars` (gitignored, auto-loaded by Terraform) and Terraform stores them in Azure Key Vault.
+Complete reference for every input variable exposed by the [Azure Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/azure). Use it while filling in `terraform.tfvars` for the first time or tuning an existing deployment.
+
+Variables come in two categories:
+
+- **Non-sensitive** (region, sizing, feature flags): set in `infra/terraform.tfvars`.
+- **Sensitive** (license key, passwords, encryption keys): set with `make setup-env`, which writes them to `infra/secrets.auto.tfvars` (gitignored, auto-loaded by Terraform) and stores them in Azure Key Vault.
+
+For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-terraform-azure-deploy). For how the modules fit together, refer to the [architecture reference](/langsmith/self-host-terraform-azure-architecture).
 
 ## Core
 
@@ -36,9 +43,9 @@ Reference for every input variable exposed by the [Azure Terraform modules](http
 |---|---|---|---|
 | `default_node_pool_vm_size` | `Standard_D8s_v3` | no | VM size for the default node pool. `Standard_D8s_v3` (8 vCPU / 32 GiB) is the recommended baseline for the core platform with external Postgres and Redis. Use `Standard_D4s_v3` (4 vCPU / 16 GiB) only for light or demo deployments with in-cluster databases. |
 | `default_node_pool_min_count` | `1` | no | Minimum node count for the default pool. The autoscaler never scales below this floor. Set to 3 for production (the core platform needs about 14.4 vCPU, which three `Standard_D8s_v3` nodes cover). Set to 1 for minimum or dev deployments. |
-| `default_node_pool_max_count` | `10` | no | Maximum node count for the default pool. Core platform uses 4 to 6 nodes; add headroom as you enable add-ons (LangGraph Platform Deployments ~6, Agent Builder ~8, Insights 10 to 12). Raising this takes effect immediately with no node restarts. |
+| `default_node_pool_max_count` | `10` | no | Maximum node count for the default pool. Core platform uses 4 to 6 nodes; add headroom as you enable add-ons (LangSmith Deployment ~6, Agent Builder ~8, Insights 10 to 12). Raising this takes effect immediately with no node restarts. |
 | `default_node_pool_max_pods` | `60` | no | Maximum pods per node in the default pool. The Azure CNI default of 30 is too low for LangSmith; 60 fits a full deployment on a single node. Immutable: changing it recreates the node pool. |
-| `additional_node_pools` | `large: Standard_D16s_v3, 0–2` | no | Additional node pools. The default `large` pool (`Standard_D16s_v3`, 16 vCPU / 64 GiB) is required for ClickHouse (requests 3.5 vCPU / 15 GiB) and LangGraph Platform agent pods. `min_count = 0` scales it to zero when idle. Raise `max_count` to 3 or more for Agent Builder with multiple simultaneous deployments. |
+| `additional_node_pools` | `large: Standard_D16s_v3, 0–2` | no | Additional node pools. The default `large` pool (`Standard_D16s_v3`, 16 vCPU / 64 GiB) is required for ClickHouse (requests 3.5 vCPU / 15 GiB) and LangSmith Deployment agent pods. `min_count = 0` scales it to zero when idle. Raise `max_count` to 3 or more for Agent Builder with multiple simultaneous deployments. |
 | `aks_service_cidr` | `10.0.64.0/20` | no | Kubernetes service CIDR. Must not overlap the VNet. |
 | `aks_dns_service_ip` | `10.0.64.10` | no | CoreDNS service IP. Must be within `aks_service_cidr`. |
 | `aks_deletion_protection` | `true` | no | Prevent accidental AKS cluster deletion. Set `false` for dev/test. |
@@ -126,7 +133,7 @@ Reference for every input variable exposed by the [Azure Terraform modules](http
 | Variable | Default | Required | Description |
 |---|---|---|---|
 | `sizing_profile` | `production` | no | Helm sizing overlay: `minimum`, `dev`, `production`, or `production-large`. |
-| `enable_deployments` | `false` | no | Enable LangGraph Platform Deployments (host-backend, listener, operator). |
+| `enable_deployments` | `false` | no | Enable LangSmith Deployment (host-backend, listener, operator). |
 | `enable_agent_builder` | `false` | no | Enable Agent Builder UI. Requires `enable_deployments = true`. |
 | `enable_insights` | `false` | no | Enable Insights (ClickHouse-backed analytics). Requires `enable_deployments = true`. |
 | `enable_polly` | `false` | no | Enable Polly (AI evaluation and monitoring). Requires `enable_deployments = true`. |
@@ -156,14 +163,14 @@ Reference for every input variable exposed by the [Azure Terraform modules](http
 | `langsmith_admin_password` | Initial org admin password. |
 | `langsmith_api_key_salt` | Salt for hashing API keys. Must stay stable after first deploy. |
 | `langsmith_jwt_secret` | JWT secret for Basic Auth sessions. Must stay stable. |
-| `langsmith_deployments_encryption_key` | Fernet key for LangGraph Platform Deployments. Must never change. |
+| `langsmith_deployments_encryption_key` | Fernet key for LangSmith Deployment. Must never change. |
 | `langsmith_agent_builder_encryption_key` | Fernet key for Agent Builder. Must never change. |
 | `langsmith_insights_encryption_key` | Fernet key for Insights. Must never change. |
 | `langsmith_polly_encryption_key` | Fernet key for Polly. Must never change. |
 
 ## App module variables (Terraform path)
 
-The Terraform path (`make init-app` then `make apply-app`) manages the LangSmith Helm release, its Kubernetes Secret, and the Workload Identity ServiceAccount in Terraform state instead of through the Helm shell scripts. Its variables live in `app/terraform.tfvars`. Use this path as an alternative to `make init-values && make deploy`. See the [Azure deployment guide](/langsmith/self-host-terraform-azure-deploy) for when to choose it.
+The Terraform path (`make init-app` then `make apply-app`) manages the LangSmith Helm release, its Kubernetes Secret, and the Workload Identity ServiceAccount in Terraform state instead of through the Helm shell scripts. Its variables live in `app/terraform.tfvars`. Use this path as an alternative to `make init-values && make deploy`. For when to choose this path, refer to the [Azure deployment guide](/langsmith/self-host-terraform-azure-deploy).
 
 `make init-app` auto-populates the infrastructure passthrough variables (`subscription_id`, `resource_group_name`, `cluster_name`, `keyvault_name`, `storage_account_name`, `storage_container_name`, `workload_identity_client_id`, `langsmith_namespace`, `tls_certificate_source`, `ingress_controller`, and `dns_label`) from the infra module outputs. Each defaults to `null` and fails at plan time with a precondition error naming what is missing. Override them only when running the app module against infrastructure you provisioned separately.
 
@@ -180,7 +187,7 @@ Set the following in `app/terraform.tfvars`:
 | `chart_version` | `""` | no | LangSmith Helm chart version. Empty uses the latest. |
 | `helm_timeout` | `1200` | no | Helm install and upgrade timeout in seconds. |
 | `helm_force_update` | `false` | no | Force a Helm upgrade on every apply, even when values are unchanged. |
-| `enable_agent_deploys` | `false` | no | Enable LangGraph Platform Deployments. |
+| `enable_agent_deploys` | `false` | no | Enable LangSmith Deployment. |
 | `enable_agent_builder` | `false` | no | Enable Agent Builder. Requires `enable_agent_deploys = true`. |
 | `enable_insights` | `false` | no | Enable Insights. Requires external ClickHouse. |
 | `enable_polly` | `false` | no | Enable Polly AI evaluation and monitoring. Requires `enable_agent_deploys = true`. |

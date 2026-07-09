@@ -4,11 +4,16 @@ sidebarTitle: Deploy
 description: End-to-end walkthrough for provisioning LangSmith self-hosted on AWS EKS using the LangChain Terraform modules.
 ---
 
-Provision the AWS cloud foundation and install LangSmith with the public Terraform modules at [github.com/langchain-ai/terraform/tree/main/modules/aws](https://github.com/langchain-ai/terraform/tree/main/modules/aws). Plan for 30 to 40 minutes end to end on a clean account.
+Deploy LangSmith to AWS with the public [Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/aws). Managing the deployment as code lets you version, review, and reproduce your LangSmith environment across accounts instead of clicking through the AWS Console.
 
-The deployment runs in two stages: infrastructure (Terraform provisions VPC, EKS, RDS, ElastiCache, S3, IAM) and application (Helm installs the LangSmith chart against the cluster). Add-ons are enabled with a flag and a redeploy.
+The install runs in two stages:
 
-```mermaid
+1. **Infrastructure**: Terraform provisions VPC, EKS, RDS, ElastiCache, S3, and IAM.
+2. **Application**: Helm installs the LangSmith chart against the cluster.
+
+After the base install, enable optional add-ons by setting flags and redeploying.
+
+```mermaid actions={false}
 %%{init: {'flowchart': {'nodeSpacing': 25, 'rankSpacing': 30}}}%%
 graph TB
     subgraph stage1["Set up infrastructure"]
@@ -131,13 +136,17 @@ Two independent settings control capacity:
 - **Infrastructure capacity** sets instance types and node counts directly through the infra variables `eks_managed_node_groups`, `postgres_instance_type`, and `redis_instance_type`. The module defaults are one `m5.4xlarge` node group (min 3, max 10), `db.t3.large` for RDS, and `cache.m6g.xlarge` for ElastiCache.
 - **`sizing_profile`** selects the Helm sizing overlay (pod resource requests and limits). `init-values.sh` and `deploy.sh` read it; Terraform does not.
 
-Size the infrastructure for your target tier before deploying. See [Scaling guidance](/langsmith/self-host-scale) for per-tier recommendations.
+Size the infrastructure for your target tier before deploying. For per-tier recommendations, refer to [Scaling guidance](/langsmith/self-host-scale).
 
 <Note>
 For production workloads, also plan to provision external [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse) or a self-managed external ClickHouse cluster. In-cluster ClickHouse is supported for dev/POC only.
 </Note>
 
-## Rapid path
+## Quickstart
+
+<Tip>
+For a condensed cheat sheet of `make` targets, required variables, and common constraints, see the [AWS quick reference](/langsmith/self-host-terraform-aws-quick-reference).
+</Tip>
 
 For the fastest path from zero to a running LangSmith instance, run these commands in order:
 
@@ -180,13 +189,11 @@ make quickdeploy-auto     # non-interactive, auto-approves terraform
 
 `make quickdeploy` runs `terraform apply` → `kubeconfig` → `init-values` → `helm deploy` in sequence. If any step fails, the command exits with instructions for resuming from that step.
 
-The sections below cover each phase in detail.
+The following sections cover each phase in detail.
 
 ## Provision infrastructure
 
-Provisioning the AWS cloud foundation takes 20 to 25 minutes on a clean account. Do not interrupt the apply.
-
-### What gets provisioned
+Terraform provisions the following AWS resources:
 
 | Resource | Purpose |
 |---|---|
@@ -286,6 +293,10 @@ make secrets
 
 ### Apply
 
+<Note>
+Provisioning the AWS cloud foundation takes 20 to 25 minutes on a clean account. Do not interrupt the apply.
+</Note>
+
 ```bash
 make init
 make plan
@@ -338,6 +349,8 @@ kubectl get ingress -n langsmith
 ```
 
 When all pods are `Running` and the ingress shows the ALB DNS name, the deployment is ready. Use the domain you configured in `langsmith_domain` (or the ALB DNS name) to reach the UI.
+
+If you completed the script-driven deploy, you are done. The following section is an alternative deployment path, not an additional step.
 
 ### Terraform-managed Helm deploy
 
@@ -401,7 +414,13 @@ For details on each add-on, see [LangSmith Deployment](/langsmith/deploy-self-ho
 
 ### Fleet
 
-Fleet is the current form of the feature formerly called Agent Builder, deployed as a standalone service (chart v0.15+). Enable it with `enable_fleet`. On AWS it requires `enable_deployments = true`, because the Fleet chat UI resolves OAuth provider and token connections through the host-backend that ships with LangSmith Deployment. It also requires external Postgres and Redis (`postgres_source = "external"` and `redis_source = "external"`). Terraform creates a dedicated `langsmith_fleet` database on RDS and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing RDS and ElastiCache instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
+<Note>
+Fleet is the current form of the feature formerly called Agent Builder, deployed as a standalone service (chart v0.15+).
+</Note>
+
+You can enable Fleet with `enable_fleet`. On AWS, it requires `enable_deployments = true`, because the Fleet chat UI resolves OAuth provider and token connections through the host-backend that ships with LangSmith Deployment. It also requires external Postgres and Redis (`postgres_source = "external"` and `redis_source = "external"`).
+
+Terraform creates a dedicated `langsmith_fleet` database on RDS and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing RDS and ElastiCache instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
 
 <Note>
 Fleet requires the LangSmith Helm chart `>=0.15.0` and the Agent Builder or Fleet entitlement in your license.

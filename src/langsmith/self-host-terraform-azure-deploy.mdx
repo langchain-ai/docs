@@ -4,11 +4,16 @@ sidebarTitle: Deploy
 description: End-to-end walkthrough for provisioning LangSmith self-hosted on Azure AKS using the LangChain Terraform modules.
 ---
 
-Provision the Azure cloud foundation and install LangSmith with the public Terraform modules at [github.com/langchain-ai/terraform/tree/main/modules/azure](https://github.com/langchain-ai/terraform/tree/main/modules/azure). Plan for 40 to 50 minutes end to end on a clean subscription.
+Deploy LangSmith to Azure with the public [Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/azure). Managing the deployment as code lets you version, review, and reproduce your LangSmith environment across subscriptions instead of clicking through the Azure Portal.
 
-The deployment runs in two stages: infrastructure (Terraform provisions AKS, Postgres, Redis, Blob Storage, Key Vault, cert-manager, KEDA, ingress) and application (Helm installs the LangSmith chart against the cluster). Three add-ons (LangSmith Deployment, Agent Builder, Insights and Polly) are enabled with flags and a redeploy.
+The install runs in two stages:
 
-```mermaid
+1. **Infrastructure**: Terraform provisions AKS, Postgres, Redis, Blob Storage, Key Vault, cert-manager, KEDA, and ingress.
+2. **Application**: Helm installs the LangSmith chart against the cluster.
+
+After the base install, enable three optional add-ons (LangSmith Deployment, Agent Builder, and Insights and Polly) by setting flags and redeploying.
+
+```mermaid actions={false}
 %%{init: {'flowchart': {'nodeSpacing': 25, 'rankSpacing': 30}}}%%
 graph TB
     subgraph stage1["Set up infrastructure"]
@@ -85,7 +90,11 @@ az account show
 
 You also need a LangSmith license key ([contact sales](https://www.langchain.com/contact-sales)) and either a `dns_label` (Azure subdomain, no DNS setup needed) or a custom `langsmith_domain`.
 
-## Rapid path
+## Quickstart
+
+<Tip>
+For a condensed cheat sheet of `make` targets, required variables, and common constraints, see the [Azure quick reference](/langsmith/self-host-terraform-azure-quick-reference).
+</Tip>
 
 For the fastest path from zero to a running LangSmith instance:
 
@@ -122,13 +131,11 @@ Or run steps 5 through 7 in one shot:
 make deploy-all   # apply → kubeconfig → k8s-secrets → init-values → deploy
 ```
 
-The sections below cover each phase in detail.
+The following sections cover each phase in detail.
 
 ## Provision infrastructure
 
-Provisioning the Azure cloud foundation takes 15 to 20 minutes on a clean subscription. Do not interrupt the apply.
-
-### What gets provisioned
+Terraform provisions the following Azure resources:
 
 | Resource | Type | Purpose |
 |---|---|---|
@@ -159,7 +166,7 @@ Generate `terraform.tfvars` with the interactive wizard:
 make quickstart
 ```
 
-The wizard runs a 10-section questionnaire covering profile, subscription, naming, networking, AKS sizing, ingress controller, DNS/TLS, backend services, Key Vault, sizing profile, and security add-ons. Each section includes explanatory context, cost estimates, and trade-offs. Re-running is safe; existing values are preselected at each prompt, press Enter to keep them.
+The wizard runs a 10-section questionnaire covering profile, subscription, naming, networking, AKS sizing, ingress controller, DNS/TLS, backend services, Key Vault, sizing profile, and security add-ons. Each section includes explanatory context, cost estimates, and trade-offs. Re-running is safe; existing values are preselected at each prompt. Press Enter to keep them.
 
 Prefer manual editing:
 
@@ -211,7 +218,7 @@ For all variables, see the [Azure variables reference](/langsmith/self-host-terr
 make setup-env
 ```
 
-`setup-env.sh` writes `infra/secrets.auto.tfvars` (gitignored, `chmod 600`). Terraform picks this file up automatically, no shell exports needed.
+`setup-env.sh` writes `infra/secrets.auto.tfvars` (gitignored, `chmod 600`). Terraform picks this file up automatically; no shell exports needed.
 
 - **First run:** prompts for PostgreSQL password, LangSmith license key, admin password, and admin email. Generates `api_key_salt`, `jwt_secret`, and four Fernet encryption keys locally.
 - **Subsequent runs:** reads the six generated secrets (`api_key_salt`, `jwt_secret`, and the four Fernet keys) from Azure Key Vault. Re-prompts for the PostgreSQL password, license key, admin password, and admin email unless `LANGSMITH_PG_PASSWORD`, `LANGSMITH_LICENSE_KEY`, `LANGSMITH_ADMIN_PASSWORD`, and `LANGSMITH_ADMIN_EMAIL` are set in the environment.
@@ -229,6 +236,10 @@ make preflight
 Validates Azure CLI auth, the active subscription, 11 required resource providers, RBAC (Contributor + User Access Administrator), `terraform.tfvars` and `secrets.auto.tfvars` presence, and `terraform`/`kubectl`/`helm` on PATH.
 
 ### Apply
+
+<Note>
+Provisioning the Azure cloud foundation takes 15 to 20 minutes on a clean subscription. Do not interrupt the apply.
+</Note>
 
 ```bash
 make init
@@ -280,7 +291,7 @@ terraform -chdir=infra output -raw storage_account_k8s_managed_identity_client_i
 
 ## Deploy LangSmith
 
-Two deployment paths are supported. Pick one.
+Use one of the two supported deployment paths:
 
 | Path | Command | When to use |
 |---|---|---|
@@ -318,14 +329,14 @@ The admin email is read from `langsmith_admin_email` in `terraform.tfvars` (set 
 make deploy   # ~10 min
 ```
 
-`make deploy` handles:
+`make deploy` does the following:
 
 1. Validates `values-overrides.yaml` exists.
 2. Refreshes kubeconfig via `az aks get-credentials`.
 3. Annotates the LoadBalancer service with `service.beta.kubernetes.io/azure-dns-label-name`, required for Azure to assign the DNS label to the public IP.
 4. Creates the `letsencrypt-prod` cert-manager `ClusterIssuer` if `tls_certificate_source = "letsencrypt"` (idempotent).
 5. Runs preflight checks (tools, cluster connectivity, Helm repo).
-6. Verifies `langsmith-config-secret` exists; auto-creates from Key Vault if missing.
+6. Verifies `langsmith-config-secret` exists; auto-creates from Key Vault if it is missing.
 7. Builds and logs the values chain.
 8. Auto-recovers any stuck `pending-upgrade` Helm release before proceeding.
 9. Runs `helm upgrade --install langsmith langchain/langsmith --timeout 20m`.
@@ -349,6 +360,8 @@ watch kubectl get pods -n langsmith
 while true; do clear; kubectl get pods -n langsmith; sleep 3; done
 ```
 </Tip>
+
+If you completed the Helm path, skip to [Verify the deployment](#verify-the-deployment). The following Terraform path is an alternative to the Helm path, not an additional step.
 
 ### Terraform path
 
@@ -453,7 +466,7 @@ Each add-on is gated by a flag in `infra/terraform.tfvars`. Set the flag, re-run
 
 ### LangSmith Deployment
 
-Enables [LangSmith Deployment](/langsmith/deploy-self-hosted-full-platform), which lets you deploy and manage LangGraph graphs as API servers directly from the LangSmith UI. Adds three new pods.
+Enables [LangSmith Deployment](/langsmith/deploy-self-hosted-full-platform), which lets you deploy and manage agents as API servers directly from the [LangSmith UI](https://smith.langchain.com). This adds three new pods.
 
 | Pod | Role | Workload Identity |
 |---|---|---|
@@ -495,11 +508,11 @@ config:
 ```
 
 <Warning>
-**`config.deployment.url` must include `https://`.** Missing the protocol causes operator-deployed agents to stay stuck in `DEPLOYING` state indefinitely. The URL is injected automatically by `make init-values`, do not set it manually in the overlay file; it will be overwritten.
+**`config.deployment.url` must include `https://`.** Missing the protocol causes operator-deployed agents to stay stuck in `DEPLOYING` state indefinitely. The URL is injected automatically by `make init-values`. Do not set it manually in the overlay file; it is overwritten on the next run.
 </Warning>
 
 <Warning>
-**`config.deployment.enabled: true` is required.** Setting only `config.deployment.url` without `enabled: true` causes the chart to silently skip creating `listener` and `operator`. No error, they just never appear.
+**`config.deployment.enabled: true` is required.** Setting only `config.deployment.url` without `enabled: true` causes the chart to silently skip creating `listener` and `operator`. No error, they never appear.
 </Warning>
 
 #### Verify
@@ -521,7 +534,7 @@ KEDA is already installed alongside infrastructure. With `enable_deployments = t
 
 ### Agent Builder
 
-Provides visual AI-assisted creation and management of LangGraph agents from the LangSmith UI. No `terraform apply` needed; just `make init-values && make deploy`.
+Provides visual AI-assisted creation and management of LangGraph agents from the LangSmith UI. No `terraform apply` needed; run `make init-values && make deploy`.
 
 **Prerequisite:** LangSmith Deployment enabled (`enable_deployments = true`). Enabling Agent Builder without it causes a preflight error.
 
@@ -584,7 +597,7 @@ Two features, both of which require LangSmith Deployment. They are independent o
 - **Insights:** AI-powered trace analytics (Clio). Surfaces patterns and anomalies in LangSmith traces. Clio deploys as a dynamic LangGraph deployment through the operator on first UI invocation. Adds no new static pods.
 - **Polly:** AI-powered evaluation and monitoring agent. Runs as a dynamic LangGraph deployment, operator-managed. The overlay enables Polly (top-level `polly.enabled: true`); the operator manages its resources.
 
-No `terraform apply` needed; just `make init-values && make deploy`.
+No `terraform apply` needed; run `make init-values && make deploy`.
 
 ```hcl
 # infra/terraform.tfvars
@@ -593,7 +606,7 @@ enable_insights    = true    # Insights / Clio analytics
 enable_polly       = true    # Polly AI evaluation agent
 ```
 
-Enable just one:
+Enable one:
 
 ```hcl
 enable_insights = true    # Insights only

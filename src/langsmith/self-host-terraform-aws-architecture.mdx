@@ -4,7 +4,17 @@ sidebarTitle: Architecture
 description: Platform layers, services, IRSA roles, networking, and module dependencies for LangSmith self-hosted on AWS EKS.
 ---
 
-This page documents what the [AWS Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/aws) provision and how the modules wire the resulting deployment together.
+Understand what the [AWS Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/aws) provision and how the pieces fit together, so you can size, secure, and customize your LangSmith deployment before running `make apply`.
+
+Use this page as a reference while planning a rollout or troubleshooting an existing one. It covers:
+
+- Platform layers and application core services.
+- AWS managed services, IRSA roles, and cluster infrastructure.
+- Network topology, ingress options, and TLS/DNS strategies.
+- LangSmith Deployment add-on.
+- Module dependency graph and opt-in security modules.
+
+If you are ready to install, start with the [deployment walkthrough](/langsmith/self-host-terraform-aws-deploy).
 
 ## Platform layers
 
@@ -48,7 +58,7 @@ In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). 
 </Warning>
 
 <Note>
-[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for self-hosted deployments starting with self-hosted version 0.16.0 (see [deployment support](/langsmith/smithdb-sdk-migration#deployment-support)). These Terraform modules provision ClickHouse, so the guidance above applies to current deployments.
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [deployment support](/langsmith/smithdb-sdk-migration#deployment-support)). These Terraform modules provision ClickHouse, so the guidance in the previous sections applies to current deployments.
 </Note>
 
 ### One-time jobs
@@ -92,7 +102,7 @@ When `postgres_source = "external"` and `redis_source = "external"` (the recomme
 - Trace payloads: large inputs and outputs, attachments.
 - IRSA via `langsmith_irsa_role` (no static keys). VPC Gateway Endpoint, no public internet.
 - Prefixes: `ttl_s/` (short TTL) and `ttl_l/` (long TTL).
-- Always required. Disabling blob storage breaks the cluster on large payloads.
+- The S3 bucket is always required, regardless of tier. Disabling blob storage breaks the cluster on large payloads.
 
 ### SSM Parameter Store
 
@@ -126,7 +136,7 @@ IRSA replaces static credentials. The EKS cluster's OIDC issuer is the trust anc
 
 ### Default ALB ingress
 
-```mermaid
+```mermaid actions={false}
 graph TD
     Internet(["Internet"])
     ALB["AWS Application Load Balancer<br/>port 80/443, TLS via ACM or Let's Encrypt"]
@@ -159,7 +169,7 @@ graph TD
 
 With the Terraform default (`enable_envoy_gateway = true`), the pre-provisioned ALB stays in front and binds to the Envoy service on port 8080 through a `TargetGroupBinding`, as shown in the [ingress options](#ingress-options) table. The standalone Network Load Balancer path below is an overlay variant (`helm/values/examples/langsmith-values-ingress-envoy-gateway.yaml`) in which the NLB terminates TLS directly:
 
-```mermaid
+```mermaid actions={false}
 graph TD
     Internet(["Internet"])
     NLB["AWS Network Load Balancer<br/>ACM TLS termination at 443"]
