@@ -1,0 +1,98 @@
+---
+title: Cloud platform features
+sidebarTitle: Platform features
+icon: "list-check"
+description: Cloud-only platform features for LangSmith Deployment, including data regions, static IP addresses, payload limits, and deployment types.
+---
+
+This page describes the platform features that apply only to [Cloud](/langsmith/cloud) deployments. For self-hosted equivalents, see [Deploy to self-hosted](/langsmith/deploy-to-self-hosted-overview).
+
+## Data region
+
+Deployments can be created in two data regions: US and EU.
+
+The data region for a deployment is implied by the data region of the LangSmith organization where the deployment is created. Deployments and the underlying database for the deployments cannot be migrated between data regions.
+
+## Static IP addresses
+
+All traffic from deployments created after January 6, 2025 comes through a NAT gateway. This NAT gateway has several static IP addresses depending on the data region. For the list of static IP addresses, see the [Allowlist IP addresses table](/langsmith/deploy-to-cloud#allowlist-ip-addresses).
+
+## Payload size
+
+The maximum payload size for all requests sent to Cloud deployments is 25 MB. A request with a payload larger than 25 MB returns a `413 Payload Too Large` error.
+
+## Deployment types
+
+For simplicity, the control plane offers two deployment types with different resource allocations: `Development` and `Production`.
+
+| **Deployment Type** | **CPU/Memory**  | **Scaling**         | **Database**                                                                     |
+|---------------------|-----------------|---------------------|----------------------------------------------------------------------------------|
+| Development         | 1 CPU, 1 GB RAM | Up to 1 replica   | 10 GB disk, no backups                                                           |
+| Production          | 2 CPU, 2 GB RAM | Up to 10 replicas | Autoscaling disk, automatic backups, highly available (multi-zone configuration) |
+
+CPU and memory resources are per replica.
+
+<Warning>
+**Immutable deployment type**
+Once a deployment is created, the deployment type cannot be changed.
+</Warning>
+
+### Production
+
+`Production` type deployments are suitable for production workloads. For example, select `Production` for customer-facing applications in the critical path.
+
+Resources for `Production` type deployments can be manually increased on a case-by-case basis depending on use case and capacity constraints. Contact support via [support.langchain.com](https://support.langchain.com) to request an increase in resources.
+
+### Development
+
+`Development` type deployments are suitable for development and testing. For example, select `Development` for internal testing environments. `Development` type deployments are not suitable for production workloads.
+
+<Danger>
+**Preemptible compute infrastructure**
+`Development` type deployments (API server, queue server, and database) are provisioned on preemptible compute infrastructure. This means the compute infrastructure **may be terminated at any time without notice**. This may result in intermittent:
+
+* Redis connection timeouts/errors
+* Postgres connection timeouts/errors
+* Failed or retrying background runs
+
+This behavior is expected. Preemptible compute infrastructure **significantly reduces the cost to provision a `Development` type deployment**. By design, Agent Server is fault-tolerant. The implementation automatically attempts to recover from Redis/Postgres connection errors and retry failed background runs.
+
+`Production` type deployments are provisioned on durable compute infrastructure, not preemptible compute infrastructure.
+</Danger>
+
+Database disk size for `Development` type deployments can be manually increased on a case-by-case basis depending on use case and capacity constraints. For most use cases, [TTLs](/langsmith/configure-ttl) should be configured to manage disk usage. Contact support via [support.langchain.com](https://support.langchain.com) to request an increase in resources.
+
+## Database provisioning
+
+The control plane and [data plane](/langsmith/data-plane) listener application coordinate to automatically create a Postgres database for each Cloud deployment. The database serves as the [persistence layer](/oss/python/langgraph/persistence#memory-store) for the deployment.
+
+When implementing a LangGraph application, a [checkpointer](/oss/python/langgraph/persistence#checkpointer-libraries) does not need to be configured. A checkpointer is automatically configured for the graph. Any checkpointer configured for a graph is replaced by the one that is automatically configured.
+
+There is no direct access to the database. All access to the database occurs through the [Agent Server](/langsmith/agent-server).
+
+The database is never deleted until the deployment itself is deleted.
+
+For self-hosted deployments, see [custom PostgreSQL configuration](/langsmith/self-hosted-platform-features#custom-postgresql).
+
+## Scaling
+
+Cloud deployments autoscale automatically; you don't configure queue workers, replicas, or pool sizes directly. `Production` deployments scale up to 10 replicas based on three metrics:
+
+- **CPU utilization** — autoscaler targets 75%.
+- **Memory utilization** — autoscaler targets 75%.
+- **Pending runs** — autoscaler targets 10 pending runs per container.
+
+Each metric is computed independently and the scaling action follows the metric that requires the largest number of containers. Scale-down actions wait 30 minutes before taking effect to avoid thrashing under bursty load. [Queue workers](/langsmith/agent-server#runtime-architecture) scale on pending run count while [API servers](/langsmith/agent-server#runtime-architecture) scale on CPU and memory, so read traffic does not slow down run submission and vice versa.
+
+Application-level scaling levers (durability modes, async patterns, avoiding synchronous blocking, using `/join` instead of polling) apply to Cloud the same as to self-hosted. See [Scaling on self-hosted](/langsmith/agent-server-scale) for the underlying concepts; the Helm and resource configurations there do not apply to Cloud.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/cloud-platform-features.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

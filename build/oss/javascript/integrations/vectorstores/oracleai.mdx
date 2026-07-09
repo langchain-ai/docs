@@ -1,0 +1,226 @@
+---
+title: "OracleVS integration"
+description: "Integrate with the OracleVS vector store using LangChain JavaScript."
+---
+
+<Tip>
+**Compatibility**: Only available on Node.js.
+</Tip>
+
+Oracle AI Database supports AI workloads where you query data by **meaning** (semantics), not just keywords. It combines **semantic search over unstructured content** with **relational filtering over business data** in a single system, so you can build retrieval workflows (like RAG) without introducing a separate vector database and fragmenting data across multiple platforms.
+
+This guide demonstrates how to use `OracleVS` (the LangChain vector store integration for Oracle AI Vector Search) to:
+
+- Ingest documents and embeddings into Oracle
+- Run similarity search
+- Create HNSW and IVF indexes
+- Apply metadata filters for advanced retrieval
+- Enable hybrid search (keyword + semantic) in Oracle AI Database 26ai
+- Run full-text search using Oracle Text
+
+## Overview
+
+### Integration details
+
+| Class | Package | Hybrid search | PY support |
+| :--- | :--- | :---: | :---: |
+| `OracleVS` | [`@oracle/langchain-oracledb`](https://www.npmjs.com/package/@oracle/langchain-oracledb) | ✅ | ✅ |
+
+## Setup
+
+Install Oracle client bindings and the LangChain Oracle helpers:
+
+<CodeGroup>
+```bash npm
+npm install @oracle/langchain-oracledb @langchain/core
+```
+```bash yarn
+yarn add @oracle/langchain-oracledb @langchain/core
+```
+```bash pnpm
+pnpm add @oracle/langchain-oracledb @langchain/core
+```
+</CodeGroup>
+
+Set connection credentials for the Oracle user that will own the vector table:
+
+```bash
+export ORACLE_USER=testuser
+export ORACLE_PASSWORD=testuser
+export ORACLE_DSN="localhost:1521/free"
+```
+
+## Create a vector store
+
+The example below assumes that you already created a table with vector and metadata columns and generated embeddings using [`OracleEmbeddings`](/oss/javascript/integrations/embeddings/oracleai).
+
+```typescript
+import oracledb from "oracledb";
+import { OracleEmbeddings, OracleVS } from "@oracle/langchain-oracledb";
+import { Document } from "@langchain/core/documents";
+
+const connection = await oracledb.getConnection({
+  user: process.env.ORACLE_USER,
+  password: process.env.ORACLE_PASSWORD,
+  connectionString: process.env.ORACLE_DSN,
+});
+
+const embeddings = new OracleEmbeddings(connection, {
+  provider: "database",
+  model: "DEMO_MODEL",
+});
+
+const vectorStore = new OracleVS(embeddings, {
+  client: connection,
+  tableName: "DEMO_VECTORS",
+  query: "Find documents about Oracle RAG patterns.",
+  distanceStrategy: "DOT",
+});
+await vectorStore.initialize();
+
+const docs: Document[] = [
+  {
+    pageContent: "LangChain works great with Oracle Database.",
+    metadata: {
+      doc_id: "doc-1",
+      title: "RAG overview",
+      status: "release",
+      tags: ["AI", "rag"],
+      category: "books",
+      price: 18,
+    },
+  },
+];
+
+await vectorStore.addDocuments(docs);
+
+// Close connections or pools in application shutdown hooks to avoid leaks.
+// await connection.close();
+```
+
+
+If your application already manages an Oracle Database connection pool, pass the pool directly to `OracleVS`. The store acquires and releases connections as needed.
+
+```typescript
+const pool = await oracledb.createPool({
+  user: process.env.ORACLE_USER,
+  password: process.env.ORACLE_PASSWORD,
+  connectString: process.env.ORACLE_DSN,
+  poolIncrement: 1,
+  poolMax: 4,
+  poolMin: 0,
+  poolPingInterval: 60,
+});
+
+const vectorStoreFromPool = new OracleVS(embeddings, {
+  client: pool,
+  tableName: "DEMO_VECTORS",
+  query: "Find documents about Oracle RAG patterns.",
+  distanceStrategy: "DOT",
+});
+await vectorStoreFromPool.initialize();
+
+// Release resources during shutdown.
+// await pool.close(0);
+```
+
+
+## Filter search results
+
+You can pass rich metadata filters as the third argument to `similaritySearch`, `similaritySearchWithScore`, or `similaritySearchVectorWithScore`. Filters operate on the JSON `metadata` column that Oracle VS maintains for each document.
+
+Supported comparison operators include `$eq` (default), `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`, `$nin`, `$between`, and `$exists`. Combine clauses with `$and` and `$or` to build more expressive predicates.
+
+```typescript
+const results = await vectorStore.similaritySearch("oracle rag", 3, {
+  $and: [
+    { status: "release" },
+    { tags: { $in: ["AI"] } },
+    { price: { $between: [10, 25] } },
+  ],
+});
+
+// Or request scores alongside documents.
+const scored = await vectorStore.similaritySearchWithScore(
+  "oracle rag",
+  3,
+  { status: "release" },
+);
+
+console.log(results[0]?.pageContent);
+console.log(scored[0]?.[1]); // similarity score
+```
+
+
+Nested logical clauses are also supported. For example:
+
+```typescript
+const complexFilter = {
+  $or: [
+    { status: "draft" },
+    {
+      $and: [
+        { category: "books" },
+        { price: { $lte: 20 } },
+      ],
+    },
+  ],
+};
+```
+
+## Accelerate search with vector indexes
+
+Oracle Database can speed up similarity queries by creating vector indexes on the `embedding` column. The `@oracle/langchain-oracledb` helpers expose a `createIndex` utility that provisions either HNSW (default) or IVF indexes.
+
+### HNSW index (default)
+
+Use HNSW when you want a graph-based index that balances recall and latency. Omit `idxType` to use the default configuration or override parameters such as `neighbors`, `efConstruction`, and `accuracy`.
+
+```typescript
+import { createIndex } from "@oracle/langchain-oracledb";
+
+// Reuse the vectorStore and connection from the setup section,
+// or create one with OracleVS.fromDocuments / initialize().
+await createIndex(connection, vectorStore, {
+  idxName: "demo_hnsw_idx",
+  neighbors: 48,
+  efConstruction: 400,
+  accuracy: 95,
+  parallel: 16,
+});
+```
+
+### IVF index
+
+Switch to IVF by passing `idxType: "IVF"` along with the number of neighbor partitions to create. IVF partitions vectors into clusters and is useful when you want coarse quantization with predictable memory usage.
+
+```typescript
+import { createIndex } from "@oracle/langchain-oracledb";
+
+await createIndex(connection, vectorStore, {
+  idxName: "demo_ivf_idx",
+  idxType: "IVF",
+  neighborPart: 64,
+  accuracy: 90,
+  parallel: 8,
+});
+```
+
+Run `createIndex` once after loading data (or after `initialize`) and reuse the index for subsequent searches. To rebuild or swap strategies, drop the existing index through standard SQL (`DROP INDEX ...`) and rerun `createIndex` with new parameters.
+
+## Next steps
+
+- Load content with [`OracleDocLoader`](/oss/javascript/integrations/document_loaders/file_loaders/oracleai)
+- Generate embeddings with [`OracleEmbeddings`](/oss/javascript/integrations/embeddings/oracleai)
+- Summarize documents using [`OracleSummary`](/oss/javascript/integrations/tools/oracleai)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/vectorstores/oracleai.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
