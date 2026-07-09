@@ -1186,9 +1186,11 @@ Then run a sandbox smoke test:
 
 ### Upgrade notes
 
-Sandbox runtime image changes roll out through the `sandbox-host` Kubernetes Deployment. After changing the image tag, use the normal Helm upgrade flow and check the Deployment rollout before running sandbox smoke tests.
+Sandbox runtime image changes roll out through the `sandbox-host` Kubernetes Deployment. The chart uses a no-surge rolling update strategy by default, so hosts are replaced one at a time.
 
-The JuiceFS persistent volumes use `Retain`. If you uninstall Sandboxes, review the retained PVs, PVCs, Redis metadata, and object storage data before deleting anything.
+During a normal Helm upgrade, a terminating host stops accepting new Sandboxes, attempts to save each running Sandbox's VM memory to JuiceFS, and then stops those VMs before the pod exits. This shutdown is bounded by the `sandbox-host` pod termination grace period, which defaults to 300 seconds. This is not live migration: Sandboxes on that host are interrupted during the restart.
+
+Sandboxes are not proactively restarted. They start again when a user or API action starts the Sandbox, or when a request path wakes it. LangSmith then places the Sandbox on an available host and restores from the saved memory image if the shutdown capture completed. If the memory image is absent or incomplete, the Sandbox starts from the saved root filesystem.
 
 ## Optional configuration
 
