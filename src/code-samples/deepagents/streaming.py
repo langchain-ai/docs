@@ -154,6 +154,8 @@ print("✓ streaming-llm-tokens validated")
 # :remove-end:
 
 # :snippet-start: streaming-tool-calls-py
+from langchain.messages import AIMessageChunk, ToolMessage
+
 for chunk in agent.stream(
     {"messages": [{"role": "user", "content": "Research recent quantum computing advances"}]},
     stream_mode="messages",
@@ -168,7 +170,7 @@ for chunk in agent.stream(
         source = next((s for s in chunk["ns"] if s.startswith("tools:")), "main") if is_subagent else "main"
 
         # Tool call chunks (streaming tool invocations)
-        if token.tool_call_chunks:
+        if isinstance(token, AIMessageChunk) and token.tool_call_chunks:
             for tc in token.tool_call_chunks:
                 if tc.get("name"):
                     print(f"\n[{source}] Tool call: {tc['name']}")
@@ -177,11 +179,15 @@ for chunk in agent.stream(
                     print(tc["args"], end="", flush=True)
 
         # Tool results
-        if token.type == "tool":
+        if isinstance(token, ToolMessage):
             print(f"\n[{source}] Tool result [{token.name}]: {str(token.content)[:150]}")
 
         # Regular AI content (skip tool call messages)
-        if token.type == "ai" and token.content and not token.tool_call_chunks:
+        if (
+            isinstance(token, AIMessageChunk)
+            and token.content
+            and not token.tool_call_chunks
+        ):
             print(token.content, end="", flush=True)
 
 print()
@@ -203,9 +209,9 @@ for chunk in agent.stream(
     if chunk["type"] == "updates":
         for node_name, data in chunk["data"].items():
             # ─── Phase 1: Detect subagent starting ────────────────────────
-            # When the main agent's model_request contains task tool calls,
+            # When the main agent's model node contains task tool calls,
             # a subagent has been spawned.
-            if not chunk["ns"] and node_name == "model_request":
+            if not chunk["ns"] and node_name == "model":
                 for msg in data.get("messages", []):
                     for tc in getattr(msg, "tool_calls", []):
                         if tc["name"] == "task":
@@ -338,7 +344,7 @@ print("✓ streaming-custom-updates validated")
 
 # :snippet-start: streaming-multiple-modes-py
 # Skip internal middleware steps - only show meaningful node names
-INTERESTING_NODES = {"model_request", "tools"}
+INTERESTING_NODES = {"model", "tools"}
 
 last_source = ""
 mid_line = False  # True when we've written tokens without a trailing newline

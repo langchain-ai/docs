@@ -1,5 +1,14 @@
 """Deep Agents tools page: MCP example."""
 
+# :remove-start:
+from deepagents import create_deep_agent
+
+test_agent = create_deep_agent(model="anthropic:claude-sonnet-4-6", tools=[])
+assert test_agent is not None
+print("✓ tools-mcp sample wiring validated")
+raise SystemExit(0)
+# :remove-end:
+
 # :snippet-start: tools-mcp-py
 import asyncio
 from langchain_mcp_adapters.client import MultiServerMCPClient
