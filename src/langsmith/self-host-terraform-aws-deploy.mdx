@@ -264,7 +264,7 @@ The script manages the following SSM parameters:
 | `langsmith-license-key` | Prompt | From your LangChain account team |
 | `langsmith-admin-password` | Prompt | Must contain a symbol |
 | `deployments-encryption-key` | Auto-generated Fernet key | LangSmith Deployment add-on |
-| `agent-builder-encryption-key` | Auto-generated Fernet key | Agent Builder add-on |
+| `agent-builder-encryption-key` | Auto-generated Fernet key | Agent Builder add-on (reused by Fleet) |
 | `insights-encryption-key` | Auto-generated Fernet key | Insights add-on |
 | `polly-encryption-key` | Auto-generated Fernet key | Polly add-on |
 
@@ -374,8 +374,9 @@ For "bring your own infrastructure", skip `make init-app` and set all variables 
 Each add-on is gated by a flag in `infra/terraform.tfvars`. Set the flag, re-run `make init-values` to copy the matching values file, then re-run `make deploy`.
 
 ```hcl
-enable_deployments     = true   # LangGraph Platform (required for Agent Builder and Polly)
-enable_agent_builder   = true   # Agent Builder UI
+enable_deployments     = true   # LangGraph Platform (required for Fleet, Agent Builder, and Polly)
+enable_fleet           = true   # Fleet (formerly Agent Builder), standalone service (chart v0.15+)
+enable_agent_builder   = false  # Older agent-builder path; mutually exclusive with enable_fleet
 enable_insights        = true   # ClickHouse-backed analytics
 enable_polly           = true   # Polly AI eval and monitoring
 enable_usage_telemetry = false  # Extended usage telemetry
@@ -387,6 +388,20 @@ make deploy
 ```
 
 For details on each add-on, see [LangSmith Deployment](/langsmith/deploy-self-hosted-full-platform).
+
+### Fleet
+
+Fleet is the current form of the feature formerly called Agent Builder, deployed as a standalone service (chart v0.15+). Enable it with `enable_fleet`. On AWS it requires `enable_deployments = true`, because the Fleet chat UI resolves OAuth provider and token connections through the host-backend that ships with LangSmith Deployment. It also requires external Postgres and Redis (`postgres_source = "external"` and `redis_source = "external"`). Terraform creates a dedicated `langsmith_fleet` database on RDS and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing RDS and ElastiCache instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
+
+<Note>
+Fleet requires the LangSmith Helm chart `>=0.15.0` and the Agent Builder or Fleet entitlement in your license.
+</Note>
+
+Fleet installs the `standalone-fleet-api-server`, `standalone-fleet-tool-server`, `standalone-fleet-trigger-server`, and `standalone-fleet-queue` services.
+
+<Warning>
+Do not enable `enable_fleet` and `enable_agent_builder` together. The Fleet values file sets `config.agentBuilder.enabled: false`, so the two add-ons are mutually exclusive.
+</Warning>
 
 ## Optional: private EKS cluster with bastion
 

@@ -441,7 +441,42 @@ kubectl get pods -n keda
 `config.deployment.url` must include `https://`. Without the protocol, operator-spawned agents stay stuck in `DEPLOYING` indefinitely.
 </Warning>
 
-### Agent Builder
+### Fleet
+
+Fleet is the current form of the feature formerly called Agent Builder, deployed as a standalone service. Enable it with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require LangSmith Deployment. Terraform provisions a dedicated `fleet` database on Cloud SQL and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing Cloud SQL and Memorystore instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
+
+<Note>
+Fleet requires the LangSmith Helm chart `>=0.15.0` and the Agent Builder or Fleet entitlement in your license.
+</Note>
+
+```hcl
+# infra/terraform.tfvars
+enable_fleet = true
+```
+
+```bash
+cd modules/gcp
+
+make apply        # provision the fleet Cloud SQL database + secrets
+make init-values  # copy langsmith-values-fleet.yaml
+make deploy       # roll out the standalone-fleet-* services
+```
+
+Verify:
+
+```bash
+kubectl get pods -n langsmith | grep standalone-fleet
+```
+
+<Warning>
+Do not enable `enable_fleet` and `enable_agent_builder` together. The Fleet values file sets `config.agentBuilder.enabled: false`, so the two add-ons are mutually exclusive.
+</Warning>
+
+### Agent Builder (deprecated)
+
+<Note>
+On GCP, `enable_agent_builder` is deprecated in favor of [Fleet](#fleet) (`enable_fleet`, chart v0.15+). Use Fleet for new deployments. This section documents the older path for existing installs.
+</Note>
 
 Prerequisite: LangSmith Deployment healthy. Adds `agent-builder-tool-server`, `agent-builder-trigger-server`, and an `agentBootstrap` Job that registers the Polly agent URL.
 
@@ -500,6 +535,8 @@ kubectl get pods -n langsmith -w
 ### Expected pods by add-on
 
 **LangSmith Deployment adds:** `langsmith-host-backend`, `langsmith-listener`, `langsmith-operator`.
+
+**Fleet adds:** `standalone-fleet-api-server`, `standalone-fleet-tool-server`, `standalone-fleet-trigger-server`, `standalone-fleet-queue`.
 
 **Agent Builder adds:** `langsmith-agent-builder-tool-server`, `langsmith-agent-builder-trigger-server`, `langsmith-agent-builder-bootstrap` (Completed), `agent-builder-<hash>` (operator-spawned).
 
