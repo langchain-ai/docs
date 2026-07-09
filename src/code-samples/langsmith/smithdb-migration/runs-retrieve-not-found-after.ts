@@ -1,6 +1,6 @@
 // :snippet-start: runs-retrieve-not-found-after-js
 // :codegroup-tab: After
-import { Client } from "langsmith";
+import { Client, NotFoundError } from "langsmith";
 
 const client = new Client();
 const project = await client.readProject({ projectName: "default" });
@@ -15,11 +15,14 @@ try {
     project_id: project.id,
     start_time: startTime,
   });
-} catch (e: any) {
-  if (e?.status === 404) {
+} catch (e) {
+  if (e instanceof NotFoundError) {
     console.log(`Run ${runId} not found`);
-  } else {
+  }
+  // :remove-start:
+  else {
     throw e;
   }
+  // :remove-end:
 }
 // :snippet-end:

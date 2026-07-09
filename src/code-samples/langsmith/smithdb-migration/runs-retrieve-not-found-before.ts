@@ -13,8 +13,11 @@ try {
 } catch (e: any) {
   if (e?.status === 404) {
     console.log(`Run ${runId} not found`);
-  } else {
+  }
+  // :remove-start:
+  else {
     throw e;
   }
+  // :remove-end:
 }
 // :snippet-end:
