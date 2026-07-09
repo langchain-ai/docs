@@ -417,14 +417,11 @@ agent = create_deep_agent(
 )
 
 # Context flows to the researcher subagent and its tools automatically
-async def main():
-    result = await agent.invoke(
-        {"messages": [HumanMessage("Look up my recent activity")]},
-        context=Context(user_id="user-123", session_id="abc"),
-    )
-    return result
+result = agent.invoke(
+    {"messages": [HumanMessage("Look up my recent activity")]},
+    context=Context(user_id="user-123", session_id="abc"),
+)
 
-result = asyncio.run(main())
 # :snippet-end:
 
 # :remove-start:
@@ -446,6 +443,7 @@ assert result is not None
 # :snippet-start: subagents-per-subagent-context-py
 from dataclasses import dataclass
 
+from deepagents import create_deep_agent
 from langchain.messages import HumanMessage
 from langchain.tools import ToolRuntime, tool
 
@@ -466,18 +464,27 @@ def verify_claim(claim: str, runtime: ToolRuntime[Context]) -> str:
     return basic_verification(claim)
 
 
-async def main():
-    result = await agent.invoke(
-        {"messages": [HumanMessage("Research this and verify the claims")]},
-        context=Context(
-            user_id="user-123",
-            researcher_max_depth=3,
-            fact_checker_strict_mode=True,
-        ),
-    )
-    return result
+agent = create_deep_agent(
+    model="google_genai:gemini-3.5-flash",
+    subagents=[
+        {
+            "name": "fact-checker",
+            "description": "Verifies factual claims",
+            "system_prompt": "You verify claims carefully.",
+            "tools": [verify_claim],
+        },
+    ],
+    context_schema=Context,
+)
 
-result = asyncio.run(main())
+result = agent.invoke(
+    {"messages": [HumanMessage("Research this and verify the claims")]},
+    context=Context(
+        user_id="user-123",
+        researcher_max_depth=3,
+        fact_checker_strict_mode=True,
+    ),
+)
 # :snippet-end:
 
 # :remove-start:
@@ -500,19 +507,7 @@ _strict = verify_claim.func(
     ),
 )
 assert "strict verified" in _strict
-_per_subagent_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    subagents=[
-        {
-            "name": "fact-checker",
-            "description": "Verifies factual claims",
-            "system_prompt": "You verify claims carefully.",
-            "tools": [verify_claim],
-        },
-    ],
-    context_schema=Context,
-)
-assert _per_subagent_agent is not None
+assert agent is not None
 # :remove-end:
 
 # :snippet-start: subagents-shared-lookup-py
