@@ -15,7 +15,67 @@ The LLM Gateway is provider-compatible: you route calls through it by pointing y
 - Your [Organization admin](/langsmith/rbac#organization-admin) has completed [Admin setup](/langsmith/llm-gateway-admin-setup) and added provider API keys to workspace secrets.
 - You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations).
 
-## Base environment variables
+## LangChain chat models
+
+When you build with LangChain, you can route every supported provider through the gateway with two environment variables, instead of configuring a base URL for each provider:
+
+```bash
+export LANGSMITH_GATEWAY_URL="https://gateway.smith.langchain.com"
+export LANGSMITH_GATEWAY_API_KEY="lsv2_..._....cbed3e"
+```
+
+<Note>
+`LANGSMITH_GATEWAY_URL` and `LANGSMITH_GATEWAY_API_KEY` are recognized by LangChain chat models and Deep Agents only. They are a convenience for LangChain users, so that you do not have to set and keep in sync a separate base URL and key for each provider. Native provider SDKs and other frameworks do not read these variables; use the [standard provider variables](#native-provider-sdks-and-other-frameworks) instead.
+</Note>
+
+With these variables set, LangChain routes each model to the correct gateway path based on its `model_provider`, so no per-model `base_url` is required:
+
+```python
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+# Reads LANGSMITH_GATEWAY_URL and LANGSMITH_GATEWAY_API_KEY from the environment.
+# Swap model and model_provider for OpenAI, Gemini, or any other supported provider.
+model = init_chat_model(
+    model="claude-sonnet-4-6",
+    model_provider="anthropic",
+)
+agent = create_agent(model=model, system_prompt="You are a helpful assistant.")
+result = agent.invoke({"messages": [{"role": "user", "content": "ping"}]})
+print(result["messages"][-1].content)
+```
+
+Because routing is keyed off `model_provider`, using multiple providers in the same application requires no extra configuration. Initialize each model as usual:
+
+```python
+from langchain.chat_models import init_chat_model
+
+openai_model = init_chat_model(model="gpt-4o-mini", model_provider="openai")
+anthropic_model = init_chat_model(model="claude-sonnet-4-6", model_provider="anthropic")
+```
+
+### Set the base URL and key explicitly
+
+If you prefer not to rely on the gateway-specific environment variables, set the gateway base URL and API key directly on each model. Each model points at the gateway path for its provider while sharing the same LangSmith API key:
+
+```python
+import os
+
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(
+    model="claude-sonnet-4-6",
+    model_provider="anthropic",
+    base_url=os.environ["ANTHROPIC_BASE_URL"],
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+```
+
+The per-provider `ANTHROPIC_BASE_URL` and related variables are defined in [Native provider SDKs and other frameworks](#native-provider-sdks-and-other-frameworks).
+
+## Native provider SDKs and other frameworks
+
+If you call providers through their native SDKs (or a framework that uses them), you usually do not need any code changes. The provider SDKs read their standard base-URL and API-key environment variables, so setting the variables below is enough to route existing code through the gateway.
 
 Set these in your terminal (or add them to your shell profile to persist across sessions). Each provider has its own gateway path, and the same LangSmith API key authenticates all of them:
 
@@ -34,20 +94,14 @@ export GEMINI_API_KEY="$LANGSMITH_API_KEY"
 export GOOGLE_API_KEY="$LANGSMITH_API_KEY"
 ```
 
-The gateway resolves the real provider keys from your workspace's Provider Secrets—you never need local copies of provider API keys. For the full list of providers and gateway paths, see [Supported providers](/langsmith/llm-gateway#supported-providers).
-
-## Native provider SDKs and other frameworks
-
-If you call providers through their native SDKs (or a framework that uses them), you usually don't need any code changes. The provider SDKs read their standard base-URL and API-key environment variables, so setting the [base environment variables](#base-environment-variables) above is enough to route existing code through the gateway.
+The gateway resolves the real provider keys from your workspace's Provider Secrets, so you never need local copies of provider API keys. For the full list of providers and gateway paths, see [Supported providers](/langsmith/llm-gateway#supported-providers).
 
 <Tabs>
   <Tab title="OpenAI SDK">
     ```python
-    import os
-
     from openai import OpenAI
 
-    # base_url and api_key are read from OPENAI_BASE_URL / OPENAI_API_KEY.
+    # base_url and api_key are read from OPENAI_BASE_URL and OPENAI_API_KEY.
     client = OpenAI()
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -58,11 +112,9 @@ If you call providers through their native SDKs (or a framework that uses them),
   </Tab>
   <Tab title="Anthropic SDK">
     ```python
-    import os
-
     import anthropic
 
-    # base_url and api_key are read from ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY.
+    # base_url and api_key are read from ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY.
     client = anthropic.Anthropic()
     message = client.messages.create(
         model="claude-sonnet-4-6",
@@ -81,51 +133,6 @@ If you call providers through their native SDKs (or a framework that uses them),
     ```
   </Tab>
 </Tabs>
-
-## LangChain chat models
-
-When you build with LangChain, set the gateway base URL and API key explicitly on each model. This keeps configuration unambiguous when a single application uses more than one provider—each model points at the gateway path for its provider while sharing the same LangSmith API key.
-
-```python
-import os
-
-from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
-
-# Anthropic shown here; OpenAI and Gemini are supported by swapping
-# base_url and model_provider.
-model = init_chat_model(
-    model="claude-sonnet-4-6",
-    model_provider="anthropic",
-    base_url=os.environ["ANTHROPIC_BASE_URL"],
-    api_key=os.environ["LANGSMITH_API_KEY"],
-)
-agent = create_agent(model=model, system_prompt="You are a helpful assistant.")
-result = agent.invoke({"messages": [{"role": "user", "content": "ping"}]})
-print(result["messages"][-1].content)
-```
-
-To use multiple providers in the same application, initialize one model per provider, each with its own `base_url`:
-
-```python
-import os
-
-from langchain.chat_models import init_chat_model
-
-openai_model = init_chat_model(
-    model="gpt-4o-mini",
-    model_provider="openai",
-    base_url=os.environ["OPENAI_BASE_URL"],
-    api_key=os.environ["LANGSMITH_API_KEY"],
-)
-
-anthropic_model = init_chat_model(
-    model="claude-sonnet-4-6",
-    model_provider="anthropic",
-    base_url=os.environ["ANTHROPIC_BASE_URL"],
-    api_key=os.environ["LANGSMITH_API_KEY"],
-)
-```
 
 ## Verify the setup
 
