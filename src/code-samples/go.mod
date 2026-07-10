@@ -2,14 +2,16 @@ module github.com/langchain-ai/docs-code-samples
 
 go 1.25.0
 
-require github.com/langchain-ai/langsmith-go v0.17.0
+require (
+	github.com/google/uuid v1.6.0
+	github.com/langchain-ai/langsmith-go v0.17.0
+)
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/klauspost/compress v1.19.0 // indirect
 	github.com/tidwall/gjson v1.19.0 // indirect
