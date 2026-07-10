@@ -22,7 +22,7 @@ except LangSmithNotFoundError:
 import asyncio
 
 from langsmith import Client
-from langsmith._openapi_client import NotFoundError
+from langsmith import NotFoundError
 
 
 async def main():
