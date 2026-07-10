@@ -1108,6 +1108,9 @@ In `modules/aws/infra/terraform.tfvars`, enable Sandboxes and configure the sand
 enable_sandboxes = true
 redis_source     = "external"
 
+sandbox_juicefs_redis_instance_type             = "cache.m6g.large"
+sandbox_juicefs_redis_snapshot_retention_limit  = 7
+
 sandbox_host_node_count               = 1
 sandbox_host_instance_types           = ["m5d.metal"]
 sandbox_host_configure_instance_store = true
@@ -1115,7 +1118,19 @@ sandbox_host_configure_instance_store = true
 sandbox_host_image_tag = "<same-release-tag-as-your-langsmith-images>"
 ```
 
-AWS Sandboxes require `redis_source = "external"`. The Terraform module reuses the managed Redis and S3 bucket from the LangSmith installation, configures Redis with the recommended `noeviction` policy, creates the JuiceFS CSI config Secret, and adds the expected node label and taint.
+AWS Sandboxes require `redis_source = "external"`. The Terraform module creates a dedicated ElastiCache Redis instance for JuiceFS sandbox metadata, configures that dedicated instance with the recommended `noeviction` policy, reuses the LangSmith S3 bucket for sandbox object storage, creates the JuiceFS CSI config Secret, and adds the expected node label and taint.
+
+The AWS setup script generates the sandbox service-auth secret, callback signing JWK, and dedicated JuiceFS Redis auth token through the normal SSM-backed setup flow. Run the infra setup script before applying Terraform if those values do not exist yet.
+
+If you deploy the Helm release with the Terraform app module, set the sandbox app values in `modules/aws/app/terraform.tfvars` as well:
+
+```hcl
+enable_sandboxes      = true
+chart_version          = "~0.16.0"
+sandbox_host_image_tag = "<same-release-tag-as-your-langsmith-images>"
+```
+
+When `enable_sandboxes = true`, the Terraform app module requires an explicit LangSmith Helm chart version `0.16.0` or later and a sandbox runtime image tag.
 
 Run the normal AWS flow:
 
@@ -1136,6 +1151,9 @@ redis_source     = "external"
 gke_use_autopilot     = false
 enable_gcp_iam_module = true
 
+sandbox_juicefs_redis_memory_size       = 5
+sandbox_juicefs_redis_high_availability = true
+
 sandbox_host_node_count     = 1
 sandbox_host_min_node_count = 1
 sandbox_host_max_node_count = 5
@@ -1144,7 +1162,19 @@ sandbox_host_machine_type   = "n2-standard-8"
 sandbox_host_image_tag = "<same-release-tag-as-your-langsmith-images>"
 ```
 
-GCP Sandboxes require `redis_source = "external"`. The Terraform module reuses Memorystore and the GCS bucket from the LangSmith installation, configures Redis with the recommended `noeviction` policy, creates the JuiceFS CSI config Secret, and adds the expected node label and taint.
+GCP Sandboxes require `redis_source = "external"`. The Terraform module creates a dedicated Memorystore Redis instance for JuiceFS sandbox metadata, configures that dedicated instance with the recommended `noeviction` policy, reuses the LangSmith GCS bucket for sandbox object storage, creates the JuiceFS CSI config Secret, and adds the expected node label and taint.
+
+The GCP setup script generates the sandbox service-auth secret and callback signing JWK through the normal Secret Manager setup flow. Run the infra setup script before applying Terraform if those values do not exist yet.
+
+If you deploy the Helm release with the Terraform app module, set the sandbox app values in `modules/gcp/app/terraform.tfvars` as well:
+
+```hcl
+enable_sandboxes      = true
+chart_version          = "~0.16.0"
+sandbox_host_image_tag = "<same-release-tag-as-your-langsmith-images>"
+```
+
+When `enable_sandboxes = true`, the Terraform app module requires an explicit LangSmith Helm chart version `0.16.0` or later and a sandbox runtime image tag.
 
 Run the normal GCP flow:
 
