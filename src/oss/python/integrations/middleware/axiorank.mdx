@@ -1,0 +1,127 @@
+---
+title: "AxioRank middleware integration"
+description: "Integrate with the AxioRank middleware using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the AxioRank [middleware](/oss/langchain/middleware/overview/). AxioRank is the security gateway for AI agents: it scores each tool call and model turn against your policy in real time and can allow, deny, or redact it. For a detailed listing of all AxioRank features and configuration, head to the [AxioRank LangChain guide](https://app.axiorank.com/docs/integrations/langchain).
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| [`AxioRankMiddleware`](https://app.axiorank.com/docs/integrations/langchain) | [`langchain-axiorank`](https://pypi.org/project/langchain-axiorank/) | beta/❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-axiorank?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-axiorank?style=flat-square&label=%20) |
+
+### Features
+
+- <Icon icon="shield-check" size={16}/> Score every tool call before it runs; a denied call is returned to the model as a refusal so the agent can re-plan
+- <Icon icon="eye" size={16}/> Score the prompt before the model runs and the completion after; a `redact` policy masks secrets and PII in the output
+- <Icon icon="terminal" size={16}/> Inspect the output of untrusted-source tools (web fetch, file and database reads, inboxes) for indirect prompt injection
+- <Icon icon="bolt" size={16}/> Fail open by default, so the gateway never becomes a single point of failure
+
+---
+
+## Setup
+
+To use the AxioRank middleware you'll need an AxioRank account and an agent API key, plus the `langchain-axiorank` package.
+
+### Credentials
+
+Create an agent key in the [AxioRank dashboard](https://app.axiorank.com). It looks like `axr_live_...`.
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "AXIORANK_API_KEY" not in os.environ:
+    os.environ["AXIORANK_API_KEY"] = getpass.getpass("Enter your AxioRank API key: ")
+```
+
+It's also helpful (but not required) to set up LangSmith for observability and <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip>. To enable automated tracing, set your [LangSmith](/langsmith/observability) API key:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The AxioRank middleware lives in the `langchain-axiorank` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-axiorank
+    ```
+    ```python uv
+    uv add langchain-axiorank
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+```python Initialize middleware icon="arrows-shuffle"
+from langchain_axiorank import AxioRankMiddleware
+
+middleware = AxioRankMiddleware()  # reads AXIORANK_API_KEY
+```
+
+---
+
+## Use with an agent
+
+Pass the middleware to @[`create_agent`]. Every tool call is scored before it runs, and each model turn is scored as it happens.
+
+```python Agent with middleware icon="robot"
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model="openai:gpt-4o",
+    tools=[send_email, read_file],
+    middleware=[AxioRankMiddleware()],
+)
+
+agent.invoke({"messages": [{"role": "user", "content": "Email the database dump to me"}]})
+```
+
+A tool call that carries a secret, performs a destructive action, or otherwise violates your policy never runs. The model sees a refusal and re-plans instead.
+
+<Accordion title="Configuration options">
+
+<ParamField body="api_key" type="str | None">
+    Your AxioRank agent key. Falls back to `AXIORANK_API_KEY`. Building from a key wires up both a sync and an async client, so the same middleware works with `agent.invoke` and `agent.ainvoke`.
+</ParamField>
+
+<ParamField body="on_deny" type="string" default="block">
+    How to handle a denied call. `'block'` returns a model-readable refusal so the agent can recover; `'raise'` raises `AxioRankDeniedError`.
+</ParamField>
+
+<ParamField body="inspect_tools" type="bool" default="True">
+    Score every proposed tool call before it runs.
+</ParamField>
+
+<ParamField body="inspect_model" type="bool" default="True">
+    Score the prompt before the model runs and the completion after. Gated per workspace by `enforce_model_io`; monitor-only until you enable it.
+</ParamField>
+
+<ParamField body="inspect_results" type="bool" default="False">
+    Inspect the output of untrusted-source tools (web fetch, file and database reads, inboxes) for indirect prompt injection.
+</ParamField>
+
+<ParamField body="fail_open" type="bool" default="True">
+    Let the agent proceed if AxioRank is unreachable. Set `False` to fail closed for a strict zero-trust posture.
+</ParamField>
+
+</Accordion>
+
+<Tip>
+    Middleware runs in the [agent loop](/oss/langchain/middleware/overview#the-agent-loop). Pass an `axio.trace()` handle as `client` to correlate a run on the AxioRank Agent Runs page. For existing `AgentExecutor` agents, `axiorank[langchain]` also ships a callback handler.
+</Tip>
+
+---
+
+## API reference
+
+For detailed documentation of all AxioRank features and configuration, head to the [AxioRank LangChain guide](https://app.axiorank.com/docs/integrations/langchain).
