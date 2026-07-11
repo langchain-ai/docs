@@ -1,0 +1,371 @@
+---
+title: "TalorData SERP integration"
+description: Query 33 search engines with geo-targeting using TalorData's SERP API in TypeScript
+---
+
+[TalorData](https://talordata.com/) provides a unified SERP API that lets you query 33 search engines across Google, Bing, Yandex, and DuckDuckGo with geo-targeting, language controls, and engine-specific parameters. This TypeScript integration is designed for applications and agents that need live web search capabilities.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | Node support | Version |
+| :-- | :-- | :-: | :-: | :-: |
+| `TalorDataSerpTool` | [`langchain-talordata`](https://www.npmjs.com/package/langchain-talordata) | ✅ | ✅ | ![npm](https://img.shields.io/npm/v/langchain-talordata?style=flat-square&label=%20) |
+
+### Tool features
+
+| Native async | Returns artifact | Return data | Pricing |
+| :-: | :-: | :-- | :-: |
+| ✅ | ❌ | Title, URL, snippet, position, knowledge graph, answer box, AI overview, and other search result data | Requires TalorData account |
+
+## Setup
+
+The integration lives in the `langchain-talordata` package.
+
+```bash
+npm install langchain-talordata
+```
+
+If you want to use modern LangChain JS tool-calling flows, install a model integration too:
+
+```bash
+npm install @langchain/openai
+```
+
+### Credentials
+
+You'll need a TalorData API key to use this integration. Set it as an environment variable:
+
+```typescript
+process.env.TALOR_API_KEY = "your-api-key";
+```
+
+## Instantiation
+
+`TalorDataSerpTool` is the main LangChain-facing entrypoint for this integration.
+
+Use `TalorDataSerpTool.fromEnv()` in most cases:
+
+```typescript
+import { TalorDataSerpTool } from "langchain-talordata";
+
+process.env.TALOR_API_KEY = "your-api-key";
+
+const tool = TalorDataSerpTool.fromEnv();
+```
+
+If you want to set defaults such as the engine at construction time, you can also use:
+
+```typescript
+import { TalorDataSerpTool } from "langchain-talordata";
+
+const tool = TalorDataSerpTool.fromApiKey(
+  "your-api-key",
+  "google"
+);
+```
+
+## Invocation
+
+### Basic usage
+
+```typescript
+import { TalorDataSerpTool } from "langchain-talordata";
+
+process.env.TALOR_API_KEY = "your-api-key";
+
+const tool = TalorDataSerpTool.fromEnv();
+
+const result = await tool.execute({
+  query: "LangChain tutorial",
+});
+
+console.log(result);
+```
+
+### Advanced usage with parameters
+
+```typescript
+import { TalorDataSerpTool } from "langchain-talordata";
+
+process.env.TALOR_API_KEY = "your-api-key";
+
+const tool = TalorDataSerpTool.fromEnv();
+
+const result = await tool.execute({
+  query: "best electric vehicles",
+  engine: "google_shopping",
+  params: {
+    gl: "cn",
+    hl: "zh",
+  },
+});
+
+console.log(result);
+```
+
+### Using different engines
+
+```typescript
+import { TalorDataSerpTool } from "langchain-talordata";
+
+process.env.TALOR_API_KEY = "your-api-key";
+
+const tool = TalorDataSerpTool.fromEnv();
+
+const bingNews = await tool.execute({
+  query: "AI news",
+  engine: "bing_news",
+});
+
+const scholar = await tool.execute({
+  query: "machine learning",
+  engine: "google_scholar",
+});
+
+const patentDetail = await tool.execute({
+  engine: "google_patents_details",
+  params: {
+    parent_id: "patent/US11734097B1/en",
+    gl: "us",
+    hl: "en",
+  },
+});
+
+const duckduckgo = await tool.execute({
+  query: "typescript tutorial",
+  engine: "duckduckgo",
+});
+
+const yandex = await tool.execute({
+  query: "test",
+  engine: "yandex",
+});
+```
+
+### Raw JSON results
+
+If you specifically need the original API payload instead of formatted tool output, use `TalorDataSerpAPIWrapper`:
+
+```typescript
+import { TalorDataSerpAPIWrapper } from "langchain-talordata";
+
+process.env.TALOR_API_KEY = "your-api-key";
+
+const wrapper = new TalorDataSerpAPIWrapper();
+
+const result = await wrapper.results("LangChain tutorial", "google");
+
+console.log(result.ok);
+console.log(result.engine);
+console.log(result.data);
+```
+
+## Customization options
+
+`TalorDataSerpTool.execute()` accepts the following input shape:
+
+| Parameter | Type | Description |
+| :-- | :-- | :-- |
+| `query` | `string` | The search query to perform. Optional for some engines. |
+| `engine` | `string` | Search engine key. Default is `google`. |
+| `params` | `Record<string, any> \| string` | Engine-specific parameters. A JSON string is also accepted for model-produced tool calls. |
+
+### Common parameters
+
+| Parameter | Type | Description |
+| :-- | :-- | :-- |
+| `gl` | `string` | Country code for geo-targeting, for example `us` or `cn` |
+| `hl` | `string` | Interface language, for example `en` or `zh` |
+| `device` | `string` | `desktop` or `mobile` |
+| `no_cache` | `boolean` | Force fresh results bypassing cache |
+| `json` | `string` | Response format: `1` (JSON), `2` (JSON + HTML), `3` (HTML) |
+
+### JSON string params
+
+The `params` field also accepts a JSON string. This is useful when a model emits tool arguments as a serialized string:
+
+```typescript
+const result = await tool.execute({
+  query: "LangChain tutorial",
+  engine: "google",
+  params: "{\"gl\":\"cn\",\"hl\":\"zh\"}",
+});
+```
+
+### When to use which class
+
+| Class | Use case |
+| :-- | :-- |
+| `TalorDataSerpTool` | Recommended for LangChain agents and normal tool invocation |
+| `TalorDataSerpAPIWrapper` | Use when you specifically need raw JSON, async methods, history, or statistics |
+
+## Supported engines
+
+### Google
+
+`google`, `google_web`, `google_images`, `google_news`, `google_shopping`, `google_maps`, `google_flights`, `google_hotels`, `google_scholar`, `google_jobs`, `google_videos`, `google_trends`, `google_finance`, `google_local`, `google_lens`, `google_patents`, `google_patents_details`, `google_play`, `google_play_books`, `google_play_games`, `google_play_movies`, `google_play_product`, `google_scholar_author`, `google_scholar_cite`, `google_finance_markets`
+
+### Bing
+
+`bing`, `bing_images`, `bing_news`, `bing_shopping`, `bing_videos`, `bing_maps`
+
+### Others
+
+`yandex`, `duckduckgo`
+
+## Toolset
+
+This integration provides four tool descriptors:
+
+| Tool | Description |
+| :-- | :-- |
+| `talor_serp_search` | Search the web using any supported engine |
+| `talor_serp_list_engines` | List all supported engines and detailed parameter descriptions |
+| `talor_serp_history` | Query SERP request history with filters |
+| `talor_serp_statistics` | Query usage statistics |
+
+## Use within an agent
+
+In TypeScript, these tools are lightweight descriptors with:
+
+- `name`
+- `description`
+- `inputSchema`
+- `execute(input)`
+
+You can bind them to a chat model, let the model emit tool calls, and then execute the selected tool yourself.
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+import { TalorDataSerpTool } from "langchain-talordata";
+
+process.env.TALOR_API_KEY = "your-api-key";
+
+const llm = new ChatOpenAI({
+  model: "gpt-4o-mini",
+  temperature: 0,
+});
+
+const searchTool = TalorDataSerpTool.fromEnv();
+
+const modelWithTools = llm.bindTools([
+  {
+    type: "function",
+    function: {
+      name: searchTool.name,
+      description: searchTool.description,
+      parameters: searchTool.inputSchema,
+    },
+  },
+]);
+
+const response = await modelWithTools.invoke(
+  "Search for the latest LangChain news"
+);
+
+for (const call of response.tool_calls ?? []) {
+  if (call.name === searchTool.name) {
+    const toolResult = await searchTool.execute(call.args);
+    console.log(toolResult);
+  }
+}
+```
+
+## Bind multiple tools
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+import { TalorDataSerpTool } from "langchain-talordata";
+
+process.env.TALOR_API_KEY = "your-api-key";
+
+const llm = new ChatOpenAI({
+  model: "gpt-4o-mini",
+  temperature: 0,
+});
+
+const tools = TalorDataSerpTool.toolsFromEnv();
+const toolsByName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
+
+const modelWithTools = llm.bindTools(
+  tools.map((tool) => ({
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema,
+    },
+  }))
+);
+
+const response = await modelWithTools.invoke(
+  "Show my SERP usage statistics for 2026-06-01 to 2026-06-05"
+);
+
+for (const call of response.tool_calls ?? []) {
+  const tool = toolsByName[call.name];
+  if (!tool) continue;
+
+  const result = await tool.execute(call.args);
+  console.log(call.name, result);
+}
+```
+
+## Async support
+
+All network methods in the TypeScript package are already async:
+
+```typescript
+import { TalorDataSerpAPIWrapper } from "langchain-talordata";
+
+process.env.TALOR_API_KEY = "your-api-key";
+
+const wrapper = new TalorDataSerpAPIWrapper();
+
+const textResult = await wrapper.run("LangChain tutorial");
+const jsonResult = await wrapper.results("LangChain tutorial", "google");
+```
+
+## History and statistics
+
+`TalorDataSerpAPIWrapper` also exposes low-level history and statistics endpoints:
+
+```typescript
+import { TalorDataSerpAPIWrapper } from "langchain-talordata";
+
+process.env.TALOR_API_KEY = "your-api-key";
+
+const wrapper = new TalorDataSerpAPIWrapper();
+
+const history = await wrapper.history({
+  page: 1,
+  pageSize: 20,
+  searchEngine: "google",
+  status: "success",
+});
+
+const stats = await wrapper.statistics({
+  startDate: "2024-01-01",
+  endDate: "2024-12-31",
+  engines: "google,bing",
+});
+```
+
+## Integration tests
+
+The TypeScript package also includes upstream integration tests. With a valid key set, run:
+
+```bash
+npx jest tests/integration.test.ts --forceExit
+```
+
+Without `TALOR_API_KEY`, those tests are skipped.
+
+---
+
+## API reference
+
+- [npm: langchain-talordata](https://www.npmjs.com/package/langchain-talordata)
+- [GitHub: langchain-talordata](https://github.com/Talordata/langchain-talordata)
