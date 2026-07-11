@@ -1,0 +1,102 @@
+---
+title: Coding agent metadata contract
+sidebarTitle: Metadata contract
+description: The metadata schema that standardizes what trace metadata coding agents must emit when sending runs to LangSmith.
+---
+
+This schema is the authoritative contract for metadata that coding agents attach to LangSmith runs. It defines which fields are required on every run, which fields are expected when the runtime can supply them, and which fields apply only to specific run types.
+
+Coding agent integrations use this schema to ensure their traces are consistently structured, queryable, and compatible with LangSmith's observability and filtering features.
+
+## Supported integrations
+
+The following integrations implement this schema:
+
+| Integration | `ls_integration` value |
+|---|---|
+| [Claude Code](/langsmith/trace-claude-code) | `claude-code` |
+| [OpenAI Codex](/langsmith/trace-with-codex) | `openai-codex` |
+| [Deep Agents](/langsmith/trace-deep-agents) | `deepagents-code` |
+| [Cursor](/langsmith/trace-with-cursor) | `cursor` |
+| [Pi](/langsmith/trace-with-pi) | `pi` |
+| [Opencode](/langsmith/trace-with-opencode) | `opencode` |
+| [GitHub Copilot](/langsmith/trace-with-vscode-copilot) | `copilot` |
+
+## Global identity block
+
+Every run type must include the following identity fields in its metadata:
+
+| Field | Description |
+|---|---|
+| `ls_agent_kind` | High-level kind of agent, for example `"coding-agent"`. |
+| `ls_integration` | Identifier of the integration emitting the run (see [Supported integrations](#supported-integrations)). |
+| `ls_agent_runtime` | Human-readable runtime name, for example `"Claude Code 1.0.28"`. |
+| `thread_id` | Stable identifier for the conversation thread. Used to group related runs in LangSmith's Threads view. |
+| `ls_trace_schema_version` | Currently `"coding-agent-v1"`. |
+
+## Availability tiers
+
+Fields in this schema are marked with one of three availability tiers:
+
+| Tier | Meaning |
+|---|---|
+| **always** | Must be present on every run. |
+| **where_known** | Required whenever the runtime can expose the value. Omit only when the runtime genuinely cannot provide the information. |
+| **contextual** | Optional metadata. Omit when not applicable. |
+
+## Run types
+
+This schema distinguishes five run types. Some fields apply only to a subset of run types.
+
+| Run type | Description |
+|---|---|
+| `root` | The top-level run representing a full agent turn or session. |
+| `llm` | A language model call within a turn. |
+| `tool` | A tool invocation within a turn. |
+| `subagent` | A nested or delegated agent run. |
+| `interrupted` | A run that was interrupted before completion. |
+
+## Required fields by run type
+
+### All run types
+
+The [global identity block](#global-identity-block) fields are **always** required on every run type.
+
+Additional fields required on all run types:
+
+| Field | Tier | Description |
+|---|---|---|
+| `ls_agent_version` | `where_known` | Version string for the agent runtime, for example `"1.0.28"`. |
+| `git_branch` | `where_known` | Active Git branch in the repository being edited. |
+| `git_commit_sha` | `where_known` | Full SHA of the current Git commit. |
+| `git_repo_url` | `where_known` | Remote URL of the repository. |
+| `working_directory` | `where_known` | Absolute path of the working directory. |
+
+### `llm` runs
+
+| Field | Tier | Description |
+|---|---|---|
+| `ls_model_name` | `where_known` | Model identifier, for example `"claude-opus-4-5"`. |
+| `ls_provider` | `where_known` | Model provider, for example `"anthropic"`. |
+
+### `tool` runs
+
+| Field | Tier | Description |
+|---|---|---|
+| `ls_tool_name` | `always` | Name of the tool invoked, for example `"bash"` or `"computer"`. |
+
+### `subagent` runs
+
+| Field | Tier | Description |
+|---|---|---|
+| `ls_subagent_id` | `always` | Stable identifier for the subagent. |
+| `ls_subagent_type` | `always` | Type or role of the subagent, for example `"researcher"`. |
+
+### `interrupted` runs
+
+Interrupted runs carry the same fields as `root` runs. The run type itself signals the abnormal termination state; no additional required fields are added.
+
+## Related
+
+- [Metadata parameters reference](/langsmith/ls-metadata-parameters): `ls_` prefixed fields used in LangSmith runs generally.
+- [Add metadata and tags](/langsmith/add-metadata-tags): how to attach metadata to traces using the LangSmith SDK.

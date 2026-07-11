@@ -73,6 +73,53 @@ When using the [Agent Server](/langsmith/agent-server), you do not need to imple
 | Access pattern | Pass a `thread_id` in graph config | Read and write items from nodes or application code |
 | Full guide | [Checkpointers](/oss/langgraph/checkpointers) | [Stores](/oss/langgraph/stores) |
 
+## Troubleshooting common issues
+
+### PostgresSaver: `thread_id` too long
+
+When using `PostgresSaver` (or `AsyncPostgresSaver`), the `thread_id` is stored in a column with limited length. If your `thread_id` exceeds the column size, you will see a database error.
+
+**Fix:** Keep `thread_id` values under 255 characters. Use a UUID or hash if you need deterministic IDs:
+
+:::python
+```python
+import uuid
+
+config = {"configurable": {"thread_id": str(uuid.uuid4())[:255]}}
+```
+:::
+
+### `MemorySaver` does not persist between restarts
+
+`MemorySaver` and `InMemorySaver` store checkpoints in RAM. When the process restarts, all checkpoints are lost.
+
+**Fix:** Use a persistent checkpointer for production:
+
+- `PostgresSaver`: PostgreSQL with async support
+- `SqliteSaver`: Local file-based storage for development
+
+### Checkpoints growing unboundedly
+
+Over long conversations, checkpoints accumulate. This can increase latency and storage costs.
+
+**Fix:** Prune old checkpoints periodically or set a retention policy:
+
+:::python
+```python
+from langgraph.checkpoint.postgres import PostgresSaver
+
+checkpointer = PostgresSaver.from_conn_string("postgresql://...")
+checkpointer.setup()  # Creates tables with indexes
+# Consider adding a cron job to delete checkpoints older than N days
+```
+:::
+
+### State access from parent graph to subgraph
+
+When a subgraph updates state, the parent graph may not see the changes immediately. This is because each subgraph manages its own checkpoint namespace.
+
+**Fix:** Use [shared state via Store](/oss/langgraph/stores) for data that needs to cross graph boundaries, or configure your subgraph to write to the parent checkpoint.
+
 ## Next steps
 
 - [Use checkpointers](/oss/langgraph/checkpointers) to persist and inspect thread state.

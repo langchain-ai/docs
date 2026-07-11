@@ -108,7 +108,7 @@ Flat groups (no tabs):
 | Tab | Directory | Groups |
 |-----|-----------|--------|
 | Deep Agents | `src/oss/deepagents/` | Get started, Deployment, Core capabilities, Frontend, Protocols, Code |
-| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend, Advanced usage, Agent development, Deploy with LangSmith |
+| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend, Advanced usage, Agent development, Production |
 | LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs |
 | Integrations* | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Popular Providers, Integrations by component (TS: "General integrations, RAG integrations") |
 | Learn* | `src/oss/` (various) | Tutorials, Conceptual overviews, Additional resources (TS adds: "LangChain Academy") |
@@ -118,6 +118,13 @@ Flat groups (no tabs):
 ## Local development
 
 See [Contributing to documentation](/oss/contributing/documentation) for setup instructions.
+
+### Command-line tools
+
+Two distinct binaries drive local work. Do not assume `mint` is the only command just because the `Makefile` targets shell out to it: `docs` is a first-class, preferred entry point installed separately via Python:
+
+- **`docs`**: The primary CLI, a Python console script (`docs = "pipeline.cli:main"` in `pyproject.toml`) installed into the virtualenv by `uv sync` (the first step of `make install`). Provides `docs dev`, `docs build`, `docs migrate`, and `docs mv`. The `make` targets wrap this CLI. If `docs` is not found after `make install`, relaunch your shell (or activate the venv) so `.venv/bin/docs` lands on `PATH`.
+- **`mint`**: Mintlify's CLI, a separate global npm binary (`npm install -g mint@latest`). The build targets shell out to it for `mint dev`, `mint broken-links`, and `mint export`.
 
 ## Frontmatter
 
@@ -268,6 +275,18 @@ Always use the latest generally available (GA) models when referencing LLMs in d
 
 Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names — they go stale quickly.
 
+### Release stage names
+
+LangSmith ships features through three release stages: alpha, beta, and generally available (GA). See [Release stages](/langsmith/release-stages) for what each stage means.
+
+These are common nouns, not proper nouns. Write them lowercase in prose, including parenthetical and inline status markers:
+
+- Lowercase mid-sentence and in markers: "available in beta", "is in beta", "(beta)", "the feature is in alpha".
+- Capitalize only where normal sentence case requires it: the first word of a sentence or heading ("Beta is optional.", "## Beta").
+- Keep the literal product UI label capitalized when quoting it as a tag: the `Beta` tag, frontmatter `tag: "Beta"`. The same applies to a stage name standing alone as a table cell's only label.
+- Spell out "generally available" on first use, then use "GA". GA is always uppercase.
+- Do not change code identifiers, package version identifiers (`1.0.0b1`), or literal CLI output that contains "Beta".
+
 ## Adding pages
 
 1. Create MDX file with required frontmatter in the correct directory (see navigation map above)
@@ -284,14 +303,16 @@ Before writing or updating model references, verify current model IDs against th
 
 **Add a new integration page (Python):**
 
-1. Create `src/oss/python/integrations/<provider>/<component>.mdx`
-2. Add to `src/docs.json` under Open source → Python dropdown → Integrations tab
+1. Create `src/oss/python/integrations/<component>/<provider>.mdx`
+2. Add the page to the component's index page (`src/oss/python/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
 3. Use description format: `"Integrate with the ClassName type using LangChain Python."`
+4. If the provider has an overview page at `src/oss/python/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
 **Add a new integration page (TypeScript):**
 
-1. Create `src/oss/javascript/integrations/<provider>/<component>.mdx`
-2. Add to `src/docs.json` under Open source → TypeScript dropdown → Integrations tab
+1. Create `src/oss/javascript/integrations/<component>/<provider>.mdx`
+2. Add the page to the component's index page (`src/oss/javascript/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
+3. If the provider has an overview page at `src/oss/javascript/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
 **Add a reusable snippet:**
 
