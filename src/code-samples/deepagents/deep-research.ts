@@ -83,6 +83,8 @@ const tavilySearch = tool(
 );
 // :snippet-end:
 
+// :snippet-start: deep-research-workflow-instructions-js
+// :codegroup-fence-mods: expandable wrap
 const RESEARCH_WORKFLOW_INSTRUCTIONS = `# Research Workflow
 
 Follow this workflow for all research requests:
@@ -146,8 +148,10 @@ Simply list items with details - no introduction needed:
  [1] AI Research Paper: https://example.com/paper
  [2] Industry Analysis: https://example.com/analysis
 `;
+// :snippet-end:
 
-// :snippet-start: researcher-instructions-js
+// :snippet-start: deep-research-researcher-instructions-js
+// :codegroup-fence-mods: expandable wrap
 const RESEARCHER_INSTRUCTIONS = `You are a research assistant conducting research on the user's input topic. For context, today's date is {date}.
 
 Your job is to use tools to gather information about the user's input topic.
@@ -194,6 +198,8 @@ The orchestrator will consolidate citations from all sub-agents into the final r
 `;
 // :snippet-end:
 
+// :snippet-start: deep-research-subagent-delegation-instructions-js
+// :codegroup-fence-mods: expandable wrap
 const SUBAGENT_DELEGATION_INSTRUCTIONS = `# Sub-Agent Research Coordination
 
 Your role is to coordinate research by delegating tasks from your TODO list to specialized research sub-agents.
@@ -230,6 +236,7 @@ Your role is to coordinate research by delegating tasks from your TODO list to s
 - Stop after {maxResearcherIterations} delegation rounds if you haven't found adequate sources
 - Stop when you have sufficient information to answer comprehensively
 - Bias towards focused research over exhaustive exploration`;
+// :snippet-end:
 
 // :snippet-start: deep-research-agent-claude-js
 import { createDeepAgent } from "deepagents";
@@ -257,12 +264,13 @@ const researchSubAgent = {
   tools: [tavilySearch],
 };
 
+// KEEP MODEL
 const model = new ChatAnthropic({
   model: "claude-sonnet-4-5-20250929",
   temperature: 0,
 });
 
-const agent = createDeepAgent({
+const agent = await createDeepAgent({
   model,
   tools: [tavilySearch],
   systemPrompt: INSTRUCTIONS,
@@ -347,6 +355,6 @@ if (!researchSubAgent) throw new Error("researchSubAgent not defined");
 if (!model) throw new Error("model not defined");
 if (!agent) throw new Error("agent not defined");
 if (!agent.invoke) throw new Error("agent.invoke not defined");
-if (!agent.stream) throw new Error("agent.stream not defined");
+if (!agent.streamEvents) throw new Error("agent.streamEvents not defined");
 console.log("✓ Deep research agent components defined correctly");
 // :remove-end:
