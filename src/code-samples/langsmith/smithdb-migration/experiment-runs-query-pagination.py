@@ -87,6 +87,8 @@ async def main():
     runs = []
     async for run in page:
         runs.append(run)
+        if len(runs) >= 100:
+            break
     return runs
 
 

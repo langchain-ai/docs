@@ -142,7 +142,7 @@ for {
 	}
 	// :remove-end:
 	examplesWithRuns = append(examplesWithRuns, page.Items...)
-	if page.NextCursor == "" {
+	if page.NextCursor == "" || len(examplesWithRuns) >= 100 {
 		break
 	}
 	params.Cursor = langsmith.F(page.NextCursor)

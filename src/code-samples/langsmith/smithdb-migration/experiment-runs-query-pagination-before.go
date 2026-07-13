@@ -129,15 +129,27 @@ client := langsmith.NewClient()
 // :remove-start:
 datasetID, experimentID := setupFixture(ctx, client)
 // :remove-end:
-examplesWithRuns, err := client.Datasets.Runs.Query(ctx, datasetID, langsmith.DatasetRunQueryParams{
-	SessionIDs: langsmith.F([]string{experimentID}),
-	Limit:      langsmith.F(int64(1)),
-	Offset:     langsmith.F(int64(1)),
-})
-// :remove-start:
-if err != nil {
-	panic(err.Error())
+var examplesWithRuns []langsmith.ExampleWithRunsCh
+offset := int64(0)
+limit := int64(20)
+for {
+	page, err := client.Datasets.Runs.Query(ctx, datasetID, langsmith.DatasetRunQueryParams{
+		SessionIDs: langsmith.F([]string{experimentID}),
+		Limit:      langsmith.F(limit),
+		Offset:     langsmith.F(offset),
+	})
+	// :remove-start:
+	if err != nil {
+		panic(err.Error())
+	}
+	// :remove-end:
+	examplesWithRuns = append(examplesWithRuns, *page...)
+	if len(examplesWithRuns) >= 100 || int64(len(*page)) < limit {
+		break
+	}
+	offset += limit
 }
+// :remove-start:
 _ = examplesWithRuns
 }
 // :remove-end:

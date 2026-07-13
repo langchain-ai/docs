@@ -53,12 +53,15 @@ if (!(await client.hasProject({ projectName: EXPERIMENT_NAME }))) {
 const experimentName = EXPERIMENT_NAME;
 // :remove-end:
 const experimentId = (await client.readProject({ projectName: experimentName })).id;
+const runs: unknown[] = [];
 for await (const run of client.datasets.experimentRuns.query(datasetId, {
   experiment_ids: [experimentId],
   page_size: 1,
 })) {
-  // :remove-start:
-  void run;
-  // :remove-end:
+  runs.push(run);
+  if (runs.length >= 100) break;
 }
+// :remove-start:
+void runs;
+// :remove-end:
 // :snippet-end:

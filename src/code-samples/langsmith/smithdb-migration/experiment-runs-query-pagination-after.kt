@@ -125,10 +125,13 @@ val page = client.datasets().experimentRuns().query(
         .pageSize(1L)
         .build()
 )
+var count = 0
 for (run in page.autoPager()) {
     // :remove-start:
     println(run)
     // :remove-end:
+    count++
+    if (count >= 100) break
 }
 // :remove-start:
 }

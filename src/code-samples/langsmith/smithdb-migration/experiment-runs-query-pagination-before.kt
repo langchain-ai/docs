@@ -8,6 +8,7 @@
 import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.datasets.runs.RunQueryParams
+import com.langchain.smith.models.datasets.runs.ExampleWithRunsCh
 // :remove-start:
 import com.langchain.smith.models.datasets.DatasetCreateParams
 import com.langchain.smith.models.datasets.DatasetListParams
@@ -118,14 +119,22 @@ val experimentId = if (existingSessions.isNotEmpty()) {
     session.id()
 }
 // :remove-end:
-val examplesWithRuns = client.datasets().runs().query(
-    datasetId,
-    RunQueryParams.builder()
-        .addSessionId(experimentId)
-        .limit(1L)
-        .offset(1L)
-        .build()
-)
+val examplesWithRuns = mutableListOf<ExampleWithRunsCh>()
+var offset = 0L
+val limit = 20L
+while (true) {
+    val page = client.datasets().runs().query(
+        datasetId,
+        RunQueryParams.builder()
+            .addSessionId(experimentId)
+            .limit(limit)
+            .offset(offset)
+            .build()
+    ).orElse(emptyList())
+    examplesWithRuns.addAll(page)
+    if (examplesWithRuns.size >= 100 || page.size.toLong() < limit) break
+    offset += limit
+}
 // :remove-start:
 }
 // :remove-end:
