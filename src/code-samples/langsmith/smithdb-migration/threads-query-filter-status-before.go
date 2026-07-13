@@ -27,6 +27,7 @@ func main() {
 		Session: langsmith.F([]string{projectID}),
 		IsRoot:  langsmith.F(true),
 		Filter:  langsmith.F(`eq(status, "error")`),
+		Limit:   langsmith.F(int64(5)),
 	})
 	if err != nil {
 		panic(err.Error())

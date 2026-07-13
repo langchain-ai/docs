@@ -4,7 +4,7 @@
 from langsmith import Client
 
 client = Client()
-threads = client.list_threads(project_name="default")
+threads = client.list_threads(project_name="default", limit=5)
 for thread in threads:
     print(thread["thread_id"], thread["count"])
 # :snippet-end:
