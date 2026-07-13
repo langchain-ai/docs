@@ -32,6 +32,12 @@ _results = _setup_client.evaluate(
 )
 dataset_id = _results.get_dataset_id()
 experiment_name = _results.experiment_name
+# Sorting queries derive their time window from the experiment's start time,
+# truncated to whole seconds. Without a short buffer, a fixture created and
+# queried within the same second can produce an empty (min == max) window.
+import time as _time
+
+_time.sleep(1)
 # :remove-end:
 
 # :snippet-start: experiment-runs-query-sort-after-py
