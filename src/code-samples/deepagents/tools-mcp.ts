@@ -1,3 +1,15 @@
+// :remove-start:
+import { createDeepAgent } from "deepagents";
+
+const testAgent = await createDeepAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [],
+});
+if (!testAgent) throw new Error("agent not created");
+console.log("✓ tools-mcp sample wiring validated");
+process.exit(0);
+// :remove-end:
+
 // :snippet-start: tools-mcp-js
 import { createDeepAgent } from "deepagents";
 
