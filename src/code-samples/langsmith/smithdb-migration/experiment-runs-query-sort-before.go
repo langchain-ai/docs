@@ -6,18 +6,116 @@ import (
 	"context"
 
 	"github.com/langchain-ai/langsmith-go"
+	// :remove-start:
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/langchain-ai/langsmith-go/shared"
+	// :remove-end:
 )
 
 // :remove-start:
-var datasetID = "00000000-0000-0000-0000-000000000000"
-var experimentID = "00000000-0000-0000-0000-000000000001"
+func setupFixture(ctx context.Context, client *langsmith.Client, experimentPrefix string) (string, string) {
+	fixtureDatasetName := "docs-experiment-runs-query-fixture"
+	existing, err := client.Datasets.List(ctx, langsmith.DatasetListParams{
+		Name: langsmith.F(fixtureDatasetName),
+	})
+	if err != nil {
+		panic(err.Error())
+	}
+	var datasetID string
+	if len(existing.Items) > 0 {
+		datasetID = existing.Items[0].ID
+	} else {
+		dataset, err := client.Datasets.New(ctx, langsmith.DatasetNewParams{
+			Name: langsmith.F(fixtureDatasetName),
+		})
+		if err != nil {
+			panic(err.Error())
+		}
+		datasetID = dataset.ID
+
+		qa := [][2]string{{"2 + 2", "4"}, {"3 + 3", "6"}, {"4 + 4", "9"}}
+		for _, pair := range qa {
+			_, err := client.Examples.New(ctx, langsmith.ExampleNewParams{
+				DatasetID: langsmith.F(datasetID),
+				Inputs:    langsmith.F(map[string]interface{}{"question": pair[0]}),
+				Outputs:   langsmith.F(map[string]interface{}{"answer": pair[1]}),
+			})
+			if err != nil {
+				panic(err.Error())
+			}
+		}
+	}
+
+	examples, err := client.Examples.List(ctx, langsmith.ExampleListParams{
+		Dataset: langsmith.F(datasetID),
+	})
+	if err != nil {
+		panic(err.Error())
+	}
+
+	experimentName := fmt.Sprintf("%s-%s", experimentPrefix, uuid.New().String()[:8])
+	session, err := client.Sessions.New(ctx, langsmith.SessionNewParams{
+		Name:               langsmith.F(experimentName),
+		ReferenceDatasetID: langsmith.F(datasetID),
+	})
+	if err != nil {
+		panic(err.Error())
+	}
+	experimentID := session.ID
+
+	now := time.Now().Format(time.RFC3339)
+	for _, example := range examples.Items {
+		question, _ := example.Inputs["question"].(string)
+		var a, b int
+		fmt.Sscanf(question, "%d + %d", &a, &b)
+		answer := fmt.Sprintf("%d", a+b)
+
+		runID := uuid.New().String()
+		_, err := client.Runs.New(ctx, langsmith.RunNewParams{
+			RunIngest: langsmith.RunIngestParam{
+				ID:                 langsmith.F(runID),
+				Name:               langsmith.F("target"),
+				RunType:            langsmith.F(langsmith.RunIngestRunTypeChain),
+				SessionID:          langsmith.F(experimentID),
+				ReferenceExampleID: langsmith.F(example.ID),
+				Inputs:             langsmith.F(example.Inputs),
+				Outputs:            langsmith.F(map[string]interface{}{"answer": answer}),
+				StartTime:          langsmith.F(now),
+				EndTime:            langsmith.F(now),
+			},
+		})
+		if err != nil {
+			panic(err.Error())
+		}
+
+		score := 0.0
+		if referenceAnswer, ok := example.Outputs["answer"].(string); ok && answer == referenceAnswer {
+			score = 1.0
+		}
+		_, err = client.Feedback.New(ctx, langsmith.FeedbackNewParams{
+			FeedbackCreateSchema: langsmith.FeedbackCreateSchemaParam{
+				Key:   langsmith.F("correctness"),
+				RunID: langsmith.F(runID),
+				Score: langsmith.F[langsmith.FeedbackCreateSchemaScoreUnionParam](shared.UnionFloat(score)),
+			},
+		})
+		if err != nil {
+			panic(err.Error())
+		}
+	}
+	return datasetID, experimentID
+}
 
 func main() {
-	if false {
 // :remove-end:
 ctx := context.Background()
 client := langsmith.NewClient()
-
+// :remove-start:
+datasetID, experimentID := setupFixture(ctx, client, "docs-experiment-runs-query-sort")
+// :remove-end:
 examplesWithRuns, err := client.Datasets.Runs.Query(ctx, datasetID, langsmith.DatasetRunQueryParams{
 	SessionIDs: langsmith.F([]string{experimentID}),
 	SortParams: langsmith.F(langsmith.SortParamsForRunsComparisonView{
@@ -30,7 +128,6 @@ if err != nil {
 	panic(err.Error())
 }
 _ = examplesWithRuns
-	}
 }
 // :remove-end:
 // :snippet-end:

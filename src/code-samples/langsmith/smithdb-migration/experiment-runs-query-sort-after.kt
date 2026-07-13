@@ -8,16 +8,70 @@
 import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.datasets.experimentruns.ExperimentRunQueryParams
+// :remove-start:
+import com.langchain.smith.models.datasets.DatasetCreateParams
+import com.langchain.smith.models.datasets.DatasetListParams
+import com.langchain.smith.models.examples.ExampleCreateParams
+import com.langchain.smith.evaluation.EvaluateParams
+import com.langchain.smith.evaluation.EvaluationResult
+import com.langchain.smith.evaluation.evaluate
+import com.langchain.smith.evaluation.runEvaluator
+// :remove-end:
 
 // :remove-start:
 fun main() {
-    if (false) {
-// :remove-end:
-// :remove-start:
-val datasetId = "00000000-0000-0000-0000-000000000000"
-val experimentId = "00000000-0000-0000-0000-000000000001"
 // :remove-end:
 val client: LangsmithClient = LangsmithOkHttpClient.fromEnv()
+// :remove-start:
+val fixtureDatasetName = "docs-experiment-runs-query-fixture"
+val existingDatasets = client.datasets().list(
+    DatasetListParams.builder().name(fixtureDatasetName).build()
+).items()
+if (existingDatasets.isEmpty()) {
+    val created = client.datasets().create(
+        DatasetCreateParams.builder().name(fixtureDatasetName).build()
+    )
+    listOf("2 + 2" to "4", "3 + 3" to "6", "4 + 4" to "9").forEach { (question, answer) ->
+        client.examples().create(
+            ExampleCreateParams.builder()
+                .datasetId(created.id())
+                .inputs(
+                    ExampleCreateParams.Inputs.builder()
+                        .putAdditionalProperty("question", com.langchain.smith.core.JsonValue.from(question))
+                        .build()
+                )
+                .outputs(
+                    ExampleCreateParams.Outputs.builder()
+                        .putAdditionalProperty("answer", com.langchain.smith.core.JsonValue.from(answer))
+                        .build()
+                )
+                .build()
+        )
+    }
+}
+
+val correctness = runEvaluator { outputs: Map<String, Any?>, referenceOutputs: Map<String, Any?> ->
+    EvaluationResult(
+        key = "correctness",
+        score = if (outputs["answer"] == referenceOutputs["answer"]) 1 else 0,
+    )
+}
+
+val evalResults = evaluate(
+    client,
+    { inputs ->
+        val (a, b) = (inputs["question"] as String).split(" + ").map { it.toInt() }
+        mapOf("answer" to (a + b).toString())
+    },
+    EvaluateParams.builder()
+        .data(fixtureDatasetName)
+        .addEvaluator(correctness)
+        .experimentPrefix("docs-experiment-runs-query-sort")
+        .build(),
+)
+val datasetId = evalResults.datasetId
+val experimentId = evalResults.experimentId!!
+// :remove-end:
 val page = client.datasets().experimentRuns().query(
     datasetId,
     ExperimentRunQueryParams.builder()
@@ -31,7 +85,7 @@ val page = client.datasets().experimentRuns().query(
         .build()
 )
 // :remove-start:
-    }
+println(page)
 }
 // :remove-end:
 // :snippet-end:
