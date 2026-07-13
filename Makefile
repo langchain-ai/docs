@@ -61,19 +61,11 @@ lint_md_fix:
 
 lint_prose:
 	@echo "Linting prose with Vale..."
-	@if command -v vale >/dev/null 2>&1; then \
-		if [ -n "$(FILES)" ]; then \
-			vale --glob='!**/node_modules/**' $(FILES); \
-		else \
-			vale --glob='!**/node_modules/**' src/; \
-		fi; \
+	@command -v vale >/dev/null 2>&1 || { echo "Installing Vale for prose linting..."; brew install vale; }
+	@if [ -n "$(FILES)" ]; then \
+		vale --glob='!**/node_modules/**' $(FILES); \
 	else \
-		echo "Vale not found; running the local fallback prose checker."; \
-		if [ -n "$(FILES)" ]; then \
-			python3 scripts/lint_prose.py $(FILES); \
-		else \
-			python3 scripts/lint_prose.py src; \
-		fi; \
+		vale --glob='!**/node_modules/**' src/; \
 	fi
 
 test:
