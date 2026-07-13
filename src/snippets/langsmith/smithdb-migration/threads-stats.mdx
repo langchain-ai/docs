@@ -68,6 +68,8 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
     | `project_ids` | `session_id` | v2 takes a single project UUID, not a list |
     | `filter=eq(thread_id, ...)` + `is_root=True` | `thread_id` (path param) | v2 scopes by path, not filter |
     | *(returns everything)* | `selects` | v2 requires an explicit, non-empty select list |
+
+    <Note>`session_id` takes a tracing project UUID, the same value every other v2 method in this guide calls `project_id`. This is a real naming inconsistency in the API, confirmed against the generated SDK types, not a documentation error.</Note>
   </Tab>
   <Tab title="TypeScript">
     Same mapping as Python: `getRunStats({ projectIds, filter, isRoot })` → `threads.stats(threadId, { session_id, selects })`.
@@ -108,18 +110,62 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
   </Tab>
   <Tab title="Java">
     Same field mapping. `RunStatsResponse.runStats()` reliably decodes to the flat `RunStats` variant for a non-grouped query in the current Java binding.
+
+    | Before (v1 `RunStats` method) | After (v2 `ThreadStatsResponse` method) | Notes |
+    |---|---|---|
+    | `stats.runCount()` | `turns()` | Renamed |
+    | `stats.latencyP50()` | `latencyP50Seconds()` | Renamed, unit made explicit |
+    | `stats.latencyP99()` | `latencyP99Seconds()` | Renamed |
+    | `stats.lastRunStartTime()` | `lastStartTime()` | Renamed |
+    | `stats.promptTokens()`, `.completionTokens()`, `.totalTokens()` | Unchanged | Same names |
+    | `stats.promptCost()`, `.completionCost()`, `.totalCost()` | Unchanged | Same names |
+    | `stats.*TokenDetails()`, `.*CostDetails()` | Unchanged | Same names |
+    | `stats.feedbackStats()` | Unchanged | Same name |
+    | *(needed a second `runs().query()` call sorted ascending)* | `firstStartTime()` | New: no longer needs a second API call |
+    | *(not available)* | `lastEndTime()` | New |
+    | `firstTokenP50()`/`firstTokenP99()`, `medianTokens()`, token-count percentiles, `runFacets()`, `errorRate()`, `streamingRate()`, `costP50()`/`costP99()` | *(removed)* | v1-only, no v2 equivalent |
   </Tab>
   <Tab title="Go">
     Same field mapping, but the Go binding's `RunStatsResponseUnion` can misdecode a flat (non-grouped) response as the grouped-map variant, a known ambiguity between `RunStatsResponseRunStats` and `RunStatsResponseMap`. Handle both cases defensively with a type switch, as shown below.
+
+    | Before (v1 `RunStats` field) | After (v2 `ThreadStatsResponse` field) | Notes |
+    |---|---|---|
+    | `stats.RunCount` | `Turns` | Renamed |
+    | `stats.LatencyP50` | `LatencyP50Seconds` | Renamed, unit made explicit |
+    | `stats.LatencyP99` | `LatencyP99Seconds` | Renamed |
+    | `stats.LastRunStartTime` | `LastStartTime` | Renamed |
+    | `stats.PromptTokens`, `.CompletionTokens`, `.TotalTokens` | Unchanged | Same names |
+    | `stats.PromptCost`, `.CompletionCost`, `.TotalCost` | Unchanged | Same names |
+    | `stats.*TokenDetails`, `.*CostDetails` | Unchanged | Same names |
+    | `stats.FeedbackStats` | Unchanged | Same name |
+    | *(needed a second `Runs.Query()` call sorted ascending)* | `FirstStartTime` | New: no longer needs a second API call |
+    | *(not available)* | `LastEndTime` | New |
+    | `FirstTokenP50`/`FirstTokenP99`, `MedianTokens`, token-count percentiles, `RunFacets`, `ErrorRate`, `StreamingRate`, `CostP50`/`CostP99` | *(removed)* | v1-only, no v2 equivalent |
   </Tab>
   <Tab title="cURL">
     JSON response fields match Python `snake_case`.
+
+    | Before (v1 `RunStats` field) | After (v2 `ThreadStatsResponse` field) | Notes |
+    |---|---|---|
+    | `run_count` | `turns` | Renamed |
+    | `latency_p50` | `latency_p50_seconds` | Renamed, unit made explicit |
+    | `latency_p99` | `latency_p99_seconds` | Renamed |
+    | `last_run_start_time` | `last_start_time` | Renamed |
+    | `prompt_tokens`, `completion_tokens`, `total_tokens` | Unchanged | Same names |
+    | `prompt_cost`, `completion_cost`, `total_cost` | Unchanged | Same names |
+    | `*_token_details`, `*_cost_details` | Unchanged | Same names |
+    | `feedback_stats` | Unchanged | Same name |
+    | *(needed a second `runs/query` call sorted ascending)* | `first_start_time` | New: no longer needs a second API call |
+    | *(not available)* | `last_end_time` | New |
+    | `first_token_p50`/`first_token_p99`, `median_tokens`, token-count percentiles, `run_facets`, `error_rate`, `streaming_rate`, `cost_p50`/`cost_p99` | *(removed)* | v1-only, no v2 equivalent |
   </Tab>
 </Tabs>
 
 ### Examples
 
-#### Compute stats for a thread
+#### Get stats for a thread
+
+Fetch turn count, latency, and token and cost totals for a thread in a single call, instead of a filtered `runs.stats` call.
 
 <Warning>
 `threads.stats` aggregates are computed by an eventually-consistent background job. A call right after a thread's last run can succeed with some selected fields still unpopulated.
@@ -178,7 +224,9 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
   </Tab>
 </Tabs>
 
-#### Replace the two-call workaround for `first_start_time`
+#### Get a thread's first-turn start time in one call
+
+Fetch when a thread started without a second, separately-sorted query.
 
 <Tabs>
   <Tab title="Python">

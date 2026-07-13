@@ -7,6 +7,7 @@ const client = new Client();
 const threads = await client.listThreads({
   projectName: "default",
   filter: 'eq(status, "error")',
+  limit: 5,
 });
 for (const thread of threads) {
   console.log(thread.thread_id, thread.last_error);
