@@ -13,10 +13,13 @@ import com.langchain.smith.models.datasets.runs.SortParamsForRunsComparisonView
 import com.langchain.smith.models.datasets.DatasetCreateParams
 import com.langchain.smith.models.datasets.DatasetListParams
 import com.langchain.smith.models.examples.ExampleCreateParams
-import com.langchain.smith.evaluation.EvaluateParams
-import com.langchain.smith.evaluation.EvaluationResult
-import com.langchain.smith.evaluation.evaluate
-import com.langchain.smith.evaluation.runEvaluator
+import com.langchain.smith.models.examples.ExampleListParams
+import com.langchain.smith.models.sessions.SessionCreateParams
+import com.langchain.smith.models.sessions.SessionListParams
+import com.langchain.smith.models.runs.RunIngest
+import com.langchain.smith.models.feedback.FeedbackCreateSchema
+import java.time.OffsetDateTime
+import java.util.UUID
 // :remove-end:
 
 // :remove-start:
@@ -28,7 +31,9 @@ val fixtureDatasetName = "docs-experiment-runs-query-fixture"
 val existingDatasets = client.datasets().list(
     DatasetListParams.builder().name(fixtureDatasetName).build()
 ).items()
-if (existingDatasets.isEmpty()) {
+val fixtureDatasetId = if (existingDatasets.isNotEmpty()) {
+    existingDatasets.first().id()
+} else {
     val created = client.datasets().create(
         DatasetCreateParams.builder().name(fixtureDatasetName).build()
     )
@@ -49,29 +54,70 @@ if (existingDatasets.isEmpty()) {
                 .build()
         )
     }
+    created.id()
 }
+val datasetId = fixtureDatasetId
 
-val correctness = runEvaluator { outputs: Map<String, Any?>, referenceOutputs: Map<String, Any?> ->
-    EvaluationResult(
-        key = "correctness",
-        score = if (outputs["answer"] == referenceOutputs["answer"]) 1 else 0,
+// The experiment is shared across every experiment-runs-query sample (this
+// file and its siblings): created once, ever, and reused afterward so the
+// suite doesn't spend a real evaluation run per file.
+val experimentName = "docs-experiment-runs-query-fixture-experiment"
+val existingSessions = client.sessions().list(
+    SessionListParams.builder().name(experimentName).build()
+).items()
+val experimentId = if (existingSessions.isNotEmpty()) {
+    existingSessions.first().id()
+} else {
+    val session = client.sessions().create(
+        SessionCreateParams.builder()
+            .name(experimentName)
+            .referenceDatasetId(fixtureDatasetId)
+            .build()
     )
+    val fixtureAnswers = listOf("4" to "4", "6" to "6", "9" to "8")
+    val examples = client.examples().list(
+        ExampleListParams.builder().dataset(fixtureDatasetId).build()
+    ).items()
+    examples.zip(fixtureAnswers).forEach { (example, referenceAndTarget) ->
+        val (referenceAnswer, targetAnswer) = referenceAndTarget
+        val runId = UUID.randomUUID().toString()
+        val now = OffsetDateTime.now().toString()
+        client.runs().create(
+            RunIngest.builder()
+                .id(runId)
+                .name("target")
+                .runType(RunIngest.RunType.CHAIN)
+                .sessionId(session.id())
+                .referenceExampleId(example.id())
+                .inputs(
+                    RunIngest.Inputs.builder()
+                        .putAllAdditionalProperties(example.inputs()._additionalProperties())
+                        .build()
+                )
+                .outputs(
+                    RunIngest.Outputs.builder()
+                        .putAdditionalProperty("answer", com.langchain.smith.core.JsonValue.from(targetAnswer))
+                        .build()
+                )
+                .startTime(now)
+                .endTime(now)
+                .build()
+        )
+        val score = if (targetAnswer == referenceAnswer) 1.0 else 0.0
+        client.feedback().create(
+            FeedbackCreateSchema.builder()
+                .key("correctness")
+                .runId(runId)
+                .score(score)
+                .build()
+        )
+    }
+    // Sorting queries derive their time window from the experiment's start
+    // time, truncated to whole seconds server-side. A short buffer avoids a
+    // same-second min/max window on whichever run performs this creation.
+    Thread.sleep(1000)
+    session.id()
 }
-
-val evalResults = evaluate(
-    client,
-    { inputs ->
-        val (a, b) = (inputs["question"] as String).split(" + ").map { it.toInt() }
-        mapOf("answer" to (a + b).toString())
-    },
-    EvaluateParams.builder()
-        .data(fixtureDatasetName)
-        .addEvaluator(correctness)
-        .experimentPrefix("docs-experiment-runs-query-sort")
-        .build(),
-)
-val datasetId = evalResults.datasetId
-val experimentId = evalResults.experimentId!!
 // :remove-end:
 val examplesWithRuns = client.datasets().runs().query(
     datasetId,

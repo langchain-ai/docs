@@ -16,17 +16,17 @@ import (
 )
 
 // :remove-start:
-func setupFixture(ctx context.Context, client *langsmith.Client, experimentPrefix string) (string, string) {
+func setupFixture(ctx context.Context, client *langsmith.Client) (string, string) {
 	fixtureDatasetName := "docs-experiment-runs-query-fixture"
-	existing, err := client.Datasets.List(ctx, langsmith.DatasetListParams{
+	existingDatasets, err := client.Datasets.List(ctx, langsmith.DatasetListParams{
 		Name: langsmith.F(fixtureDatasetName),
 	})
 	if err != nil {
 		panic(err.Error())
 	}
 	var datasetID string
-	if len(existing.Items) > 0 {
-		datasetID = existing.Items[0].ID
+	if len(existingDatasets.Items) > 0 {
+		datasetID = existingDatasets.Items[0].ID
 	} else {
 		dataset, err := client.Datasets.New(ctx, langsmith.DatasetNewParams{
 			Name: langsmith.F(fixtureDatasetName),
@@ -49,6 +49,20 @@ func setupFixture(ctx context.Context, client *langsmith.Client, experimentPrefi
 		}
 	}
 
+	// The experiment is shared across every experiment-runs-query sample (this
+	// file and its siblings): created once, ever, and reused afterward so the
+	// suite doesn't spend a real evaluation run per file.
+	experimentName := "docs-experiment-runs-query-fixture-experiment"
+	existingSessions, err := client.Sessions.List(ctx, langsmith.SessionListParams{
+		Name: langsmith.F(experimentName),
+	})
+	if err != nil {
+		panic(err.Error())
+	}
+	if len(existingSessions.Items) > 0 {
+		return datasetID, existingSessions.Items[0].ID
+	}
+
 	examples, err := client.Examples.List(ctx, langsmith.ExampleListParams{
 		Dataset: langsmith.F(datasetID),
 	})
@@ -56,7 +70,6 @@ func setupFixture(ctx context.Context, client *langsmith.Client, experimentPrefi
 		panic(err.Error())
 	}
 
-	experimentName := fmt.Sprintf("%s-%s", experimentPrefix, uuid.New().String()[:8])
 	session, err := client.Sessions.New(ctx, langsmith.SessionNewParams{
 		Name:               langsmith.F(experimentName),
 		ReferenceDatasetID: langsmith.F(datasetID),
@@ -114,7 +127,7 @@ func main() {
 ctx := context.Background()
 client := langsmith.NewClient()
 // :remove-start:
-datasetID, experimentID := setupFixture(ctx, client, "docs-experiment-runs-query-sort")
+datasetID, experimentID := setupFixture(ctx, client)
 // :remove-end:
 examplesWithRuns, err := client.Datasets.Runs.Query(ctx, datasetID, langsmith.DatasetRunQueryParams{
 	SessionIDs: langsmith.F([]string{experimentID}),

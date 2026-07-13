@@ -1,13 +1,12 @@
 // :snippet-start: experiment-runs-query-pagination-after-js
 // :codegroup-tab: After
 import { Client } from "langsmith";
-// :remove-start:
-import { evaluate } from "langsmith/evaluation";
-// :remove-end:
 
 const client = new Client();
 // :remove-start:
 const DATASET_NAME = "docs-experiment-runs-query-fixture";
+const EXPERIMENT_NAME = "docs-experiment-runs-query-fixture-experiment";
+
 if (!(await client.hasDataset({ datasetName: DATASET_NAME }))) {
   const newDataset = await client.createDataset(DATASET_NAME);
   await client.createExamples([
@@ -17,32 +16,41 @@ if (!(await client.hasDataset({ datasetName: DATASET_NAME }))) {
   ]);
 }
 const dataset = await client.readDataset({ datasetName: DATASET_NAME });
-
-function target(inputs: { question: string }) {
-  const [a, b] = inputs.question.split(" + ").map(Number);
-  return { answer: String(a + b) };
-}
-
-function correctness({
-  outputs,
-  referenceOutputs,
-}: {
-  outputs?: Record<string, unknown>;
-  referenceOutputs?: Record<string, unknown>;
-}) {
-  return {
-    key: "correctness",
-    score: outputs?.answer === referenceOutputs?.answer ? 1 : 0,
-  };
-}
-
-const evalResults = await evaluate(target, {
-  data: DATASET_NAME,
-  evaluators: [correctness],
-  experimentPrefix: "docs-experiment-runs-query-pagination",
-});
 const datasetId = dataset.id;
-const experimentName = evalResults.experimentName;
+
+// The experiment is shared across every experiment-runs-query sample (this
+// file and its siblings): created once, ever, and reused afterward so the
+// suite doesn't spend a real evaluation run per file.
+if (!(await client.hasProject({ projectName: EXPERIMENT_NAME }))) {
+  await client.createProject({
+    projectName: EXPERIMENT_NAME,
+    referenceDatasetId: datasetId,
+  });
+  for await (const example of client.listExamples({ datasetId })) {
+    const [a, b] = (example.inputs.question as string).split(" + ").map(Number);
+    const answer = String(a + b);
+    const runId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await client.createRun({
+      id: runId,
+      name: "target",
+      run_type: "chain",
+      inputs: example.inputs,
+      outputs: { answer },
+      reference_example_id: example.id,
+      project_name: EXPERIMENT_NAME,
+      start_time: now,
+      end_time: now,
+    });
+    const score = answer === (example.outputs?.answer as string) ? 1 : 0;
+    await client.createFeedback(runId, "correctness", { score });
+  }
+  // Sorting queries derive their time window from the experiment's start
+  // time, truncated to whole seconds server-side. A short buffer avoids a
+  // same-second min/max window on whichever run performs this creation.
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+}
+const experimentName = EXPERIMENT_NAME;
 // :remove-end:
 const experimentId = (await client.readProject({ projectName: experimentName })).id;
 for await (const run of client.datasets.experimentRuns.query(datasetId, {
