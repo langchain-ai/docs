@@ -10,16 +10,13 @@ const client = new Client();
 // :remove-start:
 if (false) {
 // :remove-end:
-const page = await client.datasets.experimentRuns.query(datasetId, {
+for await (const run of client.datasets.experimentRuns.query(datasetId, {
   experiment_ids: [experimentId],
   page_size: 20,
-});
-if (page.next_cursor) {
-  const nextPage = await client.datasets.experimentRuns.query(datasetId, {
-    experiment_ids: [experimentId],
-    page_size: 20,
-    cursor: page.next_cursor,
-  });
+})) {
+  // :remove-start:
+  void run;
+  // :remove-end:
 }
 // :remove-start:
 }

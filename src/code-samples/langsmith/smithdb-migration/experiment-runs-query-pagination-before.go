@@ -1,4 +1,4 @@
-// :snippet-start: experiment-runs-query-basic-before-go
+// :snippet-start: experiment-runs-query-pagination-before-go
 // :codegroup-tab: Before
 package main
 
@@ -21,7 +21,7 @@ client := langsmith.NewClient()
 examplesWithRuns, err := client.Datasets.Runs.Query(ctx, datasetID, langsmith.DatasetRunQueryParams{
 	SessionIDs: langsmith.F([]string{experimentID}),
 	Limit:      langsmith.F(int64(20)),
-	Preview:    langsmith.F(true),
+	Offset:     langsmith.F(int64(20)),
 })
 // :remove-start:
 if err != nil {

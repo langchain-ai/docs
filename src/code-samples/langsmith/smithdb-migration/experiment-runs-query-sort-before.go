@@ -1,4 +1,4 @@
-// :snippet-start: experiment-runs-query-basic-before-go
+// :snippet-start: experiment-runs-query-sort-before-go
 // :codegroup-tab: Before
 package main
 
@@ -20,8 +20,10 @@ client := langsmith.NewClient()
 
 examplesWithRuns, err := client.Datasets.Runs.Query(ctx, datasetID, langsmith.DatasetRunQueryParams{
 	SessionIDs: langsmith.F([]string{experimentID}),
-	Limit:      langsmith.F(int64(20)),
-	Preview:    langsmith.F(true),
+	SortParams: langsmith.F(langsmith.SortParamsForRunsComparisonView{
+		SortBy:    langsmith.F("correctness"),
+		SortOrder: langsmith.F(langsmith.SortParamsForRunsComparisonViewSortOrderAsc),
+	}),
 })
 // :remove-start:
 if err != nil {

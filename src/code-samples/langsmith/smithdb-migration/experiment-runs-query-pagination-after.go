@@ -18,29 +18,20 @@ func main() {
 ctx := context.Background()
 client := langsmith.NewClient()
 
-page, err := client.Datasets.ExperimentRuns.Query(ctx, datasetID, langsmith.DatasetExperimentRunQueryParams{
+iter := client.Datasets.ExperimentRuns.QueryAutoPaging(ctx, datasetID, langsmith.DatasetExperimentRunQueryParams{
 	ExperimentIDs: langsmith.F([]string{experimentID}),
 	PageSize:      langsmith.F(int64(20)),
 })
-// :remove-start:
-if err != nil {
-	panic(err.Error())
-}
-// :remove-end:
-if page.NextCursor != "" {
-	nextPage, err := client.Datasets.ExperimentRuns.Query(ctx, datasetID, langsmith.DatasetExperimentRunQueryParams{
-		ExperimentIDs: langsmith.F([]string{experimentID}),
-		PageSize:      langsmith.F(int64(20)),
-		Cursor:        langsmith.F(page.NextCursor),
-	})
+for iter.Next() {
+	run := iter.Current()
 	// :remove-start:
-	if err != nil {
-		panic(err.Error())
-	}
-	_ = nextPage
+	_ = run
 	// :remove-end:
 }
 // :remove-start:
+if err := iter.Err(); err != nil {
+	panic(err.Error())
+}
 	}
 }
 // :remove-end:

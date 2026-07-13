@@ -2,7 +2,7 @@ module github.com/langchain-ai/docs-code-samples
 
 go 1.25.0
 
-require github.com/langchain-ai/langsmith-go v0.17.0
+require github.com/langchain-ai/langsmith-go v0.18.2
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
