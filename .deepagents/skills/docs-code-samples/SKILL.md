@@ -1,8 +1,8 @@
 ---
 name: docs-code-samples
-description: Use this skill when migrating inline code samples from LangChain docs (MDX files) into external, testable code files that are extracted with Bluehawk and used as Mintlify snippets. Applies when extracting code blocks from documentation, creating runnable code samples, using snippet delineators, or wiring Bluehawk output into MDX includes.
+description: Use this skill when migrating inline code samples from LangChain docs (MDX files) into external, testable code files that are extracted by this repo’s snippet scripts and used as Mintlify snippets. Applies when extracting code blocks from documentation, creating runnable code samples, using snippet delineators, or wiring snippet output into MDX includes.
 license: MIT
-compatibility: LangChain docs monorepo with Mintlify. Requires npm (for Bluehawk), Python, Make.
+compatibility: LangChain docs monorepo with Mintlify. Requires Python and Make (Node.js is also required for TypeScript samples).
 metadata:
   author: langchain
   version: "1.0"
@@ -12,19 +12,20 @@ metadata:
 
 ## Overview
 
-This skill documents the workflow for moving inline code samples from LangChain documentation into standalone, testable files that Bluehawk extracts into snippets for use in MDX via Mintlify.
+This skill documents the workflow for moving inline code samples from LangChain documentation into standalone, testable files that this repo extracts into snippets for use in MDX using Mintlify.
 
 ## When to use
 
-- Migrating inline Python or TypeScript/JavaScript code blocks from MDX to external files
+- Migrating inline Python, TypeScript/JavaScript, or Java code blocks from MDX to external files
 - Creating runnable, testable code samples for documentation
-- Setting up Bluehawk snippet extraction and Mintlify snippet includes
+- Setting up snippet extraction and Mintlify snippet includes
 
 ## Directory structure
 
 Code samples live under `src/code-samples/` in folders that match the product:
 
-- `langchain/` — LangChain and LangGraph docs
+- `langchain/` — LangChain docs
+- `langgraph/` — LangGraph docs
 - `deepagents/` — Deep Agents docs
 - `langsmith/` — LangSmith docs
 
@@ -32,15 +33,19 @@ Example:
 
 ```
 src/
-├── code-samples/              # Source: testable code with Bluehawk tags
+├── code-samples/              # Source: testable code with snippet tags
 │   ├── langchain/
 │   │   ├── return-a-string.py
 │   │   └── return-a-string.ts
+│   ├── langgraph/
+│   │   ├── langgraph-sql-agent.py
+│   │   └── langgraph-sql-agent.ts
 │   ├── deepagents/
 │   │   └── example-skill.py
 │   └── langsmith/
-│       └── trace-example.py
-├── code-samples-generated/    # Bluehawk output (gitignored)
+│       ├── trace-example.py
+│       └── trace-example.java
+├── code-samples-generated/    # Snippet output (gitignored)
 │   ├── return-a-string.snippet.tool-return-values.py
 │   ├── return-a-string.snippet.tool-return-values.ts
 │   └── ...
@@ -51,17 +56,29 @@ src/
         └── ...
 ```
 
-**Multiple snippets in one file**: A single code sample file can contain multiple named snippets using different `:snippet-start: snippet-name` and `:snippet-end:` pairs. Each snippet must have a unique name. This is useful for keeping related code samples together in one testable file.
+**Prefer one file per doc page or topic**: Collocate related snippets in a single code sample file whenever they belong to the same MDX page, tutorial flow, or feature (for example, setup plus invocation, or a do/don't pair). Use multiple `:snippet-start:` / `:snippet-end:` pairs in that file rather than splitting into several `.py` or `.ts` files. Reserve separate files for unrelated samples or when a page genuinely needs independent test entry points.
+
+**More than one snippet in one file**: A single code sample file can contain more than one named snippet using different `:snippet-start: snippet-name` and `:snippet-end:` pairs. Each snippet must have a unique name. Shared imports, helpers, and `:remove-start:` test harness code live once in the file; only the fenced regions between snippet tags appear in the generated MDX snippets.
+
+**When to split TypeScript samples into separate files**: Python samples can usually keep multiple snippets in one file because later definitions overwrite earlier ones at module scope. TypeScript and JavaScript cannot: `make test-code-samples` runs the entire `.ts` file, and every snippet's code executes in the same module scope. Split into separate `.ts` files when snippets would collide, for example:
+
+- Duplicate `import` bindings (for example two snippets both `import { interrupt } from "@langchain/langgraph"`)
+- Duplicate `const` / `let` / `class` / `function` declarations with the same name (for example two snippets both declare `const State = ...`)
+- Two self-contained snippets that each need their own imports and top-level setup
+
+Keep related snippets in one Python file when possible. For TypeScript, use one file per independently runnable snippet when imports or top-level bindings would conflict. Name sibling files clearly, for example `langgraph-interrupts-validate-conditional-edge-pattern.ts` and `langgraph-interrupts-validate-conditional-edge.ts`. Put shared test-only setup in `:remove-start:` blocks inside each file rather than importing between sample files.
+
+Within a single TypeScript file, `:remove-start:` blocks and snippet regions share the same module scope when `make test-code-samples` runs the file. Do not import the same binding in both places. Keep imports that appear in the docs snippet inside the snippet; limit `:remove-start:` imports to symbols used only by the test harness (for example `Command`, `MemorySaver`) that the snippet does not import.
 
 ## Step-by-step instructions
 
 ### 1. Create the code sample file
 
-Place the file under `src/code-samples/` in the folder for the product: `langchain/`, `deepagents/`, or `langsmith/` (e.g. `src/code-samples/langchain/return-a-string.py` for LangChain docs).
+Place the file under `src/code-samples/` in the folder for the product: `langchain/`, `langgraph/`, `deepagents/`, or `langsmith/` (for example, `src/code-samples/langgraph/langgraph-sql-agent.py` for LangGraph docs).
 
-Use a descriptive filename, e.g. `return-a-string.py` or `return-a-string.ts`.
+Use a descriptive filename, for example, `return-a-string.py`, `return-a-string.ts`, or `traceable-pipeline.java`. When a doc page needs several code blocks for the same feature, add them as multiple snippets in one Python file (for example, `rubric-configure.py` with `rubric-configure-py` and `rubric-invoke-py`) instead of creating `rubric-configure.py` and `rubric-invoke.py`. For TypeScript, use one file per snippet when module-scope imports or bindings would conflict (see **When to split TypeScript samples into separate files** above).
 
-### 2. Add Bluehawk delineators
+### 2. Add snippet delineators
 
 Wrap the code that should appear in the docs with snippet tags:
 
@@ -86,11 +103,104 @@ import { tool } from "langchain";
 // :snippet-end:
 ```
 
-Choose a unique `snippet-name` in kebab-case. **All snippet names must include a language suffix:** `-py` for Python files and `-js` for TypeScript/JavaScript files (e.g. `tool-return-values-py`, `tool-return-values-js`). This becomes the base of the output filename.
+**Java:**
+```java
+// :snippet-start: snippet-name-java
+public class Example {
+  public static void main(String[] args) {
+    System.out.println("hello");
+  }
+}
+// :snippet-end:
+```
+
+**Go:**
+```go
+// :snippet-start: snippet-name-go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("hello")
+}
+// :snippet-end:
+```
+
+**Bash (cURL):**
+```bash
+# :snippet-start: snippet-name-sh
+curl "https://api.smith.langchain.com/api/v1/runs" \
+  -H "x-api-key: $LANGSMITH_API_KEY"
+# :snippet-end:
+```
+
+Choose a unique `snippet-name` in kebab-case. All snippet names must include a language suffix: `-py` for Python files, `-js` for TypeScript/JavaScript files, `-java` for Java files, `-kt` for Kotlin files, `-go` for Go files, and `-sh` for bash/cURL files (for example, `tool-return-values-py`, `tool-return-values-js`, `traceable-pipeline-java`, `traceable-pipeline-kt`, `traceable-pipeline-go`, `traceable-pipeline-sh`). This becomes the base of the output filename.
 
 ### 3. Add runnable test code in remove blocks
 
-Wrap any code that makes the sample executable but should not appear in docs:
+Wrap any code that makes the sample executable but should not appear in docs.
+
+**Run snippet code before exiting.** `make test-code-samples` must execute the snippet body, not skip it. Do not put `raise SystemExit(0)`, `process.exit(0)`, or `exit 0` at the top of a file (or before `:snippet-start:`) so the test passes without running imports, constructors, or API calls. That only checks that the file parses; it does not validate function signatures, option shapes, or import paths.
+
+Place `:remove-start:` blocks **after** the snippet when you can, so the harness runs assertions on values the snippet created:
+
+**Python (preferred):**
+```python
+# :snippet-start: example-py
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(model="google_genai:gemini-3.5-flash")
+# :snippet-end:
+
+# :remove-start:
+assert agent is not None
+print("✓ example validated")
+# :remove-end:
+```
+
+**TypeScript (preferred):**
+```ts
+// :snippet-start: example-js
+import { DeepAgentsServer } from "deepagents-acp";
+
+const server = new DeepAgentsServer({
+  agents: { name: "careful-agent", interruptOn: { write_file: true } },
+});
+// :snippet-end:
+
+// :remove-start:
+if (!server) throw new Error("server not created");
+console.log("✓ example validated");
+// :remove-end:
+```
+
+For samples whose docs show a blocking tail (for example `await server.start()`, `asyncio.run(main())`, or `agent.invoke()` with a live model), keep setup and construction in the snippet so types and signatures are checked, then move **only** the blocking call into a trailing `:remove-start:` block—or omit it when construction alone is enough:
+
+```python
+# :snippet-start: server-example-py
+server = AgentServerACP(agent)
+# :snippet-end:
+
+# :remove-start:
+# Do not call await run_agent(server) here — it blocks on stdio.
+assert server is not None
+print("✓ server-example validated")
+# :remove-end:
+```
+
+**Do not** short-circuit before the snippet:
+
+```python
+# :remove-start:
+raise SystemExit(0)  # BAD: snippet below never runs
+# :remove-end:
+
+# :snippet-start: example-py
+...
+```
+
+The examples below show harness code that invokes behavior when the snippet defines callable helpers:
 
 **Python:**
 ```python
@@ -116,11 +226,11 @@ main();
 // :remove-end:
 ```
 
-Bluehawk strips `:remove-start:` / `:remove-end:` content when extracting snippets.
+The extraction script strips `:remove-start:` / `:remove-end:` content when extracting snippets.
 
 ### 4. Test the code sample
 
-Before running Bluehawk, verify the code sample runs correctly:
+Before extracting snippets, verify the code sample runs correctly:
 
 ```bash
 # Test the file(s) you added (faster)
@@ -130,7 +240,20 @@ make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 make test-code-samples
 ```
 
-For multiple files: `FILES="path1 path2"`. Fix any failures before proceeding—do not run Bluehawk extraction until the samples pass.
+For multiple files: `FILES="path1 path2"`. Fix any failures before proceeding—do not extract snippets until the samples pass.
+
+Java files (`.java`) under `src/code-samples/` are run using `jbang`. To keep CI green, Java samples must:
+
+- Print at least one line of output so it's obvious the sample ran
+- Exit successfully (code 0) when optional API keys are not set, for example:
+  - `OPENAI_API_KEY` for LLM calls
+- Fail fast (non-zero exit) when a key is required for the sample to run, for example `manage-prompts-0-push.java` without `LANGSMITH_API_KEY`
+
+`make test-code-samples` runs every `.java` file under `src/code-samples/` in **lexical path order** (after all Python and TypeScript samples). That order is unrelated to section order in the docs. If one sample must run before another (for example creating a hub prompt before pulling it), name the source files so they sort correctly. For example, `manage-prompts-pull.java` runs before `manage-prompts-push.java` because `pull` sorts before `push`; use prefixes such as `manage-prompts-0-push.java` and `manage-prompts-1-pull.java` when you need push to run first.
+
+Go files (`.go`) under `src/code-samples/` are run with `go run` from `src/code-samples/`, which shares a single `go.mod`/`go.sum` at that directory (add new dependencies there with `go get`, then `go mod tidy`, similar to how `.ts` samples share `src/code-samples/package.json`). `go run <file>.go` only compiles that one file, not its sibling files in the same directory, so — like Kotlin — put each snippet variant in its own file (`topic-before.go`, `topic-after.go`) rather than multiple snippets sharing one file: two files in the same package cannot both declare `func main()`. Go samples do not guard on missing keys — let the SDK call fail fast (matching Python's behavior) rather than skipping with a printed message. `make test-code-samples` runs `.go` files last, after Kotlin, in lexical path order.
+
+Bash/cURL files (`.sh`) under `src/code-samples/` are run with `bash <file>.sh` from `src/code-samples/`. Like Go, put each snippet variant in its own file (`topic-before.sh`, `topic-after.sh`) rather than sharing one file. Hide test-only setup (`#!/usr/bin/env bash`, `set -euo pipefail`, resolving a real ID/value for a `<placeholder>` shown in the docs) in `# :remove-start:`/`# :remove-end:` blocks so the visible snippet is exactly the illustrative curl command a reader would copy — including no shebang or `set -e` line. `curl` does not exit non-zero on an HTTP error status by itself, so when a script pipes a response into `jq` to extract a value used by a later request (for example resolving a project ID), add a hidden check that the resolved value is non-empty and not the literal string `null` before continuing, so a bad API response fails the test loudly instead of silently propagating into later requests. `make test-code-samples` runs `.sh` files last, after Go, in lexical path order.
 
 Check formatting with:
 
@@ -148,10 +271,16 @@ From the repo root:
 make code-snippets
 ```
 
+For LangSmith JVM samples only (faster; updates stems listed in `CODE_SNIPPET_LANGSMITH_SOURCES` in the Makefile):
+
+```bash
+make code-snippets-langsmith
+```
+
 This command:
 
-1. Runs `npx --yes bluehawk snip -o src/code-samples-generated/ src/code-samples/`
-2. Runs `scripts/generate_code_snippet_mdx.py` to produce MDX snippets in `src/snippets/code-samples/`
+1. Runs `python scripts/extract_code_snippets.py` (line-based, Bluehawk-compatible; handles `/**` in TS strings). Optional env `CODE_SNIPPET_SOURCES` limits extraction to specific paths under `src/code-samples/` (`make code-snippets-langsmith` sets this).
+2. Runs `scripts/generate_code_snippet_mdx.py` to produce MDX snippets in `src/snippets/code-samples/` (always regenerates MDX from everything under `src/code-samples-generated/`)
 
 Output files:
 
@@ -187,8 +316,8 @@ Replace the inline code blocks with the snippet components:
 
 | Element | Convention | Example |
 |--------|-------------|---------|
-| Code file | Descriptive, kebab-case | `return-a-string.py`, `return-a-string.ts` |
-| Snippet name | Kebab-case with language suffix: `-py` for Python, `-js` for JS/TS | `tool-return-values-py`, `tool-return-values-js` |
+| Code file | Descriptive, kebab-case | `return-a-string.py`, `return-a-string.ts`, `traceable-pipeline.java`, `traceable-pipeline.kt`, `traceable-pipeline.go`, `traceable-pipeline.sh` |
+| Snippet name | Kebab-case with language suffix: `-py` for Python, `-js` for JS/TS, `-java` for Java, `-kt` for Kotlin, `-go` for Go, `-sh` for bash/cURL | `tool-return-values-py`, `tool-return-values-js`, `traceable-pipeline-java`, `traceable-pipeline-kt`, `traceable-pipeline-go`, `traceable-pipeline-sh` |
 | MDX snippet (Python) | `{snippet-name}.mdx` (snippet name ends in `-py`) | `tool-return-values-py.mdx` |
 | MDX snippet (JS) | `{snippet-name}.mdx` (snippet name ends in `-js`) | `tool-return-values-js.mdx` |
 | Component name | PascalCase | `ToolReturnValuesPy`, `ToolReturnValuesJs` |
@@ -205,12 +334,14 @@ To support additional languages, add config entries in that script.
 
 ## Guidelines
 
-- Do not mock LangChain internals (for example `unittest.mock.patch` on `init_chat_model` helpers) so that imports resolve real chat model instances. Tests should exercise real model wiring; use lightweight fakes such as `GenericFakeChatModel` only when you need deterministic assertions without API calls.
+- **Run snippet code in tests** — `:remove-start:` harnesses must not exit before the snippet runs. Let imports, constructors, and configuration execute so `make test-code-samples` catches wrong signatures, renamed options, and broken import paths. Put `SystemExit` / `process.exit` only after the snippet (or use them to skip a trailing blocking call such as `server.start()`, not the whole sample).
+- **Collocate related snippets** in one code sample file per doc page or feature when possible (Python and Java). Import each generated MDX snippet separately in the MDX file (for example, `<RubricConfigurePy />` then `<RubricInvokePy />` from the same source file). For TypeScript, split into separate `.ts` files when snippets duplicate imports or top-level bindings; still import each generated MDX snippet in the MDX file the same way.
+- Do not mock LangChain internals (for example `unittest.mock.patch` on `init_chat_model` helpers) so that imports resolve real chat model instances. Do not use fake chat models in docs code samples (for example `GenericFakeChatModel`, `FakeListChatModel`, or other `langchain_core` testing fakes). Wire a real chat model (for example `ChatOpenAI`) so snippets match what readers run; `make test-code-samples` requires a valid API key when the sample calls the model.
 - Do not change `pyproject.toml` when making code sample changes.
 - Always run `make test-code-samples FILES="path/to/your/file.py"` before `make code-snippets` to ensure new samples pass.
 - Run `make lint` once the code sample is written; fix any issues (or run `make format` to auto-fix).
 - Do not add code samples to linting ignore rules when making lint-related changes—fix the code instead.
-- `src/code-samples-generated/` is gitignored; regenerate with `make code-snippets`.
+- `src/code-samples-generated/` is gitignored; regenerate with `make code-snippets` or `make code-snippets-langsmith` when iterating on LangSmith JVM files only.
 - Reference `CLAUDE.md` and `AGENTS.md` for docs style and rules.
 - Use `:::python` and `:::js` fences for language-specific content; the build produces separate Python and JavaScript doc versions.
 - For python tests, try to correct the type rather than adding `# type: ignore[arg-type]`

@@ -4,7 +4,6 @@ sidebarTitle: Runtime
 ---
 
 
-
 :::python
 @[`Pregel`] implements LangGraph's runtime, managing the execution of LangGraph applications.
 
@@ -113,10 +112,10 @@ const total = new BinaryOperatorAggregate<number>({ operator: (a, b) => a + b })
 :::
 
 :::python
-### DeltaChannel (beta)
+### DeltaChannel
 
 <Warning>
-`DeltaChannel` requires `langgraph>=1.2` and is currently in beta. The API may change in future releases.
+`DeltaChannel` requires `langgraph>=1.2` and is currently in **beta**. The API may change in future releases.
 </Warning>
 
 @[`DeltaChannel`] stores only the incremental delta at each step rather than the full accumulated value. This is most useful for channels that are written frequently and accumulate large values over time—for example, a conversation message list in a long-running thread. Without delta storage, the full list is re-serialized into every checkpoint; with `DeltaChannel`, only the new messages written at each step are stored.
@@ -158,6 +157,16 @@ reducer(reducer(state, [xs]), [ys]) == reducer(state, [xs, ys])
 If your reducer is not associative, the reconstructed state may differ depending on how LangGraph batches writes across steps, producing inconsistent behavior.
 </Warning>
 
+<Warning>
+**The reducer runs on reconstruction, not on write.** Unlike a @[`BinaryOperatorAggregate`], whose reducer is invoked at write time so the combined value is what gets serialized into the checkpoint, a `DeltaChannel` reducer is invoked when the channel value is *rebuilt* from its persisted writes. The raw per-step writes are what get serialized; the reducer is only called when the value is materialized—on the next read, on the next step's actors, or when replaying history.
+
+Practical consequences when designing a reducer:
+
+- **Make it a pure function of `(state, writes)`.** Any side effects, randomness, or wall-clock reads (e.g., `uuid.uuid4()`, `datetime.now()`) execute every time the value is reconstructed and produce different results on each replay. They are *not* baked into the persisted writes.
+- **Do not rely on mutations to incoming writes being persisted.** If your reducer mutates a write object (for example, assigning a stable ID to an item that arrived without one), that mutation lives only in the reconstructed value. The stored write still has the original shape, so the next reconstruction will see the un-mutated input again.
+- **Attach identity and other stable metadata upstream.** If downstream code needs to reference an item by ID across turns (e.g., to update or remove it later), assign that ID before the value is written to the channel—not inside the reducer.
+</Warning>
+
 Here are bulk reducers for the two most common cases:
 
 ```python
@@ -197,6 +206,12 @@ class State(TypedDict):
 ```
 
 Higher values of `snapshot_frequency` reduce storage overhead but increase read latency. Lower values bound latency more tightly at the cost of larger checkpoints. `None` (the default) skips snapshots entirely—appropriate when reads are rare or threads are short.
+
+#### Version compatibility and rollbacks
+
+<Warning>
+**Rolling back to a version without `DeltaChannel` support is not supported.** `langgraph>=1.2` writes delta channel checkpoints in a new format that earlier versions cannot read. Once a thread has used `DeltaChannel`, downgrading LangGraph leaves those checkpoints unreadable as older runtimes do not understand the delta format and cannot reconstruct channel state. If you need to roll back, use the [delta-channel-dump recovery script](https://github.com/langchain-ai/langgraph/tree/main/examples/delta-channel-dump) to migrate affected threads, or discard them, before downgrading.
+</Warning>
 :::
 
 ## Examples
@@ -452,6 +467,10 @@ Below are a few different examples to give you a sense of the Pregel API.
     )
 
     app.invoke({"a": "foo"})
+    ```
+
+    ```console
+    { 'c': 'foofoo | foofoofoofoo' }
     ```
     :::
 

@@ -2,6 +2,9 @@
 title: Model Context Protocol (MCP)
 ---
 
+import McpMultimodalToolContentPy from '/snippets/code-samples/mcp-multimodal-tool-content-py.mdx';
+import McpMultimodalToolContentJs from '/snippets/code-samples/mcp-multimodal-tool-content-js.mdx';
+
 :::python
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) is an open protocol that standardizes how applications provide tools and context to LLMs. LangChain agents can use tools defined on MCP servers using the [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) library.
 :::
@@ -132,6 +135,10 @@ const weatherResponse = await agent.invoke({
 });
 ```
 :::
+
+<Tip>
+Trace MCP tool calls alongside your agent's reasoning steps with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langchain) to get set up.
+</Tip>
 
 ## Custom servers
 
@@ -444,7 +451,7 @@ client = MultiServerMCPClient(
     }
 )
 tools = await client.get_tools()
-agent = create_agent("openai:gpt-5.4", tools)
+agent = create_agent("openai:gpt-5.5", tools)
 response = await agent.ainvoke({"messages": "what is the weather in nyc?"})
 ```
 :::
@@ -527,7 +534,7 @@ async with client.session("server_name") as session:  # [!code highlight]
     # Pass the session to load tools, resources, or prompts
     tools = await load_mcp_tools(session)  # [!code highlight]
     agent = create_agent(
-        "google_genai:gemini-3.1-pro-preview",
+        "google_genai:gemini-3.5-flash",
         tools
     )
 ```
@@ -552,6 +559,14 @@ client = MultiServerMCPClient({...})
 tools = await client.get_tools()  # [!code highlight]
 agent = create_agent("claude-sonnet-4-6", tools)
 ```
+
+By default, when an MCP tool fails, the error is passed back to the model as a tool message with `status="error"` instead of raising an exception. This lets the agent read the error and try again. To raise an exception instead, set `handle_tool_errors=False` on `MultiServerMCPClient` or `load_mcp_tools`.
+
+This applies only to tool execution errors (`CallToolResult(isError=True)`). Transport, session, and content-conversion failures always raise.
+
+<Note>
+    Returning MCP tool errors as failed tool messages requires `langchain-mcp-adapters>=0.3.0`. Earlier versions raise a `ToolException`.
+</Note>
 :::
 
 :::js
@@ -565,6 +580,8 @@ const client = new MultiServerMCPClient({...});
 const tools = await client.getTools();  // [!code highlight]
 const agent = createAgent({ model: "claude-sonnet-4-6", tools });
 ```
+
+When an MCP tool execution fails (`CallToolResult` with `isError: true`), `@langchain/mcp-adapters` raises a `ToolException`. Wrap tool calls in a try/catch to handle these errors. Unlike the Python adapter, the TypeScript adapter does not return the error to the model as a failed tool message.
 :::
 
 :::python
@@ -625,34 +642,25 @@ client = MultiServerMCPClient({...}, tool_interceptors=[append_structured_conten
 
 MCP tools can return [multimodal content](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#tool-result) (images, text, etc.) in their responses. When an MCP server returns content with multiple parts (e.g., text and images), the adapter converts them to LangChain's [standard content blocks](/oss/langchain/messages#standard-content-blocks). You can access the standardized representation via the `content_blocks` property on the `ToolMessage`:
 
-```python
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain.agents import create_agent
-
-client = MultiServerMCPClient({...})
-tools = await client.get_tools()
-agent = create_agent("claude-sonnet-4-6", tools)
-
-result = await agent.ainvoke(
-    {"messages": [{"role": "user", "content": "Take a screenshot of the current page"}]}
-)
-
-# Access multimodal content from tool messages
-for message in result["messages"]:
-    if message.type == "tool":
-        # Raw content in provider-native format
-        print(f"Raw content: {message.content}")
-
-        # Standardized content blocks  # [!code highlight]
-        for block in message.content_blocks:  # [!code highlight]
-            if block["type"] == "text":  # [!code highlight]
-                print(f"Text: {block['text']}")  # [!code highlight]
-            elif block["type"] == "image":  # [!code highlight]
-                print(f"Image URL: {block.get('url')}")  # [!code highlight]
-                print(f"Image base64: {block.get('base64', '')[:50]}...")  # [!code highlight]
-```
+<McpMultimodalToolContentPy />
 
 This allows you to handle multimodal tool responses in a provider-agnostic way, regardless of how the underlying MCP server formats its content.
+
+:::
+
+:::js
+
+#### Multimodal tool content
+
+MCP tools can return [multimodal content](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#tool-result) (images, text, etc.) in their responses. When an MCP server returns content with multiple parts (e.g., text and images), the adapter converts them to LangChain's [standard content blocks](/oss/langchain/messages#standard-content-blocks). You can access the standardized representation via the `contentBlocks` property on the `ToolMessage`:
+
+<McpMultimodalToolContentJs />
+
+This allows you to handle multimodal tool responses in a provider-agnostic way, regardless of how the underlying MCP server formats its content.
+
+:::
+
+:::python
 
 ### Resources
 
@@ -746,7 +754,7 @@ async with client.session("server_name") as session:
 
 ### Tool interceptors
 
-MCP servers run as separate processes—they can't access LangGraph runtime information like the [store](/oss/langgraph/persistence#memory-store), [context](/oss/langchain/context-engineering), or agent state. **Interceptors bridge this gap** by giving you access to this runtime context during MCP tool execution.
+MCP servers run as separate processes—they can't access LangGraph runtime information like the [store](/oss/langgraph/stores), [context](/oss/langchain/context-engineering), or agent state. **Interceptors bridge this gap** by giving you access to this runtime context during MCP tool execution.
 
 Interceptors also provide middleware-like control over tool calls: you can modify requests, implement retries, add headers dynamically, or short-circuit execution entirely.
 
@@ -795,7 +803,7 @@ When MCP tools are used within a LangChain agent (via `create_agent`), intercept
         tool_interceptors=[inject_user_context],
     )
     tools = await client.get_tools()
-    agent = create_agent("gpt-5.4", tools, context_schema=Context)
+    agent = create_agent("gpt-5.5", tools, context_schema=Context)
 
     # Invoke with user context
     result = await agent.ainvoke(
@@ -848,7 +856,7 @@ When MCP tools are used within a LangChain agent (via `create_agent`), intercept
     )
     tools = await client.get_tools()
     agent = create_agent(
-        "gpt-5.4",
+        "gpt-5.5",
         tools,
         context_schema=Context,
         store=InMemoryStore()
@@ -1069,7 +1077,7 @@ client = MultiServerMCPClient(
 
 **Error handling**
 
-Use interceptors to catch tool execution errors and implement retry logic:
+Use interceptors to catch exceptions from tool execution, such as transport or runtime failures, and add retry logic. Tool execution errors (`CallToolResult(isError=True)`) do not raise by default, so exception-catching interceptors never trigger on them. To catch those as exceptions here, set `handle_tool_errors=False`.
 
 ```python Retry on error
 import asyncio

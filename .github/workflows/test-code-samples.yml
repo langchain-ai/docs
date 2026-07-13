@@ -9,6 +9,7 @@ on:
     paths:
       - "src/code-samples/**"
       - ".github/workflows/test-code-samples.yml"
+  workflow_dispatch:
   schedule:
     # Run every Sunday at 00:00 UTC
     - cron: "0 0 * * 0"
@@ -19,8 +20,12 @@ concurrency:
 
 jobs:
   test-code-samples:
+    # GitHub does not expose repository secrets to workflows triggered from fork PRs.
+    # These tests require provider API keys for some samples, so skip on forks.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Scheduled and manual runs test all samples; PR runs may touch many files in large refactors.
+    timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 90 || 60 }}
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -43,9 +48,9 @@ jobs:
       - name: Get modified code sample paths
         id: files
         run: |
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "run_all=true" >> "$GITHUB_OUTPUT"
-            echo "Weekly run: testing all code samples"
+            echo "Full run: testing all code samples"
           else
             echo "run_all=false" >> "$GITHUB_OUTPUT"
 
@@ -57,14 +62,14 @@ jobs:
             fi
 
             FILES=$(git diff --name-only "$BASE" HEAD -- src/code-samples/ \
-              | grep -E '\.(py|ts)$' \
+              | grep -E '\.(py|ts|java|kt|go|sh)$' \
               | tr '\n' ' ' || true)
 
             { echo "files<<FILESEND"; echo "$FILES"; echo "FILESEND"; } >> "$GITHUB_OUTPUT"
             if [[ -n "$FILES" ]]; then
               echo "Modified code samples: $FILES"
             else
-              echo "No modified .py or .ts files in src/code-samples/"
+              echo "No modified .py, .ts, .java, .kt, .go, or .sh files in src/code-samples/"
             fi
           fi
 
@@ -80,6 +85,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Set up Java (for JBang)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install JBang
+        uses: jbangdev/setup-jbang@v0.1.1
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/code-samples/go.mod
 
       - name: Wait for PostgreSQL
         run: |
@@ -107,6 +126,11 @@ jobs:
         id: test
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_CUSTOM_HEADERS: ${{ secrets.ANTHROPIC_CUSTOM_HEADERS }}
+          LS_GATEWAY_KEY: ${{ secrets.LS_GATEWAY_KEY }}
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           POSTGRES_URI: postgresql://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
@@ -125,25 +149,3 @@ jobs:
             fi
             make test-code-samples FILES="$FILES"
           fi
-
-  # Creates a Linear issue when the weekly scheduled test fails.
-  # Required setup: Add LINEAR_API_KEY (repo secret) and LINEAR_TEAM_KEY (repo variable)
-  create-linear-ticket:
-    needs: test-code-samples
-    if: failure() && github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Create Linear issue
-        uses: ctriolo/action-create-linear-issue@v1.3
-        with:
-          linear-api-key: ${{ secrets.LINEAR_API_KEY }}
-          linear-team-key: ${{ vars.LINEAR_TEAM_KEY }}
-          linear-issue-title: "Weekly code samples test failed"
-          linear-issue-description: |
-            The scheduled weekly test of all code samples in `src/code-samples/` failed.
-
-            **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            Please investigate and fix the failing samples.
-          linear-attachment-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          linear-attachment-title: "Failed workflow run"

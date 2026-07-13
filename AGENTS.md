@@ -2,14 +2,14 @@
 
 # LangChain Documentation Guidelines
 
-Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored docs only—not `**/reference/**` directories or build artifacts.
+Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`, not Mintlify `build/` output.
 
 ## Critical rules
 
 1. **Always ask for clarification** rather than making assumptions
 2. **Never fabricate** examples, JSON snippets, policy details, or use case descriptions — use only content from the user or existing source files
 3. **Never use markdown in frontmatter `description`** — breaks SEO
-4. **Never edit `reference/` directory** — auto-generated
+4. **Never edit `build/`** — Mintlify build output (regenerate with `make build` or `make dev`)
 5. **Always update `src/docs.json`** when adding new pages
 6. **Use Tabler icons only** — not FontAwesome
 7. **Test code examples** before including them
@@ -19,7 +19,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | What | Where/How |
 |------|-----------|
 | LangSmith docs | `src/langsmith/` |
-| Open source docs | `src/oss/` (LangChain, LangGraph, DeepAgents) |
+| Open source docs | `src/oss/` (LangChain, LangGraph, Deep Agents) |
 | Python integrations | `src/oss/python/integrations/` |
 | JS integrations | `src/oss/javascript/integrations/` |
 | Reusable snippets | `src/snippets/` |
@@ -29,6 +29,7 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Build system | `pipeline/` |
 | Icon library | Tabler — <https://tabler.io/icons> |
 | Mintlify components | <https://mintlify.com/docs/components> |
+| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report reference docs issues](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 
 ## Project structure
@@ -50,7 +51,8 @@ docs/
 │   │   ├── javascript/         #   TypeScript-specific (integrations, migrations, releases)
 │   │   ├── integrations/       #   Shared integration content
 │   │   ├── concepts/           #   Conceptual overviews
-│   │   └── contributing/       #   Contribution guides
+│   │   ├── contributing/       #   Contribution guides
+│   │   └── reference/          #   Reference tab entry pages (link to reference.langchain.com)
 │   ├── snippets/               # Reusable MDX snippets
 │   │   ├── langsmith/          #   LangSmith snippets
 │   │   ├── oss/                #   OSS snippets
@@ -105,17 +107,24 @@ Flat groups (no tabs):
 
 | Tab | Directory | Groups |
 |-----|-----------|--------|
-| Deep Agents | `src/oss/deepagents/` | Get started, Deployment, Core capabilities, Frontend, Protocols, Command line interface |
-| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend, Advanced usage, Agent development, Deploy with LangSmith |
+| Deep Agents | `src/oss/deepagents/` | Get started, Deployment, Core capabilities, Frontend, Protocols, Code |
+| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend, Advanced usage, Agent development, Production |
 | LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs |
 | Integrations* | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Popular Providers, Integrations by component (TS: "General integrations, RAG integrations") |
 | Learn* | `src/oss/` (various) | Tutorials, Conceptual overviews, Additional resources (TS adds: "LangChain Academy") |
-| Reference | `src/oss/reference/` | Reference, Errors, Releases, Policies — auto-generated, do not edit |
+| Reference | `src/oss/reference/` | Reference, Errors, Releases, Policies — short entry pages linking to reference.langchain.com |
 | Contribute | `src/oss/contributing/` | Contribution guides, integration authoring |
 
 ## Local development
 
 See [Contributing to documentation](/oss/contributing/documentation) for setup instructions.
+
+### Command-line tools
+
+Two distinct binaries drive local work. Do not assume `mint` is the only command just because the `Makefile` targets shell out to it: `docs` is a first-class, preferred entry point installed separately via Python:
+
+- **`docs`**: The primary CLI, a Python console script (`docs = "pipeline.cli:main"` in `pyproject.toml`) installed into the virtualenv by `uv sync` (the first step of `make install`). Provides `docs dev`, `docs build`, `docs migrate`, and `docs mv`. The `make` targets wrap this CLI. If `docs` is not found after `make install`, relaunch your shell (or activate the venv) so `.venv/bin/docs` lands on `PATH`.
+- **`mint`**: Mintlify's CLI, a separate global npm binary (`npm install -g mint@latest`). The build targets shell out to it for `mint dev`, `mint broken-links`, and `mint export`.
 
 ## Frontmatter
 
@@ -210,15 +219,19 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 
 - Match existing conventions in the file you are editing — do not restructure, combine, or split pages unless explicitly asked
 - Reference existing pages for style patterns when creating new content
-- Be concise — no hyperbolic or redundant language
+- Be concise — cut filler words and wordy phrases ("to" not "in order to", "because" not "due to the fact that", "can" not "has the ability to")
 - Second-person imperative present tense ("Run the following code…")
+- Active voice ("The function returns a list" not "A list is returned by the function")
 - Sentence-case headings starting with active verb, not gerund ("Add a tool" not "Adding a tool")
 - American English spelling
+- Oxford commas in lists ("traces, datasets, and experiments")
+- Descriptive link text ("[View the tracing docs](/langsmith/tracing)" not "click [this link](/langsmith/tracing)")
 - Add cross-links where applicable
 - Use `@[ClassName]` link map for API references
 - Use `:::python`/`:::js` fencing on OSS docs
 - Language tags on all code blocks (use actual language, not `output`)
 - Sort imports in all code snippets (stdlib, third-party, local)
+- Use `.content_blocks` instead of `.content` when accessing message content in LangChain code snippets
 - Test code examples and links before publishing
 
 **Don't:**
@@ -230,19 +243,49 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use model aliases — use full identifiers (e.g., `claude-sonnet-4-6`)
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
+- Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
+- Use first person ("we", "I", "our", "let's") — write in second person or use the product name as subject
+- Use future tense ("The function returns X" not "The function will return X")
+- Use weasel words or filler (avoid "simply", "easily", "just", "very", "basically", "obviously")
 - Use H5 or H6 headings
-- Overuse em dashes — prefer commas, colons, or separate sentences instead
-- Do not add spaces around em dashes — write `word—word` not `word — word` (Vale enforces this)
+- Start headings with articles ("Add a tool" not "The tool setup guide")
+- Use em dashes — prefer commas, colons, or separate sentences instead. Only use an em dash when no alternative reads naturally
+- Add spaces around em dashes — write `word—word` not `word — word` (`make lint_prose` enforces this)
 - Use excessive bold/italics in body text
+- Start bulleted list items with a lowercase letter — always capitalize the first word
 - Include "key features" lists
-- Use horizontal lines
+- Use horizontal lines (`---`) to separate sections — use headings instead
 - Apply bold to UI element names unless existing docs already do so
+- Misspell product names — use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
+- Skip `make lint_prose` — always run it on changed files before committing and fix all violations
+
+### Structure conventions
+
+Match these patterns, drawn from established pages, when authoring new content:
+
+- **Open with definition, then benefit, then task** — start a section (and the page) with a one-sentence statement of what the feature is or does, follow with a sentence on what it enables for the reader, then give the procedure or detail. When a page has a sibling variant (for example, a paid or self-hosted version), link it in the opening lines.
+- **Introduce procedures with a colon lead-in** — precede steps with a phrase such as "To add a channel:", then a numbered list (or the `<Steps>` component) of imperative steps. State a step's result as a follow-on line when it matters ("The Add User modal displays."). Flag optional steps inline with "(Optional)". For long, multi-stage tasks, use `### Step N. <verb>` headings.
+- **Use bold-led definition lists for options** — for parameters, permissions, secrets, or enumerated types, write `- **Term**: Explanation.` and end each explanation with a period.
+- **Link on first mention, and point forward at section ends** — link a feature, class, or term on first mention only, not on repeats. Use the pointer phrasing "For more information, see [Page](/path)". Close substantial pages with a `## See also` list of related links.
+- **State requirements and constraints up front** — put permission, plan tier, or preview requirements before the steps they govern ("Adding MCP servers requires admin permissions."). Write hard constraints as plain facts ("Once an agent identity is set, it cannot be changed.").
 
 ### Model references
 
 Always use the latest generally available (GA) models when referencing LLMs in docstrings and illustrative code snippets. Avoid preview or beta identifiers unless the model has no GA equivalent. Outdated model names signal stale code and confuse users.
 
 Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names — they go stale quickly.
+
+### Release stage names
+
+LangSmith ships features through three release stages: alpha, beta, and generally available (GA). See [Release stages](/langsmith/release-stages) for what each stage means.
+
+These are common nouns, not proper nouns. Write them lowercase in prose, including parenthetical and inline status markers:
+
+- Lowercase mid-sentence and in markers: "available in beta", "is in beta", "(beta)", "the feature is in alpha".
+- Capitalize only where normal sentence case requires it: the first word of a sentence or heading ("Beta is optional.", "## Beta").
+- Keep the literal product UI label capitalized when quoting it as a tag: the `Beta` tag, frontmatter `tag: "Beta"`. The same applies to a stage name standing alone as a table cell's only label.
+- Spell out "generally available" on first use, then use "GA". GA is always uppercase.
+- Do not change code identifiers, package version identifiers (`1.0.0b1`), or literal CLI output that contains "Beta".
 
 ## Adding pages
 
@@ -260,14 +303,16 @@ Before writing or updating model references, verify current model IDs against th
 
 **Add a new integration page (Python):**
 
-1. Create `src/oss/python/integrations/<provider>/<component>.mdx`
-2. Add to `src/docs.json` under Open source → Python dropdown → Integrations tab
+1. Create `src/oss/python/integrations/<component>/<provider>.mdx`
+2. Add the page to the component's index page (`src/oss/python/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
 3. Use description format: `"Integrate with the ClassName type using LangChain Python."`
+4. If the provider has an overview page at `src/oss/python/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
 **Add a new integration page (TypeScript):**
 
-1. Create `src/oss/javascript/integrations/<provider>/<component>.mdx`
-2. Add to `src/docs.json` under Open source → TypeScript dropdown → Integrations tab
+1. Create `src/oss/javascript/integrations/<component>/<provider>.mdx`
+2. Add the page to the component's index page (`src/oss/javascript/integrations/<component>/index.mdx`); only edit `src/docs.json` when creating a brand-new component group
+3. If the provider has an overview page at `src/oss/javascript/integrations/providers/<provider>.mdx`, add or update a section there linking to the new page (`/oss/integrations/<component>/<provider>`)
 
 **Add a reusable snippet:**
 
@@ -296,6 +341,27 @@ another-file.mdx                 ← no indented lines = all its links were filt
 **Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
 
 To run locally: `make broken-links`
+
+## Helper scripts
+
+### Refresh Deep Agents eval matrix
+
+The model-by-eval-category table on `/oss/python/deepagents/models` is generated by `scripts/refresh_deepagents_category_matrix.py`. The script pulls `category_scores` from the latest successful [Evals - GHA](https://github.com/langchain-ai/deepagents/actions/workflows/evals.yml) runs in `langchain-ai/deepagents` and writes the table to `src/snippets/deepagents-eval-category-matrix.mdx` (imported by `src/oss/deepagents/models.mdx`). Run it whenever new eval results land and the published table is out of date.
+
+Setup and run:
+
+```bash
+export GITHUB_TOKEN="$(gh auth token)"  # needs Actions: Read on langchain-ai/deepagents; SSO-authorize for langchain-ai
+uv run python scripts/refresh_deepagents_category_matrix.py --write
+```
+
+Notes:
+
+- For the latest `(model, category)` value per cell, the script walks runs newest-first and keeps the first hit. Models with fewer than four of the six fixed categories filled are dropped (`MIN_FILLED_CATEGORIES`).
+- Only models explicitly listed in `INCLUDED_MODELS` (in the script) appear in the table. To surface a new model, add its `provider:model` key there.
+- The fixed columns are defined by `FIXED_CATEGORY_COLUMNS` in the script (`unit_test` is intentionally excluded).
+- Without `--write`, the script prints the table to stdout for inspection.
+- After regenerating, commit only `src/snippets/deepagents-eval-category-matrix.mdx`. Do not edit that snippet by hand.
 
 ## Pre-commit linting
 

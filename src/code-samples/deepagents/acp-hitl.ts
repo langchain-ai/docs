@@ -1,0 +1,13 @@
+// :snippet-start: acp-hitl-js
+import { DeepAgentsServer } from "deepagents-acp";
+
+const server = new DeepAgentsServer({
+  agents: {
+    name: "careful-agent",
+    interruptOn: {
+      execute: { allowedDecisions: ["approve", "edit", "reject"] },
+      write_file: true,
+    },
+  },
+});
+// :snippet-end:

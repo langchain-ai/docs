@@ -33,6 +33,8 @@ def test_builder_initialization() -> None:
             ".jpg",
             ".jpeg",
             ".gif",
+            ".mp4",
+            ".webm",
             ".yml",
             ".yaml",
             ".css",
@@ -56,6 +58,22 @@ def test_build_all_empty_directory() -> None:
         builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
         builder.build_all()
         assert not fs.list_build_files()
+
+
+def test_build_all_copies_tsx_snippets() -> None:
+    """Test that local TSX snippet components are copied to build/snippets."""
+    files = [
+        File(
+            path="snippets/example-component.tsx",
+            content="export default function Example() { return null; }",
+        ),
+    ]
+
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        assert fs.build_file_exists("snippets/example-component.tsx")
 
     def test_build_all_supported_files() -> None:
         """Test building all supported file types.
@@ -274,3 +292,45 @@ def test_build_nonexistent_file() -> None:
         builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
         with pytest.raises(AssertionError):
             builder.build_file(fs.src_dir / "nonexistent.md")
+
+
+def test_rewrite_oss_links_inserts_language() -> None:
+    """Bare /oss/ links get the target language inserted after 'oss'."""
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        content = "[Deep Agents](/oss/deepagents/overview)"
+        assert (
+            builder._rewrite_oss_links(content, "python")
+            == "[Deep Agents](/oss/python/deepagents/overview)"
+        )
+        assert (
+            builder._rewrite_oss_links(content, "js")
+            == "[Deep Agents](/oss/javascript/deepagents/overview)"
+        )
+
+
+def test_rewrite_oss_links_preserves_existing_language() -> None:
+    """Links that already specify a language are left untouched.
+
+    Regression test: unversioned langsmith pages are built with
+    target_language="python", so a link that already points at
+    /oss/python/... or /oss/javascript/... must not have a second
+    language segment inserted (which produced /oss/python/python/...).
+    """
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        py = "[LangChain](/oss/python/langchain/overview)"
+        js = "[LangChain](/oss/javascript/langchain/overview)"
+        # Building langsmith uses target_language="python"; both must survive.
+        assert builder._rewrite_oss_links(py, "python") == py
+        assert builder._rewrite_oss_links(js, "python") == js
+
+
+def test_rewrite_oss_links_skips_images_and_none() -> None:
+    """Image paths and a None target language are passed through unchanged."""
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        img = '<img src="/oss/images/diagram.png" />'
+        assert builder._rewrite_oss_links(img, "python") == img
+        link = "[x](/oss/deepagents/overview)"
+        assert builder._rewrite_oss_links(link, None) == link

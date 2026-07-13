@@ -1,0 +1,58 @@
+// :snippet-start: runs-retrieve-by-id-after-go
+// :codegroup-tab: After
+package main
+
+import (
+	"context"
+	"time"
+
+	"github.com/langchain-ai/langsmith-go"
+)
+
+// :remove-start:
+func main() {
+// :remove-end:
+ctx := context.Background()
+client := langsmith.NewClient()
+
+runID := "<run-id>"
+startTime := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+projectID := "<project-id>"
+// :remove-start:
+sessions, err := client.Sessions.List(ctx, langsmith.SessionListParams{
+	Name:  langsmith.F("default"),
+	Limit: langsmith.F(int64(1)),
+})
+if err != nil {
+	panic(err.Error())
+}
+projectID = sessions.Items[0].ID
+found, err := client.Runs.QueryV2(ctx, langsmith.RunQueryV2Params{
+	ProjectIDs: langsmith.F([]string{projectID}),
+	Selects: langsmith.F([]langsmith.RunQueryV2ParamsSelect{
+		langsmith.RunQueryV2ParamsSelectID,
+		langsmith.RunQueryV2ParamsSelectStartTime,
+	}),
+	PageSize: langsmith.F(int64(1)),
+})
+if err != nil {
+	panic(err.Error())
+}
+runID = found.Items[0].ID
+startTime = found.Items[0].StartTime
+// :remove-end:
+run, err := client.Runs.GetV2(ctx, runID, langsmith.RunGetV2Params{
+	ProjectID: langsmith.F(projectID),
+	StartTime: langsmith.F(startTime),
+})
+// :remove-start:
+if err != nil {
+	panic(err.Error())
+}
+// :remove-end:
+// :remove-start:
+_ = run
+}
+
+// :remove-end:
+// :snippet-end:

@@ -337,7 +337,7 @@ The agent stage processes text transcripts through a LangChain [agent](/oss/lang
 
 ### Key concepts
 
-**Streaming Responses**: The agent uses [`stream_mode="messages"`](/oss/langchain/streaming#llm-tokens) to emit response tokens as they're generated, rather than waiting for the complete response. This enables the TTS stage to begin synthesis immediately.
+**Streaming Responses**: The agent uses [`stream_events(version="v3")`](/oss/langchain/streaming) with `stream.messages` to emit response tokens as they are generated, rather than waiting for the complete response. This enables the TTS stage to begin synthesis immediately.
 
 **Conversation Memory**: A [checkpointer](/oss/langchain/short-term-memory) maintains conversation state across turns using a unique thread ID. This allows the agent to reference previous exchanges in the conversation.
 
@@ -361,7 +361,7 @@ def confirm_order(order_summary: str) -> str:
 
 # Create agent with tools and memory
 agent = create_agent(
-    model="google_genai:gemini-3.1-pro-preview",  # Select your model
+    model="google_genai:gemini-3.5-flash",  # Select your model
     tools=[add_to_order, confirm_order],
     system_prompt="""You are a helpful sandwich shop assistant.
     Your goal is to take the user's order. Be concise and friendly.
@@ -389,16 +389,16 @@ async def agent_stream(
         # Process final transcripts through the agent
         if event.type == "stt_output":
             # Stream agent response with conversation context
-            stream = agent.astream(
+            stream = await agent.astream_events(
                 {"messages": [HumanMessage(content=event.transcript)]},
                 {"configurable": {"thread_id": thread_id}},
-                stream_mode="messages",
+                version="v3",
             )
 
             # Yield agent response chunks as they arrive
-            async for message, _ in stream:
-                if message.text:
-                    yield AgentChunkEvent.create(message.text)
+            async for message in stream.messages:
+                async for token in message.text:
+                    yield AgentChunkEvent.create(token)
 ```
 :::
 
@@ -409,7 +409,6 @@ import { HumanMessage } from "@langchain/core/messages";
 import { MemorySaver } from "@langchain/langgraph";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { v7 as uuid7 } from "uuid";
 
 // Define agent tools
 const addToOrder = tool(
@@ -454,7 +453,7 @@ async function* agentStream(
   eventStream: AsyncIterable<VoiceAgentEvent>
 ): AsyncGenerator<VoiceAgentEvent> {
   // Generate unique thread ID for conversation memory
-  const threadId = uuidv4();
+  const threadId = crypto.randomUUID();
 
   for await (const event of eventStream) {
     // Pass through all upstream events
@@ -462,17 +461,19 @@ async function* agentStream(
 
     // Process final transcripts through the agent
     if (event.type === "stt_output") {
-      const stream = await agent.stream(
+      const stream = await agent.streamEvents(
         { messages: [new HumanMessage(event.transcript)] },
         {
           configurable: { thread_id: threadId },
-          streamMode: "messages",
+          version: "v3",
         }
       );
 
       // Yield agent response chunks as they arrive
-      for await (const [message] of stream) {
-        yield { type: "agent_chunk", text: message.text, ts: Date.now() };
+      for await (const message of stream.messages) {
+        for await (const token of message.text) {
+          yield { type: "agent_chunk", text: token, ts: Date.now() };
+        }
       }
     }
   }

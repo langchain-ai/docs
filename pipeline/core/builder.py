@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
 from tqdm import tqdm
@@ -39,6 +40,7 @@ class DocumentationBuilder:
         """
         self.src_dir = src_dir
         self.build_dir = build_dir
+        self.snippet_component_extensions: set[str] = {".jsx", ".tsx"}
 
         # File extensions to copy directly
         self.copy_extensions: set[str] = {
@@ -50,12 +52,13 @@ class DocumentationBuilder:
             ".jpg",
             ".jpeg",
             ".gif",
+            ".mp4",
+            ".webm",
             ".yml",
             ".yaml",
             ".css",
             ".js",
-            ".jsx",
-            ".tsx",
+            *self.snippet_component_extensions,
             ".txt",
             ".woff2",
             ".woff",
@@ -163,8 +166,17 @@ class DocumentationBuilder:
             url = match.group(2)  # The URL
             post = match.group(3)  # Everything after the URL
 
-            # Only rewrite absolute /oss/ paths that don't contain 'images'
-            if url.startswith("/oss/") and "images" not in url:
+            # Only rewrite absolute /oss/ paths that don't contain 'images'.
+            # Skip paths that already specify a language (e.g. links from
+            # unversioned langsmith pages to /oss/python/... or
+            # /oss/javascript/...), otherwise the language is inserted a second
+            # time and produces broken URLs like /oss/python/python/...
+            if (
+                url.startswith("/oss/")
+                and "images" not in url
+                and not url.startswith("/oss/python/")
+                and not url.startswith("/oss/javascript/")
+            ):
                 parts = url.split("/")
                 # Insert full language name after "oss"
                 parts.insert(2, self.language_url_names[target_language])
@@ -196,6 +208,10 @@ class DocumentationBuilder:
 
             # Do not add source links on the home page (root index.mdx)
             if relative_path.parts == ("index.mdx",):
+                return content
+
+            # Snippet files are imported into other pages — never append page footers.
+            if "snippets" in relative_path.parts:
                 return content
 
             # Construct the GitHub URLs
@@ -770,11 +786,17 @@ class DocumentationBuilder:
             "index.mdx",
             "use-these-docs.mdx",
             "playground.mdx",
+            "build-overview.mdx",
         }:
             return True
 
+        # Snippets are imported from MDX through /snippets/... paths. This
+        # includes MDX snippets and local React components such as .tsx files.
+        if "snippets" in relative_path.parts:
+            return True
+
         # Directories whose contents should be shared
-        shared_dirs = {"images", "snippets", ".well-known", "fonts"}
+        shared_dirs = {"images", ".well-known", "fonts"}
         if shared_dirs & set(relative_path.parts):
             return True
 
@@ -824,13 +846,13 @@ class DocumentationBuilder:
         logger.info("✅ Shared files copied: %d files", copied_count)
 
     # Maps npm dist filenames to their output names in build/snippets/
-    _NPM_SNIPPET_FILES: dict[str, str] = {
+    _NPM_SNIPPET_FILES: ClassVar[dict[str, str]] = {
         "PatternEmbed.jsx": "pattern-embed.jsx",
         "ExampleEmbed.jsx": "example-embed.jsx",
     }
 
     # Maps npm dist filenames to their output names in build/ (served at site root).
-    _NPM_BUILD_FILES: dict[str, str] = {
+    _NPM_BUILD_FILES: ClassVar[dict[str, str]] = {
         "ChatLangChainEmbed.js": "ChatLangChainEmbed.js",
     }
 

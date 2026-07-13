@@ -5,7 +5,6 @@ sidebarTitle: Overview
 
 import OrgWorkspaceRole from '/snippets/langsmith/multi-workspace-org-roles.mdx';
 import PermissionReference from '/snippets/langsmith/permissions-reference.mdx';
-import MaxRunsPerTrace from '/snippets/langsmith/max-runs-per-trace.mdx';
 
 This overview covers topics related to managing users, organizations, workspaces, and applications within LangSmith.
 
@@ -19,7 +18,7 @@ When you log in for the first time, a personal organization will be created for 
 
 | Feature             | Personal            | Shared                                                                                       |
 | ------------------- | ------------------- | -------------------------------------------------------------------------------------------- |
-| Maximum workspaces  | 1                   | Variable, depending on plan (see [pricing page](https://www.langchain.com/pricing-langsmith) |
+| Maximum workspaces  | 1                   | Variable, depending on plan (see the [pricing page](https://www.langchain.com/pricing-langsmith)) |
 | Collaboration       | Cannot invite users | Can invite users                                                                             |
 | Billing: paid plans | Developer plan only | All other plans available                                                                    |
 
@@ -72,7 +71,9 @@ See the table below for details on which features are available in which scope(s
 | Assigning Organization Roles                                                | Organization                    |
 | RBAC: Creating/Editing/Deleting Custom Roles                                | Organization                    |
 
-\* Data retention settings and usage limits will be available soon for the organization level as well \*\* Self-hosted installations may enable workspace-level invites of users to the organization via a feature flag. See the [self-hosted user management docs](/langsmith/self-host-user-management) for details.
+\* Data retention settings and usage limits will be available soon for the organization level as well
+
+\*\* Self-hosted installations may enable workspace-level invites of users to the organization via a feature flag. For details, refer to the [self-hosted user management docs](/langsmith/self-host-user-management).
 
 ### Resource tags
 
@@ -215,7 +216,11 @@ This section covers how data retention works and how it's priced in LangSmith.
 #### Why retention matters
 
 * **Privacy**: Many data privacy regulations, such as GDPR in Europe or CCPA in California, require organizations to delete personal data once it's no longer necessary for the purposes for which it was collected. Setting retention periods aids in compliance with such regulations.
-* **Cost**: LangSmith charges less for traces that have low data retention. For more information, learn how to [enfore spend limits](/langsmith/billing#enforce-spend-limits).
+* **Cost**: LangSmith charges less for traces that have low data retention. For more information, learn how to [enforce spend limits](/langsmith/billing#enforce-spend-limits).
+
+<Tip>
+Plan your retention tiers before you start sending traces. Changes apply to new traces only—existing traces keep their original tier. See [Change project-level default retention](/langsmith/billing#change-project-level-default-retention).
+</Tip>
 
 #### How it works
 
@@ -225,6 +230,10 @@ LangSmith has two tiers of traces based on Data Retention with the following cha
 | -------------------- | ---------------- | -------------- |
 | **Price**            | [See pricing page](https://www.langchain.com/pricing-langsmith) | [See pricing page](https://www.langchain.com/pricing-langsmith) |
 | **Retention Period** | 14 days          | 400 days       |
+
+<Note>
+Enterprise customers can customize the extended retention period per workspace. Changes apply to new traces only—existing traces are unaffected. See [Customize extended retention policy](/langsmith/data-purging-compliance#customize-extended-retention-policy).
+</Note>
 
 **Data deletion after retention ends**
 
@@ -277,10 +286,6 @@ A natural question to ask when considering our pricing is why not just show the 
 While we understand this would be more straightforward, it doesn't fit trace upgrades properly. Consider a `base` tier trace that was recorded on June 30, and upgraded to `extended` tier on July 3. The `base` tier trace occurred in the June billing period, but the upgrade occurred in the July billing period. Therefore, we need to be able to measure these two events independently to properly bill our customers.
 
 If your trace was recorded as an extended retention trace, then the `base` and `extended` metrics will both be recorded with the same timestamp.
-
-**Cost breakdown**
-
-The Base Charge for a trace is .05¢ per trace. We priced the upgrade such that an `extended` retention trace costs 10x the price of a base tier trace (.50¢ per trace) including both metrics. Thus, each upgrade costs .45¢.
 
 ### Rate limits
 
@@ -360,7 +365,7 @@ This is thrown by our application and varies by organization based on their conf
 
 #### Run query endpoint
 
-The [`POST /runs/query`](https://api.smith.langchain.com/redoc#tag/run/operation/query_runs_api_v1_runs_query_post) endpoint has additional per-tenant rate limits based on query parameters. See [Query traces using the SDK](/langsmith/export-traces#rate-limits) for details.
+The [`POST /runs/query`](/langsmith/smith-api/run/query-runs) endpoint has additional per-tenant rate limits based on query parameters. See [Query traces using the SDK](/langsmith/export-traces#rate-limits) for details.
 
 #### Handling 429s responses in your application
 
@@ -385,6 +390,8 @@ LangSmith lets you set two different monthly limits, mirroring our Billable Metr
 
 These let you limit the number of total traces, and extended data retention traces respectively.
 
+<Note>For *spend* limits on evaluator runs specifically, refer to [Track and limit evaluator spend](/langsmith/evaluator-spend).</Note>
+
 #### Properties of usage limiting
 
 Usage limiting is approximate, meaning that we do not guarantee the exactness of the limit. In rare cases, there may be a small period of time where additional traces are processed above the limit threshold before usage limiting begins to apply.
@@ -402,6 +409,29 @@ Each of these features may cause an auto upgrade, so we shut them off when the l
 #### Updating usage limits
 
 Usage limits can be updated from the `Settings` page under `Usage and Billing`. Limit values are cached, so it may take a minute or two before the new limits apply.
+
+#### Per-project and per-user trace limits
+
+In addition to the [workspace-wide limits](#usage-limits), you can cap monthly traces for a single tracing project or an individual workspace member. This prevents one project or user from consuming a disproportionate share of a workspace's tracing budget.
+
+To configure these limits, open **Settings**, go to **Usage configuration**, and select the **Project & user limits** tab. Choose **Add limit**, then set:
+
+* **Scope**: **Project** to cap a single tracing project, or **User** to cap a single workspace member.
+* **Workspace**: the workspace that contains the project or member.
+* **Project** or **User**: the target to cap.
+* **Monthly trace limit**: the maximum number of traces allowed per calendar month.
+
+Updating these limits requires the same permission as workspace usage limits (`Update usage limits`).
+
+Like workspace limits, per-project and per-user limits are evaluated per calendar month in UTC and reset at the start of each new month. Once a project or user reaches its limit, its new traces are dropped and are not ingested again until the limit resets. Enforcement is approximate, so a small number of traces may be processed above the threshold before the limit takes effect. These limits apply to both [Cloud](/langsmith/cloud) and [Self-hosted](/langsmith/self-hosted).
+
+<Note>
+Per-project and per-user limits are **additional** to your workspace-wide and plan limits. A trace must be within every applicable limit to be ingested.
+
+Per-user limits count only traces attributed to a specific workspace member. Traces sent with an API key or service key that isn't tied to a member are not counted toward a per-user limit.
+
+Limit values are cached, so it may take a minute or two before a new or changed limit applies.
+</Note>
 
 ### Related content
 

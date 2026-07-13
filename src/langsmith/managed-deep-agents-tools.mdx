@@ -1,0 +1,111 @@
+---
+title: Add custom tools to Managed Deep Agents
+sidebarTitle: Custom tools
+description: Define authored tools for Managed Deep Agents projects.
+---
+
+import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
+import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
+
+Managed Deep Agents support the normal Deep Agents `tools` configuration surface. Define LangChain tools in your project, import them into `agent.py` or `agent.ts`, and pass them to `define_deep_agent` or `defineDeepAgent`.
+
+<Note>
+<ManagedDeepAgentsPrivateBetaNote />
+</Note>
+
+## Authored tools and connector tools
+
+Managed Deep Agents can use two kinds of tools:
+
+| Tool source | Where you configure it | Runtime behavior |
+| --- | --- | --- |
+| Authored tools | `agent.py` or `agent.ts` imports from your project source | MDA copies the source into the compiled build and passes the tools to Deep Agents. |
+| MCP connector tools | `connectors/mcp.py` or `connectors/mcp.ts` | MDA loads remote MCP tools at runtime and appends them to authored tools. |
+
+Use authored tools for business logic, private APIs, database access, and other code that belongs in your agent project. Use [MCP connectors](/langsmith/managed-deep-agents-mcp) when the tool surface is exposed by a remote MCP server.
+
+For more about LangChain tool definitions, see [Tools](/oss/langchain/tools).
+
+## Add a tool module
+
+Put custom tool code under `tools/` in your project and import it from the agent entry. For the full project layout, see the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference).
+
+<CodeGroup>
+
+```python tools/customer.py
+from langchain.tools import tool
+
+
+@tool(parse_docstring=True)
+def lookup_customer(customer_id: str) -> str:
+    """Look up a customer record by ID.
+
+    Args:
+        customer_id: Customer ID from the CRM.
+    """
+    return f"Customer {customer_id} is on the enterprise plan."
+```
+
+```ts tools/customer.ts
+import { tool } from "langchain";
+import { z } from "zod";
+
+export const lookupCustomer = tool(
+  async ({ customerId }) => `Customer ${customerId} is on the enterprise plan.`,
+  {
+    name: "lookup_customer",
+    description: "Look up a customer record by ID.",
+    schema: z.object({
+      customerId: z.string().describe("Customer ID from the CRM."),
+    }),
+  },
+);
+```
+
+</CodeGroup>
+
+## Attach tools to the agent
+
+Import the tools into the project-root agent entry and pass them in the `tools` list.
+
+<CodeGroup>
+
+```python agent.py
+from managed_deepagents import define_deep_agent
+
+from tools.customer import lookup_customer
+
+agent = define_deep_agent(
+    model="openai:gpt-5.5",
+    tools=[lookup_customer],
+)
+```
+
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
+
+import { lookupCustomer } from "./tools/customer";
+
+export const agent = defineDeepAgent({
+  model: "openai:gpt-5.5",
+  tools: [lookupCustomer],
+});
+```
+
+</CodeGroup>
+
+`mda dev` and `mda deploy` copy the project files into the compiled build. Your imports should work the same way they do in a normal local Python or TypeScript project.
+
+<Tip>
+Use clear, unique tool names. MCP connector tools are appended after authored tools, and connector names are prefixed by default to avoid collisions.
+</Tip>
+
+## Use secrets and context
+
+Tools can read deployment secrets from environment variables. Put local values in `.env` for `mda dev`; `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets.
+
+For per-run values such as user IDs, tenant IDs, request metadata, or feature flags, use the normal LangChain runtime context patterns for tools. See [how to access context from within your tools](/oss/langchain/tools#access-context).
+
+## Test and deploy
+
+<ManagedDeepAgentsTestAndDeploy />
