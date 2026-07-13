@@ -129,20 +129,26 @@ client := langsmith.NewClient()
 // :remove-start:
 datasetID, experimentID := setupFixture(ctx, client)
 // :remove-end:
-iter := client.Datasets.ExperimentRuns.QueryAutoPaging(ctx, datasetID, langsmith.DatasetExperimentRunQueryParams{
+params := langsmith.DatasetExperimentRunQueryParams{
 	ExperimentIDs: langsmith.F([]string{experimentID}),
 	PageSize:      langsmith.F(int64(1)),
-})
-for iter.Next() {
-	run := iter.Current()
+}
+var examplesWithRuns []langsmith.DatasetExperimentRunQueryResponse
+for {
+	page, err := client.Datasets.ExperimentRuns.Query(ctx, datasetID, params)
 	// :remove-start:
-	_ = run
+	if err != nil {
+		panic(err.Error())
+	}
 	// :remove-end:
+	examplesWithRuns = append(examplesWithRuns, page.Items...)
+	if page.NextCursor == "" {
+		break
+	}
+	params.Cursor = langsmith.F(page.NextCursor)
 }
 // :remove-start:
-if err := iter.Err(); err != nil {
-	panic(err.Error())
-}
+_ = examplesWithRuns
 }
 // :remove-end:
 // :snippet-end:
