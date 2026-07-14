@@ -40,11 +40,10 @@ func main() {
 	count := 0
 	for iter.Next() {
 		trace := iter.Current()
-		if trace.TraceAggregates.JSON.RawJSON() == "" {
-			continue
-		}
-		fmt.Println(trace.RootRun.Name, trace.TraceAggregates.TotalTokens, trace.TraceAggregates.TotalCost)
 		count++
+		if trace.TraceAggregates.JSON.RawJSON() != "" {
+			fmt.Println(trace.RootRun.Name, trace.TraceAggregates.TotalTokens, trace.TraceAggregates.TotalCost)
+		}
 		if count >= 5 {
 			break
 		}

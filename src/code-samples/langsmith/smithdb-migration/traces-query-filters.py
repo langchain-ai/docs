@@ -45,16 +45,14 @@ async def main():
     # trace_ids is a fast-path when you already know which traces you want.
     trace_id = "<trace-id>"
     # :remove-start:
-    known = [
-        t
-        async for t in client.traces.query(
-            project_id=str(project.id),
-            min_start_time="2026-07-01T00:00:00Z",
-            max_start_time="2026-07-31T23:59:59Z",
-            page_size=1,
-        )
-    ]
-    trace_id = known[0].root_run.trace_id
+    async for t in client.traces.query(
+        project_id=str(project.id),
+        min_start_time="2026-07-01T00:00:00Z",
+        max_start_time="2026-07-31T23:59:59Z",
+        page_size=1,
+    ):
+        trace_id = t.root_run.trace_id
+        break
     # :remove-end:
     async for trace in client.traces.query(
         project_id=str(project.id),
