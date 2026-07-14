@@ -63,37 +63,29 @@ Query threads within a project (session), with cursor-based pagination. Returns 
 
 <Tabs>
   <Tab title="Python">
-    <Warning>
-    `min_start_time` and `max_start_time` are both **required**, unlike `runs.query`. There is no default window. Omitting either raises a 400.
-    </Warning>
-
     | Before (`list_threads`) | After (`threads.query`) | Notes |
     |---|---|---|
     | `project_id` XOR `project_name` | `project_id` | v2 takes only the UUID; resolve a name via `aread_project()` first, same pattern as `Runs: query` |
-    | `start_time` (defaults to 1 day ago) | `min_start_time` + `max_start_time` | Both now required, no default (see warning above) |
+    | `start_time` (defaults to 1 day ago) | `min_start_time` + `max_start_time` | Optional; default to a 1-day window ending now, same as `start_time` |
     | `offset` + `limit` | `cursor` + `page_size` | Offset pagination replaced by cursor pagination |
     | `filter` (evaluated against runs) | `filter` | Same syntax; now evaluated against each thread's root run |
   </Tab>
   <Tab title="TypeScript">
-    <Warning>
-    `min_start_time` and `max_start_time` are both **required**, unlike `runs.query`. There is no default window. Omitting either raises a 400.
-    </Warning>
-
     | Before (`listThreads`) | After (`threads.query`) | Notes |
     |---|---|---|
     | `projectId` XOR `projectName` | `project_id` | v2 takes only the UUID; resolve a name via `readProject()` first |
-    | `startTime` (defaults to 1 day ago) | `min_start_time` + `max_start_time` | Both now required, no default |
+    | `startTime` (defaults to 1 day ago) | `min_start_time` + `max_start_time` | Optional; default to a 1-day window ending now, same as `startTime` |
     | `offset` + `limit` | `cursor` + `page_size` | Offset pagination replaced by cursor pagination |
     | `filter` | `filter` | Same syntax; now evaluated against each thread's root run |
   </Tab>
   <Tab title="Java">
-    No query parameters to map. There was no dedicated method. The old approach used the generic run query (`is_root=true`, manual grouping by `thread_id` metadata). `threads().query()` takes `projectId`, `minStartTime`, `maxStartTime` (both required), `filter`, `pageSize`, `cursor`.
+    No query parameters to map. There was no dedicated method. The old approach used the generic run query (`is_root=true`, manual grouping by `thread_id` metadata). `threads().query()` takes `projectId`, `minStartTime`, `maxStartTime` (both optional, defaulting to a 1-day window ending now), `filter`, `pageSize`, `cursor`.
   </Tab>
   <Tab title="Go">
-    No query parameters to map. There was no dedicated method. The old approach used the generic run query (`IsRoot: true`, manual grouping by `thread_id` metadata). `Threads.Query()` takes `ProjectID`, `MinStartTime`, `MaxStartTime` (both required), `Filter`, `PageSize`, `Cursor`.
+    No query parameters to map. There was no dedicated method. The old approach used the generic run query (`IsRoot: true`, manual grouping by `thread_id` metadata). `Threads.Query()` takes `ProjectID`, `MinStartTime`, `MaxStartTime` (both optional, defaulting to a 1-day window ending now), `Filter`, `PageSize`, `Cursor`.
   </Tab>
   <Tab title="cURL">
-    `POST /v2/threads/query` body fields: `project_id`, `min_start_time` (required), `max_start_time` (required), `filter`, `page_size`, `cursor` (all `snake_case`).
+    `POST /v2/threads/query` body fields: `project_id`, `min_start_time` (optional), `max_start_time` (optional), `filter`, `page_size`, `cursor` (all `snake_case`). `min_start_time`/`max_start_time` default to a 1-day window ending now when omitted.
   </Tab>
 </Tabs>
 
@@ -103,9 +95,9 @@ Query threads within a project (session), with cursor-based pagination. Returns 
   <Tab title="Python">
     Python's v1 `ListThreadsItem` only has `thread_id`, `runs` (full embedded `Run[]`), `count`, `min_start_time`, `max_start_time`. It has no token/cost/latency/feedback fields at all.
 
-    v2's `ThreadListItem` never embeds the full run list (that is what `threads.list_traces` is for) but adds real `feedback_stats`, `latency_p50`/`latency_p99`, cost/token sums with per-category `_details`, `first_trace_id`/`last_trace_id`, `first_inputs`/`last_outputs` previews, `last_error`, `num_errored_turns`.
+    v2's `Thread` never embeds the full run list (that is what `threads.list_traces` is for) but adds real `feedback_stats`, `latency_p50`/`latency_p99`, cost/token sums with per-category `_details`, `first_trace_id`/`last_trace_id`, `first_inputs`/`last_outputs` previews, `last_error`, `num_errored_turns`.
 
-    | Before (v1 `ListThreadsItem`) | After (v2 `ThreadListItem`) | Notes |
+    | Before (v1 `ListThreadsItem`) | After (v2 `Thread`) | Notes |
     |---|---|---|
     | `thread_id` | `thread_id` | Unchanged |
     | `runs` (full embedded `Run[]`) | *(not available)* | Use `threads.list_traces` for per-trace detail |
@@ -124,7 +116,7 @@ Query threads within a project (session), with cursor-based pagination. Returns 
     | *(not available)* | `feedback_stats` | New |
   </Tab>
   <Tab title="TypeScript">
-    | Before (v1 `ListThreadsItem`) | After (v2 `ThreadListItem`) | Notes |
+    | Before (v1 `ListThreadsItem`) | After (v2 `Thread`) | Notes |
     |---|---|---|
     | `threadId` | `thread_id` | Renamed to `snake_case` |
     | `runs` (full embedded `Run[]`) | *(not available)* | Use `threads.listTraces` for per-trace detail |
@@ -145,11 +137,11 @@ Query threads within a project (session), with cursor-based pagination. Returns 
     TS's v1 `ListThreadsItem` *claims* `totalTokens`, `totalCost`, `latencyP50`, `latencyP99`, `feedbackStats`, but the implementation hardcodes them to `0`/`null`, never actually computing them. This is a real v1 bug, not a rename: `threads.query` in v2 actually computes these fields.
   </Tab>
   <Tab title="Java">
-    `ThreadListItem` has 19 fields: `threadId`, `count`, `feedbackStats`, `firstInputs`, `firstTraceId`, `lastError`, `lastOutputs`, `lastTraceId`, `latencyP50`, `latencyP99`, `maxStartTime`, `minStartTime`, `numErroredTurns`, `startTime`, `totalCost`, `totalCostDetails`, `totalTokenDetails`, `totalTokens`, `traceId` (all `Optional`).
+    `Thread` has 19 fields: `threadId`, `count`, `feedbackStats`, `firstInputs`, `firstTraceId`, `lastError`, `lastOutputs`, `lastTraceId`, `latencyP50`, `latencyP99`, `maxStartTime`, `minStartTime`, `numErroredTurns`, `startTime`, `totalCost`, `totalCostDetails`, `totalTokenDetails`, `totalTokens`, `traceId` (all `Optional`).
 
     v1 never had a typed response for this. Java's closest equivalent grouped raw `runs().query()` results by the `thread_id` metadata client-side. Every field below is new in v2.
 
-    | v2 `ThreadListItem` method | Notes |
+    | v2 `Thread` method | Notes |
     |---|---|
     | `threadId()` | |
     | `count()` | |
@@ -164,11 +156,11 @@ Query threads within a project (session), with cursor-based pagination. Returns 
     | `feedbackStats()` | |
   </Tab>
   <Tab title="Go">
-    `ThreadListItem` mirrors the same 19 fields as Java/Python, in `PascalCase` Go struct form (e.g. `ThreadID`, `Count`, `LatencyP50`).
+    `Thread` mirrors the same 19 fields as Java/Python, in `PascalCase` Go struct form (e.g. `ThreadID`, `Count`, `LatencyP50`).
 
     v1 never had a typed response for this. Go's closest equivalent grouped raw `Runs.Query()` results by the `thread_id` metadata client-side. Every field below is new in v2.
 
-    | v2 `ThreadListItem` field | Notes |
+    | v2 `Thread` field | Notes |
     |---|---|
     | `ThreadID` | |
     | `Count` | |
