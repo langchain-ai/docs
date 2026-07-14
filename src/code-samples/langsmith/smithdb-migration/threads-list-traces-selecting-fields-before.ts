@@ -18,9 +18,9 @@ async function findThreadId(projectId: string): Promise<string> {
 import { Client } from "langsmith";
 
 const client = new Client();
-const project = await client.readProject({ projectName: "default" });
 let threadId = "<thread-id>";
 // :remove-start:
+const project = await client.readProject({ projectName: "default" });
 threadId = await findThreadId(project.id);
 // :remove-end:
 for await (const run of client.readThread({

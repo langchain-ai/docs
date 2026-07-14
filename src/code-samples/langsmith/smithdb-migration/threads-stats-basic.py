@@ -36,6 +36,8 @@ print(stats["run_count"], stats["total_tokens"], stats["total_cost"])
 
 # :snippet-start: threads-stats-basic-after-py
 # :codegroup-tab: After
+import asyncio
+
 from langsmith import Client
 
 

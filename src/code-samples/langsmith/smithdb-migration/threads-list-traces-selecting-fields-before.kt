@@ -6,7 +6,9 @@
 
 // :snippet-start: threads-list-traces-selecting-fields-before-kt
 // :codegroup-tab: Before
+// :remove-start:
 import java.time.OffsetDateTime
+// :remove-end:
 
 import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient

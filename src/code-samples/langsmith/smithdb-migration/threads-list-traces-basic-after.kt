@@ -6,13 +6,17 @@
 
 // :snippet-start: threads-list-traces-basic-after-kt
 // :codegroup-tab: After
+// :remove-start:
 import java.time.OffsetDateTime
+// :remove-end:
 
 import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.sessions.SessionListParams
 import com.langchain.smith.models.threads.ThreadListTracesParams
+// :remove-start:
 import com.langchain.smith.models.threads.ThreadQueryParams
+// :remove-end:
 
 // :remove-start:
 fun main() {

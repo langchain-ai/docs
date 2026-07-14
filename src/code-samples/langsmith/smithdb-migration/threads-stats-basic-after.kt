@@ -6,12 +6,16 @@
 
 // :snippet-start: threads-stats-basic-after-kt
 // :codegroup-tab: After
+// :remove-start:
 import java.time.OffsetDateTime
+// :remove-end:
 
 import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.sessions.SessionListParams
+// :remove-start:
 import com.langchain.smith.models.threads.ThreadQueryParams
+// :remove-end:
 import com.langchain.smith.models.threads.ThreadStatsParams
 import kotlin.jvm.optionals.getOrNull
 

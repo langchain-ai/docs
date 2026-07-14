@@ -11,6 +11,7 @@ import (
 	"github.com/langchain-ai/langsmith-go"
 )
 
+// :remove-start:
 func findThreadID(ctx context.Context, client *langsmith.Client, projectID string) string {
 	minStart, _ := time.Parse(time.RFC3339, "2026-07-01T00:00:00Z")
 	maxStart, _ := time.Parse(time.RFC3339, "2026-07-31T23:59:59Z")
@@ -24,7 +25,7 @@ func findThreadID(ctx context.Context, client *langsmith.Client, projectID strin
 	}
 	panic("no threads found")
 }
-
+// :remove-end:
 func main() {
 	ctx := context.Background()
 	client := langsmith.NewClient()

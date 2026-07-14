@@ -21,9 +21,9 @@ async def find_thread_id(project_id: str) -> str:
 from langsmith import Client
 
 client = Client()
-project = client.read_project(project_name="default")
 thread_id = "<thread-id>"
 # :remove-start:
+project = client.read_project(project_name="default")
 thread_id = asyncio.run(find_thread_id(str(project.id)))
 # :remove-end:
 for run in client.read_thread(
@@ -36,6 +36,8 @@ for run in client.read_thread(
 
 # :snippet-start: threads-list-traces-selecting-fields-after-py
 # :codegroup-tab: After
+import asyncio
+
 from langsmith import Client
 
 

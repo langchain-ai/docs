@@ -44,6 +44,8 @@ print(stats["run_count"], first_run.start_time)
 
 # :snippet-start: threads-stats-first-start-time-after-py
 # :codegroup-tab: After
+import asyncio
+
 from langsmith import Client
 
 
