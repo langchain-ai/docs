@@ -1,0 +1,821 @@
+---
+title: Log traces to a specific project
+sidebarTitle: Log traces to a specific project
+description: Route LangSmith traces to a named project instead of the default project using environment variables or the SDK.
+---
+
+This page covers how to control where LangSmith sends your traces:
+
+- [Set the destination project statically](#set-the-destination-project-statically)
+- [Set the destination project dynamically](#set-the-destination-project-dynamically)
+- [Set the destination workspace dynamically](#set-the-destination-workspace-dynamically)
+- [Write traces to multiple destinations with replicas](#write-traces-to-multiple-destinations-with-replicas)
+
+## Set the destination project statically
+
+LangSmith uses the concept of a [_project_](/langsmith/observability-concepts#projects) to group traces. If left unspecified, the project is set to `default`.
+
+You can set the `LANGSMITH_PROJECT` environment variable to configure a custom project name for an entire application run. Set this before running your application:
+
+```bash
+export LANGSMITH_PROJECT=my-custom-project
+```
+
+<Warning>
+The `LANGSMITH_PROJECT` flag is only supported in JS SDK versions >= 0.2.16, use `LANGCHAIN_PROJECT` instead if you are using an older version.
+</Warning>
+
+If the project specified does not exist, LangSmith will automatically create it when the first trace is ingested.
+
+## Set the destination project dynamically
+
+You can also set the project name at program runtime in various ways, depending on how you are [annotating your code for tracing](/langsmith/annotate-code). This is useful when you want to log traces to different projects within the same application:
+
+- Pass the project name at decoration or configuration time.
+- Override it per individual call.
+- Set it when constructing a run directly.
+
+<Note>
+Setting the project name dynamically using one of the following methods overrides the project name set by the `LANGSMITH_PROJECT` environment variable.
+</Note>
+
+<CodeGroup>
+
+```python Python expandable wrap
+import openai
+from langsmith import traceable
+from langsmith.run_trees import RunTree
+
+client = openai.Client()
+messages = [
+  {"role": "system", "content": "You are a helpful assistant."},
+  {"role": "user", "content": "Hello!"}
+]
+
+# Use the @traceable decorator with the 'project_name' parameter to log traces to LangSmith
+# Ensure that the LANGSMITH_TRACING environment variables is set for @traceable to work
+@traceable(
+  run_type="llm",
+  name="OpenAI Call Decorator",
+  project_name="My Project"
+)
+def call_openai(
+  messages: list[dict], model: str = "gpt-5.4-mini"
+) -> str:
+  return client.chat.completions.create(
+      model=model,
+      messages=messages,
+  ).choices[0].message.content
+
+# Call the decorated function
+call_openai(messages)
+
+# You can also specify the Project via the project_name parameter
+# This will override the project_name specified in the @traceable decorator
+call_openai(
+  messages,
+  langsmith_extra={"project_name": "My Overridden Project"},
+)
+
+# The wrapped OpenAI client accepts all the same langsmith_extra parameters
+# as @traceable decorated functions, and logs traces to LangSmith automatically.
+# Ensure that the LANGSMITH_TRACING environment variables is set for the wrapper to work.
+from langsmith import wrappers
+wrapped_client = wrappers.wrap_openai(client)
+wrapped_client.chat.completions.create(
+  model="gpt-5.4-mini",
+  messages=messages,
+  langsmith_extra={"project_name": "My Project"},
+)
+
+# Alternatively, create a RunTree object
+# You can set the project name using the project_name parameter
+rt = RunTree(
+  run_type="llm",
+  name="OpenAI Call RunTree",
+  inputs={"messages": messages},
+  project_name="My Project"
+)
+chat_completion = client.chat.completions.create(
+  model="gpt-5.4-mini",
+  messages=messages,
+)
+# End and submit the run
+rt.end(outputs=chat_completion)
+rt.post()
+```
+
+```typescript TypeScript expandable wrap
+import OpenAI from "openai";
+import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
+import { RunTree} from "langsmith";
+
+const client = new OpenAI();
+const messages = [
+  {role: "system", content: "You are a helpful assistant."},
+  {role: "user", content: "Hello!"}
+];
+
+const traceableCallOpenAI = traceable(async (messages: {role: string, content: string}[], model: string) => {
+  const completion = await client.chat.completions.create({
+      model: model,
+      messages: messages,
+  });
+  return completion.choices[0].message.content;
+},{
+  run_type: "llm",
+  name: "OpenAI Call Traceable",
+  project_name: "My Project"
+});
+
+// Call the traceable function
+await traceableCallOpenAI(messages, "gpt-5.4-mini");
+
+// Create and use a RunTree object
+const rt = new RunTree({
+  run_type: "llm",
+  name: "OpenAI Call RunTree",
+  inputs: { messages },
+  project_name: "My Project"
+});
+await rt.postRun();
+
+// Execute a chat completion and handle it within RunTree
+rt.end({outputs: chatCompletion});
+await rt.patchRun();
+```
+
+```java Java expandable wrap
+import com.langchain.smith.otel.OtelConfig;
+import com.langchain.smith.otel.OtelSpanCreator;
+import com.langchain.smith.otel.OtelTraceExporter;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.api.trace.Tracer;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Simple example: Send a single OpenTelemetry trace to LangSmith.
+ *
+ * Usage:
+ *   export LANGSMITH_API_KEY=your_api_key
+ *   export LANGSMITH_PROJECT=your_project_name  # Optional, defaults to "default"
+ */
+public class OtelLangSmithSimpleExample {
+    public static void main(String[] args) throws Exception {
+        // Get API key and project name
+        String apiKey = System.getenv("LANGSMITH_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            System.err.println("ERROR: LANGSMITH_API_KEY environment variable is required!");
+            return;
+        }
+
+        String projectName = System.getenv("LANGSMITH_PROJECT");
+        if (projectName == null || projectName.isEmpty()) {
+            projectName = "default";
+        }
+
+        // Configure exporter
+        Map<String, String> headers = new HashMap<>();
+        headers.put("x-api-key", apiKey);
+        headers.put("Langsmith-Project", projectName);
+
+        OtelConfig config = OtelConfig.builder()
+                .enabled(true)
+                .endpoint("https://api.smith.langchain.com/otel/v1/traces")
+                .headers(headers)
+                .timeout(Duration.ofSeconds(30))
+                .serviceName("langsmith-java-simple")
+                .build();
+
+        OtelTraceExporter exporter = OtelTraceExporter.fromConfig(config);
+        Tracer tracer = exporter.getTracer();
+
+        // Create a simple span
+        Span span = OtelSpanCreator.createLlmSpan(
+                tracer, "simple.llm.call", "openai", "gpt-4", projectName, null);
+
+        try {
+            OtelSpanCreator.setInput(span, "Hello, world!");
+            Thread.sleep(100); // Simulate processing
+            OtelSpanCreator.setOutput(span, "Hello! How can I help you?");
+            OtelSpanCreator.setTokenUsage(span, 5, 8);
+            span.setStatus(StatusCode.OK);
+        } finally {
+            span.end();
+        }
+
+        // Flush and shutdown
+        exporter.flush().join(5, java.util.concurrent.TimeUnit.SECONDS);
+        exporter.shutdown().join(2, java.util.concurrent.TimeUnit.SECONDS);
+
+        System.out.println("✓ Trace sent to LangSmith!");
+    }
+}
+```
+
+</CodeGroup>
+
+## Set the destination workspace dynamically
+
+If you need to route traces dynamically to different LangSmith [workspaces](/langsmith/administration-overview#workspaces) based on runtime configuration (e.g., routing different users or tenants to separate workspaces), the approach differs by language:
+
+- **Python**: use workspace-specific LangSmith clients with [`tracing_context`](/langsmith/annotate-code#use-the-trace-context-manager-python-only).
+- **TypeScript**: pass a custom client to [`traceable`](/langsmith/annotate-code#use-%40traceable-%2F-traceable), or use `LangChainTracer` with callbacks.
+
+This approach is useful for multi-tenant applications where you want to isolate traces by customer, environment, or team at the workspace level. It works with any LangSmith-compatible tracing, including LangChain, OpenAI, and custom functions decorated with `@traceable`.
+
+### Prerequisites
+
+- A [LangSmith API key](/langsmith/create-account-api-key) with access to multiple workspaces.
+- The [workspace IDs](/langsmith/set-up-hierarchy#set-up-a-workspace) for each target workspace.
+
+### Generic cross-workspace tracing
+
+Use this approach for general applications where you want to dynamically route traces to different workspaces based on runtime logic (e.g., customer ID, tenant, or environment).
+
+**Key components:**
+
+1. Initialize separate `Client` instances for each workspace with their respective `workspace_id`.
+2. Use `tracing_context` (Python) or pass the workspace-specific `client` to `traceable` (TypeScript) to route traces.
+3. Pass workspace configuration through your application's runtime config.
+4. Override both the workspace and project name per route to organize traces further within each workspace.
+
+<CodeGroup>
+
+```python Python
+import os
+import contextlib
+from langsmith import Client, traceable, tracing_context
+
+# API key with access to multiple workspaces
+api_key = os.getenv("LS_CROSS_WORKSPACE_KEY")
+
+# Initialize clients for different workspaces
+workspace_a_client = Client(
+    api_key=api_key,
+    api_url="https://api.smith.langchain.com",
+    workspace_id="<YOUR_WORKSPACE_A_ID>"  # e.g., "abc123..."
+)
+
+workspace_b_client = Client(
+    api_key=api_key,
+    api_url="https://api.smith.langchain.com",
+    workspace_id="<YOUR_WORKSPACE_B_ID>"  # e.g., "def456..."
+)
+
+# Example: Route based on customer ID
+def get_workspace_client(customer_id: str):
+    """Route to appropriate workspace based on customer."""
+    if customer_id.startswith("premium_"):
+        return workspace_a_client, "premium-customer-traces"
+    else:
+        return workspace_b_client, "standard-customer-traces"
+
+@traceable
+def process_request(data: dict, customer_id: str):
+    """Process a customer request with workspace-specific tracing."""
+    # Your business logic here
+    return {"status": "success", "data": data}
+
+# Use tracing_context to route to the appropriate workspace
+def handle_customer_request(customer_id: str, request_data: dict):
+    client, project_name = get_workspace_client(customer_id)
+
+    # Everything within this context will be traced to the selected workspace
+    with tracing_context(enabled=True, client=client, project_name=project_name):
+        result = process_request(request_data, customer_id)
+
+    return result
+
+# Example usage
+handle_customer_request("premium_user_123", {"query": "Hello"})
+handle_customer_request("standard_user_456", {"query": "Hi"})
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+import { traceable } from "langsmith/traceable";
+
+// API key with access to multiple workspaces
+const apiKey = process.env.LS_CROSS_WORKSPACE_KEY;
+
+// Initialize clients for different workspaces
+const workspaceAClient = new Client({
+  apiKey: apiKey,
+  apiUrl: "https://api.smith.langchain.com",
+  workspaceId: "<YOUR_WORKSPACE_A_ID>", // e.g., "abc123..."
+});
+
+const workspaceBClient = new Client({
+  apiKey: apiKey,
+  apiUrl: "https://api.smith.langchain.com",
+  workspaceId: "<YOUR_WORKSPACE_B_ID>", // e.g., "def456..."
+});
+
+// Example: Route based on customer ID
+function getWorkspaceClient(customerId: string): {
+  client: Client;
+  projectName: string;
+} {
+  if (customerId.startsWith("premium_")) {
+    return {
+      client: workspaceAClient,
+      projectName: "premium-customer-traces",
+    };
+  } else {
+    return {
+      client: workspaceBClient,
+      projectName: "standard-customer-traces",
+    };
+  }
+}
+
+// Route traces to the appropriate workspace by passing the client to traceable
+async function handleCustomerRequest(
+  customerId: string,
+  requestData: Record<string, any>
+) {
+  const { client, projectName } = getWorkspaceClient(customerId);
+
+  // Create a traceable function with the workspace-specific client
+  const processRequest = traceable(
+    async (data: Record<string, any>, customerId: string) => {
+      // Your business logic here
+      return { status: "success", data };
+    },
+    {
+      name: "process_request",
+      client,
+      project_name: projectName,
+    }
+  );
+
+  return await processRequest(requestData, customerId);
+}
+
+// Example usage
+await handleCustomerRequest("premium_user_123", { query: "Hello" });
+await handleCustomerRequest("standard_user_456", { query: "Hi" });
+```
+
+</CodeGroup>
+
+### Override default workspace for LangSmith deployments
+
+When [deploying agents](/langsmith/deployment) to LangSmith, you can override the default workspace that traces are sent to by using a graph lifespan context manager. This is useful when you want to route traces from a deployed agent to different workspaces based on runtime configuration passed through the `config` parameter.
+
+<CodeGroup>
+
+```python Python
+import os
+import contextlib
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph
+from langgraph.graph.state import RunnableConfig
+from langsmith import Client, tracing_context
+
+# API key with access to multiple workspaces
+api_key = os.getenv("LS_CROSS_WORKSPACE_KEY")
+
+# Initialize clients for different workspaces
+workspace_a_client = Client(
+    api_key=api_key,
+    api_url="https://api.smith.langchain.com",
+    workspace_id="<YOUR_WORKSPACE_A_ID>"
+)
+
+workspace_b_client = Client(
+    api_key=api_key,
+    api_url="https://api.smith.langchain.com",
+    workspace_id="<YOUR_WORKSPACE_B_ID>"
+)
+
+# Define configuration schema for workspace routing
+class Configuration(TypedDict):
+    workspace_id: str
+
+# Define the graph state
+class State(TypedDict):
+    response: str
+
+def greeting(state: State, config: RunnableConfig) -> State:
+    """Generate a workspace-specific greeting."""
+    workspace_id = config.get("configurable", {}).get("workspace_id", "workspace_a")
+
+    if workspace_id == "workspace_a":
+        response = "Hello from Workspace A!"
+    elif workspace_id == "workspace_b":
+        response = "Hello from Workspace B!"
+    else:
+        response = "Hello from the default workspace!"
+
+    return {"response": response}
+
+# Build the base graph
+base_graph = (
+    StateGraph(state_schema=State, config_schema=Configuration)
+    .add_node("greeting", greeting)
+    .set_entry_point("greeting")
+    .set_finish_point("greeting")
+    .compile()
+)
+
+@contextlib.asynccontextmanager
+async def graph(config):
+    """Dynamically route traces to different workspaces based on configuration."""
+    # Extract workspace_id from the configuration
+    workspace_id = config.get("configurable", {}).get("workspace_id", "workspace_a")
+
+    # Route to the appropriate workspace
+    if workspace_id == "workspace_a":
+        client = workspace_a_client
+        project_name = "production-traces"
+    elif workspace_id == "workspace_b":
+        client = workspace_b_client
+        project_name = "development-traces"
+    else:
+        client = workspace_a_client
+        project_name = "default-traces"
+
+    # Apply the tracing context for the selected workspace
+    with tracing_context(enabled=True, client=client, project_name=project_name):
+        yield base_graph
+
+# Usage: Invoke with different workspace configurations
+# await graph({"configurable": {"workspace_id": "workspace_a"}})
+# await graph({"configurable": {"workspace_id": "workspace_b"}})
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+import { LangChainTracer } from "@langchain/core/tracers/tracer_langchain";
+import { StateGraph, Annotation } from "@langchain/langgraph";
+
+// API key with access to multiple workspaces
+const apiKey = process.env.LS_CROSS_WORKSPACE_KEY;
+
+// Initialize clients for different workspaces
+const workspaceAClient = new Client({
+  apiKey: apiKey,
+  apiUrl: "https://api.smith.langchain.com",
+  workspaceId: "<YOUR_WORKSPACE_A_ID>", // e.g., "abc123..."
+});
+
+const workspaceBClient = new Client({
+  apiKey: apiKey,
+  apiUrl: "https://api.smith.langchain.com",
+  workspaceId: "<YOUR_WORKSPACE_B_ID>", // e.g., "def456..."
+});
+
+// Define the graph state
+const StateAnnotation = Annotation.Root({
+  response: Annotation<string>(),
+});
+
+async function greeting(state: typeof StateAnnotation.State, config: any) {
+  const workspaceId = config?.configurable?.workspace_id || "workspace_a";
+
+  let response: string;
+  if (workspaceId === "workspace_a") {
+    response = "Hello from Workspace A!";
+  } else if (workspaceId === "workspace_b") {
+    response = "Hello from Workspace B!";
+  } else {
+    response = "Hello from the default workspace!";
+  }
+
+  return { response };
+}
+
+// Build the base graph
+const baseGraph = new StateGraph(StateAnnotation)
+  .addNode("greeting", greeting)
+  .addEdge("__start__", "greeting")
+  .addEdge("greeting", "__end__")
+  .compile();
+
+// Helper to get workspace-specific client and project
+function getWorkspaceConfig(workspaceId: string): {
+  client: Client;
+  projectName: string;
+} {
+  if (workspaceId === "workspace_a") {
+    return { client: workspaceAClient, projectName: "production-traces" };
+  } else if (workspaceId === "workspace_b") {
+    return { client: workspaceBClient, projectName: "development-traces" };
+  }
+  return { client: workspaceAClient, projectName: "default-traces" };
+}
+
+// Invoke the graph with workspace-specific tracing
+async function invokeWithWorkspaceTracing(
+  workspaceId: string,
+  input: typeof StateAnnotation.State
+) {
+  const { client, projectName } = getWorkspaceConfig(workspaceId);
+
+  // Create a LangChainTracer with the workspace-specific client
+  const tracer = new LangChainTracer({
+    client,
+    projectName,
+  });
+
+  // Invoke the graph with the tracer attached via callbacks
+  // All traces will be routed to the selected workspace
+  return await baseGraph.invoke(input, {
+    configurable: { workspace_id: workspaceId },
+    callbacks: [tracer],
+  });
+}
+
+// Example usage
+await invokeWithWorkspaceTracing("workspace_a", { response: "" });
+await invokeWithWorkspaceTracing("workspace_b", { response: "" });
+```
+
+</CodeGroup>
+
+<Note>
+When deploying with cross-workspace tracing, ensure your service key or PAT has the necessary permissions for all target workspaces. We recommend using a multi-workspace service key for production deployments. For LangSmith deployments, you must add a service key with cross-workspace access to your environment variables (e.g., `LS_CROSS_WORKSPACE_KEY`) to override the default service key generated by your deployment.
+</Note>
+
+## Write traces to multiple destinations with replicas
+
+Replicas let you send every trace to multiple projects or workspaces **at the same time**. Unlike the dynamic routing patterns where each trace goes to one destination, replicas duplicate the trace to all configured destinations in parallel.
+
+Replicas can be useful for:
+
+- Mirror production traces into a staging or personal project for debugging.
+- Write to multiple workspaces for multi-tenant isolation without changing any application code.
+- Send traces to the same server under different projects, with per-replica metadata overrides.
+
+### Configure replicas via environment variable
+
+Set the `LANGSMITH_RUNS_ENDPOINTS` environment variable to a JSON value. Two formats are supported:
+
+- **Object format**: maps each endpoint URL to its API key:
+
+    ```bash
+    export LANGSMITH_RUNS_ENDPOINTS='{
+    "https://api.smith.langchain.com": "ls__key_workspace_a",
+    "https://api.smith.langchain.com": "ls__key_workspace_b"
+    }'
+    ```
+
+- **Array format**: a list of replica objects, useful when you need multiple replicas pointing at the same URL or when you want to set a `project_name` per replica:
+
+    ```bash
+    export LANGSMITH_RUNS_ENDPOINTS='[
+    {"api_url": "https://api.smith.langchain.com", "api_key": "ls__key1", "project_name": "project-prod"},
+    {"api_url": "https://api.smith.langchain.com", "api_key": "ls__key2", "project_name": "project-staging"}
+    ]'
+    ```
+
+<Warning>
+You cannot use `LANGSMITH_RUNS_ENDPOINTS` alongside `LANGSMITH_ENDPOINT`. If you set both, LangSmith raises an error. Use only one to configure your endpoint.
+</Warning>
+
+### Configure replicas at runtime
+
+You can also pass replicas directly in code, which is useful when destinations vary per request or tenant.
+
+<CodeGroup>
+
+```python Python
+from langsmith import traceable, tracing_context
+from langsmith.run_trees import WriteReplica, ApiKeyAuth
+
+@traceable
+def my_pipeline(query: str) -> str:
+    # Your application logic here
+    return f"Answer to: {query}"
+
+replicas = [
+    WriteReplica(
+        api_url="https://api.smith.langchain.com",
+        auth=ApiKeyAuth(api_key="ls__key_workspace_a"),
+        project_name="project-prod",
+    ),
+    WriteReplica(
+        api_url="https://api.smith.langchain.com",
+        auth=ApiKeyAuth(api_key="ls__key_workspace_b"),
+        project_name="project-staging",
+        # Optionally override fields on the replicated run
+        updates={"metadata": {"environment": "staging"}},
+    ),
+]
+
+with tracing_context(replicas=replicas):
+    my_pipeline("What is LangSmith?")
+```
+
+```typescript TypeScript
+import { traceable } from "langsmith/traceable";
+
+const myPipeline = traceable(
+  async (query: string): Promise<string> => {
+    // Your application logic here
+    return `Answer to: ${query}`;
+  },
+  {
+    name: "my_pipeline",
+    replicas: [
+      {
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "ls__key_workspace_a",
+        projectName: "project-prod",
+      },
+      {
+        apiUrl: "https://api.smith.langchain.com",
+        apiKey: "ls__key_workspace_b",
+        projectName: "project-staging",
+        // Optionally override fields on the replicated run
+        updates: { metadata: { environment: "staging" } },
+      },
+    ],
+  }
+);
+
+await myPipeline("What is LangSmith?");
+```
+
+</CodeGroup>
+
+You can also use the `updates` field to merge additional fields (such as [metadata or tags](/langsmith/ls-metadata-parameters)) into a run for a specific replica only—the primary trace is unchanged. Replica errors are non-fatal: if a replica endpoint is unavailable, LangSmith logs the error without affecting the primary trace.
+
+<Warning>
+Auth does not propagate in distributed traces. When a trace spans multiple services, LangSmith forwards replica `project_name` and `updates` to downstream services automatically, but not API keys or credentials. Each service must configure its own credentials for replica destinations.
+</Warning>
+
+### Replicate within the same server (project-only replicas)
+
+If all your replicas use the same LangSmith server, you can omit `api_url` and `auth` and specify only a `project_name`. The SDK reuses the default client credentials:
+
+<CodeGroup>
+
+```python Python
+from langsmith import traceable, tracing_context
+from langsmith.run_trees import WriteReplica
+
+@traceable
+def my_pipeline(query: str) -> str:
+    return f"Answer to: {query}"
+
+with tracing_context(
+    replicas=[
+        WriteReplica(project_name="project-prod"),
+        WriteReplica(project_name="project-staging", updates={"metadata": {"env": "staging"}}),
+    ]
+):
+    my_pipeline("What is LangSmith?")
+```
+
+```typescript TypeScript
+import { traceable } from "langsmith/traceable";
+
+const myPipeline = traceable(
+  async (query: string) => `Answer to: ${query}`,
+  {
+    name: "my_pipeline",
+    replicas: [
+      { projectName: "project-prod" },
+      { projectName: "project-staging", updates: { metadata: { env: "staging" } } },
+    ],
+  }
+);
+
+await myPipeline("What is LangSmith?");
+```
+
+</CodeGroup>
+
+### Route between LangSmith and OpenTelemetry destinations
+
+You can decide at runtime whether a given invocation sends traces to LangSmith, to an OpenTelemetry (OTel) backend, or to both, without redeploying or modifying application logic. This is useful when you want to toggle between observability backends per environment, or even per request, making the decision at runtime.
+
+Set the tracing mode using the `tracing_mode` constructor argument or the `LANGSMITH_TRACING_MODE` environment variable. Both accept the same values; an explicit `tracing_mode` argument always takes precedence over the env var:
+
+- **`"langsmith"` (default)**: sends traces natively to LangSmith.
+- **`"otel"`**: exports traces as OpenTelemetry spans to a configured OTel backend.
+- **`"hybrid"` (Python only)**: sends to both LangSmith and an OTel backend from a single replica.
+
+<Note>
+If you are using the deprecated `otel_enabled` parameter on `Client` (Python only), migrate to `tracing_mode`: `Client(otel_enabled=True)` → `Client(tracing_mode="hybrid")`. The `otel_enabled` parameter will be removed in the next minor version.
+</Note>
+
+Pass a configured `Client` directly into a replica to apply the desired mode at runtime:
+
+<CodeGroup>
+
+```python Python expandable wrap
+from langsmith import Client, traceable, tracing_context
+from langsmith.run_trees import WriteReplica
+from langsmith.wrappers import wrap_openai
+import openai
+
+# Create clients with different tracing modes
+ls_client = Client()                            # tracing_mode="langsmith" (default)
+otel_client = Client(tracing_mode="otel")       # tracing_mode="otel"
+hybrid_client = Client(tracing_mode="hybrid")   # tracing_mode="hybrid" (both)
+
+openai_client = wrap_openai(openai.Client())
+
+@traceable()
+def joke():
+    response = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "Tell me a short joke."}],
+    )
+    return response.choices[0].message.content
+
+# Mix tracing modes across replicas in a single invocation:
+# one replica sends via LangSmith's native format, another as OTel spans.
+with tracing_context(replicas=[
+    WriteReplica(client=ls_client),    # tracing_mode="langsmith"
+    WriteReplica(client=otel_client),  # tracing_mode="otel"
+]):
+    joke()
+
+# Alternatively, a single hybrid replica sends to both simultaneously.
+with tracing_context(replicas=[WriteReplica(client=hybrid_client)]):
+    joke()
+
+# Swap replica lists at runtime — e.g. based on a feature flag or environment.
+def get_replicas(send_to_otel: bool):
+    replicas = [WriteReplica(client=ls_client)]
+    if send_to_otel:
+        replicas.append(WriteReplica(client=otel_client))
+    return replicas
+
+with tracing_context(replicas=get_replicas(send_to_otel=True)):   # LangSmith + OTel
+    joke()
+
+with tracing_context(replicas=get_replicas(send_to_otel=False)):  # LangSmith only
+    joke()
+```
+
+```typescript TypeScript expandable wrap
+import { Client } from "langsmith";
+import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
+import OpenAI from "openai";
+
+// Note: tracingMode: "otel" requires OTel SDK initialization
+// (TracerProvider, SpanProcessor, etc.) before creating the client.
+// See the OpenTelemetry integration guide for setup details.
+
+// Create clients with different tracing modes
+const lsClient = new Client();                           // tracingMode: "langsmith" (default)
+const otelClient = new Client({ tracingMode: "otel" });  // tracingMode: "otel"
+
+const openaiClient = wrapOpenAI(new OpenAI());
+
+async function jokeImpl() {
+  const response = await openaiClient.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: "Tell me a short joke." }],
+  });
+  return response.choices[0].message.content;
+}
+
+// Mix tracing modes across replicas in a single traceable call:
+// the primary client sends via LangSmith, the replica sends as OTel spans.
+const joke = traceable(jokeImpl, {
+  name: "joke",
+  client: lsClient,                    // tracingMode: "langsmith" (default)
+  replicas: [{ client: otelClient }],  // tracingMode: "otel"
+});
+await joke();
+
+// Build replicas dynamically for runtime switching — e.g. based on a feature flag.
+function buildReplicas(sendToOtel: boolean) {
+  return sendToOtel ? [{ client: otelClient }] : [];
+}
+
+const sendToOtel = process.env.ROUTE_TO_OTEL === "true";
+const jokeDynamic = traceable(jokeImpl, {
+  name: "joke",
+  client: lsClient,
+  replicas: buildReplicas(sendToOtel),
+});
+await jokeDynamic();
+```
+
+</CodeGroup>
+
+The `tracing_mode` on each `Client` determines that replica's export path. In Python, `"hybrid"` mode handles both destinations within a single replica. In TypeScript, the "send to both" case uses two separate replicas, one for each client, because there is no `"hybrid"` mode. Since each replica resolves its own client independently, you can also mix modes within a single `tracing_context`, for example keeping one replica sending to LangSmith while forwarding the same trace to an OTel collector via a second replica.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/log-traces-to-project.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

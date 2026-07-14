@@ -1,0 +1,239 @@
+---
+title: "Parallel search integration"
+description: "Integrate with the ParallelSearchTool tool using LangChain Python."
+---
+
+>[Parallel](https://platform.parallel.ai/) is a real-time web search and content extraction platform built for LLMs and AI applications.
+
+`ParallelSearchTool` calls Parallel's [Search API](https://docs.parallel.ai/search/search-quickstart), which collapses the traditional search → scrape → extract pipeline into one call and returns structured, LLM-optimized excerpts.
+
+<Note>
+    `ParallelSearchTool` is the canonical class name. The earlier `ParallelWebSearchTool` continues to work as an alias for the same class. Looking for a `BaseRetriever` to drop into a RAG chain instead? See [ParallelSearchRetriever](/oss/python/integrations/retrievers/parallel).
+</Note>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Package latest |
+| :--- | :--- | :---: | :---: | :---: |
+| [`ParallelSearchTool`](https://reference.langchain.com/python/langchain-parallel/search_tool/ParallelSearchTool) | [`langchain-parallel`](https://reference.langchain.com/python/langchain-parallel/) | ❌ | ❌ | <a href="https://pypi.org/project/langchain-parallel/" target="_blank"><img src="https://img.shields.io/pypi/v/langchain-parallel?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
+
+## Setup
+
+The integration lives in the `langchain-parallel` package.
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-parallel
+    ```
+    ```bash uv
+    uv add langchain-parallel
+    ```
+</CodeGroup>
+
+### Credentials
+
+Head to [Parallel](https://platform.parallel.ai) to sign up and generate an API key. Set `PARALLEL_API_KEY` in your environment:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("PARALLEL_API_KEY"):
+    os.environ["PARALLEL_API_KEY"] = getpass.getpass("Parallel API key:\n")
+```
+
+## Instantiation
+
+```python
+from langchain_parallel import ParallelSearchTool
+
+tool = ParallelSearchTool()
+
+# Or pass an explicit key / override the base URL:
+# tool = ParallelSearchTool(
+#     api_key="your-api-key",
+#     base_url="https://api.parallel.ai",  # default
+# )
+```
+
+## Invocation
+
+### Invoke directly with args
+
+The tool requires `search_queries` (one or more keyword strings). Pair it with an `objective` for richer relevance ranking, and add domain filtering, fetch policies, and other settings as needed.
+
+```python
+result = tool.invoke(
+    {
+        "search_queries": [
+            "AI breakthroughs 2026",
+            "machine learning advances",
+            "generative AI news",
+        ],
+        "objective": "What are the latest developments in AI?",
+        "max_results": 8,
+        "excerpts": {"max_chars_per_result": 2000},
+        "mode": "advanced",
+        "source_policy": {
+            "include_domains": ["arxiv.org", "nature.com"],
+            "exclude_domains": ["reddit.com", "twitter.com"],
+        },
+        "fetch_policy": {
+            "max_age_seconds": 86400,
+            "timeout_seconds": 60,
+        },
+        "include_metadata": True,
+    }
+)
+
+print(f"Found {len(result['results'])} results")
+for r in result["results"][:3]:
+    print(r["title"], "—", r["url"])
+```
+
+```text
+Found 8 results
+Latest AI Developments 2026 — https://arxiv.org/abs/...
+...
+```
+
+`mode="basic"` is the lower-latency setting; `mode="advanced"` runs a higher-quality search.
+
+### Invoke with a ToolCall
+
+Invoking with a model-generated `ToolCall` returns a `ToolMessage`:
+
+```python
+model_generated_tool_call = {
+    "args": {
+        "search_queries": [
+            "climate change initiatives",
+            "global climate policy 2026",
+        ],
+        "objective": "Find recent news about climate change initiatives",
+        "max_results": 3,
+        "source_policy": {
+            "include_domains": ["ipcc.ch", "unfccc.int", "nature.com"],
+        },
+        "include_metadata": True,
+    },
+    "id": "call_123",
+    "name": tool.name,  # "parallel_web_search"
+    "type": "tool_call",
+}
+
+result = tool.invoke(model_generated_tool_call)
+```
+
+### Async usage
+
+```python
+async def search_async():
+    return await tool.ainvoke(
+        {
+            "search_queries": ["quantum computing breakthroughs"],
+            "objective": "Latest quantum computing breakthroughs",
+            "max_results": 5,
+        }
+    )
+
+result = await search_async()
+```
+
+### Parameters
+
+#### Required
+
+- `search_queries`: list of keyword strings (3-6 words each works best).
+
+#### Optional
+
+- `objective`: natural-language description of the retrieval goal.
+- `max_results`: number of results to return (default 10).
+- `excerpts`: per-result excerpt settings, e.g. `{"max_chars_per_result": 1500}`.
+- `mode`: `"basic"` (lower latency) or `"advanced"` (higher quality).
+- `source_policy`: domain filtering. Accepts a `SourcePolicy` pydantic model or a raw dict with `include_domains` / `exclude_domains` / `after_date`.
+- `fetch_policy`: cache control, e.g. `{"max_age_seconds": 86400, "timeout_seconds": 60}`.
+- `max_chars_total`: cap on combined excerpt length across all results.
+- `client_model` / `session_id` / `location`: forwarded to Parallel for downstream attribution and personalization.
+- `include_metadata`: include client-side timing in the response (default `True`).
+- `timeout`: per-request timeout in seconds.
+
+### SourcePolicy pydantic model
+
+[`SourcePolicy`](https://reference.langchain.com/python/langchain-parallel/_types/SourcePolicy) mirrors the API's `include_domains` / `exclude_domains` / `after_date`. Use it for type safety; raw dicts are also accepted.
+
+```python
+from langchain_parallel import SourcePolicy
+
+result = tool.invoke({
+    "search_queries": ["renewable energy policy Europe"],
+    "source_policy": SourcePolicy(
+        include_domains=["europa.eu", "iea.org", "irena.org"],
+        exclude_domains=["wikipedia.org", "reddit.com"],
+    ),
+    "max_results": 15,
+})
+```
+
+## Chaining
+
+Bind the tool to any tool-calling chat model and drive an agent with [`create_agent`](/oss/python/langchain/agents):
+
+```python
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+llm = init_chat_model(model="claude-opus-4-8")
+agent = create_agent(model=llm, tools=[tool])
+
+agent.invoke({"messages": [("human", "What are the latest breakthroughs in quantum computing?")]})
+```
+
+<Note>
+    `ChatParallel` itself does not support tool calling. Use it as a research assistant inside a chain, or use the Parallel search/extract tools alongside another tool-calling model.
+</Note>
+
+## Response format
+
+```python
+{
+    "search_id": "search_abc123...",
+    "session_id": "sess_...",
+    "results": [
+        {
+            "url": "https://example.com/page",
+            "title": "Page Title",
+            "publish_date": "2026-04-01",
+            "excerpts": [
+                "First relevant excerpt...",
+                "Second relevant excerpt...",
+            ],
+        },
+    ],
+    "warnings": [...],
+    "usage": {...},
+    "search_metadata": {  # added by this tool when include_metadata=True (the default)
+        "search_duration_seconds": 2.451,
+        "search_timestamp": "2026-04-15T10:30:00",
+        "actual_results_returned": 5,
+    },
+}
+```
+
+## API reference
+
+For detailed documentation, head to the [`ParallelSearchTool`](https://reference.langchain.com/python/langchain-parallel/search_tool/ParallelSearchTool) API reference or the [Parallel Search reference](https://docs.parallel.ai/api-reference/search/search).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/tools/parallel_search.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

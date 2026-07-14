@@ -1,0 +1,115 @@
+---
+title: "Azure container apps dynamic sessions integration"
+description: "Integrate with the Azure container apps dynamic sessions tool using LangChain JavaScript."
+---
+
+> [Azure Container Apps dynamic sessions](https://learn.microsoft.com/azure/container-apps/sessions) provide fast access to secure sandboxed environments that are ideal for running code or applications that require strong isolation from other workloads.
+
+You can learn more about Azure Container Apps dynamic sessions and its code interpretation capabilities on [this page](https://learn.microsoft.com/azure/container-apps/sessions). If you don't have an Azure account, you can [create a free account](https://azure.microsoft.com/free/) to get started.
+
+## Setup
+
+You'll first need to install the [`@langchain/azure-dynamic-sessions`](https://www.npmjs.com/package/@langchain/azure-dynamic-sessions) package:
+
+<Tip>
+See [this section for general instructions on installing LangChain packages](/oss/javascript/langchain/install).
+</Tip>
+
+```bash npm
+npm install @langchain/azure-dynamic-sessions @langchain/core
+```
+
+You'll also need to have a code interpreter session pool instance running. You can deploy a version using [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) following [this guide](https://learn.microsoft.com/azure/container-apps/sessions-code-interpreter).
+
+Once you have your instance running, you need to make sure you have properly [set up the Azure Entra authentication for it](https://learn.microsoft.com/azure/container-apps/sessions?tabs=azure-cli#authentication).
+
+After you've added the role for your identity, you need to retrieve the **session pool management endpoint**. You can find it in the Azure Portal, under the "Overview" section of your instance. Then you need to set the following environment variable:
+
+```bash .env example
+AZURE_CONTAINER_APP_SESSION_POOL_MANAGEMENT_ENDPOINT=<your_endpoint>
+```
+
+## Usage example
+
+Below is a simple example that creates a new Python code interpreter session, invoke the tool and prints the result.
+
+```typescript
+import { SessionsPythonREPLTool } from "@langchain/azure-dynamic-sessions";
+
+const tool = new SessionsPythonREPLTool({
+  poolManagementEndpoint:
+    process.env.AZURE_CONTAINER_APP_SESSION_POOL_MANAGEMENT_ENDPOINT || "",
+});
+
+const result = await tool.invoke("print('Hello, World!')\n1+2");
+
+console.log(result);
+
+// {
+//   stdout: "Hello, World!\n",
+//   stderr: "",
+//   result: 3,
+// }
+```
+
+Here is a complete example where we use an Azure OpenAI chat model to call the Python code interpreter session tool to execute the code and get the result:
+
+```typescript
+import type { ChatPromptTemplate } from "@langchain/core/prompts";
+import { pull } from "@langchain/classic/hub";
+import { AgentExecutor, createToolCallingAgent } from "@langchain/classic/agents";
+import { SessionsPythonREPLTool } from "@langchain/azure-dynamic-sessions";
+import { AzureChatOpenAI } from "@langchain/openai";
+
+const tools = [
+  new SessionsPythonREPLTool({
+    poolManagementEndpoint:
+      process.env.AZURE_CONTAINER_APP_SESSION_POOL_MANAGEMENT_ENDPOINT || "",
+  }),
+];
+
+// Note: you need a model deployment that supports function calling,
+// like `gpt-35-turbo` version `1106`.
+const llm = new AzureChatOpenAI({
+  temperature: 0,
+});
+
+// Get the prompt to use - you can modify this!
+// If you want to see the prompt in full, you can at:
+// https://smith.langchain.com/hub/jacob/tool-calling-agent
+const prompt = await pull<ChatPromptTemplate>("jacob/tool-calling-agent");
+
+const agent = await createToolCallingAgent({
+  llm,
+  tools,
+  prompt,
+});
+
+const agentExecutor = new AgentExecutor({
+  agent,
+  tools,
+});
+
+const result = await agentExecutor.invoke({
+  input:
+    "Create a Python program that prints the Python version and return the result.",
+});
+
+console.log(result);
+```
+
+## Related
+
+- Tool [conceptual guide](/oss/javascript/langchain/tools)
+- Tool [how-to guides](/oss/javascript/langchain/tools)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/tools/azure_dynamic_sessions.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

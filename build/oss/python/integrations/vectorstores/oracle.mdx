@@ -1,0 +1,630 @@
+---
+title: "Oracle AI vector search - integration"
+description: "Integrate with the Oracle AI vector search - vector store using LangChain Python."
+---
+
+import LangchainCommunityUnmaintained from '/snippets/oss/langchain-community-unmaintained.mdx';
+
+Oracle AI Database supports AI workloads where you query data by **meaning** (semantics), not just keywords. It combines **semantic search over unstructured content** with **relational filtering over business data** in a single system—so you can build retrieval workflows (like RAG) without introducing a separate vector database and fragmenting data across multiple platforms.
+
+This guide demonstrates how to use `OracleVS` (the LangChain vector store integration for Oracle AI Vector Search) to:
+
+- Ingest documents and embeddings into Oracle
+- Run similarity search
+- Create HNSW and IVF indexes
+- Apply metadata filters for advanced retrieval
+- Enable hybrid search (keyword + semantic) in Oracle Database 26ai
+- Run full-text search using Oracle Text
+
+### Prerequisites
+
+Install `langchain-oracledb`. The `python-oracledb` driver will be installed automatically as a dependency.
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-oracledb
+```
+```bash uv
+uv add langchain-oracledb
+```
+</CodeGroup>
+
+### Connect to Oracle Database
+
+The following sample code will show how to connect to Oracle Database. By default, python-oracledb runs in a ‘Thin’ mode which connects directly to Oracle Database. This mode does not need Oracle Client libraries. However, some additional functionality is available when python-oracledb uses them. Python-oracledb is said to be in ‘Thick’ mode when Oracle Client libraries are used. Both modes have comprehensive functionality supporting the Python Database API v2.0 Specification. See the following [guide](https://python-oracledb.readthedocs.io/en/latest/user_guide/appendix_a.html#featuresummary) that talks about features supported in each mode. You might want to switch to thick-mode if you are unable to use thin-mode.
+
+```python
+import oracledb
+
+# Please update with your username, password, hostname, port and service_name
+username = "<username>"
+password = "<password>"
+dsn = "<hostname>:<port>/<service_name>"
+
+connection = oracledb.connect(user=username, password=password, dsn=dsn)
+print("Connection successful!")
+```
+
+### Import the required dependencies
+
+<LangchainCommunityUnmaintained />
+
+```python
+from langchain_oracledb.vectorstores import oraclevs
+from langchain_oracledb.vectorstores.oraclevs import OracleVS
+from langchain_community.vectorstores.utils import DistanceStrategy
+from langchain_core.documents import Document
+from langchain_huggingface import HuggingFaceEmbeddings
+```
+
+### Load documents
+
+```python
+# Define a list of documents (The examples below are 5 random documents from Oracle Concepts Manual )
+
+documents_json_list = [
+    {
+        "id": "cncpt_15.5.3.2.2_P4",
+        "text": "If the answer to any preceding questions is yes, then the database stops the search and allocates space from the specified tablespace; otherwise, space is allocated from the database default shared temporary tablespace.",
+        "link": "https://docs.oracle.com/en/database/oracle/oracle-database/23/cncpt/logical-storage-structures.html#GUID-5387D7B2-C0CA-4C1E-811B-C7EB9B636442",
+    },
+    {
+        "id": "cncpt_15.5.5_P1",
+        "text": "A tablespace can be online (accessible) or offline (not accessible) whenever the database is open.\nA tablespace is usually online so that its data is available to users. The SYSTEM tablespace and temporary tablespaces cannot be taken offline.",
+        "link": "https://docs.oracle.com/en/database/oracle/oracle-database/23/cncpt/logical-storage-structures.html#GUID-D02B2220-E6F5-40D9-AFB5-BC69BCEF6CD4",
+    },
+    {
+        "id": "cncpt_22.3.4.3.1_P2",
+        "text": "The database stores LOBs differently from other data types. Creating a LOB column implicitly creates a LOB segment and a LOB index. The tablespace containing the LOB segment and LOB index, which are always stored together, may be different from the tablespace containing the table.\nSometimes the database can store small amounts of LOB data in the table itself rather than in a separate LOB segment.",
+        "link": "https://docs.oracle.com/en/database/oracle/oracle-database/23/cncpt/concepts-for-database-developers.html#GUID-3C50EAB8-FC39-4BB3-B680-4EACCE49E866",
+    },
+    {
+        "id": "cncpt_22.3.4.3.1_P3",
+        "text": "The LOB segment stores data in pieces called chunks. A chunk is a logically contiguous set of data blocks and is the smallest unit of allocation for a LOB. A row in the table stores a pointer called a LOB locator, which points to the LOB index. When the table is queried, the database uses the LOB index to quickly locate the LOB chunks.",
+        "link": "https://docs.oracle.com/en/database/oracle/oracle-database/23/cncpt/concepts-for-database-developers.html#GUID-3C50EAB8-FC39-4BB3-B680-4EACCE49E866",
+    },
+]
+```
+
+```python
+# Create LangChain Documents
+
+documents_langchain = []
+
+for doc in documents_json_list:
+    metadata = {"id": doc["id"], "link": doc["link"]}
+    doc_langchain = Document(page_content=doc["text"], metadata=metadata)
+    documents_langchain.append(doc_langchain)
+```
+
+### Create vector stores with different distance metrics
+
+First we will create three vector stores each with different distance functions. Since we have not created indices in them yet, they will just create tables for now. Later we will use these vector stores to create HNSW indices. To understand more about the different types of indices Oracle AI Vector Search supports, refer to the following [guide](https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/manage-different-categories-vector-indexes.html).
+
+You can manually connect to the Oracle Database and will see three tables :
+`Documents_DOT`, `Documents_COSINE` and `Documents_EUCLIDEAN`.
+
+We will then create three additional tables `Documents_DOT_IVF`, `Documents_COSINE_IVF` and `Documents_EUCLIDEAN_IVF` which will be used
+to create IVF indices on the tables instead of HNSW indices.
+
+```python
+# Ingest documents into Oracle Vector Store using different distance strategies
+
+# When using our API calls, start by initializing your vector store with a subset of your documents
+# through from_documents(), then incrementally add more documents using add_texts().
+# This approach prevents system overload and ensures efficient document processing.
+
+model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+
+vector_store_dot = OracleVS.from_documents(
+    documents_langchain,
+    model,
+    client=connection,
+    table_name="Documents_DOT",
+    distance_strategy=DistanceStrategy.DOT_PRODUCT,
+)
+vector_store_max = OracleVS.from_documents(
+    documents_langchain,
+    model,
+    client=connection,
+    table_name="Documents_COSINE",
+    distance_strategy=DistanceStrategy.COSINE,
+)
+vector_store_euclidean = OracleVS.from_documents(
+    documents_langchain,
+    model,
+    client=connection,
+    table_name="Documents_EUCLIDEAN",
+    distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
+)
+
+# Ingest documents into Oracle Vector Store using different distance strategies
+vector_store_dot_ivf = OracleVS.from_documents(
+    documents_langchain,
+    model,
+    client=connection,
+    table_name="Documents_DOT_IVF",
+    distance_strategy=DistanceStrategy.DOT_PRODUCT,
+)
+vector_store_max_ivf = OracleVS.from_documents(
+    documents_langchain,
+    model,
+    client=connection,
+    table_name="Documents_COSINE_IVF",
+    distance_strategy=DistanceStrategy.COSINE,
+)
+vector_store_euclidean_ivf = OracleVS.from_documents(
+    documents_langchain,
+    model,
+    client=connection,
+    table_name="Documents_EUCLIDEAN_IVF",
+    distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE,
+)
+```
+
+### Add and delete operations for texts, along with basic similarity search
+
+```python
+def manage_texts(vector_stores):
+    """
+    Adds texts to each vector store, demonstrates error handling for duplicate additions,
+    and performs deletion of texts. Showcases similarity searches and index creation for each vector store.
+
+    Args:
+    - vector_stores (list): A list of OracleVS instances.
+    """
+    texts = ["Rohan", "Shailendra"]
+    metadata = [
+        {"id": "100", "link": "Document Example Test 1"},
+        {"id": "101", "link": "Document Example Test 2"},
+    ]
+
+    for i, vs in enumerate(vector_stores, start=1):
+        # Adding texts
+        try:
+            vs.add_texts(texts, metadata)
+            print(f"\n\n\nAdd texts complete for vector store {i}\n\n\n")
+        except Exception as ex:
+            print(f"\n\n\nExpected error on duplicate add for vector store {i}\n\n\n")
+
+        # Deleting texts using the value of 'id'
+        vs.delete([metadata[0]["id"]])
+        print(f"\n\n\nDelete texts complete for vector store {i}\n\n\n")
+
+        # Similarity search
+        results = vs.similarity_search("How are LOBS stored in Oracle Database", 2)
+        print(f"\n\n\nSimilarity search results for vector store {i}: {results}\n\n\n")
+
+
+vector_store_list = [
+    vector_store_dot,
+    vector_store_max,
+    vector_store_euclidean,
+    vector_store_dot_ivf,
+    vector_store_max_ivf,
+    vector_store_euclidean_ivf,
+]
+manage_texts(vector_store_list)
+```
+
+### Index creation with specific parameters
+
+```python
+def create_search_indices(connection):
+    """
+    Creates search indices for the vector stores, each with specific parameters tailored to their distance strategy.
+    """
+    # Index for DOT_PRODUCT strategy
+    # Notice we are creating a HNSW index with default parameters
+    # This will default to creating a HNSW index with 8 Parallel Workers and use the Default Accuracy used by Oracle AI Vector Search
+    oraclevs.create_index(
+        connection,
+        vector_store_dot,
+        params={"idx_name": "hnsw_idx1", "idx_type": "HNSW"},
+    )
+
+    # Index for COSINE strategy with specific parameters
+    # Notice we are creating a HNSW index with parallel 16 and Target Accuracy Specification as 97 percent
+    oraclevs.create_index(
+        connection,
+        vector_store_max,
+        params={
+            "idx_name": "hnsw_idx2",
+            "idx_type": "HNSW",
+            "accuracy": 97,
+            "parallel": 16,
+        },
+    )
+
+    # Index for EUCLIDEAN_DISTANCE strategy with specific parameters
+    # Notice we are creating a HNSW index by specifying Power User Parameters which are neighbors = 64 and efConstruction = 100
+    oraclevs.create_index(
+        connection,
+        vector_store_euclidean,
+        params={
+            "idx_name": "hnsw_idx3",
+            "idx_type": "HNSW",
+            "neighbors": 64,
+            "efConstruction": 100,
+        },
+    )
+
+    # Index for DOT_PRODUCT strategy with specific parameters
+    # Notice we are creating an IVF index with default parameters
+    # This will default to creating an IVF index with 8 Parallel Workers and use the Default Accuracy used by Oracle AI Vector Search
+    oraclevs.create_index(
+        connection,
+        vector_store_dot_ivf,
+        params={
+            "idx_name": "ivf_idx1",
+            "idx_type": "IVF",
+        },
+    )
+
+    # Index for COSINE strategy with specific parameters
+    # Notice we are creating an IVF index with parallel 32 and Target Accuracy Specification as 90 percent
+    oraclevs.create_index(
+        connection,
+        vector_store_max_ivf,
+        params={
+            "idx_name": "ivf_idx2",
+            "idx_type": "IVF",
+            "accuracy": 90,
+            "parallel": 32,
+        },
+    )
+
+    # Index for EUCLIDEAN_DISTANCE strategy with specific parameters
+    # Notice we are creating an IVF index by specifying Power User Parameters which is neighbor_part = 64
+    oraclevs.create_index(
+        connection,
+        vector_store_euclidean_ivf,
+        params={"idx_name": "ivf_idx3", "idx_type": "IVF", "neighbor_part": 64},
+    )
+
+    print("Index creation complete.")
+
+
+create_search_indices(connection)
+```
+
+### Advanced search
+
+Oracle Database 23ai supports pre-filtering, in-filtering, and post-filtering to enhance AI Vector Search capabilities. These filtering mechanisms allow users to apply constraints before, during, and after performing vector similarity searches, improving search performance and accuracy.
+
+Key Points about Filtering in Oracle 23ai:
+
+1. Pre-filtering
+    Applies traditional SQL filters to reduce the dataset before performing the vector similarity search.
+    Helps improve efficiency by limiting the amount of data processed by AI algorithms.
+2. In-filtering
+    Utilizes AI Vector Search to perform similarity searches directly on vector embeddings, using optimized indexes and algorithms.
+    Efficiently filters results based on vector similarity without requiring full dataset scans.
+3. Post-filtering
+    Applies additional SQL filtering to refine the results after the vector similarity search.
+    Allows further refinement based on business logic or additional metadata conditions.
+
+**Why is this Important?**
+
+- Performance Optimization: Pre-filtering significantly reduces query execution time, making searches on massive datasets more efficient.
+- Accuracy Enhancement: In-filtering ensures that vector searches are semantically meaningful, improving the quality of search results.
+
+#### Filter details
+
+`OracleVS` supports a set of filters that can be applied to `metadata` fields using `filter` parameter. These filters allow you to select and refine data based on various criteria.
+
+**Available Filter Operators:**
+
+| Operator                   | Description                                                                                                  |
+|----------------------------|--------------------------------------------------------------------------------------------------------------|
+| `\$exists`                 | Field exists.                                                                                                |
+| `\$eq`                     | Field value equals the operand value (`=`).                                                                  |
+| `\$ne`                     | Field exists and value does not equal the operand value (`!=`).                                              |
+| `\$gt`                     | Field value is greater than the operand value (`>`).                                                         |
+| `\$lt`                     | Field value is less than the operand value (`<`).                                                            |
+| `\$gte`                    | Field value is greater than or equal to the operand value (`>=`).                                            |
+| `\$lte`                    | Field value is less than or equal to the operand value (`<=`).                                               |
+| `\$between`                | Field value is between (or equal to) two values in the operand array.                                        |
+| `\$startsWith`             | Field value starts with the operand value.                                                                   |
+| `\$hasSubstring`           | Field value contains the operand as a substring.                                                             |
+| `\$instr`                  | Field value contains the operand as a substring.                                                             |
+| `\$regex`                  | Field value matches the given regular expression pattern.                                                    |
+| `\$like`                   | Field value matches the operand pattern (using SQL-like syntax).                                             |
+| `\$in`                     | Field value equals at least one value in the operand array.                                                  |
+| `\$nin`                    | Field exists, but its value is not equal to any in the operand array, or the field does not exist.           |
+| `\$all`                    | Field value is an array containing all items from the operand array, or a scalar matching a single operand.  |
+
+- You can combine these filters using logical operators:
+
+| Logical Operator   | Description          |
+|--------------------|----------------------|
+| `\$and`            | Logical AND          |
+| `\$or`             | Logical OR           |
+| `\$nor`            | Logical NOR          |
+
+**Example Filter:**
+
+```json
+{
+  "age": 65,
+  "name": {"$regex": "*rk"},
+  "$or": [
+    {
+      "$and": [
+        {"name": "Jason"},
+        {"drinks": {"$in": ["tea", "soda"]}}
+      ]
+    },
+    {
+      "$nor": [
+        {"age": {"$lt": 65}},
+        {"name": "Jason"}
+      ]
+    }
+  ]
+}
+```
+
+**Additional Usage Tips:**
+
+- You can omit `$and` when all filters in an object must be satisfied. These two are equivalent:
+
+```json
+{ "$and": [
+    { "name": { "$startsWith": "Fred" } },
+    { "salary": { "$gt": 10000, "$lte": 20000 } }
+]}
+```
+
+```json
+{
+  "name": { "$startsWith": "Fred" },
+  "salary": { "$gt": 10000, "$lte": 20000 }
+}
+```
+
+- The `$not` clause can negate a comparison operator:
+
+```json
+{ "address.zip": { "$not": { "$eq": "90001" } } }
+```
+
+- Using `field: scalar` is equivalent to `field: { "$eq": scalar }`:
+
+```json
+{ "animal": "cat" }
+```
+
+For more filter examples, refer to the [test specification](https://github.com/oracle/langchain-oracle/blob/main/libs/oracledb/tests/integration_tests/vectorstores/test_oraclevs.py).
+
+```python
+# Conduct advanced searches after creating the indices
+def conduct_advanced_searches(vector_stores):
+    query = "How are LOBS stored in Oracle Database"
+    # Constructing a filter for direct comparison against document metadata
+    # This filter aims to include documents whose metadata 'id' is exactly '2'
+    db_filter = {
+        "$and": [
+            {"id": "101"},  # FilterCondition
+            {
+                "$or": [  # FilterGroup
+                    {"status": "approved"},
+                    {"link": "Document Example Test 2"},
+                    {
+                        "$and": [  # Nested FilterGroup
+                            {"status": "approved"},
+                            {"link": "Document Example Test 2"},
+                        ]
+                    },
+                ]
+            },
+        ]
+    }
+
+    for i, vs in enumerate(vector_stores, start=1):
+        print(f"\n--- Vector Store {i} Advanced Searches ---")
+        # Similarity search without a filter
+        print("\nSimilarity search results without filter:")
+        print(vs.similarity_search(query, 2))
+
+        # Similarity search with a filter
+        print("\nSimilarity search results with filter:")
+        print(vs.similarity_search(query, 2, filter=db_filter))
+
+        # Similarity search with relevance score
+        print("\nSimilarity search with relevance score:")
+        print(vs.similarity_search_with_score(query, 2))
+
+        # Similarity search with relevance score with filter
+        print("\nSimilarity search with relevance score with filter:")
+        print(vs.similarity_search_with_score(query, 2, filter=db_filter))
+
+        # Max marginal relevance search
+        print("\nMax marginal relevance search results:")
+        print(vs.max_marginal_relevance_search(query, 2, fetch_k=20, lambda_mult=0.5))
+
+        # Max marginal relevance search with filter
+        print("\nMax marginal relevance search results with filter:")
+        print(
+            vs.max_marginal_relevance_search(
+                query, 2, fetch_k=20, lambda_mult=0.5, filter=db_filter
+            )
+        )
+
+
+conduct_advanced_searches(vector_store_list)
+```
+
+### Hybrid search
+
+Oracle Database 26ai supports hybrid search, combining keyword (full-text) and semantic (vector) search into a single retrieval capability. The `langchain-oracledb` integration exposes:
+
+- `OracleVectorizerPreference`: creates a DB-side vectorizer preference used by hybrid indexes.
+- `create_hybrid_index` / `acreate_hybrid_index`: creates a HYBRID VECTOR INDEX.
+- `OracleHybridSearchRetriever`: executes keyword, semantic, or hybrid retrieval over an `OracleVS` table.
+
+#### Prerequisites and model configuration
+
+When using hybrid search, configure your `OracleVS` with `OracleEmbeddings` so the vectorizer preference exactly matches the embedding configuration. You can further tune the hybrid vector index by supplying additional parameters via `OracleVectorizerPreference`. For details, see the [documentation](https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/create_preference.html).
+
+```python
+from langchain_core.documents import Document
+from langchain_oracledb.embeddings import OracleEmbeddings
+from langchain_oracledb.vectorstores.oraclevs import OracleVS
+from langchain_oracledb.retrievers.hybrid_search import (
+    OracleVectorizerPreference,
+    create_hybrid_index,
+    OracleHybridSearchRetriever,
+)
+
+# Use OracleEmbeddings (database-resident model shown)
+embeddings = OracleEmbeddings(conn=connection, params={"provider": "database", "model": "DB_MODEL"})
+
+# Create/load your vector store
+vs = OracleVS(connection, table_name="DOCS", embedding_function=embeddings)
+
+# Create a vectorizer preference
+pref = OracleVectorizerPreference.create_preference(
+    vector_store=vs, preference_name="PREF_DOCS"
+)
+
+# Create a HYBRID VECTOR INDEX
+create_hybrid_index(
+    connection,
+    idx_name="IDX_DOCS_HYB",
+    vectorizer_preference=pref
+)
+
+# Build a retriever and search
+retriever = OracleHybridSearchRetriever(
+    vector_store=vs,
+    idx_name="IDX_DOCS_HYB",
+    search_mode="hybrid",     # "hybrid" | "keyword" | "semantic"
+    k=5,
+    return_scores=True,       # includes score, text_score, vector_score in metadata
+)
+
+docs = retriever.invoke("refund policy for premium plan")
+for d in docs:
+    print(d.page_content, d.metadata.get("score"), d.metadata.get("text_score"), d.metadata.get("vector_score"))
+
+# Optional cleanup when done with the preference:
+# pref.drop_preference()
+```
+
+*Alternative* create the index without an explicit preference:
+
+- If you don't want to manage a named preference, pass the `vector_store` instead. The function will create a temporary preference, build the index, then drop the preference automatically.
+
+```python
+create_hybrid_index(
+    connection,
+    idx_name="IDX_DOCS_HYB2",
+    vector_store=vs,          # mutually exclusive with vectorizer_preference
+    params={"parallel": 8},
+)
+```
+
+Notes and tips:
+
+- search_mode decides which signals are used:
+  - "keyword": keyword-only
+  - "semantic": vector-only
+  - "hybrid" (default): both combined
+- Pass `DBMS_HYBRID_VECTOR` parameters via the retriever’s params argument.
+- `return_scores=True` adds overall score and component text_score and vector_score to Document.metadata.
+- Async usage is supported via `acreate_hybrid_index` and `OracleHybridSearchRetriever.ainvoke`.
+
+More information:
+
+- [Understand Hybrid Search](https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/understand-hybrid-search.html)
+- [`CREATE_PREFERENCE`](https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/create_preference.html)
+- [`CREATE_HYBRID_VECTOR_INDEX`](https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/create-hybrid-vector-index.html)
+- [`DBMS_HYBRID_VECTOR.SEARCH`](https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/search.html)
+
+### Full-text search (Oracle Text)
+
+You can run high-quality keyword search directly against Oracle Database using Oracle Text. The `langchain-oracledb` integration exposes:
+
+- `create_text_index` / `acreate_text_index`: creates an Oracle Text `SEARCH INDEX` on a column.
+- `OracleTextSearchRetriever`: runs `CONTAINS` queries and returns LangChain `Document` objects.
+
+Indexing options:
+
+- If you have an `OracleVS` vector store, you can index its built-in "text" column.
+- You can also index any other table/column by providing `table_name` + `column_name` directly.
+
+```python
+from langchain_oracledb.retrievers.text_search import create_text_index, OracleTextSearchRetriever
+
+# Using an OracleVS table (indexes the 'text' column)
+retriever_text = None
+create_text_index(
+    connection,
+    idx_name="IDX_DOCS_TEXT",
+    vector_store=vs,
+)
+
+# Build a retriever. With OracleVS, returned_columns defaults to ["metadata"].
+retriever_text = OracleTextSearchRetriever(
+    vector_store=vs,
+    k=5,
+    fuzzy=True,          # applies Oracle Text FUZZY per token when operator_search=False
+    return_scores=True,  # adds SCORE(1) as metadata["score"]
+)
+docs = retriever_text.invoke("refund policy")
+for d in docs:
+    print(d.page_content, d.metadata.get("score"))
+
+# Alternatively, index an arbitrary table/column:
+# create_text_index(connection, idx_name="IDX_MYDOCS_TEXT", table_name="MYDOCS", column_name="CONTENT")
+# retriever_text = OracleTextSearchRetriever(client=connection, table_name="MYDOCS", column_name="CONTENT", k=5)
+```
+
+Operator mode and advanced queries:
+
+- Default behavior (`operator_search=False`):
+  - Input is treated as literal text, tokenized on non-word characters, and rewritten as an ACCUM expression.
+  - With `fuzzy=True`, each token is wrapped as `FUZZY("token")` to match misspellings.
+- Operator mode (`operator_search=True`):
+  - Pass an Oracle Text expression unchanged (`NEAR`, `ABOUT`, `AND`, `OR`, `NOT`, `WITHIN`, etc.). In this mode, fuzzy is ignored.
+
+Returned columns:
+
+- When targeting a raw table, include extra columns in results via `returned_columns`; they are attached to `Document.metadata`.
+- With `OracleVS`, `returned_columns` defaults to ["metadata"].
+
+```python
+# Operator mode example
+retriever_text_ops = OracleTextSearchRetriever(
+    vector_store=vs,
+    operator_search=True,   # pass Oracle Text expression directly
+    return_scores=True,
+)
+docs = retriever_text_ops.invoke('NEAR((policy, refund), 2, TRUE)')
+```
+
+Notes and tips:
+
+- When using `operator_search=True`, fuzzy is ignored (by design).
+- Async usage is supported via `acreate_text_index` and `OracleTextSearchRetriever.ainvoke`.
+
+More information:
+
+- [Oracle Text `CONTAINS` Query Operators](https://docs.oracle.com/en/database/oracle/oracle-database/26/ccref/oracle-text-CONTAINS-query-operators.html)
+- [Fuzzy Matching and Stemming](https://docs.oracle.com/en/database/oracle/oracle-database/26/ccapp/fuzzy-matching-and-stemming.html)
+
+### End to end demo
+
+Please refer to our complete demo guide [Oracle AI Vector Search End-to-End Demo Guide](https://github.com/langchain-ai/langchain/blob/v0.3/cookbook/oracleai_demo.ipynb) to build an end to end RAG pipeline with the help of Oracle AI Vector Search.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/vectorstores/oracle.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

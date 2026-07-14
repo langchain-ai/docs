@@ -1,0 +1,218 @@
+---
+title: "Cohere rerank integration"
+description: "Integrate with the Cohere rerank document compressor using LangChain JavaScript."
+---
+
+Reranking documents can greatly improve any RAG application and document retrieval system.
+
+At a high level, a rerank API is a language model which analyzes documents and reorders them based on their relevance to a given query.
+
+Cohere offers an API for reranking documents. In this example we'll show you how to use it.
+
+## Setup
+
+<Tip>
+See [this section for general instructions on installing LangChain packages](/oss/javascript/langchain/install).
+</Tip>
+
+Set your API key:
+
+```bash
+export COHERE_API_KEY="your-api-key"
+```
+
+<CodeGroup>
+```bash npm
+npm install @langchain/cohere @langchain/core
+```
+```bash yarn
+yarn add @langchain/cohere @langchain/core
+```
+```bash pnpm
+pnpm add @langchain/cohere @langchain/core
+```
+</CodeGroup>
+
+```typescript
+import { CohereRerank } from "@langchain/cohere";
+import { Document } from "@langchain/core/documents";
+
+const query = "What is the capital of the United States?";
+const docs = [
+  new Document({
+    pageContent:
+      "Carson City is the capital city of the American state of Nevada. At the 2010 United States Census, Carson City had a population of 55,274.",
+  }),
+  new Document({
+    pageContent:
+      "The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean that are a political division controlled by the United States. Its capital is Saipan.",
+  }),
+  new Document({
+    pageContent:
+      "Charlotte Amalie is the capital and largest city of the United States Virgin Islands. It has about 20,000 people. The city is on the island of Saint Thomas.",
+  }),
+  new Document({
+    pageContent:
+      "Washington, D.C. (also known as simply Washington or D.C., and officially as the District of Columbia) is the capital of the United States. It is a federal district. The President of the USA and many major national government offices are in the territory. This makes it the political center of the United States of America.",
+  }),
+  new Document({
+    pageContent:
+      "Capital punishment (the death penalty) has existed in the United States since before the United States was a country. As of 2017, capital punishment is legal in 30 of the 50 states. The federal government (including the United States military) also uses capital punishment.",
+  }),
+];
+
+const cohereRerank = new CohereRerank({
+  apiKey: process.env.COHERE_API_KEY, // Default
+  model: "rerank-english-v2.0",
+});
+
+const rerankedDocuments = await cohereRerank.rerank(docs, query, {
+  topN: 5,
+});
+
+console.log(rerankedDocuments);
+/**
+[
+  { index: 3, relevanceScore: 0.9871293 },
+  { index: 1, relevanceScore: 0.29961726 },
+  { index: 4, relevanceScore: 0.27542195 },
+  { index: 0, relevanceScore: 0.08977329 },
+  { index: 2, relevanceScore: 0.041462272 }
+]
+ */
+```
+
+Here, we can see the `.rerank()` method returns just the index of the documents (matching the indexes of the input documents) and their relevancy scores.
+
+If we'd like to have the documents returned from the method itself, we can use the `.compressDocuments()` method.
+
+```typescript
+import { CohereRerank } from "@langchain/cohere";
+import { Document } from "@langchain/core/documents";
+
+const query = "What is the capital of the United States?";
+const docs = [
+  new Document({
+    pageContent:
+      "Carson City is the capital city of the American state of Nevada. At the 2010 United States Census, Carson City had a population of 55,274.",
+  }),
+  new Document({
+    pageContent:
+      "The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean that are a political division controlled by the United States. Its capital is Saipan.",
+  }),
+  new Document({
+    pageContent:
+      "Charlotte Amalie is the capital and largest city of the United States Virgin Islands. It has about 20,000 people. The city is on the island of Saint Thomas.",
+  }),
+  new Document({
+    pageContent:
+      "Washington, D.C. (also known as simply Washington or D.C., and officially as the District of Columbia) is the capital of the United States. It is a federal district. The President of the USA and many major national government offices are in the territory. This makes it the political center of the United States of America.",
+  }),
+  new Document({
+    pageContent:
+      "Capital punishment (the death penalty) has existed in the United States since before the United States was a country. As of 2017, capital punishment is legal in 30 of the 50 states. The federal government (including the United States military) also uses capital punishment.",
+  }),
+];
+
+const cohereRerank = new CohereRerank({
+  apiKey: process.env.COHERE_API_KEY, // Default
+  topN: 3, // Default
+  model: "rerank-english-v2.0",
+});
+
+const rerankedDocuments = await cohereRerank.compressDocuments(docs, query);
+
+console.log(rerankedDocuments);
+/**
+[
+  Document {
+    pageContent: 'Washington, D.C. (also known as simply Washington or D.C., and officially as the District of Columbia) is the capital of the United States. It is a federal district. The President of the USA and many major national government offices are in the territory. This makes it the political center of the United States of America.',
+    metadata: { relevanceScore: 0.9871293 }
+  },
+  Document {
+    pageContent: 'The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean that are a political division controlled by the United States. Its capital is Saipan.',
+    metadata: { relevanceScore: 0.29961726 }
+  },
+  Document {
+    pageContent: 'Capital punishment (the death penalty) has existed in the United States since before the United States was a country. As of 2017, capital punishment is legal in 30 of the 50 states. The federal government (including the United States military) also uses capital punishment.',
+    metadata: { relevanceScore: 0.27542195 }
+  }
+]
+ */
+```
+
+From the results, we can see it returned the top 3 documents, and assigned a `relevanceScore` to each.
+
+As expected, the document with the highest `relevanceScore` is the one that references Washington, D.C., with a score of `98.7%`!
+
+### Usage with `CohereClient`
+
+If you are using Cohere on Azure, AWS Bedrock or a standalone instance you can use the `CohereClient` to create a `CohereRerank` instance with your endpoint.
+
+```typescript
+import { CohereRerank } from "@langchain/cohere";
+import { CohereClient } from "cohere-ai";
+import { Document } from "@langchain/core/documents";
+
+const query = "What is the capital of the United States?";
+const docs = [
+  new Document({
+    pageContent:
+      "Carson City is the capital city of the American state of Nevada. At the 2010 United States Census, Carson City had a population of 55,274.",
+  }),
+  new Document({
+    pageContent:
+      "The Commonwealth of the Northern Mariana Islands is a group of islands in the Pacific Ocean that are a political division controlled by the United States. Its capital is Saipan.",
+  }),
+  new Document({
+    pageContent:
+      "Charlotte Amalie is the capital and largest city of the United States Virgin Islands. It has about 20,000 people. The city is on the island of Saint Thomas.",
+  }),
+  new Document({
+    pageContent:
+      "Washington, D.C. (also known as simply Washington or D.C., and officially as the District of Columbia) is the capital of the United States. It is a federal district. The President of the USA and many major national government offices are in the territory. This makes it the political center of the United States of America.",
+  }),
+  new Document({
+    pageContent:
+      "Capital punishment (the death penalty) has existed in the United States since before the United States was a country. As of 2017, capital punishment is legal in 30 of the 50 states. The federal government (including the United States military) also uses capital punishment.",
+  }),
+];
+
+const client = new CohereClient({
+  token: process.env.COHERE_API_KEY,
+  environment: "<your-cohere-deployment-url>", // optional
+  // other params
+});
+
+const cohereRerank = new CohereRerank({
+  client, // apiKey will be ignored even if provided
+  model: "rerank-english-v2.0",
+});
+
+const rerankedDocuments = await cohereRerank.rerank(docs, query, {
+  topN: 5,
+});
+
+console.log(rerankedDocuments);
+
+/*
+  [
+    { index: 3, relevanceScore: 0.9871293 },
+    { index: 1, relevanceScore: 0.29961726 },
+    { index: 4, relevanceScore: 0.27542195 },
+    { index: 0, relevanceScore: 0.08977329 },
+    { index: 2, relevanceScore: 0.041462272 }
+  ]
+*/
+```
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/document_compressors/cohere_rerank.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
