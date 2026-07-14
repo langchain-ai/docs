@@ -1,0 +1,134 @@
+---
+title: "SCXEmbeddings integration"
+sidebarTitle: "Embeddings"
+description: "Integrate with the SCXEmbeddings embedding model using LangChain JavaScript."
+---
+
+This will help you get started with SCXEmbeddings [embedding models](/oss/integrations/embeddings) using LangChain. [SCX](https://scx.ai/) serves open-weight embedding models over an OpenAI-compatible API. For detailed documentation on `SCXEmbeddings` features and configuration options, please refer to the [`@scx-ai/langchain` repository](https://github.com/SouthernCrossAI/scx-langchain).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | PY support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [`SCXEmbeddings`](https://github.com/SouthernCrossAI/scx-langchain) | [`@scx-ai/langchain`](https://www.npmjs.com/package/@scx-ai/langchain) | ❌ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@scx-ai/langchain?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@scx-ai/langchain?style=flat-square&label=%20&) |
+
+## Setup
+
+To access SCX embedding models, create an SCX account, get an API key, and install the `@scx-ai/langchain` integration package.
+
+### Credentials
+
+Head to [platform.scx.ai](https://platform.scx.ai) to sign up and generate an API key. Set the `SCX_API_KEY` environment variable:
+
+```bash
+export SCX_API_KEY="your-api-key"
+```
+
+If you want to get automated tracing of your model calls you can also set your [LangSmith](/langsmith/observability) API key by uncommenting below:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain SCXEmbeddings integration lives in the `@scx-ai/langchain` package:
+
+<CodeGroup>
+```bash npm
+npm install @scx-ai/langchain @langchain/core
+```
+```bash yarn
+yarn add @scx-ai/langchain @langchain/core
+```
+```bash pnpm
+pnpm add @scx-ai/langchain @langchain/core
+```
+</CodeGroup>
+
+## Instantiation
+
+Instantiate the embeddings model:
+
+```typescript
+import { SCXEmbeddings } from "@scx-ai/langchain";
+
+const embeddings = new SCXEmbeddings({
+  model: "E5-Mistral-7B-Instruct", // default; 4096 dimensions
+});
+```
+
+## Indexing and retrieval
+
+Embedding models are often used in retrieval-augmented generation (RAG) flows, both as part of indexing data as well as later retrieving it. For more detailed instructions, please see our RAG tutorials under the [**Learn** tab](/oss/learn/).
+
+Below, see how to index and retrieve data using the `embeddings` object we initialized above. In this example, we will index and retrieve a sample document using the demo [`MemoryVectorStore`](/oss/integrations/vectorstores/memory).
+
+```typescript
+// Create a vector store with a sample text
+import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
+
+const text = "LangChain is the framework for building context-aware reasoning applications";
+
+const vectorstore = await MemoryVectorStore.fromDocuments(
+  [{ pageContent: text, metadata: {} }],
+  embeddings,
+);
+
+// Use the vector store as a retriever that returns a single document
+const retriever = vectorstore.asRetriever(1);
+
+// Retrieve the most similar text
+const retrievedDocuments = await retriever.invoke("What is LangChain?");
+
+retrievedDocuments[0].pageContent;
+```
+
+```text
+LangChain is the framework for building context-aware reasoning applications
+```
+
+## Direct usage
+
+You can directly call `embedQuery` and `embedDocuments` to get embeddings for your own use cases.
+
+### Embed single texts
+
+```typescript
+const singleVector = await embeddings.embedQuery("What is sovereign AI?");
+console.log(singleVector.length, singleVector.slice(0, 4));
+```
+
+```text
+4096 [
+  0.006491813808679581,
+  -0.0042033325880765915,
+  -0.002930656773969531,
+  -0.0071456655859947205
+]
+```
+
+### Embed multiple texts
+
+```typescript
+const vectors = await embeddings.embedDocuments([
+  "LangChain is the framework for building context-aware reasoning applications",
+  "SCX serves open-weight models over an OpenAI-compatible API",
+]);
+console.log(vectors.length, vectors[0].length);
+```
+
+```text
+2 4096
+```
+
+<Note>
+    `SCXEmbeddings` forces `encodingFormat: "float"`. SCX's base64 encoding path returns truncated vectors, and the underlying OpenAI SDK defaults to base64 — the float default guarantees full 4096-dimension vectors.
+</Note>
+
+## Related
+
+- [`ChatSCX`](/oss/integrations/chat/scx) for SCX's chat and multimodal models.

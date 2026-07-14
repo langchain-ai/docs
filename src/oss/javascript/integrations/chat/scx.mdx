@@ -1,0 +1,183 @@
+---
+title: "ChatSCX integration"
+sidebarTitle: "Chat"
+description: "Integrate with the ChatSCX chat model using LangChain JavaScript."
+---
+
+This will help you get started with SCX [chat models](/oss/langchain/models). [SCX](https://scx.ai/) serves open-weight chat, multimodal (image and video), embedding, and speech-to-text models over an OpenAI-compatible API.
+
+<Tip>
+    **API Reference**
+
+    For detailed documentation of all features and configuration options, head to the [`@scx-ai/langchain` repository](https://github.com/SouthernCrossAI/scx-langchain). `ChatSCX` subclasses [`ChatOpenAI`](https://reference.langchain.com/javascript/langchain-openai/ChatOpenAI), so all of its options apply.
+</Tip>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | PY support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| [`ChatSCX`](https://github.com/SouthernCrossAI/scx-langchain) | [`@scx-ai/langchain`](https://www.npmjs.com/package/@scx-ai/langchain) | ✅ | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@scx-ai/langchain?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@scx-ai/langchain?style=flat-square&label=%20&) |
+
+### Model features
+
+| [Tool calling](/oss/langchain/tools) | [Structured output](/oss/langchain/structured-output) | [Image input](/oss/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/langchain/streaming/) | [Token usage](/oss/langchain/models#token-usage) | [Logprobs](/oss/langchain/models#log-probabilities) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
+
+## Setup
+
+To access SCX models you'll need to create an SCX account, get an API key, and install the `@scx-ai/langchain` integration package.
+
+### Credentials
+
+Head to [platform.scx.ai](https://platform.scx.ai) to sign up and generate an API key. Once you've done this set the `SCX_API_KEY` environment variable:
+
+```bash
+export SCX_API_KEY="your-api-key"
+```
+
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/observability) API key:
+
+```bash
+# export LANGSMITH_TRACING="true"
+# export LANGSMITH_API_KEY="your-api-key"
+```
+
+### Installation
+
+The LangChain SCX integration lives in the `@scx-ai/langchain` package:
+
+<CodeGroup>
+```bash npm
+npm install @scx-ai/langchain @langchain/core
+```
+```bash yarn
+yarn add @scx-ai/langchain @langchain/core
+```
+```bash pnpm
+pnpm add @scx-ai/langchain @langchain/core
+```
+</CodeGroup>
+
+## Instantiation
+
+Now you can instantiate the model:
+
+```typescript
+import { ChatSCX } from "@scx-ai/langchain";
+
+const model = new ChatSCX({
+  model: "MiniMax-M2.7", // default
+  temperature: 0,
+  maxTokens: 1024,
+  // other params...
+});
+```
+
+---
+
+## Invocation
+
+```typescript
+const aiMsg = await model.invoke([
+  {
+    role: "system",
+    content:
+      "You are a helpful assistant that translates English to French. Translate the user sentence.",
+  },
+  {
+    role: "user",
+    content: "I love programming.",
+  },
+]);
+console.log(aiMsg.content);
+```
+
+```text
+J'aime programmer.
+```
+
+---
+
+## Streaming
+
+```typescript
+const stream = await model.stream("Write a haiku about the sea.");
+for await (const chunk of stream) {
+  process.stdout.write(typeof chunk.content === "string" ? chunk.content : "");
+}
+```
+
+```text
+Blue waves crash and rise,
+Salt wind whispers through the dunes softly,
+Moonlit tide's calm sigh.
+```
+
+---
+
+## Tool calling and structured output
+
+SCX uses the OpenAI-compatible tool calling format, so both work exactly as they do in `@langchain/openai`:
+
+```typescript
+import { z } from "zod";
+
+const structuredModel = model.withStructuredOutput(
+  z.object({
+    sentiment: z.enum(["positive", "negative"]).describe("The sentiment of the text"),
+  })
+);
+
+await structuredModel.invoke("I love this!");
+```
+
+```text
+{ sentiment: 'positive' }
+```
+
+---
+
+## Multimodal: image and video input
+
+SCX's multimodal models (e.g. `gemma-4-31B-it`) accept image **and video** content parts. Use the exported content-part helpers to build message content:
+
+```typescript
+import { ChatSCX, scxImageContent, scxVideoContent } from "@scx-ai/langchain";
+import { HumanMessage } from "@langchain/core/messages";
+
+const vlm = new ChatSCX({ model: "gemma-4-31B-it" });
+
+const res = await vlm.invoke([
+  new HumanMessage({
+    content: [
+      { type: "text", text: "What happens in this video?" },
+      // Remote URL (recommended — fetched server-side, no size limit):
+      scxVideoContent("https://example.com/clip.mp4"),
+      // Or an image:
+      scxImageContent("https://example.com/frame.png"),
+    ],
+  }),
+]);
+```
+
+<Note>
+    Video is sent as an OpenAI-style `video_url` content part and also accepts base64 `data:video/mp4;base64,...` URIs. Inlined base64 video is subject to a 25 MiB request-body limit — `scxVideoContent` throws client-side before you hit it. For larger clips, pass a remote `https://` URL instead, which is fetched server-side and bypasses the limit.
+</Note>
+
+---
+
+## SCX-specific parameters
+
+- `temperature` is clamped to `[0, 1]` (SCX's supported range; OpenAI allows `[0, 2]`). Values above `1` are clamped with a warning.
+- `topK` is exposed and forwarded as SCX's `top_k` sampling parameter.
+- Accepted but silently ignored by SCX: `logprobs`, `top_logprobs`, `n`, `presence_penalty`, `frequency_penalty`, `logit_bias`, `seed`.
+
+---
+
+## Related
+
+- [`SCXEmbeddings`](/oss/integrations/embeddings/scx) for SCX's embedding models.
+- The package also ships `SCXTranscription` for speech-to-text (Whisper) — see the [repository README](https://github.com/SouthernCrossAI/scx-langchain#audio-transcription).
