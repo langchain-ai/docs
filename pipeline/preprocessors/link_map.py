@@ -595,6 +595,7 @@ LINK_MAPS: list[LinkMap] = [
             "InMemorySaver": "classes/_langchain_langgraph-checkpoint.MemorySaver.html",
             "MemorySaver": "langchain-langgraph/index/MemorySaver",
             "AsyncPostgresSaver": "classes/_langchain_langgraph-checkpoint-postgres.AsyncPostgresSaver.html",
+            "MongoDBSaver": "langchain-langgraph-checkpoint-mongodb/MongoDBSaver",
             "PostgresSaver": "langchain-langgraph-checkpoint-postgres/index/PostgresSaver",
             "PostgresStore": "langchain-langgraph-checkpoint-postgres/store/PostgresStore",
             "protocol": "interfaces/_langchain_langgraph-checkpoint.SerializerProtocol.html",
