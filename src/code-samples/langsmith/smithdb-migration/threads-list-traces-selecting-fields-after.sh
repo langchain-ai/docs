@@ -19,6 +19,7 @@ THREAD_ID=$(curl -s -X POST "https://api.smith.langchain.com/v2/threads/query" \
 curl -G "https://api.smith.langchain.com/v2/threads/$THREAD_ID/traces" \
   -H "x-api-key: $LANGSMITH_API_KEY" \
   --data-urlencode "project_id=$PROJECT_ID" \
+  --data-urlencode "selects=TRACE_ID" \
   --data-urlencode "selects=TOTAL_TOKENS" \
   --data-urlencode "selects=TOTAL_COST"
 # :snippet-end:

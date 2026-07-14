@@ -63,7 +63,7 @@ Retrieve all traces belonging to a specific thread within a project.
 
 <Tabs>
   <Tab title="Python">
-    `read_thread`'s `is_root` (default `True`, can be set `False` to get descendant runs too) has no v2 equivalent. `list_traces` always returns traces (root runs) only, matching its name. `read_thread`'s `order` (asc/desc) also has no v2 equivalent. `ThreadListTracesParams` has exactly 5 fields (`project_id`, `cursor`, `filter`, `page_size`, `selects`), with no sort/order field at all.
+    `read_thread`'s `is_root` has no v2 equivalent. `list_traces` always returns traces (root runs) only, matching its name. `read_thread`'s `order` (asc/desc) also has no v2 equivalent: results are always sorted by `start_time` ascending, a fixed server-side order.
 
     | Before (`read_thread`) | After (`list_traces`) | Notes |
     |---|---|---|
@@ -76,16 +76,16 @@ Retrieve all traces belonging to a specific thread within a project.
     | *(not available)* | `page_size` + `cursor` | v2 adds cursor pagination |
   </Tab>
   <Tab title="TypeScript">
-    Same mapping as Python, with `snake_case` field names: `threadId` (path param), `project_id`, `filter`, `selects`, `page_size`, `cursor`. `isRoot` and `order` have no v2 equivalent.
+    Same mapping as Python, with `snake_case` field names: `threadId` (path param), `project_id`, `filter`, `selects`, `page_size`, `cursor`. `isRoot` and `order` have no v2 equivalent: results are always sorted by `start_time` ascending, a fixed server-side order.
   </Tab>
   <Tab title="Java">
-    No query parameters to map. There was no dedicated method. `listTraces(threadId, params)` takes `projectId`, `filter`, `pageSize`, `cursor`, `selects` (21-value enum).
+    No query parameters to map. There was no dedicated method. `listTraces(threadId, params)` takes `projectId`, `filter`, `pageSize`, `cursor`, `selects` (21-value enum). Results are always sorted by `startTime` ascending, a fixed server-side order.
   </Tab>
   <Tab title="Go">
-    No query parameters to map. There was no dedicated method. `ListTraces(ctx, threadID, params)` takes `ProjectID`, `Filter`, `PageSize`, `Cursor`, `Selects` (21-value enum).
+    No query parameters to map. There was no dedicated method. `ListTraces(ctx, threadID, params)` takes `ProjectID`, `Filter`, `PageSize`, `Cursor`, `Selects` (21-value enum). Results are always sorted by `StartTime` ascending, a fixed server-side order.
   </Tab>
   <Tab title="cURL">
-    `GET /v2/threads/{thread_id}/traces` query params: `project_id`, `filter`, `page_size`, `cursor`, `selects` (repeatable), all `snake_case`.
+    `GET /v2/threads/{thread_id}/traces` query params: `project_id`, `filter`, `page_size`, `cursor`, `selects` (repeatable), all `snake_case`. Results are always sorted by `start_time` ascending, a fixed server-side order.
   </Tab>
 </Tabs>
 
@@ -93,12 +93,12 @@ Retrieve all traces belonging to a specific thread within a project.
 
 <Tabs>
   <Tab title="Python">
-    v1's `read_thread` returns full `Run` objects (a generator). v2's `ThreadTraceListItem` is lightweight: preview fields (`inputs_preview`/`outputs_preview`) instead of full `inputs`/`outputs`, no embedded child runs. `selects` controls what's populated; `trace_id` is always present.
+    v1's `read_thread` returns full `Run` objects (a generator). v2's `ThreadTraceListItem` is lightweight: preview fields (`inputs_preview`/`outputs_preview`) instead of full `inputs`/`outputs`, no embedded child runs. `selects` controls what's populated, the same as `traces.query`.
 
     | Before (v1 `Run` field, via `read_thread`) | After (v2 `ThreadTraceListItem` field) | Notes |
     |---|---|---|
     | `run.id` | *(not available)* | v1's root run `id` and `trace_id` were identical; v2 exposes only `trace_id` |
-    | `run.trace_id` | `trace_id` | Always present, unlike every other field below |
+    | `run.trace_id` | `trace_id` | Returned by default when `selects` is omitted |
     | `run.name` | `name` | Omitted unless included in `selects` |
     | `run.start_time` | `start_time` | Omitted unless included in `selects` |
     | `run.end_time` | `end_time` | Omitted unless included in `selects` |
@@ -114,19 +114,17 @@ Retrieve all traces belonging to a specific thread within a project.
     | `run.first_token_time` | `first_token_time` | Omitted unless included in `selects` |
     | *(not available)* | `thread_id` | New: the thread UUID this trace belongs to |
     | `run.child_runs`, `.child_run_ids` | *(not available)* | No embedded child runs; use `traces.list_runs` for descendant runs |
-
-    <Note>Unlike `traces.query`, where `id` is only returned if `"ID"` is included in `selects` (or as the sole fallback field when `selects` is omitted entirely), `list_traces` always returns `trace_id` regardless of `selects`. This is a real behavior difference between the two v2 endpoints, not a documentation error.</Note>
   </Tab>
   <Tab title="TypeScript">
     Same shape as Python: `ThreadTraceListItem` with 21 fields, `selects`-gated.
   </Tab>
   <Tab title="Java">
-    `ThreadTraceListItem` has 21 `Optional` fields: `traceId` (always present), `threadId`, `name`, `startTime`, `endTime`, `latency`, `op`, token/cost fields with per-category `_details`, `inputsPreview`/`outputsPreview`, `errorPreview`, `firstTokenTime`.
+    `ThreadTraceListItem` has 21 `Optional` fields: `traceId`, `threadId`, `name`, `startTime`, `endTime`, `latency`, `op`, token/cost fields with per-category `_details`, `inputsPreview`/`outputsPreview`, `errorPreview`, `firstTokenTime`.
 
     | Before (v1 `RunSchema` method) | After (v2 `ThreadTraceListItem` method) | Notes |
     |---|---|---|
     | `run.id()` | *(not available)* | v1's root run `id()` and `traceId()` were identical; v2 exposes only `traceId()` |
-    | `run.traceId()` | `traceId()` | Always present, unlike every other field below |
+    | `run.traceId()` | `traceId()` | Returned by default when `selects` is omitted |
     | `run.name()` | `name()` | Omitted unless included in `selects` |
     | `run.startTime()` | `startTime()` | Omitted unless included in `selects` |
     | `run.endTime()` | `endTime()` | Omitted unless included in `selects` |
@@ -149,7 +147,7 @@ Retrieve all traces belonging to a specific thread within a project.
     | Before (v1 root `Run` field) | After (v2 `ThreadTraceListItem` field) | Notes |
     |---|---|---|
     | `run.ID` | *(not available)* | v1's root run `ID` and `TraceID` were identical; v2 exposes only `TraceID` |
-    | `run.TraceID` | `TraceID` | Always present, unlike every other field below |
+    | `run.TraceID` | `TraceID` | Returned by default when `Selects` is omitted |
     | `run.Name` | `Name` | Omitted unless included in `Selects` |
     | `run.StartTime` | `StartTime` | Omitted unless included in `Selects` |
     | `run.EndTime` | `EndTime` | Omitted unless included in `Selects` |
@@ -172,7 +170,7 @@ Retrieve all traces belonging to a specific thread within a project.
     | Before (v1 root run field) | After (v2 `ThreadTraceListItem` field) | Notes |
     |---|---|---|
     | `run.id` | *(not available)* | v1's root run `id` and `trace_id` were identical; v2 exposes only `trace_id` |
-    | `run.trace_id` | `trace_id` | Always present, unlike every other field below |
+    | `run.trace_id` | `trace_id` | Returned by default when `selects` is omitted |
     | `run.name` | `name` | Omitted unless included in `selects` |
     | `run.start_time` | `start_time` | Omitted unless included in `selects` |
     | `run.end_time` | `end_time` | Omitted unless included in `selects` |

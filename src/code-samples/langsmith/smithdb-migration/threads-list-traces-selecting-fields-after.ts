@@ -25,7 +25,7 @@ threadId = await findThreadId(project.id);
 // :remove-end:
 for await (const trace of client.threads.listTraces(threadId, {
   project_id: project.id,
-  selects: ["TOTAL_TOKENS", "TOTAL_COST"],
+  selects: ["TRACE_ID", "TOTAL_TOKENS", "TOTAL_COST"],
 })) {
   console.log(trace.trace_id, trace.total_tokens, trace.total_cost);
 }

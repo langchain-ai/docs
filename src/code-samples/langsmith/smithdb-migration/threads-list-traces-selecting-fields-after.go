@@ -45,6 +45,7 @@ func main() {
 	iter := client.Threads.ListTracesAutoPaging(ctx, threadID, langsmith.ThreadListTracesParams{
 		ProjectID: langsmith.F(projectID),
 		Selects: langsmith.F([]langsmith.ThreadListTracesParamsSelect{
+			langsmith.ThreadListTracesParamsSelectTraceID,
 			langsmith.ThreadListTracesParamsSelectTotalTokens,
 			langsmith.ThreadListTracesParamsSelectTotalCost,
 		}),

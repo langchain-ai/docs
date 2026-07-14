@@ -49,7 +49,7 @@ async def main():
     async for trace in client.threads.list_traces(
         thread_id,
         project_id=str(project.id),
-        selects=["TOTAL_TOKENS", "TOTAL_COST"],
+        selects=["TRACE_ID", "TOTAL_TOKENS", "TOTAL_COST"],
     ):
         print(trace.trace_id, trace.total_tokens, trace.total_cost)
 
