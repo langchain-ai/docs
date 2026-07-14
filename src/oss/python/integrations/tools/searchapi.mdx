@@ -1,0 +1,80 @@
+---
+title: "SearchApi"
+description: "Integrate with the SearchApi real-time SERP tool using LangChain Python."
+---
+
+This page shows how to use [SearchApi](https://www.searchapi.io/) to search the web. SearchApi is a real-time SERP API that returns structured results from Google Search, Google News, Google Jobs, Google Scholar, YouTube, and many other engines. Go to [searchapi.io](https://www.searchapi.io/) to sign up for a free account and get an API key.
+
+First, install `langchain-community` and set your API key as an environment variable:
+
+```python
+pip install -qU langchain-community
+```
+
+```python
+import os
+
+os.environ["SEARCHAPI_API_KEY"] = ""
+```
+
+## Basic usage
+
+```python
+from langchain_community.utilities import SearchApiAPIWrapper
+
+search = SearchApiAPIWrapper()
+search.run("Obama's first name?")
+```
+
+## Using as a tool in an agent
+
+Wrap the search in a tool and hand it to an agent:
+
+```python
+from langchain_community.utilities import SearchApiAPIWrapper
+from langchain_core.tools import Tool
+from langgraph.prebuilt import create_react_agent
+
+search = SearchApiAPIWrapper()
+tools = [
+    Tool(
+        name="intermediate_answer",
+        func=search.run,
+        description="useful for when you need to ask with search",
+    )
+]
+
+agent = create_react_agent("openai:gpt-4.1-mini", tools)
+
+input_message = {
+    "role": "user",
+    "content": "Who lived longer: Plato, Socrates, or Aristotle?",
+}
+
+for step in agent.stream(
+    {"messages": [input_message]},
+    stream_mode="values",
+):
+    step["messages"][-1].pretty_print()
+```
+
+## Custom parameters and engines
+
+The SearchApi wrapper can be customized to use different engines like [Google News](https://www.searchapi.io/docs/google-news), [Google Jobs](https://www.searchapi.io/docs/google-jobs), [Google Scholar](https://www.searchapi.io/docs/google-scholar), and others described in the [SearchApi documentation](https://www.searchapi.io/docs/google). All parameters supported by SearchApi can be passed when executing a query:
+
+```python
+search = SearchApiAPIWrapper(engine="google_jobs")
+search.run("AI Engineer", location="Portugal", gl="pt")[0:500]
+```
+
+## Getting results with metadata
+
+Use `results()` to get the raw structured response instead of a plain-text answer:
+
+```python
+import pprint
+
+search = SearchApiAPIWrapper(engine="google_scholar")
+results = search.results("Large Language Models")
+pprint.pp(results)
+```
