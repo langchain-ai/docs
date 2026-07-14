@@ -35,22 +35,30 @@ Supports filters (`trace_filter`, `tree_filter`) and field projection (`selects`
   <Tab title="Python">
     | Before | After |
     |--------|-------|
-    | `client.list_runs(is_root=True)` (generic, no dedicated wrapper) | `client.traces.query()` |
+    | `client.list_runs(is_root=True)` (generic) | `client.traces.query()` |
+
+    See the [reference](https://reference.langchain.com/python/langsmith/_openapi_client/resources/traces/TracesResource/query) for the full parameter and field list.
   </Tab>
   <Tab title="TypeScript">
     | Before | After |
     |--------|-------|
     | `client.listRuns({ isRoot: true })` (generic) | `client.traces.query()` |
+
+    See the [reference](https://reference.langchain.com/javascript/langsmith/_openapi_client/Langsmith/Traces/query) for the full parameter and field list.
   </Tab>
   <Tab title="Java">
     | Before | After |
     |--------|-------|
     | `client.runs().query()` (generic, `isRoot(true)`) | `client.traces().query()` |
+
+    See the [reference](https://javadoc.io/doc/com.langchain.smith/langsmith-java/latest/com/langchain/smith/services/blocking/TraceService.html) for the full parameter list.
   </Tab>
   <Tab title="Go">
     | Before | After |
     |--------|-------|
     | `client.Runs.Query()` (generic, `IsRoot: true`) | `client.Traces.Query()` |
+
+    See the [reference](https://pkg.go.dev/github.com/langchain-ai/langsmith-go#TraceService.QueryAutoPaging) for the full parameter list.
   </Tab>
   <Tab title="cURL">
     | Before | After |
@@ -58,8 +66,6 @@ Supports filters (`trace_filter`, `tree_filter`) and field projection (`selects`
     | `POST /api/v1/runs/query` (`is_root=true`) | `POST /v2/traces/query` |
   </Tab>
 </Tabs>
-
-This is not a "no predecessor" case, it is "no dedicated wrapper." `list_runs(is_root=True)` already does most of the job of listing traces. What changes is where trace-wide totals live (see the example below).
 
 #### Query parameters
 
@@ -69,27 +75,59 @@ This is not a "no predecessor" case, it is "no dedicated wrapper." `list_runs(is
     `min_start_time` defaults to **24 hours ago** and `max_start_time` defaults to the request time when omitted, narrower than `list_runs`, which returned all historical root runs with no time filter.
     </Note>
 
-    | Before (`list_runs`) | After (`traces.query`) | Notes |
-    |---|---|---|
-    | `project_id`/`project_ids` | `project_id` | Unchanged in spirit |
-    | `filter` (evaluated against runs) | `trace_filter` | Now explicitly scoped to root runs only (`is_root=true` is implied) |
-    | *(not available)* | `tree_filter` | New: matches any run anywhere in the tree |
-    | *(not available)* | `trace_ids` | New: fast-path restriction to known trace UUIDs |
-    | `start_time` (no default) | `min_start_time` | Defaults to 24h ago, see note above |
-    | *(not available)* | `max_start_time` | Defaults to request time |
-    | `select` | `selects` | Routes to `trace_aggregates` (`total_tokens`/`total_cost`/`first_token_time`) or `root_run` (everything else) |
+    - `session` (a list of project UUIDs) becomes `project_id`, a single UUID; `traces.query` scopes to exactly one project per call.
+    - `is_root` is removed: `traces.query` is always scoped to root runs implicitly.
+    - The generic `filter` (evaluated against any run) has no direct equivalent; use `trace_filter` or `tree_filter` instead.
+    - `trace_filter` and `tree_filter` carry over unchanged; both already existed on `list_runs`.
+    - `trace_ids` is new: a fast-path restriction to a known set of trace UUIDs, more efficient at scale than an equivalent `trace_filter`.
+    - `start_time` (no default) becomes `min_start_time`, which defaults to 24 hours ago when omitted (see note above).
+    - `max_start_time` is new, defaulting to the request time; `list_runs`'s `end_time` filtered by a run's own end timestamp, not a scan-window bound.
+    - `select` is renamed `selects`; entries route to `trace_aggregates` (`total_tokens`, `total_cost`, `first_token_time`) or `root_run` (everything else).
   </Tab>
   <Tab title="TypeScript">
-    Same mapping as Python, `snake_case` field names.
+    - `session` (a list of project UUIDs) becomes `project_id`, a single UUID; `traces.query` scopes to exactly one project per call.
+    - `isRoot` is removed: `traces.query` is always scoped to root runs implicitly.
+    - The generic `filter` (evaluated against any run) has no direct equivalent; use `trace_filter` or `tree_filter` instead.
+    - `traceFilter` and `treeFilter` carry over as `trace_filter`/`tree_filter`; both already existed on `listRuns`. Note the v1 method took camelCase options (`traceFilter`); the v2 resource method takes the wire-format `snake_case` keys directly.
+    - `trace_ids` is new: a fast-path restriction to a known set of trace UUIDs, more efficient at scale than an equivalent `trace_filter`.
+    - `startTime` (no default) becomes `min_start_time`, which defaults to 24 hours ago when omitted.
+    - `max_start_time` is new, defaulting to the request time; `listRuns`'s `endTime` filtered by a run's own end timestamp, not a scan-window bound.
+    - `select` is renamed `selects`; entries route to `trace_aggregates` (`total_tokens`, `total_cost`, `first_token_time`) or `root_run` (everything else).
   </Tab>
   <Tab title="Java">
-    `RunQueryParams` (23 fields) → `TraceQueryParams`: `projectId`, `traceFilter`, `treeFilter`, `traceIds`, `minStartTime` (defaults 24h ago), `maxStartTime` (defaults now), `selects` (44-value enum), `pageSize`, `cursor`.
+    `RunQueryParams` (23 fields) → `TraceQueryParams`.
+
+    - `session` (`List<String>` of project UUIDs) becomes `projectId`, a single UUID; `traces().query()` scopes to exactly one project per call.
+    - `isRoot` is removed: `traces().query()` is always scoped to root runs implicitly.
+    - The generic `filter` (evaluated against any run) has no direct equivalent; use `traceFilter` or `treeFilter` instead.
+    - `traceFilter` and `treeFilter` carry over unchanged; both already existed on `RunQueryParams`.
+    - `traceIds` is new: a fast-path restriction to a known set of trace UUIDs, more efficient at scale than an equivalent `traceFilter`.
+    - `startTime` (no default) becomes `minStartTime`, which defaults to 24 hours ago when omitted.
+    - `maxStartTime` is new, defaulting to the request time; `RunQueryParams`'s `endTime` filtered by a run's own end timestamp, not a scan-window bound.
+    - `select` is renamed `selects`; entries route to `traceAggregates` (`totalTokens`, `totalCost`, `firstTokenTime`) or `rootRun` (everything else).
   </Tab>
   <Tab title="Go">
-    Same mapping: `RunQueryParams` → `TraceQueryParams` with `ProjectID`, `TraceFilter`, `TreeFilter`, `TraceIDs`, `MinStartTime`, `MaxStartTime`, `Selects`, `PageSize`, `Cursor`.
+    `RunQueryParams` (23 fields) → `TraceQueryParams`.
+
+    - `Session` (`[]string` of project UUIDs) becomes `ProjectID`, a single UUID; `Traces.Query()` scopes to exactly one project per call.
+    - `IsRoot` is removed: `Traces.Query()` is always scoped to root runs implicitly.
+    - The generic `Filter` (evaluated against any run) has no direct equivalent; use `TraceFilter` or `TreeFilter` instead.
+    - `TraceFilter` and `TreeFilter` carry over unchanged; both already existed on `RunQueryParams`.
+    - `TraceIDs` is new: a fast-path restriction to a known set of trace UUIDs, more efficient at scale than an equivalent `TraceFilter`.
+    - `StartTime` (no default) becomes `MinStartTime`, which defaults to 24 hours ago when omitted.
+    - `MaxStartTime` is new, defaulting to the request time; `RunQueryParams`'s `EndTime` filtered by a run's own end timestamp, not a scan-window bound.
+    - `Select` is renamed `Selects`; entries route to `TraceAggregates` (`TotalTokens`, `TotalCost`, `FirstTokenTime`) or `RootRun` (everything else).
   </Tab>
   <Tab title="cURL">
     `POST /v2/traces/query` body fields: `project_id`, `trace_filter`, `tree_filter`, `trace_ids`, `min_start_time`, `max_start_time`, `selects`, `page_size`, `cursor` (all `snake_case`).
+
+    - `session` (a list of project UUIDs) becomes `project_id`, a single UUID.
+    - `is_root` is removed: the endpoint is always scoped to root runs implicitly.
+    - The generic `filter` has no direct equivalent; use `trace_filter` or `tree_filter` instead. Both already existed on `POST /api/v1/runs/query`.
+    - `trace_ids` is new: a fast-path restriction to a known set of trace UUIDs.
+    - `start_time` (no default) becomes `min_start_time`, which defaults to 24 hours ago when omitted.
+    - `max_start_time` is new, defaulting to the request time.
+    - `select` is renamed `selects`.
   </Tab>
 </Tabs>
 
@@ -99,60 +137,37 @@ This is not a "no predecessor" case, it is "no dedicated wrapper." `list_runs(is
   <Tab title="Python">
     Each returned `Trace` has `root_run` (a `Run`, same shape as the Runs: query response above, gated by `selects`) and `trace_aggregates`, omitted entirely when no aggregate field was selected.
 
-    | Before (v1 root `Run` field) | After (v2 `Trace` field) | Notes |
-    |---|---|---|
-    | `run.id`, `.name`, `.run_type`, `.status`, ... | `trace.root_run.id`, `.name`, `.run_type`, `.status`, ... | Same `Run` shape as Runs: query, gated by `selects` |
-    | `run.total_tokens` | *(not available on `root_run`)* | Moved to `trace_aggregates` |
-    | `run.total_cost` | *(not available on `root_run`)* | Moved to `trace_aggregates` |
-    | *(not available)* | `trace.trace_aggregates.total_tokens` | Summed across every run in the trace |
-    | *(not available)* | `trace.trace_aggregates.total_cost` | Summed across every run in the trace |
-    | *(not available)* | `trace.trace_aggregates.first_token_time` | New: first LLM token timestamp anywhere in the trace |
+    - `root_run` carries the same `Run` shape as Runs: query (`id`, `name`, `run_type`, `status`, and so on), gated by `selects`.
+    - `total_tokens`/`total_cost` move off `root_run` onto `trace_aggregates`, summed across every run in the trace instead of just the root run.
+    - `trace_aggregates.first_token_time` is new
   </Tab>
   <Tab title="TypeScript">
     Same shape and field mapping as Python.
 
-    | Before (v1 root `Run` field) | After (v2 `Trace` field) | Notes |
-    |---|---|---|
-    | `run.id`, `.name`, `.run_type`, `.status`, ... | `trace.root_run.id`, `.name`, `.run_type`, `.status`, ... | Same `Run` shape as Runs: query, gated by `selects` |
-    | `run.total_tokens` | *(not available on `root_run`)* | Moved to `trace_aggregates` |
-    | `run.total_cost` | *(not available on `root_run`)* | Moved to `trace_aggregates` |
-    | *(not available)* | `trace.trace_aggregates.total_tokens` | Summed across every run in the trace |
-    | *(not available)* | `trace.trace_aggregates.total_cost` | Summed across every run in the trace |
-    | *(not available)* | `trace.trace_aggregates.first_token_time` | New: first LLM token timestamp anywhere in the trace |
+    - `root_run` carries the same `Run` shape as Runs: query (`id`, `name`, `run_type`, `status`, and so on), gated by `selects`.
+    - `total_tokens`/`total_cost` move off `root_run` onto `trace_aggregates`, summed across every run in the trace instead of just the root run.
+    - `trace_aggregates.first_token_time` is new
   </Tab>
   <Tab title="Java">
     `Trace` has 2 fields: `rootRun` (`Optional<Run>`) and `traceAggregates` (`Optional<TraceAggregates>`). `TraceAggregates` has `totalCost`, `totalTokens`, `firstTokenTime`.
 
-    | Before (v1 root `RunSchema` field) | After (v2 `Trace` field) | Notes |
-    |---|---|---|
-    | `run.totalTokens()`, `.name()`, `.runType()`, `.status()`, ... | `trace.rootRun().totalTokens()`, `.name()`, ... | Same `RunSchema` shape as Runs: query, gated by `selects` |
-    | `run.totalTokens()` | *(not available on `rootRun`)* | Moved to `traceAggregates` |
-    | `run.totalCost()` | *(not available on `rootRun`)* | Moved to `traceAggregates` |
-    | *(not available)* | `trace.traceAggregates().totalTokens()` | Summed across every run in the trace |
-    | *(not available)* | `trace.traceAggregates().totalCost()` | Summed across every run in the trace |
-    | *(not available)* | `trace.traceAggregates().firstTokenTime()` | New: first LLM token timestamp anywhere in the trace |
+    - `rootRun()` carries the same `RunSchema` shape as Runs: query (`totalTokens()`, `name()`, `runType()`, `status()`, and so on), gated by `selects`.
+    - `totalTokens()`/`totalCost()` move off `rootRun()` onto `traceAggregates()`, summed across every run in the trace instead of just the root run.
+    - `traceAggregates().firstTokenTime()` is new
   </Tab>
   <Tab title="Go">
     Same 2-field `Trace` struct, `PascalCase`. Check for an absent `TraceAggregates` via `trace.TraceAggregates.JSON.RawJSON() == ""`, since it is a value type, not a pointer.
 
-    | Before (v1 root `Run` field) | After (v2 `Trace` field) | Notes |
-    |---|---|---|
-    | `run.TotalTokens` | *(not available on `RootRun`)* | Moved to `TraceAggregates` |
-    | `run.TotalCost` | *(not available on `RootRun`)* | Moved to `TraceAggregates` |
-    | *(not available)* | `trace.TraceAggregates.TotalTokens` | Summed across every run in the trace |
-    | *(not available)* | `trace.TraceAggregates.TotalCost` | Summed across every run in the trace |
-    | *(not available)* | `trace.TraceAggregates.FirstTokenTime` | New: first LLM token timestamp anywhere in the trace |
+    - `RootRun` carries the same `Run` shape as Runs: query, gated by `Selects`.
+    - `TotalTokens`/`TotalCost` move off `RootRun` onto `TraceAggregates`, summed across every run in the trace instead of just the root run.
+    - `TraceAggregates.FirstTokenTime` is new
   </Tab>
   <Tab title="cURL">
     JSON response fields match Python `snake_case`.
 
-    | Before (v1 root run field) | After (v2 `trace` field) | Notes |
-    |---|---|---|
-    | `run.total_tokens` | *(not available on `root_run`)* | Moved to `trace_aggregates` |
-    | `run.total_cost` | *(not available on `root_run`)* | Moved to `trace_aggregates` |
-    | *(not available)* | `trace.trace_aggregates.total_tokens` | Summed across every run in the trace |
-    | *(not available)* | `trace.trace_aggregates.total_cost` | Summed across every run in the trace |
-    | *(not available)* | `trace.trace_aggregates.first_token_time` | New: first LLM token timestamp anywhere in the trace |
+    - `root_run` carries the same shape as Runs: query, gated by `selects`.
+    - `total_tokens`/`total_cost` move off `root_run` onto `trace_aggregates`, summed across every run in the trace instead of just the root run.
+    - `trace_aggregates.first_token_time` is new
   </Tab>
 </Tabs>
 
