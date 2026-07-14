@@ -61,15 +61,15 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
 
 <Tabs>
   <Tab title="Python">
-    v1's `RunStatsQueryParams` has 23 generic filter/grouping params. Only `filter` + `is_root` + `project_ids` are actually used to scope stats to one thread. v2 takes `thread_id` (path) + `session_id` + `selects` (required, at least one value, from a 17-value enum).
+    The legacy `RunStatsQueryParams` has 23 generic filter/grouping params. Only `filter` + `is_root` + `project_ids` are actually used to scope stats to one thread. The new method takes `thread_id` (path) + `session_id` + `selects` (required, at least one value, from a 17-value enum).
 
     | Before (`get_run_stats`) | After (`threads.stats`) | Notes |
     |---|---|---|
-    | `project_ids` | `session_id` | v2 takes a single project UUID, not a list |
-    | `filter=eq(thread_id, ...)` + `is_root=True` | `thread_id` (path param) | v2 scopes by path, not filter |
-    | *(returns everything)* | `selects` | v2 requires an explicit, non-empty select list |
+    | `project_ids` | `session_id` | The new method takes a single project UUID, not a list |
+    | `filter=eq(thread_id, ...)` + `is_root=True` | `thread_id` (path param) | The new method scopes by path, not filter |
+    | *(returns everything)* | `selects` | The new method requires an explicit, non-empty select list |
 
-    <Note>`session_id` takes a tracing project UUID, the same value every other v2 method in this guide calls `project_id`. This is a real naming inconsistency in the API, confirmed against the generated SDK types, not a documentation error.</Note>
+    <Note>`session_id` takes a tracing project UUID, the same value every other new method in this guide calls `project_id`. This is a real naming inconsistency in the API, confirmed against the generated SDK types, not a documentation error.</Note>
   </Tab>
   <Tab title="TypeScript">
     Same mapping as Python: `getRunStats({ projectIds, filter, isRoot })` → `threads.stats(threadId, { session_id, selects })`.
@@ -89,7 +89,7 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
 
 <Tabs>
   <Tab title="Python">
-    | v1 `RunStats` field | v2 `ThreadStats` field | Notes |
+    | Legacy `RunStats` field | New `ThreadStats` field | Notes |
     |---|---|---|
     | `run_count` | `turns` | Renamed |
     | `latency_p50` | `latency_p50_seconds` | Renamed, unit made explicit |
@@ -101,9 +101,9 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
     | `feedback_stats` | Unchanged | Same name |
     | *(needed a second `runs/query` call sorted ascending)* | `first_start_time` | New: no longer needs a second API call |
     | *(not available)* | `last_end_time` | New |
-    | `first_token_p50`/`first_token_p99`, `median_tokens`, token-count percentiles, `run_facets`, `error_rate`, `streaming_rate`, `cost_p50`/`cost_p99` | *(removed)* | v1-only, no v2 equivalent |
+    | `first_token_p50`/`first_token_p99`, `median_tokens`, token-count percentiles, `run_facets`, `error_rate`, `streaming_rate`, `cost_p50`/`cost_p99` | *(removed)* | legacy-only, no new equivalent |
 
-    <Note>v1's stats response is a union of a flat shape and a grouped-by-key map (when `group_by`/`groups` are set). Only the flat variant matters here, since scoping to a single thread never uses grouping.</Note>
+    <Note>The legacy stats response is a union of a flat shape and a grouped-by-key map (when `group_by`/`groups` are set). Only the flat variant matters here, since scoping to a single thread never uses grouping.</Note>
   </Tab>
   <Tab title="TypeScript">
     Same field mapping as Python.
@@ -111,7 +111,7 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
   <Tab title="Java">
     Same field mapping. `RunStatsResponse.runStats()` reliably decodes to the flat `RunStats` variant for a non-grouped query in the current Java binding.
 
-    | Before (v1 `RunStats` method) | After (v2 `ThreadStats` method) | Notes |
+    | Before (legacy `RunStats` method) | After (new `ThreadStats` method) | Notes |
     |---|---|---|
     | `stats.runCount()` | `turns()` | Renamed |
     | `stats.latencyP50()` | `latencyP50Seconds()` | Renamed, unit made explicit |
@@ -123,12 +123,12 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
     | `stats.feedbackStats()` | Unchanged | Same name |
     | *(needed a second `runs().query()` call sorted ascending)* | `firstStartTime()` | New: no longer needs a second API call |
     | *(not available)* | `lastEndTime()` | New |
-    | `firstTokenP50()`/`firstTokenP99()`, `medianTokens()`, token-count percentiles, `runFacets()`, `errorRate()`, `streamingRate()`, `costP50()`/`costP99()` | *(removed)* | v1-only, no v2 equivalent |
+    | `firstTokenP50()`/`firstTokenP99()`, `medianTokens()`, token-count percentiles, `runFacets()`, `errorRate()`, `streamingRate()`, `costP50()`/`costP99()` | *(removed)* | legacy-only, no new equivalent |
   </Tab>
   <Tab title="Go">
     Same field mapping, but the Go binding's `RunStatsResponseUnion` can misdecode a flat (non-grouped) response as the grouped-map variant, a known ambiguity between `RunStatsResponseRunStats` and `RunStatsResponseMap`. Handle both cases defensively with a type switch, as shown below.
 
-    | Before (v1 `RunStats` field) | After (v2 `ThreadStats` field) | Notes |
+    | Before (legacy `RunStats` field) | After (new `ThreadStats` field) | Notes |
     |---|---|---|
     | `stats.RunCount` | `Turns` | Renamed |
     | `stats.LatencyP50` | `LatencyP50Seconds` | Renamed, unit made explicit |
@@ -140,12 +140,12 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
     | `stats.FeedbackStats` | Unchanged | Same name |
     | *(needed a second `Runs.Query()` call sorted ascending)* | `FirstStartTime` | New: no longer needs a second API call |
     | *(not available)* | `LastEndTime` | New |
-    | `FirstTokenP50`/`FirstTokenP99`, `MedianTokens`, token-count percentiles, `RunFacets`, `ErrorRate`, `StreamingRate`, `CostP50`/`CostP99` | *(removed)* | v1-only, no v2 equivalent |
+    | `FirstTokenP50`/`FirstTokenP99`, `MedianTokens`, token-count percentiles, `RunFacets`, `ErrorRate`, `StreamingRate`, `CostP50`/`CostP99` | *(removed)* | legacy-only, no new equivalent |
   </Tab>
   <Tab title="cURL">
     JSON response fields match Python `snake_case`.
 
-    | Before (v1 `RunStats` field) | After (v2 `ThreadStats` field) | Notes |
+    | Before (legacy `RunStats` field) | After (new `ThreadStats` field) | Notes |
     |---|---|---|
     | `run_count` | `turns` | Renamed |
     | `latency_p50` | `latency_p50_seconds` | Renamed, unit made explicit |
@@ -157,7 +157,7 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
     | `feedback_stats` | Unchanged | Same name |
     | *(needed a second `runs/query` call sorted ascending)* | `first_start_time` | New: no longer needs a second API call |
     | *(not available)* | `last_end_time` | New |
-    | `first_token_p50`/`first_token_p99`, `median_tokens`, token-count percentiles, `run_facets`, `error_rate`, `streaming_rate`, `cost_p50`/`cost_p99` | *(removed)* | v1-only, no v2 equivalent |
+    | `first_token_p50`/`first_token_p99`, `median_tokens`, token-count percentiles, `run_facets`, `error_rate`, `streaming_rate`, `cost_p50`/`cost_p99` | *(removed)* | legacy-only, no new equivalent |
   </Tab>
 </Tabs>
 
