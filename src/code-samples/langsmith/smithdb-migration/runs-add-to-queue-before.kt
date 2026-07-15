@@ -9,7 +9,7 @@ import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.annotationqueues.AnnotationQueueAnnotationQueuesParams
 import com.langchain.smith.models.annotationqueues.runs.RunCreateParams
-import com.langchain.smith.models.runs.RunQueryV2Params
+import com.langchain.smith.models.runs.RunQueryParams
 import com.langchain.smith.models.sessions.SessionListParams
 
 // :remove-start:
@@ -34,18 +34,14 @@ queueId = client.annotationQueues().annotationQueues(
         .build()
 ).id()
 // :remove-end:
-val runs = client.runs().queryV2(
-    RunQueryV2Params.builder()
-        .addProjectId(projectId)
-        .addSelect(RunQueryV2Params.Select.ID)
-        .pageSize(5L)
-        .build()
+val runs = client.runs().query(
+    RunQueryParams.builder().session(listOf(projectId)).limit(5L).build()
 ).items()
 
 client.annotationQueues().runs().create(
     RunCreateParams.builder()
         .queueId(queueId)
-        .bodyOfRunsUuidArray(runs.map { it.id().get() })
+        .bodyOfRunsUuidArray(runs.map { it.id() })
         .build()
 )
 // :remove-start:
