@@ -1,0 +1,339 @@
+---
+title: Expose LangSmith capabilities with Managed Deep Agents
+sidebarTitle: LangSmith
+description: Declare constrained LangSmith capabilities for untrusted callers with Managed Deep Agents connectors.
+---
+
+import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
+import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
+
+The LangSmith connector lets browsers and other untrusted callers invoke a small, constrained set of LangSmith operations without receiving `LANGSMITH_API_KEY`. Managed Deep Agents runs each call server-side with the workspace key and returns an allowlisted response.
+
+<Note>
+<ManagedDeepAgentsPrivateBetaNote />
+</Note>
+
+The LangSmith connector requires [identity](/langsmith/managed-deep-agents-identity). Every capability route resolves the caller first, then proves ownership (for example thread or run scope) before calling LangSmith.
+
+For other connector types, see [Connectors](/langsmith/managed-deep-agents-connectors).
+
+## Add a LangSmith connector
+
+Add `connectors/langsmith.py` or `connectors/langsmith.ts` next to your agent entry file. Start with presets for the common browser surfaces, or compose [custom grants](#custom-capability-grants) when you need different scopes or constraints.
+
+<CodeGroup>
+
+```python connectors/langsmith.py
+from managed_deepagents.connectors import langsmith
+
+connector = langsmith.connector(
+    langsmith.chat_feedback(dataset="public-feedback"),
+    langsmith.trace_viewer(),
+)
+```
+
+```ts connectors/langsmith.ts
+import { langsmith } from "managed-deepagents";
+
+export default langsmith.connector(
+  langsmith.chatFeedback({ dataset: "public-feedback" }),
+  langsmith.traceViewer(),
+);
+```
+
+</CodeGroup>
+
+That declaration mounts one HTTP route per capability id on your deployment.
+
+## Call the HTTP API
+
+Every capability shares the same endpoint shape on the Agent Server:
+
+```http
+POST {deploymentUrl}/connectors/langsmith/capabilities/{capability_id}
+Content-Type: application/json
+```
+
+URL-encode the capability id when it contains `:` (for example `langsmith%3Achat-feedback`).
+
+### Authenticate
+
+The route uses the same [identity ingress](/langsmith/managed-deep-agents-identity#ingress-how-managed-deep-agents-learns-who-is-calling) as agent runs. Include identity headers on every request:
+
+| Ingress | Headers |
+| --- | --- |
+| Validated token (browser-direct) | `Authorization: Bearer <token>` |
+| Trusted backend | `X-MDA-Ingress-Secret`, `X-MDA-Actor-Id`, and `X-MDA-Tenant-Id` when multi-tenant |
+
+Unauthenticated calls return `401`. Ownership failures return `403`.
+
+### Body shape
+
+Always send JSON with an `action` field. Other fields depend on the capability and action. CamelCase and snake_case keys are both accepted (`runId` / `run_id`, `threadId` / `thread_id`, and so on).
+
+### Endpoints opened by the presets
+
+With the connector example above, the deployment exposes three capability endpoints:
+
+| Capability id | Preset | Allowed actions | Typical use |
+| --- | --- | --- | --- |
+| `langsmith:chat-feedback` | `chatFeedback` | `create`, `update`, `delete` | Thumbs up/down on a run |
+| `langsmith:chat-feedback-examples` | `chatFeedback` | `create` | Save the conversation into a dataset |
+| `langsmith:trace-viewer` | `traceViewer` | `read`, `share` | Redacted run summary / share link |
+
+### Example: create feedback
+
+<CodeGroup>
+
+```bash curl
+curl -X POST \
+  "$DEPLOYMENT_URL/connectors/langsmith/capabilities/langsmith%3Achat-feedback" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -d '{
+    "action": "create",
+    "runId": "<langsmith-run-id>",
+    "threadId": "<langgraph-thread-id>",
+    "key": "user_score",
+    "score": "positive",
+    "comment": "Helpful answer"
+  }'
+```
+
+```ts Fetch
+await fetch(
+  `${deploymentUrl}/connectors/langsmith/capabilities/${encodeURIComponent("langsmith:chat-feedback")}`,
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      action: "create",
+      runId,
+      threadId,
+      key: "user_score",
+      score: "positive",
+      comment: "Helpful answer",
+    }),
+  },
+);
+```
+
+</CodeGroup>
+
+`create` requires `runId`, `key`, and (for this preset) a `score` of `positive` or `negative`. Optional: `comment`, `feedbackId`. Update and delete require `feedbackId` instead.
+
+### Example: read a redacted trace
+
+<CodeGroup>
+
+```bash curl
+curl -X POST \
+  "$DEPLOYMENT_URL/connectors/langsmith/capabilities/langsmith%3Atrace-viewer" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -d '{
+    "action": "read",
+    "runId": "<langsmith-run-id>",
+    "threadId": "<langgraph-thread-id>"
+  }'
+```
+
+```ts Fetch
+await fetch(
+  `${deploymentUrl}/connectors/langsmith/capabilities/${encodeURIComponent("langsmith:trace-viewer")}`,
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      action: "read",
+      runId,
+      threadId,
+    }),
+  },
+);
+```
+
+</CodeGroup>
+
+Use `"action": "share"` with the same ids to get a share URL. Responses include `id`, `status`, `start_time`, `end_time`, `url`, and `metadata`. Sensitive fields (`inputs`, `outputs`, `events`) stay redacted unless you build a custom grant with `allowSensitive` / `allow_sensitive`.
+
+## Presets
+
+Presets expand to the stable capability ids in the table above.
+
+### Chat feedback
+
+`chatFeedback` / `chat_feedback` exposes create, update, and delete for one bounded feedback key per actor on a run, and can create an example in a fixed dataset from the same conversation.
+
+<CodeGroup>
+
+```python
+langsmith.chat_feedback(dataset="public-feedback")
+```
+
+```ts
+langsmith.chatFeedback({ dataset: "public-feedback" })
+```
+
+</CodeGroup>
+
+<ParamField body="dataset" type="string" required>
+  LangSmith dataset name used by `langsmith:chat-feedback-examples`.
+</ParamField>
+
+- **`langsmith:chat-feedback`** — run-scoped feedback for browsers. Key `user_score`, scores `positive` / `negative`, comments up to 2000 characters, `onePerActor`. Response fields: `id`, `run_id`, `key`, `score`, `created_at`.
+- **`langsmith:chat-feedback-examples`** — thread-scoped example create. Allowed fields: `messages`, `answer`, `feedback`, `source`. Response fields: `id`, `dataset_id`, `created_at`.
+
+<Accordion title="Equivalent builders">
+  <CodeGroup>
+
+  ```python
+  langsmith.connector(
+      langsmith.feedback(
+          id="langsmith:chat-feedback",
+          expose_to=["browser"],
+          actions=["create", "update", "delete"],
+          scope="run",
+          keys=["user_score"],
+          scores=["positive", "negative"],
+          max_comment_chars=2000,
+          one_per_actor=True,
+      ),
+      langsmith.examples(
+          id="langsmith:chat-feedback-examples",
+          expose_to=["browser"],
+          actions=["create"],
+          scope="thread",
+          dataset="public-feedback",
+          allowed_fields=["messages", "answer", "feedback", "source"],
+      ),
+  )
+  ```
+
+  ```ts
+  langsmith.connector(
+    langsmith.feedback({
+      id: "langsmith:chat-feedback",
+      exposeTo: ["browser"],
+      actions: ["create", "update", "delete"],
+      scope: "run",
+      keys: ["user_score"],
+      scores: ["positive", "negative"],
+      maxCommentChars: 2000,
+      onePerActor: true,
+    }),
+    langsmith.examples({
+      id: "langsmith:chat-feedback-examples",
+      exposeTo: ["browser"],
+      actions: ["create"],
+      scope: "thread",
+      dataset: "public-feedback",
+      allowedFields: ["messages", "answer", "feedback", "source"],
+    }),
+  );
+  ```
+
+  </CodeGroup>
+</Accordion>
+
+### Trace viewer
+
+`traceViewer` / `trace_viewer` exposes a read-only, redacted run summary and share link for the caller's thread.
+
+<CodeGroup>
+
+```python
+langsmith.trace_viewer()
+```
+
+```ts
+langsmith.traceViewer()
+```
+
+</CodeGroup>
+
+Expands to **`langsmith:trace-viewer`**: thread-scoped `runs` with actions `read` and `share`, exposed to `browser`.
+
+<Accordion title="Equivalent builder">
+  <CodeGroup>
+
+  ```python
+  langsmith.connector(
+      langsmith.runs(
+          id="langsmith:trace-viewer",
+          expose_to=["browser"],
+          actions=["read", "share"],
+          scope="thread",
+      )
+  )
+  ```
+
+  ```ts
+  langsmith.connector(
+    langsmith.runs({
+      id: "langsmith:trace-viewer",
+      exposeTo: ["browser"],
+      actions: ["read", "share"],
+      scope: "thread",
+    }),
+  );
+  ```
+
+  </CodeGroup>
+</Accordion>
+
+## Custom capability grants
+
+When a preset is too narrow, compose builders yourself: `runs`, `feedback`, `examples`, `threads`, `prompts`, and `annotationQueues` / `annotation_queues`.
+
+Each grant needs:
+
+- A stable `id` — becomes `{capability_id}` in the HTTP path
+- `exposeTo` / `expose_to` — who may call it (`browser`, `trusted_backend`, `channel`, `schedule`)
+- `actions` — allowed values for the body's `action` field
+- `scope` — ownership boundary (`agent`, `tenant`, `actor`, `thread`, `run`)
+
+Optional constraints and response shaping (`include`, `redact`, `allowSensitive` / `allow_sensitive`) keep browser responses small and fail closed on sensitive fields.
+
+Clients still call the same `POST /connectors/langsmith/capabilities/{id}` route; only the capability id and allowed body fields change.
+
+<Tip>
+Start from a preset, then copy the equivalent builders from the accordion above and adjust only the fields you need.
+</Tip>
+
+## Test and deploy
+
+<ManagedDeepAgentsTestAndDeploy />
+
+Capability calls return 401 without a resolved identity and 403 when ownership checks fail. Confirm [identity](/langsmith/managed-deep-agents-identity) is declared and that callers authenticate through the configured ingress mode.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Identity" icon="fingerprint" href="/langsmith/managed-deep-agents-identity">
+    Authenticate callers and scope threads before exposing capabilities.
+  </Card>
+  <Card title="Connectors" icon="plug" href="/langsmith/managed-deep-agents-connectors">
+    Compare LangSmith and MCP connector types.
+  </Card>
+  <Card title="Deploy an agent" icon="upload" href="/langsmith/managed-deep-agents-deploy">
+    Deploy the connector-enabled agent.
+  </Card>
+</CardGroup>
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-connectors/langsmith.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
