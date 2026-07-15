@@ -5,8 +5,7 @@ from langsmith import Client
 
 client = Client()
 threads = client.list_threads(
-    project_name="default", filter='eq(status, "error")', limit=5
-)
+    project_name="default", filter='eq(status, "error")')
 for thread in threads:
     print(thread["thread_id"], thread["last_error"])
 # :snippet-end:
@@ -21,7 +20,6 @@ from langsmith import Client
 async def main():
     client = Client()
     project = await client.aread_project(project_name="default")
-    count = 0
     async for thread in client.threads.query(
         project_id=str(project.id),
         min_start_time="2026-07-01T00:00:00Z",
@@ -29,9 +27,6 @@ async def main():
         filter='eq(status, "error")',
     ):
         print(thread.thread_id, thread.last_error)
-        count += 1
-        if count >= 5:
-            break
 
 
 asyncio.run(main())
