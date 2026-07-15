@@ -36,6 +36,9 @@ func main() {
 	for iter.Next() {
 		thread := iter.Current()
 		fmt.Println(thread.ThreadID, thread.LastError)
+		// :remove-start:
+		break
+		// :remove-end:
 	}
 	if err := iter.Err(); err != nil {
 		panic(err.Error())

@@ -44,6 +44,9 @@ func main() {
 	}
 	for threadID, count := range threads {
 		fmt.Println(threadID, count)
+		// :remove-start:
+		break
+		// :remove-end:
 	}
 }
 // :snippet-end:

@@ -7,6 +7,9 @@ client = Client()
 threads = client.list_threads(project_name="default")
 for thread in threads:
     print(thread["thread_id"], thread["count"])
+    # :remove-start:
+    break
+    # :remove-end:
 # :snippet-end:
 
 # :snippet-start: threads-query-list-all-after-py
@@ -25,6 +28,9 @@ async def main():
         max_start_time="2026-07-31T23:59:59Z",
     ):
         print(thread.thread_id, thread.count)
+        # :remove-start:
+        break
+        # :remove-end:
 
 
 asyncio.run(main())

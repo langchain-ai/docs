@@ -44,6 +44,9 @@ func main() {
 	}
 	for threadID := range threadIDs {
 		fmt.Println(threadID)
+		// :remove-start:
+		break
+		// :remove-end:
 	}
 }
 // :snippet-end:

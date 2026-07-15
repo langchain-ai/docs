@@ -34,6 +34,9 @@ val rootRuns = client.runs().query(
 ).runs()
 for (run in rootRuns) {
     println("${run.traceId()} ${run.error().getOrNull()}")
+    // :remove-start:
+    break
+    // :remove-end:
 }
 // :remove-start:
 }

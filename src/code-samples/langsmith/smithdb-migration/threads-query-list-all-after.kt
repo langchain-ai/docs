@@ -35,6 +35,9 @@ val threads = client.threads().query(
 ).items()
 for (thread in threads) {
     println("${thread.threadId().get()} ${thread.count().get()}")
+    // :remove-start:
+    break
+    // :remove-end:
 }
 // :remove-start:
 }

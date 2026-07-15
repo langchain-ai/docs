@@ -11,5 +11,8 @@ for await (const thread of client.threads.query({
   max_start_time: "2026-07-31T23:59:59Z",
 })) {
   console.log(thread.thread_id, thread.count);
+  // :remove-start:
+  break;
+  // :remove-end:
 }
 // :snippet-end:

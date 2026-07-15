@@ -10,5 +10,8 @@ const threads = await client.listThreads({
 });
 for (const thread of threads) {
   console.log(thread.thread_id, thread.last_error);
+  // :remove-start:
+  break;
+  // :remove-end:
 }
 // :snippet-end:

@@ -12,5 +12,8 @@ for await (const thread of client.threads.query({
   filter: 'eq(status, "error")',
 })) {
   console.log(thread.thread_id, thread.last_error);
+  // :remove-start:
+  break;
+  // :remove-end:
 }
 // :snippet-end:

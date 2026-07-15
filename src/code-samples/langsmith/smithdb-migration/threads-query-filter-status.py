@@ -7,6 +7,9 @@ client = Client()
 threads = client.list_threads(project_name="default", filter='eq(status, "error")')
 for thread in threads:
     print(thread["thread_id"])
+    # :remove-start:
+    break
+    # :remove-end:
 # :snippet-end:
 
 # :snippet-start: threads-query-filter-status-after-py
@@ -26,6 +29,9 @@ async def main():
         filter='eq(status, "error")',
     ):
         print(thread.thread_id, thread.last_error)
+        # :remove-start:
+        break
+        # :remove-end:
 
 
 asyncio.run(main())
