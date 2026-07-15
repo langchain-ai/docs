@@ -14,6 +14,7 @@ THREAD_ID=$(curl -s -X POST "https://api.smith.langchain.com/v2/threads/query" \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg pid "$PROJECT_ID" '{"project_id": $pid, "min_start_time": "2026-07-01T00:00:00Z", "max_start_time": "2026-07-31T23:59:59Z", "page_size": 1}')" \
   | jq -r '.items[0].thread_id')
+[ -n "$THREAD_ID" ] && [ "$THREAD_ID" != "null" ] || { echo "error: could not resolve a thread id for \"default\"" >&2; exit 1; }
 # :remove-end:
 
 curl -G "https://api.smith.langchain.com/v2/threads/$THREAD_ID/stats" \
