@@ -14,7 +14,6 @@ curl -X POST "https://api.smith.langchain.com/v2/threads/query" \
   -d "$(jq -n --arg pid "$PROJECT_ID" '{
     "project_id": $pid,
     "min_start_time": "2026-07-01T00:00:00Z",
-    "max_start_time": "2026-07-31T23:59:59Z",
-    "page_size": 5
+    "max_start_time": "2026-07-31T23:59:59Z"
   }')"
 # :snippet-end:

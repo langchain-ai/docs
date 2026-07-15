@@ -33,14 +33,9 @@ func main() {
 		MaxStartTime: langsmith.F(maxStart),
 		Filter:       langsmith.F(`eq(status, "error")`),
 	})
-	count := 0
 	for iter.Next() {
 		thread := iter.Current()
 		fmt.Println(thread.ThreadID, thread.LastError)
-		count++
-		if count >= 5 {
-			break
-		}
 	}
 	if err := iter.Err(); err != nil {
 		panic(err.Error())

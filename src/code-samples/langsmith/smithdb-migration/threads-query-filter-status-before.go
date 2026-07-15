@@ -27,25 +27,23 @@ func main() {
 		Session: langsmith.F([]string{projectID}),
 		IsRoot:  langsmith.F(true),
 		Filter:  langsmith.F(`eq(status, "error")`),
-		Limit:   langsmith.F(int64(5)),
 	})
 	if err != nil {
 		panic(err.Error())
 	}
 
-	threads := map[string]string{}
+	threadIDs := map[string]bool{}
 	for _, run := range runs.Runs {
 		metadata, ok := run.Extra["metadata"].(map[string]interface{})
 		if !ok {
 			continue
 		}
-		threadID, ok := metadata["thread_id"].(string)
-		if ok {
-			threads[threadID] = run.Error
+		if threadID, ok := metadata["thread_id"].(string); ok {
+			threadIDs[threadID] = true
 		}
 	}
-	for threadID, lastError := range threads {
-		fmt.Println(threadID, lastError)
+	for threadID := range threadIDs {
+		fmt.Println(threadID)
 	}
 }
 // :snippet-end:

@@ -30,7 +30,6 @@ val rootRuns = client.runs().query(
     RunQueryParams.builder()
         .addSession(project.id())
         .isRoot(true)
-        .limit(5L)
         .build()
 ).runs()
 for (run in rootRuns) {

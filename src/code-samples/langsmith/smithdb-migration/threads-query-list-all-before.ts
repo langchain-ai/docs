@@ -4,7 +4,7 @@
 import { Client } from "langsmith";
 
 const client = new Client();
-const threads = await client.listThreads({ projectName: "default", limit: 5 });
+const threads = await client.listThreads({ projectName: "default" });
 for (const thread of threads) {
   console.log(thread.thread_id, thread.count);
 }

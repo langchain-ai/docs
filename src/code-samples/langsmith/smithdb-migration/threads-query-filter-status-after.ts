@@ -5,7 +5,6 @@ import { Client } from "langsmith";
 
 const client = new Client();
 const project = await client.readProject({ projectName: "default" });
-let count = 0;
 for await (const thread of client.threads.query({
   project_id: project.id,
   min_start_time: "2026-07-01T00:00:00Z",
@@ -13,7 +12,5 @@ for await (const thread of client.threads.query({
   filter: 'eq(status, "error")',
 })) {
   console.log(thread.thread_id, thread.last_error);
-  count += 1;
-  if (count >= 5) break;
 }
 // :snippet-end:

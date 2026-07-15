@@ -4,10 +4,9 @@
 from langsmith import Client
 
 client = Client()
-threads = client.list_threads(
-    project_name="default", filter='eq(status, "error")')
+threads = client.list_threads(project_name="default", filter='eq(status, "error")')
 for thread in threads:
-    print(thread["thread_id"], thread["last_error"])
+    print(thread["thread_id"])
 # :snippet-end:
 
 # :snippet-start: threads-query-filter-status-after-py
