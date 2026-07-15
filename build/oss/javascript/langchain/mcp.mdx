@@ -1,0 +1,388 @@
+---
+title: Model Context Protocol (MCP)
+---
+
+import McpMultimodalToolContentPy from '/snippets/code-samples/mcp-multimodal-tool-content-py.mdx';
+import McpMultimodalToolContentJs from '/snippets/code-samples/mcp-multimodal-tool-content-js.mdx';
+
+
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) is an open protocol that standardizes how applications provide tools and context to LLMs. LangChain agents can use tools defined on MCP servers using the [`@langchain/mcp-adapters`](https://github.com/langchain-ai/langchainjs/tree/main/libs/langchain-mcp-adapters) library.
+
+
+## Quickstart
+
+
+
+Install the `@langchain/mcp-adapters` library:
+
+<CodeGroup>
+```bash npm
+npm install @langchain/mcp-adapters
+```
+
+```bash pnpm
+pnpm add @langchain/mcp-adapters
+```
+
+```bash yarn
+yarn add @langchain/mcp-adapters
+```
+
+```bash bun
+bun add @langchain/mcp-adapters
+```
+</CodeGroup>
+
+`@langchain/mcp-adapters` enables agents to use tools defined across one or more MCP servers.
+
+<Note>
+    `MultiServerMCPClient` is **stateless by default**. Each tool invocation creates a fresh MCP `ClientSession`, executes the tool, and then cleans up.
+</Note>
+
+```ts Accessing multiple MCP servers icon="server"
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";  // [!code highlight]
+import { ChatAnthropic } from "@langchain/anthropic";
+import { createAgent } from "langchain";
+
+const client = new MultiServerMCPClient({  // [!code highlight]
+    math: {
+        transport: "stdio",  // Local subprocess communication
+        command: "node",
+        // Replace with absolute path to your math_server.js file
+        args: ["/path/to/math_server.js"],
+    },
+    weather: {
+        transport: "http",  // HTTP-based remote server
+        // Ensure you start your weather server on port 8000
+        url: "http://localhost:8000/mcp",
+    },
+});
+
+const tools = await client.getTools();  // [!code highlight]
+const agent = createAgent({
+    model: "claude-sonnet-4-6",
+    tools,  // [!code highlight]
+});
+
+const mathResponse = await agent.invoke({
+    messages: [{ role: "user", content: "what's (3 + 5) x 12?" }],
+});
+
+const weatherResponse = await agent.invoke({
+    messages: [{ role: "user", content: "what is the weather in nyc?" }],
+});
+```
+
+
+<Tip>
+Trace MCP tool calls alongside your agent's reasoning steps with [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=oss-langchain-mcp). Follow the [tracing quickstart](/langsmith/trace-with-langchain) to get set up.
+</Tip>
+
+## Custom servers
+
+
+
+To create your own MCP servers, you can use the `@modelcontextprotocol/sdk` library. This library provides a simple way to define [tools](https://modelcontextprotocol.io/docs/learn/server-concepts#tools-ai-actions) and run them as servers.
+
+<CodeGroup>
+```bash npm
+npm install @modelcontextprotocol/sdk
+```
+
+```bash pnpm
+pnpm add @modelcontextprotocol/sdk
+```
+
+```bash yarn
+yarn add @modelcontextprotocol/sdk
+```
+
+```bash bun
+bun add @modelcontextprotocol/sdk
+```
+</CodeGroup>
+
+
+To test your agent with MCP tool servers, use the following examples:
+
+
+
+
+```typescript title="Math server (stdio transport)" icon="device-floppy"
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+    CallToolRequestSchema,
+    ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+
+const server = new Server(
+    {
+        name: "math-server",
+        version: "0.1.0",
+    },
+    {
+        capabilities: {
+            tools: {},
+        },
+    }
+);
+
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return {
+        tools: [
+        {
+            name: "add",
+            description: "Add two numbers",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    a: {
+                        type: "number",
+                        description: "First number",
+                    },
+                    b: {
+                        type: "number",
+                        description: "Second number",
+                    },
+                },
+                required: ["a", "b"],
+            },
+        },
+        {
+            name: "multiply",
+            description: "Multiply two numbers",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    a: {
+                        type: "number",
+                        description: "First number",
+                    },
+                    b: {
+                        type: "number",
+                        description: "Second number",
+                    },
+                },
+                required: ["a", "b"],
+            },
+        },
+        ],
+    };
+});
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    switch (request.params.name) {
+        case "add": {
+            const { a, b } = request.params.arguments as { a: number; b: number };
+            return {
+                content: [
+                {
+                    type: "text",
+                    text: String(a + b),
+                },
+                ],
+            };
+        }
+        case "multiply": {
+            const { a, b } = request.params.arguments as { a: number; b: number };
+            return {
+                content: [
+                {
+                    type: "text",
+                    text: String(a * b),
+                },
+                ],
+            };
+        }
+        default:
+            throw new Error(`Unknown tool: ${request.params.name}`);
+    }
+});
+
+async function main() {
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("Math MCP server running on stdio");
+}
+
+main();
+```
+
+```typescript title="Weather server (SSE transport)" icon="wifi"
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import {
+    CallToolRequestSchema,
+    ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import express from "express";
+
+const app = express();
+app.use(express.json());
+
+const server = new Server(
+    {
+        name: "weather-server",
+        version: "0.1.0",
+    },
+    {
+        capabilities: {
+            tools: {},
+        },
+    }
+);
+
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return {
+        tools: [
+        {
+            name: "get_weather",
+            description: "Get weather for location",
+            inputSchema: {
+            type: "object",
+            properties: {
+                location: {
+                type: "string",
+                description: "Location to get weather for",
+                },
+            },
+            required: ["location"],
+            },
+        },
+        ],
+    };
+});
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    switch (request.params.name) {
+        case "get_weather": {
+            const { location } = request.params.arguments as { location: string };
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: `It's always sunny in ${location}`,
+                    },
+                ],
+            };
+        }
+        default:
+            throw new Error(`Unknown tool: ${request.params.name}`);
+    }
+});
+
+app.post("/mcp", async (req, res) => {
+    const transport = new SSEServerTransport("/mcp", res);
+    await server.connect(transport);
+});
+
+const PORT = process.env.PORT || 8000;
+app.listen(PORT, () => {
+    console.log(`Weather MCP server running on port ${PORT}`);
+});
+```
+
+
+## Transports
+
+MCP supports different transport mechanisms for client-server communication.
+
+### HTTP
+
+The `http` transport (also referred to as `streamable-http`) uses HTTP requests for client-server communication. See the [MCP HTTP transport specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) for more details.
+
+
+
+```typescript
+const client = new MultiServerMCPClient({
+    weather: {
+        transport: "sse",
+        url: "http://localhost:8000/mcp",
+    },
+});
+```
+
+
+#### Passing headers
+
+
+
+#### Authentication
+
+
+
+### stdio
+
+Client launches server as a subprocess and communicates via standard input/output. Best for local tools and simple setups.
+
+
+
+```typescript
+const client = new MultiServerMCPClient({
+    math: {
+        transport: "stdio",
+        command: "node",
+        args: ["/path/to/math_server.js"],
+    },
+});
+```
+
+
+
+
+## Core features
+
+### Tools
+
+[Tools](https://modelcontextprotocol.io/docs/concepts/tools) allow MCP servers to expose executable functions that LLMs can invoke to perform actions—such as querying databases, calling APIs, or interacting with external systems. LangChain converts MCP tools into LangChain [tools](/oss/javascript/langchain/tools), making them directly usable in any LangChain agent or workflow.
+
+#### Loading tools
+
+
+
+Use `client.getTools()` to retrieve tools from MCP servers and pass them to your agent:
+
+```typescript
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+import { createAgent } from "langchain";
+
+const client = new MultiServerMCPClient({...});
+const tools = await client.getTools();  // [!code highlight]
+const agent = createAgent({ model: "claude-sonnet-4-6", tools });
+```
+
+When an MCP tool execution fails (`CallToolResult` with `isError: true`), `@langchain/mcp-adapters` raises a `ToolException`. Wrap tool calls in a try/catch to handle these errors. Unlike the Python adapter, the TypeScript adapter does not return the error to the model as a failed tool message.
+
+
+
+
+#### Multimodal tool content
+
+MCP tools can return [multimodal content](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#tool-result) (images, text, etc.) in their responses. When an MCP server returns content with multiple parts (e.g., text and images), the adapter converts them to LangChain's [standard content blocks](/oss/javascript/langchain/messages#standard-content-blocks). You can access the standardized representation via the `contentBlocks` property on the `ToolMessage`:
+
+<McpMultimodalToolContentJs />
+
+This allows you to handle multimodal tool responses in a provider-agnostic way, regardless of how the underlying MCP server formats its content.
+
+
+
+
+
+## Additional resources
+
+* [MCP documentation](https://modelcontextprotocol.io/introduction)
+* [MCP Transport documentation](https://modelcontextprotocol.io/docs/concepts/transports)
+
+* [`@langchain/mcp-adapters`](https://github.com/langchain-ai/langchainjs/tree/main/libs/langchain-mcp-adapters/)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/mcp.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

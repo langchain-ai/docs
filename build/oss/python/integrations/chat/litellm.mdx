@@ -1,0 +1,206 @@
+---
+title: "ChatLiteLLM and ChatLiteLLMRouter integration"
+description: "Integrate with the ChatLiteLLM and ChatLiteLLMRouter chat model using LangChain Python."
+---
+
+[LiteLLM](https://github.com/BerriAI/litellm) is a library that simplifies calling Anthropic, Azure, Huggingface, Replicate, etc.
+
+This page covers how to get started using LangChain with the LiteLLM I/O library.
+
+This integration provides two chat model classes:
+
+- [ChatLiteLLM](https://reference.langchain.com/python/langchain-litellm/chat_models/litellm/ChatLiteLLM): The main LangChain chat wrapper for LiteLLM.
+- [ChatLiteLLMRouter](https://reference.langchain.com/python/langchain-litellm/chat_models/litellm_router/ChatLiteLLMRouter): A `ChatLiteLLM` wrapper that leverages LiteLLM's Router for load balancing and fallbacks.
+
+The package also ships [LiteLLMEmbeddings](https://reference.langchain.com/python/langchain-litellm/embeddings/litellm/LiteLLMEmbeddings), [LiteLLMEmbeddingsRouter](https://reference.langchain.com/python/langchain-litellm/embeddings/litellm_router/LiteLLMEmbeddingsRouter), and [LiteLLMOCRLoader](https://reference.langchain.com/python/langchain-litellm/document_loaders/litellm_ocr/LiteLLMOCRLoader). See the [providers page](/oss/python/integrations/providers/litellm) for details.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support| Downloads | Version |
+| :---  | :--- | :---: |  :---: | :---: | :---: |
+| [ChatLiteLLM](https://reference.langchain.com/python/langchain-litellm/chat_models/litellm/ChatLiteLLM) | [`langchain-litellm`](https://pypi.org/project/langchain-litellm/)| ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-litellm?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-litellm?style=flat-square&label=%20) |
+| [ChatLiteLLMRouter](https://reference.langchain.com/python/langchain-litellm/chat_models/litellm_router/ChatLiteLLMRouter) | [`langchain-litellm`](https://pypi.org/project/langchain-litellm/)| ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-litellm?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-litellm?style=flat-square&label=%20) |
+
+### Model features
+
+| [Tool calling](/oss/python/langchain/tools) | [Structured output](/oss/python/langchain/structured-output) | Image input | Audio input | Video input | [Token-level streaming](/oss/python/integrations/chat/litellm#async-and-streaming-functionality) | [Native async](/oss/python/integrations/chat/litellm#async-and-streaming-functionality) | [Token usage](/oss/python/langchain/models#token-usage) | [Logprobs](/oss/python/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
+
+### Setup
+
+To access `ChatLiteLLM` and `ChatLiteLLMRouter` models, you'll need to install the `langchain-litellm` package and create an OpenAI, Anthropic, Azure, Replicate, OpenRouter, Hugging Face, Together AI, or Cohere account. Then, you have to get an API key and export it as an environment variable.
+
+## Credentials
+
+You have to choose the LLM provider you want and sign up with them to get their API key.
+
+### Example - Anthropic
+
+Head to the [Claude console](https://console.anthropic.com) to sign up and generate a Claude API key. Once you've done this set the `ANTHROPIC_API_KEY` environment variable:
+
+### Example - OpenAI
+
+Head to [platform.openai.com/api-keys](https://platform.openai.com/api-keys) to sign up for OpenAI and generate an API key. Once you've done this, set the OPENAI_API_KEY environment variable.
+
+```python
+## Set ENV variables
+import os
+
+os.environ["OPENAI_API_KEY"] = "your-openai-key"
+os.environ["ANTHROPIC_API_KEY"] = "your-anthropic-key"
+```
+
+### Installation
+
+The LangChain LiteLLM integration is available in the `langchain-litellm` package:
+
+```python
+pip install -qU langchain-litellm
+```
+
+## Instantiation
+
+### ChatLiteLLM
+
+You can instantiate a `ChatLiteLLM` model by providing a `model` name [supported by LiteLLM](https://docs.litellm.ai/docs/providers).
+
+```python
+from langchain_litellm import ChatLiteLLM
+
+llm = ChatLiteLLM(model="gpt-5.4-nano", temperature=0.1)
+```
+
+### ChatLiteLLMRouter
+
+You can also leverage LiteLLM's routing capabilities by defining your model list as specified in the [LiteLLM routing documentation](https://docs.litellm.ai/docs/routing).
+
+```python
+from langchain_litellm import ChatLiteLLMRouter
+from litellm import Router
+
+model_list = [
+    {
+        "model_name": "gpt-5.5",
+        "litellm_params": {
+            "model": "azure/gpt-5.5",
+            "api_key": "<your-api-key>",
+            "api_version": "2024-10-21",
+            "api_base": "https://<your-endpoint>.openai.azure.com/",
+        },
+    },
+    {
+        "model_name": "gpt-5.5",
+        "litellm_params": {
+            "model": "azure/gpt-5.5",
+            "api_key": "<your-api-key>",
+            "api_version": "2024-10-21",
+            "api_base": "https://<your-endpoint>.openai.azure.com/",
+        },
+    },
+]
+litellm_router = Router(model_list=model_list)
+llm = ChatLiteLLMRouter(router=litellm_router, model_name="gpt-5.5", temperature=0.1)
+```
+
+## Invocation
+
+Whether you've instantiated a `ChatLiteLLM` or a `ChatLiteLLMRouter`, you can now use the ChatModel through LangChain's API.
+
+```python
+response = await llm.ainvoke(
+    "Classify the text into neutral, negative or positive. Text: I think the food was okay. Sentiment:"
+)
+print(response)
+```
+
+```text
+content='Neutral' additional_kwargs={} response_metadata={'token_usage': Usage(completion_tokens=2, prompt_tokens=30, total_tokens=32, completion_tokens_details=CompletionTokensDetailsWrapper(accepted_prediction_tokens=0, audio_tokens=0, reasoning_tokens=0, rejected_prediction_tokens=0, text_tokens=None), prompt_tokens_details=PromptTokensDetailsWrapper(audio_tokens=0, cached_tokens=0, text_tokens=None, image_tokens=None)), 'model': 'gpt-3.5-turbo', 'finish_reason': 'stop', 'model_name': 'gpt-3.5-turbo'} id='run-ab6a3b21-eae8-4c27-acb2-add65a38221a-0' usage_metadata={'input_tokens': 30, 'output_tokens': 2, 'total_tokens': 32}
+```
+
+## Async and streaming functionality
+
+`ChatLiteLLM` and `ChatLiteLLMRouter` also support async and streaming functionality:
+
+```python
+stream = await llm.astream_events("Hello, please explain how antibiotics work", version="v3")
+async for token in stream.text:
+    print(token, end="")
+```
+
+```text
+Antibiotics are medications that fight bacterial infections in the body. They work by targeting specific bacteria and either killing them or preventing their growth and reproduction.
+
+There are several different mechanisms by which antibiotics work. Some antibiotics work by disrupting the cell walls of bacteria, causing them to burst and die. Others interfere with the protein synthesis of bacteria, preventing them from growing and reproducing. Some antibiotics target the DNA or RNA of bacteria, disrupting their ability to replicate.
+
+It is important to note that antibiotics only work against bacterial infections and not viral infections. It is also crucial to take antibiotics as prescribed by a healthcare professional and to complete the full course of treatment, even if symptoms improve before the medication is finished. This helps to prevent antibiotic resistance, where bacteria become resistant to the effects of antibiotics.
+```
+
+## Advanced features
+
+### Vertex AI grounding (Google Search)
+
+Use Google Search grounding with Vertex AI models (e.g., `gemini-3.5-flash`). Citations and metadata are returned in `response_metadata` (batch) or `additional_kwargs` (streaming).
+
+**Setup**
+
+```python
+import os
+from langchain_litellm import ChatLiteLLM
+
+os.environ["VERTEX_PROJECT"] = "your-project-id"
+os.environ["VERTEX_LOCATION"] = "us-central1"
+
+llm = ChatLiteLLM(model="vertex_ai/gemini-2.5-flash", temperature=0)
+```
+
+**Batch usage**
+
+```python
+# Invoke with Google Search tool enabled
+response = llm.invoke(
+    "What is the current stock price of Google?",
+    tools=[{"googleSearch": {}}]
+)
+
+# Access citations & metadata
+provider_fields = response.response_metadata.get("provider_specific_fields")
+if provider_fields:
+    # Vertex returns a list; the first item contains the grounding info
+    print(provider_fields[0])
+```
+
+**Streaming usage**
+
+```python
+stream = llm.stream_events(
+    "What is the current stock price of Google?",
+    version="v3",
+    tools=[{"googleSearch": {}}],
+)
+for token in stream.text:
+    print(token, end="", flush=True)
+# Metadata is available on the full output message
+output = stream.output
+if "provider_specific_fields" in output.additional_kwargs:
+    print("\n[Metadata Found]:", output.additional_kwargs["provider_specific_fields"])
+```
+
+---
+
+## API reference
+
+For detailed documentation of all `ChatLiteLLM` and `ChatLiteLLMRouter` features and configurations, see the [langchain-litellm](https://reference.langchain.com/python/langchain-litellm/) API reference.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/chat/litellm.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

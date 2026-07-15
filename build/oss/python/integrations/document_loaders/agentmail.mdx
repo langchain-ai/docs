@@ -1,0 +1,96 @@
+---
+title: "AgentMail"
+description: "Load messages from an AgentMail inbox as LangChain Documents."
+---
+
+`AgentMailLoader` streams messages from an [AgentMail](https://agentmail.to) inbox as LangChain `Document`s—one document per message, plain-text body as `page_content`, sender / subject / labels / thread / attachment metadata on `metadata`. Useful for indexing an inbox into a vector store for RAG over email.
+
+## Overview
+
+| Class | Package |
+|:------|:--------|
+| `AgentMailLoader` | [`langchain-agentmail`](https://pypi.org/project/langchain-agentmail/) |
+
+## Setup
+
+Install the package:
+
+```bash
+pip install -qU langchain-agentmail
+```
+
+Set your AgentMail API key (get one at [agentmail.to](https://agentmail.to)):
+
+```python
+import getpass
+import os
+
+if not os.environ.get("AGENTMAIL_API_KEY"):
+    os.environ["AGENTMAIL_API_KEY"] = getpass.getpass("AgentMail API key:\n")
+```
+
+## Instantiation
+
+```python
+from langchain_agentmail import AgentMailLoader
+
+loader = AgentMailLoader(
+    inbox_id="ib_abc123",
+    labels=["inbox"],  # optional — filter messages by label
+    limit=100,         # optional — cap the number of messages loaded
+)
+```
+
+## Load
+
+```python
+docs = loader.load()
+print(docs[0].page_content[:200])
+print(docs[0].metadata)
+```
+
+Each `Document` includes the following metadata keys (when present):
+
+- `inbox_id`, `message_id`, `thread_id`
+- `from`, `to`, `cc`, `subject`, `labels`, `timestamp`
+- `has_attachments`, `attachments`: a list of `{attachment_id, filename, content_type, size}`
+
+To download attachment bytes, pair the loader with `AgentMailGetAttachmentTool` from the toolkit—it returns a presigned download URL.
+
+## Lazy load
+
+For larger inboxes, stream documents one at a time instead of materializing the full list:
+
+```python
+for doc in loader.lazy_load():
+    print(doc.metadata["subject"])
+```
+
+## Indexing into a vector store
+
+```python
+from langchain_core.vectorstores import InMemoryVectorStore
+from langchain_openai import OpenAIEmbeddings
+
+docs = AgentMailLoader(inbox_id="ib_abc123", limit=200).load()
+
+store = InMemoryVectorStore.from_documents(docs, OpenAIEmbeddings())
+retriever = store.as_retriever(search_kwargs={"k": 5})
+
+retriever.invoke("Q3 invoice from acme")
+```
+
+## API reference
+
+The package source lives at [github.com/agentmail-to/langchain-agentmail](https://github.com/agentmail-to/langchain-agentmail).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/document_loaders/agentmail.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

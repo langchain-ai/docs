@@ -1,0 +1,272 @@
+---
+title: Build a SQL agent
+sidebarTitle: SQL agent
+---
+
+import ChatModelTabsPy from '/snippets/chat-model-tabs.mdx';
+import ChatModelTabsJS from '/snippets/chat-model-tabs-js.mdx';
+import SqlAgentDownloadChinookPy from '/snippets/code-samples/sql-agent-download-chinook-py.mdx';
+import SqlAgentDownloadChinookJs from '/snippets/code-samples/sql-agent-download-chinook-js.mdx';
+import SqlAgentExploreDatabasePy from '/snippets/code-samples/sql-agent-explore-database-py.mdx';
+import SqlAgentToolsPy from '/snippets/code-samples/sql-agent-tools-py.mdx';
+import SqlAgentSystemPromptPy from '/snippets/code-samples/sql-agent-system-prompt-py.mdx';
+import SqlAgentCreateAgentPy from '/snippets/code-samples/sql-agent-create-agent-py.mdx';
+import SqlAgentRunAgentPy from '/snippets/code-samples/sql-agent-run-agent-py.mdx';
+import SqlAgentHitlMiddlewarePy from '/snippets/code-samples/sql-agent-hitl-middleware-py.mdx';
+import SqlAgentHitlRunPy from '/snippets/code-samples/sql-agent-hitl-run-py.mdx';
+import SqlAgentHitlResumePy from '/snippets/code-samples/sql-agent-hitl-resume-py.mdx';
+import SqlAgentRunQueryJs from '/snippets/code-samples/sql-agent-run-query-js.mdx';
+import SqlAgentSanitizeSqlJs from '/snippets/code-samples/sql-agent-sanitize-sql-js.mdx';
+import SqlAgentExecuteSqlJs from '/snippets/code-samples/sql-agent-execute-sql-js.mdx';
+import SqlAgentSystemPromptJs from '/snippets/code-samples/sql-agent-system-prompt-js.mdx';
+import SqlAgentCreateAgentJs from '/snippets/code-samples/sql-agent-create-agent-js.mdx';
+import SqlAgentRunAgentJs from '/snippets/code-samples/sql-agent-run-agent-js.mdx';
+import SqlAgentStudioPy from '/snippets/code-samples/sql-agent-studio-py.mdx';
+import SqlAgentStudioJs from '/snippets/code-samples/sql-agent-studio-js.mdx';
+import SqlAgentHitlMiddlewareJs from '/snippets/code-samples/sql-agent-hitl-middleware-js.mdx';
+import SqlAgentHitlRunJs from '/snippets/code-samples/sql-agent-hitl-run-js.mdx';
+import SqlAgentHitlResumeJs from '/snippets/code-samples/sql-agent-hitl-resume-js.mdx';
+
+## Overview
+
+In this tutorial, you will learn how to build an agent that can answer questions about a SQL database using LangChain [agents](/oss/javascript/langchain/agents).
+
+At a high level, the agent will:
+
+1. Fetch the available tables and schemas from the database
+1. Decide which tables are relevant to the question
+1. Fetch the schemas for the relevant tables
+1. Generate a query based on the question and information from the schemas
+1. Double-check the query for common mistakes using an LLM
+1. Execute the query and return the results
+1. Correct mistakes surfaced by the database engine until the query is successful
+1. Formulate a response based on the results
+
+<Warning>
+Building Q&A systems of SQL databases requires executing model-generated SQL queries. There are inherent risks in doing this. Make sure that your database connection permissions are always scoped as narrowly as possible for your agent's needs. This will mitigate, though not eliminate, the risks of building a model-driven system.
+</Warning>
+
+### Concepts
+
+The following tutorial covers the following concepts:
+
+- [Tools](/oss/javascript/langchain/tools) for reading from SQL databases
+- LangChain [agents](/oss/javascript/langchain/agents)
+- [Human-in-the-loop](/oss/javascript/langchain/human-in-the-loop) processes
+
+## Setup
+
+<Steps>
+<Step title="Install dependencies">
+
+
+<CodeGroup>
+```bash npm
+npm i langchain @langchain/core sqlite3 zod
+```
+```bash yarn
+yarn add langchain @langchain/core sqlite3 zod
+```
+```bash pnpm
+pnpm add langchain @langchain/core sqlite3 zod
+```
+</CodeGroup>
+
+
+</Step>
+<Step title="Set up LangSmith">
+
+Set up [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=oss-langchain-sql-agent) to inspect what is happening inside your chain or agent. Then set the following environment variables:
+
+```shell
+export LANGSMITH_TRACING="true"
+export LANGSMITH_API_KEY="..."
+```
+
+</Step>
+</Steps>
+
+## Build your SQL agent
+
+<Steps>
+<Step title="Select an LLM">
+
+
+Select a model that supports [tool-calling](/oss/javascript/integrations/providers/overview):
+<ChatModelTabsJS />
+
+
+The output shown in the examples below used OpenAI.
+
+</Step>
+<Step title="Configure the database">
+
+You will be creating a [SQLite database](https://www.sqlitetutorial.net/sqlite-sample-database/) for this tutorial. SQLite is a lightweight database that is easy to set up and use. We will be loading the `chinook` database, which is a sample database that represents a digital media store.
+
+For convenience, we have hosted the database (`Chinook.db`) on a public GCS bucket.
+
+
+<SqlAgentDownloadChinookJs />
+
+
+
+
+</Step>
+<Step title="Add tools for database interactions">
+
+<Warning>
+The following database tools are minimal wrappers for demonstration purposes only. They are not intended to be secure or used in production. Use narrowly scoped database permissions and add application-specific validation before executing model-generated SQL.
+</Warning>
+
+
+We will use the `sqlite3` library to query the database and fetch schemas:
+
+<SqlAgentRunQueryJs />
+
+
+
+</Step>
+<Step title="Create the agent">
+
+
+Before running the command, do a check to check the LLM generated command in ` _safe_sql`:
+
+<SqlAgentSanitizeSqlJs />
+
+Then, execute commands with an `execute_sql` tool:
+
+<SqlAgentExecuteSqlJs />
+
+Use `createAgent` to build a [ReAct agent](https://arxiv.org/pdf/2210.03629) with minimal code. The agent will interpret the request and generate a SQL command. The tools will check the command for safety and then try to execute the command. If the command has an error, the error message is returned to the model. The model can then examine the original request and the new error message and generate a new command. This can continue until the LLM generates the command successfully or reaches an end count. This pattern of providing a model with feedback - error messages in this case - is very powerful.
+
+Initialize the agent with a descriptive system prompt to customize its behavior:
+
+<SqlAgentSystemPromptJs />
+
+Now, create an agent with the model, tools, and prompt:
+
+<SqlAgentCreateAgentJs />
+
+
+</Step>
+<Step title="Run the agent">
+
+
+
+Run the agent on a sample query and observe its behavior:
+
+<SqlAgentRunAgentJs />
+
+```
+human: Which genre, on average, has the longest tracks?
+ai:
+tool: [{"Genre":"Sci Fi & Fantasy","AvgMilliseconds":2911783.0384615385}]
+ai: Sci Fi & Fantasy — average track length ≈ 48.5 minutes (about 2,911,783 ms).
+```
+
+The agent correctly wrote a query, checked the query, and ran it to inform its final response.
+
+<Note>
+    You can inspect all aspects of the above run, including steps taken, tools invoked, what prompts were seen by the LLM, and more in the [LangSmith trace](https://smith.langchain.com/public/653d218b-af67-4854-95ca-6abecb9b2520/r).
+</Note>
+
+
+
+</Step>
+<Step title="(Optional) Use Studio">
+
+
+
+[Studio](/langsmith/studio) provides a "client side" loop as well as memory so you can run this as a chat interface and query the database. You can ask questions like "Tell me the scheme of the database" or "Show me the invoices for the 5 top customers". You will see the SQL command that is generated and the resulting output. The details of how to get that started are below.
+<Accordion title="Run your agent in Studio">
+
+In addition to the previously mentioned packages, you will need to:
+
+```shell
+npm i -g @langchain/langgraph-cli@latest
+```
+
+In directory you will run in, you will need a `langgraph.json` file with the following contents:
+
+```json
+{
+  "dependencies": ["."],
+  "graphs": {
+      "agent": "./sqlAgent.ts:agent",
+      "graph": "./sqlAgentLanggraph.ts:graph"
+  },
+  "env": ".env"
+}
+```
+
+Create a file `sqlAgent.ts` and insert this:
+
+<SqlAgentStudioJs />
+</Accordion>
+
+
+</Step>
+<Step title="Implement human-in-the-loop review">
+
+
+
+It can be prudent to check the agent's SQL queries before they are executed for any unintended actions or inefficiencies.
+
+LangChain agents feature support for built-in [human-in-the-loop middleware](/oss/javascript/langchain/human-in-the-loop) to add oversight to agent tool calls. Let's configure the agent to pause for human review on calling the `execute_sql` tool:
+
+<SqlAgentHitlMiddlewareJs />
+<Note>
+We've added a [checkpointer](/oss/javascript/langchain/short-term-memory) to our agent to allow execution to be paused and resumed. See the [human-in-the-loop guide](/oss/javascript/langchain/human-in-the-loop) for detalis on this as well as available middleware configurations.
+</Note>
+
+On running the agent, it will now pause for review before executing the `execute_sql` tool:
+
+<SqlAgentHitlRunJs />
+```
+...
+
+INTERRUPTED:
+Tool execution pending approval
+
+Tool: execute_sql
+Args: {'query': 'SELECT g.Name AS Genre, AVG(t.Milliseconds) AS AvgTrackLength FROM Track t JOIN Genre g ON t.GenreId = g.GenreId GROUP BY g.Name ORDER BY AvgTrackLength DESC LIMIT 1;'}
+```
+We can resume execution, in this case accepting the query, using [Command](/oss/javascript/langgraph/use-graph-api#combine-control-flow-and-state-updates-with-command):
+
+<SqlAgentHitlResumeJs />
+```
+================================== Ai Message ==================================
+Tool Calls:
+  execute_sql (call_7oz86Epg7lYRqi9rQHbZPS1U)
+ Call ID: call_7oz86Epg7lYRqi9rQHbZPS1U
+  Args:
+    query: SELECT Genre.Name, AVG(Track.Milliseconds) AS AvgDuration FROM Track JOIN Genre ON Track.GenreId = Genre.GenreId GROUP BY Genre.Name ORDER BY AvgDuration DESC LIMIT 5;
+================================= Tool Message =================================
+Name: execute_sql
+
+[('Sci Fi & Fantasy', 2911783.0384615385), ('Science Fiction', 2625549.076923077), ('Drama', 2575283.78125), ('TV Shows', 2145041.0215053763), ('Comedy', 1585263.705882353)]
+================================== Ai Message ==================================
+
+The genre with the longest average track length is "Sci Fi & Fantasy" with an average duration of about 2,911,783 milliseconds, followed by "Science Fiction" and "Drama."
+```
+
+Refer to the [human-in-the-loop guide](/oss/javascript/langchain/human-in-the-loop) for details.
+
+
+</Step>
+</Steps>
+
+## Next steps
+
+For deeper customization, check out [this tutorial](/oss/javascript/langgraph/sql-agent) for implementing a SQL agent directly using LangGraph primitives.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/sql-agent.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

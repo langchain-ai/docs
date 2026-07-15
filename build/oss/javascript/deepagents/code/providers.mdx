@@ -1,0 +1,349 @@
+---
+title: Model providers
+description: Configure any LangChain-compatible model provider for Deep Agents Code
+---
+
+Deep Agents Code supports any [chat model provider compatible with LangChain](/oss/javascript/integrations/chat), unlocking use for virtually any LLM that supports tool calling. Any service that exposes an OpenAI-compatible or Anthropic-compatible API also works out of the box—see [Compatible APIs](/oss/javascript/deepagents/code/config-file#compatible-apis).
+
+## Quickstart
+
+Deep Agents Code integrates automatically with the [following model providers](#provider-reference): no extra configuration needed beyond installing the relevant provider package.
+
+1. **Install provider packages**
+
+    Each model provider requires its corresponding LangChain integration package. These ship as optional extras to keep the application lightweight. OpenAI, Anthropic, and Gemini are included by default. Install any other extra from within a session with `/install`, or from the shell with `dcode --install`:
+
+    <CodeGroup>
+        ```txt In session
+        /install groq
+        ```
+
+        ```bash Shell
+        dcode --install groq
+        ```
+    </CodeGroup>
+
+    Run `/install` with no argument to list the valid extras. To preinstall extras during the initial CLI install, set `DEEPAGENTS_CODE_EXTRAS`:
+
+    ```bash
+    DEEPAGENTS_CODE_EXTRAS="baseten,groq" curl -LsSf https://langch.in/dcode | bash
+    ```
+
+2. **Set credentials**
+
+    Add an API key for your provider with the [`/auth`](/oss/javascript/deepagents/code/credentials#use-%2Fauth-recommended) credential manager:
+
+    ```txt
+    /auth
+    ```
+
+    `/auth` shows a list of available providers and stores credentials for reuse across sessions.
+
+    For non-interactive runs, CI/CD, or anywhere a TUI isn't available, store the same key from the shell with [`dcode auth set`](/oss/javascript/deepagents/code/credentials#manage-credentials-from-the-shell-dcode-auth) or set the provider's environment variable instead. See [Provider credentials](/oss/javascript/deepagents/code/credentials) for the full key resolution order, the [`DEEPAGENTS_CODE_` prefix](/oss/javascript/deepagents/code/configuration#deepagents_code_-prefix) for scoping a key to Deep Agents Code, and the [Provider reference](#provider-reference) for each provider's environment variable.
+
+    To configure model parameters, see [Model parameters](#model-parameters).
+
+## Provider reference
+
+Deep Agents Code is built in Python. Use the [Python provider reference docs](https://docs.langchain.com/oss/python/deepagents/code/providers#provider-reference).
+
+
+
+
+### Model routers and proxies
+
+Model routers like [OpenRouter](https://openrouter.ai/) and [LiteLLM](https://docs.litellm.ai/) provide access to models from multiple providers through a single endpoint.
+
+Use the dedicated integration packages for these services:
+
+
+
+| Router | Package |
+| --- | --- |
+| OpenRouter | [`langchain-openrouter`](/oss/javascript/integrations/chat/openrouter) |
+
+
+**OpenRouter** is a built-in provider—install the extra and use it directly:
+
+<CodeGroup>
+    ```txt In session
+    /install openrouter
+    ```
+
+    ```bash Shell
+    dcode --install openrouter
+    ```
+</CodeGroup>
+
+**LiteLLM** is also a built-in provider:
+
+<CodeGroup>
+    ```txt In session
+    /install litellm
+    ```
+
+    ```bash Shell
+    dcode --install litellm
+    ```
+</CodeGroup>
+
+## Switch models
+
+To switch models in Deep Agents Code, either:
+
+1. **Use the interactive model switcher** with the `/model` command.
+
+    <Note>
+        Not all models appear here. If yours is missing, pass the model name directly (e.g. `/model gpt-5.5`) or add it to `config.toml`.
+    </Note>
+2. **Specify a model name directly** as an argument, e.g. `/model gpt-5.5`. You can use any model supported by the chosen provider, regardless of whether it appears in the list from option 1. The model name will be passed to the API request.
+3. **Specify the model at launch** via `--model`, e.g.
+
+    ```txt
+    dcode --model openai:gpt-5.5
+    ```
+
+<Accordion title="Model resolution order" icon="list-numbers">
+    When Deep Agents Code launches, it resolves which model to use in the following order:
+
+    1. **`--model` flag** always wins when provided.
+    2. **`[models].default`** in `~/.deepagents/config.toml`—the user's intentional long-term preference.
+    3. **`[models].recent`** in `~/.deepagents/config.toml`—the last model switched to via `/model`. Written automatically; never overwrites `[models].default`.
+    4. **Environment auto-detection**: falls back to the first available startup credential, checked in order: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_CLOUD_PROJECT` (Vertex AI).
+
+    This startup fallback intentionally checks only those four credentials. Other supported providers (for example, Groq) are still available via `--model`, `/model`, and saved defaults (`[models].default` / `[models].recent`).
+</Accordion>
+
+### Which models appear in the switcher
+
+The `/model` selector dynamically builds its list from installed provider packages. Expand below for the full criteria and troubleshooting.
+
+<Accordion title="How the switcher builds its model list" icon="list-search">
+    The interactive `/model` selector builds its list from installed provider packages and models configured in `config.toml`.
+
+    A model appears when:
+
+    1. The provider package is installed.
+    2. The model is available from the provider package, a local provider, or your `config.toml`.
+    3. The model profile does not mark text input or output as unsupported.
+
+    If a model is missing, use `/model <provider>:<model>` directly or add it to [`[models.providers.<name>].models`](/oss/javascript/deepagents/code/config-file#adding-models-to-the-interactive-switcher).
+
+    <Tip>
+        Credential status does **not** affect whether a model is listed. You can still select a model with missing credentials. The provider reports an authentication error at request time.
+    </Tip>
+</Accordion>
+
+### Open weights models
+
+If you want to use an open weights model, there are two common paths depending on whether you prefer local or cloud-hosted inference.
+
+**Local inference with Ollama** is the easiest way to get started for free, with no API key required:
+
+1. [Install Ollama](https://ollama.com/) and pull a model, for example:
+
+    ```bash
+    ollama pull qwen3:4b
+    ```
+
+2. Install the Ollama extra:
+
+    <CodeGroup>
+        ```txt In session
+        /install ollama
+        ```
+
+        ```bash Shell
+        dcode --install ollama
+        ```
+    </CodeGroup>
+
+3. Select the model:
+
+    <CodeGroup>
+        ```txt In session
+        /model
+        ```
+
+        ```bash Shell
+        dcode --model ollama:qwen3:4b
+        ```
+    </CodeGroup>
+
+    Use the interactive switcher, or pass the model directly with `/model ollama:qwen3:4b`.
+
+**Cloud-hosted open weights via Groq** gives you fast inference without running anything locally:
+
+1. Get a free API key at [console.groq.com](https://console.groq.com/).
+
+2. Install the Groq extra:
+
+    <CodeGroup>
+        ```txt In session
+        /install groq
+        ```
+
+        ```bash Shell
+        dcode --install groq
+        ```
+    </CodeGroup>
+
+3. Select a model:
+
+    <CodeGroup>
+        ```txt In session
+        /model
+        ```
+
+        ```bash Shell
+        GROQ_API_KEY="your-api-key" dcode --model groq:openai/gpt-oss-120b
+        ```
+    </CodeGroup>
+
+    Use the interactive switcher, or pass the model directly with `/model groq:openai/gpt-oss-120b`.
+
+**Fireworks** is another popular cloud provider for open weights models:
+
+<CodeGroup>
+    ```txt In session
+    /install fireworks
+    /model
+    ```
+
+    ```bash Shell
+    dcode --install fireworks
+    FIREWORKS_API_KEY="your-api-key" dcode --model fireworks:accounts/fireworks/models/deepseek-v4-pro
+    ```
+</CodeGroup>
+
+Use the interactive switcher, or pass the model directly with `/model fireworks:accounts/fireworks/models/deepseek-v4-pro`.
+
+**Baseten** is another cloud provider for open weights models:
+
+<CodeGroup>
+    ```txt In session
+    /install baseten
+    /model
+    ```
+
+    ```bash Shell
+    dcode --install baseten
+    BASETEN_API_KEY="your-api-key" dcode --model baseten:moonshotai/Kimi-K2.7-Code
+    ```
+</CodeGroup>
+
+Use the interactive switcher, or pass the model directly with `/model baseten:moonshotai/Kimi-K2.7-Code`.
+
+<Tip>
+    If you want a provider preinstalled at the same time as the CLI itself, use `DEEPAGENTS_CODE_EXTRAS` during the initial install:
+
+    ```bash
+    DEEPAGENTS_CODE_EXTRAS="fireworks" curl -LsSf https://langch.in/dcode | bash
+    ```
+
+    You can combine multiple providers: `DEEPAGENTS_CODE_EXTRAS="groq,fireworks,ollama"`. If Deep Agents Code is already installed, use `/install <extra>` in a session or `dcode --install <extra>` from the shell instead.
+</Tip>
+
+**Together**, **OpenRouter**, and **Hugging Face** (`langchain-huggingface`) are other options for cloud-hosted open weights. See the [Provider reference](#provider-reference) for credentials and package names.
+
+### Set a default model
+
+You can set a persistent default model that applies to all future CLI launches:
+
+* **Via model selector:** Open `/model`, navigate to the desired model, and press `Ctrl+S` to pin it as the default. Pressing `Ctrl+S` again on the current default clears it.
+* **Via command:** `/model --default provider:model` (e.g., `/model --default anthropic:claude-opus-4-8`)
+* **Via config file:** Set `[models].default` in `~/.deepagents/config.toml` (see [Configuration](/oss/javascript/deepagents/code/configuration)).
+* **From the shell:**
+
+    ```bash
+    dcode --default-model anthropic:claude-opus-4-8
+    ```
+
+To view the current default:
+
+```bash
+dcode --default-model
+```
+
+To clear the default:
+
+* **From the shell:**
+
+    ```bash
+    dcode --clear-default-model
+    ```
+
+* **Via command:** `/model --default --clear`
+* **Via model selector:** Press `Ctrl+S` on the currently pinned default model.
+
+Without a default, Deep Agents Code uses the most recently used model.
+
+### Model parameters
+
+Pass extra constructor kwargs to the model—sampling controls, reasoning/thinking budgets, context window sizes, request timeouts, and anything else the underlying chat-model class accepts. Three places to set them, in priority order (highest first):
+
+1. **One-off at launch with `--model-params`.** JSON string, session-only:
+
+    ```bash
+    # OpenAI reasoning effort
+    dcode --model openai:gpt-5.5 --model-params '{"reasoning": {"effort": "high"}}'
+
+    # Anthropic extended thinking
+    dcode --model anthropic:claude-opus-4-8 --model-params '{"thinking": {"type": "enabled", "budget_tokens": 10000}, "max_tokens": 16000}'
+    ```
+
+2. **Mid-session via `/model --model-params`.** Same JSON syntax—swaps params (and optionally the model) without restarting:
+
+    ```txt
+    /model --model-params '{"temperature": 0.7}' anthropic:claude-opus-4-8
+    /model --model-params '{"num_ctx": 16384}'           # opens selector, applies params to choice
+    ```
+
+3. **Persistent in `config.toml`.** Provider-level defaults (with optional per-model sub-tables) that apply on every launch:
+
+    ```toml
+    [models.providers.anthropic.params]
+    thinking = { type = "enabled", budget_tokens = 10000 }
+    max_tokens = 16000
+
+    [models.providers.openai.params]
+    reasoning = { effort = "high", summary = "auto" }
+    output_version = "responses/v1"
+
+    [models.providers.ollama.params]
+    num_ctx = 16384
+    temperature = 0
+
+    # Per-model override—wins over provider-level keys
+    [models.providers.ollama.params."qwen3:4b"]
+    temperature = 0.5
+    ```
+
+CLI flags override config-file `params` and are session-only (mid-session changes are not persisted). Per-model sub-tables in `config.toml` override provider-level keys (shallow merge—see [Model constructor params](/oss/javascript/deepagents/code/config-file#model-constructor-params) for full semantics). `--model-params` cannot be combined with `--default`.
+
+For retry counts, prefer `--max-retries` or the top-level [`[retries]` config](/oss/javascript/deepagents/code/config-file#retries).
+
+<Tip>
+    Any kwarg accepted by the underlying chat-model constructor is valid. Refer to the provider's reference docs for the full list—e.g. [`ChatAnthropic`](https://reference.langchain.com/python/langchain-anthropic/langchain_anthropic/chat_models/ChatAnthropic), [`ChatOpenAI`](https://reference.langchain.com/python/langchain-openai/langchain_openai/chat_models/base/ChatOpenAI), [`ChatOllama`](https://reference.langchain.com/python/langchain-ollama/langchain_ollama/chat_models/ChatOllama). Unknown kwargs are forwarded to the upstream API request, so newly released parameters work without a CLI update.
+</Tip>
+
+<Note>
+    Don't put credentials (`api_key`) in `params`—use [`api_key_env`](/oss/javascript/deepagents/code/config-file#provider-configuration) to point at an environment variable instead.
+</Note>
+
+To override fields on the model's runtime *profile* (`max_input_tokens`, `tool_calling`, capability flags)—distinct from constructor params—see [Profile overrides](/oss/javascript/deepagents/code/config-file#profile-overrides-advanced).
+
+## Advanced configuration
+
+For detailed configuration of provider params, profile overrides, custom base URLs, compatible APIs, arbitrary providers, and lifecycle hooks, see [Config file](/oss/javascript/deepagents/code/config-file) and [Hooks](/oss/javascript/deepagents/code/hooks).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/deepagents/code/providers.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

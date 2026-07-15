@@ -1,0 +1,265 @@
+---
+title: "Parallel extract integration"
+description: "Integrate with the ParallelExtractTool tool using LangChain Python."
+---
+
+>[Parallel](https://platform.parallel.ai/) is a real-time web search and content extraction platform built for LLMs and AI applications.
+
+`ParallelExtractTool` calls Parallel's [Extract API](https://docs.parallel.ai/extract/extract-quickstart), which returns clean, markdown-formatted content from web pages, with optional focused excerpts driven by a `search_objective`. Pair it with [ParallelSearchTool](/oss/python/integrations/tools/parallel_search) to build a search → extract pipeline.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Package latest |
+| :--- | :--- | :---: | :---: | :---: |
+| [`ParallelExtractTool`](https://reference.langchain.com/python/langchain-parallel/extract_tool/ParallelExtractTool) | [`langchain-parallel`](https://reference.langchain.com/python/langchain-parallel/) | ❌ | ❌ | <a href="https://pypi.org/project/langchain-parallel/" target="_blank"><img src="https://img.shields.io/pypi/v/langchain-parallel?style=flat-square&label=%20&color=orange" alt="PyPI - Latest version" noZoom height="100" class="rounded" /></a> |
+
+## Setup
+
+The integration lives in the `langchain-parallel` package.
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-parallel
+    ```
+    ```bash uv
+    uv add langchain-parallel
+    ```
+</CodeGroup>
+
+### Credentials
+
+Head to [Parallel](https://platform.parallel.ai) to sign up and generate an API key. Set `PARALLEL_API_KEY` in your environment:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("PARALLEL_API_KEY"):
+    os.environ["PARALLEL_API_KEY"] = getpass.getpass("Parallel API key:\n")
+```
+
+## Instantiation
+
+```python
+from langchain_parallel import ParallelExtractTool
+
+tool = ParallelExtractTool()
+
+# Or pass an explicit key, override the base URL, or cap per-URL `full_content` size:
+# tool = ParallelExtractTool(
+#     api_key="your-api-key",
+#     base_url="https://api.parallel.ai",
+#     max_chars_per_extract=5000,
+# )
+```
+
+## Invocation
+
+### Invoke directly with args
+
+```python
+result = tool.invoke(
+    {"urls": ["https://en.wikipedia.org/wiki/Artificial_intelligence"]}
+)
+
+print(result[0]["title"])
+print(result[0]["url"])
+print(result[0]["content"][:200], "...")
+```
+
+Multiple URLs in a single call:
+
+```python
+result = tool.invoke(
+    {
+        "urls": [
+            "https://en.wikipedia.org/wiki/Machine_learning",
+            "https://en.wikipedia.org/wiki/Deep_learning",
+            "https://en.wikipedia.org/wiki/Natural_language_processing",
+        ]
+    }
+)
+
+for item in result:
+    print(item["title"], "—", item["url"])
+```
+
+### Invoke with a ToolCall
+
+Invoking with a model-generated `ToolCall` returns a `ToolMessage`:
+
+```python
+model_generated_tool_call = {
+    "args": {
+        "urls": [
+            "https://en.wikipedia.org/wiki/Climate_change",
+            "https://en.wikipedia.org/wiki/Renewable_energy",
+        ]
+    },
+    "id": "call_123",
+    "name": tool.name,  # "parallel_extract"
+    "type": "tool_call",
+}
+
+result = tool.invoke(model_generated_tool_call)
+```
+
+### Async usage
+
+```python
+async def extract_async():
+    return await tool.ainvoke(
+        {
+            "urls": [
+                "https://en.wikipedia.org/wiki/Python_(programming_language)",
+                "https://en.wikipedia.org/wiki/JavaScript",
+            ]
+        }
+    )
+
+result = await extract_async()
+```
+
+### Focused excerpts
+
+Drive excerpt selection with a `search_objective` (or `search_queries`). Setting `full_content=False` skips the full markdown body and returns only matched excerpts:
+
+```python
+result = tool.invoke(
+    {
+        "urls": ["https://en.wikipedia.org/wiki/Artificial_intelligence"],
+        "search_objective": "What are the main applications and ethical concerns of AI?",
+        "excerpts": {"max_chars_per_result": 2000},
+        "full_content": False,
+    }
+)
+```
+
+### Fetch policy and full-content sizing
+
+Control caching, timeouts, and the per-URL `full_content` cap independently:
+
+```python
+result = tool.invoke(
+    {
+        "urls": ["https://en.wikipedia.org/wiki/Quantum_computing"],
+        "fetch_policy": {
+            "max_age_seconds": 86400,
+            "timeout_seconds": 60,
+            "disable_cache_fallback": False,
+        },
+        "full_content": {"max_chars_per_result": 5000},
+    }
+)
+```
+
+<Note>
+    **`full_content` precedence.** An explicit `FullContentSettings` (or dict) on the call always wins over the tool-level `max_chars_per_extract`. The latter only applies when you pass `full_content=True` as a plain bool.
+</Note>
+
+### Per-URL error handling
+
+Failed URLs are returned as items with `error_type` set, so partial-success is the default:
+
+```python
+result = tool.invoke(
+    {
+        "urls": [
+            "https://en.wikipedia.org/wiki/Artificial_intelligence",
+            "https://this-domain-does-not-exist-12345.com/",
+        ]
+    }
+)
+
+for item in result:
+    if "error_type" in item:
+        print("failed:", item["url"], "—", item["content"])
+    else:
+        print("ok:", item["url"], f"({len(item['content'])} chars)")
+```
+
+### Parameters
+
+#### Required
+
+- `urls`: list of URLs to extract.
+
+#### Optional
+
+- `search_objective`: natural-language description that drives excerpt selection.
+- `search_queries`: list of keyword strings used together with (or in place of) `search_objective`.
+- `excerpts`: per-result excerpt settings. Pass `ExcerptSettings(max_chars_per_result=…)` (or a dict) to control per-result excerpt size; omit for the API default.
+- `full_content`: `True` to return full markdown content (sized by the tool-level `max_chars_per_extract`), `False` to skip it, or `FullContentSettings(max_chars_per_result=…)` for fine-grained control.
+- `fetch_policy`: cache control, e.g. `{"max_age_seconds": 86400, "timeout_seconds": 60}`.
+- `max_chars_total`: cap on combined output length across all URLs.
+- `client_model` / `session_id`: forwarded to Parallel for downstream attribution.
+
+## Chaining
+
+Bind the tool to any tool-calling chat model and drive an agent with [`create_agent`](/oss/python/langchain/agents):
+
+```python
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+
+llm = init_chat_model(model="claude-opus-4-8")
+agent = create_agent(model=llm, tools=[tool])
+
+agent.invoke({"messages": [("human", "Summarize https://en.wikipedia.org/wiki/Quantum_computing")]})
+```
+
+### Search → extract
+
+Hand `ParallelSearchTool` and `ParallelExtractTool` to the same agent. The model uses search to find URLs and extract to drill into the ones it picks.
+
+```python
+from langchain_parallel import ParallelSearchTool
+
+search = ParallelSearchTool()
+extract = ParallelExtractTool()
+agent = create_agent(model=llm, tools=[search, extract])
+
+agent.invoke({
+    "messages": [
+        ("human", "Find a recent peer-reviewed paper on net-energy-gain fusion and summarize it."),
+    ]
+})
+```
+
+## Response format
+
+```python
+[
+    {
+        "url": "https://example.com/article",
+        "title": "Article Title",
+        "content": "# Article Title\n\nMain content formatted as markdown...",
+        "publish_date": "2026-01-15",
+        "excerpts": ["...", "..."],  # if excerpts/search_objective requested
+    },
+    # Failed extractions:
+    {
+        "url": "https://failed-site.com",
+        "title": None,
+        "content": "Error: 404 Not Found",
+        "error_type": "http_error",
+    },
+]
+```
+
+## API reference
+
+For detailed documentation, head to the [`ParallelExtractTool`](https://reference.langchain.com/python/langchain-parallel/extract_tool/ParallelExtractTool) API reference or the [Parallel Extract reference](https://docs.parallel.ai/api-reference/extract/extract).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/tools/parallel_extract.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
