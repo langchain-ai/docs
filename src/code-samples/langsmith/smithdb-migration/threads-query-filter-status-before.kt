@@ -1,0 +1,44 @@
+
+///usr/bin/env jbang "$0" "$@" ; exit $?
+//JAVA 21
+//KOTLIN 2.2.0
+//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.15
+
+// :snippet-start: threads-query-filter-status-before-kt
+// :codegroup-tab: Before
+import com.langchain.smith.client.LangsmithClient
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
+import com.langchain.smith.models.runs.RunQueryParams
+import com.langchain.smith.models.sessions.SessionListParams
+import kotlin.jvm.optionals.getOrNull
+
+// :remove-start:
+fun main() {
+    if (System.getenv("LANGSMITH_API_KEY").isNullOrBlank()) {
+        println("[smithdb-threads-query-filter-status-before] Skipping (LANGSMITH_API_KEY is not set).")
+        return
+    }
+// :remove-end:
+val client: LangsmithClient = LangsmithOkHttpClient.fromEnv()
+
+val project = client.sessions().list(
+    SessionListParams.builder().name("default").limit(1L).build()
+).items().first()
+
+val rootRuns = client.runs().query(
+    RunQueryParams.builder()
+        .addSession(project.id())
+        .isRoot(true)
+        .filter("eq(status, \"error\")")
+        .build()
+).runs()
+for (run in rootRuns) {
+    println("${run.traceId()} ${run.error().getOrNull()}")
+    // :remove-start:
+    break
+    // :remove-end:
+}
+// :remove-start:
+}
+// :remove-end:
+// :snippet-end:
