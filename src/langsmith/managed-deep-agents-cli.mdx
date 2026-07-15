@@ -14,7 +14,7 @@ The `mda` CLI tests and deploys code-first [Managed Deep Agents](/langsmith/mana
 <ManagedDeepAgentsPrivateBetaNote />
 </Note>
 
-For the fastest end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart). For workflow guidance, see [Identity](/langsmith/managed-deep-agents-identity), [Custom tools](/langsmith/managed-deep-agents-tools), [Custom middleware](/langsmith/managed-deep-agents-middleware), [Connectors](/langsmith/managed-deep-agents-connectors), [Schedules](/langsmith/managed-deep-agents-schedules), and [Deploy an agent](/langsmith/managed-deep-agents-deploy).
+For the fastest end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart). For workflow guidance, see [Identity](/langsmith/managed-deep-agents-identity), [Evals](/langsmith/managed-deep-agents-evals), [Custom tools](/langsmith/managed-deep-agents-tools), [Custom middleware](/langsmith/managed-deep-agents-middleware), [Connectors](/langsmith/managed-deep-agents-connectors), [Schedules](/langsmith/managed-deep-agents-schedules), and [Deploy an agent](/langsmith/managed-deep-agents-deploy).
 
 ## Install
 
@@ -64,6 +64,7 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 | `mda --help` | Show CLI help. |
 | `mda --version` | Show the installed CLI version. |
 | `mda init <name>` | Scaffold a TypeScript or Python Managed Deep Agents project. |
+| `mda eval …` | Scaffold, check, and run Harbor-style eval tasks (`mda evals` is a visible alias). |
 | `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
 | `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
 
@@ -97,6 +98,39 @@ The scaffold creates:
 | `README.md` | Local project instructions. |
 | `.env` | Deploy auth and runtime secrets. Do not commit real secrets. |
 | `.gitignore` | Ignores `.env`, `.env.*`, `.mda/`, and dependency caches. |
+| `evals/` | Example Harbor-style eval tasks for local Docker runs. |
+
+## Evaluate projects
+
+Use `mda eval` to scaffold Harbor-style tasks, validate them, and run trials in Docker:
+
+```bash
+mda eval init
+mda eval check .
+mda eval run .
+```
+
+| Subcommand | Use |
+| --- | --- |
+| `mda eval init [path]` | Scaffold the example `evals/` suite, or a single task directory. |
+| `mda eval check [path]` | Validate task layout and local prerequisites before model calls. |
+| `mda eval run [path]` | Run discovered tasks in Docker (default `--environment docker`). |
+
+Common `mda eval run` flags:
+
+| Flag | Use |
+| --- | --- |
+| `--model <provider:model>` | Override the model. Repeat for a matrix. |
+| `--rollouts <n>` | Independent repeats per task/model pair. Defaults to `1`. |
+| `-j` / `--concurrency <n>` | Max parallel trials after shared image warm-up. Defaults to `1`. |
+| `--tasks <pattern>` | Include tasks whose name or path contains the pattern. Repeatable. |
+| `--exclude-tasks <pattern>` | Exclude matching tasks. |
+| `--gate 'reward.mean>=1'` | Fail with exit `2` when mean reward is below the threshold. |
+| `--max-errors <n>` | Fail with exit `3` when trial errors exceed the budget. |
+| `--shard K/N` | Run shard `K` of `N` from the ordered trial plan (1-based `K`). |
+| `--dry-run` | Print a redacted job config without running trials. |
+
+For task layout, verifiers, and identity fixtures, see [Evals](/langsmith/managed-deep-agents-evals).
 
 ## Develop locally
 
@@ -219,6 +253,12 @@ Deploy extracts schedule declarations from static literals, arrays, objects, and
 To configure a managed sandbox, export `sandbox` from `sandbox/index.ts` for TypeScript or `sandbox/__init__.py` for Python. Sandboxes are scoped per thread. `sandbox/setup.sh`, when present, runs once when a new managed sandbox is provisioned for a thread.
 
 For configuration examples and lifecycle behavior, see [Configure a sandbox](/langsmith/managed-deep-agents-deploy#configure-a-sandbox).
+
+### Evals
+
+Put Harbor-style eval tasks under `evals/`. Each task directory includes `instruction.md`, `task.toml`, an `environment/` image, and a `tests/test.sh` verifier. When the project declares [identity](/langsmith/managed-deep-agents-identity), each task also needs `identity.json`.
+
+`mda init` scaffolds an example suite. For existing projects, use `mda eval init`. Run tasks locally with Docker via `mda eval run`. Artifacts land under `.mda/evals/` and are not part of the deploy archive. For the full workflow, see [Evals](/langsmith/managed-deep-agents-evals).
 
 ### Ignored paths
 

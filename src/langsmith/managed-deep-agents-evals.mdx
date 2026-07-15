@@ -1,0 +1,243 @@
+---
+title: Evaluate Managed Deep Agents
+sidebarTitle: Evals
+description: Scaffold Harbor-style eval tasks and run them locally with Docker through the mda CLI.
+---
+
+import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
+
+Evals let you run your Managed Deep Agent against checked-in Harbor-style tasks in isolated Docker containers. Each task describes what the agent should do, runs the compiled agent once, then verifies the result with a shell entrypoint (`tests/test.sh`) and language tests.
+
+<Note>
+<ManagedDeepAgentsPrivateBetaNote />
+</Note>
+
+## Prerequisites
+
+- A Managed Deep Agents project created with `mda init` (or an existing project that already has an agent entry).
+- [Docker](https://docs.docker.com/get-docker/) running locally.
+- Model credentials in the project `.env` or your shell (for example `OPENAI_API_KEY` for `openai:…` models).
+- The `mda` CLI from `managed-deepagents` (same install as [CLI reference](/langsmith/managed-deep-agents-cli#install)).
+
+`mda eval run` provisions Harbor for you. Override the Harbor binary only if needed with `MDA_HARBOR_BIN`.
+
+## Concepts
+
+| Term | Meaning |
+| --- | --- |
+| **Task** | One checked-in scenario under `evals/` (instruction + image + verifier). |
+| **Trial** | One concrete run: task × model × rollout index. |
+| **Rollout** | An independent repeat of the same task/model pair for variance. |
+| **Reward** | Score written by the verifier (`reward.txt`). `1` means pass for the scaffolded examples. |
+
+## Scaffold example tasks
+
+From your project root:
+
+```bash
+mda eval init
+```
+
+`mda evals` is a visible alias for `mda eval`.
+
+With no path (or with `evals`), the command creates an example suite under `evals/` when that directory does not already exist. `mda init` also scaffolds the same example suite for new projects.
+
+The example suite includes three tasks:
+
+| Task | What it checks |
+| --- | --- |
+| `answer-a-question` | The agent writes `answer.txt` with exactly `PONG`. |
+| `project-layout` | Expected project files are present in `/app`. |
+| `agent-source` | The agent entry source is present and readable. |
+
+To add one more task later:
+
+```bash
+mda eval init evals/my-task
+```
+
+## Task layout
+
+Each task is a Harbor-style directory:
+
+```text
+evals/
+  answer-a-question/
+    instruction.md              # Prompt given to the agent
+    task.toml                   # Timeouts and environment hints
+    identity.json               # Required when the project declares identity
+    environment/
+      Dockerfile                # Trial image (or extends the default)
+    tests/
+      test.sh                   # Verifier entry (writes reward.txt)
+      answer.test.mjs           # TypeScript: node:test assertions
+      # or test_answer.py       # Python: pytest assertions
+```
+
+### Instruction
+
+`instruction.md` is the user-facing task prompt. The agent sees it during the trial. Keep it specific and verifiable.
+
+```markdown
+Write a file named `answer.txt` in the working directory containing exactly the word PONG and nothing else.
+```
+
+### Verifier
+
+`tests/test.sh` is the Harbor verifier entry. The scaffolded scripts run language tests, then write a classic Harbor reward file:
+
+- Pass → `/logs/verifier/reward.txt` contains `1`
+- Fail → `/logs/verifier/reward.txt` contains `0` and a non-zero exit
+
+TypeScript tasks use Node's test runner:
+
+```bash
+node --test /tests/*.test.mjs
+```
+
+Python tasks use pytest:
+
+```bash
+pytest -q /tests
+```
+
+Assertions run against the trial filesystem. The agent working directory is `/app`.
+
+<CodeGroup>
+
+```js tests/answer.test.mjs
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+
+test("answer.txt contains exactly PONG", () => {
+  const text = readFileSync("/app/answer.txt", "utf8").trim();
+  assert.equal(text, "PONG");
+});
+```
+
+```python tests/test_answer.py
+from pathlib import Path
+
+
+def test_answer_is_pong():
+    assert Path("/app/answer.txt").read_text().strip() == "PONG"
+```
+
+</CodeGroup>
+
+### Identity-aware projects
+
+If the project exports [identity](/langsmith/managed-deep-agents-identity) (`identity.ts` or `identity.py`), every eval task must include `identity.json`. Scaffolding adds a default fixture automatically. Customize the fixture when your agent or tests depend on a specific actor, tenant, or claims.
+
+```json identity.json
+{
+  "actor": {
+    "type": "user",
+    "id": "eval_user_1",
+    "email": "eval@example.com"
+  },
+  "tenant": {
+    "id": "acme"
+  },
+  "source": {
+    "provider": "cli"
+  },
+  "claims": {
+    "permissions": ["billing:read"]
+  }
+}
+```
+
+The fixture is injected as the trial identity envelope. It is not left under `/app` as an agent-writable file.
+
+## Check tasks
+
+Validate task discovery and local prerequisites before spending model calls:
+
+```bash
+mda eval check .
+```
+
+Pass a project root or a specific task directory (`evals/answer-a-question`). Fix any missing `identity.json`, duplicate task names, or layout errors before running.
+
+## Run tasks in Docker
+
+```bash
+mda eval run .
+```
+
+Defaults:
+
+| Setting | Default |
+| --- | --- |
+| Environment | `docker` (local Harbor + Docker) |
+| Model | The model from your agent entry, or a supported CLI default |
+| Rollouts | `1` |
+| Concurrency | `1` |
+
+Useful flags:
+
+| Flag | Purpose |
+| --- | --- |
+| `--model <provider:model>` | Override the model. Repeat for a matrix. |
+| `--rollouts <n>` | Independent repeats per task/model pair. |
+| `-j` / `--concurrency <n>` | Max parallel trials after shared image warm-up. |
+| `--tasks <pattern>` | Include tasks whose name or path contains the pattern. Repeatable. |
+| `--exclude-tasks <pattern>` | Exclude matching tasks. |
+| `--gate 'reward.mean>=1'` | Fail the command (exit `2`) when mean reward is below the threshold. |
+| `--max-errors <n>` | Fail (exit `3`) when trial errors exceed the budget. |
+| `--shard K/N` | Run shard `K` of `N` from the ordered trial plan (1-based `K`). |
+| `--dry-run` | Print a redacted job config without running trials. |
+
+Examples:
+
+```bash
+# Run the example suite once
+mda eval run .
+
+# Filter to one task, require a perfect mean reward
+mda eval run . --tasks answer-a-question --gate 'reward.mean>=1'
+
+# Three rollouts with up to three parallel trials
+mda eval run . --rollouts 3 -j 3
+
+# CI matrix sharding
+mda eval run . --rollouts 4 --shard 1/3
+mda eval run . --rollouts 4 --shard 2/3
+mda eval run . --rollouts 4 --shard 3/3
+```
+
+Artifacts and per-trial logs land under `.mda/evals/runs/<run-id>/`. That directory is local output; do not commit it.
+
+### Exit codes
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Job completed; optional gates passed |
+| `1` | Could not start a valid job |
+| `2` | Opt-in quality gate failed |
+| `3` | Errors exceeded `--max-errors` |
+
+A trial with reward `0` is a completed low score, not automatically exit `2`. Use `--gate` when you want CI to fail on quality.
+
+### Sandbox setup scripts
+
+If the project has `sandbox/setup.sh`, eval trials run it once while preparing the trial environment (with `bash`, so bashisms such as `set -o pipefail` are supported). Authored sandbox provider config is ignored during evals; the trial environment owns isolation.
+
+## Day-one workflow
+
+```bash
+# From an existing Managed Deep Agents project
+mda eval init
+mda eval check .
+mda eval run . --gate 'reward.mean>=1'
+```
+
+Edit `instruction.md` and the tests under `tests/` for each task, re-check, then re-run. When a project already has `evals/`, add individual tasks with `mda eval init evals/<name>` instead of scaffolding the suite again.
+
+## Next steps
+
+- [Identity](/langsmith/managed-deep-agents-identity) — when tasks need `identity.json`
+- [CLI reference](/langsmith/managed-deep-agents-cli) — full `mda` command surface
+- [Deploy an agent](/langsmith/managed-deep-agents-deploy) — ship the agent after local evals pass
