@@ -32,9 +32,12 @@ val project = client.sessions().list(
 var runId = "<run-id>"
 var startTime = "<run-start-time-rfc3339>"
 // :remove-start:
+val maxStart = OffsetDateTime.now()
 val foundRun = client.runs().queryV2(
     RunQueryV2Params.builder()
         .addProjectId(project.id())
+        .minStartTime(maxStart.minusMonths(1))
+        .maxStartTime(maxStart)
         .addSelect(RunQueryV2Params.Select.ID)
         .addSelect(RunQueryV2Params.Select.START_TIME)
         .pageSize(1L)

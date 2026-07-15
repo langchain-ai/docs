@@ -2,7 +2,15 @@ import { Client } from "langsmith";
 
 async function findRun(projectId: string) {
   const client = new Client();
-  for await (const run of client.runs.query({ project_ids: [projectId], selects: ["ID", "START_TIME"] })) {
+  const maxStart = new Date();
+  const minStart = new Date(maxStart);
+  minStart.setUTCMonth(minStart.getUTCMonth() - 1);
+  for await (const run of client.runs.query({
+    project_ids: [projectId],
+    min_start_time: minStart.toISOString(),
+    max_start_time: maxStart.toISOString(),
+    selects: ["ID", "START_TIME"],
+  })) {
     return run;
   }
   return null;
