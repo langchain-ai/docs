@@ -11,7 +11,7 @@ PROJECT_ID=$(curl -s "https://api.smith.langchain.com/api/v1/sessions?name=defau
 QUEUE_ID=$(curl -s -X POST "https://api.smith.langchain.com/api/v1/annotation-queues" \
   -H "x-api-key: $LANGSMITH_API_KEY" \
   -H "Content-Type: application/json" \
-  -d "$(jq -n '{name: "docs-smithdb-migration"}')" | jq -r '.id')
+  -d "$(jq -n --arg name "docs-smithdb-migration-$(date +%s%N)-$RANDOM" '{name: $name}')" | jq -r '.id')
 [ -n "$QUEUE_ID" ] && [ "$QUEUE_ID" != "null" ] || { echo "error: could not create annotation queue" >&2; exit 1; }
 FOUND=$(curl -s -X POST "https://api.smith.langchain.com/v2/runs/query" \
   -H "x-api-key: $LANGSMITH_API_KEY" \

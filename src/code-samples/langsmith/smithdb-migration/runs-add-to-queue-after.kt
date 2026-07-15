@@ -29,7 +29,9 @@ projectId = client.sessions()
     .list(SessionListParams.builder().name("default").limit(1L).build())
     .items().first().id()
 queueId = client.annotationQueues().annotationQueues(
-    AnnotationQueueAnnotationQueuesParams.builder().name("docs-smithdb-migration").build()
+    AnnotationQueueAnnotationQueuesParams.builder()
+        .name("docs-smithdb-migration-" + java.util.UUID.randomUUID())
+        .build()
 ).id()
 // :remove-end:
 val runs = client.runs().queryV2(

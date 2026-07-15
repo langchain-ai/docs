@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"time"
 
 	"github.com/langchain-ai/langsmith-go"
 )
@@ -26,7 +27,7 @@ if err != nil {
 }
 projectID = sessions.Items[0].ID
 queue, err := client.AnnotationQueues.AnnotationQueues(ctx, langsmith.AnnotationQueueAnnotationQueuesParams{
-	Name: langsmith.F("docs-smithdb-migration"),
+	Name: langsmith.F("docs-smithdb-migration-" + time.Now().Format("20060102150405.000000000")),
 })
 if err != nil {
 	panic(err.Error())
