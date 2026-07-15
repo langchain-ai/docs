@@ -6,7 +6,7 @@ description: Scaffold Harbor-style eval tasks and run them with Docker or LangSm
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 
-Evals let you run your Managed Deep Agent against checked-in Harbor-style tasks in isolated environments. Trials can run locally with Docker or remotely on LangSmith. Each task describes what the agent should do, runs the compiled agent once, then verifies the result with a shell entrypoint (`tests/test.sh`) and language tests.
+Evals let you run your Managed Deep Agent against checked-in [Harbor](https://www.harborframework.com/docs/tasks) tasks in isolated environments. Trials can run locally with Docker or remotely on LangSmith. Each task describes what the agent should do, runs the compiled agent once, then grades the result with a Harbor verifier.
 
 <Note>
 <ManagedDeepAgentsPrivateBetaNote />
@@ -29,7 +29,7 @@ Evals let you run your Managed Deep Agent against checked-in Harbor-style tasks 
 | **Task** | One checked-in scenario under `evals/` (instruction + image + verifier). |
 | **Trial** | One concrete run: task × model × rollout index. |
 | **Rollout** | An independent repeat of the same task/model pair for variance. |
-| **Reward** | Score written by the verifier (`reward.txt`). `1` typically means pass. |
+| **Reward** | Numeric score written by the verifier to `/logs/verifier/` (`reward.txt` or `reward.json`). |
 
 ## Scaffold tasks
 
@@ -49,73 +49,54 @@ mda evals init evals/my-task
 
 ## Task layout
 
-Each task is a Harbor-style directory:
+Each task is a Harbor task directory under `evals/`. The layout matches Harbor’s [task structure](https://www.harborframework.com/docs/tasks):
 
 ```text
 evals/
   my-task/
     instruction.md              # Prompt given to the agent
-    task.toml                   # Timeouts and environment hints
+    task.toml                   # Timeouts, metadata, verifier env
     identity.json               # Required when the project declares identity
     environment/
-      Dockerfile                # Trial image (or extends the default)
+      Dockerfile                # Trial image
     tests/
-      test.sh                   # Verifier entry (writes reward.txt)
-      answer.test.mjs           # TypeScript: node:test assertions
-      # or test_answer.py       # Python: pytest assertions
+      test.sh                   # Verifier entrypoint
+      # optional helpers used by test.sh
 ```
 
 ### Instruction
 
-`instruction.md` is the user-facing task prompt. The agent sees it during the trial. Keep it specific and verifiable.
-
-```markdown
-Write a file named `answer.txt` in the working directory containing exactly the word PONG and nothing else.
-```
+`instruction.md` is the natural-language task description Harbor shows the agent. Keep it specific and verifiable.
 
 ### Verifier
 
-`tests/test.sh` is the Harbor verifier entry. The scaffolded scripts run language tests, then write a classic Harbor reward file:
+After the agent finishes, Harbor runs the task [verifier](https://www.harborframework.com/docs/tasks#tests): `tests/test.sh` on Linux (or `tests/test.bat` on Windows). Harbor copies `tests/` to `/tests` in the trial environment and executes the script. Your script decides success or failure by inspecting the agent’s work—usually under `/app`—then **must** write a reward file under `/logs/verifier/`.
 
-- Pass → `/logs/verifier/reward.txt` contains `1`
-- Fail → `/logs/verifier/reward.txt` contains `0` and a non-zero exit
+| Reward file | Format |
+| --- | --- |
+| `/logs/verifier/reward.txt` | A single integer or float (commonly `1` for pass, `0` for fail). |
+| `/logs/verifier/reward.json` | A JSON object of numeric metrics (for multi-dimensional scores). |
 
-TypeScript tasks use Node's test runner:
+Use either format. Harbor accepts both; Managed Deep Agents reads `reward.json` when present and otherwise falls back to `reward.txt`. Prefer absolute paths in the script. You can implement checks in shell, call pytest or another test runner, or run custom grading logic—as long as the reward file is written.
 
-```bash
-node --test /tests/*.test.mjs
-```
-
-Python tasks use pytest:
+Minimal example:
 
 ```bash
-pytest -q /tests
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p /logs/verifier
+
+# Replace with your real checks (files, APIs, unit tests, …).
+if [[ -f /app/output.txt ]]; then
+  echo 1 > /logs/verifier/reward.txt
+else
+  echo 0 > /logs/verifier/reward.txt
+  exit 1
+fi
 ```
 
-Assertions run against the trial filesystem. The agent working directory is `/app`.
-
-<CodeGroup>
-
-```js tests/answer.test.mjs
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { test } from "node:test";
-
-test("answer.txt contains exactly PONG", () => {
-  const text = readFileSync("/app/answer.txt", "utf8").trim();
-  assert.equal(text, "PONG");
-});
-```
-
-```python tests/test_answer.py
-from pathlib import Path
-
-
-def test_answer_is_pong():
-    assert Path("/app/answer.txt").read_text().strip() == "PONG"
-```
-
-</CodeGroup>
+Put helper scripts or test files next to `test.sh` and invoke them from there. For multi-metric rewards, verifier env vars in `task.toml`, and LLM-as-a-judge patterns, see Harbor’s [task structure](https://www.harborframework.com/docs/tasks) and [LLM-as-a-judge](https://www.harborframework.com/docs/tutorials/llm-as-a-judge) docs.
 
 ### Identity-aware projects
 
