@@ -86,7 +86,7 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
     <Note>`session_id` takes a tracing project UUID, the same value every other new method in this guide calls `project_id`. This is a real naming inconsistency in the API, confirmed against the generated SDK types, not a documentation error.</Note>
   </Tab>
   <Tab title="TypeScript">
-    Same mapping as Python: `getRunStats({ projectIds, filter, isRoot })` → `threads.stats(threadId, { session_id, selects })`.
+    `getRunStats({ projectIds, filter, isRoot })` maps to `threads.stats(threadId, { session_id, selects })`: `session_id` replaces `projectIds` and takes a single project UUID, not a list; `filter`/`isRoot` are dropped in favor of scoping by the `threadId` path param; `selects` is required (at least one value, from a 17-value enum).
   </Tab>
   <Tab title="Java">
     `runs().stats()` takes a 23-field `RunStatsQueryParams` (only `session`, `filter`, `isRoot` used here). `threads().stats(threadId, params)` takes `sessionId` and `selects` (required, 17-value enum).
@@ -120,10 +120,22 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
     <Note>The legacy stats response is a union of a flat shape and a grouped-by-key map (when `group_by`/`groups` are set). Only the flat variant matters here, since scoping to a single thread never uses grouping.</Note>
   </Tab>
   <Tab title="TypeScript">
-    Same field mapping as Python.
+    | Legacy `RunStats` field | New `ThreadStats` field | Notes |
+    |---|---|---|
+    | `run_count` | `turns` | Renamed |
+    | `latency_p50` | `latency_p50_seconds` | Renamed, unit made explicit |
+    | `latency_p99` | `latency_p99_seconds` | Renamed |
+    | `last_run_start_time` | `last_start_time` | Renamed |
+    | `prompt_tokens`, `completion_tokens`, `total_tokens` | Unchanged | Same names |
+    | `prompt_cost`, `completion_cost`, `total_cost` | Unchanged | Same names |
+    | `*_token_details`, `*_cost_details` | Unchanged | Same names |
+    | `feedback_stats` | Unchanged | Same name |
+    | *(needed a second `listRuns` call sorted ascending)* | `first_start_time` | New: no longer needs a second API call |
+    | *(not available)* | `last_end_time` | New |
+    | `first_token_p50`/`first_token_p99`, `median_tokens`, token-count percentiles, `run_facets`, `error_rate`, `streaming_rate`, `cost_p50`/`cost_p99` | *(removed)* | legacy-only, no new equivalent |
   </Tab>
   <Tab title="Java">
-    Same field mapping. `RunStatsResponse.runStats()` reliably decodes to the flat `RunStats` variant for a non-grouped query in the current Java binding.
+    `RunStatsResponse.runStats()` reliably decodes to the flat `RunStats` variant for a non-grouped query in the current Java binding.
 
     | Before (legacy `RunStats` method) | After (new `ThreadStats` method) | Notes |
     |---|---|---|
@@ -140,7 +152,7 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
     | `firstTokenP50()`/`firstTokenP99()`, `medianTokens()`, token-count percentiles, `runFacets()`, `errorRate()`, `streamingRate()`, `costP50()`/`costP99()` | *(removed)* | legacy-only, no new equivalent |
   </Tab>
   <Tab title="Go">
-    Same field mapping, but the Go binding's `RunStatsResponseUnion` can misdecode a flat (non-grouped) response as the grouped-map variant, a known ambiguity between `RunStatsResponseRunStats` and `RunStatsResponseMap`. Handle both cases defensively with a type switch, as shown below.
+    The Go binding's `RunStatsResponseUnion` can misdecode a flat (non-grouped) response as the grouped-map variant, a known ambiguity between `RunStatsResponseRunStats` and `RunStatsResponseMap`. Handle both cases defensively with a type switch, as shown below.
 
     | Before (legacy `RunStats` field) | After (new `ThreadStats` field) | Notes |
     |---|---|---|
@@ -157,7 +169,7 @@ Compute aggregate stats for a single thread (turn count, latency percentiles, to
     | `FirstTokenP50`/`FirstTokenP99`, `MedianTokens`, token-count percentiles, `RunFacets`, `ErrorRate`, `StreamingRate`, `CostP50`/`CostP99` | *(removed)* | legacy-only, no new equivalent |
   </Tab>
   <Tab title="cURL">
-    JSON response fields match Python `snake_case`.
+    JSON response fields use `snake_case`, matching the table below.
 
     | Before (legacy `RunStats` field) | After (new `ThreadStats` field) | Notes |
     |---|---|---|

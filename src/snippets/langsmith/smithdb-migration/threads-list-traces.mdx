@@ -90,7 +90,17 @@ Retrieve all traces belonging to a specific thread within a project.
     | *(not available)* | `page_size` + `cursor` | The new method adds cursor pagination |
   </Tab>
   <Tab title="TypeScript">
-    Same mapping as Python, with `snake_case` field names: `threadId` (path param), `project_id`, `filter`, `selects`, `page_size`, `cursor`. `isRoot` and `order` have no new equivalent: results are always sorted by `start_time` ascending, a fixed server-side order.
+    `readThread`'s `isRoot` has no new equivalent. `listTraces` always returns traces (root runs) only, matching its name. `readThread`'s `order` (asc/desc) also has no new equivalent: results are always sorted by `start_time` ascending, a fixed server-side order.
+
+    | Before (`readThread`) | After (`listTraces`) | Notes |
+    |---|---|---|
+    | `threadId` | `threadId` (path param) | Unchanged |
+    | `projectId` XOR `projectName` | `project_id` | The new method takes only the UUID |
+    | `isRoot` | *(not available)* | The new method always returns traces (root runs) only |
+    | `order` | *(not available)* | No sort/order field on the new method |
+    | `filter` | `filter` | Same syntax, now evaluated against each root trace run |
+    | `select` (arbitrary run field list) | `selects` | The new method uses a 24-value uppercase enum |
+    | *(not available)* | `page_size` + `cursor` | The new method adds cursor pagination |
   </Tab>
   <Tab title="Java">
     No query parameters to map. There was no dedicated method. `listTraces(threadId, params)` takes `projectId`, `filter`, `pageSize`, `cursor`, `selects` (24-value enum). Results are always sorted by `startTime` ascending, a fixed server-side order.
@@ -130,7 +140,27 @@ Retrieve all traces belonging to a specific thread within a project.
     | `child_runs`, `child_run_ids` | *(not available)* | No embedded child runs; use `traces.list_runs` for descendant runs |
   </Tab>
   <Tab title="TypeScript">
-    Same shape as Python: `ThreadTrace` with 24 fields, `selects`-gated.
+    The legacy `readThread` returns full `Run` objects (an async generator). The new `ThreadTrace` is lightweight: preview fields (`inputs_preview`/`outputs_preview`) instead of full `inputs`/`outputs`, no embedded child runs. `selects` controls what is populated, the same as `traces.query`.
+
+    | Before (legacy `Run` field, via `readThread`) | After (new `ThreadTrace` field) | Notes |
+    |---|---|---|
+    | `id` | *(not available)* | the legacy root run `id` and `trace_id` were identical; the new API exposes only `trace_id` |
+    | `trace_id` | `trace_id` | Returned by default when `selects` is omitted |
+    | `name` | `name` | Omitted unless included in `selects` |
+    | `start_time` | `start_time` | Omitted unless included in `selects` |
+    | `end_time` | `end_time` | Omitted unless included in `selects` |
+    | `run_type` | `op` | Renamed; encoded as a number instead of a string |
+    | `inputs` | `inputs_preview`, or `inputs` for the untruncated payload | Truncated preview by default; select `INPUTS` for the full payload |
+    | `outputs` | `outputs_preview`, or `outputs` for the untruncated payload | Truncated preview by default; select `OUTPUTS` for the full payload |
+    | `error` | `error_preview`, or `error` for the full message | Truncated summary by default; select `ERROR` for the full error message |
+    | `latency` | `latency` | Native field on the new type |
+    | `total_tokens`, `prompt_tokens`, `completion_tokens` | `total_tokens`, `prompt_tokens`, `completion_tokens` | Unchanged |
+    | `total_cost`, `prompt_cost`, `completion_cost` | `total_cost`, `prompt_cost`, `completion_cost` | Unchanged |
+    | `prompt_token_details`, `completion_token_details` | `prompt_token_details`, `completion_token_details` | Unchanged |
+    | `prompt_cost_details`, `completion_cost_details` | `prompt_cost_details`, `completion_cost_details` | Unchanged |
+    | `first_token_time` | `first_token_time` | Omitted unless included in `selects` |
+    | *(not available)* | `thread_id` | New: the thread UUID this trace belongs to |
+    | `child_runs`, `child_run_ids` | *(not available)* | No embedded child runs; use `traces.listRuns` for descendant runs |
   </Tab>
   <Tab title="Java">
     `ThreadTrace` has 24 `Optional` fields: `traceId`, `threadId`, `name`, `startTime`, `endTime`, `latency`, `op`, token/cost fields with per-category `_details`, `inputsPreview`/`outputsPreview`/`inputs`/`outputs`, `errorPreview`/`error`, `firstTokenTime`.
@@ -156,7 +186,7 @@ Retrieve all traces belonging to a specific thread within a project.
     | `childRuns()`, `childRunIds()` | *(not available)* | No embedded child runs; use `traces().listRuns()` for descendant runs |
   </Tab>
   <Tab title="Go">
-    Same 24 fields as Java/Python, in `PascalCase` Go struct form.
+    `ThreadTrace` has 24 fields, in `PascalCase` Go struct form.
 
     | Before (legacy root `Run` field) | After (new `ThreadTrace` field) | Notes |
     |---|---|---|
@@ -179,7 +209,7 @@ Retrieve all traces belonging to a specific thread within a project.
     | `ChildRuns`, `ChildRunIDs` | *(not available)* | No embedded child runs; use `Traces.ListRuns` for descendant runs |
   </Tab>
   <Tab title="cURL">
-    JSON response fields match Python `snake_case`.
+    JSON response fields use `snake_case`, matching the table below.
 
     | Before (legacy root run field) | After (new `ThreadTrace` field) | Notes |
     |---|---|---|
