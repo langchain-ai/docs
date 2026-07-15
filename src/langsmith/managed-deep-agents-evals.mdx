@@ -1,12 +1,12 @@
 ---
 title: Evaluate Managed Deep Agents
 sidebarTitle: Evals
-description: Scaffold Harbor-style eval tasks and run them locally with Docker through the mda CLI.
+description: Scaffold Harbor-style eval tasks and run them with Docker or LangSmith through the mda CLI.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 
-Evals let you run your Managed Deep Agent against checked-in Harbor-style tasks in isolated Docker containers. Each task describes what the agent should do, runs the compiled agent once, then verifies the result with a shell entrypoint (`tests/test.sh`) and language tests.
+Evals let you run your Managed Deep Agent against checked-in Harbor-style tasks in isolated environments. Trials can run locally with Docker or remotely on LangSmith. Each task describes what the agent should do, runs the compiled agent once, then verifies the result with a shell entrypoint (`tests/test.sh`) and language tests.
 
 <Note>
 <ManagedDeepAgentsPrivateBetaNote />
@@ -15,7 +15,8 @@ Evals let you run your Managed Deep Agent against checked-in Harbor-style tasks 
 ## Prerequisites
 
 - A Managed Deep Agents project created with `mda init` (or an existing project that already has an agent entry).
-- [Docker](https://docs.docker.com/get-docker/) running locally.
+- For `--environment docker` (the default): [Docker](https://docs.docker.com/get-docker/) running locally.
+- For `--environment langsmith`: `LANGSMITH_API_KEY` (or `LANGSMITH_SANDBOX_API_KEY`) in the project `.env` or your shell.
 - Model credentials in the project `.env` or your shell (for example `OPENAI_API_KEY` for `openai:…` models).
 - The `mda` CLI from `managed-deepagents` (same install as [CLI reference](/langsmith/managed-deep-agents-cli#install)).
 
@@ -161,7 +162,7 @@ mda eval check .
 
 Pass a project root or a specific task directory (`evals/answer-a-question`). Fix any missing `identity.json`, duplicate task names, or layout errors before running.
 
-## Run tasks in Docker
+## Run tasks
 
 ```bash
 mda eval run .
@@ -176,10 +177,18 @@ Defaults:
 | Rollouts | `1` |
 | Concurrency | `1` |
 
+Choose where trials run with `--environment`:
+
+| Value | Where trials run |
+| --- | --- |
+| `docker` | Local Harbor + Docker (default). |
+| `langsmith` | Remote Harbor trials on LangSmith sandboxes. |
+
 Useful flags:
 
 | Flag | Purpose |
 | --- | --- |
+| `--environment docker\|langsmith` | Trial backend. Defaults to `docker`. |
 | `--model <provider:model>` | Override the model. Repeat for a matrix. |
 | `--rollouts <n>` | Independent repeats per task/model pair. |
 | `-j` / `--concurrency <n>` | Max parallel trials after shared image warm-up. |
@@ -193,8 +202,11 @@ Useful flags:
 Examples:
 
 ```bash
-# Run the example suite once
+# Run the example suite once (local Docker)
 mda eval run .
+
+# Same tasks on LangSmith sandboxes
+mda eval run . --environment langsmith
 
 # Filter to one task, require a perfect mean reward
 mda eval run . --tasks answer-a-question --gate 'reward.mean>=1'
