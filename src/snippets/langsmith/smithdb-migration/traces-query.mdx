@@ -81,16 +81,12 @@ Supports filters (`trace_filter`, `tree_filter`) and field projection (`selects`
 
 <Tabs>
   <Tab title="Python">
-    <Note>
-    `min_start_time` defaults to **24 hours ago** and `max_start_time` defaults to the request time when omitted, narrower than `list_runs`, which returned all historical root runs with no time filter.
-    </Note>
-
     - `session` (a list of project UUIDs) becomes `project_id`, a single UUID; `traces.query` scopes to exactly one project per call.
     - `is_root` is removed: `traces.query` is always scoped to root runs implicitly.
     - The generic `filter` (evaluated against any run) has no direct equivalent; use `trace_filter` or `tree_filter` instead.
     - `trace_filter` and `tree_filter` carry over unchanged; both already existed on `list_runs`.
     - `trace_ids` is new: a fast-path restriction to a known set of trace UUIDs, more efficient at scale than an equivalent `trace_filter`.
-    - `start_time` (no default) becomes `min_start_time`, which defaults to 24 hours ago when omitted (see note above).
+    - `start_time` (no default) becomes `min_start_time`, which defaults to 24 hours ago when omitted.
     - `max_start_time` is new, defaulting to the request time; `list_runs`'s `end_time` filtered by a run's own end timestamp, not a scan-window bound.
     - `select` is renamed `selects`; entries route to `trace_aggregates` (`total_tokens`, `total_cost`, `first_token_time`) or `root_run` (everything else).
   </Tab>
@@ -105,8 +101,6 @@ Supports filters (`trace_filter`, `tree_filter`) and field projection (`selects`
     - `select` is renamed `selects`; entries route to `trace_aggregates` (`total_tokens`, `total_cost`, `first_token_time`) or `root_run` (everything else).
   </Tab>
   <Tab title="Java">
-    `RunQueryParams` (23 fields) → `TraceQueryParams`.
-
     - `session` (`List<String>` of project UUIDs) becomes `projectId`, a single UUID; `traces().query()` scopes to exactly one project per call.
     - `isRoot` is removed: `traces().query()` is always scoped to root runs implicitly.
     - The generic `filter` (evaluated against any run) has no direct equivalent; use `traceFilter` or `treeFilter` instead.
@@ -117,8 +111,6 @@ Supports filters (`trace_filter`, `tree_filter`) and field projection (`selects`
     - `select` is renamed `selects`; entries route to `traceAggregates` (`totalTokens`, `totalCost`, `firstTokenTime`) or `rootRun` (everything else).
   </Tab>
   <Tab title="Go">
-    `RunQueryParams` (23 fields) → `TraceQueryParams`.
-
     - `Session` (`[]string` of project UUIDs) becomes `ProjectID`, a single UUID; `Traces.Query()` scopes to exactly one project per call.
     - `IsRoot` is removed: `Traces.Query()` is always scoped to root runs implicitly.
     - The generic `Filter` (evaluated against any run) has no direct equivalent; use `TraceFilter` or `TreeFilter` instead.
@@ -129,8 +121,6 @@ Supports filters (`trace_filter`, `tree_filter`) and field projection (`selects`
     - `Select` is renamed `Selects`; entries route to `TraceAggregates` (`TotalTokens`, `TotalCost`, `FirstTokenTime`) or `RootRun` (everything else).
   </Tab>
   <Tab title="cURL">
-    `POST /v2/traces/query` body fields: `project_id`, `trace_filter`, `tree_filter`, `trace_ids`, `min_start_time`, `max_start_time`, `selects`, `page_size`, `cursor` (all `snake_case`).
-
     - `session` (a list of project UUIDs) becomes `project_id`, a single UUID.
     - `is_root` is removed: the endpoint is always scoped to root runs implicitly.
     - The generic `filter` has no direct equivalent; use `trace_filter` or `tree_filter` instead. Both already existed on `POST /api/v1/runs/query`.
@@ -145,31 +135,23 @@ Supports filters (`trace_filter`, `tree_filter`) and field projection (`selects`
 
 <Tabs>
   <Tab title="Python">
-    Each returned `Trace` has `root_run` (a `Run`, same shape as the Runs: query response above, gated by `selects`) and `trace_aggregates`, omitted entirely when no aggregate field was selected.
-
     - `root_run` carries the same `Run` shape as Runs: query (`id`, `name`, `run_type`, `status`, and so on), gated by `selects`.
-    - `total_tokens`/`total_cost` move off `root_run` onto `trace_aggregates`, summed across every run in the trace instead of just the root run.
+    - `total_tokens`/`total_cost` move off `root_run` onto `trace_aggregates`, summed across every run in the trace instead of just the root run. `trace_aggregates` is omitted entirely from the response when no aggregate field was selected.
     - `trace_aggregates.first_token_time` is new
   </Tab>
   <Tab title="TypeScript">
-    Same shape and field mapping as Python.
-
     - `root_run` carries the same `Run` shape as Runs: query (`id`, `name`, `run_type`, `status`, and so on), gated by `selects`.
-    - `total_tokens`/`total_cost` move off `root_run` onto `trace_aggregates`, summed across every run in the trace instead of just the root run.
+    - `total_tokens`/`total_cost` move off `root_run` onto `trace_aggregates`, summed across every run in the trace instead of just the root run. `trace_aggregates` is omitted entirely from the response when no aggregate field was selected.
     - `trace_aggregates.first_token_time` is new
   </Tab>
   <Tab title="Java">
-    `Trace` has 2 fields: `rootRun` (`Optional<Run>`) and `traceAggregates` (`Optional<TraceAggregates>`). `TraceAggregates` has `totalCost`, `totalTokens`, `firstTokenTime`.
-
     - `rootRun()` carries the same `RunSchema` shape as Runs: query (`totalTokens()`, `name()`, `runType()`, `status()`, and so on), gated by `selects`.
     - `totalTokens()`/`totalCost()` move off `rootRun()` onto `traceAggregates()`, summed across every run in the trace instead of just the root run.
     - `traceAggregates().firstTokenTime()` is new
   </Tab>
   <Tab title="Go">
-    Same 2-field `Trace` struct, `PascalCase`. Check for an absent `TraceAggregates` via `trace.TraceAggregates.JSON.RawJSON() == ""`, since it is a value type, not a pointer.
-
     - `RootRun` carries the same `Run` shape as Runs: query, gated by `Selects`.
-    - `TotalTokens`/`TotalCost` move off `RootRun` onto `TraceAggregates`, summed across every run in the trace instead of just the root run.
+    - `TotalTokens`/`TotalCost` move off `RootRun` onto `TraceAggregates`, summed across every run in the trace instead of just the root run. Check for an absent `TraceAggregates` via `trace.TraceAggregates.JSON.RawJSON() == ""`, since it is a value type, not a pointer.
     - `TraceAggregates.FirstTokenTime` is new
   </Tab>
   <Tab title="cURL">
