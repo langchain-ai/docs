@@ -346,46 +346,6 @@ def process_spec(spec: dict) -> dict:
             if v2_path:
                 v2_count += 1
 
-    # 1c. Place each v2 endpoint that has a direct v1 counterpart immediately
-    # after it, sharing the v1 tag, so the two versions sit together in the
-    # sidebar. Only /v2/ paths with a matching "/api/v1/..." path are paired;
-    # the rest stay grouped by their own resource tag.
-    paths = spec.get("paths", {})
-    v2_after_v1: dict[str, str] = {}
-    for path in paths:
-        if not path.startswith(V2_PATH_PREFIX):
-            continue
-        if any(path.startswith(p) for p in V2_LABEL_EXCLUDE_PREFIXES):
-            continue
-        v1_path = "/api/v1" + path[len("/v2"):]
-        if v1_path not in paths:
-            continue
-        v2_after_v1[v1_path] = path
-        v1_tags = next(
-            (
-                op["tags"]
-                for op in paths[v1_path].values()
-                if isinstance(op, dict) and op.get("tags")
-            ),
-            None,
-        )
-        if v1_tags:
-            for op in paths[path].values():
-                if isinstance(op, dict) and "tags" in op:
-                    op["tags"] = list(v1_tags)
-
-    if v2_after_v1:
-        v2_targets = set(v2_after_v1.values())
-        reordered: dict = {}
-        for p, methods in paths.items():
-            if p in v2_targets:
-                continue
-            reordered[p] = methods
-            if p in v2_after_v1:
-                vp = v2_after_v1[p]
-                reordered[vp] = paths[vp]
-        spec["paths"] = reordered
-
     # 2. Ensure top-level tags array exists and add x-group.
     if "tags" not in spec:
         spec["tags"] = []
