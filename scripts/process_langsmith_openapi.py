@@ -89,9 +89,24 @@ HIDDEN_PATH_PREFIXES: list[str] = [
     "/v2/sandboxes/internal/",
 ]
 
+# Newer v2 API endpoints (paths under ``/v2/``) are pulled into a dedicated
+# sidebar group so readers notice them, rather than being scattered through the
+# feature groups alongside their v1 counterparts.
+V2_PATH_PREFIX = "/v2/"
+V2_TAG = "v2"
+V2_GROUP = "v2 endpoints"
+
+# v2 paths that are standalone features (not a newer version of a v1 endpoint)
+# stay in their own feature group instead of the v2 group.
+V2_GROUP_EXCLUDE_PREFIXES: list[str] = [
+    "/v2/sandboxes/",
+]
+
 # Map raw tag names to human-readable group headings (``x-group``).
 # Tags not listed here keep their original name as the group heading.
 TAG_GROUPS: dict[str, str] = {
+    # Newer v2 endpoints (see V2_GROUP).
+    V2_TAG: V2_GROUP,
     # Tracing
     "run": "Tracing",
     "runs": "Tracing",
@@ -176,6 +191,7 @@ TAG_GROUPS: dict[str, str] = {
 # Display order for groups in the generated docs sidebar.
 # Groups not listed here are appended alphabetically after the listed ones.
 GROUP_ORDER: list[str] = [
+    V2_GROUP,
     "Tracing",
     "Datasets",
     "Evaluation",
@@ -230,6 +246,40 @@ def process_spec(spec: dict) -> dict:
                 operation["x-hidden"] = True
                 hidden_count += 1
 
+    # 1b. Reassign visible v2 operations to a dedicated group so the newer
+    # endpoints stand out. Runs after hiding so hidden v2 ops stay hidden.
+    v2_count = 0
+    for path, methods in spec.get("paths", {}).items():
+        if not path.startswith(V2_PATH_PREFIX):
+            continue
+        if any(path.startswith(p) for p in V2_GROUP_EXCLUDE_PREFIXES):
+            continue
+        for method, operation in methods.items():
+            if not isinstance(operation, dict):
+                continue
+            if method in ("parameters", "summary", "description", "servers"):
+                continue
+            if operation.get("x-hidden"):
+                continue
+            operation["tags"] = [V2_TAG]
+            v2_count += 1
+
+    # 1c. Move v2-tagged paths to the front of ``paths``. Mintlify orders
+    # auto-generated sidebar groups by the order operations appear in the spec
+    # (not by the ``tags`` array), so the v2 group must lead the paths to render
+    # first, directly under the reference overview page.
+    def _is_v2_path(methods: dict) -> bool:
+        return any(
+            isinstance(op, dict) and op.get("tags") == [V2_TAG]
+            for op in methods.values()
+        )
+
+    paths = spec.get("paths", {})
+    v2_paths = {p: m for p, m in paths.items() if _is_v2_path(m)}
+    if v2_paths:
+        rest = {p: m for p, m in paths.items() if p not in v2_paths}
+        spec["paths"] = {**v2_paths, **rest}
+
     # 2. Ensure top-level tags array exists and add x-group.
     if "tags" not in spec:
         spec["tags"] = []
@@ -272,7 +322,8 @@ def process_spec(spec: dict) -> dict:
 
     print(
         f"Processed {total_count} operations: "
-        f"{hidden_count} hidden, {total_count - hidden_count} public",
+        f"{hidden_count} hidden, {total_count - hidden_count} public "
+        f"({v2_count} grouped under {V2_GROUP!r})",
         file=sys.stderr,
     )
 
