@@ -90,6 +90,7 @@ LINK_MAPS: list[LinkMap] = [
             "TodoListMiddleware": "langchain/agents/middleware/todo/TodoListMiddleware",
             "LLMToolSelectorMiddleware": "langchain/agents/middleware/tool_selection/LLMToolSelectorMiddleware",
             "ToolRetryMiddleware": "langchain/agents/middleware/tool_retry/ToolRetryMiddleware",
+            "ToolErrorMiddleware": "langchain/agents/middleware/tool_error/ToolErrorMiddleware",
             "ModelRetryMiddleware": "langchain/agents/middleware/model_retry/ModelRetryMiddleware",
             "LLMToolEmulator": "langchain/agents/middleware/tool_emulator/LLMToolEmulator",
             "ContextEditingMiddleware": "langchain/agents/middleware/context_editing/ContextEditingMiddleware",

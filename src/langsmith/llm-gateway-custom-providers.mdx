@@ -14,10 +14,17 @@ In addition to the [built-in providers](/langsmith/llm-gateway#supported-provide
 A custom provider is defined by an **OpenAI Compatible Endpoint** [model configuration](/langsmith/model-configurations) that you save under **Settings → Model configurations** in the [LangSmith UI](https://smith.langchain.com). The gateway uses the following options from the configuration:
 
 - A **base URL**: the upstream endpoint the gateway forwards requests to.
-- A **model name**: injected into each request so callers don't have to specify it.
+- A **model name**: the model identifier your upstream expects.
 - An **API key**: stored as a [workspace secret](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets), never sent by the client.
 
-You then address the saved configuration by name through the `https://gateway.smith.langchain.com/providers/{configName}` route. When a request comes in, the gateway looks up the configuration, resolves the secret, and proxies the call to the configured upstream URL.
+You address the saved configuration by name through one of two routes, depending on whether you want callers to choose the model or want to enforce the configured one:
+
+| Route | Model name in the request body |
+| --- | --- |
+| `https://gateway.smith.langchain.com/providers/{configName}` | Forwarded to the upstream as-is—the client picks the model. |
+| `https://gateway.smith.langchain.com/models/{configName}` | Overridden with the configuration's model name—the client's value is ignored. |
+
+Both routes look up the same configuration, resolve the same secret, and proxy to the same upstream URL; they only differ in whether the model name is enforced.
 
 <Note>
 `{configName}` is the configuration name from your workspace [model configuration](/langsmith/model-configurations). If the name contains characters that aren't URL-safe (such as `/` or spaces), URL-encode them in the path. For example, a configuration named `meta-llama/Llama-3.1-8B-Instruct` becomes `https://gateway.smith.langchain.com/providers/meta-llama%2FLlama-3.1-8B-Instruct/v1/chat/completions`.
@@ -27,30 +34,47 @@ You then address the saved configuration by name through the `https://gateway.sm
 
 1. Add the upstream endpoint's API key as a workspace secret under **Settings → Integrations → Provider Secrets**. Give it a descriptive name (for example, `MY_PROVIDER_API_KEY`).
 1. Go to **Settings → Model configurations** and create a configuration with **OpenAI Compatible Endpoint** as the provider.
-1. Set the **Base URL** to your upstream endpoint (for example, `https://my-inference-server.example.com/v1`) and the **Model Name** to the model identifier the endpoint expects.
+1. Set the **Base URL** to your upstream endpoint (for example, `https://my-inference-server.example.com/v1`) and the **Model Name** to a model identifier the endpoint expects.
 1. Set the **API Key Name** to the secret you created.
 1. Save the configuration with a **name**. This name is what you'll use in the gateway route.
 
 <Note>
-Each configuration pins a single model, since the gateway overrides the request body's `model` with the configured value. To serve multiple models from the same endpoint, create one configuration per model (each with its own name and `/providers/{configName}` route).
+The **Model Name** you save only matters if you call the configuration through `/models/{configName}`. Through `/providers/{configName}`, the client's `model` field is sent through unchanged, so a single configuration can serve any model your upstream supports (for example, any model pulled into a shared Ollama instance).
 </Note>
 
 ## 2. Make a call
 
-Call the saved configuration by name. The route is `https://gateway.smith.langchain.com/providers/{configName}`, where `{configName}` is the configuration name you saved in **Settings → Model configurations** (`my-custom-endpoint` in the following examples).
+Call the saved configuration by name (`my-custom-endpoint` in the following examples).
+
+### Any model: `/providers/{configName}`
+
+Use this route when the upstream serves multiple models and you want callers to pick which one:
 
 ```bash
 curl https://gateway.smith.langchain.com/providers/my-custom-endpoint/v1/chat/completions \
     -H "Authorization: Bearer $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
+    -d '{"model":"llama3.1:8b","messages":[{"role":"user","content":"ping"}]}'
+```
+
+The gateway forwards the request body's `model` field to the upstream as-is.
+
+### One model: `/models/{configName}`
+
+Use this route to pin every call through this configuration to a single model, regardless of what the client requests—useful for enforcing model behavior for a team or application:
+
+```bash
+curl https://gateway.smith.langchain.com/models/my-custom-endpoint/v1/chat/completions \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
     -d '{"messages":[{"role":"user","content":"ping"}]}'
 ```
 
-The gateway overrides the request body's `model` field with the model name from the saved configuration, so the value you pass from the client is ignored.
+The gateway overrides the request body's `model` field with the model name from the saved configuration, so any value the client passes (or omitting it, as per the example) is ignored. To serve multiple pinned models from the same upstream, create one configuration per model (each with its own name and `/models/{configName}` route).
 
 ## Supported endpoints
 
-Custom providers use the same allowlist as the built-in OpenAI provider: `POST /v1/chat/completions` (including streaming), `POST /v1/responses`, and the `GET /v1/models` listing endpoints. Any other path returns `501 Not Implemented`.
+Both `/providers/{configName}` and `/models/{configName}` use the same allowlist as the built-in OpenAI provider: `POST /v1/chat/completions` (including streaming), `POST /v1/responses`, and the `GET /v1/models` listing endpoints. Any other path returns `501 Not Implemented`.
 
 ## Next steps
 
