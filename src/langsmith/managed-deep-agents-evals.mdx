@@ -1,12 +1,14 @@
 ---
 title: Evaluate Managed Deep Agents
 sidebarTitle: Evals
-description: Scaffold Harbor-style eval tasks and run them with Docker or LangSmith through the mda CLI.
+description: Scaffold Harbor-style eval tasks, compile a Harbor handoff with mda, and run trials with Harbor.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 
-Evals let you run your Managed Deep Agent against checked-in [Harbor](https://www.harborframework.com/docs/tasks) tasks in isolated environments. Trials can run locally with Docker or remotely on LangSmith. Each task describes what the agent should do, runs the compiled agent once, then grades the result with a Harbor verifier.
+Evals let you run your Managed Deep Agent against checked-in [Harbor](https://www.harborframework.com/docs/tasks) tasks in isolated environments. Managed Deep Agents **compiles** your agent into a Harbor-ready artifact; you run trials with Harbor yourself (local Docker by default, or another Harbor environment you configure).
+
+Each task describes what the agent should do, Harbor runs the compiled agent once, then grades the result with a Harbor verifier.
 
 <Note>
 <ManagedDeepAgentsPrivateBetaNote />
@@ -15,20 +17,19 @@ Evals let you run your Managed Deep Agent against checked-in [Harbor](https://ww
 ## Prerequisites
 
 - A Managed Deep Agents project created with `mda init` (or an existing project that already has an agent entry).
-- For `--environment docker` (the default): [Docker](https://docs.docker.com/get-docker/) running locally.
-- For `--environment langsmith`: `LANGSMITH_API_KEY` (or `LANGSMITH_SANDBOX_API_KEY`) in the project `.env` or your shell.
+- Harbor tasks under `evals/` (scaffold with `mda evals init` if needed).
+- [Docker](https://docs.docker.com/get-docker/) running locally when using Harbor’s default `docker` environment.
 - Model credentials in the project `.env` or your shell (for example `OPENAI_API_KEY` for `openai:…` models).
 - The `mda` CLI from `managed-deepagents` (same install as [CLI reference](/langsmith/managed-deep-agents-cli#install)).
-
-`mda evals run` provisions Harbor for you. Override the Harbor binary only if needed with `MDA_HARBOR_BIN`.
+- [Harbor](https://www.harborframework.com/docs) on your `PATH`, or [`uv`](https://docs.astral.sh/uv/) so you can run `uv run --with harbor …`.
 
 ## Concepts
 
 | Term | Meaning |
 | --- | --- |
 | **Task** | One checked-in scenario under `evals/` (instruction + image + verifier). |
-| **Trial** | One concrete run: task × model × rollout index. |
-| **Rollout** | An independent repeat of the same task/model pair for variance. |
+| **Compile** | `mda evals compile` builds a Harbor handoff under `.mda/evals/` (artifact, adapter, example job config). |
+| **Trial** | One Harbor run of a task against the compiled agent. |
 | **Reward** | Numeric score written by the verifier to `/logs/verifier/` (`reward.txt` or `reward.json`). |
 
 ## Scaffold tasks
@@ -85,7 +86,7 @@ Your script inspects `/app` (or other outputs), then **must** write a reward fil
 | `/logs/verifier/reward.txt` | A single integer or float (commonly `1` for pass, `0` for fail). |
 | `/logs/verifier/reward.json` | A JSON object of numeric metrics (for multi-dimensional scores). |
 
-Use either format. Harbor accepts both; Managed Deep Agents reads `reward.json` when present and otherwise falls back to `reward.txt`. Prefer absolute paths (`/app/...`, `/tests/...`) so the script does not depend on the working directory. You can implement checks in shell, call a test runner, or run custom grading logic—as long as the reward file is written.
+Use either format. Harbor accepts both. Prefer absolute paths (`/app/...`, `/tests/...`) so the script does not depend on the working directory. You can implement checks in shell, call a test runner, or run custom grading logic—as long as the reward file is written.
 
 Minimal example:
 
@@ -131,93 +132,52 @@ If the project exports [identity](/langsmith/managed-deep-agents-identity) (`ide
 
 The fixture is injected as the trial identity envelope. It is not left under `/app` as an agent-writable file.
 
-## Check tasks
+## Compile a Harbor handoff
 
-Validate task discovery and local prerequisites before spending model calls:
-
-```bash
-mda evals check .
-```
-
-Pass a project root or a specific task directory (`evals/my-task`). Fix any missing `identity.json`, duplicate task names, or layout errors before running.
-
-## Run tasks
+From your project root:
 
 ```bash
-mda evals run .
+mda evals compile .
 ```
 
-Defaults:
+Compile requires at least one Harbor task under `evals/` (a subdirectory with `instruction.md` and `tests/`). It writes a handoff under `.mda/evals/`:
 
-| Setting | Default |
+| Path | Contents |
 | --- | --- |
-| Environment | `docker` (local Harbor + Docker) |
-| Model | The model from your agent entry, or a supported CLI default |
-| Rollouts | `1` |
-| Concurrency | `1` |
+| `.mda/evals/artifact/` | Compiled managed agent (manifest + project archive). |
+| `.mda/evals/harbor-adapter/` | Embedded `mda_harbor` adapter Harbor imports to run the agent. |
+| `.mda/evals/harbor-job.json` | Example Harbor job config pointing at your `evals/` dataset. |
 
-Choose where trials run with `--environment`:
-
-| Value | Where trials run |
-| --- | --- |
-| `docker` | Local Harbor + Docker (default). |
-| `langsmith` | Remote Harbor trials on LangSmith sandboxes. |
-
-Useful flags:
+Optional compile flag:
 
 | Flag | Purpose |
 | --- | --- |
-| `--environment docker\|langsmith` | Trial backend. Defaults to `docker`. |
-| `--model <provider:model>` | Override the model. Repeat for a matrix. |
-| `--rollouts <n>` | Independent repeats per task/model pair. |
-| `-j` / `--concurrency <n>` | Max parallel trials after shared image warm-up. |
-| `--tasks <pattern>` | Include tasks whose name or path contains the pattern. Repeatable. |
-| `--exclude-tasks <pattern>` | Exclude matching tasks. |
-| `--gate 'reward.mean>=1'` | Fail the command (exit `2`) when mean reward is below the threshold. |
-| `--max-errors <n>` | Fail (exit `3`) when trial errors exceed the budget. |
-| `--shard K/N` | Run shard `K` of `N` from the ordered trial plan (1-based `K`). |
-| `--dry-run` | Print a redacted job config without running trials. |
+| `--model <provider:model>` | Model recorded in the example job config. Repeat to record a matrix in the artifact manifest; the job config uses the first value. Defaults to the model from your agent entry when omitted. |
 
-Examples:
+`.mda/evals/` is local output. Do not commit it, and it is not part of the deploy archive.
+
+## Run trials with Harbor
+
+`mda evals compile` prints a copy-pasteable Harbor command. From the project root:
 
 ```bash
-# Run the suite once (local Docker)
-mda evals run .
-
-# Same tasks on LangSmith sandboxes
-mda evals run . --environment langsmith
-
-# Filter to one task, require a perfect mean reward
-mda evals run . --tasks my-task --gate 'reward.mean>=1'
-
-# Three rollouts with up to three parallel trials
-mda evals run . --rollouts 3 -j 3
-
-# CI matrix sharding
-mda evals run . --rollouts 4 --shard 1/3
-mda evals run . --rollouts 4 --shard 2/3
-mda evals run . --rollouts 4 --shard 3/3
+PYTHONPATH=.mda/evals/harbor-adapter \
+  uv run --with harbor harbor run --config .mda/evals/harbor-job.json --yes
 ```
 
-Artifacts and per-trial logs land under `.mda/evals/runs/<run-id>/`. That directory is local output; do not commit it.
+If `harbor` is already on your `PATH`, the printed command uses `harbor run` directly instead of `uv run --with harbor`.
 
-### Exit codes
+Edit `.mda/evals/harbor-job.json` to change tasks, model, environment type, concurrency, or attempts. Harbor owns trial orchestration, backends, and reporting—not the `mda` CLI. For Harbor flags and job config fields, see the [Harbor docs](https://www.harborframework.com/docs).
 
-| Exit | Meaning |
-| --- | --- |
-| `0` | Job completed; optional gates passed |
-| `1` | Could not start a valid job |
-| `2` | Opt-in quality gate failed |
-| `3` | Errors exceeded `--max-errors` |
-
-A trial with reward `0` is a completed low score, not automatically exit `2`. Use `--gate` when you want CI to fail on quality.
+Re-run `mda evals compile` after you change the agent or want a fresh example job config (each compile uses a new Harbor jobs directory under `.mda/evals/harbor-jobs/`).
 
 ### Sandbox setup scripts
 
-If the project has `sandbox/setup.sh`, eval trials run it once while preparing the trial environment (with `bash`, so bashisms such as `set -o pipefail` are supported). Authored sandbox provider config is ignored during evals; the trial environment owns isolation.
+If the project has `sandbox/setup.sh`, the Managed Deep Agents Harbor adapter runs it once while preparing the trial environment (with `bash`, so bashisms such as `set -o pipefail` are supported). Authored sandbox provider config is ignored during evals; the trial environment owns isolation.
 
 ## Next steps
 
 - [Identity](/langsmith/managed-deep-agents-identity) — when tasks need `identity.json`
 - [CLI reference](/langsmith/managed-deep-agents-cli) — full `mda` command surface
 - [Deploy an agent](/langsmith/managed-deep-agents-deploy) — ship the agent after local evals pass
+- [Harbor documentation](https://www.harborframework.com/docs) — job config, environments, and trial runners
