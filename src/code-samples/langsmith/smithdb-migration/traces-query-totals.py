@@ -1,0 +1,44 @@
+
+# :snippet-start: traces-query-totals-before-py
+# :codegroup-tab: Before
+from langsmith import Client
+
+client = Client()
+project = client.read_project(project_name="default")
+
+root_runs = list(client.list_runs(project_id=project.id, is_root=True, limit=5))
+
+for root_run in root_runs:
+    print(root_run.trace_id, root_run.total_tokens, root_run.total_cost)
+# :snippet-end:
+
+# :snippet-start: traces-query-totals-after-py
+# :codegroup-tab: After
+import asyncio
+
+from langsmith import Client
+
+
+async def main():
+    client = Client()
+    project = await client.aread_project(project_name="default")
+    count = 0
+    async for trace in client.traces.query(
+        project_id=str(project.id),
+        min_start_time="2026-07-01T00:00:00Z",
+        max_start_time="2026-07-31T23:59:59Z",
+        selects=["NAME", "TOTAL_TOKENS", "TOTAL_COST"],
+    ):
+        count += 1
+        if trace.trace_aggregates is not None:
+            print(
+                trace.root_run.name,
+                trace.trace_aggregates.total_tokens,
+                trace.trace_aggregates.total_cost,
+            )
+        if count >= 5:
+            break
+
+
+asyncio.run(main())
+# :snippet-end:
