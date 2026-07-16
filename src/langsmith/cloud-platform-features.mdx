@@ -23,44 +23,55 @@ The maximum payload size for all requests sent to Cloud deployments is 25 MB. A
 
 ## Deployment types
 
-For simplicity, the control plane offers two deployment types with different resource allocations: `Development` and `Production`.
+The control plane offers two deployment types: Serverless and Dedicated. Each is available in three sizes: Small, Medium, and Large.
 
-| **Deployment Type** | **CPU/Memory**  | **Scaling**         | **Database**                                                                     |
-|---------------------|-----------------|---------------------|----------------------------------------------------------------------------------|
-| Development         | 1 CPU, 1 GB RAM | Up to 1 replica   | 10 GB disk, no backups                                                           |
-| Production          | 2 CPU, 2 GB RAM | Up to 10 replicas | Autoscaling disk, automatic backups, highly available (multi-zone configuration) |
+Organizations still on previous pricing continue to create Development and Production deployments until October 1, 2026. Those types do not include scale to zero. To select them with the CLI, pass `--deployment-type dev` or `--deployment-type prod`. For pricing and the transition timeline, see [Manage billing](/langsmith/billing#langsmith-deployment-billing). For the full list of `--deployment-type` values, see [`langgraph deploy`](/langsmith/cli#deploy).
 
-CPU and memory resources are per replica.
+| **Deployment type** | **Scaling** | **Database** | **Best for** |
+|---|---|---|---|
+| Serverless | Scales to zero after inactivity, wakes on the next request | Shared, multi-tenant | Background or latency-tolerant agents, and development/testing deployments |
+| Dedicated | Always-on, autoscales across replicas | Dedicated, with automatic backups and high availability | Production workloads in the critical path |
 
 <Warning>
 **Immutable deployment type**
-Once a deployment is created, the deployment type cannot be changed.
+Once a deployment is created, the deployment type cannot be changed. You can still change its [size](#sizes).
 </Warning>
 
-### Production
+### Serverless
 
-`Production` type deployments are suitable for production workloads. For example, select `Production` for customer-facing applications in the critical path.
+Serverless deployments are cost-optimized for background and latency-tolerant agents, as well as development, testing, and preview branches. A Serverless deployment scales to zero after a period of inactivity and wakes on the next request. Compute is billed while resources are provisioned, including during idle time before the deployment scales down. This makes it a good fit for agents that run intermittently or can tolerate a brief startup delay, because the first request after scale-down takes longer to respond while the deployment starts.
 
-Resources for `Production` type deployments can be manually increased on a case-by-case basis depending on use case and capacity constraints. Contact support via [support.langchain.com](https://support.langchain.com) to request an increase in resources.
+For workloads that need consistently low latency or guaranteed uptime, use Dedicated instead. Serverless deployments run on shared, multi-tenant infrastructure.
 
-### Development
+<Note>
+Scale to zero is in [beta](/langsmith/release-stages) and is initially available only for deployments on the new usage-based pricing. The inactivity window before scale-down may change as the feature rolls out. See [Manage billing](/langsmith/billing#langsmith-deployment-billing) for pricing and the transition timeline.
+</Note>
 
-`Development` type deployments are suitable for development and testing. For example, select `Development` for internal testing environments. `Development` type deployments are not suitable for production workloads.
+Agent Server is fault-tolerant: it automatically recovers from transient Redis or Postgres interruptions and retries failed background runs.
 
-<Danger>
-**Preemptible compute infrastructure**
-`Development` type deployments (API server, queue server, and database) are provisioned on preemptible compute infrastructure. This means the compute infrastructure **may be terminated at any time without notice**. This may result in intermittent:
+### Dedicated
 
-* Redis connection timeouts/errors
-* Postgres connection timeouts/errors
-* Failed or retrying background runs
+Dedicated deployments are always-on and built for production workloads in the critical path, such as customer-facing applications. Each Dedicated deployment has its own database with automatic backups and high availability, and autoscales across replicas as load increases. For details, see [Scaling](#scaling).
 
-This behavior is expected. Preemptible compute infrastructure **significantly reduces the cost to provision a `Development` type deployment**. By design, Agent Server is fault-tolerant. The implementation automatically attempts to recover from Redis/Postgres connection errors and retry failed background runs.
+Resources for Dedicated deployments can be increased on a case-by-case basis depending on use case and capacity constraints. Contact support via [support.langchain.com](https://support.langchain.com) to request an increase in resources.
 
-`Production` type deployments are provisioned on durable compute infrastructure, not preemptible compute infrastructure.
-</Danger>
+### Sizes
 
-Database disk size for `Development` type deployments can be manually increased on a case-by-case basis depending on use case and capacity constraints. For most use cases, [TTLs](/langsmith/configure-ttl) should be configured to manage disk usage. Contact support via [support.langchain.com](https://support.langchain.com) to request an increase in resources.
+Both Serverless and Dedicated are available in three sizes: Small, Medium, and Large. Each size sets the compute and memory provisioned for a deployment, and larger sizes autoscale to more replicas. The following table shows the resources included with each size:
+
+| Resource | Serverless S | Serverless M | Serverless L | Dedicated S | Dedicated M | Dedicated L |
+|---|---|---|---|---|---|---|
+| Runtime compute (vCPU) | 1 | 5 | 9 | 3 | 5 | 10 |
+| Runtime memory (GiB) | 3 | 6 | 11 | 6 | 12 | 24 |
+| Database compute (vCPU) | — | — | — | 1 | 2 | 4 |
+| Database memory (GiB) | — | — | — | 4 | 8 | 16 |
+| Storage | Shared | Shared | Shared | Auto-scaling | Auto-scaling | Auto-scaling |
+
+<Note>
+Runtime compute and memory are the total vCPU and memory provisioned across a deployment's containers, rounded to the nearest whole unit. Serverless deployments use a shared, multi-tenant database, so they have no dedicated database resources. Dedicated storage is an auto-scaling disk that grows with usage.
+</Note>
+
+For the price of each size, see the [pricing page](https://www.langchain.com/pricing), which includes a deployment cost calculator. For how Serverless and Dedicated deployments are billed, see [Manage billing](/langsmith/billing#langsmith-deployment-billing).
 
 ## Database provisioning
 
@@ -76,12 +87,8 @@ For self-hosted deployments, see [custom PostgreSQL configuration](/langsmith/se
 
 ## Scaling
 
-Cloud deployments autoscale automatically; you don't configure queue workers, replicas, or pool sizes directly. `Production` deployments scale up to 10 replicas based on three metrics:
+Cloud deployments autoscale automatically; you do not configure queue workers, replicas, or pool sizes directly. A Dedicated deployment adds and removes replicas based on CPU utilization, memory utilization, and the number of pending runs, up to the maximum for its size. Each metric is evaluated independently, and the deployment scales to satisfy whichever requires the most replicas. [Queue workers](/langsmith/agent-server#runtime-architecture) scale on pending run count while [API servers](/langsmith/agent-server#runtime-architecture) scale on CPU and memory, so read traffic does not slow run submission and vice versa. Scale-down is delayed to avoid thrashing under bursty load.
 
-- **CPU utilization** — autoscaler targets 75%.
-- **Memory utilization** — autoscaler targets 75%.
-- **Pending runs** — autoscaler targets 10 pending runs per container.
-
-Each metric is computed independently and the scaling action follows the metric that requires the largest number of containers. Scale-down actions wait 30 minutes before taking effect to avoid thrashing under bursty load. [Queue workers](/langsmith/agent-server#runtime-architecture) scale on pending run count while [API servers](/langsmith/agent-server#runtime-architecture) scale on CPU and memory, so read traffic does not slow down run submission and vice versa.
+Autoscaling changes the number of replicas, but the CPU and memory available to each replica are fixed by the deployment's [size](#sizes). If a deployment is under sustained CPU or memory pressure, upgrade it to a larger size. A size change rolls out as a new revision with no downtime; the deployment type cannot be changed.
 
 Application-level scaling levers (durability modes, async patterns, avoiding synchronous blocking, using `/join` instead of polling) apply to Cloud the same as to self-hosted. See [Scaling on self-hosted](/langsmith/agent-server-scale) for the underlying concepts; the Helm and resource configurations there do not apply to Cloud.

@@ -1,0 +1,34 @@
+```kotlin After
+import java.time.OffsetDateTime
+
+import com.langchain.smith.client.LangsmithClient
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
+import com.langchain.smith.models.sessions.SessionListParams
+import com.langchain.smith.models.traces.TraceQueryParams
+import kotlin.jvm.optionals.getOrNull
+
+val client: LangsmithClient = LangsmithOkHttpClient.fromEnv()
+
+val project = client.sessions().list(
+    SessionListParams.builder().name("default").limit(1L).build()
+).items().first()
+
+val traces = client.traces().query(
+    TraceQueryParams.builder()
+        .projectId(project.id())
+        .minStartTime(OffsetDateTime.parse("2026-07-01T00:00:00Z"))
+        .maxStartTime(OffsetDateTime.parse("2026-07-31T23:59:59Z"))
+        .addSelect(TraceQueryParams.Select.NAME)
+        .addSelect(TraceQueryParams.Select.TOTAL_TOKENS)
+        .addSelect(TraceQueryParams.Select.TOTAL_COST)
+        .build()
+).items()
+
+var count = 0
+for (trace in traces) {
+    val aggregates = trace.traceAggregates().getOrNull() ?: continue
+    println("${trace.rootRun().get().name().getOrNull()} ${aggregates.totalTokens().getOrNull()} ${aggregates.totalCost().getOrNull()}")
+    count++
+    if (count >= 5) break
+}
+```
