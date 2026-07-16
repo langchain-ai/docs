@@ -1,0 +1,107 @@
+---
+title: PaySafe
+description: Scan x402 payments for safety before your agent settles them, with automatic provenance tagging for prompt-injection detection.
+---
+
+[PaySafe](https://paysafe-agent.com) is a payment security firewall for [x402](https://x402.org) micropayments. Agents that pay for APIs and data over x402 get drained in predictable ways: payments triggered by prompt-injected content, replayed payment authorizations, inflated prices, secrets leaking through payment metadata, lookalike tokens, and address poisoning. `langchain-paysafe` gives a LangChain/LangGraph agent an allow / flag / block verdict on every payment before it settles — plus a callback that makes PaySafe's strongest detector work automatically.
+
+## Overview
+
+### Integration details
+
+| Package | Serializable | JS support | Latest |
+| :--- | :---: | :---: | :---: |
+| [langchain-paysafe](https://pypi.org/project/langchain-paysafe/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-paysafe?style=flat-square&label=%20) |
+
+### Tool features
+
+| Returns artifact | Native async | Return data | Pricing |
+| :---: | :---: | :---: | :---: |
+| ❌ | ❌ | JSON verdict (allow/flag/block + per-check reasons, Ed25519-signed) | First 100 scans free per key, then $0.01/scan (paid over x402) |
+
+## Setup
+
+Install `langchain-paysafe`:
+
+```bash
+pip install -U langchain-paysafe
+```
+
+### Credentials
+
+No signup needed — a free API key (100 free scans) is minted automatically on first use and kept on the client. To pin a key across sessions, mint one and set it:
+
+```python
+import os
+
+os.environ["PAYSAFE_API_KEY"] = "psk_..."  # optional; from POST https://paysafe-agent.com/v1/keys
+```
+
+## Instantiation
+
+Create one `PaySafeClient` and share it between the tools and the callback:
+
+```python
+from paysafe_x402 import PaySafeClient
+from langchain_paysafe import PaySafeProvenanceCallback, paysafe_tools
+
+paysafe = PaySafeClient(agent_id="my-agent", api_key=os.environ.get("PAYSAFE_API_KEY"))
+
+tools = paysafe_tools(paysafe)                 # scan / check reputation / report
+callbacks = [PaySafeProvenanceCallback(paysafe)]
+```
+
+The callback is the important part: PaySafe's strongest check catches payments whose *decision* came from content the agent just read (a prompt-injected page or tool result). The callback observes every tool output and retrieval automatically, so the next scan is provenance-tagged and that check runs with real input — no prompt engineering required.
+
+## Invocation
+
+### Invoke directly with args
+
+```python
+scan_tool = next(t for t in tools if t.name == "paysafe_scan_payment")
+
+scan_tool.invoke({
+    "payment": {
+        "network": "eip155:8453",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "amount": "10000",           # atomic units ($0.01 USDC)
+        "pay_to": "0x2096...287C",
+        "resource_url": "https://api.example.com/premium",
+        "nonce": "0x1a2b3c",
+    },
+    "expected_price_usd": 0.01,
+})
+# -> '{"scan_id": "...", "verdict": "allow", "risk_score": 0, "checks": [...], ...}'
+```
+
+A `block` verdict means do not pay; `flag` means pause and confirm intent. Use `direction="incoming"` to screen a 402 offer the agent received before paying it.
+
+## Use within an agent
+
+```python
+from langchain.agents import create_agent  # or your framework's equivalent
+
+agent = create_agent(
+    model="claude-sonnet-4-5",
+    tools=[*tools, *my_other_tools],
+)
+agent.invoke(
+    {"messages": [("user", "Buy the premium market report if it costs $0.01")]},
+    config={"callbacks": callbacks},
+)
+```
+
+To make payments that *cannot* execute when blocked (instead of trusting the model to scan first), wrap your payment executor:
+
+```python
+from langchain_paysafe import guarded_payment
+
+safe_pay = guarded_payment(execute_x402_payment, paysafe)
+# raises PaySafeBlockedError on a block verdict — the executor is never called
+```
+
+## API reference
+
+- Package: [langchain-paysafe on PyPI](https://pypi.org/project/langchain-paysafe/) · [source](https://github.com/corbinallison/paysafe/tree/main/integrations/langchain-paysafe)
+- Service: [PaySafe API](https://paysafe-agent.com/llms.txt) · [OpenAPI](https://paysafe-agent.com/openapi.json)
+- Verdicts are Ed25519-signed and payment-bound; the underlying [paysafe-x402](https://pypi.org/project/paysafe-x402/) client verifies them against a pinned key automatically. PaySafe is advisory and non-custodial — it never touches keys, wallets, or funds.
