@@ -94,7 +94,7 @@ HIDDEN_PATH_PREFIXES: list[str] = [
 # feature groups alongside their v1 counterparts.
 V2_PATH_PREFIX = "/v2/"
 V2_TAG = "v2"
-V2_GROUP = "New v2 endpoints"
+V2_GROUP = "v2 endpoints"
 
 # v2 paths that are standalone features (not a newer version of a v1 endpoint)
 # stay in their own feature group instead of the v2 group.
