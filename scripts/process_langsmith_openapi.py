@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import ssl
 import sys
 import urllib.error
@@ -224,6 +225,25 @@ def _should_hide_by_tags(tags: list[str]) -> bool:
     return any(tag in HIDDEN_TAGS for tag in tags)
 
 
+_BETA_PREFIX_RE = re.compile(r"^\[Beta\]\s*(.+)$")
+_TRAILING_V2_RE = re.compile(r"^(.*\S)\s+V2$")
+
+
+def _normalize_summary(summary: str) -> str:
+    """Rewrite inline markers to a trailing suffix.
+
+    ``"[Beta] X"`` becomes ``"X (Beta)"`` and ``"X V2"`` becomes ``"X (v2)"`` so
+    version and release-stage markers read consistently across the reference.
+    """
+    beta = _BETA_PREFIX_RE.match(summary)
+    if beta:
+        summary = f"{beta.group(1).rstrip()} (Beta)"
+    trailing = _TRAILING_V2_RE.match(summary)
+    if trailing:
+        summary = f"{trailing.group(1)} (v2)"
+    return summary
+
+
 def process_spec(spec: dict) -> dict:
     """Add ``x-hidden`` and ``x-group`` annotations to *spec* in place."""
     hidden_count = 0
@@ -243,30 +263,70 @@ def process_spec(spec: dict) -> dict:
                 operation["x-hidden"] = True
                 hidden_count += 1
 
-    # 1b. Append a "(v2)" marker to visible v2 operation titles so they are
-    # distinguishable from their v1 siblings within the same resource group.
-    # Runs after hiding so hidden v2 ops are skipped; sandboxes are excluded
-    # (v2-only feature, no v1 counterpart). Idempotent on re-runs.
+    # 1b. Standardize endpoint titles: normalize inline markers to a trailing
+    # suffix (see _normalize_summary), and append a "(v2)" marker to visible
+    # non-sandbox /v2/ operations so they are distinguishable from their v1
+    # siblings. Idempotent on re-runs.
     v2_count = 0
     marker = V2_LABEL_SUFFIX.strip()
     for path, methods in spec.get("paths", {}).items():
-        if not path.startswith(V2_PATH_PREFIX):
-            continue
-        if any(path.startswith(p) for p in V2_LABEL_EXCLUDE_PREFIXES):
-            continue
+        is_v2 = path.startswith(V2_PATH_PREFIX) and not any(
+            path.startswith(p) for p in V2_LABEL_EXCLUDE_PREFIXES
+        )
         for method, operation in methods.items():
             if not isinstance(operation, dict):
                 continue
             if method in ("parameters", "summary", "description", "servers"):
                 continue
-            if operation.get("x-hidden"):
+            summary = _normalize_summary((operation.get("summary") or "").strip())
+            if is_v2 and not operation.get("x-hidden"):
+                if not summary:
+                    summary = f"{method.upper()} {path}"
+                if not summary.endswith(marker):
+                    summary = f"{summary}{V2_LABEL_SUFFIX}"
+                v2_count += 1
+            if summary:
+                operation["summary"] = summary
+
+    # 1c. Place each v2 endpoint that has a direct v1 counterpart immediately
+    # after it, sharing the v1 tag, so the two versions sit together in the
+    # sidebar. Only /v2/ paths with a matching "/api/v1/..." path are paired;
+    # the rest stay grouped by their own resource tag.
+    paths = spec.get("paths", {})
+    v2_after_v1: dict[str, str] = {}
+    for path in paths:
+        if not path.startswith(V2_PATH_PREFIX):
+            continue
+        if any(path.startswith(p) for p in V2_LABEL_EXCLUDE_PREFIXES):
+            continue
+        v1_path = "/api/v1" + path[len("/v2"):]
+        if v1_path not in paths:
+            continue
+        v2_after_v1[v1_path] = path
+        v1_tags = next(
+            (
+                op["tags"]
+                for op in paths[v1_path].values()
+                if isinstance(op, dict) and op.get("tags")
+            ),
+            None,
+        )
+        if v1_tags:
+            for op in paths[path].values():
+                if isinstance(op, dict) and "tags" in op:
+                    op["tags"] = list(v1_tags)
+
+    if v2_after_v1:
+        v2_targets = set(v2_after_v1.values())
+        reordered: dict = {}
+        for p, methods in paths.items():
+            if p in v2_targets:
                 continue
-            summary = (operation.get("summary") or "").rstrip()
-            if not summary:
-                summary = f"{method.upper()} {path}"
-            if not summary.endswith(marker):
-                operation["summary"] = f"{summary}{V2_LABEL_SUFFIX}"
-            v2_count += 1
+            reordered[p] = methods
+            if p in v2_after_v1:
+                vp = v2_after_v1[p]
+                reordered[vp] = paths[vp]
+        spec["paths"] = reordered
 
     # 2. Ensure top-level tags array exists and add x-group.
     if "tags" not in spec:
