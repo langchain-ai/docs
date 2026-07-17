@@ -406,7 +406,52 @@ For how memory paths remount under each scope, see [Scope memory with identity](
 
 ### Custom downstream credentials
 
-Set `scoping.credentials: "custom"` and provide either an in-process `resolve` function or a hosted token-exchange `endpoint`. Tools then call `runtime.credentials.for(target)` to mint per-actor headers. Secrets stay in memory and are never written to thread state or traces.
+Use `scoping.credentials: "custom"` when your application can securely obtain a per-actor credential for a downstream target. Provide a `resolve` function; tools then call `runtime.credentials.for(target)` to obtain the headers for that request. Resolved credentials are kept in memory and are never written to thread state or traces.
+
+<Note>
+The token that proves a caller's identity is not automatically a credential for downstream APIs. For example, a Supabase access token lets Managed Deep Agents identify the caller, but it is not a GitHub API token. Your backend or credential service must hold (and, when needed, refresh) the caller's separately authorized GitHub credential.
+</Note>
+
+The following shape lets a user sign in through Supabase and open GitHub pull requests as themselves. After the user has separately authorized GitHub, your application stores the GitHub grant keyed by the Supabase user id. `getGitHubAccessToken` is application code: it looks up and refreshes that grant in your server-side credential store.
+
+```ts identity.ts
+import { defineIdentity, providers } from "managed-deepagents";
+import { getGitHubAccessToken } from "./github-credentials.js";
+
+export const identity = defineIdentity({
+  ingress: {
+    http: {
+      mode: "validated_token",
+      providers: [providers.supabase({ projectRef: "your-project-ref" })],
+    },
+  },
+  tenancy: "single",
+  scoping: {
+    threads: "actor",
+    memory: "actor",
+    credentials: "custom",
+  },
+  credentials: {
+    async resolve({ identity, target }) {
+      if (target.name !== "github") {
+        throw new Error(`No credentials configured for ${target.name}.`);
+      }
+
+      const credential = await getGitHubAccessToken(identity.actor.id);
+      if (!credential) {
+        throw new Error("Connect GitHub before using GitHub tools.");
+      }
+
+      return {
+        headers: { Authorization: `Bearer ${credential.token}` },
+        expiresAt: credential.expiresAt.toISOString(),
+      };
+    },
+  },
+});
+```
+
+In a GitHub tool, request the headers with `await runtime.credentials.for({ kind: "connection", name: "github", intent: "write" })` and pass them to your GitHub client.
 
 To expose LangSmith capabilities to browsers or other untrusted callers, add a [LangSmith connector](/langsmith/managed-deep-agents-connectors/langsmith). It requires identity so capability routes can resolve the caller and prove ownership before calling LangSmith server-side.
 
