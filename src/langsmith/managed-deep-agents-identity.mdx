@@ -1,38 +1,64 @@
 ---
 title: Add identity to Managed Deep Agents
 sidebarTitle: Identity
-description: Declare who is calling, scope threads and memory, and use runtime.identity in Managed Deep Agents.
+description: Give each caller their own threads, memory, and credentials so agents stay private and multi-user safe.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-Identity tells Managed Deep Agents who each run is for and how to partition threads, memory, and credentials. It is opt-in: projects without `identity.ts` or `identity.py` compile and deploy unchanged. When you add an identity declaration, the CLI wires auth, store scoping, and a frozen `runtime.identity` envelope into tools and middleware.
+Agents are not anonymous chat boxes. As soon as more than one person (or one company) uses a deployment, you need a reliable answer to: **whose conversation is this, and whose data may the agent see or act on?**
+
+Identity is how Managed Deep Agents answers that before every run. You declare a small contract once; the runtime then partitions threads, [memory](/langsmith/managed-deep-agents-memory), and credentials so callers cannot bleed into each other.
+
+It is opt-in: projects without `identity.ts` or `identity.py` compile and deploy unchanged. When you add a declaration, the CLI wires auth, store scoping, and a frozen `runtime.identity` object into tools and middleware.
 
 <Note>
 <ManagedDeepAgentsPrivateBetaNote />
 </Note>
 
-## What identity solves
+## Why identity matters for agents
 
-Without identity, every caller shares the same thread and memory boundary. With identity, Managed Deep Agents answers two questions before the agent runs:
+Without identity, a Managed Deep Agent has one shared boundary for the whole deployment. That is fine for a personal prototype. It breaks as soon as real users show up:
+
+| What goes wrong | Example |
+| --- | --- |
+| **Shared memory** | Alice asks the agent to remember her API preferences. Bob opens a new chat and the agent already "knows" Alice's details. |
+| **Shared threads** | Anyone who can hit the deployment can resume or inspect another user's conversation. |
+| **Wrong credentials** | The agent calls GitHub or another API with one shared token, so every user acts as the same account, or you have no safe way to act *as* the signed-in user. |
+
+Deep Agents make this sharper than a simple chatbot: they keep durable memory, resume long-running threads, and call tools on the user's behalf. Identity turns "who is calling?" into hard isolation instead of hoping the prompt or the UI keeps people apart.
+
+## The mental model
+
+Before the agent runs, Managed Deep Agents resolves two facts:
 
 | Question | Term | Example |
 | --- | --- | --- |
 | Who is this run for? | **Actor** | `user_123`, a GitHub login, a guest id |
 | Which customer or org? | **Tenant** (optional) | `acme`, a Slack workspace, a repo |
 
-From those answers, Managed Deep Agents scopes:
+Everything else is derived from those answers:
 
 - **Threads** — who can open or resume a conversation
-- **Memory** — which Context Hub `/memories` slice the run remounts
+- **Memory** — which durable store namespace the run uses
 - **Credentials** — whose token downstream calls carry (managed modes or your own resolver)
 
-Identity is fail-closed: missing required actor or tenant values reject the request instead of falling back to shared state.
+| Layer | Question | Who owns it |
+| --- | --- | --- |
+| **Resolution** | Who is calling, and from which tenant? | Managed Deep Agents (from your ingress config) |
+| **Scoping** | Given that caller, how are conversations and memory partitioned? | You (usually via a [preset](#choose-a-preset)) |
+| **Credentials** | When the agent calls another system, whose token does it use? | You (managed mode or a custom resolver) |
+
+A few plain-language definitions:
+
+- **Actor** — the human or service the run is for. Not "the agent."
+- **Tenant** — the customer or org boundary when one deployment serves many orgs. Not a LangSmith workspace. Single-tenant agents have no tenant.
+- **Fail closed** — if a required actor or tenant is missing, the request is rejected. The runtime never falls back to "everyone's" memory or threads.
 
 ## Add an identity declaration
 
-Create `identity.py` or `identity.ts` next to your agent entry and export a named `identity`. Most projects start from a preset.
+Create `identity.py` or `identity.ts` next to your agent entry and export a named `identity`. Most projects start from a preset—one line that expands to a full, safe config:
 
 <CodeGroup>
 
@@ -50,31 +76,73 @@ export const identity = defineIdentity.preset("private-assistant");
 
 </CodeGroup>
 
+The same contract written out in full (what `private-assistant` expands to):
+
+<CodeGroup>
+
+```python identity.py
+from managed_deepagents import define_identity
+
+identity = define_identity(
+    ingress={"http": "trusted_backend"},
+    tenancy="single",
+    scoping={
+        "threads": "actor",
+        "memory": "actor",
+        "credentials": "actor",
+    },
+)
+```
+
+```ts identity.ts
+import { defineIdentity } from "managed-deepagents";
+
+export const identity = defineIdentity({
+  ingress: { http: "trusted_backend" },
+  tenancy: "single",
+  scoping: {
+    threads: "actor",
+    memory: "actor",
+    credentials: "actor",
+  },
+});
+```
+
+</CodeGroup>
+
+Use the full form when you want every field visible, or when you are assembling a config that does not match a preset. You can also start from a preset and override only the fields that differ—see [Choose a preset](#choose-a-preset) and [Ingress](#ingress-how-managed-deep-agents-learns-who-is-calling).
+
 For the full project layout, see the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference).
 
 When identity is present, `mda` generates the custom auth handler, injects it into the compiled LangGraph app, and only then enables reserved identity headers and token verification.
 
 ## Choose a preset
 
-Presets expand to a full ingress, tenancy, and scoping config. Override any field when you need a different ingress or scope.
+Presets encode the common product shapes so you do not have to invent scoping rules on day one. Override any field when you need a different ingress or scope.
 
-| Preset | Best for | Threads | Memory | Credentials |
+| Preset | Use it when… | Threads | Memory | Credentials |
 | --- | --- | --- | --- | --- |
-| `private-assistant` | Personal agents where each user owns their data | `actor` | `actor` | `actor` |
-| `multi-tenant-saas` | One deployment serving many customers | `actor` | `tenant` | `agent` |
-| `shared-bot` | Channel bots (Slack, Discord) with shared threads | `channel` | `actor` | `agent` |
-| `internal-tool` | Internal apps with per-user threads | `actor` | `actor` | `agent` |
-| `service` | Cron/webhook-only agents with shared memory | _(unset)_ | `agent` | `agent` |
+| `private-assistant` | Each person gets a private 1:1 assistant with their own history and memory | `actor` | `actor` | `actor` |
+| `multi-tenant-saas` | One deployment serves many customer orgs; users share org data but not across orgs | `actor` | `tenant` | `agent` |
+| `shared-bot` | A Slack/Discord-style bot where everyone in the channel shares the thread | `channel` | `actor` | `agent` |
+| `internal-tool` | An internal company agent: one org, private per-user threads | `actor` | `actor` | `agent` |
+| `service` | Cron/webhook-only agents with no human caller and shared memory | _(unset)_ | `agent` | `agent` |
 
-All presets default to `trusted_backend` ingress and `tenancy: "single"`, except `multi-tenant-saas` which sets `tenancy: "multi"`.
+All presets default to `trusted_backend` ingress and `tenancy: "single"`, except `multi-tenant-saas`, which sets `tenancy: "multi"`.
+
+<Tip>
+**How to choose quickly:** One human per conversation who must not see anyone else's data → `private-assistant`. SaaS with customer orgs → `multi-tenant-saas`. Shared channel bot → `shared-bot`. Internal company tool → `internal-tool`. Timer or webhook with no user → `service`.
+</Tip>
 
 ## Ingress: how Managed Deep Agents learns who is calling
 
-Pick one HTTP ingress mode.
+Ingress is only the *how*: how the runtime learns the actor (and tenant) for this request. Pick one HTTP mode.
 
 ### Trusted backend
 
-Your API authenticates the user, then proxies LangGraph requests with a shared ingress secret and reserved identity headers. The browser never sends the secret or raw IdP tokens to Managed Deep Agents.
+Your own API authenticates the user (session, OAuth, etc.), then proxies LangGraph requests with a shared ingress secret and reserved identity headers. The browser never sends the secret or raw IdP tokens to Managed Deep Agents.
+
+This is the default for presets and the usual path when you already have a backend in front of the agent.
 
 Required headers (case-insensitive):
 
@@ -105,6 +173,8 @@ Put `MDA_INGRESS_SECRET` in `.env` for `mda dev` and as a hosted deployment secr
 ### Validated token (browser-direct)
 
 The client sends `Authorization: Bearer <token>`. Managed Deep Agents verifies the token server-side (JWKS, OIDC discovery, opaque introspection, or guest tokens signed by Managed Deep Agents) and maps claims into the identity envelope.
+
+Use this when the browser talks to the deployment directly and you do not want a proxy that asserts actor headers.
 
 <CodeGroup>
 
@@ -145,139 +215,240 @@ export const identity = defineIdentity.preset("internal-tool", {
 
 </CodeGroup>
 
-Built-in provider helpers:
-
-| Helper | Verification | Typical claim mapping |
-| --- | --- | --- |
-| `providers.auth0` | JWKS | `sub` → actor, `org_id` → tenant |
-| `providers.clerk` | JWKS | `sub` → actor |
-| `providers.okta` | JWKS | `sub` → actor |
-| `providers.cognito` | JWKS | `sub` → actor |
-| `providers.entra` | JWKS | `oid` → actor |
-| `providers.google` | JWKS | `sub` → actor, `email` → email |
-| `providers.supabase` | JWKS (default) or `/auth/v1/user` introspection | `sub` → actor |
-| `providers.oidc` | OIDC discovery + JWKS | `sub` → actor |
-| `providers.github` | Opaque introspection via `GET /user` | `login` → actor |
-| `providers.guest` | Guest tokens signed by Managed Deep Agents (HS256) | `sub` → actor |
-
 In `validated_token` mode, your frontend signs the user in with the same IdP you configured, reads an access token (or ID token where applicable), and passes it to the LangGraph client as `Authorization: Bearer <token>`. Do not send refresh tokens or client secrets to the deployment.
-
-| Provider | Where to get the token | Docs |
-| --- | --- | --- |
-| Auth0 | Access token after login (`getAccessTokenSilently`) | [Auth0 SPA SDK](https://auth0.com/docs/libraries/auth0-spa-js) |
-| Clerk | Session JWT (`session.getToken()`) | [Clerk `getToken()`](https://clerk.com/docs/guides/development/making-requests) |
-| Okta | Access token from the Okta Auth JS client | [Okta Auth JS](https://developer.okta.com/docs/guides/auth-js/main/) |
-| Cognito | ID or access token from Amplify Auth or the hosted UI flow | [Amplify Auth](https://docs.amplify.aws/react/build-a-backend/auth/) |
-| Entra | Access token from `@azure/msal-browser` | [MSAL.js](https://learn.microsoft.com/en-us/entra/identity-platform/msal-overview) |
-| Google | ID token from Google Identity Services | [Sign in with Google](https://developers.google.com/identity/gsi/web/guides/overview) |
-| Supabase | `session.access_token` from `@supabase/supabase-js` | [Supabase JavaScript auth](https://supabase.com/docs/reference/javascript/auth-getsession) |
-| OIDC | Access token from your IdP's OIDC client | Your IdP's OIDC documentation |
-| GitHub | OAuth user access token from your app's sign-in flow | [GitHub OAuth apps](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps) |
-| Guest | `token` from `POST /identity/guest` | [Claim a guest token](#claim-a-guest-token) |
 
 When more than one provider is configured, each entry needs an `id`. Managed Deep Agents routes JWT providers by token `iss` and fails closed when the issuer is unknown.
 
-<Tip>
-For Supabase, pass `projectRef` (the subdomain before `.supabase.co`). Managed Deep Agents derives the JWKS URL. Use `introspect: true` only for legacy projects that still need `/auth/v1/user`, and set `SUPABASE_ANON_KEY` on the deployment.
-</Tip>
+### Provider setup guides
 
-## Guest tokens
+<Tabs>
+  <Tab title="Guest tokens">
+    Anonymous visitors get a short-lived, actor-scoped session without signing in. Managed Deep Agents signs guest tokens with `MDA_GUEST_SIGNING_KEY` (HS256) and maps `sub` → actor.
 
-Add `providers.guest(...)` when anonymous visitors should get a short-lived, actor-scoped session without signing in. Managed Deep Agents signs guest tokens with `MDA_GUEST_SIGNING_KEY` (HS256). Set the key in `.env` for `mda dev` and as a hosted deployment secret for `mda deploy`. Rotate it like any other signing secret.
+    | Option | Required | Description |
+    | --- | --- | --- |
+    | `ttl` | No | Token lifetime (for example `"24h"`) |
+    | `actorPrefix` / `actor_prefix` | No | Prefix for generated actor ids (for example `"guest:"`) |
 
-With guest issuance enabled, the deployment exposes a public issuance route:
+    Guest is usually combined with another IdP:
 
-```http
-POST /identity/guest
-```
+    <CodeGroup>
+    ```python identity.py
+    from managed_deepagents import define_identity, providers
 
-### Claim a guest token
+    identity = define_identity.preset(
+        "internal-tool",
+        {
+            "ingress": {
+                "http": {
+                    "mode": "validated_token",
+                    "providers": [
+                        providers.supabase(project_ref="your-project-ref"),
+                        providers.guest(ttl="24h", actor_prefix="guest:"),
+                    ],
+                }
+            }
+        },
+    )
+    ```
 
-To claim a token, send an empty `POST` to the deployment base URL with `Content-Type: application/json`. If the deployment requires a public app key (`LANGGRAPH_AUTH_SECRET`), also send `X-Auth-Key`.
+    ```ts identity.ts
+    import { defineIdentity, providers } from "managed-deepagents";
 
-```bash
-curl -X POST "$LANGGRAPH_API_URL/identity/guest" \
-  -H "Content-Type: application/json"
-```
+    export const identity = defineIdentity.preset("internal-tool", {
+      ingress: {
+        http: {
+          mode: "validated_token",
+          providers: [
+            providers.supabase({ projectRef: "your-project-ref" }),
+            providers.guest({ ttl: "24h", actorPrefix: "guest:" }),
+          ],
+        },
+      },
+    });
+    ```
+    </CodeGroup>
 
-On success, the response body contains a signed JWT:
+    Set `MDA_GUEST_SIGNING_KEY` in `.env` for `mda dev` and as a hosted deployment secret for `mda deploy`.
 
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
-```
+    #### Claim a guest token
 
-Decode the JWT to read the actor id from `sub` (for example, `guest:01932f4a-...` when `actor_prefix` is `guest:`) and the expiry from `exp`. Managed Deep Agents maps `sub` to `runtime.identity.actor.id` on subsequent requests.
+    With guest issuance enabled, the deployment exposes `POST /identity/guest`. Send an empty `POST` with `Content-Type: application/json`. If the deployment requires a public app key (`LANGGRAPH_AUTH_SECRET`), also send `X-Auth-Key`.
 
-### Use the guest token
+    ```bash
+    curl -X POST "$LANGGRAPH_API_URL/identity/guest" \
+      -H "Content-Type: application/json"
+    ```
 
-Send the token on LangGraph and connector requests the same way you send IdP access tokens:
+    On success:
 
-```http
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-```
+    ```json
+    {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+    ```
 
-<CodeGroup>
+    #### Use the guest token
 
-```typescript
-const response = await fetch(`${deploymentUrl}/identity/guest`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-});
-const { token } = (await response.json()) as { token: string };
+    Send the token the same way you send IdP access tokens:
 
-const client = new Client({
-  apiUrl: deploymentUrl,
-  defaultHeaders: { Authorization: `Bearer ${token}` },
-});
-```
+    ```http
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+    ```
 
-```python
-import httpx
-from langgraph_sdk import get_client
+    <CodeGroup>
+    ```typescript
+    const response = await fetch(`${deploymentUrl}/identity/guest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const { token } = (await response.json()) as { token: string };
 
-response = httpx.post(f"{deployment_url}/identity/guest")
-response.raise_for_status()
-token = response.json()["token"]
+    const client = new Client({
+      apiUrl: deploymentUrl,
+      defaultHeaders: { Authorization: `Bearer ${token}` },
+    });
+    ```
 
-client = get_client(
-    url=deployment_url,
-    headers={"Authorization": f"Bearer {token}"},
-)
-```
+    ```python
+    import httpx
+    from langgraph_sdk import get_client
 
-</CodeGroup>
+    response = httpx.post(f"{deployment_url}/identity/guest")
+    response.raise_for_status()
+    token = response.json()["token"]
 
-<Tip>
-For browser apps, proxy guest issuance through your own backend and store the token in an `httpOnly` cookie. That keeps the same guest actor across reloads until `exp` and lets you handle rate limits before calling the deployment.
-</Tip>
+    client = get_client(
+        url=deployment_url,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    ```
+    </CodeGroup>
 
-Reclaim a token when the current one is expired or missing. While a token is still valid, reuse it so the guest keeps the same actor id, threads, and memory scope for the token lifetime.
+    <Tip>
+    For browser apps, proxy guest issuance through your own backend and store the token in an `httpOnly` cookie. That keeps the same guest actor across reloads until `exp` and lets you handle rate limits before calling the deployment.
+    </Tip>
+
+    Reclaim a token when the current one is expired or missing. While a token is still valid, reuse it so the guest keeps the same actor id, threads, and memory scope for the token lifetime.
+  </Tab>
+
+  <Tab title="Supabase">
+    JWKS by default (asymmetric JWTs). Maps `sub` → actor. Pass only one of `projectRef` or `url`.
+
+    | Option | Required | Description |
+    | --- | --- | --- |
+    | `projectRef` / `project_ref` | One of `projectRef` or `url` | Subdomain before `.supabase.co` |
+    | `url` | One of `projectRef` or `url` | Project URL or custom auth domain |
+    | `introspect` | No | `true` for legacy HS256 projects that need `/auth/v1/user` |
+
+    <CodeGroup>
+    ```python identity.py
+    from managed_deepagents import define_identity, providers
+
+    identity = define_identity.preset(
+        "internal-tool",
+        {
+            "ingress": {
+                "http": {
+                    "mode": "validated_token",
+                    "providers": [
+                        providers.supabase(project_ref="your-project-ref"),
+                        providers.guest(ttl="24h", actor_prefix="guest:"),
+                    ],
+                }
+            }
+        },
+    )
+    ```
+
+    ```ts identity.ts
+    import { defineIdentity, providers } from "managed-deepagents";
+
+    export const identity = defineIdentity.preset("internal-tool", {
+      ingress: {
+        http: {
+          mode: "validated_token",
+          providers: [
+            providers.supabase({ projectRef: "your-project-ref" }),
+            providers.guest({ ttl: "24h", actorPrefix: "guest:" }),
+          ],
+        },
+      },
+    });
+    ```
+    </CodeGroup>
+
+    After sign-in, send `session.access_token` from [@supabase/supabase-js](https://supabase.com/docs/reference/javascript/auth-getsession). See also [Supabase Auth](https://supabase.com/docs/guides/auth) and [JWT signing keys](https://supabase.com/docs/guides/auth/signing-keys).
+
+    For legacy introspection, use `introspect: true` and set `SUPABASE_ANON_KEY` on the deployment.
+  </Tab>
+
+  <Tab title="GitHub">
+    Opaque token introspection via `GET https://api.github.com/user`. Maps `login` → actor, `email` → email. `providers.github()` takes no options.
+
+    <CodeGroup>
+    ```python identity.py
+    from managed_deepagents import define_identity, providers
+
+    identity = define_identity.preset(
+        "internal-tool",
+        {
+            "ingress": {
+                "http": {
+                    "mode": "validated_token",
+                    "providers": [providers.github()],
+                }
+            }
+        },
+    )
+    ```
+
+    ```ts identity.ts
+    import { defineIdentity, providers } from "managed-deepagents";
+
+    export const identity = defineIdentity.preset("internal-tool", {
+      ingress: {
+        http: {
+          mode: "validated_token",
+          providers: [providers.github()],
+        },
+      },
+    });
+    ```
+    </CodeGroup>
+
+    Complete a [GitHub OAuth App](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps) sign-in flow, then send the **user access token**. Do not send OAuth client secrets to the deployment. See also [Authorizing OAuth apps](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps) and [Get the authenticated user](https://docs.github.com/en/rest/users/users#get-the-authenticated-user).
+
+    For production, prefer [trusted backend](#trusted-backend) ingress: keep the GitHub token on your API, and proxy with `X-MDA-Ingress-Secret` + `X-MDA-Actor-Id` (for example the GitHub `login`).
+  </Tab>
+</Tabs>
 
 ## Use `runtime.identity` in tools and middleware
 
 When identity is declared, authored tools and middleware receive a frozen `runtime.identity` object built from the trusted auth result. Client-supplied spoofable identity keys are stripped from `configurable`.
 
+Annotate the injected `runtime` parameter as `ManagedDeepAgentRuntime` so you get typed access to `identity` (and optional `credentials`). Use it whenever a tool or middleware hook needs to know *who* triggered the run—for personalization, audit logs, or branching on verified claims—without trusting anything from the request body.
+
 <CodeGroup>
 
 ```python tools/whoami.py
-from langchain.tools import ToolRuntime, tool
+from langchain.tools import tool
+from managed_deepagents import ManagedDeepAgentRuntime
 
 
 @tool
-def whoami(runtime: ToolRuntime) -> str:
+def whoami(runtime: ManagedDeepAgentRuntime) -> str:
     """Return the authenticated actor id for this run."""
-    identity = getattr(runtime, "identity", None)
+    identity = runtime.identity
     if not identity:
         return "No authenticated caller on this run."
     return f"Signed in as {identity['actor']['id']}"
 ```
 
 ```ts tools/whoami.ts
+import { z } from "zod";
 import { tool } from "langchain";
 import type { ManagedDeepAgentRuntime } from "managed-deepagents";
-import { z } from "zod";
 
 export const whoami = tool(
   async (_input, runtime: ManagedDeepAgentRuntime) => {
@@ -293,6 +464,45 @@ export const whoami = tool(
     schema: z.object({}),
   },
 );
+```
+
+</CodeGroup>
+
+The same type works in middleware hooks:
+
+<CodeGroup>
+
+```python middleware/audit.py
+from langchain.agents.middleware import AgentState, before_model
+from managed_deepagents import ManagedDeepAgentRuntime
+
+
+def audit_middleware():
+    @before_model
+    def audit(state: AgentState, runtime: ManagedDeepAgentRuntime) -> dict | None:
+        user = runtime.identity["actor"]["id"] if runtime.identity else "anonymous"
+        print(f"[audit] {user} model call with {len(state['messages'])} messages")
+        return None
+
+    return audit
+```
+
+```ts middleware/audit.ts
+import { createMiddleware } from "langchain";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
+
+export function auditMiddleware() {
+  return createMiddleware({
+    name: "audit",
+    beforeModel: (state, runtime: ManagedDeepAgentRuntime) => {
+      const user = runtime.identity?.actor.id ?? "anonymous";
+      console.log(
+        `[audit] ${user} model call with ${state.messages.length} messages`
+      );
+      return undefined;
+    },
+  });
+}
 ```
 
 </CodeGroup>
@@ -318,10 +528,12 @@ Presets cover the common cases. To customize, set `scoping` explicitly:
 | Axis | Values | Meaning |
 | --- | --- | --- |
 | `threads` | `actor`, `channel`, `tenant` | Who can open or resume the conversation |
-| `memory` | `actor`, `tenant`, `agent`, `none` | Which Context Hub slice remounts as `/memories` (see [Memory](/langsmith/managed-deep-agents-memory)) |
+| `memory` | `actor`, `tenant`, `agent`, `none` | Durable store namespace prefix |
 | `credentials` | `agent`, `actor`, `none`, `custom` | Whose credentials downstream calls use |
 
 `tenancy: "single"` cannot use `"tenant"` on any axis. Store access fails closed (403) when required identity segments are missing.
+
+For how memory paths remount under each scope, see [Scope memory with identity](/langsmith/managed-deep-agents-memory#scope-memory-with-identity).
 
 ### Custom downstream credentials
 
@@ -348,14 +560,11 @@ Never commit ingress secrets, guest signing keys, or IdP credentials. Do not sen
 
 <ManagedDeepAgentsTestAndDeploy />
 
-Identity misconfiguration usually surfaces as 401 (auth) or 403 (store/thread scope) during local Studio or first authenticated request. Confirm the matching secret is present and that trusted-backend proxies attach the reserved headers.
+Identity misconfiguration usually surfaces as 401 (auth) or 403 (store/thread scope) during local Studio or the first authenticated request. Confirm the matching secret is present and that trusted-backend proxies attach the reserved headers.
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Memory" icon="brain" href="/langsmith/managed-deep-agents-memory">
-    Persist preferences in the scoped `/memories` slice.
-  </Card>
   <Card title="Custom tools" icon="tool" href="/langsmith/managed-deep-agents-tools">
     Read `runtime.identity` from authored tools.
   </Card>
@@ -364,8 +573,5 @@ Identity misconfiguration usually surfaces as 401 (auth) or 403 (store/thread sc
   </Card>
   <Card title="How it works" icon="settings" href="/langsmith/managed-deep-agents-how-it-works">
     See how compile and deploy wire auth into the runtime.
-  </Card>
-  <Card title="CLI reference" icon="terminal" href="/langsmith/managed-deep-agents-cli">
-    Look up the `identity` project file and deploy flags.
   </Card>
 </CardGroup>
