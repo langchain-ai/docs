@@ -1,0 +1,128 @@
+---
+title: "Lians agent memory"
+description: "Give LangChain and LangGraph agents bitemporal memory with point-in-time recall."
+---
+
+This guide shows how to use [Lians agent memory](https://github.com/Lians-ai/Lians) as a LangChain toolkit. Lians stores changing facts with event time and system-time validity, excludes superseded versions from current recall, and supports point-in-time queries.
+
+## Overview
+
+### Details
+
+| Toolkit | Package | Local mode | API key required | License |
+| :--- | :--- | :---: | :---: | :---: |
+| `build_tools` | [`lians-sdk`](https://pypi.org/project/lians-sdk/) | Yes | No | Apache-2.0 |
+
+### Tools
+
+| Tool | Purpose |
+| :--- | :--- |
+| `remember` | Store a fact with its real-world event timestamp and metadata |
+| `recall` | Retrieve currently valid facts while excluding superseded versions |
+| `recall_at` | Retrieve facts that were valid at a specified timestamp |
+
+## Setup
+
+Install the LangChain integration and the local SQLite engine:
+
+<CodeGroup>
+    ```bash pip
+    pip install -U "lians-sdk[langchain,local]"
+    ```
+    ```bash uv
+    uv add "lians-sdk[langchain,local]"
+    ```
+</CodeGroup>
+
+Local mode does not require a server or API key. For a deployed environment, use `LiansClient` with your self-hosted or managed endpoint.
+
+## Instantiation
+
+```python Initialize Lians tools icon="database"
+from lians import LocalLiansClient
+from lians.langchain_integration import build_tools
+
+memory = LocalLiansClient(db_path="lians.db")
+tools = build_tools(memory, agent_id="research-agent")
+
+[tool.name for tool in tools]
+# ['remember', 'recall', 'recall_at']
+```
+
+## Invocation
+
+Store a fact with an event timestamp and a stable metadata key:
+
+```python Store a fact icon="database"
+remember, recall, recall_at = tools
+
+remember.invoke({
+    "content": "NVDA FY2026 revenue guidance is $32B",
+    "event_time_iso": "2025-02-26T00:00:00Z",
+    "metadata": {"ticker": "NVDA", "metric": "revenue_guidance"},
+})
+```
+
+When a later write uses the same entity and metric, Lians closes the previous validity window. Current recall returns the latest fact:
+
+```python Current recall icon="search"
+remember.invoke({
+    "content": "NVDA FY2026 revenue guidance is $40B",
+    "event_time_iso": "2025-11-19T00:00:00Z",
+    "metadata": {"ticker": "NVDA", "metric": "revenue_guidance"},
+})
+
+recall.invoke({"query": "NVDA revenue guidance"})
+```
+
+Point-in-time recall returns the fact that was valid before the revision:
+
+```python Point-in-time recall icon="history"
+recall_at.invoke({
+    "query": "NVDA revenue guidance",
+    "as_of_iso": "2025-03-01T00:00:00Z",
+})
+# NVDA FY2026 revenue guidance is $32B
+```
+
+## Within an agent
+
+The toolkit can be passed directly to a LangChain agent:
+
+```python Create an agent icon="robot"
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model="openai:gpt-5.4-mini",
+    tools=tools,
+    system_prompt=(
+        "Use recall before answering questions that may depend on stored facts. "
+        "Use remember when the user provides a durable fact."
+    ),
+)
+```
+
+## LangGraph point-in-time replay
+
+Lians also provides LangGraph node factories. Setting `as_of_key` reads the replay timestamp from graph state, which lets a checkpoint use the memory state from the same point in time.
+
+```python Create a recall node icon="git-branch"
+from lians.langgraph_integration import create_recall_node
+
+recall_node = create_recall_node(
+    memory,
+    agent_id="research-agent",
+    query_key="query",
+    memories_key="memories",
+    as_of_key="checkpoint_time",
+)
+
+state_update = await recall_node({
+    "query": "NVDA revenue guidance",
+    "checkpoint_time": "2025-03-01T00:00:00Z",
+})
+```
+
+## API reference
+
+See the [Lians Python SDK documentation](https://github.com/Lians-ai/Lians/tree/master/agentmem/sdk/python) and [source repository](https://github.com/Lians-ai/Lians).
