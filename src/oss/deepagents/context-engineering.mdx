@@ -233,6 +233,9 @@ The following techniques are the built-in mechanisms to ensure the context passe
   <Card title="Summarization" icon="article" href="#summarization">
     Old messages are compressed into an LLM-generated summary when limits are approached.
   </Card>
+  <Card title="Tool exclusion" icon="filter" href="#tool-exclusion">
+    Drop unused built-in tools so their schemas aren't sent to the model on every turn.
+  </Card>
 </CardGroup>
 
 ### Offloading
@@ -333,6 +336,25 @@ Adding the compaction tool does not disable automatic summarization at 85% of th
 See @[`SummarizationToolMiddleware`] and @[`create_summarization_tool_middleware`] in the API reference for details.
 
 :::
+
+### Tool exclusion
+
+Built-in tools an agent never uses still have their full schemas sent to the model on every turn — a read-only agent that never calls `execute` or `write_todos`, for example, pays for those tool definitions on every single request regardless.
+
+Use a [harness profile](/oss/deepagents/profiles#harness-profiles)'s `excluded_tools` to remove specific built-in tools from the visible tool set entirely, before the request reaches the model:
+
+```python
+from deepagents import HarnessProfile, register_harness_profile
+
+register_harness_profile(
+    "openai",
+    HarnessProfile(excluded_tools=frozenset({"write_file", "edit_file", "execute", "write_todos"})),
+)
+```
+
+Unlike offloading and summarization, this is a static reduction decided ahead of time rather than a dynamic response to context size — but it applies to every turn from the start of the run, not just once a threshold is crossed. In informal testing on a multi-turn agentic search task, excluding four unused built-in tools this way reduced total token usage by roughly 20-30%, with no change in agent behavior since the excluded tools were never being called anyway.
+
+See [harness profiles](/oss/deepagents/profiles#harness-profiles) for the full set of options and how registration keys are resolved.
 
 ## Context isolation with subagents
 
