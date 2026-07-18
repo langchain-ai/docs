@@ -1,0 +1,285 @@
+---
+title: "Monty Code Interpreter Integration"
+description: "Integrate with the Monty code interpreter middleware using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the Monty code interpreter [middleware](/oss/langchain/middleware/overview/). For a detailed listing of all `MontyCodeInterpreterMiddleware` features, parameters, and configurations, head to the [API reference](https://github.com/shane-rand/langchain-monty).
+
+## Overview
+
+`MontyCodeInterpreterMiddleware` adds an `eval_python` tool to your agent, backed by [pydantic-monty](https://github.com/pydantic/monty), Pydantic's Rust-implemented, sandboxed Python interpreter. The interpreter starts in microseconds, runs in-process, and has no access to the host filesystem, network, or environment. The only way code running inside the sandbox can reach the outside world is through host tools you explicitly allowlist.
+
+### Details
+
+| Class | Package | Serializable | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| [`MontyCodeInterpreterMiddleware`](https://github.com/shane-rand/langchain-monty) | [`langchain-monty`](https://pypi.org/project/langchain-monty/) | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-monty?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-monty?style=flat-square&label=%20) |
+
+### Features
+
+- Adds an `eval_python` tool that executes Python in a sandboxed, in-process interpreter and appends a usage guide to the system prompt
+- Programmatic tool calling: allowlist LangChain tools with `ptc=` so the agent can call them as regular functions from inside the sandbox
+- Static type checking of submitted code against stubs generated from tool schemas, before anything runs
+- Human-in-the-loop support: `GraphInterrupt` from bridged tools checkpoints normally, with snapshot-based resume when a LangGraph store is available
+- Per-call resource limits for wall-clock time, memory, recursion depth, and allocations
+- Full sync and async support, including host-side concurrency for `asyncio.gather` under `ainvoke`
+- Works with `create_agent` and with deepagents' `create_deep_agent` (no runtime dependency on deepagents)
+
+---
+
+## Setup
+
+The middleware runs entirely in-process. There is no external service, so no account or API key is required.
+
+It's helpful (but not required) to set up LangSmith for observability and <Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip>. To enable automated tracing, set your [LangSmith](/langsmith/observability) API key:
+
+```python Enable tracing icon="flask"
+import getpass
+import os
+
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The Monty code interpreter middleware lives in the `langchain-monty` package. Python 3.12+ is required.
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-monty
+    ```
+    ```python uv
+    uv add langchain-monty
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+```python Initialize middleware icon="arrows-shuffle"
+from langchain_monty import MontyCodeInterpreterMiddleware
+
+middleware = MontyCodeInterpreterMiddleware()
+```
+
+With no arguments, the interpreter is pure-compute: the agent can run Python but has no access to host tools.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `ptc` | `Sequence[BaseTool \| str] \| None` | `None` | Tools the interpreter may call. `BaseTool` entries are available immediately — their schemas appear in the system prompt. `str` entries are deferred: the name is registered in the allowlist and resolved at runtime from the agent's bound tools. `None` means pure-compute only. |
+| `limits` | `MontyLimits \| None` | `None` | Per-call resource budgets. Uses defaults when `None`. |
+| `system_prompt` | `str \| None` | Built-in block | System-prompt block appended to every model call. Pass `None` to keep the tool but add no prompt text — host-function schemas then move into the tool description. |
+| `tool_description` | `str \| None` | Built-in template | Description rendered on the `eval_python` tool. Supports `{available_host_tools}`, `{max_duration_secs}`, `{max_memory_bytes}`, `{max_stack_depth}` placeholders. |
+| `iteration_budget` | `int` | `64` | Hard cap on host-tool calls per `eval_python` call (a `gather` fan-out of N counts N). Exceeding it returns an `IterationBudgetExceeded` error. |
+| `type_check` | `bool` | `True` | Statically type-check submitted code against stubs generated from the allowlisted tools' schemas before executing. |
+
+---
+
+## Use with an agent
+
+Pass middleware to @[`create_agent`] or @[`create_deep_agent`] in order. You can combine it with [built-in middleware](/oss/langchain/middleware/built-in).
+
+```python Agent with middleware icon="robot"
+from langchain.agents import create_agent
+from langchain_monty import MontyCodeInterpreterMiddleware
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-6",
+    middleware=[MontyCodeInterpreterMiddleware()],
+)
+
+agent.invoke({"messages": [{"role": "user", "content": "What is 2 ** 32?"}]})
+```
+
+The agent can call `eval_python` with any Python code; the result of the final expression is returned, along with any captured stdout.
+
+<Tip>
+    Middleware runs in the [agent loop](/oss/langchain/middleware/overview#the-agent-loop). For custom behavior, see [custom middleware](/oss/langchain/middleware/custom).
+</Tip>
+
+---
+
+## Programmatic tool calling
+
+Pass `ptc=` with a list of `BaseTool` objects to expose those tools inside the sandbox. The agent can then call them as ordinary Python functions — filtering, joining, and aggregating results in code instead of round-tripping every intermediate value through the model's context window.
+
+```python Expose tools to the sandbox icon="terminal"
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from langchain_monty import MontyCodeInterpreterMiddleware
+
+@tool
+async def search(query: str) -> str:
+    """Search the document index.
+
+    Returns a JSON array of results. Each result is a dict with:
+      - title (str): document title
+      - url (str): source URL
+      - snippet (str): matching excerpt
+    """
+    ...
+
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-6",
+    tools=[search],
+    middleware=[MontyCodeInterpreterMiddleware(ptc=[search])],
+)
+```
+
+Inside the sandbox, the agent can now write:
+
+```python
+results = search("LangGraph 0.6 release notes")
+[r["title"] for r in results if "breaking" in r["title"].lower()]
+```
+
+Each host-tool call is invoked through LangChain's normal tool machinery as a full `ToolCall`, so tracing, retries, and injected parameters (`ToolRuntime`, `InjectedState`, `InjectedStore`, `InjectedToolCallId`) all work. Sandbox code can never forge injected values — interpreter-supplied kwargs matching injected names are stripped before the real ones are added. Tools not in the allowlist return an error to the interpreter rather than executing.
+
+`Command`-returning tools (such as deepagents' `task`) are the one unsupported shape: a `Command` mutates graph state and can only be applied by the agent's own tool node, so calling one from inside `eval_python` raises an error telling the agent to call that tool directly instead.
+
+### Deferred tool names
+
+`ptc` entries can also be plain strings. String entries register the name in the allowlist but are resolved at runtime from the agent's bound tools — useful for tools injected by other middleware. For example, `FilesystemMiddleware` contributes `ls`, `read_file`, `write_file`, `edit_file`, `glob`, and `grep`:
+
+```python Deferred tool names icon="clock"
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    middleware=[
+        MontyCodeInterpreterMiddleware(
+            ptc=[my_api_tool, "read_file", "ls", "grep"],
+        ),
+    ],
+)
+```
+
+Once a deferred name resolves to a real tool, its full signature and docstring are rendered into the system prompt dynamically.
+
+### Call styles
+
+Host functions support two call styles inside the sandbox. Both behave identically under `invoke` and `ainvoke`:
+
+```python
+# Plain — calls resolve one at a time
+hits = search("a")
+
+# Concurrent — independent calls run in parallel (under ainvoke)
+import asyncio
+
+async def go():
+    return await asyncio.gather(search("a"), search("b"))
+
+asyncio.run(go())
+```
+
+The two styles cannot be mixed in one snippet. Code that awaits some calls but discards others gets a structured `UnawaitedHostCallError` telling the agent to pick one style.
+
+---
+
+## Static type checking
+
+Before executing anything, submitted code is type-checked against stub signatures generated from the allowlisted tools' JSON schemas. A hallucinated keyword argument, a wrong argument type, or a misspelled parameter comes back as a structured `TypeCheckError` with `file:line:col` diagnostics — no execution, no wasted host-tool calls:
+
+```json
+{
+  "result": null,
+  "stdout": "",
+  "error": {
+    "type": "TypeCheckError",
+    "message": "static type check failed before execution; no code was run",
+    "traceback": "main.py:1:18: error[unknown-argument] Argument `limit` does not match any known parameter of function `search`"
+  },
+  "attempted_code": "search(query=\"x\", limit=5)"
+}
+```
+
+Disable with `MontyCodeInterpreterMiddleware(type_check=False)` if Monty's checker (a strict subset of Python's type system) rejects code you need to run. Deferred tool names that haven't resolved yet get permissive `(*args, **kwargs)` stubs, so they never fail the static check.
+
+---
+
+## Human-in-the-loop
+
+When a bridged host tool raises `GraphInterrupt` — for example, `HumanInTheLoopMiddleware` asking for approval — the middleware re-raises it instead of feeding it into the sandbox, so LangGraph checkpoints and pauses normally. What happens on resume depends on whether the agent has a [LangGraph store](https://langchain-ai.github.io/langgraph/concepts/persistence/#memory-store):
+
+**With a store** (`create_agent(..., store=...)`), the paused Monty VM is serialized into the store at interrupt time. On resume, execution continues from the interrupted host call: host tools that already ran are not re-invoked, stdout printed before the pause is preserved, and the iteration budget keeps counting across the pause. Multiple sequential interrupts within one snippet are supported.
+
+**Without a store**, LangGraph's plain replay model applies: on resume the whole `eval_python` call re-runs from the top, so host tools called before the interrupt point are re-invoked. Combine HITL with idempotent tools in this mode.
+
+Snapshot-resume covers the plain-call execution path; an interrupt escaping an awaited `asyncio.gather` batch falls back to full replay. Persistence failures degrade silently to the replay model, never to a broken run.
+
+---
+
+## Resource limits
+
+Use `MontyLimits` to control per-call resource budgets. Setting any field to `None` disables that limit:
+
+```python Configure limits icon="gauge"
+from langchain_monty import MontyCodeInterpreterMiddleware, MontyLimits
+
+limits = MontyLimits(
+    max_duration_secs=10.0,       # wall-clock time (default 5.0)
+    max_memory_bytes=128_000_000, # heap cap (default 64 MB)
+    max_stack_depth=512,          # recursion limit (default 256)
+    max_allocations=2_000_000,    # allocation count (default 1,000,000)
+    gc_interval=None,             # allocations between GCs (default: Monty's)
+)
+
+middleware = MontyCodeInterpreterMiddleware(limits=limits)
+```
+
+---
+
+## Return shape
+
+`eval_python` always returns a JSON object with three fields:
+
+```json
+{
+  "result": <value of final expression, or null>,
+  "stdout": "<captured stdout>",
+  "error": null
+}
+```
+
+On failure, `error.type` is the real exception class the sandbox raised, `error.traceback` carries a CPython-style traceback with line numbers, and `attempted_code` is populated with the code that failed. Error classes the agent can act on differently:
+
+| Error | Meaning |
+|---|---|
+| `SyntaxError` | Parse or unsupported-feature errors. Nothing was executed. |
+| `TypeCheckError` | The static pre-flight check failed. Nothing was executed; `traceback` has per-line diagnostics. |
+| Runtime errors | The real sandbox exception class (`KeyError`, `ZeroDivisionError`, ...) including resource exhaustion. |
+| `IterationBudgetExceeded` | Too many host-tool calls in one invocation. |
+| `UnawaitedHostCallError` | The code mixed awaited and plain host-call styles. |
+
+If the final expression's value can't be expressed in plain JSON, the result falls back to Monty's tagged natural form — `{"$set": [1, 2, 3]}`, `{"$dataclass": {...}, "name": "..."}` — so it always survives message serialization losslessly.
+
+---
+
+## Sandbox capabilities
+
+Monty implements a Python subset. Currently supported stdlib modules:
+
+`sys`, `os`, `typing`, `asyncio`, `re`, `datetime`, `json`, `dataclasses`
+
+Class definitions and imports beyond the listed modules are not supported yet. The sandbox has no access to the host filesystem, network, subprocesses, or environment variables — all communication with the outside world goes through explicitly allowlisted host tools.
+
+---
+
+## Async support
+
+The tool is always called `eval_python`. Internally the middleware registers both a sync and an async implementation; LangChain dispatches to the async path automatically when you use `agent.ainvoke(...)`:
+
+```python Async invocation icon="bolt"
+result = await agent.ainvoke({"messages": [{"role": "user", "content": "go"}]})
+```
+
+The async path is event-loop friendly: every VM step is offloaded to a worker thread, so a compute-heavy snippet never stalls other coroutines in your server. Sandbox code using `asyncio.gather` over host calls gets true host-side concurrency under `ainvoke`, and falls back to sequential execution under `invoke`.
+
+---
+
+## API reference
+
+For detailed documentation of all `MontyCodeInterpreterMiddleware` features and configurations, head to the [langchain-monty repository](https://github.com/shane-rand/langchain-monty).
