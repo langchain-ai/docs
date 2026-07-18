@@ -1,21 +1,21 @@
 ---
 title: Hooks
 sidebarTitle: Hooks
-description: Claude Code-compatible lifecycle hooks for Deep Agents Code, including blocking PreToolUse and Stop decisions
+description: Lifecycle hooks for Deep Agents Code, including blocking PreToolUse and Stop decisions
 ---
 
 Hooks let external programs observe and control Deep Agents Code lifecycle events. Configure handlers in settings, and Deep Agents Code sends a JSON payload to each matching handler whenever an event fires.
 
 <Warning>
-    This page documents the **planned Claude Code-compatible hooks redesign**. It is a draft for design review and is **not** the behavior of the shipping CLI yet. Until the redesign lands, the live CLI still uses the [current fire-and-forget hooks](#current-fire-and-forget-hooks) described at the bottom of this page.
+    This page documents the **planned hooks redesign**. It is a draft for design review and is **not** the behavior of the shipping CLI yet. Until the redesign lands, the live CLI still uses the [current fire-and-forget hooks](#current-fire-and-forget-hooks) described at the bottom of this page.
 </Warning>
 
-The redesign targets [Claude Code hooks](https://code.claude.com/docs/en/hooks) compatibility for a focused MVP event set: scripts written for Claude's JSON input/output contract should work for those events, with explicitly documented gaps where Deep Agents Code does not apply every Claude capability yet.
+The redesign focuses on a defined MVP event set with a stable JSON input/output contract for command hooks, including explicitly documented gaps where Deep Agents Code does not apply every capability yet.
 
 ## Goals
 
 - Support blocking decisions on the execution path (`PreToolUse`, `PermissionRequest`, `Stop`), not only side-effect notifications.
-- Preserve Claude event names, matcher vocabulary, common input fields, exit-code semantics, and command-hook JSON output.
+- Use consistent event names, matcher vocabulary, common input fields, exit-code semantics, and command-hook JSON output.
 - Keep a shared engine that matches, executes, parses, and aggregates hooks, while lifecycle owners apply typed decisions at the correct seams.
 - Snapshot hook configuration for the session so mid-session config edits cannot add or remove policy hooks.
 
@@ -37,7 +37,7 @@ Client-owned events run in the CLI process. Server-owned events originate in the
 
 ## Configuration shape
 
-Claude-compatible hooks nest in three levels: event name → matcher group → handlers.
+Hooks nest in three levels: event name → matcher group → handlers.
 
 ```json
 {
@@ -78,26 +78,26 @@ A **matcher** filters whether a handler group runs for a given event invocation:
 - Alternation matches either side (`Edit|Write`).
 - Otherwise the value is treated as a regular expression (`mcp__.*`).
 
-Optional Claude-style `if` predicates (for example `Bash(git *)`) are a second-stage filter and apply only to tool-oriented events (`PreToolUse`, `PostToolUse`, `PermissionRequest`). On other events, an `if` predicate fails closed.
+Optional `if` predicates (for example `Bash(git *)`) are a second-stage filter and apply only to tool-oriented events (`PreToolUse`, `PostToolUse`, `PermissionRequest`). On other events, an `if` predicate fails closed.
 
 ### Handler types in MVP
 
 MVP focuses on `type: "command"` handlers: a subprocess receives event JSON on stdin and communicates through exit codes and stdout JSON.
 
-Other Claude handler types (`http`, `prompt`, `agent`, `mcp_tool`) and Claude async acknowledgement (`{"async": true}`) are out of scope unless already supported. Unsupported configured types should fail validation visibly rather than being skipped silently.
+Other handler types (`http`, `prompt`, `agent`, `mcp_tool`) and async acknowledgement (`{"async": true}`) are out of scope unless already supported. Unsupported configured types should fail validation visibly rather than being skipped silently.
 
 ## Common input fields
 
-Every event includes Claude's common envelope fields (plus event-specific fields):
+Every event includes common envelope fields (plus event-specific fields):
 
 | Field | Description |
 | --- | --- |
-| `session_id` | Session identifier (Claude wire name; maps from Deep Agents Code thread/session id) |
+| `session_id` | Session identifier (maps from Deep Agents Code thread/session id) |
 | `transcript_path` | Path to conversation transcript JSON/JSONL when available |
 | `cwd` | Working directory when the hook is invoked |
 | `hook_event_name` | Event name that fired |
 | `prompt_id` | Optional UUID for the current user prompt |
-| `permission_mode` | Optional Claude permission-mode string when meaningful |
+| `permission_mode` | Optional permission-mode string when meaningful |
 | `effort` | Optional `{ "level": "low" \| "medium" \| "high" \| "xhigh" \| "max" }` |
 
 Example `PreToolUse` payload after tool-name adaptation:
@@ -119,9 +119,9 @@ Example `PreToolUse` payload after tool-name adaptation:
 
 ### Tool vocabulary adapter
 
-Hook scripts see **Claude tool names and argument shapes**, not internal Deep Agents Code tool names. Planned mappings include:
+Hook scripts see **stable public tool names and argument shapes**, not internal Deep Agents Code tool names. Planned mappings include:
 
-| Internal tool | Claude wire name | Notable input fields |
+| Internal tool | Public wire name | Notable input fields |
 | --- | --- | --- |
 | Shell / execute | `Bash` | `command`, optional `description`, timeout, background |
 | Write file | `Write` | `file_path`, `content` |
@@ -130,7 +130,7 @@ Hook scripts see **Claude tool names and argument shapes**, not internal Deep Ag
 
 ## Exit codes and JSON output
 
-Command hooks follow Claude's exit-code contract:
+Command hooks follow this exit-code contract:
 
 | Exit code | Meaning |
 | --- | --- |
@@ -220,7 +220,7 @@ Design principles:
 
 1. **Wire compatibility is an adapter boundary** — internal models do not leak into hook scripts.
 2. **Capabilities are data** — matcher field, owner, exit-code policy, timeouts, and aggregation live in an event registry.
-3. **Parse broadly, apply narrowly** — recognize Claude fields even when MVP cannot apply them; emit diagnostics instead of silent success.
+3. **Parse broadly, apply narrowly** — recognize documented fields even when MVP cannot apply them; emit diagnostics instead of silent success.
 4. **Lifecycle owners apply effects** — the engine returns typed decisions; it does not mutate the graph, permission UI, or transcript directly.
 5. **Blocking happens before effects** — `PreToolUse` runs before HITL and tool execution; `Stop` runs before a terminal turn is committed.
 
@@ -234,7 +234,7 @@ Design principles:
 | `PermissionRequest.updatedPermissions` | No permission-rules store yet |
 | `SubagentStop` block / exit 2 resume | Context injection only |
 | Non-command handler types | Configuration error unless an executor exists |
-| Undocumented Claude quirks | Guaranteed only when covered by contract tests |
+| Undocumented edge cases | Guaranteed only when covered by contract tests |
 
 ## Security
 
@@ -251,7 +251,7 @@ Hooks remain trusted configuration equivalent to shell aliases or Git hooks:
 
 ## Current fire-and-forget hooks
 
-Until the Claude-compatible redesign ships, Deep Agents Code still supports the existing observational hooks in `~/.deepagents/hooks.json`.
+Until the redesign ships, Deep Agents Code still supports the existing observational hooks in `~/.deepagents/hooks.json`.
 
 ```json
 {
@@ -270,7 +270,7 @@ Current behavior:
 - Dispatch is fire-and-forget in a background thread and does **not** block the agent.
 - Stdout/stderr are discarded; there is no decision channel yet.
 - Each command has a short timeout (5 seconds).
-- Matching is by `events` list (omit/empty = all events), not Claude matchers.
+- Matching is by `events` list (omit/empty = all events), not event matchers.
 
 ### Current events
 
@@ -310,4 +310,3 @@ if __name__ == "__main__":
 
 - [Configuration](/oss/deepagents/code/configuration)
 - [CLI reference](/oss/deepagents/code/cli-reference)
-- [Claude Code hooks documentation](https://code.claude.com/docs/en/hooks)
