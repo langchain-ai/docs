@@ -1,0 +1,105 @@
+---
+title: "Mengram integration"
+description: "Integrate with the Mengram retriever using LangChain Python."
+---
+
+# MengramRetriever
+
+This will help you get started with the Mengram [retriever](/oss/langchain/retrieval).
+
+[Mengram](https://mengram.io) is a long-term memory layer for AI agents with three memory types: **semantic** (facts and knowledge-graph relations), **episodic** (events and their outcomes), and **procedural** (step-by-step workflows with success tracking). `MengramRetriever` searches all three and returns them as LangChain `Document` objects, so an agent can recall what it knows about a user, what happened before, and how it solved similar tasks.
+
+### Integration details
+
+| Retriever | Self-host | Cloud offering | Package |
+| :--- | :--- | :---: | :---: |
+`MengramRetriever` | ✅ | ✅ | `langchain-mengram` |
+
+## Setup
+
+Get a free API key at [mengram.io](https://mengram.io) (no card required), or [self-host](https://github.com/alibaizhanov/mengram) the Apache 2.0 backend.
+
+If you want to get automated tracing from individual queries, you can also set your [LangSmith](/langsmith/observability) API key by uncommenting below:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+This retriever lives in the `langchain-mengram` package:
+
+```python
+pip install -qU langchain-mengram
+```
+
+## Instantiation
+
+Now we can instantiate our retriever:
+
+```python
+from langchain_mengram import MengramRetriever
+
+retriever = MengramRetriever(
+    api_key="om-...",       # Mengram API key
+    user_id="user-123",     # whose memory to search
+    top_k=5,                # max results per memory type
+)
+```
+
+Optional parameters: `api_url` (default `https://mengram.io`, point at your own deployment when self-hosting) and `memory_types` (default `["semantic", "episodic", "procedural"]`).
+
+## Usage
+
+Memories accumulate as your application feeds conversations to Mengram (via its SDK, REST API, or MCP server). The retriever then surfaces whatever is relevant to a query:
+
+```python
+query = "deployment issues"
+results = retriever.invoke(query)
+
+for doc in results:
+    print(f"[{doc.metadata['memory_type']}] {doc.page_content}")
+```
+
+Each document carries `metadata["memory_type"]` (`semantic`, `episodic`, or `procedural`) so you can filter or weight by type.
+
+## Use within a chain
+
+```python
+from langchain_mengram import MengramRetriever
+from langchain_openai import ChatOpenAI
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+
+retriever = MengramRetriever(api_key="om-...", user_id="user-123")
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "Use the following memory context to answer:\n\n{context}"),
+    ("human", "{question}"),
+])
+
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+chain.invoke("What deployment steps did we follow last time?")
+```
+
+## Chat message history
+
+The package also ships `MengramChatMessageHistory`, a `BaseChatMessageHistory` implementation that persists conversation turns to Mengram so facts, episodes, and procedures are extracted automatically from the dialogue.
+
+## API reference
+
+For detailed documentation of all `MengramRetriever` features and configurations, head to the [Mengram documentation](https://mengram.io/docs) and the [GitHub repository](https://github.com/alibaizhanov/mengram).
