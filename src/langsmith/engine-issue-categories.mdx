@@ -1,0 +1,140 @@
+---
+title: LangSmith Engine issue categories
+sidebarTitle: Issue categories
+description: Reference for the failure categories LangSmith Engine assigns to detected issues, including descriptions, examples, and detection methods.
+---
+
+When [LangSmith Engine](/langsmith/engine) detects a recurring issue in your traces, it tags the issue with a category. This page lists every category Engine assigns, with a description, concrete example, and detection method for each. Engine automatically scans your traces and assigns the best-fitting category to each detected issue; you do not select categories manually.
+
+The 16 categories below cover the most common agent failure patterns Engine has observed. When Engine finds a recurring issue that does not fit any of these categories cleanly, it assigns a short descriptive category name instead, so project-specific issues are still labeled and tracked.
+
+## How Engine detects issues
+
+Engine uses two detection methods, depending on the category:
+
+- **Code evaluator**: Engine generates a deterministic code rule that checks for structural patterns in trace data. For example, a code evaluator can detect response truncation by checking whether the final output ends with a clean terminator, or detect agent looping by measuring the fraction of repeated tool calls. Engine specializes each code evaluator to your project's specific tool names, field paths, and observed patterns, so the exact rule may differ between projects even for the same category. Code evaluators produce consistent results across runs.
+- **LLM judgment**: Engine uses LLM-based analysis to identify semantic patterns that cannot be checked with a code rule. For example, determining whether a response contains hallucinated facts requires comparing the agent's claims against tool outputs and reasoning about whether the facts are supported.
+
+| Detection method | Categories |
+| --- | --- |
+| [Code evaluator](#categories-detected-with-code-evaluators) | [Agent looping](#agent-looping), [Context explosion](#context-explosion), [Failed error recovery](#failed-error-recovery), [Incorrect tool args](#incorrect-tool-args), [PII leak](#pii-leak), [Response truncation](#response-truncation), [Silent tool error](#silent-tool-error), [Tracing quality](#tracing-quality), [Wrong tool](#wrong-tool) |
+| [LLM judgment](#categories-detected-with-llm-judgment) | [Feature gap](#feature-gap), [Flawed plan](#flawed-plan), [Guardrail bypass](#guardrail-bypass), [Hallucination](#hallucination), [Missing capability awareness](#missing-capability-awareness), [System prompt drift](#system-prompt-drift), [Task evasion](#task-evasion) |
+
+## Categories detected with code evaluators
+
+### Agent looping
+
+The agent repeats the same action multiple times within a single trace without making progress toward the user's goal.
+
+**Example:** the agent calls the same search tool with the same query eight times in a row, each call returning the same results, without using the results to advance the conversation.
+
+### Context explosion
+
+The trace consumed an extremely large number of tokens due to unbounded context accumulation, not from looping.
+
+**Example:** a multi-turn conversation replays the full history of prior messages to each LLM call, causing token counts to grow with every turn even though the agent is not repeating actions.
+
+### Failed error recovery
+
+A tool returned an explicit error, and the agent retried the same call with identical or near-identical arguments repeatedly instead of adapting its approach.
+
+**Example:** an API call fails with a 500 error, and the agent retries the exact same call five times in a row without changing the parameters or trying a different tool.
+
+### Incorrect tool args
+
+The agent picked the right tool but called it with arguments that do not match the user's intent or the tool's schema.
+
+**Example:** the user asks for order #12345, but the agent calls the get-order tool with a truncated ID "1234" or a fabricated ID, returning the wrong record or an empty result.
+
+### PII leak
+
+The agent's response contains sensitive data such as Social Security numbers, dates of birth, home addresses, phone numbers, email addresses, or API keys. Engine further classifies PII leaks by the source of the sensitive data, because the right fix differs for each: agent-introduced (the agent generated sensitive data on its own), tool-returned echo (a tool response included sensitive fields the developer can filter at the source), or user-supplied echo (the sensitive data was already in the user's input).
+
+**Example:** a customer lookup tool returns a full user profile including an SSN and home address, and the agent includes all of those fields in its response to the user.
+
+### Response truncation
+
+The agent's response was cut off mid-sentence or mid-code-block.
+
+**Example:** the agent's answer ends abruptly with "To fix this, you need to update the config fil" and the user has to ask the agent to continue.
+
+### Silent tool error
+
+A tool returned an error message as its content instead of raising an exception, so the agent treated the error as a valid response.
+
+**Example:** a search tool returns "404 Not Found" as its result content, and the agent includes that error text in its response to the user as if it were a real answer.
+
+### Tracing quality
+
+The project's traces are missing metadata, tags, or structural markers that unlock LangSmith features. This is not a behavioral issue with the agent but an instrumentation gap.
+
+**Example:** traces lack a `thread_id` in metadata, so the Threads view cannot group conversation turns, and LLM runs are missing model provider metadata, so cost tracking shows null values.
+
+### Wrong tool
+
+A better-fit tool existed but the agent chose the wrong one for the user's request.
+
+**Example:** the user asks to look up a single order by ID, but the agent calls a "list all orders" tool instead of the "get order by ID" tool, returning a page of results that does not directly answer the question.
+
+## Categories detected with LLM judgment
+
+### Feature gap
+
+The user asks for a legitimate in-scope capability that does not exist yet. This is an unmet product need, not an agent execution mistake.
+
+**Example:** users repeatedly ask to export reports as PDF, but the application has no export feature. The agent correctly explains the limitation, but the recurring requests reveal an unmet product need for the team to evaluate.
+
+### Flawed plan
+
+The agent's approach shows a fundamental misunderstanding of the task. The answer addresses a different question than asked, or the plan was wrong from the first tool call.
+
+**Example:** the user asks to calculate a monthly average, but the agent sums all values and reports the total instead, solving a different problem than requested.
+
+### Guardrail bypass
+
+A user manipulated the agent into generating content outside its intended scope through multi-turn steering or prompt injection.
+
+**Example:** a user progressively steers a finance bot from legitimate account questions into generating specific investment recommendations the bot is not authorized to give.
+
+### Hallucination
+
+The agent's response contains specific facts, numbers, or names that are not present in any tool output.
+
+**Example:** the agent reports "Your account balance is $4,200" when no tool returned that number, meaning the agent fabricated the figure.
+
+### Missing capability awareness
+
+The agent tried to use a tool it does not have, refused a task it was equipped to handle, or hit a case the prompt never prepared it for.
+
+**Example:** the agent tells the user "I cannot search the knowledge base" even though a search tool is available in its toolset.
+
+### System prompt drift
+
+The agent answered an off-topic question outside the application's purpose instead of declining.
+
+**Example:** a customer support bot for an e-commerce store writes a Python script when asked "Write me a poem about cats" instead of redirecting the user to an appropriate channel.
+
+### Task evasion
+
+The agent declared success before the work was complete, simplified the task to avoid a difficult part, or gave up after a single failure without trying alternative approaches.
+
+**Example:** the user asks for a detailed analysis of three data sources, but the agent produces a one-sentence summary from only one source and declares the task complete.
+
+## Taxonomy stability
+
+The 16 categories are defined in Engine's detection logic and represent the most common agent failure patterns Engine has observed.
+
+The taxonomy is not exhaustive. Engine can assign additional descriptive category names for project-specific failure patterns that do not fit the predefined categories. If your project surfaces an issue with a category name not listed on this page, Engine identified a pattern specific to your application.
+
+If Engine assigns a category that does not match the actual problem, you can mark the issue as ignored with a reason. Engine uses this feedback to improve its future analysis. For more information, see [Resolve or ignore an issue](/langsmith/engine#resolve-or-ignore-an-issue).
+
+<Note>
+LangSmith does not currently send notifications when the issue taxonomy changes. To stay informed, watch the [LangSmith Cloud changelog](/langsmith/changelog) or contact LangSmith support.
+</Note>
+
+## See also
+
+- [Find and fix your agent's issues](/langsmith/engine): Set up Engine, work through the issue lifecycle, and control costs.
+- [Engine](/langsmith/engine-overview): Product overview and where Engine fits in the development lifecycle.
+- [Engine webhook events](/langsmith/engine-webhooks): Forward detected issues to your incident-management, paging, or chat tools.
+- [Evaluators](/langsmith/evaluators): Deploy the suggested evaluator Engine generates for each issue.
