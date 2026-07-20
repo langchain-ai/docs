@@ -9,6 +9,7 @@ import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.runs.RunGetUrlParams
 import com.langchain.smith.models.runs.RunQueryV2Params
+import com.langchain.smith.models.runs.RunSelectField
 import com.langchain.smith.models.sessions.SessionListParams
 
 fun main() {
@@ -21,9 +22,9 @@ fun main() {
     val run = client.runs().queryV2(
         RunQueryV2Params.builder()
             .addProjectId(project.id())
-            .addSelect(RunQueryV2Params.Select.ID)
-            .addSelect(RunQueryV2Params.Select.TRACE_ID)
-            .addSelect(RunQueryV2Params.Select.START_TIME)
+            .addSelect(RunSelectField.ID)
+            .addSelect(RunSelectField.TRACE_ID)
+            .addSelect(RunSelectField.START_TIME)
             .pageSize(1L)
             .build()
     ).items().first()
