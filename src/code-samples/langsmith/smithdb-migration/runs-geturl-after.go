@@ -26,8 +26,9 @@ func main() {
 	project := sessions.Items[0]
 
 	runs, err := client.Runs.QueryV2(ctx, langsmith.RunQueryV2Params{
-		ProjectIDs: langsmith.F([]string{project.ID}),
-		PageSize:   langsmith.F(int64(1)),
+		ProjectIDs:   langsmith.F([]string{project.ID}),
+		MinStartTime: langsmith.F(time.Now().UTC().AddDate(0, -1, 0)),
+		PageSize:     langsmith.F(int64(1)),
 	})
 	if err != nil {
 		panic(err.Error())

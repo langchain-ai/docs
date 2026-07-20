@@ -9,6 +9,8 @@ import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.runs.RunGetUrlParams
 // :remove-start:
+import java.time.OffsetDateTime
+
 import com.langchain.smith.models.runs.RunQueryV2Params
 import com.langchain.smith.models.sessions.SessionListParams
 // :remove-end:
@@ -24,6 +26,7 @@ fun main() {
     val foundRun = client.runs().queryV2(
         RunQueryV2Params.builder()
             .addProjectId(project.id())
+            .minStartTime(OffsetDateTime.now().minusMonths(1))
             .pageSize(1L)
             .build()
     ).items().first()
