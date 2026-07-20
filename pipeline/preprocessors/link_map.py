@@ -689,7 +689,7 @@ LINK_MAPS: list[LinkMap] = [
             # LangSmith Deployment SDK - JS
             "LangGraphSDK": "langgraph-sdk/",
             "ThreadsClient": "langchain-langgraph-sdk/client/ThreadsClient",
-            "ThreadsClient.create": "langchain-node-vfs/node-vfs-polyfill/create",
+            "ThreadsClient.create": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#create",
             "ThreadsClient.copy": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#copy",
             "ThreadsClient.get": "langchain-community/utils/convex/get",
             "ThreadsClient.get_state": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#getstate",
@@ -697,7 +697,7 @@ LINK_MAPS: list[LinkMap] = [
             "ThreadsClient.get_history": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#gethistory",
             "ThreadsClient.getHistory": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#gethistory",
             "AssistantsClient": "langchain-langgraph-sdk/client/AssistantsClient",
-            "AssistantsClient.create": "langchain-node-vfs/node-vfs-polyfill/create",
+            "AssistantsClient.create": "classes/_langchain_langgraph-sdk.client.AssistantsClient.html#create",
             "AssistantsClient.update": "classes/_langchain_langgraph-sdk.client.AssistantsClient.html#update",
             "AssistantsClient.search": "classes/_langchain_langgraph-sdk.client.AssistantsClient.html#search",
             "RunsClient": "langchain-langgraph-sdk/client/RunsClient",
