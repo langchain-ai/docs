@@ -3,20 +3,21 @@
 import { Client } from "langsmith";
 
 const client = new Client();
+let runId = "<run-id>";
+// :remove-start:
 const runs = [];
 for await (const run of client.listRuns({ projectName: "default", limit: 1 })) {
   runs.push(run);
 }
-// :remove-start:
 if (runs.length === 0) {
   throw new Error("expected at least one run in the 'default' project");
 }
+runId = runs[0].id;
 // :remove-end:
-const run = runs[0];
-const url = await client.getRunUrl({ run });
+const url = await client.getRunUrl({ runId });
 console.log(url);
 // :snippet-end:
 
 // :remove-start:
-console.log("✓ runs-get-url-before validated");
+console.log("✓ runs-geturl-before validated");
 // :remove-end:

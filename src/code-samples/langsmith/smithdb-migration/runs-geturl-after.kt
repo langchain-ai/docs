@@ -8,32 +8,34 @@
 import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.runs.RunGetUrlParams
+// :remove-start:
 import com.langchain.smith.models.runs.RunQueryV2Params
-import com.langchain.smith.models.runs.RunSelectField
 import com.langchain.smith.models.sessions.SessionListParams
+// :remove-end:
 
 fun main() {
     val client: LangsmithClient = LangsmithOkHttpClient.fromEnv()
 
+    var runId = "<run-id>"
+    // :remove-start:
     val project = client.sessions().list(
         SessionListParams.builder().name("default").limit(1L).build()
     ).items().first()
-
-    val run = client.runs().queryV2(
+    val foundRun = client.runs().queryV2(
         RunQueryV2Params.builder()
             .addProjectId(project.id())
-            .addSelect(RunSelectField.ID)
-            .addSelect(RunSelectField.TRACE_ID)
-            .addSelect(RunSelectField.START_TIME)
             .pageSize(1L)
             .build()
     ).items().first()
+    runId = foundRun.id().get()
+    // :remove-end:
+    val run = client.runs().retrieve(runId)
 
     val response = client.runs().getUrl(
-        run.id().get(),
+        run.id(),
         RunGetUrlParams.builder()
-            .projectId(project.id())
-            .traceId(run.traceId().get())
+            .projectId(run.sessionId())
+            .traceId(run.traceId())
             .startTime(run.startTime().get().toString())
             .build()
     )
