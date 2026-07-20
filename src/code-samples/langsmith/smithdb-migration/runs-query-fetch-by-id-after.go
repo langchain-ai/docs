@@ -4,6 +4,9 @@ package main
 
 import (
 	"context"
+	// :remove-start:
+	"time"
+	// :remove-end:
 
 	"github.com/langchain-ai/langsmith-go"
 )
@@ -28,9 +31,13 @@ project := sessions.Items[0]
 runID1 := "<run-id-1>"
 runID2 := "<run-id-2>"
 // :remove-start:
+maxStart := time.Now().UTC()
+minStart := maxStart.AddDate(0, -1, 0)
 found, err := client.Runs.QueryV2(ctx, langsmith.RunQueryV2Params{
-	ProjectIDs: langsmith.F([]string{project.ID}),
-	PageSize:   langsmith.F(int64(2)),
+	ProjectIDs:   langsmith.F([]string{project.ID}),
+	MinStartTime: langsmith.F(minStart),
+	MaxStartTime: langsmith.F(maxStart),
+	PageSize:     langsmith.F(int64(2)),
 })
 if err != nil {
 	panic(err.Error())

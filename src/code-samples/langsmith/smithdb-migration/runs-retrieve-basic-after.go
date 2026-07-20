@@ -28,8 +28,12 @@ if err != nil {
 	panic(err.Error())
 }
 projectID = sessions.Items[0].ID
+maxStart := time.Now().UTC()
+minStart := maxStart.AddDate(0, -1, 0)
 found, err := client.Runs.QueryV2(ctx, langsmith.RunQueryV2Params{
-	ProjectIDs: langsmith.F([]string{projectID}),
+	ProjectIDs:   langsmith.F([]string{projectID}),
+	MinStartTime: langsmith.F(minStart),
+	MaxStartTime: langsmith.F(maxStart),
 	Selects: langsmith.F([]langsmith.RunQueryV2ParamsSelect{
 		langsmith.RunQueryV2ParamsSelectID,
 		langsmith.RunQueryV2ParamsSelectStartTime,
