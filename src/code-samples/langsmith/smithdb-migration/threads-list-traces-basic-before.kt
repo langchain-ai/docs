@@ -51,6 +51,9 @@ val runs = client.runs().query(
 ).runs()
 for (run in runs) {
     println("${run.id()} ${run.startTime().get()}")
+    // :remove-start:
+    break
+    // :remove-end:
 }
 // :remove-start:
 }

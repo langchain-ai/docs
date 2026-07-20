@@ -54,6 +54,9 @@ val traces = client.threads().listTraces(
 ).items()
 for (trace in traces) {
     println("${trace.traceId().get()} ${trace.totalTokens().getOrNull()} ${trace.totalCost().getOrNull()}")
+    // :remove-start:
+    break
+    // :remove-end:
 }
 // :remove-start:
 }

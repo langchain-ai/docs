@@ -57,6 +57,9 @@ val runs = client.runs().query(
 ).runs()
 for (run in runs) {
     println("${run.id()} ${run.totalTokens().getOrNull()}")
+    // :remove-start:
+    break
+    // :remove-end:
 }
 // :remove-start:
 }
