@@ -1,0 +1,97 @@
+---
+title: "Inspeximus integrations"
+description: "Integrate with Inspeximus for LangGraph checkpointing and store persistence using LangChain Python."
+---
+
+>[Inspeximus](https://pypi.org/project/inspeximus/) is a zero-dependency memory layer for agents. It stores facts on a bi-temporal ledger, so correcting a value retires the previous one instead of overwriting it, and the earlier value stays queryable. Deleting a value leaves a signed, content-free receipt.
+
+Writes are deterministic: no model is called on the write path, so a given sequence of writes always produces the same store file.
+
+The Inspeximus LangGraph integrations provide a checkpointer for graph execution state and a store for long-lived agent data. Both are backed by the same ledger.
+
+## Get started
+
+The implementation is in the [DanceNitra/inspeximus](https://github.com/DanceNitra/inspeximus) repository, under `inspeximus/integrations/langgraph.py`. It includes the conformance run wired into CI, an operation-by-operation parity audit against @[InMemoryStore], and tests covering both. Both distributions are thin re-exports of that module.
+
+The store is a single file on disk. No server or connection configuration is required.
+
+## Installation
+
+```bash
+pip install -U langgraph-checkpoint-inspeximus langgraph-store-inspeximus
+```
+
+## LangGraph checkpointer
+
+`InspeximusSaver` persists LangGraph execution state and enables resume from any checkpoint.
+
+```python
+from langgraph.checkpoint.inspeximus import InspeximusSaver
+from langgraph.graph import StateGraph, START, END
+from typing_extensions import TypedDict
+
+
+class State(TypedDict):
+    count: int
+
+
+builder = StateGraph(State)
+builder.add_node("bump", lambda s: {"count": s["count"] + 1})
+builder.add_edge(START, "bump")
+builder.add_edge("bump", END)
+
+graph = builder.compile(checkpointer=InspeximusSaver(path="threads.jsonl"))
+
+config = {"configurable": {"thread_id": "t1"}}
+graph.invoke({"count": 0}, config)
+print(graph.get_state(config).values)
+```
+
+```text
+{'count': 1}
+```
+
+Async is supported: `ainvoke` and `aget_state` work the same way.
+
+`InspeximusSaver` implements the five base methods and passes the [conformance suite](/oss/langgraph/checkpointers), which runs in the repository's CI. It does not implement the extended capabilities, so Agent Server features that depend on them, including rollback, thread forking, and pruning, are unavailable.
+
+## LangGraph store
+
+`InspeximusStore` implements LangGraph's @[BaseStore] interface, so it works anywhere @[InMemoryStore] does, including LangMem.
+
+```python
+from langgraph.store.inspeximus import InspeximusStore
+
+store = InspeximusStore(path="store.jsonl")
+
+store.put(("user", "42"), "timezone", {"tz": "UTC"})
+store.put(("user", "42"), "timezone", {"tz": "PST"})
+
+print(store.get(("user", "42"), "timezone").value)
+```
+
+```text
+{'tz': 'PST'}
+```
+
+Put, get, search, delete, and `list_namespaces` behave as @[InMemoryStore] does. `InspeximusStore` adds `history`, which returns every value a key has held:
+
+```python
+print(store.history(("user", "42"), "timezone"))
+```
+
+```text
+[{'tz': 'UTC'}, {'tz': 'PST'}]
+```
+
+There is [no conformance suite for custom stores](/oss/langgraph/stores), so the repository's `store_audit.py` tests `InspeximusStore` against @[InMemoryStore] as the reference, covering CRUD, namespace isolation, search, and `list_namespaces`.
+
+<Note>
+A namespace whose last key is deleted is still listed, matching @[InMemoryStore]. Only the namespace name is retained; the deleted value is erased. Pass `prune_empty_namespaces=True` to drop the name as well.
+</Note>
+
+## Resources
+
+- [langgraph-checkpoint-inspeximus on PyPI](https://pypi.org/project/langgraph-checkpoint-inspeximus/)
+- [langgraph-store-inspeximus on PyPI](https://pypi.org/project/langgraph-store-inspeximus/)
+- [DanceNitra/inspeximus on GitHub](https://github.com/DanceNitra/inspeximus)
