@@ -23,6 +23,7 @@ The following middleware work with any LLM provider:
 | [PII detection](#pii-detection) | Detect and handle Personally Identifiable Information (PII). |
 | [To-do list](#to-do-list) | Equip agents with task planning and tracking capabilities. |
 | [LLM tool selector](#llm-tool-selector) | Use an LLM to select relevant tools before calling main model. |
+| [Tool error](#tool-error) | Catch tool execution exceptions and convert them to error messages for the model. |
 | [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
 | [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
 | [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
@@ -1295,6 +1296,109 @@ const agent = createAgent({
 </Accordion>
 
 
+### Tool error
+
+:::python
+
+Catch exceptions raised during tool execution and convert them into error `ToolMessage`s that the model can see and recover from, instead of halting the agent run. Tool error is useful for the following:
+
+- Letting the model retry a failed tool call with corrected arguments.
+- Surfacing controlled, sanitized error messages instead of raw exception details.
+- Preventing unexpected tool exceptions from crashing the agent.
+
+<Note>
+Tool error middleware does not automatically retry failed calls. For retries, compose with [Tool retry](#tool-retry) middleware placed *inner* (earlier in the `middleware` list) and configured with `on_failure="error"` so that exceptions reach the tool error middleware. See the [full example](#tool-error-full-example) below.
+</Note>
+
+**API reference:** @[`ToolErrorMiddleware`]
+
+<Note>
+`ToolErrorMiddleware` requires `langchain>=1.3.14`.
+</Note>
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ToolErrorMiddleware
+
+
+def on_error(exc: Exception, request: ToolCallRequest) -> str | None:
+    if isinstance(exc, ValueError):
+        return f"`{request.tool_call['name']}` failed with {type(exc).__name__}."
+    # propagate everything else
+
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[your_tools],
+    middleware=[ToolErrorMiddleware(on_error)],
+)
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="on_error" type="Callable[[Exception, ToolCallRequest], str | list[ContentBlock] | None]">
+    Sync handler called for each exception raised by tool execution. Return content (a `str` or list of content blocks) to convert the exception into a `ToolMessage(status="error")`. Return `None` or omit a return statement to let the exception propagate. Used on the sync path and, unless `aon_error` is given, on the async path.
+</ParamField>
+
+<ParamField body="aon_error" type="Callable[[Exception, ToolCallRequest], Awaitable[str | list[ContentBlock] | None]]">
+    Optional async handler, used on the async execution path. Falls back to `on_error` when not provided.
+</ParamField>
+
+<ParamField body="tools" type="list[BaseTool | str]">
+    Optional list of tools or tool names to apply error handling to. If `None`, applies to all tools.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Tool error full example">
+
+The `on_error` handler receives the exception and the `ToolCallRequest` (which includes the tool call dict with name, args, and call ID). Return `None` for exceptions you do not want to handle, and they will propagate normally.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ToolErrorMiddleware, ToolRetryMiddleware
+
+
+def on_error(exc: Exception, request: ToolCallRequest) -> str | None:
+    # Surface ValueError to the model so it can correct the input
+    if isinstance(exc, ValueError):
+        return f"`{request.tool_call['name']}` failed: {type(exc).__name__}. Fix the input and retry."
+    # Let all other exceptions propagate (halts the run)
+    return None
+
+
+# Async-only usage
+async def aon_error(exc: Exception, request: ToolCallRequest) -> str | None:
+    if isinstance(exc, ConnectionError):
+        return f"Tool `{request.tool_call['name']}` encountered a connection error."
+    return None
+
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[search_tool, database_tool],
+    middleware=[
+        # Place retry inner so exceptions reach ToolErrorMiddleware after retries are exhausted
+        ToolRetryMiddleware(max_retries=3, on_failure="error"),
+        ToolErrorMiddleware(on_error=on_error, tools=["search_tool"]),
+    ],
+)
+
+# Async-only: pass aon_error alone (do not pass on_error)
+async_agent = create_agent(
+    model="gpt-5.5",
+    tools=[api_tool],
+    middleware=[ToolErrorMiddleware(aon_error=aon_error)],
+)
+```
+
+<Note>
+Prefer returning content that names the exception type over the raw exception message, which may carry sensitive or internal detail. The `on_error` handler controls disclosure: the raw exception message is never sent to the model unless you choose to include it.
+</Note>
+
+</Accordion>
+:::
+
 ### Tool retry
 
 Automatically retry failed tool calls with configurable exponential backoff. Tool retry is useful for the following:
@@ -1356,14 +1460,16 @@ const agent = createAgent({
 </ParamField>
 
 <ParamField body="retry_on" type="tuple[type[Exception], ...] | callable" default="(Exception,)">
-    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried.
+    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried. By default, all exceptions are retried. Exceptions that do not match propagate immediately and are not handled by `on_failure`.
 </ParamField>
 
-<ParamField body="on_failure" type="string | callable" default="return_message">
+<ParamField body="on_failure" type="string | callable" default="continue">
     Behavior when all retries are exhausted. Options:
-    - `'return_message'` - Return a `ToolMessage` with error details (allows LLM to handle failure)
-    - `'raise'` - Re-raise the exception (stops agent execution)
+    - `'continue'` (default) - Return a `ToolMessage` with error details, allowing the LLM to handle the failure
+    - `'error'` - Re-raise the exception, stopping agent execution
     - Custom callable - Function that takes the exception and returns a string for the `ToolMessage` content
+
+    **Deprecated values:** `'return_message'` (use `'continue'` instead) and `'raise'` (use `'error'` instead).
 </ParamField>
 
 <ParamField body="backoff_factor" type="number" default="2.0">
@@ -1437,8 +1543,8 @@ The middleware automatically retries failed tool calls with exponential backoff.
 - `jitter` - Add random variation (default: True)
 
 **Failure handling:**
-- `on_failure='return_message'` - Return error message
-- `on_failure='raise'` - Re-raise exception
+- `on_failure='continue'` (default) - Return error message
+- `on_failure='error'` - Re-raise exception
 - Custom function - Function returning error message
 :::
 :::js

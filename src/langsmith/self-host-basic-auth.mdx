@@ -3,31 +3,43 @@ title: Basic authentication with email and password
 sidebarTitle: Set up basic authentication
 ---
 
-LangSmith supports login via username/password with a few limitations:
+Basic authentication lets users log in to LangSmith [Self-hosted](/langsmith/self-hosted) with an email and password, without configuring an external identity provider. [Organization Admins](/langsmith/rbac#organization-admin) manage users directly from LangSmith, so authentication runs self-contained without depending on [OAuth or SSO](/langsmith/self-host-sso).
 
-* You cannot change an existing installation from basic auth mode to OAuth with PKCE (deprecated) or vice versa - installations must be either one or the other. **A basic auth installation requires a completely fresh installation including a separate PostgreSQL database/schema, unless migrating from an existing `None` type installation (see below).**
-* Users must be given their initial auto-generated password once they are invited. This password may be changed later by any Organization Admin.
-* You cannot use both basic auth and OAuth with client secret at the same time.
+<Tip>
+For a description of the supported authentication methods in LangSmith Self-hosted, refer to the [Authentication methods](/langsmith/authentication-methods#self-hosted) page.
+</Tip>
+
+## Considerations
+
+- You can upgrade a basic auth installation to [OAuth with client secret](/langsmith/self-host-sso#with-client-secret-recommended) by swapping the configuration parameters, but you cannot switch back to basic auth from any OAuth mode.
+- You cannot switch between basic auth and OAuth with PKCE (deprecated), in either direction.
+- A new basic auth installation requires a fresh installation including a separate PostgreSQL database/schema, unless migrating from an existing [None](/langsmith/authentication-methods#none) auth installation (refer to [Migrating from none auth](#migrating-from-none-auth)).
+- Users receive an auto-generated initial password when invited, which must be shared with them out of band. Any Organization Admin can change this password later.
+- You cannot enable basic auth and OAuth with client secret at the same time.
+- All basic auth users share a single `Default` [organization](/langsmith/administration-overview#organizations) that is provisioned at install time. Creating additional organizations is not supported.
 
 ## Requirements and features
 
-* There is a single `Default` organization that is provisioned during initial installation, and creating additional organizations is not supported
-* Your initial password (configured below) must be least 12 characters long and have at least one lowercase, uppercase, and symbol
-* There are no strict requirements for the secret used for signing JWTs, but we recommend securely generating a string of at least 32 characters. For example: `openssl rand -base64 32`
+- Your initial password must be at least 12 characters long and contain at least one lowercase, uppercase, and symbol (refer to [Configuration](#configuration)).
+- The secret used for signing JWTs has no strict requirements, but should be a securely generated string of at least 32 characters. For example, [`openssl rand -base64 32`](https://docs.openssl.org/1.0.2/man1/rand/#description).
 
-### Migrating from none auth
-
-**Only supported in versions 0.7 and above.**
-
-Migrating an installation from [None](/langsmith/authentication-methods#none) auth mode replaces the single "default" user with a user with the configured credentials and keeps all existing resources. The single pre-existing workspace ID post-migration remains `00000000-0000-0000-0000-000000000000`, but everything else about the migrated installation is standard for a basic auth installation.
-
-To migrate, simply update your configuration as shown below and run `helm upgrade` as usual.
-
-### Configuration
+## Migrating from none auth
 
 <Note>
-Changing the JWT secret will log out your users
+Only supported in [versions 0.7 and later](/langsmith/self-hosted-changelog).
 </Note>
+
+Migrating from [None](/langsmith/authentication-methods#none) auth mode to basic auth preserves your existing traces, datasets, and other resources. LangSmith replaces the single "default" user with a user created from the basic auth credentials you set up in your [configuration file](#configuration). The pre-existing workspace keeps its ID (`00000000-0000-0000-0000-000000000000`) so existing resources remain bound to it. Aside from the user swap, the resulting migrated installation behaves the same as a fresh basic auth install.
+
+To migrate, apply the basic auth configuration shown in [Configuration](#configuration) and then run `helm upgrade`.
+
+## Configuration
+
+<Note>
+Changing the JWT secret will log out your users.
+</Note>
+
+Enable basic auth by adding the following block to your LangSmith Helm values. On first install, LangSmith uses these values to create the initial Organization Admin user for the `Default` organization:
 
 ```yaml Helm
 config:
@@ -35,10 +47,8 @@ config:
   basicAuth:
     enabled: true
     initialOrgAdminEmail: <YOUR EMAIL ADDRESS>
-    initialOrgAdminPassword: <PASSWORD> # Must be at least 12 characters long and have at least one lowercase, uppercase, and symbol
+    initialOrgAdminPassword: <PASSWORD> # Must be at least 12 characters long and contain at least one lowercase, uppercase, and symbol
     jwtSecret: <SECRET>
 ```
 
-Once configured, you will see a login screen like the one below. You should be able to login with the `initialOrgAdminEmail` and `initialOrgAdminPassword` values, and your user will be auto-provisioned with role `Organization Admin`. See the [admin guide](/langsmith/administration-overview#organization-roles) for more details on organization roles.
-
-![LangSmith UI with basic auth](/langsmith/images/langsmith-ui-basic-auth.png)
+Once configured, LangSmith displays a login screen with email and password. Log in with the `initialOrgAdminEmail` and `initialOrgAdminPassword` values, and your user is auto-provisioned with the `Organization Admin` role. For more details, refer to [Organization roles](/langsmith/administration-overview#organization-roles).

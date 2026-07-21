@@ -139,7 +139,68 @@ Choose a unique `snippet-name` in kebab-case. All snippet names must include a l
 
 ### 3. Add runnable test code in remove blocks
 
-Wrap any code that makes the sample executable but should not appear in docs:
+Wrap any code that makes the sample executable but should not appear in docs.
+
+**Run snippet code before exiting.** `make test-code-samples` must execute the snippet body, not skip it. Do not put `raise SystemExit(0)`, `process.exit(0)`, or `exit 0` at the top of a file (or before `:snippet-start:`) so the test passes without running imports, constructors, or API calls. That only checks that the file parses; it does not validate function signatures, option shapes, or import paths.
+
+Place `:remove-start:` blocks **after** the snippet when you can, so the harness runs assertions on values the snippet created:
+
+**Python (preferred):**
+```python
+# :snippet-start: example-py
+from deepagents import create_deep_agent
+
+agent = create_deep_agent(model="google_genai:gemini-3.5-flash")
+# :snippet-end:
+
+# :remove-start:
+assert agent is not None
+print("✓ example validated")
+# :remove-end:
+```
+
+**TypeScript (preferred):**
+```ts
+// :snippet-start: example-js
+import { DeepAgentsServer } from "deepagents-acp";
+
+const server = new DeepAgentsServer({
+  agents: { name: "careful-agent", interruptOn: { write_file: true } },
+});
+// :snippet-end:
+
+// :remove-start:
+if (!server) throw new Error("server not created");
+console.log("✓ example validated");
+// :remove-end:
+```
+
+For samples whose docs show a blocking tail (for example `await server.start()`, `asyncio.run(main())`, or `agent.invoke()` with a live model), keep setup and construction in the snippet so types and signatures are checked, then move **only** the blocking call into a trailing `:remove-start:` block—or omit it when construction alone is enough:
+
+```python
+# :snippet-start: server-example-py
+server = AgentServerACP(agent)
+# :snippet-end:
+
+# :remove-start:
+# Do not call await run_agent(server) here — it blocks on stdio.
+assert server is not None
+print("✓ server-example validated")
+# :remove-end:
+```
+
+**Do not** short-circuit before the snippet:
+
+```python
+# :remove-start:
+raise SystemExit(0)  # BAD: snippet below never runs
+# :remove-end:
+
+# :snippet-start: example-py
+...
+```
+
+The examples below show harness code that invokes behavior when the snippet defines callable helpers:
 
 **Python:**
 ```python
@@ -273,6 +334,7 @@ To support additional languages, add config entries in that script.
 
 ## Guidelines
 
+- **Run snippet code in tests** — `:remove-start:` harnesses must not exit before the snippet runs. Let imports, constructors, and configuration execute so `make test-code-samples` catches wrong signatures, renamed options, and broken import paths. Put `SystemExit` / `process.exit` only after the snippet (or use them to skip a trailing blocking call such as `server.start()`, not the whole sample).
 - **Collocate related snippets** in one code sample file per doc page or feature when possible (Python and Java). Import each generated MDX snippet separately in the MDX file (for example, `<RubricConfigurePy />` then `<RubricInvokePy />` from the same source file). For TypeScript, split into separate `.ts` files when snippets duplicate imports or top-level bindings; still import each generated MDX snippet in the MDX file the same way.
 - Do not mock LangChain internals (for example `unittest.mock.patch` on `init_chat_model` helpers) so that imports resolve real chat model instances. Do not use fake chat models in docs code samples (for example `GenericFakeChatModel`, `FakeListChatModel`, or other `langchain_core` testing fakes). Wire a real chat model (for example `ChatOpenAI`) so snippets match what readers run; `make test-code-samples` requires a valid API key when the sample calls the model.
 - Do not change `pyproject.toml` when making code sample changes.
