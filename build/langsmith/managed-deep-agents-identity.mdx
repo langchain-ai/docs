@@ -1,17 +1,19 @@
 ---
 title: Add identity to Managed Deep Agents
 sidebarTitle: Identity
-description: Give each caller their own threads, memory, and credentials so agents stay private and multi-user safe.
+description: Give each caller their own threads, memory, and credentials so agents stay private and secure in multi-user deployments.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-Agents are not anonymous chat boxes. As soon as more than one person (or one company) uses a deployment, you need a reliable answer to: **whose conversation is this, and whose data may the agent see or act on?**
+Agents are not anonymous chatbots. As soon as more than one person (or one company) uses a deployment, you need to know: **whose conversation is this, and whose data may the agent see or act on?** Identity lets one deployment serve thousands of users safely, with no data leakage between callers.
 
-Identity is how Managed Deep Agents answers that before every run. You declare a small contract once. The runtime then partitions threads, [memory](/langsmith/managed-deep-agents-memory), and credentials so callers cannot bleed into each other.
+Managed Deep Agents answers that question before every run. You declare a small contract once, and the runtime partitions threads, [memory](/langsmith/managed-deep-agents-memory), and credentials so callers cannot see or affect each other.
 
 Identity is opt-in. Projects without `identity.ts` or `identity.py` compile and deploy unchanged. When you add a declaration, `mda` wires auth, scoping, and a frozen `runtime.identity` object into tools and middleware.
+
+This page assumes you have an existing Managed Deep Agents project and the `mda` CLI installed. If you are new to Managed Deep Agents, start with the [overview](/langsmith/managed-deep-agents-overview) and [quickstart](/langsmith/managed-deep-agents-quickstart) first.
 
 <Note>
 <ManagedDeepAgentsPrivateBetaNote />
@@ -27,11 +29,19 @@ Without identity, a Managed Deep Agent has one shared boundary for the whole dep
 | **Shared threads** | Anyone who can hit the deployment can resume or inspect another user's conversation. |
 | **Wrong credentials** | The agent calls GitHub or another API with one shared token, so every user acts as the same account, or you have no safe way to act *as* the signed-in user. |
 
-Deep Agents make this sharper than a simple chatbot: they keep durable memory, resume long-running threads, and call tools on the user's behalf. Identity turns "who is calling?" into hard isolation instead of hoping the prompt or the UI keeps people apart.
+Deep Agents without identity make this a real problem: they keep durable memory, resume long-running threads, and call tools on the user's behalf. Identity turns "who is calling?" into enforced isolation instead of hoping the prompt or the UI keeps people apart.
 
-## Three ideas to know first
+A key benefit of identity is that downstream tool calls can act **as the signed-in user** rather than as a shared bot account. For example, with `credentials: "actor"`, the agent calls GitHub as Alice, not as a single bot token shared across all users.
 
-You only need three ideas before you write any config:
+For deployments with compliance requirements such as SOC 2, GDPR, or HIPAA, identity scoping provides the data segregation boundaries that auditors expect: each caller's threads and memory are isolated, and `runtime.identity` gives you an audit trail of who triggered each run.
+
+<Note>
+Adding identity to a project that previously had none does not delete existing threads or memory. Threads created before identity was enabled remain accessible at the agent scope. New threads are scoped by actor (or tenant) according to your declaration. To migrate old data, export it and re-create threads under the new scoping rules.
+</Note>
+
+## Understand three core concepts
+
+Learn these three concepts before you write any identity config:
 
 | Idea | Plain meaning | Example |
 | --- | --- | --- |
@@ -43,34 +53,37 @@ A few important clarifications:
 
 - **Actor** is not the agent. It is the caller the run represents.
 - **Tenant** is not a LangSmith workspace. Single-tenant agents have no tenant.
-- **Fail closed** means a missing required actor or tenant rejects the request. The runtime never falls back to "everyone's" memory or threads.
+- **Fail closed** means the runtime rejects any request that is missing a required actor or tenant. It never falls back to shared memory or threads.
 
 From actor (and optional tenant), Managed Deep Agents derives three outcomes:
 
 - **Threads**: who can open or resume a conversation
 - **Memory**: which durable [Context Hub](/langsmith/managed-deep-agents-memory) slice the run can see
-- **Credentials**: whose token downstream tool calls use (the signed-in user, or one shared agent token)
+- **Credentials**: whose token the agent uses for downstream tool calls (the signed-in user, or one shared agent token)
 
 ```mermaid
 flowchart LR
     Caller["Caller"] --> Ingress["Ingress authenticates request"]
     Ingress --> Resolve["Resolve actor and tenant"]
     Resolve --> Scope["Scope threads and memory"]
+    Resolve --> Reject["Reject: 403"]
     Scope --> Run["Run agent with runtime.identity"]
 
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710;
     classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900;
     classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33;
+    classDef alert fill:#F8E8E6,stroke:#B27D75,stroke-width:2px,color:#634643;
     class Caller trigger;
     class Ingress,Resolve,Scope process;
     class Run output;
+    class Reject alert;
 ```
 
 ## Choose a preset
 
 Presets encode the common product shapes so you do not invent scoping rules on day one. Start here, then override only what differs.
 
-Before you read the table, these scope values mean:
+The preset table uses these scope values:
 
 | Value | Meaning |
 | --- | --- |
@@ -78,25 +91,33 @@ Before you read the table, these scope values mean:
 | `tenant` | Shared inside one customer org, isolated from other orgs |
 | `channel` | Shared by everyone in the same channel (for example Slack) |
 | `agent` | Shared by the whole deployment |
-| _(unset)_ / `none` | Not used for that axis |
+| _(unset)_ / `none` | Not scoped on this axis |
 
-**Credentials** is the product difference many teams care about first:
+**Credentials** is often the first thing teams consider:
 
 - **`actor`**: downstream calls can act as the signed-in user (for example call GitHub as Alice).
 - **`agent`**: downstream calls use one shared bot or service token for everyone.
+
+Managed Deep Agents ships with five product shapes out of the box, covering the most common deployment patterns. Choose a preset based on your product shape:
 
 | Preset | Use it when… | Threads | Memory | Credentials |
 | --- | --- | --- | --- | --- |
 | `private-assistant` | Each person gets a private 1:1 assistant with their own history and memory | `actor` | `actor` | `actor` |
 | `multi-tenant-saas` | One deployment serves many customer orgs; users share org data but not across orgs | `actor` | `tenant` | `agent` |
-| `shared-bot` | A Slack/Discord-style bot where everyone in the channel shares the thread. Pair with [Channels](/langsmith/managed-deep-agents-channels) for Slack Events. | `channel` | `actor` | `agent` |
+| `shared-bot` | A Slack/Discord-style bot where everyone in the channel shares the thread | `channel` | `actor` | `agent` |
 | `internal-tool` | An internal company agent: one org, private per-user threads | `actor` | `actor` | `agent` |
 | `service` | Cron/webhook-only agents with no human caller and shared memory | _(unset)_ | `agent` | `agent` |
 
 All presets default to `trusted_backend` ingress and `tenancy: "single"`, except `multi-tenant-saas`, which sets `tenancy: "multi"`.
 
 <Tip>
-**How to choose quickly:** One human per conversation who must not see anyone else's data → `private-assistant`. SaaS with customer orgs → `multi-tenant-saas`. Shared channel bot → `shared-bot`. Internal company tool → `internal-tool`. Timer or webhook with no user → `service`.
+**How to choose quickly:**
+
+- One human per conversation who must not see anyone else's data → `private-assistant`
+- SaaS with customer orgs → `multi-tenant-saas`
+- Shared channel bot → `shared-bot`
+- Internal company tool → `internal-tool`
+- Timer or webhook with no user → `service`
 </Tip>
 
 ## Add an identity declaration
@@ -153,21 +174,21 @@ export const identity = defineIdentity({
 
 </CodeGroup>
 
-Use the full form when you want every field visible, or when you are assembling a config that does not match a preset. You can also start from a preset and override only the fields that differ.
+Use the full form when you want every field visible, or when you are assembling a config that does not match a preset. You can also start from a preset and override only the fields that differ. The same `define_identity` / `defineIdentity` object serves as both a factory (full form) and a preset selector (`.preset()` method).
 
 For the full project layout, see the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference).
 
 When identity is present, `mda` generates the custom auth handler, injects it into the compiled LangGraph app, and only then enables reserved identity headers and token verification.
 
-## Ingress: how Managed Deep Agents learns who is calling
+## Ingress: identify the caller
 
-Ingress is only the *how*: how the runtime learns the actor (and tenant) for this request. Pick one HTTP mode.
+Ingress is the mechanism the runtime uses to identify the actor (and tenant) for each request. Choose one HTTP mode: `trusted_backend` or `validated_token`.
 
 ### Trusted backend (recommended default)
 
 Your own API authenticates the user (session, OAuth, or similar), then proxies LangGraph requests with a shared ingress secret and reserved identity headers. The browser never sends the secret or raw identity-provider (IdP) tokens to Managed Deep Agents.
 
-This is the default for presets and the usual path when you already have a backend in front of the agent.
+This is the default ingress for all presets, and the recommended choice when you already have a backend in front of the agent. For the broader LangGraph auth model, see [Add auth to your server](/langsmith/add-auth-server).
 
 Required headers (case-insensitive):
 
@@ -195,7 +216,7 @@ export const identity = defineIdentity.preset("internal-tool");
 
 </CodeGroup>
 
-Put `MDA_INGRESS_SECRET` in `.env` for `mda dev` and as a hosted deployment secret for `mda deploy`. Your production backend should authenticate the user, then attach the headers above when proxying agent traffic.
+Put `MDA_INGRESS_SECRET` in `.env` for `mda dev` and as a hosted deployment secret for `mda deploy`. In production, your backend authenticates the user, then attaches the identity headers (`X-MDA-Ingress-Secret`, `X-MDA-Actor-Id`, and `X-MDA-Tenant-Id` when applicable) when proxying agent traffic.
 
 Example shape for a backend proxy (pseudocode):
 
@@ -214,7 +235,7 @@ await fetch(`${deploymentUrl}/threads/${threadId}/runs`, {
 ```
 
 <Warning>
-Never commit ingress secrets or IdP credentials. Do not send `MDA_INGRESS_SECRET` from the browser—only from a trusted backend proxy.
+Never commit ingress secrets or IdP credentials. Only send `MDA_INGRESS_SECRET` from a trusted backend proxy, never from the browser.
 </Warning>
 
 ### Validated token (browser-direct)
@@ -230,7 +251,7 @@ Verification can use:
 - **Opaque introspection**: call the IdP to ask whether a non-JWT token is still valid
 - **Guest tokens**: short-lived tokens signed by Managed Deep Agents for anonymous visitors
 
-Override a preset to enable validated-token ingress. The example below combines Supabase sign-in with optional guest access:
+Override a preset to enable validated-token ingress. The following example combines Supabase sign-in with optional guest access:
 
 <CodeGroup>
 
@@ -273,7 +294,7 @@ export const identity = defineIdentity.preset("internal-tool", {
 
 In `validated_token` mode, your frontend signs the user in with the same IdP you configured, reads an access token (or ID token where applicable), and passes it to the LangGraph client as `Authorization: Bearer <token>`. Do not send refresh tokens or client secrets to the deployment.
 
-When more than one provider is configured, each entry needs an `id`. Managed Deep Agents routes JWT providers by token `iss` (issuer) and fails closed when the issuer is unknown.
+When you configure more than one provider, give each entry a unique `id`. The runtime routes JWT providers by token `iss` (issuer) and returns 401 when the issuer does not match any configured provider.
 
 For provider-specific options and client examples, see [Provider setup guides](#provider-setup-guides).
 
@@ -287,7 +308,7 @@ For provider-specific options and client examples, see [Provider setup guides](#
 Put local values in `.env`. `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets. Provider-specific secrets (for example Supabase introspection) are listed in [Provider setup guides](#provider-setup-guides).
 
 <Warning>
-Never commit ingress secrets, guest signing keys, or IdP credentials. Do not send `MDA_INGRESS_SECRET` from the browser—only from a trusted backend proxy.
+Never commit ingress secrets, guest signing keys, or IdP credentials. Only send `MDA_INGRESS_SECRET` from a trusted backend proxy, never from the browser.
 </Warning>
 
 ## Use `runtime.identity` in tools and middleware
@@ -612,7 +633,7 @@ Identity misconfiguration usually surfaces as 401 (auth) or 403 (store/thread sc
   <Card title="LangSmith connector" icon="chart-line" href="/langsmith/managed-deep-agents-connectors/langsmith">
     Expose constrained LangSmith capabilities to untrusted callers.
   </Card>
-  <Card title="Channels" icon="messages" href="/langsmith/managed-deep-agents-channels">
+    <Card title="Channels" icon="messages" href="/langsmith/managed-deep-agents-channels">
     Receive Slack Events with shared-bot or Connect-with-Slack linking.
   </Card>
   <Card title="How it works" icon="settings" href="/langsmith/managed-deep-agents-how-it-works">
