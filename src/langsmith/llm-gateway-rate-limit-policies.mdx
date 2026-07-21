@@ -16,11 +16,11 @@ Retry-After: 42
 
 The `Retry-After` value is the number of seconds until the current window resets. Clients should honor this header and back off before retrying.
 
-Rate limit policies and [spend cap policies](/langsmith/llm-gateway-spend-policies) are complementary and can be applied together—spend caps for cost control, rate limits for throughput and abuse control.
+Rate limit policies and [spend cap policies](/langsmith/llm-gateway-spend-policies) are complementary and can be applied together—spend caps for cost control, rate limits for throughput and traffic control.
 
 ## Policy dimensions
 
-Rate limit policies are evaluated for every incoming request. You can set a policy as a default (applying a blanket rate limit to all users, workspaces, or API keys) or as a specific policy (an individual limit or a limit on a group of subjects).
+Rate limit policies are evaluated for every incoming request. You can set a policy as a default (applying a blanket rate limit to all users, workspaces, or API keys) or as a granular policy (an individual limit or a limit on a group of subjects).
 
 | Subject | What it limits | Example |
 | --- | --- | --- |
@@ -28,12 +28,12 @@ Rate limit policies are evaluated for every incoming request. You can set a poli
 | **Workspace** | Requests or tokens within a single workspace or group of workspaces | "The R&D workspace cannot exceed 1,000,000 tokens per hour" |
 | **API key** | Requests or tokens from a single API key or group of API keys | "The customer support agent keys share a limit of 200 requests per minute" |
 
-### Defaults vs. specific policies
+### Defaults vs. granular policies
 
 Rate limit policies have two modes:
 
 1. **Default policies** apply automatically to every member of a subject dimension. Example: "Every user in this workspace gets a default cap of 100 requests per minute." No need to create a policy per person.
-2. **Specific policies** target a named subject and override the default for that subject only. Example: "The on-call engineer gets 500 requests per minute." Editing the default updates everyone still on it.
+2. **Granular policies** target a named subject and override the default for that subject only. Example: "The on-call engineer gets 500 requests per minute." Editing the default updates everyone still on it.
 
 ### Independent enforcement
 
@@ -47,7 +47,7 @@ Each limit has three fields:
 
 | Field | Allowed values |
 | --- | --- |
-| **Metric** | `requests` or `tokens` |
+| **Metric** | `requests` or `tokens` (total tokens as reported by the provider) |
 | **Window** | `minute` or `hour` |
 | **Value** | A positive integer (the cap) |
 
@@ -70,45 +70,6 @@ Creating and managing policies requires `organization:manage` permission. For th
 1. Save.
 
 Policies take effect immediately.
-
-### Example policy configuration
-
-The following example enforces 100 requests per minute and 1,000,000 tokens per hour for a specific user:
-
-```json
-{
-  "name": "100 req/min + 1M tokens/hour per user",
-  "policy_type": "rate_limit",
-  "subject_matchers": [{"key": "user_id", "value": "<user-id>"}],
-  "config": {
-    "limits": [
-      {"metric": "requests", "window": "minute", "value": 100},
-      {"metric": "tokens",   "window": "hour",   "value": 1000000}
-    ]
-  },
-  "action": "block"
-}
-```
-
-## What callers see when a limit is exceeded
-
-When a rate limit is exceeded, the gateway returns **HTTP 429 (Too Many Requests)**:
-
-```
-API Error: 429 request blocked by gateway policies: <policy-name>
-```
-
-The response includes a **`Retry-After`** header indicating how many seconds remain until the current window resets. Clients should read this header and wait before retrying.
-
-<Note>
-For comparison, a spend cap violation returns **HTTP 402 (Payment Required)** instead of 429. See [Spend policies](/langsmith/llm-gateway-spend-policies).
-</Note>
-
-## Integration with LangSmith Engine
-
-When a rate limit policy blocks a request, the violation is recorded as metadata on the trace. These violations surface as issues in [LangSmith Engine](/langsmith/engine), where you can click through from the issue to the trace to understand what the agent was doing when it hit the limit.
-
-This is useful for diagnosing whether a blocked request represents a genuine abuse pattern (a user hammering the gateway in a loop) or a policy that needs adjustment (a legitimate workload that grew beyond its cap).
 
 ## Next steps
 
