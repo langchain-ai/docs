@@ -16,7 +16,7 @@ ctx := context.Background()
 client := langsmith.NewClient()
 
 runID := "<run-id>"
-startTime := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+startTime := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC) // Optional, but speeds up retrieval
 projectID := "<project-id>"
 // :remove-start:
 sessions, err := client.Sessions.List(ctx, langsmith.SessionListParams{

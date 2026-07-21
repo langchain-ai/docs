@@ -31,7 +31,7 @@ val project = client.sessions().list(
 ).items().first()
 
 var runId = "<run-id>"
-var startTime = "<run-start-time-rfc3339>"
+var startTime = "<run-start-time-rfc3339>" // Optional, but speeds up retrieval
 // :remove-start:
 val maxStart = OffsetDateTime.now()
 val foundRun = client.runs().queryV2(

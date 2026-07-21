@@ -18,7 +18,7 @@ const run = await client.readRun(runId);
 const response = await client.runs.getURL(run.id, {
   project_id: run.session_id!,
   trace_id: run.trace_id!,
-  start_time: String(run.start_time!),
+  start_time: String(run.start_time!), // Optional, but speeds up retrieval
 });
 console.log(response.url);
 // :snippet-end:

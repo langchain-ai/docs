@@ -43,7 +43,7 @@ func main() {
 	response, err := client.Runs.GetURL(ctx, run.ID, langsmith.RunGetURLParams{
 		ProjectID: langsmith.F(run.SessionID),
 		TraceID:   langsmith.F(run.TraceID),
-		StartTime: langsmith.F(run.StartTime.Format(time.RFC3339)),
+		StartTime: langsmith.F(run.StartTime.Format(time.RFC3339)), // Optional, but speeds up retrieval
 	})
 	if err != nil {
 		panic(err.Error())

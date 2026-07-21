@@ -39,7 +39,7 @@ fun main() {
         RunGetUrlParams.builder()
             .projectId(run.sessionId())
             .traceId(run.traceId())
-            .startTime(run.startTime().get().toString())
+            .startTime(run.startTime().get().toString()) // Optional, but speeds up retrieval
             .build()
     )
     println(response.url().get())
