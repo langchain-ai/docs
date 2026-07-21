@@ -28,5 +28,8 @@ for await (const trace of client.threads.listTraces(threadId, {
   selects: ["TRACE_ID", "TOTAL_TOKENS", "TOTAL_COST"],
 })) {
   console.log(trace.trace_id, trace.total_tokens, trace.total_cost);
+  // :remove-start:
+  break;
+  // :remove-end:
 }
 // :snippet-end:

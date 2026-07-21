@@ -9,7 +9,7 @@ PROJECT_ID=$(curl -s "https://api.smith.langchain.com/api/v1/sessions?name=defau
 # :remove-end:
 
 RUN_ID="<run-id>"
-START_TIME="2025-01-01T12:00:00Z"
+START_TIME="2025-01-01T12:00:00Z" # Optional, but speeds up retrieval
 # :remove-start:
 MAX_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MIN_START=$(date -u -d '-1 month' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1m +%Y-%m-%dT%H:%M:%SZ)
