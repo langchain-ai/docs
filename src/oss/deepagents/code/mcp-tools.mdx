@@ -371,14 +371,14 @@ What happens depends on the server's host:
 - **Slack** (`slack.com`, `*.slack.com`): same paste-back flow, but with Slack's public client preseeded. You're prompted for an optional team ID (e.g., `T01234567`) so the app installs into the right workspace.
 - **GitHub** (`api.githubcopilot.com`): RFC 8628 Device Authorization Grant. Deep Agents Code prints a verification URL and a user code; you enter the code in your browser and Deep Agents Code polls for completion.
 
-By default, `dcode mcp login` reads the same auto-discovered configs Deep Agents Code uses at runtime (subject to project-level trust gating). Pass `--config <path>` to use a specific file:
+By default, `dcode mcp login` reads the same auto-discovered configs Deep Agents Code uses at runtime (subject to project-level trust gating). Pass `--mcp-config <path>` to use a specific file:
 
 ```bash
-dcode mcp login linear --config ./mcp-config.json
+dcode mcp login linear --mcp-config ./mcp-config.json
 ```
 
 <Warning>
-    Project-level configs that haven't been trusted (see [Project-level trust](#project-level-trust)) are skipped during `mcp login` to prevent attacker-controlled `headers` entries from exfiltrating local secrets through `${VAR}` interpolation. Run `dcode` in the project once to approve the config, or pass `--config <path>` explicitly.
+    Project-level configs that have not been trusted (see [Project-level trust](#project-level-trust)) are skipped during `mcp login` to prevent attacker-controlled `headers` entries from exfiltrating local secrets through `${VAR}` interpolation. Run `dcode` in the project and choose `Allow for this project — until changed` to save an approval, or pass `--mcp-config <path>` explicitly.
 </Warning>
 
 ### Token storage
@@ -415,19 +415,24 @@ A single failing server no longer aborts startup. The agent runs with whichever 
 
 Project-level configs can contain stdio servers that execute local commands and remote servers whose `headers` may interpolate `${VAR}` from your environment. To prevent untrusted repositories from running arbitrary code or exfiltrating local secrets on CLI startup, Deep Agents Code enforces a **default-deny** policy for project-level entries.
 
+<Note>
+    Saved project MCP approvals and the per-server allow and deny policy require `deepagents-code>=0.1.40`.
+</Note>
+
 ### How it works
 
-- **Interactive mode:** Deep Agents Code prompts for approval before activating project servers, showing each stdio command and remote URL. Approval is persisted using a SHA-256 content fingerprint—if the config changes, you are prompted again.
-- **Non-interactive mode (`-n`):** Project servers are silently skipped unless `--trust-project-mcp` is passed.
-- **Trust covers stdio and remote entries alike** — remote servers can SSRF into localhost or cloud-metadata endpoints during the pre-flight probe and exfiltrate `${VAR}` values via headers, so they're gated the same way as stdio.
-- **User-level configs** (`~/.deepagents/.mcp.json`) are always trusted—the same trust model as `config.toml` and `hooks.json`.
-- **`dcode mcp login`** also honors project trust: an untrusted project-level config is skipped during login discovery so an attacker-controlled remote entry cannot pull secrets into the OAuth handshake.
+- **Interactive mode:** Deep Agents Code prompts for approval before activating project servers, showing each stdio command and remote URL. Choose `Allow once` to activate every prompted server for the current session. Choose `Allow for this project — until changed` to activate every prompted server for the session and select which approvals to save for future sessions.
+- **Saved approvals:** Deep Agents Code writes selected server approvals to the user-level `~/.deepagents/config.toml`. Each approval is scoped to the resolved project root, the server name, and a SHA-256 fingerprint of that server definition. If the server command, URL, headers, or other config fields change, Deep Agents Code prompts again.
+- **Non-interactive mode (`-n`):** Project servers without a matching saved or environment approval are silently skipped unless `--trust-project-mcp` is passed. Explicit denies still apply.
+- **Trust covers stdio and remote entries alike:** Remote servers can SSRF into localhost or cloud-metadata endpoints during the pre-flight probe and exfiltrate `${VAR}` values through headers, so Deep Agents Code gates them the same way as stdio servers.
+- **User-level configs** (`~/.deepagents/.mcp.json`) are always trusted, following the same trust model as `config.toml` and `hooks.json`.
+- **`dcode mcp login`** also honors project trust: An untrusted project-level config is skipped during login discovery so an attacker-controlled remote entry cannot pull secrets into the OAuth handshake.
 
 ### Flags
 
 | Flag | Behavior |
 |------|----------|
-| `--trust-project-mcp` | Trust all project-level stdio servers without prompting (for CI and automation) |
+| `--trust-project-mcp` | Trust project-level servers without prompting for the current run. Servers denied by user policy remain disabled. |
 
 ```bash
 # Skip the approval prompt
@@ -437,23 +442,31 @@ dcode --trust-project-mcp
 dcode -n "run tests" --trust-project-mcp
 ```
 
-### Trust store
+### Saved approvals
 
-Trust decisions are stored in `~/.deepagents/.state/mcp_trust.json`:
+Saved approvals are stored in `~/.deepagents/config.toml`:
 
-```json
-{
-  "version": 1,
-  "projects": {
-    "/Users/you/myproject": "sha256:abc123..."
-  }
-}
+```toml title="~/.deepagents/config.toml"
+[mcp]
+enabled_project_server_approvals = [
+  { project_root = "/Users/you/myproject", name = "docs-langchain", fingerprint = "sha256:abc123..." }
+]
 ```
 
-Each key under `projects` is an absolute project root path. The value is a SHA-256 digest of the concatenated project-level config contents. To revoke trust, delete the entry or modify the project's `.mcp.json` (which invalidates the fingerprint automatically).
+To revoke an approval, remove its entry from `enabled_project_server_approvals`. To force a re-approval without editing `config.toml`, change the server definition in the project's `.mcp.json`; the saved fingerprint no longer matches.
+
+The legacy flat `[mcp].enabled_project_servers` list is ignored in `config.toml`. Use `enabled_project_server_approvals` for saved approvals.
+
+### Advanced allow and deny policy
+
+Use `[mcp].disabled_project_servers` in `~/.deepagents/config.toml`, or `DEEPAGENTS_CODE_DISABLED_PROJECT_MCP_SERVERS` in your shell or global `~/.deepagents/.env`, to always reject project MCP servers by name. Denies win over saved approvals and over the `--trust-project-mcp` flag.
+
+For automation that must pre-approve project MCP servers by name, set `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS` in your shell or global `~/.deepagents/.env` to a comma-separated list of server names. This is a process-wide escape hatch: A different project, command change, or URL change under the same server name still matches. When this variable is set, Deep Agents Code ignores saved approvals for that process. Prefer saved approvals or `--trust-project-mcp` unless you need name-based approval across projects and server-definition changes.
+
+`deepagents-code>=0.1.40` ignores the former `DEEPAGENTS_CODE_ENABLED_PROJECT_MCP_SERVERS` variable. Replace it with `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS` if you need the same name-based behavior.
 
 <Warning>
-    A trusted stdio MCP server has the same permissions as your user account. Only approve servers from repositories you trust. Review the commands shown in the approval prompt before accepting.
+    A trusted stdio MCP server runs with the permissions of your user account. Approving a remote server allows Deep Agents Code to contact its URL during pre-flight and send its configured headers. Only approve servers from repositories you trust, and review the commands and URLs shown in the approval prompt.
 </Warning>
 
 ## System prompt awareness
