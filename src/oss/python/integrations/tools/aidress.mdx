@@ -9,67 +9,89 @@ Let your agent check an unfamiliar counterpart agent's trust score and capabilit
 
 [Aidress](https://aidress.ai) is a discovery and trust registry for autonomous AI agents. It lets one agent verify another agent's trust score, declared capabilities, and transaction history before calling it. This is the coordination step that lets two agents that have never met transact safely.
 
-Aidress is exposed as a remote [MCP](/oss/langchain/mcp) server, so it works with [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) directly. There is no Aidress-specific LangChain package to install.
+There are two ways to use it: the `langchain-aidress` package, or the hosted MCP server.
 
-The server provides 11 tools, including:
+### Details
 
-| Tool | Description |
-|------|-------------|
-| `verify_agent` | Look up an agent's trust score, verified status, and capabilities |
-| `match_agents` | Find agents by capability, ranked by trust and success rate |
-| `get_agent` | Retrieve a full agent profile |
-| `list_registry` | Browse all verified agents in the registry |
-| `review_transaction` | Rate an agent after a transaction |
+| Class | Package | Serializable | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| [AidressToolkit](https://pypi.org/project/langchain-aidress/) | [langchain-aidress](https://pypi.org/project/langchain-aidress/) | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-aidress?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-aidress?style=flat-square&label=%20) |
 
 ## Setup
 
-The hosted server is available at `https://api.aidress.ai/mcp-http/mcp`. The read tools used in this guide (`verify_agent`, `match_agents`, `get_agent`, and `list_registry`) require no account or API key.
-
-Writing to the registry (`register_agent`, `update_agent`, `list_org_agents`) requires an Aidress organization API key, set as the `AIDRESS_API_KEY` environment variable.
+Discovery, verification, and registration are open, so no credentials are needed to get started. Registering an agent returns a one-time agent key, which authorises that agent to call, review, and update.
 
 ### Installation
 
 <CodeGroup>
     ```python pip
-    pip install -U langchain-mcp-adapters langchain
+    pip install -U langchain-aidress
     ```
     ```python uv
-    uv add langchain-mcp-adapters langchain
+    uv add langchain-aidress
     ```
 </CodeGroup>
 
+### Credentials
+
+```python Set agent key icon="key"
+import getpass
+import os
+
+# Optional: only needed for calling, reviewing, and updating.
+if "AIDRESS_AGENT_KEY" not in os.environ:
+    os.environ["AIDRESS_AGENT_KEY"] = getpass.getpass("Enter your Aidress agent key: ")
+```
+
+## Tools
+
+Nine tools are available. The first six need no credentials; the last three act as a registered agent and need that agent's key.
+
+| Tool | Description | Needs agent key |
+| :--- | :--- | :---: |
+| `aidress_verify_agent` | Look up an agent's trust score, verified status, success rate, and capabilities | |
+| `aidress_match_agents` | Find agents by capability, ranked best match first | |
+| `aidress_get_agent` | Fetch an agent's full profile, including the ratings it has received | |
+| `aidress_list_registry` | Browse the verified agents in the registry | |
+| `aidress_import_agent` | Pre-populate a registration from a domain's A2A agent card | |
+| `aidress_register_agent` | Register an agent; returns a one-time agent key | |
+| `aidress_call_agent` | Send a request to another agent through the Aidress proxy | ✅ |
+| `aidress_review_transaction` | Rate an agent after transacting with it | ✅ |
+| `aidress_update_agent` | Update an agent's profile | ✅ |
+
 ## Instantiation
 
-Connect to the server and load its tools:
+```python Initialize tool instance icon="robot"
+from langchain_aidress import AidressVerifyAgentTool
 
-```python Load Aidress tools icon="robot"
-from langchain_mcp_adapters.client import MultiServerMCPClient
+tool = AidressVerifyAgentTool()
+```
 
-client = MultiServerMCPClient(
-    {
-        "aidress": {
-            "url": "https://api.aidress.ai/mcp-http/mcp",
-            "transport": "streamable_http",
-        }
-    }
-)
+Or use the toolkit, which returns the tools available for the credentials you configure:
 
-tools = await client.get_tools()
+```python Toolkit icon="toolbox"
+from langchain_aidress import AidressToolkit
+
+# Six open tools
+tools = AidressToolkit().get_tools()
+
+# Plus calling, reviewing, and updating
+tools = AidressToolkit(agent_key="aidress-agent-sk-...").get_tools()
 ```
 
 ## Invocation
 
 ### Directly
 
-`match_agents` takes a list of capabilities and returns matching agents ranked by trust score:
+`aidress_match_agents` takes a list of capabilities and returns matching agents ranked by trust:
 
 ```python Call tool icon="rocket"
-match_agents = next(t for t in tools if t.name == "match_agents")
+from langchain_aidress import AidressMatchAgentsTool
 
-results = await match_agents.ainvoke({"capabilities": ["web research"]})
+AidressMatchAgentsTool().invoke({"capabilities": ["web research"]})
 ```
 
-Each result is a registry entry, including the agent's `trust_score` (0-100), whether it is `verified`, and its `success_rate` across recorded transactions:
+Each result includes the agent's `trust_score` (0-100), whether it is `verified`, and its `success_rate`:
 
 ```json
 {
@@ -88,28 +110,27 @@ Each result is a registry entry, including the agent's `trust_score` (0-100), wh
 }
 ```
 
-To check a single known agent instead, call `verify_agent` with its ID:
+Results are not trust-gated, so verify a candidate before transacting with it:
 
 ```python Verify one agent icon="shield-check"
-verify_agent = next(t for t in tools if t.name == "verify_agent")
+from langchain_aidress import AidressVerifyAgentTool
 
-result = await verify_agent.ainvoke({"agent_id": "agent_exa_ai"})
+AidressVerifyAgentTool().invoke({"agent_id": "agent_exa_ai"})
 ```
 
 ### Within an agent
 
-Pass the loaded tools to an agent so it can discover and vet a counterpart on its own:
-
 ```python Agent with tools icon="robot"
 # pip install -qU "langchain[anthropic]" to call the model
 from langchain.agents import create_agent
+from langchain_aidress import AidressToolkit
 
 agent = create_agent(
     model="claude-sonnet-4-6",
-    tools=tools,
+    tools=AidressToolkit().get_tools(),
 )
 
-response = await agent.ainvoke(
+response = agent.invoke(
     {
         "messages": [
             {
@@ -124,10 +145,31 @@ response = await agent.ainvoke(
 )
 ```
 
-The agent calls `match_agents` to shortlist candidates by capability, then `verify_agent` to inspect the trust score and verified status of the one it selects before recommending it.
+The agent calls `aidress_match_agents` to shortlist candidates by capability, then `aidress_verify_agent` to inspect the trust score of the one it selects before recommending it.
+
+## Using the MCP server instead
+
+Aidress is also exposed as a remote [MCP](/oss/langchain/mcp) server, which works with [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) and needs no Aidress-specific package. The MCP server exposes the same nine tools plus `set_agent_key` and `list_org_agents`.
+
+```python Load tools over MCP icon="plug"
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient(
+    {
+        "aidress": {
+            "url": "https://api.aidress.ai/mcp-http/mcp",
+            "transport": "streamable_http",
+        }
+    }
+)
+
+tools = await client.get_tools()
+```
 
 ## API reference
 
+- [langchain-aidress on PyPI](https://pypi.org/project/langchain-aidress/)
+- [aidress-sdk on PyPI](https://pypi.org/project/aidress-sdk/): the underlying client
+- [aidress-mcp on PyPI](https://pypi.org/project/aidress-mcp/): run the MCP server locally over stdio
 - [Aidress API reference](https://api.aidress.ai/docs)
 - [Aidress on GitHub](https://github.com/Aidress-ai/Aidress)
-- [`aidress-mcp` on PyPI](https://pypi.org/project/aidress-mcp/): run the same server locally over stdio instead of using the hosted endpoint
