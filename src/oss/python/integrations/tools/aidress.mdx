@@ -1,0 +1,133 @@
+---
+title: "Aidress integration"
+description: "Verify the trust and capabilities of other AI agents from LangChain using the Aidress registry."
+---
+
+Let your agent check an unfamiliar counterpart agent's trust score and capabilities before it transacts.
+
+## Overview
+
+[Aidress](https://aidress.ai) is a discovery and trust registry for autonomous AI agents. It lets one agent verify another agent's trust score, declared capabilities, and transaction history before calling it. This is the coordination step that lets two agents that have never met transact safely.
+
+Aidress is exposed as a remote [MCP](/oss/langchain/mcp) server, so it works with [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) directly. There is no Aidress-specific LangChain package to install.
+
+The server provides 11 tools, including:
+
+| Tool | Description |
+|------|-------------|
+| `verify_agent` | Look up an agent's trust score, verified status, and capabilities |
+| `match_agents` | Find agents by capability, ranked by trust and success rate |
+| `get_agent` | Retrieve a full agent profile |
+| `list_registry` | Browse all verified agents in the registry |
+| `review_transaction` | Rate an agent after a transaction |
+
+## Setup
+
+The hosted server is available at `https://api.aidress.ai/mcp-http/mcp`. The read tools used in this guide (`verify_agent`, `match_agents`, `get_agent`, and `list_registry`) require no account or API key.
+
+Writing to the registry (`register_agent`, `update_agent`, `list_org_agents`) requires an Aidress organization API key, set as the `AIDRESS_API_KEY` environment variable.
+
+### Installation
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-mcp-adapters langchain
+    ```
+    ```python uv
+    uv add langchain-mcp-adapters langchain
+    ```
+</CodeGroup>
+
+## Instantiation
+
+Connect to the server and load its tools:
+
+```python Load Aidress tools icon="robot"
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient(
+    {
+        "aidress": {
+            "url": "https://api.aidress.ai/mcp-http/mcp",
+            "transport": "streamable_http",
+        }
+    }
+)
+
+tools = await client.get_tools()
+```
+
+## Invocation
+
+### Directly
+
+`match_agents` takes a list of capabilities and returns matching agents ranked by trust score:
+
+```python Call tool icon="rocket"
+match_agents = next(t for t in tools if t.name == "match_agents")
+
+results = await match_agents.ainvoke({"capabilities": ["web research"]})
+```
+
+Each result is a registry entry, including the agent's `trust_score` (0-100), whether it is `verified`, and its `success_rate` across recorded transactions:
+
+```json
+{
+  "agent_id": "agent_exa_ai",
+  "org_name": "Exa",
+  "org_domain": "api.exa.ai",
+  "verified": true,
+  "trust_score": 77,
+  "transaction_count": 9,
+  "success_rate": 100.0,
+  "capabilities": [
+    {"name": "search", "weight": 1},
+    {"name": "research", "weight": 3}
+  ],
+  "routing": {"protocol": "http", "settlement_rail": "x402"}
+}
+```
+
+To check a single known agent instead, call `verify_agent` with its ID:
+
+```python Verify one agent icon="shield-check"
+verify_agent = next(t for t in tools if t.name == "verify_agent")
+
+result = await verify_agent.ainvoke({"agent_id": "agent_exa_ai"})
+```
+
+### Within an agent
+
+Pass the loaded tools to an agent so it can discover and vet a counterpart on its own:
+
+```python Agent with tools icon="robot"
+# pip install -qU "langchain[anthropic]" to call the model
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=tools,
+)
+
+response = await agent.ainvoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Find a web research agent in the registry, then check its "
+                    "trust score before I send it any work."
+                ),
+            }
+        ]
+    }
+)
+```
+
+The agent calls `match_agents` to shortlist candidates by capability, then `verify_agent` to inspect the trust score and verified status of the one it selects before recommending it.
+
+## API reference
+
+- [Aidress API reference](https://api.aidress.ai/docs)
+- [Aidress on GitHub](https://github.com/Aidress-ai/Aidress)
+- [`aidress-mcp` on PyPI](https://pypi.org/project/aidress-mcp/): run the same server locally over stdio instead of using the hosted endpoint
