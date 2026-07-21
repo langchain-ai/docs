@@ -32,6 +32,9 @@ for run in client.read_thread(
     select=["id", "total_tokens", "total_cost"],
 ):
     print(run.id, run.total_tokens, run.total_cost)
+    # :remove-start:
+    break
+    # :remove-end:
 # :snippet-end:
 
 # :snippet-start: threads-list-traces-selecting-fields-after-py
@@ -54,6 +57,9 @@ async def main():
         selects=["TRACE_ID", "TOTAL_TOKENS", "TOTAL_COST"],
     ):
         print(trace.trace_id, trace.total_tokens, trace.total_cost)
+        # :remove-start:
+        break
+        # :remove-end:
 
 
 asyncio.run(main())

@@ -53,6 +53,9 @@ func main() {
 	}
 	for _, run := range runs.Runs {
 		fmt.Println(run.ID, run.StartTime)
+		// :remove-start:
+		break
+		// :remove-end:
 	}
 }
 // :snippet-end:
