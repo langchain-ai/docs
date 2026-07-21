@@ -1,0 +1,164 @@
+---
+title: Trajectories integrations
+description: How each LangSmith SDK integration sets the metadata that trajectories require, and the one case where you set it yourself.
+---
+
+<Note>
+[Trajectories](/langsmith/trajectories) and the Messages view are in **beta**.
+</Note>
+
+The [trajectory endpoint](/langsmith/trajectories) and the [Messages view](/langsmith/view-traces#messages-view) both need two pieces of metadata on your runs to render the main conversation correctly:
+
+- **Thread grouping**: `thread_id` on each run tells LangSmith that a set of runs belong to the same conversation.
+- **Run classification**: `ls_agent_type: "root"` on the top-level run of a turn tells the trajectory endpoint that this run is the main conversation (rather than a subagent, middleware, or compaction run, which are filtered out).
+
+For most LangSmith integrations, both are set for you. The one case that needs manual instrumentation is the [OpenAI Responses API in chaining mode](#openai-responses-api-with-chaining): server-side chaining leaves the wrapper with no natural thread key.
+
+## Supported integrations
+
+The following integrations set both `thread_id` and `ls_agent_type` automatically:
+
+- [Claude Code](/langsmith/trace-claude-code)
+- [Claude Agent SDK (Python)](/langsmith/trace-claude-code)
+- [Claude Agent SDK (JS)](/langsmith/trace-claude-code)
+- [OpenAI Codex](/langsmith/trace-with-codex)
+- [Cursor](/langsmith/trace-with-cursor)
+- [Pi](/langsmith/trace-with-pi)
+- [Opencode](/langsmith/trace-with-opencode)
+- [GitHub Copilot](/langsmith/trace-with-vscode-copilot)
+- [Deep Agents](/langsmith/trace-deep-agents)
+- [LangChain / LangGraph](/oss/langchain/overview)
+- OpenAI Chat Completions (`wrap_openai`)
+- OpenAI Responses API, single call (`wrap_openai`)
+
+The **OpenAI Responses API in chaining mode** (`previous_response_id`) sets `ls_agent_type` automatically, but you set `thread_id` yourself. Fore more details, refer to the [OpenAI Responses API with chaining](#openai-responses-api-with-chaining) example.
+
+For the full `ls_agent_type` schema and the other values (`subagent`, `middleware`, `compaction`) that official integrations set on non-root runs, see the [Coding agent metadata contract](/langsmith/coding-agent-metadata-contract). For the underlying thread-grouping mechanism, see [Configure threads](/langsmith/threads).
+
+## OpenAI Responses API with chaining
+
+When you chain calls to the OpenAI Responses API by passing `previous_response_id`, OpenAI stores conversation state server-side and the LangSmith wrapper has no natural key to group calls into a thread. Set `thread_id` yourself, either per call or at wrapper init time.
+
+<Note>
+Use a [UUID v7](https://uuid7.com) for `thread_id`. LangSmith's SDK exports a `uuid7` helper, and UUID v7 sorts by creation time so threads stay ordered in list views.
+</Note>
+
+### Per-call metadata
+
+Set `thread_id` on each call. Use this when one wrapped client serves multiple threads (for example, one client per process, many concurrent conversations).
+
+<CodeGroup>
+
+```python Python
+import openai
+from langsmith import uuid7
+from langsmith.wrappers import wrap_openai
+
+client = wrap_openai(openai.Client())
+thread_id = str(uuid7())
+
+resp1 = client.responses.create(
+    model="gpt-5.6",
+    input="What is the capital of France?",
+    store=True,
+    langsmith_extra={"metadata": {"thread_id": thread_id}},
+)
+
+resp2 = client.responses.create(
+    model="gpt-5.6",
+    input="And its population?",
+    previous_response_id=resp1.id,
+    store=True,
+    langsmith_extra={"metadata": {"thread_id": thread_id}},
+)
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+import { uuid7 } from "langsmith";
+import { wrapOpenAI } from "langsmith/wrappers";
+
+const client = wrapOpenAI(new OpenAI());
+const threadId = uuid7();
+
+const res1 = await client.responses.create({
+  model: "gpt-5.6",
+  input: "What is the capital of France?",
+  metadata: { thread_id: threadId },
+  store: true,
+});
+
+const res2 = await client.responses.create({
+  model: "gpt-5.6",
+  input: "And its population?",
+  previous_response_id: res1.id,
+  metadata: { thread_id: threadId },
+  store: true,
+});
+```
+
+</CodeGroup>
+
+### Init-time metadata
+
+Set `thread_id` once when wrapping the client. Every call made through this wrapper is tagged with the same thread. Use this when a wrapped client serves exactly one thread for its lifetime (for example, a per-conversation worker).
+
+<CodeGroup>
+
+```python Python
+import openai
+from langsmith import uuid7
+from langsmith.wrappers import wrap_openai
+
+thread_id = str(uuid7())
+
+client = wrap_openai(
+    openai.Client(),
+    tracing_extra={"metadata": {"thread_id": thread_id}},
+)
+
+resp1 = client.responses.create(
+    model="gpt-5.6",
+    input="What is the capital of France?",
+    store=True,
+)
+
+resp2 = client.responses.create(
+    model="gpt-5.6",
+    input="And its population?",
+    previous_response_id=resp1.id,
+    store=True,
+)
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+import { uuid7 } from "langsmith";
+import { wrapOpenAI } from "langsmith/wrappers";
+
+const threadId = uuid7();
+
+const client = wrapOpenAI(new OpenAI(), { metadata: { thread_id: threadId } });
+
+const res1 = await client.responses.create({
+  model: "gpt-5.6",
+  input: "What is the capital of France?",
+  store: true,
+});
+
+const res2 = await client.responses.create({
+  model: "gpt-5.6",
+  input: "And its population?",
+  previous_response_id: res1.id,
+  store: true,
+});
+```
+
+</CodeGroup>
+
+## Related
+
+- [Trajectories](/langsmith/trajectories): the trajectory endpoint and response formats.
+- [Configure threads](/langsmith/threads): how `thread_id` groups runs across LangSmith.
+- [Coding agent metadata contract](/langsmith/coding-agent-metadata-contract): the full `ls_agent_type` schema.
+- [Messages view integrations](/langsmith/messages-view-integrations): the current (non-Beta) Messages view and how it renders each integration.

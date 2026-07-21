@@ -1,0 +1,262 @@
+---
+title: Trajectories
+description: A chat-style representation of the main conversation from a LangSmith trace or thread, available in the Messages view and as a public API.
+---
+
+<Note>
+Trajectories are part of the [Messages view](/langsmith/messages-view-integrations) **beta** and are also available as a public API at `POST /v1/trajectory`.
+</Note>
+
+A _trajectory_ is the chat-style conversation extracted from an agent trace, in a single normalized shape regardless of which framework produced the trace. Instead of walking the run tree yourself and handling each SDK's serialization, you get an ordered list of user messages, agent responses, tool calls, and tool results, together with the per-message model, token, cost, and latency data.
+
+Retrieve a trajectory for a single trace or an entire thread. LangSmith's UI renders trajectories in the Messages view. Programmatically, `POST /v1/trajectory` returns the same data, ready to feed into a UI, a dataset, an evaluator, or offline analysis.
+
+## Endpoint
+
+```
+POST /v1/trajectory
+```
+
+The endpoint returns the **main conversation** for the selected [trace](/langsmith/observability-concepts#traces) or [thread](/langsmith/observability-concepts#threads). Runs classified as subagent, middleware, or compaction are filtered out. Ensuring the endpoint identifies the main conversation correctly requires two pieces of run metadata to be present: `thread_id` (for grouping) and `ls_agent_type` (for classification). Most LangSmith integrations set both automatically. For the full support matrix and the situations that require manual instrumentation, refer to [Trajectories integrations](/langsmith/trajectories-integrations).
+
+## Response formats
+
+The `format` parameter selects one of two response shapes.
+
+### `messages` (default)
+
+A flat list of LangChain-format messages. Use this when you only need conversation content. For example, exporting a thread into a dataset or feeding it to an evaluator.
+
+```json
+[
+  {
+    "role": "human",
+    "content": "What's the weather in Paris?"
+  },
+  {
+    "role": "ai",
+    "content": [
+      { "type": "text", "text": "It's 18°C and partly cloudy." }
+    ]
+  }
+]
+```
+
+### `ui`
+
+A paginated list of message envelopes, each wrapping the LangChain message with per-run source metadata (trace, run, model, tokens, cost, latency). Use this when you are rendering a Messages-view-style UI or need to surface cost and performance data next to each turn. To recover turn boundaries, group consecutive items by `trace_id`.
+
+```json
+{
+  "items": [
+    {
+      "message": {
+        "role": "human",
+        "content": "What's the weather in Paris?"
+      },
+      "metadata": {
+        "trace_id": "019f1519-f15e-7291-b2a1-59f47f99f7a5",
+        "run_id": "019f1519-f1a4-7390-b924-3cfde64ad235",
+        "start_time": "2026-07-09T00:00:00Z",
+        "model_name": "gpt-4o-mini"
+      }
+    },
+    {
+      "message": {
+        "role": "ai",
+        "content": [
+          { "type": "text", "text": "It's 18°C and partly cloudy." }
+        ]
+      },
+      "metadata": {
+        "trace_id": "019f1519-f15e-7291-b2a1-59f47f99f7a5",
+        "run_id": "019f1519-f989-7011-8c37-143c1fa63f83",
+        "start_time": "2026-07-09T00:00:04Z",
+        "model_name": "gpt-4o-mini",
+        "prompt_tokens": 42,
+        "completion_tokens": 18,
+        "total_tokens": 60,
+        "prompt_cost": 0.0002,
+        "completion_cost": 0.0003,
+        "total_cost": 0.0005,
+        "latency_ms": 812
+      }
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+## Request parameters
+
+| Field | Type | Purpose |
+| --- | --- | --- |
+| `project_id` | UUID, **required** | Tracing project the trace or thread belongs to. |
+| `thread_id` | Non-empty string, **required** unless `trace_id` is set | Selects a thread. Mutually exclusive with `trace_id`. |
+| `trace_id` | UUID, **required** unless `thread_id` is set | Selects a single trace. Mutually exclusive with `thread_id`. |
+| `format` | `"messages"` or `"ui"` (default: `"messages"`) | Response shape. See [Response formats](#response-formats). |
+| `start_at` | RFC 3339 timestamp | Seek handle for UI deep-linking. Set to open a thread at a specific turn (e.g., when a link from an alert or dashboard should jump to a particular timestamp instead of the top of the thread). Valid only when `thread_id` is set. Cannot be combined with `cursor`. |
+| `cursor` | String | Continuation token from a previous response's `next_cursor`. Send it back verbatim to fetch the next page. Cannot be combined with `start_at`. |
+
+## Validation
+
+Condition | Status
+--- | ---
+Request body is not valid JSON | `400`
+Missing `project_id` | `422`
+Missing both `thread_id` and `trace_id` | `422`
+Both `thread_id` and `trace_id` provided | `422`
+Both `cursor` and `start_at` provided | `422`
+`start_at` provided with `trace_id` (thread-only field) | `422`
+
+## Pagination
+
+Pagination is cursor-based:
+
+- Callers do not set a page size. The server chooses page boundaries internally.
+- `next_cursor` in the response is an **opaque continuation token**, which is a string the server issues and the client hands back verbatim as `cursor` on the next request.
+- `next_cursor: null` means there are no more results.
+- `start_at` is a seek handle for UI deep-linking. It selects the first thread turn whose source trace or run starts at or after the given timestamp. Use it only on the initial request; on subsequent pages, send `cursor` instead. This is the mechanism a UI uses to open a thread scrolled to a specific turn. For example, following a link from an alert that references a specific timestamp.
+
+## Metadata fields (`ui` format)
+
+The `metadata` object on each item mirrors the field names used elsewhere in the runs API. Fields are omitted when not applicable (for example, tool result messages have no token or cost data).
+
+| Field | Description |
+| --- | --- |
+| `trace_id` | Trace containing the source run. |
+| `run_id` | Run from which the message was projected. |
+| `start_time` | Source run start time (RFC 3339). |
+| `model_name` | Model name from the run's metadata. |
+| `prompt_tokens` | Prompt token count from the source run. |
+| `completion_tokens` | Completion token count from the source run. |
+| `total_tokens` | Total token count from the source run. |
+| `prompt_cost` | Prompt cost from the source run. |
+| `completion_cost` | Completion cost from the source run. |
+| `total_cost` | Total cost from the source run. |
+| `latency_ms` | Source run latency in milliseconds. |
+
+## Examples
+
+### Trace with tool calls
+
+Request:
+
+```json
+{
+  "project_id": "c7cfabe9-7d33-4112-b53c-563ffa26af27",
+  "trace_id": "019f2341-9f9f-7272-8d8d-1978150b5143",
+  "format": "ui"
+}
+```
+
+Abbreviated response:
+
+```json expandable
+{
+  "items": [
+    {
+      "message": {
+        "role": "human",
+        "content": "how do I integrate G Suite with LangSmith Fleet"
+      },
+      "metadata": {
+        "trace_id": "019f2341-9f9f-7272-8d8d-1978150b5143",
+        "run_id": "019f2341-a405-7542-8518-925e7f83e325",
+        "start_time": "2026-07-02T14:35:32.229374Z",
+        "model_name": "gemini-3.1-flash-lite"
+      }
+    },
+    {
+      "message": {
+        "role": "ai",
+        "content": [
+          { "type": "tool_call", "id": "KUNP9vqK", "name": "search_docs", "args": { "query": "gsuite integration" } }
+        ]
+      },
+      "metadata": {
+        "trace_id": "019f2341-9f9f-7272-8d8d-1978150b5143",
+        "run_id": "019f2341-a405-7542-8518-925e7f83e325",
+        "start_time": "2026-07-02T14:35:32.229374Z",
+        "model_name": "gemini-3.1-flash-lite",
+        "prompt_tokens": 9068,
+        "completion_tokens": 71,
+        "total_tokens": 9139
+      }
+    },
+    {
+      "message": {
+        "role": "tool",
+        "tool_call_id": "KUNP9vqK",
+        "content": "Title: Integrations\nLink: https://docs.langchain.com/langsmith/integrations\n..."
+      },
+      "metadata": {
+        "trace_id": "019f2341-9f9f-7272-8d8d-1978150b5143",
+        "run_id": "fake-tool-run-1"
+      }
+    },
+    {
+      "message": {
+        "role": "ai",
+        "content": [
+          { "type": "text", "text": "LangSmith Fleet does not have a direct G Suite integration, but individual Google services are available through Fleet's tool registry." }
+        ]
+      },
+      "metadata": {
+        "trace_id": "019f2341-9f9f-7272-8d8d-1978150b5143",
+        "run_id": "019f2341-b915-7dc0-94e1-7e3d67d4d63f",
+        "start_time": "2026-07-02T14:35:37Z",
+        "model_name": "gemini-3.1-flash-lite"
+      }
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+### Paginating a thread with `start_at`
+
+Deep-link into a thread at a specific timestamp, then continue paging with the returned cursor.
+
+**Initial request** (seek with `start_at`):
+
+```json
+{
+  "project_id": "4dd208d3-593b-462e-a0ba-7349c7c35288",
+  "thread_id": "conv_6a42d78942248194a82451536f08a8340d9ae0006c568d65",
+  "start_at": "2026-06-29T20:37:29.636595Z",
+  "format": "ui"
+}
+```
+
+**Initial response** returns the first source page and a continuation cursor:
+
+```json
+{
+  "items": [
+    /* ... messages from the first turn ... */
+  ],
+  "next_cursor": "opaque_cursor_after_paris_turn"
+}
+```
+
+**Continuation request** (use `cursor`, not `start_at`):
+
+```json
+{
+  "project_id": "4dd208d3-593b-462e-a0ba-7349c7c35288",
+  "thread_id": "conv_6a42d78942248194a82451536f08a8340d9ae0006c568d65",
+  "cursor": "opaque_cursor_after_paris_turn",
+  "format": "ui"
+}
+```
+
+Continue paging until `next_cursor` is `null`.
+
+## Related
+
+- [Trajectories integrations](/langsmith/trajectories-integrations): how each SDK sets `thread_id` and `ls_agent_type`, and situations that need manual instrumentation.
+- [Messages view integrations](/langsmith/messages-view-integrations): Messages view and its supported frameworks.
+- [Configure threads](/langsmith/threads): how to group traces into a thread using `thread_id`.
+- [Coding agent metadata contract](/langsmith/coding-agent-metadata-contract): the full `ls_agent_type` schema.
+- [Evaluate agent trajectories](/langsmith/trajectory-evals): separate feature for scoring agent trajectories against a reference.
