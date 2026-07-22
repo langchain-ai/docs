@@ -1,0 +1,207 @@
+---
+title: Plugins and marketplaces
+sidebarTitle: Plugins
+description: Install plugins from marketplaces or package skills and MCP servers for Deep Agents Code
+---
+
+Plugins extend Deep Agents Code with reusable [skills](/oss/deepagents/code/memory-and-skills) and [MCP servers](/oss/deepagents/code/mcp-tools). Marketplaces provide catalogs for discovering and installing plugins across projects or teams. Deep Agents Code supports Claude- and Codex-style plugin manifests and marketplace catalogs, as described in [Create a plugin](#create-a-plugin) and [Create a marketplace](#create-a-marketplace).
+
+<Warning>
+    Install plugins and marketplaces only from sources you trust. An enabled plugin can add instructions and start MCP server processes with your user permissions.
+</Warning>
+
+## Manage plugins interactively
+
+To browse marketplaces and manage plugins in a `dcode` session:
+
+1. Run `/plugins` to open the plugin manager.
+2. Add a marketplace from its **Marketplaces** tab. Supported sources include:
+    - A GitHub repository in `owner/repo` format, optionally followed by `@branch-or-tag`.
+    - An HTTPS Git repository URL, optionally followed by `#branch-or-tag`.
+    - An HTTPS URL that serves a marketplace JSON file.
+    - A local marketplace directory or JSON file.
+3. Install a plugin from the marketplace.
+4. Run `/reload` to activate newly installed plugin skills and MCP servers without restarting the session.
+
+The plugin manager also lets you enable, disable, and uninstall installed plugins. Disabling a plugin keeps it installed but excludes its skills and MCP servers after you run `/reload` or start a new session.
+
+Removing a marketplace uninstalls its plugins and removes managed cache data. Deep Agents Code preserves the original source when the marketplace came from a local directory or file. Run `/reload` or start a new session to apply the removal to an active session.
+
+## Manage plugins from the command line
+
+Use `dcode plugin` for scripts and terminal-based administration. Plugin IDs use the format `plugin-name@marketplace-name`.
+
+```bash
+# Add and inspect a marketplace
+dcode plugin marketplace add acme/plugins
+dcode plugin marketplace list
+
+# Browse and install plugins
+dcode plugin list
+dcode plugin install code-review@acme-tools
+
+# Change plugin state
+dcode plugin disable code-review@acme-tools
+dcode plugin enable code-review@acme-tools
+
+# Remove a plugin or marketplace
+dcode plugin uninstall code-review@acme-tools
+dcode plugin marketplace remove acme-tools
+```
+
+`plugin list` and `plugin marketplace list` accept `--json`. After installing a plugin, run `/reload` in an active interactive session or start a new session.
+
+## Use plugin skills and MCP servers
+
+Plugin skills are namespaced to prevent collisions with project, user, and other plugin skills. Invoke a skill with its plugin ID and skill path:
+
+```text
+/skill:plugin-name@marketplace-name:skill-name optional arguments
+```
+
+In interactive mode, autocomplete also matches the shorter `/plugin-name:skill-name` form and expands it to the canonical `/skill:` command. Nested skill directories add each directory to the namespace. For example, `skills/review/security/SKILL.md` from `quality@acme-tools` becomes `/skill:quality@acme-tools:review:security`.
+
+An enabled plugin can also contribute MCP servers. Deep Agents Code merges these servers with your regular MCP configuration when plugins load. Use `/mcp` to inspect available servers and tools.
+
+## Create a plugin
+
+A Deep Agents Code plugin is a directory containing one or both of the supported components:
+
+```text
+my-plugin/
+├── .claude-plugin/
+│   └── plugin.json
+├── skills/
+│   └── review/
+│       └── SKILL.md
+└── .mcp.json
+```
+
+Deep Agents Code also recognizes `.codex-plugin/plugin.json`. The manifest is optional when components use their default locations. If the plugin contains one skill only, you can place `SKILL.md` at the plugin root instead of creating `skills/`.
+
+### Define the plugin manifest
+
+When present, `.claude-plugin/plugin.json` or `.codex-plugin/plugin.json` must contain a `name`. You can also declare a version and custom component paths:
+
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json"
+}
+```
+
+The `skills` and `mcpServers` fields accept a path string or an array of paths. `mcpServers` can also contain an inline MCP configuration object. Every component path must start with `./`, remain inside the plugin root, and not contain `..`.
+
+When no custom path is declared, Deep Agents Code discovers:
+
+- Skills under `skills/`, or a root `SKILL.md` when no `skills/` directory exists.
+- MCP servers in a root `.mcp.json` file.
+
+### Add skills
+
+Organize each skill as a directory containing `SKILL.md`:
+
+```text
+skills/
+└── review/
+    ├── SKILL.md
+    └── checklist.md
+```
+
+Use the same skill format as standalone Deep Agents Code skills. The installed plugin name becomes the skill namespace. For more information, see [Memory and skills](/oss/deepagents/code/memory-and-skills#skills).
+
+### Add MCP servers
+
+Place standard MCP server definitions in `.mcp.json` or declare them inline with `mcpServers` in the plugin manifest. Plugin configuration supports these path variables:
+
+- `${CLAUDE_PLUGIN_ROOT}` or `${PLUGIN_ROOT}`: The installed plugin directory.
+- `${CLAUDE_PLUGIN_DATA}` or `${PLUGIN_DATA}`: The writable data directory for the plugin.
+- `${CLAUDE_PROJECT_DIR}`: The active project directory.
+
+For example:
+
+```json
+{
+  "mcpServers": {
+    "review-tools": {
+      "command": "python",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server.py"],
+      "env": {
+        "CACHE_DIR": "${CLAUDE_PLUGIN_DATA}"
+      }
+    }
+  }
+}
+```
+
+For supported MCP transports and fields, see [MCP tools](/oss/deepagents/code/mcp-tools).
+
+## Create a marketplace
+
+A marketplace is a JSON catalog with a name and a `plugins` array. Store it at one of these paths in the marketplace root:
+
+- `.claude-plugin/marketplace.json`
+- `.agents/plugins/marketplace.json`
+- `.agents/plugins/api_marketplace.json`
+
+The following marketplace contains one plugin stored in the same repository:
+
+```json
+{
+  "name": "acme-tools",
+  "plugins": [
+    {
+      "name": "code-review",
+      "source": "./plugins/code-review",
+      "description": "Review code for correctness and maintainability"
+    }
+  ]
+}
+```
+
+Each plugin entry requires a `name` and `source`. It can also include `description` and `author`. Local source paths must start with `./` and stay inside the marketplace root. Set `metadata.pluginRoot` when all local plugins share a different base directory.
+
+Marketplace entries can also use external Git sources:
+
+```json
+{
+  "name": "acme-tools",
+  "plugins": [
+    {
+      "name": "code-review",
+      "source": {
+        "source": "github",
+        "repo": "acme/code-review-plugin",
+        "ref": "v1.0.0"
+      }
+    },
+    {
+      "name": "release-tools",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/acme/developer-tools.git",
+        "path": "./plugins/release-tools",
+        "ref": "main"
+      }
+    }
+  ]
+}
+```
+
+Supported external plugin source types are `github`, `url`, and `git-subdir`. Remote URLs must use HTTPS. A marketplace added as a direct JSON URL cannot contain local relative plugin sources because only the catalog file is downloaded. Use a Git repository or local directory when the catalog references plugin directories in the same source tree.
+
+Test a local marketplace by adding its directory, installing a plugin, and starting a new session or running `/reload`:
+
+```bash
+dcode plugin marketplace add ./my-marketplace
+dcode plugin install code-review@acme-tools
+```
+
+## See also
+
+- [Memory and skills](/oss/deepagents/code/memory-and-skills)
+- [MCP tools](/oss/deepagents/code/mcp-tools)
+- [Command reference](/oss/deepagents/code/cli-reference)
+- [Configuration](/oss/deepagents/code/configuration)

@@ -1,0 +1,14 @@
+
+// :snippet-start: runs-query-filter-time-range-after-js
+// :codegroup-tab: After
+import { Client } from "langsmith";
+
+const client = new Client();
+const project = await client.readProject({ projectName: "default" });
+const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+const runs = client.runs.query({
+  project_ids: [project.id],
+  min_start_time: oneDayAgo.toISOString(),
+  run_type: "LLM",
+});
+// :snippet-end:
