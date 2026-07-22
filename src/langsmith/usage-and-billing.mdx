@@ -42,16 +42,25 @@ After the specified retention period, traces are no longer accessible in the tra
 Auto upgrades can have an impact on your bill. Please read this section carefully to fully understand your estimated LangSmith tracing costs.
 </Warning>
 
-When you use certain features with `base` tier traces, their data retention will be automatically upgraded to `extended` tier. This will increase both the retention period, and the cost of the trace.
+Most traces use base retention. Some actions, such as online evaluators and automation rules, can extend a trace to a longer retention period at a higher cost. You control which actions extend retention.
 
-The complete list of scenarios in which a trace will upgrade when:
+When you use certain features with `base` tier traces, their data retention may be automatically upgraded to `extended` tier. This increases both the retention period and the cost of the trace.
 
-* **Feedback** is added to any run on the trace (or any trace in the thread), whether through [manual annotation](/langsmith/annotate-traces-inline), automatically with [an online evaluator](/langsmith/online-evaluations-llm-as-judge), or programmatically [via the SDK](/langsmith/attach-user-feedback).
-* An **[annotation queue](/langsmith/annotation-queues#assign-runs-to-a-single-run-queue)** receives any run from the trace.
-* An **[automation rule](/langsmith/rules#create-a-rule)** matches any run within a trace.
+Retention behavior by action:
+
+* **Feedback via API or SDK**: Feedback is added to any run on the trace (or any trace in the thread) through an API or SDK call that explicitly passes `extend_trace_retention=true` (`extendTraceRetention: true` in TypeScript). For more information, see [Attach user feedback](/langsmith/attach-user-feedback). The LangSmith UI sends feedback and notes without extending retention.
+* **Online evaluators**: An online evaluator scores the trace and its retention setting is enabled. Both trace-level and thread-level evaluators can opt out of this upgrade.
+* **Automation rules**: An [automation rule](/langsmith/rules#create-a-rule) with retention extension enabled matches any run within a trace.
+* **Manual annotation queue adds** (no upgrade): Manually adding runs to an [annotation queue](/langsmith/annotation-queues#assign-runs-to-a-single-run-queue) does not upgrade retention by default.
+
+This change applies to new actions only. Traces that were already upgraded by a previous action keep their extended retention.
 
 <Note>
-When you create or edit an online evaluator on a tracing project, you can opt out of upgrading the traces that evaluator scores, keeping them at base retention. This option is available only when the project's default retention is the base tier. For more information, see [Manage evaluator trace retention](/langsmith/evaluators#manage-evaluator-trace-retention).
+When you create or edit an online evaluator on a tracing project, you can opt out of upgrading the traces that evaluator scores, keeping them at base retention. This option is available only when the project's default retention is the base tier. For step-by-step instructions, see [Manage evaluator trace retention](/langsmith/evaluators#manage-evaluator-trace-retention).
+</Note>
+
+<Note>
+Retention extension is enabled by default for new online evaluators and automation rules. You can opt out when configuring each evaluator or rule.
 </Note>
 
 **Why auto-upgrade traces?**
@@ -65,7 +74,14 @@ If you have questions or concerns about our pricing model, please feel free to c
 
 **How does data retention affect downstream features?**
 
-* **Annotation Queues, Run Rules, and Feedback**: Traces that use these features will be [auto-upgraded](#data-retention-auto-upgrades).
+**Retention impact:**
+
+* **Extended by default**: Experiment runs are created at extended retention by default.
+* **Can change retention**: Automation rules and evaluators can upgrade matching traces when their retention setting is enabled.
+* **Does not change retention by default**: Feedback submitted in the LangSmith UI, notes, and manually adding runs to annotation queues keep traces at their current retention tier.
+
+**Other features:**
+
 * **Monitoring**: The monitoring tab will continue to work even after a base tier trace's data retention period ends. It is powered by trace metadata that exists for >30 days, meaning that your monitoring graphs will continue to stay accurate even on `base` tier traces.
 * **Datasets**: Datasets have an indefinite data retention period. Restated differently, if you add a trace's inputs and outputs to a dataset, they will never be deleted. We suggest that if you are using LangSmith for data collection, you take advantage of the datasets feature.
 
@@ -205,13 +221,12 @@ Usage limiting is approximate, meaning that we do not guarantee the exactness of
 
 ### Side effects of extended data retention traces limit
 
-The extended data retention traces limit has side effects. If the limit is already reached, any feature that could cause an auto-upgrade of tracing tiers becomes inaccessible. This is because an auto-upgrade of a trace would cause another extended retention trace to be created, which in turn should not be allowed by the limit. Therefore, you can no longer:
+The extended data retention traces limit has side effects. If the limit is already reached, LangSmith blocks actions that would create another extended-retention trace. For example, you can no longer:
 
-1. match run rules
-2. add feedback to traces
-3. add runs to annotation queues
+1. run automation rules that extend trace retention
+2. run evaluators that extend trace retention
 
-Each of these features may cause an auto upgrade, so we shut them off when the limit is reached.
+Actions that do not change trace retention are not counted against the extended-retention trace limit. You can still submit feedback in the LangSmith UI, add runs to annotation queues, and run automation rules or evaluators with retention extension disabled when the limit is reached.
 
 ### Updating usage limits
 
