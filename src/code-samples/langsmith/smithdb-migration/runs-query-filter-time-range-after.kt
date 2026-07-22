@@ -1,7 +1,7 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 21
 //KOTLIN 2.2.0
-//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.15
+//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.18
 
 // :snippet-start: runs-query-filter-time-range-after-kt
 // :codegroup-tab: After
@@ -10,6 +10,7 @@ import java.time.OffsetDateTime
 import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.runs.RunQueryV2Params
+import com.langchain.smith.models.runs.RunType
 import com.langchain.smith.models.sessions.SessionListParams
 
 // :remove-start:
@@ -29,7 +30,7 @@ val runs = client.runs().queryV2(
     RunQueryV2Params.builder()
         .addProjectId(project.id())
         .minStartTime(OffsetDateTime.now().minusDays(1))
-        .runType(RunQueryV2Params.RunType.LLM)
+        .runType(RunType.LLM)
         .build()
 ).items()
 // :remove-start:

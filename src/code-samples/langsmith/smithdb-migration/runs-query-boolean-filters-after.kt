@@ -1,7 +1,7 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 21
 //KOTLIN 2.2.0
-//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.15
+//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.18
 
 // :snippet-start: runs-query-boolean-filters-after-kt
 // :codegroup-tab: After
