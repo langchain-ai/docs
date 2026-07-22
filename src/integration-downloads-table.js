@@ -6,6 +6,10 @@
  * categorical sort expose `<span data-sort-value="...">`. This script makes
  * every header clickable and reorders tbody rows.
  *
+ * Download badges (pepy / shields.io) are live images. On enhance, this script
+ * fetches each badge SVG, parses the displayed count into data-sort-value, and
+ * re-sorts so order matches the badges even when baked-in values have drifted.
+ *
  * Mintlify auto-injects every .js file under src/, so this runs site-wide.
  * A MutationObserver re-enhances tables after client-side navigations.
  */
@@ -15,8 +19,102 @@
 
   const WRAPPER = ".integration-downloads-table";
   const ENHANCED = "data-sort-enhanced";
+  const BADGE_IMG =
+    'img[src*="pepy.tech/badge/"], img[src*="img.shields.io/"]';
 
-  function cellSortValue(cell, columnIndex) {
+  /** @type {Map<string, Promise<number|null>>} */
+  const badgeCountCache = new Map();
+
+  function parseAbbreviatedCount(raw) {
+    const text = String(raw || "")
+      .replace(/\/month/i, "")
+      .replace(/,/g, "")
+      .trim();
+    const match = text.match(/^([\d.]+)\s*([kKmMbB])?$/);
+    if (!match) return null;
+    const n = Number(match[1]);
+    if (Number.isNaN(n)) return null;
+    const suffix = (match[2] || "").toLowerCase();
+    if (suffix === "k") return Math.round(n * 1e3);
+    if (suffix === "m") return Math.round(n * 1e6);
+    if (suffix === "b") return Math.round(n * 1e9);
+    return Math.round(n);
+  }
+
+  function extractCountFromPepySvg(svgText) {
+    const texts = Array.from(
+      String(svgText).matchAll(/<text[^>]*>([^<]+)<\/text>/g),
+    ).map((match) => match[1].trim());
+    for (let i = texts.length - 1; i >= 0; i -= 1) {
+      if (/downloads/i.test(texts[i])) continue;
+      const count = parseAbbreviatedCount(texts[i]);
+      if (count !== null) return count;
+    }
+    return null;
+  }
+
+  function extractCountFromShields(svgOrLabel) {
+    const text = String(svgOrLabel);
+    const labeled =
+      text.match(/aria-label="([^"]+)"/i) ||
+      text.match(/<title>([^<]+)<\/title>/i);
+    const source = labeled ? labeled[1] : text;
+    const downloads = source.match(/downloads:\s*(.+)/i);
+    if (downloads) return parseAbbreviatedCount(downloads[1]);
+    return parseAbbreviatedCount(source);
+  }
+
+  function extractBadgeCount(url, body) {
+    if (/pepy\.tech/i.test(url)) return extractCountFromPepySvg(body);
+    if (/shields\.io/i.test(url)) return extractCountFromShields(body);
+    return extractCountFromPepySvg(body) ?? extractCountFromShields(body);
+  }
+
+  function fetchBadgeCount(url) {
+    if (badgeCountCache.has(url)) return badgeCountCache.get(url);
+
+    const pending = fetch(url, { mode: "cors", credentials: "omit" })
+      .then(function (response) {
+        if (!response.ok) return null;
+        return response.text();
+      })
+      .then(function (body) {
+        if (!body) return null;
+        return extractBadgeCount(url, body);
+      })
+      .catch(function () {
+        return null;
+      });
+
+    badgeCountCache.set(url, pending);
+    return pending;
+  }
+
+  function syncDownloadSortValues(table) {
+    const images = table.querySelectorAll(BADGE_IMG);
+    if (images.length === 0) return Promise.resolve(false);
+
+    const jobs = Array.from(images).map(function (img) {
+      const span = img.closest("[data-sort-value]");
+      if (!span) return Promise.resolve(false);
+      const url = img.currentSrc || img.getAttribute("src") || "";
+      if (!url) return Promise.resolve(false);
+
+      return fetchBadgeCount(url).then(function (count) {
+        if (count === null) return false;
+        const next = String(count);
+        if (span.getAttribute("data-sort-value") === next) return false;
+        span.setAttribute("data-sort-value", next);
+        return true;
+      });
+    });
+
+    return Promise.all(jobs).then(function (results) {
+      return results.some(Boolean);
+    });
+  }
+
+  function cellSortValue(cell) {
     if (!cell) return { kind: "empty", value: "" };
 
     const marked = cell.querySelector("[data-sort-value]");
@@ -57,8 +155,8 @@
     const rows = Array.from(tbody.rows);
     rows.sort((rowA, rowB) =>
       compareValues(
-        cellSortValue(rowA.cells[columnIndex], columnIndex),
-        cellSortValue(rowB.cells[columnIndex], columnIndex),
+        cellSortValue(rowA.cells[columnIndex]),
+        cellSortValue(rowB.cells[columnIndex]),
         direction,
       ),
     );
@@ -97,6 +195,14 @@
     );
     let direction = "desc";
     setAriaSort(headers, activeColumn, direction);
+    sortTable(table, activeColumn, direction);
+
+    // Prefer live badge counts over baked-in data-sort-value.
+    syncDownloadSortValues(table).then(function (changed) {
+      if (!changed) return;
+      if (!/downloads/i.test(headers[activeColumn].textContent || "")) return;
+      sortTable(table, activeColumn, direction);
+    });
 
     headers.forEach((th, columnIndex) => {
       th.setAttribute("data-sortable", "true");
