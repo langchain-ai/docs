@@ -4,7 +4,7 @@ sidebarTitle: CLI reference
 description: Deep Agents Code command-line flags and management subcommands
 ---
 
-Deep Agents Code (`dcode`) accepts command-line flags at launch and exposes management subcommands for agents, sessions, skills, credentials, and configuration. Use this page as a reference when you need to override defaults from the shell, run non-interactive tasks in scripts, or automate administration without opening a session. For installation and daily interactive use, see [Quickstart](/oss/deepagents/code/quickstart). For how CLI flags fit into the broader configuration model, see [Configuration](/oss/deepagents/code/configuration).
+Deep Agents Code (`dcode`) accepts command-line flags at launch and exposes management subcommands for tools, agents, sessions, skills, credentials, and configuration. Use this page as a reference when you need to override defaults from the shell, run non-interactive tasks in scripts, or automate administration without opening a session. For installation and daily interactive use, see [Quickstart](/oss/deepagents/code/quickstart). For how CLI flags fit into the broader configuration model, see [Configuration](/oss/deepagents/code/configuration).
 
 ## Example usage
 
@@ -203,6 +203,44 @@ dcode --yolo
 
 The `-S`/`--shell-allow-list` flag applies in both interactive and non-interactive modes. Pass a comma-separated list of command names, `recommended` for safe read-only defaults, or `all` to permit any command. You can also set `DEEPAGENTS_CODE_SHELL_ALLOW_LIST` in the environment.
 
+## Restrict filesystem tools
+
+By default, Deep Agents Code exposes all filesystem tools. To expose only a subset, pass a comma-separated list:
+
+```bash
+dcode -n "Audit this repository" --allow-fs-tools ls,read_file,glob,grep
+```
+
+Valid names are `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, `grep`, and `execute`. Explicit lists must include `read_file`. The allowlist applies to the main agent and synchronous subagents in every session mode, but not to async subagents or non-filesystem tools.
+
+<Note>
+    `--allow-fs-tools` and `-S`/`--shell-allow-list` control different layers of shell access:
+
+    - **`--allow-fs-tools`** controls which filesystem tools are available. Shell access requires `execute`.
+    - **`-S`/`--shell-allow-list`** controls which shell commands are permitted through `execute`. It does not affect other filesystem tools.
+
+    | `--allow-fs-tools` includes `execute`? | `-S` set? | Shell access |
+    |---|---|---|
+    | Yes | Yes | Allowed commands run (interactive confirms; non-interactive auto-approves) |
+    | Yes | No | Tool exists, but no command is pre-approved |
+    | No | Yes | No shell access — `execute` is absent, so `-S` has nothing to gate |
+    | No | No | No shell access |
+
+    In non-interactive mode, pass both to enable commands without a human to approve them:
+
+    ```bash
+    dcode -n "Fix the failing tests" --allow-fs-tools execute -S "pytest,git,make"
+    ```
+</Note>
+
+Run `/tools` in a session to inspect the active tool set. From the shell, place tool-shaping flags before the subcommand:
+
+```bash
+dcode tools list
+dcode --allow-fs-tools ls,read_file tools list
+dcode --allow-fs-tools ls,read_file tools list --json
+```
+
 ## Startup commands and initial prompts
 
 Use `-m`/`--message` to auto-submit an initial prompt when an interactive session starts. Combine with `--startup-cmd` to run a shell command first:
@@ -281,7 +319,8 @@ Run OAuth login for MCP servers marked `auth: "oauth"` with `dcode mcp login <se
 | `-y`, `--auto-approve` | Enable classifier-backed [Auto](/oss/deepagents/code/approval-modes) mode. Requires an interactive local session; toggle with `Shift+Tab` during an interactive session |
 | `--yolo` | Run gated actions without review after the one-time local risk acknowledgement. Interactive mode only |
 | `-S`, `--shell-allow-list LIST` | Comma-separated shell commands to auto-approve, `'recommended'` for safe defaults, or `'all'` to allow any command. Applies to both `-n` and interactive modes |
-| `--json`               | Emit machine-readable JSON from management subcommands (`agents`, `threads`, `skills`, `update`). Output envelope: `{"schema_version": 1, "command": "...", "data": ...}` |
+| `--allow-fs-tools LIST` | Filesystem tools to expose. Defaults to `all`. See [Restrict filesystem tools](#restrict-filesystem-tools) |
+| `--json`               | Emit machine-readable JSON from supported management subcommands, including `tools`, `agents`, `threads`, `skills`, and `update`. Output envelope: `{"schema_version": 1, "command": "...", "data": ...}` |
 | `--sandbox TYPE`       | Remote sandbox for code execution: `none` (default), `langsmith`, `agentcore`, `daytona`, `modal`, `runloop`, `vercel`, and third-party providers. LangSmith is included; other built-ins require extras. Pass `--sandbox` with no value to use `[sandboxes].default` from config |
 | `--sandbox-id ID`      | Reuse an existing sandbox (skips creation and cleanup)      |
 | `--sandbox-snapshot-name NAME` | Sandbox snapshot name to use or create (`langsmith`, `runloop`, and providers that advertise snapshot support) |
@@ -343,6 +382,7 @@ Pair `dcode doctor` with `dcode config show` when you need both a high-level hea
 | Command                              | Description                            |
 |--------------------------------------|----------------------------------------|
 | `dcode help`                    | Show help                              |
+| `dcode tools list [--json]`     | List the tools available to the configured agent. Place top-level tool-shaping flags, such as `--allow-fs-tools`, `--no-mcp`, `--mcp-config`, and `--trust-project-mcp`, before `tools list` |
 | `dcode agents list`             | List all agents (alias: `ls`)          |
 | `dcode agents reset --agent NAME` | Clear agent memory and reset to default. Supports `--dry-run` |
 | `dcode agents reset --agent NAME --target SOURCE` | Copy memory from another agent |
