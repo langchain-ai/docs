@@ -214,7 +214,23 @@ dcode -n "Audit this repository" --allow-fs-tools ls,read_file,glob,grep
 Valid names are `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, `grep`, and `execute`. Explicit lists must include `read_file`. The allowlist applies to the main agent and synchronous subagents in every session mode, but not to async subagents or non-filesystem tools.
 
 <Note>
-    `--allow-fs-tools` controls whether `execute` is available; it does not approve shell commands. In non-interactive mode, also pass `-S`/`--shell-allow-list` to enable allowed commands. Omitting `execute` removes shell access even when `-S` is set.
+    `--allow-fs-tools` and `-S`/`--shell-allow-list` are two independent gates that both affect shell access:
+
+    - **`--allow-fs-tools`** can decide whether the `execute` tool exists at all. Omit `execute` and the agent has no shell tool, regardless of `-S`.
+    - **`-S`/`--shell-allow-list`** decides which commands the `execute` tool is allowed to run. It has no effect when `execute` is not exposed.
+
+    | `--allow-fs-tools` includes `execute`? | `-S` set? | Shell access |
+    |---|---|---|
+    | Yes | Yes | Allowed commands run (interactive confirms; non-interactive auto-approves) |
+    | Yes | No | Tool exists, but no command is pre-approved |
+    | No | Yes | No shell access — `execute` is absent, so `-S` has nothing to gate |
+    | No | No | No shell access |
+
+    In non-interactive mode, pass both to enable commands without a human to approve them:
+
+    ```bash
+    dcode -n "Fix the failing tests" --allow-fs-tools execute -S "pytest,git,make"
+    ```
 </Note>
 
 Run `/tools` in a session to inspect the active tool set. From the shell, place tool-shaping flags before the subcommand:
