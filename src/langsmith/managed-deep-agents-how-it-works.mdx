@@ -1,0 +1,79 @@
+---
+title: How Managed Deep Agents work
+sidebarTitle: How it works
+description: How the mda CLI compiles a project, what a deploy creates, and how Context Hub, threads, and sandboxes work.
+---
+
+import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
+import ManagedDeepAgentsRuntimeOwnership from '/snippets/langsmith/managed-deep-agents-runtime-ownership.mdx';
+
+Managed Deep Agents turns a local [project directory](/langsmith/managed-deep-agents-cli#project-file-reference) into a hosted LangGraph deployment. Knowing what the `mda` CLI compiles, what a deploy creates, and which parts the runtime owns helps you reason about behavior, secrets, and state.
+
+<Note>
+<ManagedDeepAgentsPrivateBetaNote />
+</Note>
+
+## Compilation
+
+`mda dev` and `mda deploy` compile your project into a runnable LangGraph app in a `.mda/build` directory. Your agent entry and the modules it imports are copied without rewriting, so imports behave the same as in a normal Python or TypeScript project. The build leaves out secrets and generated files such as `.env` and `node_modules`. For the full ignored-path list, see the [CLI reference](/langsmith/managed-deep-agents-cli#project-file-reference).
+
+## Deploy lifecycle
+
+You author and test your project locally, then deploy it to LangSmith with one command.
+
+```mermaid
+flowchart LR
+    A["Author your project"] --> B["Test locally<br/><code>mda dev</code>"]
+    B --> C["Deploy<br/><code>mda deploy</code>"]
+    C --> D["Runs on LangSmith"]
+
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710;
+    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33;
+    class A,B,C process;
+    class D output;
+```
+
+`mda dev` runs the compiled app in LangSmith Studio so you can test it. `mda deploy` validates the project, syncs deploy-owned context to Context Hub, uploads the build, triggers a hosted build, and reconciles any cron schedules once the deployment is live. For secrets routing, deploy flags, and operational tips, see [Deploy an agent](/langsmith/managed-deep-agents-deploy). For the full step list and flags, see the [CLI reference](/langsmith/managed-deep-agents-cli#deploy-projects).
+
+When you deploy a Managed Deep Agent, LangSmith creates or updates a hosted LangGraph deployment, creates a Context Hub agent repo for managed context, and reconciles any managed cron schedules declared under `schedules/`. Open the deployment page in LangSmith to inspect build status and revisions. Open traces to inspect user inputs, final responses, model calls, tool calls, sandbox activity, files, and runtime state created during runs.
+
+## What the managed runtime owns
+
+<ManagedDeepAgentsRuntimeOwnership />
+
+## Context Hub
+
+Each deployment has a [Context Hub](/langsmith/use-the-context-hub) repo that stores deploy-owned context and runtime-created memory:
+
+- **`/instructions.md`**: the managed system prompt, synced from your project on deploy.
+- **`/skills/**`**: deploy-owned skills, synced from your project on deploy.
+- **`memories/**`**: durable long-term memory. The runtime remounts a scoped slice as `/memories/user/` (hot `/memories/user/AGENTS.md` plus optional cold files).
+- **`org-memory/**`** (optional): org-wide facts mounted read-only at `/memories/org`.
+
+Edit instructions and skills in your project and redeploy. Memory is runtime-owned, so deploy preserves `memories/**` instead of overwriting it. For more information about hot/cold tiers, identity remounts, and local `.mda/__contexthub__`, see [Memory](/langsmith/managed-deep-agents-memory).
+
+## Threads and memory
+
+The managed runtime owns the checkpointer and store, so each thread's state persists across runs without any setup. Durable memory persists in [Context Hub](#context-hub) and is available to the agent across threads.
+
+When you declare [identity](/langsmith/managed-deep-agents-identity), Managed Deep Agents scopes threads and remounts the matching memory slice for the authenticated actor or tenant so callers cannot open each other's conversations or memory. Without identity, the deployment uses shared agent memory.
+
+Scheduled runs choose their thread behavior explicitly. An ephemeral thread is cleaned up after the run, while a persistent thread reuses a stable thread ID so state accumulates. For the thread modes and when to use each, see [Schedules](/langsmith/managed-deep-agents-schedules).
+
+## Sandboxes
+
+A [sandbox](/langsmith/sandboxes) gives the agent an isolated environment for code execution and filesystem work. Configure one by exporting `sandbox` from `sandbox/index.ts` or `sandbox/__init__.py`, and use `sandbox/setup.sh` to provision it the first time it is created. Sandboxes default to one per thread; set `scope` to `agent` to share one across the agent process. Connectors can also provision files, CLIs, and credentials when a sandbox starts. For configuration options and examples, see [Configure a sandbox](/langsmith/managed-deep-agents-deploy#configure-a-sandbox).
+
+## Channels
+
+Optional modules under `channels/` mount public provider Events URLs on the Agent Server (for example Slack at `POST /channels/slack/events`, or GitHub at `POST /channels/github/events`). The runtime verifies provider signatures, acknowledges delivery, then invokes the graph over trusted loopback with identity stamps and optional auto-reply. Channels require a root identity declaration. For authoring and provider setup, see [Channels](/langsmith/managed-deep-agents-channels).
+
+## See also
+
+- [Overview](/langsmith/managed-deep-agents-overview): when to use Managed Deep Agents and beta limits.
+- [Identity](/langsmith/managed-deep-agents-identity): authenticate callers and scope threads and memory.
+- [Memory](/langsmith/managed-deep-agents-memory): persist preferences across threads with Context Hub `/memories`.
+- [Evals](/langsmith/managed-deep-agents-evals): compile a Harbor handoff and run Harbor-style tasks.
+- [Channels](/langsmith/managed-deep-agents-channels): receive Slack or GitHub events and reply from messaging channels.
+- [Deploy an agent](/langsmith/managed-deep-agents-deploy): the full deploy workflow, secrets, and troubleshooting.
+- [CLI reference](/langsmith/managed-deep-agents-cli): every `mda` command, flag, and project file rule.

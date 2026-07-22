@@ -7,7 +7,7 @@ import SaasRegionUrls from '/snippets/langsmith/saas-region-urls.mdx';
 
 The LangSmith Remote MCP is a [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) server hosted by LangSmith. It exposes the same tools as the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server) (conversation history, prompts, runs and traces, datasets, experiments, billing) without a separate deployment. Interactive MCP clients connect over OAuth with no API key or header configuration; programmatic clients can authenticate with a LangSmith API key via the `X-Api-Key` header.
 
-The Remote MCP is available on all LangSmith Cloud regions and on [self-hosted LangSmith](/langsmith/self-hosted) deployments running v0.15 or later. Self-hosted deployments on earlier versions should continue to use the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server).
+The Remote MCP is available on all LangSmith Cloud regions and on [self-hosted LangSmith](/langsmith/self-hosted) deployments running v0.16 or later (self-hosted additionally requires configuring a signing JWKS—see [Self-hosted LangSmith](#self-hosted-langsmith)). Self-hosted deployments on earlier versions should continue to use the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server).
 
 ## Endpoints
 
@@ -111,6 +111,20 @@ Add to your Cursor `mcp.json`:
 
 Cursor will prompt you to complete the OAuth flow on first use.
 
+### LangSmith CLI
+
+The [LangSmith CLI](/langsmith/langsmith-cli) authenticates against this same OAuth server, so `langsmith auth login` logs you in via the OAuth device flow—no API key required:
+
+```bash
+# LangSmith Cloud
+langsmith auth login
+
+# Self-hosted (point at your instance's /api base)
+langsmith auth login --api-url https://<your-langsmith-host>/api
+```
+
+The CLI prints an activation URL; open it, approve, and the CLI completes login and stores the token per profile in `~/.langsmith/config.json`. It then works against the same projects, traces, runs, datasets, experiments, and threads as the Remote MCP server.
+
 ### AI SDK
 
 For programmatic use from the [AI SDK](https://ai-sdk.dev/), authenticate with an API key via the `X-Api-Key` header and the built-in `http` (Streamable HTTP) transport:
@@ -138,7 +152,7 @@ Any MCP client supporting the [Streamable HTTP transport](https://spec.modelcont
 ## Known client incompatibilities
 
 <Note>
-**OpenAI Codex CLI** does not work with the LangSmith Remote MCP. Codex omits the [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) `resource` parameter required by the [MCP authorization spec](https://modelcontextprotocol.io/specification/draft/basic/authorization) during the OAuth flow, so login appears to succeed but the issued token is not bound to the LangSmith MCP and `initialize` fails with an auth-required error. Two upstream issues affect token exchange and authorize requests in Codex (refer to [openai/codex#20729](https://github.com/openai/codex/issues/20729) and [openai/codex#13891](https://github.com/openai/codex/issues/13891)). In the meantime, use the [LangSmith CLI](vscode-webview://10gvgke5c00vonuvk2psr9q89hcqv6q2583jm92ucepld5716i57/langsmith/langsmith-cli) from Codex—it supports the same projects, traces, runs, datasets, experiments, and threads as the MCP server, with native OAuth login.
+**OpenAI Codex CLI** does not work with the LangSmith Remote MCP. Codex omits the [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) `resource` parameter required by the [MCP authorization spec](https://modelcontextprotocol.io/specification/draft/basic/authorization) during the OAuth flow, so login appears to succeed but the issued token is not bound to the LangSmith MCP and `initialize` fails with an auth-required error. Two upstream issues affect token exchange and authorize requests in Codex (refer to [openai/codex#20729](https://github.com/openai/codex/issues/20729) and [openai/codex#13891](https://github.com/openai/codex/issues/13891)). In the meantime, use the [LangSmith CLI](/langsmith/langsmith-cli) from Codex. The LangSmith CLI supports the same projects, traces, runs, datasets, experiments, and threads as the MCP server, with native OAuth login.
 </Note>
 
 ## Available tools
@@ -164,6 +178,36 @@ If a client loses its session (for example, after revoking access in your LangSm
 
 ## Self-hosted LangSmith
 
-[Self-hosted LangSmith](/langsmith/self-hosted) deployments on v0.15 or later expose the Remote MCP at `https://<your-langsmith-host>/api/mcp`. Configuration, authentication, and tool surface are identical to LangSmith Cloud.
+[Self-hosted LangSmith](/langsmith/self-hosted) deployments on v0.16 or later expose the Remote MCP at `https://<your-langsmith-host>/api/mcp`. Once enabled, authentication and the tool surface are identical to LangSmith Cloud.
+
+### Enabling Remote MCP
+
+The Remote MCP and its OAuth Authorization Server are wired automatically when `config.hostname` is set, but they stay **inert (404)** until you provide a signing JWKS. This is the one piece of configuration LangSmith Cloud handles for you. To enable it:
+
+1. **Generate an Ed25519 (OKP) JWKS.** RSA keys are rejected. For example, with [`step`](https://smallstep.com/docs/step-cli/):
+
+   ```bash
+   step crypto jwk create /dev/null /tmp/jwk.json --kty OKP --crv Ed25519 --no-password --insecure -f
+   jq -c '{keys:[.]}' /tmp/jwk.json   # wrap the single key in a JWKS
+   ```
+
+2. **Provide it to the chart** as `config.signingJwks` (stored in the chart secret), or as the key `langsmith_signing_jwks` in your [existing secret](/langsmith/self-host-using-an-existing-secret):
+
+   ```yaml
+   config:
+     hostname: "your-langsmith-host"
+     signingJwks: |
+       {"keys":[ ... ]}
+   ```
+
+   <Warning>
+   Do not set `LANGSMITH_SIGNING_JWKS` directly via `commonEnv` or `extraEnv`—the chart already wires it from the secret, and a manual copy fails the install with a duplicate environment-variable error. Use `config.signingJwks` or `config.existingSecretName` instead.
+   </Warning>
+
+After upgrading, the OAuth discovery endpoints and `/api/mcp` become live. Verify with:
+
+```bash
+curl https://<your-langsmith-host>/api/.well-known/oauth-protected-resource/mcp
+```
 
 For deployments on earlier versions, run the [standalone LangSmith MCP Server](/langsmith/langsmith-mcp-server) in your own environment and point its `LANGSMITH_ENDPOINT` at your self-hosted instance.
