@@ -31,6 +31,10 @@ Reads each integration MDX page's frontmatter for:
       multi_tenancy: true
       ids_in_add_documents: true
 
+Also merges third-party rows from scripts/data/integration_external_docs.yaml.
+Those rows stay in the same tables but link the name column to docs_url
+(partner docs > GitHub > PyPI/npm) instead of a hosted guide.
+
 Chat tables include capability columns. Middleware tables include
 Provider, Middleware available, Source, and Downloads. Retriever tables
 include Retriever, Self-host, Cloud offering, Package, and Downloads.
@@ -65,6 +69,7 @@ _REQUEST_TIMEOUT = 20
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parent
+_EXTERNAL_DOCS_PATH = _SCRIPT_DIR / "data" / "integration_external_docs.yaml"
 
 LANGUAGES = ("javascript", "python")
 
@@ -143,6 +148,8 @@ class IntegrationRow:
     tool_calling: Optional[bool]
     structured_output: Optional[bool]
     multimodal: Optional[bool]
+    # When set, the name column links here instead of a hosted docs page.
+    docs_url: Optional[str] = None
     # Middleware-only optional columns from frontmatter.
     available: Optional[str] = None
     source: Optional[str] = None
@@ -163,6 +170,13 @@ class IntegrationRow:
 
 def _integrations_dir(language: str) -> Path:
     return _REPO_ROOT / "src" / "oss" / language / "integrations"
+
+
+def _load_external_docs() -> dict[str, Any]:
+    if not _EXTERNAL_DOCS_PATH.is_file():
+        return {}
+    data = yaml.safe_load(_EXTERNAL_DOCS_PATH.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
 
 
 def _snippet_path(language: str, component: str, kind: str) -> Path:
@@ -315,6 +329,151 @@ def _rel_integration_path(language: str, path: Path) -> str:
     return path.relative_to(_integrations_dir(language)).with_suffix("").as_posix()
 
 
+def _resolve_downloads(
+    language: str,
+    npm: Any,
+    pypi: Any,
+    package_cache: dict[tuple[str, str], int],
+) -> tuple[Optional[str], Optional[str], Optional[int]]:
+    package: Optional[str] = None
+    registry: Optional[str] = None
+    downloads: Optional[int] = None
+
+    if language == "javascript" and isinstance(npm, str) and npm.strip():
+        candidate = npm.strip()
+        if not candidate.startswith("-"):
+            package = candidate
+            registry = "npm"
+    elif language == "python" and isinstance(pypi, str) and pypi.strip():
+        candidate = pypi.strip()
+        if not candidate.startswith("-"):
+            package = candidate
+            registry = "pypi"
+
+    if not package or not registry:
+        return package, registry, downloads
+
+    cache_key = (registry, package)
+    if cache_key not in package_cache:
+        try:
+            if registry == "npm":
+                package_cache[cache_key] = fetch_npm_downloads(package)
+            else:
+                package_cache[cache_key] = fetch_pypi_downloads(package)
+            print(f"{registry}:{package} -> {package_cache[cache_key]}")
+            time.sleep(0.15)
+        except (requests.RequestException, ValueError, KeyError) as exc:
+            print(
+                f"warn: failed to fetch {registry} downloads for {package}: {exc}",
+                file=sys.stderr,
+            )
+            return None, None, None
+    return package, registry, package_cache[cache_key]
+
+
+def _row_from_integration_dict(
+    *,
+    rel_path: str,
+    integration: dict[str, Any],
+    language: str,
+    package_cache: dict[tuple[str, str], int],
+    docs_url: Optional[str] = None,
+) -> Optional[IntegrationRow]:
+    name = integration.get("name")
+    if not name or not isinstance(name, str):
+        return None
+
+    package, registry, downloads = _resolve_downloads(
+        language,
+        integration.get("npm"),
+        integration.get("pypi"),
+        package_cache,
+    )
+
+    available = integration.get("available")
+    source = integration.get("source")
+    package_md = integration.get("package_md")
+    external_docs = docs_url or integration.get("docs_url")
+    if isinstance(external_docs, str):
+        external_docs = external_docs.strip() or None
+    else:
+        external_docs = None
+
+    return IntegrationRow(
+        rel_path=rel_path,
+        name=name,
+        package=package,
+        registry=registry,
+        downloads=downloads,
+        featured=bool(integration.get("featured")),
+        deprecated=bool(integration.get("deprecated")),
+        stream=_as_bool(integration.get("stream")),
+        tool_calling=_as_bool(integration.get("tool_calling")),
+        structured_output=_as_bool(integration.get("structured_output")),
+        multimodal=_as_bool(integration.get("multimodal")),
+        docs_url=external_docs,
+        available=available.strip()
+        if isinstance(available, str) and available.strip()
+        else None,
+        source=source.strip()
+        if isinstance(source, str) and source.strip()
+        else None,
+        self_host=_as_bool(integration.get("self_host")),
+        cloud_offering=_as_bool(integration.get("cloud_offering")),
+        package_md=package_md.strip()
+        if isinstance(package_md, str) and package_md.strip()
+        else None,
+        delete_by_id=_as_bool(integration.get("delete_by_id")),
+        filtering=_as_bool(integration.get("filtering")),
+        search_by_vector=_as_bool(integration.get("search_by_vector")),
+        search_with_score=_as_bool(integration.get("search_with_score")),
+        async_api=_as_bool(integration.get("async_api")),
+        passes_standard_tests=_as_bool(integration.get("passes_standard_tests")),
+        multi_tenancy=_as_bool(integration.get("multi_tenancy")),
+        ids_in_add_documents=_as_bool(integration.get("ids_in_add_documents")),
+    )
+
+
+def _collect_external_rows(
+    language: str,
+    component: str,
+    package_cache: dict[tuple[str, str], int],
+) -> list[IntegrationRow]:
+    entries = _load_external_docs().get(language, {})
+    if not isinstance(entries, dict):
+        return []
+    items = entries.get(component, [])
+    if not isinstance(items, list):
+        return []
+
+    rows: list[IntegrationRow] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        docs_url = item.get("docs_url")
+        if not isinstance(docs_url, str) or not docs_url.strip():
+            print(
+                f"warn: external {language}/{component} entry missing docs_url",
+                file=sys.stderr,
+            )
+            continue
+        row = _row_from_integration_dict(
+            rel_path=f"{component}/external",
+            integration=item,
+            language=language,
+            package_cache=package_cache,
+            docs_url=docs_url.strip(),
+        )
+        if row is None:
+            print(
+                f"warn: external {language}/{component} entry missing name",
+                file=sys.stderr,
+            )
+            continue
+        rows.append(row)
+    return rows
+
+
 def _collect_rows(
     language: str,
     component: str,
@@ -332,97 +491,21 @@ def _collect_rows(
             )
             continue
 
-        name = integration.get("name")
-        if not name or not isinstance(name, str):
+        row = _row_from_integration_dict(
+            rel_path=_rel_integration_path(language, path),
+            integration=integration,
+            language=language,
+            package_cache=package_cache,
+        )
+        if row is None:
             print(
                 f"warn: {path.relative_to(_REPO_ROOT)} missing integration.name",
                 file=sys.stderr,
             )
             continue
+        rows.append(row)
 
-        rel_path = _rel_integration_path(language, path)
-        npm = integration.get("npm")
-        pypi = integration.get("pypi")
-
-        package: Optional[str] = None
-        registry: Optional[str] = None
-        downloads: Optional[int] = None
-
-        if language == "javascript" and isinstance(npm, str) and npm.strip():
-            candidate = npm.strip()
-            if not candidate.startswith("-"):
-                package = candidate
-                registry = "npm"
-        elif language == "python" and isinstance(pypi, str) and pypi.strip():
-            candidate = pypi.strip()
-            if not candidate.startswith("-"):
-                package = candidate
-                registry = "pypi"
-
-        if package and registry:
-            cache_key = (registry, package)
-            if cache_key not in package_cache:
-                try:
-                    if registry == "npm":
-                        package_cache[cache_key] = fetch_npm_downloads(package)
-                    else:
-                        package_cache[cache_key] = fetch_pypi_downloads(package)
-                    print(f"{registry}:{package} -> {package_cache[cache_key]}")
-                    time.sleep(0.15)
-                except (requests.RequestException, ValueError, KeyError) as exc:
-                    print(
-                        f"warn: failed to fetch {registry} downloads for {package}: {exc}",
-                        file=sys.stderr,
-                    )
-                    package = None
-                    registry = None
-                    downloads = None
-                else:
-                    downloads = package_cache[cache_key]
-            else:
-                downloads = package_cache[cache_key]
-
-        available = integration.get("available")
-        source = integration.get("source")
-        package_md = integration.get("package_md")
-        rows.append(
-            IntegrationRow(
-                rel_path=rel_path,
-                name=name,
-                package=package,
-                registry=registry,
-                downloads=downloads,
-                featured=bool(integration.get("featured")),
-                deprecated=bool(integration.get("deprecated")),
-                stream=_as_bool(integration.get("stream")),
-                tool_calling=_as_bool(integration.get("tool_calling")),
-                structured_output=_as_bool(integration.get("structured_output")),
-                multimodal=_as_bool(integration.get("multimodal")),
-                available=available.strip()
-                if isinstance(available, str) and available.strip()
-                else None,
-                source=source.strip()
-                if isinstance(source, str) and source.strip()
-                else None,
-                self_host=_as_bool(integration.get("self_host")),
-                cloud_offering=_as_bool(integration.get("cloud_offering")),
-                package_md=package_md.strip()
-                if isinstance(package_md, str) and package_md.strip()
-                else None,
-                delete_by_id=_as_bool(integration.get("delete_by_id")),
-                filtering=_as_bool(integration.get("filtering")),
-                search_by_vector=_as_bool(integration.get("search_by_vector")),
-                search_with_score=_as_bool(integration.get("search_with_score")),
-                async_api=_as_bool(integration.get("async_api")),
-                passes_standard_tests=_as_bool(
-                    integration.get("passes_standard_tests")
-                ),
-                multi_tenancy=_as_bool(integration.get("multi_tenancy")),
-                ids_in_add_documents=_as_bool(
-                    integration.get("ids_in_add_documents")
-                ),
-            )
-        )
+    rows.extend(_collect_external_rows(language, component, package_cache))
 
     rows.sort(
         key=lambda row: (
@@ -435,7 +518,10 @@ def _collect_rows(
 
 
 def _model_link(row: IntegrationRow) -> str:
-    link = f"[`{row.name}`](/oss/integrations/{row.rel_path})"
+    if row.docs_url:
+        link = f"[`{row.name}`]({row.docs_url})"
+    else:
+        link = f"[`{row.name}`](/oss/integrations/{row.rel_path})"
     if row.deprecated:
         return f"{link} (deprecated)"
     return link
