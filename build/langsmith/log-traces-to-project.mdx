@@ -10,6 +10,7 @@ This page covers how to control where LangSmith sends your traces:
 - [Set the destination project dynamically](#set-the-destination-project-dynamically)
 - [Set the destination workspace dynamically](#set-the-destination-workspace-dynamically)
 - [Write traces to multiple destinations with replicas](#write-traces-to-multiple-destinations-with-replicas)
+- [Leave feedback on all replica instances](#leave-feedback-on-all-replica-instances)
 
 ## Set the destination project statically
 
@@ -692,6 +693,127 @@ await myPipeline("What is LangSmith?");
 ```
 
 </CodeGroup>
+
+### Leave feedback on all replica instances
+
+When you use replicas, each replica receives a copy of every run. To submit feedback for a run on a specific replica, you need that replica's run ID. Starting in **Python SDK 0.10.8** and **JS SDK 0.8.5**, you can designate one replica as the **primary** and use `compute_run_id_for_secondary_replica` to deterministically calculate the run IDs for all other replicas.
+
+The **primary** replica keeps the original run ID unchanged. Each **secondary** replica receives a deterministic run ID derived from the original run ID and the secondary replica's project name. Use `compute_run_id_for_secondary_replica(original_run_id, project_name)` to compute the secondary run ID and pass it when calling `create_feedback`.
+
+<CodeGroup>
+
+```python Python
+from langsmith import (
+    Client,
+    compute_run_id_for_secondary_replica,
+    trace,
+    tracing_context,
+)
+
+primary_client = Client(api_key="primary-key")
+secondary_client = Client(api_key="secondary-key")
+
+secondary_project = "backup-project"
+
+with tracing_context(
+    replicas=[
+        {
+            "project_name": "production",
+            "primary": True,
+            "client": primary_client,
+        },
+        {
+            "project_name": secondary_project,
+            "primary": False,
+            "client": secondary_client,
+        },
+    ]
+):
+    with trace("answer-question", inputs={"question": "Capital of France?"}) as run:
+        run.outputs = {"answer": "Paris"}
+
+# Compute the secondary replica's run ID from the original run ID and project name
+secondary_run_id = compute_run_id_for_secondary_replica(
+    run.id,
+    secondary_project,
+)
+
+# Submit feedback to the primary replica using the original run ID
+primary_client.create_feedback(
+    trace_id=run.id,
+    key="user-rating",
+    score=1,
+)
+
+# Submit feedback to the secondary replica using the computed run ID
+secondary_client.create_feedback(
+    trace_id=secondary_run_id,
+    key="user-rating",
+    score=1,
+)
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+import { traceable, getCurrentRunTree } from "langsmith/traceable";
+import { computeRunIdForSecondaryReplica } from "langsmith";
+
+const primaryClient = new Client({ apiKey: "primary-key" });
+const secondaryClient = new Client({ apiKey: "secondary-key" });
+
+const secondaryProject = "backup-project";
+
+let primaryRunId: string | undefined;
+
+const answerQuestion = traceable(
+  async (question: string) => {
+    primaryRunId = getCurrentRunTree()?.id;
+    return { answer: "Paris" };
+  },
+  {
+    name: "answer-question",
+    client: primaryClient,
+    replicas: [
+      {
+        projectName: "production",
+        primary: true,
+        client: primaryClient,
+      },
+      {
+        projectName: secondaryProject,
+        primary: false,
+        client: secondaryClient,
+      },
+    ],
+  }
+);
+
+await answerQuestion("Capital of France?");
+
+if (primaryRunId) {
+  // Compute the secondary replica's run ID
+  const secondaryRunId = computeRunIdForSecondaryReplica(
+    primaryRunId,
+    secondaryProject
+  );
+
+  // Submit feedback to the primary replica using the original run ID
+  await primaryClient.createFeedback(primaryRunId, "user-rating", {
+    score: 1,
+  });
+
+  // Submit feedback to the secondary replica using the computed run ID
+  await secondaryClient.createFeedback(secondaryRunId, "user-rating", {
+    score: 1,
+  });
+}
+```
+
+</CodeGroup>
+
+<Note>
+The `compute_run_id_for_secondary_replica` / `computeRunIdForSecondaryReplica` helper is available in Python SDK >= 0.10.8 and JS SDK >= 0.8.5. If you are using an earlier SDK version, upgrade to use this feature.
+</Note>
 
 ### Route between LangSmith and OpenTelemetry destinations
 
