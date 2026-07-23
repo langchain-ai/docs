@@ -287,6 +287,22 @@ These are common nouns, not proper nouns. Write them lowercase in prose, includi
 - Spell out "generally available" on first use, then use "GA". GA is always uppercase.
 - Do not change code identifiers, package version identifiers (`1.0.0b1`), or literal CLI output that contains "Beta".
 
+### Product and feature name capitalization
+
+Capitalize a word when it refers to a **product or brand name**. Use lowercase when it refers to a **common noun** — a thing you build, an instance, or a type.
+
+**Capitalize** product and brand names:
+
+- LangChain, LangGraph, LangSmith, Deep Agents, Fleet, Engine
+
+**Lowercase** common nouns (things you create, instances, or types):
+
+- "Create a dashboard" (dashboard = a thing you build, not a product name)
+- "a deep agent created using Deep Agents" (the first "deep agent" is a common noun; "Deep Agents" is the product name)
+- "Run an experiment", "View your traces", "Manage your projects"
+
+When in doubt, ask: is this word the product's proper name, or is it describing a thing the user creates or works with? If the latter, use lowercase.
+
 ## Adding pages
 
 1. Create MDX file with required frontmatter in the correct directory (see navigation map above)
