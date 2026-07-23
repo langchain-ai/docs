@@ -1,11 +1,11 @@
 ---
 title: Agent User Interaction Protocol (AG-UI)
 sidebarTitle: AG-UI
-description: Expose Deep Agents over the Agent User Interaction Protocol (AG-UI) to build streaming, interactive frontends with CopilotKit.
+description: Expose Deep Agents over the Agent User Interaction Protocol (AG-UI) to stream events to any AG-UI client or frontend.
 ---
 
 [Agent User Interaction Protocol (AG-UI)](https://docs.ag-ui.com) is an open, lightweight, event-based protocol that standardizes how AI agents connect to user-facing applications.
-Exposing a deep agent over AG-UI lets any AG-UI client, such as a [CopilotKit](https://docs.copilotkit.ai) React frontend, stream the agent's messages, tool calls, state, and subagent activity in real time, and send user input back to the running agent.
+Exposing a deep agent over AG-UI turns its run into a typed event stream (messages, tool calls, reasoning, state, and lifecycle) that any AG-UI client can consume, so you can drive a frontend without coupling it to LangGraph internals.
 
 <Note>
     AG-UI is designed for agent-to-user interaction: the connection between an agentic backend and a user-facing frontend. It is distinct from the other Deep Agents protocols:
@@ -23,11 +23,11 @@ Install the AG-UI integration for LangGraph alongside `deepagents`.
 :::python
 <CodeGroup>
 ```bash pip
-pip install ag-ui-langgraph deepagents "langgraph-cli[inmem]"
+pip install deepagents "langgraph-cli[inmem]"
 ```
 
 ```bash uv
-uv add ag-ui-langgraph deepagents "langgraph-cli[inmem]"
+uv add deepagents "langgraph-cli[inmem]"
 ```
 </CodeGroup>
 :::
@@ -122,11 +122,7 @@ npx @langchain/langgraph-cli dev
 
 ### Connect the AG-UI adapter
 
-The `@ag-ui/langgraph` adapter wraps the running graph as an AG-UI agent that a client can drive. Point it at the LangGraph server and name the graph to load.
-
-:::python
-The Python `ag-ui-langgraph` package can also mount an AG-UI agent directly onto your own FastAPI app without a separate LangGraph server. See [Programmatic API](#programmatic-api).
-:::
+The `@ag-ui/langgraph` adapter wraps the running graph as an AG-UI agent that any client can drive. Point it at the LangGraph server and name the graph to load.
 
 ```ts icon="plug" title="ag-ui agent"
 import { LangGraphAgent } from "@ag-ui/langgraph";
@@ -141,105 +137,11 @@ const agent = new LangGraphAgent({
   The `@ag-ui/langgraph` package implements the AG-UI protocol for LangGraph graphs, including deep agents.
 </Card>
 
-## Clients
-
-Deep agents work with any AG-UI client. [CopilotKit](https://docs.copilotkit.ai) provides React components and a runtime that speak AG-UI, so you can build a production chat UI on top of a deep agent.
-
-### Add the runtime endpoint
-
-The CopilotKit runtime registers the AG-UI agent and exposes it to the frontend. Register the `LangGraphAgent` adapter in a Next.js App Router route.
-
-```bash npm
-npm install @copilotkit/runtime @ag-ui/langgraph
-```
-
-```ts icon="server" title="app/api/copilotkit/route.ts"
-import {
-  CopilotRuntime,
-  ExperimentalEmptyAdapter,
-  copilotRuntimeNextJSAppRouterEndpoint,
-} from "@copilotkit/runtime";
-import { LangGraphAgent } from "@ag-ui/langgraph";
-import { NextRequest } from "next/server";
-
-const serviceAdapter = new ExperimentalEmptyAdapter();
-
-const runtime = new CopilotRuntime({
-  agents: {
-    deepAgent: new LangGraphAgent({
-      graphId: "deep_agent",
-      deploymentUrl: process.env.LANGGRAPH_URL ?? "http://localhost:2024",
-    }),
-  },
-});
-
-export const POST = async (req: NextRequest) => {
-  const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
-    runtime,
-    serviceAdapter,
-    endpoint: "/api/copilotkit",
-  });
-
-  return handleRequest(req);
-};
-```
-
-### Add the frontend
-
-Wrap your app in the `CopilotKit` provider, select the registered agent by name, and drop in a chat component.
-
-```bash npm
-npm install @copilotkit/react-core
-```
-
-```tsx icon="brand-react" title="app/page.tsx"
-"use client";
-
-import { CopilotKit, CopilotSidebar } from "@copilotkit/react-core/v2";
-import "@copilotkit/react-core/v2/styles.css";
-
-export default function Page() {
-  return (
-    <CopilotKit runtimeUrl="/api/copilotkit" agent="deepAgent">
-      <CopilotSidebar />
-    </CopilotKit>
-  );
-}
-```
-
-<Tip>
-    The `agent` prop must match a key in the runtime's `agents` map (`deepAgent` above).
-</Tip>
-
-### Render agent state
-
-Deep agents expose more than the final message. Use the `useAgent` hook to read the agent's live state, streamed messages, and run status, then render subagent progress, todos, or tool cards.
-
-```tsx icon="brand-react" title="AgentStatus.tsx"
-"use client";
-
-import { useAgent } from "@copilotkit/react-core/v2";
-
-export function AgentStatus() {
-  const { agent } = useAgent();
-
-  return (
-    <div>
-      <div>Running: {agent.isRunning ? "yes" : "no"}</div>
-      <div>Messages: {agent.messages.length}</div>
-      <pre>{JSON.stringify(agent.state, null, 2)}</pre>
-    </div>
-  );
-}
-```
-
-<Info>
-    For the full component and hook reference, see the [CopilotKit documentation](https://docs.copilotkit.ai).
-</Info>
-
 ## Streaming and events
 
-AG-UI is an event stream. As a deep agent runs, the `@ag-ui/langgraph` adapter translates LangGraph stream output into typed AG-UI events that the client consumes to update the UI incrementally.
+AG-UI is an event stream. As a deep agent runs, the adapter translates its LangGraph execution into typed AG-UI events. A client subscribes to those events and updates as they arrive, rather than waiting for the final answer.
+
+A deep agent run maps onto many AG-UI event types. The main ones, among others:
 
 | Deep agent activity | AG-UI events |
 | --- | --- |
@@ -253,80 +155,39 @@ AG-UI is an event stream. As a deep agent runs, the `@ag-ui/langgraph` adapter t
 
 State updates use `STATE_SNAPSHOT` for a full baseline and `STATE_DELTA` (JSON Patch, RFC 6902) for incremental changes, so a client can keep todos, plans, and subagent status in sync without re-sending the whole state on every step.
 
-<Info>
-    For the complete event schema, see the [AG-UI events reference](https://docs.ag-ui.com/concepts/events).
-</Info>
+To watch the stream directly, run the agent with a subscriber. Each event has a matching `on…Event` callback:
 
-## Programmatic API
-
-:::js
-### `LangGraphAgent`
-
-`LangGraphAgent` connects to a running LangGraph server and exposes its graph as an AG-UI agent.
-
-```ts icon="plug"
+```ts icon="activity" title="observe.ts"
 import { LangGraphAgent } from "@ag-ui/langgraph";
 
 const agent = new LangGraphAgent({
   graphId: "deep_agent",
   deploymentUrl: "http://localhost:2024",
+  initialMessages: [
+    { id: "1", role: "user", content: "Research the AG-UI protocol." },
+  ],
 });
+
+await agent.runAgent(
+  {},
+  {
+    onTextMessageContentEvent({ event }) {
+      process.stdout.write(event.delta);
+    },
+    onToolCallStartEvent({ event }) {
+      console.log(`\n[tool] ${event.toolCallName}`);
+    },
+    onStateSnapshotEvent({ event }) {
+      console.log("\n[state]", event.snapshot);
+    },
+    onRunFinishedEvent() {
+      console.log("\n[done]");
+    },
+  },
+);
 ```
 
-| Option           | Type     | Description                                                     |
-| ---------------- | -------- | --------------------------------------------------------------- |
-| `graphId`        | `string` | Name of the graph to run (matches a key in `langgraph.json`)    |
-| `deploymentUrl`  | `string` | URL of the LangGraph server or deployment                       |
-| `langsmithApiKey`| `string` | API key for authenticated LangGraph Platform deployments        |
-| `agentName`      | `string` | Optional agent name reported to the client                      |
-
-### `LangGraphHttpAgent`
-
-For a plain AG-UI HTTP endpoint (for example, a self-hosted server), use `LangGraphHttpAgent` with the endpoint URL.
-
-```ts icon="plug"
-import { LangGraphHttpAgent } from "@ag-ui/langgraph";
-
-const agent = new LangGraphHttpAgent({
-  url: "http://localhost:8000/agent",
-});
-```
-:::
-
-:::python
-### `add_langgraph_fastapi_endpoint`
-
-The Python `ag-ui-langgraph` package mounts a deep agent onto your own FastAPI application, so you can serve AG-UI without a separate LangGraph server.
-
-```python icon="server" title="server.py"
-from ag_ui_langgraph import LangGraphAgent, add_langgraph_fastapi_endpoint
-from deepagents import create_deep_agent
-from fastapi import FastAPI
-
-deep_agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
-    system_prompt="You are an expert researcher.",
-)
-
-app = FastAPI()
-agent = LangGraphAgent(name="deep_agent", graph=deep_agent)
-add_langgraph_fastapi_endpoint(app, agent, path="/agent")
-```
-
-Run the server with any ASGI runner, then point an AG-UI client at `http://localhost:8000/agent`.
-
-```bash
-uvicorn server:app
-```
-:::
-
-## Customization
-
-### Human-in-the-loop
-
-Deep agents pause for human approval through LangGraph interrupts. AG-UI surfaces each interrupt to the client and resumes the run once the user responds.
-
-Send the response with the standard AG-UI `resume` field on the next run input:
+When a deep agent pauses for human input, the pause surfaces in the stream as an interrupt. Resume the run by sending the standard AG-UI `resume` field on the next input:
 
 ```ts icon="hand-stop"
 const input = {
@@ -339,87 +200,66 @@ const input = {
 };
 ```
 
-<Note>
-    To terminate an interrupted run with the AG-UI structured outcome (`RUN_FINISHED.outcome.type === "interrupt"`), set `emitInterruptOutcome: true` on the agent (`emit_interrupt_outcome=True` in Python). This is opt-in: released clients that resume through the legacy `forwardedProps.command.resume` channel stop sending a resume directive once they observe the structured outcome. Enable it only after your client reads `RunAgentInput.resume`.
-</Note>
+For the interrupt model itself, see [Human-in-the-loop](/oss/deepagents/human-in-the-loop).
 
-### Custom tools
+<Info>
+    For the complete event schema, see the [AG-UI events reference](https://docs.ag-ui.com/concepts/events).
+</Info>
 
-Tools you attach to the deep agent stream to the client as `TOOL_CALL_*` events, so the frontend can render tool progress and results.
+## Connect a frontend
 
-:::js
-```ts icon="tool"
-import { createDeepAgent } from "deepagents";
-import { tool } from "@langchain/core/tools";
-import { z } from "zod";
+Any AG-UI client can drive a deep agent exposed over the protocol, so you do not have to build message rendering, streaming, or state sync yourself. Point the client at the adapter (or a runtime that wraps it) and select the agent by its `graphId`.
 
-const searchTool = tool(
-  async ({ query }) => `Results for: ${query}`,
-  {
-    name: "search",
-    description: "Search the web",
-    schema: z.object({ query: z.string() }),
-  },
-);
+<CardGroup cols={2}>
+  <Card title="CopilotKit" icon="brand-react" href="https://docs.copilotkit.ai">
+    React components and hooks for chat, generative UI, and shared state, with built-in AG-UI support.
+  </Card>
+  <Card title="AG-UI clients" icon="apps" href="https://docs.ag-ui.com/integrations">
+    The full list of AG-UI clients and SDKs, including terminal and mobile clients.
+  </Card>
+  <Card title="Build a custom client" icon="code" href="https://docs.ag-ui.com/quickstart/clients">
+    Consume the event stream directly with the AG-UI SDK to build your own interface.
+  </Card>
+</CardGroup>
 
-export const agent = createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
-  tools: [searchTool],
+## Programmatic API
+
+`LangGraphAgent` connects to a deep agent on a LangGraph server and exposes it as an AG-UI agent. Construct it with the graph to load, then drive it with a few methods.
+
+```ts icon="plug"
+import { LangGraphAgent } from "@ag-ui/langgraph";
+
+const agent = new LangGraphAgent({
+  graphId: "deep_agent",              // matches a key in langgraph.json
+  deploymentUrl: "http://localhost:2024",
 });
 ```
-:::
 
-:::python
-```python icon="tool"
-from deepagents import create_deep_agent
-from langchain_core.tools import tool
+- **`runAgent(parameters?, subscriber?)`**: Run the agent and stream AG-UI events to the subscriber's `on…Event` callbacks (see [Streaming and events](#streaming-and-events)). Resolves when the run finishes.
+- **`subscribe(subscriber)`**: Attach a persistent subscriber that receives events across every run, rather than for a single call.
+- **`abortRun()`**: Cancel the run in progress.
 
-@tool
-def search(query: str) -> str:
-    """Search the web."""
-    return f"Results for: {query}"
-
-agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
-    tools=[search],
-)
-```
-:::
-
-### Multiple agents
-
-Register more than one agent in the runtime and select between them from the frontend with the `agent` prop.
-
-```ts icon="users" title="app/api/copilotkit/route.ts"
-const runtime = new CopilotRuntime({
-  agents: {
-    researcher: new LangGraphAgent({
-      graphId: "researcher",
-      deploymentUrl: process.env.LANGGRAPH_URL ?? "http://localhost:2024",
-    }),
-    coder: new LangGraphAgent({
-      graphId: "coder",
-      deploymentUrl: process.env.LANGGRAPH_URL ?? "http://localhost:2024",
-    }),
-  },
-});
-```
+To seed input, pass `initialMessages` to the constructor, or call `addMessage` or `setMessages` before running.
 
 ## AG-UI transformer
 
-The LangGraph AG-UI integration exports an AG-UI stream transformer, `aguiTransformer`, that maps a LangGraph execution stream onto AG-UI protocol events. Transformers are a LangGraph streaming primitive: you attach one to a graph so its output stream is converted as the run proceeds, rather than writing a custom adapter.
+`@ag-ui/langgraph` ships `aguiTransformer`, a LangGraph stream transformer that projects a run into AG-UI events. Stream transformers are LangGraph's projection layer: they observe a run's protocol events, hold their own state, and expose a derived view of the run. `aguiTransformer` is the projection whose derived view is the AG-UI event stream, so a graph emits AG-UI events as a native stream projection.
+
+Register it on the graph with the `transformers` option:
 
 ```ts icon="transform"
 import { aguiTransformer } from "@ag-ui/langgraph/transformer";
+
+const graph = workflow.compile({ transformers: [aguiTransformer] });
 ```
 
 <Note>
-    Stream transformer support is rolling out to the LangGraph AG-UI integration (`@ag-ui/langgraph` and `ag-ui-langgraph`). For how transformers process a streaming run, see [Streaming](/oss/langchain/streaming).
+    Stream transformer support is rolling out to the LangGraph Python and TypeScript AG-UI integrations. To see how projections work, or to build your own, see [Build your own projection](/oss/langgraph/event-streaming#build-your-own-projection).
 </Note>
 
 <Info>
     See the upstream docs for protocol details and client support:
     - AG-UI introduction: https://docs.ag-ui.com
     - AG-UI events: https://docs.ag-ui.com/concepts/events
-    - CopilotKit: https://docs.copilotkit.ai
+    - AG-UI clients and integrations: https://docs.ag-ui.com/integrations
 </Info>
