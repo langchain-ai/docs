@@ -1,6 +1,6 @@
 ---
 title: CopilotKit
-description: Use CopilotKit with LangGraph, Deep Agents, and React with custom endpoints, the Python AG-UI bridge, and structured generative UI
+description: Use CopilotKit with LangGraph, Deep Agents, and React with custom endpoints, the Python AG-UI bridge, structured generative UI, and messaging-platform channels
 ---
 
 [CopilotKit](https://www.copilotkit.ai/) provides a full React chat runtime and pairs especially well with LangGraph when you want the agent to return **structured UI payloads** instead of only plain text. In this pattern, your LangGraph deployment serves both the graph API and a custom CopilotKit endpoint, while the frontend parses assistant messages into dynamic React components.
@@ -22,6 +22,10 @@ This approach is useful when you want:
 </Info>
 
 import { ExampleEmbed } from "/snippets/example-embed.jsx"
+import ChannelsTsconfig from "/snippets/code-samples/copilotkit-channels-tsconfig.mdx"
+import ChannelsBot from "/snippets/code-samples/copilotkit-channels-bot-js.mdx"
+import ChannelsRichMessage from "/snippets/code-samples/copilotkit-channels-rich-message-js.mdx"
+import ChannelsPlatforms from "/snippets/code-samples/copilotkit-channels-platforms-js.mdx"
 
 <ExampleEmbed example="copilotkit" minHeight={700} />
 
@@ -637,6 +641,88 @@ This renderer pattern is what makes the integration feel native:
 - CopilotKit handles chat state and transport
 - the custom renderer decides how assistant payloads become UI
 - [Hashbrown](https://hashbrown.dev/) turns validated structured data into concrete React elements
+
+## Channels
+
+The same agent that powers your in-app copilot can also run as a bot in Slack and other messaging platforms. CopilotKit Channels wraps any LangChain agent with a platform adapter, so you point a channel at any LangChain deployment you already run and reach the agent from where your team already works.
+
+<Note>
+  Channels require `@copilotkit/channels>=0.2.1`. The channel is a small Node service; the LangChain deployment it connects to can be Python or TypeScript.
+</Note>
+
+### How it fits together
+
+A channel attaches a platform adapter to an agent and drives the run loop:
+
+- `createChannel` takes one or more `adapters` and an `agent`.
+- `agent` accepts any AG-UI `AbstractAgent`. Use `LangGraphAgent` from `@copilotkit/runtime/langgraph`, pointed at your deployment URL and graph ID.
+- `onMention` (or `onMessage`) receives the incoming turn, and `thread.runAgent()` runs the agent and streams the reply back.
+- Rich replies are authored once as JSX and rendered to each platform's native message format, such as Slack Block Kit.
+
+Configure TypeScript to use the Channels JSX runtime:
+
+<ChannelsTsconfig />
+
+Then wire the channel to your deployment:
+
+<ChannelsBot />
+
+Because `agent` is a factory, each conversation gets its own agent session keyed by thread. The `graphId` and `deploymentUrl` match the [graph you deployed above](#extend-the-langgraph-deployment-with-a-custom-endpoint): a channel talks to that deployment directly over AG-UI, so no separate CopilotKit runtime route is needed.
+
+### Slack
+
+Slack channels run in Socket Mode by default: the bot opens an outbound WebSocket to Slack, so no public URL or tunnel is required in development.
+
+Install the packages:
+
+<CodeGroup>
+```bash npm
+npm install @copilotkit/channels @copilotkit/runtime
+```
+
+```bash pnpm
+pnpm add @copilotkit/channels @copilotkit/runtime
+```
+
+```bash yarn
+yarn add @copilotkit/channels @copilotkit/runtime
+```
+
+```bash bun
+bun add @copilotkit/channels @copilotkit/runtime
+```
+</CodeGroup>
+
+Create a Slack app, then provide two tokens:
+
+- **`SLACK_BOT_TOKEN`** (`xoxb-…`): Bot token for the Slack Web API.
+- **`SLACK_APP_TOKEN`** (`xapp-…`): App-level token for Socket Mode. Requires the `connections:write` scope.
+
+Configure the Slack app:
+
+<Steps>
+  <Step title="Enable Socket Mode">
+    Turn on Socket Mode and generate an app-level token with the `connections:write` scope. Copy it into `SLACK_APP_TOKEN`.
+  </Step>
+  <Step title="Add bot scopes">
+    Under OAuth & Permissions, add the `chat:write` bot scope, install the app to your workspace, then copy the bot token into `SLACK_BOT_TOKEN`.
+  </Step>
+  <Step title="Subscribe to events">
+    Under Event Subscriptions, subscribe to the `app_mention` and `message.im` bot events so the bot receives mentions and direct messages.
+  </Step>
+</Steps>
+
+Post rich messages by writing JSX, which the Slack adapter renders to Block Kit:
+
+<ChannelsRichMessage />
+
+### Other platforms
+
+The same channel wiring works across platforms. Swap or add an adapter and keep the agent unchanged:
+
+<ChannelsPlatforms />
+
+CopilotKit ships adapters for Slack (`@copilotkit/channels/slack`), Discord (`@copilotkit/channels/discord`), Microsoft Teams (`@copilotkit/channels/teams`), Telegram (`@copilotkit/channels/telegram`), and WhatsApp (`@copilotkit/channels/whatsapp`). Each maps the shared JSX vocabulary to that platform's native message format, so one agent serves every surface.
 
 ## Resources
 

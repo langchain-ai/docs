@@ -1,0 +1,32 @@
+```ts icon="robot" title="bot.ts"
+import { createChannel } from "@copilotkit/channels";
+import {
+  slack,
+  defaultSlackContext,
+  defaultSlackTools,
+} from "@copilotkit/channels/slack";
+import { LangGraphAgent } from "@copilotkit/runtime/langgraph";
+
+const channel = createChannel({
+  adapters: [
+    slack({
+      botToken: process.env.SLACK_BOT_TOKEN!, // xoxb-…
+      appToken: process.env.SLACK_APP_TOKEN!, // xapp-… (Socket Mode)
+    }),
+  ],
+  // Any LangChain agent works. Point a fresh session at the LangChain
+  // deployment you already run, keyed by conversation thread.
+  agent: (threadId) =>
+    new LangGraphAgent({
+      deploymentUrl: process.env.LANGGRAPH_DEPLOYMENT_URL ?? "http://127.0.0.1:2024",
+      graphId: "copilotkit_shadify",
+    }),
+  tools: [...defaultSlackTools], // lookup_slack_user, plus any of your own
+  context: [...defaultSlackContext], // tagging, mrkdwn, and thread guidance
+});
+
+// A mention (or DM) starts a turn; runAgent streams the reply back to Slack.
+channel.onMention(({ thread }) => thread.runAgent());
+
+await channel.start();
+```
