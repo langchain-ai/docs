@@ -1,0 +1,324 @@
+---
+title: Build a custom SQL agent
+sidebarTitle: Custom SQL agent
+---
+
+import ChatModelTabsPy from '/snippets/chat-model-tabs.mdx';
+import ChatModelTabsJS from '/snippets/chat-model-tabs-js.mdx';
+import SqlAgentDownloadChinookPy from '/snippets/code-samples/sql-agent-download-chinook-py.mdx';
+import SqlAgentExploreDatabasePy from '/snippets/code-samples/sql-agent-explore-database-py.mdx';
+import LanggraphSqlAgentToolsPy from '/snippets/code-samples/langgraph-sql-agent-tools-py.mdx';
+import LanggraphSqlAgentDefineStepsPy from '/snippets/code-samples/langgraph-sql-agent-define-steps-py.mdx';
+import LanggraphSqlAgentAssembleAgentPy from '/snippets/code-samples/langgraph-sql-agent-assemble-agent-py.mdx';
+import LanggraphSqlAgentVisualizeGraphPy from '/snippets/code-samples/langgraph-sql-agent-visualize-graph-py.mdx';
+import LanggraphSqlAgentStreamAgentPy from '/snippets/code-samples/langgraph-sql-agent-stream-agent-py.mdx';
+import LanggraphSqlAgentHitlInterruptPy from '/snippets/code-samples/langgraph-sql-agent-hitl-interrupt-py.mdx';
+import LanggraphSqlAgentHitlAssemblePy from '/snippets/code-samples/langgraph-sql-agent-hitl-assemble-py.mdx';
+import LanggraphSqlAgentHitlStreamPy from '/snippets/code-samples/langgraph-sql-agent-hitl-stream-py.mdx';
+import LanggraphSqlAgentHitlResumePy from '/snippets/code-samples/langgraph-sql-agent-hitl-resume-py.mdx';
+import LanggraphSqlAgentDownloadChinookJs from '/snippets/code-samples/langgraph-sql-agent-download-chinook-js.mdx';
+import LanggraphSqlAgentExploreDatabaseJs from '/snippets/code-samples/langgraph-sql-agent-explore-database-js.mdx';
+import LanggraphSqlAgentToolsJs from '/snippets/code-samples/langgraph-sql-agent-tools-js.mdx';
+import LanggraphSqlAgentDefineStepsJs from '/snippets/code-samples/langgraph-sql-agent-define-steps-js.mdx';
+import LanggraphSqlAgentAssembleAgentJs from '/snippets/code-samples/langgraph-sql-agent-assemble-agent-js.mdx';
+import LanggraphSqlAgentVisualizeGraphJs from '/snippets/code-samples/langgraph-sql-agent-visualize-graph-js.mdx';
+import LanggraphSqlAgentStreamAgentJs from '/snippets/code-samples/langgraph-sql-agent-stream-agent-js.mdx';
+import LanggraphSqlAgentHitlInterruptJs from '/snippets/code-samples/langgraph-sql-agent-hitl-interrupt-js.mdx';
+import LanggraphSqlAgentHitlAssembleJs from '/snippets/code-samples/langgraph-sql-agent-hitl-assemble-js.mdx';
+import LanggraphSqlAgentHitlStreamJs from '/snippets/code-samples/langgraph-sql-agent-hitl-stream-js.mdx';
+import LanggraphSqlAgentHitlResumeJs from '/snippets/code-samples/langgraph-sql-agent-hitl-resume-js.mdx';
+
+In this tutorial we will build a custom agent that can answer questions about a SQL database using LangGraph.
+
+LangChain offers built-in [agent](/oss/python/langchain/agents) implementations, implemented using [LangGraph](/oss/python/langgraph/overview) primitives. If deeper customization is required, agents can be implemented directly in LangGraph. This guide demonstrates an example implementation of a SQL agent. For a practical introduction, see [building a SQL agent using higher-level LangChain abstractions](/oss/python/langchain/sql-agent).
+
+<Warning>
+Building Q&A systems of SQL databases requires executing model-generated SQL queries. There are inherent risks in doing this. Make sure that your database connection permissions are always scoped as narrowly as possible for your agent's needs. This will mitigate, though not eliminate, the risks of building a model-driven system.
+</Warning>
+
+The [prebuilt agent](/oss/python/langchain/sql-agent) lets us get started quickly, but we relied on the system prompt to constrain its behavior—for example, we instructed the agent to always start with the "list tables" tool, and to always run a query-checker tool before executing the query.
+
+We can enforce a higher degree of control in LangGraph by customizing the agent. Here, we implement a simple ReAct-agent setup, with dedicated nodes for specific tool-calls. We will use the same [state] as the prebuilt agent.
+
+### Concepts
+
+We will cover the following concepts:
+
+- [Tools](/oss/python/langchain/tools) for reading from SQL databases
+- The LangGraph [Graph API](/oss/python/langgraph/graph-api), including state, nodes, edges, and conditional edges.
+- [Human-in-the-loop](/oss/python/langgraph/interrupts) processes
+
+## Setup
+
+### Installation
+
+    <CodeGroup>
+    ```bash pip
+    pip install langchain langgraph
+    ```
+    </CodeGroup>
+
+
+
+### LangSmith
+Set up [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=oss-langgraph-sql-agent) to inspect what is happening inside your chain or agent. Then set the following environment variables:
+
+    ```shell
+    export LANGSMITH_TRACING="true"
+    export LANGSMITH_API_KEY="..."
+    ```
+
+## 1. Select an LLM
+
+Select a model that supports [tool-calling](/oss/python/integrations/providers/overview):
+
+<ChatModelTabsPy />
+
+
+
+The output shown in the examples below used OpenAI.
+
+## 2. Configure the database
+
+You will be creating a [SQLite database](https://www.sqlitetutorial.net/sqlite-sample-database/) for this tutorial. SQLite is a lightweight database that is easy to set up and use. We will be loading the `chinook` database, which is a sample database that represents a digital media store.
+
+For convenience, we have hosted the database (`Chinook.db`) on a public GCS bucket.
+
+<SqlAgentDownloadChinookPy />
+
+We will use Python's built-in `sqlite3` module to interact with the database:
+
+<SqlAgentExploreDatabasePy />
+```
+Dialect: sqlite
+Available tables: ['Album', 'Artist', 'Customer', 'Employee', 'Genre', 'Invoice', 'InvoiceLine', 'MediaType', 'Playlist', 'PlaylistTrack', 'Track']
+Sample output: [(1, 'AC/DC'), (2, 'Accept'), (3, 'Aerosmith'), (4, 'Alanis Morissette'), (5, 'Alice In Chains')]
+```
+
+
+
+## 3. Add tools for database interactions
+
+<Warning>
+The following database tools are minimal wrappers for demonstration purposes only. They are not intended to be secure or used in production. Use narrowly scoped database permissions and add application-specific validation before executing model-generated SQL.
+</Warning>
+
+We can implement database [tools](/oss/python/langchain/tools) as thin wrappers using the `@tool` decorator from `langchain.tools`:
+
+<LanggraphSqlAgentToolsPy />
+```
+sql_db_list_tables: Input is an empty string, output is a comma-separated list of tables in the database.
+
+sql_db_schema: Input to this tool is a comma-separated list of tables, output is the schema and sample rows for those tables.
+    Be sure that the tables actually exist by calling sql_db_list_tables first!
+    Example Input: table1, table2, table3
+
+sql_db_query: Input to this tool is a detailed and correct SQL query, output is a result from the database.
+    If the query is not correct, an error message will be returned.
+    If an error is returned, rewrite the query, check the query, and try again.
+    If you encounter an issue with Unknown column 'xxxx' in 'field list', use sql_db_schema to query the correct table fields.
+```
+
+
+
+## 4. Define application steps
+
+We construct dedicated nodes for the following steps:
+
+- Listing DB tables
+- Calling the "get schema" tool
+- Generating a query
+- Checking the query
+
+Putting these steps in dedicated nodes lets us (1) force tool-calls when needed, and (2) customize the prompts associated with each step.
+
+<LanggraphSqlAgentDefineStepsPy />
+
+
+
+
+## 5. Implement the agent
+
+We can now assemble these steps into a workflow using the [Graph API](/oss/python/langgraph/graph-api). We define a [conditional edge](/oss/python/langgraph/graph-api#conditional-edges) at the query generation step that will route to the query checker if a query is generated, or end if there are no tool calls present, such that the LLM has delivered a response to the query.
+
+<LanggraphSqlAgentAssembleAgentPy />
+
+We visualize the application below:
+
+<LanggraphSqlAgentVisualizeGraphPy />
+
+
+
+<img
+  src="/oss/images/sql-agent-langgraph.png"
+  alt="SQL agent graph"
+  style={{ height: "800px" }}
+/>
+
+We can now invoke the graph:
+<LanggraphSqlAgentStreamAgentPy />
+
+
+
+```
+================================ Human Message =================================
+
+Which genre on average has the longest tracks?
+================================== Ai Message ==================================
+
+Available tables: Album, Artist, Customer, Employee, Genre, Invoice, InvoiceLine, MediaType, Playlist, PlaylistTrack, Track
+================================== Ai Message ==================================
+Tool Calls:
+  sql_db_schema (call_yzje0tj7JK3TEzDx4QnRR3lL)
+ Call ID: call_yzje0tj7JK3TEzDx4QnRR3lL
+  Args:
+    table_names: Genre, Track
+================================= Tool Message =================================
+Name: sql_db_schema
+
+
+CREATE TABLE "Genre" (
+	"GenreId" INTEGER NOT NULL,
+	"Name" NVARCHAR(120),
+	PRIMARY KEY ("GenreId")
+)
+
+/*
+3 rows from Genre table:
+GenreId	Name
+1	Rock
+2	Jazz
+3	Metal
+*/
+
+
+CREATE TABLE "Track" (
+	"TrackId" INTEGER NOT NULL,
+	"Name" NVARCHAR(200) NOT NULL,
+	"AlbumId" INTEGER,
+	"MediaTypeId" INTEGER NOT NULL,
+	"GenreId" INTEGER,
+	"Composer" NVARCHAR(220),
+	"Milliseconds" INTEGER NOT NULL,
+	"Bytes" INTEGER,
+	"UnitPrice" NUMERIC(10, 2) NOT NULL,
+	PRIMARY KEY ("TrackId"),
+	FOREIGN KEY("MediaTypeId") REFERENCES "MediaType" ("MediaTypeId"),
+	FOREIGN KEY("GenreId") REFERENCES "Genre" ("GenreId"),
+	FOREIGN KEY("AlbumId") REFERENCES "Album" ("AlbumId")
+)
+
+/*
+3 rows from Track table:
+TrackId	Name	AlbumId	MediaTypeId	GenreId	Composer	Milliseconds	Bytes	UnitPrice
+1	For Those About To Rock (We Salute You)	1	1	1	Angus Young, Malcolm Young, Brian Johnson	343719	11170334	0.99
+2	Balls to the Wall	2	2	1	U. Dirkschneider, W. Hoffmann, H. Frank, P. Baltes, S. Kaufmann, G. Hoffmann	342562	5510424	0.99
+3	Fast As a Shark	3	2	1	F. Baltes, S. Kaufman, U. Dirkscneider & W. Hoffman	230619	3990994	0.99
+*/
+================================== Ai Message ==================================
+Tool Calls:
+  sql_db_query (call_cb9ApLfZLSq7CWg6jd0im90b)
+ Call ID: call_cb9ApLfZLSq7CWg6jd0im90b
+  Args:
+    query: SELECT Genre.Name, AVG(Track.Milliseconds) AS AvgMilliseconds FROM Track JOIN Genre ON Track.GenreId = Genre.GenreId GROUP BY Genre.GenreId ORDER BY AvgMilliseconds DESC LIMIT 5;
+================================== Ai Message ==================================
+Tool Calls:
+  sql_db_query (call_DMVALfnQ4kJsuF3Yl6jxbeAU)
+ Call ID: call_DMVALfnQ4kJsuF3Yl6jxbeAU
+  Args:
+    query: SELECT Genre.Name, AVG(Track.Milliseconds) AS AvgMilliseconds FROM Track JOIN Genre ON Track.GenreId = Genre.GenreId GROUP BY Genre.GenreId ORDER BY AvgMilliseconds DESC LIMIT 5;
+================================= Tool Message =================================
+Name: sql_db_query
+
+[('Sci Fi & Fantasy', 2911783.0384615385), ('Science Fiction', 2625549.076923077), ('Drama', 2575283.78125), ('TV Shows', 2145041.0215053763), ('Comedy', 1585263.705882353)]
+================================== Ai Message ==================================
+
+The genre with the longest tracks on average is "Sci Fi & Fantasy," with an average track length of approximately 2,911,783 milliseconds. Other genres with relatively long tracks include "Science Fiction," "Drama," "TV Shows," and "Comedy."
+```
+<Tip>
+See [LangSmith trace](https://smith.langchain.com/public/94b8c9ac-12f7-4692-8706-836a1f30f1ea/r) for the above run.
+</Tip>
+
+
+
+## 6. Implement human-in-the-loop review
+
+It can be prudent to check the agent's SQL queries before they are executed for any unintended actions or inefficiencies.
+
+Here we leverage LangGraph's [human-in-the-loop](/oss/python/langgraph/interrupts) features to pause the run before executing a SQL query and wait for human review. Using LangGraph's [persistence layer](/oss/python/langgraph/persistence), we can pause the run indefinitely (or at least as long as the persistence layer is alive).
+
+Let's wrap the `sql_db_query` tool in a node that receives human input. We can implement this using the [interrupt](/oss/python/langgraph/interrupts) function. Below, we allow for input to approve the tool call, edit its arguments, or provide user feedback.
+
+<LanggraphSqlAgentHitlInterruptPy />
+
+
+
+
+<Note>
+The above implementation follows the [tool interrupt example](/oss/python/langgraph/interrupts#interrupts-in-tools) in the broader [human-in-the-loop](/oss/python/langgraph/interrupts) guide. Refer to that guide for details and alternatives.
+</Note>
+
+Let's now re-assemble our graph. We will replace the programmatic check with human review. Note that we now include a [checkpointer](/oss/python/langgraph/persistence); this is required to pause and resume the run.
+
+<LanggraphSqlAgentHitlAssemblePy />
+
+
+
+
+We can invoke the graph as before. This time, execution is interrupted:
+
+<LanggraphSqlAgentHitlStreamPy />
+
+
+
+
+```
+...
+
+INTERRUPTED:
+{
+  "action": "sql_db_query",
+  "args": {
+    "query": "SELECT Genre.Name, AVG(Track.Milliseconds) AS AvgLength FROM Track JOIN Genre ON Track.GenreId = Genre.GenreId GROUP BY Genre.Name ORDER BY AvgLength DESC LIMIT 5;"
+  },
+  "description": "Please review the tool call"
+}
+```
+We can accept or edit the tool call using [Command](/oss/python/langgraph/use-graph-api#combine-control-flow-and-state-updates-with-command):
+
+<LanggraphSqlAgentHitlResumePy />
+
+
+
+
+```
+================================== Ai Message ==================================
+Tool Calls:
+  sql_db_query (call_t4yXkD6shwdTPuelXEmY3sAY)
+ Call ID: call_t4yXkD6shwdTPuelXEmY3sAY
+  Args:
+    query: SELECT Genre.Name, AVG(Track.Milliseconds) AS AvgLength FROM Track JOIN Genre ON Track.GenreId = Genre.GenreId GROUP BY Genre.Name ORDER BY AvgLength DESC LIMIT 5;
+================================= Tool Message =================================
+Name: sql_db_query
+
+[('Sci Fi & Fantasy', 2911783.0384615385), ('Science Fiction', 2625549.076923077), ('Drama', 2575283.78125), ('TV Shows', 2145041.0215053763), ('Comedy', 1585263.705882353)]
+================================== Ai Message ==================================
+
+The genre with the longest average track length is "Sci Fi & Fantasy" with an average length of about 2,911,783 milliseconds. Other genres with long average track lengths include "Science Fiction," "Drama," "TV Shows," and "Comedy."
+```
+
+Refer to the [human-in-the-loop guide](/oss/python/langgraph/interrupts) for details.
+
+## Next steps
+Check out the [Evaluate a graph](/langsmith/evaluate-graph) guide for evaluating LangGraph applications, including SQL agents like this one, using LangSmith.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langgraph/sql-agent.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

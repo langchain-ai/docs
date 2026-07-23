@@ -1,0 +1,417 @@
+---
+title: "ChatBedrock integration"
+description: "Integrate with the ChatBedrock chat model using LangChain Python."
+---
+
+This doc will help you get started with AWS Bedrock [chat models](/oss/python/langchain/models). Amazon Bedrock is a fully managed service that offers a choice of high-performing foundation models (FMs) from leading AI companies like AI21 Labs, Anthropic, Cohere, Meta, Stability AI, and Amazon via a single API, along with a broad set of capabilities you need to build generative AI applications with security, privacy, and responsible AI. Using Amazon Bedrock, you can easily experiment with and evaluate top FMs for your use case, privately customize them with your data using techniques such as fine-tuning and Retrieval Augmented Generation (RAG), and build agents that execute tasks using your enterprise systems and data sources. Since Amazon Bedrock is serverless, you don't have to manage any infrastructure, and you can securely integrate and deploy generative AI capabilities into your applications using the AWS services you are already familiar with.
+
+AWS Bedrock maintains a [Converse API](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html) which provides a unified conversational interface for Bedrock models. This API does not yet support custom models. You can see a list of all [models that are supported here](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html).
+
+<Info>
+**We recommend the Converse API for users who do not need to use custom models. It can be accessed using [`ChatBedrockConverse`](https://reference.langchain.com/python/langchain-aws/chat_models/bedrock_converse/ChatBedrockConverse).**
+
+</Info>
+
+<Info>
+**Anthropic models on Bedrock**
+
+For Anthropic models specifically, you can use `ChatAnthropicBedrock` which extends `ChatAnthropic` and provides the same API while running on AWS Bedrock. See the [ChatAnthropicBedrock section](#chatanthropicbedrock) below for details.
+</Info>
+
+For detailed documentation of all Bedrock features and configurations head to the [API reference](https://reference.langchain.com/python/langchain-aws/chat_models/bedrock_converse/ChatBedrockConverse).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/bedrock) | Downloads | Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| [`ChatBedrock`](https://reference.langchain.com/python/langchain-aws/chat_models/bedrock/ChatBedrock) | [`langchain-aws`](https://reference.langchain.com/python/langchain-aws) | beta | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-aws?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-aws?style=flat-square&label=%20) |
+| [`ChatBedrockConverse`](https://reference.langchain.com/python/langchain-aws/chat_models/bedrock_converse/ChatBedrockConverse) | [`langchain-aws`](https://reference.langchain.com/python/langchain-aws) | beta | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-aws?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-aws?style=flat-square&label=%20) |
+
+### Model features
+
+The below apply to both `ChatBedrock` and `ChatBedrockConverse`.
+
+| [Tool calling](/oss/python/langchain/tools) | [Structured output](/oss/python/langchain/structured-output) | [Image input](/oss/python/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/python/langchain/streaming/) | Native async | [Token usage](/oss/python/langchain/models#token-usage) | [Logprobs](/oss/python/langchain/models#log-probabilities) |
+| :---: | :---: | :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
+
+## Setup
+
+To access Bedrock models you'll need to create an AWS account, set up the Bedrock API service, get an access key ID and secret key, and install the `langchain-aws` integration package.
+
+### Credentials
+
+Head to the [AWS docs](https://docs.aws.amazon.com/bedrock/latest/userguide/setting-up.html) to sign up to AWS and setup your credentials.
+
+Alternatively, `ChatBedrockConverse` will read from the following environment variables by default:
+
+```python
+# os.environ["AWS_ACCESS_KEY_ID"] = "..."
+# os.environ["AWS_SECRET_ACCESS_KEY"] = "..."
+
+# Not required unless using temporary credentials.
+# os.environ["AWS_SESSION_TOKEN"] = "..."
+```
+
+You'll also need to turn on model access for your account, which you can do by following [these instructions](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html).
+
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/observability) API key:
+
+```python
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The LangChain Bedrock integration lives in the `langchain-aws` package:
+
+```python
+pip install -qU langchain-aws
+```
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+```python
+from langchain_aws import ChatBedrockConverse
+
+llm = ChatBedrockConverse(
+    model_id="us.anthropic.claude-sonnet-4-6",
+    # region_name=...,
+    # aws_access_key_id=...,
+    # aws_secret_access_key=...,
+    # aws_session_token=...,
+    # temperature=...,
+    # max_tokens=...,
+    # other params...
+)
+```
+
+## Invocation
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = llm.invoke(messages)
+ai_msg
+```
+
+```text
+AIMessage(content="J'adore la programmation.", additional_kwargs={}, response_metadata={'ResponseMetadata': {'RequestId': 'b07d1630-06f2-44b1-82bf-e82538dd2215', 'HTTPStatusCode': 200, 'HTTPHeaders': {'date': 'Wed, 16 Apr 2025 19:35:34 GMT', 'content-type': 'application/json', 'content-length': '206', 'connection': 'keep-alive', 'x-amzn-requestid': 'b07d1630-06f2-44b1-82bf-e82538dd2215'}, 'RetryAttempts': 0}, 'stopReason': 'end_turn', 'metrics': {'latencyMs': [488]}, 'model_name': 'us.anthropic.claude-sonnet-4-6'}, id='run-d09ed928-146a-4336-b1fd-b63c9e623494-0', usage_metadata={'input_tokens': 29, 'output_tokens': 11, 'total_tokens': 40, 'input_token_details': {'cache_creation': 0, 'cache_read': 0}})
+```
+
+```python
+print(ai_msg.content)
+```
+
+```text
+J'adore la programmation.
+```
+
+### Streaming
+
+Use `stream_events` to stream tokens directly:
+
+```python
+stream = llm.stream_events(messages, version="v3")
+for token in stream.text:
+    print(token, end="|")
+```
+
+```text
+J|'adore la| programmation.|
+```
+
+### Streaming tool calls and structured output
+
+When using [tool calling](/oss/python/langchain/tools) or [structured output](/oss/python/langchain/structured-output) with Anthropic models, tool call arguments stream as partial JSON chunks by default.
+
+To reduce latency and get more evenly distributed chunks, you can enable Anthropic's fine-grained tool streaming beta:
+
+```python
+from langchain_aws import ChatBedrockConverse
+
+llm = ChatBedrockConverse(
+    model_id="us.anthropic.claude-sonnet-4-5-20250514-v1:0",
+    additional_model_request_fields={
+        "anthropic_beta": ["fine-grained-tool-streaming-2025-05-14"]
+    }
+)
+```
+
+<Note>
+    Fine-grained tool streaming is supported on Claude 4.5+ models. See the [Claude documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming) for more details.
+</Note>
+
+<Warning>
+When using fine-grained tool streaming, you may receive invalid or partial JSON inputs. Make sure to account for these edge cases in your code.
+</Warning>
+
+## Extended thinking
+
+This guide focuses on implementing Extended Thinking using AWS Bedrock with LangChain's `ChatBedrockConverse` integration.
+
+### Supported models
+
+Extended Thinking is available for the following Claude models on AWS Bedrock:
+
+| Model | Model ID |
+|-------|----------|
+| **Claude Opus 4** | `anthropic.claude-opus-4-20250514-v1:0` |
+| **Claude Sonnet 4** | `anthropic.claude-sonnet-4-20250514-v1:0` |
+| **Claude 3.7 Sonnet** | `us.anthropic.claude-3-7-sonnet-20250219-v1:0` |
+
+```python
+from langchain_aws import ChatBedrockConverse
+
+llm = ChatBedrockConverse(
+    model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
+    region_name="us-west-2",
+    max_tokens=4096,
+    additional_model_request_fields={
+        "thinking": {"type": "enabled", "budget_tokens": 1024},
+    },
+)
+
+ai_msg = llm.invoke(messages)
+ai_msg.content_blocks
+```
+
+```text
+[{'type': 'reasoning',
+  'reasoning': 'The user wants me to translate "I love programming" from English to French.\n\n"I love" translates to "J\'aime" in French.\n"Programming" translates to "la programmation" in French.\n\nSo the full translation would be "J\'aime la programmation."',
+  'extras': {'signature': 'EpkDCkgIBxABGAIqQGI0KGz8LoVaFwqSAYPN7N+FecI1ZGtb0zpfPr5F8Sb1yxtQHQlmbKUS8JByenWCFGpRKigNaQh1+rLZ59GEX/sSDB+6gxZAT24DJrq4pxoMySVhzwALI6FEC+1UIjDcozOIznjRTYlDWPcYUNYvpt8rwF9IHE38Ha2uqVY8ROJa1tjOMk3OEnbSoV13Pa8q/gETsz+1UwxNX5tgxOa+38jLEryhdFyyAk2JDLrmluZBM6TMrtyzALQvVbZqjpkKAXdtcVCrsz8zUo/LZT1B/92Ukux2dE0O1ZOdcW3tORK+NFLSBaWuqigcFUTDH9XNQoHd2WpQNhl+ypnCItbL2wDRscN/tEBkgGMQugvPmL0LAuLKBmsRKStKRi/RMYGJb3Ft2yEDsRnYNJBJ6TtgxXFvjDwqc/UaI9cIcTxdoVVlsPFsYccpVwirzwAOiz6CSQ1oOQTYJVT90eQ71QW74n1ubbFIZAvDBKk0KG8jK1FGx4FpuuZyFhBpXtfrgOCdrlVSAO/EE9fKCbP9FlhPbRgB'}},
+ {'type': 'text', 'text': "J'aime la programmation."}]
+```
+
+### How extended thinking works
+
+When extended thinking is turned on, Claude creates thinking content blocks where it outputs its internal reasoning. Claude incorporates insights from this reasoning before crafting a final response. The API response will include thinking content blocks, followed by text content blocks.
+
+```python
+next_messages = messages + [("ai", ai_msg.content), ("human", "I love AI")]
+
+ai_msg = llm.invoke(next_messages)
+ai_msg.content_blocks
+```
+
+```text
+[{'type': 'reasoning',
+  'reasoning': 'The user wants me to translate "I love AI" from English to French. \n\n"I love" translates to "J\'aime" in French.\n"AI" stands for "Artificial Intelligence" which in French is "Intelligence Artificielle" or "IA" (the French abbreviation).\n\nSo the translation would be "J\'aime l\'IA" or "J\'aime l\'intelligence artificielle".\n\nI think using the abbreviation "IA" would be more natural and concise, similar to how the user used "AI" in English.',
+  'extras': {'signature': 'EuAECkgIBxABGAIqQLWbkzJ8RzfxhVN1BhfRj5+On8/M9Utt0yH9kvj9P2zlQkO5xloq6I/AiEeArwwdJeqJVcLRjqLtinh6HIBbSDwSDFwt0GL409TqjSZNBhoMPQtJdZmx/uiPrLHUIjCJXyyjgSK3vzbcSEnsvo7pdpoo+waUFrAPDCGL/CIN5u7c8ueLCuCn8W0qGGc+BNgqxQO6UbV11RnMdnUyFmVgTPJErfzBr6U6KyUHd5dJmFWIUVpbbxT2C9vawpbKMPThaRW3BhItEafWGUpPqztzFhqJpSegXtXehIn5iY4yHzTUZ5FPdkNIuAmTsFNNGxiKr9H/gqknvQ2B7I4ushRHLg+drU4cH18EGZlAo5Tu1O9yH5GbweIEew4Uv7oWje+R8TIku0OFVhrbnQqqqukBicMV2JRifUYuz6dYM1UDYS8SfxQ1MmcVY5t1L9LDpoL4F/CtpL8/6YDsB/FosU37Qc1qm+D+pKEPTYnyxaP5tRXqTBfqUIiNJGqr9Egl17Akoy6NIv234rPfuf8HjTcu5scZoPGhOreG5rWxJ7AbTCIXgGWqpcf2TqDtniOac3jW4OtnlID9fsloKNq6Y5twgXHDR47c4Jh6vWmucZiIlL6hkklQzt5To6vOnqcTOGUtuCis8Y2wRzlNGeR2d8A+ocYm7mBvR/Y5DvDgstJwB/vCLoQlIL+jm6+h8k6EX/24GqOsh5hxsS5IsNIob/p8tr4TBbc9noCoUSYkMhbQPi2xpRrNML9GUIo7Skbh1ni67uqeShj1xuUrFG+cN6x4yzDaRb59LCAYAQ=='}},
+ {'type': 'text', 'text': "J'aime l'IA."}]
+```
+
+## Prompt caching
+
+Bedrock supports [caching](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html) of elements of your prompts, including messages and tools. This allows you to reuse large documents, instructions, [few-shot documents](/langsmith/create-few-shot-evaluators), and other data to reduce latency and costs.
+
+<Note>
+    **Not all models support prompt caching. See [Bedrock prompt caching supported models](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html#prompt-caching-models).**
+</Note>
+
+<Note>
+    For LangChain agents, use [`BedrockPromptCachingMiddleware`](/oss/python/integrations/middleware/aws#prompt-caching) to let LangChain optimize stable system prompt and tool content. For direct model calls, use manual `cachePoint` blocks or invocation-level `cache_control`, depending on the model and API.
+</Note>
+
+To enable caching on an element of a prompt, mark its associated content block using the `cachePoint` key. See example below:
+
+```python
+import requests
+from langchain_aws import ChatBedrockConverse
+
+llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
+
+# Pull LangChain readme
+get_response = requests.get(
+    "https://raw.githubusercontent.com/langchain-ai/langchain/b476fdb54aa6e6f5f0b24a68c2f4a94e43b369f9/README.md"
+)
+readme = get_response.text
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "What's LangChain, according to its README?",
+            },
+            {
+                "type": "text",
+                "text": f"{readme}",
+            },
+            {
+                "cachePoint": {"type": "default"},
+            },
+        ],
+    },
+]
+
+response_1 = llm.invoke(messages)
+response_2 = llm.invoke(messages)
+
+usage_1 = response_1.usage_metadata["input_token_details"]
+usage_2 = response_2.usage_metadata["input_token_details"]
+
+print(f"First invocation:\n{usage_1}")
+print(f"\nSecond:\n{usage_2}")
+```
+
+```python
+First invocation:
+{'cache_creation': 1528, 'cache_read': 0}
+
+Second:
+{'cache_creation': 0, 'cache_read': 1528}
+```
+
+## Citations
+
+Citations can be generated if they are enabled on input documents. Documents can be
+specified in Bedrock's
+[native format](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_DocumentBlock.html)
+or LangChain's [standard types](/oss/python/langchain/messages#multimodal):
+
+<CodeGroup>
+```python Bedrock format
+from langchain_aws import ChatBedrockConverse
+
+llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-20250514-v1:0")
+
+pdf_path = "path/to/your/file.pdf"
+
+with open(pdf_path, "rb") as f:
+    pdf_bytes = f.read()
+
+document = {
+    "document": {
+        "format": "pdf",
+        "source": {"bytes": pdf_bytes},
+        "name": "my-pdf",
+        "citations": {"enabled": True},  # [!code highlight]
+    },
+}
+
+response = llm.invoke(
+    [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Describe this document."},
+                document,
+            ]
+        },
+    ]
+)
+response.content_blocks
+```
+
+```python LangChain standard format
+import base64
+from langchain_aws import ChatBedrockConverse
+
+llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-20250514-v1:0")
+
+pdf_path = "path/to/your/file.pdf"
+
+with open(pdf_path, "rb") as f:
+    pdf_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+document = {
+    "type": "file",
+    "mime_type": "application/pdf",
+    "base64": pdf_base64,
+    "name": "my-pdf",  # Converse requires a filename
+    "citations": {"enabled": True},  # [!code highlight]
+}
+
+response = llm.invoke(
+    [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Describe this document."},
+                document,
+            ]
+        },
+    ]
+)
+response.content_blocks
+```
+</CodeGroup>
+
+---
+
+## ChatAnthropicBedrock
+
+For AWS Bedrock users specifically interested in Anthropic models, `langchain-aws` provides `ChatAnthropicBedrock`. This class extends `ChatAnthropic` and provides the same interface while running on AWS Bedrock infrastructure. This takes advantage of the Anthropic SDK's [Bedrock clients](https://platform.claude.com/docs/en/build-with-claude/claude-on-amazon-bedrock).
+
+### Installation
+
+Install `langchain-aws` with the `anthropic` extra to get the required dependencies:
+
+<CodeGroup>
+```bash pip
+pip install --upgrade "langchain-aws[anthropic]"
+```
+```bash uv
+uv add "langchain-aws[anthropic]"
+```
+</CodeGroup>
+
+### Usage
+
+`ChatAnthropicBedrock` supports the same features and parameters as `ChatAnthropic`. You can initialize it with AWS-specific parameters:
+
+```python
+from langchain_aws import ChatAnthropicBedrock
+
+model = ChatAnthropicBedrock(
+    model="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    region_name="us-west-2",
+    aws_access_key_id="...",
+    aws_secret_access_key="...",
+    aws_session_token="...",
+)
+```
+
+AWS credentials can also be read from environment variables or discovered automatically by boto3:
+
+```python
+# Set environment variables
+# os.environ["AWS_ACCESS_KEY_ID"] = "..."
+# os.environ["AWS_SECRET_ACCESS_KEY"] = "..."
+# os.environ["AWS_REGION"] = "..."
+
+from langchain_aws import ChatAnthropicBedrock
+
+model = ChatAnthropicBedrock(model="us.anthropic.claude-haiku-4-5-20251001-v1:0")
+```
+
+For detailed documentation on available parameters and features, refer to the [`ChatAnthropic` integration page](/oss/python/integrations/chat/anthropic).
+
+---
+
+## API reference
+
+For detailed documentation of all `ChatBedrock`, `ChatBedrockConverse`, and `ChatAnthropicBedrock` features and configurations head to [the API reference](https://reference.langchain.com/python/langchain-aws).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/chat/bedrock.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

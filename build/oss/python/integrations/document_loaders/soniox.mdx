@@ -1,0 +1,359 @@
+---
+title: Soniox
+---
+
+Get started using the [Soniox](https://soniox.com/) audio transcription loader in LangChain.
+
+## Setup
+
+Install the package:
+
+```bash
+pip install langchain-soniox
+```
+
+### Credentials
+
+Get your Soniox API key from the [Soniox Console](https://console.soniox.com) and set it as an environment variable:
+
+```bash
+export SONIOX_API_KEY=your_api_key
+```
+
+## Usage
+
+### Basic transcription
+
+Example how to transcribe audio file using the `SonioxDocumentLoader` and generate the summary with an LLM.
+
+```python
+from langchain_soniox import SonioxDocumentLoader
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
+audio_file_url = "https://soniox.com/media/examples/coffee_shop.mp3"
+loader = SonioxDocumentLoader(file_url=audio_file_url)
+
+print(f"Transcribing {audio_file_url}...")
+docs = loader.load()
+
+transcript_text = docs[0].page_content
+print(f"Transcript: {transcript_text}")
+
+# Create a chain to summarize the transcript
+prompt = ChatPromptTemplate.from_template(
+    "Write a concise summary of the following speech:\n\n{transcript}"
+)
+
+chain = prompt | ChatOpenAI(model="gpt-5-mini") | StrOutputParser()
+summary = chain.invoke({"transcript": transcript_text})
+print(summary)
+```
+
+You can also load audio from a local file or from bytes:
+
+```python
+# Using a local file path
+loader = SonioxDocumentLoader(file_path="/path/to/audio.mp3")
+
+# Using binary data
+with open("/path/to/audio.mp3", "rb") as f:
+    audio_bytes = f.read()
+loader = SonioxDocumentLoader(file_data=audio_bytes)
+```
+
+### Async transcription
+
+For async operations, use `aload()` or `alazy_load()`:
+
+```python
+import asyncio
+from langchain_soniox import SonioxDocumentLoader
+
+async def transcribe_async():
+    loader = SonioxDocumentLoader(
+        file_url="https://soniox.com/media/examples/coffee_shop.mp3"
+    )
+
+    docs = [doc async for doc in loader.alazy_load()]
+    print(docs[0].page_content)
+
+asyncio.run(transcribe_async())
+```
+
+## Advanced usage
+
+### Language hints
+
+Soniox automatically detects and transcribes speech in [**60+ languages**](https://soniox.com/docs/stt/concepts/supported-languages). When you know which languages are likely to appear in your audio, provide `language_hints` to improve accuracy by biasing recognition toward those languages.
+
+Language hints **do not restrict** recognition—they only **bias** the model toward the specified languages, while still allowing other languages to be detected if present.
+
+```python
+from langchain_soniox import (
+    SonioxDocumentLoader,
+    SonioxTranscriptionOptions,
+)
+
+loader = SonioxDocumentLoader(
+    file_url="https://soniox.com/media/examples/coffee_shop.mp3",
+    options=SonioxTranscriptionOptions(
+        language_hints=["en", "es"],
+    ),
+)
+
+docs = loader.load()
+```
+
+For more details, see the [Soniox language hints documentation](https://soniox.com/docs/stt/concepts/language-hints).
+
+### Speaker diarization
+
+Enable speaker identification to distinguish between different speakers:
+
+```python
+from langchain_soniox import (
+    SonioxDocumentLoader,
+    SonioxTranscriptionOptions,
+)
+
+loader = SonioxDocumentLoader(
+    file_url="https://soniox.com/media/examples/coffee_shop.mp3",
+    options=SonioxTranscriptionOptions(
+        enable_speaker_diarization=True,
+    ),
+)
+
+docs = loader.load()
+
+# Access speaker information in the metadata
+current_speaker = None
+output = ""
+for token in docs[0].metadata["tokens"]:
+    if current_speaker != token["speaker"]:
+        current_speaker = token["speaker"]
+        output += f"\nSpeaker {current_speaker}: {token['text'].lstrip()}"
+    else:
+        output += token["text"]
+print(output)
+
+# Analyze the conversation
+prompt = ChatPromptTemplate.from_template(
+    """
+    Analyze the following conversation between speakers.
+    Identify the intent of each speaker.
+
+    Conversation:
+    {conversation}
+    """
+)
+
+chain = prompt | ChatOpenAI(model="gpt-5-mini") | StrOutputParser()
+analysis = chain.invoke({"conversation": output})
+print(analysis)
+```
+
+### Language identification
+
+Enable automatic language detection and identification:
+
+```python
+from langchain_soniox import (
+    SonioxDocumentLoader,
+    SonioxTranscriptionOptions,
+)
+
+loader = SonioxDocumentLoader(
+    file_url="https://soniox.com/media/examples/coffee_shop.mp3",
+    options=SonioxTranscriptionOptions(
+        enable_language_identification=True,
+    ),
+)
+
+docs = loader.load()
+
+# Access language information in the metadata
+current_language = None
+output = ""
+for token in docs[0].metadata["tokens"]:
+    if current_language != token["language"]:
+        current_language = token["language"]
+        output += f"\n[{current_language}] {token['text'].lstrip()}"
+    else:
+        output += token["text"]
+print(output)
+```
+
+### Context for improved accuracy
+
+Provide domain-specific [context](https://soniox.com/docs/stt/concepts/context) to improve transcription accuracy. Context helps the model understand your domain, recognize important terms, and apply custom vocabulary.
+
+The `context` object supports four optional sections:
+
+```python
+from langchain_soniox import (
+    SonioxDocumentLoader,
+    SonioxTranscriptionOptions,
+    StructuredContext,
+    StructuredContextGeneralItem,
+    StructuredContextTranslationTerm,
+)
+
+loader = SonioxDocumentLoader(
+    file_url="https://soniox.com/media/examples/coffee_shop.mp3",
+    options=SonioxTranscriptionOptions(
+        context=StructuredContext(
+            # Structured key-value information (domain, topic, intent, etc.)
+            general=[
+                StructuredContextGeneralItem(key="domain", value="Healthcare"),
+                StructuredContextGeneralItem(
+                    key="topic", value="Diabetes management consultation"
+                ),
+                StructuredContextGeneralItem(key="doctor", value="Dr. Martha Smith"),
+            ],
+            # Longer free-form background text or related documents
+            text="The patient has a history of...",
+            # Domain-specific or uncommon words
+            terms=["Celebrex", "Zyrtec", "Xanax"],
+            # Custom translations for ambiguous terms
+            translation_terms=[
+                StructuredContextTranslationTerm(
+                    source="Mr. Smith", target="Sr. Smith"
+                ),
+                StructuredContextTranslationTerm(source="MRI", target="RM"),
+            ],
+        ),
+    ),
+)
+
+docs = loader.load()
+```
+
+For more details, see the [Soniox context documentation](https://soniox.com/docs/stt/concepts/context).
+
+### Translation
+
+Translate from any detected language to a target language:
+
+```python
+from langchain_soniox import (
+    SonioxDocumentLoader,
+    SonioxTranscriptionOptions,
+    TranslationConfig,
+)
+
+loader = SonioxDocumentLoader(
+    file_url="https://soniox.com/media/examples/coffee_shop.mp3",
+    options=SonioxTranscriptionOptions(
+        translation=TranslationConfig(
+            type="one_way",
+            target_language="fr",
+        ),
+        language_hints=["en"],
+    ),
+)
+
+docs = list(loader.lazy_load())
+
+translated_text = ""
+original_text = ""
+
+for token in docs[0].metadata["tokens"]:
+    if token["translation_status"] == "translation":
+        translated_text += token["text"]
+    else:
+        original_text += token["text"]
+
+print(original_text)
+print(translated_text)
+```
+
+You can also transcribe and translate between two languages simultaneously using `two_way` translation type. For more information, see [async translation](https://soniox.com/docs/stt/async/async-translation).
+
+## API reference
+
+### Constructor parameters
+
+| Parameter                      | Type                         | Required | Default                        | Description                                        |
+| ------------------------------ | ---------------------------- | -------- | ------------------------------ | -------------------------------------------------- |
+| `file_path`                    | `str`                        | No\*     | `None`                         | Path to local audio file to transcribe             |
+| `file_data`                    | `bytes`                      | No\*     | `None`                         | Binary data of audio file to transcribe            |
+| `file_url`                     | `str`                        | No\*     | `None`                         | URL of audio file to transcribe                    |
+| `api_key`                      | `str`                        | No       | `SONIOX_API_KEY` env var       | Soniox API key                                     |
+| `base_url`                     | `str`                        | No       | `https://api.soniox.com/v1`    | API base URL (see [regional endpoints][endpoints]) |
+| `options`                      | `SonioxTranscriptionOptions` | No       | `SonioxTranscriptionOptions()` | Transcription options                              |
+| `polling_interval_seconds`     | `float`                      | No       | `1.0`                          | Time between status polls (seconds)                |
+| `timeout_seconds`              | `float`                      | No       | `300.0` (5 minutes)            | Maximum time to wait for transcription             |
+| `http_request_timeout_seconds` | `float`                      | No       | `60.0`                         | Timeout for individual HTTP requests               |
+
+\* You must specify **exactly one** of: `file_path`, `file_data`, or `file_url`.
+
+[endpoints]: https://soniox.com/docs/stt/data-residency#regional-endpoints
+
+### Transcription options
+
+The `SonioxTranscriptionOptions` class supports these parameters:
+
+| Parameter                        | Type                | Description                                           |
+| -------------------------------- | ------------------- | ----------------------------------------------------- |
+| `model`                          | `str`               | Async model to use (see [available models][models])   |
+| `language_hints`                 | `list[str]`         | Language hints for transcription (ISO language codes) |
+| `language_hints_strict`          | `bool`              | Enforce strict language hints                         |
+| `enable_speaker_diarization`     | `bool`              | Enable speaker identification                         |
+| `enable_language_identification` | `bool`              | Enable language detection                             |
+| `translation`                    | `TranslationConfig` | Translation configuration                             |
+| `context`                        | `StructuredContext` | Context for improved accuracy                         |
+| `client_reference_id`            | `str`               | Custom reference ID for your records                  |
+| `webhook_url`                    | `str`               | Webhook URL for completion notifications              |
+| `webhook_auth_header_name`       | `str`               | Custom auth header name for webhook                   |
+| `webhook_auth_header_value`      | `str`               | Custom auth header value for webhook                  |
+
+Browse the [API documentation](https://soniox.com/docs/stt/api-reference/transcriptions/create_transcription) for a full list of supported options.
+
+[models]: https://soniox.com/docs/stt/models
+
+### Return value
+
+The `lazy_load()` and `alazy_load()` methods yield a single `Document` object:
+
+```python
+Document(
+    page_content=str,  # The transcribed text
+    metadata={
+        "source": str,  # File URL, path, or "file_upload"
+        "transcription_id": str,  # Unique transcription ID
+        "audio_duration_ms": int,  # Audio duration in milliseconds
+        "model": str,  # Model used for transcription
+        "created_at": str,  # ISO 8601 timestamp
+        "tokens": list[dict],  # Detailed token-level information
+    }
+)
+```
+
+The `tokens` array in metadata includes detailed information for each transcribed word:
+
+- `text`: The transcribed text
+- `start_ms`: Start time in milliseconds
+- `end_ms`: End time in milliseconds
+- `speaker`: Speaker ID (if diarization enabled), for example `"1"`, `"2"`, etc.
+- `language`: Detected language (if identification enabled), for example `"en"`, `"fr"`, etc.
+- `translation_status`: Translation status (`"original"`, `"translated"` or `"none"`)
+
+Learn more about the [Soniox API reference](https://soniox.com/docs/stt/api-reference/transcriptions/get_transcription_transcript).
+
+## Related
+
+- [Soniox API documentation](https://soniox.com/docs)
+- [Soniox Console](https://console.soniox.com)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/document_loaders/soniox.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

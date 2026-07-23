@@ -1,0 +1,180 @@
+---
+title: "OracleEmbeddings integration"
+sidebarTitle: "Embeddings"
+description: "Integrate with the OracleEmbeddings embedding model using LangChain JavaScript."
+---
+
+<Tip>
+**Compatibility**: Only available on Node.js.
+</Tip>
+
+Oracle AI Database supports AI workloads where you query data by **meaning** (semantics), not just keywords. It combines **semantic search over unstructured content** with **relational filtering over business data** in a single system—so you can build retrieval workflows (like RAG) without introducing a separate vector database and fragmenting data across multiple platforms.
+
+This guide demonstrates how to generate embeddings for your content using `OracleEmbeddings`.
+
+> **Why generate embeddings in (or via) Oracle?**
+> You can keep data governance and operational guarantees (security, transactions, availability) close to your AI workflow—while choosing the embedding provider model that fits your environment.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | [PY support](https://python.langchain.com/docs/integrations/embeddings/oracleai/) |
+| :--- | :--- | :---: | :---: |
+| `OracleEmbeddings` | [`@oracle/langchain-oracledb`](https://www.npmjs.com/package/@oracle/langchain-oracledb) | ✅ | ✅ |
+
+## Setup
+
+To use OracleEmbeddings, install the `@oracle/langchain-oracledb` helpers (plus `@langchain/core`) and make sure the Oracle Database driver prerequisites are met for your system.
+
+### Credentials
+
+Export credentials (or load them from your secrets manager) for the Oracle user that owns your vector tables and ONNX models.
+
+```bash
+export ORACLE_USER=testuser
+export ORACLE_PASSWORD=testuser
+export ORACLE_DSN="localhost:1521/free"
+```
+
+If you plan to call third-party providers (for example, OCI Generative AI or Hugging Face) you must create credentials inside Oracle Database first. See the [Oracle AI Vector Search guide](https://www.oracle.com/pls/topic/lookup?ctx=dblatest&id=GUID-C6439E94-4E86-4ECD-954E-4B73D53579DE) for the PL/SQL helper procedures.
+
+### Installation
+
+<CodeGroup>
+```bash npm
+npm install @oracle/langchain-oracledb @langchain/core
+```
+```bash yarn
+yarn add @oracle/langchain-oracledb @langchain/core
+```
+```bash pnpm
+pnpm add @oracle/langchain-oracledb @langchain/core
+```
+</CodeGroup>
+
+## Instantiate embeddings
+
+```typescript
+import oracledb from "oracledb";
+import { OracleEmbeddings } from "@oracle/langchain-oracledb";
+
+const connection = await oracledb.getConnection({
+  user: process.env.ORACLE_USER,
+  password: process.env.ORACLE_PASSWORD,
+  connectionString: process.env.ORACLE_DSN,
+});
+
+const embeddings = new OracleEmbeddings(connection, {
+  provider: "database",
+  model: "DEMO_MODEL",
+});
+
+// Close the connection (or pool) when you are done to avoid leaking resources.
+// await connection.close();
+```
+
+The third argument to the constructor is an optional `proxy` string. Use it when outbound requests must travel through an HTTP proxy (for example, when calling Hugging Face from within a private network).
+
+## Run ONNX models inside Oracle Database
+
+Oracle Database accommodates a variety of embedding providers, enabling users to choose between proprietary database solutions and third-party services such as OCIGENAI and HuggingFace. This selection dictates the methodology for generating and managing embeddings.
+
+***Important*** : Should users opt for the database option, they must upload an ONNX model into the Oracle Database. Conversely, if a third-party provider is selected for embedding generation, uploading an ONNX model to Oracle Database is not required.
+
+A significant advantage of utilizing an ONNX model directly within Oracle is the enhanced security and performance it offers by eliminating the need to transmit data to external parties. Additionally, this method avoids the latency typically associated with network or REST API calls.
+
+Below is the example code to upload an ONNX model into Oracle Database:
+
+```typescript
+import { OracleEmbeddings } from "@oracle/langchain-oracledb";
+
+await OracleEmbeddings.loadOnnxModel(
+  connection,
+  "/path/to/model",
+  "all-minilm-l12-v2.onnx",
+  "DEMO_MODEL",
+);
+
+const dbEmbeddings = new OracleEmbeddings(connection, {
+  provider: "database",
+  model: "DEMO_MODEL",
+});
+
+const singleVector = await dbEmbeddings.embedQuery(
+  "Summarize hybrid search patterns in Oracle Database.",
+);
+console.log(singleVector.length);
+```
+
+## Call managed embedding providers
+
+Switch `provider` to route embedding requests through OCI Generative AI or Hugging Face. Provide the credential name you created with Oracle's `DBMS_VECTOR_CHAIN` helpers and, if required, a proxy.
+
+```typescript
+const ociEmbeddings = new OracleEmbeddings(connection, {
+  provider: "ocigenai",
+  credential_name: "OCI_CRED",
+  url: "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/embedText",
+  model: "cohere.embed-english-light-v3.0",
+}, process.env.HTTP_PROXY);
+
+const hfEmbeddings = new OracleEmbeddings(connection, {
+  provider: "huggingface",
+  credential_name: "HF_CRED",
+  url: "https://api-inference.huggingface.co/pipeline/feature-extraction/",
+  model: "sentence-transformers/all-MiniLM-L6-v2",
+});
+
+// Clean up when finished:
+// await connection.close();
+```
+
+## Embed documents for retrieval
+
+Use the same embedding instances to prepare content for vector stores or hybrid retrieval in Oracle Database.
+
+```typescript
+import { OracleDocLoader, OracleTextSplitter } from "@oracle/langchain-oracledb";
+
+const loader = new OracleDocLoader(connection, {
+  owner: "TESTUSER",
+  tablename: "DEMO_TAB",
+  colname: "DATA",
+});
+
+const docs = await loader.load();
+
+const splitter = new OracleTextSplitter(connection, {
+  split: "chars",
+  max: 500,
+  normalize: "all",
+});
+
+const chunks = await splitter.splitText(docs[0].pageContent);
+const vectors = await embeddings.embedDocuments(chunks);
+
+console.log(`Generated ${vectors.length} vectors`);
+```
+
+## Next steps
+
+- Store embeddings with [`OracleVS`](/oss/javascript/integrations/vectorstores/oracleai) for hybrid search
+- Summarize documents using [`OracleSummary`](/oss/javascript/integrations/tools/oracleai)
+
+---
+
+## API reference
+
+For detailed documentation of all `OracleEmbeddings` options head to the [Oracle LangChain Oracle DB repository](https://github.com/oracle/langchain-oracle/tree/main/libs/js/langchain-oracledb).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/embeddings/oracleai.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
