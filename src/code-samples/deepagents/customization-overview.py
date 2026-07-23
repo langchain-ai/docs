@@ -35,10 +35,10 @@ agent = create_deep_agent(
     model="anthropic:claude-sonnet-4-6",
     system_prompt="You are a customer-support agent for ACME Corp.",
 )
-# Final = USER + BASE + SUFFIX
+# Built-in profiles (Anthropic, OpenAI) ship only a `system_prompt_suffix`,
+# and no profile sets `base_system_prompt` here, so:
+# Final = USER + SUFFIX
 #       = "You are a customer-support agent for ACME Corp."
-#         + "\n\n"
-#         + BASE_AGENT_PROMPT
 #         + "\n\n"
 #         + <Claude-specific guidance>
 # :snippet-end:
