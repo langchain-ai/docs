@@ -44,6 +44,53 @@ If your LangSmith account is on the EU or APAC instance, use the corresponding r
 These gateways are deployed in LangChain's regional production environments. There is no automatic region routing.
 </Note>
 
+### Using LangChain and Deep Agents
+
+[LangChain](/oss/langchain/overview) chat models and [Deep Agents](/oss/deepagents/overview) support the gateway through two convenience environment variables:
+
+```bash
+export LANGSMITH_GATEWAY="true"
+export LANGSMITH_GATEWAY_API_KEY="$LANGSMITH_API_KEY"
+```
+
+This routes all supported chat models through the gateway at `https://gateway.smith.langchain.com`. To use a different gateway (e.g. the EU instance), set its URL instead of `true`:
+
+```bash
+export LANGSMITH_GATEWAY="https://eu.gateway.smith.langchain.com"
+export LANGSMITH_GATEWAY_API_KEY="$LANGSMITH_API_KEY"
+```
+
+See [more details](#more-details) below for provider support and interactions with provider-specific environment variables.
+
+<Accordion title="More details">
+
+- Supported in Python only.
+- Supported chat models: [Anthropic](/oss/python/integrations/chat/anthropic) (`langchain-anthropic >= 1.5.1`), [Fireworks](/oss/python/integrations/chat/fireworks) (`langchain-fireworks >= 1.5.1`), and [OpenAI](/oss/python/integrations/chat/openai) (`langchain-openai >= 1.4.1`).
+- Provider-specific base URLs take precedence over the gateway, so you can still route an individual provider elsewhere. For example, with the gateway enabled, `OPENAI_API_BASE` sends OpenAI to that URL while every other provider continues to use the gateway:
+
+  ```bash
+  export OPENAI_API_BASE="https://my.custom.gateway/openai/v2"
+  ```
+
+The table below shows how the base URL and key are resolved, using OpenAI as the example (other providers use their own `*_API_BASE` / `*_API_KEY` variables). `GW default` is `https://gateway.smith.langchain.com/openai/v1`.
+
+| `LANGSMITH_GATEWAY` | `LANGSMITH_GATEWAY_API_KEY` | `OPENAI_API_BASE` | `OPENAI_API_KEY` | `base_url=` kwarg | Resolved base URL | Resolved key |
+|---|---|---|---|---|---|---|
+| unset / `false` | — | — | — | — | `api.openai.com` | none |
+| unset / `false` | ✓ | — | provider-key | — | `api.openai.com` | provider-key |
+| `true` | ✓ | — | — | — | GW default | gateway-key |
+| `true` | — | — | — | — | GW default | none |
+| `true` | ✓ | — | provider-key | — | GW default | gateway-key |
+| `true` | — | — | provider-key | — | GW default | provider-key |
+| `true` | ✓ | `api.openai.com/v1` | provider-key | — | `api.openai.com/v1` | provider-key |
+| `true` | ✓ | `api.openai.com/v1` | — | — | `api.openai.com/v1` | gateway-key |
+| `true` | ✓ | `my.dev.gateway` | — | — | `my.dev.gateway` | gateway-key |
+| `https://eu…` | ✓ | — | — | — | `eu…/openai/v1` | gateway-key |
+| `https://eu…` | ✓ | — | — | `https://apac…` | `apac…` | gateway-key |
+| `https://eu…` | ✓ | — | provider-key | `https://apac…` | `apac…` | provider-key |
+
+</Accordion>
+
 ## 2. Make a call
 
 <CodeGroup>
