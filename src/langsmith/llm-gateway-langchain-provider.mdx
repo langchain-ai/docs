@@ -1,0 +1,125 @@
+---
+title: LangChain managed models
+description: Call LangChain-managed models through the LLM Gateway with no provider key or account of your own. Authenticate with your LangSmith API key.
+---
+
+<Note>
+**Private beta:** The LLM Gateway is in private [beta](/langsmith/release-stages). APIs and features may change as we iterate. Sign up for [the waitlist](https://www.langchain.com/langsmith-llm-gateway-waitlist) to get access.
+</Note>
+
+The `/langchain` provider serves **LangChain-managed models** through the LLM Gateway. With the [other providers](/langsmith/llm-gateway#supported-providers), you bring your own account and key. With managed models, LangChain owns the upstream provider credential, so you can start calling a model immediately with only your [LangSmith API key](/langsmith/create-account-api-key). No [provider secret](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets) setup is required.
+
+<Card title="Base URL" icon="link">
+Point any OpenAI-compatible client at:
+
+```
+https://gateway.smith.langchain.com/langchain/v1
+```
+
+Authenticate with your LangSmith API key as a bearer token.
+</Card>
+
+<Note>
+If your LangSmith account is on a regional instance, use the corresponding regional gateway:
+
+- EU: `https://eu.gateway.smith.langchain.com/langchain/v1`
+- APAC: `https://apac.gateway.smith.langchain.com/langchain/v1`
+- AWS US: `https://aws.gateway.smith.langchain.com/langchain/v1`
+</Note>
+
+## Available models
+
+The provider is OpenAI-compatible and advertises branded model IDs. You select a model by name (case-insensitive) in the request body, and the gateway routes it to the managed upstream model.
+
+| Model ID | Description |
+| --- | --- |
+| `LangSmith:pro` | A high-capability general-purpose managed model. |
+
+You can also list the available models programmatically:
+
+```bash
+curl https://gateway.smith.langchain.com/langchain/v1/models \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY"
+```
+
+The response is the standard OpenAI `/v1/models` list containing only the managed model IDs above.
+
+## Prerequisites
+
+Before you can call the `/langchain` provider, confirm that:
+
+- Your organization is on a **paid plan** ([Developer, Plus, Startup, or Premier](/langsmith/pricing-plans)).
+- You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations). See [Admin setup](/langsmith/llm-gateway-admin-setup) if you're unsure.
+
+## Make a call
+
+Point any OpenAI-compatible client at `https://gateway.smith.langchain.com/langchain/v1`, authenticate with your LangSmith API key, and set `model` to one of the advertised model IDs.
+
+<CodeGroup>
+
+```bash curl
+curl https://gateway.smith.langchain.com/langchain/v1/chat/completions \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"LangSmith:pro","messages":[{"role":"user","content":"ping"}]}'
+```
+
+```python OpenAI SDK
+import os
+
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://gateway.smith.langchain.com/langchain/v1",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+response = client.chat.completions.create(
+    model="LangSmith:pro",
+    messages=[{"role": "user", "content": "ping"}],
+)
+print(response.choices[0].message.content)
+```
+
+```python LangChain
+import os
+
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(
+    model="LangSmith:pro",
+    model_provider="openai",
+    base_url="https://gateway.smith.langchain.com/langchain/v1",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+print(model.invoke("ping").content)
+```
+
+</CodeGroup>
+
+## Supported endpoints
+
+The `/langchain` provider forwards two OpenAI-compatible prompt endpoints and serves the model list locally:
+
+| Method & path | Behavior |
+| --- | --- |
+| `POST /langchain/v1/chat/completions` | Chat completions, including streaming. |
+| `POST /langchain/v1/responses` | OpenAI Responses API. |
+| `GET /langchain/v1/models` | Lists the managed model IDs. |
+
+Any other path returns `404`. A request for a model that isn't advertised also returns `404` with a message listing the available model IDs.
+
+## Pricing
+
+{/* TODO: pricing, billing model, per-plan spend caps, and over-cap behavior for managed models. */}
+
+Standard gateway [spend policies](/langsmith/llm-gateway-spend-policies) still apply on top of the managed-model cap, so you can add tighter per-key or per-user limits.
+
+## Tracing
+
+Like all gateway traffic, managed-model calls are traced to LangSmith. See [Traces, Engine, and access control](/langsmith/llm-gateway-access) for where traces land and how to control access to them.
+
+## Next steps
+
+- [Quickstart](/langsmith/llm-gateway-quickstart): make your first gateway-proxied call.
+- [Spend policies](/langsmith/llm-gateway-spend-policies): add cost limits on top of the managed-model cap.
+- [Custom model providers](/langsmith/llm-gateway-custom-providers): route to your own OpenAI-compatible endpoints.
