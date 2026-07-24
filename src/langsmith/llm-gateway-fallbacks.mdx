@@ -13,9 +13,9 @@ Model fallbacks retry a request against one or more backup [model configurations
 
 A fallback configuration has:
 
-- **A name**, exposed at the route `https://gateway.smith.langchain.com/routes/{name}`. Clients call this URL instead of a provider-specific path.
-- **One or more fallback chains**, each an ordered list of [model configurations](/langsmith/model-configurations) to try in priority order.
-- **Triggers**: the upstream HTTP status codes that should cause the gateway to move on to the next model in the chain—for example `429` for rate limits, or `500`, `502`, `503`, `504` for other provider errors.
+- **A name**: exposed at the route `https://gateway.smith.langchain.com/routes/{name}`. Clients call this URL instead of a provider-specific path.
+- **One or more fallback chains**: each an ordered list of [model configurations](/langsmith/model-configurations) to try in priority order.
+- **Triggers**: the upstream HTTP status codes that should cause the gateway to move on to the next model in the chain. For example, `429` for rate limits, or `500`, `502`, `503`, `504` for other provider errors.
 
 For each request, the gateway:
 
@@ -24,7 +24,7 @@ For each request, the gateway:
 1. If the response status matches a configured trigger, discards that response and calls the next model configuration in the chain.
 1. Repeats until a candidate returns a non-trigger response, or the chain is exhausted—in which case the last candidate's response is returned to the caller.
 
-Each candidate is called with its own configured model, and each model configuration can point to a different provider and model identifier. The request's `model` is used only to select a chain; if it doesn't match any chain, the first (default) chain is used. If a fallback is triggered the original request's `model` is overridden with the `model` tag in the Model Configuration. So you can fallback from `model-x` to `model-y`, for example.
+The gateway calls each candidate with its own configured model, and each model configuration can point to a different provider and model identifier. The gateway uses the request's `model` only to select a chain; if it doesn't match any chain, the gateway falls back to the first (default) chain. When a fallback triggers, the `model` tag in the Model Configuration overrides the original request's `model`, so you can fall back from `model-x` to `model-y`, for example.
 
 <Note>
 Only **OpenAI Compatible Endpoint** [model configurations](/langsmith/model-configurations)—the same type used for [custom providers](/langsmith/llm-gateway-custom-providers)—can be added to a fallback chain.
@@ -59,7 +59,7 @@ The gateway tries each model configuration in the selected chain, in order, unti
 
 ## Selecting a chain by model
 
-A configuration can hold more than one fallback chain—useful when different model families need different fallback behavior. The gateway selects a chain by matching the request body's `model` field against each chain's **primary** (first) model configuration's underlying model name:
+A configuration can hold more than one fallback chain, which is useful when different model families need different fallback behavior. The gateway selects a chain by matching the request body's `model` field against each chain's **primary** (first) model configuration's underlying model name:
 
 - If `model` matches a chain's primary model, that chain is used.
 - If `model` is omitted, or doesn't match any chain's primary model, the first (default) chain is used.
@@ -77,7 +77,7 @@ For example, a configuration with two chains:
 - A request with `"model": "gpt-4o-mini"` uses chain 2, which fails over from OpenAI to Fireworks.
 - A request with an unrecognized or omitted model uses chain 1, the default.
 
-You may also specify an alias for each chain. Your client can set their requested to model in their request like `"model": "heavy"` to route to the first chain.
+You may also specify an alias for each chain. Your client sets the alias in the request's `model` field (for example, `"model": "heavy"`) to route to that chain.
 
 ## Next steps
 
