@@ -15,20 +15,16 @@ Middleware specifically designed for models hosted on AWS Bedrock. Learn more ab
 Reduce inference latency and input token costs by caching frequently reused prompt prefixes on Amazon Bedrock. `BedrockPromptCachingMiddleware` enables caching through `model_settings`. `ChatBedrock` and `ChatBedrockConverse` then translate that into the correct AWS wire format at request time. Cache checkpoints are placed after the system prompt, tool definitions, and the most recent message where supported, so that the model can skip recomputation of previously seen content on subsequent requests. Cache placement varies by API and model family: for example, Nova skips some tool definition and tool-result cases.
 
 Prompt caching is useful for the following:
-
 - Multi-turn conversations with long, consistent system prompts
 - Agents with many tool definitions that remain constant across invocations
 - Document-based Q&A where users ask multiple questions over the same uploaded context
 - Batch processing workloads with repeated static content
 
 Supported models:
-
 - **Anthropic Claude**
 - **Amazon Nova**
 
-<Info>
-    Learn more about [AWS Bedrock prompt caching](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html) strategies and limitations. Cached content must exceed 1,024 tokens for a cache checkpoint to take effect, sometimes more depending on model. See [supported models, regions, and limits](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html#prompt-caching-models).
-</Info>
+Learn more about [AWS Bedrock prompt caching](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html) strategies and limitations. Cached content must exceed 1,024 tokens for a cache checkpoint to take effect, sometimes more depending on model. See [supported models, regions, and limits](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html#prompt-caching-models).
 
 **API reference:** @[`BedrockPromptCachingMiddleware`]
 
@@ -56,27 +52,10 @@ agent = create_agent(
 )
 ```
 
-<Accordion title="Configuration options">
-
-<ParamField body="type" type="string" default="ephemeral">
-    Cache type. For `ChatBedrock`, only `'ephemeral'` is currently supported. For `ChatBedrockConverse`, this value is ignored as the Converse API always uses `"default"` cache type.
-</ParamField>
-
-<ParamField body="ttl" type="string" default="5m">
-    Time to live for cached content. Valid values: `'5m'` or `'1h'`. Note that Amazon Nova models only support `'5m'`.
-</ParamField>
-
-<ParamField body="min_messages_to_cache" type="number" default="0">
-    Minimum number of messages before caching starts.
-</ParamField>
-
-<ParamField body="unsupported_model_behavior" type="string" default="warn">
-    Behavior when using unsupported models. Options: `'ignore'`, `'warn'`, or `'raise'`.
-</ParamField>
-
-</Accordion>
-
-<Accordion title="Full example">
+Cache type. For `ChatBedrock`, only `'ephemeral'` is currently supported. For `ChatBedrockConverse`, this value is ignored as the Converse API always uses `"default"` cache type.
+Time to live for cached content. Valid values: `'5m'` or `'1h'`. Note that Amazon Nova models only support `'5m'`.
+Minimum number of messages before caching starts.
+Behavior when using unsupported models. Options: `'ignore'`, `'warn'`, or `'raise'`.
 
 The middleware caches content up to and including the latest message in each request. On subsequent requests within the TTL window (5 minutes or 1 hour), previously seen content is retrieved from cache rather than reprocessed, reducing costs and latency.
 
@@ -85,9 +64,7 @@ The middleware caches content up to and including the latest message in each req
 2. Second request: The cached content is retrieved from cache. Only the new message needs to be processed
 3. This pattern continues for each turn, with each request reusing the cached conversation history
 
-<Note>
-    Prompt caching reduces API costs by caching tokens, but does **not** provide conversation memory. To persist conversation history across invocations, use a [checkpointer](https://langchain-ai.github.io/langgraph/concepts/persistence/#checkpointer-libraries) like `MemorySaver`.
-</Note>
+Prompt caching reduces API costs by caching tokens, but does **not** provide conversation memory. To persist conversation history across invocations, use a [checkpointer](https://langchain-ai.github.io/langgraph/concepts/persistence/#checkpointer-libraries) like `MemorySaver`.
 
 ```python
 from langchain_aws import ChatBedrockConverse
@@ -147,8 +124,6 @@ response = agent.invoke(
 print(response["messages"][-1].content)
 ```
 
-</Accordion>
-
 ### Model-specific behavior
 
 The middleware handles differences between APIs and model families automatically:
@@ -162,6 +137,8 @@ The middleware handles differences between APIs and model families automatically
 
 ## AgentCore Payments
 
+> **Preview** — AgentCore Payments is currently in preview. Requires `bedrock-agentcore>=1.18.0`.
+
 Autonomously handle [x402 Payment Required](https://www.x402.org/) responses in LangGraph agents. When a tool hits a paid API that returns HTTP 402, `AgentCorePaymentsMiddleware` detects the payment requirement, signs the payment via [Amazon Bedrock AgentCore Payments](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments.html), enforces session budget limits, and retries the request with payment credentials — all transparent to the agent.
 
 AgentCore Payments middleware is useful for the following:
@@ -169,7 +146,6 @@ AgentCore Payments middleware is useful for the following:
 - Enforcing spending limits at the session level before any payment is signed
 - Automatically recovering from payment errors (expired sessions, insufficient budget) via callbacks
 - Supporting both SigV4 and bearer token (CUSTOM_JWT) authentication
-- MCP tools that return raw JSON with 402 status codes
 
 For a guided setup of PaymentManager and instruments, see the [AgentCore Payments getting started skill](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments-getting-started.html#payments-getting-started-skill).
 
@@ -182,12 +158,13 @@ For a guided setup of PaymentManager and instruments, see the [AgentCore Payment
 **Installation:**
 
 ```bash
-pip install -U bedrock-agentcore langchain langgraph
+pip install -U "bedrock-agentcore[langgraph]>=1.18.0" langchain-aws
 ```
 
 **API reference:** [`AgentCorePaymentsMiddleware`](https://pypi.org/project/bedrock-agentcore/)
 
 ```python
+from langchain_aws import ChatBedrockConverse
 from langchain.agents import create_agent
 from bedrock_agentcore.payments.integrations.langgraph import (
     AgentCorePaymentsConfig,
@@ -205,7 +182,7 @@ config = AgentCorePaymentsConfig(
 payments = AgentCorePaymentsMiddleware(config)
 
 agent = create_agent(
-    model="claude-sonnet-4-20250514",
+    model=ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
     tools=[],  # middleware auto-registers http_request + payment query tools
     middleware=[payments], # [!code highlight]
 )
@@ -235,10 +212,10 @@ sequenceDiagram
     Note over Middleware: 2. Detect 402
     Note over Middleware: 3. Validate session budget
     Note over Middleware: 4. Sign payment (PaymentManager)
-    Note over Middleware: 5. Inject payment header
+    Note over Middleware: 5. Inject payment proof header
     Note over Middleware: 6. Wait (on-chain propagation delay)
     Middleware->>Tool: 7. Retry tool with payment header
-    Tool->>API: HTTP + X-PAYMENT header
+    Tool->>API: HTTP + payment proof header
     API-->>Tool: 200 + content
     Tool-->>Middleware: success response
     Middleware-->>Agent: return content (402 never seen)
@@ -329,7 +306,13 @@ When a tool returns, the middleware checks for 402 in this order:
 2. **`PAYMENT_REQUIRED:` marker** — explicit opt-in signal in content
 3. **Lenient fallback** — parses raw JSON for `statusCode: 402` or `x402Version` + `accepts` fields
 
-This means MCP tools and other tools that return raw JSON are handled automatically without needing the marker or a custom handler.
+### MCP tool compatibility
+
+MCP tools connected via `langchain-mcp-adapters` can work with the middleware when the following conditions are met:
+1. The tool returns payment-related JSON (including `statusCode: 402`) as **text content** in `ToolMessage.content` (not in `ToolMessage.artifact` or `structuredContent`)
+2. The tool accepts a `headers` argument and forwards it in its outbound HTTP requests
+
+When these conditions are satisfied, the lenient fallback detection handles 402 responses automatically. For MCP tools with non-standard response formats (e.g., those using `structuredContent` or custom transport headers), register a [custom handler](#custom-handlers) to parse and inject payment credentials correctly.
 
 ### Error handling
 
@@ -345,6 +328,13 @@ from bedrock_agentcore.payments.integrations.langgraph import (
     AgentCorePaymentsMiddleware,
     PaymentErrorContext,
     ErrorResolution,
+)
+from bedrock_agentcore.payments.manager import PaymentManager
+
+# Initialize PaymentManager for session creation in the callback
+pm = PaymentManager(
+    payment_manager_arn="arn:aws:bedrock-agentcore:us-east-1:123456789012:payment-manager/pm-abc123",
+    region="us-east-1",
 )
 
 def handle_payment_error(ctx: PaymentErrorContext) -> ErrorResolution | str:
@@ -558,27 +548,6 @@ config = AgentCorePaymentsConfig(
 
 Custom handlers receive the **raw `ToolMessage.content`** — parse it yourself. Don't pass built-in handlers (like `GenericPaymentHandler`) as custom handlers directly; they expect a different normalized shape.
 
-### MCP server tools
-
-MCP tools connected via `langchain-mcp-adapters` work with the middleware out of the box:
-
-```python
-from langchain_mcp_adapters.client import MultiServerMCPClient
-
-client = MultiServerMCPClient({
-    "paid_api": {"transport": "stdio", "command": "python", "args": ["server.py"]}
-})
-mcp_tools = await client.get_tools()
-
-agent = create_agent(
-    model=model,
-    tools=mcp_tools,
-    middleware=[payments], # [!code highlight]
-)
-```
-
-Since MCP adapters serialize responses as raw JSON strings, the fallback detection handles the common case automatically. For non-standard formats, register a custom handler.
-
 ### Sync and async
 
 The middleware provides both sync and async paths. LangGraph calls the right one automatically:
@@ -590,6 +559,7 @@ The middleware provides both sync and async paths. LangGraph calls the right one
 
 ```python Async in FastAPI
 from fastapi import FastAPI
+from langchain_aws import ChatBedrockConverse
 from langchain.agents import create_agent
 from bedrock_agentcore.payments.integrations.langgraph import (
     AgentCorePaymentsConfig,
@@ -608,7 +578,11 @@ async def chat(message: str):
         auto_session=True,
     )
     payments = AgentCorePaymentsMiddleware(config)
-    agent = create_agent(model="claude-sonnet-4-20250514", tools=[], middleware=[payments])
+    agent = create_agent(
+        model=ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+        tools=[],
+        middleware=[payments],
+    )
 
     # Uses awrap_tool_call automatically — won't block other requests
     result = await agent.ainvoke({"messages": [{"role": "user", "content": message}]})
@@ -616,6 +590,7 @@ async def chat(message: str):
 ```
 
 ```python Sync in a script
+from langchain_aws import ChatBedrockConverse
 from langchain.agents import create_agent
 from bedrock_agentcore.payments.integrations.langgraph import (
     AgentCorePaymentsConfig,
@@ -630,7 +605,11 @@ config = AgentCorePaymentsConfig(
     auto_session=True,
 )
 payments = AgentCorePaymentsMiddleware(config)
-agent = create_agent(model="claude-sonnet-4-20250514", tools=[], middleware=[payments])
+agent = create_agent(
+    model=ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+    tools=[],
+    middleware=[payments],
+)
 
 # Uses wrap_tool_call automatically
 result = agent.invoke({"messages": [{"role": "user", "content": "Fetch paid data"}]})
@@ -698,3 +677,4 @@ Done. All tools handled automatically.
 - [AgentCore Payments documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments.html)
 - [Code samples — Agents that transact](https://github.com/awslabs/agentcore-samples/tree/main/01-features/08-agents-that-transact)
 - [Blog — Introducing Amazon Bedrock AgentCore Payments](https://aws.amazon.com/blogs/machine-learning/agents-that-transact-introducing-amazon-bedrock-agentcore-payments-built-with-coinbase-and-stripe/)
+- [Technical deep dive — AgentCore Payments and innovation in agentic commerce](https://aws.amazon.com/blogs/machine-learning/technical-deep-dive-agentcore-payments-and-innovation-in-agentic-commerce/)
