@@ -326,6 +326,61 @@ def test_rewrite_oss_links_preserves_existing_language() -> None:
         assert builder._rewrite_oss_links(js, "python") == js
 
 
+def test_rewrite_oss_links_preserves_deepagents_code() -> None:
+    """Deep Agents Code URLs stay language-agnostic (no python/javascript insert)."""
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        link = "[Overview](/oss/deepagents/code/overview)"
+        assert builder._rewrite_oss_links(link, "python") == link
+        assert builder._rewrite_oss_links(link, "js") == link
+        # Sibling OSS paths still get the language prefix.
+        other = "[SDK](/oss/deepagents/quickstart)"
+        assert (
+            builder._rewrite_oss_links(other, "python")
+            == "[SDK](/oss/python/deepagents/quickstart)"
+        )
+
+
+def test_unversioned_oss_code_builds_once() -> None:
+    """Deep Agents Code pages build to oss/deepagents/code/, not per-language copies."""
+    files = [
+        File(
+            path="oss/deepagents/code/overview.mdx",
+            content=(
+                "---\ntitle: Code\n---\n\n"
+                "See [SDK](/oss/deepagents/quickstart) and "
+                "[Config](/oss/deepagents/code/configuration).\n"
+            ),
+        ),
+        File(
+            path="oss/deepagents/quickstart.mdx",
+            content="---\ntitle: Quickstart\n---\n\nSDK docs.\n",
+        ),
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        code_src = fs.src_dir / "oss" / "deepagents" / "code" / "overview.mdx"
+        assert builder.is_unversioned_oss_file(code_src)
+        assert not builder.is_unversioned_oss_file(
+            fs.src_dir / "oss" / "deepagents" / "quickstart.mdx"
+        )
+
+        builder.build_file(code_src)
+        unversioned = fs.build_dir / "oss" / "deepagents" / "code" / "overview.mdx"
+        assert unversioned.exists()
+        assert not (
+            fs.build_dir / "oss" / "python" / "deepagents" / "code" / "overview.mdx"
+        ).exists()
+        assert not (
+            fs.build_dir / "oss" / "javascript" / "deepagents" / "code" / "overview.mdx"
+        ).exists()
+
+        content = unversioned.read_text()
+        assert "/oss/python/deepagents/quickstart" in content
+        assert "/oss/deepagents/code/configuration" in content
+        assert "/oss/python/deepagents/code/" not in content
+
+
 def test_rewrite_oss_links_skips_images_and_none() -> None:
     """Image paths and a None target language are passed through unchanged."""
     with file_system([]) as fs:

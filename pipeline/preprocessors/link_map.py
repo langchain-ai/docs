@@ -333,6 +333,7 @@ LINK_MAPS: list[LinkMap] = [
             "add_edge": "langgraph/pregel/_draw/add_edge",
             "add_conditional_edges": "langgraph/graph/state/StateGraph/add_conditional_edges",
             "add_node": "langgraph/graph/state/StateGraph/add_node",
+            "set_node_defaults": "langgraph/graph/state/StateGraph/set_node_defaults",
             "add_messages": "langgraph/graph/message/add_messages",
             "CompiledStateGraph": "langgraph/graph/state/CompiledStateGraph",
             "CompiledStateGraph.astream": "langgraph/graphs/#langgraph.graph.state.CompiledStateGraph.astream",
