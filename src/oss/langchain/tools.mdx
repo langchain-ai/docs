@@ -10,6 +10,7 @@ import ToolReturnCommandPy from '/snippets/code-samples/tool-return-command-py.m
 import ToolReturnCommandJs from '/snippets/code-samples/tool-return-command-js.mdx';
 import ToolReturnDirectPy from '/snippets/code-samples/tool-return-direct-py.mdx';
 import ToolReturnDirectJs from '/snippets/code-samples/tool-return-direct-js.mdx';
+import ToolReturnDirectCommandPy from '/snippets/code-samples/tool-return-direct-command-py.mdx';
 import ToolUpdateStatePy from '/snippets/code-samples/tool-update-state-py.mdx';
 import ToolErrorHandlingPy from '/snippets/code-samples/tool-error-handling-py.mdx';
 import ToolErrorHandlingJs from '/snippets/code-samples/tool-error-handling-js.mdx';
@@ -815,50 +816,30 @@ Behavior:
 
 - The tool executes normally and its output is wrapped in a `ToolMessage`.
 - The agent stops looping and returns the tool's output as the final response, bypassing any additional model call.
-- **Multiple parallel tool calls:** When the model calls several tools in one step, all of them execute first — `return_direct` does not short-circuit individual tool execution. After all tools finish, if **any** tool in the batch has `return_direct=True`, the agent routes to `END` instead of calling the model again. The final response includes the `ToolMessage` outputs of every tool that was called in that step.
+- **Multiple parallel tool calls:** When the model calls several tools in one step, all of them execute first. After all tools finish, the agent routes to `END` only if **every** tool in that batch has `return_direct=True`. The final response includes the `ToolMessage` outputs of every tool that was called in that step.
 
 Use this when:
 
 - The tool's output is the complete, user-ready answer (for example, a lookup that returns a ready-to-display result).
 - You want to avoid an extra model call when no additional reasoning is needed.
-- You need deterministic, unmodified output — the model cannot rephrase, summarize, or act on the tool result.
+- You need deterministic, unmodified output: the model cannot rephrase, summarize, or act on the tool result.
 
 <Warning>
     Because the model does not process the tool's output, `return_direct=True` is not suitable for tools whose results require further reasoning, summarization, or chaining with other tool calls.
 </Warning>
 
 <Warning>
-    **Mixed parallel calls:** If the model calls a `return_direct=True` tool alongside tools that do not have `return_direct=True`, the agent still exits after that step. The non-`return_direct` tool results are included in the message history but are not processed further by the model. Design your tool sets carefully — avoid mixing `return_direct=True` and `return_direct=False` tools if you expect the model to reason over all results.
+    **Mixed parallel calls:** If the model calls a `return_direct=True` tool alongside tools that do not have `return_direct=True`, the agent does **not** exit after that step. It routes back to the model with every `ToolMessage` from the batch, so the model can reason over all results. `return_direct` only short-circuits the loop when every tool call in the step has `return_direct=True`.
 </Warning>
 
 #### Returning a Command with return_direct
 
-A tool with `return_direct=True` can also return a @[`Command`] to update graph state before the agent exits. When targeting the current graph (`graph` is not set or is `None`), you **must** include a `ToolMessage` in `Command.update` — one entry matching the tool call's `tool_call_id`. Omitting it raises an `INVALID_CHAT_HISTORY` error because every `AIMessage` tool call must have a corresponding `ToolMessage` in the message history.
+A tool with `return_direct=True` can also return a @[`Command`] to update graph state before the agent exits. When targeting the current graph (`graph` is not set or is `None`), you **must** include a `ToolMessage` in `Command.update`: one entry matching the tool call's `tool_call_id`. Omitting it raises a `ValueError` because every `AIMessage` tool call must have a corresponding `ToolMessage` in the message history.
 
 :::python
-```python
-from langchain.tools import tool, ToolRuntime
-from langgraph.types import Command
-from langchain_core.messages import ToolMessage
 
+<ToolReturnDirectCommandPy />
 
-@tool(return_direct=True)
-def fetch_and_store_order(order_id: str, runtime: ToolRuntime) -> Command:
-    """Fetch order status and store it in state."""
-    status = f"Order {order_id} is shipped and will arrive in 2 days."
-    return Command(
-        update={
-            "last_order_status": status,
-            # Must include a ToolMessage so the message history stays valid
-            "messages": [
-                ToolMessage(
-                    content=status,
-                    tool_call_id=runtime.tool_call_id,
-                )
-            ],
-        }
-    )
-```
 :::
 
 To write to a parent graph instead, set `graph=Command.PARENT`. In that case the `ToolMessage` requirement is lifted because execution leaves the current graph entirely.
