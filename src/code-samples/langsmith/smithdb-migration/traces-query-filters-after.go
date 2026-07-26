@@ -1,0 +1,76 @@
+
+// :snippet-start: traces-query-filters-after-go
+// :codegroup-tab: After
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/langchain-ai/langsmith-go"
+)
+
+func main() {
+	ctx := context.Background()
+	client := langsmith.NewClient()
+
+	sessions, err := client.Sessions.List(ctx, langsmith.SessionListParams{
+		Name:  langsmith.F("default"),
+		Limit: langsmith.F(int64(1)),
+	})
+	if err != nil {
+		panic(err.Error())
+	}
+	projectID := sessions.Items[0].ID
+
+	minStart, _ := time.Parse(time.RFC3339, "2026-07-01T00:00:00Z")
+	maxStart, _ := time.Parse(time.RFC3339, "2026-07-31T23:59:59Z")
+
+	// trace_filter is implicitly root-run-only — no is_root needed.
+	iter := client.Traces.QueryAutoPaging(ctx, langsmith.TraceQueryParams{
+		ProjectID:    langsmith.F(projectID),
+		MinStartTime: langsmith.F(minStart),
+		MaxStartTime: langsmith.F(maxStart),
+		TraceFilter:  langsmith.F(`eq(status, "error")`),
+	})
+	count := 0
+	for iter.Next() {
+		trace := iter.Current()
+		fmt.Println(trace.RootRun.TraceID)
+		count++
+		if count >= 5 {
+			break
+		}
+	}
+	if err := iter.Err(); err != nil {
+		panic(err.Error())
+	}
+
+	// trace_ids is a fast-path when you already know which traces you want.
+	traceID := "<trace-id>"
+	// :remove-start:
+	firstIter := client.Traces.QueryAutoPaging(ctx, langsmith.TraceQueryParams{
+		ProjectID:    langsmith.F(projectID),
+		MinStartTime: langsmith.F(minStart),
+		MaxStartTime: langsmith.F(maxStart),
+	})
+	if firstIter.Next() {
+		traceID = firstIter.Current().RootRun.TraceID
+	}
+	// :remove-end:
+	knownIter := client.Traces.QueryAutoPaging(ctx, langsmith.TraceQueryParams{
+		ProjectID:    langsmith.F(projectID),
+		MinStartTime: langsmith.F(minStart),
+		MaxStartTime: langsmith.F(maxStart),
+		TraceIDs:     langsmith.F([]string{traceID}),
+	})
+	for knownIter.Next() {
+		trace := knownIter.Current()
+		fmt.Println(trace.RootRun.TraceID)
+	}
+	if err := knownIter.Err(); err != nil {
+		panic(err.Error())
+	}
+}
+// :snippet-end:

@@ -2,7 +2,7 @@
 name: deep-agents
 description: Build batteries-included agents with planning, context management, subagent delegation, and sandboxed execution. Use for complex, multi-step tasks that need built-in capabilities.
 license: MIT
-compatibility: Python 3.10+, Node.js 20+. Requires a model that supports tool calling.
+compatibility: Python 3.10+, Node.js 22+. Requires a model that supports tool calling.
 metadata:
   author: langchain-ai
   version: "1.0"

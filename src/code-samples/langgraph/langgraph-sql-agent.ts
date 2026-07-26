@@ -478,17 +478,18 @@ async function main() {
     // :snippet-start: langgraph-sql-agent-stream-agent-js
     const question = "Which genre on average has the longest tracks?";
 
-    const stream = await agent.stream(
+    const stream = await agent.streamEvents(
       { messages: [{ role: "user", content: question }] },
-      { streamMode: "values" },
+      { version: "v3" },
     );
 
-    for await (const step of stream) {
-      if (step.messages && step.messages.length > 0) {
-        const lastMessage = step.messages[step.messages.length - 1];
-        console.log(lastMessage.toFormattedString());
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
       }
     }
+
+    const finalState = await stream.output;
     // :snippet-end:
 
     const config = { configurable: { thread_id: "1" } };
@@ -496,37 +497,34 @@ async function main() {
     // :snippet-start: langgraph-sql-agent-hitl-stream-js
     const hitlQuestion = "Which genre on average has the longest tracks?";
 
-    const hitlStream = await agentWithHuman.stream(
+    const hitlStream = await agentWithHuman.streamEvents(
       { messages: [{ role: "user", content: hitlQuestion }] },
-      { ...config, streamMode: "values" },
+      { ...config, version: "v3" },
     );
 
-    for await (const step of hitlStream) {
-      if (step.messages && step.messages.length > 0) {
-        const lastMessage = step.messages[step.messages.length - 1];
-        console.log(lastMessage.toFormattedString());
+    for await (const message of hitlStream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
       }
     }
 
     // Check for interrupts
-    const state = await agentWithHuman.getState(config);
-    if (state.next.length > 0) {
+    if (hitlStream.interrupted) {
       console.log("\nINTERRUPTED:");
-      console.log(JSON.stringify(state.tasks[0].interrupts[0], null, 2));
+      console.log(JSON.stringify(hitlStream.interrupts[0], null, 2));
     }
     // :snippet-end:
 
     // :snippet-start: langgraph-sql-agent-hitl-resume-js
-    const resumeStream = await agentWithHuman.stream(
+    const resumeStream = await agentWithHuman.streamEvents(
       new Command({ resume: { type: "accept" } }),
       // new Command({ resume: { type: "edit", args: { query: "..." } } }),
-      { ...config, streamMode: "values" },
+      { ...config, version: "v3" },
     );
 
-    for await (const step of resumeStream) {
-      if (step.messages && step.messages.length > 0) {
-        const lastMessage = step.messages[step.messages.length - 1];
-        console.log(lastMessage.toFormattedString());
+    for await (const message of resumeStream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
       }
     }
     // :snippet-end:

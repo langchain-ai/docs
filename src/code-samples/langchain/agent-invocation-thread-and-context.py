@@ -3,7 +3,6 @@ from dataclasses import dataclass
 
 from langchain.agents import create_agent
 from langchain_core.utils.uuid import uuid7
-from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 
 

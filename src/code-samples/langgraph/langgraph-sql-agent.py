@@ -118,8 +118,10 @@ def sql_db_query(query: str) -> str:
 
 tools = [sql_db_list_tables, sql_db_schema, sql_db_query]
 
-for tool in tools:
-    print(f"{tool.name}: {tool.description}\n")
+# Use a distinct loop variable so it does not shadow the `tool` decorator,
+# which is reused later to wrap the query tool for human review.
+for t in tools:
+    print(f"{t.name}: {t.description}\n")
 # :snippet-end:
 
 # :snippet-start: langgraph-sql-agent-define-steps-py
@@ -354,11 +356,15 @@ if __name__ == "__main__":
         # :snippet-start: langgraph-sql-agent-stream-agent-py
         question = "Which genre on average has the longest tracks?"
 
-        for step in agent.stream(
+        stream = agent.stream_events(
             {"messages": [{"role": "user", "content": question}]},
-            stream_mode="values",
-        ):
-            step["messages"][-1].pretty_print()
+            version="v3",
+        )
+        for message in stream.messages:
+            for token in message.text:
+                print(token, end="", flush=True)
+
+        final_state = stream.output
         # :snippet-end:
 
         # :snippet-start: langgraph-sql-agent-hitl-assemble-py
@@ -398,40 +404,38 @@ if __name__ == "__main__":
         # :snippet-start: langgraph-sql-agent-hitl-stream-py
         question = "Which genre on average has the longest tracks?"
 
-        for step in agent.stream(
+        stream = agent.stream_events(
             {"messages": [{"role": "user", "content": question}]},
             config,
-            stream_mode="values",
-        ):
-            if "__interrupt__" in step:
-                action = step["__interrupt__"][0]
-                print("INTERRUPTED:")
-                for request in action.value:
-                    print(json.dumps(request, indent=2))
-            elif "messages" in step:
-                step["messages"][-1].pretty_print()
-            else:
-                raise ValueError(f"Unsupported stream step type: {type(step)}")
+            version="v3",
+        )
+        for message in stream.messages:
+            for token in message.text:
+                print(token, end="", flush=True)
+        if stream.interrupted:
+            action = stream.interrupts[0]
+            print("INTERRUPTED:")
+            for request in action.value:
+                print(json.dumps(request, indent=2))
         # :snippet-end:
 
         # :snippet-start: langgraph-sql-agent-hitl-resume-py
         from langgraph.types import Command
 
-        for step in agent.stream(
+        stream = agent.stream_events(
             Command(resume={"type": "accept"}),
             # Command(resume={"type": "edit", "args": {"query": "..."}}),
             config,
-            stream_mode="values",
-        ):
-            if "__interrupt__" in step:
-                action = step["__interrupt__"][0]
-                print("INTERRUPTED:")
-                for request in action.value:
-                    print(json.dumps(request, indent=2))
-            elif "messages" in step:
-                step["messages"][-1].pretty_print()
-            else:
-                raise ValueError(f"Unsupported stream step type: {type(step)}")
+            version="v3",
+        )
+        for message in stream.messages:
+            for token in message.text:
+                print(token, end="", flush=True)
+        if stream.interrupted:
+            action = stream.interrupts[0]
+            print("INTERRUPTED:")
+            for request in action.value:
+                print(json.dumps(request, indent=2))
         # :snippet-end:
 
     print("✓ langgraph-sql-agent")

@@ -7,7 +7,19 @@ import GraphApiUsingTasksOriginalJs from '/snippets/code-samples/graph-api-using
 import GraphApiUsingTasksOriginalPy from '/snippets/code-samples/graph-api-using-tasks-original-py.mdx';
 import GraphApiUsingTasksTaskJs from '/snippets/code-samples/graph-api-using-tasks-task-js.mdx';
 import GraphApiUsingTasksTaskPy from '/snippets/code-samples/graph-api-using-tasks-task-py.mdx';
+import LanggraphGraphApiMultipleSchemasJs from '/snippets/code-samples/langgraph-graph-api-multiple-schemas-js.mdx';
+import LanggraphGraphApiMultipleSchemasPy from '/snippets/code-samples/langgraph-graph-api-multiple-schemas-py.mdx';
 import LanggraphGraphApiResumeV2Py from '/snippets/code-samples/langgraph-graph-api-resume-v2-py.mdx';
+import LanggraphGraphApiStreamPrivateChannelJs from '/snippets/code-samples/langgraph-graph-api-stream-private-channel-js.mdx';
+import LanggraphGraphApiStreamPrivateChannelPy from '/snippets/code-samples/langgraph-graph-api-stream-private-channel-py.mdx';
+import LanggraphGraphApiReducersAppendStringsCallJs from '/snippets/code-samples/langgraph-graph-api-reducers-append-strings-call-js.mdx';
+import LanggraphGraphApiReducersAppendStringsCallPy from '/snippets/code-samples/langgraph-graph-api-reducers-append-strings-call-py.mdx';
+import LanggraphGraphApiReducersAppendStringsJs from '/snippets/code-samples/langgraph-graph-api-reducers-append-strings-js.mdx';
+import LanggraphGraphApiReducersAppendStringsPy from '/snippets/code-samples/langgraph-graph-api-reducers-append-strings-py.mdx';
+import LanggraphGraphApiReducersCustomStateJs from '/snippets/code-samples/langgraph-graph-api-reducers-custom-state-js.mdx';
+import LanggraphGraphApiReducersCustomStatePy from '/snippets/code-samples/langgraph-graph-api-reducers-custom-state-py.mdx';
+import LanggraphGraphApiReducersDefaultStateJs from '/snippets/code-samples/langgraph-graph-api-reducers-default-state-js.mdx';
+import LanggraphGraphApiReducersDefaultStatePy from '/snippets/code-samples/langgraph-graph-api-reducers-default-state-py.mdx';
 
 ## Graphs
 
@@ -153,103 +165,13 @@ Let's look at an example:
 
 :::python
 
-```python
-class InputState(TypedDict):
-    user_input: str
-
-class OutputState(TypedDict):
-    graph_output: str
-
-class OverallState(TypedDict):
-    foo: str
-    user_input: str
-    graph_output: str
-
-class PrivateState(TypedDict):
-    bar: str
-
-def node_1(state: InputState) -> OverallState:
-    # Write to OverallState
-    return {"foo": state["user_input"] + " name"}
-
-def node_2(state: OverallState) -> PrivateState:
-    # Read from OverallState, write to PrivateState
-    return {"bar": state["foo"] + " is"}
-
-def node_3(state: PrivateState) -> OutputState:
-    # Read from PrivateState, write to OutputState
-    return {"graph_output": state["bar"] + " Lance"}
-
-builder = StateGraph(OverallState,input_schema=InputState,output_schema=OutputState)
-builder.add_node("node_1", node_1)
-builder.add_node("node_2", node_2)
-builder.add_node("node_3", node_3)
-builder.add_edge(START, "node_1")
-builder.add_edge("node_1", "node_2")
-builder.add_edge("node_2", "node_3")
-builder.add_edge("node_3", END)
-
-graph = builder.compile()
-graph.invoke({"user_input":"My"})
-# {'graph_output': 'My name is Lance'}
-```
+<LanggraphGraphApiMultipleSchemasPy />
 
 :::
 
 :::js
 
-```typescript
-import { StateSchema, GraphNode } from "@langchain/langgraph";
-import * as z from "zod";
-
-const InputState = new StateSchema({
-  userInput: z.string(),
-});
-
-const OutputState = new StateSchema({
-  graphOutput: z.string(),
-});
-
-const OverallState = new StateSchema({
-  foo: z.string(),
-  userInput: z.string(),
-  graphOutput: z.string(),
-});
-
-const PrivateState = new StateSchema({
-  bar: z.string(),
-});
-
-const graph = new StateGraph({
-  state: OverallState,
-  input: InputState,
-  output: OutputState,
-})
-  .addNode("node1", (state) => {
-    // Write to OverallState
-    return { foo: state.userInput + " name" };
-  })
-  .addNode("node2", (state) => {
-    // Read from OverallState, write to PrivateState
-    return { bar: state.foo + " is" };
-  })
-  .addNode(
-    "node3",
-    (state) => {
-      // Read from PrivateState, write to OutputState
-      return { graphOutput: state.bar + " Lance" };
-    },
-    { input: PrivateState }
-  )
-  .addEdge(START, "node1")
-  .addEdge("node1", "node2")
-  .addEdge("node2", "node3")
-  .addEdge("node3", END)
-  .compile();
-
-await graph.invoke({ userInput: "My" });
-// { graphOutput: 'My name is Lance' }
-```
+<LanggraphGraphApiMultipleSchemasJs />
 
 :::
 
@@ -289,24 +211,18 @@ Input, output, and private schemas constrain what each node _reads_ (its input s
 
 When you stream with `stream_mode="values"`, the graph emits **all** of its state channels by default, including private ones, because values streaming defaults to the full set of state channels rather than the output schema. This is why a private channel like `bar` is hidden by `invoke` but visible while streaming:
 
-```python
-for chunk in graph.stream({"user_input": "My"}, stream_mode="values"):
-    print(chunk)
-# {'user_input': 'My'}
-# {'user_input': 'My', 'foo': 'My name'}
-# {'user_input': 'My', 'foo': 'My name', 'bar': 'My name is'}        # <-- private channel
-# {'user_input': 'My', 'foo': 'My name', 'bar': 'My name is', 'graph_output': 'My name is Lance'}
-```
+<LanggraphGraphApiStreamPrivateChannelPy />
 
 To restrict the streamed values to a specific set of channels (e.g. only the output schema), pass `output_keys`:
 
 ```python
-for chunk in graph.stream(
+stream = graph.stream_events(
     {"user_input": "My"},
-    stream_mode="values",
+    version="v3",
     output_keys=["graph_output"],  # [!code highlight]
-):
-    print(chunk)
+)
+for snapshot in stream.values:
+    print(snapshot)
 # {'graph_output': 'My name is Lance'}
 ```
 
@@ -322,27 +238,17 @@ Input, output, and private schemas constrain what each node _reads_ (its input s
 
 When you stream with `streamMode: "values"`, the graph emits **all** of its state channels by default — including private ones — because values streaming defaults to the full set of state channels rather than the output schema. This is why a private channel like `bar` is hidden by `invoke` but visible while streaming:
 
-```typescript
-for await (const chunk of await graph.stream(
-  { userInput: "My" },
-  { streamMode: "values" }
-)) {
-  console.log(chunk);
-}
-// { userInput: 'My' }
-// { userInput: 'My', foo: 'My name' }
-// { userInput: 'My', foo: 'My name', bar: 'My name is' }            // <-- private channel
-// { userInput: 'My', foo: 'My name', bar: 'My name is', graphOutput: 'My name is Lance' }
-```
+<LanggraphGraphApiStreamPrivateChannelJs />
 
 To restrict the streamed values to a specific set of channels (e.g. only the output schema), pass `outputKeys`:
 
 ```typescript
-for await (const chunk of await graph.stream(
+const stream = await graph.streamEvents(
   { userInput: "My" },
-  { streamMode: "values", outputKeys: ["graphOutput"] }  // [!code highlight]
-)) {
-  console.log(chunk);
+  { version: "v3", outputKeys: ["graphOutput"] }  // [!code highlight]
+);
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
 }
 // { graphOutput: 'My name is Lance' }
 ```
@@ -355,33 +261,68 @@ If you only need the channels a node actually produced each step (rather than th
 
 Reducers are key to understanding how updates from nodes are applied to the `State`. Each key in the `State` has its own independent reducer function. If no reducer function is explicitly specified then it is assumed that all updates to that key should override it. There are a few different types of reducers, starting with the default type of reducer:
 
-#### Default reducer
+#### Reducer arguments
 
-These two examples show how to use the default reducer:
+Every reducer is a binary function with two positional arguments:
+
+- **Left argument**: The current value already stored in state for that key.
+- **Right argument**: The update for that key returned by a node.
+
+When a node returns a partial update, LangGraph calls the reducer for each updated key and saves the return value as the new state value:
+
+:::python
+```python
+new_value = reducer(left=current_state[key], right=node_update[key])
+```
+:::
+
+:::js
+```typescript
+const newValue = reducer(currentState[key], nodeUpdate[key]); // left, right
+```
+:::
+
+The left argument always comes from accumulated state. The right argument always comes from the latest node update. The following example names both arguments explicitly:
 
 :::python
 
-```python Example A
-from typing_extensions import TypedDict
+<LanggraphGraphApiReducersAppendStringsPy />
 
-class State(TypedDict):
-    foo: int
-    bar: list[str]
-```
+Suppose the state is `{"tags": ["draft"]}` and a node returns `{"tags": ["review"]}`. LangGraph calls:
+
+<LanggraphGraphApiReducersAppendStringsCallPy />
+
+The new state value for `tags` is `["draft", "review"]`.
 
 :::
 
 :::js
 
-```typescript Example A
-import { StateSchema } from "@langchain/langgraph";
-import * as z from "zod";
+<LanggraphGraphApiReducersAppendStringsJs />
 
-const State = new StateSchema({
-  foo: z.number(),
-  bar: z.array(z.string()),
-});
-```
+Suppose the state is `{ tags: ["draft"] }` and a node returns `{ tags: ["review"] }`. LangGraph calls:
+
+<LanggraphGraphApiReducersAppendStringsCallJs />
+
+The new state value for `tags` is `["draft", "review"]`.
+
+:::
+
+Custom reducers combine the left and right arguments. The [default reducer](#default-reducer) discards the left argument and keeps only the right.
+
+#### Default reducer
+
+The default reducer ignores the left argument and replaces the state value with the right argument. This example shows how to use the default reducer:
+
+:::python
+
+<LanggraphGraphApiReducersDefaultStatePy />
+
+:::
+
+:::js
+
+<LanggraphGraphApiReducersDefaultStateJs />
 
 :::
 
@@ -395,35 +336,20 @@ In this example, no reducer functions are specified for any key. Let's assume th
 `{ foo: 1, bar: ["hi"] }`. Let's then assume the first `Node` returns `{ foo: 2 }`. This is treated as an update to the state. Notice that the `Node` does not need to return the whole `State` schema - just an update. After applying this update, the `State` would then be `{ foo: 2, bar: ["hi"] }`. If the second node returns `{ bar: ["bye"] }` then the `State` would then be `{ foo: 2, bar: ["bye"] }`
 :::
 
+#### Custom reducers
+
+A custom reducer combines the left and right arguments instead of replacing the state value, which is useful for accumulating values, such as appending updates to a list. This example shows how to specify a custom reducer:
+
 :::python
 
-```python Example B
-from typing import Annotated
-from typing_extensions import TypedDict
-from operator import add
-
-class State(TypedDict):
-    foo: int
-    bar: Annotated[list[str], add]
-```
+<LanggraphGraphApiReducersCustomStatePy />
 
 In this example, we've used the `Annotated` type to specify a reducer function (`operator.add`) for the second key (`bar`). Note that the first key remains unchanged. Let's assume the input to the graph is `{"foo": 1, "bar": ["hi"]}`. Let's then assume the first `Node` returns `{"foo": 2}`. This is treated as an update to the state. Notice that the `Node` does not need to return the whole `State` schema - just an update. After applying this update, the `State` would then be `{"foo": 2, "bar": ["hi"]}`. If the second node returns `{"bar": ["bye"]}` then the `State` would then be `{"foo": 2, "bar": ["hi", "bye"]}`. Notice here that the `bar` key is updated by adding the two lists together.
 :::
 
 :::js
 
-```typescript Example B
-import { StateSchema, ReducedValue } from "@langchain/langgraph";
-import { z } from "zod/v4";
-
-const State = new StateSchema({
-  foo: z.number(),
-  bar: new ReducedValue(
-    z.array(z.string()).default(() => []),
-    { reducer: (x, y) => x.concat(y) }
-  ),
-});
-```
+<LanggraphGraphApiReducersCustomStateJs />
 
 In this example, we've used `ReducedValue` to specify a reducer function for the second key (`bar`). Note that the first key remains unchanged. Let's assume the input to the graph is `{ foo: 1, bar: ["hi"] }`. Let's then assume the first `Node` returns `{ foo: 2 }`. This is treated as an update to the state. Notice that the `Node` does not need to return the whole `State` schema - just an update. After applying this update, the `State` would then be `{ foo: 2, bar: ["hi"] }`. If the second node returns `{ bar: ["bye"] }` then the `State` would then be `{ foo: 2, bar: ["hi", "bye"] }`. Notice here that the `bar` key is updated by concatenating the two arrays together.
 :::
@@ -779,7 +705,7 @@ const builder = new StateGraph(State)
 
 :::
 
-Behind the scenes, functions are converted to @[`RunnableLambda`], which add batch and async support to your function, along with [native tracing and debugging](/langsmith/home).
+Behind the scenes, functions are converted to @[`RunnableLambda`], which add batch and async support to your function, along with [native tracing and debugging](/langsmith/observability).
 
 If you add a node to a graph without specifying a name, it will be given a default name equivalent to the function name.
 
@@ -1337,7 +1263,7 @@ This is particularly useful when implementing [multi-agent handoffs](/oss/langch
 
 <Warning>
 
-`Command(resume=...)` is the **only** `Command` pattern intended as input to `invoke()`/`stream()`. Do not use `Command(update=...)` as input to continue multi-turn conversations—because passing any `Command` as input resumes from the latest checkpoint (i.e. the last step that ran, not `__start__`), the graph will appear stuck if it already finished. To continue a conversation on an existing thread, pass a plain input dict:
+`Command(resume=...)` is the **only** `Command` pattern intended as input to `invoke()`/`stream()` (optionally combined with `update=...` to also apply a state change while resuming). Do not use `Command(update=...)` alone as input to continue multi-turn conversations—because passing any `Command` as input resumes from the latest checkpoint (i.e. the last step that ran, not `__start__`), the graph will appear stuck if it already finished. To continue a conversation on an existing thread, pass a plain input dict:
 
 ```python
 # WRONG - graph resumes from the latest checkpoint
@@ -1360,7 +1286,7 @@ graph.invoke( {  # [!code ++]
 
 <Warning>
 
-`new Command({ resume: ... })` is the **only** `Command` pattern intended as input to `invoke()`/`stream()`. Do not use `new Command({ update: ... })` as input to continue multi-turn conversations—because passing any `Command` as input resumes from the latest checkpoint (i.e. the last step that ran, not `__start__`), the graph will appear stuck if it already finished. To continue a conversation on an existing thread, pass a plain input object:
+`new Command({ resume: ... })` is the **only** `Command` pattern intended as input to `invoke()`/`stream()` (optionally combined with `update` to also apply a state change while resuming). Do not use `new Command({ update: ... })` alone as input to continue multi-turn conversations—because passing any `Command` as input resumes from the latest checkpoint (i.e. the last step that ran, not `__start__`), the graph will appear stuck if it already finished. To continue a conversation on an existing thread, pass a plain input object:
 
 ```typescript
 // WRONG - graph resumes from the latest checkpoint
@@ -1915,7 +1841,7 @@ It's often nice to be able to visualize graphs, especially as they get more comp
 
 ## Observability and Tracing
 
-To trace, debug and evaluate your agents, use [LangSmith](/langsmith/home).
+To trace, debug and evaluate your agents, use [LangSmith](/langsmith/observability).
 
 ## Learn more
 

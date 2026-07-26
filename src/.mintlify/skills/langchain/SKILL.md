@@ -2,7 +2,7 @@
 name: langchain
 description: Build agents with a prebuilt architecture and integrations for any model or tool. Use when creating tool-calling agents, switching model providers, or adding structured output.
 license: MIT
-compatibility: Python 3.10+, Node.js 20+
+compatibility: Python 3.10+, Node.js 22+
 metadata:
   author: langchain-ai
   version: "1.0"
