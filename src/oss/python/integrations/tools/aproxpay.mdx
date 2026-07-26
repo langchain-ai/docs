@@ -1,0 +1,181 @@
+---
+title: "AproxPay integration"
+description: "Integrate with the AproxPayProxyGetTool tool using LangChain Python."
+---
+
+[AproxPay](https://aproxpay.com) is a residential proxy built for autonomous agents, with native [x402](https://www.x402.org/) payments in USDC on Base. No signup and no API key: a buyer wallet signs EIP-3009 transfers per request or session pass.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](/oss/javascript/integrations/tools/aproxpay) | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| `AproxPayProxyGetTool` | [`langchain-aproxpay`](https://pypi.org/project/langchain-aproxpay/) | ❌ | ✅ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-aproxpay?style=flat-square&label=%20) |
+
+### Tool features
+
+| Native async | Returns artifact | Return data | Pricing |
+| :---: | :---: | :--- | :--- |
+| ✅ | ❌ | Origin HTTP status + response body (truncated) | Pay-per-use via x402 ([pricing](https://aproxpay.com/pricing)) |
+
+### Included tools
+
+| Tool | Pays | Purpose |
+| :--- | :--- | :--- |
+| `aproxpay_proxy_get` | ~$0.003 | Fetch a URL via residential IP (2MB cap). Optional `region`, `sticky`, `sticky_duration`. |
+| `aproxpay_list_countries` | free | ISO exit countries for `region`. |
+| `aproxpay_create_session` | tiered | Ephemeral CONNECT credentials for Playwright / curl. |
+| `aproxpay_extend_session` | ~$0.15 | +30 min / +50MB (not for `gb` tier). |
+| `aproxpay_close_session` | free | Invalidate credentials (no refund). |
+
+---
+
+## Setup
+
+### Installation
+
+The integration lives in the [`langchain-aproxpay`](https://pypi.org/project/langchain-aproxpay/) package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-aproxpay
+    ```
+    ```python uv
+    uv add langchain-aproxpay
+    ```
+</CodeGroup>
+
+### Credentials
+
+AproxPay does **not** use an API key. Fund a dedicated low-balance buyer wallet with USDC on Base and set the private key:
+
+```python Set buyer wallet icon="key"
+import getpass
+import os
+
+if not os.environ.get("APROXPROXY_PRIVATE_KEY"):
+    os.environ["APROXPROXY_PRIVATE_KEY"] = getpass.getpass(
+        "Enter AproxPay buyer private key (0x… on Base): "
+    )
+```
+
+Optional override for staging/local:
+
+```python
+os.environ["APROXPROXY_BASE_URL"] = "https://proxy.aproxpay.com"  # default
+```
+
+Keep the private key on the machine that runs the agent (non-custodial). Never commit or log `APROXPROXY_PRIVATE_KEY`, `Authorization`, or payment headers.
+
+It's also helpful (but not needed) to set up [LangSmith](/langsmith/observability) for tracing:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+---
+
+## Instantiation
+
+```python Initialize tool instance icon="robot"
+from langchain_aproxpay import AproxPayProxyGetTool, create_aproxpay_tools
+
+tool = AproxPayProxyGetTool()  # reads APROXPROXY_PRIVATE_KEY from env
+
+# Or bind the full toolkit to one client:
+tools = create_aproxpay_tools()
+```
+
+---
+
+## Invocation
+
+### Invoke directly with args
+
+`aproxpay_proxy_get` accepts:
+
+- `url` (required): target URL (`http`/`https`)
+- `sticky` (optional, bool): reuse the same exit IP for this wallet (default `true`)
+- `sticky_duration` (optional, `30`|`60`): sticky TTL in minutes (default `30`)
+- `region` (optional, str): ISO 3166-1 alpha-2 exit country (e.g. `us`, `de`); call `aproxpay_list_countries` first. No surcharge.
+
+Successful forwards return origin status (from `X-Target-Status`) and body JSON — billing is for the forward, not for a 2xx origin.
+
+```python Call tool icon="rocket"
+tool.invoke({"url": "https://api.ipify.org?format=json", "sticky": True})
+```
+
+### Invoke with ToolCall
+
+```python ToolCall icon="briefcase"
+model_generated_tool_call = {
+    "args": {"url": "https://api.ipify.org?format=json", "region": "us"},
+    "id": "1",
+    "name": tool.name,
+    "type": "tool_call",
+}
+tool.invoke(model_generated_tool_call)
+```
+
+### Within an agent
+
+```python Agent with tool icon="robot"
+# pip install -qU "langchain[anthropic]" to call the model
+from langchain.agents import create_agent
+from langchain_aproxpay import create_aproxpay_tools
+
+tools = create_aproxpay_tools()
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=tools,
+)
+
+agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Fetch https://api.ipify.org?format=json through a US residential IP.",
+            }
+        ]
+    }
+)
+```
+
+---
+
+## Session pass (Playwright)
+
+For browser agents that need a standard CONNECT proxy, buy a session pass and use the returned HTTPS proxy URL:
+
+```python
+import json
+from langchain_aproxpay import AproxPayCreateSessionTool
+
+raw = AproxPayCreateSessionTool().invoke({"tier": "entry", "region": "us"})
+session = json.loads(raw)
+proxy_url = session["proxyUrl"]  # https://user:pass@gw.aproxpay.com:443
+```
+
+Always use the advertised `https://` proxy URL. Plain `http://` against the gateway on `:443` hits the web front and returns 404. Documented TLS fallback: same credentials on `:8443`.
+
+Approximate tiers (see [live pricing](https://aproxpay.com/pricing)):
+
+| Tier | Price | Cap |
+| :--- | :--- | :--- |
+| `entry` | $0.05 | 30 min + 15MB |
+| `heavy` | $0.50 | 60 min + 200MB |
+| `gb` | $2.50 | ≤120 min + 1GB dedicated |
+| extend | $0.15 | +30 min + 50MB |
+
+There is **no automatic refund** on close.
+
+---
+
+## API reference
+
+- Package source: [github.com/aproxpay/langchain-aproxpay](https://github.com/aproxpay/langchain-aproxpay)
+- PyPI: [langchain-aproxpay](https://pypi.org/project/langchain-aproxpay/)
+- Service docs / pricing: [aproxpay.com](https://aproxpay.com) · [pricing](https://aproxpay.com/pricing)

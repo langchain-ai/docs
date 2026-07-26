@@ -1,0 +1,132 @@
+---
+title: "AproxPay integration"
+description: "Integrate with the AproxPay tools using LangChain JavaScript."
+---
+
+[AproxPay](https://aproxpay.com) is a residential proxy built for autonomous agents, with native [x402](https://www.x402.org/) payments in USDC on Base. No signup and no API key: a buyer wallet signs EIP-3009 transfers per request or session pass.
+
+## Overview
+
+### Integration details
+
+| Class | Package | [PY support](/oss/python/integrations/tools/aproxpay) | Version |
+| :--- | :--- | :---: | :---: |
+| `createAproxPayTools` | [`langchain-aproxpay`](https://www.npmjs.com/package/langchain-aproxpay) | ✅ | ![NPM - Version](https://img.shields.io/npm/v/langchain-aproxpay?style=flat-square&label=%20&) |
+
+### Tool features
+
+| Native async | Returns artifact | Return data | Pricing |
+| :---: | :---: | :--- | :--- |
+| ✅ | ❌ | Origin HTTP status + response body (truncated) | Pay-per-use via x402 ([pricing](https://aproxpay.com/pricing)) |
+
+### Included tools
+
+| Tool | Pays | Purpose |
+| :--- | :--- | :--- |
+| `aproxpay_proxy_get` | ~$0.003 | Fetch a URL via residential IP (2MB cap). Optional `region`, `sticky`, `sticky_duration`. |
+| `aproxpay_list_countries` | free | ISO exit countries for `region`. |
+| `aproxpay_create_session` | tiered | Ephemeral CONNECT credentials for Playwright / curl. |
+| `aproxpay_extend_session` | ~$0.15 | +30 min / +50MB (not for `gb` tier). |
+| `aproxpay_close_session` | free | Invalidate credentials (no refund). |
+
+## Setup
+
+The integration lives in the [`langchain-aproxpay`](https://www.npmjs.com/package/langchain-aproxpay) package:
+
+<CodeGroup>
+```bash npm
+npm install langchain-aproxpay @langchain/core
+```
+```bash yarn
+yarn add langchain-aproxpay @langchain/core
+```
+```bash pnpm
+pnpm add langchain-aproxpay @langchain/core
+```
+</CodeGroup>
+
+### Credentials
+
+AproxPay does **not** use an API key. Fund a dedicated low-balance buyer wallet with USDC on Base and set:
+
+```typescript
+process.env.APROXPROXY_PRIVATE_KEY = "0x…"; // buyer wallet on Base
+// optional:
+// process.env.APROXPROXY_BASE_URL = "https://proxy.aproxpay.com";
+```
+
+Keep the private key on the machine that runs the agent (non-custodial). Never commit or log `APROXPROXY_PRIVATE_KEY`, `Authorization`, or payment headers.
+
+It's also helpful (but not needed) to set up [LangSmith](https://smith.langchain.com) for observability:
+
+```typescript
+process.env.LANGSMITH_TRACING = "true";
+process.env.LANGSMITH_API_KEY = "your-api-key";
+```
+
+## Instantiation
+
+```typescript
+import { createAproxPayTools } from "langchain-aproxpay";
+
+const { aproxpay_proxy_get, aproxpay_list_countries } = createAproxPayTools();
+```
+
+## Invocation
+
+### Invoke directly with args
+
+`aproxpay_proxy_get` accepts `url` (required), plus optional `sticky`, `sticky_duration` (`30`|`60`), and `region` (ISO alpha-2).
+
+```typescript
+const result = await aproxpay_proxy_get.invoke({
+  url: "https://api.ipify.org?format=json",
+  sticky: true,
+});
+console.log(result);
+```
+
+### Within an agent
+
+```typescript
+import { createAgent } from "langchain";
+import { createAproxPayTools } from "langchain-aproxpay";
+
+const tools = Object.values(createAproxPayTools());
+const agent = createAgent({
+  model: "claude-sonnet-4-6",
+  tools,
+});
+
+await agent.invoke({
+  messages: [
+    {
+      role: "user",
+      content:
+        "Fetch https://api.ipify.org?format=json through a US residential IP.",
+    },
+  ],
+});
+```
+
+## Session pass (Playwright)
+
+```typescript
+import { createAproxPayTools } from "langchain-aproxpay";
+
+const { aproxpay_create_session } = createAproxPayTools();
+const raw = await aproxpay_create_session.invoke({
+  tier: "entry",
+  region: "us",
+});
+const session = JSON.parse(raw as string);
+const proxyUrl = session.proxyUrl; // https://user:pass@gw.aproxpay.com:443
+```
+
+Always use the advertised `https://` proxy URL. See [live pricing](https://aproxpay.com/pricing) for the current ladder. There is **no automatic refund** on close.
+
+## API reference
+
+- Package source: [github.com/aproxpay/langchain-aproxpay](https://github.com/aproxpay/langchain-aproxpay)
+- npm: [langchain-aproxpay](https://www.npmjs.com/package/langchain-aproxpay)
+- Service docs / pricing: [aproxpay.com](https://aproxpay.com) · [pricing](https://aproxpay.com/pricing)
