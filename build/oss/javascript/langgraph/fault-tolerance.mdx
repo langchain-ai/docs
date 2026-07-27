@@ -565,6 +565,44 @@ const graph = new StateGraph(State)
   .compile();
 ```
 
+### Default error handler
+
+The `errorHandler` default is particularly valuable when every graph run maps to an external process (for example a background job row) and any unhandled node failure should mark that process as failed, without repeating `errorHandler` on every `addNode`. Per-node handlers still take precedence when a step needs its own compensation logic:
+
+```typescript
+import { Command, NodeError, StateGraph, START } from "@langchain/langgraph";
+
+const markProcessFailed = (
+  state: typeof State.State,
+  error: NodeError
+) => {
+  // Persist failure on the external process row keyed by processId.
+  return { status: `failed at ${error.node}: ${error.error.message}` };
+};
+
+const refundPayment = (state: typeof State.State, error: NodeError) =>
+  new Command({
+    update: { status: `compensated after ${error.node}` },
+    goto: "finalize",
+  });
+
+const graph = new StateGraph(State)
+  .setNodeDefaults({
+    retryPolicy: { maxAttempts: 3 },
+    errorHandler: markProcessFailed,
+  })
+  .addNode("fetchData", fetchData) // uses markProcessFailed
+  .addNode("chargePayment", chargePayment, {
+    errorHandler: refundPayment, // overrides the graph-wide default
+  })
+  .addNode("finalize", finalize)
+  .addEdge(START, "fetchData")
+  .addEdge("fetchData", "chargePayment")
+  .compile();
+```
+
+If `fetchData` fails after retries, `markProcessFailed` runs. If `chargePayment` fails after retries, `refundPayment` runs instead because the per-node handler overrides the default.
+
 ### Applicability matrix
 
 Not all defaults apply to all node types. Error-handler nodes (those registered via `addNode(..., { errorHandler })`) are excluded from certain defaults to prevent unsafe behavior:
