@@ -103,7 +103,7 @@ const SYSTEM_PROMPT = openuiLibrary.prompt({ ... });
 
 export function App() {
   const stream = useStream({
-    apiUrl: import.meta.env.VITE_LANGGRAPH_API_URL ?? "/api/langgraph",
+    apiUrl: import.meta.env.VITE_LANGGRAPH_API_URL ?? "http://localhost:2024",
     assistantId: "openui",
   });
 
@@ -497,6 +497,189 @@ followUpCard  = Card([CardHeader("Explore Further"), followUpBtns], "sunk")
 root = Stack([..., followUpCard])
 ```
 
+## Build a parallel dashboard with Deep Agents
+
+The flow above renders one OpenUI program into one surface. For richer apps, a [Deep Agents](/oss/javascript/deepagents/overview) coordinator can delegate to several specialist agents that each stream their own OpenUI panel concurrently, all over one [`useStream`](https://reference.langchain.com/javascript/langchain-react/index/useStream) connection. The [OpenUI parallel dashboard example](https://github.com/langchain-ai/streaming-cookbook/tree/main/typescript/openui) turns one dashboard brief into independently streaming Stripe, PostHog, GitHub, and Calendar panels, with no custom graph or stream-demultiplexing code.
+
+```mermaid
+%%{
+  init: {
+    "fontFamily": "monospace",
+    "flowchart": {
+      "curve": "curve"
+    }
+  }
+}%%
+graph LR
+  BRIEF["User brief"]
+  COORD["Deep Agents coordinator"]
+  PANELS["Stripe / PostHog / GitHub / Calendar panel agents"]
+  SUBAGENTS["stream.subagents"]
+  RENDERER["Renderer per panel"]
+
+  BRIEF --> COORD
+  COORD --"parallel task() calls"--> PANELS
+  PANELS --"namespaced events"--> SUBAGENTS
+  SUBAGENTS --"useMessages(stream, snapshot)"--> RENDERER
+```
+
+### Share one OpenUI library
+
+Use the same library object on the server (to generate the panel prompt) and on the client (as the `Renderer` prop) so the components the model is told about always match the ones the renderer can draw:
+
+```ts library.ts
+import { openuiChatLibrary, openuiChatPromptOptions } from "@openuidev/react-ui";
+
+export const library = openuiChatLibrary;
+export const promptOptions = openuiChatPromptOptions;
+```
+
+### Define the coordinator and panel agents
+
+[`createDeepAgent`](https://reference.langchain.com/javascript/deepagents/agent/createDeepAgent) builds a coordinator whose only job is routing: it picks the specialists a brief needs and emits all of their `task()` calls in one message so the panels run concurrently. Each panel subagent shares one pre-generated OpenUI system prompt and receives only the tools for its data domain.
+
+```ts expandable agent.ts
+import { createDeepAgent, type SubAgent } from "deepagents";
+
+import { library, promptOptions } from "./library.js";
+import { calendarTools, githubTools, posthogTools, stripeTools } from "./tools.js";
+
+// The coordinator only routes, so a fast model handles it; panels generate
+// strict openui-lang and stay on the frontier model.
+const COORDINATOR_MODEL = "openai:gpt-5.4-mini";
+const PANEL_MODEL = "openai:gpt-5.5";
+
+// Generate the shared panel prompt once at module load so the model prefix
+// stays stable for provider prompt caching.
+const PANEL_SYSTEM_PROMPT = library.prompt({
+  ...promptOptions,
+  preamble:
+    "Build one panel of a live executive dashboard. Follow the coordinator's " +
+    "task exactly and stay within the data available from your tools.",
+  additionalRules: [
+    ...(promptOptions.additionalRules ?? []),
+    "Use your available data tools before writing the panel.",
+    "Return the complete openui-lang program and nothing else.",
+    "Emit the `root` statement on the first line so rendering can start immediately.",
+  ],
+});
+
+const subagents: SubAgent[] = [
+  {
+    name: "stripe-panel",
+    model: PANEL_MODEL,
+    description: "Builds the revenue and payments panel from Stripe data.",
+    systemPrompt: PANEL_SYSTEM_PROMPT,
+    tools: stripeTools,
+  },
+  // posthog-panel, github-panel, and calendar-panel follow the same shape.
+];
+
+const COORDINATOR_PROMPT = `You orchestrate a live executive dashboard.
+
+1. Delegate immediately. Never write openui-lang yourself.
+2. Launch all selected specialists in a SINGLE message, one task call per
+   panel, so they run concurrently.
+3. Give each task a distinct, self-contained description.
+4. After the tasks complete, reply with one short plain-text summary.`;
+
+export const dashboard = createDeepAgent({
+  model: COORDINATOR_MODEL,
+  systemPrompt: COORDINATOR_PROMPT,
+  subagents,
+});
+```
+
+The coordinator never writes openui-lang. Each panel agent calls its tools, then returns one complete program that starts with `root` so its renderer can paint before the model finishes the remaining statements.
+
+### Register the graph
+
+Point `langgraph.json` at the exported coordinator:
+
+```json langgraph.json
+{
+  "node_version": "22",
+  "graphs": {
+    "dashboard": "./src/agent.ts:dashboard"
+  },
+  "env": "../../.env"
+}
+```
+
+### Discover and render panels on the frontend
+
+One `useStream` connection carries the coordinator and every panel. The panels are not hardcoded: each parallel `task()` call surfaces as a `stream.subagents` snapshot. For each snapshot, scope a `useMessages(stream, snapshot)` projection so a panel receives only its own subagent's messages, then feed its OpenUI program into an isolated `Renderer`:
+
+```tsx expandable App.tsx
+import { memo } from "react";
+
+import type { SubagentDiscoverySnapshot } from "@langchain/langgraph-sdk/stream";
+import { useMessages, useStream } from "@langchain/react";
+import { Renderer, type ActionEvent } from "@openuidev/react-lang";
+
+import { library } from "./library";
+
+// One panel, scoped to one subagent. Memoized so the app shell's re-renders
+// never reach this Renderer; the panel's own tokens arrive through useMessages.
+const Panel = memo(function Panel({
+  stream,
+  snapshot,
+  isStreaming,
+  onAction,
+}: {
+  stream: ReturnType<typeof useStream>;
+  snapshot: SubagentDiscoverySnapshot;
+  isStreaming: boolean;
+  onAction: (event: ActionEvent) => void;
+}) {
+  const messages = useMessages(stream, snapshot);
+  // The program is the last AI message whose text starts with `root =`.
+  const program = programFromMessages(messages);
+
+  if (program === "") return <PanelSkeleton name={snapshot.name} />;
+
+  return (
+    <Renderer
+      response={program}
+      library={library}
+      isStreaming={isStreaming}
+      onAction={onAction}
+    />
+  );
+});
+
+export function Dashboard() {
+  const stream = useStream({
+    assistantId: "dashboard",
+    apiUrl: import.meta.env.VITE_LANGGRAPH_API_URL ?? "http://localhost:2024",
+  });
+
+  // Discover top-level panels from the stream; the layout adapts to whichever
+  // specialists the coordinator delegated.
+  const panels = [...stream.subagents.values()].filter(
+    (snapshot) => snapshot.parentId === null,
+  );
+
+  return (
+    <main>
+      {panels.map((snapshot) => (
+        <Panel
+          key={snapshot.id}
+          stream={stream}
+          snapshot={snapshot}
+          isStreaming={snapshot.status === "running" && stream.isLoading}
+          onAction={(event) => {
+            // Handle continue_conversation and open_url actions.
+          }}
+        />
+      ))}
+    </main>
+  );
+}
+```
+
+Because the SDK keeps subagent token events out of the root store and each `Panel` is memoized on its snapshot identity, tokens from one panel never re-render another.
+
 ## Best practices
 
 - **Generate the system prompt at module load:** not inside a React component; the prompt is several kilobytes and should be computed once
@@ -505,6 +688,8 @@ root = Stack([..., followUpCard])
 - **Gate on complete statements:** avoid re-rendering the Renderer on every token; update only when a full statement (`name = ComponentCall(...)`) has arrived
 - **Verify chart data before rendering:** chart components need their `Series` and label arrays defined before they're included in the stable snapshot
 - **Keep camelCase variable names:** the openui-lang parser only accepts camelCase identifiers; reinforce this in the system prompt's `additionalRules`
+- **Delegate panels in one message:** when fanning out to Deep Agents specialists, emit all `task()` calls in a single coordinator message so the panels stream concurrently rather than one at a time
+- **Scope each panel to its subagent:** discover panels from `stream.subagents` and pass each snapshot to `useMessages(stream, snapshot)` so a panel renders only its own subagent's output
 
 ---
 
