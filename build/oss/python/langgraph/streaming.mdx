@@ -621,6 +621,36 @@ The outputs will be streamed as tuples `(namespace, data)`, where `namespace` is
 
 
 
+<Note>
+    This applies to every `stream_mode`, including `"messages"`. Agent builders like [`create_agent`](https://reference.langchain.com/python/langchain/agents/factory/create_agent) return a **compiled graph**, so adding one as a node turns it into a subgraph. Without `subgraphs=True`, `stream_mode="messages"` on the parent graph will not emit token chunks from the inner agent's LLM calls. Invoking `agent.stream(...)` directly will, which is why this often shows up only after wrapping.
+
+    ```python
+    from langchain.agents import create_agent
+    from langgraph.graph import END, START, StateGraph
+
+    graph = (
+        StateGraph(State)
+        .add_node("agent", create_agent(model, tools, state_schema=State))
+        .add_edge(START, "agent")
+        .add_edge("agent", END)
+        .compile()
+    )
+
+    for chunk in graph.stream(
+        {"messages": [{"role": "user", "content": "..."}]},
+        stream_mode="messages",
+        subgraphs=True,  # [!code highlight]
+        version="v2",
+    ):
+        print(chunk["type"])  # "messages"
+        print(chunk["ns"])    # () for root, ("agent:<task_id>",) for subgraph
+        print(chunk["data"])  # (token, metadata)
+    ```
+</Note>
+
+
+
+
 <Accordion title="Extended example: streaming from subgraphs">
   ```python
   from langgraph.graph import START, StateGraph
