@@ -139,6 +139,30 @@ def _update_internal_links_in_moved_file(
     return changes
 
 
+def _resolve_site_absolute_url(url: str, docs_root: Path) -> Path | None:
+    """Resolve a site-absolute URL to the file it corresponds to.
+
+    Mintlify serves pages at a clean URL derived from their source path with
+    the `.md`/`.mdx` extension stripped (e.g. `src/oss/langchain/agents.mdx`
+    is served at `/oss/langchain/agents`). This reverses that mapping.
+
+    Args:
+        url: A site-absolute URL, e.g. `/oss/langchain/agents`.
+        docs_root: The root of the documentation tree (`<repo>/src`).
+
+    Returns:
+        The resolved file path, or None if no matching file exists.
+    """
+    rel = url.lstrip("/")
+    if not rel:
+        return None
+    for suffix in (".mdx", ".md", ""):
+        candidate = (docs_root / f"{rel}{suffix}").resolve()
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _rewrite_links(
     md_file: Path,
     old_abs: Path,
@@ -175,13 +199,33 @@ def _rewrite_links(
         if url.startswith(("http://", "https://", "mailto:")) or (not url and anchor):
             return match.group(0)
 
-        resolved = (md_file.parent / url).resolve()
+        is_absolute = url.startswith("/")
+        if is_absolute:
+            # Site-absolute link (the convention used throughout this docs
+            # site). Must be resolved against docs_root, not md_file.parent:
+            # joining a Path with an absolute string discards the left-hand
+            # side, so treating this like a relative link would silently
+            # resolve it against the filesystem root instead of docs_root.
+            resolved = _resolve_site_absolute_url(url, docs_root)
+            if resolved is None:
+                return match.group(0)
+        else:
+            resolved = (md_file.parent / url).resolve()
+
         try:
             if _rel_to_docs_root(resolved, docs_root) == _rel_to_docs_root(
                 old_abs, docs_root
             ):
-                new_rel = os.path.relpath(new_abs, md_file.parent)
-                new_rel_posix = Path(new_rel).as_posix()
+                if is_absolute:
+                    new_rel_posix = (
+                        "/"
+                        + _rel_to_docs_root(new_abs, docs_root)
+                        .with_suffix("")
+                        .as_posix()
+                    )
+                else:
+                    new_rel = os.path.relpath(new_abs, md_file.parent)
+                    new_rel_posix = Path(new_rel).as_posix()
                 new_full_url = new_rel_posix + anchor
 
                 changes.append((full_url, new_full_url))

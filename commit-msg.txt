@@ -1,0 +1,23 @@
+fix: docs mv does not update site-absolute links when moving files
+
+_rewrite_links() joined every URL with `md_file.parent / url`, but
+joining a Path with an absolute string discards the left-hand side
+(`Path("/a/b") / "/c/d" == Path("/c/d")`). So for a site-absolute link
+like `/oss/langchain/agents` -- the convention used throughout this
+docs site -- the code silently resolved it against the filesystem
+root instead of docs_root, never matched the file being moved, and
+left the link untouched. A repo-wide check found 7,872 links using
+this absolute style and zero using relative `../` style, so this
+affected effectively every link in the site.
+
+Added _resolve_site_absolute_url() to map a site-absolute URL back to
+its source file the same way Mintlify serves it (strip the leading
+slash, try .mdx/.md under docs_root), and use it whenever a matched
+URL starts with "/". Relative-link handling is unchanged.
+
+Added regression tests: absolute link gets rewritten, anchors on
+absolute links are preserved, and absolute links that are unrelated
+or don't resolve to any file (e.g. Mintlify-generated API reference
+pages with no source file) are left untouched rather than raising.
+
+Full test suite passes locally with no failures.
