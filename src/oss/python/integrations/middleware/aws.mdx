@@ -162,9 +162,11 @@ The middleware handles differences between APIs and model families automatically
 
 ## AgentCore Payments
 
-> **Preview** — AgentCore Payments is currently in preview. Requires `bedrock-agentcore>=1.18.0`.
+<Note>
+AgentCore Payments is currently in preview and requires `bedrock-agentcore>=1.18.0`.
+</Note>
 
-Autonomously handle [x402 Payment Required](https://www.x402.org/) responses in LangGraph agents. When a tool hits a paid API that returns HTTP 402, `AgentCorePaymentsMiddleware` detects the payment requirement, signs the payment via [Amazon Bedrock AgentCore Payments](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments.html), enforces session budget limits, and retries the request with payment credentials — all transparent to the agent.
+Autonomously handle [x402 Payment Required](https://www.x402.org/) responses in LangGraph agents. When a tool hits a paid API that returns HTTP 402, `AgentCorePaymentsMiddleware` detects the payment requirement, signs the payment via [Amazon Bedrock AgentCore Payments](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments.html), enforces session budget limits, and retries the request with payment credentials. This process is transparent to the agent.
 
 AgentCore Payments middleware is useful for the following:
 - Agents that access paid APIs without manual payment logic per tool
@@ -189,12 +191,12 @@ pip install -U "bedrock-agentcore[langgraph]>=1.18.0" langchain-aws
 **API reference:** [`AgentCorePaymentsMiddleware`](https://pypi.org/project/bedrock-agentcore/)
 
 ```python
-from langchain_aws import ChatBedrockConverse
-from langchain.agents import create_agent
 from bedrock_agentcore.payments.integrations.langgraph import (
     AgentCorePaymentsConfig,
     AgentCorePaymentsMiddleware,
 )
+from langchain.agents import create_agent
+from langchain_aws import ChatBedrockConverse
 
 config = AgentCorePaymentsConfig(
     payment_manager_arn="arn:aws:bedrock-agentcore:us-east-1:123456789012:payment-manager/pm-abc123",
@@ -218,11 +220,12 @@ result = agent.invoke({
 })
 ```
 
-With this setup, the agent can access any paid API transparently. When a tool receives a 402 response, the middleware handles payment signing, budget enforcement, and retry — the agent sees only the successful response content.
+With this setup, the agent can access any paid API transparently. When a tool receives a 402 response, the middleware handles payment signing, budget enforcement, and retry, so the agent sees only the successful response content.
 
 ### How it works
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"lineColor": "#40668D", "primaryColor": "#E5F4FF", "primaryTextColor": "#030710", "primaryBorderColor": "#006DDD"}}}%%
 sequenceDiagram
     participant Agent
     participant Middleware as AgentCorePaymentsMiddleware
@@ -273,12 +276,13 @@ Set `provide_http_request=False` if you bring your own HTTP tool.
 
 For your own tools to work with auto-payment, they need two things:
 
-**1. Signal 402 (output)** — the tool must indicate a 402 response in its return value. Three formats are supported:
+**1. Signal 402 (output)**: The tool must indicate a 402 response in its return value. Three formats are supported:
 
 ```python PAYMENT_REQUIRED marker (recommended)
-from langchain.tools import tool
-import httpx
 import json
+
+import httpx
+from langchain.tools import tool
 
 @tool
 def my_api(query: str, headers: dict = None) -> str:
@@ -291,9 +295,10 @@ def my_api(query: str, headers: dict = None) -> str:
 ```
 
 ```python Raw JSON (fallback detection)
-from langchain.tools import tool
-import httpx
 import json
+
+import httpx
+from langchain.tools import tool
 
 @tool
 def my_api(query: str, headers: dict = None) -> str:
@@ -313,7 +318,7 @@ config = AgentCorePaymentsConfig(
 )
 ```
 
-**2. Accept and forward `headers` (input)** — the tool **must** have a `headers` parameter and forward it in its HTTP request. The middleware injects the payment header into `tool_args["headers"]` before retry:
+**2. Accept and forward `headers` (input)**: The tool **must** have a `headers` parameter and forward it in its HTTP request. The middleware injects the payment header into `tool_args["headers"]` before retry:
 
 ```python
 @tool
@@ -327,9 +332,9 @@ Without this, the payment header is injected but never sent to the server.
 ### Detection priority
 
 When a tool returns, the middleware checks for 402 in this order:
-1. **Custom handler** — if registered for the tool name via `custom_handlers`, full control over detection
-2. **`PAYMENT_REQUIRED:` marker** — explicit opt-in signal in content
-3. **Lenient fallback** — parses raw JSON for `statusCode: 402` or `x402Version` + `accepts` fields
+1. **Custom handler**: If registered for the tool name via `custom_handlers`, full control over detection
+2. **`PAYMENT_REQUIRED:` marker**: Explicit opt-in signal in content
+3. **Lenient fallback**: Parses raw JSON for `statusCode: 402` or `x402Version` + `accepts` fields
 
 ### MCP tool compatibility
 
@@ -345,14 +350,14 @@ The middleware provides two layers of error control:
 
 #### Error handler callback (recommended)
 
-The error handler callback is recommended because it keeps payment lifecycle complexity out of the agent's reasoning. Without it, the agent receives error messages about expired sessions or missing instruments and must attempt to debug payment configuration — wasting tokens and often failing. With the callback, your application code resolves issues programmatically (creating sessions, refreshing instruments, increasing budgets) and the agent only ever sees successful payment results.
+The error handler callback is recommended because it keeps payment lifecycle complexity out of the agent's reasoning. Without it, the agent receives error messages about expired sessions or missing instruments and must attempt to debug payment configuration, which wastes tokens and often fails. With the callback, your application code resolves issues programmatically (creating sessions, refreshing instruments, increasing budgets) and the agent only ever sees successful payment results.
 
 ```python
 from bedrock_agentcore.payments.integrations.langgraph import (
     AgentCorePaymentsConfig,
     AgentCorePaymentsMiddleware,
-    PaymentErrorContext,
     ErrorResolution,
+    PaymentErrorContext,
 )
 from bedrock_agentcore.payments.manager import PaymentManager
 
@@ -406,7 +411,7 @@ The callback can return:
 
 **Callback flow:**
 
-```
+```text
 Payment exception occurs
     │
     ├── on_payment_error is None? → deterministic error ToolMessage
@@ -431,8 +436,8 @@ Payment exception occurs
 | `tool_name` | `str` | Tool that triggered the 402 |
 | `tool_args` | `dict` | The tool call arguments |
 | `payment_required_request` | `dict \| None` | The 402 payload (None if error before extraction) |
-| `config` | `AgentCorePaymentsConfig` | Mutable reference — modify to fix the issue |
-| `retry_count` | `int` | How many times we've retried (starts at 0) |
+| `config` | `AgentCorePaymentsConfig` | Mutable reference; modify to fix the issue |
+| `retry_count` | `int` | Number of retry attempts, starting at 0 |
 
 **Recommended resolution patterns:**
 
@@ -441,9 +446,9 @@ Payment exception occurs
 | `PaymentSessionNotFound` / `PaymentSessionExpired` | Create new session, set `ctx.config.payment_session_id`, return RETRY |
 | `InsufficientBudget` | Create session with higher limits, or PROPAGATE |
 | `PaymentInstrumentConfigurationRequired` | Set `ctx.config.payment_instrument_id`, return RETRY |
-| `PaymentInstrumentNotFound` | Likely config error — PROPAGATE |
+| `PaymentInstrumentNotFound` | Likely config error; return PROPAGATE |
 | `PaymentSessionConfigurationRequired` | Create session, or enable `auto_session=True` |
-| Generic `PaymentError` | Log and PROPAGATE — usually transient |
+| Generic `PaymentError` | Log and return PROPAGATE; usually transient |
 
 #### Deterministic error messages (default)
 
@@ -463,7 +468,7 @@ All messages include `"Do not retry this call"` and actionable guidance for the 
 
 ### Auto-session
 
-Skip manual session creation — the middleware creates one lazily on the first 402:
+Skip manual session creation. The middleware creates one lazily on the first 402:
 
 ```python
 config = AgentCorePaymentsConfig(
@@ -477,7 +482,7 @@ config = AgentCorePaymentsConfig(
 )
 ```
 
-The session is created once and reused for all subsequent payments in that middleware instance. Create one `AgentCorePaymentsMiddleware` per agent invocation (or per user request in a server) — the middleware is not thread-safe.
+The session is created once and reused for all subsequent payments in that middleware instance. Create one `AgentCorePaymentsMiddleware` per agent invocation (or per user request in a server). The middleware is not thread-safe.
 
 ### Payment tool allowlist
 
@@ -534,10 +539,10 @@ config = AgentCorePaymentsConfig(
 ```
 
 Common reasons to disable auto-payment:
-- **Human-in-the-loop approval** — surface 402 details to the user and let them authorize each payment before it's signed
-- **Audit and compliance** — log payment requests for review without executing them, ensuring all transactions are explicitly approved
-- **Development and testing** — inspect raw 402 responses during integration without triggering real payments
-- **High-value transactions** — require manual review for payments above a certain threshold before proceeding
+- **Human-in-the-loop approval**: Surface 402 details to the user and let them authorize each payment before it is signed
+- **Audit and compliance**: Log payment requests for review without executing them, ensuring all transactions are explicitly approved
+- **Development and testing**: Inspect raw 402 responses during integration without triggering real payments
+- **High-value transactions**: Require manual review for payments above a certain threshold before proceeding
 
 ### Custom handlers
 
@@ -571,7 +576,7 @@ config = AgentCorePaymentsConfig(
 )
 ```
 
-Custom handlers receive the **raw `ToolMessage.content`** — parse it yourself. Don't pass built-in handlers (like `GenericPaymentHandler`) as custom handlers directly; they expect a different normalized shape.
+Custom handlers receive the **raw `ToolMessage.content`**; parse it yourself. Do not pass built-in handlers (like `GenericPaymentHandler`) as custom handlers directly; they expect a different normalized shape.
 
 ### Sync and async
 
@@ -579,17 +584,23 @@ The middleware provides both sync and async paths. LangGraph calls the right one
 
 | Invocation | Path | Use case |
 |---|---|---|
-| `agent.invoke(...)` | Sync — `time.sleep`, direct calls | Scripts, CLI tools |
-| `agent.ainvoke(...)` | Async — `asyncio.sleep`, `asyncio.to_thread` | FastAPI, web servers, Jupyter |
+| `agent.invoke(...)` | Sync: `time.sleep`, direct calls | Scripts, CLI tools |
+| `agent.ainvoke(...)` | Async: `asyncio.sleep`, `asyncio.to_thread` | FastAPI, web servers, Jupyter |
+
+Install FastAPI to run the asynchronous web server example:
+
+```bash
+pip install -U fastapi
+```
 
 ```python Async in FastAPI
-from fastapi import FastAPI
-from langchain_aws import ChatBedrockConverse
-from langchain.agents import create_agent
 from bedrock_agentcore.payments.integrations.langgraph import (
     AgentCorePaymentsConfig,
     AgentCorePaymentsMiddleware,
 )
+from fastapi import FastAPI
+from langchain.agents import create_agent
+from langchain_aws import ChatBedrockConverse
 
 app = FastAPI()
 
@@ -609,18 +620,18 @@ async def chat(message: str):
         middleware=[payments],
     )
 
-    # Uses awrap_tool_call automatically — won't block other requests
+    # Uses awrap_tool_call automatically without blocking other requests
     result = await agent.ainvoke({"messages": [{"role": "user", "content": message}]})
     return result
 ```
 
 ```python Sync in a script
-from langchain_aws import ChatBedrockConverse
-from langchain.agents import create_agent
 from bedrock_agentcore.payments.integrations.langgraph import (
     AgentCorePaymentsConfig,
     AgentCorePaymentsMiddleware,
 )
+from langchain.agents import create_agent
+from langchain_aws import ChatBedrockConverse
 
 config = AgentCorePaymentsConfig(
     payment_manager_arn="arn:aws:bedrock-agentcore:us-east-1:123456789012:payment-manager/pm-abc123",
@@ -650,8 +661,8 @@ The async path uses:
 **Without middleware** (manual wrapping):
 - Write a wrapper function per tool type (~30-50 lines each)
 - Handle 402 detection, x402 parsing, signing, retry manually
-- No error handling — exceptions crash the tool call
-- No on-chain timing delay — fast facilitators may reject
+- No error handling: Exceptions crash the tool call
+- No on-chain timing delay: Fast facilitators may reject
 - No budget error messages to the agent
 - Adding a new tool = another wrapper
 
@@ -700,6 +711,6 @@ Done. All tools handled automatically.
 ### Learn more
 
 - [AgentCore Payments documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments.html)
-- [Code samples — Agents that transact](https://github.com/awslabs/agentcore-samples/tree/main/01-features/08-agents-that-transact)
-- [Blog — Introducing Amazon Bedrock AgentCore Payments](https://aws.amazon.com/blogs/machine-learning/agents-that-transact-introducing-amazon-bedrock-agentcore-payments-built-with-coinbase-and-stripe/)
-- [Technical deep dive — AgentCore Payments and innovation in agentic commerce](https://aws.amazon.com/blogs/machine-learning/technical-deep-dive-agentcore-payments-and-innovation-in-agentic-commerce/)
+- [Code samples: Agents that transact](https://github.com/awslabs/agentcore-samples/tree/main/01-features/08-agents-that-transact)
+- [Blog: Introducing Amazon Bedrock AgentCore Payments](https://aws.amazon.com/blogs/machine-learning/agents-that-transact-introducing-amazon-bedrock-agentcore-payments-built-with-coinbase-and-stripe/)
+- [Technical deep dive: AgentCore Payments and innovation in agentic commerce](https://aws.amazon.com/blogs/machine-learning/technical-deep-dive-agentcore-payments-and-innovation-in-agentic-commerce/)
