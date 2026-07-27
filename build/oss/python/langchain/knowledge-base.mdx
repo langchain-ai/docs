@@ -10,22 +10,30 @@ import VectorstoreTabsJS from '/snippets/vectorstore-tabs-js.mdx';
 
 ## Overview
 
-This tutorial will familiarize you with LangChain's [embedding](/oss/python/integrations/embeddings) and [vector store](/oss/python/integrations/vectorstores) abstractions. These abstractions are designed to support retrieval of data--  from (vector) databases and other sources -- for integration with LLM workflows. They are important for applications that fetch data to be reasoned over as part of model inference, as in the case of retrieval-augmented generation, or [RAG](/oss/python/langchain/retrieval).
+Build a semantic search engine over a PDF with LangChain [embeddings](/oss/python/integrations/embeddings) and [vector stores](/oss/python/integrations/vectorstores). Use it to retrieve passages similar to a query, then plug the retriever into [retrieval-augmented generation (RAG)](/oss/python/langchain/retrieval) or other LLM workflows.
 
-Here we will build a search engine over a PDF document. This will allow us to retrieve passages in the PDF that are similar to an input query. The guide also includes a minimal RAG implementation on top of the search engine.
+This tutorial covers:
+
+1. Create `Document` objects from a PDF.
+2. Generate embeddings.
+3. Load and split a PDF.
+4. Index chunks in a vector store and query by similarity.
+5. Wrap the store as a retriever.
+
+The guide also includes a minimal RAG implementation on top of the search engine.
 
 ### Concepts
 
-This guide focuses on retrieval of text data. We will cover the following concepts:
+This tutorial focuses on text retrieval and covers the following concepts:
 
-- [Documents](https://reference.langchain.com/python/langchain-core/documents);
-- [Text splitters](/oss/python/integrations/splitters);
-- [Embeddings](/oss/python/integrations/embeddings);
-- [Vector stores](/oss/python/integrations/vectorstores) and [retrievers](/oss/python/integrations/retrievers).
+- [`Document`](https://reference.langchain.com/python/langchain-core/documents/base/Document)
+- [Text splitters](/oss/python/integrations/splitters)
+- [Embeddings](/oss/python/integrations/embeddings)
+- [Vector stores](/oss/python/integrations/vectorstores) and [retrievers](/oss/python/integrations/retrievers)
 
 ## Setup
 
-### Installation
+### Install dependencies
 
 This tutorial reads a PDF using the `pypdf` package:
 
@@ -45,9 +53,9 @@ uv add pypdf
 
 
 
-For more details, see our [Installation guide](/oss/python/langchain/install).
+For more details, see the [Installation guide](/oss/python/langchain/install).
 
-### LangSmith
+### Configure LangSmith
 
 Many of the applications you build with LangChain will contain multiple steps with multiple invocations of LLM calls.
 As these applications get more and more complex, it becomes crucial to be able to inspect what exactly is going on inside your chain or agent.
@@ -60,7 +68,7 @@ export LANGSMITH_TRACING="true"
 export LANGSMITH_API_KEY="..."
 ```
 
-Or, if in a notebook, you can set them with:
+In a notebook, you can set them with:
 
 ```python
 import getpass
@@ -72,19 +80,19 @@ os.environ["LANGSMITH_API_KEY"] = getpass.getpass()
 
 
 
-## 1. Documents
+## Create documents
 
-LangChain implements a [Document](https://reference.langchain.com/python/langchain-core/documents/base/Document) abstraction, which is intended to represent a unit of text and associated metadata. It has three attributes:
+LangChain implements a [`Document`](https://reference.langchain.com/python/langchain-core/documents/base/Document) abstraction for a unit of text and associated metadata. It has three attributes:
 
-- `page_content`: a string representing the content;
-- `metadata`: a dict containing arbitrary metadata;
+- `page_content`: a string representing the content.
+- `metadata`: a dict containing arbitrary metadata.
 - `id`: (optional) a string identifier for the document.
 
 
 
-The `metadata` attribute can capture information about the source of the document, its relationship to other documents, and other information. Note that an individual [`Document`](https://reference.langchain.com/python/langchain-core/documents/base/Document) object often represents a chunk of a larger document.
+`metadata` can capture the source of the document, its relationship to other documents, and other information. An individual [`Document`](https://reference.langchain.com/python/langchain-core/documents/base/Document) often represents a chunk of a larger document.
 
-We can generate sample documents when desired:
+The following code creates sample documents:
 
 ```python
 from langchain_core.documents import Document
@@ -103,11 +111,11 @@ documents = [
 
 
 
-## 2. Embeddings
+## Generate embeddings
 
-Vector search is a common way to store and search over unstructured data (such as unstructured text). The idea is to store numeric vectors that are associated with the text. Given a query, we can [embed](/oss/python/integrations/embeddings) it as a vector of the same dimension and use vector similarity metrics (such as cosine similarity) to identify related text.
+Vector search stores numeric vectors associated with text. Embed a query as a vector of the same dimension, then use similarity metrics (such as cosine similarity) to find related text.
 
-LangChain supports embeddings from [dozens of providers](/oss/python/integrations/embeddings/). These models specify how text should be converted into a numeric vector. Let's select a model:
+LangChain supports embeddings from [many providers](/oss/python/integrations/embeddings/). Select a model to specify how text should be converted into a numeric vector:
 
 <EmbeddingsTabsPy />
 
@@ -122,26 +130,27 @@ print(vector_1[:10])
 
 
 
-```text
+```text wrap
 Generated vectors of length 1536
 
 [-0.008586574345827103, -0.03341241180896759, -0.008936782367527485, -0.0036674530711025, 0.010564599186182022, 0.009598285891115665, -0.028587326407432556, -0.015824200585484505, 0.0030416189692914486, -0.012899317778646946]
 ```
-Armed with a model for generating text embeddings, we can next store them in a special data structure that supports efficient similarity search.
 
-## 3. Vector stores
+Next, store embeddings in a vector store that supports efficient similarity search.
 
-LangChain [VectorStore](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStore) objects contain methods for adding text and [`Document`](https://reference.langchain.com/python/langchain-core/documents/base/Document) objects to the store, and querying them using various similarity metrics. They are often initialized with [embedding](/oss/python/integrations/embeddings) models, which determine how text data is translated to numeric vectors.
+## Select a vector store
 
-LangChain includes a suite of [integrations](/oss/python/integrations/vectorstores) with different vector store technologies. Some vector stores are hosted by a provider and require specific credentials to use; some run in separate infrastructure that can be run locally or via a third-party; others can run in-memory for lightweight workloads. Let's select a vector store:
+LangChain [`VectorStore`](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStore) objects add text and [`Document`](https://reference.langchain.com/python/langchain-core/documents/base/Document) objects to a store and query them with similarity metrics. They are often initialized with [embedding](/oss/python/integrations/embeddings) models that translate text into numeric vectors.
+
+LangChain includes [integrations](/oss/python/integrations/vectorstores) with many vector store technologies. Some are hosted and need credentials, some run in separate infrastructure (local or third-party), and others run in-memory for lightweight workloads. Select a vector store:
 
 <VectorstoreTabsPy />
 
 
 
-### Seeding the vector store
+## Load and split a PDF
 
-Let's seed the store with content from a PDF. [Here is a sample PDF](https://github.com/langchain-ai/langchain/blob/v0.3/docs/docs/example_data/nke-10k-2023.pdf) -- a 10-k filing for Nike from 2023. We'll read the PDF directly with a small helper and split it into smaller chunks before indexing.
+Load content from a PDF, then split it into smaller chunks before indexing. This example uses [a sample Nike 10-K filing from 2023](https://github.com/langchain-ai/langchain/blob/v0.3/docs/docs/example_data/nke-10k-2023.pdf).
 
 ```python
 import pypdf
@@ -171,9 +180,9 @@ print(len(docs))
 107
 ```
 
-A page may be too coarse a representation for retrieval and downstream question-answering. Further splitting helps ensure that the meanings of relevant portions of the document are not "washed out" by surrounding text. We use [`RecursiveCharacterTextSplitter`](/oss/python/integrations/splitters), which recursively splits a document using common separators like new lines until each chunk is the appropriate size. This is the recommended text splitter for generic text use cases.
+A page is often too coarse for retrieval. Split pages further so relevant passages are not diluted by surrounding text. [`RecursiveCharacterTextSplitter`](https://reference.langchain.com/python/langchain-text-splitters/character/RecursiveCharacterTextSplitter) recursively splits on common separators (such as newlines) until each chunk is the target size. This is the recommended text splitter for generic text use cases.
 
-We set `add_start_index=True` so that the character index where each split Document starts within the initial Document is preserved as metadata attribute `start_index`.
+Set `add_start_index=True` so each split keeps a `start_index` metadata field for its character offset in the original document.
 
 ```python
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -192,7 +201,9 @@ print(len(all_splits))
 516
 ```
 
-We can now index the chunks into the vector store.
+## Index documents
+
+Index the chunks into the vector store:
 
 ```python
 ids = vector_store.add_documents(documents=all_splits)
@@ -200,25 +211,26 @@ ids = vector_store.add_documents(documents=all_splits)
 
 
 
-Note that most vector store implementations will allow you to connect to an existing vector store--  e.g., by providing a client, index name, or other information. See the documentation for a specific [integration](/oss/python/integrations/vectorstores) for more detail.
+Most vector store integrations also support connecting to an existing store (for example with a client or index name). See the docs for a specific [integration](/oss/python/integrations/vectorstores) for details.
 
-Once we've instantiated a [`VectorStore`](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStore) that contains documents, we can query it. [VectorStore](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStore) includes methods for querying:
-- Synchronously and asynchronously;
-- By string query and by vector;
-- With and without returning similarity scores;
-- By similarity and [maximum marginal relevance](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStore/max_marginal_relevance_search) (to balance similarity with query to diversity in retrieved results).
+## Query the vector store
+
+After you have added the documents to the [`VectorStore`](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStore), you can query it:
+
+- Synchronously and asynchronously
+- By string query and by vector
+- With and without similarity scores
+- By similarity and [maximum marginal relevance](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStore/max_marginal_relevance_search) (to balance similarity with diversity)
 
 
 
 
 
-The methods will generally include a list of [Document](https://reference.langchain.com/python/langchain-core/documents/base/Document) objects in their outputs.
+These methods generally return a list of [`Document`](https://reference.langchain.com/python/langchain-core/documents/base/Document) objects.
 
-**Usage**
+### Search by string
 
-Embeddings typically represent text as a "dense" vector such that texts with similar meanings are geometrically close. This lets us retrieve relevant information just by passing in a question, without knowledge of any specific key-terms used in the document.
-
-Return documents based on similarity to a string query:
+Embeddings map text to dense vectors so similar meanings are geometrically close. This means you can Retrieve relevant passages by passing a natural-language question:
 
 ```python
 results = vector_store.similarity_search(
@@ -227,7 +239,7 @@ results = vector_store.similarity_search(
 
 print(results[0])
 ```
-```python
+```python wrap
 page_content='direct to consumer operations sell products through the following number of retail stores in the United States:
 U.S. RETAIL STORES NUMBER
 NIKE Brand factory stores 213
@@ -247,7 +259,7 @@ results = await vector_store.asimilarity_search("When was Nike incorporated?")
 
 print(results[0])
 ```
-```python
+```python wrap
 page_content='Table of Contents
 PART I
 ITEM 1. BUSINESS
@@ -260,7 +272,9 @@ and sales through our digital platforms (also referred to as "NIKE Brand Digital
 ```
 
 
-Return scores:
+### Return scores
+
+You can return similarity scores with the documents. Score meaning varies by provider. In this case, the score is a distance metric that varies inversely with similarity:
 
 ```python
 # Note that providers implement different scores; the score here
@@ -271,7 +285,7 @@ doc, score = results[0]
 print(f"Score: {score}\n")
 print(doc)
 ```
-```python
+```python wrap
 Score: 0.23699893057346344
 
 page_content='Table of Contents
@@ -288,7 +302,9 @@ equivalent basis.' metadata={'page': 35, 'source': '../example_data/nke-10k-2023
 
 
 
-Return documents based on similarity to an embedded query:
+### Search by vector
+
+Embed the query yourself, then search with the resulting vector:
 
 ```python
 embedding = embeddings.embed_query("How were Nike's margins impacted in 2023?")
@@ -296,7 +312,7 @@ embedding = embeddings.embed_query("How were Nike's margins impacted in 2023?")
 results = vector_store.similarity_search_by_vector(embedding)
 print(results[0])
 ```
-```python
+```python wrap
 page_content='Table of Contents
 GROSS MARGIN
 FISCAL 2023 COMPARED TO FISCAL 2022
@@ -320,11 +336,13 @@ Learn more:
 - [API Reference](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStore)
 - [Integration-specific docs](/oss/python/integrations/vectorstores)
 
-## 4. Retrievers
+## Use retrievers
 
-LangChain [`VectorStore`](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStore) objects do not subclass [Runnable](https://reference.langchain.com/python/langchain-core/runnables/base/Runnable). LangChain [Retrievers](https://reference.langchain.com/python/langchain-core/retrievers/BaseRetriever) are Runnables, so they implement a standard set of methods (e.g., synchronous and asynchronous `invoke` and `batch` operations). Although we can construct retrievers from vector stores, retrievers can interface with non-vector store sources of data, as well (such as external APIs).
+LangChain [`VectorStore`](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStore) objects do not subclass [`Runnable`](https://reference.langchain.com/python/langchain-core/runnables/base/Runnable). [Retrievers](https://reference.langchain.com/python/langchain-core/retrievers/BaseRetriever) are Runnables, so they support standard methods such as sync and async `invoke` and `batch`.
 
-We can create a simple version of this ourselves, without subclassing `Retriever`. If we choose what method we wish to use to retrieve documents, we can create a runnable easily. Below we will build one around the `similarity_search` method:
+You can also build retrievers from vector stores, and retrievers can also wrap non-vector sources (such as external APIs).
+
+In this case, create a simple retriever without subclassing `Retriever` by wrapping `similarity_search`:
 
 
 ```python
@@ -348,13 +366,13 @@ retriever.batch(
 ```
 
 
-```text
+```text wrap
 [[Document(metadata={'page': 4, 'source': '../example_data/nke-10k-2023.pdf', 'start_index': 3125}, page_content='direct to consumer operations sell products through the following number of retail stores in the United States:\nU.S. RETAIL STORES NUMBER\nNIKE Brand factory stores 213 \nNIKE Brand in-line stores (including employee-only stores) 74 \nConverse stores (including factory stores) 82 \nTOTAL 369 \nIn the United States, NIKE has eight significant distribution centers. Refer to Item 2. Properties for further information.\n2023 FORM 10-K 2')],
  [Document(metadata={'page': 3, 'source': '../example_data/nke-10k-2023.pdf', 'start_index': 0}, page_content='Table of Contents\nPART I\nITEM 1. BUSINESS\nGENERAL\nNIKE, Inc. was incorporated in 1967 under the laws of the State of Oregon. As used in this Annual Report on Form 10-K (this "Annual Report"), the terms "we," "us," "our,"\n"NIKE" and the "Company" refer to NIKE, Inc. and its predecessors, subsidiaries and affiliates, collectively, unless the context indicates otherwise.\nOur principal business activity is the design, development and worldwide marketing and selling of athletic footwear, apparel, equipment, accessories and services. NIKE is\nthe largest seller of athletic footwear and apparel in the world. We sell our products through NIKE Direct operations, which are comprised of both NIKE-owned retail stores\nand sales through our digital platforms (also referred to as "NIKE Brand Digital"), to retail accounts and to a mix of independent distributors, licensees and sales')]]
 ```
 
 
-Vectorstores implement an `as_retriever` method that will generate a Retriever, specifically a [`VectorStoreRetriever`](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStoreRetriever). These retrievers include specific `search_type` and `search_kwargs` attributes that identify what methods of the underlying vector store to call, and how to parameterize them. For instance, we can replicate the above with the following:
+Vector stores implement an `as_retriever` method that returns a [`VectorStoreRetriever`](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStoreRetriever). These retrievers expose `search_type` and `search_kwargs` to select and parameterize the underlying store methods. Replicate the example above with:
 
 ```python
 retriever = vector_store.as_retriever(
@@ -369,35 +387,31 @@ retriever.batch(
     ],
 )
 ```
-```text
+```text wrap
 [[Document(metadata={'page': 4, 'source': '../example_data/nke-10k-2023.pdf', 'start_index': 3125}, page_content='direct to consumer operations sell products through the following number of retail stores in the United States:\nU.S. RETAIL STORES NUMBER\nNIKE Brand factory stores 213 \nNIKE Brand in-line stores (including employee-only stores) 74 \nConverse stores (including factory stores) 82 \nTOTAL 369 \nIn the United States, NIKE has eight significant distribution centers. Refer to Item 2. Properties for further information.\n2023 FORM 10-K 2')],
  [Document(metadata={'page': 3, 'source': '../example_data/nke-10k-2023.pdf', 'start_index': 0}, page_content='Table of Contents\nPART I\nITEM 1. BUSINESS\nGENERAL\nNIKE, Inc. was incorporated in 1967 under the laws of the State of Oregon. As used in this Annual Report on Form 10-K (this "Annual Report"), the terms "we," "us," "our,"\n"NIKE" and the "Company" refer to NIKE, Inc. and its predecessors, subsidiaries and affiliates, collectively, unless the context indicates otherwise.\nOur principal business activity is the design, development and worldwide marketing and selling of athletic footwear, apparel, equipment, accessories and services. NIKE is\nthe largest seller of athletic footwear and apparel in the world. We sell our products through NIKE Direct operations, which are comprised of both NIKE-owned retail stores\nand sales through our digital platforms (also referred to as "NIKE Brand Digital"), to retail accounts and to a mix of independent distributors, licensees and sales')]]
 ```
 
-`VectorStoreRetriever` supports search types of `"similarity"` (default), `"mmr"` (maximum marginal relevance, described above), and `"similarity_score_threshold"`. We can use the latter to threshold documents output by the retriever by similarity score.
+`VectorStoreRetriever` supports search types of `"similarity"` (default), `"mmr"` (maximum marginal relevance), and `"similarity_score_threshold"`. Use the last option to filter documents by similarity score.
 
 
 
-Retrievers can easily be incorporated into more complex applications, such as [retrieval-augmented generation (RAG)](/oss/python/langchain/retrieval) applications that combine a given question with retrieved context into a prompt for a LLM. To learn more about building such an application, check out the [RAG tutorial](/oss/python/deepagents/rag) tutorial.
-
+You can use retrievers in more complex apps such as [retrieval-augmented generation (RAG)](/oss/python/langchain/retrieval), which combine a question with retrieved context in a prompt for an LLM. To learn more about building such an application, check out the [RAG tutorial](/oss/python/deepagents/rag) tutorial.
 
 ## Next steps
 
 You've now seen how to build a semantic search engine over a PDF document.
 
-For more on embeddings:
+For more information see:
 
-- [Overview](/oss/python/langchain/retrieval)
-- [Available integrations](/oss/python/integrations/embeddings/)
+- [Available embedding integrations](/oss/python/integrations/embeddings)
+- [Available vector store integrations](/oss/python/integrations/vectorstores)
 
-For more on vector stores:
+For more on RAG:
 
-- [Overview](/oss/python/langchain/retrieval)
-- [Available integrations](/oss/python/integrations/vectorstores/)
-
-For more on RAG, see:
-
-- [Build a Retrieval Augmented Generation (RAG) App](/oss/python/deepagents/rag)
+- [Retrieval overview](/oss/python/langchain/retrieval)
+- [RAG with Deep Agents](/oss/python/deepagents/rag)
+- [Evaluate a RAG application](/langsmith/evaluate-rag-tutorial)
 
 ---
 
