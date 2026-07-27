@@ -1,0 +1,99 @@
+---
+title: "CKG (Compact Knowledge Graph)"
+description: "Integrate with Compact Knowledge Graphs (CKG) using LangChain Python."
+---
+
+## Overview
+
+[Graphify.md](https://graphifymd.com) builds **Compact Knowledge Graphs (CKGs)**—structured, typed dependency graphs of domain concepts served over MCP. CKGs replace vector-search retrieval with deterministic graph traversal. Every node carries a SHA-256 source hash for full audit provenance.
+
+**Benchmark (ckg-benchmark v0.6.2, 97 domains):**
+
+| System | Macro F1 | Tokens/query |
+|--------|:--------:|:------------:|
+| **CKG** | **0.471** | **269** |
+| RAG | 0.123 | 2,982 |
+| GraphRAG | 0.120 | 3,450 |
+
+97 domains available including NVIDIA AI, NemoClaw, Salesforce AgentForce, Nemotron, and Perplexity.
+
+## Installation and setup
+
+<CodeGroup>
+```bash pip
+pip install langchain-ckg
+```
+
+```bash uv
+uv add langchain-ckg
+```
+</CodeGroup>
+
+## Retrievers
+
+`CKGRetriever` implements `BaseRetriever` and traverses a CKG domain graph — returning prerequisite and dependent concept chains as structured `Document` objects.
+
+```python
+from langchain_ckg import CKGRetriever
+
+retriever = CKGRetriever(domain="nvidia-nemoclaw", depth=3)
+docs = retriever.invoke("CUDA kernel fusion")
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `domain` | `str` | required | CKG domain name. See [available domains](https://pypi.org/project/ckg-mcp/). |
+| `depth` | `int` | `3` | Prerequisite traversal hops (1–5). |
+| `k` | `int` | `5` | Max concept matches returned. |
+
+### Use with RetrievalQA
+
+```python
+from langchain_ckg import CKGRetriever
+from langchain_openai import ChatOpenAI
+from langchain.chains import RetrievalQA
+
+retriever = CKGRetriever(domain="nvidia-nemoclaw", depth=3)
+qa = RetrievalQA.from_chain_type(llm=ChatOpenAI(), retriever=retriever)
+result = qa.invoke("How does NemoClaw handle CUDA kernel fusion?")
+```
+
+### Use in LCEL
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+from langchain_ckg import CKGRetriever
+
+retriever = CKGRetriever(domain="nvidia-nemoclaw", depth=3)
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer using only this context:\n{context}\n\nQuestion: {question}"
+)
+
+chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | ChatOpenAI()
+    | StrOutputParser()
+)
+
+chain.invoke("What are the prerequisites for NemoClaw kernel fusion?")
+```
+
+### Hosted retriever
+
+`CKGHostedRetriever` hits a managed endpoint with a rate-gate. Free: 50 calls/day. Upgrade at [graphifymd.com/pricing](https://graphifymd.com/pricing).
+
+```python
+from langchain_ckg import CKGHostedRetriever
+
+retriever = CKGHostedRetriever(
+    domain="nvidia-nemoclaw",
+    license_key="your-license-key",  # optional, unlocks unlimited calls
+)
+```
