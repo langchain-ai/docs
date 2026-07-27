@@ -3,7 +3,7 @@ title: "AWS middleware integration"
 description: "Integrate with AWS middleware using LangChain Python."
 ---
 
-Middleware specifically designed for models hosted on AWS Bedrock. Learn more about [middleware](/oss/langchain/middleware/overview).
+Middleware integrations for AWS services. Prompt caching is designed for models hosted on Amazon Bedrock, while AgentCore Payments works with LangGraph agents regardless of model provider. Learn more about [middleware](/oss/langchain/middleware/overview).
 
 | Middleware | Description |
 |------------|-------------|
@@ -168,6 +168,8 @@ AgentCore Payments is currently in preview and requires `bedrock-agentcore>=1.18
 
 Autonomously handle [x402 Payment Required](https://www.x402.org/) responses in LangGraph agents. When a tool hits a paid API that returns HTTP 402, `AgentCorePaymentsMiddleware` detects the payment requirement, signs the payment via [Amazon Bedrock AgentCore Payments](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/payments.html), enforces session budget limits, and retries the request with payment credentials. This process is transparent to the agent.
 
+AgentCore Payments middleware lives in the `bedrock-agentcore` package. The examples below install `langchain-aws` only to configure an Amazon Bedrock model; you can use the middleware with any model provider supported by LangChain agents.
+
 AgentCore Payments middleware is useful for the following:
 - Agents that access paid APIs without manual payment logic per tool
 - Enforcing spending limits at the session level before any payment is signed
@@ -178,6 +180,7 @@ For a guided setup of PaymentManager and instruments, see the [AgentCore Payment
 
 **Prerequisites:**
 - An AWS account with [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/) access
+- An AWS Region where AgentCore Payments is available: `us-east-1`, `us-west-2`, `eu-central-1`, or `ap-southeast-2`. See [Supported AWS Regions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-regions.html).
 - A configured **PaymentManager** resource (provides the ARN)
 - A **PaymentInstrument** (wallet) provisioned for your user
 - Python 3.10+
@@ -220,7 +223,7 @@ result = agent.invoke({
 })
 ```
 
-With this setup, the agent can access any paid API transparently. When a tool receives a 402 response, the middleware handles payment signing, budget enforcement, and retry, so the agent sees only the successful response content.
+With this setup, the built-in `http_request` tool can automatically retry requests to x402-compatible paid APIs after payment succeeds. When the tool receives a supported 402 response, the middleware handles payment signing, budget enforcement, and retry. If payment processing fails, the agent receives the configured or default payment error.
 
 ### How it works
 
@@ -350,7 +353,7 @@ The middleware provides two layers of error control:
 
 #### Error handler callback (recommended)
 
-The error handler callback is recommended because it keeps payment lifecycle complexity out of the agent's reasoning. Without it, the agent receives error messages about expired sessions or missing instruments and must attempt to debug payment configuration, which wastes tokens and often fails. With the callback, your application code resolves issues programmatically (creating sessions, refreshing instruments, increasing budgets) and the agent only ever sees successful payment results.
+The error handler callback is recommended because it keeps payment lifecycle complexity out of the agent's reasoning. Without it, the agent receives error messages about expired sessions or missing instruments and must attempt to debug payment configuration, which wastes tokens and often fails. With the callback, your application code can resolve issues programmatically by creating sessions, refreshing instruments, or increasing budgets. When the callback returns `ErrorResolution.RETRY`, the middleware retries payment with the updated configuration. If the callback propagates the error, returns a custom message, raises, or exhausts its retries, the agent receives the configured or default payment error.
 
 ```python
 from bedrock_agentcore.payments.integrations.langgraph import (
@@ -661,9 +664,9 @@ The async path uses:
 **Without middleware** (manual wrapping):
 - Write a wrapper function per tool type (~30-50 lines each)
 - Handle 402 detection, x402 parsing, signing, retry manually
-- No error handling: Exceptions crash the tool call
-- No on-chain timing delay: Fast facilitators may reject
-- No budget error messages to the agent
+- Implement payment error handling for each wrapper
+- Implement any required post-payment timing delay
+- Create budget error messages for the agent
 - Adding a new tool = another wrapper
 
 **With middleware:**
@@ -681,7 +684,7 @@ agent = create_agent(
 )
 ```
 
-Done. All tools handled automatically.
+Compatible tools that meet the [custom tool integration contract](#custom-tool-integration-contract) are handled automatically.
 
 ### Configuration reference
 
