@@ -31,6 +31,7 @@ import CustomizationToolsPy from '/snippets/code-samples/customization-tools-py.
 import CustomizationToolsJs from '/snippets/code-samples/customization-tools-js.mdx';
 import CustomizationSystemPromptPy from '/snippets/code-samples/customization-system-prompt-py.mdx';
 import CustomizationSystemPromptJs from '/snippets/code-samples/customization-system-prompt-js.mdx';
+
 import CustomizationMiddlewarePy from '/snippets/code-samples/customization-middleware-py.mdx';
 import CustomizationMiddlewareJs from '/snippets/code-samples/customization-middleware-js.mdx';
 import CustomizationMiddlewareDoPy from '/snippets/code-samples/customization-middleware-do-py.mdx';
@@ -52,7 +53,6 @@ import CustomizationOverviewPy from '/snippets/code-samples/customization-overvi
 import CustomizationOverviewJs from '/snippets/code-samples/customization-overview-js.mdx';
 import CustomizationMcpPy from '/snippets/code-samples/customization-mcp-py.mdx';
 import CustomizationMcpJs from '/snippets/code-samples/customization-mcp-js.mdx';
-import CustomizationPromptAssemblyPy from '/snippets/code-samples/customization-prompt-assembly-py.mdx';
 import CustomizationGpSubagentProfilePy from '/snippets/code-samples/customization-gp-subagent-profile-py.mdx';
 
 Build the harness around your goal. `create_deep_agent` gives you a production-ready foundation: connect it to your data, shape its behavior, and add the capabilities your use case needs.
@@ -177,13 +177,7 @@ For detailed configuration options including stdio servers, OAuth authentication
 
 ## System prompt
 
-:::python
-Deep Agents does not add an authored base system prompt by default: `create_deep_agent` starts from an empty base, so a deep agent ships with no persona or task guidance out of the box. Pass `system_prompt=` to add your own instructions, or pass `system_prompt=BASE_AGENT_PROMPT` to restore the SDK's built-in persona and task-guidance prompt, or set it on a [profile](/oss/deepagents/profiles#harness-profiles) as `base_system_prompt`:
-:::
-
-:::js
-Deep Agents ship with a built-in system prompt. A deep agent's value comes from the orchestration layer the SDK provides on top of the model—planning, virtual-filesystem tools, and subagents—and the model needs to know those exist and when to reach for them. The built-in prompt teaches the agent how to use that scaffolding so you don't have to re-derive it for every project; tweak it through a [profile](/oss/deepagents/profiles#harness-profiles) or your own `systemPrompt` rather than copying it verbatim.
-:::
+Deep Agents ship with a built-in base system prompt that teaches the agent how to use the harness scaffolding (planning, filesystem tools, subagents). Pass `system_prompt=` to prepend your own instructions before that base prompt:
 
 :::python
 <CustomizationSystemPromptPy />
@@ -199,44 +193,8 @@ Besides a string, the main agent also accepts a @[`SystemMessage`] with structur
 
 When middleware adds special tools, like the filesystem tools, it appends its own guidance to the system prompt at runtime.
 
-### Prompt assembly
-
 :::python
-Deep Agents builds the system prompt from up to three named parts so that caller-supplied instructions and any model-specific [profile](/oss/deepagents/profiles) overrides can coexist with predictable precedence. Without this layering, a profile suffix tuned for Claude (for example) could overwrite or be overwritten by your `system_prompt=` argument depending on call order; the named slots make the ordering explicit and stable.
-
-The three named parts (each may be absent):
-
-| Name     | Source                                            | Notes                                             |
-| -------- | ------------------------------------------------- | ------------------------------------------------- |
-| `USER`   | `system_prompt=` argument to `create_deep_agent`  | `str` or `SystemMessage`; omitted when unset.     |
-| `BASE`   | [`HarnessProfile.base_system_prompt`](/oss/deepagents/profiles#harness-profiles) | Empty unless a matching profile sets it. Pass `system_prompt=BASE_AGENT_PROMPT` to restore the SDK's authored prompt without a profile. |
-| `SUFFIX` | [`HarnessProfile.system_prompt_suffix`](/oss/deepagents/profiles#harness-profiles) | Appended last when a matching profile sets it.   |
-
-The order is always **`USER` -> `BASE` -> `SUFFIX`**, joined by blank lines (`\n\n`). Two invariants follow:
-
-1. **`USER` is always at the front.** The caller's text precedes any profile content, so persona/instructions take precedence regardless of which model is selected.
-2. **`SUFFIX` is always at the end.** Profile suffixes sit closest to the conversation history, where model-tuning guidance lands most reliably.
-
-Assembled shapes (✓ = field is set, - = field is unset):
-
-| `system_prompt=` | profile `base_system_prompt` (`BASE`) | profile `system_prompt_suffix` (`SUFFIX`) | Final assembled system prompt |
-| ---------------- | :------------------------------------: | :----------------------------------------: | ------------------------------ |
-| `None`           |                    -                    |                     -                     | *(empty)*                     |
-| `None`           |                    -                    |                     ✓                     | `SUFFIX`                       |
-| `None`           |                    ✓                    |                     -                     | `BASE`                         |
-| `None`           |                    ✓                    |                     ✓                     | `BASE` + `SUFFIX`              |
-| `str`            |                    -                    |                     -                     | `USER`                         |
-| `str`            |                    -                    |                     ✓                     | `USER` + `SUFFIX`              |
-| `str`            |                    ✓                    |                     -                     | `USER` + `BASE`                |
-| `str`            |                    ✓                    |                     ✓                     | `USER` + `BASE` + `SUFFIX`     |
-
-Worked example—built-in profiles (Anthropic, OpenAI) ship only a `system_prompt_suffix`, so a typical call lands in the `str` + `-` + `✓` row:
-
-<CustomizationPromptAssemblyPy />
-
-<Note>
-    Passing a `SystemMessage` (rather than a string) triggers a different concatenation path: the assembled `BASE` and `SUFFIX` are appended as an additional text content block onto the message's existing `content_blocks`. The same logical ordering applies (caller blocks first), and any `cache_control` markers on the caller's blocks are preserved—useful for placing explicit Anthropic prompt-cache breakpoints.
-</Note>
+For model-specific system prompt customization, such as replacing the base prompt or appending a suffix for a particular provider, use a [harness profile](/oss/deepagents/profiles#harness-profiles): set `base_system_prompt` to replace the built-in base, or `system_prompt_suffix` to append text after it.
 :::
 
 <AccordionGroup>
