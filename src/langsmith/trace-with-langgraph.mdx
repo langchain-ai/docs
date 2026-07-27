@@ -134,7 +134,7 @@ import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { ChatOpenAI } from "@langchain/openai";
-import { StateGraph, StateGraphArgs } from "@langchain/langgraph";
+import { StateGraph, StateGraphArgs, START, END } from "@langchain/langgraph"
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 
 interface AgentState {
@@ -175,7 +175,7 @@ function shouldContinue(state: AgentState) {
   if (lastMessage.tool_calls?.length) {
     return "tools";
   }
-  return "__end__";
+  return END;
 }
 
 async function callModel(state: AgentState) {
@@ -188,7 +188,7 @@ async function callModel(state: AgentState) {
 const workflow = new StateGraph<AgentState>({ channels: graphState })
   .addNode("agent", callModel)
   .addNode("tools", toolNode)
-  .addEdge("__start__", "agent")
+  .addEdge(START, "agent")
   .addConditionalEdges("agent", shouldContinue)
   .addEdge("tools", "agent");
 
@@ -377,7 +377,7 @@ final_state["messages"][-1]["content"]
 **Note:** The below example requires `langsmith>=0.1.39` and `@langchain/langgraph>=0.0.31`
 
 import OpenAI from "openai";
-import { StateGraph } from "@langchain/langgraph";
+import { StateGraph, START, END } from "@langchain/langgraph"
 import { wrapOpenAI } from "langsmith/wrappers/openai";
 import { traceable } from "langsmith/traceable";
 
@@ -460,7 +460,7 @@ const shouldContinue = ({ messages }: GraphState) => {
   ) {
     return "tools";
   }
-  return "__end__";
+  return END;
 }
 
 const workflow = new StateGraph<GraphState>({
@@ -474,10 +474,10 @@ const workflow = new StateGraph<GraphState>({
 const graph = workflow
   .addNode("model", callModel)
   .addNode("tools", callTools)
-  .addEdge("__start__", "model")
+  .addEdge(START, "model")
   .addConditionalEdges("model", shouldContinue, {
     tools: "tools",
-    __end__: "__end__",
+    [END]: END,
   })
   .addEdge("tools", "model")
   .compile();
