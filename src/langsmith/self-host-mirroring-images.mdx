@@ -235,13 +235,13 @@ cosign download attestation docker.io/langchain/langsmith-backend:<tag>
 
 ### Verifying SBOM attestations
 
-Released images also carry signed SPDX software bill of materials (SBOM) attestations, one per architecture in the image index.
+Released images also carry signed CycloneDX software bill of materials (SBOM) attestations, one per architecture in the image index.
 
 The per-architecture SBOMs are also attached to the multi-architecture index digest, so you can verify against a bare tag directly:
 
 ```bash
 cosign verify-attestation \
-  --type spdxjson \
+  --type cyclonedx \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
   docker.io/langchain/langsmith-backend:<tag>
@@ -251,7 +251,7 @@ The command returns one verified statement per architecture. A successful verifi
 
 ### Fetching SBOMs
 
-To feed an SBOM into a vulnerability scanner or SBOM management tool, extract the verified SPDX document to a file. Because the index carries one statement per architecture, resolve a single architecture's child digest first so you get one SPDX document rather than one per architecture.
+To feed an SBOM into a vulnerability scanner or SBOM management tool, extract the verified CycloneDX document to a file. Because the index carries one statement per architecture, resolve a single architecture's child digest first so you get one CycloneDX document rather than one per architecture.
 
 List the per-architecture digests for a tag:
 
@@ -260,18 +260,18 @@ docker buildx imagetools inspect --raw docker.io/langchain/langsmith-backend:<ta
   | jq -r '.manifests[] | select(.platform.os == "linux") | .digest + "  " + .platform.architecture'
 ```
 
-Then verify that digest and save the decoded predicate — a standard SPDX 2.3 document listing every package in the image — to a file:
+Then verify that digest and save the decoded predicate — a standard CycloneDX document listing every package in the image — to a file:
 
 ```bash
 cosign verify-attestation \
-  --type spdxjson \
+  --type cyclonedx \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp 'https://github\.com/langchain-ai/langchainplus/\.github/workflows/release_self_hosted_on_version_bump\.yaml@refs/heads/v[0-9]+-stable' \
   docker.io/langchain/langsmith-backend@<digest> \
-  | jq -r '.payload' | base64 -d | jq '.predicate' > langsmith-backend.spdx.json
+  | jq -r '.payload' | base64 -d | jq '.predicate' > langsmith-backend.cdx.json
 ```
 
-You can pass the resulting `langsmith-backend.spdx.json` directly to scanners such as [Grype](https://github.com/anchore/grype) (`grype sbom:langsmith-backend.spdx.json`) or [Trivy](https://trivy.dev/) (`trivy sbom langsmith-backend.spdx.json`).
+You can pass the resulting `langsmith-backend.cdx.json` directly to scanners such as [Grype](https://github.com/anchore/grype) (`grype sbom:langsmith-backend.cdx.json`) or [Trivy](https://trivy.dev/) (`trivy sbom langsmith-backend.cdx.json`).
 
 <Note>
 Extracting the SBOM through `cosign verify-attestation`, rather than `cosign download attestation`, ensures you only ever consume an SBOM whose signature and signing identity have been verified.
