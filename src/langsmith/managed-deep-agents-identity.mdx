@@ -298,6 +298,50 @@ When you configure more than one provider, give each entry a unique `id`. The ru
 
 For provider-specific options and client examples, see [Provider setup guides](#provider-setup-guides).
 
+To let anonymous visitors use the agent with no external identity provider, configure guest tokens as the only provider. Each visitor gets a short-lived, Managed Deep Agents-signed token and a distinct guest actor, so the `private-assistant` preset still scopes threads and memory per visitor.
+
+<CodeGroup>
+
+```python identity.py
+from managed_deepagents import define_identity, providers
+
+identity = define_identity.preset(
+    "private-assistant",
+    {
+        "ingress": {
+            "http": {
+                "mode": "validated_token",
+                "providers": [
+                    providers.guest(ttl="24h", actor_prefix="guest:"),
+                ],
+            }
+        }
+    },
+)
+```
+
+```ts identity.ts
+import { defineIdentity, providers } from "managed-deepagents";
+
+export const identity = defineIdentity.preset("private-assistant", {
+  ingress: {
+    http: {
+      mode: "validated_token",
+      providers: [providers.guest({ ttl: "24h", actorPrefix: "guest:" })],
+    },
+  },
+});
+```
+
+</CodeGroup>
+
+When a guest provider is configured, the deployment exposes a public `POST /identity/guest` route that mints a guest token. The client calls it once, then sends the returned token as `Authorization: Bearer <token>` on later requests. The response body is `{"token": "<token>"}`.
+
+```bash
+USER_TOKEN=$(curl -s -X POST "$DEPLOYMENT_URL/identity/guest" \
+  -H "Content-Type: application/json" | python -c 'import sys, json; print(json.load(sys.stdin)["token"])')
+```
+
 ## Secrets checklist
 
 | Secret | How Managed Deep Agents uses it |

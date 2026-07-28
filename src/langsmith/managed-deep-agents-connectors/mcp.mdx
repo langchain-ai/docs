@@ -13,11 +13,13 @@ Managed Deep Agents use MCP connectors to load tools from remote MCP servers. De
 <ManagedDeepAgentsPrivateBetaNote />
 </Note>
 
-For other connector types, see [Connectors](/langsmith/managed-deep-agents-connectors).
+For other connector types, and how connectors differ from channels and identity connect, see [Connectors](/langsmith/managed-deep-agents-connectors) and [Choose the right integration](/langsmith/managed-deep-agents-connectors#choose-the-right-integration).
+
+Managed Deep Agents configures MCP servers through the `connectors/mcp` module shown on this page, not through a CLI command. The `mda` CLI has no MCP server management commands, so do not use older `deepagents mcp-servers ...` examples in a Managed Deep Agents project.
 
 ## Add an MCP connector
 
-Add `connectors/mcp.py` or `connectors/mcp.ts` next to your agent entry file.
+Add `connectors/mcp.py` or `connectors/mcp.ts` next to your [agent entry file](/langsmith/managed-deep-agents-cli#agent-entry).
 
 The connector module must export a named `mcp` declaration.
 
@@ -51,7 +53,7 @@ export const mcp = defineMcpServers({
 
 </CodeGroup>
 
-You do not import `MultiServerMCPClient` or call `getTools()` / `get_tools()` yourself. `mda` discovers the connector module, injects the MCP adapter dependency into the compiled build, creates the client in the managed runtime, loads the tools, and appends them to the authored tools from `agent.ts` or `agent.py`.
+You do not import `MultiServerMCPClient` or call `getTools()` / `get_tools()` yourself. `mda` discovers the connector module, injects the MCP adapter dependency into the compiled build, creates the client in the managed runtime, loads the tools, and appends them to the [authored tools](/langsmith/managed-deep-agents-tools) from `agent.ts` or `agent.py`.
 
 ## Supported MCP servers
 
@@ -62,15 +64,17 @@ Connectors support remote MCP servers only:
 | `http` | Streamable HTTP MCP servers. |
 | `sse` | Legacy SSE MCP servers. |
 
+To connect a legacy SSE server, set `transport` to `sse` on the server config; the remaining fields match the `http` examples above.
+
 Stdio MCP servers are not supported in connectors. If a server needs local process management, expose it over HTTP/SSE or wrap the behavior as a normal authored tool.
 
 ## Configure server options
 
 Each server key is the logical server name Managed Deep Agents uses for validation, tracing metadata, and tool-name prefixing. Server configs can include static headers.
 
-Connectors do not run an OAuth authorization flow. If an MCP server requires OAuth, provide a pre-provisioned access token or another static credential through headers. Store the token in `.env` so `mda dev` can load it locally and `mda deploy` can forward it as a hosted deployment secret.
+Connectors do not run an OAuth authorization flow. If an MCP server requires OAuth, provide a pre-provisioned access token or another static credential through headers. Store the token in `.env` (see the security warning below).
 
-The connector module is normal project code, so read secrets as environment variables with `os.environ` in Python or `process.env` in TypeScript. You do not import the `.env` file directly.
+The connector module is normal project code, so read secrets as environment variables with `os.environ` in Python or `process.env` in TypeScript. You do not load or parse the `.env` file directly.
 
 <CodeGroup>
 
@@ -111,27 +115,27 @@ export const mcp = defineMcpServers({
 </CodeGroup>
 
 <Warning>
-Do not commit MCP tokens, API keys, OAuth access tokens, or passwords. Put local values in `.env`; `mda dev` loads them for local development, and `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets.
+**Security warning:** Do not commit MCP tokens, API keys, OAuth access tokens, or passwords. Put local values in `.env`; `mda dev` loads them for local development, and `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets. Reserved platform variables such as `LANGSMITH_API_KEY` are not forwarded; for the full list, see the [CLI authentication reference](/langsmith/managed-deep-agents-cli#authentication).
 </Warning>
 
 ## MCP connector defaults
 
-Managed Deep Agents applies managed defaults when it loads connector tools:
+Managed Deep Agents applies these default options when it loads connector tools:
 
-| Option | Default | Description |
+| Option (Python / TypeScript) | Default | Description |
 | --- | --- | --- |
-| `prefixToolNameWithServerName` / `prefix_tool_name_with_server_name` | `true` | Prefix MCP tool names with the server name, for example `github__search`, to avoid collisions. |
-| `throwOnLoadError` / `throw_on_load_error` | `true` | Fail when tools cannot be loaded instead of starting with a partial tool surface. |
-| `useStandardContentBlocks` / `use_standard_content_blocks` | `true` | Convert MCP tool outputs to standard LangChain content blocks. Python connectors currently require the default `true` value. |
-| `onConnectionError` / `on_connection_error` | `"throw"` | Fail when a server cannot be reached. `"throw"` is the only supported value. |
+| `prefix_tool_name_with_server_name` / `prefixToolNameWithServerName` | `true` | Prefix MCP tool names with the server name, for example `github__search`, to avoid collisions. |
+| `throw_on_load_error` / `throwOnLoadError` | `true` | Fail when tools cannot be loaded instead of starting with a partial tool surface. |
+| `use_standard_content_blocks` / `useStandardContentBlocks` | `true` | Convert MCP tool outputs to standard LangChain content blocks. Python connectors currently require the default `true` value. |
+| `on_connection_error` / `onConnectionError` | `"throw"` | Fail when a server cannot be reached. `"throw"` is the only supported value. |
 
-Disable tool-name prefixing only when you know the MCP tool names do not collide. Managed Deep Agents validates duplicate MCP tool names when prefixing is disabled.
+Disable tool-name prefixing only when you know the MCP tool names do not collide. With prefixing disabled, Managed Deep Agents checks the loaded MCP tools for duplicate names.
 
 ## Test and deploy
 
 <ManagedDeepAgentsTestAndDeploy />
 
-MCP misconfiguration surfaces during local startup or first tool load, depending on when the runtime reaches the MCP server.
+MCP misconfiguration surfaces during local startup or first tool load, depending on when the runtime reaches the MCP server. For deploy symptoms and fixes, see [Troubleshooting](/langsmith/managed-deep-agents-cli#troubleshooting).
 
 ## Next steps
 
