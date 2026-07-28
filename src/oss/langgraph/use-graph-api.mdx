@@ -1654,6 +1654,35 @@ builder.add_node(
 
 See [Fault tolerance](/oss/langgraph/fault-tolerance#error-handling) for compensation patterns and `Command` routing.
 
+## Set graph-wide node defaults
+
+<Note>
+Requires `langgraph>=1.2`.
+</Note>
+
+Use @[`set_node_defaults`] to set `retry_policy`, `timeout`, `cache_policy`, or `error_handler` once for every node in a graph, instead of repeating them on each @[`add_node`] call. Per-node values always win, and defaults are applied at @[`StateGraph.compile`] time:
+
+```python
+from langgraph.types import RetryPolicy, TimeoutPolicy
+
+graph = (
+    StateGraph(State)
+    .set_node_defaults(
+        retry_policy=RetryPolicy(max_attempts=3),
+        timeout=TimeoutPolicy(run_timeout=30),
+        error_handler=fallback_handler,
+    )
+    .add_node("a", node_a)
+    .add_node("b", node_b, retry_policy=RetryPolicy(max_attempts=5))  # overrides default
+    .add_edge(START, "a")
+    .compile()
+)
+```
+
+`retry_policy` and `timeout` defaults apply to every node, including error-handler nodes. `cache_policy` and `error_handler` defaults apply only to regular nodes—handlers never catch themselves, and caching a handler result is unsafe. Defaults are not inherited by subgraphs.
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#graph-defaults) for the full precedence rules and applicability table.
+
 :::
 
 :::python
