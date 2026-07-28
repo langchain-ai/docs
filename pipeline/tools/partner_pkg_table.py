@@ -1,6 +1,6 @@
 """Populates the Python integrations landing page.
 
-Results in `oss/python/integrations/providers/index.mdx`
+Results in `oss/python/integrations/providers/overview.mdx`
 
 Usage (from repo root):
 
@@ -11,6 +11,9 @@ uv run python pipeline/tools/partner_pkg_table.py
 ```
 """
 
+from __future__ import annotations
+
+import re
 from pathlib import Path
 
 import yaml
@@ -33,12 +36,53 @@ IGNORE_PKG = {
 MIN_DOWNLOADS = 100_000
 
 DOCS_DIR = Path(__file__).parents[2]
-PROVIDERS_PATH = Path() / "src" / "oss" / "python" / "integrations" / "providers"
-PACKAGE_YML = Path() / "packages.yml"
+PROVIDERS_DIR = DOCS_DIR / "src" / "oss" / "python" / "integrations" / "providers"
+PACKAGE_YML = DOCS_DIR / "packages.yml"
+ALL_PROVIDERS_MDX = PROVIDERS_DIR / "all_providers.mdx"
 
 # Load package registry
 with PACKAGE_YML.open() as f:
     PACKAGE_YML = yaml.safe_load(f)
+
+
+def _provider_page_exists(slug: str) -> bool:
+    """Return True if a hosted provider MDX page or directory exists for slug."""
+    if any(PROVIDERS_DIR.glob(f"{slug}.*")):
+        return True
+    candidate = PROVIDERS_DIR / slug
+    return candidate.is_dir() and any(candidate.glob("*.mdx"))
+
+
+def _load_all_providers_hrefs() -> dict[str, str]:
+    """Map provider card titles/slugs from all_providers.mdx to hrefs.
+
+    Used when a package no longer has a hosted provider page and should link
+    out to partner docs, GitHub, or PyPI instead.
+    """
+    if not ALL_PROVIDERS_MDX.is_file():
+        return {}
+    text = ALL_PROVIDERS_MDX.read_text(encoding="utf-8")
+    mapping: dict[str, str] = {}
+    for match in re.finditer(
+        r'<Card\s+title="([^"]+)"\s+href="([^"]+)"',
+        text,
+        flags=re.MULTILINE,
+    ):
+        title, href = match.group(1), match.group(2)
+        mapping[title.lower()] = href
+        # Also index by last path segment for local provider hrefs.
+        if href.startswith("/oss/integrations/providers/"):
+            slug = href.rstrip("/").rsplit("/", 1)[-1]
+            mapping[slug.lower()] = href
+        # Index by slugified title for fuzzy package short-name matches.
+        slugified = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+        mapping.setdefault(slugified, href)
+        mapping.setdefault(slugified.replace("-", ""), href)
+        mapping.setdefault(slugified.replace("-", "_"), href)
+    return mapping
+
+
+_ALL_PROVIDERS_HREFS = _load_all_providers_hrefs()
 
 
 # For now, only include packages that are in the langchain-ai org
@@ -124,6 +168,50 @@ def js_support(p: dict) -> str:
     return "❌"
 
 
+def _resolve_provider_page(p: dict) -> str | None:
+    """Resolve the provider docs link for a package.
+
+    Priority:
+    1. Absolute URL in packages.yml ``provider_page``
+    2. Hosted provider page from ``provider_page`` slug or ``name_short``
+    3. Matching card href from ``all_providers.mdx`` (may be external)
+    4. GitHub repo URL from packages.yml ``repo``
+    5. PyPI package page
+    """
+    custom = p.get("provider_page")
+    if isinstance(custom, str) and custom.strip():
+        custom = custom.strip()
+        if custom.startswith(("http://", "https://")):
+            return custom
+        if _provider_page_exists(custom):
+            return f"/oss/integrations/providers/{custom}"
+
+    short = p["name_short"]
+    if _provider_page_exists(short):
+        return f"/oss/integrations/providers/{short}/"
+
+    # Match all_providers cards by short name / title variants.
+    title = str(p.get("name_title") or short).lower()
+    for key in (
+        short.lower(),
+        short.lower().replace("_", "-"),
+        short.lower().replace("-", "_"),
+        short.lower().replace("-", ""),
+        title,
+        title.replace(" ", "-"),
+        title.replace(" ", ""),
+        title.replace(" ", "_"),
+    ):
+        if key in _ALL_PROVIDERS_HREFS:
+            return _ALL_PROVIDERS_HREFS[key]
+
+    repo = p.get("repo")
+    if isinstance(repo, str) and repo.strip():
+        return f"https://github.com/{repo.strip()}"
+
+    return pypi_url(p["name"])
+
+
 def _enrich_package(p: dict) -> dict | None:
     """Enrich package metadata with additional fields.
 
@@ -152,26 +240,7 @@ def _enrich_package(p: dict) -> dict | None:
     # Check if JS package exists (indicating JS support)
     p["js_exists"] = bool(p.get("js")) and p.get("js") != "n/a"
 
-    # Determine provider page URL
-    default_provider_page = f"/oss/integrations/providers/{p['name_short']}/"
-    default_provider_page_exists = any(
-        (DOCS_DIR / PROVIDERS_PATH).glob(f"{p['name_short']}.*")
-    )
-
-    if custom_provider_page := p.get("provider_page"):
-        # First priority: custom provider page specified in YAML
-        p["provider_page"] = f"/oss/integrations/providers/{custom_provider_page}"
-    elif default_provider_page_exists:
-        # Second priority: default provider page based on naming convention
-        p["provider_page"] = default_provider_page
-    else:
-        # If no provider page found, raise an error to prompt creation
-        msg = (
-            f"Provider page not found for {p['name_short']}. "
-            "Please add one at oss/integrations/providers/"
-            f"{p['name_short']}.mdx"
-        )
-        raise ValueError(msg)
+    p["provider_page"] = _resolve_provider_page(p)
 
     if p.get("has_reference_docs") and not _is_integration(p):
         msg = (
