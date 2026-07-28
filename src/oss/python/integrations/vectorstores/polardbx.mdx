@@ -1,0 +1,241 @@
+---
+title: "PolarDB-X integration"
+description: "Integrate with the PolarDB-X vector store using LangChain Python."
+---
+
+This guide provides a quick overview for getting started with the PolarDB-X [vector store](/oss/integrations/vectorstores#overview). For a detailed listing of all PolarDBXVectorStore features, parameters, and configurations, head to the [API reference](https://github.com/polardb/langchain-polardbx).
+
+## Setup
+
+PolarDB-X is a cloud-native distributed database system developed by Alibaba Cloud, featuring native HNSW-based vector index support. You'll need a PolarDB-X instance with vector index enabled.
+
+### Enable Vector Index
+
+PolarDB-X disables the vector index feature by default. Enable it before using this package:
+
+```sql
+-- Enable vector index (run as admin/root on DN node)
+SET GLOBAL vidx_disabled = OFF;
+```
+
+### Installation
+
+The LangChain PolarDB-X integration lives in the `langchain-polardbx` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-polardbx
+    ```
+    ```python uv
+    uv add langchain-polardbx
+    ```
+</CodeGroup>
+
+For async support:
+
+```bash
+pip install langchain-polardbx[async]
+```
+
+For MMR search support:
+
+```bash
+pip install langchain-polardbx[mmr]
+```
+
+---
+
+## Instantiation
+
+```python Initialize vector store icon="database"
+from langchain_polardbx import PolarDBXVectorStore
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings()
+
+vector_store = PolarDBXVectorStore(
+    host="your-polardbx-host",
+    port=3306,
+    user="your-user",
+    password="your-password",
+    database="your-database",
+    embedding=embeddings,
+    table_name="my_vectors",
+    distance_strategy="cosine",  # or "euclidean", "inner_product"
+    hnsw_m=16,  # HNSW index M parameter (3-200)
+)
+```
+
+---
+
+## Manage vector store
+
+### Add items
+
+```python Add documents icon="folder-plus"
+from langchain_core.documents import Document
+
+document_1 = Document(page_content="foo", metadata={"source": "https://example.com"})
+document_2 = Document(page_content="bar", metadata={"source": "https://example.com"})
+document_3 = Document(page_content="baz", metadata={"source": "https://example.com"})
+documents = [document_1, document_2, document_3]
+
+vector_store.add_documents(documents=documents, ids=["1", "2", "3"])
+```
+
+### Update items
+
+```python Update document by ID icon="pencil"
+updated_document = Document(
+    page_content="qux", metadata={"source": "https://another-example.com"}
+)
+
+vector_store.add_documents(documents=[updated_document], ids=["1"])
+```
+
+### Delete items
+
+```python Delete documents by IDs icon="trash"
+vector_store.delete(ids=["3"])
+```
+
+---
+
+## Query vector store
+
+Once your vector store has been created and the relevant documents have been added you will most likely wish to query it during the running of your chain or agent.
+
+### Directly
+
+Performing a simple similarity search can be done as follows:
+
+```python Similarity search icon="folders"
+results = vector_store.similarity_search(
+    query="thud", k=1, filter={"source": "https://another-example.com"}
+)
+for doc in results:
+    print(f"* {doc.page_content} [{doc.metadata}]")
+```
+
+If you want to execute a similarity search and receive the corresponding scores you can run:
+
+```python Similarity search with scores icon="star-half"
+results = vector_store.similarity_search_with_score(
+    query="thud", k=1, filter={"source": "https://example.com"}
+)
+for doc, score in results:
+    print(f"* [SIM={score:3f}] {doc.page_content} [{doc.metadata}]")
+```
+
+### By turning into retriever
+
+You can also transform the vector store into a retriever for easier usage in your chains.
+
+```python Create retriever icon="robot"
+retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 1})
+retriever.invoke("thud")
+```
+
+---
+
+## PolarDB-X specific features
+
+### Metadata Filtering
+
+PolarDB-X supports rich metadata filtering with the following operators:
+
+```python Filter with operators icon="filter"
+# Simple equality filter
+results = vector_store.similarity_search("yellow things", k=2, filter={"category": "fruit"})
+
+# Operator filter: price > 2 AND category = fruit
+results = vector_store.similarity_search(
+    "fresh fruit",
+    k=2,
+    filter={"category": "fruit", "price": {"$gt": 2}},
+)
+```
+
+Supported filter operators: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$like`.
+
+### Search Mode Control
+
+Switch between ANN (index-accelerated) and KNN (full-scan) modes:
+
+```python Search mode control icon="settings"
+# Force ANN (use vector index for HNSW acceleration)
+results = vector_store.similarity_search("query", k=10, search_type="ann")
+
+# Force KNN (full table scan, bypass vector index)
+results = vector_store.similarity_search("query", k=10, search_type="knn")
+
+# Tune ef_search per query (higher = more accurate, slower)
+results = vector_store.similarity_search("query", k=10, ef_search=100)
+```
+
+### Dynamic Vector Index Management
+
+Create, drop, and rebuild vector indexes at runtime:
+
+```python Index management icon="wrench"
+# Create a vector index at runtime
+vector_store.apply_vector_index(
+    index_name="my_vi",
+    m=16,
+    distance="COSINE",
+    ef_construction=200,
+)
+
+# Drop the vector index
+vector_store.drop_vector_index()
+
+# Rebuild the index to reclaim space and improve recall
+vector_store.optimize()
+```
+
+### Index Monitoring
+
+```python Index monitoring icon="chart-bar"
+# Get runtime statistics
+stats = vector_store.get_stats()
+
+# Preload HNSW index into memory cache
+vector_store.preload_index()
+
+# Diagnose index health
+health = vector_store.explain_index_health()
+```
+
+### Async API
+
+All public methods have async equivalents (requires `langchain-polardbx[async]`):
+
+```python Async API icon="lightning"
+import asyncio
+
+async def main():
+    ids = await vector_store.aadd_texts(["Hello", "World"])
+    results = await vector_store.asimilarity_search("Hello", k=2)
+    await vector_store.adelete(ids=["id1"])
+
+asyncio.run(main())
+```
+
+---
+
+## Usage for retrieval-augmented generation
+
+<Card
+    title="PolarDB-X Vector Store RAG Guide"
+    href="/oss/deepagents/rag"
+    icon="search"
+    arrow
+>
+    Guide on how to use this vector store for retrieval-augmented generation (RAG)
+</Card>
+
+---
+
+## API reference
+
+For detailed documentation of all PolarDBXVectorStore features and configurations, head to the [API reference](https://github.com/polardb/langchain-polardbx).
