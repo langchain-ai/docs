@@ -77,6 +77,7 @@ def slack_send_message(text: str, file_path: str | None = None) -> str:
 from langchain_core.utils.uuid import uuid7
 
 from deepagents import create_deep_agent
+from langchain.agents.middleware import TodoListMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
 checkpointer = InMemorySaver()
@@ -87,6 +88,7 @@ agent = create_deep_agent(
     tools=[slack_send_message],
     backend=backend,
     checkpointer=checkpointer,
+    middleware=[TodoListMiddleware()],
 )
 
 thread_id = str(uuid7())

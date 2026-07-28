@@ -241,6 +241,7 @@ Your role is to coordinate research by delegating tasks from your TODO list to s
 // :snippet-start: deep-research-agent-claude-js
 import { createDeepAgent } from "deepagents";
 import { ChatAnthropic } from "@langchain/anthropic";
+import { todoListMiddleware } from "langchain";
 
 const maxConcurrentResearchUnits = 3;
 const maxResearcherIterations = 3;
@@ -275,6 +276,7 @@ const agent = await createDeepAgent({
   tools: [tavilySearch],
   systemPrompt: INSTRUCTIONS,
   subagents: [researchSubAgent],
+  middleware: [todoListMiddleware()],
 });
 // :snippet-end:
 
