@@ -377,9 +377,12 @@ Declarative subagents defined via `subagents=` do not inherit the main agent's m
         )
         ```
     </Accordion>
-    <Accordion title="Customize the filesystem instructions in the system prompt" icon="file-text">
-        Override [`FilesystemMiddleware`](https://reference.langchain.com/python/deepagents/middleware/filesystem/FilesystemMiddleware) with a `system_prompt` to replace the filesystem-specific instructions it appends to the system prompt in place of the dynamically generated default.
+    <Accordion title="Restrict the enabled filesystem tools" icon="filter">
+        <Note>
+        The `tools` allowlist on `FilesystemMiddleware` requires `deepagents>=0.7.0a4`.
+        </Note>
 
+        Override [`FilesystemMiddleware`](https://reference.langchain.com/python/deepagents/middleware/filesystem/FilesystemMiddleware) with a `tools` allowlist to expose only a subset of the filesystem tools to the model, instead of the full default set.
         ```python
         from deepagents import create_deep_agent
         from deepagents.backends import StateBackend
@@ -387,52 +390,17 @@ Declarative subagents defined via `subagents=` do not inherit the main agent's m
 
         backend = StateBackend()
 
+        # Read-only agent: write_file, edit_file, delete, and execute are never shown
         agent = create_deep_agent(
             model="anthropic:claude-sonnet-4-6",
             backend=backend,
             middleware=[
-                FilesystemMiddleware(
-                    backend=backend,
-                    system_prompt="Use the virtual filesystem to track long-running work. Write intermediate results to files instead of repeating them in messages.",
-                ),
+                FilesystemMiddleware(backend=backend, tools=["read_file", "ls", "glob", "grep"]),
             ],
         )
         ```
 
-        As with any [`FilesystemMiddleware`](https://reference.langchain.com/python/deepagents/middleware/filesystem/FilesystemMiddleware) override, pass the same `backend` (and `permissions`, if applicable) used elsewhere, since the override is not merged with the default.
-    </Accordion>
-    <Accordion title="Customize the task tool description" icon="message">
-        Override [`SubAgentMiddleware`](https://reference.langchain.com/python/deepagents/middleware/subagents/SubAgentMiddleware) with a `task_description` to replace the `task` tool's description, for example to steer the model on when to delegate. The override replaces the default stack outright, so redeclare the same `backend` and `subagents` passed to `create_deep_agent`. The auto-added [general-purpose subagent](/oss/python/deepagents/subagents#the-general-purpose-subagent) is not included unless you add an equivalent entry yourself.
-
-        ```python
-        from deepagents import create_deep_agent
-        from deepagents.backends import StateBackend
-        from deepagents.middleware import SubAgentMiddleware
-
-        backend = StateBackend()
-        model = "anthropic:claude-sonnet-4-6"
-        researcher = {
-            "name": "researcher",
-            "description": "Researches a topic and returns findings.",
-            "system_prompt": "You are a researcher.",
-            "model": model,
-            "tools": [search],
-        }
-
-        agent = create_deep_agent(
-            model=model,
-            subagents=[researcher],
-            middleware=[
-                SubAgentMiddleware(
-                    backend=backend,
-                    subagents=[researcher],
-                    task_description="Delegate research to the `researcher` subagent only for multi-step lookups.",
-                ),
-            ],
-        )
-        ```
-
-        `task_description` also supports an `available_agents` template placeholder that is filled in with the subagent name and description list; see the [`SubAgentMiddleware`](https://reference.langchain.com/python/deepagents/middleware/subagents/SubAgentMiddleware) reference for details. For a narrower change that only rewords the `task` tool description without replacing the subagent stack, use a [harness profile](/oss/python/deepagents/profiles#harness-profiles)'s `tool_description_overrides` instead; see [Profiles](#profiles).
+        See [Restricting filesystem tools](/oss/python/deepagents/overview#virtual-filesystem-access) for more details.
     </Accordion>
 </AccordionGroup>
 
