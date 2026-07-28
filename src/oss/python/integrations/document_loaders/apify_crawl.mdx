@@ -1,0 +1,124 @@
+---
+title: "Apify crawl integration"
+description: "Integrate with the ApifyCrawlLoader using LangChain Python."
+---
+
+> [Apify](https://apify.com) is a cloud platform for web scraping and data extraction. The `ApifyCrawlLoader` runs the [`apify/website-content-crawler`](https://apify.com/apify/website-content-crawler) Actor to crawl a website on demand and turn each page into a LangChain `Document`.
+
+## Overview
+
+This page shows how to use `ApifyCrawlLoader` to crawl a website starting from a seed URL and load each page as a `Document`. Use it when you want to ingest fresh content from a site into a vector store or other LangChain pipeline.
+
+`ApifyCrawlLoader` actively crawls a URL on every call. To read items from a dataset that already exists (typically the output of a previous Actor run), use [`ApifyDatasetLoader`](/oss/integrations/document_loaders/apify_dataset) instead. For an agent-callable tool that wraps the same Actor and returns JSON, see [`ApifyWebCrawlerTool`](/oss/integrations/tools/apify_web_crawler).
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Version |
+|:------|:--------|:------------:|:----------:|:-------:|
+| [`ApifyCrawlLoader`](https://github.com/apify/langchain-apify) | [`langchain-apify`](https://pypi.org/project/langchain-apify/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-apify?style=flat-square&label=%20) |
+
+### Loader features
+
+| Source | Document lazy loading | Native async |
+|:------:|:---------------------:|:------------:|
+| Website crawl (`apify/website-content-crawler`) | ✅ | ❌ |
+
+## Setup
+
+This integration lives in the [`langchain-apify`](https://pypi.org/project/langchain-apify/) package.
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-apify
+```
+
+```bash uv
+uv add langchain-apify
+```
+</CodeGroup>
+
+### Prerequisites
+
+- **Apify account**: Register your free [Apify account](https://console.apify.com/sign-up).
+- **Apify API token**: Get your token from the [integrations page](https://console.apify.com/account/integrations).
+
+```python
+import os
+
+os.environ["APIFY_TOKEN"] = "your-apify-token"
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
+```
+
+## Instantiation
+
+`ApifyCrawlLoader` requires a seed `url`. The remaining constructor kwargs control the crawl:
+
+- `url` (`str`, required): seed URL to start crawling from.
+- `max_crawl_pages` (`int`, default `10`): maximum number of pages to crawl.
+- `max_crawl_depth` (`int`, default `1`): maximum link-follow depth from the seed.
+- `crawler_type` (`Literal["cheerio", "playwright:adaptive", "playwright:firefox"]`, default `"cheerio"`): rendering engine for the crawl. Use `cheerio` for static HTML; switch to a Playwright engine for JavaScript-rendered sites.
+- `timeout_secs` (`int`, default `300`): max time in seconds to wait for the run.
+- `apify_token` (`str | SecretStr | None`): Apify API token. Falls back to the `APIFY_TOKEN` env var. Accepted as `str` or `pydantic.SecretStr`; forwarded to the Apify client and not retained on the loader instance. The kwarg `apify_api_token` and the env var `APIFY_API_TOKEN` are honored as deprecated aliases.
+
+Unlike the tool variants, the loader does not clamp `max_crawl_pages`, `max_crawl_depth`, or `timeout_secs`. Pass values you trust.
+
+```python
+from langchain_apify import ApifyCrawlLoader
+
+loader = ApifyCrawlLoader(
+    url="https://docs.apify.com",
+    max_crawl_pages=5,
+    max_crawl_depth=1,
+    crawler_type="cheerio",
+)
+```
+
+## Load
+
+`.load()` runs the crawl and returns the full list of `Document` objects.
+
+```python
+documents = loader.load()
+
+for doc in documents:
+    print(doc.metadata["source"], "depth=", doc.metadata["crawl_depth"])
+```
+
+Each document's `page_content` is the crawled page text or markdown. The `metadata` dict includes:
+
+- `source` (`str`): page URL.
+- `title` (`str`): page title.
+- `crawl_depth` (`int`): link-follow depth from the seed.
+
+## Lazy load
+
+`.lazy_load()` returns an iterator of `Document` objects. Useful when piping documents into a downstream component without holding the full list in memory.
+
+```python
+for doc in loader.lazy_load():
+    print(doc.metadata["source"])
+```
+
+## Load into a vector store
+
+Combine the loader with embeddings and a vector store to build a small RAG index in a few lines:
+
+```python
+from langchain_core.vectorstores import InMemoryVectorStore
+from langchain_openai import OpenAIEmbeddings
+
+docs = loader.load()
+
+vectorstore = InMemoryVectorStore.from_documents(docs, OpenAIEmbeddings())
+print(vectorstore.similarity_search("how do I run an Actor?", k=2))
+```
+
+## API reference
+
+For input parameters, return types, and source code, see the [`langchain-apify` repository](https://github.com/apify/langchain-apify) and the [Apify integration documentation](https://docs.apify.com/platform/integrations/langchain).
+
+## Additional resources
+
+- [ApifyDatasetLoader](/oss/integrations/document_loaders/apify_dataset): Load items from an existing dataset instead of crawling on demand.
+- [ApifyWebCrawlerTool](/oss/integrations/tools/apify_web_crawler): Agent-callable tool that wraps the same Actor and returns JSON.
+- [Apify provider page](/oss/integrations/providers/apify): Full list of Apify tools and components for LangChain.

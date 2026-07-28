@@ -1,0 +1,128 @@
+---
+title: "Apify Google search integration"
+description: "Integrate with the ApifyGoogleSearchTool using LangChain Python."
+---
+
+> [Apify](https://apify.com) is a cloud platform for web scraping and data extraction. The `ApifyGoogleSearchTool` runs the [`apify/google-search-scraper`](https://apify.com/apify/google-search-scraper) Actor and returns structured Google search engine results page (SERP) results.
+
+## Overview
+
+This page walks you through using `ApifyGoogleSearchTool` with LangChain to run Google searches and return structured organic results (title, URL, description) as a JSON string. Use it when an agent needs real-time Google search results.
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Version |
+|:------|:--------|:------------:|:----------:|:-------:|
+| [`ApifyGoogleSearchTool`](https://github.com/apify/langchain-apify) | [`langchain-apify`](https://pypi.org/project/langchain-apify/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-apify?style=flat-square&label=%20) |
+
+### Tool features
+
+| Returns artifact | Native async | Return data | Pricing |
+|:----------------:|:------------:|:-----------:|:-------:|
+| ❌ | ❌ | JSON envelope `{run, items}`; each item is `{title, url, description}` | Pay-per-use, [free tier available](https://apify.com/pricing) |
+
+## Setup
+
+This integration lives in the [`langchain-apify`](https://pypi.org/project/langchain-apify/) package.
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-apify
+```
+
+```bash uv
+uv add langchain-apify
+```
+</CodeGroup>
+
+### Prerequisites
+
+- **Apify account**: Register your free [Apify account](https://console.apify.com/sign-up).
+- **Apify API token**: Get your token from the [integrations page](https://console.apify.com/account/integrations).
+
+```python
+import os
+
+os.environ["APIFY_TOKEN"] = "your-apify-token"
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
+```
+
+## Instantiation
+
+`ApifyGoogleSearchTool` takes no required arguments. The constructor kwargs cap LLM-controllable values so an agent cannot request unbounded resources:
+
+- `max_timeout_secs` (`int`, default `600`): upper bound for the per-call `timeout_secs`.
+- `max_memory_mbytes` (`int`, default `32768`): upper bound for Actor memory.
+- `max_items` (`int`, default `1000`): upper bound for `max_results`.
+- `apify_token` (`str | SecretStr | None`): Apify API token. Falls back to the `APIFY_TOKEN` env var. Stored as `pydantic.SecretStr`. The kwarg `apify_api_token` and the env var `APIFY_API_TOKEN` are honored as deprecated aliases.
+
+```python
+from langchain_apify import ApifyGoogleSearchTool
+
+tool = ApifyGoogleSearchTool()
+```
+
+## Invocation
+
+The tool accepts the following invocation arguments:
+
+- `query` (`str`, required): search query string.
+- `max_results` (`int`, default `10`): number of organic results (clamped to the constructor's `max_items`).
+- `country_code` (`str | None`, default `None`): two-letter ISO country code, case-insensitive (`"us"`, `"gb"`).
+- `language_code` (`str | None`, default `None`): two-letter ISO language code (`"en"`, `"fr"`).
+- `timeout_secs` (`int`, default `300`): max time in seconds to wait for the run.
+
+```python
+import json
+
+result = tool.invoke({
+    "query": "best Python web scraping libraries",
+    "max_results": 5,
+    "country_code": "us",
+    "language_code": "en",
+})
+
+payload = json.loads(result)
+for item in payload["items"]:
+    print(f"{item['title']} - {item['url']}")
+```
+
+The return value is a JSON string with two keys: `run` (run metadata) and `items`, an array of `{"title": str, "url": str, "description": str}`.
+
+## Chaining
+
+Provide the tool to an [agent](/oss/langchain/agents) so the model can decide when to call it.
+
+```bash
+pip install langgraph langchain-openai
+```
+
+```python
+from langchain_core.messages import ToolMessage
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+
+model = ChatOpenAI(model="gpt-5.4-mini")
+tools = [tool]
+graph = create_react_agent(model, tools)
+```
+
+```python
+inputs = {"messages": [("user", "What are the most popular Python web scraping libraries?")]}
+for s in graph.stream(inputs, stream_mode="values"):
+    message = s["messages"][-1]
+    if isinstance(message, ToolMessage):
+        continue
+    message.pretty_print()
+```
+
+## API reference
+
+For input parameters, return types, and source code, see the [`langchain-apify` repository](https://github.com/apify/langchain-apify) and the [Apify integration documentation](https://docs.apify.com/platform/integrations/langchain).
+
+## Additional resources
+
+- [ApifySearchRetriever](/oss/integrations/retrievers/apify_search): For RAG chains that need `Document` objects instead of JSON.
+- [ApifyWebCrawlerTool](/oss/integrations/tools/apify_web_crawler): Dedicated tool for crawling entire websites.
+- [Apify provider page](/oss/integrations/providers/apify): Full list of Apify tools and components for LangChain.

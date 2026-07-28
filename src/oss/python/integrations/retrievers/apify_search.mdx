@@ -1,0 +1,115 @@
+---
+title: "Apify search retriever integration"
+description: "Integrate with the ApifySearchRetriever using LangChain Python."
+---
+
+> [Apify](https://apify.com) is a cloud platform for web scraping and data extraction. The `ApifySearchRetriever` runs the [`apify/rag-web-browser`](https://apify.com/apify/rag-web-browser) Actor to search the web, crawl the top results, and return them as LangChain `Document` objects.
+
+This page shows how to use `ApifySearchRetriever` to add real-time web search to a [RAG chain](/oss/langchain/retrieval). Compared to [`ApifyRAGWebBrowserTool`](/oss/integrations/providers/apify), which wraps the same Actor and returns a JSON envelope, the retriever returns LangChain `Document` objects so it fits directly into a standard retrieval chain.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Version |
+|:------|:--------|:-------:|
+| [`ApifySearchRetriever`](https://github.com/apify/langchain-apify) | [`langchain-apify`](https://pypi.org/project/langchain-apify/) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-apify?style=flat-square&label=%20) |
+
+## Setup
+
+This integration lives in the [`langchain-apify`](https://pypi.org/project/langchain-apify/) package.
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-apify
+```
+
+```bash uv
+uv add langchain-apify
+```
+</CodeGroup>
+
+### Prerequisites
+
+- **Apify account**: Register your free [Apify account](https://console.apify.com/sign-up).
+- **Apify API token**: Get your token from the [integrations page](https://console.apify.com/account/integrations).
+
+```python
+import os
+
+os.environ["APIFY_TOKEN"] = "your-apify-token"
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
+```
+
+## Instantiation
+
+`ApifySearchRetriever` takes no required arguments. Constructor kwargs:
+
+- `max_results` (`int`, default `5`): maximum number of documents returned per query. Values above `100` are clamped to `100`, the `apify/rag-web-browser` Actor's ceiling.
+- `timeout_secs` (`int`, default `300`): max time in seconds to wait for the run.
+- `apify_token` (`str | SecretStr | None`): Apify API token. Falls back to the `APIFY_TOKEN` env var. Stored as `pydantic.SecretStr`. The kwarg `apify_api_token` and the env var `APIFY_API_TOKEN` are honored as deprecated aliases.
+
+```python
+from langchain_apify import ApifySearchRetriever
+
+retriever = ApifySearchRetriever(max_results=3)
+```
+
+`ainvoke()` is supported but delegates to the sync client via `asyncio.to_thread`, not a native async Apify client.
+
+## Usage
+
+Call `.invoke(query)` with a search string and receive a list of `Document` objects.
+
+```python
+docs = retriever.invoke("What is LangChain?")
+
+for doc in docs:
+    print(doc.metadata.get("source"), "-", doc.metadata.get("title"))
+    print(doc.page_content[:200], "...")
+```
+
+Each document's `page_content` is the crawled text or markdown for one result. The `metadata` dict includes:
+
+- `source` (`str`): result URL.
+- `title` (`str`): page title.
+
+## Use within a chain
+
+Use the retriever within a standard RAG chain:
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI
+
+
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer the question using only the context below.\n\n"
+    "Context:\n{context}\n\nQuestion: {question}"
+)
+
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | ChatOpenAI(model="gpt-5.4-mini")
+    | StrOutputParser()
+)
+
+print(chain.invoke("What does the Apify platform do?"))
+```
+
+## API reference
+
+For input parameters, return types, and source code, see the [`langchain-apify` repository](https://github.com/apify/langchain-apify) and the [Apify integration documentation](https://docs.apify.com/platform/integrations/langchain).
+
+## Additional resources
+
+- [ApifyRAGWebBrowserTool](/oss/integrations/providers/apify): Tool version that returns JSON instead of `Document` objects.
+- [ApifyGoogleSearchTool](/oss/integrations/tools/apify_google_search): Dedicated tool for Google search results.
+- [Apify provider page](/oss/integrations/providers/apify): Full list of Apify tools and components for LangChain.

@@ -1,0 +1,169 @@
+---
+title: "Apify dataset integration"
+description: "Integrate with the ApifyDatasetLoader using LangChain Python."
+---
+
+> [Apify Dataset](https://docs.apify.com/platform/storage/dataset) is a scalable append-only storage with sequential access built for storing structured web scraping results, such as a list of products or Google SERPs, and then export them to various formats like JSON, CSV, or Excel. Datasets are mainly used to save results of [Apify Actors](https://apify.com/store), which are serverless cloud programs for various web scraping, crawling, and data extraction use cases.
+
+## Overview
+
+This page shows how to use `ApifyDatasetLoader` to load items from an existing Apify dataset into LangChain.
+
+`ApifyDatasetLoader` reads items from a dataset that already exists, typically the output of a previous Actor run. To crawl a URL on demand and turn each page into a `Document` in a single call, use [`ApifyCrawlLoader`](/oss/integrations/document_loaders/apify_crawl) instead.
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://reference.langchain.com/javascript/langchain-community-document-loaders-web-apify-dataset/ApifyDatasetLoader) | Version |
+|:------|:--------|:------------:|:---------------------------------------------------------------------------:|:-------:|
+| [`ApifyDatasetLoader`](https://github.com/apify/langchain-apify) | [`langchain-apify`](https://pypi.org/project/langchain-apify/) | ❌ | ✅ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-apify?style=flat-square&label=%20) |
+
+### Loader features
+
+| Source | Document lazy loading | Native async |
+|:------:|:---------------------:|:------------:|
+| Apify Dataset | ✅ | ❌ |
+
+## Setup
+
+This integration lives in the [`langchain-apify`](https://pypi.org/project/langchain-apify/) package.
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-apify
+```
+
+```bash uv
+uv add langchain-apify
+```
+</CodeGroup>
+
+### Prerequisites
+
+- **Apify account**: Register your free [Apify account](https://console.apify.com/sign-up).
+- **Apify API token**: Get your token from the [integrations page](https://console.apify.com/account/integrations).
+- **An existing dataset**: You need an Apify dataset ID. The example below uses a dataset produced by the [Website Content Crawler](https://apify.com/apify/website-content-crawler).
+
+```python
+import os
+
+os.environ["APIFY_TOKEN"] = "your-apify-token"
+```
+
+## Instantiation
+
+`ApifyDatasetLoader` requires a `dataset_id` and a `dataset_mapping_function`:
+
+- `dataset_id` (`str`, required): ID of an existing Apify dataset.
+- `dataset_mapping_function` (`Callable[[dict], Document]`, required): function that converts one raw dataset item into a LangChain `Document`. The `metadata` schema is whatever this function returns.
+- `apify_token` (`str | SecretStr | None`): Apify API token. Falls back to the `APIFY_TOKEN` env var (set automatically when running on the Apify platform). The kwarg `apify_api_token` and the env var `APIFY_API_TOKEN` are honored as deprecated aliases.
+
+For example, if your dataset items are shaped like:
+
+```json
+{
+    "url": "https://apify.com",
+    "text": "Apify is the best web scraping and automation platform."
+}
+```
+
+You can map them to `Document` objects like this:
+
+```python
+from langchain_apify import ApifyDatasetLoader
+from langchain_core.documents import Document
+
+loader = ApifyDatasetLoader(
+    dataset_id="your-dataset-id",
+    dataset_mapping_function=lambda item: Document(
+        page_content=item["text"],
+        metadata={"source": item["url"]},
+    ),
+)
+```
+
+## Load
+
+`.load()` runs the dataset fetch and returns the full list of `Document` objects.
+
+```python
+documents = loader.load()
+```
+
+The shape of `Document.page_content` and `Document.metadata` is defined entirely by your `dataset_mapping_function`.
+
+## Lazy load
+
+`.lazy_load()` returns an iterator of `Document` objects. Useful for piping documents into a downstream component without holding the full list in memory.
+
+```python
+for doc in loader.lazy_load():
+    print(doc.metadata.get("source"))
+```
+
+## Use within a question-answering chain
+
+This example uses data from the dataset to answer a question. Install the LLM-side dependencies first:
+
+```bash
+pip install -qU langchain-openai
+```
+
+```python
+import os
+
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
+```
+
+```python
+from langchain_apify import ApifyDatasetLoader
+from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.vectorstores import InMemoryVectorStore
+from langchain_openai import ChatOpenAI
+from langchain_openai.embeddings import OpenAIEmbeddings
+
+loader = ApifyDatasetLoader(
+    dataset_id="your-dataset-id",
+    dataset_mapping_function=lambda item: Document(
+        page_content=item["text"] or "", metadata={"source": item["url"]}
+    ),
+)
+
+vector_store = InMemoryVectorStore.from_documents(loader.load(), OpenAIEmbeddings())
+retriever = vector_store.as_retriever()
+
+llm = ChatOpenAI(model="gpt-5.4-mini")
+prompt = ChatPromptTemplate.from_template(
+    "Answer the question using only the context below.\n\n"
+    "Context:\n{context}\n\nQuestion: {question}"
+)
+
+query = "What is Apify?"
+docs = retriever.invoke(query)
+context = "\n\n".join(doc.page_content for doc in docs)
+answer = (prompt | llm).invoke({"context": context, "question": query}).content
+sources = ", ".join({doc.metadata["source"] for doc in docs})
+
+print(answer)
+print(sources)
+```
+
+```text
+ Apify is a platform for developing, running, and sharing serverless cloud programs. It enables users to create web scraping and automation tools and publish them on the Apify platform.
+
+https://docs.apify.com/platform/actors, https://docs.apify.com/platform/actors/running/actors-in-store, https://docs.apify.com/platform/security, https://docs.apify.com/platform/actors/examples
+```
+
+## API reference
+
+For input parameters, return types, and source code, see the [`langchain-apify` repository](https://github.com/apify/langchain-apify) and the [Apify integration documentation](https://docs.apify.com/platform/integrations/langchain).
+
+## Use the Apify MCP server
+
+For discovering Actors and their parameters dynamically, see the [Apify MCP server](/oss/integrations/providers/apify#mcp-server) section on the provider page.
+
+## Additional resources
+
+- [ApifyCrawlLoader](/oss/integrations/document_loaders/apify_crawl): Crawl a URL on demand instead of loading from an existing dataset.
+- [ApifySearchRetriever](/oss/integrations/retrievers/apify_search): Search the web and return results as `Document` objects.
+- [Apify provider page](/oss/integrations/providers/apify): Full list of Apify tools and components for LangChain.

@@ -1,0 +1,175 @@
+---
+title: "Apify Actor integration"
+description: "Integrate with the ApifyActorsTool using LangChain Python."
+---
+
+>[Apify Actors](https://docs.apify.com/platform/actors) are cloud programs designed for a wide range of web scraping, crawling, and data extraction tasks. These Actors facilitate automated data gathering from the web, enabling users to extract, process, and store information efficiently. Actors can be used to perform tasks like scraping e-commerce sites for product details, monitoring price changes, or gathering search engine results. They integrate seamlessly with [Apify Datasets](https://docs.apify.com/platform/storage/dataset), allowing the structured data collected by Actors to be stored, managed, and exported in formats like JSON, CSV, or Excel for further analysis or use.
+
+## Overview
+
+This page walks you through using [Apify Actors](https://docs.apify.com/platform/actors) with LangChain to automate web scraping and data extraction. The `langchain-apify` package integrates Apify's cloud-based tools with LangChain agents, enabling efficient data collection and processing for AI applications.
+
+### When to use this vs. the dedicated tools
+
+`ApifyActorsTool` is a generic wrapper that runs any Actor by ID. The `langchain-apify` package also exports dedicated tool classes for common use cases. These have a fixed input schema that an LLM can call directly without hand-crafting an Actor input dict. Reach for the dedicated class when one exists for your use case, and fall back to `ApifyActorsTool` when running an arbitrary Actor:
+
+- **Search and crawling**: [`ApifyGoogleSearchTool`](/oss/integrations/tools/apify_google_search), [`ApifyWebCrawlerTool`](/oss/integrations/tools/apify_web_crawler), `ApifyRAGWebBrowserTool`, `ApifyGoogleMapsTool`, `ApifyYouTubeScraperTool`, `ApifyEcommerceScraperTool`.
+- **Social media**: `ApifyInstagramScraperTool`, `ApifyLinkedInProfilePostsTool`, `ApifyLinkedInProfileSearchTool`, `ApifyLinkedInProfileDetailTool`, `ApifyTwitterScraperTool`, `ApifyTikTokScraperTool`, `ApifyFacebookPostsScraperTool`.
+- **Generic Actor and task tools**: `ApifyRunActorTool`, `ApifyRunActorAndGetDatasetTool`, `ApifyGetDatasetItemsTool`, `ApifyScrapeUrlTool`, `ApifyRunTaskTool`, `ApifyRunTaskAndGetDatasetTool`.
+- **Retrieval**: [`ApifySearchRetriever`](/oss/integrations/retrievers/apify_search) returns LangChain `Document` objects directly for RAG chains.
+
+See the [Apify provider page](/oss/integrations/providers/apify) for the full component list and the exported tool grouping constants (`APIFY_SEARCH_TOOLS`, `APIFY_SOCIAL_TOOLS`, `APIFY_CORE_TOOLS`).
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://reference.langchain.com/javascript/langchain-community-tools-apify-actors/ApifyActorsTool) | Version |
+|:------|:--------|:------------:|:---------------------------------------------------------------------------:|:-------:|
+| [`ApifyActorsTool`](https://github.com/apify/langchain-apify) | [`langchain-apify`](https://pypi.org/project/langchain-apify/) | ❌ | ✅ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-apify?style=flat-square&label=%20) |
+
+### Tool features
+
+| Returns artifact | Native async | Return data | Pricing |
+|:----------------:|:------------:|:-----------:|:-------:|
+| ❌ | ❌ | Actor output (varies by Actor) | Pay-per-use, [free tier available](https://apify.com/pricing) |
+
+## Setup
+
+This integration lives in the [langchain-apify](https://pypi.org/project/langchain-apify/) package.
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-apify
+```
+
+```bash uv
+uv add langchain-apify
+```
+</CodeGroup>
+
+### Prerequisites
+
+- **Apify account**: Register your free [Apify account](https://console.apify.com/sign-up).
+- **Apify API token**: Learn how to get your API token in the [Apify documentation](https://docs.apify.com/platform/integrations/api).
+
+```python
+import os
+
+os.environ["APIFY_TOKEN"] = "your-apify-token"
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
+```
+
+## Instantiation
+
+Instantiate the `ApifyActorsTool` to call the [RAG Web Browser](https://apify.com/apify/rag-web-browser) Apify Actor. This Actor provides web browsing functionality for AI and LLM applications, similar to the web browsing feature in ChatGPT. Any Actor from the [Apify Store](https://apify.com/store) can be used in this way.
+
+```python
+from langchain_apify import ApifyActorsTool
+
+tool = ApifyActorsTool("apify/rag-web-browser")
+```
+
+## Invocation
+
+The `ApifyActorsTool` takes a single argument, `run_input`, that is passed as input to the Actor. Run input schema documentation can be found in the input section of the Actor details page. See [RAG Web Browser input schema](https://apify.com/apify/rag-web-browser/input-schema).
+
+```python
+tool.invoke({"run_input": {"query": "what is apify?", "maxResults": 2}})
+```
+
+When invoked by an LLM agent, `run_input` is typically passed as a JSON-encoded string (the tool's `args_schema` accepts `str | dict`, and its schema description instructs the model to send JSON). When invoked directly from Python, a dict works as well; the tool accepts either form.
+
+## Chaining
+
+Provide the tool to an [agent](/oss/langchain/agents). When asked to search for information, the agent calls the Apify Actor, which searches the web and retrieves the results.
+
+```bash
+pip install langgraph langchain-openai
+```
+
+```python
+from langchain_core.messages import ToolMessage
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+
+model = ChatOpenAI(model="gpt-5.4-mini")
+tools = [tool]
+graph = create_react_agent(model, tools)
+```
+
+```python
+inputs = {"messages": [("user", "search for what is Apify")]}
+for s in graph.stream(inputs, stream_mode="values"):
+    message = s["messages"][-1]
+    # skip tool messages
+    if isinstance(message, ToolMessage):
+        continue
+    message.pretty_print()
+```
+
+```text
+================================ Human Message =================================
+
+search for what is Apify
+================================== Ai Message ==================================
+Tool Calls:
+  apify_actor_apify_rag-web-browser (call_27mjHLzDzwa5ZaHWCMH510lm)
+ Call ID: call_27mjHLzDzwa5ZaHWCMH510lm
+  Args:
+    run_input: {"query":"Apify","maxResults":3,"outputFormats":["markdown"]}
+================================== Ai Message ==================================
+
+Apify is a comprehensive platform for web scraping, browser automation, and data
+extraction. It offers a wide array of tools and services for developers and
+businesses to extract data from websites...
+```
+
+## Additional Actor examples
+
+The Apify Store contains thousands of prebuilt Actors. Here are examples of other popular Actors:
+
+### Instagram scraper
+
+```python
+from langchain_apify import ApifyActorsTool
+
+instagram_tool = ApifyActorsTool("apify/instagram-scraper")
+
+# Scrape Instagram posts
+result = instagram_tool.invoke({
+    "run_input": {
+        "directUrls": ["https://www.instagram.com/humansofny/"],
+        "resultsLimit": 10
+    }
+})
+```
+
+### Google search results scraper
+
+```python
+google_search_tool = ApifyActorsTool("apify/google-search-scraper")
+
+# Scrape Google Search results
+result = google_search_tool.invoke({
+    "run_input": {
+        "queries": "langchain python tutorial",
+        "maxPagesPerQuery": 1
+    }
+})
+```
+
+Browse the [Apify Store](https://apify.com/store) to discover more Actors for your use case.
+
+## API reference
+
+For more information on how to use this integration, see the [git repository](https://github.com/apify/langchain-apify) or the [Apify integration documentation](https://docs.apify.com/platform/integrations/langchain).
+
+## Use the Apify MCP server
+
+For discovering Actors and their parameters dynamically, you can also use the [Apify MCP server](/oss/integrations/providers/apify#mcp-server).
+
+## Additional resources
+
+- [Apify provider page](/oss/integrations/providers/apify): Full list of dedicated tools for common use cases (search, social media, core tools).
+- [ApifyWebCrawlerTool](/oss/integrations/tools/apify_web_crawler): Dedicated tool for crawling websites with a simpler interface.
+- [ApifyGoogleSearchTool](/oss/integrations/tools/apify_google_search): Dedicated tool for Google search results.

@@ -1,0 +1,372 @@
+---
+title: "Apify integrations"
+sidebarTitle: "Apify"
+description: "Integrate with Apify using LangChain Python."
+---
+
+>[Apify](https://apify.com) is a cloud platform for web scraping and data extraction,
+>which provides an [ecosystem](https://apify.com/store) of more than 25,000
+>ready-made apps called *Actors* for various scraping, crawling, and extraction use cases.
+
+The `langchain-apify` package wraps Apify Actors as LangChain tools, a retriever, and document loaders. Run prebuilt Actors for search, scraping, and social media, or any Actor from the [Apify Store](https://apify.com/store) by ID.
+
+## Installation and setup
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-apify
+```
+
+```bash uv
+uv add langchain-apify
+```
+</CodeGroup>
+
+Get your [Apify API token](https://console.apify.com/account/integrations) and either set it as the `APIFY_TOKEN` environment variable or pass it as `apify_token` to any component constructor. (The legacy `APIFY_API_TOKEN` env var and `apify_api_token` kwarg are honored as deprecated aliases.)
+
+```python
+import os
+
+os.environ["APIFY_TOKEN"] = "your-apify-token"
+```
+
+## Components
+
+### Tools
+
+The package exports tools for common scraping use cases plus generic wrappers for running any Actor by ID. Tools are grouped into three exported lists (`APIFY_SEARCH_TOOLS`, `APIFY_SOCIAL_TOOLS`, `APIFY_CORE_TOOLS`) so you can bind a focused subset to an agent, or compose your own list from individual tool classes.
+
+All tools follow the same pattern; import the class and instantiate:
+
+```python
+# Tool use example
+from langchain_apify import ApifyGoogleSearchTool
+
+tool = ApifyGoogleSearchTool()
+```
+
+#### Search and crawling (`APIFY_SEARCH_TOOLS`)
+
+Dedicated wrappers for web search, crawling, and platform-specific search.
+
+<AccordionGroup>
+    <Accordion title="ApifyGoogleSearchTool">
+        `from langchain_apify import ApifyGoogleSearchTool`
+
+        *Uses Actor: [apify/google-search-scraper](https://apify.com/apify/google-search-scraper)*
+
+        Returns structured Google search results: title, URL, and description per organic result.
+
+        [learn more](/oss/integrations/tools/apify_google_search)
+    </Accordion>
+    <Accordion title="ApifyWebCrawlerTool">
+        `from langchain_apify import ApifyWebCrawlerTool`
+
+        *Uses Actor: [apify/website-content-crawler](https://apify.com/apify/website-content-crawler)*
+
+        Crawls multiple pages of a website starting from a seed URL and returns each page as markdown.
+
+        [learn more](/oss/integrations/tools/apify_web_crawler)
+    </Accordion>
+    <Accordion title="ApifyRAGWebBrowserTool">
+        `from langchain_apify import ApifyRAGWebBrowserTool`
+
+        *Uses Actor: [apify/rag-web-browser](https://apify.com/apify/rag-web-browser)*
+
+        Searches the web and returns the top results' content as a JSON envelope (`{run, items}`), where each item is `{url, title, content}`. For LangChain `Document` objects (RAG chains) use [`ApifySearchRetriever`](/oss/integrations/retrievers/apify_search) instead, which wraps the same Actor.
+    </Accordion>
+    <Accordion title="ApifyGoogleMapsTool">
+        `from langchain_apify import ApifyGoogleMapsTool`
+
+        *Uses Actor: [compass/crawler-google-places](https://apify.com/compass/crawler-google-places)*
+
+        Returns Google Maps place results for a query (e.g. `"coffee shops in Berlin"`).
+    </Accordion>
+    <Accordion title="ApifyYouTubeScraperTool">
+        `from langchain_apify import ApifyYouTubeScraperTool`
+
+        *Uses Actor: [streamers/youtube-scraper](https://apify.com/streamers/youtube-scraper)*
+
+        Searches YouTube by keyword or returns videos from a video/channel URL.
+    </Accordion>
+    <Accordion title="ApifyEcommerceScraperTool">
+        `from langchain_apify import ApifyEcommerceScraperTool`
+
+        *Uses Actor: [apify/e-commerce-scraping-tool](https://apify.com/apify/e-commerce-scraping-tool)*
+
+        Extracts product or category-listing data from supported e-commerce sites.
+    </Accordion>
+</AccordionGroup>
+
+Bind all search tools to an agent at once:
+
+```python
+from langchain_apify import APIFY_SEARCH_TOOLS
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+# APIFY_SEARCH_TOOLS is a list of tool *classes*, not instances:
+# [ApifyGoogleSearchTool, ApifyWebCrawlerTool, ApifyRAGWebBrowserTool, ...]
+# Instantiate each class before binding it to an agent.
+
+model = ChatOpenAI(model="gpt-5.4-mini")
+tools = [tool_cls() for tool_cls in APIFY_SEARCH_TOOLS]
+graph = create_react_agent(model, tools)
+```
+
+#### Social media (`APIFY_SOCIAL_TOOLS`)
+
+Scrape posts and profiles from major social platforms.
+
+<AccordionGroup>
+    <Accordion title="ApifyInstagramScraperTool">
+        `from langchain_apify import ApifyInstagramScraperTool`
+
+        *Uses Actor: [apify/instagram-scraper](https://apify.com/apify/instagram-scraper)*
+
+        Scrapes Instagram users, hashtags, posts, or comments. Pick the source by setting `search_type`; pass a username, hashtag, or post URL as `search_query`.
+    </Accordion>
+    <Accordion title="ApifyLinkedInProfilePostsTool">
+        `from langchain_apify import ApifyLinkedInProfilePostsTool`
+
+        *Uses Actor: [apimaestro/linkedin-profile-posts](https://apify.com/apimaestro/linkedin-profile-posts)*
+
+        Returns the recent posts of a single LinkedIn profile, given a profile URL or bare username.
+    </Accordion>
+    <Accordion title="ApifyLinkedInProfileSearchTool">
+        `from langchain_apify import ApifyLinkedInProfileSearchTool`
+
+        *Uses Actor: [harvestapi/linkedin-profile-search](https://apify.com/harvestapi/linkedin-profile-search)*
+
+        Searches LinkedIn for profiles matching a keyword query (name, title, company). Returns multiple profiles.
+    </Accordion>
+    <Accordion title="ApifyLinkedInProfileDetailTool">
+        `from langchain_apify import ApifyLinkedInProfileDetailTool`
+
+        *Uses Actor: [apimaestro/linkedin-profile-detail](https://apify.com/apimaestro/linkedin-profile-detail)*
+
+        Returns the full detail of a single LinkedIn profile given a URL, username, or URN.
+
+        Use after `ApifyLinkedInProfileSearchTool` to enrich a specific profile.
+    </Accordion>
+    <Accordion title="ApifyTwitterScraperTool">
+        `from langchain_apify import ApifyTwitterScraperTool`
+
+        *Uses Actor: [apidojo/twitter-scraper-lite](https://apify.com/apidojo/twitter-scraper-lite)*
+
+        Returns tweets via keyword search, a user's timeline, or replies to a tweet (set `search_mode`). Supports date filtering and Latest/Top sorting.
+    </Accordion>
+    <Accordion title="ApifyTikTokScraperTool">
+        `from langchain_apify import ApifyTikTokScraperTool`
+
+        *Uses Actor: [clockworks/tiktok-scraper](https://apify.com/clockworks/tiktok-scraper)*
+
+        Scrapes TikTok by keyword search, user, hashtag, or video URL (set `search_type`).
+    </Accordion>
+    <Accordion title="ApifyFacebookPostsScraperTool">
+        `from langchain_apify import ApifyFacebookPostsScraperTool`
+
+        *Uses Actor: [apify/facebook-posts-scraper](https://apify.com/apify/facebook-posts-scraper)*
+
+        Returns posts from a public Facebook page URL with optional date-window filtering. Personal profiles are not supported.
+    </Accordion>
+</AccordionGroup>
+
+Bind all social media tools to an agent at once:
+
+```python
+from langchain_apify import APIFY_SOCIAL_TOOLS
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+# APIFY_SOCIAL_TOOLS is a list of tool *classes*, not instances:
+# [ApifyInstagramScraperTool, ApifyLinkedInProfilePostsTool, ...]
+# Instantiate each class before binding it to an agent.
+
+model = ChatOpenAI(model="gpt-5.4-mini")
+tools = [tool_cls() for tool_cls in APIFY_SOCIAL_TOOLS]
+graph = create_react_agent(model, tools)
+```
+
+#### Generic Actor and task tools (`APIFY_CORE_TOOLS`)
+
+Run any Actor or task by ID and read items from datasets.
+
+<AccordionGroup>
+    <Accordion title="ApifyRunActorTool">
+        `from langchain_apify import ApifyRunActorTool`
+
+        Starts an Actor by ID and returns run metadata only (`run_id`, `status`, `dataset_id`). Pair with `ApifyGetDatasetItemsTool`.
+    </Accordion>
+    <Accordion title="ApifyRunActorAndGetDatasetTool">
+        `from langchain_apify import ApifyRunActorAndGetDatasetTool`
+
+        Starts an Actor, waits for it to finish, and returns both the run metadata and its dataset items.
+    </Accordion>
+    <Accordion title="ApifyGetDatasetItemsTool">
+        `from langchain_apify import ApifyGetDatasetItemsTool`
+
+        Reads items from an existing dataset by ID, with `limit`/`offset` pagination. Pair with `ApifyRunActorTool` / `ApifyRunTaskTool`.
+    </Accordion>
+    <Accordion title="ApifyScrapeUrlTool">
+        `from langchain_apify import ApifyScrapeUrlTool`
+
+        Scrapes a single URL and returns a JSON envelope (`{run, items}`) with the scraped markdown in the single item's `content` field.
+    </Accordion>
+    <Accordion title="ApifyRunTaskTool">
+        `from langchain_apify import ApifyRunTaskTool`
+
+        Like `ApifyRunActorTool` but starts a [saved Apify task](https://docs.apify.com/platform/actors/running/tasks) by ID instead of an Actor.
+    </Accordion>
+    <Accordion title="ApifyRunTaskAndGetDatasetTool">
+        `from langchain_apify import ApifyRunTaskAndGetDatasetTool`
+
+        Like `ApifyRunActorAndGetDatasetTool` but for a saved Apify task.
+    </Accordion>
+</AccordionGroup>
+
+Bind all core tools to an agent at once:
+
+```python
+from langchain_apify import APIFY_CORE_TOOLS
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+# APIFY_CORE_TOOLS is a list of tool *classes*, not instances:
+# [ApifyRunActorTool, ApifyRunActorAndGetDatasetTool, ...]
+# Instantiate each class before binding it to an agent.
+
+model = ChatOpenAI(model="gpt-5.4-mini")
+tools = [tool_cls() for tool_cls in APIFY_CORE_TOOLS]
+graph = create_react_agent(model, tools)
+```
+
+#### Generic Actor wrapper
+
+`ApifyActorsTool` is a single-class wrapper for running an arbitrary Actor, whose input you pass as a `run_input` dict (or a JSON-encoded string). Use this when no dedicated tool above covers your Actor.
+
+<AccordionGroup>
+    <Accordion title="ApifyActorsTool">
+        `from langchain_apify import ApifyActorsTool`
+
+        Fallback for any Actor not covered by a dedicated tool. Construct with the Actor ID; the agent passes a `run_input` matching the Actor's input schema. The `args_schema` accepts either a dict or a JSON-encoded string (an LLM agent typically sends JSON, which the tool parses before running the Actor).
+
+        [learn more](/oss/integrations/tools/apify_actors)
+    </Accordion>
+</AccordionGroup>
+
+Use `ApifyActorsTool` to run any Actor by ID when no dedicated tool exists:
+
+```python
+from langchain_apify import ApifyActorsTool
+
+# Run any Actor from the Apify Store by ID
+tool = ApifyActorsTool("apify/rag-web-browser")
+
+result = tool.invoke({
+    "run_input": {"query": "latest AI news", "maxResults": 3}
+})
+```
+
+### Retriever
+
+Use [`ApifySearchRetriever`](/oss/integrations/retrievers/apify_search) to search the web and return results as LangChain `Document` objects, suitable for RAG chains. Wraps [`apify/rag-web-browser`](https://apify.com/apify/rag-web-browser).
+
+```python
+from langchain_apify import ApifySearchRetriever
+
+retriever = ApifySearchRetriever()
+```
+
+### Document loaders
+
+[`ApifyCrawlLoader`](/oss/integrations/document_loaders/apify_crawl) crawls a URL on demand, wrapping [`apify/website-content-crawler`](https://apify.com/apify/website-content-crawler). [`ApifyDatasetLoader`](/oss/integrations/document_loaders/apify_dataset) reads items from a previously completed Actor run by dataset ID.
+
+```python
+from langchain_apify import ApifyCrawlLoader, ApifyDatasetLoader
+
+loader = ApifyCrawlLoader(url="https://docs.apify.com")
+```
+
+### Wrapper
+
+`ApifyWrapper` exposes the lower-level Apify client used by the components above.
+
+Use the **tools above** when building AI agents that decide when to call Apify. Use **`ApifyWrapper`** when writing direct Python code that needs to run Actors programmatically, transform results into `Document` objects, or run async workflows.
+
+With `APIFY_TOKEN` set:
+
+```python
+from langchain_apify import ApifyWrapper
+
+apify = ApifyWrapper()
+```
+
+Use `call_actor()` to run any Actor by ID. It returns an `ApifyDatasetLoader` that maps each dataset item to a LangChain `Document` via the function you pass:
+
+```python
+from langchain_core.documents import Document
+
+loader = apify.call_actor(
+    actor_id="apify/website-content-crawler",
+    run_input={"startUrls": [{"url": "https://docs.apify.com"}], "maxCrawlPages": 5},
+    dataset_mapping_function=lambda item: Document(
+        page_content=item.get("text", "") or "",
+        metadata={"source": item.get("url", "")},
+    ),
+)
+documents = loader.load()
+```
+
+Use `call_actor_task()` to run a saved [Apify task](https://docs.apify.com/platform/actors/running/tasks) by ID. The signature mirrors `call_actor()`:
+
+```python
+loader = apify.call_actor_task(
+    task_id="your-task-id",
+    task_input={},
+    dataset_mapping_function=lambda item: Document(
+        page_content=item.get("text", "") or "",
+        metadata={"source": item.get("url", "")},
+    ),
+)
+documents = loader.load()
+```
+
+Async variants (`acall_actor()`, `acall_actor_task()`) are also available for async workflows.
+
+## MCP server
+
+Apify hosts an [MCP server](https://mcp.apify.com) that exposes Actor discovery and execution to any MCP-compatible agent. Use it instead of the LangChain tools above when:
+
+- You do not know at build time which Actors you need and want the agent to discover them at runtime.
+- You want access to the full [Apify Store](https://apify.com/store) (25,000+ Actors) without importing individual tool classes.
+
+Connect the Apify MCP server to a LangChain agent:
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+client = MultiServerMCPClient({
+    "apify": {
+        "transport": "streamable_http",
+        "url": "https://mcp.apify.com",
+        "headers": {"Authorization": "Bearer <APIFY_TOKEN>"},
+    }
+})
+
+# get_tools() is async; call it inside an async function (or `await` it in a notebook).
+tools = await client.get_tools()
+model = ChatOpenAI(model="gpt-5.4-mini")
+graph = create_react_agent(model, tools)
+# Invoke the agent here
+```
+
+You can customize the server to include only specific Actors, reducing token usage and keeping agents focused. Configure your selection at [mcp.apify.com](https://mcp.apify.com).
+
+See the [Apify MCP documentation](https://docs.apify.com/platform/integrations/mcp) for setup and authorization, and the [LangChain MCP documentation](/oss/langchain/mcp) for more MCP client options.
+
+## Source
+
+The integration source is at [`apify/langchain-apify`](https://github.com/apify/langchain-apify). For platform-specific guides see the [Apify integration documentation](https://docs.apify.com/platform/integrations/langchain).

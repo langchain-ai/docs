@@ -1,0 +1,137 @@
+---
+title: "Apify web crawler integration"
+description: "Integrate with the ApifyWebCrawlerTool using LangChain Python."
+---
+
+> [Apify](https://apify.com) is a cloud platform for web scraping and data extraction. The `ApifyWebCrawlerTool` runs the [`apify/website-content-crawler`](https://apify.com/apify/website-content-crawler) Actor and returns each crawled page's content as markdown.
+
+## Overview
+
+This page walks you through using `ApifyWebCrawlerTool` with LangChain to crawl a website starting from a seed URL and return each page's content as markdown. Use it when you need to scrape an entire site or a section of it rather than a single URL. For a single URL use [`ApifyScrapeUrlTool`](/oss/integrations/providers/apify); for a `BaseLoader` that returns LangChain `Document` objects use [`ApifyCrawlLoader`](/oss/integrations/document_loaders/apify_crawl).
+
+### Integration details
+
+| Class | Package | Serializable | JS support | Version |
+|:------|:--------|:------------:|:----------:|:-------:|
+| [`ApifyWebCrawlerTool`](https://github.com/apify/langchain-apify) | [`langchain-apify`](https://pypi.org/project/langchain-apify/) | ❌ | ❌ | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-apify?style=flat-square&label=%20) |
+
+### Tool features
+
+| Returns artifact | Native async | Return data | Pricing |
+|:----------------:|:------------:|:-----------:|:-------:|
+| ❌ | ❌ | JSON envelope `{run, items}`; each item is `{url, title, content}` (`content` is markdown) | Pay-per-use, [free tier available](https://apify.com/pricing) |
+
+## Setup
+
+This integration lives in the [`langchain-apify`](https://pypi.org/project/langchain-apify/) package.
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-apify
+```
+
+```bash uv
+uv add langchain-apify
+```
+</CodeGroup>
+
+### Prerequisites
+
+- **Apify account**: Register your free [Apify account](https://console.apify.com/sign-up).
+- **Apify API token**: Get your token from the [integrations page](https://console.apify.com/account/integrations).
+
+```python
+import os
+
+os.environ["APIFY_TOKEN"] = "your-apify-token"
+os.environ["OPENAI_API_KEY"] = "your-openai-api-key"
+```
+
+## Instantiation
+
+`ApifyWebCrawlerTool` takes no required arguments. The constructor kwargs cap LLM-controllable values:
+
+- `max_timeout_secs` (`int`, default `600`): upper bound for the per-call `timeout_secs`.
+- `max_memory_mbytes` (`int`, default `32768`): upper bound for Actor memory.
+- `max_items` (`int`, default `1000`): upper bound for `max_crawl_pages`.
+- `max_crawl_depth` (`int`, default `5`): upper bound for the per-call `max_crawl_depth`.
+- `apify_token` (`str | SecretStr | None`): Apify API token. Falls back to the `APIFY_TOKEN` env var. Stored as `pydantic.SecretStr`. The kwarg `apify_api_token` and the env var `APIFY_API_TOKEN` are honored as deprecated aliases.
+
+```python
+from langchain_apify import ApifyWebCrawlerTool
+
+tool = ApifyWebCrawlerTool()
+```
+
+## Invocation
+
+The tool accepts the following invocation arguments:
+
+- `url` (`str`, required): seed URL to start crawling from.
+- `max_crawl_pages` (`int`, default `10`): maximum number of pages to crawl (clamped to the constructor's `max_items`).
+- `max_crawl_depth` (`int`, default `1`): maximum link-follow depth from the seed (clamped to the constructor's `max_crawl_depth`).
+- `crawler_type` (`Literal["cheerio", "playwright:adaptive", "playwright:firefox"]`, default `"cheerio"`): rendering engine for the crawl.
+- `timeout_secs` (`int`, default `300`): max time in seconds to wait for the run.
+
+```python
+import json
+
+result = tool.invoke({
+    "url": "https://docs.apify.com",
+    "max_crawl_pages": 5,
+    "max_crawl_depth": 1,
+    "crawler_type": "cheerio",
+})
+
+payload = json.loads(result)
+for page in payload["items"]:
+    print(page["url"], "-", page["title"])
+```
+
+The return value is a JSON string with two keys: `run` (run metadata) and `items`, an array of `{"url": str, "title": str, "content": str}`. The `content` field is markdown.
+
+### Choosing a `crawler_type`
+
+`cheerio` is the default. It is fast and cheap and works well on static HTML pages. For sites that render content with JavaScript, switch to a Playwright-based engine:
+
+```python
+result = tool.invoke({
+    "url": "https://example.com",
+    "max_crawl_pages": 5,
+    "crawler_type": "playwright:adaptive",
+})
+```
+
+`playwright:adaptive` runs a real browser only when needed and falls back to a simpler mode otherwise. `playwright:firefox` always uses Firefox; pick it when adaptive mode misclassifies your target.
+
+## Chaining
+
+Provide the tool to an [agent](/oss/langchain/agents) so the model can decide when to call it.
+
+```bash
+pip install langgraph langchain-openai
+```
+
+```python
+from langchain_core.messages import ToolMessage
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+
+model = ChatOpenAI(model="gpt-5.4-mini")
+tools = [tool]
+graph = create_react_agent(model, tools)
+```
+
+```python
+inputs = {"messages": [("user", "Crawl https://docs.apify.com and summarize what the platform does.")]}
+for s in graph.stream(inputs, stream_mode="values"):
+    message = s["messages"][-1]
+    if isinstance(message, ToolMessage):
+        continue
+    message.pretty_print()
+```
+
+## API reference
+
+For input parameters, return types, and source code, see the [`langchain-apify` repository](https://github.com/apify/langchain-apify) and the [Apify integration documentation](https://docs.apify.com/platform/integrations/langchain).
