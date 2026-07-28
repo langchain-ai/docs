@@ -22,7 +22,7 @@ const fetchUserData = tool(
 );
 
 const agent = await createDeepAgent({
-  model: "google-genai:gemini-3.5-flash",
+  model: "google-genai:gemini-3.6-flash",
   tools: [fetchUserData],
   contextSchema,
 });

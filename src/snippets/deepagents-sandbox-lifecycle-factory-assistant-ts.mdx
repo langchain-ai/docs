@@ -17,7 +17,7 @@ export async function agent(config: LangGraphRunnableConfig) {
       name: sandboxName,
     }));
   return createDeepAgent({
-    model: "google_genai:gemini-3.5-flash",
+    model: "google_genai:gemini-3.6-flash",
     backend: new LangSmithSandbox({ sandbox: lsSandbox }),
   });
 }

@@ -14,7 +14,7 @@ const internetSearch = tool(
 
 // Main agent uses Gemini; general-purpose subagent uses GPT
 const agent = await createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google_genai:gemini-3.6-flash",
   tools: [internetSearch],
   subagents: [
     {

@@ -58,7 +58,7 @@ store.put(
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     backend=backend,
     store=store,
     skills=["/skills/"],
@@ -89,7 +89,7 @@ backend = FilesystemBackend(root_dir=root_dir, virtual_mode=True)
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     backend=backend,
     skills=[str(Path(root_dir) / "skills")],
     interrupt_on={

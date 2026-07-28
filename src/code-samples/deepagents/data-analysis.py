@@ -83,7 +83,7 @@ checkpointer = InMemorySaver()
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     tools=[slack_send_message],
     backend=backend,
     checkpointer=checkpointer,

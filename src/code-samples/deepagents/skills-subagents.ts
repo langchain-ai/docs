@@ -17,7 +17,7 @@ const researchSubagent = {
 
 // KEEP MODEL
 const agent = await createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google_genai:gemini-3.6-flash",
   skills: ["/skills/main/"], // Main agent and GP subagent get these
   subagents: [researchSubagent], // Researcher gets only its own skills
 });

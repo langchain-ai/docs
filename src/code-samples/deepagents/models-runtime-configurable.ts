@@ -18,7 +18,7 @@ const configurableModel = createMiddleware({
 
 // KEEP MODEL
 const agent = await createDeepAgent({
-  model: "google-genai:gemini-3.5-flash",
+  model: "google-genai:gemini-3.6-flash",
   middleware: [configurableModel],
   contextSchema,
 });

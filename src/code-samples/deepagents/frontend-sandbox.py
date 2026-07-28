@@ -23,7 +23,7 @@ def get_thread_id_from_config() -> str:
 
 def agent():
     return create_deep_agent(
-        model="google_genai:gemini-3.5-flash",
+        model="google_genai:gemini-3.6-flash",
         backend=lambda _runtime: get_or_create_sandbox_for_thread(
             get_thread_id_from_config()
         ),

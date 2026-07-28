@@ -11,7 +11,7 @@ from deepagents_acp.server import AgentServerACP
 
 async def main() -> None:
     agent = create_deep_agent(
-        model="google_genai:gemini-3.5-flash",
+        model="google_genai:gemini-3.6-flash",
         # You can customize your deep agent here: set a custom prompt,
         # add your own tools, attach middleware, or compose subagents.
         system_prompt="You are a helpful coding assistant",
@@ -26,7 +26,7 @@ import sys
 
 # Validate construction without blocking on stdio.
 _agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     system_prompt="You are a helpful coding assistant",
     checkpointer=MemorySaver(),
 )

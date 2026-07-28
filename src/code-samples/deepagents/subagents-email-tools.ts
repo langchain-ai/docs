@@ -36,7 +36,7 @@ const emailAgentBad = {
 import { createDeepAgent } from "deepagents";
 
 const focusedAgent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google_genai:gemini-3.6-flash",
   subagents: [
     {
       description: "Sends and validates email",
@@ -46,7 +46,7 @@ const focusedAgent = createDeepAgent({
   ],
 });
 const unfocusedAgent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google_genai:gemini-3.6-flash",
   subagents: [
     {
       description: "Sends email but has too many tools",

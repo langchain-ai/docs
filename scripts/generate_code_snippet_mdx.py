@@ -52,7 +52,7 @@ DEEPAGENTS_TS_MODEL_KWARG_RE = re.compile(r'\bmodel\s*:\s*"([^"]+)"')
 # Tab title and full `model=` / `model:` token for each variant (matches
 # src/oss/deepagents/quickstart.mdx Python tabs; JS uses google-genai spelling).
 DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
-    ("Google", 'model="google_genai:gemini-3.5-flash"'),
+    ("Google", 'model="google_genai:gemini-3.6-flash"'),
     ("OpenAI", 'model="openai:gpt-5.5"'),
     ("Anthropic", 'model="anthropic:claude-sonnet-4-6"'),
     ("OpenRouter", 'model="openrouter:z-ai/glm-5.2"'),
@@ -62,7 +62,7 @@ DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
 ]
 
 DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
-    ("Google", 'model: "google-genai:gemini-3.5-flash"'),
+    ("Google", 'model: "google-genai:gemini-3.6-flash"'),
     ("OpenAI", 'model: "openai:gpt-5.5"'),
     ("Anthropic", 'model: "anthropic:claude-sonnet-4-6"'),
     ("OpenRouter", 'model: "openrouter:openrouter:z-ai/glm-5.2"'),

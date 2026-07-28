@@ -7,7 +7,7 @@ from deepagents import create_deep_agent
 
 model = init_chat_model(
     # KEEP MODEL
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     thinking_level="medium",  # [!code highlight]
 )
 agent = create_deep_agent(model=model)
