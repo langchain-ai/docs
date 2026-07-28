@@ -28,9 +28,46 @@ rss: true
 
     ### Breaking changes
 
-    - **Planning todos are opt-in**: `create_deep_agent` no longer includes `ToDoListMiddleware` by default, so the `write_todos` tool, `todos` state channel, and todo-planning prompt are absent unless restored with `middleware=[ToDoListMiddleware()]`. (The OpenAI Codex harness profile still opts in automatically.) ([#4929](https://github.com/langchain-ai/deepagents/pull/4929))
+    - **Planning todos are opt-in**: `create_deep_agent` no longer includes `TodoListMiddleware` by default, so the `write_todos` tool, `todos` state channel, and todo-planning prompt are absent unless restored with `middleware=[TodoListMiddleware()]`. (The OpenAI Codex harness profile still opts in automatically.) ([#4929](https://github.com/langchain-ai/deepagents/pull/4929))
     - **Backend compatibility shims removed**: Pass concrete `BackendProtocol` instances instead of factories, configure `StoreBackend` with an explicit `namespace`, and use the current `ls` / `glob` / `grep` / `ReadResult` APIs. Removed symbols include `BackendFactory`, `BACKEND_TYPES`, `FileFormat`, and `Unset`. New files store string `FileData.content`; older `list[str]` content stays readable and converts on next write. ([#4541](https://github.com/langchain-ai/deepagents/pull/4541))
     - **Output format changes**: Empty `ls` / `glob` output is now `No files found` instead of `[]`, and `read_file` no longer renders a fixed-width `cat -n`-style gutter — update any parsers of raw tool output. ([#4561](https://github.com/langchain-ai/deepagents/pull/4561))
+
+    Copy the following prompt into your AI coding assistant to migrate a codebase for these breaking changes:
+
+    <Prompt
+        description="Migrate a deepagents codebase from v0.6.x to v0.7.0b2."
+        icon="arrow-right"
+        actions={["copy"]}
+    >
+    Migrate this codebase from `deepagents` v0.6.x to v0.7.0b2 to account for the following breaking changes:
+
+    1. `create_deep_agent` no longer includes `TodoListMiddleware` by default. If this codebase relies on the `write_todos` tool, the `todos` state channel, or the todo-planning prompt, restore it by importing `TodoListMiddleware` from `langchain.agents.middleware` (not `deepagents`) and passing it to `create_deep_agent`:
+
+       ```python
+       from langchain.agents.middleware import TodoListMiddleware
+       from deepagents import create_deep_agent
+
+       agent = create_deep_agent(middleware=[TodoListMiddleware()])
+       ```
+
+    2. Backend compatibility shims were removed: `BackendFactory`, `BACKEND_TYPES`, `FileFormat`, and `Unset` no longer exist. Replace any backend factories with concrete `BackendProtocol` instances, and add an explicit `namespace` to every `StoreBackend` configuration:
+
+       ```python
+       from deepagents import create_deep_agent
+       from deepagents.backends import StoreBackend
+
+       # Before (v0.6.x): factory callable, and StoreBackend with no explicit namespace
+       agent = create_deep_agent(backend=lambda rt: StoreBackend())  # [!code --]
+
+       # After (v0.7.0b2): concrete backend instance with an explicit namespace
+       agent = create_deep_agent(backend=StoreBackend(namespace=lambda rt: (rt.server_info.user.identity,)))  # [!code ++]
+       ```
+
+       Also update calls to use the current `ls`, `glob`, `grep`, and `ReadResult` APIs.
+    3. Tool output formats changed: empty `ls` / `glob` output is now the string `No files found` instead of `[]`, and `read_file` no longer renders a fixed-width `cat -n`-style line-number gutter. Update any code that parses these tool outputs.
+
+    Search the codebase for usages of the removed symbols and for parsing logic that depends on the old output formats, apply the necessary changes, and flag anything that needs manual review.
+    </Prompt>
 
 </Update>
 <Update label="May 12, 2026" tags={["deepagents"]} rss={{ title: "May 12, 2026 - langchain" }}>
