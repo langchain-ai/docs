@@ -35,6 +35,11 @@ Also merges third-party rows from scripts/data/integration_external_docs.yaml.
 Those rows stay in the same tables but link the name column to docs_url
 (partner docs > GitHub > PyPI/npm) instead of a hosted guide.
 
+docs_url values must be https://, http://, or a site-relative path starting
+with a single / (protocol-relative //host URLs are rejected). Validate with:
+
+    uv run python scripts/refresh_integration_downloads.py --check-docs-urls
+
 Chat tables include capability columns. Middleware tables include
 Provider, Middleware available, Source, and Downloads. Retriever tables
 include Retriever, Self-host, Cloud offering, Package, and Downloads.
@@ -48,6 +53,7 @@ Usage (from repo root):
     uv run python scripts/refresh_integration_downloads.py
     uv run python scripts/refresh_integration_downloads.py --write
     uv run python scripts/refresh_integration_downloads.py --write --component embeddings
+    uv run python scripts/refresh_integration_downloads.py --check-docs-urls
 """
 
 from __future__ import annotations
@@ -371,6 +377,72 @@ def _resolve_downloads(
     return package, registry, package_cache[cache_key]
 
 
+def _is_safe_docs_url(url: str) -> bool:
+    """Return True if url is safe to embed in a Markdown link href.
+
+    Allows https://, http://, and site-relative paths that start with a
+    single /. Rejects javascript:, data:, and protocol-relative //host URLs.
+    """
+    cleaned = url.strip()
+    if not cleaned:
+        return False
+    # Site-relative only; reject protocol-relative URLs like //evil.example
+    if cleaned.startswith("/") and not cleaned.startswith("//"):
+        return True
+    lower = cleaned.casefold()
+    return lower.startswith("https://") or lower.startswith("http://")
+
+
+def _normalize_docs_url(url: Any, *, label: str) -> Optional[str]:
+    """Strip and validate docs_url; return None when missing or unsafe."""
+    if not isinstance(url, str):
+        return None
+    cleaned = url.strip() or None
+    if cleaned is None:
+        return None
+    if not _is_safe_docs_url(cleaned):
+        print(
+            f"warn: rejecting unsafe docs_url for {label}: {cleaned!r}",
+            file=sys.stderr,
+        )
+        return None
+    return cleaned
+
+
+def validate_external_docs_urls(
+    data: Optional[dict[str, Any]] = None,
+) -> list[str]:
+    """Return errors for missing or unsafe docs_url values in the YAML."""
+    if data is None:
+        data = _load_external_docs()
+    errors: list[str] = []
+    for language, components in data.items():
+        if not isinstance(components, dict):
+            continue
+        for component, items in components.items():
+            if not isinstance(items, list):
+                continue
+            for index, item in enumerate(items):
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name")
+                label = (
+                    f"{language}/{component}/{name}"
+                    if isinstance(name, str) and name.strip()
+                    else f"{language}/{component}[{index}]"
+                )
+                docs_url = item.get("docs_url")
+                if not isinstance(docs_url, str) or not docs_url.strip():
+                    errors.append(f"{label}: missing docs_url")
+                    continue
+                if not _is_safe_docs_url(docs_url):
+                    errors.append(
+                        f"{label}: unsafe docs_url {docs_url.strip()!r} "
+                        "(allowed: https://, http://, or site-relative /path)"
+                    )
+    return errors
+
+
 def _row_from_integration_dict(
     *,
     rel_path: str,
@@ -393,11 +465,10 @@ def _row_from_integration_dict(
     available = integration.get("available")
     source = integration.get("source")
     package_md = integration.get("package_md")
-    external_docs = docs_url or integration.get("docs_url")
-    if isinstance(external_docs, str):
-        external_docs = external_docs.strip() or None
-    else:
-        external_docs = None
+    external_docs = _normalize_docs_url(
+        docs_url if docs_url is not None else integration.get("docs_url"),
+        label=repr(name),
+    )
 
     return IntegrationRow(
         rel_path=rel_path,
@@ -457,6 +528,12 @@ def _collect_external_rows(
                 file=sys.stderr,
             )
             continue
+        if not _is_safe_docs_url(docs_url):
+            raise ValueError(
+                f"unsafe docs_url in {_EXTERNAL_DOCS_PATH.name} "
+                f"({language}/{component}): {docs_url.strip()!r}. "
+                "Only https://, http://, or site-relative / paths are allowed."
+            )
         row = _row_from_integration_dict(
             rel_path=f"{component}/external",
             integration=item,
@@ -518,7 +595,7 @@ def _collect_rows(
 
 
 def _model_link(row: IntegrationRow) -> str:
-    if row.docs_url:
+    if row.docs_url and _is_safe_docs_url(row.docs_url):
         link = f"[`{row.name}`]({row.docs_url})"
     else:
         link = f"[`{row.name}`](/oss/integrations/{row.rel_path})"
@@ -689,6 +766,14 @@ def main() -> int:
         help="Write snippet files (default: print to stdout)",
     )
     parser.add_argument(
+        "--check-docs-urls",
+        action="store_true",
+        help=(
+            "Validate docs_url schemes in integration_external_docs.yaml "
+            "and exit (no network, no writes)"
+        ),
+    )
+    parser.add_argument(
         "--language",
         choices=[*LANGUAGES, "all"],
         default="all",
@@ -699,6 +784,23 @@ def main() -> int:
         default="all",
     )
     args = parser.parse_args()
+
+    if args.check_docs_urls:
+        errors = validate_external_docs_urls()
+        if errors:
+            for error in errors:
+                print(f"error: {error}", file=sys.stderr)
+            print(
+                f"\n❌ {len(errors)} invalid docs_url value(s) in "
+                f"{_EXTERNAL_DOCS_PATH.relative_to(_REPO_ROOT)}",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            f"✅ All docs_url values in "
+            f"{_EXTERNAL_DOCS_PATH.relative_to(_REPO_ROOT)} are safe"
+        )
+        return 0
 
     languages = list(LANGUAGES) if args.language == "all" else [args.language]
     components = (
