@@ -166,7 +166,7 @@ const chunkAnalystSubagent = {
 };
 
 const agent = createDeepAgent({
-  model: "google-genai:gemini-3.5-flash",
+  model: "google-genai:gemini-3.6-flash",
   tools: [searchDocumentation],
   backend,
   systemPrompt: instructions,
