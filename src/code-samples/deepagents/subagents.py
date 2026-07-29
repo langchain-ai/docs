@@ -122,7 +122,7 @@ custom_subagent = CompiledSubAgent(
 subagents = [custom_subagent]
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     tools=[internet_search],
     system_prompt=research_instructions,
     subagents=subagents,
@@ -194,7 +194,7 @@ def internet_search(query: str) -> str:
 
 # Main agent uses Gemini; general-purpose subagent uses GPT
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     tools=[internet_search],
     subagents=[
         {
@@ -235,7 +235,7 @@ research_subagent = {
 
 # :remove-start:
 _research_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=[research_subagent],
 )
 assert _research_agent is not None
@@ -252,7 +252,7 @@ email_agent = {
 # :remove-start:
 assert len(email_agent["tools"]) == 2
 _focused_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=[
         {
             "description": "Sends and validates email",
@@ -275,7 +275,7 @@ email_agent = {
 # :remove-start:
 assert len(email_agent["tools"]) == 4
 _unfocused_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=[
         {
             "description": "Sends email but has too many tools",
@@ -294,7 +294,7 @@ subagents = [
         "description": "Reviews legal documents and contracts",
         "system_prompt": "You are an expert legal reviewer...",
         "tools": [read_document, analyze_contract],
-        "model": "google_genai:gemini-3.5-flash",  # Large context for long documents
+        "model": "google_genai:gemini-3.6-flash",  # Large context for long documents
     },
     {
         "name": "financial-analyst",
@@ -310,7 +310,7 @@ subagents = [
 assert len(subagents) == 2
 assert subagents[0]["model"].startswith("google_genai:")
 _choose_models_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=subagents,
 )
 assert _choose_models_agent is not None
@@ -335,7 +335,7 @@ data_analyst = {
 # :remove-start:
 assert "Key insights" in data_analyst["system_prompt"]
 _concise_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=[
         {
             "name": "data-analyst",
@@ -372,7 +372,7 @@ subagents = [
 ]
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     system_prompt="You coordinate data analysis and reporting. Use subagents for specialized tasks.",
     subagents=subagents,
 )
@@ -411,7 +411,7 @@ research_subagent = {
 }
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=[research_subagent],
     context_schema=Context,
 )
@@ -465,7 +465,7 @@ def verify_claim(claim: str, runtime: ToolRuntime[Context]) -> str:
 
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=[
         {
             "name": "fact-checker",
@@ -591,7 +591,7 @@ good_subagent = {
 
 # :remove-start:
 _good_description_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=[
         {
             "system_prompt": "You are a research specialist.",
@@ -612,7 +612,7 @@ bad_subagent = {
 
 # :remove-start:
 _bad_description_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=[
         {
             "system_prompt": "You are a helper.",
@@ -627,7 +627,7 @@ assert _bad_description_agent is not None
 from deepagents import create_deep_agent
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     system_prompt="""...your instructions...
 
     IMPORTANT: For complex tasks, delegate to your subagents using the task() tool.
@@ -657,7 +657,7 @@ Your response should be under 500 words."""
 # :remove-start:
 assert "essential summary" in system_prompt
 _concise_prompt_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=[
         {
             "name": "research-agent",
@@ -681,7 +681,7 @@ This keeps context clean."""
 # :remove-start:
 assert "/data/raw_results.txt" in system_prompt
 _filesystem_prompt_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=[
         {
             "name": "data-analyst",
@@ -711,7 +711,7 @@ subagents = [
 # :remove-start:
 assert subagents[0]["name"] == "quick-researcher"
 _differentiate_agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=subagents,
 )
 assert _differentiate_agent is not None

@@ -28,7 +28,7 @@ def notify_email(to: str, subject: str, body: str) -> str:
 checkpointer = MemorySaver()
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     tools=[remove_file, fetch_file, notify_email],
     interrupt_on={
         "remove_file": True,  # Default: approve, edit, reject, respond

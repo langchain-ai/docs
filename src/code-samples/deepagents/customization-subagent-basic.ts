@@ -50,7 +50,7 @@ const subagents = [researchSubagent];
 
 // KEEP MODEL
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google_genai:gemini-3.6-flash",
   subagents,
 });
 // :snippet-end:
