@@ -164,10 +164,9 @@ def matchers_for(customer: str) -> list[dict[str, str]]:
 
 def existing_caps(client: httpx.Client) -> dict[str, dict]:
     """Return the current per-customer spend caps, keyed by customer identifier."""
-    response = client.get(
-        API_URL,
-        params={"policy_type": "spend_cap", "subject_matcher_key": "customer_id"},
-    )
+    # A matcher key narrows the list only when paired with a value, so the
+    # per-customer caps are selected below rather than by the query.
+    response = client.get(API_URL, params={"policy_type": "spend_cap"})
     response.raise_for_status()
     return {
         matcher["value"]: policy
@@ -209,18 +208,11 @@ Run the script whenever a customer signs up, churns, or moves to a different pla
 
 ### Step 4. Read spend per customer
 
-Each spend policy returned by the API reports `current_spend_usd`, the spend accumulated in the policy's active window. Use it to show each end customer their usage, or to warn them before they reach the cap. The field is omitted when the spend lookup fails, so treat a missing value as unknown rather than as zero:
+Each spend policy returned by the API reports `current_spend_usd`, the spend accumulated in the policy's active window. Use it to show each end customer their usage, or to warn them before they reach the cap. The field is omitted when the spend lookup fails, so treat a missing value as unknown rather than as zero.
 
-<CodeGroup>
+The list endpoint narrows by a subject matcher key only when that key is paired with a value, so list the spend caps and select the per-customer ones in your own code:
 
-```bash curl
-curl -G "https://api.smith.langchain.com/v1/platform/gateway-policies" \
-    -H "X-Api-Key: $LANGSMITH_API_KEY" \
-    --data-urlencode "policy_type=spend_cap" \
-    --data-urlencode "subject_matcher_key=customer_id"
-```
-
-```python Python
+```python
 import os
 
 import httpx
@@ -228,19 +220,21 @@ import httpx
 response = httpx.get(
     "https://api.smith.langchain.com/v1/platform/gateway-policies",
     headers={"X-Api-Key": os.environ["LANGSMITH_API_KEY"]},
-    params={"policy_type": "spend_cap", "subject_matcher_key": "customer_id"},
+    params={"policy_type": "spend_cap"},
     timeout=30.0,
 )
 response.raise_for_status()
 
 for policy in response.json():
-    matchers = policy["subject_matchers"]
-    customer = next(m["value"] for m in matchers if m["key"] == "customer_id")
+    customer = next(
+        (m["value"] for m in policy["subject_matchers"] if m["key"] == "customer_id"),
+        None,
+    )
+    if customer is None:
+        continue  # A cap on the workspace itself, not on one end customer.
     # current_spend_usd is absent when the spend lookup fails.
     print(customer, policy.get("current_spend_usd"), policy["config"]["limit_usd"])
 ```
-
-</CodeGroup>
 
 ## Limit throughput per end customer
 
