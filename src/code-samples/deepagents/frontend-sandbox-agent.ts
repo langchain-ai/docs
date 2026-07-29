@@ -11,7 +11,7 @@ export async function agent(config: LangGraphRunnableConfig) {
   const backend = await getOrCreateSandboxForThread(threadId);
 
   return createDeepAgent({
-    model: "google_genai:gemini-3.5-flash",
+    model: "google_genai:gemini-3.6-flash",
     backend,
     systemPrompt: "You are an expert developer working on a project in /app.",
   });
