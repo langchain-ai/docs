@@ -27,7 +27,7 @@ This page covers:
 - **[Production considerations](#production-considerations)**: invocation, multi-tenancy, authentication, credentials, async, and durability
 - **[Memory](#memory)**: persist information across conversations
 - **[Execution environment](#execution-environment)**: file storage and code execution
-- **[Guardrails](#guardrails)**: rate limiting, error handling, and data privacy
+- **[Guardrails](#guardrails)**: permissions and data privacy
 - **[Frontend](#frontend)**: connect your UI to a deployed agent
 
 ## LangSmith Deployments
@@ -915,109 +915,17 @@ Avoid passing secrets into sandboxes via environment variables or file uploads. 
 
 Agents in production run autonomously, which means they can loop indefinitely, hit rate limits, or process user data that contains sensitive information. Deep Agents provide two layers of protection:
 
-- **[Permissions](/oss/deepagents/permissions)**: declarative allow/deny rules that control which files and directories the agent can read or write. Use permissions to isolate the agent to a working directory, protect sensitive files, or enforce read-only memory.
-- **[Middleware](/oss/langchain/middleware/built-in)**: hooks that wrap model and tool calls for rate limiting, error handling, and data privacy.
+- **[Permissions](#permissions)**: declarative allow/deny rules that control which files and directories the agent can read or write.
+- **[Fault tolerance](#fault-tolerance)**: rate limiting, retries, fallbacks, and error handling.
+- **[Data privacy](#data-privacy)**: middleware that detects and handles PII before it reaches the model or gets stored in logs.
 
-![Middleware hooks—before_model, wrap_model_call, wrap_tool_call, after_model—wrap the agent loop so policies run deterministically around every relevant step](/oss/images/deepagents/production/middleware-lifecycle.png)
+### Permissions
 
-### Rate limiting
+[Permissions](/oss/deepagents/permissions) are declarative allow/deny rules that control which files and directories the agent can read or write. Use permissions to isolate the agent to a working directory, protect sensitive files, or enforce read-only memory. Rules are evaluated in declaration order, and the first matching rule wins.
 
-Rate limiting here refers to capping the agent's own LLM and tool usage within a run, not API gateway rate limiting for incoming requests.
+### Fault tolerance
 
-Without limits, a confused agent can burn through your LLM API budget in minutes by looping on the same tool call or making hundreds of model calls. Set caps on both model calls and tool executions per run:
-
-:::python
-```python
-from deepagents import create_deep_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware, ToolCallLimitMiddleware
-
-agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    middleware=[
-        ModelCallLimitMiddleware(run_limit=50),
-        ToolCallLimitMiddleware(run_limit=200),
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, modelCallLimitMiddleware, toolCallLimitMiddleware } from "langchain";
-
-const agent = createAgent({
-  model: "google_genai:gemini-3.5-flash",
-  middleware: [
-    modelCallLimitMiddleware({ runLimit: 50 }),
-    toolCallLimitMiddleware({ runLimit: 200 }),
-  ],
-});
-```
-:::
-
-Use `run_limit` to cap calls within a single invocation (resets each turn). Use `thread_limit` to cap calls across an entire conversation (requires a checkpointer). See @[ModelCallLimitMiddleware] and @[ToolCallLimitMiddleware] for the full configuration.
-
-### Handling errors
-
-Not all errors should be handled the same way. Transient failures (network timeouts, rate limits) should be retried automatically. Errors the LLM can recover from (bad tool output, parsing failures) should be fed back to the model. Errors that need human input should pause the agent. For the full breakdown with code examples, see [Handle errors appropriately](/oss/langgraph/thinking-in-langgraph#handle-errors-appropriately).
-
-Middleware handles the transient case. Model calls and tool calls each have their own retry middleware with exponential backoff. If your primary model provider goes down entirely, the fallback middleware switches to an alternative:
-
-:::python
-```python
-from deepagents import create_deep_agent
-from langchain.agents.middleware import (
-    ModelFallbackMiddleware,
-    ModelRetryMiddleware,
-    ToolRetryMiddleware,
-)
-
-agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    middleware=[
-        # Retry model calls on rate limits, timeouts, and 5xx errors
-        ModelRetryMiddleware(max_retries=3, backoff_factor=2.0, initial_delay=1.0),
-        # If the primary model is fully down, fall back to an alternative
-        ModelFallbackMiddleware("gpt-5.5"),
-        # Retry specific tools that hit external APIs (not all tools)
-        ToolRetryMiddleware(
-            max_retries=2,
-            tools=["search", "fetch_url"],
-            retry_on=(TimeoutError, ConnectionError),
-        ),
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import {
-  createAgent,
-  modelFallbackMiddleware,
-  modelRetryMiddleware,
-  toolRetryMiddleware,
-} from "langchain";
-
-const agent = createAgent({
-  model: "google_genai:gemini-3.5-flash",
-  middleware: [
-    // Retry model calls on rate limits, timeouts, and 5xx errors
-    modelRetryMiddleware({ maxRetries: 3, backoffFactor: 2.0, initialDelayMs: 1000 }),
-    // If the primary model is fully down, fall back to an alternative
-    modelFallbackMiddleware("gpt-5.5"),
-    // Retry specific tools that hit external APIs (not all tools)
-    toolRetryMiddleware({
-      maxRetries: 2,
-      tools: ["search", "fetch_url"],
-      retryOn: [TimeoutError, TypeError],
-    }),
-  ],
-});
-```
-:::
-
-Scope @[ToolRetryMiddleware] to specific tools rather than retrying everything. A filesystem `read_file` that fails won't benefit from a retry, but a web search that times out probably will. See @[ModelRetryMiddleware] and @[ModelFallbackMiddleware] for the full configuration.
+For rate limiting, retries, fallbacks, and error handling, see [Fault tolerance](/oss/deepagents/fault-tolerance).
 
 ### Data privacy
 

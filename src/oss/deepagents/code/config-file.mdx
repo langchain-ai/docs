@@ -33,6 +33,32 @@ recent = "frontend-dev"  # last /agents switch (written automatically)
 
 Explicit `-a`/`--agent` always overrides both, and `-r`/`--resume` bypasses both so the thread's original agent is restored. See [Command reference](/oss/deepagents/code/cli-reference#command-line-options) for related flags.
 
+## Redact LangSmith trace secrets
+
+With LangSmith tracing enabled, Deep Agents Code sends agent-trace inputs and outputs without client-side secret redaction by default.
+
+<Warning>
+    Without redaction, secrets may be uploaded to LangSmith as part of agent traces.
+</Warning>
+
+To redact detected secrets before upload:
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml title="~/.deepagents/config.toml"
+        [tracing]
+        langsmith_redact = true
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_LANGSMITH_REDACT=true
+        ```
+    </Tab>
+</Tabs>
+
+The environment variable takes precedence over the config file. When redaction is enabled, Deep Agents Code disables tracing for that run if redaction cannot be configured. Secret redaction does not redact general personally identifiable information (PII), trace metadata, or traces emitted by shell processes. For broader options, see [Redact secrets from traces](/langsmith/redact-secrets).
+
 ## Provider configuration
 
 Each provider is a TOML table under `[models.providers]`:
@@ -41,7 +67,7 @@ Each provider is a TOML table under `[models.providers]`:
 [models.providers.<name>]
 display_name = "My Provider"
 api_key_url = "https://provider.example/keys"
-models = ["gpt-4o"]
+models = ["gpt-5.5"]
 api_key_env = "OPENAI_API_KEY"
 base_url = "https://api.openai.com/v1"
 class_path = "my_package.models:MyChatModel"
@@ -51,7 +77,7 @@ enabled = true
 temperature = 0
 max_tokens = 4096
 
-[models.providers.<name>.params."gpt-4o"]
+[models.providers.<name>.params."gpt-5.5"]
 temperature = 0.7
 ```
 
@@ -98,7 +124,7 @@ Providers have the following configuration options:
 </ResponseField>
 
 <ResponseField name="params" type="object" post={["optional"]}>
-    Extra keyword arguments forwarded to the model constructor. Flat keys (e.g., `temperature = 0`) apply to every model from this provider. Model-keyed sub-tables (e.g., `[params."gpt-4o"]`) override individual values for that model only; the merge is shallow (model wins on conflict).
+    Extra keyword arguments forwarded to the model constructor. Flat keys (e.g., `temperature = 0`) apply to every model from this provider. Model-keyed sub-tables (e.g., `[params."gpt-5.5"]`) override individual values for that model only; the merge is shallow (model wins on conflict).
 
     Do not put credentials (e.g., `api_key`) in `params`. Use [`api_key_env`](#provider-configuration) to point at an environment variable instead.
 </ResponseField>
@@ -181,6 +207,17 @@ max_retries = 4
 4. `[retries.<provider>].max_retries`
 5. `[retries].max_retries`
 6. Provider SDK default
+
+## Startup approval mode
+
+Set the default [approval mode](/oss/deepagents/code/approval-modes) for interactive sessions with the top-level `[startup].mode` key:
+
+```toml
+[startup]
+mode = "auto"   # "manual" (default), "auto", or "yolo"
+```
+
+Accepted values are `manual` (the fail-closed default), `auto` (classifier-backed; requires `DEEPAGENTS_CODE_EXPERIMENTAL=1`), and `yolo` (unrestricted; requires a one-time acknowledgement). An explicit `--yolo` or `-y`/`--auto-approve` flag overrides this value for the session.
 
 ## Profile overrides (Advanced)
 
@@ -400,6 +437,49 @@ DEEPAGENTS_CODE_OPENAI_BASE_URL=https://api.openai.com/v1
 On a machine provisioned with a model gateway (for example, the LangSmith gateway), the gateway typically exports a gateway key and the matching endpoint variable (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, or `GOOGLE_GEMINI_BASE_URL`) together. Deep Agents Code uses that pair by default, so no configuration is needed.
 
 To use your own key instead, store it with `/auth` (leave the base URL blank for the provider default, or set it explicitly), or set the `DEEPAGENTS_CODE_` prefixed key and endpoint. Both override the gateway pair without leaving a mismatched endpoint behind.
+
+## Agent runtime limits
+
+The LangGraph graph step budget is the maximum number of node invocations the `dcode` agent graph may execute in a single turn. Configure this recursion limit with the `[runtime]` section:
+
+```toml title="~/.deepagents/config.toml"
+[runtime]
+recursion_limit = 2000
+```
+
+The default is `2000`. Valid values are integers from `25` to `100000` (inclusive). Values outside this range or non-integer values log a warning and fall back to the default.
+
+Precedence (highest to lowest):
+
+1. `--recursion-limit` CLI flag
+2. `DEEPAGENTS_CODE_RECURSION_LIMIT` environment variable
+3. `[runtime].recursion_limit` in `config.toml`
+4. Built-in default (`2000`)
+
+Use `dcode config get runtime.recursion_limit` to see the effective value and its source.
+
+<Tabs>
+    <Tab title="CLI flag">
+        ```bash
+        dcode --recursion-limit 5000
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_RECURSION_LIMIT=5000
+        ```
+    </Tab>
+    <Tab title="Config file">
+        ```toml title="~/.deepagents/config.toml"
+        [runtime]
+        recursion_limit = 5000
+        ```
+    </Tab>
+</Tabs>
+
+<Note>
+    `goal_rubric` recursion limits are separate and unaffected by this setting.
+</Note>
 
 ## See also
 

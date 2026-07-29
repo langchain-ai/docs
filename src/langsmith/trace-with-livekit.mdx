@@ -70,7 +70,7 @@ async def my_agent(ctx: agents.JobContext):
     await session.start(room=ctx.room, agent=Agent(instructions="You are a helpful assistant."))
 ```
 
-This works for both the STT/LLM/TTS cascade and speech-to-speech models: if you choose to build the `AgentSession` with a realtime model (for example, `lk_openai.realtime.RealtimeModel(...)`), the tracing setup is unchanged.
+This works for both the STT/LLM/TTS cascade and speech-to-speech (realtime) models. Realtime models (for example, `lk_openai.realtime.RealtimeModel(...)`) need one extra call to capture the user's transcript. Refer to [When using LiveKit with a realtime model](#when-using-livekit-with-a-realtime-model).
 
 ### Use your own tracer provider
 
@@ -98,9 +98,39 @@ configure_livekit()
 
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
-    set_thread_id(ctx.job.id)  # set to desired thread id for the session
+    thread_id = ctx.job.id  # or any id that identifies the conversation
+    set_thread_id(thread_id)
     ...
 ```
+
+## When using LiveKit with a realtime model
+
+With a speech-to-speech (realtime) model there is no separate speech-to-text step, so LiveKit transcribes the user's audio asynchronously and delivers the transcript through the session's `user_input_transcribed` event rather than on the OTel traces it emits.
+
+<Note>
+`instrument_session` requires `langsmith[livekit]>=0.10.4`.
+</Note>
+
+Call `instrument_session` once, right after creating the `AgentSession`, so the SDK subscribes to that event for you and pairs each transcript with its turn. It correlates by thread id, so set that first with `set_thread_id`, and pass the same id:
+
+```python
+from langsmith.integrations.livekit import configure_livekit, set_thread_id
+from livekit.plugins import openai as lk_openai
+
+processor = configure_livekit()
+
+@server.rtc_session()
+async def my_agent(ctx: agents.JobContext):
+    thread_id = ctx.job.id  # or any id that identifies the conversation
+    set_thread_id(thread_id)
+
+    session = AgentSession(llm=lk_openai.realtime.RealtimeModel(voice="marin"))
+    processor.instrument_session(session, thread_id)  # capture the user transcript
+
+    await session.start(room=ctx.room, agent=Agent(instructions="You are a helpful assistant."))
+```
+
+Only call `instrument_session` for realtime models. In the STT/LLM/TTS cascade the transcript is already captured (from the speech-to-text step), so calling it there would record the user's turns a second time.
 
 ## Record the conversation audio
 

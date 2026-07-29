@@ -4,9 +4,11 @@ sidebarTitle: Engine webhook events
 description: Reference for the webhook events LangSmith Engine sends when it creates issues or links new traces to existing issues.
 ---
 
+import WebhookSignatureVerification from '/snippets/langsmith/webhook-signature-verification.mdx';
+
 Forward LangSmith-detected agent issues into your incident-management, paging, or chat tools. [LangSmith Engine](/langsmith/engine) sends a webhook event to your endpoint when it opens a new issue, or when it links a new trace to an issue it has already opened.
 
-To configure webhook subscriptions, open the **Engine Settings** panel on the **Engine** tab of a tracing project. See [Configure LangSmith Engine](/langsmith/engine#configure-langsmith-engine).
+To configure webhook subscriptions, open the **Engine Settings** panel on the **Engine** tab of a tracing project. See [Configure Engine](/langsmith/engine#configure-engine).
 
 <Note>
 A destination delivers to either a webhook URL or a **Slack channel**. Both use the same [event types](#event-types) and [minimum-priority filtering](#severity-filtering) described on this page. Slack destinations post through LangSmith's managed Slack app instead of sending the [JSON payload](#event-envelope) below, so the [signing secret](#signing-secret) and [custom headers](#custom-headers) do not apply.
@@ -48,63 +50,7 @@ sha256=<hex-encoded HMAC-SHA256 digest>
 
 Verify the signature before parsing or acting on the payload. The HMAC input is the exact raw request body bytes, and the HMAC key is the subscription's signing secret. Do not parse and reserialize the JSON body before verification.
 
-<CodeGroup>
-
-```python Python
-import hashlib
-import hmac
-from typing import Optional
-
-
-def verify_langsmith_signature(
-    *,
-    body: bytes,
-    signing_secret: str,
-    signature_header: Optional[str],
-) -> bool:
-    if not signature_header or not signature_header.startswith("sha256="):
-        return False
-
-    expected = "sha256=" + hmac.new(
-        signing_secret.encode("utf-8"),
-        body,
-        hashlib.sha256,
-    ).hexdigest()
-
-    return hmac.compare_digest(expected, signature_header)
-```
-
-```typescript TypeScript
-import { createHmac, timingSafeEqual } from "node:crypto";
-
-export function verifyLangSmithSignature({
-  body,
-  signingSecret,
-  signatureHeader,
-}: {
-  body: Buffer;
-  signingSecret: string;
-  signatureHeader: string | undefined;
-}) {
-  if (!signatureHeader?.startsWith("sha256=")) {
-    return false;
-  }
-
-  const expected = `sha256=${createHmac("sha256", signingSecret)
-    .update(body)
-    .digest("hex")}`;
-
-  const expectedBytes = Buffer.from(expected);
-  const actualBytes = Buffer.from(signatureHeader);
-
-  return (
-    expectedBytes.length === actualBytes.length &&
-    timingSafeEqual(expectedBytes, actualBytes)
-  );
-}
-```
-
-</CodeGroup>
+<WebhookSignatureVerification />
 
 ### Roll a signing secret
 

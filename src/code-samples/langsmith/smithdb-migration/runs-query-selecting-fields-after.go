@@ -29,14 +29,14 @@ project := sessions.Items[0]
 // must explicitly list every field needed; default returns only id
 runs, err := client.Runs.QueryV2(ctx, langsmith.RunQueryV2Params{
 	ProjectIDs: langsmith.F([]string{project.ID}),
-	Selects: langsmith.F([]langsmith.RunQueryV2ParamsSelect{
-		langsmith.RunQueryV2ParamsSelectID,
-		langsmith.RunQueryV2ParamsSelectName,
-		langsmith.RunQueryV2ParamsSelectRunType,
-		langsmith.RunQueryV2ParamsSelectStatus,
-		langsmith.RunQueryV2ParamsSelectStartTime,
-		langsmith.RunQueryV2ParamsSelectInputs,
-		langsmith.RunQueryV2ParamsSelectError,
+	Selects: langsmith.F([]langsmith.RunSelectField{
+		langsmith.RunSelectFieldID,
+		langsmith.RunSelectFieldName,
+		langsmith.RunSelectFieldRunType,
+		langsmith.RunSelectFieldStatus,
+		langsmith.RunSelectFieldStartTime,
+		langsmith.RunSelectFieldInputs,
+		langsmith.RunSelectFieldError,
 	}),
 })
 // :remove-start:

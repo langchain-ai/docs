@@ -1153,7 +1153,7 @@ const checkHotels = tool(
 );
 
 export const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-4o-mini" }),
+  model: new ChatOpenAI({ model: "gpt-5.4-mini" }),
   tools: [searchFlights, checkHotels],
   checkpointer: new MemorySaver(),
 });
@@ -1278,6 +1278,65 @@ for await (const chunk of await graph.stream(
   console.log(chunk);
 }
 ```
+:::
+
+:::python
+<Note>
+    This applies to every `stream_mode`, including `"messages"`. Agent builders like @[`create_agent`] return a **compiled graph**, so adding one as a node turns it into a subgraph. Without `subgraphs=True`, `stream_mode="messages"` on the parent graph will not emit token chunks from the inner agent's LLM calls. Invoking `agent.stream(...)` directly will, which is why this often shows up only after wrapping.
+
+    ```python
+    from langchain.agents import create_agent
+    from langgraph.graph import END, START, StateGraph
+
+    graph = (
+        StateGraph(State)
+        .add_node("agent", create_agent(model, tools, state_schema=State))
+        .add_edge(START, "agent")
+        .add_edge("agent", END)
+        .compile()
+    )
+
+    for chunk in graph.stream(
+        {"messages": [{"role": "user", "content": "..."}]},
+        stream_mode="messages",
+        subgraphs=True,  # [!code highlight]
+        version="v2",
+    ):
+        print(chunk["type"])  # "messages"
+        print(chunk["ns"])    # () for root, ("agent:<task_id>",) for subgraph
+        print(chunk["data"])  # (token, metadata)
+    ```
+</Note>
+:::
+
+:::js
+<Note>
+    This applies to every `streamMode`, including `"messages"`. @[`createAgent`] returns a `ReactAgent` wrapper; pass `agent.graph` when adding it as a node so the parent treats it as a subgraph. With `subgraphs: true`, message chunks are `[namespace, [token, metadata]]`, so you can tell which subgraph emitted them.
+
+    ```typescript
+    import { createAgent } from "langchain";
+    import { END, START, StateGraph } from "@langchain/langgraph";
+
+    const agent = createAgent({ model, tools, stateSchema: State });
+
+    const graph = new StateGraph(State)
+        .addNode("agent", agent.graph)
+        .addEdge(START, "agent")
+        .addEdge("agent", END)
+        .compile();
+
+    for await (const [ns, data] of await graph.stream(
+        { messages: [{ role: "user", content: "..." }] },
+        {
+            streamMode: "messages",
+            subgraphs: true, // [!code highlight]
+        }
+    )) {
+        const [token, metadata] = data;
+        console.log(ns, token, metadata);
+    }
+    ```
+</Note>
 :::
 
 <Accordion title="Extended example: streaming from subgraphs">
@@ -1883,7 +1942,7 @@ Set `streaming=False` when initializing the model.
     from langchain_openai import ChatOpenAI
 
     # Set streaming=False to disable streaming for the chat model
-    model = ChatOpenAI(model="o1-preview", streaming=False)
+    model = ChatOpenAI(model="gpt-5.5", streaming=False)
     ```
     </Tab>
 </Tabs>
@@ -1896,7 +1955,7 @@ Set `streaming: false` when initializing the model.
 import { ChatOpenAI } from "@langchain/openai";
 
 const model = new ChatOpenAI({
-  model: "o1-preview",
+  model: "gpt-5.5",
   // Set streaming: false to disable streaming for the chat model
   streaming: false,
 });

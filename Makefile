@@ -1,4 +1,4 @@
-.PHONY: all dev build export format lint test install clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
+.PHONY: all dev build export format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
 
 # Default target
 all: help
@@ -59,13 +59,19 @@ lint_md_fix:
 		exit 1; \
 	fi
 
+VALE_BIN ?= .bin/vale
+VALE_VERSION ?= v3.9.6
+
+install_vale:
+	@bash scripts/install-vale.sh "$(VALE_BIN)" "$(VALE_VERSION)"
+
 lint_prose:
 	@echo "Linting prose with Vale..."
-	@command -v vale >/dev/null 2>&1 || { echo "Installing Vale for prose linting..."; brew install vale; }
+	@if [ ! -x "$(VALE_BIN)" ]; then bash scripts/install-vale.sh "$(VALE_BIN)" "$(VALE_VERSION)"; fi
 	@if [ -n "$(FILES)" ]; then \
-		vale --glob='!**/node_modules/**' $(FILES); \
+		"$(VALE_BIN)" --glob='!**/node_modules/**' $(FILES); \
 	else \
-		vale --glob='!**/node_modules/**' src/; \
+		"$(VALE_BIN)" --glob='!**/node_modules/**' src/; \
 	fi
 
 test:
@@ -91,7 +97,9 @@ clean:
 # broken-links: Checks for broken links, excluding OpenAPI-generated pages and snippet files
 # (snippets use relative paths that resolve when inlined; /oss/langchain/agents uses redirect)
 # Excluded: /langsmith/agent-server-api/, /api-reference/ (Mintlify-generated at deploy, not in local build)
-# Excluded: ../langchain/agents, ../langgraph/local-server (snippet preprocessing: /oss/... → relative path, resolves when inlined)
+# Excluded: ../langchain/, ../integrations/, ../langgraph/local-server
+#   (snippet preprocessing: /oss/... → relative path for language-agnostic inlining;
+#   mint checks snippets as standalone files so these look broken until inlined)
 # python3 normalizes U+00A0 (NBSP) to space so grep works on both macOS and Linux ([[:space:]] treats NBSP differently by locale)
 # Failure: only when filtered output still has indented link lines (real broken links we care about)
 # Run mint, capture output, filter exclusions. Only show output when failing.
@@ -104,7 +112,7 @@ broken-links: build
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
 	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
-		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/langsmith/smith-api' | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | grep -v '\.\./langgraph/local-server' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
+		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/langsmith/smith-api' | grep -v '/api-reference/' | grep -v '\.\./langchain/' | grep -v '\.\./integrations/' | grep -v '\.\./langgraph/local-server' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
 		else \
@@ -120,7 +128,7 @@ broken-links-with-anchors: build
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
 	@cd build && mint broken-links --check-anchors 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
-		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/langsmith/smith-api' | grep -v '/api-reference/' | grep -v '\.\./langchain/agents' | grep -v '\.\./langgraph/local-server' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
+		filtered=$$(grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -v '/langsmith/smith-api' | grep -v '/api-reference/' | grep -v '\.\./langchain/' | grep -v '\.\./integrations/' | grep -v '\.\./langgraph/local-server' | grep -vE '/langsmith/smithdb-sdk-migration#(traces-query|runs-query|exceptions)$$' | python3 -c "import sys; sys.stdout.write(sys.stdin.read().replace('\u00a0', ' '))"); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
 		else \

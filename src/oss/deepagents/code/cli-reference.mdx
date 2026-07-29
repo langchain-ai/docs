@@ -4,7 +4,7 @@ sidebarTitle: CLI reference
 description: Deep Agents Code command-line flags and management subcommands
 ---
 
-Deep Agents Code (`dcode`) accepts command-line flags at launch and exposes management subcommands for agents, sessions, skills, credentials, and configuration. Use this page as a reference when you need to override defaults from the shell, run non-interactive tasks in scripts, or automate administration without opening a session. For installation and daily interactive use, see [Quickstart](/oss/deepagents/code/quickstart). For how CLI flags fit into the broader configuration model, see [Configuration](/oss/deepagents/code/configuration).
+Deep Agents Code (`dcode`) accepts command-line flags at launch and exposes management subcommands for tools, agents, sessions, skills, credentials, and configuration. Use this page as a reference when you need to override defaults from the shell, run non-interactive tasks in scripts, or automate administration without opening a session. For installation and daily interactive use, see [Quickstart](/oss/deepagents/code/quickstart). For how CLI flags fit into the broader configuration model, see [Configuration](/oss/deepagents/code/configuration).
 
 ## Example usage
 
@@ -194,13 +194,52 @@ All rubric flags require `-n` or piped stdin. See [Goals and rubrics](/oss/deepa
 
 ## Human-in-the-loop and shell access
 
-Potentially destructive tool calls require approval by default. Skip prompts for a session with `-y`/`--auto-approve`, or toggle auto-approve with `Shift+Tab` during an interactive session:
+Potentially destructive tool calls require approval by default. There are three [approval modes](/oss/deepagents/code/approval-modes) to choose from: the default Manual mode requires confirmation at all checkpoints, Auto mode (`-y`/`--auto-approve`) uses an LLM classifier, and YOLO (`--yolo`) runs gated actions without review. Toggle between Manual and Auto during an interactive session with `Shift+Tab`:
 
 ```bash
 dcode -y
+dcode --yolo
 ```
 
 The `-S`/`--shell-allow-list` flag applies in both interactive and non-interactive modes. Pass a comma-separated list of command names, `recommended` for safe read-only defaults, or `all` to permit any command. You can also set `DEEPAGENTS_CODE_SHELL_ALLOW_LIST` in the environment.
+
+## Restrict filesystem tools
+
+By default, Deep Agents Code exposes all filesystem tools. To expose only a subset, pass a comma-separated list:
+
+```bash
+dcode -n "Audit this repository" --allow-fs-tools ls,read_file,glob,grep
+```
+
+Valid names are `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, `grep`, and `execute`. Explicit lists must include `read_file`. The allowlist applies to the main agent and synchronous subagents in every session mode, but not to async subagents or non-filesystem tools.
+
+<Note>
+    `--allow-fs-tools` and `-S`/`--shell-allow-list` control different layers of shell access:
+
+    - **`--allow-fs-tools`** controls which filesystem tools are available. Shell access requires `execute`.
+    - **`-S`/`--shell-allow-list`** controls which shell commands are permitted through `execute`. It does not affect other filesystem tools.
+
+    | `--allow-fs-tools` includes `execute`? | `-S` set? | Shell access |
+    |---|---|---|
+    | Yes | Yes | Allowed commands run (interactive confirms; non-interactive auto-approves) |
+    | Yes | No | Tool exists, but no command is pre-approved |
+    | No | Yes | No shell access — `execute` is absent, so `-S` has nothing to gate |
+    | No | No | No shell access |
+
+    In non-interactive mode, pass both to enable commands without a human to approve them:
+
+    ```bash
+    dcode -n "Fix the failing tests" --allow-fs-tools execute -S "pytest,git,make"
+    ```
+</Note>
+
+Run `/tools` in a session to inspect the active tool set. From the shell, place tool-shaping flags before the subcommand:
+
+```bash
+dcode tools list
+dcode --allow-fs-tools ls,read_file tools list
+dcode --allow-fs-tools ls,read_file tools list --json
+```
 
 ## Startup commands and initial prompts
 
@@ -243,9 +282,9 @@ Control MCP server loading at launch:
 |------|----------|
 | `--mcp-config PATH` | Add an explicit config as the highest-precedence source (merged on top of auto-discovered configs) |
 | `--no-mcp` | Disable MCP entirely |
-| `--trust-project-mcp` | Trust project-level stdio servers without prompting (for CI and automation) |
+| `--trust-project-mcp` | Trust project-level servers without prompting for the current run. Servers denied by user policy remain disabled. |
 
-`--mcp-config` and `--no-mcp` are mutually exclusive. In non-interactive mode, project-level stdio servers are silently skipped unless `--trust-project-mcp` is passed:
+`--mcp-config` and `--no-mcp` are mutually exclusive. In non-interactive mode, project servers without a matching saved or environment approval are silently skipped unless `--trust-project-mcp` is passed:
 
 ```bash
 dcode --trust-project-mcp
@@ -272,21 +311,24 @@ Run OAuth login for MCP servers marked `auth: "oauth"` with `dcode mcp login <se
 | `--rubric-model MODEL` | Model the rubric grader uses. Defaults to the main agent model. Requires `-n` or piped stdin |
 | `--rubric-max-iterations N` | Grader iterations per rubric attempt before stopping. Requires `-n` or piped stdin |
 | `-n`, `--non-interactive TEXT` | Run a single task non-interactively and exit. Shell is disabled unless `--shell-allow-list` is set |
+| `--recursion-limit N`  | LangGraph graph step budget (max node invocations per turn). Valid range: `25`–`100000`. Out-of-range or non-integer values log a warning and fall back to the default (`2000`). Overrides `DEEPAGENTS_CODE_RECURSION_LIMIT` and `[runtime].recursion_limit` in `config.toml` |
 | `--max-turns N`        | Cap agentic turns in non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Non-interactive mode and piping](#non-interactive-mode-and-piping) |
 | `--timeout SECONDS`    | Hard wall-clock timeout for non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Non-interactive mode and piping](#non-interactive-mode-and-piping) |
 | `-q`, `--quiet`        | Clean output for piping—only the agent's response goes to stdout. Requires `-n` or piped stdin |
 | `--no-stream`          | Buffer the full response and write to stdout at once instead of streaming. Requires `-n` or piped stdin |
 | `--stdin`              | Read input from stdin explicitly instead of auto-detection. Errors clearly when stdin is unavailable or is a TTY |
-| `-y`, `--auto-approve` | Auto-approve all tool calls without prompting (disables human-in-the-loop). Toggle with `Shift+Tab` during an interactive session |
+| `-y`, `--auto-approve` | Enable classifier-backed [Auto](/oss/deepagents/code/approval-modes) mode. Requires an interactive local session; toggle with `Shift+Tab` during an interactive session |
+| `--yolo` | Run gated actions without review after the one-time local risk acknowledgement. Interactive mode only |
 | `-S`, `--shell-allow-list LIST` | Comma-separated shell commands to auto-approve, `'recommended'` for safe defaults, or `'all'` to allow any command. Applies to both `-n` and interactive modes |
-| `--json`               | Emit machine-readable JSON from management subcommands (`agents`, `threads`, `skills`, `update`). Output envelope: `{"schema_version": 1, "command": "...", "data": ...}` |
+| `--allow-fs-tools LIST` | Filesystem tools to expose. Defaults to `all`. See [Restrict filesystem tools](#restrict-filesystem-tools) |
+| `--json`               | Emit machine-readable JSON from supported management subcommands, including `tools`, `agents`, `threads`, `skills`, and `update`. Output envelope: `{"schema_version": 1, "command": "...", "data": ...}` |
 | `--sandbox TYPE`       | Remote sandbox for code execution: `none` (default), `langsmith`, `agentcore`, `daytona`, `modal`, `runloop`, `vercel`, and third-party providers. LangSmith is included; other built-ins require extras. Pass `--sandbox` with no value to use `[sandboxes].default` from config |
 | `--sandbox-id ID`      | Reuse an existing sandbox (skips creation and cleanup)      |
 | `--sandbox-snapshot-name NAME` | Sandbox snapshot name to use or create (`langsmith`, `runloop`, and providers that advertise snapshot support) |
 | `--sandbox-setup PATH` | Path to setup script to run in sandbox after creation       |
 | `--mcp-config PATH`    | Add an explicit MCP config as the highest-precedence source (merged with auto-discovered configs) |
 | `--no-mcp`             | Disable all MCP tool loading                                |
-| `--trust-project-mcp`  | Trust project-level MCP configs with stdio servers (skip approval prompt) |
+| `--trust-project-mcp`  | Trust project-level MCP servers without prompting for the current run. Explicit denies still apply. |
 | `--interpreter`        | Enable the JS interpreter (`js_eval`) middleware on the main agent when it has been disabled in config. `js_eval` is enabled by default. |
 | `--interpreter-tools VALUE` | PTC allowlist for `js_eval`: `safe`, `all`, or a comma-separated list of tool names. Default: no PTC (pure REPL) |
 | `--profile-override JSON` | Override model profile fields as a JSON string (e.g., `'{"max_input_tokens": 4096}'`). Merged on top of config file profile overrides |
@@ -341,6 +383,7 @@ Pair `dcode doctor` with `dcode config show` when you need both a high-level hea
 | Command                              | Description                            |
 |--------------------------------------|----------------------------------------|
 | `dcode help`                    | Show help                              |
+| `dcode tools list [--json]`     | List the tools available to the configured agent. Place top-level tool-shaping flags, such as `--allow-fs-tools`, `--no-mcp`, `--mcp-config`, and `--trust-project-mcp`, before `tools list` |
 | `dcode agents list`             | List all agents (alias: `ls`)          |
 | `dcode agents reset --agent NAME` | Clear agent memory and reset to default. Supports `--dry-run` |
 | `dcode agents reset --agent NAME --target SOURCE` | Copy memory from another agent |

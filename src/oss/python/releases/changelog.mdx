@@ -10,13 +10,64 @@ rss: true
 </Callout>
 
 
-<Update label="Jul 7, 2026" tags={["deepagents"]} rss={{ title: "Jul 7, 2026 - deepagents" }}>
-    ## `deepagents` v0.7.0a6
+<Update label="Jul 24, 2026" tags={["deepagents"]} rss={{ title: "Jul 24, 2026 - deepagents" }}>
+    ## `deepagents` v0.7.0b2
 
-    - **New [`delete`](/oss/deepagents/tools#built-in-harness-tools) filesystem tool**: Delete a file, or recursively delete a directory and its contents. Backends that don't support deletion have the tool automatically hidden from the model.
-    - **`write_file` now overwrites existing files**: `write_file` used to error if the target file already existed. It now overwrites it — use `edit_file` for targeted changes to an existing file.
-    - **[Override a default middleware instance](/oss/deepagents/customization#override-a-default-middleware-instance)**: A `middleware=` (or subagent `middleware`) instance whose `.name` matches a default now replaces that default in place, instead of erroring on duplicate middleware.
-    - **[Restrict filesystem tools](/oss/deepagents/overview#virtual-filesystem-access)**: `FilesystemMiddleware` now accepts a `tools` allowlist to expose only a subset of the built-in filesystem tools to the model, building on the middleware-override behavior above.
+    A leaner, more configurable harness by default. On a default-agent turn, input tokens drop **65%** (5,395 → 1,895 vs. v0.6.12), validated against our [revamped evaluation suite](https://www.langchain.com/blog/how-we-benchmark-deep-agents) with no quality regression.
+
+    ### Optimizations
+
+    - **Lean prompts by default**: The authored base prompt starts empty and tool-usage prose that duplicated tool schemas has been trimmed. Isolated to the default agent's tool schemas, total description tokens drop **43%** (4,005 → 2,302); combined with the empty base prompt and opt-in todos, a default-agent turn's input tokens drop **65%** since v0.6.12 (5,395 → 1,895). Tool behavior is unchanged. ([#4859](https://github.com/langchain-ai/deepagents/pull/4859), [#4979](https://github.com/langchain-ai/deepagents/pull/4979), [#5009](https://github.com/langchain-ai/deepagents/pull/5009))
+
+    ### Features
+
+    - **[Override a default middleware instance](/oss/deepagents/customization#middleware)**: A `middleware=` (or subagent `middleware`) instance whose `.name` matches a built-in now replaces that default in place, rather than erroring on a duplicate. For example, pass your own `SummarizationMiddleware(...)` to change the token trigger or summary model without disabling the built-in default. ([#4251](https://github.com/langchain-ai/deepagents/pull/4251))
+    - **Filesystem tools**: New [`delete`](/oss/deepagents/tools#built-in-harness-tools) tool removes a file or recursively removes a directory ([#3659](https://github.com/langchain-ai/deepagents/pull/3659), [#3851](https://github.com/langchain-ai/deepagents/pull/3851)); `write_file` now overwrites an existing file instead of erroring ([#4109](https://github.com/langchain-ai/deepagents/pull/4109)); `FilesystemMiddleware` accepts a [tool allowlist](/oss/deepagents/overview#virtual-filesystem-access) to expose only selected built-in tools ([#4325](https://github.com/langchain-ai/deepagents/pull/4325), [#4698](https://github.com/langchain-ai/deepagents/pull/4698)); and reads and searches are tuned for open models — paginated `read_file` reports total and remaining lines plus the next `offset` ([#4540](https://github.com/langchain-ai/deepagents/pull/4540)), `grep`/`glob` return partial results with a `truncated` flag instead of hanging on large trees ([#4063](https://github.com/langchain-ai/deepagents/pull/4063)), and `grep` gains a 1,000-match cap with streamed output and optional context lines ([#4570](https://github.com/langchain-ai/deepagents/pull/4570), [#4706](https://github.com/langchain-ai/deepagents/pull/4706)).
+    - **More prompt-caching support**: Bedrock prompt caching via the `deepagents[aws]` extra ([#4108](https://github.com/langchain-ai/deepagents/issues/4108)), and automatic Fireworks prompt-cache session affinity ([#4598](https://github.com/langchain-ai/deepagents/pull/4598)).
+    - **NVIDIA support**: A built-in Nemotron 3 Ultra harness profile plus NIM app-origin attribution. ([#4192](https://github.com/langchain-ai/deepagents/pull/4192), [#4455](https://github.com/langchain-ai/deepagents/pull/4455))
+
+    ### Breaking changes
+
+    - **Planning todos are opt-in**: `create_deep_agent` no longer includes `TodoListMiddleware` by default, so the `write_todos` tool, `todos` state channel, and todo-planning prompt are absent unless restored with `middleware=[TodoListMiddleware()]`. (The OpenAI Codex harness profile still opts in automatically.) ([#4929](https://github.com/langchain-ai/deepagents/pull/4929))
+    - **Backend compatibility shims removed**: Pass concrete `BackendProtocol` instances instead of factories, configure `StoreBackend` with an explicit `namespace`, and use the current `ls` / `glob` / `grep` / `ReadResult` APIs. Removed symbols include `BackendFactory`, `BACKEND_TYPES`, `FileFormat`, and `Unset`. New files store string `FileData.content`; older `list[str]` content stays readable and converts on next write. ([#4541](https://github.com/langchain-ai/deepagents/pull/4541))
+    - **Output format changes**: Empty `ls` / `glob` output is now `No files found` instead of `[]`, and `read_file` no longer renders a fixed-width `cat -n`-style gutter — update any parsers of raw tool output. ([#4561](https://github.com/langchain-ai/deepagents/pull/4561))
+
+    Copy the following prompt into your AI coding assistant to migrate a codebase for these breaking changes:
+
+    <Prompt
+        description="Migrate a deepagents codebase from v0.6.x to v0.7.0b2."
+        icon="arrow-right"
+        actions={["copy"]}
+    >
+    Migrate this codebase from `deepagents` v0.6.x to v0.7.0b2 to account for the following breaking changes:
+
+    1. `create_deep_agent` no longer includes `TodoListMiddleware` by default. If this codebase relies on the `write_todos` tool, the `todos` state channel, or the todo-planning prompt, restore it by importing `TodoListMiddleware` from `langchain.agents.middleware` (not `deepagents`) and passing it to `create_deep_agent`:
+
+       ```python
+       from langchain.agents.middleware import TodoListMiddleware
+       from deepagents import create_deep_agent
+
+       agent = create_deep_agent(middleware=[TodoListMiddleware()])
+       ```
+
+    2. Backend compatibility shims were removed: `BackendFactory`, `BACKEND_TYPES`, `FileFormat`, and `Unset` no longer exist. Replace any backend factories with concrete `BackendProtocol` instances, and add an explicit `namespace` to every `StoreBackend` configuration:
+
+       ```python
+       from deepagents import create_deep_agent
+       from deepagents.backends import StoreBackend
+
+       # Before (v0.6.x): factory callable, and StoreBackend with no explicit namespace
+       agent = create_deep_agent(backend=lambda rt: StoreBackend())  # [!code --]
+
+       # After (v0.7.0b2): concrete backend instance with an explicit namespace
+       agent = create_deep_agent(backend=StoreBackend(namespace=lambda rt: (rt.server_info.user.identity,)))  # [!code ++]
+       ```
+
+       Also update calls to use the current `ls`, `glob`, `grep`, and `ReadResult` APIs.
+    3. Tool output formats changed: empty `ls` / `glob` output is now the string `No files found` instead of `[]`, and `read_file` no longer renders a fixed-width `cat -n`-style line-number gutter. Update any code that parses these tool outputs.
+
+    Search the codebase for usages of the removed symbols and for parsing logic that depends on the old output formats, apply the necessary changes, and flag anything that needs manual review.
+    </Prompt>
 
 </Update>
 <Update label="May 12, 2026" tags={["deepagents"]} rss={{ title: "May 12, 2026 - langchain" }}>
