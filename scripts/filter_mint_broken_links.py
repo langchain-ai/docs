@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Filter mint broken-links output for known false positives.
 
-Mint checks snippet MDX as standalone files. Snippet /oss/ links are rewritten to
-absolute language-prefixed paths (build/snippets/{python|javascript}/...) and only
-resolve correctly when imported into a page, so snippet reports are dropped.
+Mint crawls ``build/snippets/**`` as standalone pages. After language-prefixed
+snippet copies (see ``DocumentationBuilder._process_snippet_markdown_file``),
+wrong-language copies look broken (e.g. ``snippets/javascript/oss/python-*.mdx``
+with ``/oss/javascript/...`` links to Python-only pages). Drop those sections
+only; keep matching-language and shared snippet reports so real breaks still
+surface.
 
-Also drops OpenAPI-generated paths that exist at deploy time but not in local builds.
+Also drops OpenAPI-generated paths that exist at deploy time but not in local
+builds, and legacy relative-path false positives.
 
 Reads mint output from stdin (or --input), writes filtered output to stdout.
 Pass --check-anchors to also drop known smithdb migration anchor false positives.
@@ -16,6 +20,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from pathlib import PurePosixPath
 
 EXCLUDE_SUBSTRINGS = (
     "/langsmith/agent-server-api/",
@@ -31,6 +36,7 @@ SMITHDB_ANCHOR_RE = re.compile(
 )
 
 _FILE_SUFFIXES = (".mdx", ".md", ".jsx", ".tsx", ".html")
+_LANG_DIRS = frozenset({"python", "javascript"})
 
 
 def _is_file_header(line: str) -> bool:
@@ -41,16 +47,43 @@ def _is_file_header(line: str) -> bool:
     return stripped.endswith(_FILE_SUFFIXES)
 
 
+def is_cross_language_snippet(path: str) -> bool:
+    """Return True if this standalone snippet copy has the wrong language prefix.
+
+    Language-specific download/featured snippets are named ``python-*`` or
+    ``javascript-*``. Emitting both language copies rewrites ``/oss/`` links to
+    that copy's language, which breaks for the mismatched copy. The default
+    ``snippets/oss/...`` path is always Python-prefixed, so ``javascript-*``
+    files there are also mismatches.
+    """
+    if not path.startswith("snippets/"):
+        return False
+
+    parts = PurePosixPath(path).parts
+    filename = parts[-1]
+
+    if len(parts) >= 2 and parts[1] in _LANG_DIRS:
+        lang = parts[1]
+        if filename.startswith("python-") and lang != "python":
+            return True
+        if filename.startswith("javascript-") and lang != "javascript":
+            return True
+        return False
+
+    # Default path (no language dir): content is Python-prefixed.
+    return filename.startswith("javascript-")
+
+
 def filter_broken_links(text: str, *, check_anchors: bool = False) -> str:
-    """Drop snippet sections and known false-positive link lines."""
+    """Drop cross-language snippet sections and known false-positive link lines."""
     text = text.replace("\u00a0", " ")
     out: list[str] = []
-    skip_snippet = False
+    skip_section = False
 
     for line in text.splitlines(keepends=True):
         if _is_file_header(line):
-            skip_snippet = line.startswith("snippets/")
-        if skip_snippet:
+            skip_section = is_cross_language_snippet(line.strip())
+        if skip_section:
             continue
         if any(s in line for s in EXCLUDE_SUBSTRINGS):
             continue

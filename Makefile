@@ -94,14 +94,15 @@ clean:
 	@find . -name "__pycache__" -type d -exec rm -rf {} +
 
 # Mintlify commands (run from build directory where final docs are generated)
-# broken-links: Checks for broken links, excluding OpenAPI-generated pages and snippet files
-# Excluded: /langsmith/agent-server-api/, /api-reference/ (Mintlify-generated at deploy, not in local build)
-# Excluded: entire snippets/ report sections (scripts/filter_mint_broken_links.py)
-#   Snippet /oss/ links are absolute language-prefixed paths under
-#   build/snippets/{python|javascript}/...; mint checks snippets as standalone files
-#   so those look broken until inlined into a page.
-# Failure: only when filtered output still has indented link lines (real broken links we care about)
-# Run mint, capture output, filter exclusions. Only show output when failing.
+# broken-links: Checks for broken links, excluding OpenAPI-generated pages and
+# cross-language snippet copies (scripts/filter_mint_broken_links.py).
+# --check-snippets: also flag pages whose MDX snippet imports do not resolve.
+# Matching-language snippet files under build/snippets/{python|javascript}/ are
+# kept so broken /oss/ links inside snippets still fail the check.
+# Excluded: /langsmith/agent-server-api/, /api-reference/ (Mintlify-generated at
+# deploy, not in local build); wrong-language snippet copies (e.g.
+# snippets/javascript/oss/python-*.mdx).
+# Failure: only when filtered output still has indented link lines.
 broken-links: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@latest'"; exit 1; }
 	@KATEX_MJS="$$(npm root -g 2>/dev/null)/mint/node_modules/katex/dist/katex.mjs"; \
@@ -110,7 +111,7 @@ broken-links: build
 			VERSION=$$(node -e "console.log(require('$$KATEX_DIR/package.json').version)" 2>/dev/null); \
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
-	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
+	@cd build && mint broken-links --check-snippets 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
 		filtered=$$(python3 ../scripts/filter_mint_broken_links.py --input /tmp/broken-links.txt); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
@@ -126,7 +127,7 @@ broken-links-with-anchors: build
 			VERSION=$$(node -e "console.log(require('$$KATEX_DIR/package.json').version)" 2>/dev/null); \
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
-	@cd build && mint broken-links --check-anchors 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
+	@cd build && mint broken-links --check-anchors --check-snippets 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
 		filtered=$$(python3 ../scripts/filter_mint_broken_links.py --check-anchors --input /tmp/broken-links.txt); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
