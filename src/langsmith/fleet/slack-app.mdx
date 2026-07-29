@@ -1,19 +1,40 @@
 ---
 title: Integrate Slack with an agent
-description: Connect LangSmith Fleet to your Slack workspace to let your agents communicate with users in Slack.
+description: Connect LangSmith Fleet to your Slack workspace so your agents work as Slack bots your team can tag directly.
 sidebarTitle: Slack
 ---
 
-With LangSmith Fleet, you can add an agent to your Slack workspace so your team can work with it directly in Slack.
+Slack is a channel in Fleet: connect an agent to a Slack app, and your team works with that agent in Slack instead of in the Fleet UI. Any agent can have its own Slack app, so one workspace can run as many Slack agents as you need, each with its own name, icon, tools, and permissions.
+
+## Choose a setup path
+
+<CardGroup cols={2}>
+  <Card title="LangSmith Cloud" icon="cloud" href="#set-up-slack-on-langsmith-cloud">
+    Connect Slack once, then add a Slack app to any agent in one click.
+  </Card>
+  <Card title="Self-hosted" icon="server" href="#set-up-slack-on-self-hosted">
+    Configure a Slack OAuth provider, then create a custom Slack app per agent.
+  </Card>
+</CardGroup>
+
+After setup, see:
+
+- [Use your agent in Slack](#use-your-agent-in-slack): Invite the bot to a channel, tag it, and respond to approvals.
+- [Add Slack tools](#add-slack-tools): Let an agent post to Slack no matter how it was triggered.
+- [Manage a Slack app](#manage-a-slack-app): Keep the app in sync with the agent, or remove it.
+- [Troubleshooting](#troubleshooting): Fix a bot that does not respond or refuses a mention.
+
+## What an agent can do in Slack
 
 After you add an agent to Slack, it can:
 
-- Receive messages from Slack and start a run with the message content.
-- Reply in your Slack workspace after processing a message.
+- Receive mentions in channels, direct messages, and group direct messages, and start a run with the message content.
+- Reply in a thread in your Slack workspace after processing a message.
 - Read thread messages and conversation history for context.
 - Read file attachments included in Slack messages.
+- Pause for approval on sensitive tools and collect your decision in Slack.
 
-Fleet maps each agent to a single Slack app, so users experience the Slack bot as your agent deployed in Slack rather than a separate service that relays messages.
+Fleet maps each agent to a single Slack app, and each Slack app to a single agent. Users experience the Slack bot as your agent deployed in Slack rather than a separate service that relays messages.
 
 <Warning>
 Disclaimer:
@@ -27,37 +48,162 @@ The Slack integration with Fleet does not have any direct pricing. However, agen
 For current pricing information, see the [LangSmith pricing page](https://www.langchain.com/pricing).
 </Info>
 
-## Add your agent to Slack
+## Set up Slack on LangSmith Cloud
 
-After you authenticate with Slack once, you can add any agent to Slack in one click. Fleet creates a Slack app for the agent and configures it with the agent's name, description, and icon.
-
-<Note>
-One-click Slack setup is available on LangSmith Cloud. On [Self-hosted](/langsmith/deploy-self-hosted-full-platform#enable-fleet-insights-and-chat), create and link a custom Slack app manually instead. See [Connect a custom Slack app (Self-hosted)](#connect-a-custom-slack-app-self-hosted).
-</Note>
+On LangSmith Cloud, Fleet creates and installs each agent's Slack app for you. Connect Slack once, then add a Slack app to any agent in one click.
 
 ### Prerequisites
 
-- An existing agent in Fleet (see [Quickstart](/langsmith/fleet/quickstart) to create one).
+- An existing agent in Fleet. See [Quickstart](/langsmith/fleet/quickstart) to create one.
 - A Slack workspace where you can install apps.
 
-### Connect Slack
+### Step 1. Connect the Fleet Slack manager
+
+The Fleet Slack app acts as a manager for your workspace. A single connection grants two things:
+
+- **Slack tool access**: The bot scopes an agent needs to post messages, read channel and thread history, and send direct messages.
+- **App management**: The scopes that let Fleet create a dedicated Slack app for an agent and install it in your workspace on your behalf, which is what makes one-click deploy possible.
+
+To connect, open the **Integrations** page in Fleet, find **Slack**, and click **Connect**. Fleet also runs this connection inline the first time you add a Slack app to an agent, so you can skip ahead to [Step 2](#step-2-add-a-slack-app-to-an-agent) and authorize when prompted.
+
+<Note>
+The first time someone in your workspace connects, Slack may route the request to a Slack workspace admin. When the admin reviews it, they can either:
+
+- **Allow Fleet to install apps**: Anyone in the workspace can then create a Slack agent from Fleet without another approval.
+- **Require approval for each app**: Every Slack agent that Fleet creates needs a separate admin approval before it installs.
+
+If your workspace requires per-app approval, follow [Finish a Slack app that needs admin approval](#finish-a-slack-app-that-needs-admin-approval).
+</Note>
+
+### Step 2. Add a Slack app to an agent
 
 <Steps>
   <Step title="Open the Channels drawer">
-    Open your agent, then in the sidebar expand the **Channels** drawer.
+    Open your agent in the [Fleet](https://smith.langchain.com/agents) inbox, then expand the **Channels** drawer in the sidebar.
   </Step>
-  <Step title="Connect Slack">
-    1. Click **Connect your first channel**, then select **Slack**.
-    1. The first time you connect, authenticate with Slack and authorize Fleet. After that, adding an agent to Slack takes one click.
+  <Step title="Add Slack">
+    Click **Connect your first channel** (or **Add channel**), then select **Slack**.
   </Step>
-  <Step title="Confirm the Slack app">
-    Fleet creates a Slack app named after your agent and links it to the agent. Each agent maps to one Slack app, and each Slack app links to one agent.
+  <Step title="Add the agent to Slack">
+    Click **Add to Slack**. Fleet authorizes with the Slack manager if you have not connected yet, creates a Slack app named after your agent using the agent's description and icon, and installs it in your workspace.
+
+    (Optional) Expand **Advanced** and enable **Allow bot triggers** to let messages from other Slack bots start a run. This bypasses the agent's permission settings, so leave it off unless you need it.
+  </Step>
+  <Step title="Check your direct messages">
+    The new bot sends you a direct message in Slack confirming it is connected, with tips for inviting it to channels and mentioning it.
   </Step>
 </Steps>
 
+### Finish a Slack app that needs admin approval
+
+If your Slack workspace requires an admin to approve each app, Fleet cannot install the app immediately. Instead, it keeps the Slack app it created and saves the channel on your agent as a draft with a **Finish setup** button.
+
+To complete the install:
+
+1. In the **Channels** drawer, click **Finish setup** on the pending Slack row. This sends an install request to your Slack admin.
+1. Wait for a Slack admin to approve the app.
+1. Click **Finish setup** again. Fleet installs the app and activates the channel.
+
 <Note>
-When your agent is first added to a Slack workspace, it sends you a direct message with tips for inviting it to channels and mentioning it.
+Slack needs both steps. The first click requests approval, and the second click installs the app after the approval lands. Clicking **Finish setup** before the approval lands leaves the channel in the pending state.
 </Note>
+
+## Set up Slack on Self-hosted
+
+Self-hosted deployments do not use the Fleet Slack manager, so nothing is created on your behalf. Instead, configure a Slack OAuth provider once for the instance, then create a custom Slack app for each agent from a manifest that Fleet generates.
+
+### Step 1. Configure the Slack OAuth provider
+
+Fleet hides Slack setup until a Slack OAuth provider is configured for the instance. This provider also enables Slack tools for agents, so configure it even if you only want agents to post to Slack.
+
+To configure it:
+
+1. Choose a provider ID, for example `slack-oauth-provider`.
+1. Create a Slack app for the provider, add its scopes and redirect URI, and register it in LangSmith. For the full walkthrough, see [Slack OAuth provider](/langsmith/deploy-self-hosted-full-platform#slack-oauth-provider).
+1. Add the provider ID and Slack credentials to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
+
+    ```yaml
+    fleet:
+      oauth:
+        # Organization ID where OAuth providers are configured
+        providerOrgId: "<your-org-id>"
+        slackOAuthProvider: "<provider-id>"
+        slackSigningSecret: "<signing-secret>"
+        slackBotId: "<bot-id>"
+    ```
+
+1. Apply the chart and confirm the Fleet pods restart.
+
+<Note>
+Add provider IDs for other integrations, such as `googleOAuthProvider` or `linearOAuthProvider`, to the same `fleet.oauth` block. For the full list, see [Enable Fleet](/langsmith/deploy-self-hosted-full-platform#enable-fleet-insights-and-chat).
+</Note>
+
+If `slackOAuthProvider` is empty, **Add Slack App** stays disabled and the Slack channel does not appear on agents.
+
+### Step 2. Create a custom Slack app
+
+Start this flow from the agent you want the bot to run, so Fleet links the app for you when you finish.
+
+<Steps>
+  <Step title="Open the Slack setup dialog">
+    Open your agent, expand the **Channels** drawer, click **Connect your first channel** (or **Add channel**), then select **Slack**.
+
+    You can also start from the **Integrations** page: go to the **Slack Apps** section and click **Add Slack App**.
+  </Step>
+
+  <Step title="Create the app in Slack">
+    1. Enter a name for the bot.
+    1. Click **Create Slack App**. Fleet opens the Slack API site with a prefilled app manifest.
+    1. Choose the workspace where you want to install the bot, then click **Next**.
+    1. Review the prefilled configuration and click **Create**.
+
+    <Warning>
+    Do not create the Slack app outside this flow. The generated manifest sets the event subscription URL, interactivity URL, OAuth redirect URL, and scopes that Fleet needs. An app created by hand does not receive events.
+    </Warning>
+  </Step>
+
+  <Step title="Enter your app credentials">
+    Back in Fleet, click **Continue To Credentials** and copy the following values from your new Slack app:
+
+    - **App ID**: From **Basic Information**.
+    - **Client ID**: From **Basic Information > App Credentials**.
+    - **Client secret**: From **Basic Information > App Credentials**. Click **Show** in Slack and copy the whole value.
+    - **Signing secret**: From **Basic Information > App Credentials**. Click **Show** in Slack and copy the whole value.
+
+    (Optional) Enable **Allow bot triggers** to let messages from other Slack bots start a run. This bypasses the agent's permission settings, so leave it off unless you need it.
+
+    Click **Save Credentials**.
+  </Step>
+
+  <Step title="Connect OAuth">
+    1. Click **Connect OAuth**.
+    1. Click **Allow** in Slack to install the app in your workspace.
+
+    If you cannot install the app yourself because your workspace requires admin approval, click **Save & Request Approval** instead and follow [Finish a draft Slack app](#finish-a-draft-slack-app).
+  </Step>
+
+  <Step title="Finish setup">
+    Click **Finish**. If you started from an agent, Fleet links the app to that agent. If you started from the **Integrations** page, choose an agent from the dropdown, or click **Finish Without Agent** to link one later.
+  </Step>
+</Steps>
+
+### Finish a draft Slack app
+
+Clicking **Save & Request Approval** saves the app as a draft so you do not lose your progress while a Slack admin reviews the install request. Drafts appear under **Pending Slack admin approval** in the **Slack Apps** section of the **Integrations** page.
+
+After your admin approves the app:
+
+1. Go to the **Slack Apps** section on the **Integrations** page.
+1. Click **Resume Setup** on the draft.
+1. Re-enter the **Client secret** and **Signing secret**. Fleet does not store secrets on a draft, so copy them from Slack again.
+1. Click **Save Credentials**, then **Connect OAuth**, then **Allow** in Slack.
+1. Select the agent to link the app to, then click **Finish**.
+
+<Note>
+Each agent can have only one Slack app, and each Slack app can be linked to only one agent.
+</Note>
+
+## Use your agent in Slack
 
 ### Invite the agent to a channel
 
@@ -65,13 +211,15 @@ When your agent is first added to a Slack workspace, it sends you a direct messa
 1. Type `/invite @YourAgentName` to invite it.
 1. Mention the agent with `@YourAgentName` to start a run. The agent replies in a thread.
 
-## Approve or deny actions in Slack
+You can also send the bot a direct message or add it to a group direct message.
+
+### Approve or deny actions in Slack
 
 When an agent pauses on a tool that requires approval, it raises the request directly in Slack. The message names the tool and the action, with **Approve** and **Deny** buttons, so you can respond without leaving Slack.
 
-For more information on approvals, see [Human-in-the-loop](/langsmith/fleet/essentials#human-in-the-loop).
+For more information, see [Human-in-the-loop](/langsmith/fleet/essentials#human-in-the-loop).
 
-## Error messages in Slack
+### Error messages in Slack
 
 If an agent encounters an error during a run, it replies in the Slack thread instead of going silent. For some error types, such as authentication errors, the reply includes more detail so you can resolve the issue.
 
@@ -101,84 +249,34 @@ You can also ask your agent to add these tools itself. In the agent chat, try: "
 Set each tool to **Auto** to run it without approval, or **Ask** to require approval before it runs. For more information, see [Human-in-the-loop](/langsmith/fleet/essentials#human-in-the-loop).
 </Note>
 
-## Connect a custom Slack app (Self-hosted)
+## Manage a Slack app
 
-On Self-hosted, one-click Slack setup is not available. Instead, create and link a custom Slack app manually from the **Integrations** page by copying your Slack app credentials into Fleet.
+**Keep the app in sync**: On LangSmith Cloud, renaming an agent or changing its description or icon pushes the new display information to its Slack app the next time you save the agent. Custom Slack apps on Self-hosted are not updated, because Fleet does not manage them. Edit those in Slack.
 
-### Create the Slack app
-
-<Steps>
-  <Step title="Create a new Slack app">
-    1. Navigate to the **Integrations** page in Fleet and go to the **Apps** section.
-    1. Click **Add Slack App**.
-    1. Enter a name for the bot.
-    1. Click **Create Slack App**. You will be redirected to the Slack API site with a popup asking you to pick a workspace.
-
-    <Warning>
-    Do not create a separate Slack app outside of this flow. The app must be created through this popup.
-    </Warning>
-  </Step>
-
-  <Step title="Select your workspace">
-    1. Choose the workspace where you want to install the bot.
-    1. Click **Next**.
-    1. Click **Create Bot**.
-  </Step>
-
-  <Step title="Enter your app credentials">
-    After creating the bot, you will receive your app credentials. Enter the following credentials in Fleet:
-    - App ID
-    - Client ID
-    - Client secret
-    - Signing secret
-
-    <Note>
-    Copy the full client secret and signing secret carefully to ensure a successful connection.
-    </Note>
-  </Step>
-
-  <Step title="Connect OAuth">
-    1. Click **Connect OAuth**.
-    1. Click **Allow** to give Fleet access to your app.
-  </Step>
-
-  <Step title="Finish setup">
-    Link your Slack bot to an existing agent, or click **Finish** to link later.
-  </Step>
-</Steps>
-
-### Link the custom app to an agent
-
-You can link a custom Slack app to an agent from the **Integrations** page or from the agent sidebar. Each agent can only have one Slack app, and each Slack app can only be linked to one agent.
-
-<Tabs>
-  <Tab title="From the Integrations page">
-    1. Navigate to the **Slack Apps** section on the **Integrations** page in Fleet.
-    1. Select the app you want to link.
-    1. From the dropdown menu, choose the agent you want to link to.
-    1. Verify that **\<Agent Name\>** appears next to the app name.
-  </Tab>
-  <Tab title="From the agent sidebar">
-    1. Open your agent from **My Agents** in the left-hand navigation.
-    1. In the sidebar, expand the **Channels** drawer.
-    1. Select **Slack**.
-    1. From the dropdown menu, select the Slack app you want to link.
-  </Tab>
-</Tabs>
+**Remove the app**: Delete the Slack row from the **Channels** drawer, or delete the app from the **Slack Apps** section of the **Integrations** page. For an app that Fleet created, this also removes the app from Slack. For a custom app you created, the app stays in Slack, so delete it at [api.slack.com/apps](https://api.slack.com/apps).
 
 ## Troubleshooting
 
 ### Agent does not respond
 
-If your agent is not responding, you can try the following:
+If your agent is not responding, try the following:
 
 - Check the thread in the Fleet UI for errors.
 - Verify the agent was invited to the channel.
-- Try deleting the Slack app in the **Channels** drawer, then going through [setup](#add-your-agent-to-slack) again.
+- Confirm the Slack channel is not paused in the **Channels** drawer.
+- Delete the Slack app in the **Channels** drawer, then set it up again.
 
 ### Not allowed to tag the bot
 
 If you receive a private message saying you are not allowed to tag the bot, your Slack ID is not authorized for that agent. The agent's owner needs to share the agent with you, either by sharing run access with the whole workspace or with you individually.
+
+### Slack app stays pending approval
+
+A Slack row that stays in the pending state is waiting on a Slack admin. Ask an admin to approve the app in Slack, then click **Finish setup** again. See [Finish a Slack app that needs admin approval](#finish-a-slack-app-that-needs-admin-approval).
+
+### Add Slack App is disabled
+
+On Self-hosted, the control is disabled until `fleet.oauth.slackOAuthProvider` is set. See [Configure the Slack OAuth provider](#step-1-configure-the-slack-oauth-provider).
 
 ## Next steps
 
