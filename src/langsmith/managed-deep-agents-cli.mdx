@@ -51,11 +51,11 @@ LANGSMITH_API_KEY=<LANGSMITH_API_KEY>
 OPENAI_API_KEY=<OPENAI_API_KEY>
 ```
 
-To deploy with an organization-scoped key, set `LANGSMITH_TENANT_ID` or pass `--tenant-id` to `mda deploy`.
+To deploy with an organization-scoped key, set `LANGCHAIN_WORKSPACE_ID` or pass `--workspace-id` to `mda deploy`. The retired `LANGSMITH_TENANT_ID` and `LANGCHAIN_TENANT_ID` names are no longer supported—deploy fails with a rename hint if either is set.
 
 The LangSmith API key authenticates the deploy. The agent's model provider also needs credentials at runtime. Set the provider key in `.env`, export it in your shell, or configure it as a LangSmith workspace secret. For example, `openai:gpt-5.5` requires `OPENAI_API_KEY`.
 
-`mda deploy` forwards non-reserved `.env` entries, such as `OPENAI_API_KEY`, MCP tokens, and custom tool credentials, as hosted deployment secrets. Reserved platform variables, including `LANGSMITH_API_KEY`, `LANGGRAPH_HOST_API_KEY`, `LANGCHAIN_API_KEY`, and `LANGSMITH_TENANT_ID`, are used for CLI authentication and deploy routing but are not uploaded as user-managed deployment secrets.
+`mda deploy` forwards non-reserved `.env` entries, such as `OPENAI_API_KEY`, MCP tokens, and custom tool credentials, as hosted deployment secrets. Reserved platform variables, including `LANGSMITH_API_KEY`, `LANGGRAPH_HOST_API_KEY`, `LANGCHAIN_API_KEY`, and `LANGCHAIN_WORKSPACE_ID`, are used for CLI authentication and deploy routing but are not uploaded as user-managed deployment secrets.
 
 ## Command overview
 
@@ -76,9 +76,10 @@ Use `mda init` to create a new project directory:
 mda init my-agent
 ```
 
-| Argument | Use |
+| Argument or flag | Use |
 | --- | --- |
 | `name` | Required project directory name. The command fails if the destination already exists. |
+| `--scope <boundary>` | Scaffold an identity declaration for the given boundary: `user` (private threads and memory per person), `shared-conversations` (the conversation owns the thread), `organization` (many customer orgs on one deployment), `agent` (shared memory, no end user), or `none` (no durable memory or downstream credentials). Omit the flag for no identity file at all. |
 
 The command detects the language from the current directory:
 
@@ -165,14 +166,14 @@ mda deploy .
 | `path` | Project directory. Defaults to the current directory. |
 | `--name NAME` | Deployment name. Defaults to the project directory name, normalized to lowercase letters, numbers, and hyphens. |
 | `--deployment-type dev\|prod` | Deployment type when creating a deployment. Defaults to `dev`. |
-| `--tenant-id TENANT_ID` | Workspace or tenant ID. Overrides `LANGSMITH_TENANT_ID`. |
+| `--workspace-id WORKSPACE_ID` | Workspace ID to deploy into. Overrides `LANGCHAIN_WORKSPACE_ID`. |
 | `--host-url URL` | Host backend API URL override. Defaults to US LangSmith Cloud. |
 | `--no-wait` | Trigger the remote build and exit without polling for deployment completion. |
 
 Deploy runs these steps:
 
 1. Validate the project directory and load the agent entry file.
-2. Resolve the LangSmith API key and optional tenant ID.
+2. Resolve the LangSmith API key and optional workspace ID.
 3. Collect non-reserved `.env` values as hosted deployment secrets.
 4. Verify the model provider API key is available from `.env`, the shell environment, or LangSmith workspace secrets.
 5. Sync deploy-owned context to Context Hub.
@@ -206,9 +207,9 @@ For examples, see [Custom tools](/langsmith/managed-deep-agents-tools) and [Cust
 
 ### Identity
 
-Optionally export a named `identity` declaration from a project-root `identity.ts` or `identity.py` created with `defineIdentity` / `define_identity` (or `.preset(...)`).
+Optionally export a named `identity` declaration from a project-root `identity.ts` or `identity.py` created with `defineIdentity` / `define_identity`.
 
-When present, `mda` generates the custom auth handler, injects it into the compiled app, and scopes threads, memory, and store access from the declaration. Projects without identity keep the previous compile output. For presets, ingress modes, guest tokens, and `runtime.identity`, see [Identity](/langsmith/managed-deep-agents-identity).
+When present, `mda` generates the custom auth handler, injects it into the compiled app, and scopes threads, memory, and store access from the declaration. Projects without identity keep the previous compile output. For scopes, auth modes, guest tokens, and `runtime.identity`, see [Identity](/langsmith/managed-deep-agents-identity).
 
 ### Instructions
 
@@ -226,19 +227,20 @@ Managed memory lives in the same Context Hub repo as the deployed instructions a
 
 ### Connectors
 
-Declare connectors as modules directly under `connectors/`. Discovery is name-agnostic: each file is a connector module (package `__init__.py` files are ignored).
+Declare connectors as modules directly under `connectors/`. Each file exports a named `connector` created from the `connectors` namespace (package `__init__.py` files are ignored). In TypeScript, an `export default` fails the build with the fix in the error message.
 
-- **MCP:** `connectors/mcp.ts` or `connectors/mcp.py` must export a named `mcp` declaration. Supports remote `http` and `sse` servers; stdio is rejected. When present, `mda` injects `@langchain/mcp-adapters` or `langchain-mcp-adapters` and appends loaded MCP tools to authored tools.
-- **GitHub:** `connectors/github.ts` or `connectors/github.py` declares repository checkouts, GitHub CLI installation, and credential injection for the managed sandbox.
-- **LangSmith:** `connectors/langsmith.ts` or `connectors/langsmith.py` declares constrained LangSmith capabilities for untrusted callers. Requires [identity](/langsmith/managed-deep-agents-identity). The browser never receives `LANGSMITH_API_KEY`.
+- **Integrations:** `connectors/gmail.ts`, `connectors/linear.ts`, and the other [tool server integrations](/langsmith/managed-deep-agents-connectors/integrations) load LangChain-authored tools through LangSmith's gateway for integrations the workspace connected in LangSmith.
+- **MCP:** `connectors/mcp.ts` or `connectors/mcp.py` declares remote MCP servers with `connectors.mcp(...)`. Supports remote `http` and `sse` servers; stdio is rejected. When present, `mda` injects `@langchain/mcp-adapters` or `langchain-mcp-adapters` and appends loaded MCP tools to authored tools.
+- **GitHub:** `connectors/github.ts` or `connectors/github.py` declares GitHub tool loading plus repository checkouts, GitHub CLI installation, and credential injection for the managed sandbox with `connectors.github(...)`.
+- **LangSmith:** `connectors/langsmith.ts` or `connectors/langsmith.py` declares constrained LangSmith capabilities for untrusted callers with `connectors.langsmith(...)`. Requires [identity](/langsmith/managed-deep-agents-identity). The browser never receives `LANGSMITH_API_KEY`.
 
 For examples and defaults, see [Connectors](/langsmith/managed-deep-agents-connectors).
 
 ### Channels
 
-Declare messaging channels as modules directly under `channels/`. Each file exports a named `channel` (for example `defineSlackChannel` / `defineGitHubChannel`). The file stem becomes the channel name and mounts `POST /channels/{name}/events` on the Agent Server. Channels require a root [identity](/langsmith/managed-deep-agents-identity) declaration.
+Declare messaging channels as modules directly under `channels/`. Each file exports a named `channel` created from the `channels` namespace (for example `channels.slack(...)` / `channels.github(...)`). The file stem becomes the channel name and mounts `POST /channels/{name}/events` on the Agent Server. Channels require a root [identity](/langsmith/managed-deep-agents-identity) declaration.
 
-- **Slack:** `channels/slack.ts` or `channels/slack.py`. Deploy preflights `SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN` (from the channel manifest `requiredEnv`).
+- **Slack:** `channels/slack.ts` or `channels/slack.py`. Deploy creates and installs the channel's Slack app through the workspace's Slack connection in LangSmith, subscribes it to the events the `on` triggers need, and writes the bot token and signing secret onto the deployment—there are no Slack secrets to author. One Slack app per deployment, so at most one Slack channel; the first deploy warns and the next one connects the app.
 - **GitHub:** `channels/github.ts` or `channels/github.py` with ordered `handlers` (`on`, `prompt`, optional `repositories` / `autoReply`). Deploy preflights `GITHUB_WEBHOOK_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, and `GITHUB_INSTALLATION_ID`.
 
 For handlers, triggers, and provider setup, see [Channels](/langsmith/managed-deep-agents-channels), [Slack](/langsmith/managed-deep-agents-channels/slack), and [GitHub](/langsmith/managed-deep-agents-channels/github).
@@ -251,7 +253,7 @@ Deploy extracts schedule declarations from static literals, arrays, objects, and
 
 ### Sandbox
 
-To configure a managed sandbox, export `sandbox` from `sandbox/index.ts` for TypeScript or `sandbox/__init__.py` for Python. Scope defaults to one sandbox per thread; `scope: "agent"` shares one across the agent process. `sandbox/setup.sh`, when present, runs once when a new managed sandbox is provisioned.
+To configure a managed sandbox, export `sandbox` from `sandbox/index.ts` for TypeScript or `sandbox/__init__.py` for Python, created with `sandboxes.langsmith(...)`. Scope defaults to one sandbox per thread; `scope: "agent"` shares one across the agent process. `sandbox/setup.sh`, when present, runs once when a new managed sandbox is provisioned.
 
 For configuration examples and lifecycle behavior, see [Configure a sandbox](/langsmith/managed-deep-agents-deploy#configure-a-sandbox).
 

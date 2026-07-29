@@ -25,16 +25,16 @@ This page covers the **channel** (conversation ingress/egress). Use the [GitHub 
 
 ## Add a GitHub channel
 
-Add `channels/github.py` or `channels/github.ts` next to your agent entry. The file name becomes the channel name (`github` → `POST /channels/github/events`). Export a named `channel` created with `define_github_channel` / `defineGitHubChannel`.
+Add `channels/github.py` or `channels/github.ts` next to your agent entry. The file name becomes the channel name (`github` → `POST /channels/github/events`). Export a named `channel` created with `channels.github`:
 
 Handlers are ordered: the first match for a delivery wins. Each handler needs `on` and a `prompt` callback that builds the **human message** for that turn. The agent system prompt remains `instructions.md`.
 
 <CodeGroup>
 
 ```python channels/github.py
-from managed_deepagents.channels.github import define_github_channel
+from managed_deepagents import channels
 
-channel = define_github_channel(
+channel = channels.github(
     handlers=[
         {
             "on": "pull_request.opened",
@@ -52,9 +52,9 @@ channel = define_github_channel(
 
 ```ts channels/github.ts
 import type { PullRequestOpenedEvent } from "@octokit/webhooks-types";
-import { defineGitHubChannel } from "managed-deepagents/channels/github";
+import { channels } from "managed-deepagents";
 
-export const channel = defineGitHubChannel({
+export const channel = channels.github({
   handlers: [
     {
       on: "pull_request.opened",
@@ -72,7 +72,7 @@ export const channel = defineGitHubChannel({
 
 </CodeGroup>
 
-Pair with a shared-bot (or equivalent) identity for channel-only installs. The channel actor is the installation/service principal `github-app:<installationId>`, not the pull request author. Replies use the App installation token—Connect-with-GitHub OAuth is not required for this path.
+Pair with a conversation-scoped (or equivalent) identity for channel-only installs. The channel user is the installation/service principal `github-app:<installationId>`, not the pull request author. Replies use the App installation token—Connect-with-GitHub OAuth is not required for this path.
 
 ### Event filters (`on`)
 
@@ -111,7 +111,7 @@ flowchart LR
 
 1. GitHub POSTs to `https://<agent-server>/channels/github/events` (the file stem `github` becomes the path segment).
 2. The runtime verifies `X-Hub-Signature-256` against `GITHUB_WEBHOOK_SECRET`, dedupes on `X-GitHub-Delivery`, and returns HTTP 202.
-3. It picks the first matching handler, calls `prompt` to build the inbound text, then invokes the graph over trusted loopback with actor and source-thread identity (`source.provider: "github"`).
+3. It picks the first matching handler, calls `prompt` to build the inbound text, then invokes the graph over trusted loopback with user and source-thread identity (`source.provider: "github"`).
 4. When the matched handler has `autoReply` enabled and the conversation address is `owner/repo#N`, it posts the agent response as an issue/PR comment with the App installation token. Events without an issue/PR number skip the comment even when `autoReply` is `true`.
 
 LangGraph auth is bypassed only on `POST /channels/{name}/events` so GitHub can deliver without an ingress secret; the loopback invoke still uses `MDA_INGRESS_SECRET`.
@@ -145,7 +145,7 @@ Put these in the project `.env` (or LangSmith workspace secrets) before `mda dep
 | `GITHUB_APP_ID` | Yes | App id for JWT minting |
 | `GITHUB_APP_PRIVATE_KEY` | Yes | PEM private key for the App |
 | `GITHUB_INSTALLATION_ID` | Yes | Installation the channel acts as (single-install) |
-| `MDA_INGRESS_SECRET` | Yes when identity uses trusted loopback / `trusted_backend` | Trusted invoke from the Events path into the graph |
+| `MDA_INGRESS_SECRET` | Yes when identity uses trusted loopback / `backend` auth | Trusted invoke from the Events path into the graph |
 
 ## Configure the GitHub App
 
@@ -184,7 +184,7 @@ Put these in the project `.env` (or LangSmith workspace secrets) before `mda dep
     Add a Slack Events channel alongside GitHub.
   </Card>
   <Card title="Identity" icon="fingerprint" href="/langsmith/managed-deep-agents-identity">
-    Choose identity presets for channel callers.
+    Choose an identity scope for channel callers.
   </Card>
   <Card title="Deploy an agent" icon="upload" href="/langsmith/managed-deep-agents-deploy">
     Route secrets and deploy the channel-enabled agent.
