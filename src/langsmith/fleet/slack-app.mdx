@@ -98,15 +98,22 @@ If your Slack workspace requires an admin to approve each app, Fleet saves the n
 
 Self-hosted deployments do not use the Fleet Slack manager. Instead, configure a Slack OAuth provider once for the instance, then create a custom Slack app for each agent from a manifest that Fleet generates.
 
-### Step 1. Configure the Slack OAuth provider
+### Step 1. Set up the Slack OAuth provider
 
-Fleet hides Slack setup until a Slack OAuth provider is configured for the instance. This provider also enables Slack tools for agents, so configure it even if you only want agents to post to Slack.
+Every self-hosted instance needs this one-time setup before agents can use Slack. It enables [Slack tools](#add-slack-tools) for your agents and turns on the Slack channel, which is what lets you add custom apps in Step 2.
 
-To configure it:
+To set it up:
 
 1. Choose a provider ID, for example `slack-oauth-provider`.
-1. Create a Slack app for the provider, add its scopes and redirect URI, and register it in LangSmith. For the full walkthrough, see [Slack OAuth provider](/langsmith/deploy-self-hosted-full-platform#slack-oauth-provider).
-1. Add the provider ID and Slack credentials to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
+1. Create a Slack app for the provider at [api.slack.com/apps](https://api.slack.com/apps), add its bot scopes, and copy its client ID and client secret.
+1. Register the provider in LangSmith under **Settings > OAuth Providers**, using your provider ID and Slack's authorization and token URLs.
+1. Add the redirect URI to the Slack app under **OAuth & Permissions > Redirect URLs**, replacing `<hostname>` with your LangSmith hostname:
+
+    ```
+    https://<hostname>/host-oauth-callback/<provider-id>
+    ```
+
+1. Add the provider to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts):
 
     ```yaml
     fleet:
@@ -114,15 +121,16 @@ To configure it:
         # Organization ID where OAuth providers are configured
         providerOrgId: "<your-org-id>"
         slackOAuthProvider: "<provider-id>"
-        slackSigningSecret: "<signing-secret>"
     ```
 
 1. Apply the chart and confirm the Fleet pods restart.
 
-If `slackOAuthProvider` is empty, Fleet does not register the Slack trigger, **Add Slack App** stays disabled, and the Slack channel does not appear on agents.
+For the full walkthrough, including the bot scopes to add, see [Slack OAuth provider](/langsmith/deploy-self-hosted-full-platform#slack-oauth-provider).
+
+Until `slackOAuthProvider` is set, Fleet does not register the Slack trigger, **Add Slack App** stays disabled, and the Slack channel does not appear on agents.
 
 <Note>
-The custom Slack app in [Step 2](#step-2-create-a-custom-slack-app) does not reuse this provider. The wizard creates its own OAuth provider from the credentials you paste, and each app stores its own signing secret.
+Each custom Slack app in [Step 2](#step-2-create-a-custom-slack-app) gets its own OAuth provider, which the wizard registers from the credentials you paste. That is why Step 2 asks for a separate client ID, client secret, and signing secret.
 </Note>
 
 ### Step 2. Create a custom Slack app
