@@ -18,7 +18,7 @@ export async function agent(config: LangGraphRunnableConfig) {
       idleTtlSeconds: 3600, // TTL: clean up when idle
     }));
   return createDeepAgent({
-    model: "google_genai:gemini-3.5-flash",
+    model: "google_genai:gemini-3.6-flash",
     backend: new LangSmithSandbox({ sandbox: lsSandbox }),
   });
 }
