@@ -389,3 +389,109 @@ def test_rewrite_oss_links_skips_images_and_none() -> None:
         assert builder._rewrite_oss_links(img, "python") == img
         link = "[x](/oss/deepagents/overview)"
         assert builder._rewrite_oss_links(link, None) == link
+
+
+def test_rewrite_snippet_imports_for_language() -> None:
+    """MDX snippet imports are scoped under /snippets/{python|javascript}/."""
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        content = (
+            "import RequiresLanggraphServer from "
+            "'/snippets/oss/requires-langgraph-server.mdx';\n"
+            "import { PatternEmbed } from \"/snippets/pattern-embed.jsx\"\n"
+        )
+        assert (
+            builder._rewrite_snippet_imports_for_language(content, "python")
+            == (
+                "import RequiresLanggraphServer from "
+                "'/snippets/python/oss/requires-langgraph-server.mdx';\n"
+                "import { PatternEmbed } from \"/snippets/pattern-embed.jsx\"\n"
+            )
+        )
+        assert (
+            builder._rewrite_snippet_imports_for_language(content, "js")
+            == (
+                "import RequiresLanggraphServer from "
+                "'/snippets/javascript/oss/requires-langgraph-server.mdx';\n"
+                "import { PatternEmbed } from \"/snippets/pattern-embed.jsx\"\n"
+            )
+        )
+        already = (
+            "import X from '/snippets/python/oss/requires-langgraph-server.mdx';\n"
+        )
+        assert builder._rewrite_snippet_imports_for_language(already, "js") == already
+
+
+def test_snippet_oss_links_are_language_prefixed_not_relative() -> None:
+    """Shared snippets with /oss/ links get absolute language-prefixed copies.
+
+    Regression for nested consumers such as langchain/frontend/branching-chat:
+    a fixed ``../langgraph/local-server`` relative link resolved incorrectly to
+    ``/oss/{lang}/langchain/langgraph/local-server``.
+    """
+    files = [
+        File(
+            path="snippets/oss/requires-langgraph-server.mdx",
+            content=(
+                "<Note>\n"
+                "This feature requires the "
+                "[LangGraph Agent Server](/oss/langgraph/local-server).\n"
+                "</Note>\n"
+            ),
+        ),
+        File(
+            path="oss/langchain/frontend/branching-chat.mdx",
+            content=(
+                "---\ntitle: Branching chat\n---\n\n"
+                "import RequiresLanggraphServer from "
+                "'/snippets/oss/requires-langgraph-server.mdx';\n\n"
+                "<RequiresLanggraphServer />\n"
+            ),
+        ),
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        default = (
+            fs.build_dir / "snippets" / "oss" / "requires-langgraph-server.mdx"
+        ).read_text()
+        py_snippet = (
+            fs.build_dir
+            / "snippets"
+            / "python"
+            / "oss"
+            / "requires-langgraph-server.mdx"
+        ).read_text()
+        js_snippet = (
+            fs.build_dir
+            / "snippets"
+            / "javascript"
+            / "oss"
+            / "requires-langgraph-server.mdx"
+        ).read_text()
+
+        assert "/oss/python/langgraph/local-server" in default
+        assert "/oss/python/langgraph/local-server" in py_snippet
+        assert "/oss/javascript/langgraph/local-server" in js_snippet
+        assert "../langgraph/local-server" not in default
+        assert "../langgraph/local-server" not in py_snippet
+        assert "../langgraph/local-server" not in js_snippet
+
+        py_page = (
+            fs.build_dir / "oss" / "python" / "langchain" / "frontend" / "branching-chat.mdx"
+        ).read_text()
+        js_page = (
+            fs.build_dir
+            / "oss"
+            / "javascript"
+            / "langchain"
+            / "frontend"
+            / "branching-chat.mdx"
+        ).read_text()
+        assert (
+            "from '/snippets/python/oss/requires-langgraph-server.mdx'" in py_page
+        )
+        assert (
+            "from '/snippets/javascript/oss/requires-langgraph-server.mdx'" in js_page
+        )
