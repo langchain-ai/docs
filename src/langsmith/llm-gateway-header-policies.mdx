@@ -73,16 +73,13 @@ client = OpenAI(
     base_url=os.environ["OPENAI_BASE_URL"],
     api_key=os.environ["LANGSMITH_API_KEY"],
 )
-
-
-def answer(customer_id: str, question: str) -> str:
-    """Call the gateway on behalf of one end customer."""
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": question}],
-        extra_headers={"X-Gateway-Customer-Id": customer_id},
-    )
-    return response.choices[0].message.content
+customer_id = "acme"
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "ping"}],
+    extra_headers={"X-Gateway-Customer-Id": customer_id},
+)
+print(response.choices[0].message.content)
 ```
 
 </CodeGroup>
@@ -237,18 +234,10 @@ response = httpx.get(
 response.raise_for_status()
 
 for policy in response.json():
-    customer = next(
-        matcher["value"]
-        for matcher in policy["subject_matchers"]
-        if matcher["key"] == "customer_id"
-    )
-    limit_usd = policy["config"]["limit_usd"]
-    spent_usd = policy.get("current_spend_usd")
-    if spent_usd is None:
-        print(f"{customer}: spend unavailable, cap ${limit_usd:,.2f}")
-        continue
-    flag = " (80% of cap reached)" if spent_usd >= 0.8 * limit_usd else ""
-    print(f"{customer}: ${spent_usd:,.2f} of ${limit_usd:,.2f}{flag}")
+    matchers = policy["subject_matchers"]
+    customer = next(m["value"] for m in matchers if m["key"] == "customer_id")
+    # current_spend_usd is absent when the spend lookup fails.
+    print(customer, policy.get("current_spend_usd"), policy["config"]["limit_usd"])
 ```
 
 </CodeGroup>
