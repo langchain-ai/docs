@@ -1,0 +1,42 @@
+```ts After
+import { Client } from "langsmith";
+
+const client = new Client();
+const project = await client.readProject({ projectName: "default" });
+let runId = "<run-id>";
+// `traceId` is the run's trace ID. A root run is its own trace, so `traceId`
+// equals `runId`. For any other run, read `trace_id` from
+// `client.runs.retrieve()` first.
+let traceId = "<trace-id>";
+
+const traceRuns = await client.traces.listRuns(traceId, {
+  project_id: project.id,
+  selects: ["ID", "NAME", "RUN_TYPE", "PARENT_RUN_IDS", "START_TIME", "END_TIME"],
+});
+
+// `parent_run_ids` is the full ancestor chain, root first, closest parent last.
+// A run is a descendant of `runId` when `runId` appears anywhere in that chain,
+// at any depth, not only as the immediate parent. This flat list replaces
+// `child_run_ids`.
+const descendants = (traceRuns.items ?? []).filter((traceRun) =>
+  (traceRun.parent_run_ids ?? []).includes(runId),
+);
+console.log(descendants.length, "descendants");
+
+// Optional: group the runs by immediate parent to walk the trace as a tree,
+// which is the information `child_runs` used to carry.
+type TraceRun = NonNullable<typeof traceRuns.items>[number];
+const byParent = new Map<string, TraceRun[]>();
+for (const traceRun of traceRuns.items ?? []) {
+  const ancestors = traceRun.parent_run_ids ?? [];
+  if (ancestors.length === 0) continue;
+  // The last ancestor is the immediate parent.
+  const parentId = ancestors[ancestors.length - 1];
+  byParent.set(parentId, [...(byParent.get(parentId) ?? []), traceRun]);
+}
+
+const children = byParent.get(runId) ?? [];
+for (const child of children) {
+  console.log(child.name, child.run_type, (byParent.get(child.id!) ?? []).length);
+}
+```
