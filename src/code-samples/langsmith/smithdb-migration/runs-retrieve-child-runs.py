@@ -95,13 +95,10 @@ from langsmith import Client
 async def main():
     client = Client()
     project = await client.aread_project(project_name="default")
-    run_id = "<run-id>"
-    # `trace_id` is the run's trace ID. A root run is its own trace, so
-    # `trace_id` equals `run_id`. For any other run, read `trace_id` from
-    # `client.runs.retrieve()` first.
+    # A root run is its own trace, so `trace_id` is also the run ID.
     trace_id = "<trace-id>"
     # :remove-start:
-    run_id, trace_id = _RUN_ID, _TRACE_ID
+    trace_id = _TRACE_ID
     # :remove-end:
 
     trace_runs = await client.traces.list_runs(
@@ -111,11 +108,10 @@ async def main():
     )
 
     # `parent_run_ids` is the full ancestor chain, root first, closest parent
-    # last. A run is a descendant of `run_id` when `run_id` appears anywhere in
-    # that chain, at any depth, not only as the immediate parent. This flat list
-    # replaces `child_run_ids`.
+    # last. A run is a descendant of any ID in that chain, at any depth, not
+    # only of the immediate parent. This flat list replaces `child_run_ids`.
     descendants = [
-        run for run in (trace_runs.items or []) if run_id in (run.parent_run_ids or [])
+        run for run in (trace_runs.items or []) if trace_id in (run.parent_run_ids or [])
     ]
     print(len(descendants), "descendants")
 
@@ -134,7 +130,7 @@ async def main():
     for run in trace_runs.items or []:
         attach(run)
 
-    children = by_parent.get(run_id, [])
+    children = by_parent.get(trace_id, [])
     for child in children:
         print(child.name, child.run_type, len(child.child_runs))
     # :remove-start:

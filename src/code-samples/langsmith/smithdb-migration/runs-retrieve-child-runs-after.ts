@@ -5,7 +5,7 @@ process.env.LANGSMITH_TRACING = "true";
 
 // The `default` project holds no nested traces of its own, so the sample
 // creates one instead of depending on data it does not control.
-const seeded: { runId?: string; traceId?: string } = {};
+const seeded: { traceId?: string } = {};
 
 const leaf = traceable(async (index: number) => `leaf ${index}`, {
   name: "leaf",
@@ -20,9 +20,7 @@ const branch = traceable(
 );
 const seedRoot = traceable(
   async () => {
-    const runTree = getCurrentRunTree();
-    seeded.runId = runTree.id;
-    seeded.traceId = runTree.trace_id;
+    seeded.traceId = getCurrentRunTree().trace_id;
     await leaf(1);
     await branch();
     return "root";
@@ -37,15 +35,11 @@ import { Client } from "langsmith";
 
 const client = new Client();
 const project = await client.readProject({ projectName: "default" });
-let runId = "<run-id>";
-// `traceId` is the run's trace ID. A root run is its own trace, so `traceId`
-// equals `runId`. For any other run, read `trace_id` from
-// `client.runs.retrieve()` first.
+// A root run is its own trace, so `traceId` is also the run ID.
 let traceId = "<trace-id>";
 // :remove-start:
 await seedRoot();
 await client.awaitPendingTraceBatches();
-runId = seeded.runId!;
 traceId = seeded.traceId!;
 // The v2 read path becomes consistent a moment after ingestion, so poll until
 // the whole trace is visible.
@@ -65,11 +59,10 @@ const traceRuns = await client.traces.listRuns(traceId, {
 });
 
 // `parent_run_ids` is the full ancestor chain, root first, closest parent last.
-// A run is a descendant of `runId` when `runId` appears anywhere in that chain,
-// at any depth, not only as the immediate parent. This flat list replaces
-// `child_run_ids`.
+// A run is a descendant of any ID in that chain, at any depth, not only of the
+// immediate parent. This flat list replaces `child_run_ids`.
 const descendants = (traceRuns.items ?? []).filter((traceRun) =>
-  (traceRun.parent_run_ids ?? []).includes(runId),
+  (traceRun.parent_run_ids ?? []).includes(traceId),
 );
 console.log(descendants.length, "descendants");
 
@@ -85,7 +78,7 @@ for (const traceRun of traceRuns.items ?? []) {
   byParent.set(parentId, [...(byParent.get(parentId) ?? []), traceRun]);
 }
 
-const children = byParent.get(runId) ?? [];
+const children = byParent.get(traceId) ?? [];
 for (const child of children) {
   console.log(child.name, child.run_type, (byParent.get(child.id!) ?? []).length);
 }
