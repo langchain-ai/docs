@@ -1,6 +1,6 @@
 ---
 title: Trajectory integrations
-description: How each LangSmith SDK integration sets the metadata that trajectories require, and the one case where you set it yourself.
+description: How each LangSmith SDK integration sets the metadata that trajectories require, with examples for setting it manually.
 ---
 
 <Note>
@@ -12,7 +12,7 @@ The [trajectory endpoint](/langsmith/trajectories) and the [Messages view](/lang
 - **Thread grouping**: `thread_id` on each run tells LangSmith that a set of runs belong to the same conversation.
 - **Run classification**: `ls_agent_type: "root"` on the top-level run of a turn tells the trajectory endpoint that this run is the main conversation (rather than a subagent, middleware, or compaction run, which are filtered out).
 
-For most LangSmith integrations, both are set for you. The one case that needs manual instrumentation is the [OpenAI Responses API in chaining mode](#openai-responses-api-with-chaining): server-side chaining leaves the wrapper with no natural thread key.
+For most LangSmith integrations, both are set for you. When you need to set metadata manually, the following examples cover the [OpenAI Responses API in chaining mode](#openai-responses-api-with-chaining) and tagging custom middleware or guardrails.
 
 ## Supported integrations
 
@@ -152,6 +152,38 @@ const res2 = await client.responses.create({
   previous_response_id: res1.id,
   store: true,
 });
+```
+
+</CodeGroup>
+
+## Hide custom middleware or guardrails
+
+When you write your own guardrail, policy check, or middleware function around an LLM or tool call, wrap it in `@traceable` and set `ls_agent_type: "middleware"` on the metadata. The trajectory endpoint and the Messages view filter these runs out of the main conversation.
+
+<CodeGroup>
+
+```python Python
+from langsmith import traceable
+
+@traceable(
+    run_type="llm",
+    metadata={"ls_agent_type": "middleware"},
+)
+def entry_guardrail(prompt: str) -> dict:
+    # Your guardrail logic
+    return {"decision": "allow"}
+```
+
+```typescript TypeScript
+import { traceable } from "langsmith/traceable";
+
+const entryGuardrail = traceable(
+  async (prompt: string) => {
+    // Your guardrail logic
+    return { decision: "allow" };
+  },
+  { run_type: "llm", metadata: { ls_agent_type: "middleware" } },
+);
 ```
 
 </CodeGroup>
