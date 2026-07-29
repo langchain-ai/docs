@@ -398,23 +398,17 @@ def test_rewrite_snippet_imports_for_language() -> None:
         content = (
             "import RequiresLanggraphServer from "
             "'/snippets/oss/requires-langgraph-server.mdx';\n"
-            "import { PatternEmbed } from \"/snippets/pattern-embed.jsx\"\n"
+            'import { PatternEmbed } from "/snippets/pattern-embed.jsx"\n'
         )
-        assert (
-            builder._rewrite_snippet_imports_for_language(content, "python")
-            == (
-                "import RequiresLanggraphServer from "
-                "'/snippets/python/oss/requires-langgraph-server.mdx';\n"
-                "import { PatternEmbed } from \"/snippets/pattern-embed.jsx\"\n"
-            )
+        assert builder._rewrite_snippet_imports_for_language(content, "python") == (
+            "import RequiresLanggraphServer from "
+            "'/snippets/python/oss/requires-langgraph-server.mdx';\n"
+            'import { PatternEmbed } from "/snippets/pattern-embed.jsx"\n'
         )
-        assert (
-            builder._rewrite_snippet_imports_for_language(content, "js")
-            == (
-                "import RequiresLanggraphServer from "
-                "'/snippets/javascript/oss/requires-langgraph-server.mdx';\n"
-                "import { PatternEmbed } from \"/snippets/pattern-embed.jsx\"\n"
-            )
+        assert builder._rewrite_snippet_imports_for_language(content, "js") == (
+            "import RequiresLanggraphServer from "
+            "'/snippets/javascript/oss/requires-langgraph-server.mdx';\n"
+            'import { PatternEmbed } from "/snippets/pattern-embed.jsx"\n'
         )
         already = (
             "import X from '/snippets/python/oss/requires-langgraph-server.mdx';\n"
@@ -479,7 +473,12 @@ def test_snippet_oss_links_are_language_prefixed_not_relative() -> None:
         assert "../langgraph/local-server" not in js_snippet
 
         py_page = (
-            fs.build_dir / "oss" / "python" / "langchain" / "frontend" / "branching-chat.mdx"
+            fs.build_dir
+            / "oss"
+            / "python"
+            / "langchain"
+            / "frontend"
+            / "branching-chat.mdx"
         ).read_text()
         js_page = (
             fs.build_dir
@@ -489,9 +488,7 @@ def test_snippet_oss_links_are_language_prefixed_not_relative() -> None:
             / "frontend"
             / "branching-chat.mdx"
         ).read_text()
-        assert (
-            "from '/snippets/python/oss/requires-langgraph-server.mdx'" in py_page
-        )
+        assert "from '/snippets/python/oss/requires-langgraph-server.mdx'" in py_page
         assert (
             "from '/snippets/javascript/oss/requires-langgraph-server.mdx'" in js_page
         )
