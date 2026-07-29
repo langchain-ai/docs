@@ -103,8 +103,26 @@ Self-hosted deployments do not use the Fleet Slack manager. Instead, configure a
 Every self-hosted instance needs this one-time setup before agents can use Slack. It enables [Slack tools](#add-slack-tools) for your agents and turns on the Slack channel, which is what lets you add custom apps in Step 2.
 
 <Steps>
+  <Step title="Configure Helm">
+    Choose a provider ID, for example `slack-oauth-provider`. Add it to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts), along with the organization that holds your OAuth providers, and deploy:
+
+    ```yaml
+    fleet:
+      oauth:
+        # Organization ID where OAuth providers are configured
+        providerOrgId: "<your-org-id>"
+        slackOAuthProvider: "<provider-id>"
+    ```
+
+    ```bash
+    helm upgrade -i langsmith langchain/langsmith --values langsmith_config.yaml --version <version> -n <namespace> --wait --debug
+    ```
+
+    Confirm the Fleet pods restart. The provider ID is only a name at this point. The remaining steps create the provider it refers to.
+  </Step>
+
   <Step title="Create a Slack app for the provider">
-    Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App**. Choose a provider ID to use throughout this setup, for example `slack-oauth-provider`.
+    Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App**.
   </Step>
 
   <Step title="Add bot scopes">
@@ -129,11 +147,13 @@ Every self-hosted instance needs this one-time setup before agents can use Slack
   <Step title="Register the provider in LangSmith">
     Copy the **Client ID** and **Client Secret** from **Basic Information** in your Slack app. In LangSmith, go to **Settings > OAuth Providers** and add a provider:
 
-    - **Provider ID**: The ID you chose, for example `slack-oauth-provider`.
+    - **Provider ID**: The ID you set as `slackOAuthProvider`.
     - **Client ID**: From the Slack app.
     - **Client Secret**: From the Slack app.
     - **Authorization URL**: `https://slack.com/oauth/v2/authorize`
     - **Token URL**: `https://slack.com/api/oauth.v2.access`
+
+    Register it in the organization you set as `providerOrgId`. Fleet resolves the provider from that organization, so a provider registered elsewhere fails with an unknown provider error.
   </Step>
 
   <Step title="Add the redirect URI to Slack">
@@ -142,24 +162,6 @@ Every self-hosted instance needs this one-time setup before agents can use Slack
     ```
     https://<hostname>/host-oauth-callback/<provider-id>
     ```
-  </Step>
-
-  <Step title="Apply the Helm configuration">
-    Add the provider to your [`langsmith_config.yaml`](/langsmith/kubernetes#configure-your-helm-charts) and deploy:
-
-    ```yaml
-    fleet:
-      oauth:
-        # Organization ID where OAuth providers are configured
-        providerOrgId: "<your-org-id>"
-        slackOAuthProvider: "<provider-id>"
-    ```
-
-    ```bash
-    helm upgrade -i langsmith langchain/langsmith --values langsmith_config.yaml --version <version> -n <namespace> --wait --debug
-    ```
-
-    Confirm the Fleet pods restart.
   </Step>
 </Steps>
 
