@@ -212,14 +212,46 @@ Run the script whenever a customer signs up, churns, or moves to a different pla
 
 ### Step 4. Read spend per customer
 
-Every spend policy returned by the API carries `current_spend_usd`, the spend accumulated in the policy's active window. Use it to show each end customer their usage, or to warn them before they reach the cap:
+Each spend policy returned by the API reports `current_spend_usd`, the spend accumulated in the policy's active window. Use it to show each end customer their usage, or to warn them before they reach the cap. The field is omitted when the spend lookup fails, so treat a missing value as unknown rather than as zero:
 
-```bash
+<CodeGroup>
+
+```bash curl
 curl -G "https://api.smith.langchain.com/v1/platform/gateway-policies" \
     -H "X-Api-Key: $LANGSMITH_API_KEY" \
     --data-urlencode "policy_type=spend_cap" \
     --data-urlencode "subject_matcher_key=customer_id"
 ```
+
+```python Python
+import os
+
+import httpx
+
+response = httpx.get(
+    "https://api.smith.langchain.com/v1/platform/gateway-policies",
+    headers={"X-Api-Key": os.environ["LANGSMITH_API_KEY"]},
+    params={"policy_type": "spend_cap", "subject_matcher_key": "customer_id"},
+    timeout=30.0,
+)
+response.raise_for_status()
+
+for policy in response.json():
+    customer = next(
+        matcher["value"]
+        for matcher in policy["subject_matchers"]
+        if matcher["key"] == "customer_id"
+    )
+    limit_usd = policy["config"]["limit_usd"]
+    spent_usd = policy.get("current_spend_usd")
+    if spent_usd is None:
+        print(f"{customer}: spend unavailable, cap ${limit_usd:,.2f}")
+        continue
+    flag = " (80% of cap reached)" if spent_usd >= 0.8 * limit_usd else ""
+    print(f"{customer}: ${spent_usd:,.2f} of ${limit_usd:,.2f}{flag}")
+```
+
+</CodeGroup>
 
 ## Limit throughput per end customer
 
