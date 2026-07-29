@@ -1,0 +1,145 @@
+---
+title: CKGRetriever integration
+description: Integrate with the CKGRetriever using LangChain Python.
+integration:
+  name: CKGRetriever
+  pypi: langchain-ckg
+  self_host: true
+  cloud_offering: true
+  package_md: '[`langchain-ckg`](https://pypi.org/project/langchain-ckg/)'
+---
+
+`CKGRetriever` and `CKGHostedRetriever` are LangChain retrievers backed by
+[Compact Knowledge Graphs (CKG)](https://graphifymd.com)—pre-built, typed
+dependency graphs of domain concepts. CKG traversal is deterministic: the
+retriever follows declared edges rather than performing vector similarity search.
+Every node carries a SHA-256 source hash for audit provenance.
+
+**Benchmark (ckg-benchmark v0.6.2, 97 domains):**
+
+| System | Macro F1 | Tokens/query |
+|--------|:--------:|:------------:|
+| **CKG** | **0.471** | **269** |
+| RAG | 0.123 | 2,982 |
+| GraphRAG | 0.120 | 3,450 |
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | Cloud | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| `CKGRetriever` | [`langchain-ckg`](https://pypi.org/project/langchain-ckg/) | ✅ | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_ckg?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_ckg?style=flat-square&label=%20) |
+| `CKGHostedRetriever` | [`langchain-ckg`](https://pypi.org/project/langchain-ckg/) | ❌ | ✅ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain_ckg?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain_ckg?style=flat-square&label=%20) |
+
+## Setup
+
+### Installation
+
+<CodeGroup>
+```bash pip
+pip install langchain-ckg
+```
+
+```bash uv
+uv add langchain-ckg
+```
+</CodeGroup>
+
+For autonomous x402 payment support:
+
+```bash
+pip install 'langchain-ckg[x402]'
+```
+
+### Credentials
+
+`CKGRetriever` runs locally and requires no credentials. `CKGHostedRetriever`
+connects to a managed endpoint. A free tier is available; see
+[graphifymd.com/pricing](https://graphifymd.com/pricing) for rate limits and
+upgrade options.
+
+## Instantiation
+
+### Local retriever
+
+```python
+from langchain_ckg import CKGRetriever
+
+retriever = CKGRetriever(domain="nvidia-nemoclaw", depth=3)
+```
+
+### Hosted retriever
+
+```python
+from langchain_ckg import CKGHostedRetriever
+
+retriever = CKGHostedRetriever(
+    domain="nvidia-nemoclaw",
+    license_key="your-license-key",  # optional: unlocks unlimited calls
+)
+```
+
+## Invocation
+
+```python
+docs = retriever.invoke("CUDA kernel fusion")
+for doc in docs:
+    print(doc.page_content)
+```
+
+Each returned `Document` contains the prerequisite and dependent concept chain
+for a matched node, with source provenance in `metadata`.
+
+## Use within a chain
+
+```python
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_ckg import CKGRetriever
+from langchain_openai import ChatOpenAI
+
+retriever = CKGRetriever(domain="nvidia-nemoclaw", depth=3)
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer using only this context:\n{context}\n\nQuestion: {question}"
+)
+
+chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | ChatOpenAI()
+    | StrOutputParser()
+)
+
+chain.invoke("What are the prerequisites for NemoClaw kernel fusion?")
+```
+
+## Parameters
+
+### CKGRetriever
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `domain` | `str` | required | CKG domain name. Run `uvx ckg-mcp list_domains` to see all available domains. |
+| `depth` | `int` | `3` | Upstream prerequisite hops to traverse (1-5). |
+| `k` | `int` | `5` | Maximum number of concept matches to return. |
+
+### CKGHostedRetriever
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `endpoint` | `str` | `"https://ckg-nvidia-ai.onrender.com"` | Base URL of the hosted CKG server. |
+| `domain` | `str` | required | CKG domain name. |
+| `license_key` | `str` | `""` | License key for unlimited access. |
+| `x402_private_key` | `str` | `""` | EVM private key for autonomous USDC payment on Base L2 when a 402 is received. |
+| `lightning_invoice_id` | `str` | `""` | Pre-paid Lightning invoice ID. |
+| `depth` | `int` | `3` | Prerequisite traversal hops (1-5). |
+| `k` | `int` | `5` | Max concept matches. |
+
+## Related topics
+
+- [CKG provider page](/oss/integrations/providers/ckg)
+- [langchain-ckg on PyPI](https://pypi.org/project/langchain-ckg/)
+- [ckg-benchmark results](https://github.com/Yarmoluk/ckg-benchmark/blob/main/paper/main.pdf)
