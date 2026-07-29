@@ -9,13 +9,13 @@ description: Split gateway spend caps and rate limits by a custom request header
 
 A [spend policy](/langsmith/llm-gateway-spend-policies) or [rate limit policy](/langsmith/llm-gateway-rate-limit-policies) can carry a condition on a custom request header, so traffic from a single subject splits into separate limits by header value. Use this to cap each of your own end customers, tenants, or teams without issuing a separate LangSmith API key for each one.
 
-For example, a policy scoped to a workspace with the condition `X-Gateway-Tenant-Id: acme` limits only the requests from that workspace that carry that header value. Requests from the same workspace carrying `X-Gateway-Tenant-Id: globex` count against a different policy.
+For example, a policy scoped to a workspace with the condition `X-Gateway-Customer-Id: acme` limits only the requests from that workspace that carry that header value. Requests from the same workspace carrying `X-Gateway-Customer-Id: globex` count against a different policy.
 
 ## Matchable headers
 
 The gateway matches on request headers prefixed with `X-Gateway-`, and on keys inside the `X-Gateway-Metadata` JSON header. No other request header is matchable.
 
-Header names are normalized before matching: the `X-Gateway-` prefix is stripped, the remainder is lowercased, and every character outside `a-z`, `0-9`, and `_` is replaced with `_`. The headers `X-Gateway-Tenant-Id`, `x-gateway-tenant_id`, and `X-Gateway-TENANT.ID` all resolve to the matcher key `tenant_id`. Header values are compared as exact, case-sensitive strings, with no wildcard or pattern matching.
+Header names are normalized before matching: the `X-Gateway-` prefix is stripped, the remainder is lowercased, and every character outside `a-z`, `0-9`, and `_` is replaced with `_`. The headers `X-Gateway-Customer-Id`, `x-gateway-customer_id`, and `X-Gateway-CUSTOMER.ID` all resolve to the matcher key `customer_id`. Header values are compared as exact, case-sensitive strings, with no wildcard or pattern matching.
 
 The gateway stamps caller identity itself and ignores client attempts to override it. Headers that resolve to `organization_id`, `workspace_id`, `workspace_handle`, `user_id`, `user_email`, `api_key_id`, `api_key_short`, `auth_mode`, `user_agent`, `applied_policy_ids`, or `applied_policy_names`, and any header whose normalized name starts with `gateway`, are discarded.
 
@@ -37,7 +37,7 @@ Creating and managing policies requires `organization:manage` permission. For th
 1. Go to **Settings → Gateway → LLM Gateway**.
 1. Click **Create policy**.
 1. Select the policy type and subject scope, then set the limits.
-1. Under **Custom header condition (optional)**, enter the **Header name** without its `X-Gateway-` prefix (for example, `Tenant-Id`) and the **Header value** to match (for example, `acme`).
+1. Under **Custom header condition (optional)**, enter the **Header name** without its `X-Gateway-` prefix (for example, `Customer-Id`) and the **Header value** to match (for example, `acme`).
 1. Save.
 
 The header condition cannot be edited in the UI after the policy is created. To change it, delete the policy and create a new one, or update `subject_matchers` through the API.
@@ -50,7 +50,7 @@ A reseller or multi-tenant application usually calls the gateway from its own ba
 The gateway trusts the `X-Gateway-*` headers on an incoming request. Set the header in your own backend after you authenticate the end user, and do not distribute the gateway API key to end users. A caller that controls both the key and the header can choose which cap to spend against.
 </Warning>
 
-### Step 1. Send a tenant header on every call
+### Step 1. Send a customer header on every call
 
 Attach the header to each request your backend makes on behalf of an end customer:
 
@@ -60,7 +60,7 @@ Attach the header to each request your backend makes on behalf of an end custome
 curl https://gateway.smith.langchain.com/openai/v1/chat/completions \
     -H "Authorization: Bearer $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
-    -H "X-Gateway-Tenant-Id: acme" \
+    -H "X-Gateway-Customer-Id: acme" \
     -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}]}'
 ```
 
@@ -75,12 +75,12 @@ client = OpenAI(
 )
 
 
-def answer(tenant_id: str, question: str) -> str:
+def answer(customer_id: str, question: str) -> str:
     """Call the gateway on behalf of one end customer."""
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": question}],
-        extra_headers={"X-Gateway-Tenant-Id": tenant_id},
+        extra_headers={"X-Gateway-Customer-Id": customer_id},
     )
     return response.choices[0].message.content
 ```
@@ -96,18 +96,18 @@ curl -X POST "https://api.smith.langchain.com/v1/platform/gateway-policies" \
     -H "X-Api-Key: $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
     -d '{
-          "name": "tenant-acme-monthly-cap",
+          "name": "customer-acme-monthly-cap",
           "policy_type": "spend_cap",
           "action": "block",
           "subject_matchers": [
             {"key": "workspace_id", "value": "0b1c2d3e-4f56-7890-abcd-ef1234567890"},
-            {"key": "tenant_id", "value": "acme"}
+            {"key": "customer_id", "value": "acme"}
           ],
           "config": {"window": "monthly", "limit_usd": 250}
         }'
 ```
 
-The matcher key is the normalized name `tenant_id`, not the header name `X-Gateway-Tenant-Id`. The policy belongs to the organization that owns the API key.
+The matcher key is the normalized name `customer_id`, not the header name `X-Gateway-Customer-Id`. The policy belongs to the organization that owns the API key.
 
 Posting a policy whose `subject_matchers` already exist updates that policy instead of adding a duplicate, so this call is safe to repeat.
 
@@ -124,28 +124,28 @@ API_URL = "https://api.smith.langchain.com/v1/platform/gateway-policies"
 WORKSPACE_ID = os.environ["LANGSMITH_WORKSPACE_ID"]
 
 # Your source of truth: end customer identifier mapped to a monthly cap in USD.
-TENANT_CAPS = {"acme": 250.0, "globex": 1000.0, "initech": 50.0}
+CUSTOMER_CAPS = {"acme": 250.0, "globex": 1000.0, "initech": 50.0}
 
 
-def matchers_for(tenant: str) -> list[dict[str, str]]:
+def matchers_for(customer: str) -> list[dict[str, str]]:
     return [
         {"key": "workspace_id", "value": WORKSPACE_ID},
-        {"key": "tenant_id", "value": tenant},
+        {"key": "customer_id", "value": customer},
     ]
 
 
 def existing_caps(client: httpx.Client) -> dict[str, dict]:
-    """Return the current per-tenant spend caps, keyed by tenant identifier."""
+    """Return the current per-customer spend caps, keyed by customer identifier."""
     response = client.get(
         API_URL,
-        params={"policy_type": "spend_cap", "subject_matcher_key": "tenant_id"},
+        params={"policy_type": "spend_cap", "subject_matcher_key": "customer_id"},
     )
     response.raise_for_status()
     return {
         matcher["value"]: policy
         for policy in response.json()
         for matcher in policy["subject_matchers"]
-        if matcher["key"] == "tenant_id"
+        if matcher["key"] == "customer_id"
     }
 
 
@@ -156,20 +156,20 @@ def sync() -> None:
 
         # Posting an existing matcher set updates that policy, so this both
         # creates caps for new customers and corrects caps that changed.
-        for tenant, limit_usd in TENANT_CAPS.items():
+        for customer, limit_usd in CUSTOMER_CAPS.items():
             client.post(
                 API_URL,
                 json={
-                    "name": f"tenant-{tenant}-monthly-cap",
+                    "name": f"customer-{customer}-monthly-cap",
                     "policy_type": "spend_cap",
                     "action": "block",
-                    "subject_matchers": matchers_for(tenant),
+                    "subject_matchers": matchers_for(customer),
                     "config": {"window": "monthly", "limit_usd": limit_usd},
                 },
             ).raise_for_status()
 
-        for tenant, policy in existing.items():
-            if tenant not in TENANT_CAPS:
+        for customer, policy in existing.items():
+            if customer not in CUSTOMER_CAPS:
                 client.delete(f"{API_URL}/{policy['id']}").raise_for_status()
 
 
@@ -187,7 +187,7 @@ Every spend policy returned by the API carries `current_spend_usd`, the spend ac
 curl -G "https://api.smith.langchain.com/v1/platform/gateway-policies" \
     -H "X-Api-Key: $LANGSMITH_API_KEY" \
     --data-urlencode "policy_type=spend_cap" \
-    --data-urlencode "subject_matcher_key=tenant_id"
+    --data-urlencode "subject_matcher_key=customer_id"
 ```
 
 ## Limit throughput per end customer
@@ -199,12 +199,12 @@ curl -X POST "https://api.smith.langchain.com/v1/platform/gateway-policies" \
     -H "X-Api-Key: $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
     -d '{
-          "name": "tenant-acme-rate-limit",
+          "name": "customer-acme-rate-limit",
           "policy_type": "rate_limit",
           "action": "block",
           "subject_matchers": [
             {"key": "workspace_id", "value": "0b1c2d3e-4f56-7890-abcd-ef1234567890"},
-            {"key": "tenant_id", "value": "acme"}
+            {"key": "customer_id", "value": "acme"}
           ],
           "config": {
             "version": 1,
