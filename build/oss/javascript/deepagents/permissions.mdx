@@ -1,0 +1,141 @@
+---
+title: Permissions
+description: Control filesystem access with declarative permission rules for Deep Agents
+---
+
+import PermissionsBasicPy from '/snippets/code-samples/permissions-basic-py.mdx';
+import PermissionsBasicJs from '/snippets/code-samples/permissions-basic-js.mdx';
+import PermissionsIsolateWorkspacePy from '/snippets/code-samples/permissions-isolate-workspace-py.mdx';
+import PermissionsIsolateWorkspaceJs from '/snippets/code-samples/permissions-isolate-workspace-js.mdx';
+import PermissionsProtectFilesPy from '/snippets/code-samples/permissions-protect-files-py.mdx';
+import PermissionsProtectFilesJs from '/snippets/code-samples/permissions-protect-files-js.mdx';
+import PermissionsReadOnlyMemoryPy from '/snippets/code-samples/permissions-read-only-memory-py.mdx';
+import PermissionsReadOnlyMemoryJs from '/snippets/code-samples/permissions-read-only-memory-js.mdx';
+import PermissionsDenyAllPy from '/snippets/code-samples/permissions-deny-all-py.mdx';
+import PermissionsDenyAllJs from '/snippets/code-samples/permissions-deny-all-js.mdx';
+import PermissionsRuleOrderingPy from '/snippets/code-samples/permissions-rule-ordering-py.mdx';
+import PermissionsRuleOrderingJs from '/snippets/code-samples/permissions-rule-ordering-js.mdx';
+import PermissionsSubagentPy from '/snippets/code-samples/permissions-subagent-py.mdx';
+import PermissionsSubagentJs from '/snippets/code-samples/permissions-subagent-js.mdx';
+import PermissionsCompositeBackendPy from '/snippets/code-samples/permissions-composite-backend-py.mdx';
+import PermissionsCompositeBackendJs from '/snippets/code-samples/permissions-composite-backend-js.mdx';
+import PermissionsCompositeBackendInvalidPy from '/snippets/code-samples/permissions-composite-backend-invalid-py.mdx';
+import PermissionsInterruptPy from '/snippets/code-samples/permissions-interrupt-py.mdx';
+import PermissionsCompositeBackendInvalidJs from '/snippets/code-samples/permissions-composite-backend-invalid-js.mdx';
+
+Control which files and directories an agent can read or write to using declarative permission rules. Pass a list of rules to `permissions=` and the agent's built-in filesystem tools respect them.
+
+
+
+<Note>
+    Permissions require `deepagents>=1.9.1`.
+</Note>
+
+
+
+
+Permissions only apply to the built-in filesystem tools (`ls`, `read_file`, `glob`, `grep`, `write_file`, `edit_file`). Custom tools and MCP tools that access the filesystem are not covered. Permissions also do not apply to [sandbox backends](/oss/javascript/deepagents/sandboxes), which support arbitrary command execution via the `execute` tool.
+
+
+<Tip>
+Use `permissions` when you need **path-based allow/deny rules** on the built-in filesystem tools. Use [backend policy hooks](/oss/javascript/deepagents/backends#add-policy-hooks) when you need custom validation logic (rate limiting, audit logging, content inspection) or need to control custom tools.
+</Tip>
+
+## Basic usage
+
+
+
+Pass a list of `FilesystemPermission` rules to `createDeepAgent`. Rules are evaluated in declaration order. The first matching rule wins. If no rule matches, the operation is allowed.
+
+<PermissionsBasicJs />
+
+
+
+## Rule structure
+
+
+
+Each `FilesystemPermission` has three fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `operations` | `("read" \| "write")[]` | Operations this rule applies to. `"read"` covers `ls`, `read_file`, `glob`, `grep`. `"write"` covers `write_file`, `edit_file`. |
+| `paths` | `string[]` | Glob patterns for matching file paths (e.g., `["/workspace/**"]`). Supports `**` for recursive matching and `{a,b}` for alternation. |
+| `mode` | `"allow" \| "deny"` | Whether to allow or deny matching operations. Defaults to `"allow"`. |
+
+Rules use first-match-wins evaluation: the first rule whose `operations` and `paths` match the current call determines the outcome. If no rule matches, the call is **allowed** (permissive default).
+
+Paths must be absolute (start with `/`) and cannot contain `..` or `~`. Invalid paths throw at agent construction time.
+
+
+
+
+
+## Examples
+
+
+
+### Isolate to a workspace directory
+
+Allow reads and writes only under `/workspace/` and deny everything else:
+
+<PermissionsIsolateWorkspaceJs />
+
+### Protect specific files
+
+<PermissionsProtectFilesJs />
+
+### Read-only memory
+
+Allow the agent to read memory files but prevent it from modifying them. This is useful for organization-wide policies or shared knowledge bases that should only be updated by application code. See [read-only vs writable memory](/oss/javascript/deepagents/memory#read-only-vs-writable-memory) for more context.
+
+<PermissionsReadOnlyMemoryJs />
+
+### Deny all access
+
+Block all reads and writes. This is a restrictive baseline you can layer more specific allow rules on top of:
+
+<PermissionsDenyAllJs />
+
+### Rule ordering
+
+Because of first-match-wins, rule order matters. Place more specific rules before broader ones:
+
+<PermissionsRuleOrderingJs />
+
+
+
+## Subagent permissions
+
+
+
+[Subagents](/oss/javascript/deepagents/subagents) inherit the parent agent's permissions by default. To give a subagent different permissions, set the `permissions` field in its spec. This **replaces** the parent's rules entirely.
+
+<PermissionsSubagentJs />
+
+To explicitly grant a subagent unrestricted access, set `permissions: []`. An empty array overrides the parent rules with no restrictions. Omitting `permissions` inherits from the parent.
+
+
+
+## Composite backends
+
+
+
+When using a `CompositeBackend` with a sandbox default, every permission path must be scoped under a known route prefix. Sandboxes support arbitrary command execution, so path-based restrictions alone cannot prevent filesystem access through shell commands. Scoping permissions to route-specific [backends](/oss/javascript/deepagents/backends) avoids this conflict.
+
+<PermissionsCompositeBackendJs />
+
+Permissions that include paths outside any route throw at construction time:
+
+<PermissionsCompositeBackendInvalidJs />
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/deepagents/permissions.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

@@ -1,0 +1,337 @@
+---
+title: Azure Terraform architecture
+sidebarTitle: Architecture
+description: Platform layers, services, Workload Identity, networking, ingress options, and module dependencies for LangSmith self-hosted on AKS.
+---
+
+Understand what the [Azure Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/azure) provision and how the pieces fit together, so you can size, secure, and customize your LangSmith deployment before running `make apply`.
+
+Use this page as a reference while planning a rollout or troubleshooting an existing one. It covers:
+
+- Platform layers and deployment tiers (light versus production).
+- Application deployment paths (Helm versus Terraform).
+- Networking, Workload Identity, and secret flow.
+- Add-ons: LangSmith Deployment, Agent Builder, Insights, and Polly.
+- Ingress controllers, resource sizing, and optional modules.
+
+If you are ready to install, start with the [deployment walkthrough](/langsmith/self-host-terraform-azure-deploy).
+
+## Platform layers
+
+LangSmith on Azure deploys in stages. Each stage adds a capability layer on top of the previous. All layers share the same AKS cluster and `langsmith` namespace.
+
+<img src="/images/self-hosted-terraform/azure-architecture.png" alt="LangSmith on Azure service layout" />
+
+| Stage | Layer | What it adds |
+|---|---|---|
+| Infrastructure | Azure infrastructure | VNet, AKS, Postgres, Redis, Blob, Key Vault, cert-manager, KEDA, ingress controller |
+| Application | LangSmith base | frontend, backend, platform-backend, queue, ingest-queue, ace-backend, clickhouse, playground |
+| LangSmith Deployment add-on | LangSmith Deployment | host-backend, listener, operator + per-deployment pods |
+| Agent Builder add-on | Agent Builder | agent-builder-tool-server, agent-builder-trigger-server + deep-agent LGP |
+| Insights + Polly add-on | Insights + Polly | Clio analytics (ClickHouse-backed), Polly eval agent (operator-managed, dynamic) |
+
+## Application deployment paths
+
+| Path | How | When to use |
+|---|---|---|
+| Helm path | `make init-values && make deploy` | Default. Shell script, interactive, reads TF outputs dynamically. Best for first deploys and day-2 re-deploys. |
+| Terraform path | `make init-app && make apply-app` | Declarative. Kubernetes Secrets + `langsmith-ksa` SA + Helm release in Terraform state. Best for GitOps and CI/CD pipelines. |
+
+The Terraform path uses the `app/` module. `make init-app` calls `app/scripts/pull-infra-outputs.sh` to read all infra outputs and write them into `app/infra.auto.tfvars.json`.
+
+## Deployment tiers
+
+### Light deploy (all in-cluster)
+
+```txt
+AKS Cluster
+├── langsmith namespace
+│   ├── frontend, backend, platform-backend, playground, queue, ace-backend
+│   ├── clickhouse (in-cluster pod)
+│   ├── postgres   (in-cluster pod)
+│   └── redis      (in-cluster pod)
+├── ingress-nginx (Azure Load Balancer → NGINX)
+└── cert-manager  (Let's Encrypt TLS)
+
+Azure
+├── Azure Blob Storage  (trace payloads, always external)
+└── Azure Key Vault     (secrets)
+```
+
+Set in `terraform.tfvars`:
+
+```hcl
+postgres_source   = "in-cluster"
+redis_source      = "in-cluster"
+clickhouse_source = "in-cluster"
+```
+
+For the full all-in-cluster walkthrough (NGINX with Let's Encrypt HTTP-01 TLS, all-in-cluster DBs), see `BUILDING_LIGHT_LANGSMITH.md` in the [Azure module repo](https://github.com/langchain-ai/terraform/blob/main/modules/azure/BUILDING_LIGHT_LANGSMITH.md).
+
+### Production (external managed services)
+
+```txt
+AKS Cluster
+├── langsmith namespace
+│   ├── frontend, backend, platform-backend, playground, queue, ingest-queue, ace-backend
+│   └── clickhouse (in-cluster; use LangChain Managed for production scale)
+└── ingress-nginx + cert-manager
+
+Azure Managed Services
+├── Azure DB for PostgreSQL Flexible Server (private VNet)
+├── Azure Managed Redis (private VNet)
+├── Azure Blob Storage (Workload Identity, no static keys)
+└── Azure Key Vault
+```
+
+## Networking
+
+### Light deploy
+
+```txt
+langsmith-vnet<identifier>
+└── subnet-0    (AKS nodes only)
+    No Postgres/Redis subnets; chart-managed pods handle both
+```
+
+### Production
+
+```txt
+langsmith-vnet<identifier>
+├── subnet-0              (AKS nodes)
+├── subnet-postgres       (Azure DB for PostgreSQL Flexible Server)
+└── subnet-redis          (Azure Managed Redis)
+```
+
+All subnets are private. Postgres and Redis have no public endpoints; both are accessible only from within the VNet via private DNS resolution.
+
+## Application core services
+
+| Service | Purpose | Port | HPA | Workload Identity |
+|---|---|---|---|---|
+| `langsmith-frontend` | React UI | 3000 | 2 to 10 | No |
+| `langsmith-backend` | Main API (traces, runs, projects, API keys, feedback) | 1984 | 3 to 10 | Yes (Blob) |
+| `langsmith-platform-backend` | Org and user management, auth, billing, settings | 1986 | 2 to 10 | Yes (Blob) |
+| `langsmith-playground` | LLM prompt playground UI | 3001 | 1 to 5 | No |
+| `langsmith-queue` | Trace ingestion worker (Redis → ClickHouse + Blob) | — | 3 to 10 + KEDA | Yes |
+| `langsmith-ingest-queue` | Dedicated high-throughput ingestion worker | — | 3 to 10 + KEDA | Yes |
+| `langsmith-ace-backend` | Async compute (dataset runs, evaluations, background jobs) | — | 1 to 5 | No |
+| `langsmith-clickhouse` | Columnar store (trace spans, run metadata, eval results) | — | StatefulSet, single replica, 500Gi PVC | No |
+
+<Warning>
+In-cluster ClickHouse is dev/POC only (single pod, no replication, no backups). For production use [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse) or a self-managed external cluster.
+</Warning>
+
+<Note>
+[SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs) is LangSmith's purpose-built observability backend, available for Self-hosted starting with self-hosted version 0.16.0 (see [deployment support](/langsmith/smithdb-sdk-migration#deployment-support)). These Terraform modules provision ClickHouse, so the guidance in the previous sections applies to current deployments.
+</Note>
+
+### One-time jobs
+
+| Job | Purpose |
+|---|---|
+| `langsmith-backend-migrations` | PostgreSQL schema migrations |
+| `langsmith-backend-ch-migrations` | ClickHouse schema migrations |
+| `langsmith-backend-auth-bootstrap` | Creates the initial org and admin account from `initial_org_admin_password` in `langsmith-config-secret` |
+
+## LangSmith Deployment add-on
+
+| Service | Purpose | Workload Identity |
+|---|---|---|
+| `langsmith-host-backend` | LangGraph control plane API. Manages deployment lifecycle, serves deployment metadata. | Yes |
+| `langsmith-listener` | Watches host-backend for state changes, creates and updates `LangGraphPlatform` CRDs. | Yes |
+| `langsmith-operator` | Kubernetes operator. Azure-specific: injects `azure.workload.identity/use: "true"` + `langsmith-ksa` so every agent pod accesses Blob Storage via Workload Identity. | No |
+
+## Agent Builder add-on
+
+| Pod | Type | Role | Workload Identity |
+|---|---|---|---|
+| `langsmith-agent-builder-tool-server` | Static | MCP tool execution server | Yes |
+| `langsmith-agent-builder-trigger-server` | Static | Webhook receiver and scheduled trigger engine | Yes |
+| `langsmith-agent-bootstrap` | Job | Registers the bundled Agent Builder agent | — |
+| `agent-builder-<hash>` + queue + redis + `lg-<hash>-0` | Dynamic | Agent Builder deployment, operator-managed | Inherited |
+
+## Insights and Polly add-on
+
+**Insights/Clio:** No static pods. Deploys lazily as a dynamic LangGraph deployment via the operator on first UI invocation. Reads `insights_encryption_key` from `langsmith-config-secret`. Never rotate this key: it permanently breaks existing Insights data.
+
+**Polly:** Runs as a dynamic LangGraph deployment, operator-managed. Reads `polly_encryption_key` from `langsmith-config-secret`. Same rotation warning as Insights.
+
+## Azure managed services
+
+When `postgres_source = "external"` and `redis_source = "external"` (the recommended production setting), Terraform provisions:
+
+### Azure DB for PostgreSQL Flexible Server
+
+- Holds orgs, users, projects, API keys, settings.
+- PostgreSQL ≥ 14 required. The `postgres` module sets `postgres_version` to `14` by default.
+- Extensions enabled automatically by the `postgres` module: `btree_gin`, `btree_gist`, `pgcrypto`, `citext`, `pg_trgm`.
+- Private VNet only (`subnet-postgres`), SSL port 5432.
+- Secret: `langsmith-postgres-secret`, created by the `k8s-bootstrap` Terraform module.
+
+### Azure Managed Redis
+
+- Trace ingestion queue, pub/sub, short-lived cache.
+- Azure Managed Redis manages the engine version; there is no version variable to set.
+- Each LangSmith installation must use its own dedicated Redis. Shared instances cause deployment tasks to route incorrectly.
+- Private VNet only (`subnet-redis`), TLS port 10000.
+- Secret: `langsmith-redis-secret`, created by the `k8s-bootstrap` Terraform module.
+
+### Azure Blob Storage
+
+- Trace payloads: large inputs and outputs, attachments.
+- Workload Identity (no static keys) via the `k8s-app-identity` Managed Identity.
+- Always required. Disabling blob storage breaks the cluster on large payloads.
+- Prefixes: `ttl_s/` (14-day TTL), `ttl_l/` (400-day TTL).
+
+### Azure Key Vault
+
+- Centralized secret store for all LangSmith secrets.
+- Secret flow: `az keyvault secret show` → `kubectl create secret generic langsmith-config-secret`.
+
+## Workload Identity
+
+Azure AD token exchange happens via the AKS OIDC issuer. Pods access Blob Storage without static keys.
+
+```txt
+AKS OIDC issuer
+  → Federated credential on Azure Managed Identity (one per Kubernetes ServiceAccount)
+  → Kubernetes ServiceAccount annotated with azure.workload.identity/client-id
+  → Pod labeled with azure.workload.identity/use: "true"
+  → Azure AD issues a short-lived token; no storage keys in any Secret or env var
+```
+
+Workload Identity is centralized in `modules/k8s-cluster/` alongside the managed identity and OIDC issuer, which avoids circular dependencies and simplifies adding new ServiceAccounts.
+
+### Which pods need Workload Identity
+
+Every pod that reads blob storage env vars must have:
+
+1. A federated credential registered in Terraform (`modules/k8s-cluster/main.tf`).
+2. The `azure.workload.identity/use: "true"` label on the Deployment.
+3. The `azure.workload.identity/client-id` annotation on the ServiceAccount.
+
+| Pod | Stage | Needs WI |
+|---|---|---|
+| `langsmith-backend` | Application | Yes |
+| `langsmith-platform-backend` | Application | Yes |
+| `langsmith-queue` | Application | Yes |
+| `langsmith-ingest-queue` | Application | Yes |
+| `langsmith-host-backend` | LangSmith Deployment add-on | Yes |
+| `langsmith-listener` | LangSmith Deployment add-on | Yes |
+| `langsmith-agent-builder-tool-server` | Agent Builder add-on | Yes |
+| `langsmith-agent-builder-trigger-server` | Agent Builder add-on | Yes |
+| `langsmith-frontend` | Application | No |
+| `langsmith-playground` | Application | No |
+| `langsmith-ace-backend` | Application | No |
+| `langsmith-clickhouse` | Application | No |
+| `langsmith-operator` | LangSmith Deployment add-on | No |
+
+All federated credentials are registered in `modules/k8s-cluster/main.tf` under `service_accounts_for_workload_identity`. Adding a new pod that accesses blob storage requires adding its ServiceAccount name to that list and running `terraform apply -target=module.aks`.
+
+If a pod's ServiceAccount has no registered federated credential, Azure AD rejects the token exchange and the pod panics on startup:
+
+```txt
+panic: blob-storage health-check failed: get container properties failed:
+DefaultAzureCredential: failed to acquire a token.
+WorkloadIdentityCredential authentication failed.
+  AADSTS700213: No matching federated identity record found for presented assertion subject
+```
+
+## Secret flow
+
+```txt
+Infrastructure stage
+
+  ./setup-env.sh   (read-only against Key Vault; never writes to KV directly)
+    First run:  prompts for postgres password, license key, admin password, admin email.
+                Generates api_key_salt, jwt_secret, Fernet keys locally.
+                Key Vault does not exist yet → writes to local dot-files + secrets.auto.tfvars.
+    Subsequent: Key Vault exists → reads the six generated secrets (api_key_salt,
+                jwt_secret, four Fernet keys) from KV. Re-prompts for postgres password,
+                license key, admin password, and admin email unless LANGSMITH_PG_PASSWORD,
+                LANGSMITH_LICENSE_KEY, LANGSMITH_ADMIN_PASSWORD, and LANGSMITH_ADMIN_EMAIL
+                are set. Writes secrets.auto.tfvars. No generation, no KV writes.
+    Output:     secrets.auto.tfvars  (gitignored, chmod 600)
+                Terraform picks this up automatically; no shell session coupling.
+
+  terraform apply
+    Reads:  terraform.tfvars (non-sensitive config)
+            secrets.auto.tfvars (sensitive values; sole input for KV secret creation)
+    Creates: Azure Key Vault + all secrets as KV secrets (Terraform is the sole KV writer)
+
+Application stage
+
+  ./setup-env.sh   (re-run on any machine; reads generated secrets from Key Vault,
+                    re-prompts for user-provided ones unless LANGSMITH_* env vars are set)
+
+  kubectl create secret generic langsmith-config-secret
+    Reads:  Key Vault secrets + Terraform outputs (postgres/redis URLs, blob account)
+    Writes: K8s secrets: langsmith-config-secret, langsmith-postgres-secret,
+                          langsmith-redis-secret
+
+  helm upgrade --install langsmith ...
+    Chart reads config.existingSecretName = "langsmith-config-secret".
+    No secrets inline in any YAML file.
+```
+
+**Key rule:** `secrets.auto.tfvars` is never committed. Running `./setup-env.sh` on any machine restores it: the generated secrets come from Key Vault, and the user-provided secrets are re-prompted unless supplied through the `LANGSMITH_*` environment variables. Terraform is the sole writer to Key Vault; `setup-env.sh` only reads from it after the first apply.
+
+## Ingress options
+
+| Controller | Variable | DNS label support | Notes |
+|---|---|---|---|
+| `nginx` _(default)_ | `ingress_controller = "nginx"` | Yes | NGINX via Helm, standard Kubernetes Ingress. |
+| `istio-addon` | `ingress_controller = "istio-addon"` | Yes | AKS managed Istio service mesh. Use `istio_addon_revision` to pin revision. |
+| `istio` | `ingress_controller = "istio"` | Yes | Self-managed Istio via Helm. Full control over revision and config. |
+| `agic` | `ingress_controller = "agic"` | Yes | Azure Application Gateway v2 + AKS-managed `ingress_application_gateway` add-on. Native L7 WAF. HTTP-only or dns01 + custom domain. |
+| `envoy-gateway` | `ingress_controller = "envoy-gateway"` | Yes | Gateway API native. Uses `envoyproxy/gateway-helm`. |
+| `none` | `ingress_controller = "none"` | — | Bring your own ingress. |
+
+Azure Public IP DNS labels (`dns_label`) work with all controllers. `deploy.sh` applies the `service.beta.kubernetes.io/azure-dns-label-name` annotation to the correct LoadBalancer service based on the chosen controller.
+
+For the full TLS compatibility matrix and per-controller setup, see `INGRESS_CONTROLLERS.md` in the [Azure module repo](https://github.com/langchain-ai/terraform/blob/main/modules/azure/INGRESS_CONTROLLERS.md).
+
+## Resource sizing
+
+Four sizing profiles are available.
+
+| Profile | Use case | Set via |
+|---|---|---|
+| `minimum` | Cost parking, CI smoke tests, single-user demos | `sizing_profile = "minimum"` in `terraform.tfvars` |
+| `dev` | Developer use, integration tests, POCs | `sizing_profile = "dev"` |
+| `production` | Real traffic, multi-replica + HPA | `sizing_profile = "production"` _(recommended)_ |
+| `production-large` | ~50 users, ~1000 traces/sec | `sizing_profile = "production-large"` |
+
+### AKS node pools
+
+| Pool | VM Size | vCPU | RAM | Min | Max | Purpose |
+|---|---|---|---|---|---|---|
+| default | `Standard_D8s_v3` | 8 | 32 GB | 1 | 10 | Core LangSmith, system pods (set min 3 for production) |
+| large | `Standard_D16s_v3` | 16 | 64 GB | 0 | 2 | ClickHouse (in-cluster), LGP agent pods |
+
+<Note>
+ClickHouse (when in-cluster) requests 1 to 4 CPU and 2 to 16 GB RAM depending on profile. With [LangChain Managed ClickHouse](/langsmith/langsmith-managed-clickhouse), the `large` pool is only needed for LGP operator-spawned agent pods.
+</Note>
+
+## Optional modules
+
+Each module is count-controlled (`0` disabled, `1` enabled). Enable any combination; the core deployment (Passes 1 to 5) works without them.
+
+| Module | Variable | Use case |
+|---|---|---|
+| `waf` | `create_waf = true` | Azure WAF policy (OWASP 3.2 + bot protection). Attach to Application Gateway. |
+| `diagnostics` | `create_diagnostics = true` | Log Analytics workspace + diagnostic settings for AKS, Key Vault, and PostgreSQL. Recommended for production observability. |
+| `bastion` | `create_bastion = true` | Jump VM with a static public IP for private AKS access via `az ssh vm` and Entra ID SSH. |
+| `dns` | `create_dns_zone = true` | Azure DNS zone + A record. Required for DNS-01 cert issuance with a custom domain. |
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-terraform-azure-architecture.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

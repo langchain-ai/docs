@@ -1,0 +1,159 @@
+---
+title: Connect MCP tools to Managed Deep Agents
+sidebarTitle: MCP
+description: Declare remote MCP servers with Managed Deep Agents connectors.
+---
+
+import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
+import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
+
+Managed Deep Agents use MCP connectors to load tools from remote MCP servers. Declare the servers in `connectors/mcp.ts` or `connectors/mcp.py`, export a named `mcp` declaration, and Managed Deep Agents loads those tools into the agent at runtime.
+
+<Note>
+<ManagedDeepAgentsPrivateBetaNote />
+</Note>
+
+For other connector types, see [Connectors](/langsmith/managed-deep-agents-connectors).
+
+## Add an MCP connector
+
+Add `connectors/mcp.py` or `connectors/mcp.ts` next to your agent entry file.
+
+The connector module must export a named `mcp` declaration.
+
+<CodeGroup>
+
+```python connectors/mcp.py
+from managed_deepagents.connectors import define_mcp_servers
+
+mcp = define_mcp_servers(
+    mcp_servers={
+        "langchainDocs": {
+            "transport": "http",
+            "url": "https://docs.langchain.com/mcp",
+        },
+    },
+)
+```
+
+```ts connectors/mcp.ts
+import { defineMcpServers } from "managed-deepagents";
+
+export const mcp = defineMcpServers({
+  mcpServers: {
+    langchainDocs: {
+      transport: "http",
+      url: "https://docs.langchain.com/mcp",
+    },
+  },
+});
+```
+
+</CodeGroup>
+
+You do not import `MultiServerMCPClient` or call `getTools()` / `get_tools()` yourself. `mda` discovers the connector module, injects the MCP adapter dependency into the compiled build, creates the client in the managed runtime, loads the tools, and appends them to the authored tools from `agent.ts` or `agent.py`.
+
+## Supported MCP servers
+
+Connectors support remote MCP servers only:
+
+| Transport | Use |
+| --- | --- |
+| `http` | Streamable HTTP MCP servers. |
+| `sse` | Legacy SSE MCP servers. |
+
+Stdio MCP servers are not supported in connectors. If a server needs local process management, expose it over HTTP/SSE or wrap the behavior as a normal authored tool.
+
+## Configure server options
+
+Each server key is the logical server name Managed Deep Agents uses for validation, tracing metadata, and tool-name prefixing. Server configs can include static headers.
+
+Connectors do not run an OAuth authorization flow. If an MCP server requires OAuth, provide a pre-provisioned access token or another static credential through headers. Store the token in `.env` so `mda dev` can load it locally and `mda deploy` can forward it as a hosted deployment secret.
+
+The connector module is normal project code, so read secrets as environment variables with `os.environ` in Python or `process.env` in TypeScript. You do not import the `.env` file directly.
+
+<CodeGroup>
+
+```python connectors/mcp.py
+import os
+
+from managed_deepagents.connectors import define_mcp_servers
+
+mcp = define_mcp_servers(
+    mcp_servers={
+        "github": {
+            "transport": "http",
+            "url": "https://example.com/mcp",
+            "headers": {
+                "Authorization": f"Bearer {os.environ['GITHUB_MCP_TOKEN']}",
+            },
+        },
+    },
+)
+```
+
+```ts connectors/mcp.ts
+import { defineMcpServers } from "managed-deepagents";
+
+export const mcp = defineMcpServers({
+  mcpServers: {
+    github: {
+      transport: "http",
+      url: "https://example.com/mcp",
+      headers: {
+        Authorization: `Bearer ${process.env.GITHUB_MCP_TOKEN}`,
+      },
+    },
+  },
+});
+```
+
+</CodeGroup>
+
+<Warning>
+Do not commit MCP tokens, API keys, OAuth access tokens, or passwords. Put local values in `.env`; `mda dev` loads them for local development, and `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets.
+</Warning>
+
+## MCP connector defaults
+
+Managed Deep Agents applies managed defaults when it loads connector tools:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `prefixToolNameWithServerName` / `prefix_tool_name_with_server_name` | `true` | Prefix MCP tool names with the server name, for example `github__search`, to avoid collisions. |
+| `throwOnLoadError` / `throw_on_load_error` | `true` | Fail when tools cannot be loaded instead of starting with a partial tool surface. |
+| `useStandardContentBlocks` / `use_standard_content_blocks` | `true` | Convert MCP tool outputs to standard LangChain content blocks. Python connectors currently require the default `true` value. |
+| `onConnectionError` / `on_connection_error` | `"throw"` | Fail when a server cannot be reached. `"throw"` is the only supported value. |
+
+Disable tool-name prefixing only when you know the MCP tool names do not collide. Managed Deep Agents validates duplicate MCP tool names when prefixing is disabled.
+
+## Test and deploy
+
+<ManagedDeepAgentsTestAndDeploy />
+
+MCP misconfiguration surfaces during local startup or first tool load, depending on when the runtime reaches the MCP server.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Connectors" icon="plug" href="/langsmith/managed-deep-agents-connectors">
+    Compare MCP and LangSmith connector types.
+  </Card>
+  <Card title="Custom tools" icon="tool" href="/langsmith/managed-deep-agents-tools">
+    Add authored tools alongside MCP connector tools.
+  </Card>
+  <Card title="Deploy an agent" icon="upload" href="/langsmith/managed-deep-agents-deploy">
+    Run and deploy the connector-enabled agent.
+  </Card>
+</CardGroup>
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-connectors/mcp.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

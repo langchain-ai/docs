@@ -1,0 +1,169 @@
+---
+title: Manage LangSmith with Terraform
+sidebarTitle: Terraform provider
+icon: "brand-terraform"
+description: Use the official LangSmith Terraform provider to manage workspaces, roles, members, evaluators, run rules, and alert rules as code.
+---
+
+The official [LangSmith Terraform provider](https://registry.terraform.io/providers/langchain-ai/langsmith/latest) lets you manage LangSmith organization and workspace resources as code—workspaces, custom roles, organization and workspace members, evaluators, run rules, and alert rules. It's the infrastructure-as-code counterpart to [managing your organization using the API](/langsmith/manage-organization-by-api).
+
+<Check>
+Before diving in, it might be helpful to read:
+
+* [Conceptual guide on organizations and workspaces](/langsmith/administration-overview)
+* [Organization setup how-to](/langsmith/set-up-hierarchy#set-up-an-organization)
+</Check>
+
+## Install and configure
+
+Add the provider to your Terraform configuration and pin a version:
+
+```hcl
+terraform {
+  required_providers {
+    langsmith = {
+      source  = "langchain-ai/langsmith"
+      version = "~> 0.0.2"
+    }
+  }
+}
+
+provider "langsmith" {
+  # Cloud (US). Use https://eu.api.smith.langchain.com for the EU region,
+  # or your self-hosted URL. Can also be set via LANGSMITH_ENDPOINT.
+  api_url = "https://api.smith.langchain.com"
+
+  # Optional: scope workspace-level resources to a specific workspace.
+  workspace_id = "00000000-0000-0000-0000-000000000000"
+}
+```
+
+Then run `terraform init` to download the provider.
+
+## Authentication
+
+The provider resolves credentials the same way as the LangSmith SDK and CLI. Prefer environment variables or a profile over hardcoding `api_key`:
+
+* **Environment**—`LANGSMITH_API_KEY`, `LANGSMITH_ENDPOINT` (API URL), `LANGSMITH_WORKSPACE_ID`.
+* **Profile**—set `profile` (or `LANGSMITH_PROFILE`) to use a LangSmith CLI profile.
+* **Provider arguments**—`api_key`, `api_url`, `workspace_id`, `profile`.
+
+Create an API key or [service key](/langsmith/administration-overview#service-keys) in your LangSmith settings. See [Authentication methods](/langsmith/authentication-methods) for the available key types.
+
+<Warning>
+Organization-scoped operations—creating workspaces and inviting organization members—require an **organization-scoped service key with Organization Admin permissions**. Set `workspace_id` (or `LANGSMITH_WORKSPACE_ID`) to target workspace-scoped resources such as workspace memberships, evaluators, and run rules.
+</Warning>
+
+## Examples
+
+### Create a workspace
+
+```hcl
+resource "langsmith_workspace" "demo" {
+  display_name  = "Demo Workspace"
+  tenant_handle = "demo-workspace"
+}
+```
+
+### Manage roles and members
+
+Look up built-in roles with data sources, then assign them. This invites a user to the organization and grants them admin on the workspace:
+
+```hcl
+data "langsmith_org_role" "user" {
+  name = "ORGANIZATION_USER"
+}
+
+data "langsmith_workspace_role" "admin" {
+  name = "WORKSPACE_ADMIN"
+}
+
+resource "langsmith_org_membership" "alice" {
+  email   = "alice@example.com"
+  role_id = data.langsmith_org_role.user.id
+}
+
+resource "langsmith_workspace_membership" "alice_demo" {
+  workspace_id = langsmith_workspace.demo.id
+  email        = langsmith_org_membership.alice.email
+  role_id      = data.langsmith_workspace_role.admin.id
+}
+```
+
+You can also define a custom workspace role, for example by cloning an existing role's permissions:
+
+```hcl
+resource "langsmith_workspace_role" "issues_agent" {
+  display_name = "Issues Agent"
+  description  = data.langsmith_workspace_role.admin.description
+  permissions  = data.langsmith_workspace_role.admin.permissions
+}
+```
+
+### Automate evaluators, run rules, and alerts
+
+The provider manages more than accounts. You can codify [online code evaluators](/langsmith/online-evaluations-code), the [run rules](/langsmith/rules) that apply them, and [alerts](/langsmith/alerts) alongside your workspaces:
+
+```hcl
+resource "langsmith_evaluator" "tool_calls" {
+  workspace_id = langsmith_workspace.demo.id
+  name         = "tool call counts"
+  type         = "code"
+
+  code_evaluator = {
+    language = "javascript"
+    code     = file("${path.module}/evaluator.js")
+  }
+}
+
+# A run rule applies the evaluator to matching runs in a tracing project.
+# Run rules can also add runs to a dataset or annotation queue, or call webhooks.
+resource "langsmith_run_rule" "score_root_runs" {
+  workspace_id  = langsmith_workspace.demo.id
+  display_name  = "score root runs"
+  session_id    = "00000000-0000-0000-0000-000000000000" # tracing project ID
+  sampling_rate = 1
+  filter        = "eq(is_root, true)"
+
+  evaluator_id = langsmith_evaluator.tool_calls.id
+}
+
+resource "langsmith_alert_rule" "error_rate" {
+  session_id     = "00000000-0000-0000-0000-000000000000" # tracing project ID
+  name           = "run error count high"
+  type           = "threshold"
+  attribute      = "error_count"
+  aggregation    = "sum"
+  window_minutes = 15
+  operator       = "gte"
+  threshold      = 10
+  filter         = "eq(is_root, true)"
+
+  actions = [{
+    target  = "webhook"
+    url_env = "LANGSMITH_ALERTS_WEBHOOK_URL"
+    config_json = jsonencode({
+      body = jsonencode({ text = "Error rate elevated" })
+    })
+  }]
+}
+```
+
+## Resource reference
+
+The full list of resources and data sources—with every argument and attribute—is published and kept in sync on the Terraform Registry:
+
+<Card title="LangSmith provider on the Terraform Registry" icon="brand-terraform" href="https://registry.terraform.io/providers/langchain-ai/langsmith/latest/docs">
+  Browse the complete reference for all resources and data sources.
+</Card>
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/manage-with-terraform.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
