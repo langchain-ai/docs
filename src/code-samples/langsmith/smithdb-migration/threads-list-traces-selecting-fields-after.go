@@ -54,6 +54,9 @@ func main() {
 	for iter.Next() {
 		trace := iter.Current()
 		fmt.Println(trace.TraceID, trace.TotalTokens, trace.TotalCost)
+		// :remove-start:
+		break
+		// :remove-end:
 	}
 	if err := iter.Err(); err != nil {
 		panic(err.Error())

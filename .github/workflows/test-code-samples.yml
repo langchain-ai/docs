@@ -47,18 +47,22 @@ jobs:
 
       - name: Get modified code sample paths
         id: files
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "$EVENT_NAME" == "schedule" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "run_all=true" >> "$GITHUB_OUTPUT"
             echo "Full run: testing all code samples"
           else
             echo "run_all=false" >> "$GITHUB_OUTPUT"
 
-            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-              git fetch origin "${{ github.event.pull_request.base.ref }}"
-              BASE=$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})
+            if [[ "$EVENT_NAME" == "pull_request" ]]; then
+              git fetch origin "$PR_BASE_REF"
+              BASE=$(git merge-base HEAD "origin/$PR_BASE_REF")
             else
-              BASE="${{ github.event.before }}"
+              BASE="$BEFORE_SHA"
             fi
 
             FILES=$(git diff --name-only "$BASE" HEAD -- src/code-samples/ \
@@ -136,12 +140,14 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
+          RUN_ALL: ${{ steps.files.outputs.run_all }}
+          MODIFIED_FILES: ${{ steps.files.outputs.files }}
         run: |
-          if [[ "${{ steps.files.outputs.run_all }}" == "true" ]]; then
+          if [[ "$RUN_ALL" == "true" ]]; then
             echo "Running all code samples..."
             make test-code-samples
           else
-            FILES="${{ steps.files.outputs.files }}"
+            FILES="$MODIFIED_FILES"
             FILES=$(echo "$FILES" | tr -d '\n' | xargs)
             if [[ -z "$FILES" ]]; then
               echo "No code samples to test"

@@ -28,5 +28,8 @@ for await (const trace of client.threads.listTraces(threadId, {
   selects: ["START_TIME"],
 })) {
   console.log(trace.trace_id, trace.start_time);
+  // :remove-start:
+  break;
+  // :remove-end:
 }
 // :snippet-end:

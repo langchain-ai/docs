@@ -29,5 +29,8 @@ for await (const run of client.readThread({
   select: ["id", "total_tokens", "total_cost"],
 })) {
   console.log(run.id, run.total_tokens, run.total_cost);
+  // :remove-start:
+  break;
+  // :remove-end:
 }
 // :snippet-end:

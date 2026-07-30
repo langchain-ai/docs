@@ -30,7 +30,7 @@ const researchSubagent = {
 import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google_genai:gemini-3.6-flash",
   subagents: [researchSubagent],
 });
 if (!agent) throw new Error("agent not created");

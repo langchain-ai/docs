@@ -23,7 +23,7 @@ import { Client } from "langsmith";
 const client = new Client();
 const project = await client.readProject({ projectName: "default" });
 let runId = "<run-id>";
-let startTime = "2026-06-01T12:00:00Z";
+let startTime = "2026-06-01T12:00:00Z"; // Optional, but speeds up retrieval
 // :remove-start:
 const run = await findRun(project.id);
 runId = run.id;
