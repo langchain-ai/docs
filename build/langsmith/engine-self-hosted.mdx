@@ -1,0 +1,103 @@
+---
+title: LangSmith Engine on self-hosted
+sidebarTitle: Self-hosted
+description: How LangSmith Engine runs in a self-hosted deployment, how it reaches managed inference over a private link, and what that means for your data.
+---
+
+<Note>
+  Engine for self-hosted is coming soon!
+</Note>
+
+LangSmith Engine is an agent within LangSmith that monitors your production traces, clusters them into issues, diagnoses each issue against your source code, proposes a fix as a PR, and identifies ground truth evals to add to your datasets. For a product overview, see [Engine](/langsmith/engine-overview).
+
+This page explains how Engine runs in a self-hosted deployment, how it reaches managed inference, and what that means for your data.
+
+{/* TODO(author): Add a version-added <Note> stating the minimum LangSmith / Helm chart version that supports self-hosted Engine managed inference. Required by the docs style guide for new features. */}
+
+Engine works with three kinds of data:
+
+- **Code** (optional)**:** your agent's source, which Engine reads to diagnose issues and propose fixes.
+- **Traces:** runtime data from your agents, which can include user messages, tool outputs, and PII.
+- **Model:** the LLM calls Engine makes to run diagnosis, generate fixes, and write evaluators.
+
+In a self-hosted deployment, Engine's orchestration runs inside your VPC as part of LangSmith: reading traces, reading code, and running its detect, fix, and verify loop. The models it calls are the exception. Rather than run them locally, Engine reaches a LangChain-managed, zero data retention (ZDR) inference service over a private network connection. Traces are the sensitive data type, and the architecture below keeps trace data on private networks inside your cloud service provider (CSP).
+
+## How inference works
+
+Engine's inference is delivered through a LangChain-managed service, LangSmith Intelligence. The service is fully isolated from LangSmith and does not trace, store, or persist any customer data.
+
+The flow:
+
+- Your self-hosted deployment connects to LangSmith Intelligence over a private link (PrivateLink on AWS and Azure, Private Service Connect on GCP).
+- LangSmith Intelligence runs models hosted within your cloud provider's environment (Bedrock, Vertex, or Foundry), so no data leaves your CSP.
+- The service records only request metadata for billing, plus telemetry needed to keep the service reliable.
+
+{/* TODO(author): For security review, enumerate exactly what "request metadata" includes (for example, token counts, timestamps, model ID) and confirm that no request payload is recorded. Do not ship vague wording. */}
+
+Each inference request carries the trace content, code, and intermediate outputs the model needs to reason. The request is processed by a model running inside your cloud provider and is never stored. No copy of your data is persisted outside your CSP.
+
+{/* TODO(author): State data residency: which region(s) the models run in, whether the customer selects the region, and whether any cross-region inference can occur. */}
+
+{/* TODO(author): Document the failure mode: what happens to the detect-fix-verify loop if the private link to LangSmith Intelligence is unavailable (degrade, queue, or fail closed). */}
+
+{/* TODO(author): Link or list the specific models served on each platform so customers can validate against approved-model policies. */}
+
+### AWS
+
+<Frame caption="AWS: private link to LangSmith Intelligence, models served by Bedrock">
+  <img
+    src="/langsmith/images/engine-self-hosted-aws.png"
+    alt="Architecture diagram showing a self-hosted LangSmith deployment on AWS connecting to LangSmith Intelligence over PrivateLink, with inference served by Bedrock inside the customer's account"
+  />
+</Frame>
+
+### GCP
+
+<Frame caption="GCP: Private Service Connect to LangSmith Intelligence, models served by Vertex">
+  <img
+    src="/langsmith/images/engine-self-hosted-gcp.png"
+    alt="Architecture diagram showing a self-hosted LangSmith deployment on GCP connecting to LangSmith Intelligence over Private Service Connect, with inference served by Vertex inside the customer's project"
+  />
+</Frame>
+
+### Azure
+
+<Frame caption="Azure: private link to LangSmith Intelligence, models served by Foundry">
+  <img
+    src="/langsmith/images/engine-self-hosted-azure.png"
+    alt="Architecture diagram showing a self-hosted LangSmith deployment on Azure connecting to LangSmith Intelligence over PrivateLink, with inference served by Foundry inside the customer's environment"
+  />
+</Frame>
+
+## Model selection and quality
+
+Model selection drives much of what makes Engine effective. Engine uses different models, tuned differently, for each step of its work: clustering issues, diagnosing root cause against your code, generating a fix, and writing the evaluator that verifies it. LangChain tunes these models for both quality and token efficiency, and upgrades them as better models ship.
+
+Managed inference makes that possible. Because Engine always runs the model LangChain has tuned for each step, behavior stays consistent and improves as those models are upgraded. A bring-your-own-key setup would instead tie Engine to the models you have configured, so tuning and token efficiency would vary from request to request.
+
+## What this means for your data
+
+In a self-hosted deployment, Engine adds two data-locality guarantees on top of the controls common to every deployment:
+
+- **Private networks only:** all data transit happens over private link, never the public internet.
+- **In-CSP:** models run inside your CSP, so data never leaves it.
+
+Engine's deployment-independent data handling, including zero data retention with every model provider and no use of customer data to train or fine-tune models, is described in [Engine security](/langsmith/engine-security).
+
+## See also
+
+- [Engine](/langsmith/engine-overview)
+- [Configure Engine](/langsmith/engine)
+- [Engine security](/langsmith/engine-security)
+- [Engine webhooks](/langsmith/engine-webhooks)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/engine-self-hosted.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
