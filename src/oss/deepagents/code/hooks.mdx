@@ -8,6 +8,10 @@ Hooks let external programs observe and control Deep Agents Code lifecycle event
 
 Hooks run with your user permissions and execute arbitrary code from your configuration. Treat hook configuration as executable code and only install hooks from sources you trust.
 
+<Note>
+    Hooks are experimental and load only when `DEEPAGENTS_CODE_EXPERIMENTAL=1` is set. Without it, Deep Agents Code ignores `hooks.json`.
+</Note>
+
 ## Setup
 
 Create `~/.deepagents/hooks.json` for hooks that apply to every project. Handlers nest in three levels: event name, matcher group, then the handlers that run for that group.
@@ -48,13 +52,38 @@ Deep Agents Code loads hook configuration in precedence order:
 2. User hooks from `~/.deepagents/hooks.json`.
 3. Hooks contributed by enabled plugins.
 
-Every matching handler runs concurrently. Precedence controls the order in which results are combined, not whether lower-precedence handlers execute. Interactive sessions prompt before loading untrusted project hooks; in headless or CI runs, pass `--trust-project-hooks` to opt in.
-
-Enabled plugins can contribute the same configuration shape from `hooks/hooks.json`, a manifest `hooks` path, or an inline manifest object. Plugin hooks activate on startup or after `/reload`; see [Plugins and marketplaces](/oss/deepagents/code/plugins#create-a-plugin).
+Every matching handler runs concurrently, and their results are combined in that order. Precedence decides which answer wins, not which handlers execute: a lower-precedence handler still runs, and its side effects still happen, even when a higher-precedence handler stops the event.
 
 Run `dcode config path` to inspect the separate project and user hook locations and the workspace trust store.
 
-Hook configuration is snapshotted until `/reload` or a new session. Editing `hooks.json` during a turn does not change the active policy hooks.
+Hook configuration is snapshotted until `/reload` or a new session. Editing `hooks.json` during a turn does not change the active policy hooks. Enabling or disabling a plugin also changes the snapshot, so run `/reload` to pick up its hooks.
+
+### Trust project hooks
+
+Project hooks come from the repository, so they load only after the workspace is trusted:
+
+- Interactive sessions prompt when an untrusted workspace contains `.deepagents/hooks.json`. Trusting the workspace persists the decision for that project root under `~/.deepagents/.state/hooks_trust.json`.
+- Denying the prompt skips project hooks for that session and continues with user and plugin hooks.
+- Canceling the prompt with `Esc` or `Ctrl+D` aborts startup.
+- Headless and CI runs never prompt. Pass `--trust-project-hooks` to opt in for that run.
+
+### Plugin hooks
+
+An enabled plugin contributes the same configuration shape from `hooks/hooks.json`, a manifest `hooks` path, or an inline manifest object. Installing and enabling the plugin is the consent gate: workspace trust governs project hooks only, so it neither grants nor withholds a plugin's hooks. Review a plugin before enabling it, and check the events it declares in the plugin manager. See [Plugins and marketplaces](/oss/deepagents/code/plugins#add-hooks).
+
+Server-owned events are fixed when a session starts, so newly enabled plugin hooks activate at the next startup or `/reload`.
+
+Plugin handlers can reference their own installation paths through these variables:
+
+| Variable | Value |
+| --- | --- |
+| `${CLAUDE_PLUGIN_ROOT}`, `${PLUGIN_ROOT}` | Installed plugin directory |
+| `${CLAUDE_PLUGIN_DATA}`, `${PLUGIN_DATA}` | Writable data directory for the plugin |
+| `${CLAUDE_PROJECT_DIR}` | Project root |
+
+Quote these variables in a `command` handler, because installation paths can contain spaces: `"command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/format.sh\""`. An `argv` handler resolves them before launch, which avoids shell quoting entirely.
+
+An invalid plugin hook document is skipped on its own and reported as a configuration diagnostic. Other plugins, project hooks, and user hooks keep working.
 
 ### Handler fields
 
@@ -82,6 +111,10 @@ Each entry in a matcher group's `hooks` array is a command handler:
 
 Configuring an unsupported handler type or `"async": true` produces a visible configuration error.
 
+### Handler environment
+
+A handler starts in the working directory reported as `cwd` in the payload and inherits the session environment with credential-looking variables removed: any name containing `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, or `APIKEY` is stripped before launch. A handler that needs a credential must read it from a file or a secret manager rather than the inherited environment. Plugin handlers additionally receive their own [plugin path variables](#plugin-hooks).
+
 ### Matchers
 
 A matcher filters whether a handler group runs for a given event. Each event matches against one field (see [Events](#events)):
@@ -90,6 +123,8 @@ A matcher filters whether a handler group runs for a given event. Each event mat
 - A simple name matches exactly (`Bash`).
 - `|` or `,` separates exact alternatives (`Edit|Write`).
 - Any other value is treated as an unanchored regular expression (`mcp__.*`).
+
+`UserPromptSubmit` and `Stop` have no matcher field. Omit `matcher` for those events, or set it to `*`; any other value is rejected when the configuration loads.
 
 Compile errors invalidate that group and produce a user-visible configuration diagnostic before the session runs.
 
@@ -146,6 +181,8 @@ Every handler receives a JSON object on stdin. All events share a common envelop
 | `permission_mode` | Permission mode (`default`, `plan`, `acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`), when meaningful |
 | `effort` | Object such as `{ "level": "medium" }`, where level is `none`, `low`, `medium`, `high`, `xhigh`, or `max`, when available |
 | `agent_id`, `agent_type` | Subagent identity, when available |
+
+`transcript_path` points to a JSONL projection of the conversation written under `~/.deepagents/transcripts`. Subagent events also carry `agent_transcript_path` for the subagent's own transcript. Both files are refreshed before matching handlers run, so a handler can read the conversation up to the current event.
 
 ### Event-specific fields
 
@@ -409,6 +446,16 @@ if __name__ == "__main__":
 ```
 </Accordion>
 
+## Troubleshoot hooks
+
+Hook activity is visible in the session, not only in logs:
+
+- A running handler shows its `statusMessage`, or `Running <event> hook` when it sets none. Concurrent handlers share one status slot, so the most recent one is displayed until it finishes.
+- A handler's `systemMessage` appears as an informational notice.
+- Configuration errors, nonzero exits, timeouts, and unsupported output fields appear as `Hook warning` or `Hook error` notices, once per invocation.
+- A permission answer from a hook is attributed to the hook, for example `PermissionRequest hook denied Bash`.
+- Set `DEEPAGENTS_CODE_DEBUG=1` to capture every diagnostic, including debug-level entries that are never shown as notices.
+
 ## Legacy configuration
 
 Older list-shaped `hooks.json` files are deprecated but still supported. Deep Agents Code automatically migrates equivalent events; events without a safe mapping are skipped with a diagnostic.
@@ -418,6 +465,7 @@ Older list-shaped `hooks.json` files are deprecated but still supported. Deep Ag
 Hooks follow the same trust model as Git hooks or shell aliases: any process that can write to `hooks.json` can run arbitrary commands with your permissions.
 
 - Payload data flows to stdin as JSON, never interpolated into command arguments.
+- Credential-looking environment variables are stripped from handler environments.
 - Hook configuration remains fixed until `/reload` or a new session.
 - Prefer explicit executables and argument arrays over shell wrappers.
 - Only install hooks from sources you trust.
