@@ -31,10 +31,10 @@ func main() {
 		ProjectID:    langsmith.F(projectID),
 		MinStartTime: langsmith.F(minStart),
 		MaxStartTime: langsmith.F(maxStart),
-		Selects: langsmith.F([]langsmith.TraceQueryParamsSelect{
-			langsmith.TraceQueryParamsSelectName,
-			langsmith.TraceQueryParamsSelectTotalTokens,
-			langsmith.TraceQueryParamsSelectTotalCost,
+		Selects: langsmith.F([]langsmith.RunSelectField{
+			langsmith.RunSelectFieldName,
+			langsmith.RunSelectFieldTotalTokens,
+			langsmith.RunSelectFieldTotalCost,
 		}),
 	})
 	count := 0

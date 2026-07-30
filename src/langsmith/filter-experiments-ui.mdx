@@ -16,7 +16,7 @@ In our example, we are going to attach metadata to our experiment around the mod
 models = {
     "openai-gpt-5.5": ChatOpenAI(model="gpt-5.5", temperature=0),
     "openai-gpt-5.4-mini": ChatOpenAI(model="gpt-5.4-mini", temperature=0),
-    "anthropic-claude-3-sonnet-20240229": ChatAnthropic(temperature=0, model_name="claude-3-sonnet-20240229")
+    "anthropic-claude-sonnet-4-6": ChatAnthropic(temperature=0, model_name="claude-sonnet-4-6")
 }
 
 prompts = {

@@ -1,77 +1,85 @@
 ---
 title: LLM Gateway
 sidebarTitle: Overview
-description: Use the LLM Gateway to proxy LLM calls through LangSmith, enforce spend limits, redact sensitive data, and centrally manage provider credentials.
+description: Access models across providers with one LangSmith API key while tracing calls and enforcing spend and data-protection policies.
 mode: wide
 ---
 
+Use one [LangSmith API key](/langsmith/create-account-api-key) to call models across configured providers. Switch providers by changing the model ID, while the LLM Gateway traces every call and applies centralized governance policies.
+
 <Note>
-**Private beta:** The LLM Gateway is in private [beta](/langsmith/release-stages). APIs and features may change as we iterate. Sign up for [the waitlist](https://www.langchain.com/langsmith-llm-gateway-waitlist) to get access.
+**Beta:** The LLM Gateway is in [beta](/langsmith/release-stages).
 </Note>
 
-The LLM Gateway is a proxy that sits between your agents (or any LLM client) and the LLM providers they call. Instead of each client storing provider API keys locally, keys are stored once in LangSmith as Provider Secrets. Clients authenticate with a [LangSmith API key](/langsmith/create-account-api-key).
+## Make your first request
 
-When a request passes through the gateway, it:
+<Info>
+An administrator must [enable the gateway, add a provider secret, and grant access](/langsmith/llm-gateway-admin-setup) once for your workspace. After setup, developers need only a workspace-scoped LangSmith API key.
+</Info>
 
-1. Authenticates the caller using their LangSmith API key.
-1. Resolves the actual provider API key from your workspace's Provider Secrets.
-1. Evaluates governance policies (spend limits, PII redaction, secrets redaction).
-1. Proxies the request to the upstream provider.
-1. Traces the call to LangSmith.
+Set your key and make a standard Chat Completions request. This example assumes the workspace has an Anthropic provider secret:
 
-Every gateway-proxied call appears as a [trace](/langsmith/observability-concepts#traces) in LangSmith. When a policy fires, the event flows into [LangSmith Engine](/langsmith/engine) for triage—you can go from a blocked request to the trace that triggered it to the fix, all in one product.
+```bash
+export LANGSMITH_API_KEY="lsv2_..._....cbed3e"
 
-## Feature availability
+curl https://gateway.smith.langchain.com/v1/chat/completions \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"anthropic/claude-sonnet-4-6","messages":[{"role":"user","content":"Hello!"}]}'
+```
 
-| Capability | Description |
+A `200` response confirms that the gateway, your LangSmith API key, permissions, and the selected provider secret are configured correctly. For Python, TypeScript, alternative API formats, and troubleshooting, follow the [quickstart](/langsmith/llm-gateway-quickstart).
+
+## What the gateway provides
+
+- **One key, multiple providers:** Developers authenticate with a LangSmith API key instead of storing provider keys locally.
+- **One request format, multiple models:** Use Chat Completions, Messages, or Responses with models across configured providers.
+- **Built-in observability:** Every gateway call appears as a [LangSmith trace](/langsmith/llm-gateway-access).
+- **Central governance:** Apply [spend limits](/langsmith/llm-gateway-spend-policies), [rate limits](/langsmith/llm-gateway-rate-limit-policies), and [data-protection policies](/langsmith/llm-gateway-data-protection).
+
+## Use the standard API
+
+Choose the request format already used by your application. The format does not limit which configured provider you can call.
+
+| API format | Endpoint |
 | --- | --- |
-| **Spend limits** | Hard-block enforcement at the [organization](/langsmith/administration-overview#organizations), [workspace](/langsmith/administration-overview#workspaces), [API key](/langsmith/administration-overview#api-keys), or user level. When a cap is hit, the caller receives a 402 response with an actionable error message. |
-| **Spend visibility** | Real-time cost rollups by workspace, user, API key. Per-model visibility can be had via Custom Charts. |
-| **PII redaction** | Detects and redacts names, places, nationality, religion, political affiliation, and ages from requests before they reach the model. |
-| **Secrets redaction** | Detects and redacts US phone numbers, US SSNs, API keys, tokens, and credentials from requests. Covers AWS, GitHub, GitLab, OpenAI, Anthropic, GCP, Azure, Slack, Datadog, PyPI, npm, private keys, and LangSmith tokens. |
-| **LangSmith Engine integration** | Policy violations surface as issues in LangSmith Engine. Click through from a violation to the trace that produced it. |
-| **Audit logging** | Administrative changes to gateway configuration and gateway invocations are logged. |
-| **Tracing** |  Every gateway-proxied call appears in the same LangSmith workspace as the rest of your agent’s traces. Routing through the gateway does not fragment your observability. |
+| OpenAI Chat Completions | `POST /v1/chat/completions` |
+| Anthropic Messages | `POST /v1/messages` |
+| OpenAI Responses | `POST /v1/responses` |
 
-## Supported providers
+Set `model` to a provider-prefixed ID such as `openai/gpt-5.4-mini` or `anthropic/claude-sonnet-4-6`. When the selected provider uses a different native format, the gateway translates the request and response.
 
-| Provider | Gateway path | Secret name |
+For base URLs, examples, translation behavior, and regional endpoints, see [API formats](/langsmith/llm-gateway-api-formats).
+
+## Choose how credentials are managed
+
+| Option | Upstream credential | Setup and billing |
 | --- | --- | --- |
-| Anthropic | `/anthropic` | `ANTHROPIC_API_KEY` |
-| AWS Bedrock | `/bedrock` | `AWS_BEARER_TOKEN_BEDROCK` |
-| Baseten | `/baseten` | `BASETEN_API_KEY` |
-| Fireworks | `/fireworks` | `FIREWORKS_API_KEY` |
-| Google Gemini | `/gemini` | `GOOGLE_API_KEY` |
-| Google Vertex AI | `/vertex` | `VERTEX_SERVICE_ACCOUNT_JSON` |
-| OpenAI | `/openai` | `OPENAI_API_KEY` |
+| Bring your own provider account | An administrator stores the provider key in workspace [Provider Secrets](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets). | The provider bills usage to your provider account. |
+| [Gateway Credits](/langsmith/llm-gateway-langchain-provider) | LangChain owns the upstream credential. | No provider secret is required. Invocations are billed to your LangSmith account. |
 
-## Known limitations
-
-- **Claude Desktop:** no marketplace plugins supported. The Chat tab not visible, but Cowork is functional.
-- **Codex Desktop:** no marketplace plugins supported.
-- **Cursor:** IDE integration is not yet available.
-- **ChatGPT Desktop / Gemini Desktop:** not configurable.
-
-## Resources
+## Go further
 
 <CardGroup cols={2}>
   <Card
-    title="Spend policies"
-    icon="coin"
-    href="/langsmith/llm-gateway-spend-policies"
+    title="Quickstart"
+    icon="rocket"
+    href="/langsmith/llm-gateway-quickstart"
     arrow="true"
   >
-    Set and manage cost limits across your organization.
+    Make a request with cURL, Python, or TypeScript, then view its trace.
   </Card>
 
   <Card
-    title="PII and secrets redaction"
-    icon="shield-lock"
-    href="/langsmith/llm-gateway-redaction"
+    title="Administrator setup"
+    icon="settings"
+    href="/langsmith/llm-gateway-admin-setup"
     arrow="true"
   >
-    Prevent sensitive data from reaching LLM providers or trace storage.
+    Enable the gateway, add provider credentials, and grant developer access.
   </Card>
 </CardGroup>
 
-For further questions on LLM Gateway, contact [support.langchain.com](https://support.langchain.com).
+Need provider-native request and response behavior? Use [Direct model access](/langsmith/llm-gateway-direct-model-access) to bypass the standardization layer. This is an advanced alternative to the standard API.
+
+For further questions, contact [LangChain support](https://support.langchain.com).

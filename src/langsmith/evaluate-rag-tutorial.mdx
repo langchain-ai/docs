@@ -22,9 +22,9 @@ import EvaluateRagRunEvaluationJs from '/snippets/code-samples/evaluate-rag-run-
 import EvaluateRagReferencePy from '/snippets/code-samples/evaluate-rag-reference-py.mdx';
 import EvaluateRagReferenceJs from '/snippets/code-samples/evaluate-rag-reference-js.mdx';
 
-Retrieval Augmented Generation (RAG) is a technique that enhances Large Language Models (LLMs) by providing them with relevant external knowledge. It has become one of the most widely used approaches for building LLM applications.
+Retrieval Augmented Generation (RAG) is a technique that enhances Large Language Models (LLMs) by providing them with relevant external knowledge. It has become one of the most widely used approaches for building LLM applications. To build a RAG application first, see [RAG with Deep Agents](/oss/deepagents/rag).
 
-This tutorial will show you how to evaluate your RAG applications using LangSmith. You'll learn:
+This tutorial shows how to evaluate RAG applications with LangSmith:
 
 1. How to create test datasets
 2. How to run your RAG application on those datasets
@@ -32,25 +32,19 @@ This tutorial will show you how to evaluate your RAG applications using LangSmit
 
 ## Overview
 
-A typical RAG evaluation workflow consists of three main steps:
+A typical RAG evaluation workflow has three steps:
 
-1. Creating a dataset with questions and their expected answers
+1. Create a dataset of questions and expected answers.
+2. Run the RAG application on those questions.
+3. Score results with [evaluators](/langsmith/evaluators) for answer relevance, answer accuracy, and retrieval quality.
 
-2. Running your RAG application on those questions
-
-3. Using evaluators to measure how well your application performed, looking at factors like:
-
-   * Answer relevance
-   * Answer accuracy
-   * Retrieval quality
-
-For this tutorial, we'll create and evaluate a bot that answers questions about a few of [Lilian Weng's](https://lilianweng.github.io/) insightful blog posts.
+This tutorial builds and evaluates a bot that answers questions about a few of [Lilian Weng's](https://lilianweng.github.io/) blog posts.
 
 ## Setup
 
-### Environment
+### Configure the environment
 
-First, let's set our environment variables:
+Set environment variables:
 
 <CodeGroup>
 
@@ -69,7 +63,7 @@ process.env.OPENAI_API_KEY = "YOUR OPENAI API KEY";
 
 </CodeGroup>
 
-And install the dependencies we'll need:
+Install dependencies:
 
 <CodeGroup>
 
@@ -91,23 +85,21 @@ pnpm add langsmith langchain @langchain/classic @langchain/openai @langchain/tex
 
 </CodeGroup>
 
-### Application
+### Build the application
 
 <Info>
-While this tutorial uses LangChain, the evaluation techniques and LangSmith functionality demonstrated here work with any framework. Feel free to use your preferred tools and libraries.
+This tutorial uses LangChain, but the evaluation patterns work with any framework.
 </Info>
 
-In this section, we'll build a basic Retrieval-Augmented Generation (RAG) application.
+Build a minimal RAG app with three stages:
 
-We'll stick to a simple implementation that:
+- **Indexing**: Chunk and index a few of Lilian Weng's blogs in a vector store.
+- **Retrieval**: Retrieve chunks for the user question.
+- **Generation**: Pass the question and retrieved documents to an LLM.
 
-* Indexing: chunks and indexes a few of Lilian Weng's blogs in a vector store
-* Retrieval: retrieves those chunks based on the user question
-* Generation: passes the question and retrieved docs to an LLM.
+#### Index documents
 
-#### Indexing and retrieval
-
-First, lets load the blog posts we want to build a chatbot for and index them.
+Load the blog posts and index them:
 
 <CodeGroup>
 
@@ -117,9 +109,9 @@ First, lets load the blog posts we want to build a chatbot for and index them.
 
 </CodeGroup>
 
-#### Generation
+#### Generate answers
 
-We can now define the generative pipeline.
+Define the generative pipeline:
 
 <CodeGroup>
 
@@ -129,9 +121,9 @@ We can now define the generative pipeline.
 
 </CodeGroup>
 
-## Dataset
+## Create a dataset
 
-Now that we've got our application, let's build a dataset to evaluate it. Our dataset will be very simple in this case: we'll have example questions and reference answers.
+Now that you have your application, create a small dataset of example questions and reference answers to evaluate it. This example uses an example set of inputs and outputs:
 
 <CodeGroup>
 
@@ -141,37 +133,37 @@ Now that we've got our application, let's build a dataset to evaluate it. Our da
 
 </CodeGroup>
 
-## Evaluators
+## Define evaluators
 
-One way to think about different types of RAG evaluators is as a tuple of what is being evaluated X what its being evaluated against:
+RAG evaluators compare one artifact to another (response, input, retrieved docs, or reference answer):
 
-1. **Correctness**: Response vs reference answer
+1. **[Correctness](#correctness-response-vs-reference-answer)** (response vs reference answer)
+   - **Goal**: Score how similar the RAG answer is to a ground-truth answer.
+   - **Mode**: Requires a reference answer in the dataset.
+   - **Evaluator**: LLM-as-judge for answer correctness.
 
-   * `Goal`: Measure "*how similar/correct is the RAG chain answer, relative to a ground-truth answer*"
-   * `Mode`: Requires a ground truth (reference) answer supplied through a dataset
-   * `Evaluator`: Use LLM-as-judge to assess answer correctness.
+2. **[Relevance](#relevance-response-vs-input)** (response vs input)
+   - **Goal**: Score how well the response addresses the user question.
+   - **Mode**: No reference answer; compares the answer to the input.
+   - **Evaluator**: LLM-as-judge for relevance and helpfulness.
 
-2. **Relevance**: Response vs input
+3. **[Groundedness](#groundedness-response-vs-retrieved-docs)** (response vs retrieved docs)
+   - **Goal**: Score how well the response agrees with the retrieved context.
+   - **Mode**: No reference answer; compares the answer to retrieved documents.
+   - **Evaluator**: LLM-as-judge for faithfulness and hallucinations.
 
-   * `Goal`: Measure "*how well does the generated response address the initial user input*"
-   * `Mode`: Does not require reference answer, because it will compare the answer to the input question
-   * `Evaluator`: Use LLM-as-judge to assess answer relevance, helpfulness, etc.
+4. **[Retrieval relevance](#retrieval-relevance-retrieved-docs-vs-input)** (retrieved docs vs input)
+   - **Goal**: Score how relevant the retrieved documents are to the query.
+   - **Mode**: No reference answer; compares the question to retrieved documents.
+   - **Evaluator**: LLM-as-judge for retrieval relevance.
 
-3. **Groundedness**: Response vs retrieved docs
-
-   * `Goal`: Measure "*to what extent does the generated response agree with the retrieved context*"
-   * `Mode`: Does not require reference answer, because it will compare the answer to the retrieved context
-   * `Evaluator`: Use LLM-as-judge to assess faithfulness, hallucinations, etc.
-
-4. **Retrieval relevance**: Retrieved docs vs input
-
-   * `Goal`: Measure "*how relevant are my retrieved results for this query*"
-   * `Mode`: Does not require reference answer, because it will compare the question to the retrieved context
-   * `Evaluator`: Use LLM-as-judge to assess relevance
+For more on these evaluator types, see [Evaluate RAG applications](/langsmith/evaluation-approaches#evaluate-rag-applications).
 
 ![Rag eval overview](/langsmith/images/rag-eval-overview.png)
 
 ### Correctness: Response vs reference answer
+
+Use an LLM-as-judge to compare the generated answer to the reference answer in the dataset:
 
 <CodeGroup>
 
@@ -183,7 +175,7 @@ One way to think about different types of RAG evaluators is as a tuple of what i
 
 ### Relevance: Response vs input
 
-The flow is similar to above, but we simply look at the `inputs` and `outputs` without needing the `reference_outputs`. Without a reference answer we can't grade accuracy, but can still grade relevance—as in, did the model address the user's question or not.
+Compare `inputs` and `outputs` without `reference_outputs`. You cannot score accuracy without a reference answer, but you can still score whether the model addressed the question:
 
 <CodeGroup>
 
@@ -195,7 +187,7 @@ The flow is similar to above, but we simply look at the `inputs` and `outputs` w
 
 ### Groundedness: Response vs retrieved docs
 
-Another useful way to evaluate responses without needing reference answers is to check if the response is justified by (or "grounded in") the retrieved documents.
+Another useful way to evaluate responses is to check whether the response is justified by (grounded in) the retrieved documents, without a reference answer:
 
 <CodeGroup>
 
@@ -207,6 +199,8 @@ Another useful way to evaluate responses without needing reference answers is to
 
 ### Retrieval relevance: Retrieved docs vs input
 
+Use an LLM-as-judge to score whether the retrieved documents are relevant to the user question:
+
 <CodeGroup>
 
 <EvaluateRagRetrievalRelevancePy />
@@ -215,9 +209,9 @@ Another useful way to evaluate responses without needing reference answers is to
 
 </CodeGroup>
 
-## Run evaluation
+## Run the evaluation
 
-We can now kick off our evaluation job with all of our different evaluators.
+Run the evaluation with all of the evaluators:
 
 <CodeGroup>
 
@@ -227,7 +221,7 @@ We can now kick off our evaluation job with all of our different evaluators.
 
 </CodeGroup>
 
-You can see an example of what these results look like here: [LangSmith link](https://smith.langchain.com/public/302573e2-20bf-4f8c-bdad-e97c20f33f1b/d)
+View an example of the results in [this LangSmith experiment](https://smith.langchain.com/public/302573e2-20bf-4f8c-bdad-e97c20f33f1b/d).
 
 ## Reference code
 
