@@ -1,7 +1,7 @@
 ---
 title: LLM Gateway
 sidebarTitle: Overview
-description: Use the LLM Gateway to proxy LLM calls through LangSmith, enforce spend limits, redact sensitive data, and centrally manage provider credentials.
+description: Call models across providers through unified APIs while enforcing spend limits, protecting data, and centrally managing provider credentials.
 mode: wide
 ---
 
@@ -11,15 +11,28 @@ mode: wide
 
 The LLM Gateway is a proxy that sits between your agents (or any LLM client) and the LLM providers they call. Instead of each client storing provider API keys locally, keys are stored once in LangSmith as Provider Secrets. Clients authenticate with a [LangSmith API key](/langsmith/create-account-api-key).
 
+Use the [unified API](/langsmith/llm-gateway-unified-endpoint) as the standard way to access models through the gateway. Choose the OpenAI Chat Completions, Anthropic Messages, or OpenAI Responses format, then call models from any configured provider through one gateway URL:
+
+| API format | Endpoint |
+| --- | --- |
+| OpenAI Chat Completions | `POST /v1/chat/completions` |
+| Anthropic Messages | `POST /v1/messages` |
+| OpenAI Responses | `POST /v1/responses` |
+
+Model IDs include a provider prefix, such as `openai/gpt-4o-mini` or `anthropic/claude-sonnet-4-6`. The gateway translates requests and responses when the model's provider uses a different native format.
+
 When a request passes through the gateway, it:
 
 1. Authenticates the caller using their LangSmith API key.
-1. Resolves the actual provider API key from your workspace's Provider Secrets.
-1. Evaluates governance policies (spend limits, PII redaction, secrets redaction).
+1. Resolves the actual provider API key from the workspace's Provider Secrets.
+1. Evaluates governance policies, including spend limits, PII redaction, and secrets redaction.
+1. Translates the request and response when the unified API format differs from the provider's native format.
 1. Proxies the request to the upstream provider.
 1. Traces the call to LangSmith.
 
-Every gateway-proxied call appears as a [trace](/langsmith/observability-concepts#traces) in LangSmith. When a policy fires, the event flows into [LangSmith Engine](/langsmith/engine) for triage—you can go from a blocked request to the trace that triggered it to the fix, all in one product.
+Every gateway-proxied call appears as a [trace](/langsmith/observability-concepts#traces) in LangSmith. When a policy fires, the event flows into [LangSmith Engine](/langsmith/engine) for triage.
+
+To access a provider's API directly and avoid the standardization layer, use [direct model access](/langsmith/llm-gateway-direct-model-access).
 
 ## Feature availability
 
@@ -34,23 +47,35 @@ Every gateway-proxied call appears as a [trace](/langsmith/observability-concept
 | **Audit logging** | Administrative changes to gateway configuration and gateway invocations are logged. |
 | **Tracing** |  Every gateway-proxied call appears in the same LangSmith workspace as the rest of your agent’s traces. Routing through the gateway does not fragment your observability. |
 
-## Supported providers
+## Choose an access mode
 
-| Provider | Gateway path | Secret name |
-| --- | --- | --- |
-| Anthropic | `/anthropic` | `ANTHROPIC_API_KEY` |
-| AWS Bedrock | `/bedrock` | `AWS_BEARER_TOKEN_BEDROCK` |
-| Baseten | `/baseten` | `BASETEN_API_KEY` |
-| Fireworks | `/fireworks` | `FIREWORKS_API_KEY` |
-| Google Gemini | `/gemini` | `GOOGLE_API_KEY` |
-| Google Vertex AI | `/vertex` | `VERTEX_SERVICE_ACCOUNT_JSON` |
-| OpenAI | `/openai` | `OPENAI_API_KEY` |
+<CardGroup cols={2}>
+  <Card
+    title="Unified API"
+    icon="arrows-exchange"
+    href="/langsmith/llm-gateway-unified-endpoint"
+    arrow="true"
+  >
+    Use one standard API format to call models across configured providers. Recommended for most model calls.
+  </Card>
 
 In addition to the providers above, [Gateway Credits](/langsmith/llm-gateway-langchain-provider) let you call models through the `/langchain` path with no provider secret of your own. Authenticate with your LangSmith API key.
 
+  <Card
+    title="Direct model access"
+    icon="route"
+    href="/langsmith/llm-gateway-direct-model-access"
+    arrow="true"
+  >
+    Access provider APIs directly and bypass the gateway standardization layer.
+  </Card>
+</CardGroup>
+
+LangChain also offers [managed models](/langsmith/llm-gateway-langchain-provider) that require no provider secret of your own.
+
 ## Regional gateways
 
-If your LangSmith account is on a regional instance, use the corresponding regional gateway. Append the provider path to the base URL, for example `/openai/v1` or `/langchain/v1`.
+If your LangSmith account is on a regional instance, use the corresponding regional gateway base URL. For the unified API, append `/v1`. For direct model access, append the provider path.
 
 | Region | Gateway base URL |
 | --- | --- |

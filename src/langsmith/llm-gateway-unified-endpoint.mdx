@@ -1,38 +1,37 @@
 ---
-title: Unified endpoint
-description: List and call models across all your configured providers through a single gateway base URL, using provider-prefixed model IDs and the OpenAI Responses API.
+title: Unified API
+description: Call models across configured providers through one gateway URL using OpenAI Chat Completions, Anthropic Messages, or OpenAI Responses request formats.
 ---
 
 <Note>
 **Beta:** The LLM Gateway is in [beta](/langsmith/release-stages).
 </Note>
 
-The unified endpoint exposes the providers you've configured on the LLM Gateway behind a single base URL at the gateway root. Instead of pointing each client at a provider-specific path like `/openai` or `/anthropic`, you list models and call them from one place, addressing each model with a provider-prefixed ID such as `openai/gpt-4o-mini`, `fireworks/accounts/fireworks/models/glm-5p2`, or `anthropic/claude-sonnet-4-6`.
+The unified API is the standard way to access models through the LLM Gateway. Choose one supported API format, point your client at the gateway root, and call any configured model with a provider-prefixed model ID. The gateway translates requests and responses when the selected model uses a different provider-native format.
 
-This page shows you how to:
+For example, the same Anthropic model is available through the OpenAI Chat Completions, Anthropic Messages, and OpenAI Responses formats. This lets applications use one API format across providers instead of changing clients when they change models.
 
-- Set up the [prerequisites](#prerequisites) for the unified endpoint.
-- [List available models](#list-available-models) across configured providers.
-- [Call a model](#call-a-model) with a provider-prefixed ID.
-- Understand [how requests are translated](#how-requests-are-translated) between the Responses API and each provider's native API.
+Use [direct model access](/langsmith/llm-gateway-direct-model-access) only when you want the provider's API directly and need to bypass the gateway's standardization layer.
 
-<Card title="Base URL" icon="link">
-Point any OpenAI-compatible client at:
+## Choose an API format
 
-```text
-https://gateway.smith.langchain.com/v1
-```
+The unified API supports these endpoints at the gateway root:
 
-Authenticate with your LangSmith API key, passed by your clients as the provider API key.
+| API format | Endpoint | Base URL for compatible SDKs |
+| --- | --- | --- |
+| OpenAI Chat Completions | `POST /v1/chat/completions` | `https://gateway.smith.langchain.com/v1` |
+| Anthropic Messages | `POST /v1/messages` | `https://gateway.smith.langchain.com` |
+| OpenAI Responses | `POST /v1/responses` | `https://gateway.smith.langchain.com/v1` |
 
-For regional base URLs, see [Regional gateways](/langsmith/llm-gateway#regional-gateways).
-</Card>
+Choose the format already used by your application. The format does not limit which provider you can call.
+
+Authenticate with your LangSmith API key, passed as the provider API key by your client. For regional base URLs, see [Regional gateways](/langsmith/llm-gateway#regional-gateways).
 
 ## Prerequisites
 
-Before using the unified endpoint, confirm that:
+Before using the unified API, confirm that:
 
-- Your [Organization admin](/langsmith/rbac#organization-admin) has added [Provider Secrets](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets) for the providers you want to call. The unified endpoint resolves upstream credentials from the same workspace secrets as the provider-specific gateway paths. Refer to [Admin setup](/langsmith/llm-gateway-admin-setup).
+- Your [Organization admin](/langsmith/rbac#organization-admin) has added [Provider Secrets](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets) for the providers you want to call. Refer to [Admin setup](/langsmith/llm-gateway-admin-setup).
 - You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations).
 
 ## List available models
@@ -44,7 +43,7 @@ curl https://gateway.smith.langchain.com/v1/models \
     -H "Authorization: Bearer $LANGSMITH_API_KEY"
 ```
 
-The gateway aggregates each provider's model catalog into a single OpenAI-compatible list. Every model ID is prefixed with the provider name in the form `<provider>/<model>`. The prefixed ID is what you pass as `model` when making a call:
+The gateway aggregates each provider's model catalog into one OpenAI-compatible list. Every model ID is prefixed with the provider name in the form `<provider>/<model>`:
 
 ```json
 {
@@ -55,37 +54,36 @@ The gateway aggregates each provider's model catalog into a single OpenAI-compat
       "object": "model"
     },
     {
-      "id": "fireworks/accounts/fireworks/models/glm-5p2",
+      "id": "anthropic/claude-sonnet-4-6",
       "object": "model"
-    },
-    ...
+    }
   ]
 }
 ```
 
-Your response contains one entry per model from every provider reachable for your workspace. A provider whose [Provider Secret](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets) isn't configured is skipped rather than failing the request.
+Pass the full provider-prefixed ID as `model` when making a call. A provider whose [Provider Secret](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets) is not configured is omitted from the response.
 
 ## Call a model
 
-Call models with `POST /v1/responses`, the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) shape. Set `model` to the full provider-prefixed ID:
+The following examples call `anthropic/claude-sonnet-4-6` through each supported API format:
 
 <CodeGroup>
 
-```bash OpenAI model
-curl https://gateway.smith.langchain.com/v1/responses \
+```bash Chat Completions
+curl https://gateway.smith.langchain.com/v1/chat/completions \
     -H "Authorization: Bearer $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"model":"openai/gpt-4o-mini","input":"ping"}'
+    -d '{"model":"anthropic/claude-sonnet-4-6","messages":[{"role":"user","content":"ping"}]}'
 ```
 
-```bash Fireworks model
-curl https://gateway.smith.langchain.com/v1/responses \
+```bash Messages
+curl https://gateway.smith.langchain.com/v1/messages \
     -H "Authorization: Bearer $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"model":"fireworks/accounts/fireworks/models/glm-5p2","input":"ping"}'
+    -d '{"model":"anthropic/claude-sonnet-4-6","max_tokens":1024,"messages":[{"role":"user","content":"ping"}]}'
 ```
 
-```bash Anthropic model
+```bash Responses
 curl https://gateway.smith.langchain.com/v1/responses \
     -H "Authorization: Bearer $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
@@ -94,23 +92,19 @@ curl https://gateway.smith.langchain.com/v1/responses \
 
 </CodeGroup>
 
-You must ensure that the `model` field is provider-prefixed. A bare model name such as `gpt-4o-mini` returns a `400` error
+You must provider-prefix the `model` field. A bare model name such as `claude-sonnet-4-6` returns a `400` error.
 
-<Note>
-The unified endpoint accepts Responses API requests.
+## Understand request translation
 
-You can still reach your Anthropic models from the unified endpoint: call `/v1/responses` with an `anthropic/`-prefixed model ID and the gateway translates the request for you, as described below.
-</Note>
+The endpoint determines the API format your application sends and receives. The model ID determines the upstream provider.
 
-## How requests are translated
+If the selected provider supports the requested format natively, the request and response pass through without format translation. Otherwise, the gateway translates the request into a format supported by the provider and translates the response back into the format your application selected, including streaming responses.
 
-The gateway translates between the Responses API and each provider's native API in both directions. If the provider natively speaks the Responses API, as OpenAI and Fireworks do, your request and its response pass through unchanged. Otherwise, the gateway translates your request into the provider's native format (for Anthropic models, the [Messages API](https://docs.anthropic.com/en/api/messages)) and translates the response back into the Responses API format, including streaming responses.
+Regardless of format, every call resolves the same [Provider Secrets](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets), evaluates the same [spend](/langsmith/llm-gateway-spend-policies) and [data protection](/langsmith/llm-gateway-data-protection) policies, and is traced like any other gateway call.
 
-Translated or not, every call goes through the provider's regular gateway path, so it resolves the same [Provider Secrets](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets), evaluates the same [spend](/langsmith/llm-gateway-spend-policies) and [redaction](/langsmith/llm-gateway-data-protection) policies, and is traced like any other gateway call.
+## See also
 
-## Next steps
-
-- [Traces, Engine, and access control](/langsmith/llm-gateway-access): where unified endpoint traces land and who can see them.
+- [Direct model access](/langsmith/llm-gateway-direct-model-access): use provider-specific paths without API format translation.
+- [Traces, Engine, and access control](/langsmith/llm-gateway-access): see where gateway traces appear and who can view them.
 - [Model fallbacks](/langsmith/llm-gateway-fallbacks): retry against backup models when a provider fails.
-- [Custom model providers](/langsmith/llm-gateway-custom-providers): route to your own OpenAI-compatible endpoints.
-- [Spend policies](/langsmith/llm-gateway-spend-policies): set cost limits on unified endpoint traffic.
+- [Custom model providers](/langsmith/llm-gateway-custom-providers): route to your own OpenAI-compatible or Anthropic-compatible endpoints.
