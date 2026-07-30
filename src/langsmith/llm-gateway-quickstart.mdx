@@ -1,135 +1,137 @@
 ---
 title: Quickstart
-description: Make your first standard LLM Gateway call across configured model providers.
+description: Make your first LLM Gateway request with cURL, Python, or TypeScript.
 ---
 
+The LLM Gateway lets you call models across configured providers with one LangSmith API key. This quickstart uses the OpenAI Chat Completions format as the default path.
+
 <Note>
-**Private beta:** The LLM Gateway is in private [beta](/langsmith/release-stages). Sign up for [the waitlist](https://www.langchain.com/langsmith-llm-gateway-waitlist) to get access.
+LLM Gateway is in [private beta](/langsmith/release-stages).
 </Note>
 
-The standard LLM Gateway API lets you use the OpenAI Chat Completions, Anthropic Messages, or OpenAI Responses format with models from any configured provider. Choose the format already used by your application, then call models through the gateway root with provider-prefixed model IDs.
+## Before you start
 
-Use [direct model access](/langsmith/llm-gateway-direct-model-access) only when you want to access a provider's API directly and avoid the gateway's standardization layer.
+- **Administrator:** Complete the one-time [admin setup](/langsmith/llm-gateway-admin-setup) to enable the gateway, add provider secrets, and grant access.
+- **Developer:** Get a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations).
 
-## Prerequisites
+## 1. Make your first request
 
-Before you start, confirm that:
-
-- Your [Organization admin](/langsmith/rbac#organization-admin) has enabled the LLM Gateway and added provider API keys to workspace secrets. To set this up, refer to [Admin setup](/langsmith/llm-gateway-admin-setup).
-- You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations).
-
-## 1. Choose an API format
-
-The standard API supports these endpoints at the gateway root:
-
-| API format | Endpoint | Base URL for compatible SDKs |
-| --- | --- | --- |
-| OpenAI Chat Completions | `POST /v1/chat/completions` | `https://gateway.smith.langchain.com/v1` |
-| Anthropic Messages | `POST /v1/messages` | `https://gateway.smith.langchain.com` |
-| OpenAI Responses | `POST /v1/responses` | `https://gateway.smith.langchain.com/v1` |
-
-The format does not limit which provider you can call. For example, you can call an Anthropic model through the OpenAI Chat Completions or Responses format.
-
-## 2. Set environment variables
-
-This quickstart uses the OpenAI Chat Completions format. Set its base URL and your LangSmith API key:
+Set your LangSmith API key, then use one of the following examples. The selected workspace must have an Anthropic provider secret for this model.
 
 ```bash
 export LANGSMITH_API_KEY="lsv2_..._....cbed3e"
-export OPENAI_BASE_URL="https://gateway.smith.langchain.com/v1"
-export OPENAI_API_KEY="$LANGSMITH_API_KEY"
 ```
-
-The gateway uses your LangSmith API key for authentication and resolves the selected provider's actual key from your workspace's Provider Secrets.
-
-<Note>
-If your LangSmith account is on a regional instance, use the corresponding [regional gateway](/langsmith/llm-gateway#regional-gateways).
-</Note>
-
-## 3. List available models
-
-List the models configured for your workspace:
-
-```bash
-curl "$OPENAI_BASE_URL/models" \
-    -H "Authorization: Bearer $LANGSMITH_API_KEY"
-```
-
-The gateway aggregates each configured provider's model catalog. Every model ID includes a provider prefix in the form `<provider>/<model>`, such as `openai/gpt-4o-mini` or `anthropic/claude-sonnet-4-6`.
-
-A provider whose [Provider Secret](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets) is not configured is omitted from the response.
-
-## 4. Make a call
-
-The following examples call `anthropic/claude-sonnet-4-6` through each standard API format:
 
 <CodeGroup>
 
-```bash Chat Completions
+```bash cURL
 curl https://gateway.smith.langchain.com/v1/chat/completions \
     -H "Authorization: Bearer $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"model":"anthropic/claude-sonnet-4-6","messages":[{"role":"user","content":"ping"}]}'
+    -d '{"model":"anthropic/claude-sonnet-4-6","messages":[{"role":"user","content":"Hello!"}]}'
 ```
+
+```python Python
+import os
+
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://gateway.smith.langchain.com/v1",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+response = client.chat.completions.create(
+    model="anthropic/claude-sonnet-4-6",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(response.choices[0].message.content)
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://gateway.smith.langchain.com/v1",
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+const response = await client.chat.completions.create({
+  model: "anthropic/claude-sonnet-4-6",
+  messages: [{ role: "user", content: "Hello!" }],
+});
+console.log(response.choices[0].message.content);
+```
+
+</CodeGroup>
+
+A `200` response confirms that the gateway, your key, your permissions, and the provider secret are configured correctly.
+
+To switch providers, change only the provider-prefixed model ID. For example, use `openai/gpt-5.4-mini` with the same Chat Completions client when the workspace has an OpenAI provider secret.
+
+## 2. Choose another API format
+
+The standard gateway also accepts Anthropic Messages and OpenAI Responses requests. All three formats can access models across configured providers.
+
+| API format | Base URL | Request path |
+| --- | --- | --- |
+| OpenAI Chat Completions | `https://gateway.smith.langchain.com/v1` | `/chat/completions` |
+| Anthropic Messages | `https://gateway.smith.langchain.com` | `/v1/messages` |
+| OpenAI Responses | `https://gateway.smith.langchain.com/v1` | `/responses` |
+
+<CodeGroup>
 
 ```bash Messages
 curl https://gateway.smith.langchain.com/v1/messages \
     -H "Authorization: Bearer $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"model":"anthropic/claude-sonnet-4-6","max_tokens":1024,"messages":[{"role":"user","content":"ping"}]}'
+    -d '{"model":"anthropic/claude-sonnet-4-6","max_tokens":1024,"messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
 ```bash Responses
 curl https://gateway.smith.langchain.com/v1/responses \
     -H "Authorization: Bearer $LANGSMITH_API_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"model":"anthropic/claude-sonnet-4-6","input":"ping"}'
-```
-
-```python OpenAI SDK
-import os
-
-from openai import OpenAI
-
-client = OpenAI(
-    base_url=os.environ["OPENAI_BASE_URL"],
-    api_key=os.environ["LANGSMITH_API_KEY"],
-)
-response = client.chat.completions.create(
-    model="anthropic/claude-sonnet-4-6",
-    messages=[{"role": "user", "content": "ping"}],
-)
-print(response.choices[0].message.content)
+    -d '{"model":"anthropic/claude-sonnet-4-6","input":"Hello!"}'
 ```
 
 </CodeGroup>
 
-You must provider-prefix the `model` field. A bare model name such as `claude-sonnet-4-6` returns a `400` error. A `200` response confirms that the gateway, your API key, your role permissions, and the selected provider secret are configured correctly.
+For SDK examples, request translation, and regional URLs, see [API formats](/langsmith/llm-gateway-api-formats).
 
-## Understand request translation
+## 3. Discover available models
 
-The endpoint determines the API format your application sends and receives. The model ID determines the upstream provider.
+List the models available to your workspace across configured providers:
 
-If the selected provider supports the requested format natively, the request and response pass through without format translation. Otherwise, the gateway translates the request into a format supported by the provider and translates the response back into the format your application selected, including streaming responses.
+```bash
+curl https://gateway.smith.langchain.com/v1/models \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY"
+```
 
-Regardless of format, every call resolves the same [Provider Secrets](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets), evaluates the same [spend](/langsmith/llm-gateway-spend-policies) and [data protection](/langsmith/llm-gateway-data-protection) policies, and is traced like any other gateway call.
+Every model ID uses the form `<provider>/<model>`. Providers without a configured [Provider Secret](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets) are omitted.
 
-## 5. View your trace
+## 4. View your trace
 
-Open the [LangSmith UI](https://smith.langchain.com) and navigate to the tracing project named `gateway` or `gateway-<short_api_key>-<api_key_id>` in the workspace associated with your API key. You should see a new trace for the call you made.
+Open the [LangSmith UI](https://smith.langchain.com) and navigate to the tracing project named `gateway` or `gateway-<short_api_key>-<api_key_id>` in the workspace associated with your API key. The request appears as a trace with its model, token, cost, latency, and policy metadata.
 
 <Note>
-If your application also emits its own LangSmith traces, the gateway-side trace and your application trace appear as separate runs. Linking gateway traces to the parent application run is not yet supported.
+If your application also emits LangSmith traces, the gateway trace and application trace appear as separate runs. Linking a gateway trace to its parent application run is not yet supported.
 </Note>
 
-## 6. Set a spend policy (optional)
+## 5. Add a policy (optional)
 
-Go to **Settings → Gateway → LLM Gateway** in LangSmith to create a spend policy. For example, you can set a daily $10 cap on your API key. When the cap is reached, the gateway returns a `402` response with the message: `"Request blocked by gateway policies: R&D Spend Cap"`.
+Go to **Settings → Gateway → LLM Gateway** to create a spend, rate-limit, or data-protection policy. Policies apply to standard and direct gateway traffic.
 
-For more information, see [Spend policies](/langsmith/llm-gateway-spend-policies).
+## Troubleshoot your first request
+
+| Symptom | Likely cause | Resolution |
+| --- | --- | --- |
+| `401 Unauthorized` | The LangSmith API key is missing or invalid. | Verify `LANGSMITH_API_KEY` and retry. |
+| `403 Forbidden` | The key's role cannot invoke the gateway. | Ask an administrator to grant `gateway:invoke` and `workspaces:read`. |
+| `400` response about `model` | The model ID is missing its provider prefix. | Use `<provider>/<model>`, such as `anthropic/claude-sonnet-4-6`. |
+| No models with the provider's prefix appear in `GET /v1/models` | The provider may not be configured for the workspace. | Ask an administrator to verify the corresponding [Provider Secret](/langsmith/llm-gateway-admin-setup#2-add-provider-secrets). |
+| Request works in one region but not another | The request uses the wrong regional gateway URL. | Select the URL for your [LangSmith region](/langsmith/llm-gateway-api-formats#use-a-regional-gateway). |
 
 ## See also
 
+- [API formats](/langsmith/llm-gateway-api-formats): review compatibility, translation behavior, SDK setup, and errors.
 - [Direct model access](/langsmith/llm-gateway-direct-model-access): access a provider's API directly without the standardization layer.
 - [Model fallbacks](/langsmith/llm-gateway-fallbacks): retry against backup models when a provider fails.
-- [Custom model providers](/langsmith/llm-gateway-custom-providers): route to your own OpenAI-compatible or Anthropic-compatible endpoints.
