@@ -34,9 +34,9 @@ found, err := client.Runs.QueryV2(ctx, langsmith.RunQueryV2Params{
 	ProjectIDs:   langsmith.F([]string{projectID}),
 	MinStartTime: langsmith.F(minStart),
 	MaxStartTime: langsmith.F(maxStart),
-	Selects: langsmith.F([]langsmith.RunQueryV2ParamsSelect{
-		langsmith.RunQueryV2ParamsSelectID,
-		langsmith.RunQueryV2ParamsSelectStartTime,
+	Selects: langsmith.F([]langsmith.RunSelectField{
+		langsmith.RunSelectFieldID,
+		langsmith.RunSelectFieldStartTime,
 	}),
 	PageSize: langsmith.F(int64(1)),
 })

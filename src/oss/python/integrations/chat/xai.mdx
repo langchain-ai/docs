@@ -1,6 +1,14 @@
 ---
-title: "ChatXAI integration"
-description: "Integrate with the ChatXAI chat model using LangChain Python."
+title: ChatXAI integration
+description: Integrate with the ChatXAI chat model using LangChain Python.
+integration:
+  name: ChatXAI
+  pypi: langchain-xai
+  featured: true
+  stream: true
+  tool_calling: true
+  structured_output: true
+  multimodal: false
 ---
 
 <Warning>
@@ -145,28 +153,47 @@ ai_msg
 AIMessage(content='I am retrieving the current weather for San Francisco.', additional_kwargs={'tool_calls': [{'id': '0', 'function': {'arguments': '{"location":"San Francisco, CA"}', 'name': 'GetWeather'}, 'type': 'function'}], 'refusal': None}, response_metadata={'token_usage': {'completion_tokens': 11, 'prompt_tokens': 151, 'total_tokens': 162, 'completion_tokens_details': None, 'prompt_tokens_details': None}, 'model_name': 'grok-beta', 'system_fingerprint': 'fp_14b89b2dfc', 'finish_reason': 'tool_calls', 'logprobs': None}, id='run-73707da7-afec-4a52-bee1-a176b0ab8585-0', tool_calls=[{'name': 'GetWeather', 'args': {'location': 'San Francisco, CA'}, 'id': '0', 'type': 'tool_call'}], usage_metadata={'input_tokens': 151, 'output_tokens': 11, 'total_tokens': 162, 'input_token_details': {}, 'output_token_details': {}})
 ```
 
-## Live search
+## Web search
 
-xAI supports a [Live Search](https://docs.x.ai/docs/guides/live-search) feature that enables Grok to ground its answers using results from web searches:
+xAI's previous Live Search configuration used the `search_parameters` constructor
+argument, which is now deprecated. To ground Grok responses with current web
+results, bind xAI's built-in `web_search` tool instead:
 
 ```python
 from langchain_xai import ChatXAI
 
-llm = ChatXAI(
-    model="grok-3-latest",
-    search_parameters={
-        "mode": "auto",
-        # Example optional parameters below:
-        "max_search_results": 3,
-        "from_date": "2025-05-26",
-        "to_date": "2025-05-27",
-    },
-)
+llm = ChatXAI(model="grok-4", temperature=0).bind_tools([{"type": "web_search"}])
 
-llm.invoke("Provide me a digest of world news in the last 24 hours.")
+response = llm.invoke("Provide me a digest of world news in the last 24 hours.")
+response.content
 ```
 
-See [xAI docs](https://docs.x.ai/docs/guides/live-search) for the full set of web search options.
+See [xAI's tools documentation](https://docs.x.ai/developers/tools/overview) for
+the current set of built-in tools, including Web Search and X Search.
+
+## Reasoning effort
+
+[Certain xAI models](https://docs.x.ai/docs/models#model-pricing) support the standard [`reasoning_effort`](/oss/langchain/models#reasoning) parameter, which controls the amount of reasoning the model does. It can be set at model construction or per invocation:
+
+```python
+from langchain_xai import ChatXAI
+
+model = ChatXAI(model="grok-4.3")
+response = model.invoke(
+    "Analyze the trade-offs between microservices and monolithic architectures",
+    reasoning_effort="high",
+)
+```
+
+<Note>
+    `reasoning_effort` as a standard parameter requires `langchain-xai>=1.3.0`. `ChatXAI` sends it nested under `extra_body.reasoning_effort`.
+</Note>
+
+Check a model's [profile](/oss/langchain/models#model-profiles) for the effort levels it supports:
+
+```python
+model.profile["reasoning_effort_levels"]  # e.g. ['low', 'medium', 'high']
+```
 
 ---
 

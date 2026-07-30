@@ -51,7 +51,7 @@ You are a careful assistant. Use available tools when needed and cite sources.
 
 Put deploy-owned skills under `skills/` next to the project-root agent entry file. Deploy syncs `instructions.md` and `skills/**` to the Context Hub repo associated with the deployment.
 
-Managed memory is stored in the same Context Hub repo under `/memories/AGENTS.md`. Deploy syncs `instructions.md` and `skills/**`, but preserves memory and does not overwrite `memories/**`. To disable managed memory, set `disableMemory: true` or `disable_memory=True` in the agent definition.
+Managed memory is stored in the same Context Hub repo under `memories/**` and remounted for the agent as `/memories/user/` (hot `/memories/user/AGENTS.md`). Deploy syncs `instructions.md` and `skills/**`, but preserves memory and does not overwrite `memories/**`. To disable managed memory, set `disableMemory: true` or `disable_memory=True` in the agent definition.
 
 ## Add tools, connectors, and middleware
 
@@ -101,7 +101,10 @@ export const sandbox = defineSandbox(LangSmithSandbox, {
 
 </CodeGroup>
 
-Sandboxes are scoped per thread. Each durable thread or conversation gets its own sandbox.
+Sandbox scope controls reuse:
+
+- `thread` (default): Each durable thread or conversation gets its own sandbox.
+- `agent`: All threads handled by the agent process share one sandbox.
 
 If `sandbox/setup.sh` exists, Managed Deep Agents runs it once when a new managed sandbox is provisioned. Use it to install packages, seed files, or prepare workspace state.
 
@@ -180,7 +183,7 @@ DATABASE_URL=<DATABASE_URL>
 
 `LANGSMITH_API_KEY`, `LANGGRAPH_HOST_API_KEY`, `LANGCHAIN_API_KEY`, and other platform variables are reserved. They can authenticate the deploy, but they are not uploaded as user-managed deployment secrets.
 
-Non-reserved `.env` entries, such as model provider keys, MCP tokens, and custom tool credentials, are forwarded as hosted deployment secrets when `mda deploy` creates or updates the deployment. If the configured model requires a provider key, deploy fails before upload unless that key is available from `.env`, the shell environment, or LangSmith workspace secrets. When the provider key is only in the shell environment, `mda deploy` forwards it as a secret for that deploy.
+Non-reserved `.env` entries, such as model provider keys, MCP tokens, channel secrets, and custom tool credentials, are forwarded as hosted deployment secrets when `mda deploy` creates or updates the deployment. If the configured model requires a provider key, deploy fails before upload unless that key is available from `.env`, the shell environment, or LangSmith workspace secrets. When the provider key is only in the shell environment, `mda deploy` forwards it as a secret for that deploy. When the project declares `channels/`, deploy also preflights each channel manifest’s `requiredEnv` (for example Slack or GitHub App secrets)—see [Channels](/langsmith/managed-deep-agents-channels).
 
 Reserved platform variables, empty values, `.env`, and `.env.*` files are not copied into the compiled build archive.
 
@@ -200,6 +203,9 @@ If a deployment reaches `BUILD_FAILED` or `DEPLOY_FAILED`, open the printed depl
   </Card>
   <Card title="Connectors" icon="plug" href="/langsmith/managed-deep-agents-connectors">
     Attach MCP servers or constrained LangSmith capabilities.
+  </Card>
+  <Card title="Channels" icon="messages" href="/langsmith/managed-deep-agents-channels">
+    Receive Slack Events and configure channel secrets.
   </Card>
   <Card title="Schedules" icon="calendar" href="/langsmith/managed-deep-agents-schedules">
     Run agents on managed cron schedules.

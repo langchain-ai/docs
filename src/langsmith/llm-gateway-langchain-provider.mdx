@@ -1,0 +1,120 @@
+---
+title: Gateway Credits
+description: Use Gateway Credits to access models without a provider key, just authenticate with LangSmith.
+---
+
+<Note>
+**Beta:** The LLM Gateway is in [beta](/langsmith/release-stages). APIs and features may change as we iterate.
+</Note>
+
+The `/langchain` provider gives you access to call models through the LLM Gateway without setting up a provider account or key. **Gateway Credits** are required to access models in this way. With [other providers](/langsmith/llm-gateway-direct-model-access#choose-a-provider-path), you bring your own account and key; with Gateway Credits, you authenticate with only your [LangSmith API key](/langsmith/create-account-api-key) and no [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets) setup is required.
+
+<Card title="Base URL" icon="link">
+Point any OpenAI-compatible client at:
+
+```text
+https://gateway.smith.langchain.com/langchain/v1
+```
+
+Authenticate with your LangSmith API key as a bearer token.
+
+For regional base URLs, see [Regional gateways](/langsmith/llm-gateway-api-formats#use-a-regional-gateway).
+</Card>
+
+## Available models
+
+The provider is OpenAI-compatible. Select a model by ID in the request body, and the gateway routes it to the upstream model. Model IDs are case-insensitive.
+
+| Model ID | Description |
+| --- | --- |
+| `moonshotai/Kimi-K2.6` | Kimi K2.6 by Moonshot AI. A strong general-purpose model. Powered by Fireworks Inference. |
+| `moonshotai/Kimi-K3` | Kimi K3 by Moonshot AI. Powered by Fireworks Inference. |
+
+You can also list the available models programmatically:
+
+```bash
+curl https://gateway.smith.langchain.com/langchain/v1/models \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY"
+```
+
+The response is the standard OpenAI `/v1/models` list containing only the available model IDs above.
+
+## Prerequisites
+
+Before calling the `/langchain` provider:
+
+- Your organization is on a paid plan ([Developer, Plus, Startup, or Premier](/langsmith/pricing-plans)).
+- You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations). See [Admin setup](/langsmith/llm-gateway-admin-setup) if you are unsure.
+
+## Make a call
+
+Point any OpenAI-compatible client at `https://gateway.smith.langchain.com/langchain/v1`, authenticate with your LangSmith API key, and set `model` to one of the advertised model IDs.
+
+<CodeGroup>
+
+```bash curl
+curl https://gateway.smith.langchain.com/langchain/v1/chat/completions \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"moonshotai/Kimi-K2.6","messages":[{"role":"user","content":"ping"}]}'
+```
+
+```python OpenAI SDK
+import os
+
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://gateway.smith.langchain.com/langchain/v1",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+response = client.chat.completions.create(
+    model="moonshotai/Kimi-K2.6",
+    messages=[{"role": "user", "content": "ping"}],
+)
+print(response.choices[0].message.content)
+```
+
+```python LangChain
+import os
+
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(
+    model="moonshotai/Kimi-K2.6",
+    model_provider="openai",
+    base_url="https://gateway.smith.langchain.com/langchain/v1",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+print(model.invoke("ping").content)
+```
+
+</CodeGroup>
+
+## Supported endpoints
+
+The `/langchain` provider forwards two OpenAI-compatible prompt endpoints and serves the model list locally:
+
+| Method & path | Behavior |
+| --- | --- |
+| `POST /langchain/v1/chat/completions` | Chat completions, including streaming. |
+| `POST /langchain/v1/responses` | OpenAI Responses API. |
+| `GET /langchain/v1/models` | Lists the available model IDs. |
+
+Any other path returns `404`. A request for a model that is not advertised also returns `404` with a message listing the available model IDs.
+
+## Pricing
+
+Gateway Credits are available on all paid plans besides Enterprise. See [the pricing page](https://www.langchain.com/pricing) for plan details and current rates. Gateway Credits are denominated in **LangChain Credit Units (LCUs)** at **$1.50 per LCU**; each call consumes LCUs based on token usage.
+
+Standard gateway [spend policies](/langsmith/llm-gateway-spend-policies) apply to `/langchain` traffic, so any organization, workspace, API key, or user cap you have configured also governs Gateway Credit usage. You can control Gateway Credit consumption with the same tools you use for bring-your-own-key providers. For example, cap a specific API key at $200/month across every provider, or set a workspace-wide daily limit that includes `/langchain` calls.
+
+## Tracing
+
+Like all gateway traffic, calls to `/langchain` are traced to LangSmith. For where traces land and how to control access to them, refer to [Traces, Engine, and access control](/langsmith/llm-gateway-access).
+
+## Next steps
+
+- [Quickstart](/langsmith/llm-gateway-quickstart): make your first gateway-proxied call.
+- [Spend policies](/langsmith/llm-gateway-spend-policies): add cost limits to `/langchain` usage.
+- [Custom model providers](/langsmith/llm-gateway-custom-providers): route to your own OpenAI-compatible endpoints.

@@ -29,7 +29,7 @@ project := sessions.Items[0]
 runs, err := client.Runs.QueryV2(ctx, langsmith.RunQueryV2Params{
 	ProjectIDs:   langsmith.F([]string{project.ID}),
 	MinStartTime: langsmith.F(time.Now().Add(-24 * time.Hour)),
-	RunType:      langsmith.F(langsmith.RunQueryV2ParamsRunTypeLlm),
+	RunType:      langsmith.F(langsmith.RunTypeLlm),
 })
 // :remove-start:
 if err != nil {
