@@ -10,7 +10,7 @@ Hooks run with your user permissions and execute arbitrary code from your config
 
 ## Setup
 
-Create `~/.deepagents/hooks.json`. Handlers nest in three levels: event name, matcher group, then the handlers that run for that group.
+Create `~/.deepagents/hooks.json` for hooks that apply to every project. Handlers nest in three levels: event name, matcher group, then the handlers that run for that group.
 
 ```json title="~/.deepagents/hooks.json"
 {
@@ -42,9 +42,19 @@ Create `~/.deepagents/hooks.json`. Handlers nest in three levels: event name, ma
 }
 ```
 
-Run `dcode config path` to confirm the resolved location of `hooks.json` and whether it exists.
+Deep Agents Code loads hook configuration in precedence order:
 
-Hook configuration is snapshotted when a session starts. Editing `hooks.json` mid-session does not add, remove, or weaken hooks until the next session, so an agent that edits settings during a turn cannot change the policy hooks that govern it.
+1. Project hooks from `{project_root}/.deepagents/hooks.json`, after workspace trust is granted.
+2. User hooks from `~/.deepagents/hooks.json`.
+3. Hooks contributed by enabled plugins.
+
+Every matching handler runs concurrently. Precedence controls the order in which results are combined, not whether lower-precedence handlers execute. Interactive sessions prompt before loading untrusted project hooks; in headless or CI runs, pass `--trust-project-hooks` to opt in.
+
+Enabled plugins can contribute the same configuration shape from `hooks/hooks.json`, a manifest `hooks` path, or an inline manifest object. Plugin hooks activate on startup or after `/reload`; see [Plugins and marketplaces](/oss/deepagents/code/plugins#create-a-plugin).
+
+Run `dcode config path` to inspect the separate project and user hook locations and the workspace trust store.
+
+Hook configuration is snapshotted until `/reload` or a new session. Editing `hooks.json` during a turn does not change the active policy hooks.
 
 ### Handler fields
 
@@ -55,18 +65,22 @@ Each entry in a matcher group's `hooks` array is a command handler:
 </ResponseField>
 
 <ResponseField name="command" type="string" required>
-    Path to the executable or script to run. The event payload is written to stdin as JSON, never interpolated into arguments.
+    Shell command to run. Pipes, redirects, globs, and environment-variable expansion are supported. The event payload is written to stdin as JSON, never interpolated into arguments.
 </ResponseField>
 
-<ResponseField name="timeout" type="number" default="600" post={["optional"]}>
-    Per-handler timeout in seconds. Handlers that exceed the timeout are cancelled and treated as a non-blocking failure.
+<ResponseField name="argv" type="list[string]" post={["optional"]}>
+    Execute an argument list directly instead of interpreting `command` through a shell. Use this for explicit executable paths and arguments.
+</ResponseField>
+
+<ResponseField name="timeout" type="number" post={["optional"]}>
+    Per-handler timeout in seconds. The default is 600 seconds, except for `UserPromptSubmit`, which defaults to 30 seconds. A timeout is a non-blocking failure.
 </ResponseField>
 
 <ResponseField name="statusMessage" type="string" post={["optional"]}>
-    Message shown in the UI while the handler runs.
+    Transient message shown in the UI while the handler runs.
 </ResponseField>
 
-Configuring an unsupported handler type is a configuration error that fails validation visibly, rather than being skipped silently.
+Configuring an unsupported handler type or `"async": true` produces a visible configuration error.
 
 ### Matchers
 
@@ -74,28 +88,28 @@ A matcher filters whether a handler group runs for a given event. Each event mat
 
 - Omitted, empty, or `*` matches all values for that event.
 - A simple name matches exactly (`Bash`).
-- Alternation matches either side (`Edit|Write`).
-- Any other value is treated as a regular expression (`mcp__.*`).
+- `|` or `,` separates exact alternatives (`Edit|Write`).
+- Any other value is treated as an unanchored regular expression (`mcp__.*`).
 
 Compile errors invalidate that group and produce a user-visible configuration diagnostic before the session runs.
-
-Tool-oriented events (`PreToolUse`, `PostToolUse`, `PermissionRequest`) also accept an optional `if` predicate using permission-rule syntax, such as `Bash(git *)`, as a second-stage filter. On any other event, an `if` predicate fails closed and the handler does not run.
 
 ## Events
 
 Deep Agents Code emits the following events. Client-owned events run in the CLI process. Server-owned events originate in the agent execution path and round-trip to the client so command handlers run where your configuration lives.
 
-| Event | Owner | Can block? | Matches on |
+| Event | Owner | Exit code 2 effect | Matches on |
 | --- | --- | --- | --- |
-| `SessionStart` | Client | No | `source` |
-| `SessionEnd` | Client | No | `reason` |
-| `PermissionRequest` | Client | Yes (allow, deny) | `tool_name` |
-| `Notification` | Client | No | `notification_type` |
-| `PreToolUse` | Server | Yes (allow, deny, ask) | `tool_name` |
-| `PostToolUse` | Server | No (feedback only) | `tool_name` |
-| `Stop` | Server | Yes (continue the turn) | none |
-| `SubagentStart` | Server | No | `agent_type` |
-| `SubagentStop` | Server | No (context only) | `agent_type` |
+| `SessionStart` | Client | Diagnostic | `source` |
+| `UserPromptSubmit` | Client | Block prompt | none |
+| `SessionEnd` | Client | Diagnostic | `reason` |
+| `PermissionRequest` | Client | Deny | `tool_name` |
+| `Notification` | Client | Diagnostic | `notification_type` |
+| `PreToolUse` | Server | Deny | `tool_name` |
+| `PostToolUse` | Server | Feedback | `tool_name` |
+| `PreCompact` | Server | Block compaction | `trigger` |
+| `Stop` | Server | Continue turn | none |
+| `SubagentStart` | Server | Diagnostic | `agent_type` |
+| `SubagentStop` | Server | Add context | `agent_type` |
 
 `PreToolUse` runs before the permission prompt and before tool execution, which makes it the primary enforcement seam. `Stop` runs before a terminal model response is committed.
 
@@ -130,18 +144,21 @@ Every handler receives a JSON object on stdin. All events share a common envelop
 | `hook_event_name` | Name of the event that fired |
 | `prompt_id` | UUID for the current user prompt, when available |
 | `permission_mode` | Permission mode (`default`, `plan`, `acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`), when meaningful |
-| `effort` | Object such as `{ "level": "medium" }`, where level is `low`, `medium`, `high`, `xhigh`, or `max`, when available |
+| `effort` | Object such as `{ "level": "medium" }`, where level is `none`, `low`, `medium`, `high`, `xhigh`, or `max`, when available |
+| `agent_id`, `agent_type` | Subagent identity, when available |
 
 ### Event-specific fields
 
 | Event | Fields |
 | --- | --- |
-| `SessionStart` | `source` (`startup`, `resume`, `clear`, `compact`), and when available `model`, `agent_type`, `session_title` |
+| `SessionStart` | `source` (`startup`, `resume`, `clear`, `compact`) and, when available, `model` |
+| `UserPromptSubmit` | `prompt` |
 | `SessionEnd` | `reason` (`clear`, `resume`, `logout`, `prompt_input_exit`, `bypass_permissions_disabled`, `other`) |
-| `PermissionRequest` | `tool_name`, `tool_input`, `permission_suggestions` |
+| `PermissionRequest` | `tool_name`, `tool_input`, `permission_suggestions` (currently empty) |
 | `Notification` | `message`, `notification_type`, and when available `title` |
 | `PreToolUse` | `tool_name`, `tool_input`, `tool_use_id` |
 | `PostToolUse` | `tool_name`, `tool_input`, `tool_response`, `tool_use_id`, and when available `duration_ms` |
+| `PreCompact` | `trigger` (`manual`, `auto`), `custom_instructions` |
 | `Stop` | `stop_hook_active`, `last_assistant_message`, `background_tasks`, `session_crons` |
 | `SubagentStart` | `agent_id`, `agent_type` |
 | `SubagentStop` | `stop_hook_active`, `agent_id`, `agent_type`, `agent_transcript_path`, `last_assistant_message`, `background_tasks`, `session_crons` |
@@ -169,9 +186,13 @@ Hook scripts see stable public tool names and argument shapes, not internal Deep
 
 | Public tool name | Notable input fields |
 | --- | --- |
-| `Bash` | `command`, optional `description`, timeout, background flag |
+| `Bash` | `command`, optional `timeout` in milliseconds |
 | `Write` | `file_path`, `content` |
 | `Edit` | `file_path`, `old_string`, `new_string`, `replace_all` |
+| `Read` | `file_path`, `limit`, `offset` |
+| `Glob` | `pattern`, `path` |
+| `Grep` | `pattern`, `path`, `glob`, `output_mode`, `head_limit` |
+| `LS` | `path` |
 | `mcp__<server>__<tool>` | Tool-specific JSON |
 
 ## Handler output
@@ -184,7 +205,7 @@ Command handlers communicate results through their exit code, stdout, and stderr
 | `2` | Blocking or feedback path, per the event. Stdout JSON is ignored, and stderr is the primary feedback channel. |
 | Other nonzero | Non-blocking error. Deep Agents Code logs a diagnostic and continues. |
 
-JSON output is only processed on exit `0`, and a JSON response must be the only content on stdout. User-facing and model-facing output is capped at 10,000 characters.
+JSON output is only processed on exit `0` and must be the only content on stdout. Successful non-JSON stdout becomes additional context for `SessionStart` and `UserPromptSubmit`; for other events it produces a diagnostic. Stdout and stderr are each retained up to 100,000 bytes.
 
 ### Universal output fields
 
@@ -195,14 +216,15 @@ Any handler may return these top-level fields:
   "continue": true,
   "stopReason": "optional user-facing reason when continue is false",
   "suppressOutput": false,
-  "systemMessage": "optional warning shown to the user",
+  "systemMessage": "optional message shown to the user",
+  "terminalSequence": "optional restricted terminal control sequence",
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse"
   }
 }
 ```
 
-Returning `"continue": false` stops all processing and takes precedence over event-specific decisions. When multiple hooks match, the first `stopReason` in configuration order is shown, and all `systemMessage` values are preserved in configuration order.
+All matching handlers finish before their results are combined. Returning `"continue": false` marks the reduced decision as stopped but does not prevent other matching handlers from running. The first `stopReason` wins in configuration order. `suppressOutput` suppresses only that handler's `systemMessage`.
 
 Event-specific control lives in `hookSpecificOutput` (for tool and permission events) or in top-level `decision` and `reason` (for `Stop`).
 
@@ -253,11 +275,11 @@ Return a block decision to keep the agent working instead of ending the turn:
 }
 ```
 
-A block continues the agent turn with your feedback. To avoid infinite loops, check `stop_hook_active` in the payload and stop blocking once your condition is met. Deep Agents Code also enforces a hard cap of eight consecutive continuations.
+A block continues the agent turn with your feedback. `Stop.hookSpecificOutput.additionalContext` has the same continuation effect. To avoid infinite loops, check `stop_hook_active` in the payload and stop blocking once your condition is met. Deep Agents Code also enforces a hard cap of eight consecutive continuations.
 
-### Inject context with start events
+### Inject context
 
-`SessionStart` and `SubagentStart` cannot block, but they can add context for the model:
+`SessionStart`, `UserPromptSubmit`, and `SubagentStart` can add context for the model:
 
 ```json
 {
@@ -268,18 +290,20 @@ A block continues the agent turn with your feedback. To avoid infinite loops, ch
 }
 ```
 
-`PostToolUse` and `SubagentStop` are also non-blocking: they can append `additionalContext` for the model but cannot undo an action that already ran.
+`UserPromptSubmit` also supports `suppressOriginalPrompt`. `PostToolUse` and `SubagentStop` can append `additionalContext` for the model but cannot undo an action that already ran.
 
 ## Unsupported output fields
 
-Some fields defined by the hook output contract are recognized and validated, but not applied. When a handler returns one of these, Deep Agents Code emits a diagnostic and falls back to normal behavior rather than failing silently:
+The following compatibility fields are recognized but not applied. Deep Agents Code emits a diagnostic and falls back to the behavior shown:
 
 | Field or behavior | Result |
 | --- | --- |
-| `PreToolUse.updatedInput` | Parsed, not applied |
+| `SessionStart.initialUserMessage`, `sessionTitle`, `watchPaths`, `reloadSkills` | Parsed, not applied |
+| `UserPromptSubmit.sessionTitle` | Parsed, not applied |
+| `PreToolUse.updatedInput` | Mutation ignored; `allow` or `ask` falls back to the normal permission flow |
 | `PreToolUse.defer` | Falls back to the normal permission flow, never treated as allow |
-| `PostToolUse.updatedToolOutput` | Parsed, not applied |
-| `PermissionRequest.updatedInput` | Parsed, not applied |
+| `PostToolUse.updatedToolOutput`, `updatedMCPToolOutput` | Parsed, not applied |
+| `PermissionRequest.updatedInput` | Mutation ignored; an `allow` falls back to the normal permission flow |
 | `PermissionRequest.updatedPermissions` | Parsed, not applied (no permission-rule store) |
 | `SubagentStop` block | Context only; a completed subagent cannot be resumed |
 
@@ -348,7 +372,7 @@ jq -n --arg ctx "$context" '{
 ```
 </Accordion>
 
-<Accordion title="Desktop notification when the turn ends (Stop)">
+<Accordion title="Desktop notification when the turn ends on macOS (Stop)">
 ```json title="~/.deepagents/hooks.json"
 {
   "hooks": {
@@ -385,12 +409,16 @@ if __name__ == "__main__":
 ```
 </Accordion>
 
+## Legacy configuration
+
+Older list-shaped `hooks.json` files are deprecated but still supported. Deep Agents Code automatically migrates equivalent events; events without a safe mapping are skipped with a diagnostic.
+
 ## Security
 
 Hooks follow the same trust model as Git hooks or shell aliases: any process that can write to `hooks.json` can run arbitrary commands with your permissions.
 
 - Payload data flows to stdin as JSON, never interpolated into command arguments.
-- Hook configuration is snapshotted at session start, so a mid-session settings change cannot alter the active policy hooks.
+- Hook configuration remains fixed until `/reload` or a new session.
 - Prefer explicit executables and argument arrays over shell wrappers.
 - Only install hooks from sources you trust.
 
@@ -401,5 +429,6 @@ Hooks follow the same trust model as Git hooks or shell aliases: any process tha
 ## See also
 
 - [Configuration](/oss/deepagents/code/configuration)
+- [Plugins and marketplaces](/oss/deepagents/code/plugins)
 - [Data locations](/oss/deepagents/code/configuration#data-locations)
 - [CLI reference](/oss/deepagents/code/cli-reference)
