@@ -1,5 +1,4 @@
 // :snippet-start: graph-api-using-tasks-task-js
-import { v7 as uuid7 } from "uuid";
 import * as z from "zod";
 
 import {
@@ -18,13 +17,13 @@ const State = new StateSchema({
 });
 
 const makeRequest = task("makeRequest", async (url: string) => {
-  const response = await fetch(url);  // [!code highlight]
+  const response = await fetch(url); // [!code highlight]
   const text = await response.text();
   return text.slice(0, 100);
 });
 
 const callApi: GraphNode<typeof State> = async (state) => {
-  const pending = state.urls.map((url) => makeRequest(url));  // [!code highlight]
+  const pending = state.urls.map((url) => makeRequest(url)); // [!code highlight]
   const results = await Promise.all(pending);
   return { results };
 };
@@ -37,7 +36,7 @@ const builder = new StateGraph(State)
 const checkpointer = new MemorySaver();
 const graph = builder.compile({ checkpointer });
 
-const threadId = uuid7();
+const threadId = crypto.randomUUID();
 const config = { configurable: { thread_id: threadId } };
 
 // :remove-start:
@@ -52,8 +51,13 @@ globalThis.fetch = async (url) => {
 await graph.invoke({ urls: ["https://www.example.com"] }, config);
 // :remove-start:
 const state = await graph.getState(config);
-if (JSON.stringify(state.values.results) !== JSON.stringify(["Example response body"])) {
-  throw new Error(`Unexpected results: ${JSON.stringify(state.values.results)}`);
+if (
+  JSON.stringify(state.values.results) !==
+  JSON.stringify(["Example response body"])
+) {
+  throw new Error(
+    `Unexpected results: ${JSON.stringify(state.values.results)}`,
+  );
 }
 globalThis.fetch = originalFetch;
 console.log("✓ graph API task sample works correctly");

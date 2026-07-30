@@ -21,7 +21,7 @@ _UTM_BASE = {
 # Markdown links to smith.langchain.com: [text](url) or [text](url "title")
 _MD_LINK_RE = re.compile(
     r"\[(?P<text>[^\]]*)\]"
-    r"\((?P<url>https://smith\.langchain\.com[^)\s]*)(?:\s+\"[^\"]*\")?\)"
+    r"\((?P<url>https://smith\.langchain\.com[^)\s]*)(?P<title>\s+\"[^\"]*\")?\)"
 )
 
 _CODE_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
@@ -61,7 +61,9 @@ def add_utm_to_cta_links(content: str, file_path: Path) -> str:
         url = match.group("url")
         if not _is_cta_url(url):
             return match.group(0)
-        return match.group(0).replace(url, _add_utm(url, utm_content), 1)
+        text = match.group("text")
+        title = match.group("title") or ""
+        return f"[{text}]({_add_utm(url, utm_content)}{title})"
 
     lines = content.splitlines(keepends=True)
     result: list[str] = []

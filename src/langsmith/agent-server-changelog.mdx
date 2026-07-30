@@ -11,12 +11,115 @@ rss: true
 
 [Agent Server](/langsmith/agent-server) is an API platform for creating and managing agent-based applications. It provides built-in persistence, a task queue, and supports deploying, configuring, and running assistants (agentic workflows) at scale. This changelog documents all notable updates, features, and fixes to Agent Server releases.
 
+## Release cadence
+
+`langgraph-api` maintains three release streams:
+
+- `latest`: Published every morning with the latest bug fixes and test features. Semantic versioning uses a dev tag off the minor version, for example `0.9.0.dev1`.
+- `rc` (release candidate): Published every three weeks and patched as needed during the bake window for critical bug backfills. Recommended for users who want to test a feature in the next stable release. Semantic versioning uses an rc tag off the minor version, for example `0.9.0rc1`.
+- `stable`: Published every three weeks from rc. Patched for security-related dependency bumps or critical bug fixes. This is the default version used by new deployments and is recommended for production use. Semantic versioning uses minor bumps for regular promotions (for example `0.9.0`) and patch bumps for backfills (for example `0.9.1`).
+
+Deployments use the newest `stable` version by default and are automatically updated to the newest `stable` version on each new revision. To pin to a specific version, set [`api_version`](/langsmith/cli#pinning-api-version) to the desired version in langgraph.json.
+
+## v0.11
+
+Latest version: `0.11.0`
+
+### Changes
+
+#### New Features
+- Added DeltaChannel-aware pruning that preserves only the minimum ancestor checkpoints needed for state reconstruction, replacing the previous approach that refused to prune threads with active delta channels.
+- Added opt-in Prometheus metrics scrape support. Set `LSD_PROM_METRICS_ENABLED=true` to expose OTel metrics (run lifecycle, latency, stream, worker gauges) on a dedicated Prometheus scrape endpoint at port `LSD_PROM_METRICS_PORT` (default 9464). Datadog OTLP push continues to work alongside Prometheus when both are configured.
+- Added `coreApi.runQueueTraceLog` config flag (`LSD_RUN_QUEUE_TRACE_LOG` env var, default `false`) to enable verbose Redis run-queue trace logs.
+- Added the `langsmith_session_name` field to each run and exposed support via `/info` so Studio can detect API versions that support this field.
+- Added `-fips` variants of Wolfi Python and JS server images (for example `3.13-wolfi-fips`, `22-wolfi-fips`), built with the Go FIPS 140 cryptographic module and FIPS-hardened OpenSSL for Node.
+
+#### Fixes
+- Fixed protocol v2 runs on JS graphs failing silently. The sidecar rejected `streamEvents` with a 400 due to strict stream-mode validation, the error was swallowed, and runs falsely reported success with 0 nodes executed. Relaxed stream-mode validation at the HTTP boundary and now raise a clear error on non-2xx sidecar responses instead of masking the failure.
+- Fixed protocol v2 event streaming against JS sidecar (remote) graphs, which were incorrectly served through the legacy reconstruction path. Remote graphs now use LangGraphJS's native v3 stream for v2 event-streaming runs, resolving tool calls not rendering, headless interrupts never executing or resuming, and `400: tool_use ids must be unique` errors on the final message after a resume.
+- Delete run now skips checkpoint deletion for threads using DeltaChannel and removes only the run record. Checkpoints that store delta writes later checkpoints depend on are preserved. Use thread prune APIs to reclaim checkpoint storage on delta-channel threads.
+- Fixed HTTP `input.respond` validation for Event Streaming v2 to read pending interrupts from the durable thread row instead of rebuilding thread state, preventing valid HITL resumes from incorrectly returning `no_such_interrupt` after reconnects, redeploys, or thread-state lookup failures.
+- Fixed `input.respond` so optional `update` and `goto` parameters are forwarded into the same `Command` as the resume value.
+- Fixed DeltaChannel replay for channels that migrated from a non-delta channel to DeltaChannel. The checkpointer did not correctly recognize the head seed checkpoint, which could produce incorrect reconstructed state for non-additive reducers.
+- Fixed custom stream events emitted from subgraphs not being forwarded to the client when using `stream_mode=["custom"]` with `stream_subgraphs=True` on JS deployments.
+- Fixed a bug where calling `join_stream` with a `stream_mode` filter could cause non-message events from subgraphs to be incorrectly filtered from the results.
+- Fixed Redis Cluster pub/sub failing to connect on TLS-only clusters when `REDIS_CLUSTER=true`, which previously attempted to dial port `0`.
+- Made queue runs query field selection explicit for backwards compatibility, so new run schema fields can be added without breaking older server versions during rollbacks.
+
+<Accordion title="Previous v0.11 releases">
+<Update label="2026-07-09" tags={["agent-server"]}>
+## v0.11.0rc14
+
+### Fixes
+- Fixed OTLP latency histogram bucket configuration after the metrics migration so latency metrics use legacy second-scale buckets converted to milliseconds, restoring accurate p95/p99 for long HTTP polls, queue waits, and run execution.
+- Made queue runs query field selection explicit for backwards compatibility, so new run schema fields can be added without breaking older server versions during rollbacks.
+</Update>
+
+<Update label="2026-07-08" tags={["agent-server"]}>
+## v0.11.0rc13
+
+### Fixes
+- Fixed JS worker port collisions when the API server and queue worker run as separate containers in the same Kubernetes pod. The queue entrypoint now offsets loopback ports.
+- Fixed Redis Cluster pub/sub failing to connect on TLS-only clusters when `REDIS_CLUSTER=true`, which previously attempted to dial port `0`.
+</Update>
+
+<Update label="2026-07-08" tags={["agent-server"]}>
+## v0.11.0rc12
+
+### New Features
+- Added `-fips` variants of Wolfi Python and JS server images (for example `3.13-wolfi-fips`, `22-wolfi-fips`), built with the Go FIPS 140 cryptographic module and FIPS-hardened OpenSSL for Node.
+</Update>
+
+<Update label="2026-07-07" tags={["agent-server"]}>
+## v0.11.0rc11
+
+### New Features
+- Added the `langsmith_session_name` field to each run. This field is the LangSmith tracing project name when tracing is enabled. Exposed support via `/info` so Studio can detect API versions that support this field.
+
+### General Notes
+- Applied stranded Postgres migration `061` for `thread_ls_user_id_idx` and `thread_assistant_id_idx` btree indexes.
+</Update>
+
+<Update label="2026-07-02" tags={["agent-server"]}>
+## v0.11.0rc10
+
+### New Features
+- Added core search cost rate limits for assistants, runs, crons, and threads search, wired through existing rate-limit config and metrics.
+
+### General Notes
+- Wolfi (`chainguard-base-fips`) server images now ship a FIPS-compliant Go core-server and FIPS-mode Node, and no longer include the unused bun runtime.
+</Update>
+
+<Update label="2026-07-01" tags={["agent-server"]}>
+## v0.11.0rc9
+
+### Fixes
+- Fixed a bug where calling `join_stream` with a `stream_mode` filter could cause non-message events from subgraphs to be incorrectly filtered from the results.
+</Update>
+
 <Update label="2026-06-30" tags={["agent-server"]}>
 ## v0.11.0rc8
 
 ### General Notes
 - Agent Server metrics are now emitted through the OpenTelemetry/Prometheus client on the dedicated Prometheus scrape endpoint (`LSD_PROM_METRICS_PORT`, default 9464). Set `LSD_PROM_METRICS_ENABLED=true` to enable the endpoint and `EXPOSE_INTERNAL_METRICS_PROMETHEUS=true` to expose the internal metrics migrated from the main API `/metrics` path. By default, the Prometheus endpoint serves only LSD Deployment UI metrics.
 - **Potentially breaking** for Prometheus scrapers and dashboards: point collectors at the OTLP Prometheus port instead of the main API `/metrics` path. `lg_api_http_requests_latency_seconds` is now `lg_api_http_requests_latency` and reports milliseconds instead of seconds. Pool request counters now use a `_total` suffix (`lg_api_pg_pool_requests_queued_total`, `lg_api_pg_pool_requests_errors_total`). The `lg_api_pending_runs_wait_time_*` gauges are removed in favor of the `lg_api_run_queue_wait_time_1st_attempt` latency histogram.
+</Update>
+
+<Update label="2026-06-30" tags={["agent-server"]}>
+## v0.11.0rc7
+
+### Fixes
+- Fixed custom stream events emitted from subgraphs not being forwarded to the client when using `stream_mode=["custom"]` with `stream_subgraphs=True` on JS deployments.
+
+### General Notes
+- Includes security dependency updates for PyJWT, LangSmith, cryptography, Hono, undici, `golang.org/x/net`, `golang.org/x/crypto`, and Starlette.
+</Update>
+
+<Update label="2026-06-26" tags={["agent-server"]}>
+## v0.11.0rc6
+
+### New Features
+- Added rate-limit observability metrics, including configured-limit gauges (`lg_api_rate_limit_configured_rate`, `lg_api_rate_limit_configured_burst`) and a per-bucket `rate_limit_key` tag on decision, error, and cost metrics.
 </Update>
 
 <Update label="2026-06-25" tags={["agent-server"]}>
@@ -67,6 +170,7 @@ rss: true
 - Delete run now skips checkpoint deletion for threads using DeltaChannel and removes only the run record. Checkpoints that store delta writes later checkpoints depend on are preserved. Use thread prune APIs to reclaim checkpoint storage on delta-channel threads.
 - Fixed Prometheus metrics export and aligned OpenTelemetry exporter configuration.
 </Update>
+</Accordion>
 
 <Update label="2026-06-10" tags={["agent-server"]}>
 ## v0.10.0
