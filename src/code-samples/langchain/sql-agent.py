@@ -142,8 +142,9 @@ SQL Query: """.format(query=query)
 
 tools = [sql_db_list_tables, sql_db_schema, sql_db_query, sql_db_query_checker]
 
-for tool in tools:
-    print(f"{tool.name}: {tool.description}\n")
+# Use a distinct loop variable so it does not shadow the `tool` decorator.
+for t in tools:
+    print(f"{t.name}: {t.description}\n")
 # :snippet-end:
 
 # :snippet-start: sql-agent-system-prompt-py
@@ -391,8 +392,9 @@ SQL Query: """.format(query=query)
 
 tools = [sql_db_list_tables, sql_db_schema, sql_db_query, sql_db_query_checker]
 
-for tool in tools:
-    print(f"{tool.name}: {tool.description}\n")
+# Use a distinct loop variable so it does not shadow the `tool` decorator.
+for t in tools:
+    print(f"{t.name}: {t.description}\n")
 
 # Use create_agent
 system_prompt = """
