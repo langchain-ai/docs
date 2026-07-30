@@ -713,12 +713,13 @@ from langsmith import (
 primary_client = Client(api_key="primary-key")
 secondary_client = Client(api_key="secondary-key")
 
+primary_project = "production"
 secondary_project = "backup-project"
 
 with tracing_context(
     replicas=[
         {
-            "project_name": "production",
+            "project_name": primary_project,
             "primary": True,
             "client": primary_client,
         },
@@ -738,11 +739,17 @@ secondary_run_id = compute_run_id_for_secondary_replica(
     secondary_project,
 )
 
+# Each replica writes to its own project, so resolve each project's UUID
+primary_session_id = primary_client.read_project(project_name=primary_project).id
+secondary_session_id = secondary_client.read_project(project_name=secondary_project).id
+
 # Submit feedback to the primary replica using the original run ID
 primary_client.create_feedback(
     trace_id=run.id,
     key="user-rating",
     score=1,
+    session_id=primary_session_id,
+    start_time=run.start_time,
 )
 
 # Submit feedback to the secondary replica using the computed run ID
@@ -750,6 +757,8 @@ secondary_client.create_feedback(
     trace_id=secondary_run_id,
     key="user-rating",
     score=1,
+    session_id=secondary_session_id,
+    start_time=run.start_time,
 )
 ```
 
@@ -761,13 +770,17 @@ import { computeRunIdForSecondaryReplica } from "langsmith";
 const primaryClient = new Client({ apiKey: "primary-key" });
 const secondaryClient = new Client({ apiKey: "secondary-key" });
 
+const primaryProject = "production";
 const secondaryProject = "backup-project";
 
 let primaryRunId: string | undefined;
+let primaryRunStartTime: number | undefined;
 
 const answerQuestion = traceable(
   async (question: string) => {
-    primaryRunId = getCurrentRunTree()?.id;
+    const runTree = getCurrentRunTree();
+    primaryRunId = runTree?.id;
+    primaryRunStartTime = runTree?.start_time;
     return { answer: "Paris" };
   },
   {
@@ -775,7 +788,7 @@ const answerQuestion = traceable(
     client: primaryClient,
     replicas: [
       {
-        projectName: "production",
+        projectName: primaryProject,
         primary: true,
         client: primaryClient,
       },
@@ -797,14 +810,26 @@ if (primaryRunId) {
     secondaryProject
   );
 
+  // Each replica writes to its own project, so resolve each project's UUID
+  const { id: primarySessionId } = await primaryClient.readProject({
+    projectName: primaryProject,
+  });
+  const { id: secondarySessionId } = await secondaryClient.readProject({
+    projectName: secondaryProject,
+  });
+
   // Submit feedback to the primary replica using the original run ID
   await primaryClient.createFeedback(primaryRunId, "user-rating", {
     score: 1,
+    sessionId: primarySessionId,
+    startTime: primaryRunStartTime,
   });
 
   // Submit feedback to the secondary replica using the computed run ID
   await secondaryClient.createFeedback(secondaryRunId, "user-rating", {
     score: 1,
+    sessionId: secondarySessionId,
+    startTime: primaryRunStartTime,
   });
 }
 ```
