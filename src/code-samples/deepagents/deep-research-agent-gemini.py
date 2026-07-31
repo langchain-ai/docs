@@ -8,8 +8,9 @@ raise SystemExit(0)
 # :snippet-start: deep-research-agent-gemini-py
 from datetime import datetime
 
-from langchain_google_genai import ChatGoogleGenerativeAI
 from deepagents import create_deep_agent
+from langchain.agents.middleware import TodoListMiddleware
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 max_concurrent_research_units = 3
 max_researcher_iterations = 3
@@ -42,5 +43,6 @@ agent = create_deep_agent(
     tools=[tavily_search],
     system_prompt=INSTRUCTIONS,
     subagents=[research_sub_agent],
+    middleware=[TodoListMiddleware()],
 )
 # :snippet-end:

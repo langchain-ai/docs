@@ -253,6 +253,36 @@ class DocumentationBuilder:
             # Return original content if there's an error
             return content
 
+    def _rewrite_snippet_imports_for_language(
+        self, content: str, target_language: str
+    ) -> str:
+        """Point MDX snippet imports at language-specific copies under /snippets/{lang}/.
+
+        Snippet markdown is emitted as absolute, language-prefixed /oss/ links in
+        ``build/snippets/{python|javascript}/...``. Versioned pages must import
+        those copies so nested consumers (e.g. langchain/frontend/*) resolve
+        correctly. Already-prefixed imports are left unchanged.
+
+        Args:
+            content: Markdown/MDX source that may contain snippet imports.
+            target_language: Target language ("python" or "js").
+
+        Returns:
+            Content with rewritten snippet import paths.
+        """
+        lang_name = self.language_url_names[target_language]
+        pattern = r"""(from\s+)(['"])(/snippets/[^'"]+\.mdx?)\2"""
+
+        def rewrite_import(match: re.Match) -> str:
+            """Rewrite a single snippet import if it is not already language-scoped."""
+            prefix, quote, path = match.group(1), match.group(2), match.group(3)
+            rest = path[len("/snippets/") :]
+            if rest.startswith(("python/", "javascript/")):
+                return match.group(0)
+            return f"{prefix}{quote}/snippets/{lang_name}/{rest}{quote}"
+
+        return re.sub(pattern, rewrite_import, content)
+
     def _process_markdown_content(
         self, content: str, file_path: Path, target_language: str | None = None
     ) -> str:
@@ -274,6 +304,11 @@ class DocumentationBuilder:
             content = preprocess_markdown(
                 content, file_path, target_language=target_language
             )
+
+            if target_language:
+                content = self._rewrite_snippet_imports_for_language(
+                    content, target_language
+                )
 
             # Then rewrite /oss/ links to include language
             return self._rewrite_oss_links(content, target_language)
@@ -998,63 +1033,49 @@ class DocumentationBuilder:
     ) -> None:
         """Process a snippet markdown file with language-aware URL resolution.
 
-        For snippet files that contain /oss/ links, we need to create versions
-        that work properly when included in different language contexts.
-        We'll modify the URLs to use relative paths that resolve correctly.
+        Shared MDX snippets can be imported from pages at arbitrary nesting
+        depth (e.g. ``oss/langchain/frontend/branching-chat``). Converting
+        ``/oss/...`` links to a fixed ``../`` relative path only works for
+        pages one level under ``/oss/{lang}/`` and breaks nested consumers.
+
+        Instead, emit absolute language-prefixed copies under
+        ``build/snippets/{python|javascript}/...``, and keep a Python-prefixed
+        default at the original snippet path for unversioned importers.
+        Versioned pages are pointed at the language-specific copies by
+        ``_rewrite_snippet_imports_for_language``.
 
         Args:
             input_path: Path to the source snippet markdown file.
-            output_path: Path where the processed file should be written.
+            output_path: Path where the default processed file should be written.
         """
         try:
-            # Read the source markdown content
             with input_path.open("r", encoding="utf-8") as f:
                 content = f.read()
 
-            # Apply standard markdown preprocessing
             processed_content = preprocess_markdown(
                 content, input_path, target_language=None
             )
 
-            # Convert /oss/ links to relative paths that work from any language context
-            def convert_oss_link(match: re.Match) -> str:
-                """Convert /oss/ links to language-agnostic relative paths.
-
-                IMPORTANT: the conversion creates relative paths that resolve from the
-                parent page's directory.
-                - /oss/providers/groq → ../providers/groq
-                """
-                pre = match.group(1)  # Everything before the URL
-                url = match.group(2)  # The URL
-                post = match.group(3)  # Everything after the URL
-
-                # Only convert absolute /oss/ paths that don't contain 'images'
-                # or '/oss/python' or '/oss/javascript'
-                if (
-                    url.startswith("/oss/")
-                    and "images" not in url
-                    and "/oss/python" not in url
-                    and "/oss/javascript" not in url
-                ):
-                    # Convert to relative path that works from oss/python/* or oss/js/*
-                    # e.g., /oss/releases/langchain-v1 becomes ../releases/langchain-v1
-                    parts = url.split("/")
-                    oss_path = "/".join(parts[2:])  # Remove /oss/ prefix
-                    url = f"../{oss_path}"  # Make it relative
-
-                return f"{pre}{url}{post}"
-
-            # Apply URL conversion
-            pattern = r'(\[.*?\]\(|\bhref="|")(/oss/[^")\s]+)([")\s])'
-            processed_content = re.sub(pattern, convert_oss_link, processed_content)
-
-            # Convert .md to .mdx if needed
             if input_path.suffix.lower() == ".md":
                 output_path = output_path.with_suffix(".mdx")
 
-            # Write the processed content
+            snippets_root = self.build_dir / "snippets"
+            relative_snippet = output_path.absolute().relative_to(
+                snippets_root.absolute()
+            )
+
+            for lang_key, lang_name in self.language_url_names.items():
+                lang_content = self._rewrite_oss_links(processed_content, lang_key)
+                lang_output = snippets_root / lang_name / relative_snippet
+                lang_output.parent.mkdir(parents=True, exist_ok=True)
+                with lang_output.open("w", encoding="utf-8") as f:
+                    f.write(lang_content)
+
+            # Default path: Python-prefixed absolute links for unversioned pages.
+            default_content = self._rewrite_oss_links(processed_content, "python")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             with output_path.open("w", encoding="utf-8") as f:
-                f.write(processed_content)
+                f.write(default_content)
 
         except (OSError, UnicodeDecodeError):
             logger.exception(

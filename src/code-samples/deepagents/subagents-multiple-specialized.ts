@@ -41,7 +41,7 @@ const subagents = [
 ];
 
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google_genai:gemini-3.6-flash",
   systemPrompt:
     "You coordinate data analysis and reporting. Use subagents for specialized tasks.",
   subagents: subagents,
