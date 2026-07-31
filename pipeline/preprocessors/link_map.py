@@ -268,6 +268,7 @@ LINK_MAPS: list[LinkMap] = [
             "AstraDBVectorStore": "langchain-astradb/vectorstores/AstraDBVectorStore",
             "ChromaVectorStore": "langchain-chroma/vectorstores/Chroma",
             "ElasticSearchStore": "langchain-elasticsearch/vectorstores/ElasticsearchStore",
+            "FAISS": "langchain-community/vectorstores/faiss/FAISS",
             "MilvusVectorStore": "langchain-milvus/vectorstores/milvus/Milvus",
             "MongoDBAtlasVectorSearch": "langchain-mongodb/vectorstores/MongoDBAtlasVectorSearch",
             "PineconeSparseVectorStore": "langchain-pinecone/vectorstores_sparse/PineconeSparseVectorStore",
