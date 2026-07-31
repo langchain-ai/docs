@@ -1,0 +1,72 @@
+---
+title: Use the gateway with LangChain
+sidebarTitle: LangChain integration
+description: Route LangChain and Deep Agents chat models through the LLM Gateway with a single environment variable.
+---
+
+<Note>
+**Beta:** The LLM Gateway is in [beta](/langsmith/release-stages).
+</Note>
+
+LangChain chat models and [Deep Agents](/oss/deepagents/overview) can route requests through the LLM Gateway without changing your model configuration. Two environment variables send every supported provider through its [direct gateway path](/langsmith/llm-gateway-direct-model-access), so your workspace's Provider Secrets, policies, and tracing apply to every call.
+
+## Prerequisites
+
+- Your [Organization admin](/langsmith/rbac#organization-admin) has enabled the LLM Gateway and added the relevant provider secrets. See [Admin setup](/langsmith/llm-gateway-admin-setup).
+- You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations).
+- You are using Python. Gateway routing through `LANGSMITH_GATEWAY` is supported in Python only.
+
+## Enable gateway routing
+
+Set two environment variables:
+
+```bash
+export LANGSMITH_GATEWAY="true"
+export LANGSMITH_GATEWAY_API_KEY="$LANGSMITH_API_KEY"
+```
+
+This routes every supported LangChain chat model through the appropriate [provider-specific gateway path](/langsmith/llm-gateway-direct-model-access#choose-a-provider-path) at `https://gateway.smith.langchain.com`. Deep Agents inherits the same routing. No code changes are required in your application.
+
+The gateway resolves the actual provider key from your workspace's Provider Secrets, so provider keys do not need to be stored locally.
+
+To use a regional gateway, set its URL instead of `true`:
+
+```bash
+export LANGSMITH_GATEWAY="https://eu.gateway.smith.langchain.com"
+export LANGSMITH_GATEWAY_API_KEY="$LANGSMITH_API_KEY"
+```
+
+## Make a call
+
+Once the environment variables are set, initialize a chat model as usual:
+
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model("anthropic:claude-sonnet-4-6")
+print(model.invoke("ping").content)
+```
+
+Deep Agents uses the same routing. Configure a model as [documented for your agent](/oss/deepagents/models) and the request flows through the gateway automatically.
+
+## Supported chat models
+
+The following LangChain integrations honor `LANGSMITH_GATEWAY`:
+
+- [Anthropic](/oss/python/integrations/chat/anthropic): `langchain-anthropic >= 1.5.1`
+- [Baseten](/oss/python/integrations/chat/baseten): `langchain-baseten >= 0.2.3`
+- [Fireworks](/oss/python/integrations/chat/fireworks): `langchain-fireworks >= 1.5.1`
+- [Google Gemini](/oss/python/integrations/chat/google_generative_ai): `langchain-google-genai >= 4.3.2`
+- [OpenAI](/oss/python/integrations/chat/openai): `langchain-openai >= 1.4.1`
+
+Deep Agents, including [Deep Agents Code](/oss/deepagents/code/overview), inherits this list.
+
+## Configuration precedence
+
+Provider-specific base URLs take precedence over the gateway setting. For example, `OPENAI_API_BASE` sends OpenAI to that URL while every other supported provider continues to use the gateway. Unset per-provider variables to route those providers through the gateway.
+
+## See also
+
+- [Direct model access](/langsmith/llm-gateway-direct-model-access): use provider-native APIs and gateway paths from SDKs other than LangChain.
+- [Quickstart](/langsmith/llm-gateway-quickstart): call models across providers with the standard OpenAI-compatible endpoint.
+- [Gateway Credits](/langsmith/llm-gateway-langchain-provider): access hosted models without a provider key.
