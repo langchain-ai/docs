@@ -188,9 +188,6 @@ LINK_MAPS: list[LinkMap] = [
             # langchain-deepseek
             "langchain-deepseek": "langchain-deepseek/",
             "ChatDeepSeek": "langchain-deepseek/chat_models/ChatDeepSeek",
-            # langchain-sarvamcloud
-            "langchain-sarvamcloud": "langchain-sarvamcloud/",
-            "ChatSarvam": "langchain-sarvamcloud/chat_models/ChatSarvam",
             # langchain-parallel
             "langchain-parallel": "langchain-parallel/",
             "ChatParallel": "langchain-parallel/chat_models/ChatParallel",
