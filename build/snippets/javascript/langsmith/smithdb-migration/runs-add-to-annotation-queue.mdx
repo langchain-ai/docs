@@ -1,0 +1,197 @@
+import SmithdbRunsAddToQueueBeforePy from '/snippets/code-samples/smithdb-migration/runs-add-to-queue-before-py.mdx';
+import SmithdbRunsAddToQueueAfterPy from '/snippets/code-samples/smithdb-migration/runs-add-to-queue-after-py.mdx';
+import SmithdbRunsAddToQueueBeforeJs from '/snippets/code-samples/smithdb-migration/runs-add-to-queue-before-js.mdx';
+import SmithdbRunsAddToQueueAfterJs from '/snippets/code-samples/smithdb-migration/runs-add-to-queue-after-js.mdx';
+import SmithdbRunsAddToQueueBeforeKt from '/snippets/code-samples/smithdb-migration/runs-add-to-queue-before-kt.mdx';
+import SmithdbRunsAddToQueueAfterKt from '/snippets/code-samples/smithdb-migration/runs-add-to-queue-after-kt.mdx';
+import SmithdbRunsAddToQueueBeforeGo from '/snippets/code-samples/smithdb-migration/runs-add-to-queue-before-go.mdx';
+import SmithdbRunsAddToQueueAfterGo from '/snippets/code-samples/smithdb-migration/runs-add-to-queue-after-go.mdx';
+import SmithdbRunsAddToQueueBeforeSh from '/snippets/code-samples/smithdb-migration/runs-add-to-queue-before-sh.mdx';
+import SmithdbRunsAddToQueueAfterSh from '/snippets/code-samples/smithdb-migration/runs-add-to-queue-after-sh.mdx';
+
+## Annotation queues: add runs
+
+Add runs to an annotation queue. The SmithDB-backed path takes each run's full lookup key—its ID plus the `session_id` (project UUID) and `start_time` partition keys—so the run can be located directly instead of scanned for.
+
+<Note>
+This method stays on the existing client, not the new `runs` v2 client, so the [Exceptions](/langsmith/smithdb-sdk-migration#exceptions) table above does not apply—error handling is unchanged.
+</Note>
+
+### Main changes
+
+#### Method name
+
+<Tabs>
+  <Tab title="Python">
+    No change—`client.add_runs_to_annotation_queue()`. The SmithDB path is selected by the parameters you pass (see Inputs below).
+
+    See the [reference](https://reference.langchain.com/python/langsmith/client/Client/add_runs_to_annotation_queue) for the full parameter list.
+  </Tab>
+  <Tab title="TypeScript">
+    No change—`client.addRunsToAnnotationQueue()`. The SmithDB path is selected by the argument you pass (see Inputs below).
+
+    See the [reference](https://reference.langchain.com/javascript/langsmith/client/Client/addRunsToAnnotationQueue) for the full parameter list.
+  </Tab>
+  <Tab title="Java">
+    | Before | After |
+    |--------|-------|
+    | `client.annotationQueues().runs().create()` | `client.annotationQueues().runs().createByKey()` |
+
+    See the [reference](https://javadoc.io/doc/com.langchain.smith/langsmith-java/latest/com/langchain/smith/services/blocking/annotationqueues/RunService.html) for the full parameter list.
+  </Tab>
+  <Tab title="Go">
+    | Before | After |
+    |--------|-------|
+    | `client.AnnotationQueues.Runs.New()` | `client.AnnotationQueues.Runs.NewByKey()` |
+
+    See the [reference](https://pkg.go.dev/github.com/langchain-ai/langsmith-go#AnnotationQueueRunService.NewByKey) for the full parameter list.
+  </Tab>
+  <Tab title="cURL">
+    | Before | After |
+    |--------|-------|
+    | `POST /api/v1/annotation-queues/{queue_id}/runs` | `POST /api/v1/annotation-queues/{queue_id}/runs/by-key` |
+
+    See the [API doc](/langsmith/smith-api/annotation-queues/add-runs-to-annotation-queue-by-key) for the full parameter list.
+  </Tab>
+</Tabs>
+
+#### Inputs
+
+<Tabs>
+  <Tab title="Python">
+    <Warning>
+    The SmithDB path needs each run's `session_id` (project UUID) and `start_time` in addition to its `run_id`. These are already present on the run objects you fetch (for example from `client.list_runs()`).
+    </Warning>
+
+    | Before (`run_ids`) | After (`runs`) | Notes |
+    |---|---|---|
+    | `run_ids: list[UUID \| str]` | *(deprecated)* | Legacy path. Still works and hits `/runs`, resolving each run server-side. Will be removed in a future release |
+    | *(not available)* | `runs: Sequence[RunKey]` | **New preferred.** Each `RunKey` is a `TypedDict` with `run_id`, `session_id`, and `start_time` |
+
+    Provide exactly one of `runs` or `run_ids`; passing both raises a `LangSmithUserError`.
+  </Tab>
+  <Tab title="TypeScript">
+    <Warning>
+    The SmithDB path needs each run's `sessionId` (project UUID) and `startTime` in addition to its `runId`. These are already present on the run objects you fetch (for example from `client.listRuns()`).
+    </Warning>
+
+    | Before (`string[]`) | After (`RunKey[]`) | Notes |
+    |---|---|---|
+    | `runs: string[]` | *(deprecated)* | Legacy path (array of run-ID strings). Still works and hits `/runs`. Will be removed in a future release |
+    | *(not available)* | `runs: RunKey[]` | **New preferred.** Each `RunKey` is `{ runId, sessionId, startTime }`; `startTime` accepts a `Date`, epoch ms, or ISO string |
+
+    Both shapes are the same positional second argument; the SDK selects the SmithDB path when you pass `RunKey[]`.
+  </Tab>
+  <Tab title="Java">
+    | Before (`RunCreateParams`) | After (`RunCreateByKeyParams`) | Notes |
+    |---|---|---|
+    | `.bodyOfRunsUuidArray(List<String>)` | *(removed)* | Legacy body; run IDs only |
+    | *(not available)* | `.addBody(RunCreateByKeyParams.Body)` | Each `Body` has `runId`, `sessionId`, and `startTime` |
+    | `.queueId(String)` | `.queueId(String)` | Unchanged |
+    | `.extendTraceRetention(Boolean)` | `.extendTraceRetention(Boolean)` | Unchanged optional query param |
+  </Tab>
+  <Tab title="Go">
+    | Before (`AnnotationQueueRunNewParams`) | After (`AnnotationQueueRunNewByKeyParams`) | Notes |
+    |---|---|---|
+    | `Body: AnnotationQueueRunNewParamsBodyRunsUuidArray` (`[]string`) | *(removed)* | Legacy body; run IDs only |
+    | *(not available)* | `Body: []AnnotationQueueRunNewByKeyParamsBody` | Each has `RunID`, `SessionID`, and `StartTime` |
+    | *(not available)* | `ExtendTraceRetention` | Optional query param |
+  </Tab>
+  <Tab title="cURL">
+    <Warning>
+    The `/runs/by-key` request body is an array of objects, not an array of ID strings. Each object needs `run_id`, `session_id` (project UUID), and `start_time` (RFC3339).
+    </Warning>
+
+    | Before (`POST /runs` body) | After (`POST /runs/by-key` body) | Notes |
+    |---|---|---|
+    | `["<run-id>", ...]` | `[{"run_id", "session_id", "start_time"}]` | `session_id` is the project UUID; `start_time` is RFC3339 |
+    | `?extend_trace_retention` (query) | `?extend_trace_retention` (query) | Unchanged optional query param |
+  </Tab>
+</Tabs>
+
+#### Response
+
+<Tabs>
+  <Tab title="Python">
+    No change. Both `run_ids=` and `runs=` return `None`.
+  </Tab>
+  <Tab title="TypeScript">
+    No change. Both shapes resolve to `void`.
+  </Tab>
+  <Tab title="Java">
+    `createByKey()` returns `List<RunCreateByKeyResponse>`—the same shape `create()` returned, with `id()`, `queueId()`, `runId()`, `addedAt()`, and `lastReviewedTime()`.
+  </Tab>
+  <Tab title="Go">
+    `NewByKey()` returns `*[]AnnotationQueueRunNewByKeyResponse`—the same shape `New()` returned, with `ID`, `QueueID`, `RunID`, `AddedAt`, and `LastReviewedTime`.
+  </Tab>
+  <Tab title="cURL">
+    No change. `POST /runs/by-key` returns the array of created queue-run records (`id`, `queue_id`, `run_id`, `added_at`, `last_reviewed_time`), the same shape as `POST /runs`.
+  </Tab>
+</Tabs>
+
+### Examples
+
+#### Add runs to a queue
+
+<Tabs>
+  <Tab title="Python">
+    `run_ids=` takes a plain list of run IDs. `runs=` takes each run's full lookup key—read `run_id`, `session_id`, and `start_time` off the run objects you already have.
+
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbRunsAddToQueueBeforePy />
+      </Tab>
+      <Tab title="After">
+        <SmithdbRunsAddToQueueAfterPy />
+      </Tab>
+    </Tabs>
+  </Tab>
+  <Tab title="TypeScript">
+    Pass an array of run-ID strings for the legacy path, or an array of `RunKey` objects (`runId`, `sessionId`, `startTime`) built from the run objects you already have.
+
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbRunsAddToQueueBeforeJs />
+      </Tab>
+      <Tab title="After">
+        <SmithdbRunsAddToQueueAfterJs />
+      </Tab>
+    </Tabs>
+  </Tab>
+  <Tab title="Java">
+    `create()` takes run IDs via `bodyOfRunsUuidArray`. `createByKey()` takes a `Body` per run with `runId`, `sessionId`, and `startTime`.
+
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbRunsAddToQueueBeforeKt />
+      </Tab>
+      <Tab title="After">
+        <SmithdbRunsAddToQueueAfterKt />
+      </Tab>
+    </Tabs>
+  </Tab>
+  <Tab title="Go">
+    `New()` takes run IDs via `AnnotationQueueRunNewParamsBodyRunsUuidArray`. `NewByKey()` takes an `AnnotationQueueRunNewByKeyParamsBody` per run with `RunID`, `SessionID`, and `StartTime`.
+
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbRunsAddToQueueBeforeGo />
+      </Tab>
+      <Tab title="After">
+        <SmithdbRunsAddToQueueAfterGo />
+      </Tab>
+    </Tabs>
+  </Tab>
+  <Tab title="cURL">
+    `POST /runs` takes an array of run-ID strings. `POST /runs/by-key` takes an array of objects, each with `run_id`, `session_id`, and `start_time`.
+
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbRunsAddToQueueBeforeSh />
+      </Tab>
+      <Tab title="After">
+        <SmithdbRunsAddToQueueAfterSh />
+      </Tab>
+    </Tabs>
+  </Tab>
+</Tabs>
