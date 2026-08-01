@@ -30,7 +30,7 @@ DOC_PATHS = [
     "oss/python/deepagents/rag",
     "oss/python/langchain/tools",
     "oss/python/langchain/models",
-    "oss/python/langchain/retrieval",
+    "oss/python/deepagents/retrieval",
     "oss/python/langchain/knowledge-base",
     "oss/python/langchain/middleware",
     "oss/python/deepagents/overview",
@@ -170,7 +170,7 @@ chunk_analyst_subagent = {
     "system_prompt": CHUNK_ANALYST_INSTRUCTIONS,
 }
 
-model = init_chat_model(model="google_genai:gemini-3.5-flash")
+model = init_chat_model(model="google_genai:gemini-3.6-flash")
 
 agent = create_deep_agent(
     model=model,

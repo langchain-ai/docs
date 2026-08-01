@@ -20,7 +20,7 @@ async def agent(config: RunnableConfig):
     else:
         ls_sandbox = client.create_sandbox(name=sandbox_name)
     return create_deep_agent(
-        model="google_genai:gemini-3.5-flash",
+        model="google_genai:gemini-3.6-flash",
         backend=LangSmithSandbox(sandbox=ls_sandbox),
     )
 

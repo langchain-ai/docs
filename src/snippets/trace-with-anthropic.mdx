@@ -1,5 +1,7 @@
 The Anthropic wrapper methods in Python (@[`wrap_anthropic`][wrap_anthropic]) and Typescript ([`wrapAnthropic`](https://reference.langchain.com/javascript/functions/langsmith.wrappers_anthropic.wrapAnthropic.html)) allow you to wrap your Anthropic client in order to log traces automatically. Using the wrapper ensures that messages, including tool calls and multimodal content blocks will be rendered nicely in LangSmith. The wrapper works seamlessly alongside the `@traceable` decorator (Python) or `traceable` function (TypeScript), so you can trace your Anthropic calls with the wrapper and trace other parts of your application with the decorator or function.
 
+The wrapper also supports [Claude managed agents](https://docs.anthropic.com/en/docs/claude-code/managed-agents) (TypeScript only). Refer to [Trace Claude managed agents](#trace-claude-managed-agents).
+
 <Note>
     The `LANGSMITH_TRACING` environment variable must be set to `'true'` in order for traces to be logged to LangSmith, even when using `wrap_anthropic` or `wrapAnthropic`. This allows you to toggle tracing on and off without changing your code.
 
@@ -69,3 +71,71 @@ await chatPipeline("Can you summarize this morning's meetings?");
 ```
 
 </CodeGroup>
+
+## Trace Claude managed agents
+
+The `wrapAnthropic` wrapper also supports [Claude managed agents](https://docs.anthropic.com/en/docs/claude-code/managed-agents) (TypeScript only). Wrap the Anthropic client with `wrapAnthropic`. The wrapper will automatically trace agent creation, session creation, and all events that flow through the session.
+
+```typescript TypeScript
+import Anthropic from "@anthropic-ai/sdk";
+import { wrapAnthropic } from "langsmith/wrappers/anthropic";
+
+const anthropic = wrapAnthropic(new Anthropic());
+
+// Create a managed agent
+const agent = await anthropic.beta.agents.create({
+  name: "my-agent",
+  model: "claude-opus-4-8",
+  system: "You are a helpful assistant.",
+  tools: [
+    // ... your tools here
+  ],
+});
+
+// Create a cloud environment for the agent to run in
+const environment = await anthropic.beta.environments.create({
+  name: "my-environment",
+  config: {
+    type: "cloud",
+    networking: { type: "unrestricted" },
+  },
+});
+
+// Create a session connecting the agent and environment
+const session = await anthropic.beta.sessions.create({
+  agent: agent.id,
+  environment_id: environment.id,
+  title: "My session",
+});
+
+// Stream session events
+const stream = await anthropic.beta.sessions.events.stream(session.id);
+
+// Send a message to the agent
+await anthropic.beta.sessions.events.send(session.id, {
+  events: [
+    {
+      type: "user.message",
+      content: [
+        {
+          type: "text",
+          text: "Hello! Can you help me with something?",
+        },
+      ],
+    },
+  ],
+});
+
+// Consume the event stream until the session is idle
+for await (const event of stream) {
+  if (event.type === "session.status_idle") {
+    break;
+  }
+}
+```
+
+<Note>
+  Full tracing of subagents in Anthropic's multi-agent architecture requires
+  tapping into a separate event stream and is not yet supported. Only top-level
+  session events are traced.
+</Note>

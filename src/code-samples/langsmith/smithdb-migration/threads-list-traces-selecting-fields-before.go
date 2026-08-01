@@ -58,6 +58,9 @@ func main() {
 	}
 	for _, run := range runs.Runs {
 		fmt.Println(run.ID, run.TotalTokens, run.TotalCost)
+		// :remove-start:
+		break
+		// :remove-end:
 	}
 }
 // :snippet-end:

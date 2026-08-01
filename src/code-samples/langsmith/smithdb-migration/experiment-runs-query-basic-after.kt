@@ -1,13 +1,14 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 21
 //KOTLIN 2.2.0
-//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.13
+//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.18
 
 // :snippet-start: experiment-runs-query-basic-after-kt
 // :codegroup-tab: After
 import com.langchain.smith.client.LangsmithClient
 import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
 import com.langchain.smith.models.datasets.experimentruns.ExperimentRunQueryParams
+import com.langchain.smith.models.runs.RunSelectField
 // :remove-start:
 import com.langchain.smith.models.datasets.DatasetCreateParams
 import com.langchain.smith.models.datasets.DatasetListParams
@@ -123,11 +124,11 @@ val page = client.datasets().experimentRuns().query(
     ExperimentRunQueryParams.builder()
         .addExperimentId(experimentId)
         .pageSize(20L)
-        .addSelect(ExperimentRunQueryParams.Select.ID)
-        .addSelect(ExperimentRunQueryParams.Select.NAME)
-        .addSelect(ExperimentRunQueryParams.Select.STATUS)
-        .addSelect(ExperimentRunQueryParams.Select.INPUTS_PREVIEW)
-        .addSelect(ExperimentRunQueryParams.Select.OUTPUTS_PREVIEW)
+        .addSelect(RunSelectField.ID)
+        .addSelect(RunSelectField.NAME)
+        .addSelect(RunSelectField.STATUS)
+        .addSelect(RunSelectField.INPUTS_PREVIEW)
+        .addSelect(RunSelectField.OUTPUTS_PREVIEW)
         .build()
 )
 val examplesWithRuns = page.items()

@@ -25,7 +25,7 @@ const DOC_PATHS = [
   "oss/javascript/deepagents/rag",
   "oss/javascript/langchain/tools",
   "oss/javascript/langchain/models",
-  "oss/javascript/langchain/retrieval",
+  "oss/javascript/deepagents/retrieval",
   "oss/javascript/langchain/knowledge-base",
   "oss/javascript/langchain/middleware",
   "oss/javascript/deepagents/overview",
@@ -194,7 +194,7 @@ const chunkAnalystSubagent = {
 };
 
 const agent = createDeepAgent({
-  model: "google-genai:gemini-3.5-flash",
+  model: "google-genai:gemini-3.6-flash",
   tools: [searchDocumentation],
   backend,
   systemPrompt: instructions,

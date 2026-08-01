@@ -25,5 +25,8 @@ threadId = await findThreadId(project.id);
 // :remove-end:
 for await (const run of client.readThread({ threadId, projectName: "default" })) {
   console.log(run.id, run.start_time);
+  // :remove-start:
+  break;
+  // :remove-end:
 }
 // :snippet-end:
