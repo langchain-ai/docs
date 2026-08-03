@@ -81,29 +81,63 @@ flowchart LR
 
 ## Choose a scope
 
-`scope` is the isolation boundary for the deployment. One value covers the common product shapes; per-axis overrides handle the exceptions.
+`scope` sets the isolation boundary for the deployment across three resources:
 
-The scope values:
+- **Threads**: who can open or resume a conversation.
+- **Memory**: which durable memory slice a run may read and write.
+- **Credentials**: whose token downstream tool calls carry.
 
-| Value | Meaning |
+Each resource accepts its own set of values, so a value that is valid for one resource may not be valid for another. Pass a single `scope` value to set all three at once, or pass per-resource overrides for a deployment that does not fit one value.
+
+### Threads
+
+Who can open or resume a conversation.
+
+| Value | How the agent acts |
 | --- | --- |
-| `user` | Private to the signed-in person (or service user) |
-| `organization` | Shared inside one customer org, isolated from other orgs |
-| `conversation` | Shared by everyone in the same channel conversation (threads axis only) |
-| `agent` | Shared by the whole deployment |
-| _(unset)_ / `none` | Not scoped on this axis |
+| `user` (default) | Each caller has private conversations; no one can resume another caller's thread. |
+| `conversation` | Everyone in the same source conversation (for example a Slack channel) shares one thread. |
+| `organization` | Callers in the same organization share conversations, isolated from other organizations. |
 
-**Credentials** is often the first thing teams consider:
+### Memory
 
-- **`user`**: downstream calls can act as the signed-in user (for example call GitHub as Alice).
-- **`agent`**: downstream calls use one shared bot or service token for everyone.
+Which durable [memory](/langsmith/managed-deep-agents-memory) slice a run may read and write.
+
+| Value | How the agent acts |
+| --- | --- |
+| `user` (default) | Private memory per caller. |
+| `organization` | Memory shared within one customer organization, isolated from other organizations. |
+| `agent` | One shared memory slice for the whole deployment. |
+| `none` | No durable memory. |
+
+### Credentials
+
+Whose token downstream tool calls carry.
+
+| Value | How the agent acts |
+| --- | --- |
+| `user` (default) | Downstream calls can act as the signed-in user (for example call GitHub as Alice) through the per-caller Connect vault. |
+| `agent` | Downstream calls use one shared deployment token for everyone. |
+| `none` | No downstream credentials. |
+| `custom` | Your own resolver supplies the credential. Implied when you pass a `credentials` resolver to `defineIdentity`. |
+
+### Set one value for all three
+
+A single `scope` value expands to a value on each resource:
+
+| `scope` | Threads | Memory | Credentials |
+| --- | --- | --- | --- |
+| `user` (default) | `user` | `user` | `user` |
+| `organization` | `user` | `organization` | `none` |
+| `agent` | `user` | `agent` | `agent` |
+| `none` | `user` | `none` | `none` |
 
 Choose the declaration that matches your product shape:
 
 | Product shape | Declaration | Threads | Memory | Credentials |
 | --- | --- | --- | --- | --- |
 | Private assistant or internal tool | `defineIdentity()` | `user` | `user` | `user` |
-| Multi-tenant SaaS | `defineIdentity({ scope: "organization" })` | `user` | `organization` | `agent` |
+| Multi-tenant SaaS | `defineIdentity({ scope: "organization" })` | `user` | `organization` | `none` |
 | Shared channel bot | `defineIdentity({ scope: { threads: "conversation" } })` | `conversation` | `user` | `user` |
 | Service (cron/webhook, no human caller) | `defineIdentity({ scope: "agent" })` | `user` | `agent` | `agent` |
 
