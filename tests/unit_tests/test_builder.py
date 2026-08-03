@@ -409,7 +409,9 @@ def test_unversioned_oss_openwiki_builds_once() -> None:
         builder.build_file(openwiki_src)
         unversioned = fs.build_dir / "oss" / "openwiki" / "overview.mdx"
         assert unversioned.exists()
-        assert not (fs.build_dir / "oss" / "python" / "openwiki" / "overview.mdx").exists()
+        assert not (
+            fs.build_dir / "oss" / "python" / "openwiki" / "overview.mdx"
+        ).exists()
         assert not (
             fs.build_dir / "oss" / "javascript" / "openwiki" / "overview.mdx"
         ).exists()
