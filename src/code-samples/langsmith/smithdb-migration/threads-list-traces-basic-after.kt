@@ -36,8 +36,8 @@ var threadId = "<thread-id>"
 threadId = client.threads().query(
     ThreadQueryParams.builder()
         .projectId(project.id())
-        .minStartTime(OffsetDateTime.parse("2026-07-01T00:00:00Z"))
-        .maxStartTime(OffsetDateTime.parse("2026-07-31T23:59:59Z"))
+        .minStartTime(OffsetDateTime.now().minusMonths(1))
+        .maxStartTime(OffsetDateTime.now())
         .build()
 ).items().first().threadId().get()
 // :remove-end:
@@ -46,6 +46,7 @@ val traces = client.threads().listTraces(
     threadId,
     ThreadListTracesParams.builder()
         .projectId(project.id())
+        .addSelect(ThreadListTracesParams.Select.TRACE_ID)
         .addSelect(ThreadListTracesParams.Select.START_TIME)
         .build()
 ).items()
