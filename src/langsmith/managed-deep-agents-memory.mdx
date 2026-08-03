@@ -9,7 +9,7 @@ import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-age
 
 Managed Deep Agents gives every deployment durable long-term memory: agents remember each user's preferences and context across threads and sessions, without you building a persistence layer.
 
-Memory is backed by [Context Hub](/langsmith/use-the-context-hub), where the agent reads and updates files under `/memories/user/`. With [identity](/langsmith/managed-deep-agents-identity), memory is remounted per actor or tenant so callers (the users, service accounts, or clients that trigger agent runs) cannot see each other's private state.
+Memory is backed by [Context Hub](/langsmith/use-the-context-hub), where the agent reads and updates files under `/memories/user/`. With [identity](/langsmith/managed-deep-agents-identity), memory is remounted per user or organization so callers (the users, service accounts, or clients that trigger agent runs) cannot see each other's private state.
 
 <Note>
 <ManagedDeepAgentsPrivateBetaNote />
@@ -36,10 +36,10 @@ The agent sees the following paths at runtime:
 | --- | --- | --- |
 | `/instructions.md` | Hub `instructions.md` | Read-only |
 | `/skills/**` | Hub `skills/**` | Read-only |
-| `/memories/user/**` | One remounted Hub slice (for example `memories/<actor>`) | Read/write |
+| `/memories/user/**` | One remounted Hub slice (for example `memories/<userId>`) | Read/write |
 | `/memories/org/**` | Hub `org-memory/**` (if present) | Read-only |
 
-A *memory slice* is a subdirectory within the Context Hub `memories/` tree that belongs to one scope: a single actor (`memories/<actorId>`), a tenant (`memories/<tenantId>`), or the shared agent (`memories/agent`). At runtime, one slice is remounted as `/memories/user/`, so the agent never sees a multi-user directory listing under `/memories/`.
+A *memory slice* is a subdirectory within the Context Hub `memories/` tree that belongs to one scope: a single user (`memories/<userId>`), an organization (`memories/<organizationId>`), or the shared agent (`memories/agent`). At runtime, one slice is remounted as `/memories/user/`, so the agent never sees a multi-user directory listing under `/memories/`.
 
 ## Hot and cold memory
 
@@ -88,39 +88,39 @@ After a successful write, a **new thread** for the same caller should recall the
 
 Without identity, every caller shares the same agent memory slice (`memories/agent` in Context Hub, remounted as `/memories/user`).
 
-With identity, `scoping.memory` chooses which Hub subdirectory is remounted:
+With identity, `scope.memory` chooses which Hub subdirectory is remounted:
 
-| `scoping.memory` | Hub path remounted as `/memories/user` |
+| `scope.memory` | Hub path remounted as `/memories/user` |
 | --- | --- |
-| `actor` (single-tenant) | `memories/<actorId>` |
-| `actor` (multi-tenant) | `memories/<tenantId>/<actorId>` |
-| `tenant` | `memories/<tenantId>` |
+| `user` (organizations optional) | `memories/<userId>` |
+| `user` (organizations required) | `memories/<organizationId>/<userId>` |
+| `organization` | `memories/<organizationId>` |
 | `agent` | `memories/agent` |
 | `none` | `/memories/user/` is not mounted, and hot memory is not injected |
 
-Isolation is enforced: a run only sees its remounted tree. Sibling actor or tenant trees are unreachable.
+Isolation is enforced: a run only sees its remounted tree. Sibling user or organization trees are unreachable.
 
-Presets such as `private-assistant` and `internal-tool` set `memory: "actor"`. The `service` preset uses shared `agent` memory. For more information about presets and ingress, see [Identity](/langsmith/managed-deep-agents-identity).
+The default `defineIdentity()` (private assistant shape) sets `memory: "user"`. A service-style `defineIdentity({ scope: "agent" })` uses shared `agent` memory. For more information about scopes and auth, see [Identity](/langsmith/managed-deep-agents-identity).
 
 <CodeGroup>
 
 ```python identity.py
 from managed_deepagents import define_identity
 
-identity = define_identity.preset("private-assistant")
-# scoping.memory == "actor"
+identity = define_identity()
+# scope.memory == "user"
 ```
 
 ```ts identity.ts
 import { defineIdentity } from "managed-deepagents";
 
-export const identity = defineIdentity.preset("private-assistant");
-// scoping.memory === "actor"
+export const identity = defineIdentity();
+// scope.memory === "user"
 ```
 
 </CodeGroup>
 
-When an actor or tenant interacts with the agent for the first time, the runtime creates their `/memories/user/AGENTS.md` file automatically. It copies from a project-defined seed file if one exists, or falls back to a built-in default template. This ensures the agent has its memory instructions available from the first turn, rather than starting with an empty file.
+When a user or organization interacts with the agent for the first time, the runtime creates their `/memories/user/AGENTS.md` file automatically. It copies from a project-defined seed file if one exists, or falls back to a built-in default template. This ensures the agent has its memory instructions available from the first turn, rather than starting with an empty file.
 
 ## Org memory (read-only)
 
@@ -134,11 +134,11 @@ Optional org-wide facts live under Context Hub `org-memory/` and mount at `/memo
 - Seeds `memories/agent/AGENTS.md` and `org-memory/AGENTS.md` when missing
 - Preserves existing memory files across rebuilds
 
-Actor-scoped local runs remount `memories/<actorId>/` as `/memories/user` the same way as deploy. When you update the Managed Deep Agents SDK in your project, rebuild so `.mda/build/__runtime__` picks up the new runtime. The runtime is copied at compile time, so SDK changes do not take effect until you rebuild.
+User-scoped local runs remount `memories/<userId>/` as `/memories/user` the same way as deploy. When you update the Managed Deep Agents SDK in your project, rebuild so `.mda/build/__runtime__` picks up the new runtime. The runtime is copied at compile time, so SDK changes do not take effect until you rebuild.
 
 ## Disable managed memory
 
-Use `disableMemory` for stateless agents or when you manage persistence externally. Set `disableMemory` / `disable_memory` on the agent definition to skip hot injection and the `/memories/user` memory wiring. Identity `scoping.memory: "none"` also disables the mount.
+Use `disableMemory` for stateless agents or when you manage persistence externally. Set `disableMemory` / `disable_memory` on the agent definition to skip hot injection and the `/memories/user` memory wiring. Identity `scope.memory: "none"` also disables the mount.
 
 <CodeGroup>
 
@@ -181,7 +181,7 @@ If the agent claims to remember something but the fact is missing in a new threa
 If hot memory at `/memories/user/AGENTS.md` grows too large, it consumes tokens from every request's system prompt. Move detailed content to cold files under `/memories/user/archive/` and keep only preferences and pointers in hot memory.
 </Accordion>
 <Accordion title="Why can one user see another user's memory?">
-This is a misconfiguration, not a platform issue. Verify that `scoping.memory` is set to `actor` or `tenant` (not `agent`). Check that the identity declaration is present and that the ingress mode correctly resolves the caller. Inspect `runtime.identity` in traces to confirm the resolved actor and tenant ids. For more information, see [Identity](/langsmith/managed-deep-agents-identity).
+This is a misconfiguration, not a platform issue. Verify that `scope.memory` is set to `user` or `organization` (not `agent`). Check that the identity declaration is present and that the auth mode correctly resolves the caller. Inspect `runtime.identity` in traces to confirm the resolved user and organization ids. For more information, see [Identity](/langsmith/managed-deep-agents-identity).
 </Accordion>
 <Accordion title="Why did the seed template overwrite my custom content?">
 The runtime creates `/memories/user/AGENTS.md` from the seed template only when the file does not already exist. If a user reports overwritten content, the file was likely absent when the slice was first accessed, so the runtime seeded a fresh copy. Deploy never overwrites existing `memories/**` files.
@@ -191,7 +191,7 @@ The runtime creates `/memories/user/AGENTS.md` from the seed template only when 
 
 <CardGroup cols={2}>
   <Card title="Identity" icon="fingerprint" href="/langsmith/managed-deep-agents-identity">
-    Partition memory per actor or tenant with `scoping.memory`.
+    Partition memory per user or organization with `scope.memory`.
   </Card>
   <Card title="How it works" icon="settings" href="/langsmith/managed-deep-agents-how-it-works">
     See how Context Hub, threads, and deploy sync fit together.
