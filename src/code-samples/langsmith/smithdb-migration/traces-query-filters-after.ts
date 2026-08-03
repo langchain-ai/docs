@@ -10,8 +10,8 @@ const project = await client.readProject({ projectName: "default" });
 let count = 0;
 for await (const trace of client.traces.query({
   project_id: project.id,
-  min_start_time: "2026-07-01T00:00:00Z",
-  max_start_time: "2026-07-31T23:59:59Z",
+  min_start_time: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+  max_start_time: new Date().toISOString(),
   trace_filter: 'eq(status, "error")',
 })) {
   console.log(trace.root_run?.trace_id);
@@ -24,8 +24,8 @@ let traceId = "<trace-id>";
 // :remove-start:
 for await (const t of client.traces.query({
   project_id: project.id,
-  min_start_time: "2026-07-01T00:00:00Z",
-  max_start_time: "2026-07-31T23:59:59Z",
+  min_start_time: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+  max_start_time: new Date().toISOString(),
   page_size: 1,
 })) {
   traceId = t.root_run!.trace_id!;
@@ -34,8 +34,8 @@ for await (const t of client.traces.query({
 // :remove-end:
 for await (const trace of client.traces.query({
   project_id: project.id,
-  min_start_time: "2026-07-01T00:00:00Z",
-  max_start_time: "2026-07-31T23:59:59Z",
+  min_start_time: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+  max_start_time: new Date().toISOString(),
   trace_ids: [traceId],
 })) {
   console.log(trace.root_run?.trace_id);

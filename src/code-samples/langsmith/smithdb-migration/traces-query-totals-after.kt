@@ -2,7 +2,7 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 21
 //KOTLIN 2.2.0
-//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.18
+//DEPS com.langchain.smith:langsmith-java:0.1.0-beta.22
 
 // :snippet-start: traces-query-totals-after-kt
 // :codegroup-tab: After
@@ -31,8 +31,8 @@ val project = client.sessions().list(
 val traces = client.traces().query(
     TraceQueryParams.builder()
         .projectId(project.id())
-        .minStartTime(OffsetDateTime.parse("2026-07-01T00:00:00Z"))
-        .maxStartTime(OffsetDateTime.parse("2026-07-31T23:59:59Z"))
+        .minStartTime(OffsetDateTime.now().minusMonths(1))
+        .maxStartTime(OffsetDateTime.now())
         .addSelect(RunSelectField.NAME)
         .addSelect(RunSelectField.TOTAL_TOKENS)
         .addSelect(RunSelectField.TOTAL_COST)
