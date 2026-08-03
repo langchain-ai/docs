@@ -67,20 +67,21 @@ export const IdentityScopeExplorer = () => {
   };
 
   const memoryBehavior = {
-    user: "Durable Context Hub memory remounts as memories/<userId> (or memories/<organizationId>/<userId> when organizations are required). Each caller gets a private slice.",
+    user: "The agent keeps a private long-term memory for each caller. Preferences Alice saves never appear when Bob chats. If organizations are required, that private memory is also namespaced per customer org.",
     organization:
-      "Memory remounts as memories/<organizationId>. Callers in the same org share durable notes; other orgs are unreachable. Every request must present an organization id.",
-    agent: "Memory remounts as memories/agent. The whole deployment shares one slice.",
-    none: "/memories/user is not mounted, and hot memory is not injected into the prompt.",
+      "Everyone in the same customer org shares one long-term memory. Notes written for Acme stay invisible to Globex. Every request must present an organization id.",
+    agent:
+      "The whole deployment shares one long-term memory. Anything the agent learns from one caller can surface for the next, which is fine for a single-tenant bot and risky for multi-user products.",
+    none: "The agent has no durable memory between runs. It only sees the current conversation, so it cannot recall preferences from earlier chats.",
   };
 
   const credentialBehavior = {
-    user: "Downstream tool calls can act as the signed-in user. Per-caller Connect-with-X routes mount when a credential chain reads user tokens.",
+    user: "When the agent calls external APIs (for example GitHub), it can act as the signed-in person rather than as a shared bot account. Each caller connects their own account.",
     agent:
-      "Downstream calls use the shared deployment vault (mda connect / Settings → Integrations), not each caller's personal token.",
-    none: "No managed credential owner. Connect is not inferred from memory scope.",
+      "External API calls use one shared bot or service token for everyone (the deployment vault from mda connect / Settings → Integrations).",
+    none: "Managed Deep Agents does not attach downstream credentials. Tools that need external tokens must obtain them some other way.",
     custom:
-      "You supply a credentials resolver or endpoint. Tools call runtime.credentials.for(target) to fetch headers for each platform.",
+      "You decide how tokens are fetched per caller. The generated example shows a resolve function your backend uses to look up each person's grant before a tool call.",
   };
 
   const scopesEqual = (a, b) =>
@@ -136,7 +137,9 @@ export const IdentityScopeExplorer = () => {
       const orgLine = needsExplicitOrg ? '\n    organization="required",' : "";
       code = `from managed_deepagents import define_identity
 
-# Application code: look up and refresh the caller's grant.
+# from credentials import get_access_token  # your server-side lookup
+
+
 def resolve_github(args):
     identity = args["identity"]
     credential = get_access_token(identity["user"]["id"])
@@ -146,6 +149,7 @@ def resolve_github(args):
         "headers": {"Authorization": f"Bearer {credential['token']}"},
         "expires_at": credential["expires_at"],
     }
+
 
 identity = define_identity(
     scope=${formatScopeObject},${orgLine}
@@ -274,10 +278,11 @@ export const identity = defineIdentity({
             uses organization scope.
           </p>
         )}
-        {scope.credentials === "custom" && (
+        {isCustomCredentials && (
           <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
-            Custom credentials also need a credentials resolver or endpoint in
-            the identity declaration. Setting the axis alone is not enough.
+            Custom mode is implied by a credentials resolver. The generated
+            example includes a demo resolve function; replace getAccessToken
+            with your server-side credential lookup.
           </p>
         )}
       </div>
