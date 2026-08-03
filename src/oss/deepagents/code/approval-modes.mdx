@@ -137,6 +137,61 @@ flowchart TD
 ```
 </Accordion>
 
+### Select a classifier model
+
+By default, the Auto classifier uses the same model as the main agent. You can point it at a different (typically cheaper and faster) model to reduce cost and latency during Auto review without affecting the model used for your actual tasks.
+
+Set the classifier model through any of these sources, listed from highest to lowest precedence:
+
+1. **`/auto model` TUI command** — takes effect immediately for the current session.
+2. **`--auto-classifier-model` flag** — sets the classifier for the launch (interactive TUI sessions only).
+3. **`DEEPAGENTS_CODE_AUTO_CLASSIFIER_MODEL` environment variable** — applies at startup.
+4. **`[models].auto_classifier` in `config.toml`** — your persistent default.
+5. **Inherit** — uses the main agent model (the default when nothing is configured).
+
+A blank value at any level means "inherit from the next source". For example, an unset env var falls through to `config.toml`.
+
+<Tabs>
+    <Tab title="TUI command">
+        ```txt
+        /auto model anthropic:claude-haiku-4-5
+        /auto model clear
+        ```
+
+        `/auto model` validates the spec before accepting it. Use `/auto model clear` to go back to inheriting the main model.
+    </Tab>
+    <Tab title="CLI flag">
+        ```bash
+        dcode -y --auto-classifier-model anthropic:claude-haiku-4-5
+        ```
+
+        `--auto-classifier-model` is only accepted in interactive TUI sessions. It errors in non-interactive (`-n`) and ACP server modes.
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_AUTO_CLASSIFIER_MODEL="anthropic:claude-haiku-4-5"
+        ```
+
+        <Warning>
+            A **project `.env`** cannot set `DEEPAGENTS_CODE_AUTO_CLASSIFIER_MODEL`. Only shell exports, `~/.deepagents/.env`, the CLI flag, and `/auto model` work. This prevents a cloned repository from silently redirecting your approval review to a weaker model.
+        </Warning>
+    </Tab>
+    <Tab title="config.toml">
+        ```toml title="~/.deepagents/config.toml"
+        [models]
+        auto_classifier = "anthropic:claude-haiku-4-5"
+        ```
+    </Tab>
+</Tabs>
+
+The TUI displays which model is reviewing when Auto turns on and inside `/auto model` output — including models set by env var or `config.toml`.
+
+<Warning>
+    A weaker classifier means weaker review. A less capable model may be more susceptible to prompt injection in the content it reads. This tradeoff is documented in the Deep Agents Code threat model (T14).
+</Warning>
+
+**Fail-closed on errors.** If the configured classifier model cannot be built — because of a bad spec, missing credentials, or a missing provider package — the calls it would have reviewed are **denied** and do not fall back to the main model. After repeated failures, Auto stops and shows you the normal approval UI. The error message names the model so you can identify and fix the problem.
+
 ### Revalidate before side effects
 
 The decision plan is bound to the thread, mode, batch, and exact gated calls. Missing or invalid state, a mode race, or a replay falls back to human review. For example, if you switch to Manual while classifier review is in progress, an earlier Auto decision cannot execute silently; the normal approval UI opens instead.
