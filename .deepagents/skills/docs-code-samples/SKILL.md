@@ -150,7 +150,7 @@ Place `:remove-start:` blocks **after** the snippet when you can, so the harness
 # :snippet-start: example-py
 from deepagents import create_deep_agent
 
-agent = create_deep_agent(model="google_genai:gemini-3.5-flash")
+agent = create_deep_agent(model="google_genai:gemini-3.6-flash")
 # :snippet-end:
 
 # :remove-start:

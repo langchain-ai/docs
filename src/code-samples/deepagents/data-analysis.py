@@ -77,16 +77,18 @@ def slack_send_message(text: str, file_path: str | None = None) -> str:
 from langchain_core.utils.uuid import uuid7
 
 from deepagents import create_deep_agent
+from langchain.agents.middleware import TodoListMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
 checkpointer = InMemorySaver()
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     tools=[slack_send_message],
     backend=backend,
     checkpointer=checkpointer,
+    middleware=[TodoListMiddleware()],
 )
 
 thread_id = str(uuid7())

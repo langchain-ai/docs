@@ -13,8 +13,8 @@ import (
 
 // :remove-start:
 func findThreadID(ctx context.Context, client *langsmith.Client, projectID string) string {
-	minStart, _ := time.Parse(time.RFC3339, "2026-07-01T00:00:00Z")
-	maxStart, _ := time.Parse(time.RFC3339, "2026-07-31T23:59:59Z")
+	maxStart := time.Now().UTC()
+	minStart := maxStart.AddDate(0, -1, 0)
 	iter := client.Threads.QueryAutoPaging(ctx, langsmith.ThreadQueryParams{
 		ProjectID:    langsmith.F(projectID),
 		MinStartTime: langsmith.F(minStart),
@@ -45,7 +45,7 @@ func main() {
 
 	iter := client.Threads.ListTracesAutoPaging(ctx, threadID, langsmith.ThreadListTracesParams{
 		ProjectID: langsmith.F(projectID),
-		Selects:   langsmith.F([]langsmith.ThreadListTracesParamsSelect{langsmith.ThreadListTracesParamsSelectStartTime}),
+		Selects:   langsmith.F([]langsmith.ThreadListTracesParamsSelect{langsmith.ThreadListTracesParamsSelectTraceID, langsmith.ThreadListTracesParamsSelectStartTime}),
 	})
 	for iter.Next() {
 		trace := iter.Current()
