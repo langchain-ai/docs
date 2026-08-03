@@ -1,5 +1,6 @@
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 
 async def find_thread_id(project_id: str) -> str:
@@ -8,8 +9,8 @@ async def find_thread_id(project_id: str) -> str:
     client = Client()
     async for thread in client.threads.query(
         project_id=project_id,
-        min_start_time="2026-07-01T00:00:00Z",
-        max_start_time="2026-07-31T23:59:59Z",
+        min_start_time=datetime.now(timezone.utc) - timedelta(days=30),
+        max_start_time=datetime.now(timezone.utc),
         page_size=5,
     ):
         return thread.thread_id
