@@ -1,0 +1,119 @@
+---
+title: Add LangSmith tool server integrations to Managed Deep Agents
+sidebarTitle: Integrations
+description: Give your agent Gmail, Slack, Linear, and other workspace tools connected once in LangSmith—without provider tokens ever reaching the deployment.
+---
+
+import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
+import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
+
+The LangSmith tool server hosts LangChain-authored tools per provider—Gmail, Slack, Linear, Google Sheets, Tavily, and more—and publishes them over MCP, one endpoint per integration. Your workspace connects an integration once in LangSmith; declaring the matching connector is how a deployment gets those tools. The provider's OAuth tokens never leave LangSmith's vault: Managed Deep Agents calls LangSmith's gateway, which resolves the credential and forwards the call upstream, so the deployment never sees, stores, or refreshes a provider token.
+
+<Note>
+<ManagedDeepAgentsPrivateBetaNote />
+</Note>
+
+For other connector types, see [Connectors](/langsmith/managed-deep-agents-connectors). The [GitHub connector](/langsmith/managed-deep-agents-connectors/github) is one of these integrations too, documented separately because it also provisions the sandbox.
+
+## Add an integration
+
+Connect the integration for your workspace in LangSmith (**Settings → Integrations**), then declare the connector. Create `connectors/gmail.py` or `connectors/gmail.ts` and export a named `connector`:
+
+<CodeGroup>
+
+```python connectors/gmail.py
+from managed_deepagents import connectors
+
+connector = connectors.gmail(
+    include_tools=["gmail_read_emails", "gmail_draft_email"],
+)
+```
+
+```ts connectors/gmail.ts
+import { connectors } from "managed-deepagents";
+
+export const connector = connectors.gmail({
+  includeTools: ["gmail_read_emails", "gmail_draft_email"],
+});
+```
+
+</CodeGroup>
+
+Every integration is reached the same way, as `connectors.<provider>(...)`:
+
+| Integration | Factory (TypeScript / Python) |
+| --- | --- |
+| Apollo | `connectors.apollo` |
+| Ashby | `connectors.ashby` |
+| Base (URL content & image extraction) | `connectors.base` |
+| Exa | `connectors.exa` |
+| Excel | `connectors.excel` |
+| Gmail | `connectors.gmail` |
+| Google BigQuery | `connectors.googleBigQuery` / `connectors.google_bigquery` |
+| Google Calendar | `connectors.googleCalendar` / `connectors.google_calendar` |
+| Google Docs | `connectors.googleDocs` / `connectors.google_docs` |
+| Google Drive | `connectors.googleDrive` / `connectors.google_drive` |
+| Google Meet | `connectors.googleMeet` / `connectors.google_meet` |
+| Google Sheets | `connectors.googleSheets` / `connectors.google_sheets` |
+| Google Slides | `connectors.googleSlides` / `connectors.google_slides` |
+| Linear | `connectors.linear` |
+| LinkedIn | `connectors.linkedin` |
+| Outlook | `connectors.outlook` |
+| PowerPoint | `connectors.powerpoint` |
+| Pylon | `connectors.pylon` |
+| Salesforce | `connectors.salesforce` |
+| SharePoint | `connectors.sharepoint` |
+| Slack | `connectors.slack` |
+| Tavily | `connectors.tavily` |
+| Microsoft Teams | `connectors.teams` |
+| Word | `connectors.word` |
+| X | `connectors.x` |
+
+The catalog is a superset of what any one workspace can use: an integration still has to be connected in LangSmith, which the runtime reports per call.
+
+## Select tools
+
+The config is only ever about which tools the agent gets:
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `include_tools` / `includeTools` | all published tools | Allowlist of tool names to load. An empty list loads none and skips the gateway entirely. |
+| `exclude_tools` / `excludeTools` | _(none)_ | Denylist of tool names. |
+| `default_tool_timeout` / `defaultToolTimeout` | _(provider default)_ | Per-tool call timeout—seconds in Python, milliseconds in TypeScript. |
+
+Tool names are **not** prefixed: the tool server already publishes them provider-qualified (`gmail_send_email`, `linear_create_issue`), so `includeTools` matches what the provider publishes rather than a name Managed Deep Agents renamed.
+
+How the deployment reaches LangSmith is a fact about the deployment, not a choice the agent's source makes, so it comes from the environment—`LANGSMITH_API_KEY`, `LANGSMITH_ENDPOINT` / `LANGCHAIN_ENDPOINT`, `LANGCHAIN_WORKSPACE_ID`—the same way the [LangSmith connector](/langsmith/managed-deep-agents-connectors/langsmith) resolves those values. The schema is strict: passing `apiKey` or another connection option to the factory is an error, not a silently ignored key.
+
+## Whose credentials the tools use
+
+The gateway resolves credentials for whoever the call authenticates as:
+
+- **A deployment key** resolves the workspace's shared connection, so every thread reaches the same connected account.
+- **A personal key** resolves that user's own connections, which is what makes `mda dev` work against your own Gmail while developing.
+- **A key with no user behind it** has no subject at the gateway yet. Such a deployment borrows a LangSmith agent's shared connection by UUID through `MDA_TOOLSERVER_AGENT_ID`. This is temporary: it goes away once the gateway can resolve a deployment from its own API key.
+
+For per-user credentials—each caller reaching their own Gmail—use [identity credentials](/langsmith/managed-deep-agents-identity#downstream-credentials) with a resolver for `runtime.identity.user` instead of this connector.
+
+## Test and deploy
+
+<ManagedDeepAgentsTestAndDeploy />
+
+A call against an integration the workspace has not connected fails with a gateway error naming the integration. Connect it in LangSmith and retry—no redeploy needed.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="GitHub connector" icon="brand-github" href="/langsmith/managed-deep-agents-connectors/github">
+    GitHub tools plus sandbox checkouts, `gh`, and credential injection.
+  </Card>
+  <Card title="MCP connector" icon="plug" href="/langsmith/managed-deep-agents-connectors/mcp">
+    Load tools from your own remote MCP servers.
+  </Card>
+  <Card title="Connectors" icon="plug" href="/langsmith/managed-deep-agents-connectors">
+    Compare connector types.
+  </Card>
+  <Card title="Identity" icon="fingerprint" href="/langsmith/managed-deep-agents-identity">
+    Resolve per-user credentials for downstream calls.
+  </Card>
+</CardGroup>

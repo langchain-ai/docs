@@ -19,28 +19,32 @@ For other connector types, and how connectors differ from channels and identity 
 
 ## Add a LangSmith connector
 
-Add `connectors/langsmith.py` or `connectors/langsmith.ts` next to your [agent entry file](/langsmith/managed-deep-agents-cli#agent-entry). Export the connector as `connector` in Python or as the module default in TypeScript. Start with [presets](#presets) for the common browser surfaces, or compose [custom grants](#custom-capability-grants) when you need different scopes or constraints.
+Add `connectors/langsmith.py` or `connectors/langsmith.ts` next to your [agent entry file](/langsmith/managed-deep-agents-cli#agent-entry). Export the connector as a named `connector`. Start with [presets](#presets) for the common browser surfaces, or compose [custom grants](#custom-capability-grants) when you need different scopes or constraints.
 
 The following declaration mounts one HTTP route per capability id on your deployment.
 
 <CodeGroup>
 
 ```python connectors/langsmith.py
-from managed_deepagents.connectors import langsmith
+from managed_deepagents import connectors
 
-connector = langsmith.connector(
-    langsmith.chat_feedback(dataset="public-feedback"),
-    langsmith.trace_viewer(),
+connector = connectors.langsmith(
+    capabilities=[
+        connectors.langsmith.chat_feedback(dataset="public-feedback"),
+        connectors.langsmith.trace_viewer(),
+    ],
 )
 ```
 
 ```ts connectors/langsmith.ts
-import { langsmith } from "managed-deepagents";
+import { connectors } from "managed-deepagents";
 
-export default langsmith.connector(
-  langsmith.chatFeedback({ dataset: "public-feedback" }),
-  langsmith.traceViewer(),
-);
+export const connector = connectors.langsmith({
+  capabilities: [
+    connectors.langsmith.chatFeedback({ dataset: "public-feedback" }),
+    connectors.langsmith.traceViewer(),
+  ],
+});
 ```
 
 </CodeGroup>
@@ -56,11 +60,11 @@ Presets expand to stable capability ids that you then call over HTTP. Each prese
 <CodeGroup>
 
 ```python
-langsmith.chat_feedback(dataset="public-feedback")
+connectors.langsmith.chat_feedback(dataset="public-feedback")
 ```
 
 ```ts
-langsmith.chatFeedback({ dataset: "public-feedback" })
+connectors.langsmith.chatFeedback({ dataset: "public-feedback" })
 ```
 
 </CodeGroup>
@@ -78,49 +82,53 @@ The accordion shows the equivalent builder calls.
   <CodeGroup>
 
   ```python
-  langsmith.connector(
-      langsmith.feedback(
-          id="langsmith:chat-feedback",
-          expose_to=["browser"],
-          actions=["create", "update", "delete"],
-          scope="run",
-          keys=["user_score"],
-          scores=["positive", "negative"],
-          max_comment_chars=2000,
-          one_per_actor=True,
-      ),
-      langsmith.examples(
-          id="langsmith:chat-feedback-examples",
-          expose_to=["browser"],
-          actions=["create"],
-          scope="thread",
-          dataset="public-feedback",
-          allowed_fields=["messages", "answer", "feedback", "source"],
-      ),
+  connectors.langsmith(
+      capabilities=[
+          connectors.langsmith.feedback(
+              id="langsmith:chat-feedback",
+              expose_to=["browser"],
+              actions=["create", "update", "delete"],
+              scope="run",
+              keys=["user_score"],
+              scores=["positive", "negative"],
+              max_comment_chars=2000,
+              one_per_actor=True,
+          ),
+          connectors.langsmith.examples(
+              id="langsmith:chat-feedback-examples",
+              expose_to=["browser"],
+              actions=["create"],
+              scope="thread",
+              dataset="public-feedback",
+              allowed_fields=["messages", "answer", "feedback", "source"],
+          ),
+      ],
   )
   ```
 
   ```ts
-  langsmith.connector(
-    langsmith.feedback({
-      id: "langsmith:chat-feedback",
-      exposeTo: ["browser"],
-      actions: ["create", "update", "delete"],
-      scope: "run",
-      keys: ["user_score"],
-      scores: ["positive", "negative"],
-      maxCommentChars: 2000,
-      onePerActor: true,
-    }),
-    langsmith.examples({
-      id: "langsmith:chat-feedback-examples",
-      exposeTo: ["browser"],
-      actions: ["create"],
-      scope: "thread",
-      dataset: "public-feedback",
-      allowedFields: ["messages", "answer", "feedback", "source"],
-    }),
-  );
+  connectors.langsmith({
+    capabilities: [
+      connectors.langsmith.feedback({
+        id: "langsmith:chat-feedback",
+        exposeTo: ["browser"],
+        actions: ["create", "update", "delete"],
+        scope: "run",
+        keys: ["user_score"],
+        scores: ["positive", "negative"],
+        maxCommentChars: 2000,
+        onePerActor: true,
+      }),
+      connectors.langsmith.examples({
+        id: "langsmith:chat-feedback-examples",
+        exposeTo: ["browser"],
+        actions: ["create"],
+        scope: "thread",
+        dataset: "public-feedback",
+        allowedFields: ["messages", "answer", "feedback", "source"],
+      }),
+    ],
+  });
   ```
 
   </CodeGroup>
@@ -133,11 +141,11 @@ The accordion shows the equivalent builder calls.
 <CodeGroup>
 
 ```python
-langsmith.trace_viewer()
+connectors.langsmith.trace_viewer()
 ```
 
 ```ts
-langsmith.traceViewer()
+connectors.langsmith.traceViewer()
 ```
 
 </CodeGroup>
@@ -148,25 +156,29 @@ Expands to **`langsmith:trace-viewer`**: thread-scoped `runs` with actions `read
   <CodeGroup>
 
   ```python
-  langsmith.connector(
-      langsmith.runs(
-          id="langsmith:trace-viewer",
-          expose_to=["browser"],
-          actions=["read", "share"],
-          scope="thread",
-      )
+  connectors.langsmith(
+      capabilities=[
+          connectors.langsmith.runs(
+              id="langsmith:trace-viewer",
+              expose_to=["browser"],
+              actions=["read", "share"],
+              scope="thread",
+          )
+      ],
   )
   ```
 
   ```ts
-  langsmith.connector(
-    langsmith.runs({
-      id: "langsmith:trace-viewer",
-      exposeTo: ["browser"],
-      actions: ["read", "share"],
-      scope: "thread",
-    }),
-  );
+  connectors.langsmith({
+    capabilities: [
+      connectors.langsmith.runs({
+        id: "langsmith:trace-viewer",
+        exposeTo: ["browser"],
+        actions: ["read", "share"],
+        scope: "thread",
+      }),
+    ],
+  });
   ```
 
   </CodeGroup>
@@ -181,7 +193,7 @@ Each grant needs:
 - A stable `id`: becomes `{capability_id}` in the HTTP path
 - `exposeTo` / `expose_to`: who may call it (`browser`, `trusted_backend`, `channel`, `schedule`)
 - `actions`: allowed values for the body's `action` field
-- `scope`: ownership boundary (`agent`, `tenant`, `actor`, `thread`, `run`)
+- `scope`: ownership boundary (`agent`, `organization`, `user`, `thread`, `run`)
 
 Each grant also takes optional response-shaping fields that keep browser responses small and fail closed on sensitive data (withhold it unless a grant opts in):
 
@@ -215,7 +227,7 @@ The route uses the same [identity ingress](/langsmith/managed-deep-agents-identi
 | Ingress | Headers |
 | --- | --- |
 | Validated token (browser-direct) | `Authorization: Bearer <token>` |
-| Trusted backend | `X-MDA-Ingress-Secret`, `X-MDA-Actor-Id`, and `X-MDA-Tenant-Id` when multi-tenant |
+| Trusted backend | `X-MDA-Ingress-Secret`, `X-MDA-User-Id`, and `X-MDA-Organization-Id` when multi-tenant |
 
 Unauthenticated calls return `401`. Ownership failures return `403`.
 
@@ -286,8 +298,8 @@ curl -X POST \
   "$DEPLOYMENT_URL/connectors/langsmith/capabilities/langsmith%3Achat-feedback" \
   -H "Content-Type: application/json" \
   -H "X-MDA-Ingress-Secret: $MDA_INGRESS_SECRET" \
-  -H "X-MDA-Actor-Id: $ACTOR_ID" \
-  -H "X-MDA-Tenant-Id: $TENANT_ID" \
+  -H "X-MDA-User-Id: $USER_ID" \
+  -H "X-MDA-Organization-Id: $ORGANIZATION_ID" \
   -d '{
     "action": "create",
     "runId": "<langsmith-run-id>",
@@ -296,7 +308,7 @@ curl -X POST \
   }'
 ```
 
-Send `X-MDA-Tenant-Id` only for multi-tenant deployments. For how the runtime resolves these headers, see [identity ingress](/langsmith/managed-deep-agents-identity#auth-identify-the-caller).
+Send `X-MDA-Organization-Id` only for multi-tenant deployments. For how the runtime resolves these headers, see [identity ingress](/langsmith/managed-deep-agents-identity#auth-identify-the-caller).
 
 ### Example: read a redacted trace
 

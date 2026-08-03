@@ -1,13 +1,18 @@
 ---
 title: Connect GitHub repositories to Managed Deep Agents
 sidebarTitle: GitHub
-description: Clone GitHub repositories, install the GitHub CLI, and inject credentials into a Managed Deep Agents sandbox.
+description: Load GitHub tools from the LangSmith tool server, clone repositories, install the GitHub CLI, and inject credentials into a Managed Deep Agents sandbox.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-The GitHub connector prepares repositories, the GitHub CLI (`gh`), and credentials inside a [managed sandbox](/langsmith/managed-deep-agents-deploy#configure-a-sandbox), so an agent can inspect a repository or open a pull request against it. It requires `managed-deepagents>=0.4.0`.
+The GitHub connector gives the agent two independent ways to work with GitHub:
+
+- **Tools**: GitHub is a [tool server integration](/langsmith/managed-deep-agents-connectors/integrations) like Gmail or Linear, so the connector can load LangChain-authored GitHub API tools through LangSmith's gateway. The provider token stays in LangSmith's vault.
+- **Sandbox**: the connector also prepares repositories, the `gh` CLI, and credentials inside a [managed sandbox](/langsmith/managed-deep-agents-deploy#configure-a-sandbox), so the agent can inspect or change checkouts directly.
+
+The GitHub connector requires `managed-deepagents>=0.4.0`.
 
 <Note>
 <ManagedDeepAgentsPrivateBetaNote />
@@ -17,14 +22,14 @@ This connector is separate from the [GitHub channel](/langsmith/managed-deep-age
 
 ## Add the connector
 
-Create `connectors/github.py` or `connectors/github.ts`. Export the connector as `connector` in Python or as the module default in TypeScript.
+Create `connectors/github.py` or `connectors/github.ts` and export a named `connector`:
 
 <CodeGroup>
 
 ```python connectors/github.py
-from managed_deepagents.connectors import github
+from managed_deepagents import connectors
 
-connector = github.connector(
+connector = connectors.github(
     repositories=[
         {
             "repo": "acme/api",
@@ -38,9 +43,9 @@ connector = github.connector(
 ```
 
 ```ts connectors/github.ts
-import { github } from "managed-deepagents";
+import { connectors } from "managed-deepagents";
 
-export default github.connector({
+export const connector = connectors.github({
   repositories: [
     {
       repo: "acme/api",
@@ -57,13 +62,47 @@ export default github.connector({
 
 The connector clones each repository when the sandbox is created. When a thread reuses an existing sandbox, `on_reuse` / `onReuse` controls the checkout (see [Configure options](#configure-options)).
 
+## Tools and the `installCLI` rule
+
+The two halves meet in one rule: `installCLI` decides the default tool surface. With `gh` in the sandbox (the default), the agent already reaches the GitHub API, so the integration's tool definitions stay off. Adding them would be a second route to the same endpoints. Naming tools with `include_tools` / `includeTools`, or setting `installCLI: false`, turns them on. An explicit selection always wins, including `exclude_tools` / `excludeTools` on its own.
+
+A checkout-only project needs no tool config and no connected GitHub integration in the workspace, because the gateway is never called:
+
+<CodeGroup>
+
+```python connectors/github.py
+from managed_deepagents import connectors
+
+# Tools on: no gh in the sandbox, so the agent uses the integration's tools
+connector = connectors.github(
+    install_cli=False,
+    include_tools=["github_create_pull_request"],
+)
+```
+
+```ts connectors/github.ts
+import { connectors } from "managed-deepagents";
+
+// Tools on: no gh in the sandbox, so the agent uses the integration's tools
+export const connector = connectors.github({
+  installCLI: false,
+  includeTools: ["github_create_pull_request"],
+});
+```
+
+</CodeGroup>
+
+Tool names are provider-qualified (`github_create_pull_request`), not prefixed. For how the gateway resolves credentials, see [Tool server integrations](/langsmith/managed-deep-agents-connectors/integrations).
+
 ## Configure options
 
 | Option (Python / TypeScript) | Default | Purpose |
 | --- | --- | --- |
 | `repositories` | `[]` | Repository checkouts and their sandbox paths. |
-| `install_cli` / `installCLI` | `true` | Install the GitHub CLI in the sandbox. |
+| `install_cli` / `installCLI` | `true` | Install the GitHub CLI in the sandbox. `true` also defaults the integration's tools off. |
 | `inject_credentials` / `injectCredentials` | `true` | Expose resolved GitHub credentials to `git` and `gh`. |
+| `include_tools` / `includeTools` | all tools (when on) | Allowlist of integration tool names to load. |
+| `exclude_tools` / `excludeTools` | _(none)_ | Denylist of integration tool names. |
 
 Each entry in `repositories` accepts these fields:
 
