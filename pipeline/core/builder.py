@@ -630,8 +630,8 @@ class DocumentationBuilder:
 
         all_files = [
             file_path
-            for file_path in oss_dir.rglob("*")
-            if file_path.is_file() and not self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(oss_dir)
+            if not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -718,8 +718,8 @@ class DocumentationBuilder:
 
         all_files = [
             file_path
-            for file_path in code_dir.rglob("*")
-            if file_path.is_file() and not self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(code_dir)
+            if not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -775,8 +775,8 @@ class DocumentationBuilder:
 
         all_files = [
             file_path
-            for file_path in openwiki_dir.rglob("*")
-            if file_path.is_file() and not self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(openwiki_dir)
+            if not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -832,8 +832,8 @@ class DocumentationBuilder:
 
         all_files = [
             file_path
-            for file_path in src_path.rglob("*")
-            if file_path.is_file() and not self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(src_path)
+            if not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -967,6 +967,39 @@ class DocumentationBuilder:
             return True
         return False
 
+    def _safe_source_files(self, root: Path) -> list[Path]:
+        """Collect regular files under ``root``, rejecting symlinks.
+
+        Symlinks are skipped even when they target regular files, so a
+        committed symlink cannot pull host paths (for example
+        ``/proc/self/environ``) into build artifacts. Resolved paths must
+        stay under ``root``.
+        """
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            logger.warning("Could not resolve source root %s", root)
+            return []
+
+        files: list[Path] = []
+        for file_path in root.rglob("*"):
+            if file_path.is_symlink():
+                logger.warning("Skipping symlink in source tree: %s", file_path)
+                continue
+            if not file_path.is_file():
+                continue
+            try:
+                file_path.resolve().relative_to(root_resolved)
+            except ValueError:
+                logger.warning(
+                    "Skipping file that resolves outside %s: %s",
+                    root,
+                    file_path,
+                )
+                continue
+            files.append(file_path)
+        return files
+
     def is_shared_file(self, file_path: Path) -> bool:
         """Check if a file should be shared between versions rather than duplicated.
 
@@ -1008,8 +1041,8 @@ class DocumentationBuilder:
         # Collect shared files
         shared_files = [
             file_path
-            for file_path in self.src_dir.rglob("*")
-            if file_path.is_file() and self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(self.src_dir)
+            if self.is_shared_file(file_path)
         ]
 
         if not shared_files:
