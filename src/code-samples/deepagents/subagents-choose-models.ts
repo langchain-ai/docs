@@ -20,7 +20,7 @@ const subagents = [
     description: "Reviews legal documents and contracts",
     systemPrompt: "You are an expert legal reviewer...",
     tools: [readDocument, analyzeContract],
-    model: "google_genai:gemini-3.5-flash", // Large context for long documents
+    model: "google_genai:gemini-3.6-flash", // Large context for long documents
   },
   {
     name: "financial-analyst",
@@ -36,7 +36,7 @@ const subagents = [
 import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google_genai:gemini-3.6-flash",
   subagents,
 });
 if (!agent) throw new Error("agent not created");
