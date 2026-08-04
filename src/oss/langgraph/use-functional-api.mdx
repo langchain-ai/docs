@@ -3,6 +3,8 @@ title: Use the functional API
 sidebarTitle: Use the Functional API
 ---
 
+import LanggraphFunctionalApiStreamCustomDataPy from '/snippets/code-samples/langgraph-functional-api-stream-custom-data-py.mdx';
+import LanggraphFunctionalApiStreamCustomDataJs from '/snippets/code-samples/langgraph-functional-api-stream-custom-data-js.mdx';
 
 The [**Functional API**](/oss/langgraph/functional-api) allows you to add LangGraph's key features ([persistence](/oss/langgraph/persistence), [memory](/oss/langgraph/add-memory), [human-in-the-loop](/oss/langgraph/interrupts), and [streaming](/oss/langgraph/streaming)) to your applications with minimal changes to your existing code.
 
@@ -523,48 +525,18 @@ const myWorkflow = entrypoint(
 The **Functional API** uses the same streaming mechanism as the **Graph API**. Please
 read the [**streaming guide**](/oss/langgraph/streaming) section for more details.
 
-Example of using the streaming API to stream both updates and custom data.
+Example of using the streaming API to stream value chunks from a workflow run.
 
 :::python
-```python
-from langgraph.func import entrypoint
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.config import get_stream_writer   # [!code highlight]
 
-checkpointer = InMemorySaver()
-
-@entrypoint(checkpointer=checkpointer)
-def main(inputs: dict) -> int:
-    writer = get_stream_writer()   # [!code highlight]
-    writer("Started processing")   # [!code highlight]
-    result = inputs["x"] * 2
-    writer(f"Result is {result}")   # [!code highlight]
-    return result
-
-config = {"configurable": {"thread_id": "abc"}}
-
-for mode, chunk in main.stream(   # [!code highlight]
-    {"x": 5},
-    stream_mode=["custom", "updates"],   # [!code highlight]
-    config=config
-):
-    print(f"{mode}: {chunk}")
-```
+<LanggraphFunctionalApiStreamCustomDataPy />
 
 1. Import @[`get_stream_writer`] from `langgraph.config`.
 2. Obtain a stream writer instance within the entrypoint.
 3. Emit custom data before computation begins.
 4. Emit another custom message after computing the result.
-5. Use `.stream()` to process streamed output.
-6. Specify which streaming modes to use.
-
-```pycon
-('updates', {'add_one': 2})
-('updates', {'add_two': 3})
-('custom', 'hello')
-('custom', 'world')
-('updates', {'main': 5})
-```
+5. Use `stream_events()` to process streamed output.
+6. Iterate over `(mode, chunk)` pairs from `interleave("values")`.
 
 <Warning>
 **Async with Python < 3.11**
@@ -582,51 +554,12 @@ async def main(inputs: dict, writer: StreamWriter) -> int:  # [!code highlight]
 :::
 
 :::js
-```typescript
-import {
-  entrypoint,
-  MemorySaver,
-  LangGraphRunnableConfig,
-} from "@langchain/langgraph";
-
-const checkpointer = new MemorySaver();
-
-const main = entrypoint(
-  { checkpointer, name: "main" },
-  async (
-    inputs: { x: number },
-    config: LangGraphRunnableConfig
-  ): Promise<number> => {
-    config.writer?.("Started processing");   // [!code highlight]
-    const result = inputs.x * 2;
-    config.writer?.(`Result is ${result}`);   // [!code highlight]
-    return result;
-  }
-);
-
-const config = { configurable: { thread_id: "abc" } };
-
-  // [!code highlight]
-for await (const [mode, chunk] of await main.stream(
-  { x: 5 },
-  { streamMode: ["custom", "updates"], ...config }   // [!code highlight]
-)) {
-  console.log(`${mode}: ${JSON.stringify(chunk)}`);
-}
-```
+<LanggraphFunctionalApiStreamCustomDataJs />
 
 1. Emit custom data before computation begins.
 2. Emit another custom message after computing the result.
-3. Use `.stream()` to process streamed output.
-4. Specify which streaming modes to use.
-
-```
-updates: {"addOne": 2}
-updates: {"addTwo": 3}
-custom: "hello"
-custom: "world"
-updates: {"main": 5}
-```
+3. Use `streamEvents()` to process streamed output.
+4. Iterate `stream.values` to receive value snapshots.
 :::
 
 ## Retry policy
@@ -792,12 +725,9 @@ def main(inputs: dict) -> dict[str, int]:
     return {"result1": result1, "result2": result2}
 
 
-for chunk in main.stream({"x": 5}, stream_mode="updates"):
-    print(chunk)
-
-#> {'slow_add': 10}
-#> {'slow_add': 10, '__metadata__': {'cached': True}}
-#> {'main': {'result1': 10, 'result2': 10}}
+stream = main.stream_events({"x": 5}, version="v3")
+for snapshot in stream.values:
+    print(snapshot)
 ```
 
 1. `ttl` is specified in seconds. The cache will be invalidated after this time.
@@ -832,16 +762,10 @@ const main = entrypoint(
   }
 );
 
-for await (const chunk of await main.stream(
-  { x: 5 },
-  { streamMode: "updates" }
-)) {
-  console.log(chunk);
+const stream = await main.streamEvents({ x: 5 }, { version: "v3" });
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
 }
-
-//> { slowAdd: 10 }
-//> { slowAdd: 10, '__metadata__': { cached: true } }
-//> { main: { result1: 10, result2: 10 } }
 ```
 
 1. `ttl` is specified in seconds. The cache will be invalidated after this time.
@@ -1109,9 +1033,10 @@ Let's send in a query string:
 ```python
 config = {"configurable": {"thread_id": "1"}}
 
-for event in graph.stream("foo", config):
-    print(event)
-    print("\n")
+stream = graph.stream_events("foo", config, version="v3")
+for message in stream.messages:
+    for token in message.text:
+        print(token, end="", flush=True)
 ```
 :::
 
@@ -1119,9 +1044,11 @@ for event in graph.stream("foo", config):
 ```typescript
 const config = { configurable: { thread_id: "1" } };
 
-for await (const event of await graph.stream("foo", config)) {
-  console.log(event);
-  console.log("\n");
+const stream = await graph.streamEvents("foo", config, { version: "v3" });
+for await (const message of stream.messages) {
+  for await (const token of message.text) {
+    process.stdout.write(token);
+  }
 }
 ```
 :::
@@ -1131,21 +1058,25 @@ Note that we've paused with an @[`interrupt`] after `step_1`. The interrupt prov
 :::python
 ```python
 # Continue execution
-for event in graph.stream(Command(resume="baz"), config):
-    print(event)
-    print("\n")
+stream = graph.stream_events(Command(resume="baz"), config, version="v3")
+for message in stream.messages:
+    for token in message.text:
+        print(token, end="", flush=True)
 ```
 :::
 
 :::js
 ```typescript
 // Continue execution
-for await (const event of await graph.stream(
+const stream = await graph.streamEvents(
   new Command({ resume: "baz" }),
-  config
-)) {
-  console.log(event);
-  console.log("\n");
+  config,
+  { version: "v3" }
+);
+for await (const message of stream.messages) {
+  for await (const token of message.text) {
+    process.stdout.write(token);
+  }
 }
 ```
 :::
@@ -1630,12 +1561,14 @@ def workflow(inputs: list[BaseMessage], *, previous: list[BaseMessage]):
 
 config = {"configurable": {"thread_id": "1"}}
 input_message = {"role": "user", "content": "hi! I'm bob"}
-for chunk in workflow.stream([input_message], config, stream_mode="values"):
-    chunk.pretty_print()
+stream = workflow.stream_events([input_message], config, version="v3")
+for snapshot in stream.values:
+    print(snapshot)
 
 input_message = {"role": "user", "content": "what's my name?"}
-for chunk in workflow.stream([input_message], config, stream_mode="values"):
-    chunk.pretty_print()
+stream = workflow.stream_events([input_message], config, version="v3")
+for snapshot in stream.values:
+    print(snapshot)
 ```
 :::
 
@@ -1684,19 +1617,15 @@ const workflow = entrypoint(
 const config = { configurable: { thread_id: "1" } };
 const inputMessage = { role: "user", content: "hi! I'm bob" };
 
-for await (const chunk of await workflow.stream([inputMessage], {
-  ...config,
-  streamMode: "values",
-})) {
-  console.log(chunk.content);
+const stream1 = await workflow.streamEvents([inputMessage], { ...config, version: "v3" });
+for await (const snapshot of stream1.values) {
+  console.log(snapshot);
 }
 
 const inputMessage2 = { role: "user", content: "what's my name?" };
-for await (const chunk of await workflow.stream([inputMessage2], {
-  ...config,
-  streamMode: "values",
-})) {
-  console.log(chunk.content);
+const stream2 = await workflow.streamEvents([inputMessage2], { ...config, version: "v3" });
+for await (const snapshot of stream2.values) {
+  console.log(snapshot);
 }
 ```
 :::

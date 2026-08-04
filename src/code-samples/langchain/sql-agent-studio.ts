@@ -101,7 +101,7 @@ ${await getSchema()}
 Rules:
 - Think step-by-step.
 - When you need data, call the tool \`execute_sql\` with ONE SELECT query.
-- Read-only only; no INSERT/UPDATE/DELETE/ALTER/DROP/CREATE/REPLACE/TRUNCATE.
+- Read-only; no INSERT/UPDATE/DELETE/ALTER/DROP/CREATE/REPLACE/TRUNCATE.
 - Limit to 5 rows unless user explicitly asks otherwise.
 - If the tool returns 'Error:', revise the SQL and try again.
 - Limit the number of attempts to 5.
@@ -110,7 +110,7 @@ Rules:
 `);
 
 export const agent = createAgent({
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   tools: [executeSql],
   systemPrompt: await getSystemPrompt(),
 });

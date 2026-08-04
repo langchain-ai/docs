@@ -1,5 +1,4 @@
 // :snippet-start: skills-usage-filesystem-js
-import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
 import { createDeepAgent, FilesystemBackend } from "deepagents";
 import { MemorySaver } from "@langchain/langgraph";
 
@@ -17,7 +16,6 @@ const agent = await createDeepAgent({
     delete_file: true,
   },
   checkpointer, // Required!
-  middleware: [createCodeInterpreterMiddleware({ skillsBackend: backend })],
 });
 
 const config = { configurable: { thread_id: `thread-${Date.now()}` } };

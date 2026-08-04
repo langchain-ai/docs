@@ -30,13 +30,13 @@ research_subagent = {
     "description": "Used to research more in depth questions",
     "system_prompt": "You are a great researcher",
     "tools": [internet_search],
-    "model": "openai:gpt-5.4",  # Optional override, defaults to main agent model
+    "model": "openai:gpt-5.5",  # Optional override, defaults to main agent model
 }
 subagents = [research_subagent]
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=subagents,
 )
 # :snippet-end:

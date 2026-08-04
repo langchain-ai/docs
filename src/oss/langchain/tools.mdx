@@ -8,6 +8,8 @@ import ToolReturnObjectPy from '/snippets/code-samples/tool-return-object-py.mdx
 import ToolReturnObjectJs from '/snippets/code-samples/tool-return-object-js.mdx';
 import ToolReturnCommandPy from '/snippets/code-samples/tool-return-command-py.mdx';
 import ToolReturnCommandJs from '/snippets/code-samples/tool-return-command-js.mdx';
+import ToolReturnDirectPy from '/snippets/code-samples/tool-return-direct-py.mdx';
+import ToolReturnDirectJs from '/snippets/code-samples/tool-return-direct-js.mdx';
 import ToolUpdateStatePy from '/snippets/code-samples/tool-update-state-py.mdx';
 import ToolErrorHandlingPy from '/snippets/code-samples/tool-error-handling-py.mdx';
 import ToolErrorHandlingJs from '/snippets/code-samples/tool-error-handling-js.mdx';
@@ -325,7 +327,7 @@ The @[`BaseStore`] provides persistent storage that survives across conversation
 Access the store through `runtime.store`. The store uses a namespace/key pattern to organize data:
 
 <Tip>
-    For production deployments, use a persistent store implementation like @[`PostgresStore`] instead of `InMemoryStore`. See the [memory documentation](/oss/langgraph/add-memory) for setup details.
+    For production deployments, use a persistent store implementation like @[`PostgresStore`], `MongoDBStore`, or `RedisStore` instead of `InMemoryStore`. See the [memory documentation](/oss/langgraph/add-memory) for setup details.
 </Tip>
 
 ```python expandable
@@ -351,7 +353,7 @@ def save_user_info(user_id: str, user_info: dict[str, Any], runtime: ToolRuntime
     store.put(("users",), user_id, user_info)
     return "Successfully saved user info."
 
-model = ChatOpenAI(model="gpt-5.4")
+model = ChatOpenAI(model="gpt-5.5")
 
 store = InMemoryStore()
 agent = create_agent(
@@ -424,7 +426,7 @@ const saveUserInfo = tool(
 );
 
 const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-5.4" }),
+  model: new ChatOpenAI({ model: "gpt-5.5" }),
   tools: [getUserInfo, saveUserInfo],
   store,
 });
@@ -663,7 +665,7 @@ For agent-level migrations (for example `create_react_agent` and custom state), 
 
 In LangChain, tools are used by agents (for example via @[`create_agent`]) and tool error handling is configured through [middleware](/oss/langchain/middleware).
 
-For LangGraph workflows, tool execution is handled by @[`ToolNode`]. See [ToolNode](/oss/langgraph/workflows-agents#toolnode).
+For LangGraph workflows, tool execution is handled by @[`ToolNode`]. See [ToolNode](/oss/langgraph/workflows-agents#toolnode) for Graph API usage, including how tools can access the current graph state and run-scoped context.
 
 ### Tool return values
 
@@ -721,6 +723,52 @@ Behavior:
 
 Use this when downstream reasoning benefits from explicit fields instead of free-form text.
 
+#### Return multimodal content
+
+Tools are not limited to plain text. When the model supports multimodal tool results, the tool can return [standard content blocks](/oss/langchain/messages#standard-content-blocks) so the model receives text, images, and other media in one tool result.
+
+:::python
+```python
+from langchain.tools import tool
+
+
+@tool
+def capture_screenshot() -> list[dict]:
+    """Capture a screenshot of the current page."""
+    return [
+        {"type": "text", "text": "Screenshot of the current page:"},
+        {"type": "image", "url": "https://example.com/page.png"},
+    ]
+```
+:::
+
+:::js
+```typescript
+import { tool } from "langchain";
+import { z } from "zod";
+
+const captureScreenshot = tool(
+  async () => [
+    { type: "text", text: "Screenshot of the current page:" },
+    { type: "image", url: "https://example.com/page.png" },
+  ],
+  {
+    name: "capture_screenshot",
+    description: "Capture a screenshot of the current page.",
+    schema: z.object({}),
+  }
+);
+```
+:::
+
+Behavior:
+
+- The return value is converted to a `ToolMessage` with multimodal `content`.
+- Use `message.content_blocks` to read the normalized block list after the tool runs.
+- The model must support the modalities you return. Check your [model's capabilities](/oss/integrations/chat) before returning images, audio, or video.
+
+For block types and provider-specific requirements, see [Multimodal messages](/oss/langchain/messages#multimodal). MCP tools that return images or mixed content are converted the same way; see [Multimodal tool content](/oss/langchain/mcp#multimodal-tool-content).
+
 #### Return a Command
 
 Return a @[`Command`] when the tool needs to update graph state (for example, setting user preferences or app state).
@@ -746,6 +794,38 @@ Behavior:
 - Use reducers for fields that may be updated by parallel tool calls.
 
 Use this when the tool is not just returning data, but also mutating agent state.
+
+#### Return directly from a tool
+
+Set return direct on a tool to short-circuit the agent loop: the agent returns the tool's output to the caller immediately, without sending it back through the model for further processing.
+
+:::python
+
+<ToolReturnDirectPy />
+
+:::
+
+:::js
+
+<ToolReturnDirectJs />
+
+:::
+
+Behavior:
+
+- The tool executes normally and its output is wrapped in a `ToolMessage`.
+- The agent stops looping and returns the tool's output as the final response, bypassing any additional model call.
+- If the model calls multiple tools in a single turn, `return_direct` takes effect only when **all** called tools have `return_direct=True`.
+
+Use this when:
+
+- The tool's output is the complete, user-ready answer (for example, a lookup that returns a ready-to-display result).
+- You want to avoid an extra model call when no additional reasoning is needed.
+- You need deterministic, unmodified output — the model cannot rephrase, summarize, or act on the tool result.
+
+<Warning>
+    Because the model does not process the tool's output, `return_direct=True` is not suitable for tools whose results require further reasoning, summarization, or chaining with other tool calls.
+</Warning>
 
 ### Error handling
 
@@ -778,6 +858,8 @@ def get_message_count(runtime: ToolRuntime) -> str:
     return f"There are {len(messages)} messages."
 ```
 :::
+
+For more details on accessing state, context, and long-term memory from tools, see [Access context](#access-context).
 
 ## Dynamic tool selection
 
@@ -824,7 +906,7 @@ There are two approaches depending on whether tools are known ahead of time:
             return handler(request)
 
         agent = create_agent(
-            model="gpt-5.4",
+            model="gpt-5.5",
             tools=[public_search, private_search, advanced_search],
             middleware=[state_based_tools]
         )
@@ -866,7 +948,7 @@ There are two approaches depending on whether tools are known ahead of time:
         });
 
         const agent = await createDeepAgent({
-            model: "claude-sonnet-4-20250514",
+            model: "claude-sonnet-4-6",
             tools: tools,
             middleware: [stateBasedTools] as any,
         });
@@ -912,7 +994,7 @@ There are two approaches depending on whether tools are known ahead of time:
             return handler(request)
 
         agent = create_agent(
-            model="gpt-5.4",
+            model="gpt-5.5",
             tools=[search_tool, analysis_tool, export_tool],
             middleware=[store_based_tools],
             context_schema=Context,
@@ -964,7 +1046,7 @@ There are two approaches depending on whether tools are known ahead of time:
         });
 
         const agent = await createDeepAgent({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           backend: new StoreBackend(),
           store,
           checkpointer,
@@ -1019,7 +1101,7 @@ There are two approaches depending on whether tools are known ahead of time:
             return handler(request)
 
         agent = create_agent(
-            model="gpt-5.4",
+            model="gpt-5.5",
             tools=[read_data, write_data, delete_data],
             middleware=[context_based_tools],
             context_schema=Context
@@ -1063,7 +1145,7 @@ There are two approaches depending on whether tools are known ahead of time:
         });
 
         const agent = await createDeepAgent({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           store,
           checkpointer,
           tools,
@@ -1122,7 +1204,7 @@ There are two approaches depending on whether tools are known ahead of time:
             return handler(request)
 
     agent = create_agent(
-        model="gpt-4o",
+        model="gpt-5.5",
         tools=[get_weather],  # Only static tools registered here
         middleware=[DynamicToolMiddleware()],
     )
@@ -1177,7 +1259,7 @@ There are two approaches depending on whether tools are known ahead of time:
     });
 
     const agent = createAgent({
-      model: "gpt-4o",
+      model: "gpt-5.5",
       tools: [getWeather], // Only static tools registered here
       middleware: [dynamicToolMiddleware],
     });
@@ -1201,6 +1283,61 @@ There are two approaches depending on whether tools are known ahead of time:
 
   </Tab>
 </Tabs>
+
+## Headless tools
+
+Some tools should run **where your user's app runs** (typically the browser), not inside the process. **Headless tools** are tool definitions, which include the name, description, and argument schema, that you register on the **server** with your agent. The **implementation** is registered only on the **client** and executed after a short interrupt/resume handshake.
+
+This is different from ordinary tools whose function body runs on the server, and from [server-side tool use](#server-side-tool-use) where the model provider executes built-in tools remotely.
+
+### When to use headless tools
+
+Use them when the work depends on the **environment, device, or UI** that only exists on the client. For example:
+
+- **Browser APIs:** Geolocation, IndexedDB, Clipboard, Canvas 2D, file pickers, Battery API, etc.
+- **Privacy and locality:** Data stays on the device (for example, local “memory” in IndexedDB).
+- **Latency:** No extra server round trip for purely local operations.
+- **Structured, safe effects:** Prefer many small, typed tools (for example one tool per canvas primitive) instead of sending arbitrary code to `eval`.
+
+### How the pattern works
+
+In both runtimes, the model sees a normal tool it can call, but the actual execution happens outside the server process.
+
+:::python
+1. **Define** a headless tool with `tool(name=..., description=..., args_schema=...)` from `langchain.tools`. A headless tool is schema-only, with no in-process implementation.
+2. **Register** that tool with `create_agent` or your LangGraph graph so the model can call it normally.
+3. **Handle** the interrupt payload when the tool is invoked. Instead of running locally, the graph pauses with a payload shaped like `{"type": "tool", "tool_call": {"id", "name", "args"}}`.
+4. **Resume** the graph after your app, another service, or a human step performs the action. For browser-based flows, you can mirror the schema in the frontend and attach `.implement(...)` there.
+
+<Info>
+    If you call `tool(...)` in Python with only `name`, `description`, and `args_schema`, LangChain returns a `HeadlessTool`. There is no `.implement()` API on the Python side.
+</Info>
+:::
+
+:::js
+1. **Define** the tool with `tool({ name, description, schema })` from `langchain`, metadata and validation only, no server-side runner.
+2. **Attach** the real behavior with `.implement(async (args) => { ... })`, which returns a **headless tool implementation** (definition + `execute` function).
+3. **Register** the definition from step 1 with `createAgent` or your graph so the model sees the tool in its usual tool-calling loop.
+4. **Pass** the implementation from step 2 to your streaming hook's `tools` option.
+
+<Info>
+    Put **tool definitions** (`tool({ name, description, schema })`) and **implementations** (`.implement(...)`) in **separate modules**. Import the shared definition file from your server agent and from your frontend so names and schemas stay aligned; keep client-only execute logic in implementation modules the server never loads.
+</Info>
+:::
+
+When the model issues a tool call for one of these tools, the run **interrupts** instead of executing the tool locally. Your app can inspect the payload, perform the action in the right environment (for example a browser, another service, or a human review step), then **resume** the graph with the tool result. When you use the supported JS SDK hooks, they can detect headless-tool interrupts, run the matching client implementation, and submit the resume command for you.
+
+Use the optional **`onTool`** callback to observe lifecycle events (`start`, `success`, `error`) for UI feedback such as spinners or toasts.
+
+<Card
+    title="Headless tools frontend pattern"
+    href="/oss/langchain/frontend/headless-tools"
+    icon="device-desktop"
+    arrow="true"
+    horizontal
+>
+    See an end-to-end example of schema-only tools executed in the client with `useStream`.
+</Card>
 
 ## Prebuilt tools
 

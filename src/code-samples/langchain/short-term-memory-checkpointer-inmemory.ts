@@ -12,7 +12,7 @@ const getUserInfo = tool(() => "No user profile on file.", {
 const checkpointer = new MemorySaver(); // [!code highlight]
 
 const agent = createAgent({
-  model: "openai:gpt-5.4",
+  model: "openai:gpt-5.5",
   tools: [getUserInfo],
   checkpointer,
 });

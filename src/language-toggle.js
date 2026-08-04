@@ -2,15 +2,21 @@
  * Language Toggle Script
  *
  * Enables smart navigation when switching between Python and TypeScript docs.
- * When a user clicks the language dropdown, this redirects them to the equivalent
- * page in the target language (preserving the section hash) instead of the default
- * overview page.
+ * When a reader picks the other language from the dropdown, this redirects them
+ * to the equivalent page (preserving the section hash) instead of the default
+ * overview/landing page for that language.
  *
- * How it works:
- * 1. Click listener detects language toggle clicks and stores current URL+hash
- * 2. History API interception (pushState/replaceState) and popstate/hashchange
- *    listeners detect when Mintlify's client-side routing changes the path
- * 3. On path change, check if we're switching languages and redirect to equivalent page
+ * Why this is needed:
+ * - Both language options in the switcher link to the same, language-agnostic
+ *   landing page (e.g. /build-overview), so the target language cannot be read
+ *   from the destination URL. It is read from the clicked item's label instead.
+ * - Switching languages can trigger a full page reload, so the intended switch
+ *   is persisted in sessionStorage to survive the navigation.
+ *
+ * Mintlify auto-injects every .js file in the repo as custom JS, so this runs on
+ * every page without needing a <script> tag in docs.json. The dropdown items
+ * render as `<p class="nav-dropdown-item-title">Python</p>` inside
+ * `nav-dropdown-item-*` containers.
  */
 
 (function () {
@@ -19,14 +25,26 @@
   const PYTHON_PREFIX = "/oss/python/";
   const JS_PREFIX = "/oss/javascript/";
 
-  // Selector for language dropdown items (Python/TypeScript links)
-  const LANGUAGE_TOGGLE_SELECTOR = "[data-dropdown-item]";
+  // sessionStorage key holding a pending language switch (survives a reload).
+  const PENDING_KEY = "lc-language-toggle-pending";
 
-  let previousUrl = null;
+  // A pending switch older than this (ms) is ignored, so a stored record can
+  // never trigger a stray redirect on some later, unrelated navigation.
+  const PENDING_TTL_MS = 8000;
 
   /**
-   * Convert a path from one language to another
-   * e.g., /oss/javascript/foo → /oss/python/foo
+   * Detect which language a path belongs to.
+   * Returns "python", "javascript", or null.
+   */
+  function getPathLanguage(path) {
+    if (path.startsWith(PYTHON_PREFIX)) return "python";
+    if (path.startsWith(JS_PREFIX)) return "javascript";
+    return null;
+  }
+
+  /**
+   * Convert a path from one language to another.
+   * e.g., getEquivalentPath("/oss/python/foo", "javascript") → "/oss/javascript/foo"
    */
   function getEquivalentPath(sourcePath, targetLang) {
     const sourcePrefix = targetLang === "python" ? JS_PREFIX : PYTHON_PREFIX;
@@ -39,105 +57,173 @@
   }
 
   /**
-   * Detect which language a path belongs to
-   * Returns "python", "javascript", or null
+   * Map a dropdown item label to a language, or null if it is not a language
+   * item. The docs use "Python" and "TypeScript" as the dropdown labels.
    */
-  function getPathLanguage(path) {
-    if (path.startsWith(PYTHON_PREFIX)) return "python";
-    if (path.startsWith(JS_PREFIX)) return "javascript";
+  function labelToLanguage(text) {
+    const label = (text || "").trim().toLowerCase();
+    if (label === "python") return "python";
+    if (label === "typescript" || label === "javascript") return "javascript";
     return null;
   }
 
   /**
-   * Store current URL (path + hash) in memory
-   * Only stores language-specific pages
+   * Given the clicked element, find the language a dropdown item would switch
+   * to, tolerating clicks on the item's icon, text container, or title.
    */
-  function updateCurrent() {
-    const lang = getPathLanguage(location.pathname);
-    if (lang) {
-      previousUrl = location.pathname + location.hash;
+  function clickTargetLanguage(startEl) {
+    for (let node = startEl, depth = 0; node && depth < 5; node = node.parentElement, depth++) {
+      if (!node.classList) continue;
+
+      let titleEl = null;
+      if (node.classList.contains("nav-dropdown-item-title")) {
+        titleEl = node;
+      } else if (node.querySelector) {
+        titleEl = node.querySelector(".nav-dropdown-item-title");
+      }
+
+      if (titleEl) {
+        return labelToLanguage(titleEl.textContent);
+      }
+    }
+    return null;
+  }
+
+  function readPending() {
+    try {
+      return sessionStorage.getItem(PENDING_KEY);
+    } catch (e) {
+      // sessionStorage can throw in private-mode Safari; degrade gracefully.
+      return null;
+    }
+  }
+
+  function writePending(value) {
+    try {
+      sessionStorage.setItem(PENDING_KEY, value);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function clearPending() {
+    try {
+      sessionStorage.removeItem(PENDING_KEY);
+    } catch (e) {
+      /* ignore */
     }
   }
 
   /**
-   * Check if we should redirect to an equivalent page in a different language
-   * This runs after every path change detected by the MutationObserver
+   * If a fresh language switch is pending, redirect to the equivalent of the
+   * page it started from, in the newly selected language. Consumed once.
+   * Returns true if a redirect was triggered.
    */
-  function checkRedirect() {
-    const currentLang = getPathLanguage(location.pathname);
-    if (!currentLang) return;
+  function applyPendingSwitch() {
+    const raw = readPending();
+    if (!raw) return false;
 
-    if (!previousUrl) {
-      updateCurrent();
-      return;
+    // Consume once: a switch is acted on at most a single time.
+    clearPending();
+
+    let pending;
+    try {
+      pending = JSON.parse(raw);
+    } catch (e) {
+      return false;
     }
 
-    // Split path and hash (e.g., "/oss/python/foo#bar" → ["/oss/python/foo", "bar"])
-    const [prevPath, prevHash = ""] = previousUrl.split("#");
-    const prevLang = getPathLanguage(prevPath);
-
-    // Only redirect if we're switching between languages
-    if (prevLang && prevLang !== currentLang) {
-      const equivalentPath = getEquivalentPath(prevPath, currentLang);
-
-      if (equivalentPath && equivalentPath !== location.pathname) {
-        // Clear previous URL before redirect to prevent redirect loops
-        previousUrl = null;
-
-        // Redirect with the hash from the previous page
-        location.replace(equivalentPath + (prevHash ? "#" + prevHash : ""));
-        return;
-      }
+    if (
+      !pending ||
+      !pending.src ||
+      !pending.lang ||
+      typeof pending.ts !== "number" ||
+      Date.now() - pending.ts > PENDING_TTL_MS
+    ) {
+      return false;
     }
 
-    // If no redirect needed, store current location for next navigation
-    updateCurrent();
+    // Split the source into path and hash.
+    const hashIndex = pending.src.indexOf("#");
+    const srcPath = hashIndex === -1 ? pending.src : pending.src.slice(0, hashIndex);
+    const srcHash = hashIndex === -1 ? "" : pending.src.slice(hashIndex);
+
+    const srcLang = getPathLanguage(srcPath);
+    // A shared, language-agnostic source page (e.g. /build-overview) has no
+    // per-language equivalent to preserve.
+    if (!srcLang || srcLang === pending.lang) return false;
+
+    const equivalent = getEquivalentPath(srcPath, pending.lang);
+    if (!equivalent || equivalent === location.pathname) return false;
+
+    location.replace(equivalent + srcHash);
+    return true;
   }
 
-  // Store current URL when language toggle is clicked
-  // This captures the hash before Mintlify's client-side routing changes the page
+  // Handle a language dropdown click the instant it happens, before Mintlify
+  // navigates (the destination URL does not encode the target language, and the
+  // navigation may be a full page reload).
   document.addEventListener(
     "click",
     function (e) {
-      const toggle = e.target.closest(LANGUAGE_TOGGLE_SELECTOR);
-      if (toggle) {
-        updateCurrent();
+      const targetLang = e.target && clickTargetLanguage(e.target);
+      if (!targetLang) return;
+
+      // Record the intended switch as a fallback: this survives a full page
+      // reload and is applied on the next load if the fast path below does not
+      // run (e.g. the source is the shared, language-agnostic landing page).
+      writePending(
+        JSON.stringify({
+          src: location.pathname + location.hash,
+          lang: targetLang,
+          ts: Date.now(),
+        }),
+      );
+
+      // Fast path: if the current page has a resolvable equivalent, go straight
+      // there and skip the intermediate landing-page load (avoids a visible
+      // flash). The capture-phase listener runs before Mintlify's own click
+      // handler, so suppressing propagation prevents its navigation.
+      const srcLang = getPathLanguage(location.pathname);
+      if (srcLang && srcLang !== targetLang) {
+        const equivalent = getEquivalentPath(location.pathname, targetLang);
+        if (equivalent && equivalent !== location.pathname) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          location.assign(equivalent + location.hash);
+        }
       }
     },
     true,
   );
 
-  // Watch for URL changes via History API (used by Mintlify's client-side routing)
-  // This is more efficient than MutationObserver - only fires on actual URL changes
+  // Watch for URL changes from Mintlify's client-side routing.
   let lastPath = location.pathname;
 
   function onPathChange() {
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
-      checkRedirect();
+      applyPendingSwitch();
     }
   }
 
-  // Handle back/forward navigation
   window.addEventListener("popstate", onPathChange);
-
-  // Handle hash changes (when user clicks anchor links)
   window.addEventListener("hashchange", onPathChange);
 
-  // Intercept pushState/replaceState calls
+  // Intercept History API calls used by client-side routing.
   const originalPushState = history.pushState;
   const originalReplaceState = history.replaceState;
 
-  history.pushState = function (...args) {
-    originalPushState.apply(this, args);
+  history.pushState = function () {
+    originalPushState.apply(this, arguments);
     onPathChange();
   };
 
-  history.replaceState = function (...args) {
-    originalReplaceState.apply(this, args);
+  history.replaceState = function () {
+    originalReplaceState.apply(this, arguments);
     onPathChange();
   };
 
-  // Run initial check in case user landed here via language toggle
-  checkRedirect();
+  // Handle the full-page-reload case: apply any pending switch on initial load.
+  applyPendingSwitch();
 })();

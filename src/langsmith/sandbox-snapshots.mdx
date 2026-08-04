@@ -48,39 +48,187 @@ console.log(snapshot.id);
 
 ### Private registries
 
-Pass registry credentials (or a pre-registered `registry_id` / `registryId`) to pull from a private registry.
+To pull from a private registry, create a registry once with its credentials, then reference it by id when building a snapshot. Registries persist, so reuse one across snapshots.
 
 <CodeGroup>
 
 ```python Python
 import os
 
+registry = client.registries.create(
+    name="internal",
+    url="registry.example.com",
+    username="me",
+    password=os.environ["REGISTRY_PASSWORD"],
+)
+
 snapshot = client.create_snapshot(
     "internal-python",
     docker_image="registry.example.com/internal/python:3.12",
     fs_capacity_bytes=2 * 1024**3,
-    registry_url="https://registry.example.com",
-    registry_username="me",
-    registry_password=os.environ["REGISTRY_PASSWORD"],
+    registry_id=registry.id,
     timeout=600,
 )
 ```
 
 ```ts TypeScript
+const registry = await client.registries.create({
+  name: "internal",
+  url: "registry.example.com",
+  username: "me",
+  password: process.env.REGISTRY_PASSWORD,
+});
+
 const snapshot = await client.createSnapshot(
   "internal-python",
   "registry.example.com/internal/python:3.12",
   2_147_483_648,
   {
-    registryUrl: "https://registry.example.com",
-    registryUsername: "me",
-    registryPassword: process.env.REGISTRY_PASSWORD,
+    registryId: registry.id,
     timeout: 600,
   },
 );
 ```
 
 </CodeGroup>
+
+List, inspect, update, and delete registries with `client.registries.list()`, `client.registries.retrieve(name)`, `client.registries.update(name, ...)`, and `client.registries.delete(name)`.
+
+## Build a snapshot from a Dockerfile
+
+When you have a local `Dockerfile` but don't want to publish the image to a registry first, build a snapshot directly from the `Dockerfile` and its build context. LangSmith spins up a temporary builder sandbox, uploads the context, runs the build inside it with [BuildKit](https://docs.docker.com/build/buildkit/), and captures the resulting image as a snapshot. The builder sandbox is torn down automatically once the build finishes.
+
+The call blocks until the snapshot is ready (default timeout is 60 seconds; raise it for large or slow builds). `fs_capacity_bytes` must be large enough to hold the build context, the intermediate layers, and the final image.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient
+
+client = SandboxClient()
+
+snapshot = client.create_snapshot_from_dockerfile(
+    "my-app",
+    dockerfile="Dockerfile",
+    fs_capacity_bytes=2 * 1024**3,  # 2 GiB
+    context=".",  # build context directory (default: current directory)
+)
+
+print(snapshot.id)
+```
+
+```ts TypeScript
+import { SandboxClient } from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const snapshot = await client.createSnapshotFromDockerfile(
+  "my-app",
+  "Dockerfile",
+  2_147_483_648, // 2 GiB
+  { context: "." },
+);
+
+console.log(snapshot.id);
+```
+
+</CodeGroup>
+
+<Note>
+`dockerfile` is resolved relative to `context` unless you pass an absolute path, and it must live inside the context directory. The `.git` directory is excluded from the uploaded context automatically.
+</Note>
+
+### Build args and target stage
+
+Pass `build_args` / `buildArgs` to set Docker `ARG` values, and `target` to stop at a specific stage of a multi-stage build.
+
+<CodeGroup>
+
+```python Python
+snapshot = client.create_snapshot_from_dockerfile(
+    "my-app",
+    dockerfile="Dockerfile",
+    fs_capacity_bytes=2 * 1024**3,
+    build_args={"PYTHON_VERSION": "3.12", "ENV": "prod"},
+    target="runtime",
+)
+```
+
+```ts TypeScript
+const snapshot = await client.createSnapshotFromDockerfile(
+  "my-app",
+  "Dockerfile",
+  2_147_483_648,
+  {
+    buildArgs: { PYTHON_VERSION: "3.12", ENV: "prod" },
+    target: "runtime",
+  },
+);
+```
+
+</CodeGroup>
+
+### Stream build logs
+
+Pass a callback to `on_build_log` / `onBuildLog` to receive the build's stdout and stderr as it runs, which is useful for surfacing progress or debugging a failing build.
+
+<CodeGroup>
+
+```python Python
+snapshot = client.create_snapshot_from_dockerfile(
+    "my-app",
+    dockerfile="Dockerfile",
+    fs_capacity_bytes=2 * 1024**3,
+    on_build_log=lambda line: print(line, end=""),
+)
+```
+
+```ts TypeScript
+const snapshot = await client.createSnapshotFromDockerfile(
+  "my-app",
+  "Dockerfile",
+  2_147_483_648,
+  { onBuildLog: (line) => process.stdout.write(line) },
+);
+```
+
+</CodeGroup>
+
+### Speed up cold builds
+
+`vcpus` / `vCpus` and `mem_bytes` / `memBytes` size the temporary builder sandbox. The build runs BuildKit plus the native snapshotter's layer copies inside it, which contend for a single core by default, so giving the builder an extra vCPU can cut a cold build's wall time substantially.
+
+<CodeGroup>
+
+```python Python
+snapshot = client.create_snapshot_from_dockerfile(
+    "my-app",
+    dockerfile="Dockerfile",
+    fs_capacity_bytes=2 * 1024**3,
+    vcpus=2,
+    mem_bytes=4 * 1024**3,  # 4 GiB
+    timeout=600,
+)
+```
+
+```ts TypeScript
+const snapshot = await client.createSnapshotFromDockerfile(
+  "my-app",
+  "Dockerfile",
+  2_147_483_648,
+  {
+    vCpus: 2,
+    memBytes: 4_294_967_296, // 4 GiB
+    timeout: 600,
+  },
+);
+```
+
+</CodeGroup>
+
+<Tip>
+Both the sync `SandboxClient` and the `AsyncSandboxClient` expose this method with the same arguments—`await client.create_snapshot_from_dockerfile(...)` on the async client.
+</Tip>
 
 ## Capture a snapshot from a running sandbox
 

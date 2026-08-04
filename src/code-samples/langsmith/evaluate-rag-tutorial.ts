@@ -67,7 +67,7 @@ import { traceable } from "langsmith/traceable";
 
 const llm = new ChatOpenAI({
   // KEEP MODEL
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   temperature: 1,
 });
 
@@ -159,7 +159,7 @@ Explain your reasoning in a step-by-step manner to ensure your reasoning and con
 
 const graderLLM = new ChatOpenAI({
   // KEEP MODEL
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   temperature: 0,
 }).withStructuredOutput(
   z
@@ -208,7 +208,7 @@ Explain your reasoning in a step-by-step manner to ensure your reasoning and con
 
 const relevanceLLM = new ChatOpenAI({
   // KEEP MODEL
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   temperature: 0,
 }).withStructuredOutput(
   z
@@ -255,7 +255,7 @@ Explain your reasoning in a step-by-step manner to ensure your reasoning and con
 
 const groundedLLM = new ChatOpenAI({
   // KEEP MODEL
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   temperature: 0,
 }).withStructuredOutput(
   z
@@ -306,7 +306,7 @@ Explain your reasoning in a step-by-step manner to ensure your reasoning and con
 
 const retrievalRelevanceLLM = new ChatOpenAI({
   // KEEP MODEL
-  model: "gpt-5.4",
+  model: "gpt-5.5",
   temperature: 0,
 }).withStructuredOutput(
   z

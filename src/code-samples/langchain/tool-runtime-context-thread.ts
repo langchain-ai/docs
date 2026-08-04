@@ -19,7 +19,7 @@ const contextSchema = z.object({
 });
 
 const agent = createAgent({
-  model: new ChatOpenAI({ model: "gpt-5.4" }),
+  model: new ChatOpenAI({ model: "gpt-5.5" }),
   tools: [getUserName],
   contextSchema,
 });

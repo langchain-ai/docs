@@ -24,65 +24,35 @@ const agent = createAgent({
 
 const config = { configurable: { thread_id: crypto.randomUUID() } };
 
-for await (const chunk of await agent.stream(
+const stream = await agent.streamEvents(
   { messages: [{ role: "user", content: "what is the weather in sf" }] },
-  { ...config, streamMode: "updates", version: "v2" },
-)) {
-  const [step, content] = Object.entries(chunk)[0];
-  console.log(`step: ${step}`);
-  console.log(`content: ${JSON.stringify(content, null, 2)}`);
-}
-/**
- * step: model_request
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         // ...
- *         "tool_calls": [
- *           {
- *             "name": "get_weather",
- *             "args": {
- *               "city": "San Francisco"
- *             },
- *             "type": "tool_call",
- *             "id": "call_0qLS2Jp3MCmaKJ5MAYtr4jJd"
- *           }
- *         ],
- *         // ...
- *       }
- *     }
- *   ]
- * }
- * step: tools
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         "content": "The weather in San Francisco is always sunny!",
- *         "name": "get_weather",
- *         // ...
- *       }
- *     }
- *   ]
- * }
- * step: model_request
- * content: {
- *   "messages": [
- *     {
- *       "kwargs": {
- *         "content": "The latest update says: The weather in San Francisco is always sunny!\n\nIf you'd like real-time details (current temperature, humidity, wind, and today's forecast), I can pull the latest data for you. Want me to fetch that?",
- *         // ...
- *       }
- *     }
- *   ]
- * }
- */
+  { ...config, version: "v3" },
+);
+await Promise.all([
+  (async () => {
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
+    }
+  })(),
+  (async () => {
+    for await (const call of stream.toolCalls) {
+      console.log(`\nTool call: ${call.name}(${JSON.stringify(call.input)})`);
+      console.log(`Tool result: ${await call.output}`);
+    }
+  })(),
+]);
+
+const finalState = await stream.output;
+// Tool call: get_weather({"city":"San Francisco"})
+// Tool result: [object ToolMessage]
+// According to the data I have, the weather in San Francisco is always sunny! Would you like current conditions or a short forecast for today or the next few days?
 // :snippet-end:
 
 // :remove-start:
 async function main() {
-  const collected: unknown[] = [];
+  let messagesSeen = 0;
   const stream = await agent.streamEvents(
     { messages: [{ role: "user", content: "what is the weather in sf" }] },
     {
@@ -92,18 +62,24 @@ async function main() {
   );
   await Promise.all([
     (async () => {
-      for await (const snapshot of stream.values) {
-        collected.push(snapshot);
+      for await (const message of stream.messages) {
+        messagesSeen += 1;
+        for await (const _ of message.text) {
+          // Drain text deltas.
+        }
+      }
+    })(),
+    (async () => {
+      for await (const call of stream.toolCalls) {
+        await call.output;
       }
     })(),
     stream.output,
   ]);
-  if (collected.length === 0) {
-    throw new Error("expected at least one stream values snapshot");
+  if (messagesSeen === 0) {
+    throw new Error("expected at least one streamed message");
   }
-  console.log(
-    "✓ streaming agent progress (streamEvents v3) emits value snapshots",
-  );
+  console.log("✓ streaming agent progress (streamEvents v3) uses typed projections");
 }
 
 main();

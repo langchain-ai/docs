@@ -9,7 +9,7 @@ def get_user_info() -> str:
 
 
 agent = create_agent(
-    model="openai:gpt-5.4",
+    model="openai:gpt-5.5",
     tools=[get_user_info],
     checkpointer=InMemorySaver(),  # [!code highlight]
 )

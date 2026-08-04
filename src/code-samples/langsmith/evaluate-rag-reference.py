@@ -62,7 +62,7 @@ vectorstore = InMemoryVectorStore.from_documents(
 retriever = vectorstore.as_retriever(k=6)
 
 # KEEP MODEL
-llm = ChatOpenAI(model="gpt-5.4", temperature=1)
+llm = ChatOpenAI(model="gpt-5.5", temperature=1)
 
 # Add decorator so this function is traced in LangSmith
 @traceable()
@@ -139,7 +139,7 @@ Explain your reasoning in a step-by-step manner to ensure your reasoning and con
 
 # Grader LLM
 # KEEP MODEL
-grader_llm = ChatOpenAI(model="gpt-5.4", temperature=0).with_structured_output(
+grader_llm = ChatOpenAI(model="gpt-5.5", temperature=0).with_structured_output(
     CorrectnessGrade, method="json_schema", strict=True
 )
 
@@ -177,7 +177,7 @@ Explain your reasoning in a step-by-step manner to ensure your reasoning and con
 
 # Grader LLM
 # KEEP MODEL
-relevance_llm = ChatOpenAI(model="gpt-5.4", temperature=0).with_structured_output(
+relevance_llm = ChatOpenAI(model="gpt-5.5", temperature=0).with_structured_output(
     RelevanceGrade, method="json_schema", strict=True
 )
 
@@ -211,7 +211,7 @@ Explain your reasoning in a step-by-step manner to ensure your reasoning and con
 
 # Grader LLM
 # KEEP MODEL
-grounded_llm = ChatOpenAI(model="gpt-5.4", temperature=0).with_structured_output(
+grounded_llm = ChatOpenAI(model="gpt-5.5", temperature=0).with_structured_output(
     GroundedGrade, method="json_schema", strict=True
 )
 
@@ -251,7 +251,7 @@ Explain your reasoning in a step-by-step manner to ensure your reasoning and con
 # Grader LLM
 retrieval_relevance_llm = ChatOpenAI(
     # KEEP MODEL
-    model="gpt-5.4", temperature=0
+    model="gpt-5.5", temperature=0
 ).with_structured_output(RetrievalRelevanceGrade, method="json_schema", strict=True)
 
 def retrieval_relevance(inputs: dict, outputs: dict) -> bool:

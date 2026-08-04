@@ -1,0 +1,12 @@
+
+// :snippet-start: traces-query-totals-before-js
+// :codegroup-tab: Before
+import { Client } from "langsmith";
+
+const client = new Client();
+const project = await client.readProject({ projectName: "default" });
+
+for await (const rootRun of client.listRuns({ projectId: project.id, isRoot: true, limit: 5 })) {
+  console.log(rootRun.trace_id, rootRun.total_tokens, rootRun.total_cost);
+}
+// :snippet-end:
