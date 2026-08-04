@@ -1,3 +1,128 @@
+<Update label="Version 2.0" rss={{ title: "2026-07-20 - LangSmith Cloud update" }}>
+
+## Observability and evaluations
+
+### Datasets and experiments
+
+- GET /annotation-queues/{id}/items now returns THREAD queue items alongside RUN items, with an optional item_type filter. THREAD list rows expose identity on the item (thread_id/session_id/start_time) and omit nested thread; RUN list still hydrates nested run for now (same omit planned for metadata-only list). Traces and messages load via the v2 threads APIs when reviewing.
+- GET /annotation-queues/{id}/runs and related size endpoints exclude THREAD queue rows (run_id is null) so mixed queues no longer return 500. Use GET /items for thread listing.
+- Project settings now require a thread idle time of at least two minutes to ensure thread evaluations include all ingested runs.
+- Annotation queue item add requests now consistently enforce a 100-item limit for runs and threads. Over-limit errors clearly show the configured limit.
+- GET /annotation-queues/{id}/items returns Postgres membership metadata for RUN and THREAD items without hydrating nested run or thread payloads from ClickHouse or SmithDB. Orphan queue rows remain listed. The include_stats query parameter is removed. Annotate payloads load via get-one / review APIs.
+- When you bulk-add runs from a tracing project, its default dataset now appears first in the dataset picker.
+- Annotation queue review lists now label unnamed run rows as Run <ID>, matching thread rows and making mixed queues easier to scan.
+- Opening the pairwise experiment comparison from a pairwise annotation queue no longer crashes the page when both compared runs come from the same experiment.
+
+### Tracing
+
+- The Insights reports pane can now be collapsed to give report details more space.
+- Insights cluster summary columns can now expand to show more of each summary.
+- LangSmith MCP's `fetch_runs` tool now returns `first_token_time` when that value is recorded for fetched runs, making TTFT analysis available without a separate SDK query.
+- Legacy run URLs now resolve the run metadata and redirect to the SmithDB trace view instead of showing an error.
+- Trace usage limit banners now appear only for workspace members whose user-scoped limit has been exceeded.
+- The Deployment button on tracing project pages now opens the deployment page within the app instead of reloading the UI.
+- Clicking the already-selected run or trace in a thread's trace tree now keeps it selected instead of deselecting it and scrolling back to the first trace.
+- Fixed two frontend call sites that could reach POST /runs/stats with an empty or missing session, preventing spurious 422 errors in the Insights job config and session rules form.
+- MCP run query tools now return gateway timeout responses without retrying, reducing duplicate load when a run query times out.
+- Pressing Enter to confirm characters from an input method editor (e.g. Pinyin for Chinese, or Japanese/Korean IMEs) in LangSmith Chat now commits the composed text instead of prematurely sending the message.
+- LangSmith Chat now surfaces a run's system prompt inline when reading a traced LLM run, so it can explain why a model behaved a certain way without missing the system prompt. It also recognizes system prompts stored as provider-level fields (OpenAI Responses `instructions`, Anthropic `system`).
+- LangSmith Chat traces now show the model you configured instead of mislabeling it as GPT-3.5-Turbo when a custom model endpoint is used.
+- The Run in Studio button is now hidden on public (shared) run pages, where it previously pointed to an authenticated page that shared viewers cannot open.
+- Navigating between traces now clears stale sharing state, so unshared traces no longer appear public.
+- The run, trace, and thread detail panels now enforce a minimum width when resized, so their header no longer overflows and forces the view to scroll sideways.
+- Restore `is_in_dataset` on trace and run responses when the query is proxied to the V1 backend in ClickHouse-only mode. The V1 select now forwards `in_dataset` so the Python backend computes it and the proxy renames it back to `is_in_dataset` for V2 callers.
+- BYOC workspaces now avoid requesting trace table fields that older data planes do not support, preventing invalid request errors when viewing traces.
+- Custom dashboard charts can now query summed latency and first-token time metrics through the runs analytics SmithDB path.
+- Custom dashboard charts can now query minimum and maximum latency, time-to-first-token, token, and cost values through SmithDB-backed runs analytics.
+- Custom dashboard charts can now query P90 and P95 for latency, first token time, tokens, and cost metrics, in addition to the existing P50 and P99.
+- Custom dashboard charts can now aggregate feedback scores by sum, P50, P90, P95, and P99, in addition to the existing average, min, and max.
+- The LangSmith homepage now provides clearer onboarding steps for coding agents and tracing, including a direct shortcut for creating a tracing project.
+
+### Prompts and playground
+
+- Editing agent and skill metadata in the Context Hub now shows save progress, reports actionable errors without discarding changes, and displays successful updates immediately.
+- Prompts with a repo readme now display it in a dedicated Readme section of the prompt view.
+- Gemini 3.6 Flash and Gemini 3.5 Flash Lite are now available in Fleet, Agent Builder, and playground model selectors, with usage pricing support.
+- Pasting content into rich-text editors—such as the prompt playground and agent chat—now works reliably again.
+- Previewing a single dataset row after running a full experiment now resolves the row's evaluator scores instead of showing a feedback cell that loads indefinitely, and the resulting feedback chips render with their proper colors.
+- LangSmith no longer keeps system-added top_p values when switching OpenAI prompts to reasoning models, preventing invalid invocation parameters. Users who still need top_p can add it as an extra model parameter for supported non-reasoning models.
+
+### Engine
+
+- The organization Engine usage page now lets you switch between a workspaces view and a projects view of month-to-date LCU spend, each ranked by spend. The Engine spend API returns the authoritative total independently of the breakdown.
+- Engine no longer shows redundant hover tooltips on issue category badges or the default Fix action. Permission and PR status explanations still appear when they add context.
+- Engine opens the Slack or webhook destination form immediately when no destinations are configured.
+- Engine issue category labels now appear on a dedicated row below the title for more consistent spacing and readability.
+- Engine now shows a warning beside a linked repository when it cannot access it, including failures caused by renamed or deleted repositories and broken GitHub connections.
+- On an Engine issue, navigating to the next or previous linked trace now stays in the conversation view for traces that belong to a thread, instead of switching to the single-trace view.
+- Engine now shows a clickable Paused status in the issues header when scheduled scanning is paused, so you can see its status and open settings directly.
+- Engine now works in supported self-hosted deployments without Eppo rollout configuration, while organization enablement and existing permissions remain enforced.
+- Opening the project spend limit from the pause confirmation now scrolls the settings pane to the limit editor.
+- Engine Overview now displays the current Engine package version so you can see when the underlying experience changes.
+
+### Monitoring and alerting
+
+- Self-hosted alert webhook delivery now honors `SSRF_ALLOW_K8S_INTERNAL`, so internal Kubernetes service hostnames can be used when that setting is enabled. Metadata endpoints, localhost, and private IP protections remain controlled by their existing SSRF policy settings.
+
+### Automations
+
+- Thread (grouped) evaluators now require a minimum idle time of 120 seconds. Setting a project's thread idle time below 120s is rejected.
+- Leaving feedback on a run in a thread now makes the thread eligible for re-evaluation, so thread-level evaluators re-run when new feedback arrives.
+- Editing an online evaluator (LLM-as-judge or custom code) no longer intermittently fails when sandbox validation is slow.
+
+## Deployment
+
+- Worker and API server CPU charts now plot a peak (max) series alongside the average, so a single replica with high CPU usage is no longer hidden by the fleet-wide average.
+- Worker and API server memory charts now plot a peak (max) series alongside the average, so a single replica approaching its memory limit is no longer hidden by the fleet-wide average.
+- Creating a deployment with a name that's already in use within your workspace now returns a 409 Conflict instead of a 500 error.
+- Hybrid deployments remain compatible with older listeners during control-plane upgrades, preventing new deployments from remaining queued.
+
+## Sandboxes
+
+- A sandbox proxy configuration can now define environment variables that are applied to every command in the sandbox. This is handy when a tool refuses to run unless a credential env var is present (for example gh needs GH_TOKEN) even though the egress proxy injects the real credential on the wire — set a placeholder value so the command starts.
+- Attach free-form key/value labels when creating a sandbox or snapshot. Labels are stored and returned on reads; sandboxes inherit their snapshot's labels, and snapshots built from a Docker image inherit the image's labels.
+- Sandbox network egress now tries every resolved IP for a destination instead of only the first, so requests to multi-homed hosts (for example apt package mirrors) no longer fail when the first address is unreachable on the requested port.
+- Creating a sandbox with only mem_bytes set now derives a matching CPU allocation automatically, so requests for larger-memory sandboxes no longer need an explicit vcpus value to satisfy the CPU-to-memory ratio.
+
+## Administration
+
+- Selecting All Workspaces on the Granular Billable Usage page now loads usage successfully for organizations with many workspaces.
+- The Granular Usage page now shows a notice that long-lived trace usage isn't tracked in self-hosted deployments, so the "Long-lived only" filter is expected to show zero results there.
+
+### LLM Gateway
+
+- Gateway Monitoring now shows spend for the workspace you're viewing rather than the whole organization, with a dropdown to switch workspaces from the page. Spend cards show N/A instead of a repeated error message when a workspace's gateway project can't be resolved.
+- The Rate Limiting tab in Gateway Policies now supports creating, editing, deleting, and enabling/disabling request- and token-based rate-limit policies, alongside the existing cost-control and data-protection policy management.
+- Editing a materialized LLM Gateway policy now turns it into a standalone override, preventing later default policy changes from overwriting its custom limits.
+- You can now call LangChain-managed models through the LLM gateway without configuring your own provider credentials. Usage is metered at cost and bounded by a monthly spend cap based on your plan; once the cap is reached, further requests are blocked until the next month. The cap can be raised on request. [Learn more](/langsmith/llm-gateway-langchain-provider).
+- Selecting an entity filter on the LLM Gateway spend monitoring page no longer flips the breakdown to a different dimension.
+- Selecting more than one entity in any Gateway Monitoring breakdown filter (model, user, or API key) now returns spend for all chosen entities instead of no data.
+- The Gateway Monitoring spend chart now formats axis labels and tooltip ranges in UTC to match its UTC-anchored buckets, so viewers in non-UTC timezones no longer see off-by-one dates.
+- The LLM Gateway spend chart and table now label spend from service keys as "Unaffiliated with any user" instead of showing a blank name, with a tooltip explaining that the spend came from a workspace/org-scoped key rather than an individual.
+- API-key-scoped LLM Gateway spend-cap and rate-limit policies can now add a custom X-Gateway-* header condition, so a single API key can match different limits per header value — for example, a reseller can set separate caps per downstream customer without distributing multiple keys.
+- Stat card and table headers in the LLM Gateway monitoring page's Spend tab (e.g. "Total Spend", "Daily Avg", "API Key") now capitalize every word, matching the header style used elsewhere in the product.
+- When a specific start/end date is selected in the LLM Gateway monitoring page's date range picker, the button now shows the dates in UTC and appends "(UTC)" so it's clear the range doesn't follow your local timezone. Relative ranges like "Last 7 days" are unaffected.
+- The "Spend share" column on the LLM Gateway Monitoring spend dashboard no longer cuts off its header text.
+- The LLM Gateway now lives in a dedicated top-level sidebar section instead of under Settings, with a new Home tab listing your custom model configurations and a ready-to-run code snippet for the gateway. Old Settings gateway links redirect automatically.
+- A Home banner for LangSmith Cloud orgs with LLM Gateway enabled highlights how Gateway manages costs and improves runtime reliability. [Learn more](/langsmith/llm-gateway).
+
+## Fleet
+
+- Reopening or reloading an agent chat thread while a run is still in progress no longer crashes the chat view. The chat shows a loading state until the agent is ready, then resumes streaming the active run.
+- The Fleet usage dashboard now shows a meter for orgs with a monthly LangChain Unit (LCU) spend limit, comparing month-to-date consumption against the limit and any overage.
+- Arcade MCP gateways configured with Arcade Headers (API-key) authentication can no longer be added to a Fleet workspace, because LangSmith connects to Arcade gateways over OAuth. These gateways now explain how to reconfigure them with Arcade Auth or a User Source instead of failing when you try to connect.
+- Fleet now labels the agent card action as Configure, matching the action in the chat view.
+- When a Google Docs, Sheets, Drive, or Slides tool can't open a file (a 403 or 404), the agent now explains it can only access files it created itself with its connected Google account, instead of wrongly saying the file doesn't exist.
+- Fleet now shows a warning — inline above the failing tool call in chat, and as a message in Slack — when a Google Docs, Sheets, Drive, or Slides tool hits a 403 or 404, explaining the agent can only access files it created itself with its connected Google account.
+- Fleet's configure panel now shows the connection format selector so you can choose whether an agent uses shared or per-user accounts.
+- Agents connected to Slack can now send a file from their workspace into a Slack channel using the new slack_send_file tool — for example a report, export, or chart the agent has generated. The file is uploaded server-side and the agent never sees the Slack token.
+- Fleet agents retain DeltaChannel conversation history when thread state is updated, including when users continue trigger-started conversations in chat.
+- Fleet thread APIs can now include the current agent's ID and name, making thread lists and details easier to display without fetching full agent records.
+- Fleet agents with Slack file tools can now send files from thread-scoped and agent-scoped sandbox workspaces.
+
+</Update>
+
+
 ---
 title: LangSmith Cloud changelog
 sidebarTitle: Cloud changelog
