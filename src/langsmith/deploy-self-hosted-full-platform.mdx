@@ -958,6 +958,13 @@ Enabling Sandboxes provisions the following resources:
 
     These can be bare-metal machines or supported cloud instances with nested virtualization enabled. On AWS and GCP, use x86_64 Linux instances that expose `/dev/kvm` to the sandbox runtime.
 
+    <Warning>
+    On EKS, the VPC CNI addon must be **v1.21 or later**. `v1.20.0` crashes on 8th-generation
+    Intel instances (for example `m8i`): `aws-node` enters `CrashLoopBackOff`, the node reports
+    `cni plugin not initialized`, and the managed node group eventually fails with
+    `NodeCreationFailure: Unhealthy nodes in the kubernetes cluster`.
+    </Warning>
+
     The default Helm scheduling values expect these nodes to have the following label and taint:
 
     ```yaml
@@ -969,7 +976,7 @@ Enabling Sandboxes provisions the following resources:
       effect: NoSchedule
     ```
 
-    If your nodes use different labels or taints, override `config.sandboxes.sandboxHost.deployment.nodeSelector` and `config.sandboxes.sandboxHost.deployment.tolerations`.
+    If your nodes use different labels or taints, override `sandboxes.sandboxHost.deployment.nodeSelector` and `sandboxes.sandboxHost.deployment.tolerations`.
   </Step>
 
   <Step title="Configure JuiceFS storage">
@@ -985,12 +992,12 @@ Enabling Sandboxes provisions the following resources:
 
     Supported object storage backends:
 
-    | Platform | `config.sandboxes.juicefs.storage` | `config.sandboxes.juicefs.bucket` format |
+    | Platform | `sandboxes.juicefs.storage` | `sandboxes.juicefs.bucket` format |
     | --- | --- | --- |
     | AWS | `s3` | Region-explicit HTTPS S3 endpoint, such as `https://bucket-name.s3.us-west-2.amazonaws.com` |
     | GCP | `gs` | GCS URL, such as `gs://bucket-name` |
 
-    Do not use object-store subpaths in `config.sandboxes.juicefs.name`. Use a flat name, such as `sandbox-juicefs`. JuiceFS stores objects under that name inside the configured bucket.
+    Do not use object-store subpaths in `sandboxes.juicefs.name`. Use a flat name, such as `sandbox-juicefs`. JuiceFS stores objects under that name inside the configured bucket.
 
     <Tip>
     For the Redis metadata store, we recommend setting `maxmemory-policy` to `noeviction`. This avoids evicting JuiceFS metadata under memory pressure. Monitor Redis capacity and scale it before it reaches memory limits.
@@ -1008,10 +1015,8 @@ Enabling Sandboxes provisions the following resources:
 
         ```yaml
         stringData:
-          sandbox_x_service_auth_jwt_secret: "<stable-random-secret>"
           sandbox_callback_signing_jwk: '<ed25519-private-jwk>'
           # Optional, only during service-auth secret rotation:
-          sandbox_x_service_auth_jwt_secret_previous: "<previous-stable-random-secret>"
         ```
       </Tab>
       <Tab title="Using inline values">
@@ -1020,7 +1025,6 @@ Enabling Sandboxes provisions the following resources:
         ```yaml
         config:
           sandboxes:
-            xServiceAuthJwtSecret: "<stable-random-secret>"
             callbackSigningJwk: '<ed25519-private-jwk>'
         ```
       </Tab>
@@ -1050,30 +1054,26 @@ images:
   sandboxHostImage:
     tag: "<same-release-tag-as-your-langsmith-images>"
 
-config:
-  sandboxes:
-    enabled: true
-    clusterName: "<cluster-name>"
-    juicefs:
-      name: "sandbox-juicefs"
-      storage: "s3"
-      bucket: "https://bucket-name.s3.us-west-2.amazonaws.com"
-      redis:
-        metaURL: "redis://redis-host:6379/1"
-    proxyCa:
-      mode: "generatedSecret"
+sandboxes:
+  enabled: true
+  juicefs:
+    name: "sandbox-juicefs"
+    storage: "s3"
+    bucket: "https://bucket-name.s3.us-west-2.amazonaws.com"
+    redis:
+      metaURL: "redis://redis-host:6379/1"
+  proxyCa:
+    mode: "generatedSecret"
 ```
 
-If you create the JuiceFS CSI config Secret yourself, set `config.sandboxes.juicefs.csi.existingSecretName` and omit `config.sandboxes.juicefs.name`, `storage`, `bucket`, and `redis.metaURL` from the Helm values:
+If you create the JuiceFS CSI config Secret yourself, set `sandboxes.juicefs.csi.existingSecretName` and omit `sandboxes.juicefs.name`, `storage`, `bucket`, and `redis.metaURL` from the Helm values:
 
 ```yaml
-config:
-  sandboxes:
-    enabled: true
-    clusterName: "<cluster-name>"
-    juicefs:
-      csi:
-        existingSecretName: "juicefs-csi-config"
+sandboxes:
+  enabled: true
+  juicefs:
+    csi:
+      existingSecretName: "juicefs-csi-config"
 ```
 
 The existing Secret must be in the LangSmith release namespace and contain these keys:
@@ -1186,12 +1186,11 @@ CHART_VERSION="~0.16.0" make deploy
 
 ### Optional: enable service URLs
 
-Set `config.sandboxes.serviceUrlBaseUrl` when users need browser or programmatic access to HTTP services running inside Sandboxes.
+Set `sandboxes.serviceUrlBaseUrl` when users need browser or programmatic access to HTTP services running inside Sandboxes.
 
 ```yaml
-config:
-  sandboxes:
-    serviceUrlBaseUrl: "https://sandbox-services.example.com"
+sandboxes:
+  serviceUrlBaseUrl: "https://sandbox-services.example.com"
 ```
 
 This requires wildcard DNS and TLS for `*.sandbox-services.example.com`. When `ingress.enabled` is `true`, the chart also adds a wildcard ingress rule that routes these service URLs to the LangSmith platform backend.
