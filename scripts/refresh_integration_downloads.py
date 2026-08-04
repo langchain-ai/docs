@@ -676,8 +676,13 @@ def _chat_table_header(language: str) -> tuple[str, str]:
     return header, sep
 
 
+def _normalize_prose(text: str) -> str:
+    """Normalize prose for Vale (no whitespace around em/en dashes)."""
+    return re.sub(r"\s*([—–])\s*", r"\1", text)
+
+
 def _escape_cell(text: str) -> str:
-    return text.replace("|", "\\|")
+    return _normalize_prose(text).replace("|", "\\|")
 
 
 def _package_cell(row: IntegrationRow) -> str:
