@@ -6,9 +6,11 @@ import pytest
 
 from scripts.refresh_integration_downloads import (
     IntegrationRow,
+    _escape_cell,
     _is_safe_docs_url,
     _model_link,
     _normalize_docs_url,
+    _normalize_prose,
     _row_from_integration_dict,
     validate_external_docs_urls,
 )
@@ -98,3 +100,20 @@ def test_validate_external_docs_urls_flags_unsafe() -> None:
 
 def test_validate_external_docs_urls_accepts_repo_yaml() -> None:
     assert validate_external_docs_urls() == []
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("guardrails — prompt", "guardrails—prompt"),
+        ("use — the agent", "use—the agent"),
+        ("a–b", "a–b"),
+        ("plain text", "plain text"),
+    ],
+)
+def test_normalize_prose_removes_dash_spaces(text: str, expected: str) -> None:
+    assert _normalize_prose(text) == expected
+
+
+def test_escape_cell_normalizes_dashes_and_pipes() -> None:
+    assert _escape_cell("a — b | c") == "a—b \\| c"
