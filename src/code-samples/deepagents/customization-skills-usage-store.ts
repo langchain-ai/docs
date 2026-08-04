@@ -1,5 +1,4 @@
 // :snippet-start: skills-usage-store-js
-import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
 import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
 import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
 
@@ -35,7 +34,6 @@ const agent = await createDeepAgent({
   checkpointer,
   // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
   skills: ["/skills/"],
-  middleware: [createCodeInterpreterMiddleware({ skillsBackend: backend })],
 });
 
 const config = {

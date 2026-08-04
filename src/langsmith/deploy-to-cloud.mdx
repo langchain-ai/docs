@@ -1,12 +1,13 @@
 ---
 title: Deploy on Cloud
-sidebarTitle: Cloud
-icon: "cloud"
-iconType: "solid"
+sidebarTitle: Deployment guide
+icon: "rocket"
 description: Create and manage LangSmith Cloud deployments including revisions, logs, metrics, and settings.
 ---
 
-This is the comprehensive setup and management guide for deploying applications to LangSmith Cloud. LangSmith Cloud runs on AWS and GCP (see the [Cloud overview page](/langsmith/cloud) for region details). This guide covers two deployment methods: the [LangSmith UI](https://smith.langchain.com), which deploys from a connected GitHub repository, and the [`langgraph deploy` CLI command](/langsmith/cli#deploy), which builds and pushes directly from your local machine.
+This is the comprehensive setup and management guide for deploying applications to LangSmith Cloud. LangSmith Cloud runs on AWS and GCP (see the [Cloud overview page](/langsmith/cloud) for region details).
+
+This guide covers two deployment methods: the [LangSmith UI](https://smith.langchain.com), which deploys from a connected GitHub repository, and the [`langgraph deploy` CLI command](/langsmith/cli#deploy), which builds and pushes directly from your local machine.
 
 <Callout icon="bolt" color="#4F46E5" iconType="regular">
 **If you're looking for a quick setup**, try the [quickstart guide](/langsmith/deployment-quickstart) first.
@@ -39,12 +40,12 @@ Choose the deployment method that fits your workflow—the LangSmith UI connects
         1. Specify the full path to the [LangGraph API config file](/langsmith/cli#configuration-file) including the file name. For example, if the file `langgraph.json` is in the root of the repository, specify `langgraph.json`.
         1. Use the checkbox to **Automatically update deployment on push to branch**. If checked, the deployment will automatically be updated when changes are pushed to the specified **Git Branch**. You can enable or disable this setting on the [Deployment Settings](#deployment-settings) in [the UI](https://smith.langchain.com).
         For **Deployment Type**:
-            - Development deployments are meant for non-production use cases and are provisioned with minimal resources.
-            - Production deployments can serve up to 500 requests/second and are provisioned with highly available storage with automatic backups.
+            - Serverless deployments are cost-optimized for background and latency-tolerant agents, as well as development, testing, and preview branches. They scale to zero after a period of inactivity and wake on the next request. Compute is billed while resources are provisioned, including during idle time before scale-down.
+            - Dedicated deployments are always-on and provisioned with highly available storage and automatic backups for production workloads.
         1. Determine if the deployment should be **Shareable through Studio**.
             1. If unchecked, the deployment will only be accessible with a valid LangSmith API key for the [workspace](/langsmith/administration-overview#workspaces).
             1. If checked, the deployment will be accessible through [Studio](/langsmith/studio) to any LangSmith user. A direct URL to Studio for the deployment will be provided to share with other LangSmith users.
-        1. Specify **Environment Variables** and secrets. To configure additional variables for the deployment, refer to the [Environment Variables reference](/langsmith/env-var).
+        1. Specify **Environment Variables** and secrets. To configure additional variables for the deployment, refer to the [Environment Variables reference](/langsmith/env-var-cloud).
             1. Sensitive values such as API keys (e.g., `OPENAI_API_KEY`) should be specified as secrets.
             1. Additional non-secret environment variables can be specified as well.
         1. A new LangSmith [tracing project](/langsmith/observability) is automatically created with the same name as the deployment.
@@ -52,7 +53,7 @@ Choose the deployment method that fits your workflow—the LangSmith UI connects
   </Tab>
   <Tab title="LangGraph CLI">
     <Note>
-    The `langgraph deploy` command is in **beta**. It requires [Docker](https://docs.docker.com/get-docker/) to be installed and running. On Apple Silicon (M1/M2/M3), [Docker Buildx](https://docs.docker.com/build/install-buildx/) is also required for cross-compiling to `linux/amd64`.
+    The `langgraph deploy` command is in **[beta](/langsmith/release-stages)**. It requires [Docker](https://docs.docker.com/get-docker/) to be installed and running. On Apple Silicon (M1/M2/M3), [Docker Buildx](https://docs.docker.com/build/install-buildx/) is also required for cross-compiling to `linux/amd64`.
     </Note>
 
     1. Install the [LangGraph CLI](/langsmith/cli):
@@ -67,10 +68,13 @@ Choose the deployment method that fits your workflow—the LangSmith UI connects
         ```shell
         langgraph deploy
         ```
-        This creates a `dev` deployment named after your project directory. Use `--name` to specify a different name or `--deployment-type prod` for a production deployment:
+        This creates a Serverless deployment named after your project directory. Use `--name` to specify a different name or `--deployment-type dedicated` for a Dedicated deployment:
         ```shell
-        langgraph deploy --name my-agent --deployment-type prod
+        langgraph deploy --name my-agent --deployment-type dedicated
         ```
+        <Note>
+        Organizations still on previous pricing until October 1, 2026 use `--deployment-type prod` or `--deployment-type dev` instead. For details, see [`langgraph deploy`](/langsmith/cli#deploy) and [Manage billing](/langsmith/billing#langsmith-deployment-billing).
+        </Note>
         After the command completes, the deployment is queued for provisioning. Environment variables can be managed through the [LangSmith UI](https://smith.langchain.com) after the deployment is created, or configured in the [`env` field of your `langgraph.json`](/langsmith/cli#configuration-file).
   </Tab>
 </Tabs>
@@ -89,7 +93,7 @@ When [creating a new deployment](#create-new-deployment), a new revision is crea
         1. Determine if the deployment should be **Shareable through Studio**.
             - If unchecked, the deployment will only be accessible with a valid LangSmith API key for the [workspace](/langsmith/administration-overview#workspaces).
             - If checked, the deployment will be accessible through [Studio](/langsmith/studio) to any LangSmith user. A direct URL to Studio for the deployment will be provided to share with other LangSmith users.
-        1. Specify **Environment Variables** and secrets. Existing secrets and environment variables are prepopulated. To configure additional variables for the revision, refer to the [Environment Variables reference](/langsmith/env-var).
+        1. Specify **Environment Variables** and secrets. Existing secrets and environment variables are prepopulated. To configure additional variables for the revision, refer to the [Environment Variables reference](/langsmith/env-var-cloud).
             1. Add new secrets or environment variables.
             1. Remove existing secrets or environment variables.
             1. Update the value of existing secrets or environment variables.
@@ -123,6 +127,15 @@ When [creating a new deployment](#create-new-deployment), a new revision is crea
 ## View build and server logs
 
 Build and server logs are available for each revision.
+
+### Forward server logs to Datadog
+
+LangSmith Cloud can forward Agent Server logs to Datadog. To turn on log forwarding, set both of these environment variables or secrets on the deployment:
+
+- **`DD_API_KEY`**: Your [Datadog API key](https://docs.datadoghq.com/account_management/api-app-keys/). Log forwarding requires it.
+- **`DD_LOGS_ENABLED=true`**: Forwards Agent Server logs to Datadog.
+
+To correlate logs with traces, also set `DD_LOGS_INJECTION=true`. For the full list of Datadog variables (`DD_SITE`, `DD_ENV`, `DD_SERVICE`, and more), see [Supported Datadog environment variables](/langsmith/env-var#dd_api_key).
 
 <Tabs>
   <Tab title="LangSmith UI">

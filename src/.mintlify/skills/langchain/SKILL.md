@@ -2,7 +2,7 @@
 name: langchain
 description: Build agents with a prebuilt architecture and integrations for any model or tool. Use when creating tool-calling agents, switching model providers, or adding structured output.
 license: MIT
-compatibility: Python 3.10+, Node.js 20+
+compatibility: Python 3.10+, Node.js 22+
 metadata:
   author: langchain-ai
   version: "1.0"
@@ -77,7 +77,7 @@ from langchain.chat_models import init_chat_model
 # Switch providers by changing the string
 model = init_chat_model("openai:gpt-5.5")
 model = init_chat_model("anthropic:claude-opus-4-8")
-model = init_chat_model("google_genai:gemini-3.5-flash")
+model = init_chat_model("google_genai:gemini-3.6-flash")
 ```
 
 ### Define a tool

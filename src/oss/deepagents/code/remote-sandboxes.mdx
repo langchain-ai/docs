@@ -1,7 +1,7 @@
 ---
 title: Use remote sandboxes
 sidebarTitle: Remote sandboxes
-description: Run Deep Agents Code tool execution in LangSmith, Daytona, Modal, Runloop, Vercel, or AgentCore sandboxes. Install provider extras, set credentials, and use flags and setup scripts.
+description: Run Deep Agents Code tool execution in LangSmith, AgentCore, Daytona, Modal, Runloop, Vercel, or E2B sandboxes. Install provider dependencies, set credentials, and use flags and setup scripts.
 ---
 
 Deep Agents Code uses the [sandbox as tool](/oss/deepagents/sandboxes#sandbox-as-tool-pattern) pattern: the `dcode` process (LLM loop, memory, tool dispatch) runs on your machine, but agent tool calls (`read_file`, `write_file`, `execute`, etc.) target the remote sandbox, not your local filesystem. To get files into the sandbox, use a [setup script](#setup-scripts) or the provider's file transfer APIs (see [Working with files](/oss/deepagents/sandboxes#working-with-files)).
@@ -10,11 +10,22 @@ For a deeper look at sandbox architecture, integration patterns, and security be
 
 <Steps>
     <Step title="Install provider dependency" icon="download">
-        Each provider ships as an optional extra. Install one from within a session with `/install`, or from the shell with `dcode --install`:
+        Each built-in provider ships as an optional extra. Install one from within a session with `/install`, or from the shell with `dcode --install`. Third-party providers such as E2B install as packages with the `--package` flag:
 
         <Tabs>
             <Tab title="LangSmith">
                 Included by default when installing `deepagents-code`. No extra installation needed.
+            </Tab>
+            <Tab title="AgentCore">
+                <CodeGroup>
+                    ```txt In session
+                    /install agentcore
+                    ```
+
+                    ```bash Shell
+                    dcode --install agentcore
+                    ```
+                </CodeGroup>
             </Tab>
             <Tab title="Daytona">
                 <CodeGroup>
@@ -60,20 +71,22 @@ For a deeper look at sandbox architecture, integration patterns, and security be
                     ```
                 </CodeGroup>
             </Tab>
-            <Tab title="AgentCore">
+            <Tab title="E2B">
+                E2B is a [third-party provider](#third-party-providers) published by the `langchain-e2b` package. Install it as a package, not a `deepagents-code` extra:
+
                 <CodeGroup>
                     ```txt In session
-                    /install agentcore
+                    /install langchain-e2b --package
                     ```
 
                     ```bash Shell
-                    dcode --install agentcore
+                    dcode --install langchain-e2b --package
                     ```
                 </CodeGroup>
             </Tab>
         </Tabs>
 
-        To install support for every sandbox provider at once, use the `all-sandboxes` extra: `/install all-sandboxes` in a session, or `dcode --install all-sandboxes` from the shell.
+        To install support for every built-in provider at once, use the `all-sandboxes` extra: `/install all-sandboxes` in a session, or `dcode --install all-sandboxes` from the shell. The `all-sandboxes` extra does not include third-party providers such as E2B.
     </Step>
 
     <Step title="Set provider credentials" icon="key">
@@ -81,6 +94,16 @@ For a deeper look at sandbox architecture, integration patterns, and security be
             <Tab title="LangSmith">
                 ```bash
                 export LANGSMITH_API_KEY="your-key"
+                ```
+            </Tab>
+            <Tab title="AgentCore">
+                ```bash
+                export AWS_ACCESS_KEY_ID="your-key"
+                export AWS_SECRET_ACCESS_KEY="your-secret"
+                export AWS_REGION="us-west-2"
+
+                # Only when using temporary/STS credentials:
+                export AWS_SESSION_TOKEN="session-token"
                 ```
             </Tab>
             <Tab title="Daytona">
@@ -107,14 +130,9 @@ For a deeper look at sandbox architecture, integration patterns, and security be
 
                 When running on Vercel, [OIDC](https://vercel.com/docs/oidc) credentials are used automatically instead.
             </Tab>
-            <Tab title="AgentCore">
+            <Tab title="E2B">
                 ```bash
-                export AWS_ACCESS_KEY_ID="your-key"
-                export AWS_SECRET_ACCESS_KEY="your-secret"
-                export AWS_REGION="us-west-2"
-
-                # Only when using temporary/STS credentials:
-                export AWS_SESSION_TOKEN="session-token"
+                export E2B_API_KEY="your-key"
                 ```
             </Tab>
         </Tabs>
@@ -125,6 +143,11 @@ For a deeper look at sandbox architecture, integration patterns, and security be
             <Tab title="LangSmith">
                 ```bash
                 dcode --sandbox langsmith
+                ```
+            </Tab>
+            <Tab title="AgentCore">
+                ```bash
+                dcode --sandbox agentcore
                 ```
             </Tab>
             <Tab title="Daytona">
@@ -147,9 +170,9 @@ For a deeper look at sandbox architecture, integration patterns, and security be
                 dcode --sandbox vercel
                 ```
             </Tab>
-            <Tab title="AgentCore">
+            <Tab title="E2B">
                 ```bash
-                dcode --sandbox agentcore
+                dcode --sandbox e2b
                 ```
             </Tab>
         </Tabs>
@@ -160,7 +183,7 @@ For a deeper look at sandbox architecture, integration patterns, and security be
 
 | Flag | Description |
 |------|-------------|
-| `--sandbox TYPE` | Sandbox provider to use. Built-ins: `langsmith`, `agentcore`, `modal`, `daytona`, `runloop`, `vercel` (default: `none`). [Third-party](#third-party-providers) and [config-declared](#config-declared-providers) providers are also accepted. Pass `--sandbox` with no value to use `[sandboxes].default` from your config |
+| `--sandbox TYPE` | Sandbox provider to use. Built-ins: `langsmith`, `agentcore`, `daytona`, `modal`, `runloop`, `vercel` (default: `none`). [Third-party](#third-party-providers) and [config-declared](#config-declared-providers) providers are also accepted. Pass `--sandbox` with no value to use `[sandboxes].default` from your config |
 | `--sandbox-id ID` | Reuse an existing sandbox by ID instead of creating a new one. Skips creation and cleanup. Only for providers that support reattaching by ID. Refer to your sandbox documentation for more |
 | `--sandbox-snapshot-name NAME` | Use or create a sandbox snapshot. Supported by `langsmith` and `runloop` (and any third-party provider that advertises snapshot support). Cannot be combined with `--sandbox-id` |
 | `--sandbox-setup PATH` | Path to a setup script to run inside the sandbox upon creation |
@@ -170,17 +193,18 @@ Each provider exposes a default working directory inside the sandbox. Setup scri
 | Provider | Working directory |
 |----------|-------------------|
 | LangSmith | `/root` |
+| AgentCore | `/tmp` |
 | Daytona | `/home/daytona` |
 | Modal | `/workspace` |
 | Runloop | `/home/user` |
 | Vercel | `/vercel/sandbox` |
-| AgentCore | `/tmp` |
+| E2B | `/home/user` |
 
 Examples:
 
 ```bash
-# Create a new Daytona sandbox
-dcode --sandbox daytona
+# Create a new LangSmith sandbox
+dcode --sandbox langsmith
 
 # Reuse an existing sandbox (skips creation and cleanup)
 dcode --sandbox runloop --sandbox-id dbx_abc123
@@ -198,9 +222,9 @@ dcode --sandbox
 
 ## Pluggable providers
 
-The six built-in providers above aren't the only options. Deep Agents Code discovers sandbox providers from three sources, so you can use providers shipped by other packages or declare your own without changing Deep Agents Code:
+The built-in providers are not the only options. Deep Agents Code discovers sandbox providers from three sources, so you can use providers shipped by other packages or declare your own without changing Deep Agents Code:
 
-1. **Built-in providers** — the curated set above, installed as `deepagents-code` extras.
+1. **Built-in providers** — LangSmith, AgentCore, Daytona, Modal, Runloop, and Vercel, shipped with `deepagents-code` (LangSmith by default, the others as extras).
 2. **[Third-party providers](#third-party-providers)** — published by other installed packages via a Python entry point.
 3. **[Config-declared providers](#config-declared-providers)** — defined in your `~/.deepagents/config.toml`.
 
@@ -213,6 +237,14 @@ A package can publish a sandbox provider under the `deepagents_code.sandbox_prov
 ```bash
 # Install the package that publishes the provider, then use it
 dcode --sandbox acme
+```
+
+For example, the `langchain-e2b` package publishes an `e2b` provider (see [sandbox integrations](/oss/integrations/sandboxes)). Install it as a package, set your credentials, then select it:
+
+```bash
+dcode --install langchain-e2b --package
+export E2B_API_KEY="..."
+dcode --sandbox e2b
 ```
 
 If you pass a `--sandbox` name that isn't installed or declared, Deep Agents Code lists the available providers and explains how to install or configure the missing one.
@@ -260,7 +292,7 @@ If you pass a `--sandbox` name that isn't installed or declared, Deep Agents Cod
 
 ### Config-declared providers
 
-For an in-house or local provider you don't want to package, declare it under `[sandboxes.providers]` in `~/.deepagents/config.toml`. This parallels [arbitrary model providers](/oss/deepagents/code/configuration#arbitrary-providers) and uses the same `class_path` trust model.
+For an in-house or local provider you don't want to package, declare it under `[sandboxes.providers]` in `~/.deepagents/config.toml`. This parallels [arbitrary model providers](/oss/deepagents/code/config-file#arbitrary-providers) and uses the same `class_path` trust model.
 
 ```toml
 [sandboxes]
@@ -310,7 +342,7 @@ region = "us-east-1"
 A config entry that reuses a built-in provider's name **overrides** that built-in while keeping its dependency pre-flight check. Malformed entries are skipped with a warning rather than crashing startup.
 
 <Warning>
-    Setting `class_path` causes Deep Agents Code to import and run arbitrary Python from the named module—module-level code executes on import. This is the same trust model as the model [`class_path`](/oss/deepagents/code/configuration#arbitrary-providers): you control your own machine and your own config file.
+    Setting `class_path` causes Deep Agents Code to import and run arbitrary Python from the named module—module-level code executes on import. This is the same trust model as the model [`class_path`](/oss/deepagents/code/config-file#arbitrary-providers): you control your own machine and your own config file.
 </Warning>
 
 ## Setup scripts

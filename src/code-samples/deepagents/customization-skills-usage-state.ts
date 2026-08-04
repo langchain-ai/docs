@@ -3,7 +3,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // :snippet-start: skills-usage-state-js
-import { createCodeInterpreterMiddleware } from "@langchain/quickjs";
 import { createDeepAgent, StateBackend, type FileData } from "deepagents";
 import { MemorySaver } from "@langchain/langgraph";
 
@@ -37,7 +36,6 @@ const agent = await createDeepAgent({
   checkpointer, // Required !
   // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
   skills: ["/skills/"],
-  middleware: [createCodeInterpreterMiddleware({ skillsBackend: backend })],
 });
 
 const config = { configurable: { thread_id: `thread-${Date.now()}` } };
