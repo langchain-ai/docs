@@ -1,3 +1,130 @@
+<Update label="July 27-31, 2026" rss={{ title: "2026-07-27 - LangSmith Cloud update" }}>
+
+## Observability and evaluations
+
+### Datasets and experiments
+
+- LangSmith exposes annotation queue item endpoints for adding, listing, updating, deleting, counting, positioning, and reviewing run or thread queue items through the public API and SDK generation flow.
+- Uploading a .csv or .jsonl dataset now works regardless of the Content-Type the browser reports. Windows browsers label .csv files as an Excel type, which previously caused valid uploads to fail. Uppercase filenames such as DATASET.CSV are also accepted.
+- Evaluator lists on a dataset or tracing project now show an evaluator's current name instead of the name it had when it was attached. Feedback keys are unchanged by a rename.
+- Metadata columns in the experiment comparison grid, including example.metadata.<key>, now render their values instead of staying empty.
+- LangSmith marks every legacy endpoint replaced by the SmithDB SDK migration guide as deprecated: the v1 runs query and retrieve endpoints, the v1 run sharing and public-run read endpoints, `POST /api/v1/datasets/{dataset_id}/runs`, and the annotation queue run endpoints. All of them now respond with `Deprecation: true`, a `Sunset` date of January 31, 2027, and a `Link` header pointing at the migration guide and, where a single replacement exists, the successor endpoint. [Learn more](/langsmith/smithdb-sdk-migration).
+- Dataset experiment tables can sort by feedback score when SmithDB queries are enabled and ClickHouse queries are disabled.
+- Annotation queue item APIs use project_id for the tracing project. Request bodies also accept session_id as an alias.
+- Dataset example views restore clear spacing between the example details and tab navigation.
+- Pairwise annotation queue runs again include the tracing project id needed to create feedback when ClickHouse query support is disabled.
+- Correcting an evaluator score from the experiment results grid now updates the cell and its popover right away instead of requiring a page refresh.
+- The Configure Evaluator pane's header and templates navigation again paint the same background as the pane itself in dark mode.
+- Dataset and run attachments now resolve relative signed download URLs before previewing, opening, or downloading them in self-hosted deployments.
+
+### Monitoring and alerting
+
+- Adds a reusable ChartCard component to the LangSmith design system, standardizing chart titles, move, expand, and overflow actions, responsive full-width layouts, and chart and legend spacing.
+
+### Engine
+
+- A resolved issue on an Engine Issue Board now returns to Open as soon as Engine links a new matching trace to it. Previously the trace was filed as evidence but the issue stayed closed, so a problem that came back never resurfaced on the board. Dismissed issues stay dismissed.
+- The issue detail header now renders category and tag badges on the same line as the title instead of stacking them underneath, tightening the header and reducing wasted vertical space.
+- The "Engine failed to complete a run" trigger is no longer offered when configuring a Slack channel or webhook destination on an issue board. Destinations already subscribed to it keep receiving those notifications.
+- Engine run webhooks and sandbox links now resolve the externally reachable API base from LANGSMITH_PUBLIC_API_ENDPOINT, falling back to LANGCHAIN_PLATFORM_ENDPOINT and then LANGCHAIN_ENDPOINT. Installs whose chart set only LANGSMITH_PUBLIC_API_ENDPOINT were building relative URLs, which made every non-shadow Engine run fail because the run webhook was rejected as a loopback address.
+
+### Tracing
+
+- Trace detail panes once again use an elevated background that matches their section headers.
+- Bulk exports accept a new opt-in `feedbacks` column that carries each run's individual feedback entries, with their key and comment, as a JSON array. Add `feedbacks` to `export_fields` when creating an export; exports that omit `export_fields` keep their existing columns.
+- Delete an entire trace from the run details actions menu after confirming the destructive action.
+- Negative feedback-key filters now return matching traces correctly when ClickHouse uses optimized runs tables.
+- When a project configures a custom output renderer, the trace Output section now offers it as a Custom option alongside Markdown, Plain, JSON, and YAML instead of replacing them. Custom stays the default, and your choice is remembered.
+- Tracing project activity and sorting stay up to date for self-hosted deployments using Redis versions before 6.2.
+- `POST /api/v1/runs/stats` now returns a 404 when the requested tracing project does not exist in your workspace, and reports other client errors — such as a `start_time` older than the supported lookback window — with their real status and message instead of a generic 500 internal server error.
+- Self-hosted deployments now catch up missing tracing project last-run timestamps so project sorting reflects recent historical activity.
+- Run filters now support total, prompt, and completion token counts and costs consistently across routed query backends.
+- Token Count / Cost filters now default to total tokens / cost instead of input tokens. Input and output token / cost breakdowns remain available in the selector.
+- On a tracing project, resetting a view now moves the Threads/Traces/Runs switcher back in step with the rows being shown. Previously the switcher could stay on Runs while the table had already returned to traces.
+
+### Feedback
+
+- The annotation queue item endpoints are now documented at their served path under /api/v1/platform, so the generated SDK methods for listing, adding, updating, counting, deleting, and placing queue items reach the API instead of returning 404.
+- PDFs and other documents attached to a message now render in a full-width preview frame with a header control that opens them nearly full screen, instead of collapsing to a thumbnail-sized box.
+
+### Prompts and playground
+
+- When a model provider rejects a playground run — a wrong API key or an exhausted quota — the playground now shows the provider's own error message instead of a generic server error, so the cause is clear from the error itself.
+- Playground batch and invoke endpoints now sanitize buffered run trees into JSON-safe payloads before responding, so online evaluations no longer fail with opaque 500s when a run graph cannot be serialized.
+
+### Automations
+
+- Forking an evaluator attaches the copy to the project or dataset named in the fork dialog. Previously the copy could be created attached to nothing, leaving the original evaluator running the version you had just edited away from.
+
+## Deployment
+
+- The Create New Deployment form now shows a clear, per-field message when a submitted value fails validation (e.g. an invalid image path) instead of the raw backend error payload.
+- Deleting a tracing project whose LangGraph deployment is still within its post-deletion retention window now schedules the project to be removed along with the deployment, and explains that in the error message instead of asking you to delete a deployment you already deleted.
+- The delete confirmation for a LangGraph deployment now says that cleanup of the underlying database runs after you confirm, and that a deleted deployment's name stays reserved until that cleanup finishes.
+
+## Sandboxes
+
+- Sandboxes accept a new streaming execute request that returns stdout and stderr as Server-Sent Events, for clients that cannot hold a WebSocket. Passing a command ID reuses a running command, and a separate resume request continues an interrupted stream instead of running the command again.
+- Sandboxes now ship with the `langsmith` CLI on PATH, so agents can query traces, runs, and datasets without installing it first.
+- Sandbox and snapshot rows now use single-column layouts with actions in context menus, snapshot sources remain available in their menus, and wrapped names stay left-aligned.
+- Engine sandbox commands in self-hosted deployments now authenticate over WebSocket with the deployment service key, preventing 401 failures after successful sandbox creation.
+- The `langsmith` CLI in sandboxes is updated to v0.2.44. Its requests now resolve on self-hosted deployments that serve the API under `/api`, where commands such as `trace messages` and the project issues commands previously failed.
+
+## Administration
+
+- The LangSmith home page now provides quick access to copy the current organization and workspace IDs.
+- On self-hosted installations authenticating with OAuth/SSO, the Remote MCP authorization endpoint returned a 400 because the SSO login route shadowed it. OAuth clients can now complete the authorize step and connect to the Remote MCP server.
+- Self-hosted deployments with an online license key (beacon access) now see the monthly organization usage graph automatically, without needing the enable_monthly_usage_charts org config. Offline deployments are now pointed to the Granular usage tab for locally-recorded billable usage.
+- Switching workspaces or organizations keeps you on the same page when the route has no workspace-specific resource IDs. Routes that reference a specific resource continue to open the destination workspace home page.
+- LangSmith now refreshes expired browser sessions and retries interrupted API requests before asking you to log in again.
+
+### LLM Gateway
+
+- Gateway policies with a blank or whitespace-only name now fall back to showing the policy ID instead of rendering an empty name cell, and the policy update endpoint now rejects blank names the same way creation already does.
+- The Gateway usage spend chart now shows the top 12 individual spenders per bucket, rolling the rest into an "Other" series, and its hover tooltip lists every contributor at once with the bucket total pinned beneath them.
+- The home page onboarding flow now includes a step for choosing how your agent reaches a model: bring your own provider API key, or use Gateway Credits. Choosing Gateway Credits lets an organization admin pre-purchase prepaid credit and shows the API key and gateway URL needed to start sending traffic, with no provider account required.
+- The custom X-Gateway-* header condition on LLM Gateway spend-cap and rate-limit policies now works with organization-, workspace-, and user-scoped policies too, not just API-key-scoped ones — so you can split a single subject's traffic into separate caps by header value regardless of how the policy is scoped.
+- Default spend cap and rate limit policies in LLM Gateway now expand to show the per-user, per-workspace, and per-API-key policies materialized underneath them.
+- The Gateway Credits purchase dialog now shows the credit balance your purchase will land you on, and states the fee-inclusive total directly above a single purchase button. Large amounts no longer push the credits readout and total outside the dialog.
+- Enterprise organizations without Data Protection now see the tab in the LLM Gateway, greyed out with a link to request access, instead of the tab being hidden entirely.
+- The connect card now appears above the Gateway Credits balance on the LLM Gateway Home page, and the generated code snippets list the API key before the base URL to match common convention.
+- Generating an API key from the LLM Gateway Home connect card now shows the standard one-time key reveal dialog, and each provider's "Configured" status now reflects the workspace's actual secrets instead of a fixed list.
+- The "Purchase Credits" button on LLM Gateway Home now opens the credit purchase dialog instead of showing a "coming soon" message, and the balance bar now shows spend against what's actually purchased instead of against the plan's purchase limit.
+- The Cost Controls and Model Fallbacks shortcuts on LLM Gateway Home now read "View cost controls"/"View model fallbacks" for members who can't manage the org, instead of "Manage"/"Configure".
+- Gateway Home code samples now use the gateway hostname constructed for each LangSmith region and default to the Responses API where supported. [Learn more](/langsmith/llm-gateway).
+- LLM Gateway policy tabs now clarify that policies apply across the organization, while Usage clarifies that spend is scoped to the selected workspace.
+- The home onboarding step now states your Gateway Credits balance in US dollars, matching the amount you purchase, instead of converting it to LCUs.
+- The prompt you copy into your coding agent during onboarding now states how the agent should reach a model, based on the provider you picked: Gateway Credits, or your own provider API key.
+- Homepage spacing and surface tinting now match design review feedback, and several small copy fixes clarify credit limits, provider status, and organization-level purchase limits.
+- LLM Gateway Home again includes Google Gemini and generates valid model identifiers for Gemini and Baseten connect samples. [Learn more](/langsmith/llm-gateway).
+- LLM Gateway Home now highlights the selected model and lets you switch connect samples between Chat Completions, Messages, and Responses formats.
+- The LLM Gateway Usage tab now explains when usage queries aren't available for a deployment instead of showing failed dashboard requests.
+- When you select Gateway Credits during onboarding, the prompt copied into your coding agent now includes the correct Gateway URL for your deployment. [Learn more](/langsmith/llm-gateway).
+- Gateway Credits checkout now remains on the active purchase step while a free workspace upgrades to the Developer plan, instead of briefly showing the saved-card view before closing.
+- Requests that set prompt_cache_options (or the deprecated prompt_cache_retention) now enable Anthropic prompt caching when the LLM Gateway translates an OpenAI Chat Completions or Responses request to a Claude model, instead of ignoring the field. Anthropic's default cache lifetime applies, and prompt_cache_key, prompt_cache_retention, and prompt_cache_options are all preserved when translating between the Chat Completions and Responses formats.
+- Tooltips on disabled LLM Gateway policy controls now read "You need organization admin access to create policies" instead of referencing the raw organization:manage permission string.
+- The Gateway Usage tab no longer shows an in-page workspace dropdown — the page is already scoped to your current workspace, and its subtitle now names that workspace directly.
+
+## Fleet
+
+- Fleet agents can use a built-in configuration-hardening skill to selectively separate trust boundaries, minimize tools, require approval for sensitive actions, and review access.
+- Open chat files in an edge-to-edge workspace, then collapse them back to the Files side panel without losing your place.
+- Self-hosted Fleet agents can use sandbox-backed computer access without requiring a cloud billing plan tier.
+- Files attached to Slack messages are now available under /workspace/uploads for sandbox-backed agents, matching files uploaded from Fleet.
+- Clicking + New Agent from Workspace Agents now opens the same New agent dialog used elsewhere in Fleet, instead of the old draft editor.
+- Navigating to agent chat with an agent selected no longer crashes while the agent details are still loading. The chat shows a loading state until the agent is ready, then renders normally.
+- Sandbox-backed Fleet agents can create or revise downloadable DOCX files without installing an authoring package during the task. A built-in skill guides document authoring and structural validation.
+- The Configure panel is now enabled for everyone, so it always shows up beside the chat when you open an agent.
+- Fleet now resolves AWS IAM roles only for Bedrock models, so loading OpenAI and other provider secrets no longer waits on AWS STS.
+- The new agent creation experience is now enabled for everyone. Asking the assistant for an agent surfaces the Create agent button, and the new agent runs its own setup conversation instead of being built inline.
+- A conversation whose stored state grew past the API's usual single-response size limit now loads in full, up to 32 MiB, instead of failing. The response marks the conversation as oversized, and updates to it still fail until its state shrinks.
+- Sandbox-backed Fleet agents can build a new deck, revise an existing one, and answer questions about the contents of a .pptx file without installing presentation tooling first. A built-in skill guides authoring and validates the file before delivery.
+- Fleet agents can send workspace files to Slack channels, threads, and direct messages using slack_send_file and slack_send_file_to_user.
+- Fleet agents now correctly route sandbox creation and org config requests to the Go platform-backend service on self-hosted deployments where the Go and Python services run on separate addresses, eliminating the need for a reverse-proxy workaround.
+
+</Update>
+
+
 ---
 title: LangSmith Cloud changelog
 sidebarTitle: Cloud changelog
