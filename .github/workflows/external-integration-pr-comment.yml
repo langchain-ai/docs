@@ -1,5 +1,6 @@
 # Post a patience comment on PRs from external contributors that add
-# new integration docs pages, and apply the `integration` label to those PRs.
+# integration docs (hosted MDX pages or external listing YAML rows), and
+# apply the `integration` label to those PRs.
 #
 # NOTE: Uses `pull_request_target` so it can comment on PRs from forks.
 # The script only reads changed files from the GitHub API and checks org
@@ -46,6 +47,7 @@ jobs:
               'src/oss/python/integrations/',
               'src/oss/javascript/integrations/',
             ];
+            const externalListingPath = 'scripts/data/integration_external_docs.yaml';
 
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner,
@@ -64,15 +66,24 @@ jobs:
               return true;
             });
 
-            if (newIntegrationFiles.length === 0) {
-              console.log('No new integration files added; skipping');
+            const hasExternalListingChange = files.some(
+              (file) => file.filename === externalListingPath
+            );
+
+            if (newIntegrationFiles.length === 0 && !hasExternalListingChange) {
+              console.log('No integration contribution files found; skipping');
               return;
             }
 
-            console.log(
-              `Found ${newIntegrationFiles.length} new integration file(s): ` +
-              newIntegrationFiles.map((f) => f.filename).join(', ')
-            );
+            if (newIntegrationFiles.length > 0) {
+              console.log(
+                `Found ${newIntegrationFiles.length} new integration file(s): ` +
+                newIntegrationFiles.map((f) => f.filename).join(', ')
+              );
+            }
+            if (hasExternalListingChange) {
+              console.log(`Found changes to ${externalListingPath}`);
+            }
 
             const internalBots = new Set(['open-swe[bot]']);
             let isExternal;
