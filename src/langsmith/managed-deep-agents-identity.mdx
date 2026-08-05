@@ -1,16 +1,15 @@
 ---
 title: Add identity to Managed Deep Agents
 sidebarTitle: Identity
-description: Give each caller their own threads, memory, and credentials so agents stay private and secure in multi-user deployments.
+description: Authenticate callers and control memory and credentials for multi-user Managed Deep Agents deployments.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
-import { IdentityScopeExplorer } from '/snippets/identity-scope-explorer.jsx';
 
-Agents are not anonymous chatbots. As soon as more than one person (or one company) uses a deployment, you need to know: **whose conversation is this, and whose data may the agent see or act on?** Identity lets one deployment serve thousands of users safely, with no data leakage between callers.
+Agents are not anonymous chatbots. As soon as more than one person uses a deployment, you need to know: **who is calling, which memory may the agent see, and whose credentials may tools use?** Identity lets one deployment serve many users safely, with no data leakage between callers.
 
-Managed Deep Agents answers that question before every run. You declare a small contract once, and the runtime partitions threads, [memory](/langsmith/managed-deep-agents-memory), and credentials so callers cannot see or affect each other.
+Managed Deep Agents answers that question before every run. You declare a small contract once, and the runtime authenticates the caller, remounts the configured [memory](/langsmith/managed-deep-agents-memory) slices, and resolves downstream credentials for the run.
 
 Identity is opt-in. Projects without `identity.ts` or `identity.py` compile and deploy unchanged. When you add a declaration, `mda` wires auth, scoping, and a frozen `runtime.identity` object into tools and middleware.
 
@@ -27,17 +26,16 @@ Without identity, a Managed Deep Agent has one shared boundary for the whole dep
 | What goes wrong | Example |
 | --- | --- |
 | **Shared memory** | Alice asks the agent to remember her API preferences. Bob opens a new chat and the agent already "knows" Alice's details. |
-| **Shared threads** | Anyone who can hit the deployment can resume or inspect another user's conversation. |
 | **Wrong credentials** | The agent calls GitHub or another API with one shared token, so every user acts as the same account, or you have no safe way to act *as* the signed-in user. |
 
-Deep Agents without identity make this a real problem: they keep durable memory, resume long-running threads, and call tools on the user's behalf. Identity turns "who is calling?" into enforced isolation instead of hoping the prompt or the UI keeps people apart.
+Deep Agents without identity keep durable memory and call tools on the user's behalf. Identity turns "who is calling?" into enforced isolation instead of hoping the prompt or the UI keeps people apart.
 
 A key benefit of identity is that downstream tool calls can act **as the signed-in user** rather than as a shared bot account. For example, with user-scoped credentials, the agent calls GitHub as Alice, not as a single bot token shared across all users.
 
-For deployments with compliance requirements such as SOC 2, GDPR, or HIPAA, identity scoping provides the data segregation boundaries that auditors expect: each caller's threads and memory are isolated, and `runtime.identity` gives you an audit trail of who triggered each run.
+For deployments with compliance requirements such as SOC 2, GDPR, or HIPAA, identity scoping provides the data segregation boundaries that auditors expect: each caller's memory and credentials are isolated, and `runtime.identity` gives you an audit trail of who triggered each run.
 
 <Note>
-Adding identity to a project that previously had none does not delete existing threads or memory. Threads created before identity was enabled remain accessible at the agent scope. New threads are scoped by user (or organization) according to your declaration. To migrate old data, export it and re-create threads under the new scoping rules.
+Adding identity to a project that previously had none does not delete existing threads or memory. Existing memory remains in Context Hub, and new runs use the memory slices from your identity declaration. Threads are always user-owned; identity scope controls memory and credentials.
 </Note>
 
 ## Understand three core concepts
@@ -47,26 +45,25 @@ Learn these three concepts before you write any identity config:
 | Idea | Plain meaning | Example |
 | --- | --- | --- |
 | **User** | The person or service this run is for | `user_123`, a GitHub login, a guest id |
-| **Organization** (optional) | The customer or org boundary when one deployment serves many orgs | `acme`, a Slack workspace |
 | **Auth** | How the runtime learns who is calling for this request | Your backend sends identity headers, or the browser sends a verified login token |
+| **Scope** | Which memory slices and credentials the run can use | Per-user memory and credentials, shared agent memory, or no managed memory |
 
 A few important clarifications:
 
 - **User** is not the agent. It is the caller the run represents, and it can be a person or a service (`user.kind`).
-- **Organization** is not a LangSmith workspace. Single-organization agents have no organization. Users can also carry a read-only `groups` list (every group the caller's token asserts) for authorization checks inside tools; isolation still keys on the single-valued organization.
-- **Fail closed** means the runtime rejects any request that is missing a required user or organization. It never falls back to shared memory or threads.
+- **Organization-scoped identity is not supported**. The runtime ignores organization headers, and `define_identity(...)` rejects organization scopes.
+- **Fail closed** means the runtime rejects any request that is missing a required user. It never falls back to shared memory.
 
-From the user (and optional organization), Managed Deep Agents derives three outcomes:
+From the authenticated user, Managed Deep Agents derives two scoped outcomes:
 
-- **Threads**: who can open or resume a conversation
-- **Memory**: which durable [Context Hub](/langsmith/managed-deep-agents-memory) slice the run can see
-- **Credentials**: whose token the agent uses for downstream tool calls (the signed-in user, or one shared agent token)
+- **Memory**: which durable [Context Hub](/langsmith/managed-deep-agents-memory) slices the run can see
+- **Credentials**: whose token the agent uses for downstream tool calls, the signed-in user, one shared agent token, no token, or a custom resolver
 
 ```mermaid
 flowchart LR
-    Caller["Caller"] --> Ingress["Auth authenticates request"]
-    Ingress --> Resolve["Resolve user and organization"]
-    Resolve --> Scope["Scope threads and memory"]
+    Caller["Caller"] --> Auth["Auth authenticates request"]
+    Auth --> Resolve["Resolve user"]
+    Resolve --> Scope["Scope memory and credentials"]
     Resolve --> Reject["Reject: 403"]
     Scope --> Run["Run agent with runtime.identity"]
 
@@ -75,59 +72,44 @@ flowchart LR
     classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33;
     classDef alert fill:#F8E8E6,stroke:#B27D75,stroke-width:2px,color:#634643;
     class Caller trigger;
-    class Ingress,Resolve,Scope process;
+    class Auth,Resolve,Scope process;
     class Run output;
     class Reject alert;
 ```
 
 ## Choose a scope
 
-`scope` is the isolation boundary for the deployment. One value covers the common product shapes; per-axis overrides handle the exceptions.
+`scope` is the isolation boundary for memory and credentials. Use one value for the common product shapes, or an override object when memory and credentials need different boundaries.
 
 The scope values:
 
 | Value | Meaning |
 | --- | --- |
-| `user` | Private to the signed-in person (or service user) |
-| `organization` | Shared inside one customer org, isolated from other orgs |
-| `conversation` | Shared by everyone in the same channel conversation (threads axis only) |
-| `agent` | Shared by the whole deployment |
-| _(unset)_ / `none` | Not scoped on this axis |
-
-**Credentials** is often the first thing teams consider:
-
-- **`user`**: downstream calls can act as the signed-in user (for example call GitHub as Alice).
-- **`agent`**: downstream calls use one shared bot or service token for everyone.
-
-Use the explorer to pick a preset or override each axis. It shows who can access threads, how memory remounts, whose credentials tools use, and the matching declaration:
-
-<IdentityScopeExplorer />
+| `user` | Agent memory plus per-caller memory, and per-caller credentials |
+| `agent` | Shared agent memory and the shared LangSmith vault from `mda connect` |
+| `none` | No durable memory and no downstream credentials |
 
 Choose the declaration that matches your product shape:
 
-| Product shape | Declaration | Threads | Memory | Credentials |
-| --- | --- | --- | --- | --- |
-| Private assistant or internal tool | `defineIdentity({ scope: "user" })` | `user` | `user` | `user` |
-| Multi-tenant SaaS | `defineIdentity({ scope: "organization" })` | `user` | `organization` | `none` |
-| Shared channel bot | `defineIdentity({ scope: { threads: "conversation", memory: "user", credentials: "agent" } })` | `conversation` | `user` | `agent` |
-| Service (cron/webhook) or bare default | `defineIdentity()` or `defineIdentity({ scope: "agent" })` | `user` | `agent` | `agent` |
+| Product shape | Declaration | Memory | Credentials |
+| --- | --- | --- | --- |
+| Private assistant or internal tool | `defineIdentity({ scope: "user" })` | Agent and user slices | `user` |
+| Service, cron, webhook, or bare default | `defineIdentity()` or `defineIdentity({ scope: "agent" })` | Agent slice | `agent` |
+| Stateless or externally managed auth and storage | `defineIdentity({ scope: "none" })` | none | none |
 
-Bare `defineIdentity()` expands to the service-agent axes (`threads: "user"`, `memory: "agent"`, `credentials: "agent"`). Unset axes in a per-axis object also follow that agent base, so a bare `{ threads: "conversation" }` inherits shared agent memory unless you set `memory` and `credentials` explicitly.
-
-All declarations default to `backend` auth (your backend asserts the caller) and optional organizations, except when any axis uses `"organization"`, which requires an organization on every request.
+Bare `defineIdentity()` expands to the service-agent shape (`memory: "agent"`, `credentials: "agent"`). Unset axes in an override object also follow that agent base.
 
 <Tip>
 **How to choose quickly:**
 
-- One human per conversation who must not see anyone else's data → `defineIdentity({ scope: "user" })`
-- SaaS with customer orgs → `defineIdentity({ scope: "organization" })`
-- Shared channel bot → set `threads: "conversation"` and keep `memory: "user"` (usually with `credentials: "agent"`)
+- One human per conversation who must not see anyone else's memory or credentials → `defineIdentity({ scope: "user" })`
 - Timer, webhook, or shared deployment vault → `defineIdentity()` / `scope: "agent"`
+- External persistence and external credentials → `scope: "none"`
 </Tip>
 
 ## Add an identity declaration
 
-Create `identity.py` or `identity.ts` next to your agent entry and export a named `identity`. For a private assistant, set `scope: "user"` so every caller gets private threads, memory, and credentials behind your backend's auth:
+Create `identity.py` or `identity.ts` next to your agent entry and export a named `identity`. For a private assistant, set `scope: "user"` so every caller gets private memory and credentials behind your backend's auth:
 
 <CodeGroup>
 
@@ -155,8 +137,7 @@ from managed_deepagents import define_identity
 identity = define_identity(
     auth="backend",
     scope={
-        "threads": "user",
-        "memory": "user",
+        "memory": ["agent", "user"],
         "credentials": "user",
     },
 )
@@ -168,8 +149,7 @@ import { defineIdentity } from "managed-deepagents";
 export const identity = defineIdentity({
   auth: "backend",
   scope: {
-    threads: "user",
-    memory: "user",
+    memory: ["agent", "user"],
     credentials: "user",
   },
 });
@@ -177,7 +157,7 @@ export const identity = defineIdentity({
 
 </CodeGroup>
 
-Bare `defineIdentity()` (no options) is the service-agent shape: private threads with shared agent memory and the shared deployment vault. Use the full form when you want every field visible, or when you are assembling a config beyond the common shapes. `scope` accepts either one boundary (`"user"`, `"organization"`, `"agent"`, `"none"`) or per-axis overrides such as `{ default: "user", threads: "conversation" }`.
+Bare `defineIdentity()` (no options) is the service-agent shape: user-owned threads with shared agent memory and the shared deployment vault. Use the full form when you want every field visible, or when you are assembling a config beyond the common shapes. `scope` accepts either one boundary (`"user"`, `"agent"`, `"none"`) or per-axis overrides such as `{ default: "user", credentials: "agent" }`.
 
 For the full project layout, see the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference).
 
@@ -185,7 +165,7 @@ When identity is present, `mda` generates the custom auth handler, injects it in
 
 ## Auth: identify the caller
 
-`auth` is the mechanism the runtime uses to identify the user (and organization) for each request. Choose one HTTP mode: `"backend"` or a validated-token provider list.
+`auth` is the mechanism the runtime uses to identify the user for each request. Choose one HTTP mode: `"backend"` or a validated-token provider list.
 
 ### Backend (recommended default)
 
@@ -199,8 +179,9 @@ Required headers (case-insensitive):
 | --- | --- | --- |
 | `X-MDA-Ingress-Secret` | Yes | Shared secret from `MDA_INGRESS_SECRET` |
 | `X-MDA-User-Id` | Yes | User id for this run |
-| `X-MDA-Organization-Id` | When organizations are required | Organization id for this run |
 | `X-MDA-Groups` | No | Comma- or space-delimited group ids, exposed as `identity.groups` |
+
+Organization identity is not supported. The runtime ignores organization headers.
 
 The default declaration already uses backend auth, so there is nothing to set:
 
@@ -220,7 +201,7 @@ export const identity = defineIdentity();
 
 </CodeGroup>
 
-Put `MDA_INGRESS_SECRET` in `.env` for `mda dev` and as a hosted deployment secret for `mda deploy`. In production, your backend authenticates the user, then attaches the identity headers (`X-MDA-Ingress-Secret`, `X-MDA-User-Id`, and `X-MDA-Organization-Id` when applicable) when proxying agent traffic.
+Put `MDA_INGRESS_SECRET` in `.env` for `mda dev` and as a hosted deployment secret for `mda deploy`. In production, your backend authenticates the user, then attaches the identity headers (`X-MDA-Ingress-Secret`, `X-MDA-User-Id`, and optional `X-MDA-Groups`) when proxying agent traffic.
 
 Example shape for a backend proxy (pseudocode):
 
@@ -232,7 +213,7 @@ await fetch(`${deploymentUrl}/threads/${threadId}/runs`, {
     "Content-Type": "application/json",
     "X-MDA-Ingress-Secret": process.env.MDA_INGRESS_SECRET!,
     "X-MDA-User-Id": authenticatedUser.id,
-    // "X-MDA-Organization-Id": org.id, // only when organizations are required
+    "X-MDA-Groups": authenticatedUser.groups.join(","), // optional
   },
   body: JSON.stringify(runBody),
 });
@@ -293,7 +274,7 @@ For provider-specific options and client examples, see [Provider setup guides](#
 
 | Secret | How Managed Deep Agents uses it |
 | --- | --- |
-| `MDA_INGRESS_SECRET` | Shared secret your backend sends in `X-MDA-Ingress-Secret`. The runtime checks it before trusting `X-MDA-User-Id` and `X-MDA-Organization-Id`. |
+| `MDA_INGRESS_SECRET` | Shared secret your backend sends in `X-MDA-Ingress-Secret`. The runtime checks it before trusting `X-MDA-User-Id` and `X-MDA-Groups`. |
 | `MDA_GUEST_SIGNING_KEY` | Key used to sign guest tokens at `POST /identity/guest` and to verify them on later requests. |
 
 Put local values in `.env`. `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets. Provider-specific secrets (for example Supabase introspection) are listed in [Provider setup guides](#provider-setup-guides).
@@ -311,7 +292,6 @@ The identity object looks like this:
 ```ts
 runtime.identity = {
   user: { kind: "person" | "service", id: string, email?: string },
-  organization?: { id: string },
   groups?: readonly string[],
   source: {
     provider: "http" | "slack" | "schedule" | "cli" | "studio",
@@ -401,19 +381,18 @@ export function auditMiddleware() {
 
 </CodeGroup>
 
-Prefer `runtime.identity` over client-supplied configurable keys for user or organization ids. For other per-run values such as feature flags, use normal LangChain runtime context.
+Prefer `runtime.identity` over client-supplied configurable keys for user ids. For other per-run values such as feature flags, use normal LangChain runtime context.
 
 ## Customize scoping
 
-The common shapes cover most cases. To customize, set `scope` per axis:
+The common shapes cover most cases. To customize, set `scope` per supported axis:
 
 | Axis | Values | Meaning |
 | --- | --- | --- |
-| `threads` | `user`, `conversation`, `organization` | Who can open or resume the conversation |
-| `memory` | `user`, `organization`, `agent`, `none` | Which Context Hub memory slice is remounted for the run |
-| `credentials` | `user`, `agent`, `none`, `custom` | Whose credentials downstream calls use |
+| `memory` | `"user"`, `"agent"`, `["agent", "user"]`, `"none"` | Which Context Hub memory slices are remounted for the run |
+| `credentials` | `"user"`, `"agent"`, `"none"`, `"custom"` | Whose credentials downstream calls use |
 
-Do not set any scoping axis to `"organization"` when organizations are optional, there may be no organization to scope by. If a request is missing the user or organization id that scoping needs, Managed Deep Agents rejects it with 403 instead of falling back to shared data.
+Threads are always user-owned, so `scope.threads` is not supported. Organization-scoped memory is also not supported.
 
 For how memory paths remount under each scope, see [Scope memory with identity](/langsmith/managed-deep-agents-memory#scope-memory-with-identity).
 
@@ -539,7 +518,7 @@ The `auth` namespace ships providers for the common identity providers:
 | GitHub | `auth.github()` | Opaque token introspection |
 | Guest | `auth.guest(...)` | MDA-signed tokens |
 
-Each factory returns a plain provider object, so spread it to override the claim mapping (`user`, `organization`, `groups`, `email`) when the token's claims do not match the defaults. The tabs below cover the providers that need extra setup. Use one provider, or combine them as in the [validated token example](#validated-token-browser-direct).
+Each factory returns a plain provider object, so spread it to override the claim mapping (`user`, `groups`, `email`) when the token's claims do not match the defaults. The tabs below cover the providers that need extra setup. Use one provider, or combine them as in the [validated token example](#validated-token-browser-direct).
 
 <Tabs>
   <Tab title="Guest tokens">
@@ -662,13 +641,13 @@ Each factory returns a plain provider object, so spread it to override the claim
 
 <ManagedDeepAgentsTestAndDeploy />
 
-Identity misconfiguration usually surfaces as 401 (auth) or 403 (store/thread scope) during local Studio or the first authenticated request. Confirm the matching secret is present and that backend proxies attach the reserved headers.
+Identity misconfiguration usually surfaces as 401 (auth) or 403 (memory or credential scope) during local Studio or the first authenticated request. Confirm the matching secret is present and that backend proxies attach the reserved headers.
 
 ## Next steps
 
 <CardGroup cols={2}>
   <Card title="Memory" icon="database" href="/langsmith/managed-deep-agents-memory">
-    See how identity remounts per-user or per-organization memory.
+    See how identity remounts agent and user memory slices.
   </Card>
   <Card title="Custom tools" icon="tool" href="/langsmith/managed-deep-agents-tools">
     Read `runtime.identity` from authored tools.
