@@ -64,10 +64,13 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 | `mda --help` | Show CLI help. |
 | `mda --version` | Show the installed CLI version. |
 | `mda init <name>` | Scaffold a TypeScript or Python Managed Deep Agents project. |
+| `mda build [path]` | Compile a project into a managed LangGraph app without deploying. |
 | `mda connect [name]` | Scaffold a connector and complete its workspace setup from the terminal. |
-| `mda evals …` | Scaffold Harbor-style eval tasks and compile a Harbor handoff. |
+| `mda eval …` / `mda evals …` | Scaffold Harbor-style eval tasks and compile a Harbor handoff. |
 | `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
 | `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
+| `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
+| `mda delete [path]` / `mda destroy [path]` | Delete a deployed agent and the LangSmith resources it created. |
 
 ## Initialize projects
 
@@ -77,10 +80,16 @@ Use `mda init` to create a new project directory:
 mda init my-agent
 ```
 
-| Argument | Use |
+| Argument or flag | Use |
 | --- | --- |
 | `name` | Required project directory name. The command fails if the destination already exists. |
+| `--interactive` | Build the project by talking to the Deep Agent builder in your terminal. Cannot be combined with the non-interactive scaffold options below. |
+| `--instructions TEXT` | System prompt to write into `instructions.md`. |
+| `--instructions-file PATH` | Read the system prompt for `instructions.md` from a file, or from stdin when set to `-`. |
 | `--scope SCOPE` | Optional identity scope to scaffold in `identity.py` / `identity.ts`: `user`, `agent`, or `none`. Omit for no identity declaration. |
+| `--model SPEC` | Model the agent runs on, as `provider:model`. |
+| `--no-sandbox` | Leave out the managed sandbox declaration. |
+| `--no-evals` | Leave out the example eval suite. |
 
 The command detects the language from the current directory:
 
@@ -150,6 +159,19 @@ mda connect gmail
 
 For connector authoring and options, see [Connectors](/langsmith/managed-deep-agents-connectors) and [Integrations](/langsmith/managed-deep-agents-connectors/integrations).
 
+## Build projects
+
+Use `mda build` to compile a project into a managed LangGraph app without deploying it:
+
+```bash
+mda build .
+```
+
+| Argument or flag | Use |
+| --- | --- |
+| `path` | Project directory. Defaults to the current directory. |
+| `--out OUT` | Output directory for the compiled app. Defaults to `<path>/.mda/build`. The directory is emptied before the build, so it must be missing, empty, or a directory a previous build wrote. |
+
 ## Evaluate projects
 
 Use `mda evals` to scaffold Harbor-style tasks and compile a Harbor handoff. Harbor runs the trials:
@@ -186,7 +208,7 @@ mda dev .
 | `path` | Project directory. Defaults to the current directory. |
 | `--port PORT` | Forward a port to the LangGraph dev server. |
 | `--hostname HOSTNAME` | Forward a host to the LangGraph dev server. |
-| `--browser` | Open a browser when the dev server starts. By default, no browser opens. |
+| `--no-browser` | Prevent the dev server from opening Studio in a browser when it starts. |
 | `--no-reload` | Disable the dev server's hot reload. |
 
 `mda dev` compiles into `.mda/build`, then starts the language-specific LangGraph dev server from that directory:
@@ -213,10 +235,9 @@ mda deploy .
 | Argument or flag | Use |
 | --- | --- |
 | `path` | Project directory. Defaults to the current directory. |
-| `--name NAME` | Deployment name. Defaults to the project directory name, normalized to lowercase letters, numbers, and hyphens. |
+| `--name NAME` | Deployment name. Defaults to the agent `name` from `defineDeepAgent`. |
 | `--deployment-type dev\|prod` | Deployment type when creating a deployment. Defaults to `dev`. |
 | `--workspace-id WORKSPACE_ID` | Workspace ID to deploy into. Overrides `LANGSMITH_WORKSPACE_ID`. |
-| `--host-url URL` | Host backend API URL override. Defaults to US LangSmith Cloud. |
 | `--no-wait` | Trigger the remote build and exit without polling for deployment completion. |
 
 Deploy runs these steps:
@@ -233,6 +254,39 @@ Deploy runs these steps:
 10. Reconcile the managed LangSmith cron jobs for schedules unless `--no-wait` is set.
 
 On success, the CLI prints the LangSmith deployment dashboard URL. For secrets routing and deploy tips, see [Deploy an agent](/langsmith/managed-deep-agents-deploy).
+
+## Read deployment logs
+
+Use `mda logs` to tail Agent Server logs for a deployed agent:
+
+```bash
+mda logs .
+```
+
+| Argument or flag | Use |
+| --- | --- |
+| `path` | Project directory. Defaults to the current directory. |
+| `--name NAME` | Deployment name. Defaults to the agent `name` from the project. |
+| `--lines LINES` | Number of recent log lines to fetch. Defaults to `1000`. |
+| `--level LEVEL` | Only show entries at or above the given severity: `debug`, `info`, `warning`, `error`, or `critical`. |
+| `--follow` | Keep streaming new logs. This is the default in an interactive terminal. |
+| `--no-follow` | Print recent logs and exit. This is the default when output is piped. |
+| `--workspace-id WORKSPACE_ID` | Workspace ID to read from. Overrides `LANGSMITH_WORKSPACE_ID`. |
+
+## Delete deployments
+
+Use `mda delete` to delete a deployed Managed Deep Agent and the LangSmith resources it created. `mda destroy` is an alias.
+
+```bash
+mda delete .
+```
+
+| Argument or flag | Use |
+| --- | --- |
+| `path` | Project directory. Defaults to the current directory. |
+| `--name NAME` | Deployment name. Defaults to the agent `name` from `defineDeepAgent`. |
+| `--workspace-id WORKSPACE_ID` | Workspace ID the deployment lives in. Overrides `LANGSMITH_WORKSPACE_ID`. |
+| `--yes` | Delete without asking for confirmation. |
 
 ## Project file reference
 
