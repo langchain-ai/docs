@@ -8,6 +8,7 @@ description: Configure model providers, defaults, retries, and gateways in confi
 
 - **Defaults**: pin a [default model](#default-and-recent-model) or [agent](#default-and-recent-agent).
 - **Provider setup**: the [`[models.providers.<name>]` table](#provider-configuration), [constructor params](#model-constructor-params), [retries](#retries), [profile overrides](#profile-overrides-advanced), and [adding models to the `/model` switcher](#adding-models-to-the-interactive-switcher).
+- **Auto mode**: the [auto classifier timeout](#auto-classifier-timeout).
 - **Custom endpoints and providers**: [custom base URLs](#custom-base-url), [OpenAI- or Anthropic-compatible APIs](#compatible-apis), and [arbitrary providers](#arbitrary-providers).
 - **Endpoints and gateways**: how [API keys and base URLs resolve together](#endpoints-keys-and-gateways), including through a managed gateway.
 
@@ -17,9 +18,12 @@ description: Configure model providers, defaults, retries, and gateways in confi
 [models]
 default = "ollama:qwen3:4b"             # your intentional long-term preference
 recent = "google_genai:gemini-3.6-flash"   # last /model switch (written automatically)
+auto_classifier = "openai:gpt-5.6-luna"  # optional: cheaper model for Auto approval review
 ```
 
 `[models].default` always takes priority over `[models].recent`. The `/model` command only writes to `[models].recent`, so your configured default is never overwritten by mid-session switches. To remove the default, use `/model --default --clear` or delete the `default` key from the config file.
+
+`[models].auto_classifier` sets the model used by the [Auto approval classifier](/oss/deepagents/code/approval-modes#select-a-classifier-model) to review gated tool calls. When unset, the classifier inherits the main agent model. You can override this at runtime with `--auto-classifier-model` or `/auto model`. See [Select a classifier model](/oss/deepagents/code/approval-modes#select-a-classifier-model) for full precedence and security notes.
 
 ## Default and recent agent
 
@@ -219,9 +223,31 @@ mode = "auto"   # "manual" (default), "auto", or "yolo"
 
 Accepted values are `manual` (the fail-closed default), `auto` (classifier-backed; requires `DEEPAGENTS_CODE_EXPERIMENTAL=1`), and `yolo` (unrestricted; requires a one-time acknowledgement). An explicit `--yolo` or `-y`/`--auto-approve` flag overrides this value for the session.
 
+## Auto classifier timeout
+
+When [Auto mode](/oss/deepagents/code/approval-modes) is active, the classifier has a time budget to review each batch of gated actions. Batches not reviewed within the deadline are denied as `classifier_unavailable`; repeated misses fall back to the manual approval UI. The default is 20 seconds.
+
+If reviews are timing out, the first thing to try is [selecting a faster classifier model](#default-and-recent-model) (see `[models].auto_classifier`). If you have already done that and still need more headroom, you can raise the deadline:
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml title="~/.deepagents/config.toml"
+        [models]
+        auto_classifier_timeout = 60   # seconds; minimum 1, maximum 300
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_AUTO_CLASSIFIER_TIMEOUT=60
+        ```
+    </Tab>
+</Tabs>
+
+The environment variable takes precedence over the config file, which takes precedence over the built-in default. Values below 1 or above 300 are clamped to the floor or ceiling. Non-integer values fall back to the default with a warning.
+
 ## Profile overrides (Advanced)
 
-Override fields in the model's runtime profile to change how Deep Agents Code interprets model capabilities. See @[`ModelProfile`] for the full list of overridable fields. The most common use case is lowering `max_input_tokens` to trigger auto-summarization earlier — useful for testing or for constraining context usage:
+Override fields in the model's runtime profile to change how Deep Agents Code interprets model capabilities. See @[`ModelProfile`] for the full list of overridable fields. The most common use case is lowering `max_input_tokens` to trigger auto-summarization earlier—useful for testing or for constraining context usage:
 
 ```toml
 # Apply to all models from this provider
