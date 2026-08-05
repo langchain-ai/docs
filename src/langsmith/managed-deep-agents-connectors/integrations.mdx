@@ -1,13 +1,13 @@
 ---
-title: Add LangSmith tool server integrations to Managed Deep Agents
+title: Add integrations to Managed Deep Agents
 sidebarTitle: Integrations
-description: Give your agent Gmail, Slack, Linear, and other workspace tools connected once in LangSmith—without provider tokens ever reaching the deployment.
+description: Give your agent Gmail, Slack, Linear, and other workspace tools connected in LangSmith, without provider tokens reaching the deployment.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-The LangSmith tool server hosts LangChain-authored tools per provider—Gmail, Slack, Linear, Google Sheets, Tavily, and more—and publishes them over MCP, one endpoint per integration. Your workspace connects an integration once in LangSmith; declaring the matching connector is how a deployment gets those tools. The provider's OAuth tokens never leave LangSmith's vault: Managed Deep Agents calls LangSmith's gateway, which resolves the credential and forwards the call upstream, so the deployment never sees, stores, or refreshes a provider token.
+Managed Deep Agents can load LangChain-authored tools and remote MCP integrations from connector declarations. Your workspace connects an integration in LangSmith or through `mda connect`; declaring the matching connector is how a deployment gets those tools. Provider OAuth tokens stay in LangSmith's vault, and the deployment calls LangSmith's gateway instead of storing or refreshing provider tokens itself.
 
 <Note>
 <ManagedDeepAgentsPrivateBetaNote />
@@ -17,7 +17,9 @@ For other connector types, see [Connectors](/langsmith/managed-deep-agents-conne
 
 ## Add an integration
 
-Connect the integration for your workspace in LangSmith (**Settings → Integrations**), then declare the connector. Create `connectors/gmail.py` or `connectors/gmail.ts` and export a named `connector`:
+Connect the integration for your workspace, then declare the connector. For OAuth and secret-backed connectors, [`mda connect`](#connect-from-the-cli) can scaffold the connector and complete the required workspace setup. You can also connect integrations in LangSmith when the integration supports UI setup.
+
+Create `connectors/gmail.py` or `connectors/gmail.ts` and export a named `connector`:
 
 <CodeGroup>
 
@@ -41,46 +43,57 @@ export const connector = connectors.gmail({
 
 ### Connect from the CLI
 
-Instead of connecting the integration in the LangSmith UI, you can scaffold the connector and complete its OAuth from the terminal with [`mda connect`](/langsmith/managed-deep-agents-cli#connect-integrations):
+Use [`mda connect`](/langsmith/managed-deep-agents-cli#connect-integrations) to list connectors, scaffold connector files, and complete workspace setup:
 
 ```bash
-mda connect --list   # see every connector and its connection status
-mda connect gmail    # scaffold connectors/gmail and complete OAuth in the browser
+mda connect --list       # see every connector and its connection status
+mda connect gmail        # scaffold connectors/gmail and complete OAuth
+mda connect exa --secret KEY # upload a workspace API key for a secret-backed connector
 ```
 
-`mda connect <name>` creates the connector file if it does not exist, opens the authorization URL in your browser, and waits for the workspace connection to complete. Use `mda connect <name> --check` to verify a connection and `mda connect <name> --revoke` to disconnect. OAuth integrations (Google, X, and others) connect this way; secret-based integrations (for example Exa or Tavily) take a workspace API key in LangSmith instead.
+`mda connect <name>` creates the connector file if it does not exist. For `oauth` connectors, it prints an authorization URL, opens it in your browser when confirmed, and waits for the workspace connection to complete. For `secret` connectors, it prompts for or accepts the workspace API key. Use `mda connect <name> --check` to verify a connection and `mda connect <name> --revoke` to disconnect.
 
-Every integration is reached the same way, as `connectors.<provider>(...)`:
+## Connector catalog
 
-| Integration | Factory (TypeScript / Python) |
-| --- | --- |
-| Apollo | `connectors.apollo` |
-| Ashby | `connectors.ashby` |
-| Base (URL content & image extraction) | `connectors.base` |
-| Exa | `connectors.exa` |
-| Excel | `connectors.excel` |
-| Gmail | `connectors.gmail` |
-| Google BigQuery | `connectors.googleBigQuery` / `connectors.google_bigquery` |
-| Google Calendar | `connectors.googleCalendar` / `connectors.google_calendar` |
-| Google Docs | `connectors.googleDocs` / `connectors.google_docs` |
-| Google Drive | `connectors.googleDrive` / `connectors.google_drive` |
-| Google Meet | `connectors.googleMeet` / `connectors.google_meet` |
-| Google Sheets | `connectors.googleSheets` / `connectors.google_sheets` |
-| Google Slides | `connectors.googleSlides` / `connectors.google_slides` |
-| Linear | `connectors.linear` |
-| LinkedIn | `connectors.linkedin` |
-| Outlook | `connectors.outlook` |
-| PowerPoint | `connectors.powerpoint` |
-| Pylon | `connectors.pylon` |
-| Salesforce | `connectors.salesforce` |
-| SharePoint | `connectors.sharepoint` |
-| Slack | `connectors.slack` |
-| Tavily | `connectors.tavily` |
-| Microsoft Teams | `connectors.teams` |
-| Word | `connectors.word` |
-| X | `connectors.x` |
+Every integration is reached as `connectors.<provider>(...)`. The `Auth` column matches the `mda connect --list` catalog:
 
-The catalog is a superset of what any one workspace can use: an integration still has to be connected in LangSmith, which the runtime reports per call.
+| Integration | Auth | Factory (TypeScript / Python) |
+| --- | --- | --- |
+| Apollo | `secret` | `connectors.apollo` |
+| Ashby | `secret` | `connectors.ashby` |
+| Base (URL content and image extraction) | `none` | `connectors.base` |
+| Close | `oauth` | `connectors.close` |
+| Cloudflare | `oauth` | `connectors.cloudflare` |
+| Exa | `secret` | `connectors.exa` |
+| Excel | `oauth` | `connectors.excel` |
+| GitHub | `oauth` | `connectors.github` |
+| Gmail | `oauth` | `connectors.gmail` |
+| Google BigQuery | `oauth` | `connectors.googleBigQuery` / `connectors.google_bigquery` |
+| Google Calendar | `oauth` | `connectors.googleCalendar` / `connectors.google_calendar` |
+| Google Docs | `oauth` | `connectors.googleDocs` / `connectors.google_docs` |
+| Google Drive | `oauth` | `connectors.googleDrive` / `connectors.google_drive` |
+| Google Meet | `oauth` | `connectors.googleMeet` / `connectors.google_meet` |
+| Google Sheets | `oauth` | `connectors.googleSheets` / `connectors.google_sheets` |
+| Google Slides | `oauth` | `connectors.googleSlides` / `connectors.google_slides` |
+| Linear | `oauth` | `connectors.linear` |
+| LinkedIn | `oauth` | `connectors.linkedin` |
+| Neon | `oauth` | `connectors.neon` |
+| Netlify | `oauth` | `connectors.netlify` |
+| Notion | `oauth` | `connectors.notion` |
+| Outlook | `oauth` | `connectors.outlook` |
+| PowerPoint | `oauth` | `connectors.powerpoint` |
+| Prisma | `oauth` | `connectors.prisma` |
+| Pylon | `secret` | `connectors.pylon` |
+| Salesforce | `oauth` | `connectors.salesforce` |
+| SharePoint | `oauth` | `connectors.sharepoint` |
+| Slack | `none` | `connectors.slack` |
+| Tavily | `secret` | `connectors.tavily` |
+| Microsoft Teams | `oauth` | `connectors.teams` |
+| Vanta | `oauth` | `connectors.vanta` |
+| Word | `oauth` | `connectors.word` |
+| X | `oauth` | `connectors.x` |
+
+The catalog is a superset of what any one workspace can use: an integration still has to be available and connected in LangSmith, which the runtime reports per call.
 
 ## Select tools
 
@@ -90,11 +103,11 @@ The config is only ever about which tools the agent gets:
 | --- | --- | --- |
 | `include_tools` / `includeTools` | all published tools | Allowlist of tool names to load. An empty list loads none and skips the gateway entirely. |
 | `exclude_tools` / `excludeTools` | _(none)_ | Denylist of tool names. |
-| `default_tool_timeout` / `defaultToolTimeout` | _(provider default)_ | Per-tool call timeout—seconds in Python, milliseconds in TypeScript. |
+| `default_tool_timeout` / `defaultToolTimeout` | _(provider default)_ | Per-tool call timeout, seconds in Python and milliseconds in TypeScript. |
 
-Tool names are **not** prefixed: the tool server already publishes them provider-qualified (`gmail_send_email`, `linear_create_issue`), so `includeTools` matches what the provider publishes rather than a name Managed Deep Agents renamed.
+Tool names are **not** prefixed by Managed Deep Agents: match the names the provider publishes, such as `gmail_send_email` or `linear_create_issue`.
 
-How the deployment reaches LangSmith is a fact about the deployment, not a choice the agent's source makes, so it comes from the environment—`LANGSMITH_API_KEY`, `LANGSMITH_ENDPOINT` / `LANGCHAIN_ENDPOINT`, `LANGCHAIN_WORKSPACE_ID`—the same way the [LangSmith connector](/langsmith/managed-deep-agents-connectors/langsmith) resolves those values. The schema is strict: passing `apiKey` or another connection option to the factory is an error, not a silently ignored key.
+How the deployment reaches LangSmith is a fact about the deployment, not a choice the agent's source makes, so it comes from the environment: `LANGSMITH_API_KEY`, `LANGSMITH_ENDPOINT`, and `LANGSMITH_WORKSPACE_ID`. The schema is strict: passing `apiKey` or another connection option to the factory is an error, not a silently ignored key.
 
 ## Whose credentials the tools use
 
@@ -104,13 +117,13 @@ The gateway resolves credentials for whoever the call authenticates as:
 - **A personal key** resolves that user's own connections, which is what makes `mda dev` work against your own Gmail while developing.
 - **A key with no user behind it** has no subject at the gateway yet. Such a deployment borrows a LangSmith agent's shared connection by UUID through `MDA_TOOLSERVER_AGENT_ID`. This is temporary: it goes away once the gateway can resolve a deployment from its own API key.
 
-For per-user credentials—each caller reaching their own Gmail—use [identity credentials](/langsmith/managed-deep-agents-identity#downstream-credentials) with a resolver for `runtime.identity.user` instead of this connector.
+For per-user credentials, such as each caller reaching their own Gmail, use [identity credentials](/langsmith/managed-deep-agents-identity#downstream-credentials) with a resolver for `runtime.identity.user` instead of this connector.
 
 ## Test and deploy
 
 <ManagedDeepAgentsTestAndDeploy />
 
-A call against an integration the workspace has not connected fails with a gateway error naming the integration. Connect it in LangSmith and retry—no redeploy needed.
+A call against an integration the workspace has not connected fails with a gateway error naming the integration. Connect it in LangSmith and retry, no redeploy needed.
 
 ## Next steps
 
