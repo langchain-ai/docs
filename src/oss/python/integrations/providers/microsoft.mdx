@@ -749,15 +749,77 @@ Before you begin, you need an Azure subscription, a Foundry project, a deployed 
 
 Choose a hosting protocol based on how clients interact with the agent:
 
-| Protocol | Host class | Endpoint | Use when |
-| --- | --- | --- | --- |
-| Responses | `ResponsesHostServer` | `/responses` | You need OpenAI-compatible chat, streaming, response history, or conversation threading. Start here for most conversational agents. |
-| Invocations | `InvocationsHostServer` | `/invocations` | You need a custom JSON shape, a webhook-style endpoint, or non-conversational processing. |
+| Protocol | Run argument | SDK host class | Endpoint | Use when |
+| --- | --- | --- | --- | --- |
+| Responses | `--protocol responses` | `ResponsesHostServer` | `/responses` | You need OpenAI-compatible chat, streaming, response history, or conversation threading. Start here for most conversational agents. |
+| Invocations | `--protocol invocations` | `InvocationsHostServer` | `/invocations` | You need a custom JSON shape, a webhook-style endpoint, or non-conversational processing. |
 
-To host and deploy a graph:
+#### Use the configuration-driven runner
 
-1. Pass the compiled graph to the host server for your chosen protocol.
-2. Set `FOUNDRY_PROJECT_ENDPOINT` and `FOUNDRY_MODEL_NAME`, then run and test the host locally.
-3. Use `azd ai agent init` to initialize a hosted-agent project, `azd ai agent run` to test its container, and `azd provision` and `azd deploy` to deploy it. You can also deploy with the Foundry Toolkit Visual Studio Code extension.
+If your agent already runs with the LangGraph CLI, use `langchain_azure_ai.agents.hosting.run` tool from the same project directory. The runner uses the existing `langgraph.json` configuration to load the compiled graph, so the graph does not need hosting-specific wrapper code.
+
+Set the Foundry project endpoint and model deployment name, then select the protocol when you start the host:
+
+<Tabs>
+    <Tab title="Responses">
+        ```bash
+        export FOUNDRY_PROJECT_ENDPOINT="https://<account>.services.ai.azure.com/api/projects/<project>"
+        export AZURE_AI_MODEL_DEPLOYMENT_NAME="<model-deployment-name>"
+        python -m langchain_azure_ai.agents.hosting.run --protocol responses
+        ```
+    </Tab>
+    <Tab title="Invocations">
+        ```bash
+        export FOUNDRY_PROJECT_ENDPOINT="https://<account>.services.ai.azure.com/api/projects/<project>"
+        export AZURE_AI_MODEL_DEPLOYMENT_NAME="<model-deployment-name>"
+        python -m langchain_azure_ai.agents.hosting.run --protocol invocations
+        ```
+    </Tab>
+</Tabs>
+
+For deployment, set `codeConfiguration.entryPoint` on the agent service in `azure.yaml` to the same runner and protocol. Keep the existing project path, runtime, and dependency resolution settings:
+
+<Tabs>
+        <Tab title="Responses">
+                ```yaml
+                services:
+                    my-agent:
+                        codeConfiguration:
+                            entryPoint: '-m langchain_azure_ai.agents.hosting.run --protocol responses'
+                ```
+        </Tab>
+        <Tab title="Invocations">
+                ```yaml
+                services:
+                    my-agent:
+                        codeConfiguration:
+                            entryPoint: '-m langchain_azure_ai.agents.hosting.run --protocol invocations'
+                ...
+                ```
+        </Tab>
+</Tabs>
+
+#### Use the SDK host classes
+
+Use the SDK host classes when you need to customize server construction, control the server lifecycle directly, or implement advanced hosting behavior such as custom routes or handlers:
+
+<Tabs>
+    <Tab title="Responses">
+        ```python
+        from langchain_azure_ai.agents.hosting import ResponsesHostServer
+
+        ResponsesHostServer(graph).run()
+        ```
+    </Tab>
+    <Tab title="Invocations">
+        ```python
+        from langchain_azure_ai.agents.hosting import InvocationsHostServer
+
+        InvocationsHostServer(graph).run()
+        ```
+    </Tab>
+</Tabs>
+
+To deploy either approach, use `azd ai agent init` to initialize a hosted-agent project, `azd ai agent run` to test it locally, and `azd deploy` to deploy it. Run `azd provision` first only when you need to create the Foundry project or other Azure resources. You can also deploy with the Foundry Toolkit Visual Studio Code extension.
 
 The Microsoft Learn guide includes complete examples for both protocols, conversation state, human-in-the-loop flows, testing, deployment, and troubleshooting.
