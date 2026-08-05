@@ -6,6 +6,7 @@ description: Give each caller their own threads, memory, and credentials so agen
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
+import { IdentityScopeExplorer } from '/snippets/identity-scope-explorer.jsx';
 
 Agents are not anonymous chatbots. As soon as more than one person (or one company) uses a deployment, you need to know: **whose conversation is this, and whose data may the agent see or act on?** Identity lets one deployment serve thousands of users safely, with no data leakage between callers.
 
@@ -98,42 +99,48 @@ The scope values:
 - **`user`**: downstream calls can act as the signed-in user (for example call GitHub as Alice).
 - **`agent`**: downstream calls use one shared bot or service token for everyone.
 
+Use the explorer to pick a preset or override each axis. It shows who can access threads, how memory remounts, whose credentials tools use, and the matching declaration:
+
+<IdentityScopeExplorer />
+
 Choose the declaration that matches your product shape:
 
 | Product shape | Declaration | Threads | Memory | Credentials |
 | --- | --- | --- | --- | --- |
-| Private assistant or internal tool | `defineIdentity()` | `user` | `user` | `user` |
-| Multi-tenant SaaS | `defineIdentity({ scope: "organization" })` | `user` | `organization` | `agent` |
-| Shared channel bot | `defineIdentity({ scope: { threads: "conversation" } })` | `conversation` | `user` | `user` |
-| Service (cron/webhook, no human caller) | `defineIdentity({ scope: "agent" })` | `user` | `agent` | `agent` |
+| Private assistant or internal tool | `defineIdentity({ scope: "user" })` | `user` | `user` | `user` |
+| Multi-tenant SaaS | `defineIdentity({ scope: "organization" })` | `user` | `organization` | `none` |
+| Shared channel bot | `defineIdentity({ scope: { threads: "conversation", memory: "user", credentials: "agent" } })` | `conversation` | `user` | `agent` |
+| Service (cron/webhook) or bare default | `defineIdentity()` or `defineIdentity({ scope: "agent" })` | `user` | `agent` | `agent` |
 
-All declarations default to `backend` auth (your backend asserts the caller) and optional organizations, except `scope: "organization"`, which requires an organization on every request.
+Bare `defineIdentity()` expands to the service-agent axes (`threads: "user"`, `memory: "agent"`, `credentials: "agent"`). Unset axes in a per-axis object also follow that agent base, so a bare `{ threads: "conversation" }` inherits shared agent memory unless you set `memory` and `credentials` explicitly.
+
+All declarations default to `backend` auth (your backend asserts the caller) and optional organizations, except when any axis uses `"organization"`, which requires an organization on every request.
 
 <Tip>
 **How to choose quickly:**
 
-- One human per conversation who must not see anyone else's data → `defineIdentity()` (the default)
+- One human per conversation who must not see anyone else's data → `defineIdentity({ scope: "user" })`
 - SaaS with customer orgs → `defineIdentity({ scope: "organization" })`
-- Shared channel bot → `defineIdentity({ scope: { threads: "conversation" } })`
-- Timer or webhook with no user → `defineIdentity({ scope: "agent" })`
+- Shared channel bot → set `threads: "conversation"` and keep `memory: "user"` (usually with `credentials: "agent"`)
+- Timer, webhook, or shared deployment vault → `defineIdentity()` / `scope: "agent"`
 </Tip>
 
 ## Add an identity declaration
 
-Create `identity.py` or `identity.ts` next to your agent entry and export a named `identity`. Most projects need no options at all — `defineIdentity()` gives every caller private threads, memory, and credentials behind your backend's auth:
+Create `identity.py` or `identity.ts` next to your agent entry and export a named `identity`. For a private assistant, set `scope: "user"` so every caller gets private threads, memory, and credentials behind your backend's auth:
 
 <CodeGroup>
 
 ```python identity.py
 from managed_deepagents import define_identity
 
-identity = define_identity()
+identity = define_identity(scope="user")
 ```
 
 ```ts identity.ts
 import { defineIdentity } from "managed-deepagents";
 
-export const identity = defineIdentity();
+export const identity = defineIdentity({ scope: "user" });
 ```
 
 </CodeGroup>
@@ -170,7 +177,7 @@ export const identity = defineIdentity({
 
 </CodeGroup>
 
-Use the full form when you want every field visible, or when you are assembling a config beyond the common shapes. `scope` accepts either one boundary (`"user"`, `"organization"`, `"agent"`, `"none"`) or per-axis overrides such as `{ default: "user", threads: "conversation" }`.
+Bare `defineIdentity()` (no options) is the service-agent shape: private threads with shared agent memory and the shared deployment vault. Use the full form when you want every field visible, or when you are assembling a config beyond the common shapes. `scope` accepts either one boundary (`"user"`, `"organization"`, `"agent"`, `"none"`) or per-axis overrides such as `{ default: "user", threads: "conversation" }`.
 
 For the full project layout, see the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference).
 
