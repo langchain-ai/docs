@@ -1,175 +1,194 @@
 ---
 title: Evaluate Managed Deep Agents
 sidebarTitle: Evals
-description: Scaffold Harbor-style eval tasks, compile a Harbor handoff with mda, and run trials with Harbor.
+description: Author Harbor evals directly or generate them from minimal Managed Deep Agents task definitions.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 
-Evals let you run your Managed Deep Agent against checked-in [Harbor](https://www.harborframework.com/docs/tasks) tasks in isolated environments. Managed Deep Agents **compiles** your agent into a Harbor-ready artifact; you run trials with Harbor yourself (local Docker by default, or another Harbor environment you configure).
+Managed Deep Agents uses [Harbor](https://www.harborframework.com/docs/tasks) for evals. Harbor files under `evals/` are the primary eval interface: you can author Harbor tasks there directly, configure how Harbor runs them, and check them into your project.
 
-Each task describes what the agent should do, Harbor runs the compiled agent once, then grades the result with a Harbor verifier.
+For a faster starting point, MDA can generate Harbor tasks from minimal definitions under `mda_evals/`. This shortcut lets you write an instruction and a language-native test, then compile them into the Harbor workspace.
 
 <ManagedDeepAgentsPrivateBetaNote />
 
+## Understand the eval directories
+
+| Directory | Purpose |
+| --- | --- |
+| `evals/` | Harbor workspace. Contains Harbor tasks, the compiled agent artifact and adapter, the job config, and trial output. Author Harbor files here directly when you need full control. |
+| `mda_evals/` | Optional MDA shortcut. Contains minimal task definitions that `mda evals compile` copies into `evals/tasks/`. |
+
+The two directories support separate authoring paths:
+
+- **Author Harbor evals directly**: Create complete Harbor tasks under `evals/tasks/` and manage them with Harbor.
+- **Generate Harbor evals with MDA**: Create minimal tasks under `mda_evals/`, then compile them into `evals/tasks/` with the agent artifact and Harbor adapter.
+
 ## Prerequisites
 
-- A Managed Deep Agents project created with `mda init` (or an existing project that already has an agent entry).
-- Harbor tasks under `evals/` (scaffold with `mda evals init` if needed).
-- [Docker](https://docs.docker.com/get-docker/) running locally when using Harbor’s default `docker` environment.
-- Model credentials in the project `.env` or your shell (for example `OPENAI_API_KEY` for `openai:…` models).
-- The `mda` CLI from `managed-deepagents` (same install as [CLI reference](/langsmith/managed-deep-agents-cli#install)).
+- A Managed Deep Agents project created with `mda init`, or an existing project with an agent entry.
+- [Docker](https://docs.docker.com/get-docker/) running locally when using Harbor's default `docker` environment.
+- The `mda` CLI from `managed-deepagents`. See the [CLI reference](/langsmith/managed-deep-agents-cli#install).
 - [Harbor](https://www.harborframework.com/docs) on your `PATH`, or [`uv`](https://docs.astral.sh/uv/) so you can run `uv run --with harbor …`.
+- Model and tool credentials exported in the shell that runs Harbor.
 
-## Concepts
+<Note>
+Harbor does not load values from the project `.env` file. When MDA generates a Harbor job config, it writes `${VAR}` placeholders for eligible `.env` keys, not their values. Export the required variables before you run Harbor.
+</Note>
 
-| Term | Meaning |
-| --- | --- |
-| **Task** | One checked-in scenario under `evals/` (instruction + image + verifier). |
-| **Compile** | `mda evals compile` builds a Harbor handoff under `.mda/evals/` (artifact, adapter, example job config). |
-| **Trial** | One Harbor run of a task against the compiled agent. |
-| **Reward** | Numeric score written by the verifier to `/logs/verifier/` (`reward.txt` or `reward.json`). |
+## Author Harbor evals directly
 
-## Scaffold tasks
-
-From your project root:
-
-```bash
-mda evals init
-```
-
-With no path (or with `evals`), the command creates starter tasks under `evals/` when that directory does not already exist. `mda init` also scaffolds starter evals for new projects.
-
-To add one more task later:
-
-```bash
-mda evals init evals/my-task
-```
-
-## Task layout
-
-Each task is a Harbor task directory under `evals/`. The layout matches Harbor’s [task structure](https://www.harborframework.com/docs/tasks):
+Create Harbor tasks under `evals/tasks/` when you want to use Harbor's complete task format. A task can define its instruction, environment, verifier, metadata, and other Harbor configuration:
 
 ```text
 evals/
-  my-task/
-    instruction.md              # Prompt given to the agent
-    task.toml                   # Timeouts, metadata, verifier env
-    identity.json               # Optional caller identity fixture
-    environment/
-      Dockerfile                # Trial image
-    tests/
-      test.sh                   # Verifier entrypoint
-      # optional helpers used by test.sh
+  tasks/
+    my-task/
+      instruction.md
+      task.toml
+      environment/
+        Dockerfile
+      tests/
+        test.sh
 ```
 
-### Instruction
+Each task describes what the agent should do. Harbor runs the agent in the task environment, then runs `tests/test.sh` to grade the result. During grading, the main paths are:
 
-`instruction.md` is the natural-language task description Harbor shows the agent. Keep it specific and verifiable.
-
-### Verifier
-
-After the agent finishes, Harbor grades the trial by running your [verifier](https://www.harborframework.com/docs/tasks#tests) script: `tests/test.sh` on Linux (or `tests/test.bat` on Windows). Inside the container that grades the run, paths look like this:
-
-| Path | What it is |
+| Path | Purpose |
 | --- | --- |
-| `/app` | The agent’s working directory (files the agent created or edited). |
-| `/tests` | Your task’s `tests/` folder during grading (so `test.sh` can call helpers next to it). |
-| `/logs/verifier/` | Where the verifier must write its score. |
+| `/app` | Agent working directory and task output. |
+| `/tests` | Task verifier files. |
+| `/logs/verifier/` | Verifier reward output. |
 
-Your script inspects `/app` (or other outputs), then **must** write a reward file:
+The verifier must write a numeric reward to `/logs/verifier/reward.txt` or numeric metrics to `/logs/verifier/reward.json`. For the full task format and verifier options, see the [Harbor task documentation](https://www.harborframework.com/docs/tasks).
 
-| Reward file | Format |
-| --- | --- |
-| `/logs/verifier/reward.txt` | A single integer or float (commonly `1` for pass, `0` for fail). |
-| `/logs/verifier/reward.json` | A JSON object of numeric metrics (for multi-dimensional scores). |
+Files you author directly under `evals/tasks/` are preserved when MDA compiles shortcut tasks with other names.
 
-Use either format. Harbor accepts both. Prefer absolute paths (`/app/...`, `/tests/...`) so the script does not depend on the working directory. You can implement checks in shell, call a test runner, or run custom grading logic—as long as the reward file is written.
+## Generate Harbor evals with MDA
 
-Minimal example:
+MDA can generate a Harbor task from an instruction and a Python or TypeScript test. Run the following command from the Managed Deep Agents project root:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-mkdir -p /logs/verifier
-
-# Replace with your real checks (files, APIs, unit tests, …).
-if [[ -f /app/output.txt ]]; then
-  echo 1 > /logs/verifier/reward.txt
-else
-  echo 0 > /logs/verifier/reward.txt
-  exit 1
-fi
+mda evals init smoke
 ```
 
-For multi-metric rewards, verifier env vars in `task.toml`, and LLM-as-a-judge patterns, see Harbor’s [task structure](https://www.harborframework.com/docs/tasks) and [LLM-as-a-judge](https://www.harborframework.com/docs/tutorials/llm-as-a-judge) docs.
+The task name can contain ASCII letters, numbers, `_`, and `-`. Run the command with another name to add another task. `mda init` does not create eval tasks automatically.
 
-### Set an eval identity
+The command creates one of the following layouts:
 
-Add `identity.json` when a task needs a specific caller, groups, or claims. The fixture is optional, including for projects that export [identity](/langsmith/managed-deep-agents-identity), and scaffolding does not create one automatically.
+<CodeGroup>
 
-```json identity.json
-{
-  "user": {
-    "kind": "person",
-    "id": "eval_user_1",
-    "email": "eval@example.com"
-  },
-  "groups": ["billing"],
-  "source": {
-    "provider": "cli"
-  },
-  "claims": {
-    "permissions": ["billing:read"]
-  }
-}
+```text TypeScript
+mda_evals/
+  smoke/
+    instruction.md
+    tests/
+      answer.test.ts
 ```
 
-The fixture is injected as the trial identity envelope. It is not left under `/app` as an agent-writable file.
+```text Python
+mda_evals/
+  smoke/
+    instruction.md
+    tests/
+      test_answer.py
+```
 
-## Compile a Harbor handoff
+</CodeGroup>
 
-From your project root:
+The generated task asks the agent to write `answer.txt` containing `PONG`. Replace the instruction and test with behavior that represents your application.
+
+<CodeGroup>
+
+```typescript TypeScript
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+
+test("answer.txt contains exactly PONG", () => {
+  const text = readFileSync("/app/answer.txt", "utf8").trim();
+  assert.equal(text, "PONG");
+});
+```
+
+```python Python
+from pathlib import Path
+
+
+def test_answer_is_pong():
+    assert Path("/app/answer.txt").read_text().strip() == "PONG"
+```
+
+</CodeGroup>
+
+### Compile shortcut tasks
+
+Compile every task under `mda_evals/`:
 
 ```bash
 mda evals compile .
 ```
 
-Compile requires at least one Harbor task under `evals/` (a subdirectory with `instruction.md` and `tests/`). It writes a handoff under `.mda/evals/`:
+To refresh specific tasks, repeat `--task`:
+
+```bash
+mda evals compile . --task smoke --task regression
+```
+
+For each selected task, MDA:
+
+1. Replaces the matching directory under `evals/tasks/`.
+2. Copies the complete task directory from `mda_evals/`.
+3. Adds `tests/test.sh` when the task does not provide one. The wrapper runs the language-native tests and writes a `1` or `0` reward.
+
+Unselected tasks under `evals/tasks/` are preserved, including tasks authored directly as Harbor tasks. The generated Harbor job uses `evals/tasks/` as its dataset, so preserved tasks remain part of the Harbor workspace.
+
+<Warning>
+Treat `mda_evals/<name>/` as the source for a shortcut-generated task. Compiling that task replaces the entire matching `evals/tasks/<name>/` directory, including changes made only to the compiled copy.
+</Warning>
+
+You can add Harbor files such as `task.toml`, `environment/`, or a custom `tests/test.sh` to a shortcut task under `mda_evals/<name>/`. MDA copies them into the Harbor task during compilation.
+
+### Inspect the compiled handoff
+
+Compilation writes or updates the Harbor workspace:
 
 | Path | Contents |
 | --- | --- |
-| `.mda/evals/artifact/` | Compiled managed agent (manifest + project archive). |
-| `.mda/evals/harbor-adapter/` | Embedded `mda_harbor` adapter Harbor imports to run the agent. |
-| `.mda/evals/harbor-job.json` | Example Harbor job config pointing at your `evals/` dataset. |
+| `evals/artifact/` | Compiled managed agent and artifact manifest. |
+| `evals/harbor-adapter/` | Embedded `mda_harbor` adapter that Harbor imports to run the agent. |
+| `evals/tasks/` | Harbor task dataset, including generated and directly authored tasks. |
+| `evals/harbor-job.json` | Ready-to-edit Harbor job config. |
+| `evals/harbor-jobs/<id>/` | Local trial results for this compile. |
 
-Optional compile flag:
+Compile supports the following repeatable flags:
 
 | Flag | Purpose |
 | --- | --- |
-| `--model <provider:model>` | Model recorded in the example job config. Repeat to record a matrix in the artifact manifest; the job config uses the first value. Defaults to the model from your agent entry when omitted. |
+| `--task <name>` | Refresh one shortcut task from `mda_evals/`. Repeat to select more tasks. Omit to refresh every shortcut task. |
+| `--model <provider:model>` | Record a model in the artifact manifest. The generated job config uses the first model. If omitted, MDA uses the agent's model when available. |
 
-`.mda/evals/` is local output. Do not commit it, and it is not part of the deploy archive.
+Check in the Harbor definitions and configuration under `evals/` that your project uses. Keep local run output under `evals/harbor-jobs/` out of version control. Eval directories are not included in the deployed agent build.
 
 ## Run trials with Harbor
 
-`mda evals compile` prints a copy-pasteable Harbor command. From the project root:
+`mda evals compile` prints a Harbor command configured for the compiled agent. Export the variables listed in the compile summary, then run the command from the project root:
 
 ```bash
-PYTHONPATH=.mda/evals/harbor-adapter \
-  uv run --with harbor harbor run --config .mda/evals/harbor-job.json --yes
+export OPENAI_API_KEY="<OPENAI_API_KEY>"
+
+PYTHONPATH=evals/harbor-adapter \
+  uv run --with harbor harbor run --config evals/harbor-job.json --yes
 ```
 
 If `harbor` is already on your `PATH`, the printed command uses `harbor run` directly instead of `uv run --with harbor`.
 
-Edit `.mda/evals/harbor-job.json` to change tasks, model, environment type, concurrency, or attempts. Harbor owns trial orchestration, backends, and reporting—not the `mda` CLI. For Harbor flags and job config fields, see the [Harbor docs](https://www.harborframework.com/docs).
+Edit `evals/harbor-job.json` to change the task dataset, model, environment, concurrency, or attempts. Harbor owns trial orchestration, environments, and reporting. For job configuration and run options, see the [Harbor documentation](https://www.harborframework.com/docs).
 
-Re-run `mda evals compile` after you change the agent or want a fresh example job config (each compile uses a new Harbor jobs directory under `.mda/evals/harbor-jobs/`).
+Running the same command again resumes the jobs directory referenced by the config. Recompile, or pass Harbor a fresh `--job-name`, to start a new run.
 
 ## Next steps
 
-- [Identity](/langsmith/managed-deep-agents-identity) — when tasks need `identity.json`
-- [CLI reference](/langsmith/managed-deep-agents-cli) — full `mda` command surface
-- [Deploy an agent](/langsmith/managed-deep-agents-deploy) — ship the agent after local evals pass
-- [Harbor documentation](https://www.harborframework.com/docs) — job config, environments, and trial runners
+- [CLI reference](/langsmith/managed-deep-agents-cli): Review all `mda evals` commands and flags.
+- [Deploy an agent](/langsmith/managed-deep-agents-deploy): Deploy the agent after its evals pass.
+- [Harbor documentation](https://www.harborframework.com/docs): Configure tasks, environments, jobs, and verifiers.
