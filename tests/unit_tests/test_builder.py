@@ -537,6 +537,8 @@ def test_build_all_creates_managed_deep_agents_language_routes() -> None:
             content=(
                 "[Tools](/langsmith/managed-deep-agents-tools)\n"
                 "[Deep Agents](/oss/deepagents/overview)\n"
+                ":::python\nPython only.\n:::\n"
+                ":::js\nTypeScript only.\n:::\n"
             ),
         ),
     ]
@@ -587,4 +589,8 @@ def test_build_all_creates_managed_deep_agents_language_routes() -> None:
             / "managed-deep-agents-next-steps.mdx"
         ).read_text()
         assert "/langsmith/python/managed-deep-agents-tools" in python_snippet
+        assert "Python only." in python_snippet
+        assert "TypeScript only." not in python_snippet
         assert "/langsmith/javascript/managed-deep-agents-tools" in js_snippet
+        assert "TypeScript only." in js_snippet
+        assert "Python only." not in js_snippet

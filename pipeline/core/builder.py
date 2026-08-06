@@ -1116,10 +1116,6 @@ class DocumentationBuilder:
             with input_path.open("r", encoding="utf-8") as f:
                 content = f.read()
 
-            processed_content = preprocess_markdown(
-                content, input_path, target_language=None
-            )
-
             if input_path.suffix.lower() == ".md":
                 output_path = output_path.with_suffix(".mdx")
 
@@ -1129,7 +1125,10 @@ class DocumentationBuilder:
             )
 
             for lang_key, lang_name in self.language_url_names.items():
-                lang_content = self._rewrite_oss_links(processed_content, lang_key)
+                lang_content = preprocess_markdown(
+                    content, input_path, target_language=lang_key
+                )
+                lang_content = self._rewrite_oss_links(lang_content, lang_key)
                 lang_content = self._rewrite_managed_deep_agents_links(
                     lang_content, lang_key
                 )
@@ -1139,7 +1138,10 @@ class DocumentationBuilder:
                     f.write(lang_content)
 
             # Default path: Python-prefixed absolute links for unversioned pages.
-            default_content = self._rewrite_oss_links(processed_content, "python")
+            default_content = preprocess_markdown(
+                content, input_path, target_language="python"
+            )
+            default_content = self._rewrite_oss_links(default_content, "python")
             default_content = self._rewrite_managed_deep_agents_links(
                 default_content, "python"
             )
