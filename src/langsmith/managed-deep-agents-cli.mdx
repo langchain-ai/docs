@@ -10,11 +10,9 @@ import ManagedDeepAgentsRuntimeOwnership from '/snippets/langsmith/managed-deep-
 
 The `mda` CLI tests and deploys code-first [Managed Deep Agents](/langsmith/managed-deep-agents-overview). It is included with the `managed-deepagents` npm and Python packages.
 
-<Note>
 <ManagedDeepAgentsPrivateBetaNote />
-</Note>
 
-For the fastest end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart). For workflow guidance, see [Identity](/langsmith/managed-deep-agents-identity), [Memory](/langsmith/managed-deep-agents-memory), [Evals](/langsmith/managed-deep-agents-evals), [Custom tools](/langsmith/managed-deep-agents-tools), [Custom middleware](/langsmith/managed-deep-agents-middleware), [Sandboxes](/langsmith/managed-deep-agents-sandboxes), [Schedules](/langsmith/managed-deep-agents-schedules), and [Deploy an agent](/langsmith/managed-deep-agents-deploy).
+For the fastest end-to-end path, see the [quickstart](/langsmith/managed-deep-agents-quickstart). For workflow guidance, see [Identity](/langsmith/managed-deep-agents-identity), [Memory](/langsmith/managed-deep-agents-memory), [Evals](/langsmith/managed-deep-agents-evals), [Custom tools](/langsmith/managed-deep-agents-tools), [Custom middleware](/langsmith/managed-deep-agents-middleware), [Sandboxes](/langsmith/managed-deep-agents-sandboxes), [Channels](/langsmith/managed-deep-agents-channels), [Schedules](/langsmith/managed-deep-agents-schedules), and [Deploy an agent](/langsmith/managed-deep-agents-deploy).
 
 ## Install
 
@@ -84,7 +82,7 @@ mda init my-agent
 | `name` | Required project directory name. The command fails if the destination already exists. |
 | `--instructions TEXT` | System prompt to write into `instructions.md`. |
 | `--instructions-file PATH` | Read the system prompt for `instructions.md` from a file, or from stdin when set to `-`. |
-| `--identity` | Add managed authentication with user-owned threads and downstream credentials. |
+| `--identity` | Add managed authentication with user-owned threads. |
 | `--memory agent\|none` | Optionally write a root memory declaration. If omitted, no memory file is created and durable memory is off. |
 | `--model SPEC` | Model the agent runs on, as `provider:model`. |
 | `--no-sandbox` | Leave out the managed sandbox declaration. |
@@ -189,6 +187,7 @@ mda deploy .
 | `--deployment-type dev\|prod` | Deployment type when creating a deployment. Defaults to `dev`. |
 | `--workspace-id WORKSPACE_ID` | Workspace ID to deploy into. Overrides `LANGSMITH_WORKSPACE_ID`. |
 | `--no-wait` | Trigger the remote build and exit without polling for deployment completion. |
+| `--configure-slack` | Generate bootstrap and deployed app manifests for the project's single Slack channel. |
 
 Deploy runs these steps:
 
@@ -202,6 +201,8 @@ Deploy runs these steps:
 8. Archive the build, upload it, and trigger a remote build.
 9. Poll the revision until it reaches `DEPLOYED` unless `--no-wait` is set.
 10. Reconcile the managed LangSmith cron jobs for schedules unless `--no-wait` is set.
+
+With `--configure-slack`, deploy requires exactly one Slack channel and a project-root `slack-app-manifest.json`. When the Slack credentials are missing, it writes `.mda/slack/bootstrap-manifest.json` and exits before changing remote state. After you create the app and add its credentials, rerun the waited deployment to write `.mda/slack/app-manifest.json` with the deployed Events URL. For the complete workflow, see [Slack channels](/langsmith/managed-deep-agents-channels-slack#create-and-deploy-the-slack-app).
 
 On success, the CLI prints the LangSmith deployment dashboard URL. For secrets routing and deploy tips, see [Deploy an agent](/langsmith/managed-deep-agents-deploy).
 
@@ -262,7 +263,13 @@ For examples, see [Custom tools](/langsmith/managed-deep-agents-tools) and [Cust
 
 Optionally export a named `identity` declaration from a project-root `identity.ts` or `identity.py` created with `defineIdentity` / `define_identity`.
 
-When present, `mda` generates the custom auth handler, injects it into the compiled app, and scopes threads and store access from the declaration. Projects without identity keep the previous compile output. For presets, ingress modes, guest tokens, and `runtime.identity`, see [Identity](/langsmith/managed-deep-agents-identity).
+When present, `mda` generates the custom auth handler, injects it into the compiled app, and gives each caller private threads. Projects without identity keep the previous compile output. For authentication modes and `runtime.identity`, see [Identity](/langsmith/managed-deep-agents-identity).
+
+### Channels
+
+Declare external messaging channels under `channels/`. Each channel module must export a named `channel` in TypeScript or a module-level `channel` in Python. The file name becomes the configured channel name and its inbound route at `/channels/<name>/events`.
+
+For supported providers and project conventions, see [Channels](/langsmith/managed-deep-agents-channels).
 
 ### Instructions
 
@@ -292,7 +299,7 @@ For configuration examples and lifecycle behavior, see [Sandboxes](/langsmith/ma
 
 ### Evals
 
-Put Harbor-style eval tasks under `evals/`. Each task directory includes `instruction.md`, `task.toml`, an `environment/` image, and a `tests/test.sh` verifier. When the project declares [identity](/langsmith/managed-deep-agents-identity), each task also needs `identity.json`.
+Put Harbor-style eval tasks under `evals/`. Each task directory includes `instruction.md`, `task.toml`, an `environment/` image, and a `tests/test.sh` verifier. Add an optional `identity.json` when a task needs a specific caller identity.
 
 `mda init` scaffolds starter evals under `evals/`. For existing projects, use `mda evals init`. Compile a Harbor handoff with `mda evals compile`, then run trials with Harbor. Artifacts land under `.mda/evals/` and are not part of the deploy archive. For the full workflow, see [Evals](/langsmith/managed-deep-agents-evals).
 
