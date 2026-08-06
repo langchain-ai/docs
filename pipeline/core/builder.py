@@ -112,6 +112,9 @@ class DocumentationBuilder:
         logger.debug("Building LangSmith content...")
         self._build_unversioned_content("langsmith", "langsmith")
 
+        logger.debug("Building Managed Deep Agents language variants...")
+        self._build_managed_deep_agents_versions()
+
         # Copy shared files (docs.json, images, etc.)
         logger.debug("Copying shared files...")
         self._copy_shared_files()
@@ -195,6 +198,27 @@ class DocumentationBuilder:
         # Match markdown links and HTML links/anchors
         # This handles both [text](/oss/path) and <a href="/oss/path">
         pattern = r'(\[.*?\]\(|\bhref="|")(/oss/[^")\s]+)([")\s])'
+        return re.sub(pattern, rewrite_link, content)
+
+    def _rewrite_managed_deep_agents_links(
+        self, content: str, target_language: str | None
+    ) -> str:
+        """Rewrite Managed Deep Agents links to the target language route."""
+        if not target_language:
+            return content
+
+        language = self.language_url_names[target_language]
+
+        def rewrite_link(match: re.Match) -> str:
+            prefix, url, suffix = match.groups()
+            relative_url = url.removeprefix("/langsmith/")
+            return f"{prefix}/langsmith/{language}/{relative_url}{suffix}"
+
+        pattern = (
+            r'(\[.*?\]\(|\bhref="|")'
+            r'(/langsmith/managed-deep-agents[^"\)\s]*)'
+            r'(["\)\s])'
+        )
         return re.sub(pattern, rewrite_link, content)
 
     def _add_suggested_edits_link(self, content: str, input_path: Path) -> str:
@@ -310,8 +334,8 @@ class DocumentationBuilder:
                     content, target_language
                 )
 
-            # Then rewrite /oss/ links to include language
-            return self._rewrite_oss_links(content, target_language)
+            content = self._rewrite_oss_links(content, target_language)
+            return self._rewrite_managed_deep_agents_links(content, target_language)
 
         except Exception:
             logger.exception("Failed to process markdown content from %s", file_path)
@@ -443,6 +467,41 @@ class DocumentationBuilder:
         if self._build_single_file_to_path(file_path, js_output, "js"):
             logger.debug("Built JavaScript version: oss/javascript/%s", oss_relative)
 
+    def is_managed_deep_agents_file(self, file_path: Path) -> bool:
+        """Return whether a source file is a Managed Deep Agents page."""
+        try:
+            relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
+        except ValueError:
+            return False
+        return (
+            relative_path.parent == Path("langsmith")
+            and relative_path.name.startswith("managed-deep-agents")
+            and relative_path.suffix.lower() in {".md", ".mdx"}
+        )
+
+    def _build_managed_deep_agents_variants(self, file_path: Path) -> None:
+        """Build Python and JavaScript routes for a Managed Deep Agents page."""
+        relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
+        langsmith_relative = relative_path.relative_to("langsmith")
+        for language, output_name in self.language_url_names.items():
+            output_path = (
+                self.build_dir / "langsmith" / output_name / langsmith_relative
+            )
+            if self._build_single_file_to_path(file_path, output_path, language):
+                logger.debug(
+                    "Built Managed Deep Agents %s version: %s",
+                    output_name,
+                    langsmith_relative,
+                )
+
+    def _build_managed_deep_agents_versions(self) -> None:
+        """Build language-specific routes for all Managed Deep Agents pages."""
+        langsmith_dir = self.src_dir / "langsmith"
+        if not langsmith_dir.exists():
+            return
+        for file_path in langsmith_dir.glob("managed-deep-agents*.mdx"):
+            self._build_managed_deep_agents_variants(file_path)
+
     def _build_unversioned_file(self, file_path: Path, relative_path: Path) -> None:
         """Build an unversioned file (langsmith).
 
@@ -453,6 +512,8 @@ class DocumentationBuilder:
         output_path = self.build_dir / relative_path
         if self._build_single_file_to_path(file_path, output_path, "python"):
             logger.debug("Built: %s", relative_path)
+        if self.is_managed_deep_agents_file(file_path):
+            self._build_managed_deep_agents_variants(file_path)
 
     def _build_shared_file(self, file_path: Path, relative_path: Path) -> None:
         """Build a shared file (images, docs.json, JS/CSS files).
@@ -554,7 +615,10 @@ class DocumentationBuilder:
         if file_path.suffix.lower() in self.copy_extensions:
             # Handle markdown files with preprocessing
             if file_path.suffix.lower() in {".md", ".mdx"}:
-                self._process_markdown_file(file_path, output_path)
+                if self.is_managed_deep_agents_file(file_path):
+                    self._build_unversioned_file(file_path, relative_path)
+                else:
+                    self._process_markdown_file(file_path, output_path)
                 return True
             shutil.copy2(file_path, output_path)
             return True
@@ -1066,6 +1130,9 @@ class DocumentationBuilder:
 
             for lang_key, lang_name in self.language_url_names.items():
                 lang_content = self._rewrite_oss_links(processed_content, lang_key)
+                lang_content = self._rewrite_managed_deep_agents_links(
+                    lang_content, lang_key
+                )
                 lang_output = snippets_root / lang_name / relative_snippet
                 lang_output.parent.mkdir(parents=True, exist_ok=True)
                 with lang_output.open("w", encoding="utf-8") as f:
@@ -1073,6 +1140,9 @@ class DocumentationBuilder:
 
             # Default path: Python-prefixed absolute links for unversioned pages.
             default_content = self._rewrite_oss_links(processed_content, "python")
+            default_content = self._rewrite_managed_deep_agents_links(
+                default_content, "python"
+            )
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with output_path.open("w", encoding="utf-8") as f:
                 f.write(default_content)
