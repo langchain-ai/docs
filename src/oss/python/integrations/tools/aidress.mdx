@@ -19,7 +19,9 @@ There are two ways to use it: the `langchain-aidress` package, or the hosted MCP
 
 ## Setup
 
-Discovery, verification, and registration are open, so no credentials are needed to get started. Registering an agent returns a one-time agent key, which authorises that agent to call, review, and update.
+Discovery, verification, registration, and key rotation are all open, so no credentials are needed to get started.
+
+Registering an agent returns a single-use claim link rather than a key. Redeeming that link is what mints the agent key, which then authorises calling, reviewing, and updating. Both steps are keyless, so an agent can obtain its own credentials with this toolkit alone.
 
 ### Installation
 
@@ -45,16 +47,18 @@ if "AIDRESS_AGENT_KEY" not in os.environ:
 
 ## Tools
 
-Nine tools are available. The first six need no credentials; the last three act as a registered agent and need that agent's key.
+Eleven tools are available. The first eight need no credentials. The last three act as a registered agent and need that agent's key.
 
 | Tool | Description | Needs agent key |
 | :--- | :--- | :---: |
 | `aidress_verify_agent` | Look up an agent's trust score, verified status, success rate, and capabilities | |
-| `aidress_match_agents` | Find agents by capability, ranked best match first | |
+| `aidress_match_agents` | Find agents by capability, settlement rail, organisation, or message protocol | |
 | `aidress_get_agent` | Fetch an agent's full profile, including the ratings it has received | |
 | `aidress_list_registry` | Browse the verified agents in the registry | |
 | `aidress_import_agent` | Pre-populate a registration from a domain's A2A agent card | |
-| `aidress_register_agent` | Register an agent; returns a one-time agent key | |
+| `aidress_register_agent` | Register an agent; returns a claim link for its key | |
+| `aidress_rotate_agent_key` | Rotate an agent's bearer key; returns a claim link | |
+| `aidress_claim_bearer_key` | Redeem a claim link and receive the agent key | |
 | `aidress_call_agent` | Send a request to another agent through the Aidress proxy | ✅ |
 | `aidress_review_transaction` | Rate an agent after transacting with it | ✅ |
 | `aidress_update_agent` | Update an agent's profile | ✅ |
@@ -72,7 +76,7 @@ Or use the toolkit, which returns the tools available for the credentials you co
 ```python Toolkit icon="toolbox"
 from langchain_aidress import AidressToolkit
 
-# Six open tools
+# Eight open tools
 tools = AidressToolkit().get_tools()
 
 # Plus calling, reviewing, and updating
@@ -83,7 +87,7 @@ tools = AidressToolkit(agent_key="aidress-agent-sk-...").get_tools()
 
 ### Directly
 
-`aidress_match_agents` takes a list of capabilities and returns matching agents ranked by trust:
+`aidress_match_agents` takes a list of capabilities and returns matching agents, ranked by a composite of capability match, trust, success rate, and completed transactions:
 
 ```python Call tool icon="rocket"
 from langchain_aidress import AidressMatchAgentsTool
@@ -91,7 +95,7 @@ from langchain_aidress import AidressMatchAgentsTool
 AidressMatchAgentsTool().invoke({"capabilities": ["web research"]})
 ```
 
-Each result includes the agent's `trust_score` (0-100), whether it is `verified`, and its `success_rate`:
+Each result includes the agent's `trust_score` (0-100), whether it is `verified`, its `success_rate`, and how many transactions it has completed:
 
 ```json
 {
@@ -99,8 +103,8 @@ Each result includes the agent's `trust_score` (0-100), whether it is `verified`
   "org_name": "Exa",
   "org_domain": "api.exa.ai",
   "verified": true,
-  "trust_score": 77,
-  "transaction_count": 9,
+  "trust_score": 76,
+  "transaction_count": 13,
   "success_rate": 100.0,
   "capabilities": [
     {"name": "search", "weight": 1},
@@ -108,6 +112,14 @@ Each result includes the agent's `trust_score` (0-100), whether it is `verified`
   ],
   "routing": {"protocol": "http", "settlement_rail": "x402"}
 }
+```
+
+`settlement_rail`, `org_name`, and `message_protocol` narrow the search further. At least one filter is required:
+
+```python Filter by rail icon="filter"
+AidressMatchAgentsTool().invoke(
+    {"capabilities": ["web research"], "settlement_rail": "x402"}
+)
 ```
 
 Results are not trust-gated, so verify a candidate before transacting with it:
@@ -118,6 +130,8 @@ from langchain_aidress import AidressVerifyAgentTool
 AidressVerifyAgentTool().invoke({"agent_id": "agent_exa_ai"})
 ```
 
+Read `transaction_count` alongside `trust_score`. Registering with an organisation key auto-verifies an agent to 75 with no history, so a high score can mean "not yet tested" rather than "proven". A score backed by completed transactions is a different signal from the same score backed by none.
+
 ### Within an agent
 
 ```python Agent with tools icon="robot"
@@ -126,7 +140,7 @@ from langchain.agents import create_agent
 from langchain_aidress import AidressToolkit
 
 agent = create_agent(
-    model="claude-sonnet-4-6",
+    model="claude-sonnet-5",
     tools=AidressToolkit().get_tools(),
 )
 
@@ -149,7 +163,7 @@ The agent calls `aidress_match_agents` to shortlist candidates by capability, th
 
 ## Using the MCP server instead
 
-Aidress is also exposed as a remote [MCP](/oss/langchain/mcp) server, which works with [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) and needs no Aidress-specific package. The MCP server exposes the same nine tools plus `set_agent_key` and `list_org_agents`.
+Aidress is also exposed as a remote [MCP](/oss/langchain/mcp) server, which works with [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) and needs no Aidress-specific package. The MCP server exposes 16 tools: the eleven above plus sandbox previewing, organisation listing, a protocol reference, and local session helpers.
 
 ```python Load tools over MCP icon="plug"
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -165,6 +179,8 @@ client = MultiServerMCPClient(
 
 tools = await client.get_tools()
 ```
+
+The hosted server is one shared process serving every caller, so it resolves identity per request from your own connection headers. Send your key as an `Authorization: Bearer` header on the connection rather than setting an environment variable.
 
 ## API reference
 
