@@ -1,0 +1,343 @@
+---
+title: Connect a Managed Deep Agent to Slack
+sidebarTitle: Slack
+description: Start Managed Deep Agents runs from Slack messages and send responses to Slack conversations.
+---
+
+import ManagedDeepAgentsPrivateBetaNote from '/snippets/python/langsmith/managed-deep-agents-private-beta-note.mdx';
+
+A Slack channel lets people invoke a Managed Deep Agent through app mentions, direct messages, and replies in an active Slack thread. Managed Deep Agents verifies Slack events, maps each conversation to a thread, runs the agent as the resolved caller, and posts the response back to Slack.
+
+Slack is a bring-your-own-app integration. You own a Slack app manifest in the agent project, and the `mda` CLI generates the bootstrap and deployed versions you apply to the app.
+
+<ManagedDeepAgentsPrivateBetaNote />
+
+## Add a Slack channel
+
+Create `channels/slack.py` or `channels/slack.ts` and export a channel created with `channels.slack()`:
+
+<CodeGroup>
+
+```python channels/slack.py
+from managed_deepagents import channels
+
+channel = channels.slack()
+```
+
+```ts channels/slack.ts
+import { channels } from "managed-deepagents";
+
+export const channel = channels.slack();
+```
+
+</CodeGroup>
+
+The file name sets the channel name to `slack` and mounts its Events API route at `/channels/slack/events`. You can use another file name when you need a different configured name.
+
+For the full project layout, see [Project structure](/langsmith/managed-deep-agents-project-structure).
+
+## Create and deploy the Slack app
+
+The `--configure-slack` deployment workflow creates a bootstrap manifest before the Slack credentials exist, then creates a final manifest after the deployed Events URL is available. It requires exactly one Slack channel in the project.
+
+<Steps>
+  <Step title="Create the app manifest template">
+    Create `slack-app-manifest.json` at the project root. Commit this file so it remains the source of truth for the app name, bot user, OAuth scopes, bot events, branding, and other Slack settings.
+
+    Start with this template:
+
+    ```json slack-app-manifest.json
+    {
+      "display_information": {
+        "name": "Managed Deep Agent"
+      },
+      "features": {
+        "bot_user": {
+          "display_name": "Managed Deep Agent",
+          "always_online": false
+        }
+      },
+      "oauth_config": {
+        "scopes": {
+          "bot": [
+            "app_mentions:read",
+            "channels:history",
+            "chat:write",
+            "groups:history",
+            "im:history"
+          ]
+        }
+      },
+      "settings": {
+        "event_subscriptions": {
+          "bot_events": [
+            "app_mention",
+            "message.channels",
+            "message.groups",
+            "message.im"
+          ]
+        },
+        "socket_mode_enabled": false
+      }
+    }
+    ```
+
+    Edit the template for your app. Keep the bot scopes aligned with its bot events. Do not add credentials or `settings.event_subscriptions.request_url`; MDA inserts the trusted Events URL after deployment. Keep `settings.socket_mode_enabled` set to `false` because deployed channels receive events over HTTPS.
+  </Step>
+  <Step title="Configure deployment credentials">
+    Set the LangSmith workspace and API key, plus the key required by the agent's model provider:
+
+    ```bash
+    export LANGSMITH_WORKSPACE_ID='<workspace-id>'
+    export LANGSMITH_API_KEY='<langsmith-api-key>'
+    export OPENAI_API_KEY='<model-provider-key>'
+    ```
+
+    Use the appropriate model-provider variable instead of `OPENAI_API_KEY` when the agent uses another provider. A project that uses trusted-backend identity also needs `MDA_INGRESS_SECRET` in `.env`, the process environment, or LangSmith workspace secrets.
+  </Step>
+  <Step title="Generate the bootstrap manifest">
+    Run a waited deployment with Slack configuration enabled:
+
+    ```bash
+    mda deploy . \
+      --workspace-id "$LANGSMITH_WORKSPACE_ID" \
+      --configure-slack
+    ```
+
+    Because a new app does not have Slack credentials yet, MDA writes `.mda/slack/bootstrap-manifest.json` and exits before it syncs Context Hub or creates or updates a remote deployment. The bootstrap manifest preserves the template except that it omits Event Subscriptions until the deployed HTTPS URL is known.
+
+    MDA prints a **Create app from manifest** link when the encoded manifest fits in a URL. For a larger manifest, it prints instructions for importing the generated file manually.
+  </Step>
+  <Step title="Create and install the Slack app">
+    Open the link printed by MDA and select the target workspace. If MDA printed file-import instructions instead, open [Slack apps](https://api.slack.com/apps), select **Create New App**, select **From a manifest**, and import `.mda/slack/bootstrap-manifest.json`.
+
+    Review the requested scopes, create the app, and install it to the workspace.
+  </Step>
+  <Step title="Add the Slack credentials">
+    In the new Slack app, copy:
+
+    - **Basic Information > App Credentials > Signing Secret**
+    - **OAuth & Permissions > Bot User OAuth Token**
+
+    Add the values to the project `.env` file:
+
+    ```dotenv
+    SLACK_SIGNING_SECRET=your-signing-secret
+    SLACK_BOT_TOKEN=xoxb-your-bot-token
+    ```
+
+    Never commit `.env` or either credential. MDA also recognizes these values from the process environment or LangSmith workspace secrets.
+  </Step>
+  <Step title="Deploy and generate the final manifest">
+    Rerun the same command:
+
+    ```bash
+    mda deploy . \
+      --workspace-id "$LANGSMITH_WORKSPACE_ID" \
+      --configure-slack
+    ```
+
+    Do not add `--no-wait`. MDA must wait for the deployment and receive its public Agent Server URL before it can generate `.mda/slack/app-manifest.json`.
+  </Step>
+  <Step title="Apply the final manifest">
+    Open the existing Slack app's **App Manifest** page and apply `.mda/slack/app-manifest.json`. The final manifest restores the template's Event Subscriptions and adds the deployed request URL:
+
+    ```text
+    https://<agent-server>/channels/<channel-name>/events
+    ```
+
+    Save the changes and confirm that Slack marks the request URL as verified. Reinstall the app if Slack reports changed OAuth scopes.
+  </Step>
+  <Step title="Test the bot">
+    Invite the bot to a channel, then test the configured event types:
+
+    - Mention the bot with `@bot-name`.
+    - Send the bot a direct message.
+    - Reply inside an existing bot thread.
+
+    Inspect the resulting traces in LangSmith.
+  </Step>
+</Steps>
+
+Treat `slack-app-manifest.json` as the source of truth. When you change its scopes, bot events, branding, or other settings, rerun `mda deploy . --configure-slack`, apply the regenerated `.mda/slack/app-manifest.json`, and reinstall the app if Slack requests it. The generated files under `.mda/` are build artifacts; do not commit them.
+
+## Configure Slack behavior
+
+Pass options to `channels.slack(...)` to control Managed Deep Agents runtime behavior. Configure OAuth scopes and delivered event types in the Slack app, not in the channel declaration.
+
+<CodeGroup>
+
+```python channels/slack.py
+from managed_deepagents import channels
+
+channel = channels.slack(
+    auto_reply=True,
+    mention_behavior="strip",
+    filters={
+        "include_conversations": ["C0123456789"],
+        "exclude_users": ["slack:T0123456789:U0123456789"],
+    },
+    conversation={
+        "app_mention": "thread",
+        "direct_message": "conversation",
+    },
+)
+```
+
+```ts channels/slack.ts
+import { channels } from "managed-deepagents";
+
+export const channel = channels.slack({
+  autoReply: true,
+  mentionBehavior: "strip",
+  filters: {
+    includeConversations: ["C0123456789"],
+    excludeUsers: ["slack:T0123456789:U0123456789"],
+  },
+  conversation: {
+    appMention: "thread",
+    directMessage: "conversation",
+  },
+});
+```
+
+</CodeGroup>
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `auto_reply` / `autoReply` | `true` | Post the agent's final response to the originating Slack thread or conversation. |
+| `mention_behavior` / `mentionBehavior` | `"strip"` | Remove Slack mention tokens before passing text to the agent. Set it to `"preserve"` to keep them. |
+| `filters.include_conversations` / `includeConversations` | All | Accept events only from the listed Slack conversation IDs. |
+| `filters.exclude_conversations` / `excludeConversations` | None | Ignore events from the listed Slack conversation IDs. |
+| `filters.include_users` / `includeUsers` | All | Accept events only from the listed fully qualified users, such as `slack:T123:U456`. |
+| `filters.exclude_users` / `excludeUsers` | None | Ignore events from the listed fully qualified users. |
+| `filters.allow_shared_conversations` / `allowSharedConversations` | `false` | Controls Slack Connect shared conversations. Setting this to `true` is not currently supported. |
+| `conversation.app_mention` / `appMention` | `"thread"` | Select how app mentions and their follow-up replies map to Managed Deep Agents threads. |
+| `conversation.direct_message` / `directMessage` | `"conversation"` | Select how direct messages map to Managed Deep Agents threads. |
+
+Conversation mappings accept:
+
+- **`"thread"`**: Reuse one Managed Deep Agents thread for a Slack thread.
+- **`"conversation"`**: Reuse one Managed Deep Agents thread for the Slack conversation.
+- **`"message"`**: Start a separate Managed Deep Agents thread for each message.
+
+## Understand event and thread behavior
+
+The Slack app controls which events reach the deployment. The Slack channel normalizes supported events and applies the configured filters and conversation mapping.
+
+| Slack interaction | Event subscription | Default Managed Deep Agents behavior |
+| --- | --- | --- |
+| App mention | `app_mention` | Start or continue a thread associated with the Slack thread. |
+| Direct message | `message.im` | Reuse a thread associated with the direct-message conversation. |
+| Non-mention reply in a public channel | `message.channels` | Continue the thread only when the agent already has a corresponding Managed Deep Agents thread. |
+| Non-mention reply in a private channel | `message.groups` | Continue the thread only when the agent already has a corresponding Managed Deep Agents thread. |
+
+Top-level channel messages that do not mention the bot are ignored. Bot messages, the app's own messages, unsupported message subtypes, and events rejected by channel filters do not start runs.
+
+When Slack delivers the same mention through both `app_mention` and `message.*`, Managed Deep Agents drops the duplicate message event. Subscribe to `app_mention` for mentions and use `message.channels` or `message.groups` for non-mention follow-up replies.
+
+## Send responses to Slack
+
+With `auto_reply` / `autoReply` enabled, Managed Deep Agents extracts the final assistant response and posts it to the originating Slack conversation after the run completes.
+
+Channel-originated runs also expose `runtime.channel` in tools and middleware. Use it to inspect the normalized event, post an intermediate or final message, or update a previously posted message. It is absent for ordinary HTTP and scheduled runs.
+
+The following tool posts the final response explicitly:
+
+<CodeGroup>
+
+```python tools/send_channel_reply.py
+from langchain.tools import tool
+from managed_deepagents import ManagedDeepAgentRuntime
+
+
+@tool
+async def send_channel_reply(
+    text: str,
+    runtime: ManagedDeepAgentRuntime,
+) -> str:
+    """Send the final response to the originating messaging channel."""
+    if runtime.channel is None:
+        return "This run did not originate from a messaging channel."
+    posted = await runtime.channel.post({"text": text}, {"final": True})
+    return posted["id"]
+```
+
+```ts tools/send-channel-reply.ts
+import { tool } from "langchain";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
+import { z } from "zod";
+
+export const sendChannelReply = tool(
+  async ({ text }, runtime: ManagedDeepAgentRuntime) => {
+    if (!runtime.channel) {
+      return "This run did not originate from a messaging channel.";
+    }
+    const posted = await runtime.channel.post({ text }, { final: true });
+    return posted.id;
+  },
+  {
+    name: "send_channel_reply",
+    description: "Send the final response to the originating messaging channel.",
+    schema: z.object({ text: z.string() }),
+  },
+);
+```
+
+</CodeGroup>
+
+Pass `{ "final": true }` in Python or `{ final: true }` in TypeScript only when the posted message is the final response. It suppresses the automatic reply so the user does not receive the final response twice. A post without that option is an intermediate message and does not suppress auto-reply.
+
+`runtime.channel.post(...)` can post only to the originating Slack thread. Explicit destinations are not supported for channel-originated runs. To send a scheduled result to a specific Slack conversation, use [`deliver_to` / `deliverTo`](/langsmith/managed-deep-agents-schedules#deliver-results-to-slack).
+
+## Understand Slack caller identity
+
+A Slack event runs as an identity derived from the Slack workspace and user, such as `slack:T123:U456`. This identity is separate from caller identities used for HTTP requests. Slack account linking is not supported.
+
+## Deploy changes
+
+Redeploy after changing the channel declaration, secrets, or identity configuration. Include `--configure-slack` when you change `slack-app-manifest.json`, the channel name, or the deployment so MDA can regenerate the final manifest with the current Events URL. Apply the generated manifest to the existing Slack app after the deployment completes.
+
+Avoid making lasting configuration changes only in the Slack dashboard. A later manifest update can replace settings that are not present in the checked-in template.
+
+## Review security and current limits
+
+- Managed Deep Agents verifies every Slack request against its raw body and rejects signatures outside Slack's five-minute replay window.
+- Slack Connect shared conversations are not supported.
+- `runtime.channel` does not expose `SLACK_BOT_TOKEN` or other provider credentials.
+- Event deduplication is currently process-local. A multi-replica deployment can invoke the agent more than once when Slack retries an event.
+
+<Warning>
+Design channel-triggered tools as idempotent when they perform external side effects. Slack retries and multi-replica processing can produce more than one run for the same logical event.
+</Warning>
+
+## Troubleshoot Slack channels
+
+- **`--configure-slack` reports that it needs exactly one channel**: Keep exactly one `channels.slack(...)` declaration in the project when using the manifest workflow.
+- **MDA cannot read the template**: Confirm `slack-app-manifest.json` is a regular JSON file at the project root. Remove credentials and any `settings.event_subscriptions.request_url`, and keep Socket Mode disabled.
+- **The first deploy writes a bootstrap manifest and exits**: This is expected when the Slack credentials do not exist yet. Create and install the app, add both credentials, then rerun the same command.
+- **MDA does not write the final manifest**: Rerun `mda deploy . --configure-slack` without `--no-wait`. The CLI needs the deployed Agent Server URL.
+- **Slack cannot verify the request URL**: Confirm the deployment is healthy, the URL on the app's **Event Subscriptions** page matches `https://<agent-server>/channels/<name>/events`, and `SLACK_SIGNING_SECRET` belongs to that app. Redeploy after adding the Slack credentials, then apply the regenerated final manifest.
+- **Mentions do not start runs**: Subscribe to `app_mention`, add `app_mentions:read`, invite the bot to the conversation, and reinstall the app after changing scopes.
+- **Direct messages do not start runs**: Subscribe to `message.im` and add `im:history`.
+- **Thread replies do not start runs**: Reply inside a thread where the agent previously participated. Subscribe to `message.channels` or `message.groups`, add the matching history scope, and confirm the bot remains in the conversation.
+- **The agent runs but does not reply**: Confirm `auto_reply` / `autoReply` is enabled and `SLACK_BOT_TOKEN` has `chat:write`.
+
+## See also
+
+- [Channels overview](/langsmith/managed-deep-agents-channels): understand the provider-neutral channel model.
+- [Identity](/langsmith/managed-deep-agents-identity): configure authentication and caller ownership.
+- [Schedules](/langsmith/managed-deep-agents-schedules): deliver scheduled results to Slack.
+- [Custom tools](/langsmith/managed-deep-agents-tools): attach a tool that uses `runtime.channel`.
+- [Deploy an agent](/langsmith/managed-deep-agents-deploy): configure deployment secrets and inspect builds.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-channels-slack.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
