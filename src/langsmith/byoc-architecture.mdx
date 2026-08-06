@@ -1,0 +1,86 @@
+---
+title: BYOC architecture
+sidebarTitle: Architecture
+description: How a LangSmith BYOC deployment is structured across the LangChain control plane and the data plane in your AWS account.
+icon: "sitemap"
+---
+
+## Control plane / Data plane Model
+
+A BYOC deployment is split across two planes. 
+
+The <b>control plane</b> runs in LangChain's cloud and handles authentication, organization configuration, and billing. It provisions, monitors, and orchestrates your deployment, but does not hold any sensitive application data. 
+
+The <b>data plane</b> runs in your AWS account and ingests, stores, and queries all of your sensitive application data. It holds your VPC, EKS cluster, databases, and other resources.
+
+This page describes the components of each plane, how they communicate, and what LangChain provisions in your account.
+
+
+| Plane | Where it runs | What it holds |
+|-------|---------------|---------------|
+| **Control plane** | LangChain's cloud, `us-east-2` | Authentication, organization and workspace configuration, billing and usage metadata, hashed API keys, and the static frontend assets |
+| **Data plane** | Your AWS account, in the region you choose | Traces, prompts, datasets, evaluators, experiments, insights runs, annotation queues, agent deployments, and workspace secrets, etc.. |
+
+
+<img
+  className="block dark:hidden"
+  src="/langsmith/images/byoc-architecture-light.svg"
+  alt="BYOC architecture diagram. The LangChain cloud control plane holds Crossplane, on-call engineers, alerting, and the auth and billing services, and reaches the data plane over PrivateLink for Helm reconciliation and approved break-glass access. Your AWS account holds the EKS cluster, LangSmith services, trace store, sandboxes, and storage, and calls back to the control plane over a second PrivateLink for auth and telemetry. The LangSmith UI and client apps reach the data plane through a network load balancer."
+/>
+<img
+  className="hidden dark:block"
+  src="/langsmith/images/byoc-architecture-dark.svg"
+  alt="BYOC architecture diagram. The LangChain cloud control plane holds Crossplane, on-call engineers, alerting, and the auth and billing services, and reaches the data plane over PrivateLink for Helm reconciliation and approved break-glass access. Your AWS account holds the EKS cluster, LangSmith services, trace store, sandboxes, and storage, and calls back to the control plane over a second PrivateLink for auth and telemetry. The LangSmith UI and client apps reach the data plane through a network load balancer."
+/>
+
+
+## Provisioned resources
+
+LangChain provisions the following in your account:
+
+- **VPC**: a dedicated VPC spread across the region's availability zones. Fully private by default, unless opting into public ingress. VPC endpoints for private communication to AWS services. PrivateLink for communication between data plane and control plane.
+- **Managed Databases**: RDS for relational workloads, Elasticache for caching. 
+- **Storage**: S3 buckets for the blob store holding trace data, VPC flow logs and ClickHouse backups.
+- **EKS**: Private EKS cluster, with managed add-ons.
+- **Compute**: a system node group for platform workloads, application node groups through Karpenter.
+- **In-cluster resources**: the LangSmith Helm chart, Istio, KEDA, and other in-cluster resources.
+- **IAM roles**: roles and permissions required for Kubernetes resources.
+
+## Cross-account IAM permissions
+
+LangChain needs cross-account IAM permissions to provision and manage resources within your AWS account. These permissions let LangChain:
+
+- **Provision infrastructure**: create and configure the VPC, subnets, security groups, and other networking components.
+- **Manage the Kubernetes cluster**: deploy and maintain the EKS cluster, its node groups, and cluster add-ons.
+- **Create storage resources**: provision RDS, ElastiCache, and the S3 buckets used for application data and backups.
+- **Create IAM roles**: create and configure the roles used by Kubernetes service accounts and supporting services.
+- **Operate supporting services**: deploy and manage ingress, autoscaling, scale and upgrade LangSmith workloads.
+
+Permissions are granted through a single cross-account IAM role that you create during onboarding by applying the [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role).
+
+### How least privilege is enforced
+
+The role is scoped to only what BYOC operations require:
+
+- **Scoped to LangSmith-owned resources**: wherever AWS supports resource-level scoping, permissions are restricted to resources carrying specific tags, and name prefixes, so the role cannot act on unrelated resources in the account.
+- **Infrastructure-scoped, not data-scoped**: the role can manage the resources that hold your data, but cannot read the data itself through AWS data APIs. It holds no `s3:GetObject` on the trace bucket, no `rds-db:connect` to PostgreSQL, and no `elasticache:Connect` to Redis.
+
+## Networking
+
+### Connectivity
+
+All communication between the control plane and your data plane travels over AWS PrivateLink, in both directions. LangChain does not reach your environment over the public internet. BYOC establishes two PrivateLink connections:
+
+- **Control plane to data plane (management path)**: exposes only your cluster's Kubernetes API server, which LangChain uses to install and reconcile the LangSmith components. Your data is not reachable over this connection.
+- **Data plane to control plane (runtime path)**: the data plane calls the control plane to authenticate requests, validate API keys, resolve roles and permissions, and load organization and workspace configuration.
+
+Container images are pulled read-only from LangChain's control plane ECR repositories through VPC endpoints.
+
+### DNS and ingress
+
+Traffic reaches LangSmith through an Istio ingress fronted by an AWS NLB, using Route 53 for DNS resolution. Your data plane endpoint will be visible in the `Settings > Data Plane` section of the LangSmith UI once your data plane is created.
+
+## See also
+
+- [BYOC overview](/langsmith/byoc)
+- [Egress for billing and operational telemetry](/langsmith/self-host-egress)
