@@ -381,6 +381,76 @@ def test_unversioned_oss_code_builds_once() -> None:
         assert "/oss/python/deepagents/code/" not in content
 
 
+def test_unversioned_oss_openwiki_builds_once() -> None:
+    """OpenWiki pages build to oss/openwiki/, not per-language copies."""
+    files = [
+        File(
+            path="oss/openwiki/overview.mdx",
+            content=(
+                "---\ntitle: OpenWiki\n---\n\n"
+                "See [SDK](/oss/deepagents/quickstart) and "
+                "[Quickstart](/oss/openwiki/quickstart).\n"
+            ),
+        ),
+        File(
+            path="oss/deepagents/quickstart.mdx",
+            content="---\ntitle: Quickstart\n---\n\nSDK docs.\n",
+        ),
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        openwiki_src = fs.src_dir / "oss" / "openwiki" / "overview.mdx"
+        assert builder.is_unversioned_oss_file(openwiki_src)
+
+        link = "[Overview](/oss/openwiki/overview)"
+        assert builder._rewrite_oss_links(link, "python") == link
+        assert builder._rewrite_oss_links(link, "js") == link
+
+        builder.build_file(openwiki_src)
+        unversioned = fs.build_dir / "oss" / "openwiki" / "overview.mdx"
+        assert unversioned.exists()
+        assert not (
+            fs.build_dir / "oss" / "python" / "openwiki" / "overview.mdx"
+        ).exists()
+        assert not (
+            fs.build_dir / "oss" / "javascript" / "openwiki" / "overview.mdx"
+        ).exists()
+
+        content = unversioned.read_text()
+        assert "/oss/python/deepagents/quickstart" in content
+        assert "/oss/openwiki/quickstart" in content
+        assert "/oss/python/openwiki/" not in content
+
+
+def test_safe_source_files_skips_symlinks() -> None:
+    """Source collection rejects symlinks so host files cannot be exfiltrated."""
+    files = [
+        File(
+            path="oss/openwiki/overview.mdx",
+            content="---\ntitle: OpenWiki\n---\n\nOverview.\n",
+        ),
+    ]
+    with file_system(files) as fs:
+        openwiki_dir = fs.src_dir / "oss" / "openwiki"
+        secret_target = fs.temp_dir / "outside-secret.txt"
+        secret_target.write_text("secret-value\n", encoding="utf-8")
+        symlink_path = openwiki_dir / "leaked.env"
+        symlink_path.symlink_to(secret_target)
+
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        collected = builder._safe_source_files(openwiki_dir)
+
+        assert openwiki_dir / "overview.mdx" in collected
+        assert symlink_path not in collected
+        assert all(not path.is_symlink() for path in collected)
+
+        builder._build_unversioned_oss_openwiki()
+        assert not (fs.build_dir / "oss" / "openwiki" / "leaked.env").exists()
+        overview = fs.build_dir / "oss" / "openwiki" / "overview.mdx"
+        assert overview.exists()
+        assert "secret-value" not in overview.read_text()
+
+
 def test_rewrite_oss_links_skips_images_and_none() -> None:
     """Image paths and a None target language are passed through unchanged."""
     with file_system([]) as fs:
