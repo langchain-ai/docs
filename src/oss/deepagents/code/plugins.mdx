@@ -1,13 +1,13 @@
 ---
 title: Plugins and marketplaces
 sidebarTitle: Plugins
-description: Install plugins from marketplaces or package skills and MCP servers for Deep Agents Code
+description: Install plugins from marketplaces or package skills, MCP servers, and hooks for Deep Agents Code
 ---
 
-Plugins extend Deep Agents Code with reusable [skills](/oss/deepagents/code/memory-and-skills) and [MCP servers](/oss/deepagents/code/mcp-tools). Marketplaces provide catalogs for discovering and installing plugins across projects or teams. Deep Agents Code supports Claude- and Codex-style plugin manifests and marketplace catalogs, as described in [Create a plugin](#create-a-plugin) and [Create a marketplace](#create-a-marketplace).
+Plugins extend Deep Agents Code with reusable [skills](/oss/deepagents/code/memory-and-skills), [MCP servers](/oss/deepagents/code/mcp-tools), and [hooks](/oss/deepagents/code/hooks). Marketplaces provide catalogs for discovering and installing plugins across projects or teams. Deep Agents Code supports Claude- and Codex-style plugin manifests and marketplace catalogs, as described in [Create a plugin](#create-a-plugin) and [Create a marketplace](#create-a-marketplace).
 
 <Warning>
-    Install plugins and marketplaces only from sources you trust. An enabled plugin can add instructions and start MCP server processes with your user permissions.
+    Install plugins and marketplaces only from sources you trust. An enabled plugin can add instructions and run MCP servers or hook commands with your user permissions.
 </Warning>
 
 ## Manage plugins interactively
@@ -21,9 +21,9 @@ To browse marketplaces and manage plugins in a `dcode` session:
     - An HTTPS URL that serves a marketplace JSON file.
     - A local marketplace directory or JSON file.
 3. Install a plugin from the marketplace.
-4. Run `/reload` to activate newly installed plugin skills and MCP servers without restarting the session.
+4. Run `/reload` to activate newly installed plugin skills, MCP servers, and hooks without restarting the session.
 
-The plugin manager also lets you enable, disable, and uninstall installed plugins. Disabling a plugin keeps it installed but excludes its skills and MCP servers after you run `/reload` or start a new session.
+The plugin manager also lets you enable, disable, and uninstall installed plugins. Disabling a plugin keeps it installed but excludes its skills, MCP servers, and hooks after you run `/reload` or start a new session.
 
 Removing a marketplace uninstalls its plugins and removes managed cache data. Deep Agents Code preserves the original source when the marketplace came from a local directory or file. Run `/reload` or start a new session to apply the removal to an active session.
 
@@ -51,7 +51,7 @@ dcode plugin marketplace remove acme-tools
 
 `plugin list` and `plugin marketplace list` accept `--json`. After installing a plugin, run `/reload` in an active interactive session or start a new session.
 
-## Use plugin skills and MCP servers
+## Use plugin skills, MCP servers, and hooks
 
 Plugin skills are namespaced to prevent collisions with project, user, and other plugin skills. Invoke a skill with its plugin ID and skill path:
 
@@ -63,9 +63,11 @@ In interactive mode, autocomplete also matches the shorter `/plugin-name:skill-n
 
 An enabled plugin can also contribute MCP servers. Deep Agents Code merges these servers with your regular MCP configuration when plugins load. Use `/mcp` to inspect available servers and tools.
 
+Plugin hooks use the same lifecycle events and handler format as user and project hooks. The plugin manager lists the events each plugin declares. Enabling the plugin is the only consent gate for its hooks: workspace trust applies to project hooks, not plugin hooks.
+
 ## Create a plugin
 
-A Deep Agents Code plugin is a directory containing one or both of the supported components:
+A Deep Agents Code plugin is a directory containing any of the supported components:
 
 ```text
 my-plugin/
@@ -74,6 +76,8 @@ my-plugin/
 ├── skills/
 │   └── review/
 │       └── SKILL.md
+├── hooks/
+│   └── hooks.json
 └── .mcp.json
 ```
 
@@ -88,16 +92,18 @@ When present, `.claude-plugin/plugin.json` or `.codex-plugin/plugin.json` must c
   "name": "my-plugin",
   "version": "1.0.0",
   "skills": "./skills",
-  "mcpServers": "./.mcp.json"
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json"
 }
 ```
 
-The `skills` and `mcpServers` fields accept a path string or an array of paths. `mcpServers` can also contain an inline MCP configuration object. Every component path must start with `./`, remain inside the plugin root, and not contain `..`.
+The `skills`, `mcpServers`, and `hooks` fields accept a path string or an array of paths. `mcpServers` and `hooks` can also contain inline configuration objects. Every component path must start with `./`, remain inside the plugin root, and not contain `..`.
 
 When no custom path is declared, Deep Agents Code discovers:
 
 - Skills under `skills/`, or a root `SKILL.md` when no `skills/` directory exists.
 - MCP servers in a root `.mcp.json` file.
+- Hooks in `hooks/hooks.json`.
 
 ### Add skills
 
@@ -114,7 +120,7 @@ Use the same skill format as standalone Deep Agents Code skills. The installed p
 
 ### Add MCP servers
 
-Place standard MCP server definitions in `.mcp.json` or declare them inline with `mcpServers` in the plugin manifest. Plugin configuration supports these path variables:
+Place standard MCP server definitions in `.mcp.json` or declare them inline with `mcpServers` in the plugin manifest. MCP servers and hook commands support these path variables:
 
 - `${CLAUDE_PLUGIN_ROOT}` or `${PLUGIN_ROOT}`: The installed plugin directory.
 - `${CLAUDE_PLUGIN_DATA}` or `${PLUGIN_DATA}`: The writable data directory for the plugin.
@@ -137,6 +143,10 @@ For example:
 ```
 
 For supported MCP transports and fields, see [MCP tools](/oss/deepagents/code/mcp-tools).
+
+### Add hooks
+
+Place a hook document at `hooks/hooks.json`, declare a relative `hooks` path, or define hooks inline in the plugin manifest. Hook commands receive the path variables above. See [Hooks](/oss/deepagents/code/hooks) for the configuration and event reference.
 
 ## Create a marketplace
 
@@ -203,5 +213,6 @@ dcode plugin install code-review@acme-tools
 
 - [Memory and skills](/oss/deepagents/code/memory-and-skills)
 - [MCP tools](/oss/deepagents/code/mcp-tools)
+- [Hooks](/oss/deepagents/code/hooks)
 - [Command reference](/oss/deepagents/code/cli-reference)
 - [Configuration](/oss/deepagents/code/configuration)
