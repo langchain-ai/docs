@@ -1,17 +1,17 @@
 ---
 title: Add identity to Managed Deep Agents
 sidebarTitle: Identity
-description: Give each caller their own threads, memory, and credentials so agents stay private and secure in multi-user deployments.
+description: Authenticate callers and expose verified identity to threads, tools, middleware, and downstream credential resolution.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-Agents are not anonymous chatbots. As soon as more than one person (or one company) uses a deployment, you need to know: **whose conversation is this, and whose data may the agent see or act on?** Identity lets one deployment serve thousands of users safely, with no data leakage between callers.
+Agents are not anonymous chatbots. As soon as more than one person (or one company) uses a deployment, you need to know: **whose conversation is this, and whose data may the agent see or act on?** Identity authenticates the caller and makes that verified identity available to supported thread access controls, tools, middleware, and downstream credential resolution.
 
-Managed Deep Agents answers that question before every run. You declare a small contract once, and the runtime partitions threads, [memory](/langsmith/managed-deep-agents-memory), and credentials so callers cannot see or affect each other.
+Durable memory is configured separately through a project-root `memory.py` or `memory.ts` declaration and is shared across the deployment when enabled. See [Memory](/langsmith/managed-deep-agents-memory).
 
-Identity is opt-in. Projects without `identity.ts` or `identity.py` compile and deploy unchanged. When you add a declaration, `mda` wires auth, scoping, and a frozen `runtime.identity` object into tools and middleware.
+Identity is opt-in. Projects without `identity.ts` or `identity.py` compile and deploy unchanged. When you add a declaration, `mda` wires auth, supported scoping, and a frozen `runtime.identity` object into tools and middleware.
 
 This page assumes you have an existing Managed Deep Agents project and the `mda` CLI installed. If you are new to Managed Deep Agents, start with the [overview](/langsmith/managed-deep-agents-overview) and [quickstart](/langsmith/managed-deep-agents-quickstart) first.
 
@@ -21,22 +21,21 @@ This page assumes you have an existing Managed Deep Agents project and the `mda`
 
 ## Why identity matters for agents
 
-Without identity, a Managed Deep Agent has one shared boundary for the whole deployment. That is fine for a personal prototype. It breaks as soon as real users show up:
+Without identity, a Managed Deep Agent cannot reliably attribute a request to a verified caller. That becomes a problem as soon as real users show up:
 
 | What goes wrong | Example |
 | --- | --- |
-| **Shared memory** | Alice asks the agent to remember her API preferences. Bob opens a new chat and the agent already "knows" Alice's details. |
-| **Shared threads** | Anyone who can hit the deployment can resume or inspect another user's conversation. |
+| **Shared thread access** | Anyone who can hit the deployment may be able to resume or inspect another user's conversation. |
 | **Wrong credentials** | The agent calls GitHub or another API with one shared token, so every user acts as the same account, or you have no safe way to act *as* the signed-in user. |
 
-Deep Agents without identity make this a real problem: they keep durable memory, resume long-running threads, and call tools on the user's behalf. Identity turns "who is calling?" into enforced isolation instead of hoping the prompt or the UI keeps people apart.
+Identity turns "who is calling?" into verified runtime context that supported authorization and credential flows can enforce.
 
 A key benefit of identity is that downstream tool calls can act **as the signed-in user** rather than as a shared bot account. For example, with `credentials: "actor"`, the agent calls GitHub as Alice, not as a single bot token shared across all users.
 
-For deployments with compliance requirements such as SOC 2, GDPR, or HIPAA, identity scoping provides the data segregation boundaries that auditors expect: each caller's threads and memory are isolated, and `runtime.identity` gives you an audit trail of who triggered each run.
+For deployments with compliance requirements such as SOC 2, GDPR, or HIPAA, verified identity can support access-control and audit requirements. Evaluate the complete system architecture because identity alone is not a general data-segregation boundary.
 
 <Note>
-Adding identity to a project that previously had none does not delete existing threads or memory. Threads created before identity was enabled remain accessible at the agent scope. New threads are scoped by actor (or tenant) according to your declaration. To migrate old data, export it and re-create threads under the new scoping rules.
+Adding identity to a project that previously had none does not delete existing threads. Threads created before identity was enabled remain accessible at the agent scope. New threads follow the scoping in your declaration. To migrate old thread data, export it and re-create threads under the new scoping rules.
 </Note>
 
 ## Understand three core concepts
@@ -53,19 +52,18 @@ A few important clarifications:
 
 - **Actor** is not the agent. It is the caller the run represents.
 - **Tenant** is not a LangSmith workspace. Single-tenant agents have no tenant.
-- **Fail closed** means the runtime rejects any request that is missing a required actor or tenant. It never falls back to shared memory or threads.
+- **Fail closed** means the runtime rejects any request that is missing an actor or tenant required by a supported identity-controlled resource. It does not silently fall back to shared thread access.
 
-From actor (and optional tenant), Managed Deep Agents derives three outcomes:
+From actor (and optional tenant), Managed Deep Agents derives two relevant outcomes:
 
 - **Threads**: who can open or resume a conversation
-- **Memory**: which durable [Context Hub](/langsmith/managed-deep-agents-memory) slice the run can see
 - **Credentials**: whose token the agent uses for downstream tool calls (the signed-in user, or one shared agent token)
 
 ```mermaid
 flowchart LR
     Caller["Caller"] --> Ingress["Ingress authenticates request"]
     Ingress --> Resolve["Resolve actor and tenant"]
-    Resolve --> Scope["Scope threads and memory"]
+    Resolve --> Scope["Apply supported access and credential scope"]
     Resolve --> Reject["Reject: 403"]
     Scope --> Run["Run agent with runtime.identity"]
 
@@ -100,13 +98,13 @@ The preset table uses these scope values:
 
 Managed Deep Agents ships with five product shapes out of the box, covering the most common deployment patterns. Choose a preset based on your product shape:
 
-| Preset | Use it when… | Threads | Memory | Credentials |
-| --- | --- | --- | --- | --- |
-| `private-assistant` | Each person gets a private 1:1 assistant with their own history and memory | `actor` | `actor` | `actor` |
-| `multi-tenant-saas` | One deployment serves many customer orgs; users share org data but not across orgs | `actor` | `tenant` | `agent` |
-| `shared-bot` | A Slack/Discord-style bot where everyone in the channel shares the thread | `channel` | `actor` | `agent` |
-| `internal-tool` | An internal company agent: one org, private per-user threads | `actor` | `actor` | `agent` |
-| `service` | Cron/webhook-only agents with no human caller and shared memory | _(unset)_ | `agent` | `agent` |
+| Preset | Use it when… | Threads | Credentials |
+| --- | --- | --- | --- |
+| `private-assistant` | Each person gets a private 1:1 assistant with their own thread history | `actor` | `actor` |
+| `multi-tenant-saas` | One deployment serves many customer orgs | `actor` | `agent` |
+| `shared-bot` | A Slack/Discord-style bot where everyone in the channel shares the thread | `channel` | `agent` |
+| `internal-tool` | An internal company agent with private per-user threads | `actor` | `agent` |
+| `service` | Cron/webhook-only agents with no human caller | _(unset)_ | `agent` |
 
 All presets default to `trusted_backend` ingress and `tenancy: "single"`, except `multi-tenant-saas`, which sets `tenancy: "multi"`.
 
@@ -152,7 +150,6 @@ identity = define_identity(
     tenancy="single",
     scoping={
         "threads": "actor",
-        "memory": "actor",
         "credentials": "actor",
     },
 )
@@ -166,7 +163,6 @@ export const identity = defineIdentity({
   tenancy: "single",
   scoping: {
     threads: "actor",
-    memory: "actor",
     credentials: "actor",
   },
 });
@@ -298,7 +294,7 @@ When you configure more than one provider, give each entry a unique `id`. The ru
 
 For provider-specific options and client examples, see [Provider setup guides](#provider-setup-guides).
 
-To let anonymous visitors use the agent with no external identity provider, configure guest tokens as the only provider. Each visitor gets a short-lived, Managed Deep Agents-signed token and a distinct guest actor, so the `private-assistant` preset still scopes threads and memory per visitor.
+To let anonymous visitors use the agent with no external identity provider, configure guest tokens as the only provider. Each visitor gets a short-lived, Managed Deep Agents-signed token and a distinct guest actor, so the `private-assistant` preset can still distinguish callers for its supported identity behavior.
 
 <CodeGroup>
 
@@ -462,16 +458,13 @@ Presets cover the common cases. To customize, set `scoping` explicitly:
 | Axis | Values | Meaning |
 | --- | --- | --- |
 | `threads` | `actor`, `channel`, `tenant` | Who can open or resume the conversation |
-| `memory` | `actor`, `tenant`, `agent`, `none` | Which Context Hub memory slice is remounted for the run |
 | `credentials` | `agent`, `actor`, `none`, `custom` | Whose credentials downstream calls use |
 
-If `tenancy` is `"single"`, do not set any scoping axis to `"tenant"`, there is no tenant to scope by. If a request is missing the actor or tenant id that scoping needs, Managed Deep Agents rejects it with 403 instead of falling back to shared data.
-
-For how memory paths remount under each scope, see [Scope memory with identity](/langsmith/managed-deep-agents-memory#scope-memory-with-identity).
+If `tenancy` is `"single"`, do not set a supported scoping axis to `"tenant"`, there is no tenant to scope by. If a request is missing the actor or tenant id that scoping needs, Managed Deep Agents rejects it with 403 instead of falling back to shared access.
 
 ### Custom downstream credentials
 
-Use `scoping.credentials: "custom"` when your application can securely obtain a per-actor credential for a downstream target. Provide a `resolve` function; tools then call `runtime.credentials.for(target)` to obtain the headers for that request. Resolved credentials are kept in memory and are never written to thread state or traces.
+Use `scoping.credentials: "custom"` when your application can securely obtain a per-actor credential for a downstream target. Provide a `resolve` function; tools then call `runtime.credentials.for(target)` to obtain the headers for that request. Resolved credentials are cached transiently and are never written to thread state or traces.
 
 <Note>
 The token that proves a caller's identity is not automatically a credential for downstream APIs. For example, a Supabase access token lets Managed Deep Agents identify the caller, but it is not a GitHub API token. Your backend or credential service must hold (and, when needed, refresh) the caller's separately authorized GitHub credential.
@@ -493,7 +486,6 @@ export const identity = defineIdentity({
   tenancy: "single",
   scoping: {
     threads: "actor",
-    memory: "actor",
     credentials: "custom",
   },
   credentials: {
@@ -597,7 +589,7 @@ These guides cover the built-in providers for [validated token](#validated-token
     For browser apps, proxy guest issuance through your own backend and store the token in an `httpOnly` cookie. That keeps the same guest actor across reloads until `exp` and lets you handle rate limits before calling the deployment.
     </Tip>
 
-    Reclaim a token when the current one is expired or missing. While a token is still valid, reuse it so the guest keeps the same actor id, threads, and memory scope for the token lifetime.
+    Reclaim a token when the current one is expired or missing. While a token is still valid, reuse it so the guest keeps the same actor id and thread access for the token lifetime.
   </Tab>
 
   <Tab title="Supabase">
@@ -666,7 +658,7 @@ Identity misconfiguration usually surfaces as 401 (auth) or 403 (store/thread sc
 
 <CardGroup cols={2}>
   <Card title="Memory" icon="database" href="/langsmith/managed-deep-agents-memory">
-    See how identity remounts per-actor or per-tenant memory.
+    Configure shared durable agent memory independently of identity.
   </Card>
   <Card title="Custom tools" icon="tool" href="/langsmith/managed-deep-agents-tools">
     Read `runtime.identity` from authored tools.

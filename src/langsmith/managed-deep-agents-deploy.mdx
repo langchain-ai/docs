@@ -51,7 +51,7 @@ You are a careful assistant. Use available tools when needed and cite sources.
 
 Put deploy-owned skills under `skills/` next to the project-root agent entry file. Deploy syncs `instructions.md` and `skills/**` to the Context Hub repo associated with the deployment.
 
-Managed memory is stored in the same Context Hub repo under `memories/**` and remounted for the agent as `/memories/user/` (hot `/memories/user/AGENTS.md`). Deploy syncs `instructions.md` and `skills/**`, but preserves memory and does not overwrite `memories/**`. To disable managed memory, set `disableMemory: true` or `disable_memory=True` in the agent definition.
+Durable memory is optional through a project-root `memory.py` or `memory.ts` declaration and is shared across the deployment when enabled. Shared memory is visible to all callers, so do not store personal data or secrets. Redeploying preserves existing durable memory. See [Memory](/langsmith/managed-deep-agents-memory).
 
 ## Add tools, connectors, and middleware
 
@@ -60,7 +60,7 @@ Add authored tools and middleware directly in the agent source. Managed Deep Age
 - Use [custom tools](/langsmith/managed-deep-agents-tools) for business logic, private APIs, database access, and other project-owned code.
 - Use [custom middleware](/langsmith/managed-deep-agents-middleware) for cross-cutting behavior around model calls, tool calls, lifecycle hooks, retries, limits, and data handling.
 - Declare remote MCP servers in `connectors/mcp.ts` or `connectors/mcp.py`; Managed Deep Agents loads those connector tools and appends them to the authored tools at runtime. For examples and guidance, see [Connectors](/langsmith/managed-deep-agents-connectors).
-- Optionally declare [identity](/langsmith/managed-deep-agents-identity) in `identity.ts` or `identity.py` to authenticate callers and scope threads and memory.
+- Optionally declare [identity](/langsmith/managed-deep-agents-identity) in `identity.ts` or `identity.py` to authenticate callers and scope threads and store access.
 
 To pause for human approval before sensitive tool calls, set `interrupt_on` in the agent definition. See [Human-in-the-loop](/langsmith/managed-deep-agents-middleware#human-in-the-loop).
 
@@ -74,41 +74,7 @@ For examples and schedule constraints, see [Schedules](/langsmith/managed-deep-a
 
 Use a sandbox when the agent needs isolated code execution or filesystem work. Export `sandbox` from `sandbox/index.ts` or `sandbox/__init__.py`.
 
-<CodeGroup>
-
-```python sandbox/__init__.py
-from managed_deepagents import define_sandbox
-from deepagents.backends import LangSmithSandbox
-
-sandbox = define_sandbox(
-    LangSmithSandbox,
-    scope="thread",
-    idle_ttl_seconds=600,
-    default_timeout=600,
-)
-```
-
-```ts sandbox/index.ts
-import { defineSandbox } from "managed-deepagents";
-import { LangSmithSandbox } from "deepagents";
-
-export const sandbox = defineSandbox(LangSmithSandbox, {
-  scope: "thread",
-  idleTtlSeconds: 600,
-  defaultTimeout: 600,
-});
-```
-
-</CodeGroup>
-
-Sandbox scope controls reuse:
-
-- `thread` (default): Each durable thread or conversation gets its own sandbox.
-- `agent`: All threads handled by the agent process share one sandbox.
-
-If `sandbox/setup.sh` exists, Managed Deep Agents runs it once when a new managed sandbox is provisioned. Use it to install packages, seed files, or prepare workspace state.
-
-For sandbox scope and lifecycle during local development, see [How Managed Deep Agents work](/langsmith/managed-deep-agents-how-it-works#sandboxes).
+For declarations, scope, provisioning, and lifecycle, see [Sandboxes](/langsmith/managed-deep-agents-sandboxes).
 
 ## Run locally
 
@@ -141,7 +107,6 @@ mda deploy .
 
 ```text
 instructions.md + skills/**  -> Context Hub deploy-owned context
-memories/**                  -> ignored; existing Context Hub memory is preserved
 .env                         -> deploy auth + non-reserved hosted secrets, not archived
 project source files         -> .mda/build source archive -> hosted deployment
 schedules/**                 -> LangSmith cron jobs after the deployment is live
@@ -199,7 +164,7 @@ If a deployment reaches `BUILD_FAILED` or `DEPLOY_FAILED`, open the printed depl
 
 <CardGroup cols={2}>
   <Card title="Identity" icon="fingerprint" href="/langsmith/managed-deep-agents-identity">
-    Authenticate callers and scope threads and memory.
+    Authenticate callers and scope threads and store access.
   </Card>
   <Card title="Connectors" icon="plug" href="/langsmith/managed-deep-agents-connectors">
     Attach MCP servers or constrained LangSmith capabilities.
