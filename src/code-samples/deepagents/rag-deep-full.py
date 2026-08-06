@@ -68,6 +68,7 @@ text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=20
 all_splits = text_splitter.split_documents(docs)
 print(f"Split documentation into {len(all_splits)} chunks.")
 
+# KEEP MODEL
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 vector_store = InMemoryVectorStore(embedding=embeddings)
 vector_store.add_documents(documents=all_splits)
@@ -170,6 +171,7 @@ chunk_analyst_subagent = {
     "system_prompt": CHUNK_ANALYST_INSTRUCTIONS,
 }
 
+# KEEP MODEL
 model = init_chat_model(model="google_genai:gemini-3.6-flash")
 
 agent = create_deep_agent(
