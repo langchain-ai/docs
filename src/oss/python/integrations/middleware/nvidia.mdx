@@ -4,17 +4,73 @@ description: Integrate with NVIDIA middleware using LangChain Python.
 integration:
   name: NVIDIA middleware
   featured: true
-  available: Model routing across LangChain chat models
-  source: "[`langchain-ai/langchain-nvidia`](https://github.com/langchain-ai/langchain-nvidia)"
+  available: Model routing and Nemotron 3 Ultra harness optimization
+  source: "[`langchain-ai/langchain-nvidia`](https://github.com/langchain-ai/langchain-nvidia), [`langchain-ai/deepagents`](https://github.com/langchain-ai/deepagents)"
 ---
 
-Middleware integrations for NVIDIA services and libraries. NeMo Switchyard is the first available integration and provides model routing across LangChain chat models. Learn more about [middleware](/oss/langchain/middleware/overview).
+Middleware integrations and model-specific harness profiles for NVIDIA services and models. Use them to route calls across LangChain chat models or optimize Deep Agents behavior for NVIDIA Nemotron 3 Ultra. Learn more about [middleware](/oss/langchain/middleware/overview).
 
 ## Overview
 
-| Middleware | Description |
-|------------|-------------|
+| Integration | Description |
+|-------------|-------------|
+| [Deep Agents profile for Nemotron 3 Ultra](#optimize-deep-agents-for-nemotron-3-ultra) | Apply model-specific prompts and middleware for more reliable agentic behavior |
 | [Model routing with NeMo Switchyard](#model-routing-with-nemo-switchyard) | Route each model call to the target selected by a configured Switchyard algorithm |
+
+## Optimize Deep Agents for Nemotron 3 Ultra
+
+Deep Agents includes a built-in harness profile for [NVIDIA Nemotron 3 Ultra](https://build.nvidia.com/nvidia/nemotron-3-ultra-550b-a55b). The profile adds model-specific prompt guidance, tool descriptions, and middleware for tool calling, filesystem operations, retries, context management, and final answers. It was developed through [evaluation-driven harness tuning](https://developer.nvidia.com/blog/create-a-langchain-deep-agents-harness-profile-for-nvidia-nemotron-3-ultra-to-improve-performance/).
+
+<Note>
+  The built-in Nemotron 3 Ultra harness profile requires `deepagents>=0.7.0`.
+</Note>
+
+### What the profile changes
+
+- Repairs common filesystem tool arguments and normalizes empty tool results.
+- Adds continuation guidance when `read_file` returns a full page of results.
+- Retries selected filesystem failures and model rate limits.
+- Normalizes ChatNVIDIA messages, reasoning tags, and text-formatted tool calls.
+- Adds progress, follow-up, entity-resolution, and final-answer safeguards.
+
+### Setup
+
+Install Deep Agents and the NVIDIA chat model integration:
+
+```bash
+pip install -U "deepagents>=0.7.0" langchain-nvidia-ai-endpoints
+```
+
+Configure `NVIDIA_API_KEY` as described in the [ChatNVIDIA setup guide](/oss/integrations/chat/nvidia_ai_endpoints#access-the-nvidia-api-catalog).
+
+### Use the built-in profile
+
+Create a deep agent with the Nemotron 3 Ultra model. Deep Agents recognizes the model and applies the profile automatically, so you do not need to instantiate or pass its middleware:
+
+```python Create a profiled deep agent icon="robot"
+from deepagents import create_deep_agent
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+
+model = ChatNVIDIA(model="nvidia/nemotron-3-ultra-550b-a55b")
+agent = create_deep_agent(model=model)
+
+result = agent.invoke({
+    "messages": [
+        {
+            "role": "user",
+            "content": "Inspect this project and summarize its architecture.",
+        }
+    ]
+})
+print(result["messages"][-1].content_blocks)
+```
+
+The profile is registered for Nemotron 3 Ultra model identifiers served through NVIDIA, Baseten, Fireworks, OpenRouter, Nebius, and Together. Registration is model-specific, so other models from these providers remain unchanged.
+
+### API reference
+
+- [Nemotron 3 Ultra harness profile source](https://github.com/langchain-ai/deepagents/blob/main/libs/deepagents/deepagents/profiles/harness/_nvidia_nemotron_3_ultra.py)
+- [`HarnessProfile`](https://reference.langchain.com/python/deepagents/profiles/harness/harness_profiles#deepagents.profiles.harness.harness_profiles.HarnessProfile)
 
 ## Model routing with NeMo Switchyard
 
@@ -138,4 +194,5 @@ Some algorithms make more than one decision. Use `decisions` for the full trace;
 
 - [NVIDIA integrations](/oss/integrations/providers/nvidia)
 - [`langchain-nvidia-switchyard` package README](https://github.com/langchain-ai/langchain-nvidia/tree/main/libs/switchyard#readme)
+- [Create a Deep Agents harness profile for NVIDIA Nemotron 3 Ultra](https://developer.nvidia.com/blog/create-a-langchain-deep-agents-harness-profile-for-nvidia-nemotron-3-ultra-to-improve-performance/)
 - [Deep Agents models and dynamic selection](/oss/deepagents/models)
