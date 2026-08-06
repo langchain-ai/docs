@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from pipeline.preprocessors.handle_auto_links import replace_autolinks
+from pipeline.preprocessors.utm_links import add_utm_to_cta_links
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,9 @@ def preprocess_markdown(
 
     # Apply cross-reference preprocessing
     content = replace_autolinks(content, str(file_path), default_scope=default_scope)
+
+    # Add UTM tracking to LangSmith CTA links
+    content = add_utm_to_cta_links(content, file_path)
 
     # Apply conditional rendering for code blocks
     return _apply_conditional_rendering(content, target_language)

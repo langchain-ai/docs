@@ -28,7 +28,7 @@ Examples:
 
 ## Checklist
 <!-- Put an 'x' in all boxes that apply -->
-- [ ] I have read the [contributing guidelines](README.md)
+- [ ] I have read the [contributing guidelines](README.md), including the [language policy](https://docs.langchain.com/oss/python/contributing/overview#language-policy)
 - [ ] I have tested my changes locally using `docs dev`
 - [ ] All code examples have been tested and work correctly
 - [ ] I have used **root relative** paths for internal links

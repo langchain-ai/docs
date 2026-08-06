@@ -1,0 +1,66 @@
+---
+name: Close stale needs-title issues
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # Every Monday at 9 AM UTC
+  workflow_dispatch:
+
+jobs:
+  close-stale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+
+    steps:
+      - name: Close issues with needs-title label older than 7 days
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+            // Paginate through all open issues with needs-title label
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'needs-title',
+              state: 'open',
+              per_page: 100,
+            });
+
+            let closed = 0;
+            for (const issue of issues) {
+              // Skip pull requests (they also appear in the issues API)
+              if (issue.pull_request) continue;
+
+              const createdAt = new Date(issue.created_at);
+              if (createdAt >= sevenDaysAgo) {
+                console.log(`Skipping #${issue.number} — created ${issue.created_at}, not yet 7 days old`);
+                continue;
+              }
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: [
+                  'Closing this issue because the title was not updated within 7 days.',
+                  '',
+                  'If you still need help, please open a new issue with a descriptive title so maintainers can understand and prioritize it.',
+                ].join('\n'),
+              });
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'not_planned',
+              });
+
+              console.log(`Closed #${issue.number} (created ${issue.created_at})`);
+              closed++;
+            }
+
+            console.log(`Done. Closed ${closed} issue(s).`);

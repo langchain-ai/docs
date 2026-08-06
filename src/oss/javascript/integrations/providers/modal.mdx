@@ -1,0 +1,254 @@
+---
+title: "Modal"
+sidebarTitle: "Modal"
+description: "Use Modal sandbox backends with deepagents for isolated code execution with GPU support"
+---
+
+[Modal](https://modal.com) provides serverless container infrastructure with GPU support. Best for ML/AI workloads and Python development.
+
+## Setup
+
+<CodeGroup>
+    ```bash npm
+    npm install @langchain/modal
+    ```
+
+    ```bash yarn
+    yarn add @langchain/modal
+    ```
+
+    ```bash pnpm
+    pnpm add @langchain/modal
+    ```
+</CodeGroup>
+
+### Authentication
+
+Get your tokens from [modal.com/settings/tokens](https://modal.com/settings/tokens).
+
+```bash
+export MODAL_TOKEN_ID=your_token_id
+export MODAL_TOKEN_SECRET=your_token_secret
+```
+
+Or pass credentials directly:
+
+```typescript
+const sandbox = await ModalSandbox.create({
+  auth: {
+    tokenId: "your-token-id",
+    tokenSecret: "your-token-secret",
+  },
+});
+```
+
+## Usage with deepagents
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { ModalSandbox } from "@langchain/modal";
+
+const sandbox = await ModalSandbox.create({
+  imageName: "python:3.12-slim",
+  timeoutMs: 600_000, // 10 minutes
+});
+
+try {
+  const agent = createDeepAgent({
+    model: new ChatAnthropic({ model: "claude-sonnet-4-20250514" }),
+    systemPrompt: "You are a coding assistant with sandbox access.",
+    backend: sandbox,
+  });
+
+  const result = await agent.invoke({
+    messages: [{ role: "user", content: "Install numpy and calculate pi" }],
+  });
+} finally {
+  await sandbox.close();
+}
+```
+:::
+
+## Standalone usage
+
+:::js
+```typescript
+import { ModalSandbox } from "@langchain/modal";
+
+const sandbox = await ModalSandbox.create({
+  imageName: "python:3.12-slim",
+  timeoutMs: 600_000,
+});
+
+const result = await sandbox.execute("python --version");
+console.log(result.output);
+
+await sandbox.close();
+```
+:::
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `imageName` | `string` | `"alpine:3.21"` | Docker image to use |
+| `timeoutMs` | `number` | `300000` | Max lifetime in milliseconds |
+| `workdir` | `string` | - | Working directory |
+| `gpu` | `string` | - | GPU type (`"T4"`, `"A100"`, `"H100"`, etc.) |
+| `cpu` | `number` | - | CPU cores (fractional allowed) |
+| `memoryMiB` | `number` | - | Memory allocation in MiB |
+| `volumes` | `Record<string, string>` | - | Volume name mappings (mount path to volume name) |
+| `secrets` | `string[]` | - | Modal Secret names to inject |
+| `initialFiles` | `Record<string, string \| Uint8Array>` | - | Files to create on startup |
+| `env` | `Record<string, string>` | - | Environment variables |
+| `blockNetwork` | `boolean` | - | Block network access |
+| `name` | `string` | - | Sandbox name (unique within app) |
+
+## GPU support
+
+Modal supports NVIDIA GPUs for ML workloads:
+
+:::js
+```typescript
+const sandbox = await ModalSandbox.create({
+  imageName: "python:3.12-slim",
+  gpu: "T4",  // or "L4", "A10G", "A100", "H100"
+});
+```
+:::
+
+## Volumes and secrets
+
+Mount Modal Volumes for persistent storage and inject secrets as environment variables:
+
+:::js
+```typescript
+// Volumes and secrets must be created in Modal first
+const sandbox = await ModalSandbox.create({
+  imageName: "python:3.12-slim",
+  volumes: {
+    "/data": "my-data-volume",
+    "/models": "my-models-volume",
+  },
+  secrets: ["my-api-keys", "database-credentials"],
+});
+
+// Files in /data and /models persist across sandbox restarts
+await sandbox.execute("echo 'Hello' > /data/test.txt");
+
+// Secrets are available as environment variables
+await sandbox.execute("echo $API_KEY");
+```
+:::
+
+## Initial files
+
+Pre-populate the sandbox with files during creation:
+
+:::js
+```typescript
+const sandbox = await ModalSandbox.create({
+  imageName: "python:3.12-slim",
+  initialFiles: {
+    "/app/main.py": 'print("Hello from Python!")',
+    "/app/config.json": JSON.stringify({ name: "my-app" }, null, 2),
+  },
+});
+
+const result = await sandbox.execute("python /app/main.py");
+```
+:::
+
+## Accessing the Modal SDK
+
+For advanced features not exposed by `BaseSandbox`, access the underlying Modal SDK:
+
+:::js
+```typescript
+const modalSandbox = await ModalSandbox.create();
+
+const client = modalSandbox.client;     // ModalClient
+const instance = modalSandbox.instance;  // Sandbox
+
+// Direct SDK operations
+const process = await instance.exec(["python", "-c", "print('Hello')"], {
+  stdout: "pipe",
+  stderr: "pipe",
+});
+```
+:::
+
+## Reconnecting to existing sandboxes
+
+:::js
+```typescript
+// Reconnect by ID
+const reconnected = await ModalSandbox.fromId(sandboxId);
+
+// Reconnect by name
+const reconnected2 = await ModalSandbox.fromName("my-app", "my-sandbox");
+```
+:::
+
+## Factory functions
+
+:::js
+```typescript
+import { createModalSandboxFactory, createModalSandboxFactoryFromSandbox } from "@langchain/modal";
+
+// Create new sandbox per invocation
+const factory = createModalSandboxFactory({ imageName: "python:3.12-slim" });
+
+// Or reuse an existing sandbox across invocations
+const sandbox = await ModalSandbox.create();
+const reuseFactory = createModalSandboxFactoryFromSandbox(sandbox);
+```
+:::
+
+## Error handling
+
+```typescript
+import { ModalSandboxError } from "@langchain/modal";
+
+try {
+  await sandbox.execute("some command");
+} catch (error) {
+  if (error instanceof ModalSandboxError) {
+    switch (error.code) {
+      case "NOT_INITIALIZED":
+        await sandbox.initialize();
+        break;
+      case "COMMAND_TIMEOUT":
+        console.error("Command took too long");
+        break;
+      case "AUTHENTICATION_FAILED":
+        console.error("Check your Modal token credentials");
+        break;
+    }
+  }
+}
+```
+
+### Error codes
+
+| Code | Description |
+|------|-------------|
+| `NOT_INITIALIZED` | Sandbox not initialized - call `initialize()` |
+| `ALREADY_INITIALIZED` | Cannot initialize twice |
+| `AUTHENTICATION_FAILED` | Invalid or missing Modal tokens |
+| `SANDBOX_CREATION_FAILED` | Failed to create sandbox |
+| `SANDBOX_NOT_FOUND` | Sandbox ID/name not found or expired |
+| `COMMAND_TIMEOUT` | Command execution timed out |
+| `COMMAND_FAILED` | Command execution failed |
+| `FILE_OPERATION_FAILED` | File read/write failed |
+| `RESOURCE_LIMIT_EXCEEDED` | CPU, memory, or storage limits exceeded |
+| `VOLUME_ERROR` | Volume operation failed |
+
+## Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `MODAL_TOKEN_ID` | Modal API token ID |
+| `MODAL_TOKEN_SECRET` | Modal API token secret |

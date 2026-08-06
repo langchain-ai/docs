@@ -1,12 +1,63 @@
 ---
-title: Self-hosted on GCP
+title: Self-hosted LangSmith on GCP
 sidebarTitle: GCP
-icon: "google"
+icon: "brand-google"
 ---
 
-When running LangSmith on [Google Cloud Platform (GCP)](https://cloud.google.com/), you can set up in either [full self-hosted](/langsmith/self-hosted) or [hybrid](/langsmith/hybrid) mode. Full self-hosted mode deploys a complete LangSmith platform with observability functionality as well as the option to create agent deployments. Hybrid mode entails just the infrastructure to run agents in a data plane within your cloud, while our SaaS provides the control plane and observability functionality.
+When running LangSmith on [Google Cloud Platform (GCP)](https://cloud.google.com/), [self-hosted](/langsmith/self-hosted) mode deploys a complete LangSmith platform with observability functionality.
 
-This page provides GCP-specific architecture patterns, service recommendations, and best practices for deploying and operating LangSmith on GCP.
+This page provides:
+
+- [Initial setup steps](#initial-setup) for deploying to GKE, configuring managed services, and setting up authentication.
+- [GCP-specific architecture patterns](#reference-architecture) and reference diagrams.
+- [Service recommendations](#compute-options) and best practices.
+- [Google Cloud Well-Architected best practices](#google-cloud-well-architected-best-practices) for operational excellence, security, and reliability.
+
+<Note>
+LangChain publishes production-ready [Terraform modules for GCP](https://github.com/langchain-ai/terraform/tree/main/modules/gcp) that provision GKE, Cloud SQL, Memorystore, Cloud Storage, and networking in a single workflow. Start with the [Deploy with Terraform overview](/langsmith/self-host-terraform) to choose between the Terraform and Helm-only paths.
+</Note>
+
+## Initial setup
+
+<Steps>
+  <Step title="Deploy to Kubernetes">
+    Follow the [Kubernetes installation guide](/langsmith/kubernetes). LangSmith is tested on Google Kubernetes Engine (GKE).
+
+    **GKE-specific notes:**
+    - LangSmith works with standard GKE clusters
+    - Use GCE persistent disk storage class
+  </Step>
+
+  <Step title="Configure external services">
+    For production deployments, connect to GCP managed services:
+
+    <CardGroup cols={2}>
+      <Card title="Google Cloud Storage" icon="database" href="/langsmith/self-host-blob-storage#google-cloud-storage">
+        Store trace data in GCS
+      </Card>
+      <Card title="Cloud SQL" icon="database" href="/langsmith/self-host-external-postgres#google-cloud-sql">
+        PostgreSQL database
+      </Card>
+      <Card title="Memorystore" icon="cpu" href="/langsmith/self-host-external-redis#google-cloud-memorystore">
+        Redis or Valkey for caching
+      </Card>
+      <Card title="ClickHouse Cloud" icon="chart-line" href="/langsmith/self-host-external-clickhouse">
+        Analytics database
+      </Card>
+    </CardGroup>
+  </Step>
+
+  <Step title="Set up authentication">
+    Use [Workload Identity](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) to authenticate LangSmith pods to GCP services.
+
+    **Key pages:**
+    - [GCS HMAC key authentication](/langsmith/self-host-blob-storage#google-cloud-storage)
+    - [Cloud SQL IAM authentication](/langsmith/self-host-external-postgres#iam-authentication)
+    - [Memorystore IAM authentication](/langsmith/self-host-external-redis#iam-authentication)
+  </Step>
+</Steps>
+
+After completing these initial setup steps, you can review the complete GCP architecture and best practices below.
 
 ## Reference architecture
 
@@ -18,7 +69,7 @@ We recommend leveraging GCP's managed services to provide a scalable, secure, an
 - <Icon icon="cube" /> **Frontend & backend services:** Containers run on [Google Kubernetes Engine (GKE)](https://cloud.google.com/kubernetes-engine), orchestrated behind the load balancer. Routes requests to other services within the cluster as necessary.
 - <Icon icon="database" /> **Storage & databases:**
   - [Cloud SQL for PostgreSQL](https://cloud.google.com/sql/docs/postgres): metadata, projects, users, and short-term and long-term memory for deployed agents. LangSmith supports PostgreSQL version 14 or higher.
-  - [Memorystore for Redis](https://cloud.google.com/memorystore/docs/redis): caching and job queues. Memorystore can be in single-instance or cluster mode, running Redis OSS version 5 or higher.
+  - [Memorystore](https://cloud.google.com/memorystore) ([Redis](https://cloud.google.com/memorystore/docs/redis) or [Valkey](https://cloud.google.com/memorystore/docs/valkey)): caching and job queues. Memorystore can be in single-instance or cluster mode. LangSmith requires Redis OSS version 5 or higher, or Valkey 8.
   - ClickHouse + [Persistent Disks](https://cloud.google.com/compute/docs/disks): analytics and trace storage.
     - We recommend using an [externally managed ClickHouse solution](/langsmith/self-host-external-clickhouse) unless security or compliance reasons
     prevent you from doing so.
@@ -47,7 +98,7 @@ This reference is designed to align with the six pillars of the Google Cloud Wel
 - Automate deployments with IaC ([Terraform](https://www.terraform.io/) / [Deployment Manager](https://cloud.google.com/deployment-manager)).
 - Use [Secret Manager](https://cloud.google.com/secret-manager) for configuration and sensitive data.
 - Configure your LangSmith instance to [export telemetry data](/langsmith/export-backend) and continuously monitor via [Cloud Logging](https://cloud.google.com/logging).
-- The preferred method to manage [LangSmith deployments](/langsmith/deployments) is to create a CI process that builds [Agent Server](/langsmith/agent-server) images and pushes them to [Artifact Registry](https://cloud.google.com/artifact-registry). Create a test deployment for pull requests before deploying a new revision to staging or production upon PR merge.
+- The preferred method to manage [LangSmith deployments](/langsmith/deployment) is to create a CI process that builds [Agent Server](/langsmith/agent-server) images and pushes them to [Artifact Registry](https://cloud.google.com/artifact-registry). Create a test deployment for pull requests before deploying a new revision to staging or production upon PR merge.
 
 ### Security
 

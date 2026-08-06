@@ -9,14 +9,14 @@ sidebarTitle: Memory
 
 This conceptual guide covers two types of memory, based on their recall scope:
 
-* [Short-term memory](#short-term-memory), or [thread](/oss/langgraph/persistence#threads)-scoped memory, tracks the ongoing conversation by maintaining message history within a session. LangGraph manages short-term memory as a part of your agent's [state](/oss/langgraph/graph-api#state). State is persisted to a database using a [checkpointer](/oss/langgraph/persistence#checkpoints) so the thread can be resumed at any time. Short-term memory updates when the graph is invoked or a step is completed, and the State is read at the start of each step.
-* [Long-term memory](#long-term-memory) stores user-specific or application-level data across sessions and is shared _across_ conversational threads. It can be recalled _at any time_ and _in any thread_. Memories are scoped to any custom namespace, not just within a single thread ID. LangGraph provides [stores](/oss/langgraph/persistence#memory-store) ([reference doc](https://langchain-ai.github.io/langgraph/reference/store/#langgraph.store.base.BaseStore)) to let you save and recall long-term memories.
+* [Short-term memory](#short-term-memory), or [thread](/oss/langgraph/checkpointers#threads)-scoped memory, tracks the ongoing conversation by maintaining message history within a session. LangGraph manages short-term memory as a part of your agent's [state](/oss/langgraph/graph-api#state). State is persisted to a database using a [checkpointer](/oss/langgraph/checkpointers#checkpoints) so the thread can be resumed at any time. Short-term memory updates when the graph is invoked or a step is completed, and the State is read at the start of each step.
+* [Long-term memory](#long-term-memory) stores user-specific or application-level data across sessions and is shared _across_ conversational threads. It can be recalled _at any time_ and _in any thread_. Memories are scoped to any custom namespace, not just within a single thread ID. LangGraph provides [stores](/oss/langgraph/stores) ([reference doc](https://langchain-ai.github.io/langgraph/reference/store/#langgraph.store.base.BaseStore)) to let you save and recall long-term memories.
 
 ![Short vs long](/oss/images/short-vs-long.png)
 
 ## Short-term memory
 
-[Short-term memory](/oss/langgraph/add-memory#add-short-term-memory) lets your application remember previous interactions within a single [thread](/oss/langgraph/persistence#threads) or conversation. A [thread](/oss/langgraph/persistence#threads) organizes multiple interactions in a session, similar to the way email groups messages in a single conversation.
+[Short-term memory](/oss/langgraph/add-memory#add-short-term-memory) lets your application remember previous interactions within a single [thread](/oss/langgraph/checkpointers#threads) or conversation. A [thread](/oss/langgraph/checkpointers#threads) organizes multiple interactions in a session, similar to the way email groups messages in a single conversation.
 
 LangGraph manages short-term memory as part of the agent's state, persisted via thread-scoped checkpoints. This state can normally include the conversation history along with other stateful data, such as uploaded files, retrieved documents, or generated artifacts. By storing these in the graph's state, the bot can access the full context for a given conversation while maintaining separation between different threads.
 
@@ -69,7 +69,7 @@ When remembering a profile, you will want to make sure that you are **updating**
 
 Alternatively, memories can be a collection of documents that are continuously updated and extended over time. Each individual memory can be more narrowly scoped and easier to generate, which means that you're less likely to **lose** information over time. It's easier for an LLM to generate _new_ objects for new information than reconcile new information with an existing profile. As a result, a document collection tends to lead to [higher recall downstream](https://en.wikipedia.org/wiki/Precision_and_recall).
 
-However, this shifts some complexity memory updating. The model must now _delete_ or _update_ existing items in the list, which can be tricky. In addition, some models may default to over-inserting and others may default to over-updating. See the [Trustcall](https://github.com/hinthornw/trustcall) package for one way to manage this and consider evaluation (e.g., with a tool like [LangSmith](https://docs.langchain.com/langsmith/evaluation)) to help you tune the behavior.
+However, this shifts some complexity memory updating. The model must now _delete_ or _update_ existing items in the list, which can be tricky. In addition, some models may default to over-inserting and others may default to over-updating. See the [Trustcall](https://github.com/hinthornw/trustcall) package for one way to manage this and consider evaluation (e.g., with a tool like [LangSmith](/langsmith/evaluation)) to help you tune the behavior.
 
 Working with document collections also shifts complexity to memory **search** over the list. The `Store` currently supports both [semantic search](https://langchain-ai.github.io/langgraph/reference/store/#langgraph.store.base.SearchOp.query) and [filtering by content](https://langchain-ai.github.io/langgraph/reference/store/#langgraph.store.base.SearchOp.filter).
 
@@ -77,7 +77,7 @@ Finally, using a collection of memories can make it challenging to provide compr
 
 ![Update list](/oss/images/update-list.png)
 
-Regardless of memory management approach, the central point is that the agent will use the semantic memories to [ground its responses](/oss/langchain/retrieval), which often leads to more personalized and relevant interactions.
+Regardless of memory management approach, the central point is that the agent will use the semantic memories to [ground its responses](/oss/deepagents/retrieval), which often leads to more personalized and relevant interactions.
 
 ### Episodic memory
 
@@ -92,15 +92,15 @@ In practice, episodic memories are often implemented through few-shot example pr
 :::
 
 :::python
-Note that the memory [store](/oss/langgraph/persistence#memory-store) is just one way to store data as few-shot examples. If you want to have more developer involvement, or tie few-shots more closely to your evaluation harness, you can also use a [LangSmith Dataset](/langsmith/index-datasets-for-dynamic-few-shot-example-selection) to store your data. Then dynamic few-shot example selectors can be used out-of-the box to achieve this same goal. LangSmith will index the dataset for you and enable retrieval of few shot examples that are most relevant to the user input based upon keyword similarity ([using a BM25-like algorithm](/langsmith/index-datasets-for-dynamic-few-shot-example-selection) for keyword based similarity).
+Note that the memory [store](/oss/langgraph/stores) is just one way to store data as few-shot examples. If you want to have more developer involvement, or tie few-shots more closely to your evaluation harness, you can also use a [LangSmith Dataset](/langsmith/manage-datasets) to store your data and implement your own retrieval logic to select the most relevant examples based on user input.
 
-See this how-to [video](https://www.youtube.com/watch?v=37VaU7e7t5o) for example usage of dynamic few-shot example selection in LangSmith. Also, see this [blog post](https://blog.langchain.dev/few-shot-prompting-to-improve-tool-calling-performance/) showcasing few-shot prompting to improve tool calling performance and this [blog post](https://blog.langchain.dev/aligning-llm-as-a-judge-with-human-preferences/) using few-shot example to align an LLMs to human preferences.
+See this [blog post](https://blog.langchain.dev/few-shot-prompting-to-improve-tool-calling-performance/) showcasing few-shot prompting to improve tool calling performance and this [blog post](https://blog.langchain.dev/aligning-llm-as-a-judge-with-human-preferences/) using few-shot examples to align an LLM to human preferences.
 :::
 
 :::js
-Note that the memory [store](/oss/langgraph/persistence#memory-store) is just one way to store data as few-shot examples. If you want to have more developer involvement, or tie few-shots more closely to your evaluation harness, you can also use a LangSmith Dataset to store your data. Then dynamic few-shot example selectors can be used out-of-the box to achieve this same goal. LangSmith will index the dataset for you and enable retrieval of few shot examples that are most relevant to the user input based upon keyword similarity.
+Note that the memory [store](/oss/langgraph/stores) is just one way to store data as few-shot examples. If you want to have more developer involvement, or tie few-shots more closely to your evaluation harness, you can also use a LangSmith Dataset to store your data and implement your own retrieval logic to select the most relevant examples based on user input.
 
-See this how-to [video](https://www.youtube.com/watch?v=37VaU7e7t5o) for example usage of dynamic few-shot example selection in LangSmith. Also, see this [blog post](https://blog.langchain.dev/few-shot-prompting-to-improve-tool-calling-performance/) showcasing few-shot prompting to improve tool calling performance and this [blog post](https://blog.langchain.dev/aligning-llm-as-a-judge-with-human-preferences/) using few-shot example to align an LLMs to human preferences.
+See this [blog post](https://blog.langchain.dev/few-shot-prompting-to-improve-tool-calling-performance/) showcasing few-shot prompting to improve tool calling performance and this [blog post](https://blog.langchain.dev/aligning-llm-as-a-judge-with-human-preferences/) using few-shot examples to align an LLM to human preferences.
 :::
 
 ### Procedural memory
@@ -113,7 +113,7 @@ One effective approach to refining an agent's instructions is through ["Reflecti
 
 For example, we built a [Tweet generator](https://www.youtube.com/watch?v=Vn8A3BxfplE) using external feedback and prompt re-writing to produce high-quality paper summaries for Twitter. In this case, the specific summarization prompt was difficult to specify *a priori*, but it was fairly easy for a user to critique the generated Tweets and provide feedback on how to improve the summarization process.
 
-The below pseudo-code shows how you might implement this with the LangGraph memory [store](/oss/langgraph/persistence#memory-store), using the store to save a prompt, the `update_instructions` node to get the current prompt (as well as feedback from the conversation with the user captured in `state["messages"]`), update the prompt, and save the new prompt back to the store. Then, the `call_model` get the updated prompt from the store and uses it to generate a response.
+The below pseudo-code shows how you might implement this with the LangGraph memory [store](/oss/langgraph/stores), using the store to save a prompt, the `update_instructions` node to get the current prompt (as well as feedback from the conversation with the user captured in `state["messages"]`), update the prompt, and save the new prompt back to the store. Then, the `call_model` get the updated prompt from the store and uses it to generate a response.
 
 :::python
 ```python
@@ -184,7 +184,7 @@ Creating memories during runtime offers both advantages and challenges. On the p
 
 However, this method also presents challenges. It may increase complexity if the agent requires a new tool to decide what to commit to memory. In addition, the process of reasoning about what to save to memory can impact agent latency. Finally, the agent must multitask between memory creation and its other responsibilities, potentially affecting the quantity and quality of memories created.
 
-As an example, ChatGPT uses a [save_memories](https://openai.com/index/memory-and-new-controls-for-chatgpt/) tool to upsert memories as content strings, deciding whether and how to use this tool with each user message. See our [memory-agent](https://github.com/langchain-ai/memory-agent) template as an reference implementation.
+As an example, ChatGPT uses a [save_memories](https://openai.com/index/memory-and-new-controls-for-chatgpt/) tool to upsert memories as content strings, deciding whether and how to use this tool with each user message. See our [memory-agent](https://github.com/langchain-ai/memory-agent) template as a reference implementation.
 
 #### In the background
 
@@ -192,11 +192,11 @@ Creating memories as a separate background task offers several advantages. It el
 
 However, this method has its own challenges. Determining the frequency of memory writing becomes crucial, as infrequent updates may leave other threads without new context. Deciding when to trigger memory formation is also important. Common strategies include scheduling after a set time period (with rescheduling if new events occur), using a cron schedule, or allowing manual triggers by users or the application logic.
 
-See our [memory-service](https://github.com/langchain-ai/memory-template) template as an reference implementation.
+See our [memory-service](https://github.com/langchain-ai/memory-template) template as a reference implementation.
 
 ### Memory storage
 
-LangGraph stores long-term memories as JSON documents in a [store](/oss/langgraph/persistence#memory-store). Each memory is organized under a custom `namespace` (similar to a folder) and a distinct `key` (like a file name). Namespaces often include user or org IDs or other labels that makes it easier to organize information. This structure enables hierarchical organization of memories. Cross-namespace searching is then supported through content filters.
+LangGraph stores long-term memories as JSON documents in a [store](/oss/langgraph/stores). Each memory is organized under a custom `namespace` (similar to a folder) and a distinct `key` (like a file name). Namespaces often include user or org IDs or other labels that makes it easier to organize information. This structure enables hierarchical organization of memories. Cross-namespace searching is then supported through content filters.
 
 :::python
 ```python
@@ -274,4 +274,10 @@ const items = await store.search(
 ```
 :::
 
-For more information about the memory store, see the [Persistence](/oss/langgraph/persistence#memory-store) guide.
+For more information about the memory store, see the [Persistence](/oss/langgraph/stores) guide.
+
+## Learn more
+
+- [Context conceptual overview](/oss/concepts/context)
+- [Short-term memory in LangChain](/oss/langchain/short-term-memory)
+- [Memory in LangGraph](/oss/langgraph/add-memory)

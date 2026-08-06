@@ -30,8 +30,8 @@ def test_load_existing_mappings() -> None:
     with patch("scripts.check_pr_imports.Path") as mock_path:
         mock_path.return_value.exists.return_value = True
         temp_file_path = Path(temp_path)
-        mock_path.return_value.open.return_value.__enter__ = (
-            lambda _: temp_file_path.open()
+        mock_path.return_value.open.return_value.__enter__ = lambda _: (
+            temp_file_path.open()
         )
         mock_path.return_value.open.return_value.__exit__ = Mock(return_value=None)
 
@@ -225,6 +225,27 @@ def test_non_langchain_core_import(mapping_dict: dict[str, str]) -> None:
     assert len(issues) == 0
 
 
+def test_from_import_symbol_not_re_exported(mapping_dict: dict[str, str]) -> None:
+    """Test that symbols not re-exported by langchain are not flagged.
+
+    For example, BaseMessage is in langchain_core.messages but is not
+    re-exported by langchain.messages, so it should not be flagged.
+    """
+    line = "from langchain_core.messages import BaseMessage"
+    issues = check_import_line(line, mapping_dict)
+    assert len(issues) == 0
+
+
+def test_from_import_mixed_re_exported_and_not(mapping_dict: dict[str, str]) -> None:
+    """Test mixed imports where some symbols are re-exported and some are not."""
+    line = "from langchain_core.messages import HumanMessage, BaseMessage"
+    issues = check_import_line(line, mapping_dict)
+
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue["suggested"] == "from langchain.messages import HumanMessage"
+
+
 def test_analyze_simple_diff(mapping_dict: dict[str, str]) -> None:
     """Test analyzing a simple diff with one issue."""
     diff = """diff --git a/test.py b/test.py
@@ -350,7 +371,7 @@ index d51f18f8a..077e9ba03 100644
  from langchain.chat_models import init_chat_model
 +from langchain_core import AIMessage, SystemMessage
 
- model = init_chat_model("gpt-4.1-mini")
+ model = init_chat_model("gpt-5.4")
 """
 
     issues = analyze_diff(diff, mapping_dict)

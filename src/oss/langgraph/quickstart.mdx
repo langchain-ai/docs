@@ -3,8 +3,14 @@ title: Quickstart
 ---
 
 
-
 This quickstart demonstrates how to build a calculator agent using the LangGraph Graph API or the Functional API.
+
+<Tip>
+    **Using an AI coding assistant?**
+
+    - Install the [LangChain Docs MCP server](/use-these-docs) to give your agent access to up-to-date LangChain documentation and examples.
+    - Install [LangChain Skills](https://github.com/langchain-ai/langchain-skills) to improve your agent's performance on LangChain ecosystem tasks.
+</Tip>
 
 - [Use the Graph API](#use-the-graph-api) if you prefer to define your agent as a graph of nodes and edges.
 - [Use the Functional API](#use-the-functional-api) if you prefer to define your agent as a single function.
@@ -12,7 +18,7 @@ This quickstart demonstrates how to build a calculator agent using the LangGraph
 For conceptual information, see [Graph API overview](/oss/langgraph/graph-api) and [Functional API overview](/oss/langgraph/functional-api).
 
 <Info>
-For this example, you will need to set up a [Claude (Anthropic)](https://www.anthropic.com/) account and get an API key. Then, set the `ANTHROPIC_API_KEY` environment variable in your terminal.
+For this example, you will need to set up a [Claude (Anthropic)](https://www.anthropic.com/) account and get an API key. Then, set the `ANTHROPIC_API_KEY` environment variable in your terminal. See [chat model integrations](/oss/integrations/chat) for all available providers. If you use [LangSmith Gateway](/langsmith/llm-gateway), you can [bring your own provider keys](/langsmith/llm-gateway-quickstart) or use [Gateway Credits](/langsmith/llm-gateway-credits) to access models without a provider key.
 </Info>
 
 <Tabs>
@@ -29,7 +35,7 @@ from langchain.chat_models import init_chat_model
 
 
 model = init_chat_model(
-    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-4-6",
     temperature=0
 )
 
@@ -82,7 +88,7 @@ import { tool } from "@langchain/core/tools";
 import * as z from "zod";
 
 const model = new ChatAnthropic({
-  model: "claude-sonnet-4-5-20250929",
+  model: "claude-sonnet-4-6",
   temperature: 0,
 });
 
@@ -144,7 +150,7 @@ The graph's state is used to store the messages and the number of LLM calls.
 <Tip>
     State in LangGraph persists throughout the agent's execution.
 
-    The `MessagesAnnotation` constant includes a built-in reducer for appending messages. The `llmCalls` field uses `(x, y) => x + y` to accumulate the count.
+    The `MessagesValue` provides a built-in reducer for appending messages. The `llmCalls` field uses a `ReducedValue` with `(x, y) => x + y` to accumulate the count.
 </Tip>
 
 :::
@@ -165,18 +171,25 @@ class MessagesState(TypedDict):
 
 :::js
 ```typescript
-import { StateGraph, START, END, MessagesAnnotation, Annotation } from "@langchain/langgraph";
+import {
+  StateGraph,
+  StateSchema,
+  MessagesValue,
+  ReducedValue,
+  GraphNode,
+  ConditionalEdgeRouter,
+  START,
+  END,
+} from "@langchain/langgraph";
+import { z } from "zod/v4";
 
-const MessagesState = Annotation.Root({
-  ...MessagesAnnotation.spec,
-  llmCalls: Annotation<number>({
-    reducer: (x, y) => x + y,
-    default: () => 0,
-  }),
+const MessagesState = new StateSchema({
+  messages: MessagesValue,
+  llmCalls: new ReducedValue(
+    z.number().default(0),
+    { reducer: (x, y) => x + y }
+  ),
 });
-
-// Extract the state type for function signatures
-type MessagesStateType = typeof MessagesState.State;
 ```
 :::
 
@@ -213,17 +226,19 @@ def llm_call(state: dict):
 
 ```typescript
 import { SystemMessage } from "@langchain/core/messages";
-async function llmCall(state: MessagesStateType) {
+
+const llmCall: GraphNode<typeof MessagesState> = async (state) => {
+  const response = await modelWithTools.invoke([
+    new SystemMessage(
+      "You are a helpful assistant tasked with performing arithmetic on a set of inputs."
+    ),
+    ...state.messages,
+  ]);
   return {
-    messages: [await modelWithTools.invoke([
-      new SystemMessage(
-        "You are a helpful assistant tasked with performing arithmetic on a set of inputs."
-      ),
-      ...state.messages,
-    ])],
+    messages: [response],
     llmCalls: 1,
   };
-}
+};
 ```
 :::
 
@@ -253,7 +268,8 @@ def tool_node(state: dict):
 
 ```typescript
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
-async function toolNode(state: MessagesStateType) {
+
+const toolNode: GraphNode<typeof MessagesState> = async (state) => {
   const lastMessage = state.messages.at(-1);
 
   if (lastMessage == null || !AIMessage.isInstance(lastMessage)) {
@@ -268,7 +284,7 @@ async function toolNode(state: MessagesStateType) {
   }
 
   return { messages: result };
-}
+};
 ```
 :::
 
@@ -301,7 +317,7 @@ def should_continue(state: MessagesState) -> Literal["tool_node", END]:
 :::js
 
 ```typescript
-async function shouldContinue(state: MessagesStateType) {
+const shouldContinue: ConditionalEdgeRouter<typeof MessagesState, "toolNode"> = (state) => {
   const lastMessage = state.messages.at(-1);
 
   // Check if it's an AIMessage before accessing tool_calls
@@ -316,7 +332,7 @@ async function shouldContinue(state: MessagesStateType) {
 
   // Otherwise, we stop (reply to the user)
   return END;
-}
+};
 ```
 :::
 
@@ -383,7 +399,9 @@ for (const message of result.messages) {
 :::
 
 <Tip>
-    To learn how to trace your agent with LangSmith, see the [LangSmith documentation](/langsmith/trace-with-langgraph).
+Trace and debug your agent with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to get set up. When ready for production, see [Deploy](/langsmith/deployment) for hosting options.
+
+We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
 </Tip>
 
 Congratulations! You've built your first agent using the LangGraph Graph API.
@@ -399,7 +417,7 @@ from langchain.chat_models import init_chat_model
 
 
 model = init_chat_model(
-    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-4-6",
     temperature=0
 )
 
@@ -458,7 +476,7 @@ class MessagesState(TypedDict):
 from langchain.messages import SystemMessage
 
 
-def llm_call(state: dict):
+def llm_call(state: MessagesState):
     """LLM decides whether to call a tool or not"""
 
     return {
@@ -481,7 +499,7 @@ def llm_call(state: dict):
 from langchain.messages import ToolMessage
 
 
-def tool_node(state: dict):
+def tool_node(state: MessagesState):
     """Performs the tool call"""
 
     result = []
@@ -556,7 +574,7 @@ import { tool } from "@langchain/core/tools";
 import * as z from "zod";
 
 const model = new ChatAnthropic({
-  model: "claude-sonnet-4-5-20250929",
+  model: "claude-sonnet-4-6",
   temperature: 0,
 });
 
@@ -596,27 +614,36 @@ const toolsByName = {
 };
 const tools = Object.values(toolsByName);
 const modelWithTools = model.bindTools(tools);
-
+```
+```typescript
 // Step 2: Define state
 
-import { StateGraph, START, END, MessagesAnnotation, Annotation } from "@langchain/langgraph";
+import {
+  StateGraph,
+  StateSchema,
+  MessagesValue,
+  ReducedValue,
+  GraphNode,
+  ConditionalEdgeRouter,
+  START,
+  END,
+} from "@langchain/langgraph";
+import * as z from "zod";
 
-const MessagesState = Annotation.Root({
-  ...MessagesAnnotation.spec,
-  llmCalls: Annotation<number>({
-    reducer: (x, y) => x + y,
-    default: () => 0,
-  }),
+const MessagesState = new StateSchema({
+  messages: MessagesValue,
+  llmCalls: new ReducedValue(
+    z.number().default(0),
+    { reducer: (x, y) => x + y }
+  ),
 });
-
-// Extract the state type for function signatures
-type MessagesStateType = typeof MessagesState.State;
-
+```
+```typescript
 // Step 3: Define model node
 
-import { SystemMessage } from "@langchain/core/messages";
+import { SystemMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 
-async function llmCall(state: MessagesStateType) {
+const llmCall: GraphNode<typeof MessagesState> = async (state) => {
   return {
     messages: [await modelWithTools.invoke([
       new SystemMessage(
@@ -626,13 +653,11 @@ async function llmCall(state: MessagesStateType) {
     ])],
     llmCalls: 1,
   };
-}
+};
 
 // Step 4: Define tool node
 
-import { AIMessage, ToolMessage } from "@langchain/core/messages";
-
-async function toolNode(state: MessagesStateType) {
+const toolNode: GraphNode<typeof MessagesState> = async (state) => {
   const lastMessage = state.messages.at(-1);
 
   if (lastMessage == null || !AIMessage.isInstance(lastMessage)) {
@@ -647,11 +672,13 @@ async function toolNode(state: MessagesStateType) {
   }
 
   return { messages: result };
-}
-
+};
+```
+```typescript
 // Step 5: Define logic to determine whether to end
+import { ConditionalEdgeRouter, END } from "@langchain/langgraph";
 
-async function shouldContinue(state: MessagesStateType) {
+const shouldContinue: ConditionalEdgeRouter<typeof MessagesState, "toolNode"> = (state) => {
   const lastMessage = state.messages.at(-1);
 
   // Check if it's an AIMessage before accessing tool_calls
@@ -666,9 +693,12 @@ async function shouldContinue(state: MessagesStateType) {
 
   // Otherwise, we stop (reply to the user)
   return END;
-}
-
+};
+```
+```typescript
 // Step 6: Build and compile the agent
+import { HumanMessage } from "@langchain/core/messages";
+import { StateGraph, START, END } from "@langchain/langgraph";
 
 const agent = new StateGraph(MessagesState)
   .addNode("llmCall", llmCall)
@@ -679,7 +709,6 @@ const agent = new StateGraph(MessagesState)
   .compile();
 
 // Invoke
-import { HumanMessage } from "@langchain/core/messages";
 const result = await agent.invoke({
   messages: [new HumanMessage("Add 3 and 4.")],
 });
@@ -706,7 +735,7 @@ from langchain.chat_models import init_chat_model
 
 
 model = init_chat_model(
-    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-4-6",
     temperature=0
 )
 
@@ -769,7 +798,7 @@ import { tool } from "@langchain/core/tools";
 import * as z from "zod";
 
 const model = new ChatAnthropic({
-  model: "claude-sonnet-4-5-20250929",
+  model: "claude-sonnet-4-6",
   temperature: 0,
 });
 
@@ -842,6 +871,7 @@ def call_llm(messages: list[BaseMessage]):
 ```typescript
 import { task, entrypoint } from "@langchain/langgraph";
 import { SystemMessage } from "@langchain/core/messages";
+
 const callLlm = task({ name: "callLlm" }, async (messages: BaseMessage[]) => {
   return modelWithTools.invoke([
     new SystemMessage(
@@ -871,6 +901,7 @@ def call_tool(tool_call: ToolCall):
 :::js
 ```typescript
 import type { ToolCall } from "@langchain/core/messages/tool";
+
 const callTool = task({ name: "callTool" }, async (toolCall: ToolCall) => {
   const tool = toolsByName[toolCall.name];
   return tool.invoke(toolCall);
@@ -910,8 +941,9 @@ def agent(messages: list[BaseMessage]):
 
 # Invoke
 messages = [HumanMessage(content="Add 3 and 4.")]
-for chunk in agent.stream(messages, stream_mode="updates"):
-    print(chunk)
+stream = agent.stream_events(messages, version="v3")
+for snapshot in stream.values:
+    print(snapshot)
     print("\n")
 ```
 :::
@@ -952,7 +984,9 @@ for (const message of result) {
 :::
 
 <Tip>
-    To learn how to trace your agent with LangSmith, see the [LangSmith documentation](/langsmith/trace-with-langgraph).
+Trace and debug your agent with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to get set up. When ready for production, see [Deploy](/langsmith/deployment) for hosting options.
+
+We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
 </Tip>
 
 Congratulations! You've built your first agent using the LangGraph Functional API.
@@ -968,7 +1002,7 @@ from langchain.chat_models import init_chat_model
 
 
 model = init_chat_model(
-    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-4-6",
     temperature=0
 )
 
@@ -1069,22 +1103,34 @@ def agent(messages: list[BaseMessage]):
 
 # Invoke
 messages = [HumanMessage(content="Add 3 and 4.")]
-for chunk in agent.stream(messages, stream_mode="updates"):
-    print(chunk)
+stream = agent.stream_events(messages, version="v3")
+for snapshot in stream.values:
+    print(snapshot)
     print("\n")
 ```
 :::
 
 :::js
 ```typescript
-// Step 1: Define tools and model
-
 import { ChatAnthropic } from "@langchain/anthropic";
 import { tool } from "@langchain/core/tools";
+import {
+  task,
+  entrypoint,
+  addMessages,
+} from "@langchain/langgraph";
+import {
+  SystemMessage,
+  HumanMessage,
+  type BaseMessage,
+} from "@langchain/core/messages";
+import type { ToolCall } from "@langchain/core/messages/tool";
 import * as z from "zod";
 
+// Step 1: Define tools and model
+
 const model = new ChatAnthropic({
-  model: "claude-sonnet-4-5-20250929",
+  model: "claude-sonnet-4-6",
   temperature: 0,
 });
 
@@ -1127,8 +1173,6 @@ const modelWithTools = model.bindTools(tools);
 
 // Step 2: Define model node
 
-import { task, entrypoint } from "@langchain/langgraph";
-import { SystemMessage } from "@langchain/core/messages";
 const callLlm = task({ name: "callLlm" }, async (messages: BaseMessage[]) => {
   return modelWithTools.invoke([
     new SystemMessage(
@@ -1140,15 +1184,13 @@ const callLlm = task({ name: "callLlm" }, async (messages: BaseMessage[]) => {
 
 // Step 3: Define tool node
 
-import type { ToolCall } from "@langchain/core/messages/tool";
 const callTool = task({ name: "callTool" }, async (toolCall: ToolCall) => {
   const tool = toolsByName[toolCall.name];
   return tool.invoke(toolCall);
 });
 
 // Step 4: Define agent
-import { addMessages } from "@langchain/langgraph";
-import { type BaseMessage } from "@langchain/core/messages";
+
 const agent = entrypoint({ name: "agent" }, async (messages: BaseMessage[]) => {
   let modelResponse = await callLlm(messages);
 
@@ -1169,7 +1211,7 @@ const agent = entrypoint({ name: "agent" }, async (messages: BaseMessage[]) => {
 });
 
 // Invoke
-import { HumanMessage } from "@langchain/core/messages";
+
 const result = await agent.invoke([new HumanMessage("Add 3 and 4.")]);
 
 for (const message of result) {

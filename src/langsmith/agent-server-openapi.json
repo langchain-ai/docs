@@ -22,7 +22,7 @@
       "description": "A run is an invocation of a graph / assistant, with no state or memory persistence."
     },
     {
-      "name": "Crons (Plus tier)",
+      "name": "Crons",
       "description": "A cron is a periodic run that recurs on a given schedule. The repeats can be isolated, or share state in a thread"
     },
     {
@@ -40,6 +40,10 @@
     {
       "name": "System",
       "description": "System endpoints for health checks, metrics, and server information."
+    },
+    {
+      "name": "Streaming",
+      "description": "Thread-centric streaming endpoints. Provides a structured command/event surface over SSE+HTTP; WebSocket is also supported at `/threads/{thread_id}/stream/events` (not documented here — OpenAPI 3.1 does not describe WebSocket)."
     }
   ],
   "paths": {
@@ -908,7 +912,7 @@
       "post": {
         "tags": ["Threads"],
         "summary": "Prune Threads",
-        "description": "Prune threads by ID. The 'delete' strategy removes threads entirely. The 'keep_latest' strategy prunes old checkpoints but keeps threads and their latest state (requires FF_USE_CORE_API=true).",
+        "description": "Prune threads by ID. The 'delete' strategy removes threads entirely. The 'keep_latest' strategy prunes old checkpoints but keeps threads and their latest state.",
         "operationId": "prune_threads_threads_prune_post",
         "requestBody": {
           "content": {
@@ -1136,16 +1140,6 @@
             },
             "name": "thread_id",
             "in": "path"
-          },
-          {
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "title": "Subgraphs",
-              "description": "If true, includes subgraph states."
-            },
-            "name": "subgraphs",
-            "in": "query"
           }
         ],
         "requestBody": {
@@ -1624,6 +1618,60 @@
         }
       }
     },
+    "/threads/{thread_id}/stream/events": {
+      "post": {
+        "tags": ["Streaming"],
+        "summary": "Protocol v2 Event Stream (SSE)",
+        "description": "Open a connection-scoped SSE event stream for a thread. The request body is a `ProtocolEventStreamRequest` carrying channel and namespace filters; the server replies with `Content-Type: text/event-stream` and pushes matching `ProtocolEvent` frames for the lifetime of the connection. Closing the connection unsubscribes — no state is persisted server-side.\n\nReconnect: clients pass the last `seq` they received as `since` in the body. Buffered events with `seq > since` are replayed before the stream goes live. The endpoint is POST-only, so browser-native `EventSource` auto-resume (`Last-Event-ID`) does not apply — clients drive resume explicitly via the body.",
+        "operationId": "protocol_thread_events_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Thread Id",
+              "description": "The ID of the thread to observe."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtocolEventStreamRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "Stream of `ProtocolEvent` frames. Each SSE frame uses the event's `method` as the `event:` field and a JSON-encoded `ProtocolEvent` as the `data:` field; `id:` is set to the event's `seq`.\n\n**Example frame:**\n\nid: 42\n\nevent: messages\n\ndata: {\"type\":\"event\",\"event_id\":\"42\",\"seq\":42,\"method\":\"messages\",\"params\":{\"namespace\":[],\"timestamp\":1700000000000,\"data\":{...}}}"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/threads/{thread_id}/runs": {
       "get": {
         "tags": ["Thread Runs"],
@@ -1667,7 +1715,14 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["pending", "error", "success", "timeout", "interrupted"]
+              "enum": [
+                "pending",
+                "running",
+                "error",
+                "success",
+                "timeout",
+                "interrupted"
+              ]
             },
             "name": "status",
             "in": "query"
@@ -1687,7 +1742,8 @@
                   "status",
                   "metadata",
                   "kwargs",
-                  "multitask_strategy"
+                  "multitask_strategy",
+                  "langsmith_session_name"
                 ]
               },
               "title": "Select",
@@ -1816,7 +1872,7 @@
     },
     "/threads/{thread_id}/runs/crons": {
       "post": {
-        "tags": ["Crons (Plus tier)"],
+        "tags": ["Crons"],
         "summary": "Create Thread Cron",
         "description": "Create a cron to schedule runs on a thread.",
         "operationId": "create_thread_cron_threads__thread_id__runs_crons_post",
@@ -1902,7 +1958,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RunCreateStateful"
+                "$ref": "#/components/schemas/RunCreateStreamingStateful"
               }
             }
           },
@@ -1985,7 +2041,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RunCreateStateful"
+                "$ref": "#/components/schemas/RunCreateStreamingStateful"
               }
             }
           },
@@ -2429,7 +2485,7 @@
     },
     "/runs/crons": {
       "post": {
-        "tags": ["Crons (Plus tier)"],
+        "tags": ["Crons"],
         "summary": "Create Cron",
         "description": "Create a cron to schedule runs on new threads.",
         "operationId": "create_cron_runs_crons_post",
@@ -2479,7 +2535,7 @@
     },
     "/runs/crons/search": {
       "post": {
-        "tags": ["Crons (Plus tier)"],
+        "tags": ["Crons"],
         "summary": "Search Crons",
         "description": "Search all active crons",
         "operationId": "search_crons_runs_crons_post",
@@ -2523,7 +2579,7 @@
     },
     "/runs/crons/count": {
       "post": {
-        "tags": ["Crons (Plus tier)"],
+        "tags": ["Crons"],
         "summary": "Count Crons",
         "description": "Get the count of crons matching the specified criteria.",
         "operationId": "count_crons_runs_crons_count_post",
@@ -2582,7 +2638,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RunCreateStateless"
+                "$ref": "#/components/schemas/RunCreateStreamingStateless"
               }
             }
           },
@@ -2708,7 +2764,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RunCreateStateless"
+                "$ref": "#/components/schemas/RunCreateStreamingStateless"
               }
             }
           },
@@ -2889,8 +2945,118 @@
       }
     },
     "/runs/crons/{cron_id}": {
+      "get": {
+        "tags": ["Crons"],
+        "summary": "Get Cron",
+        "description": "Get a cron by ID.",
+        "operationId": "get_cron_runs_crons__cron_id__get",
+        "parameters": [
+          {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cron Id"
+            },
+            "name": "cron_id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cron"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Crons"],
+        "summary": "Update Cron",
+        "description": "Update a cron job by ID.",
+        "operationId": "patch_cron_runs_crons__cron_id__patch",
+        "parameters": [
+          {
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cron Id"
+            },
+            "name": "cron_id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CronPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cron"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
-        "tags": ["Crons (Plus tier)"],
+        "tags": ["Crons"],
         "summary": "Delete Cron",
         "description": "Delete a cron by ID.",
         "operationId": "delete_cron_runs_crons__cron_id__delete",
@@ -3022,6 +3188,15 @@
                 "type": "string"
               }
             }
+          },
+          {
+            "name": "refresh_ttl",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Whether to refresh the TTL on this read operation. If not provided, uses the store's default behavior."
           }
         ],
         "responses": {
@@ -3061,7 +3236,8 @@
     "/store/items/search": {
       "post": {
         "tags": ["Store"],
-        "summary": "Search for items within a namespace prefix.",
+        "summary": "Search or list items within a namespace prefix.",
+        "description": "Lists items ordered by last updated time. If a `query` is provided, performs a natural language search instead. Supports pagination via `limit` and `offset`, and filtering via `filter`.",
         "operationId": "search_items",
         "requestBody": {
           "required": true,
@@ -3139,8 +3315,8 @@
     "/a2a/{assistant_id}": {
       "post": {
         "operationId": "post_a2a",
-        "summary": "A2A Post",
-        "description": "Communicate with an assistant using the Agent-to-Agent Protocol.\nSends a JSON-RPC 2.0 message to the assistant.\n\n- **Request**: Provide an object with `jsonrpc`, `id`, `method`, and optional `params`.\n- **Response**: Returns a JSON-RPC response with task information or error.\n\n**Supported Methods:**\n- `message/send`: Send a message to the assistant\n- `tasks/get`: Get the status and result of a task\n\n**Notes:**\n- Supports threaded conversations via thread context\n- Messages can contain text and data parts\n- Tasks run asynchronously and return completion status\n",
+        "summary": "A2A JSON-RPC",
+        "description": "Communicate with an assistant using the Agent-to-Agent (A2A) Protocol over JSON-RPC 2.0.\nThis endpoint accepts a JSON-RPC envelope and dispatches based on `method`.\n\n**Supported Methods:**\n- `message/send`: Send a message and wait for the final Task result.\n- `message/stream`: Send a message and receive Server-Sent Events (SSE) JSON-RPC responses.\n- `tasks/get`: Fetch the current state of a Task by ID.\n- `tasks/cancel`: Request cancellation (currently not supported; returns an error).\n\n**LangGraph Mapping:**\n- `message.contextId` maps to LangGraph `thread_id`.\n\n**Notes:**\n- Only `text` and `data` parts are supported; `file` parts are not.\n- If `message.contextId` is omitted, a new context is created.\n- Text parts require the assistant input schema to include a `messages` field.\n",
         "parameters": [
           {
             "name": "assistant_id",
@@ -3157,10 +3333,9 @@
             "in": "header",
             "required": true,
             "schema": {
-              "type": "string",
-              "enum": ["application/json"]
+              "type": "string"
             },
-            "description": "Must be application/json"
+            "description": "For `message/stream`, must include `text/event-stream`. For all other methods, use `application/json`."
           }
         ],
         "requestBody": {
@@ -3181,23 +3356,29 @@
                   },
                   "method": {
                     "type": "string",
-                    "enum": ["message/send", "tasks/get"],
+                    "enum": [
+                      "message/send",
+                      "message/stream",
+                      "tasks/get",
+                      "tasks/cancel"
+                    ],
                     "description": "The method to invoke"
                   },
                   "params": {
                     "type": "object",
-                    "description": "Method parameters",
+                    "description": "Method parameters; shape depends on the method.",
                     "oneOf": [
                       {
-                        "title": "Message Send Parameters",
+                        "title": "Message Send/Stream Parameters",
+                        "type": "object",
                         "properties": {
                           "message": {
                             "type": "object",
                             "properties": {
                               "role": {
                                 "type": "string",
-                                "enum": ["user", "assistant"],
-                                "description": "Message role"
+                                "enum": ["user", "agent"],
+                                "description": "A2A role for the message sender."
                               },
                               "parts": {
                                 "type": "array",
@@ -3212,7 +3393,8 @@
                                           "enum": ["text"]
                                         },
                                         "text": {
-                                          "type": "string"
+                                          "type": "string",
+                                          "description": "Text content."
                                         }
                                       },
                                       "required": ["kind", "text"]
@@ -3226,56 +3408,239 @@
                                           "enum": ["data"]
                                         },
                                         "data": {
-                                          "type": "object"
+                                          "type": "object",
+                                          "description": "Structured JSON merged into the assistant input."
                                         }
                                       },
                                       "required": ["kind", "data"]
                                     }
                                   ]
                                 },
-                                "description": "Message parts"
+                                "description": "Message parts (text/data only)."
                               },
                               "messageId": {
                                 "type": "string",
-                                "description": "Unique message identifier"
+                                "description": "Client-generated message identifier."
+                              },
+                              "contextId": {
+                                "type": "string",
+                                "description": "Conversation context ID; maps to LangGraph thread_id."
+                              },
+                              "taskId": {
+                                "type": "string",
+                                "description": "Optional task ID. Currently ignored by this implementation."
                               }
                             },
                             "required": ["role", "parts", "messageId"]
-                          },
-                          "thread": {
-                            "type": "object",
-                            "properties": {
-                              "threadId": {
-                                "type": "string",
-                                "description": "Thread identifier for conversation context"
-                              }
-                            },
-                            "description": "Optional thread context"
                           }
                         },
                         "required": ["message"]
                       },
                       {
                         "title": "Task Get Parameters",
+                        "type": "object",
                         "properties": {
-                          "taskId": {
+                          "id": {
                             "type": "string",
-                            "description": "Task identifier to retrieve"
+                            "description": "Task (run) identifier to retrieve."
+                          },
+                          "contextId": {
+                            "type": "string",
+                            "description": "Context identifier (thread_id) for the task."
+                          },
+                          "historyLength": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 10,
+                            "description": "Maximum number of history messages to include."
                           }
                         },
-                        "required": ["taskId"]
+                        "required": ["id", "contextId"]
+                      },
+                      {
+                        "title": "Task Cancel Parameters",
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Task (run) identifier to cancel."
+                          },
+                          "contextId": {
+                            "type": "string",
+                            "description": "Context identifier (thread_id) for the task."
+                          }
+                        },
+                        "required": ["id", "contextId"]
                       }
                     ]
                   }
                 },
                 "required": ["jsonrpc", "id", "method"]
+              },
+              "examples": {
+                "message_send": {
+                  "summary": "Send a message (synchronous)",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "1",
+                    "method": "message/send",
+                    "params": {
+                      "message": {
+                        "role": "user",
+                        "parts": [
+                          {
+                            "kind": "text",
+                            "text": "Hello from A2A"
+                          },
+                          {
+                            "kind": "data",
+                            "data": {
+                              "locale": "en-US"
+                            }
+                          }
+                        ],
+                        "messageId": "msg-1",
+                        "contextId": "f5bd2a40-74b6-4f7a-b649-ea3f09890003"
+                      }
+                    }
+                  }
+                },
+                "message_stream": {
+                  "summary": "Send a message (streaming)",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "2",
+                    "method": "message/stream",
+                    "params": {
+                      "message": {
+                        "role": "user",
+                        "parts": [
+                          {
+                            "kind": "text",
+                            "text": "Stream this response"
+                          }
+                        ],
+                        "messageId": "msg-2",
+                        "contextId": "f5bd2a40-74b6-4f7a-b649-ea3f09890003"
+                      }
+                    }
+                  }
+                },
+                "tasks_get": {
+                  "summary": "Get a task",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "3",
+                    "method": "tasks/get",
+                    "params": {
+                      "id": "run-uuid",
+                      "contextId": "f5bd2a40-74b6-4f7a-b649-ea3f09890003",
+                      "historyLength": 10
+                    }
+                  }
+                },
+                "tasks_cancel": {
+                  "summary": "Cancel a task (currently unsupported)",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "4",
+                    "method": "tasks/cancel",
+                    "params": {
+                      "id": "run-uuid",
+                      "contextId": "f5bd2a40-74b6-4f7a-b649-ea3f09890003"
+                    }
+                  }
+                },
+                "message_stream_with_context": {
+                  "summary": "Stream multi-turn messages using the same contextId",
+                  "description": "Send a streaming message; reuse the same contextId for subsequent turns to keep conversation state.",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "1",
+                    "method": "message/stream",
+                    "params": {
+                      "message": {
+                        "role": "user",
+                        "contextId": "thread-123",
+                        "parts": [
+                          {
+                            "kind": "text",
+                            "text": "Hello!"
+                          }
+                        ],
+                        "messageId": "msg-1"
+                      }
+                    }
+                  }
+                },
+                "interrupt_resume_text": {
+                  "summary": "Resume an interrupted task with a text reply",
+                  "description": "When a task is in input-required state, send a normal text part with the same contextId and taskId to resume.",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "2",
+                    "method": "message/send",
+                    "params": {
+                      "message": {
+                        "role": "user",
+                        "contextId": "thread-123",
+                        "parts": [
+                          {
+                            "kind": "text",
+                            "text": "Here is the info you asked for."
+                          }
+                        ],
+                        "messageId": "msg-2",
+                        "taskId": "thread-123:run-456"
+                      }
+                    }
+                  }
+                },
+                "interrupt_resume_data_parallel": {
+                  "summary": "Resume parallel interrupts with a data part",
+                  "description": "Advanced: if your agent supports parallel interrupts, provide a structured resume payload in a data part with the same contextId and taskId.",
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": "3",
+                    "method": "message/send",
+                    "params": {
+                      "message": {
+                        "role": "user",
+                        "contextId": "thread-123",
+                        "parts": [
+                          {
+                            "kind": "data",
+                            "data": {
+                              "resume": [
+                                {
+                                  "id": "interrupt-1",
+                                  "value": {
+                                    "choice": "A"
+                                  }
+                                },
+                                {
+                                  "id": "interrupt-2",
+                                  "value": {
+                                    "choice": "B"
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        ],
+                        "messageId": "msg-3",
+                        "taskId": "thread-123:run-456"
+                      }
+                    }
+                  }
+                }
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "JSON-RPC response",
+            "description": "JSON-RPC response for non-streaming methods. For `message/stream`, the response is an SSE stream of JSON-RPC envelopes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3306,12 +3671,64 @@
                     }
                   },
                   "required": ["jsonrpc", "id"]
+                },
+                "examples": {
+                  "task_result": {
+                    "summary": "Task result (message/send)",
+                    "value": {
+                      "jsonrpc": "2.0",
+                      "id": "1",
+                      "result": {
+                        "kind": "task",
+                        "id": "run-uuid",
+                        "contextId": "f5bd2a40-74b6-4f7a-b649-ea3f09890003",
+                        "status": {
+                          "state": "completed"
+                        },
+                        "artifacts": [
+                          {
+                            "artifactId": "artifact-uuid",
+                            "name": "Assistant Response",
+                            "parts": [
+                              {
+                                "kind": "text",
+                                "text": "Hello back"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "error_result": {
+                    "summary": "Error response",
+                    "value": {
+                      "jsonrpc": "2.0",
+                      "id": "1",
+                      "error": {
+                        "code": -32602,
+                        "message": "Invalid request: Missing required parameter: contextId"
+                      }
+                    }
+                  }
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE stream of JSON-RPC response objects."
+                },
+                "examples": {
+                  "stream_event": {
+                    "summary": "SSE data chunk (JSON-RPC)",
+                    "value": "data: {\"jsonrpc\":\"2.0\",\"id\":\"2\",\"result\":{\"kind\":\"status-update\",\"taskId\":\"run-uuid\",\"contextId\":\"f5bd2a40-74b6-4f7a-b649-ea3f09890003\",\"status\":{\"state\":\"working\"},\"final\":false}}\n\n"
+                  }
                 }
               }
             }
           },
           "400": {
-            "description": "Bad request - invalid JSON-RPC or missing Accept header"
+            "description": "Bad Request (invalid JSON-RPC, invalid params, or missing Accept header)."
           },
           "404": {
             "description": "Assistant not found"
@@ -3505,6 +3922,22 @@
         }
       }
     },
+    "/docs": {
+      "get": {
+        "tags": ["System"],
+        "summary": "API Documentation",
+        "description": "A local reference to the Agent Server API documentation.",
+        "operationId": "docs_get",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/html": {}
+            }
+          }
+        }
+      }
+    },
     "/ok": {
       "get": {
         "tags": ["System"],
@@ -3552,6 +3985,62 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads/{thread_id}/commands": {
+      "post": {
+        "tags": ["Streaming"],
+        "summary": "Protocol v2 Command",
+        "description": "Send a single protocol command scoped to a thread. The request body is a `ProtocolCommand` envelope with a `method` (e.g. `run.start`, `input.respond`, `agent.getTree`) and method-specific `params`. The response is either a `ProtocolSuccess` (with method-specific `result`) or a `ProtocolError`.\n\nCommands that create runs (`run.start`, `input.respond`) leave the run executing in the background on the worker queue. Event streaming for that run is observed via a concurrent `POST /threads/{thread_id}/stream/events` connection.\n\nWebSocket clients use the same command envelope in-band on `/threads/{thread_id}/stream/events` and additionally have access to `subscription.subscribe` / `subscription.unsubscribe` over the same connection.",
+        "operationId": "protocol_thread_command_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Thread Id",
+              "description": "The ID of the thread the command applies to."
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtocolCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Protocol response — either `ProtocolSuccess` or `ProtocolError`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/ProtocolSuccess" },
+                    { "$ref": "#/components/schemas/ProtocolError" }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed command envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtocolError"
                 }
               }
             }
@@ -3830,6 +4319,12 @@
             "type": "object",
             "title": "Metadata",
             "description": "The cron metadata."
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Whether the cron job should be enabled. Disabled crons are not executed.",
+            "default": true
           }
         },
         "type": "object",
@@ -3840,7 +4335,8 @@
           "schedule",
           "created_at",
           "updated_at",
-          "payload"
+          "payload",
+          "enabled"
         ],
         "title": "Cron",
         "description": "Represents a scheduled task."
@@ -3851,6 +4347,11 @@
             "type": "string",
             "title": "Schedule",
             "description": "The cron schedule to execute this job on."
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone",
+            "description": "IANA timezone for the cron schedule (e.g. 'America/New_York'). Defaults to null, which is treated as UTC."
           },
           "end_time": {
             "type": "string",
@@ -3965,6 +4466,69 @@
             "default": "delete",
             "title": "On Run Completed",
             "description": "What to do with the thread after the run completes. 'delete' removes the thread after execution. 'keep' creates a new thread for each execution but does not clean them up."
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Whether the cron job should be enabled. Disabled crons are not executed.",
+            "default": true
+          },
+          "stream_mode": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "values",
+                    "messages",
+                    "messages-tuple",
+                    "tasks",
+                    "checkpoints",
+                    "updates",
+                    "events",
+                    "debug",
+                    "custom"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "values",
+                  "messages",
+                  "messages-tuple",
+                  "tasks",
+                  "checkpoints",
+                  "updates",
+                  "events",
+                  "debug",
+                  "custom"
+                ]
+              }
+            ],
+            "title": "Stream Mode",
+            "description": "The stream mode(s) to use.",
+            "default": ["values"]
+          },
+          "stream_subgraphs": {
+            "type": "boolean",
+            "title": "Stream Subgraphs",
+            "description": "Whether to stream output from subgraphs.",
+            "default": false
+          },
+          "stream_resumable": {
+            "type": "boolean",
+            "title": "Stream Resumable",
+            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "default": false
+          },
+          "durability": {
+            "type": "string",
+            "enum": ["sync", "async", "exit"],
+            "title": "Durability",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "default": "async"
           }
         },
         "type": "object",
@@ -3972,6 +4536,184 @@
         "additionalProperties": true,
         "title": "CronCreate",
         "description": "Payload for creating a stateless cron job (creates a new thread for each execution)."
+      },
+      "CronPatch": {
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "title": "Schedule",
+            "description": "The cron schedule to execute this job on."
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone",
+            "description": "IANA timezone for the cron schedule (e.g. 'America/New_York'). Defaults to null, which is treated as UTC."
+          },
+          "end_time": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "title": "End Time",
+            "description": "The end date to stop running the cron. Send null to clear a previously set end time; omit this field to leave the existing value unchanged."
+          },
+          "input": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "object"
+              }
+            ],
+            "title": "Input",
+            "description": "The input to the graph."
+          },
+          "metadata": {
+            "type": "object",
+            "title": "Metadata",
+            "description": "Metadata to merge with existing cron job metadata."
+          },
+          "config": {
+            "properties": {
+              "tags": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "title": "Tags"
+              },
+              "recursion_limit": {
+                "type": "integer",
+                "title": "Recursion Limit"
+              },
+              "configurable": {
+                "type": "object",
+                "title": "Configurable"
+              }
+            },
+            "type": "object",
+            "title": "Config",
+            "description": "The configuration for the assistant."
+          },
+          "context": {
+            "type": "object",
+            "title": "Context",
+            "description": "Static context added to the assistant."
+          },
+          "webhook": {
+            "type": "string",
+            "maxLength": 65536,
+            "minLength": 1,
+            "format": "uri-reference",
+            "title": "Webhook",
+            "description": "Webhook to call after LangGraph API call is done."
+          },
+          "interrupt_before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["*"]
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Interrupt Before",
+            "description": "Nodes to interrupt immediately before they get executed."
+          },
+          "interrupt_after": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["*"]
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Interrupt After",
+            "description": "Nodes to interrupt immediately after they get executed."
+          },
+          "on_run_completed": {
+            "type": "string",
+            "enum": ["delete", "keep"],
+            "title": "On Run Completed",
+            "description": "What to do with the thread after the run completes. 'delete' removes the thread after execution. 'keep' creates a new thread for each execution but does not clean them up."
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Enable or disable the cron job."
+          },
+          "stream_mode": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "values",
+                    "messages",
+                    "messages-tuple",
+                    "tasks",
+                    "checkpoints",
+                    "updates",
+                    "events",
+                    "debug",
+                    "custom"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "values",
+                  "messages",
+                  "messages-tuple",
+                  "tasks",
+                  "checkpoints",
+                  "updates",
+                  "events",
+                  "debug",
+                  "custom"
+                ]
+              }
+            ],
+            "title": "Stream Mode",
+            "description": "The stream mode(s) to use.",
+            "default": ["values"]
+          },
+          "stream_subgraphs": {
+            "type": "boolean",
+            "title": "Stream Subgraphs",
+            "description": "Whether to stream output from subgraphs.",
+            "default": false
+          },
+          "stream_resumable": {
+            "type": "boolean",
+            "title": "Stream Resumable",
+            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "default": false
+          },
+          "durability": {
+            "type": "string",
+            "enum": ["sync", "async", "exit"],
+            "title": "Durability",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "default": "async"
+          }
+        },
+        "type": "object",
+        "title": "CronPatch",
+        "description": "Payload for updating a cron job. All fields are optional."
       },
       "CronSearch": {
         "properties": {
@@ -3986,6 +4728,16 @@
             "format": "uuid",
             "title": "Thread Id",
             "description": "The thread ID to search for."
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Filter by enabled status. If not provided, returns both enabled and disabled crons."
+          },
+          "metadata": {
+            "type": "object",
+            "title": "Metadata",
+            "description": "Metadata to filter by. Exact match filter for each KV pair."
           },
           "limit": {
             "type": "integer",
@@ -4035,13 +4787,14 @@
                 "on_run_completed",
                 "end_time",
                 "schedule",
+                "timezone",
                 "created_at",
                 "updated_at",
                 "user_id",
                 "payload",
                 "next_run_date",
                 "metadata",
-                "now"
+                "enabled"
               ]
             },
             "title": "Select",
@@ -4066,6 +4819,11 @@
             "format": "uuid",
             "title": "Thread Id",
             "description": "The thread ID to search for."
+          },
+          "metadata": {
+            "type": "object",
+            "title": "Metadata",
+            "description": "Metadata to filter by. Exact match filter for each KV pair."
           }
         },
         "type": "object",
@@ -4210,6 +4968,12 @@
             "enum": ["reject", "rollback", "interrupt", "enqueue"],
             "title": "Multitask Strategy",
             "description": "Strategy to handle concurrent runs on the same thread."
+          },
+          "langsmith_session_name": {
+            "type": "string",
+            "title": "Langsmith Session Name",
+            "description": "LangSmith tracing session (project) name for this run, when tracing is enabled at creation time.",
+            "nullable": true
           }
         },
         "type": "object",
@@ -4468,20 +5232,13 @@
             "description": "Whether to persist the stream chunks in order to resume the stream later.",
             "default": false
           },
-          "on_disconnect": {
-            "type": "string",
-            "enum": ["cancel", "continue"],
-            "title": "On Disconnect",
-            "description": "The disconnect mode to use. Must be one of 'cancel' or 'continue'.",
-            "default": "continue"
-          },
           "feedback_keys": {
             "items": {
               "type": "string"
             },
             "type": "array",
             "title": "Feedback Keys",
-            "description": "Feedback keys to assign to run."
+            "description": "Generate pre-signed URLs for assigning feedback keys to the run.\n\nFor each key specified, a unique URL will be generated that can be called to assign the feedback key to the run. See [LangSmith Feedback](https://docs.langchain.com/langsmith/observability-concepts#feedback) for more details."
           },
           "multitask_strategy": {
             "type": "string",
@@ -4505,14 +5262,15 @@
           "checkpoint_during": {
             "type": "boolean",
             "title": "Checkpoint During",
-            "description": "Whether to checkpoint during the run.",
+            "description": "Whether to checkpoint during the run.\n\nDeprecated. Use `durability` instead to control checkpoint persistence behavior during the run.",
+            "deprecated": true,
             "default": false
           },
           "durability": {
             "type": "string",
             "enum": ["sync", "async", "exit"],
             "title": "Durability",
-            "description": "Durability level for the run. Must be one of 'sync', 'async', or 'exit'.",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
             "default": "async"
           }
         },
@@ -4666,7 +5424,7 @@
             },
             "type": "array",
             "title": "Feedback Keys",
-            "description": "Feedback keys to assign to run."
+            "description": "Generate pre-signed URLs for assigning feedback keys to the run.\n\nFor each key specified, a unique URL will be generated that can be called to assign the feedback key to the run. See [LangSmith Feedback](https://docs.langchain.com/langsmith/observability-concepts#feedback) for more details."
           },
           "stream_subgraphs": {
             "type": "boolean",
@@ -4687,13 +5445,6 @@
             "description": "Whether to delete or keep the thread created for a stateless run. Must be one of 'delete' or 'keep'.",
             "default": "delete"
           },
-          "on_disconnect": {
-            "type": "string",
-            "enum": ["cancel", "continue"],
-            "title": "On Disconnect",
-            "description": "The disconnect mode to use. Must be one of 'cancel' or 'continue'.",
-            "default": "continue"
-          },
           "after_seconds": {
             "type": "number",
             "title": "After Seconds",
@@ -4702,14 +5453,15 @@
           "checkpoint_during": {
             "type": "boolean",
             "title": "Checkpoint During",
-            "description": "Whether to checkpoint during the run.",
+            "description": "Whether to checkpoint during the run.\n\nDeprecated. Use `durability` instead to control checkpoint persistence behavior during the run.",
+            "deprecated": true,
             "default": false
           },
           "durability": {
             "type": "string",
             "enum": ["sync", "async", "exit"],
             "title": "Durability",
-            "description": "Durability level for the run. Must be one of 'sync', 'async', or 'exit'.",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
             "default": "async"
           }
         },
@@ -4886,7 +5638,13 @@
           },
           "sort_by": {
             "type": "string",
-            "enum": ["thread_id", "status", "created_at", "updated_at"],
+            "enum": [
+              "thread_id",
+              "status",
+              "created_at",
+              "updated_at",
+              "state_updated_at"
+            ],
             "title": "Sort By",
             "description": "Sort by field."
           },
@@ -4904,6 +5662,7 @@
                 "thread_id",
                 "created_at",
                 "updated_at",
+                "state_updated_at",
                 "metadata",
                 "config",
                 "status",
@@ -4913,6 +5672,15 @@
             },
             "title": "Select",
             "description": "Specify which fields to return. If not provided, all fields are returned."
+          },
+          "extract": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Extract",
+            "description": "Map of alias to JSONB path for extracting specific values. Paths must start with values, metadata, config, or interrupts. Example: {\"last_msg\": \"values.messages[-1]\"}.",
+            "maxProperties": 10
           }
         },
         "type": "object",
@@ -4962,6 +5730,12 @@
             "title": "Updated At",
             "description": "The last time the thread was updated."
           },
+          "state_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "State Updated At",
+            "description": "The last time the thread state was updated."
+          },
           "metadata": {
             "type": "object",
             "title": "Metadata",
@@ -5008,6 +5782,11 @@
                 "description": "When the thread will expire."
               }
             }
+          },
+          "extracted": {
+            "type": "object",
+            "title": "Extracted",
+            "description": "Extracted values from thread JSONB columns, populated when extract is specified in search request."
           }
         },
         "type": "object",
@@ -5048,7 +5827,7 @@
               "strategy": {
                 "type": "string",
                 "enum": ["delete", "keep_latest"],
-                "description": "The TTL strategy. 'delete' removes the entire thread. 'keep_latest' prunes old checkpoints but keeps the thread and its latest state (requires FF_USE_CORE_API=true).",
+                "description": "The TTL strategy. 'delete' removes the entire thread. 'keep_latest' prunes old checkpoints but keeps the thread and its latest state.",
                 "default": "delete"
               },
               "ttl": {
@@ -5092,7 +5871,7 @@
               "strategy": {
                 "type": "string",
                 "enum": ["delete", "keep_latest"],
-                "description": "The TTL strategy. 'delete' removes the entire thread. 'keep_latest' prunes old checkpoints but keeps the thread and its latest state (requires FF_USE_CORE_API=true).",
+                "description": "The TTL strategy. 'delete' removes the entire thread. 'keep_latest' prunes old checkpoints but keeps the thread and its latest state.",
                 "default": "delete"
               },
               "ttl": {
@@ -5121,7 +5900,7 @@
             "type": "string",
             "enum": ["delete", "keep_latest"],
             "title": "Strategy",
-            "description": "The prune strategy. 'delete' removes threads entirely. 'keep_latest' prunes old checkpoints but keeps threads and their latest state (requires FF_USE_CORE_API=true).",
+            "description": "The prune strategy. 'delete' removes threads entirely. 'keep_latest' prunes old checkpoints but keeps threads and their latest state.",
             "default": "delete"
           }
         },
@@ -5400,6 +6179,32 @@
             "type": "object",
             "title": "Value",
             "description": "A dictionary containing the item's data."
+          },
+          "index": {
+            "oneOf": [
+              {
+                "type": "boolean",
+                "enum": [false]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Index",
+            "description": "Controls search indexing - null (use defaults), false (disable), or list of field paths to index."
+          },
+          "ttl": {
+            "type": ["number", "null"],
+            "default": null,
+            "title": "TTL",
+            "description": "Optional time-to-live in minutes for the item, or null for no expiration."
           }
         },
         "title": "StorePutRequest",
@@ -5458,11 +6263,17 @@
           "query": {
             "type": ["string", "null"],
             "title": "Query",
-            "description": "Query string for semantic/vector search."
+            "description": "Optional natural language search query. If not provided, items are returned ordered by last updated time (listing mode). If provided, performs a natural language search over item contents."
+          },
+          "refresh_ttl": {
+            "type": ["boolean", "null"],
+            "default": null,
+            "title": "Refresh TTL",
+            "description": "Whether to refresh the TTL on items returned by this search. If null, uses the store's default behavior."
           }
         },
         "title": "StoreSearchRequest",
-        "description": "Request to search for items within a namespace prefix."
+        "description": "Request to list or search for items within a namespace prefix. Without a query, lists items by last updated time. With a query, performs natural language search."
       },
       "StoreListNamespacesRequest": {
         "type": "object",
@@ -5592,9 +6403,16 @@
         }
       },
       "ErrorResponse": {
-        "type": "string",
+        "type": "object",
+        "required": ["detail"],
+        "properties": {
+          "detail": {
+            "type": "string",
+            "description": "Human-readable error message"
+          }
+        },
         "title": "ErrorResponse",
-        "description": "Error message returned from the server"
+        "description": "Error response returned from the server"
       },
       "ThreadCronCreate": {
         "properties": {
@@ -5602,6 +6420,11 @@
             "type": "string",
             "title": "Schedule",
             "description": "The cron schedule to execute this job on."
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone",
+            "description": "IANA timezone for the cron schedule (e.g. 'America/New_York'). Defaults to null, which is treated as UTC."
           },
           "end_time": {
             "type": "string",
@@ -5716,6 +6539,69 @@
             "title": "Multitask Strategy",
             "description": "Multitask strategy to use. Must be one of 'reject', 'interrupt', 'rollback', or 'enqueue'.",
             "default": "enqueue"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "Whether the cron job should be enabled. Disabled crons are not executed.",
+            "default": true
+          },
+          "stream_mode": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "values",
+                    "messages",
+                    "messages-tuple",
+                    "tasks",
+                    "checkpoints",
+                    "updates",
+                    "events",
+                    "debug",
+                    "custom"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "values",
+                  "messages",
+                  "messages-tuple",
+                  "tasks",
+                  "checkpoints",
+                  "updates",
+                  "events",
+                  "debug",
+                  "custom"
+                ]
+              }
+            ],
+            "title": "Stream Mode",
+            "description": "The stream mode(s) to use.",
+            "default": ["values"]
+          },
+          "stream_subgraphs": {
+            "type": "boolean",
+            "title": "Stream Subgraphs",
+            "description": "Whether to stream output from subgraphs.",
+            "default": false
+          },
+          "stream_resumable": {
+            "type": "boolean",
+            "title": "Stream Resumable",
+            "description": "Whether to persist the stream chunks in order to resume the stream later.",
+            "default": false
+          },
+          "durability": {
+            "type": "string",
+            "enum": ["sync", "async", "exit"],
+            "title": "Durability",
+            "description": "Durability level for the run. Must be one of `sync`, `async`, or `exit`. See [durability modes](https://docs.langchain.com/oss/python/langgraph/durable-execution#durability-modes) for more details.",
+            "default": "async"
           }
         },
         "type": "object",
@@ -5735,6 +6621,234 @@
         },
         "title": "Interrupt",
         "required": ["value"]
+      },
+      "RunCreateStreamingStateful": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RunCreateStateful"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "on_disconnect": {
+                "type": "string",
+                "enum": ["cancel", "continue"],
+                "title": "On Disconnect",
+                "description": "The disconnect mode to use. Must be one of 'cancel' or 'continue'.",
+                "default": "continue"
+              }
+            }
+          }
+        ],
+        "title": "RunCreateStreamingStateful"
+      },
+      "RunCreateStreamingStateless": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RunCreateStateless"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "on_disconnect": {
+                "type": "string",
+                "enum": ["cancel", "continue"],
+                "title": "On Disconnect",
+                "description": "The disconnect mode to use. Must be one of 'cancel' or 'continue'.",
+                "default": "continue"
+              }
+            }
+          }
+        ],
+        "title": "RunCreateStreamingStateless"
+      },
+      "ProtocolChannel": {
+        "type": "string",
+        "title": "Protocol Channel",
+        "description": "Subscribable event channel. One of the eight fixed channels or a user-defined `custom:<name>` namespaced custom channel emitted by a stream transformer. `debug` and `checkpoints` were removed from the protocol in `@langchain/protocol@0.0.10` — task-level debug info now flows on the `tasks` channel, and checkpoint pointers ride on `values` events as an attached `checkpoint` envelope.",
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "values",
+              "updates",
+              "messages",
+              "tools",
+              "lifecycle",
+              "input",
+              "tasks",
+              "custom"
+            ]
+          },
+          {
+            "type": "string",
+            "pattern": "^custom:.+$",
+            "description": "User-defined namespaced custom channel."
+          }
+        ]
+      },
+      "ProtocolNamespace": {
+        "type": "array",
+        "items": { "type": "string" },
+        "title": "Protocol Namespace",
+        "description": "Hierarchical path identifying a position in the agent tree. Empty array denotes the root agent; each segment names a nested subgraph."
+      },
+      "ProtocolEventStreamRequest": {
+        "type": "object",
+        "title": "ProtocolEventStreamRequest",
+        "description": "Body of `POST /threads/{thread_id}/stream/events`. Filters the connection-scoped SSE stream.",
+        "required": ["channels"],
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ProtocolChannel" },
+            "minItems": 1,
+            "description": "Channels to subscribe to for the lifetime of this connection."
+          },
+          "namespaces": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ProtocolNamespace" },
+            "description": "Prefix-match filter. An event matches if its namespace starts with any of these prefixes. Omit for all namespaces."
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Max depth below the namespace prefix. Omit for unbounded depth."
+          },
+          "since": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Replay events with `seq` greater than this value before streaming live events."
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProtocolCommand": {
+        "type": "object",
+        "title": "ProtocolCommand",
+        "description": "A client → server command envelope. Known methods: `run.start`, `input.respond`, `subscription.subscribe` (WS only), `subscription.unsubscribe` (WS only), `agent.getTree`.",
+        "required": ["id", "method"],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Client-assigned command id; echoed in the response."
+          },
+          "method": {
+            "type": "string",
+            "description": "Command method name (e.g. `run.start`)."
+          },
+          "params": {
+            "type": "object",
+            "description": "Method-specific parameters. See the CDDL spec for per-method shapes.",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProtocolResponseMeta": {
+        "type": "object",
+        "title": "ProtocolResponseMeta",
+        "description": "Optional metadata attached to command responses.",
+        "properties": {
+          "applied_through_seq": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Highest event `seq` observed on the session when this response was generated."
+          }
+        },
+        "additionalProperties": true
+      },
+      "ProtocolSuccess": {
+        "type": "object",
+        "title": "ProtocolSuccess",
+        "description": "Successful command response.",
+        "required": ["type", "id", "result"],
+        "properties": {
+          "type": { "type": "string", "const": "success" },
+          "id": { "type": "integer", "minimum": 0 },
+          "result": {
+            "type": "object",
+            "description": "Method-specific result payload.",
+            "additionalProperties": true
+          },
+          "meta": { "$ref": "#/components/schemas/ProtocolResponseMeta" }
+        },
+        "additionalProperties": true
+      },
+      "ProtocolError": {
+        "type": "object",
+        "title": "ProtocolError",
+        "description": "Error response for a command.",
+        "required": ["type", "id", "error", "message"],
+        "properties": {
+          "type": { "type": "string", "const": "error" },
+          "id": {
+            "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }],
+            "description": "The `id` of the offending command, or null if the envelope was unparseable."
+          },
+          "error": {
+            "type": "string",
+            "enum": [
+              "invalid_argument",
+              "unknown_command",
+              "unknown_error",
+              "no_such_run",
+              "no_such_subscription",
+              "no_such_namespace",
+              "no_such_interrupt",
+              "no_such_checkpoint",
+              "permission_denied",
+              "not_supported"
+            ]
+          },
+          "message": { "type": "string" },
+          "stacktrace": { "type": "string" },
+          "meta": { "$ref": "#/components/schemas/ProtocolResponseMeta" }
+        },
+        "additionalProperties": true
+      },
+      "ProtocolEvent": {
+        "type": "object",
+        "title": "ProtocolEvent",
+        "description": "A server → client event. Sent as JSON over WebSocket, or as the `data:` field of an SSE frame (with `event:` set to `method` and `id:` set to `seq`).",
+        "required": ["type", "method", "params"],
+        "properties": {
+          "type": { "type": "string", "const": "event" },
+          "event_id": {
+            "type": "string",
+            "description": "Unique ID for reconnection (mirrored to SSE `id:`)."
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Monotonic per-session sequence number for ordering and replay."
+          },
+          "method": {
+            "type": "string",
+            "description": "Channel method name (e.g. `messages`, `tools`, `lifecycle`, `custom:my_channel`)."
+          },
+          "params": {
+            "type": "object",
+            "required": ["namespace", "timestamp", "data"],
+            "properties": {
+              "namespace": { "$ref": "#/components/schemas/ProtocolNamespace" },
+              "timestamp": {
+                "type": "integer",
+                "description": "Wall-clock milliseconds since Unix epoch. Use `seq` for ordering."
+              },
+              "data": {
+                "description": "Channel-specific payload. See the CDDL spec for per-channel shapes."
+              },
+              "node": {
+                "type": "string",
+                "description": "Graph node that produced this event (messages, tools)."
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
       }
     },
     "responses": {

@@ -1,18 +1,63 @@
 ---
-title: Self-hosted on AWS
+title: Self-hosted LangSmith on AWS
 sidebarTitle: AWS
-icon: "aws"
+icon: "brand-aws"
 ---
 
-When running LangSmith on [Amazon Web Services (AWS)](https://aws.amazon.com/), you can set up in either [full self-hosted](/langsmith/self-hosted) or [hybrid](/langsmith/hybrid) mode. Full self-hosted mode deploys a complete LangSmith platform with observability functionality as well as the option to create agent deployments. Hybrid mode entails just the infrastructure to run agents in a data plane within your cloud, while our SaaS provides the control plane and observability functionality.
+When running LangSmith on [Amazon Web Services (AWS)](https://aws.amazon.com/), [self-hosted](/langsmith/self-hosted) mode deploys a complete LangSmith platform with observability functionality.
 
-This page provides AWS-specific architecture patterns, service recommendations, and best practices for deploying and operating LangSmith on AWS.
+This page provides:
+
+- [Initial setup steps](#initial-setup) for deploying to EKS, configuring managed services, and setting up authentication.
+- [AWS-specific architecture patterns](#reference-architecture) and reference diagrams.
+- [Service recommendations](#compute-options) and best practices.
+- [AWS Well-Architected best practices](#aws-well-architected-best-practices) for operational excellence, security, and reliability.
 
 <Note>
-LangChain provides Terraform modules specifically for AWS to help provision infrastructure for LangSmith. These modules can quickly set up EKS clusters, RDS, ElastiCache, S3, and networking resources.
-
-View the [AWS Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/aws) for documentation and examples.
+LangChain publishes production-ready [Terraform modules for AWS](https://github.com/langchain-ai/terraform/tree/main/modules/aws) that provision EKS, RDS, ElastiCache, S3, and networking in a single workflow. Start with the [Deploy with Terraform overview](/langsmith/self-host-terraform) to choose between the Terraform and Helm-only paths.
 </Note>
+
+## Initial setup
+
+<Steps>
+  <Step title="Deploy to Kubernetes">
+    Follow the [Kubernetes installation guide](/langsmith/kubernetes). LangSmith is tested on Amazon Elastic Kubernetes Service (EKS).
+
+    **EKS-specific notes:**
+    - Ensure the EBS CSI Driver is installed for persistent storage
+    - Use the `ebs.csi.aws.com` storage class provisioner
+  </Step>
+
+  <Step title="Configure external services">
+    For production deployments, connect to AWS managed services:
+
+    <CardGroup cols={2}>
+      <Card title="Amazon S3" icon="database" href="/langsmith/self-host-blob-storage#amazon-s3">
+        Store trace data in S3
+      </Card>
+      <Card title="Amazon RDS" icon="database" href="/langsmith/self-host-external-postgres#amazon-rds">
+        PostgreSQL database
+      </Card>
+      <Card title="Amazon ElastiCache" icon="cpu" href="/langsmith/self-host-external-redis#amazon-elasticache">
+        Redis or Valkey for caching
+      </Card>
+      <Card title="ClickHouse Cloud" icon="chart-line" href="/langsmith/self-host-external-clickhouse">
+        Analytics database
+      </Card>
+    </CardGroup>
+  </Step>
+
+  <Step title="Set up authentication">
+    Use [IAM Roles for Service Accounts (IRSA)](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) to authenticate LangSmith pods to AWS services without static credentials.
+
+    **Key pages:**
+    - [S3 IRSA configuration](/langsmith/self-host-blob-storage#amazon-s3)
+    - [RDS IAM authentication](/langsmith/self-host-external-postgres#iam-authentication)
+    - [ElastiCache IAM authentication](/langsmith/self-host-external-redis#iam-authentication)
+  </Step>
+</Steps>
+
+After completing these initial setup steps, you can review the complete AWS architecture and best practices below.
 
 ## Reference architecture
 
@@ -21,10 +66,10 @@ We recommend leveraging AWS's managed services to provide a scalable, secure, an
 ![Architecture diagram showing AWS relations to LangSmith services](/langsmith/images/aws-architecture-self-hosted.png)
 
 - <Icon icon="globe" /> **Ingress & networking**: Requests enter via [Amazon Application Load Balancer (ALB)](https://aws.amazon.com/elasticloadbalancing/application-load-balancer/) within your [VPC](https://aws.amazon.com/vpc/), secured using [AWS WAF](https://aws.amazon.com/waf/) and [IAM](https://aws.amazon.com/iam/)-based authentication.
-- <Icon icon="cube" /> **Frontend & backend services:** Containers run on [Amazon EKS](https://aws.amazon.com/eks/), orchestrated behind the ALB. routes requests to other services within the cluster as necessary.
+- <Icon icon="cube" /> **Frontend & backend services:** Containers run on [Amazon EKS](https://aws.amazon.com/eks/), orchestrated behind the ALB, and route requests to other services within the cluster as necessary.
 - <Icon icon="database" /> **Storage & databases:**
   - [Amazon RDS for PostgreSQL](https://aws.amazon.com/rds/postgresql/) or [Aurora](https://aws.amazon.com/rds/aurora/): metadata, projects, users, and short-term and long-term memory for deployed agents. LangSmith supports PostgreSQL version 14 or higher.
-  - [Amazon ElastiCache (Redis)](https://aws.amazon.com/elasticache/redis/): caching and job queues. ElastiCache can be in single-instance or cluster mode, running Redis OSS version 5 or higher.
+  - [Amazon ElastiCache](https://aws.amazon.com/elasticache/) (Redis or Valkey): caching and job queues. ElastiCache can be in single-instance or cluster mode. LangSmith requires Redis OSS version 5 or higher, or Valkey 8.
   - ClickHouse + [Amazon EBS](https://aws.amazon.com/ebs/): analytics and trace storage.
     - We recommend using an [externally managed ClickHouse solution](/langsmith/self-host-external-clickhouse) unless security or compliance reasons
     prevent you from doing so.
@@ -53,7 +98,7 @@ This reference is designed to align with the six pillars of the AWS Well-Archite
 - Automate deployments with IaC ([CloudFormation](https://aws.amazon.com/cloudformation/) / [Terraform](https://www.terraform.io/)).
 - Use [AWS Systems Manager Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html) for configuration.
 - Configure your LangSmith instance to [export telemetry data](/langsmith/export-backend) and continuously monitor via [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html).
-- The preferred method to manage [LangSmith deployments](/langsmith/deployments) is to create a CI process that builds [Agent Server](/langsmith/agent-server) images and pushes them to [ECR](https://aws.amazon.com/ecr/). Create a test deployment for pull requests before deploying a new revision to staging or production upon PR merge.
+- The preferred method to manage [LangSmith deployments](/langsmith/deployment) is to create a CI process that builds [Agent Server](/langsmith/agent-server) images and pushes them to [ECR](https://aws.amazon.com/ecr/). Create a test deployment for pull requests before deploying a new revision to staging or production upon PR merge.
 
 ### Security
 

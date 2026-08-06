@@ -1,26 +1,21 @@
 ---
-title: Query traces (SDK)
-sidebarTitle: Query traces (SDK)
+title: Query traces using the SDK
+sidebarTitle: Query traces
+tag: "SDK"
 ---
 
-<Tip>
-**Recommended Reading**
+The recommended way to query [runs](/langsmith/observability-concepts#runs) (the span data in LangSmith traces) is to use the `list_runs` method in the [SDK](https://reference.langchain.com/python/langsmith/) or `/runs/query` endpoint in the [API](/langsmith/smith-api-ref). LangSmith stores traces in a simple format that is specified in the [Run (span) data format](/langsmith/run-data-format).
 
-Before diving into this content, it might be helpful to read the following:
+This page covers:
 
-- [Run (span) data format](/langsmith/run-data-format)
-- <RegionalUrl type="api" suffix="/redoc" text="LangSmith API Reference" />
-- [LangSmith trace query syntax](/langsmith/trace-query-syntax)
-
-</Tip>
+- [Use filter arguments](#use-filter-arguments): keyword-based filtering using SDK parameters.
+- [Use filter query language](#use-filter-query-language): complex queries using LangSmith's filter syntax.
+- [Query trace trees with child-run predicates](#query-trace-trees-with-child-run-predicates): combine server-side narrowing with local child-run traversal.
+- [Rate limits](#rate-limits): per-tenant limits and best practices for staying within them.
 
 <Note>
-**If you are looking to export a large volume of traces, we recommend that you use the [Bulk Data Export](./data-export) functionality, as it will better handle large data volumes and will support automatic retries and parallelization across partitions.**
+If you are looking to export a large volume of traces, we recommend that you use the [Bulk Data Export](/langsmith/data-export) functionality, as it will better handle large data volumes and will support automatic retries and parallelization across partitions.
 </Note>
-
-The recommended way to query runs (the span data in LangSmith traces) is to use the `list_runs` method in the SDK or `/runs/query` endpoint in the API.
-
-LangSmith stores traces in a simple format that is specified in the [Run (span) data format](/langsmith/run-data-format).
 
 ## Use filter arguments
 
@@ -46,6 +41,13 @@ import { Client, Run } from "langsmith";
 const client = new Client();
 ```
 
+```java Java
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+
+LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+```
+
 </CodeGroup>
 
 Below are some examples of ways to list runs using keyword arguments:
@@ -66,6 +68,14 @@ for await (const run of client.listRuns({
 })) {
   projectRuns.push(run);
 };
+```
+
+```java Java
+import com.langchain.smith.models.runs.RunQueryParams;
+
+RunQueryParams projectRuns = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .build();
 ```
 
 </CodeGroup>
@@ -93,6 +103,18 @@ for await (const run of client.listRuns({
 };
 ```
 
+```java Java
+OffsetDateTime now = OffsetDateTime.now();
+OffsetDateTime twentyFourHoursAgo = now.minus(24, ChronoUnit.HOURS);
+
+RunQueryParams todaysLlmRuns = RunQueryParams.builder()
+    .runType(RunQueryParams.RunType.LLM)
+    .startTime(twentyFourHoursAgo)
+    .addSession("<your_project>")
+    .limit(50L)
+    .build();
+```
+
 </CodeGroup>
 
 ### List root runs in a project
@@ -118,6 +140,15 @@ for await (const run of client.listRuns({
 };
 ```
 
+```java Java
+import com.langchain.smith.models.runs.RunQueryParams;
+
+RunQueryParams rootRuns = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .isRoot(true)
+    .build();
+```
+
 </CodeGroup>
 
 ### List runs without errors
@@ -136,6 +167,15 @@ for await (const run of client.listRuns({
 })) {
   correctRuns.push(run);
 };
+```
+
+```java Java
+import com.langchain.smith.models.runs.RunQueryParams;
+
+RunQueryParams noErrorRuns = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .error(false)
+    .build();
 ```
 
 </CodeGroup>
@@ -170,6 +210,15 @@ for await (const run of client.listRuns({
 };
 ```
 
+```java Java
+import com.langchain.smith.models.runs.RunQueryParams;
+
+RunQueryParams runIdsRuns = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .id(runIds)
+    .build();
+```
+
 </CodeGroup>
 
 ### Fetch a single run by ID
@@ -198,6 +247,15 @@ console.log(run.outputs);
 console.log(run.name);
 ```
 
+```java Java
+import com.langchain.smith.models.runs.RunQueryParams;
+
+RunQueryParams runIdRun = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .addId(runId)
+    .build();
+```
+
 </CodeGroup>
 
 <Tip>
@@ -208,18 +266,18 @@ console.log(run.name);
 
 ## Use filter query language
 
-For more complex queries, you can use the query language described in the [filter query language reference](/langsmith/trace-query-syntax#filter-query-language).
+For more complex queries, you can use the filter query language. The following examples cover the most common patterns. For the full operator and field reference, including all comparators, filterable fields, value formatting rules, and a quick-reference example table, refer to [Trace query syntax: filter query language](/langsmith/trace-query-syntax#filter-query-language).
 
 ### List all root runs in a conversational thread
 
-This is the way to fetch runs in a conversational thread. For more information on setting up threads, refer to our [how-to guide on setting up threads](./threads).
-Threads are grouped by setting a shared thread ID. The LangSmith UI lets you use any one of the following three metadata keys: `session_id`, `conversation_id`, or `thread_id`. The session ID is also known as the tracing project ID. The following query matches on any of them.
+This is the way to fetch runs in a conversational thread. For more information on setting up threads, refer to our [how-to guide on setting up threads](/langsmith/threads).
+Threads are grouped by setting a shared thread ID. The LangSmith UI lets you use either of the following metadata keys: `session_id` or `thread_id`. The session ID is also known as the tracing project ID. The following query matches on either of them.
 
 <CodeGroup>
 
 ```python Python
 group_key = "<your_thread_id>"
-filter_string = f'and(in(metadata_key, ["session_id","conversation_id","thread_id"]), eq(metadata_value, "{group_key}"))'
+filter_string = f'and(in(metadata_key, ["session_id","thread_id"]), eq(metadata_value, "{group_key}"))'
 thread_runs = client.list_runs(
     project_name="<your_project>",
     filter=filter_string,
@@ -229,7 +287,7 @@ thread_runs = client.list_runs(
 
 ```typescript TypeScript
 const groupKey = "<your_thread_id>";
-const filterString = `and(in(metadata_key, ["session_id","conversation_id","thread_id"]), eq(metadata_value, "${groupKey}"))`;
+const filterString = `and(in(metadata_key, ["session_id","thread_id"]), eq(metadata_value, "${groupKey}"))`;
 const threadRuns: Run[] = [];
 for await (const run of client.listRuns({
   projectName: "<your_project>",
@@ -238,6 +296,22 @@ for await (const run of client.listRuns({
 })) {
   threadRuns.push(run);
 };
+```
+
+```java Java
+import com.langchain.smith.models.runs.RunQueryParams;
+
+String groupKey = "<your_thread_id>";
+
+String filterString = String.format(
+    "and(in(metadata_key, [\"session_id\",\"thread_id\"]), eq(metadata_value, \"%s\"))",
+    groupKey
+);
+
+RunQueryParams threadRuns = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter(filterString)
+    .build();
 ```
 
 </CodeGroup>
@@ -262,6 +336,14 @@ client.listRuns({
 })
 ```
 
+```java Java
+RunQueryParams extractorRuns = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("eq(name, \"extractor\")")
+    .traceFilter("and(eq(feedback_key, \"user_score\"), eq(feedback_score, 1))")
+    .build();
+```
+
 </CodeGroup>
 
 ### List runs with "star_rating" key whose score is greater than 4
@@ -282,6 +364,13 @@ client.listRuns({
 })
 ```
 
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("and(eq(feedback_key, \"star_rating\"), gt(feedback_score, 4))")
+    .build();
+```
+
 </CodeGroup>
 
 ### List runs that took longer than 5 seconds to complete
@@ -295,17 +384,32 @@ client.list_runs(project_name="<your_project>", filter='gt(latency, "5s")')
 ```typescript TypeScript
 client.listRuns({projectName: "<your_project>", filter: 'gt(latency, "5s")'})
 ```
+
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("gt(latency, \"5s\")")
+    .build();
+```
+
 </CodeGroup>
-### List all runs that have "error" not equal to null
+### List all runs where status is not "error"
 
 <CodeGroup>
 
 ```python Python
-client.list_runs(project_name="<your_project>", filter='neq(error, null)')
+client.list_runs(project_name="<your_project>", filter='neq(status, "error")')
 ```
 
 ```typescript TypeScript
-client.listRuns({projectName: "<your_project>", filter: 'neq(error, null)'})
+client.listRuns({projectName: "<your_project>", filter: 'neq(status, "error")'})
+```
+
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("neq(status, \"error\")")
+    .build();
 ```
 
 </CodeGroup>
@@ -322,6 +426,13 @@ client.list_runs(project_name="<your_project>", filter='gt(start_time, "2023-07-
 client.listRuns({projectName: "<your_project>", filter: 'gt(start_time, "2023-07-15T12:34:56Z")'})
 ```
 
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("gt(start_time, \"2023-07-15T12:34:56Z\")")
+    .build();
+```
+
 </CodeGroup>
 
 ### List all runs that contain the string "substring"
@@ -334,6 +445,13 @@ client.list_runs(project_name="<your_project>", filter='search("substring")')
 
 ```typescript TypeScript
 client.listRuns({projectName: "<your_project>", filter: 'search("substring")'})
+```
+
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("search(\"substring\")")
+    .build();
 ```
 
 </CodeGroup>
@@ -350,24 +468,38 @@ client.list_runs(project_name="<your_project>", filter='has(tags, "2aa1cf4")')
 client.listRuns({projectName: "<your_project>", filter: 'has(tags, "2aa1cf4")'})
 ```
 
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("has(tags, \"2aa1cf4\")")
+    .build();
+```
+
 </CodeGroup>
 
-### List all runs that started after a specific timestamp and either have "error" not equal to null or a "Correctness" feedback score equal to 0
+### List all runs that started after a specific timestamp and either have a non-error status or a "Correctness" feedback score equal to 0
 
 <CodeGroup>
 
 ```python Python
 client.list_runs(
   project_name="<your_project>",
-  filter='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
+  filter='and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(status, "error"), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
 )
 ```
 
 ```typescript TypeScript
 client.listRuns({
   projectName: "<your_project>",
-  filter: 'and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(error, null), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
+  filter: 'and(gt(start_time, "2023-07-15T12:34:56Z"), or(neq(status, "error"), and(eq(feedback_key, "Correctness"), eq(feedback_score, 0.0))))'
 })
+```
+
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("and(gt(start_time, \"2023-07-15T12:34:56Z\"), or(neq(status, \"error\"), and(eq(feedback_key, \"Correctness\"), eq(feedback_score, 0.0))))")
+    .build();
 ```
 
 </CodeGroup>
@@ -390,6 +522,13 @@ client.listRuns({
 })
 ```
 
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("and(or(has(tags, 'experimental'), has(tags, 'beta')), gt(latency, 2))")
+    .build();
+```
+
 </CodeGroup>
 
 ### Search trace trees by full text
@@ -410,6 +549,13 @@ client.listRuns({
   projectName: "<your_project>",
   filter: 'search("image classification")'
 })
+```
+
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("search(\"image classification\")")
+    .build();
 ```
 
 </CodeGroup>
@@ -450,6 +596,18 @@ client.listRuns({
 });
 ```
 
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("eq(metadata_key, 'user_id')")
+    .build();
+
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("and(eq(metadata_key, 'user_id'), eq(metadata_value, '4070f233-f61e-44eb-bff1-da3c163895a3'))")
+    .build();
+```
+
 </CodeGroup>
 
 ### Check for environment details in metadata
@@ -472,26 +630,40 @@ client.listRuns({
 });
 ```
 
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("and(eq(metadata_key, 'environment'), eq(metadata_value, 'production'))")
+    .build();
+```
+
 </CodeGroup>
 
-### Check for conversation ID in metadata
+### Check for thread ID in metadata
 
-Another common way to associate traces in the same conversation is by using a shared conversation ID. If you want to filter runs based on a conversation ID in this way, you can search for that ID in the metadata.
+A common way to associate traces in the same conversation is by using a shared thread ID. If you want to filter runs based on a thread ID in this way, you can search for that ID in the metadata.
 
 <CodeGroup>
 
 ```python Python
 client.list_runs(
   project_name="default",
-  filter="and(eq(metadata_key, 'conversation_id'), eq(metadata_value, 'a1b2c3d4-e5f6-7890'))"
+  filter="and(eq(metadata_key, 'thread_id'), eq(metadata_value, 'a1b2c3d4-e5f6-7890'))"
 )
 ```
 
 ```typescript TypeScript
 client.listRuns({
   projectName: 'default',
-  filter: `and(eq(metadata_key, 'conversation_id'), eq(metadata_value, 'a1b2c3d4-e5f6-7890'))`
+  filter: `and(eq(metadata_key, 'thread_id'), eq(metadata_value, 'a1b2c3d4-e5f6-7890'))`
 });
+```
+
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("and(eq(metadata_key, 'thread_id'), eq(metadata_value, 'a1b2c3d4-e5f6-7890'))")
+    .build();
 ```
 
 </CodeGroup>
@@ -503,77 +675,110 @@ You can use negative filtering on metadata, input, and output key-value pairs to
 <CodeGroup>
 
 ```python Python
-# Find all runs where the metadata does not contain a "conversation_id" key
+# Find all runs where the metadata does not contain a "thread_id" key
 client.list_runs(
   project_name="default",
-  filter="and(neq(metadata_key, 'conversation_id'))"
+  filter="and(neq(metadata_key, 'thread_id'))"
 )
 
-# Find all runs where the conversation_id in metadata is not "a1b2c3d4-e5f6-7890"
+# Find all runs where the thread_id in metadata is not "a1b2c3d4-e5f6-7890"
 client.list_runs(
   project_name="default",
-  filter="and(eq(metadata_key, 'conversation_id'), neq(metadata_value, 'a1b2c3d4-e5f6-7890'))"
+  filter="and(eq(metadata_key, 'thread_id'), neq(metadata_value, 'a1b2c3d4-e5f6-7890'))"
 )
 
-# Find all runs where there is no "conversation_id" metadata key and the "a1b2c3d4-e5f6-7890" value is not present
+# Find all runs where there is no "thread_id" metadata key and the "a1b2c3d4-e5f6-7890" value is not present
 client.list_runs(
   project_name="default",
-  filter="and(neq(metadata_key, 'conversation_id'), neq(metadata_value, 'a1b2c3d4-e5f6-7890'))"
+  filter="and(neq(metadata_key, 'thread_id'), neq(metadata_value, 'a1b2c3d4-e5f6-7890'))"
 )
 
-# Find all runs where the conversation_id metadata key is not present but the "a1b2c3d4-e5f6-7890" value is present
+# Find all runs where the thread_id metadata key is not present but the "a1b2c3d4-e5f6-7890" value is present
 client.list_runs(
   project_name="default",
-  filter="and(neq(metadata_key, 'conversation_id'), eq(metadata_value, 'a1b2c3d4-e5f6-7890'))"
+  filter="and(neq(metadata_key, 'thread_id'), eq(metadata_value, 'a1b2c3d4-e5f6-7890'))"
 )
 ```
 
 ```typescript TypeScript
-// Find all runs where the metadata does not contain a "conversation_id" key
+// Find all runs where the metadata does not contain a "thread_id" key
 client.listRuns({
   projectName: 'default',
-  filter: `and(neq(metadata_key, 'conversation_id'))`
+  filter: `and(neq(metadata_key, 'thread_id'))`
 });
 
-// Find all runs where the conversation_id in metadata is not "a1b2c3d4-e5f6-7890"
+// Find all runs where the thread_id in metadata is not "a1b2c3d4-e5f6-7890"
 client.listRuns({
   projectName: 'default',
-  filter: `and(eq(metadata_key, 'conversation_id'), neq(metadata_value, 'a1b2c3d4-e5f6-7890'))`
+  filter: `and(eq(metadata_key, 'thread_id'), neq(metadata_value, 'a1b2c3d4-e5f6-7890'))`
 });
 
-// Find all runs where there is no "conversation_id" metadata key and the "a1b2c3d4-e5f6-7890" value is not present
+// Find all runs where there is no "thread_id" metadata key and the "a1b2c3d4-e5f6-7890" value is not present
 client.listRuns({
   projectName: 'default',
-  filter: `and(neq(metadata_key, 'conversation_id'), neq(metadata_value, 'a1b2c3d4-e5f6-7890'))`
+  filter: `and(neq(metadata_key, 'thread_id'), neq(metadata_value, 'a1b2c3d4-e5f6-7890'))`
 });
 
-// Find all runs where the conversation_id metadata key is not present but the "a1b2c3d4-e5f6-7890" value is present
+// Find all runs where the thread_id metadata key is not present but the "a1b2c3d4-e5f6-7890" value is present
 client.listRuns({
   projectName: 'default',
-  filter: `and(neq(metadata_key, 'conversation_id'), eq(metadata_value, 'a1b2c3d4-e5f6-7890'))`
+  filter: `and(neq(metadata_key, 'thread_id'), eq(metadata_value, 'a1b2c3d4-e5f6-7890'))`
 });
+```
+
+```java Java
+// Find all runs where the metadata does not contain a "thread_id" key
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("default")
+    .filter("and(neq(metadata_key, 'thread_id'))")
+    .build();
+
+// Find all runs where the thread_id in metadata is not "a1b2c3d4-e5f6-7890"
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("default")
+    .filter("and(eq(metadata_key, 'thread_id'), neq(metadata_value, 'a1b2c3d4-e5f6-7890'))")
+    .build();
+
+// Find all runs where there is no "thread_id" metadata key and the "a1b2c3d4-e5f6-7890" value is not present
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("default")
+    .filter("and(neq(metadata_key, 'thread_id'), neq(metadata_value, 'a1b2c3d4-e5f6-7890'))")
+    .build();
+
+// Find all runs where the thread_id metadata key is not present but the "a1b2c3d4-e5f6-7890" value is present
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("default")
+    .filter("and(neq(metadata_key, 'thread_id'), eq(metadata_value, 'a1b2c3d4-e5f6-7890'))")
+    .build();
 ```
 
 </CodeGroup>
 
 ### Combine multiple filters
 
-If you want to combine multiple conditions to refine your search, you can use the `and` operator along with other filtering functions. Here's how you can search for runs named "ChatOpenAI" that also have a specific `conversation_id` in their metadata:
+If you want to combine multiple conditions to refine your search, you can use the `and` operator along with other filtering functions. Here's how you can search for runs named "ChatOpenAI" that also have a specific `thread_id` in their metadata:
 
 <CodeGroup>
 
 ```python Python
 client.list_runs(
   project_name="default",
-  filter="and(eq(name, 'ChatOpenAI'), eq(metadata_key, 'conversation_id'), eq(metadata_value, '69b12c91-b1e2-46ce-91de-794c077e8151'))"
+  filter="and(eq(name, 'ChatOpenAI'), eq(metadata_key, 'thread_id'), eq(metadata_value, '69b12c91-b1e2-46ce-91de-794c077e8151'))"
 )
 ```
 
 ```typescript TypeScript
 client.listRuns({
   projectName: 'default',
-  filter: `and(eq(name, 'ChatOpenAI'), eq(metadata_key, 'conversation_id'), eq(metadata_value, '69b12c91-b1e2-46ce-91de-794c077e8151'))`
+  filter: `and(eq(name, 'ChatOpenAI'), eq(metadata_key, 'thread_id'), eq(metadata_value, '69b12c91-b1e2-46ce-91de-794c077e8151'))`
 });
+```
+
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("and(eq(name, 'ChatOpenAI'), eq(metadata_key, 'thread_id'), eq(metadata_value, '69b12c91-b1e2-46ce-91de-794c077e8151'))")
+    .build();
 ```
 
 </CodeGroup>
@@ -602,6 +807,106 @@ client.listRuns({
   traceFilter: 'and(eq(feedback_key, "user_score"), eq(feedback_score, 1))',
   treeFilter: 'eq(name, "ExpandQuery")'
 })
+```
+
+```java Java
+RunQueryParams runs = RunQueryParams.builder()
+    .addSession("<your_project>")
+    .filter("eq(name, \"RetrieveDocs\")")
+    .traceFilter("and(eq(feedback_key, 'user_score'), eq(feedback_score, 1))")
+    .treeFilter("eq(name, 'ExpandQuery')")
+    .build();
+```
+
+</CodeGroup>
+
+## Query trace trees with child-run predicates
+
+Use `trace_filter` to match fields on the root run and `tree_filter` to match supported searchable fields on any run in the trace tree. For predicates over arbitrary returned child-run fields, such as nested `inputs`, `outputs`, or `extra` payloads, use the steps below:
+
+1. Narrow candidate root traces server-side with `filter`, `trace_filter`, `tree_filter`, `run_type`, metadata filters, `parent_run_id`, and the `ls_run_depth` [system metadata key](/langsmith/ls-metadata-parameters#ls_run_depth).
+2. Hydrate each candidate root trace with child runs by calling `read_run(..., load_child_runs=True)` in Python or `readRun(..., { loadChildRuns: true })` in TypeScript.
+3. Traverse the hydrated `child_runs` tree locally and apply your predicate to the fields that are not available as server-side filter fields.
+
+The following example (Python 0.8 and JS 0.7) returns root traces that contain a tool run whose output contains a specific value. The server-side `tree_filter` narrows candidates to traces that contain the relevant tool run, and the local predicate checks the hydrated `outputs` payload.
+
+<CodeGroup>
+
+```python Python
+from datetime import datetime, timedelta
+
+from langsmith import Client
+
+client = Client()
+project_name = "<your_project>"
+
+
+def iter_runs(run):
+    yield run
+    for child in run.child_runs or []:
+        yield from iter_runs(child)
+
+
+candidate_roots = client.list_runs(
+    project_name=project_name,
+    is_root=True,
+    start_time=datetime.now() - timedelta(days=7),
+    tree_filter='and(eq(run_type, "tool"), eq(name, "<tool_name>"))',
+    select=["id"],
+)
+
+matching_roots = []
+for candidate in candidate_roots:
+    root = client.read_run(candidate.id, load_child_runs=True)
+    has_matching_child = any(
+        child.id != root.id
+        and child.run_type == "tool"
+        and child.name == "<tool_name>"
+        and "<expected_value>" in str(child.outputs or {})
+        for child in iter_runs(root)
+    )
+    if has_matching_child:
+        matching_roots.append(root)
+```
+
+```typescript TypeScript
+import { Client, Run } from "langsmith";
+
+const client = new Client();
+const projectName = "<your_project>";
+
+function* iterRuns(run: Run): Generator<Run> {
+  yield run;
+  for (const child of run.child_runs ?? []) {
+    yield* iterRuns(child);
+  }
+}
+
+const candidateRoots: Run[] = [];
+for await (const run of client.listRuns({
+  projectName,
+  isRoot: true,
+  startTime: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7),
+  treeFilter: 'and(eq(run_type, "tool"), eq(name, "<tool_name>"))',
+  select: ["id"],
+})) {
+  candidateRoots.push(run);
+}
+
+const matchingRoots: Run[] = [];
+for (const candidate of candidateRoots) {
+  const root = await client.readRun(candidate.id, { loadChildRuns: true });
+  const hasMatchingChild = [...iterRuns(root)].some(
+    (child) =>
+      child.id !== root.id &&
+      child.run_type === "tool" &&
+      child.name === "<tool_name>" &&
+      JSON.stringify(child.outputs ?? {}).includes("<expected_value>"),
+  );
+  if (hasMatchingChild) {
+    matchingRoots.push(root);
+  }
+}
 ```
 
 </CodeGroup>
@@ -810,3 +1115,30 @@ df.head()
 ```
 
 </CodeGroup>
+
+## Rate limits
+
+The [`POST /runs/query`](/langsmith/smith-api/run/query-runs) endpoint ([`list_runs`](https://reference.langchain.com/python/langsmith/client/Client/list_runs) in Python, [`listRuns`](https://reference.langchain.com/javascript/langsmith/client/Client/listRuns) in JavaScript) has per-tenant rate limits that vary based on query parameters:
+
+| **Query type** | **Limit** | **Window** |
+|---|---|---|
+| Short time window (≤ 7 days) | 10 requests | 10 seconds |
+| Large time window (> 7 days) | 3 requests | 10 seconds |
+| Full-text search, short time window (≤ 7 days) | 3 requests | 10 seconds |
+| Full-text search, large time window (> 7 days) | 1 request | 10 seconds |
+| Select `child_run_ids`, short time window (≤ 7 days) | 3 requests | 10 seconds |
+| Select `child_run_ids`, large time window (> 7 days) | 1 request | 10 seconds |
+
+The time window is determined by `end_time - start_time`. If `end_time` is not provided, LangSmith will use the current time. Queries without a `start_time` are treated as large time window queries.
+
+### Best practices
+
+To avoid hitting rate limits and reduce query time, especially for runs with large inputs/outputs:
+
+- **Set `start_time`**: omitting it triggers the large time window rate limit tier (3 requests per 10 seconds instead of 10). Use a window of 7 days or less when possible.
+- **Use `select`**: by default all fields are returned. Specifying only the fields you need (e.g., `select=["inputs", "outputs"]`) substantially reduces response size and query time, especially for runs with large inputs/outputs.
+- **Set `limit`**: cap the number of results if you don't need to paginate through everything.
+- **Avoid full-text search**: `filter='search("...")'` has the strictest rate limits; use structured filters (e.g., `eq()`, `has()`) when possible.
+- **Avoid selecting `child_run_ids`**: this also triggers a stricter rate limit tier.
+
+When you exceed these limits, the API returns a `429 Too Many Requests` response. For general rate limit information, refer to [Administration overview](/langsmith/usage-and-billing#rate-limits).

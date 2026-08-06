@@ -1,15 +1,24 @@
-.PHONY: all dev build format lint test install clean lint_md lint_md_fix broken-links build-references preview-references format-check
+.PHONY: all dev build export format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
 
 # Default target
 all: help
 
 dev:
 	@echo "Starting development mode..."
+	npm install
 	PYTHONPATH=$(CURDIR) uv run pipeline dev
 
 build:
 	@echo "Building documentation..."
+	npm install
 	PYTHONPATH=$(CURDIR) uv run pipeline build
+
+# Offline zip via Mintlify (https://www.mintlify.com/docs/deploy/export).
+# Must run from build/: docs.json paths are oss/python/... and oss/javascript/... but sources live under src/oss/... until the pipeline emits build/oss/{python,javascript}/...
+# Example: make export MINT_EXPORT_ARGS='--output ../langchain-docs-export.zip'
+export: build
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run: npm install -g mint@latest"; exit 1; }
+	@cd build && mint export $(MINT_EXPORT_ARGS)
 
 # Define a variable for the test file path.
 TEST_FILE ?= tests/unit_tests
@@ -20,7 +29,8 @@ PYTHON_FILES=.
 lint:
 	uv run ruff format $(PYTHON_FILES) --diff
 	uv run ruff check $(PYTHON_FILES) --diff
-	uv run mypy $(PYTHON_FILES)
+	uv run ty check
+	uv run codespell src
 
 format:
 	uv run ruff format $(PYTHON_FILES)
@@ -49,13 +59,30 @@ lint_md_fix:
 		exit 1; \
 	fi
 
+VALE_BIN ?= .bin/vale
+VALE_VERSION ?= v3.9.6
+
+install_vale:
+	@bash scripts/install-vale.sh "$(VALE_BIN)" "$(VALE_VERSION)"
+
+lint_prose:
+	@echo "Linting prose with Vale..."
+	@if [ ! -x "$(VALE_BIN)" ]; then bash scripts/install-vale.sh "$(VALE_BIN)" "$(VALE_VERSION)"; fi
+	@if [ -n "$(FILES)" ]; then \
+		"$(VALE_BIN)" --glob='!**/node_modules/**' $(FILES); \
+	else \
+		"$(VALE_BIN)" --glob='!**/node_modules/**' src/; \
+	fi
+
 test:
 	uv run pytest --disable-socket --allow-unix-socket $(TEST_FILE) -vv
 
 install:
 	@echo "Installing all dependencies"
 	uv sync --all-groups
+	npm install
 	npm install -g mint@latest
+	@echo "If the docs command is not available, relaunch your shell so it picks up the docs binary."
 
 clean:
 	@echo "Cleaning build artifacts..."
@@ -67,42 +94,85 @@ clean:
 	@find . -name "__pycache__" -type d -exec rm -rf {} +
 
 # Mintlify commands (run from build directory where final docs are generated)
-# broken-links: Checks for broken links, excluding OpenAPI-generated pages (/langsmith/agent-server-api/)
+# broken-links: Checks for broken links, excluding OpenAPI-generated pages and snippet files
+# Excluded: /langsmith/agent-server-api/, /api-reference/ (Mintlify-generated at deploy, not in local build)
+# Excluded: entire snippets/ report sections (scripts/filter_mint_broken_links.py)
+#   Snippet /oss/ links are absolute language-prefixed paths under
+#   build/snippets/{python|javascript}/...; mint checks snippets as standalone files
+#   so those look broken until inlined into a page.
+# Failure: only when filtered output still has indented link lines (real broken links we care about)
+# Run mint, capture output, filter exclusions. Only show output when failing.
 broken-links: build
-	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@4.2.126'"; exit 1; }
-	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt | grep -v '/langsmith/agent-server-api/'; \
-		grep -v '/langsmith/agent-server-api/' /tmp/broken-links.txt | grep -qE '^[[:space:]]+' && \
-		echo "❌ Broken links found" && exit 1; echo "✅ No broken links"
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@latest'"; exit 1; }
+	@KATEX_MJS="$$(npm root -g 2>/dev/null)/mint/node_modules/katex/dist/katex.mjs"; \
+		if [ -f "$$KATEX_MJS" ] && grep -q '__VERSION__' "$$KATEX_MJS" 2>/dev/null; then \
+			KATEX_DIR="$$(cd "$$(dirname "$$KATEX_MJS")/.." && pwd)"; \
+			VERSION=$$(node -e "console.log(require('$$KATEX_DIR/package.json').version)" 2>/dev/null); \
+			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
+		fi
+	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
+		filtered=$$(python3 ../scripts/filter_mint_broken_links.py --input /tmp/broken-links.txt); \
+		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
+			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
+		else \
+			echo "✅ No broken links"; \
+		fi
+
+broken-links-with-anchors: build
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run 'npm install -g mint@latest'"; exit 1; }
+	@KATEX_MJS="$$(npm root -g 2>/dev/null)/mint/node_modules/katex/dist/katex.mjs"; \
+		if [ -f "$$KATEX_MJS" ] && grep -q '__VERSION__' "$$KATEX_MJS" 2>/dev/null; then \
+			KATEX_DIR="$$(cd "$$(dirname "$$KATEX_MJS")/.." && pwd)"; \
+			VERSION=$$(node -e "console.log(require('$$KATEX_DIR/package.json').version)" 2>/dev/null); \
+			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
+		fi
+	@cd build && mint broken-links --check-anchors 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
+		filtered=$$(python3 ../scripts/filter_mint_broken_links.py --check-anchors --input /tmp/broken-links.txt); \
+		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
+			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
+		else \
+			echo "✅ No broken links"; \
+		fi
 
 check-openapi: build
 	@echo "Checking openapi spec validity"
-	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@4.2.126'"; exit 1; }
+	@command -v mint >/dev/null 2>&1 || { echo "Error: mint is not installed. Run 'npm install -g mint@latest'"; exit 1; }
 	@cd build && output=$$(mint openapi-check langsmith/agent-server-openapi.json) && echo "$$output"
 
-check-pnpm:
-	@command -v pnpm >/dev/null 2>&1 || { echo >&2 "pnpm is not installed. Please install pnpm to proceed (https://pnpm.io/installation)"; exit 1; }
+# Extract code snippets from src/code-samples (line-based, Bluehawk-compatible tags)
+code-snippets:
+	@echo "Extracting code snippets..."
+	@mkdir -p src/code-samples-generated
+	@PYTHONPATH=$(CURDIR) python scripts/extract_code_snippets.py
+	@PYTHONPATH=$(CURDIR) python scripts/generate_code_snippet_mdx.py
 
-# Reference docs commands (in reference/ subdirectory)
-build-references: check-pnpm
-	@echo "Building references..."
-	cd reference && pnpm i && pnpm build
+# Run code samples. By default runs all; pass FILES to test specific paths.
+#   make test-code-samples
+#   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
+test-code-samples:
+	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent); fi
+	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
 
-preview-references: check-pnpm
-	@echo "Previewing references..."
-	cd reference && pnpm i && pnpm run preview
+# Check that all @[ref] cross-references in source files resolve against link_map.py
+check-cross-refs:
+	@PYTHONPATH=$(CURDIR) uv run python scripts/check_cross_refs.py
 
 help:
 	@echo "Available commands:"
 	@echo "  make dev                - Start development mode with file watching and mint dev"
 	@echo "  make build              - Build documentation to ./build directory"
+	@echo "  make export             - Run mint export from ./build (optional: MINT_EXPORT_ARGS)"
 	@echo "  make broken-links       - Check for broken links in built documentation"
-	@echo "  make build-references   - Build reference docs"
-	@echo "  make preview-references - Preview reference docs"
+	@echo "  make check-cross-refs   - Check for unresolved @[ref] cross-references"
+	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"
 	@echo "  make format             - Format code"
 	@echo "  make lint               - Lint code"
 	@echo "  make lint_md            - Lint markdown files"
 	@echo "  make lint_md_fix        - Lint and fix markdown files"
+	@echo "  make lint_prose         - Lint prose with Vale (terminology, style)"
 	@echo "  make test               - Run tests"
 	@echo "  make install            - Install dependencies"
+	@echo "  make code-snippets      - Extract code snippets (line-based, Bluehawk-compatible)"
+	@echo "  make test-code-samples  - Run code samples (FILES=\"path ...\" for specific)"
 	@echo "  make clean              - Clean build artifacts"
 	@echo "  make help               - Show this help message"
