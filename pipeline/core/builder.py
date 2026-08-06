@@ -105,9 +105,12 @@ class DocumentationBuilder:
         logger.debug("Building LangGraph JavaScript version...")
         self._build_langgraph_version("oss/javascript", "js")
 
-        # Deep Agents Code is language-agnostic (no python/javascript URL split)
+        # Language-agnostic OSS products (no python/javascript URL split)
         logger.debug("Building Deep Agents Code (unversioned)...")
         self._build_unversioned_oss_code()
+
+        logger.debug("Building OpenWiki (unversioned)...")
+        self._build_unversioned_oss_openwiki()
 
         logger.debug("Building LangSmith content...")
         self._build_unversioned_content("langsmith", "langsmith")
@@ -175,8 +178,8 @@ class DocumentationBuilder:
             # unversioned langsmith pages to /oss/python/... or
             # /oss/javascript/...), otherwise the language is inserted a second
             # time and produces broken URLs like /oss/python/python/...
-            # Also skip Deep Agents Code paths: those pages are language-agnostic
-            # at /oss/deepagents/code/... (not duplicated under python/javascript).
+            # Also skip language-agnostic OSS product paths (Deep Agents Code,
+            # OpenWiki): those pages are not duplicated under python/javascript.
             if (
                 url.startswith("/oss/")
                 and "images" not in url
@@ -184,6 +187,8 @@ class DocumentationBuilder:
                 and not url.startswith("/oss/javascript/")
                 and not url.startswith("/oss/deepagents/code/")
                 and url != "/oss/deepagents/code"
+                and not url.startswith("/oss/openwiki/")
+                and url != "/oss/openwiki"
             ):
                 parts = url.split("/")
                 # Insert full language name after "oss"
@@ -394,20 +399,22 @@ class DocumentationBuilder:
     def is_unversioned_oss_file(self, file_path: Path) -> bool:
         """Return True for OSS files that must not be duplicated per language.
 
-        Deep Agents Code (dcode) ships one set of pages at
-        ``/oss/deepagents/code/...`` rather than python/ and javascript/ copies.
+        Deep Agents Code ships one set of pages at ``/oss/deepagents/code/...``.
+        OpenWiki ships one set of pages at ``/oss/openwiki/...``.
         """
         try:
             relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
         except ValueError:
             return False
         parts = relative_path.parts
-        return (
+        if (
             len(parts) >= 3
             and parts[0] == "oss"
             and parts[1] == "deepagents"
             and parts[2] == "code"
-        )
+        ):
+            return True
+        return len(parts) >= 2 and parts[0] == "oss" and parts[1] == "openwiki"
 
     def _build_oss_file(self, file_path: Path, relative_path: Path) -> None:
         """Build an OSS file for both Python and JavaScript versions.
@@ -623,8 +630,8 @@ class DocumentationBuilder:
 
         all_files = [
             file_path
-            for file_path in oss_dir.rglob("*")
-            if file_path.is_file() and not self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(oss_dir)
+            if not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -665,8 +672,12 @@ class DocumentationBuilder:
                         # e.g., "python/concepts/low_level.md" > "concepts/low_level.md"
                         relative_path = Path(*relative_path.parts[1:])
 
-                # Deep Agents Code is built once under oss/deepagents/code/
+                # Language-agnostic OSS products are built once under their
+                # own paths (not duplicated into python/javascript trees).
                 if relative_path.parts[:2] == ("deepagents", "code"):
+                    pbar.update(1)
+                    continue
+                if relative_path.parts[:1] == ("openwiki",):
                     pbar.update(1)
                     continue
 
@@ -707,8 +718,8 @@ class DocumentationBuilder:
 
         all_files = [
             file_path
-            for file_path in code_dir.rglob("*")
-            if file_path.is_file() and not self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(code_dir)
+            if not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -750,6 +761,63 @@ class DocumentationBuilder:
             skipped_count,
         )
 
+    def _build_unversioned_oss_openwiki(self) -> None:
+        """Build OpenWiki once at ``oss/openwiki/``.
+
+        These pages are language-agnostic (no python/javascript URL split).
+        Conditional blocks use the Python branch; ``/oss/openwiki/`` links are
+        left unprefixed by ``_rewrite_oss_links``.
+        """
+        openwiki_dir = self.src_dir / "oss" / "openwiki"
+        if not openwiki_dir.exists():
+            logger.warning("oss/openwiki/ directory not found, skipping")
+            return
+
+        all_files = [
+            file_path
+            for file_path in self._safe_source_files(openwiki_dir)
+            if not self.is_shared_file(file_path)
+        ]
+
+        if not all_files:
+            logger.info("No files found in oss/openwiki/")
+            return
+
+        copied_count = 0
+        skipped_count = 0
+        output_root = self.build_dir / "oss" / "openwiki"
+
+        with tqdm(
+            total=len(all_files),
+            desc="Building oss/openwiki files",
+            unit="file",
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
+            leave=False,
+            disable=_IS_CI,
+        ) as pbar:
+            for file_path in all_files:
+                relative_path = file_path.relative_to(openwiki_dir)
+                output_path = output_root / relative_path
+                result = self._build_single_file(
+                    file_path,
+                    output_path,
+                    "python",
+                    pbar,
+                    f"oss/openwiki/{relative_path}",
+                )
+                if result:
+                    copied_count += 1
+                else:
+                    skipped_count += 1
+                pbar.update(1)
+
+        logger.info(
+            "✅ oss/openwiki complete: %d files copied, %d files skipped",
+            copied_count,
+            skipped_count,
+        )
+
     def _build_unversioned_content(self, source_dir: str, output_dir: str) -> None:
         """Build unversioned content (langsmith/).
 
@@ -764,8 +832,8 @@ class DocumentationBuilder:
 
         all_files = [
             file_path
-            for file_path in src_path.rglob("*")
-            if file_path.is_file() and not self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(src_path)
+            if not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -899,6 +967,39 @@ class DocumentationBuilder:
             return True
         return False
 
+    def _safe_source_files(self, root: Path) -> list[Path]:
+        """Collect regular files under ``root``, rejecting symlinks.
+
+        Symlinks are skipped even when they target regular files, so a
+        committed symlink cannot pull host paths (for example
+        ``/proc/self/environ``) into build artifacts. Resolved paths must
+        stay under ``root``.
+        """
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            logger.warning("Could not resolve source root %s", root)
+            return []
+
+        files: list[Path] = []
+        for file_path in root.rglob("*"):
+            if file_path.is_symlink():
+                logger.warning("Skipping symlink in source tree: %s", file_path)
+                continue
+            if not file_path.is_file():
+                continue
+            try:
+                file_path.resolve().relative_to(root_resolved)
+            except ValueError:
+                logger.warning(
+                    "Skipping file that resolves outside %s: %s",
+                    root,
+                    file_path,
+                )
+                continue
+            files.append(file_path)
+        return files
+
     def is_shared_file(self, file_path: Path) -> bool:
         """Check if a file should be shared between versions rather than duplicated.
 
@@ -940,8 +1041,8 @@ class DocumentationBuilder:
         # Collect shared files
         shared_files = [
             file_path
-            for file_path in self.src_dir.rglob("*")
-            if file_path.is_file() and self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(self.src_dir)
+            if self.is_shared_file(file_path)
         ]
 
         if not shared_files:
