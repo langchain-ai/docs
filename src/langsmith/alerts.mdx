@@ -17,7 +17,7 @@ Effective observability in LLM applications requires proactive detection of fail
 Alerts in LangSmith are project-scoped, requiring separate configuration for each monitored project.
 
 <Tip>
-Alerts can [route](#step-4-configure-notification-channel) to Slack, PagerDuty, Dynatrace, or any HTTP endpoint via webhook. The **Webhook** tab includes [example recipes](#example-recipes) for Microsoft Teams, email, and Slack on self-hosted deployments.
+Alerts can [route](#step-4-configure-notification-channel) to Slack, PagerDuty, Dynatrace, or any HTTP endpoint via webhook. The **Webhook** tab includes [example recipes](#example-recipes) for Microsoft Teams, email, Slack on self-hosted deployments, and Google Chat (which requires middleware).
 </Tip>
 
 Follow these steps to configure an alert.
@@ -259,11 +259,15 @@ You can preview alert behavior over a historical time window to understand how m
 
     - **Request Body Template**: Customize the JSON payload sent to your endpoint
       - Default: LangSmith sends the payload defined and the following additional key-value pairs appended to the payload:
-        - `project_name`: Name of the triggered alert
+        - `project_name`: Name of the LangSmith project the alert is scoped to.
+        - `workspace_name`: Name of the LangSmith workspace.
         - `alert_rule_id`: A UUID to identify the LangSmith alert. This can be used as a de-duplication key in the webhook service.
         - `alert_rule_name`: The name of the alert rule.
+        - `alert_rule_description`: The description of the alert rule (empty string if none set).
         - `alert_rule_type`: The type of alert (as of 04/01/2025 all alerts are of type `threshold`).
         - `alert_rule_attribute`: The attribute associated with the alert rule - `error_count`, `feedback_score`, `latency`, or `cost`.
+        - `alert_rule_url`: A direct link to the alert rule in LangSmith.
+        - `runs_url`: A direct link to the runs that triggered the alert in LangSmith.
         - `triggered_metric_value`: The value of the metric at the time the threshold was triggered.
         - `triggered_threshold`: The threshold that triggered the alert.
         - `timestamp`: The timestamp that triggered the alert.
@@ -285,6 +289,10 @@ You can preview alert behavior over a historical time window to understand how m
     - Check that your receiving endpoint accepts POST requests
     - Examine your endpoint's logs for received but rejected requests
     - Verify your custom payload template is valid JSON format
+
+    <Warning>
+    **Send Test Alert does not validate the downstream response.** The UI reports **your configuration is working correctly and the test notification was delivered** even if the receiving endpoint returned an error (for example, a 400 or 422 rejection). Always verify receipt on the receiver side, check your endpoint's logs or the target platform's message history, rather than relying solely on the LangSmith success message.
+    </Warning>
 
     ### Security considerations
 
@@ -589,6 +597,142 @@ You can preview alert behavior over a historical time window to understand how m
       Adjust the **Request Body Template** to match each provider's expected payload format. Amazon SES is not directly compatible because the SES API requires per-request AWS SigV4 signing, which cannot be expressed as a static header. To use SES, route through a middleware (for example, a Lambda function with an HTTP trigger).
     </Accordion>
 
+    <Accordion title="Configure Google Chat notifications via webhook (requires middleware)">
+      Google Chat's incoming webhook API (`spaces.messages.create`) only accepts the `text` field at the top level. Because LangSmith merges all 12 alert metadata keys into the request body as top-level fields, Google Chat rejects every request with a 400 error:
+
+      ```
+      Invalid JSON payload received. Unknown name "project_name" at 'message': Cannot find field.
+      ```
+
+      There is no Request Body Template that avoids this, even a minimal body such as `{"text": "hello", "project_name": "x"}` will fail. **A translation layer (middleware) is required**, similar to the Amazon SES note in the [email recipe](#configure-email-notifications-via-webhook).
+
+      **Option A: Cloud Run or Cloud Functions middleware (recommended)**
+
+      This approach uses a small HTTP handler that receives the LangSmith webhook, extracts the relevant fields, and forwards a clean `{"text": "..."}` payload to a Google Chat space webhook URL.
+
+      **Prerequisites**
+
+      - A Google Chat space with an incoming webhook configured. In Google Chat, open the space → **Apps & integrations** → **Add webhooks**, create a webhook, and copy the URL.
+      - A Google Cloud project with Cloud Run or Cloud Functions enabled, or equivalent hosting.
+
+      **Step 1: Deploy the handler**
+
+      Deploy the following Python function as a Cloud Run service or Cloud Function:
+
+      ```python
+      import json
+      import os
+      import re
+      import urllib.request
+      from urllib.parse import urlparse
+
+      ALLOWED_LINK_HOSTS = {"smith.langchain.com"}
+
+      def build_text(payload):
+          def safe(v):
+              # Strip angle brackets to prevent <url|label> link injection
+              return re.sub(r"[<>]", "", str(v if v is not None else ""))
+
+          parsed = urlparse(str(payload.get("runs_url") or ""))
+          trusted = parsed.scheme == "https" and parsed.hostname in ALLOWED_LINK_HOSTS
+          return (
+              f"*{safe(payload.get('alert_rule_name'))}* triggered for "
+              f"`{safe(payload.get('project_name'))}`\n"
+              f"{safe(payload.get('alert_rule_attribute'))}: "
+              f"{safe(payload.get('triggered_metric_value'))} "
+              f"(threshold {safe(payload.get('triggered_threshold'))})"
+              + (f"\n<{parsed.geturl()}|View runs>" if trusted else "")
+          )
+
+      def handler(request):
+          if request.headers.get("X-Webhook-Secret") != os.environ["LANGSMITH_SHARED_SECRET"]:
+              return ("forbidden", 403)
+          payload = request.get_json(silent=True) or {}
+          urllib.request.urlopen(
+              urllib.request.Request(
+                  os.environ["GCHAT_WEBHOOK_URL"],
+                  data=json.dumps({"text": build_text(payload)}).encode(),
+                  headers={"Content-Type": "application/json"},
+                  method="POST",
+              ),
+              timeout=10,
+          )
+          return ("ok", 200)
+      ```
+
+      Set the following environment variables for the deployed function:
+
+      - `GCHAT_WEBHOOK_URL`: The Google Chat space webhook URL.
+      - `LANGSMITH_SHARED_SECRET`: A secret string you choose (used to authenticate incoming requests from LangSmith).
+
+      **Step 2: Configure the webhook alert in LangSmith**
+
+      Point the LangSmith webhook at your deployed handler's URL.
+
+      **Webhook URL**
+
+      ```
+      https://<your-cloud-run-service-url>/
+      ```
+
+      **Headers**
+
+      ```json
+      {
+        "Content-Type": "application/json",
+        "X-Webhook-Secret": "<your-shared-secret>"
+      }
+      ```
+
+      **Request Body Template**
+
+      ```json
+      {}
+      ```
+
+      The metadata fields (`alert_rule_name`, `project_name`, `runs_url`, etc.) are merged into the body by LangSmith regardless of what you put here, so an empty body is sufficient.
+
+      <Note>
+      Do not strip `*` or `_` from alert field values in your handler. These characters are also used in Google Chat's basic text formatting, but they appear in LangSmith identifiers (such as `run_count`). Stripping them will corrupt field names in the message.
+      </Note>
+
+      <Note>
+      Google Chat enforces a write rate limit of **1 message per second per space**, shared across all webhooks writing to that space. If you have multiple LangSmith alerts routing to the same space and they fire simultaneously, some messages may be dropped.
+      </Note>
+
+      **Option B: Google Apps Script (no infrastructure required)**
+
+      Google Apps Script can serve as lightweight middleware without deploying any cloud infrastructure.
+
+      Create a new Apps Script project at [script.google.com](https://script.google.com), paste the following, and deploy it as a web app (execute as yourself, access to anyone):
+
+      ```javascript
+      function doPost(e) {
+        var payload = JSON.parse(e.postData.contents);
+        var secret = e.parameter.secret; // shared secret passed as query param
+        if (secret !== PropertiesService.getScriptProperties().getProperty("LANGSMITH_SHARED_SECRET")) {
+          return ContentService.createTextOutput("forbidden").setMimeType(ContentService.MimeType.TEXT);
+        }
+        var text =
+          "*" + (payload.alert_rule_name || "") + "* triggered for `" + (payload.project_name || "") + "`\n" +
+          (payload.alert_rule_attribute || "") + ": " + (payload.triggered_metric_value || "") +
+          " (threshold " + (payload.triggered_threshold || "") + ")";
+        UrlFetchApp.fetch(PropertiesService.getScriptProperties().getProperty("GCHAT_WEBHOOK_URL"), {
+          method: "post",
+          contentType: "application/json",
+          payload: JSON.stringify({ text: text }),
+        });
+        return ContentService.createTextOutput("ok").setMimeType(ContentService.MimeType.TEXT);
+      }
+      ```
+
+      Set `GCHAT_WEBHOOK_URL` and `LANGSMITH_SHARED_SECRET` in **Project Settings → Script Properties**.
+
+      <Warning>
+      Apps Script web apps cannot read custom HTTP request headers, so the shared secret must be passed as a **query string parameter** (`?secret=...`) rather than a header. Include it in the LangSmith webhook URL rather than the Headers field.
+      </Warning>
+    </Accordion>
+
     ### Additional resources
 
     - [Slack chat.postMessage API Documentation](https://api.slack.com/methods/chat.postMessage)
@@ -597,6 +741,7 @@ You can preview alert behavior over a historical time window to understand how m
     - [Power Automate documentation](https://learn.microsoft.com/en-us/power-automate/)
     - [langsmith-teams-webhook sample repo](https://github.com/langchain-samples/langsmith-teams-webhook)
     - [SendGrid Mail Send API Documentation](https://docs.sendgrid.com/api-reference/mail-send/mail-send)
+    - [Google Chat incoming webhooks](https://developers.google.com/chat/how-tos/webhooks)
   </Tab>
 </Tabs>
 
