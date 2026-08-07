@@ -83,4 +83,74 @@ results = evaluate(
 )
 ```
 
+### Example with reference outputs
+
+Many evaluations compare the application's output against a **reference output** (i.e. an expected or ground-truth answer stored in the dataset). To access the reference output, add a `reference_outputs` parameter to your evaluator function. LangSmith automatically passes the example's reference outputs to any evaluator that declares this parameter.
+
+```python
+from langsmith import evaluate, traceable, wrappers, Client
+from openai import OpenAI
+from pydantic import BaseModel
+
+# Wrap the OpenAI client to automatically trace all LLM calls
+oai_client = wrappers.wrap_openai(OpenAI())
+
+# 1. Define your evaluator function
+# reference_outputs contains the expected answer from your dataset
+def correct_answer(inputs: dict, outputs: dict, reference_outputs: dict) -> bool:
+    """Use an LLM to judge whether the application's answer matches the expected answer."""
+    instructions = """You are an expert evaluator. Given a question, a reference answer, and a
+predicted answer, determine whether the predicted answer is correct.
+Consider the answer correct if it conveys the same meaning as the reference answer,
+even if the wording differs."""
+
+    class Response(BaseModel):
+        is_correct: bool
+
+    msg = (
+        f"Question: {inputs['question']}\n"
+        f"Reference answer: {reference_outputs['answer']}\n"
+        f"Predicted answer: {outputs['answer']}"
+    )
+
+    response = oai_client.beta.chat.completions.parse(
+        model="gpt-4o",
+        messages=[{"role": "system", "content": instructions}, {"role": "user", "content": msg}],
+        response_format=Response
+    )
+
+    return response.choices[0].message.parsed.is_correct
+
+# 2. Define your target function (the application being evaluated)
+@traceable
+def my_app(inputs: dict) -> dict:
+    return {"answer": "The universe will end in heat death."}
+
+# 3. Create a dataset with test examples that include reference outputs
+ls_client = Client()
+dataset = ls_client.create_dataset("cosmology questions")
+examples = [
+    {
+        "inputs": {"question": "How will the universe end?"},
+        "outputs": {"answer": "The universe will end in heat death as entropy increases."},
+    },
+    {
+        "inputs": {"question": "What is the age of the universe?"},
+        "outputs": {"answer": "The universe is approximately 13.8 billion years old."},
+    },
+]
+ls_client.create_examples(dataset_id=dataset.id, examples=examples)
+
+# 4. Run the evaluation
+results = evaluate(
+    my_app,
+    data=dataset,
+    evaluators=[correct_answer]  # LangSmith passes reference_outputs automatically
+)
+```
+
+<Note>
+LangSmith automatically injects `reference_outputs` into your evaluator when that parameter is present in the function signature. No extra configuration is needed — just add the parameter and ensure your dataset examples include reference outputs.
+</Note>
+
 For more information on how to write a custom evaluator, refer to [How to define a code evaluator (SDK)](/langsmith/code-evaluator-sdk).
