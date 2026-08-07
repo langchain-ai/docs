@@ -14,6 +14,7 @@ mkdir -p "$(dirname "$dest_path")"
 
 if [ "$os_name" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
   brew install vale
+  ln -sf "$(brew --prefix)/bin/vale" "$dest_path"
   exit 0
 fi
 
