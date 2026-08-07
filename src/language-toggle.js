@@ -22,14 +22,17 @@
 (function () {
   "use strict";
 
+  // Only paths under these prefixes participate in language switching.
+  // Managed Deep Agents lives under Deploy with its own Python/TypeScript
+  // dropdown; other Deploy pages are language-agnostic and must not switch.
   const LANGUAGE_PREFIX_PAIRS = [
     {
       python: "/oss/python/",
       javascript: "/oss/javascript/",
     },
     {
-      python: "/langsmith/python/",
-      javascript: "/langsmith/javascript/",
+      python: "/langsmith/python/managed-deep-agents",
+      javascript: "/langsmith/javascript/managed-deep-agents",
     },
   ];
 
