@@ -25,14 +25,13 @@ This page describes the components of each plane, how they communicate, and what
 <img
   className="block dark:hidden"
   src="/langsmith/images/byoc-architecture-light.svg"
-  alt="BYOC architecture diagram. The LangChain cloud control plane holds Crossplane, on-call engineers, alerting, and the auth and billing services, and reaches the data plane over PrivateLink for Helm reconciliation and approved break-glass access. Your AWS account holds the EKS cluster, LangSmith services, trace store, sandboxes, and storage, and calls back to the control plane over a second PrivateLink for auth and telemetry. The LangSmith UI and client apps reach the data plane through a network load balancer."
+  alt="BYOC architecture diagram. The LangSmith UI and the client apps in your application VPC both reach the data plane over one private connection, using PrivateLink, VPC peering, or Tailscale, which terminates at a network load balancer. The load balancer feeds an Istio ingress in an EKS cluster in your AWS account, which routes to the LangSmith services that run the backend, SmithDB, and sandboxes, and those services read and write S3, RDS, and ElastiCache. The LangChain cloud control plane holds Crossplane, on-call engineers, alerting, and the LangSmith control plane services. It reaches the cluster over PrivateLink for scaling and upgrades, receives auth and telemetry back over a second PrivateLink, and assumes an IAM role in your account to provision resources."
 />
 <img
   className="hidden dark:block"
   src="/langsmith/images/byoc-architecture-dark.svg"
-  alt="BYOC architecture diagram. The LangChain cloud control plane holds Crossplane, on-call engineers, alerting, and the auth and billing services, and reaches the data plane over PrivateLink for Helm reconciliation and approved break-glass access. Your AWS account holds the EKS cluster, LangSmith services, trace store, sandboxes, and storage, and calls back to the control plane over a second PrivateLink for auth and telemetry. The LangSmith UI and client apps reach the data plane through a network load balancer."
+  alt="BYOC architecture diagram. The LangSmith UI and the client apps in your application VPC both reach the data plane over one private connection, using PrivateLink, VPC peering, or Tailscale, which terminates at a network load balancer. The load balancer feeds an Istio ingress in an EKS cluster in your AWS account, which routes to the LangSmith services that run the backend, SmithDB, and sandboxes, and those services read and write S3, RDS, and ElastiCache. The LangChain cloud control plane holds Crossplane, on-call engineers, alerting, and the LangSmith control plane services. It reaches the cluster over PrivateLink for scaling and upgrades, receives auth and telemetry back over a second PrivateLink, and assumes an IAM role in your account to provision resources."
 />
-
 
 ## Provisioned resources
 
@@ -66,6 +65,26 @@ The role is scoped to only what BYOC operations require:
 - **Infrastructure-scoped, not data-scoped**: the role can manage the resources that hold your data, but cannot read the data itself through AWS data APIs. It holds no `s3:GetObject` on the trace bucket, no `rds-db:connect` to PostgreSQL, and no `elasticache:Connect` to Redis.
 
 ## Networking
+
+### Data traffic
+
+Sensitive data does not leave your VPC, and does not pass through LangChain's VPC.
+
+1. When a user opens `aws.smith.langchain.com`, the browser fetches the LangSmith UI bundle of HTML, JavaScript, CSS, and images from LangChain's cloud. These assets are the same code that every BYOC and Cloud tenant runs, and contain no customer data.
+2. Once loaded, the application resolves the data plane endpoint for the selected workspace and routes every request for sensitive data to your VPC.
+
+To ingest or query data programmatically, point your client at your data plane directly. The data flow is always `browser or client → data plane → back to client`.
+
+<img
+  className="block dark:hidden"
+  src="/langsmith/images/byoc-data-flow-light.svg"
+  alt="Data traffic diagram. A user on their own machine, VPC, or network opens aws.smith.langchain.com in a browser. The browser makes two requests: first it fetches the UI bundle of HTML, CSS, and JavaScript from the static assets in LangChain's cloud, which hold no customer data; second it sends data plane API requests to the network load balancer in your BYOC VPC, which routes to the EKS cluster running LangSmith and on to S3, RDS, and the cache."
+/>
+<img
+  className="hidden dark:block"
+  src="/langsmith/images/byoc-data-flow-dark.svg"
+  alt="Data traffic diagram. A user on their own machine, VPC, or network opens aws.smith.langchain.com in a browser. The browser makes two requests: first it fetches the UI bundle of HTML, CSS, and JavaScript from the static assets in LangChain's cloud, which hold no customer data; second it sends data plane API requests to the network load balancer in your BYOC VPC, which routes to the EKS cluster running LangSmith and on to S3, RDS, and the cache."
+/>
 
 ### Connectivity
 
