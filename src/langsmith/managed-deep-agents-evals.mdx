@@ -1,52 +1,61 @@
 ---
 title: Evaluate Managed Deep Agents
 sidebarTitle: Evals
-description: Author Harbor evals directly or generate them from minimal Managed Deep Agents task definitions.
+description: Create and run Harbor evals for Managed Deep Agents.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 
-Managed Deep Agents uses [Harbor](https://www.harborframework.com/docs/tasks) for evals. Harbor files under `evals/` are the primary eval interface: you can author Harbor tasks there directly, configure how Harbor runs them, and check them into your project.
+Managed Deep Agents evals are [Harbor](https://www.harborframework.com/docs/tasks) evals. `evals/tasks/` is the canonical Harbor dataset. Author complete tasks there with Harbor's task format, environments, and verifiers.
 
-For a faster starting point, MDA can generate Harbor tasks from minimal definitions under `mda_evals/`. This shortcut lets you write an instruction and a language-native test, then compile them into the Harbor workspace.
+The `mda evals` commands do not introduce a separate eval format or run trials. They package the managed agent for Harbor and can optionally turn a minimal starter task under `evals/scaffold/` into a complete task under `evals/tasks/`.
 
 <ManagedDeepAgentsPrivateBetaNote />
 
 ## Project structure
 
-Keep Harbor tasks under `evals/tasks/` and optional MDA shortcut definitions under `mda_evals/`:
+Keep all eval files under one top-level `evals/` directory:
 
 :::python
 ```text
 my-agent/
-  agent.py
-  evals/
-    tasks/
-  mda_evals/
+├── agent.py
+└── evals/                          # Harbor workspace
+    ├── tasks/                      # Canonical Harbor dataset
+    │   └── <task>/
+    └── scaffold/                   # Optional starter tasks
+        └── <task>/
 ```
 :::
 
 :::js
 ```text
 my-agent/
-  agent.ts
-  evals/
-    tasks/
-  mda_evals/
+├── agent.ts
+└── evals/                          # Harbor workspace
+    ├── tasks/                      # Canonical Harbor dataset
+    │   └── <task>/
+    └── scaffold/                   # Optional starter tasks
+        └── <task>/
 ```
 :::
 
-## Understand the eval directories
+An optional scaffold has a one-way relationship with its canonical Harbor task:
 
-| Directory | Purpose |
-| --- | --- |
-| `evals/` | Harbor workspace. Contains Harbor tasks, the compiled agent artifact and adapter, the job config, and trial output. Author Harbor files here directly when you need full control. |
-| `mda_evals/` | Optional MDA shortcut. Contains minimal task definitions that `mda evals compile` copies into `evals/tasks/`. |
+```text
+evals/scaffold/<task>/ → mda evals compile → evals/tasks/<task>/
+```
 
-The two directories support separate authoring paths:
+<Note>
+`evals/scaffold/` is not a second eval system. Harbor runs the tasks under `evals/tasks/`. Use scaffolding only when you want MDA to create a minimal starting point.
+</Note>
 
-- **Author Harbor evals directly**: Create complete Harbor tasks under `evals/tasks/` and manage them with Harbor.
-- **Generate Harbor evals with MDA**: Create minimal tasks under `mda_evals/`, then compile them into `evals/tasks/` with the agent artifact and Harbor adapter.
+## Choose an authoring workflow
+
+Use one of the following ways to populate the canonical Harbor dataset:
+
+- **Author a Harbor task directly**: Create a complete task under `evals/tasks/` and manage it with Harbor. Use this workflow when you need the full Harbor task format.
+- **Start from an optional scaffold**: Run `mda evals init <name>` to create a minimal task under `evals/scaffold/`, then compile it into `evals/tasks/` with the agent artifact and Harbor adapter.
 
 ## Prerequisites
 
@@ -86,16 +95,18 @@ Each task describes what the agent should do. Harbor runs the agent in the task 
 
 The verifier must write a numeric reward to `/logs/verifier/reward.txt` or numeric metrics to `/logs/verifier/reward.json`. For the full task format and verifier options, see the [Harbor task documentation](https://www.harborframework.com/docs/tasks).
 
-Files you author directly under `evals/tasks/` are preserved when MDA compiles shortcut tasks with other names.
+Files you author directly under `evals/tasks/` are preserved when MDA compiles scaffolds with other names.
 
-## Generate Harbor evals with MDA
+## Scaffold a Harbor task
+
+This optional workflow creates a minimal source task that MDA can complete and copy into the canonical Harbor dataset.
 
 :::python
-MDA can generate a Harbor task from an instruction and a Python test.
+MDA scaffolds the task from an instruction and a Python test.
 :::
 
 :::js
-MDA can generate a Harbor task from an instruction and a TypeScript test.
+MDA scaffolds the task from an instruction and a TypeScript test.
 :::
 
 Run the following command from the Managed Deep Agents project root:
@@ -110,25 +121,27 @@ The command creates the following layout:
 
 :::python
 ```text
-mda_evals/
-  smoke/
-    instruction.md
-    tests/
-      test_answer.py
+evals/
+  scaffold/
+    smoke/
+      instruction.md
+      tests/
+        test_answer.py
 ```
 :::
 
 :::js
 ```text
-mda_evals/
-  smoke/
-    instruction.md
-    tests/
-      answer.test.ts
+evals/
+  scaffold/
+    smoke/
+      instruction.md
+      tests/
+        answer.test.ts
 ```
 :::
 
-The generated task asks the agent to write `answer.txt` containing `PONG`. Replace the instruction and test with behavior that represents your application.
+The starter task asks the agent to write `answer.txt` containing `PONG`. Replace the instruction and test with behavior that represents your application.
 
 :::python
 ```python
@@ -153,33 +166,33 @@ test("answer.txt contains exactly PONG", () => {
 ```
 :::
 
-### Compile shortcut tasks
+### Compile scaffolded tasks
 
-Compile every task under `mda_evals/`:
+Compile every scaffold under `evals/scaffold/`:
 
 ```bash
 mda evals compile .
 ```
 
-To refresh specific tasks, repeat `--task`:
+To refresh specific scaffolds, repeat `--task`:
 
 ```bash
 mda evals compile . --task smoke --task regression
 ```
 
-For each selected task, MDA:
+For each selected scaffold, MDA:
 
 1. Replaces the matching directory under `evals/tasks/`.
-2. Copies the complete task directory from `mda_evals/`.
-3. Adds `tests/test.sh` when the task does not provide one. The wrapper runs the language-native tests and writes a `1` or `0` reward.
+2. Copies the complete scaffold from `evals/scaffold/`.
+3. Adds `tests/test.sh` when the scaffold does not provide one. The wrapper runs the language-native tests and writes a `1` or `0` reward.
 
-Unselected tasks under `evals/tasks/` are preserved, including tasks authored directly as Harbor tasks. The generated Harbor job uses `evals/tasks/` as its dataset, so preserved tasks remain part of the Harbor workspace.
+Unselected tasks under `evals/tasks/` are preserved, including tasks authored directly as Harbor tasks. The generated Harbor job uses all tasks under `evals/tasks/` as its dataset.
 
 <Warning>
-Treat `mda_evals/<name>/` as the source for a shortcut-generated task. Compiling that task replaces the entire matching `evals/tasks/<name>/` directory, including changes made only to the compiled copy.
+Treat `evals/scaffold/<name>/` as the source of truth for a scaffolded task. Compiling that scaffold replaces the entire matching `evals/tasks/<name>/` directory, including changes made only to the canonical copy.
 </Warning>
 
-You can add Harbor files such as `task.toml`, `environment/`, or a custom `tests/test.sh` to a shortcut task under `mda_evals/<name>/`. MDA copies them into the Harbor task during compilation.
+You can add Harbor files such as `task.toml`, `environment/`, or a custom `tests/test.sh` to a scaffold under `evals/scaffold/<name>/`. MDA copies them into the canonical Harbor task during compilation.
 
 ### Inspect the compiled handoff
 
@@ -189,7 +202,7 @@ Compilation writes or updates the Harbor workspace:
 | --- | --- |
 | `evals/artifact/` | Compiled managed agent and artifact manifest. |
 | `evals/harbor-adapter/` | Embedded `mda_harbor` adapter that Harbor imports to run the agent. |
-| `evals/tasks/` | Harbor task dataset, including generated and directly authored tasks. |
+| `evals/tasks/` | Canonical Harbor dataset, including compiled scaffolds and directly authored tasks. |
 | `evals/harbor-job.json` | Ready-to-edit Harbor job config. |
 | `evals/harbor-jobs/<id>/` | Local trial results for this compile. |
 
@@ -197,10 +210,10 @@ Compile supports the following repeatable flags:
 
 | Flag | Purpose |
 | --- | --- |
-| `--task <name>` | Refresh one shortcut task from `mda_evals/`. Repeat to select more tasks. Omit to refresh every shortcut task. |
+| `--task <name>` | Select one task. Repeat to select more tasks. If a selected task has a source under `evals/scaffold/`, MDA refreshes its canonical copy. Omit the flag to select all tasks and refresh every scaffold. |
 | `--model <provider:model>` | Record a model in the artifact manifest. The generated job config uses the first model. If omitted, MDA uses the agent's model when available. |
 
-Check in the Harbor definitions and configuration under `evals/` that your project uses. Keep local run output under `evals/harbor-jobs/` out of version control. Eval directories are not included in the deployed agent build.
+Check in the Harbor definitions and configuration under `evals/` that your project uses. Keep local run output under `evals/harbor-jobs/` out of version control. The `evals/` directory is not included in the deployed agent build.
 
 ## Run trials with Harbor
 
