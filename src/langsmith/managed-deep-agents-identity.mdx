@@ -1,15 +1,50 @@
 ---
 title: Add identity to Managed Deep Agents
 sidebarTitle: Identity
-description: Authenticate callers and expose verified identity to threads, tools, and middleware.
+description: Authenticate callers to a Managed Deep Agents deployment with a LangSmith API key or Supabase.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-Identity authenticates callers to a Managed Deep Agents deployment. When you declare identity, Managed Deep Agents gives each caller private threads and exposes the verified caller to tools and middleware.
+Identity controls who can call your Managed Deep Agents deployment. By default, identity is secure: `mda init` configures authentication with a LangSmith API key.
+
+That default answers whether a caller is allowed. To also keep each signed-in person's conversations private, use Supabase.
 
 <ManagedDeepAgentsPrivateBetaNote />
+
+## Choose a path
+
+| Goal | Use |
+| --- | --- |
+| Lock down the deployment for SDK clients, scripts, and services | LangSmith API key (default) |
+| Signed-in end users with private chats | Supabase |
+
+## Default: LangSmith API key
+
+`mda init` scaffolds this secure default. Callers must present a valid LangSmith workspace API key. Managed Deep Agents verifies the key with LangSmith Cloud.
+
+:::python
+```python identity.py
+from managed_deepagents import auth, define_identity
+
+identity = define_identity(auth=auth.langsmith_api_key())
+```
+:::
+
+:::js
+```ts identity.ts
+import { auth, defineIdentity } from "managed-deepagents";
+
+export const identity = defineIdentity({
+  auth: auth.langsmithApiKey(),
+});
+```
+:::
+
+Clients send the key as `x-api-key`. You do not need to add verification endpoint or tenant settings to your project `.env`. LangSmith Cloud supplies those.
+
+Anyone with the key can reach the deployment, so treat the key as a secret. This default does not give each end user private threads. If Alice must not see Bob's threads, use [Supabase](#authenticate-end-users-with-supabase).
 
 ## Project structure
 
@@ -31,122 +66,15 @@ my-agent/
 ```
 :::
 
-## Add identity
+## Authenticate end users with Supabase
 
-:::python
-Export a named `identity` declaration:
+Use Supabase when a browser or another client calls the deployment as a signed-in person. Each user gets private threads. Managed Deep Agents configures that ownership for you. For more information on the underlying LangSmith Deployment pattern, see [Make conversations private](/langsmith/resource-auth).
 
-```python identity.py
-from managed_deepagents import define_identity
+To configure Supabase authentication:
 
-identity = define_identity()
-```
-:::
-
-:::js
-Export a named `identity` declaration:
-
-```ts identity.ts
-import { defineIdentity } from "managed-deepagents";
-
-export const identity = defineIdentity();
-```
-:::
-
-This declaration uses backend authentication, the default. The only configurable identity option is `auth`, which controls how Managed Deep Agents authenticates callers.
-
-Managed Deep Agents supplies the remaining identity behavior:
-
-- **Threads**: Each thread belongs to the authenticated caller. Requests cannot select another caller's thread owner.
-- **Runtime identity**: Tools and middleware receive the verified caller through `runtime.identity`.
-
-Identity does not configure durable memory or downstream connections.
-
-:::python
-Do not pass `scope`, `credentials`, `connect`, or memory options to `define_identity(...)`.
-:::
-
-:::js
-Do not pass `scope`, `credentials`, `connect`, or memory options to `defineIdentity(...)`.
-:::
-
-<Note>
-Adding identity to an existing deployment does not add owner metadata to existing threads. Plan and test a migration before relying on identity-based access for those threads.
-</Note>
-
-## Choose how callers authenticate
-
-The `auth` option supports two patterns:
-
-- **Backend authentication**: Your backend authenticates the caller and sends trusted identity headers. This is the default.
-- **Validated-token authentication**: The caller sends an identity-provider token that Managed Deep Agents verifies.
-
-### Use backend authentication
-
-Use backend authentication when your application server already authenticates users through a session, OAuth flow, or another mechanism. Your server proxies requests to the deployment with these headers:
-
-| Header | Purpose |
-| --- | --- |
-| `X-MDA-Ingress-Secret` | Shared secret that must match the deployment's `MDA_INGRESS_SECRET`. |
-| `X-MDA-User-Id` | Stable identifier for the authenticated caller. |
-
-The argument-free declaration selects this mode. You can also set it explicitly:
-
-:::python
-```python identity.py
-from managed_deepagents import define_identity
-
-identity = define_identity(auth="backend")
-```
-:::
-
-:::js
-```ts identity.ts
-import { defineIdentity } from "managed-deepagents";
-
-export const identity = defineIdentity({ auth: "backend" });
-```
-:::
-
-:::js
-After your backend authenticates the caller, forward the request with the reserved headers:
-
-```ts
-await fetch(`${deploymentUrl}/threads/${threadId}/runs`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "X-MDA-Ingress-Secret": process.env.MDA_INGRESS_SECRET!,
-    "X-MDA-User-Id": authenticatedUser.id,
-  },
-  body: JSON.stringify(runBody),
-});
-```
-:::
-
-Set `MDA_INGRESS_SECRET` as a hosted deployment secret. `mda dev` configures local identity automatically, so local Studio requests do not require these headers.
-
-<Warning>
-Send `MDA_INGRESS_SECRET` only from a trusted backend. Do not expose it in browser code or commit it to source control.
-</Warning>
-
-Backend authentication accepts only the caller id from the public identity headers. It does not accept groups, email, organization, or arbitrary claims from the client.
-
-### Use validated-token authentication
-
-Use validated-token authentication when a browser or another client calls the deployment directly. The client sends:
-
-```http
-Authorization: Bearer <token>
-```
-
-Managed Deep Agents verifies the token and maps its claims to the caller identity.
-
-As a first party example, use `auth.supabase(...)` to authenticate callers with Supabase.
-
-#### Authenticate with Supabase
-
-Configure Supabase with a project reference or project URL:
+1. In the Supabase dashboard, enable the auth provider you will use (for example email/password).
+2. Copy the project reference: the subdomain before `.supabase.co` in your project URL.
+3. Declare identity with that project reference:
 
 :::python
 ```python identity.py
@@ -168,87 +96,48 @@ export const identity = defineIdentity({
 ```
 :::
 
-After signing in with Supabase Auth, send the user's access token in the `Authorization` header. By default, Managed Deep Agents verifies JWTs against Supabase JWKS. Pass `url` for a custom auth domain.
+Pass `url` instead of the project reference for a custom auth domain.
 
-## Use `runtime.identity`
-
-Tools and middleware receive a frozen identity object built from the trusted authentication result. Client-supplied identity keys in the normal configurable payload are not trusted.
-
-The identity contains:
-
-- **`user`**: The caller's `id`, `kind`, and optional `email`.
-- **`groups`**: Optional group memberships mapped from a validated token.
-- **`source`**: The run's ingress provider and optional source thread id.
-- **`claims`**: Optional verified token claims.
-
-Use `ManagedDeepAgentRuntime` for typed access:
+4. In the client app, set the Supabase project URL and publishable (anon) key. Sign the user in, then send the access token on every deployment request:
 
 :::python
-```python tools/whoami.py
-from langchain.tools import tool
-from managed_deepagents import ManagedDeepAgentRuntime
+```python
+import httpx
 
-
-@tool
-def whoami(runtime: ManagedDeepAgentRuntime) -> str:
-    """Return the authenticated user id for this run."""
-    identity = runtime.identity
-    if not identity:
-        return "No authenticated caller on this run."
-    return f"Signed in as {identity['user']['id']}"
+response = httpx.post(
+    f"{deployment_url}/threads/{thread_id}/runs",
+    headers={
+        "Authorization": f"Bearer {supabase_access_token}",
+        "Content-Type": "application/json",
+    },
+    json=run_body,
+)
 ```
 :::
 
 :::js
-```ts tools/whoami.ts
-import { tool } from "langchain";
-import type { ManagedDeepAgentRuntime } from "managed-deepagents";
-import { z } from "zod";
-
-export const whoami = tool(
-  async (_input, runtime: ManagedDeepAgentRuntime) => {
-    const identity = runtime.identity;
-    if (!identity) {
-      return "No authenticated caller on this run.";
-    }
-    return `Signed in as ${identity.user.id}`;
+```ts
+await fetch(`${deploymentUrl}/threads/${threadId}/runs`, {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${supabaseAccessToken}`,
+    "Content-Type": "application/json",
   },
-  {
-    name: "whoami",
-    description: "Return the authenticated user id for this run.",
-    schema: z.object({}),
-  },
-);
+  body: JSON.stringify(runBody),
+});
 ```
 :::
 
-:::python
-Read the optional source thread as `runtime.identity["source"]["thread_id"]`.
-:::
+The publishable (anon) key is only for the client to sign in with Supabase. Do not send a LangSmith API key in this mode. The Bearer token is the caller identity.
 
-:::js
-Read the optional source thread as `runtime.identity.source.threadId`.
-:::
+Managed Deep Agents verifies the JWT against the project's JWKS URL derived from your project reference (`https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`).
 
-Use verified identity for personalization, audit records, and authorization decisions. Do not trust a user id supplied in a tool argument or request body.
-
-## Understand identity boundaries
-
-Identity provides a fixed user boundary rather than configurable scope axes:
-
-- Threads are always per caller.
-- Validated-token groups and claims are available for authorization logic, but they do not change thread ownership.
-
-:::python
-- Durable memory is configured in `memory.py` and is shared across the deployment.
-:::
-
-:::js
-- Durable memory is configured in `memory.ts` and is shared across the deployment.
-:::
+<Note>
+Adding Supabase identity to an existing deployment does not add owner metadata to existing threads. Plan and test a migration before relying on identity-based access for those threads.
+</Note>
 
 ## Test and deploy
 
 <ManagedDeepAgentsTestAndDeploy />
 
-Authentication failures return 401. Attempts to access another caller's thread return 403. For backend authentication, confirm that the deployment has `MDA_INGRESS_SECRET` and that your proxy sends both reserved headers.
+Authentication failures return 401. For the LangSmith API-key default, confirm that clients send `x-api-key`. For Supabase, confirm that clients send `Authorization: Bearer <access_token>`, that `project_ref` / `projectRef` matches your Supabase project, and that callers cannot access another user's threads (403).
