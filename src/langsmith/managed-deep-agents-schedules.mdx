@@ -7,20 +7,45 @@ description: Declare managed cron schedules for Managed Deep Agents deployments.
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-Managed Deep Agents can run agents on a cron schedule. Add one schedule file under `schedules/`, export a named `schedule` declaration, and `mda deploy` provisions it as a LangSmith cron after the deployment is live.
+Managed Deep Agents can run agents on a cron schedule. When you deploy the project, `mda deploy` provisions each schedule as a LangSmith cron after the deployment is live.
 
-<Note>
 <ManagedDeepAgentsPrivateBetaNote />
-</Note>
+
+## Project structure
+
+Schedule declarations live in the project-level `schedules/` directory, with one schedule per file:
+
+:::python
+```text
+my-agent/
+  agent.py
+  schedules/
+    daily_digest.py
+```
+:::
+
+:::js
+```text
+my-agent/
+  agent.ts
+  schedules/
+    daily-digest.ts
+```
+:::
 
 ## Add a schedule
 
-Create one file per schedule under `schedules/`. The file name becomes the managed schedule name. For the full project layout, see the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference).
+The file name becomes the managed schedule name.
 
+:::python
+The schedule module must define a named `schedule` declaration.
+:::
+
+:::js
 The schedule module must export a named `schedule` declaration.
+:::
 
-<CodeGroup>
-
+:::python
 ```python schedules/daily_digest.py
 from managed_deepagents import define_schedule
 
@@ -30,7 +55,9 @@ schedule = define_schedule(
     prompt="Write the daily digest.",
 )
 ```
+:::
 
+:::js
 ```ts schedules/daily-digest.ts
 import { defineSchedule } from "managed-deepagents";
 
@@ -40,8 +67,7 @@ export const schedule = defineSchedule({
   prompt: "Write the daily digest.",
 });
 ```
-
-</CodeGroup>
+:::
 
 ## Configure schedule input
 
@@ -50,8 +76,7 @@ Each schedule must define exactly one of:
 - `prompt`: A natural-language prompt. MDA converts it to a user message when the cron fires.
 - `input`: A structured LangGraph input object. Use this when you need to pass custom graph input instead of a single prompt.
 
-<CodeGroup>
-
+:::python
 ```python schedules/nightly_sweep.py
 from managed_deepagents import define_schedule
 
@@ -64,7 +89,9 @@ schedule = define_schedule(
     },
 )
 ```
+:::
 
+:::js
 ```ts schedules/nightly-sweep.ts
 import { defineSchedule } from "managed-deepagents";
 
@@ -77,8 +104,7 @@ export const schedule = defineSchedule({
   },
 });
 ```
-
-</CodeGroup>
+:::
 
 `cron` must be a standard five-field cron expression: minute, hour, day of month, month, and day of week. If `timezone` is omitted, LangSmith crons use UTC.
 
@@ -88,8 +114,11 @@ Schedules use ephemeral threads by default. MDA creates a fresh thread for each 
 
 Use a persistent thread only when scheduled runs should accumulate durable thread state across invocations.
 
-<CodeGroup>
+<Note>
+The following example requires [durable memory](/langsmith/managed-deep-agents-memory).
+</Note>
 
+:::python
 ```python schedules/nightly_memory.py
 from managed_deepagents import define_schedule
 
@@ -99,7 +128,9 @@ schedule = define_schedule(
     thread={"mode": "persistent", "id": "nightly-memory"},
 )
 ```
+:::
 
+:::js
 ```ts schedules/nightly-memory.ts
 import { defineSchedule } from "managed-deepagents";
 
@@ -109,19 +140,31 @@ export const schedule = defineSchedule({
   thread: { mode: "persistent", id: "nightly-memory" },
 });
 ```
-
-</CodeGroup>
+:::
 
 ## Deliver results to Slack
 
-Set `deliver_to` / `deliverTo` to post the final response through a configured Slack channel. Use a Slack channel ID because scheduled runs have no originating thread.
+:::python
+Set `deliver_to` to post the final response through a configured [Slack channel](/langsmith/managed-deep-agents-channels-slack).
+:::
+
+:::js
+Set `deliverTo` to post the final response through a configured [Slack channel](/langsmith/managed-deep-agents-channels-slack).
+:::
+
+Use a Slack channel ID because scheduled runs have no originating thread.
 
 <Note>
+:::python
 Schedule delivery requires `managed-deepagents>=0.4.0`.
+:::
+
+:::js
+Schedule delivery requires `managed-deepagents` version 0.4.0 or later.
+:::
 </Note>
 
-<CodeGroup>
-
+:::python
 ```python schedules/monday_greeting.py
 from managed_deepagents import define_schedule
 
@@ -137,7 +180,9 @@ schedule = define_schedule(
     },
 )
 ```
+:::
 
+:::js
 ```ts schedules/monday-greeting.ts
 import { defineSchedule } from "managed-deepagents";
 
@@ -153,17 +198,24 @@ export const schedule = defineSchedule({
   },
 });
 ```
+:::
 
-</CodeGroup>
-
-The Slack bot must have access to the destination. For channel setup and required secrets, see [Slack](/langsmith/managed-deep-agents-channels/slack).
+The Slack bot must have access to the destination.
 
 ## Use static declarations
 
 Schedule declarations are extracted at compile time. Keep schedule configuration statically serializable:
 
+:::python
+- Use literals, lists, dictionaries, and references to top-level literal constants.
+- Do not read environment variables, call functions, use `**kwargs`, or compute schedule values dynamically.
+:::
+
+:::js
 - Use literals, arrays, objects, and references to top-level literal constants.
-- Do not read environment variables, call functions, spread objects, use `**kwargs`, or compute schedule values dynamically.
+- Do not read environment variables, call functions, spread objects, or compute schedule values dynamically.
+:::
+
 - Put dynamic behavior in the agent, tools, middleware, or runtime context instead.
 
 ## Deploy schedules
@@ -178,7 +230,14 @@ If you deploy with `--no-wait`, the CLI triggers the remote build and exits befo
 
 ## Troubleshoot schedules
 
+:::python
+- `must export a named schedule declaration`: Define a top-level `schedule` in each file in `schedules/`.
+:::
+
+:::js
 - `must export a named schedule declaration`: Export a top-level `schedule` from each file in `schedules/`.
+:::
+
 - `must define exactly one of prompt or input`: Add either `prompt` or `input`, but not both.
 - `cron must be a standard 5-field expression`: Use five cron fields, not seconds-based cron syntax.
 - `schedule is not static`: Replace computed values with literals or top-level literal constants.

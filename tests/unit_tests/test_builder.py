@@ -562,3 +562,109 @@ def test_snippet_oss_links_are_language_prefixed_not_relative() -> None:
         assert (
             "from '/snippets/javascript/oss/requires-langgraph-server.mdx'" in js_page
         )
+
+
+def test_rewrite_managed_deep_agents_links_inserts_language() -> None:
+    """Managed Deep Agents links get the target language route."""
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        content = (
+            "[Quickstart](/langsmith/managed-deep-agents-quickstart)\n"
+            '<Card href="/langsmith/managed-deep-agents-tools#example" />\n'
+            "[Python](/langsmith/python/managed-deep-agents-overview)"
+        )
+
+        python_content = builder._rewrite_managed_deep_agents_links(content, "python")
+        assert "/langsmith/python/managed-deep-agents-quickstart" in python_content
+        assert "/langsmith/python/managed-deep-agents-tools#example" in python_content
+        assert python_content.count("/langsmith/python/") == 3
+
+        js_content = builder._rewrite_managed_deep_agents_links(content, "js")
+        assert "/langsmith/javascript/managed-deep-agents-quickstart" in js_content
+        assert "/langsmith/javascript/managed-deep-agents-tools#example" in js_content
+        assert "/langsmith/python/managed-deep-agents-overview" in js_content
+
+
+def test_build_all_creates_managed_deep_agents_language_routes() -> None:
+    """Managed Deep Agents pages and snippets build for both languages."""
+    files = [
+        File(
+            path="langsmith/managed-deep-agents-overview.mdx",
+            content=(
+                "---\ntitle: Managed Deep Agents\n---\n\n"
+                "import NextSteps from "
+                "'/snippets/langsmith/managed-deep-agents-next-steps.mdx';\n\n"
+                "[Quickstart](/langsmith/managed-deep-agents-quickstart)\n\n"
+                "[Deep Agents](/oss/deepagents/overview)\n"
+            ),
+        ),
+        File(
+            path="langsmith/managed-deep-agents-quickstart.mdx",
+            content="---\ntitle: Quickstart\n---\n",
+        ),
+        File(
+            path="snippets/langsmith/managed-deep-agents-next-steps.mdx",
+            content=(
+                "[Tools](/langsmith/managed-deep-agents-tools)\n"
+                "[Deep Agents](/oss/deepagents/overview)\n"
+                ":::python\nPython only.\n:::\n"
+                ":::js\nTypeScript only.\n:::\n"
+            ),
+        ),
+    ]
+
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        # Unversioned routes are redirects only; do not emit orphaned pages.
+        assert not (
+            fs.build_dir / "langsmith" / "managed-deep-agents-overview.mdx"
+        ).exists()
+        assert not (
+            fs.build_dir / "langsmith" / "managed-deep-agents-quickstart.mdx"
+        ).exists()
+
+        python_page = (
+            fs.build_dir / "langsmith" / "python" / "managed-deep-agents-overview.mdx"
+        ).read_text()
+        js_page = (
+            fs.build_dir
+            / "langsmith"
+            / "javascript"
+            / "managed-deep-agents-overview.mdx"
+        ).read_text()
+
+        assert "/langsmith/python/managed-deep-agents-quickstart" in python_page
+        assert "/langsmith/javascript/managed-deep-agents-quickstart" in js_page
+        assert "/oss/python/deepagents/overview" in python_page
+        assert "/oss/javascript/deepagents/overview" in js_page
+        assert (
+            "from '/snippets/python/langsmith/managed-deep-agents-next-steps.mdx'"
+            in python_page
+        )
+        assert (
+            "from '/snippets/javascript/langsmith/managed-deep-agents-next-steps.mdx'"
+            in js_page
+        )
+
+        python_snippet = (
+            fs.build_dir
+            / "snippets"
+            / "python"
+            / "langsmith"
+            / "managed-deep-agents-next-steps.mdx"
+        ).read_text()
+        js_snippet = (
+            fs.build_dir
+            / "snippets"
+            / "javascript"
+            / "langsmith"
+            / "managed-deep-agents-next-steps.mdx"
+        ).read_text()
+        assert "/langsmith/python/managed-deep-agents-tools" in python_snippet
+        assert "Python only." in python_snippet
+        assert "TypeScript only." not in python_snippet
+        assert "/langsmith/javascript/managed-deep-agents-tools" in js_snippet
+        assert "TypeScript only." in js_snippet
+        assert "Python only." not in js_snippet
