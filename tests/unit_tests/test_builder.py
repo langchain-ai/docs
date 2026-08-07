@@ -617,9 +617,14 @@ def test_build_all_creates_managed_deep_agents_language_routes() -> None:
         builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
         builder.build_all()
 
-        default_page = (
+        # Unversioned routes are redirects only; do not emit orphaned pages.
+        assert not (
             fs.build_dir / "langsmith" / "managed-deep-agents-overview.mdx"
-        ).read_text()
+        ).exists()
+        assert not (
+            fs.build_dir / "langsmith" / "managed-deep-agents-quickstart.mdx"
+        ).exists()
+
         python_page = (
             fs.build_dir / "langsmith" / "python" / "managed-deep-agents-overview.mdx"
         ).read_text()
@@ -630,7 +635,6 @@ def test_build_all_creates_managed_deep_agents_language_routes() -> None:
             / "managed-deep-agents-overview.mdx"
         ).read_text()
 
-        assert "/langsmith/python/managed-deep-agents-quickstart" in default_page
         assert "/langsmith/python/managed-deep-agents-quickstart" in python_page
         assert "/langsmith/javascript/managed-deep-agents-quickstart" in js_page
         assert "/oss/python/deepagents/overview" in python_page
