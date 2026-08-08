@@ -1,0 +1,86 @@
+---
+title: BYOC billing
+sidebarTitle: Billing (AWS)
+description: How LangSmith BYOC is billed across your AWS account and your LangSmith contract, which AWS services carry cost, and the account quotas to check before you deploy.
+icon: "credit-card"
+---
+
+## Cost model
+
+A BYOC deployment produces two separate bills:
+
+- **AWS**: the data plane runs in your own AWS account, so AWS bills you directly for the infrastructure it creates.
+- **LangSmith**: LangChain invoices you based on your contract and usage.
+
+LangChain provides integrations with AWS Marketplace.
+
+## Billable AWS services
+
+Every data plane creates the following resources in your account. AWS charges for them at its own rates, independently of your LangSmith contract.
+
+| Service | What it covers | Billing basis |
+|---------|----------------|---------------|
+| **Amazon EKS** | The Kubernetes control plane for the data plane cluster | Per cluster-hour |
+| **Amazon EC2** | Worker nodes: the system node group, application capacity from Karpenter, and the sandbox node group | Per instance-hour |
+| **Amazon RDS** | The PostgreSQL instance, and a second instance for SmithDB where present | Per instance-hour, including Multi-AZ, plus storage, backups, and snapshots |
+| **Amazon ElastiCache** | The Redis replication group | Per node-hour |
+| **Amazon S3** | The blob store holding run inputs, outputs, and attachments, plus trace store backups, VPC flow logs, and sandbox snapshots | Storage, requests, and data transfer |
+| **Amazon EBS** | Node root disks, and the gp3 volumes for workload and ClickHouse storage | Per GB-month, plus provisioned IOPS and throughput above the gp3 baseline |
+| **Regional NAT gateway** | Outbound egress from the private subnets | Per hour, plus data processed |
+| **Elastic Load Balancing** | Two network load balancers: one in front of the Istio ingress, and one for the EKS API PrivateLink endpoint | Per NLB-hour, plus NLCUs |
+| **AWS PrivateLink** | The interface VPC endpoints the data plane uses | Per interface endpoint per availability zone-hour, plus data processed |
+| **AWS Lambda and Amazon EventBridge** | Reconciliation of the PrivateLink endpoints | Per invocation, and per event published |
+| **Amazon CloudWatch Logs** | EKS control plane logs, with all five log types enabled | Ingestion and storage |
+| **VPC flow logs** | Delivery of flow logs to S3 | Per GB delivered |
+| **Amazon Route 53** | The private hosted zones for data plane hostnames | Per hosted zone-month, plus queries |
+| **AWS Secrets Manager** | RDS-generated master secrets, and the application secrets LangSmith references | Per secret-month, plus API calls |
+
+### Data transfer
+
+- Cross-availability-zone traffic, since the data plane runs [highly available](/langsmith/byoc-operations#high-availability) across zones.
+- Outbound egress through the NAT gateway, for example if calling model providers, or an external API through a webhook.
+- Egress to your clients through the load balancer or your private connectivity.
+- Public IPv4 addresses, which AWS charges per address-hour. The regional NAT gateway uses one, and an internet-facing load balancer uses another when public ingress is enabled.
+
+## Service limits
+
+AWS enforces default quotas per Region and per account. Defaults are often too low for production on new or lightly used accounts, so check the following before you deploy, and request increases where needed:
+
+- **EC2 vCPU quotas**: at minimum 64 vCPU of On-Demand capacity, covering the 3 system nodes and Karpenter workloads.
+- **Subnet IP capacity**: room for pods, nodes, EKS ENIs, load balancers, and at least 12 interface endpoints per application subnet.
+- **VPC endpoints**: capacity for 12 interface endpoints and 1 S3 gateway endpoint.
+- **Load balancers**: capacity for 2 Network Load Balancers and their target groups.
+- **EKS**: capacity for 1 additional EKS cluster.
+- **Storage**: EBS volume and storage capacity for ClickHouse, ZooKeeper, node disks, and other persistent workloads.
+- **Databases**: capacity for 2 RDS instances and 3 ElastiCache replicas.
+- **PrivateLink and networking**: capacity for 1 endpoint service and 1 regional NAT gateway.
+
+For current default values, see [AWS service quotas](https://docs.aws.amazon.com/general/latest/gr/aws_service_limits.html).
+
+If provisioning stalls or fails, an exhausted quota is a common cause, alongside missing permissions and service control policies. See [What happens if provisioning fails?](/langsmith/byoc-faq).
+
+## See also
+
+- [BYOC architecture](/langsmith/byoc-architecture)
+- [Operations](/langsmith/byoc-operations)
+- [BYOC FAQ](/langsmith/byoc-faq)
+
+{/*
+Open questions for this page. Fill in and remove this comment.
+
+Cost model:
+- Confirm the AWS Marketplace integration: is LangSmith purchasable through Marketplace so it draws
+  down an AWS committed-spend agreement, or does it mean something else?
+- Is there a statement to make about not marking up or reselling AWS capacity?
+
+Billable services:
+- Which services are the largest share of a typical bill? A ranked list is the most useful thing on
+  a page like this, and ClickHouse leads with one.
+- Is ElastiCache always Multi-AZ, or only when HA is on? Affects both cost and the cross-AZ
+  transfer note.
+
+Service limits:
+- Specific required values per quota (EC2 vCPU by data plane size, NAT gateways, S3 buckets,
+  subnets, managed node groups). Deliberately omitted rather than guessed, since a wrong number
+  causes a failed provision.
+*/}
