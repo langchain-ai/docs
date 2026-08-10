@@ -326,6 +326,131 @@ def test_rewrite_oss_links_preserves_existing_language() -> None:
         assert builder._rewrite_oss_links(js, "python") == js
 
 
+def test_rewrite_oss_links_preserves_deepagents_code() -> None:
+    """Deep Agents Code URLs stay language-agnostic (no python/javascript insert)."""
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        link = "[Overview](/oss/deepagents/code/overview)"
+        assert builder._rewrite_oss_links(link, "python") == link
+        assert builder._rewrite_oss_links(link, "js") == link
+        # Sibling OSS paths still get the language prefix.
+        other = "[SDK](/oss/deepagents/quickstart)"
+        assert (
+            builder._rewrite_oss_links(other, "python")
+            == "[SDK](/oss/python/deepagents/quickstart)"
+        )
+
+
+def test_unversioned_oss_code_builds_once() -> None:
+    """Deep Agents Code pages build to oss/deepagents/code/, not per-language copies."""
+    files = [
+        File(
+            path="oss/deepagents/code/overview.mdx",
+            content=(
+                "---\ntitle: Code\n---\n\n"
+                "See [SDK](/oss/deepagents/quickstart) and "
+                "[Config](/oss/deepagents/code/configuration).\n"
+            ),
+        ),
+        File(
+            path="oss/deepagents/quickstart.mdx",
+            content="---\ntitle: Quickstart\n---\n\nSDK docs.\n",
+        ),
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        code_src = fs.src_dir / "oss" / "deepagents" / "code" / "overview.mdx"
+        assert builder.is_unversioned_oss_file(code_src)
+        assert not builder.is_unversioned_oss_file(
+            fs.src_dir / "oss" / "deepagents" / "quickstart.mdx"
+        )
+
+        builder.build_file(code_src)
+        unversioned = fs.build_dir / "oss" / "deepagents" / "code" / "overview.mdx"
+        assert unversioned.exists()
+        assert not (
+            fs.build_dir / "oss" / "python" / "deepagents" / "code" / "overview.mdx"
+        ).exists()
+        assert not (
+            fs.build_dir / "oss" / "javascript" / "deepagents" / "code" / "overview.mdx"
+        ).exists()
+
+        content = unversioned.read_text()
+        assert "/oss/python/deepagents/quickstart" in content
+        assert "/oss/deepagents/code/configuration" in content
+        assert "/oss/python/deepagents/code/" not in content
+
+
+def test_unversioned_oss_openwiki_builds_once() -> None:
+    """OpenWiki pages build to oss/openwiki/, not per-language copies."""
+    files = [
+        File(
+            path="oss/openwiki/overview.mdx",
+            content=(
+                "---\ntitle: OpenWiki\n---\n\n"
+                "See [SDK](/oss/deepagents/quickstart) and "
+                "[Quickstart](/oss/openwiki/quickstart).\n"
+            ),
+        ),
+        File(
+            path="oss/deepagents/quickstart.mdx",
+            content="---\ntitle: Quickstart\n---\n\nSDK docs.\n",
+        ),
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        openwiki_src = fs.src_dir / "oss" / "openwiki" / "overview.mdx"
+        assert builder.is_unversioned_oss_file(openwiki_src)
+
+        link = "[Overview](/oss/openwiki/overview)"
+        assert builder._rewrite_oss_links(link, "python") == link
+        assert builder._rewrite_oss_links(link, "js") == link
+
+        builder.build_file(openwiki_src)
+        unversioned = fs.build_dir / "oss" / "openwiki" / "overview.mdx"
+        assert unversioned.exists()
+        assert not (
+            fs.build_dir / "oss" / "python" / "openwiki" / "overview.mdx"
+        ).exists()
+        assert not (
+            fs.build_dir / "oss" / "javascript" / "openwiki" / "overview.mdx"
+        ).exists()
+
+        content = unversioned.read_text()
+        assert "/oss/python/deepagents/quickstart" in content
+        assert "/oss/openwiki/quickstart" in content
+        assert "/oss/python/openwiki/" not in content
+
+
+def test_safe_source_files_skips_symlinks() -> None:
+    """Source collection rejects symlinks so host files cannot be exfiltrated."""
+    files = [
+        File(
+            path="oss/openwiki/overview.mdx",
+            content="---\ntitle: OpenWiki\n---\n\nOverview.\n",
+        ),
+    ]
+    with file_system(files) as fs:
+        openwiki_dir = fs.src_dir / "oss" / "openwiki"
+        secret_target = fs.temp_dir / "outside-secret.txt"
+        secret_target.write_text("secret-value\n", encoding="utf-8")
+        symlink_path = openwiki_dir / "leaked.env"
+        symlink_path.symlink_to(secret_target)
+
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        collected = builder._safe_source_files(openwiki_dir)
+
+        assert openwiki_dir / "overview.mdx" in collected
+        assert symlink_path not in collected
+        assert all(not path.is_symlink() for path in collected)
+
+        builder._build_unversioned_oss_openwiki()
+        assert not (fs.build_dir / "oss" / "openwiki" / "leaked.env").exists()
+        overview = fs.build_dir / "oss" / "openwiki" / "overview.mdx"
+        assert overview.exists()
+        assert "secret-value" not in overview.read_text()
+
+
 def test_rewrite_oss_links_skips_images_and_none() -> None:
     """Image paths and a None target language are passed through unchanged."""
     with file_system([]) as fs:
@@ -334,3 +459,212 @@ def test_rewrite_oss_links_skips_images_and_none() -> None:
         assert builder._rewrite_oss_links(img, "python") == img
         link = "[x](/oss/deepagents/overview)"
         assert builder._rewrite_oss_links(link, None) == link
+
+
+def test_rewrite_snippet_imports_for_language() -> None:
+    """MDX snippet imports are scoped under /snippets/{python|javascript}/."""
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        content = (
+            "import RequiresLanggraphServer from "
+            "'/snippets/oss/requires-langgraph-server.mdx';\n"
+            'import { PatternEmbed } from "/snippets/pattern-embed.jsx"\n'
+        )
+        assert builder._rewrite_snippet_imports_for_language(content, "python") == (
+            "import RequiresLanggraphServer from "
+            "'/snippets/python/oss/requires-langgraph-server.mdx';\n"
+            'import { PatternEmbed } from "/snippets/pattern-embed.jsx"\n'
+        )
+        assert builder._rewrite_snippet_imports_for_language(content, "js") == (
+            "import RequiresLanggraphServer from "
+            "'/snippets/javascript/oss/requires-langgraph-server.mdx';\n"
+            'import { PatternEmbed } from "/snippets/pattern-embed.jsx"\n'
+        )
+        already = (
+            "import X from '/snippets/python/oss/requires-langgraph-server.mdx';\n"
+        )
+        assert builder._rewrite_snippet_imports_for_language(already, "js") == already
+
+
+def test_snippet_oss_links_are_language_prefixed_not_relative() -> None:
+    """Shared snippets with /oss/ links get absolute language-prefixed copies.
+
+    Regression for nested consumers such as langchain/frontend/branching-chat:
+    a fixed ``../langgraph/local-server`` relative link resolved incorrectly to
+    ``/oss/{lang}/langchain/langgraph/local-server``.
+    """
+    files = [
+        File(
+            path="snippets/oss/requires-langgraph-server.mdx",
+            content=(
+                "<Note>\n"
+                "This feature requires the "
+                "[LangGraph Agent Server](/oss/langgraph/local-server).\n"
+                "</Note>\n"
+            ),
+        ),
+        File(
+            path="oss/langchain/frontend/branching-chat.mdx",
+            content=(
+                "---\ntitle: Branching chat\n---\n\n"
+                "import RequiresLanggraphServer from "
+                "'/snippets/oss/requires-langgraph-server.mdx';\n\n"
+                "<RequiresLanggraphServer />\n"
+            ),
+        ),
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        default = (
+            fs.build_dir / "snippets" / "oss" / "requires-langgraph-server.mdx"
+        ).read_text()
+        py_snippet = (
+            fs.build_dir
+            / "snippets"
+            / "python"
+            / "oss"
+            / "requires-langgraph-server.mdx"
+        ).read_text()
+        js_snippet = (
+            fs.build_dir
+            / "snippets"
+            / "javascript"
+            / "oss"
+            / "requires-langgraph-server.mdx"
+        ).read_text()
+
+        assert "/oss/python/langgraph/local-server" in default
+        assert "/oss/python/langgraph/local-server" in py_snippet
+        assert "/oss/javascript/langgraph/local-server" in js_snippet
+        assert "../langgraph/local-server" not in default
+        assert "../langgraph/local-server" not in py_snippet
+        assert "../langgraph/local-server" not in js_snippet
+
+        py_page = (
+            fs.build_dir
+            / "oss"
+            / "python"
+            / "langchain"
+            / "frontend"
+            / "branching-chat.mdx"
+        ).read_text()
+        js_page = (
+            fs.build_dir
+            / "oss"
+            / "javascript"
+            / "langchain"
+            / "frontend"
+            / "branching-chat.mdx"
+        ).read_text()
+        assert "from '/snippets/python/oss/requires-langgraph-server.mdx'" in py_page
+        assert (
+            "from '/snippets/javascript/oss/requires-langgraph-server.mdx'" in js_page
+        )
+
+
+def test_rewrite_managed_deep_agents_links_inserts_language() -> None:
+    """Managed Deep Agents links get the target language route."""
+    with file_system([]) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        content = (
+            "[Quickstart](/langsmith/managed-deep-agents-quickstart)\n"
+            '<Card href="/langsmith/managed-deep-agents-tools#example" />\n'
+            "[Python](/langsmith/python/managed-deep-agents-overview)"
+        )
+
+        python_content = builder._rewrite_managed_deep_agents_links(content, "python")
+        assert "/langsmith/python/managed-deep-agents-quickstart" in python_content
+        assert "/langsmith/python/managed-deep-agents-tools#example" in python_content
+        assert python_content.count("/langsmith/python/") == 3
+
+        js_content = builder._rewrite_managed_deep_agents_links(content, "js")
+        assert "/langsmith/javascript/managed-deep-agents-quickstart" in js_content
+        assert "/langsmith/javascript/managed-deep-agents-tools#example" in js_content
+        assert "/langsmith/python/managed-deep-agents-overview" in js_content
+
+
+def test_build_all_creates_managed_deep_agents_language_routes() -> None:
+    """Managed Deep Agents pages and snippets build for both languages."""
+    files = [
+        File(
+            path="langsmith/managed-deep-agents-overview.mdx",
+            content=(
+                "---\ntitle: Managed Deep Agents\n---\n\n"
+                "import NextSteps from "
+                "'/snippets/langsmith/managed-deep-agents-next-steps.mdx';\n\n"
+                "[Quickstart](/langsmith/managed-deep-agents-quickstart)\n\n"
+                "[Deep Agents](/oss/deepagents/overview)\n"
+            ),
+        ),
+        File(
+            path="langsmith/managed-deep-agents-quickstart.mdx",
+            content="---\ntitle: Quickstart\n---\n",
+        ),
+        File(
+            path="snippets/langsmith/managed-deep-agents-next-steps.mdx",
+            content=(
+                "[Tools](/langsmith/managed-deep-agents-tools)\n"
+                "[Deep Agents](/oss/deepagents/overview)\n"
+                ":::python\nPython only.\n:::\n"
+                ":::js\nTypeScript only.\n:::\n"
+            ),
+        ),
+    ]
+
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        # Unversioned routes are redirects only; do not emit orphaned pages.
+        assert not (
+            fs.build_dir / "langsmith" / "managed-deep-agents-overview.mdx"
+        ).exists()
+        assert not (
+            fs.build_dir / "langsmith" / "managed-deep-agents-quickstart.mdx"
+        ).exists()
+
+        python_page = (
+            fs.build_dir / "langsmith" / "python" / "managed-deep-agents-overview.mdx"
+        ).read_text()
+        js_page = (
+            fs.build_dir
+            / "langsmith"
+            / "javascript"
+            / "managed-deep-agents-overview.mdx"
+        ).read_text()
+
+        assert "/langsmith/python/managed-deep-agents-quickstart" in python_page
+        assert "/langsmith/javascript/managed-deep-agents-quickstart" in js_page
+        assert "/oss/python/deepagents/overview" in python_page
+        assert "/oss/javascript/deepagents/overview" in js_page
+        assert (
+            "from '/snippets/python/langsmith/managed-deep-agents-next-steps.mdx'"
+            in python_page
+        )
+        assert (
+            "from '/snippets/javascript/langsmith/managed-deep-agents-next-steps.mdx'"
+            in js_page
+        )
+
+        python_snippet = (
+            fs.build_dir
+            / "snippets"
+            / "python"
+            / "langsmith"
+            / "managed-deep-agents-next-steps.mdx"
+        ).read_text()
+        js_snippet = (
+            fs.build_dir
+            / "snippets"
+            / "javascript"
+            / "langsmith"
+            / "managed-deep-agents-next-steps.mdx"
+        ).read_text()
+        assert "/langsmith/python/managed-deep-agents-tools" in python_snippet
+        assert "Python only." in python_snippet
+        assert "TypeScript only." not in python_snippet
+        assert "/langsmith/javascript/managed-deep-agents-tools" in js_snippet
+        assert "TypeScript only." in js_snippet
+        assert "Python only." not in js_snippet

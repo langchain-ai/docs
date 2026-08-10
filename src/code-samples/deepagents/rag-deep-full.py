@@ -4,8 +4,8 @@
 import os
 import sys
 
-if not os.environ.get("OPENAI_API_KEY"):
-    print("[rag-deep-full] Skipping (OPENAI_API_KEY required).")
+if not os.environ.get("GOOGLE_API_KEY"):
+    print("[rag-deep-full] Skipping (GOOGLE_API_KEY required).")
     sys.exit(0)
 # :remove-end:
 
@@ -20,7 +20,7 @@ from langchain.messages import HumanMessage
 from langchain.tools import tool
 from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 DOCS_BASE = "https://docs.langchain.com"
@@ -30,7 +30,7 @@ DOC_PATHS = [
     "oss/python/deepagents/rag",
     "oss/python/langchain/tools",
     "oss/python/langchain/models",
-    "oss/python/langchain/retrieval",
+    "oss/python/deepagents/retrieval",
     "oss/python/langchain/knowledge-base",
     "oss/python/langchain/middleware",
     "oss/python/deepagents/overview",
@@ -68,7 +68,8 @@ text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=20
 all_splits = text_splitter.split_documents(docs)
 print(f"Split documentation into {len(all_splits)} chunks.")
 
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+# KEEP MODEL
+embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 vector_store = InMemoryVectorStore(embedding=embeddings)
 vector_store.add_documents(documents=all_splits)
 print(f"Indexed {len(all_splits)} chunks.")
@@ -170,7 +171,8 @@ chunk_analyst_subagent = {
     "system_prompt": CHUNK_ANALYST_INSTRUCTIONS,
 }
 
-model = init_chat_model(model="google_genai:gemini-3.5-flash")
+# KEEP MODEL
+model = init_chat_model(model="google_genai:gemini-3.6-flash")
 
 agent = create_deep_agent(
     model=model,

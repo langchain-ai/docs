@@ -1,7 +1,21 @@
 ---
-title: "Weaviate integration"
-description: "Integrate with the Weaviate vector store using LangChain Python."
+title: Weaviate integration
+description: Integrate with the Weaviate vector store using LangChain Python.
+integration:
+  name: Weaviate
+  pypi: langchain-weaviate
+  featured: true
+  delete_by_id: true
+  filtering: true
+  search_by_vector: true
+  search_with_score: true
+  async_api: true
+  passes_standard_tests: false
+  multi_tenancy: true
+  ids_in_add_documents: true
 ---
+
+
 
 import LangchainCommunityUnmaintained from '/snippets/oss/langchain-community-unmaintained.mdx';
 
@@ -251,6 +265,48 @@ db_with_mt.similarity_search(query, tenant="Foo")
  Document(page_content='And so many families are living paycheck to paycheck, struggling to keep up with the rising cost of food, gas, housing, and so much more. \n\nI understand. \n\nI remember when my Dad had to leave our home in Scranton, Pennsylvania to find work. I grew up in a family where if the price of food went up, you felt it. \n\nThat’s why one of the first things I did as President was fight to pass the American Rescue Plan.  \n\nBecause people were hurting. We needed to act, and we did. \n\nFew pieces of legislation have done more in a critical moment in our history to lift us out of crisis. \n\nIt fueled our efforts to vaccinate the nation and combat COVID-19. It delivered immediate economic relief for tens of millions of Americans.  \n\nHelped put food on their table, keep a roof over their heads, and cut the cost of health insurance. \n\nAnd as my Dad used to say, it gave people a little breathing room.', metadata={'source': 'state_of_the_union.txt'}),
  Document(page_content='He and his Dad both have Type 1 diabetes, which means they need insulin every day. Insulin costs about $10 a vial to make.  \n\nBut drug companies charge families like Joshua and his Dad up to 30 times more. I spoke with Joshua’s mom. \n\nImagine what it’s like to look at your child who needs insulin and have no idea how you’re going to pay for it.  \n\nWhat it does to your dignity, your ability to look your child in the eye, to be the parent you expect to be. \n\nJoshua is here with us tonight. Yesterday was his birthday. Happy birthday, buddy.  \n\nFor Joshua, and for the 200,000 other young people with Type 1 diabetes, let’s cap the cost of insulin at $35 a month so everyone can afford it.  \n\nDrug companies will still do very well. And while we’re at it let Medicare negotiate lower prices for prescription drugs, like the VA already does.', metadata={'source': 'state_of_the_union.txt'}),
  Document(page_content='Putin’s latest attack on Ukraine was premeditated and unprovoked. \n\nHe rejected repeated efforts at diplomacy. \n\nHe thought the West and NATO wouldn’t respond. And he thought he could divide us at home. Putin was wrong. We were ready.  Here is what we did.   \n\nWe prepared extensively and carefully. \n\nWe spent months building a coalition of other freedom-loving nations from Europe and the Americas to Asia and Africa to confront Putin. \n\nI spent countless hours unifying our European allies. We shared with the world in advance what we knew Putin was planning and precisely how he would try to falsely justify his aggression.  \n\nWe countered Russia’s lies with truth.   \n\nAnd now that he has acted the free world is holding him accountable. \n\nAlong with twenty-seven members of the European Union including France, Germany, Italy, as well as countries like the United Kingdom, Canada, Japan, Korea, Australia, New Zealand, and many others, even Switzerland.', metadata={'source': 'state_of_the_union.txt'})]
+```
+
+## Asynchronous usage
+
+`langchain-weaviate` supports Weaviate's native asynchronous client. Provide a connected [`WeaviateAsyncClient`](https://weaviate.io/developers/weaviate/client-libraries/python/async) as the `client_async` argument (alongside the synchronous `client`), and the async methods — `afrom_texts`, `aadd_texts`, `asimilarity_search`, `asimilarity_search_with_score`, `amax_marginal_relevance_search`, and their variants — will use it directly instead of running the synchronous client in a thread pool.
+
+<Note>
+Native async support requires `langchain-weaviate` `0.0.8` or higher. If you call an async method without passing `client_async`, the store falls back to running the synchronous client in an executor and logs a warning, so your code still works but does not get true async I/O.
+</Note>
+
+Unlike the synchronous `connect_to_local()` helper, the `use_async_with_*` helpers return a client that is **not** yet connected — you must `await client.connect()` before using it. The synchronous `client` is still required, since it is used for collection/schema management.
+
+```python
+import weaviate
+from langchain_weaviate import WeaviateVectorStore
+
+# Synchronous client (used for schema/collection management)
+weaviate_client = weaviate.connect_to_local()
+
+# Asynchronous client — must be connected explicitly
+weaviate_client_async = weaviate.use_async_with_local()
+await weaviate_client_async.connect()
+
+db = await WeaviateVectorStore.afrom_texts(
+    texts,
+    embeddings,
+    client=weaviate_client,
+    client_async=weaviate_client_async,
+)
+
+results = await db.asimilarity_search(
+    "What did the president say about Ketanji Brown Jackson", k=3
+)
+for doc in results:
+    print(doc.page_content[:100] + "...")
+```
+
+When you are finished, close both clients to release their connections:
+
+```python
+weaviate_client.close()
+await weaviate_client_async.close()
 ```
 
 ## Retriever options

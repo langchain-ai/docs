@@ -64,7 +64,7 @@ Input context is information provided to your deep agent at startup that becomes
 
 ### System prompt
 
-Your custom system prompt is prepended to the built-in system prompt, which includes guidance for planning, filesystem tools, and subagents. Use it to define the agent's role, behavior, and knowledge:
+Your custom system prompt is prepended to the built-in system prompt, which includes guidance for filesystem tools and subagents. Use it to define the agent's role, behavior, and knowledge:
 
 :::python
 <ContextEngineeringSystemPromptPy />
@@ -78,7 +78,7 @@ Your custom system prompt is prepended to the built-in system prompt, which incl
 The `system_prompt` parameter is static which means it does not change per invocation.
 For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from [long-term memory](#long-term-memory).
 If your prompt depends on context or `runtime.store`, use `@dynamic_prompt` to build context-aware instructions. Your middleware can read `request.runtime.context` and `request.runtime.store`.
-See [Customization](/oss/deepagents/customization#middleware) for the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent) and for adding [custom middleware](/oss/langchain/middleware). See the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
+See [Customization](/oss/deepagents/customization#middleware) for the [Deep Agents stack](/oss/deepagents/customization#deep-agents-stack) and for adding [custom middleware](/oss/langchain/middleware). See the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
 
 You do **not** need middleware when tools alone use context or `runtime.store`; tools receive the @[ToolRuntime] object (including `runtime.context` and `runtime.store`) directly. Add middleware only when tools should be packaged with an update to the system prompt.
 :::
@@ -88,7 +88,7 @@ The `systemPrompt` parameter is static which means it does not change per invoca
 For some use cases you may want a dynamic prompt: for example, to tell the model "You have admin access" vs "You have read-only access," or to inject user preferences like "User prefers concise responses" from [long-term memory](#long-term-memory).
 If your prompt depends on context or `runtime.store`, use `dynamicSystemPromptMiddleware` to build context-aware instructions.
 Your middleware can read `request.runtime.context` and `request.runtime.store`.
-See [Customization](/oss/deepagents/customization#middleware) for the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent) and for adding [custom middleware](/oss/langchain/middleware). See the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
+See [Customization](/oss/deepagents/customization#middleware) for the [Deep Agents stack](/oss/deepagents/customization#deep-agents-stack) and for adding [custom middleware](/oss/langchain/middleware). See the [LangChain context engineering](/oss/langchain/context-engineering#system-prompt) guide for examples.
 
 You do **not** need middleware when tools alone use context or `runtime.store`; tools receive the `runtime` object (including `runtime.context` and `runtime.store`) directly. Add middleware only when the system prompt itself must vary per request.
 :::
@@ -111,6 +111,8 @@ Memory files ([`AGENTS.md`](https://agents.md/)) provide persistent context that
 
 Unlike skills, memory is always injected—there is no progressive disclosure. Keep memory minimal to avoid context overload; use [skills](/oss/deepagents/skills) for detailed workflows and domain-specific content. See [Memory](/oss/deepagents/customization#memory) for configuration details.
 
+To generate a repository wiki that coding agents discover through `AGENTS.md`, see [OpenWiki](/oss/openwiki/overview).
+
 ### Skills
 
 Skills provide **on-demand** capabilities. The agent reads frontmatter from each `SKILL.md` at startup, then loads full skill content only when it determines the skill is relevant. This reduces token usage while still providing specialized workflows:
@@ -127,19 +129,19 @@ Keep each skill focused on a single workflow or domain; broad or overlapping ski
 
 ### Tool prompts
 
-[Tool](/oss/langchain/tools) prompts are instructions that shape how the model uses tools. All tools expose metadata the model sees in its prompt—typically a schema and a description. Tools you pass via the `tools` parameter surface that tool metadata (schema and descriptions) to the model. A deep agent's built-in tools are packaged in the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent) and typically also update the system prompt with more guidance for those tools.
+[Tool](/oss/langchain/tools) prompts are instructions that shape how the model uses tools. All tools expose metadata the model sees in its prompt—typically a schema and a description. Tools you pass via the `tools` parameter surface that tool metadata (schema and descriptions) to the model. A deep agent's built-in tools are packaged in the [Deep Agents stack](/oss/deepagents/customization#deep-agents-stack) and typically also update the system prompt with more guidance for those tools.
 
-**Built-in tools**: Middleware that adds harness capabilities (planning, filesystem, subagents) automatically appends tool-specific instructions to the system prompt, creating tool prompts that explain how to use those tools effectively. See [Customization](/oss/deepagents/customization#middleware) for the full list:
-- Planning prompt – Instructions for `write_todos` to maintain a structured task list
+**Built-in tools**: Middleware that adds harness capabilities (filesystem, subagents, and optional planning) automatically appends tool-specific instructions to the system prompt, creating tool prompts that explain how to use those tools effectively. See [Customization](/oss/deepagents/customization#middleware) for the full list:
+
 :::python
-- Filesystem prompt – Documentation for `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, `grep` (and `execute` when using a sandbox backend)
+- Filesystem prompt: Documentation for `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, `grep` (and `execute` when using a sandbox backend)
 :::
 :::js
-- Filesystem prompt – Documentation for `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` (and `execute` when using a sandbox backend)
+- Filesystem prompt: Documentation for `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` (and `execute` when using a sandbox backend)
 :::
-- Subagent prompt – Guidance for delegating work with the `task` tool
-- Human-in-the-loop prompt – Usage for pausing at specified tool calls (when `interrupt_on` is set)
-- Local context prompt – Current directory and project info (CLI only)
+- Subagent prompt: Guidance for delegating work with the `task` tool
+- Human-in-the-loop prompt: Usage for pausing at specified tool calls (when `interrupt_on` is set)
+- Local context prompt: Current directory and project info (CLI only)
 
 **Tools you provide**: Tools passed via the `tools` parameter get their descriptions (from the tool schema) sent to the model. You can also add [custom middleware](/oss/langchain/middleware) that adds tools and appends its own system prompt instructions.
 
@@ -154,7 +156,11 @@ For tools you provide, make sure to provide a clear name, description, and argum
 :::
 
 <Tip>
-    To override a built-in or user-supplied tool's description for a specific provider or model, use a [harness profile](/oss/deepagents/profiles#harness-profiles)'s `tool_description_overrides` keyed by tool name. `excluded_tools` removes a tool from the visible tool set entirely.
+    To override a built-in or user-supplied tool's description for a specific provider or model, use a [harness profile](/oss/deepagents/profiles#harness-profiles)'s `tool_description_overrides` keyed by tool name.
+
+    Unused built-in tools still send their full schemas on every turn. Use `excluded_tools` to remove tools the agent should never call (for example `write_file` or `execute` on a read-only agent). That shrinks baseline prompt size for the whole run. It is configuration, not the automatic offloading or summarization in [Context compression](#context-compression).
+
+    See [Harness profiles](/oss/deepagents/profiles#harness-profiles) and [Running without the default filesystem tools](/oss/deepagents/overview#virtual-filesystem-access).
 </Tip>
 
 See [Overview](/oss/deepagents/overview#execution-environment) for built-in capabilities and [Customization](/oss/deepagents/customization#tools) for passing tools directly.
@@ -165,7 +171,6 @@ The deep agent's system message—the assembled system prompt the model receives
 
 1. Custom `system_prompt` (if provided)
 1. [Base agent prompt](https://github.com/langchain-ai/deepagents/blob/e18e9dcd0e6edc72c0a4a5b76ae752c4bc539752/libs/deepagents/deepagents/graph.py#L37)
-1. To-do list prompt: Instructions for how to plan with to do lists
 1. Memory prompt: `AGENTS.md` + memory usage guidelines (only when `memory` provided)
 1. Skills prompt: Skills locations + list of skills with frontmatter information + usage (only when skills provided)
 1. Virtual filesystem prompt (filesystem + execute tool docs if applicable)
@@ -235,6 +240,8 @@ The following techniques are the built-in mechanisms to ensure the context passe
   </Card>
 </CardGroup>
 
+To shrink the tool schemas sent on every turn before compression ever runs, exclude unused built-in tools via a [harness profile](/oss/deepagents/profiles#harness-profiles) (`excluded_tools`). See [Tool prompts](#tool-prompts).
+
 ### Offloading
 
 Deep Agents use the [built-in filesystem tools](/oss/deepagents/overview#virtual-filesystem-access) to automatically offload content and to search and retrieve that offloaded content as needed.
@@ -262,7 +269,7 @@ The current summarization behavior (in-model summarization via `wrapModelCall`, 
 </Note>
 :::
 
-Every `create_deep_agent` call includes @[`SummarizationMiddleware`] in the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent). When the context size crosses the model's context window limit (for example 85% of `max_input_tokens`), and there is no more context eligible for offloading, the deep agent summarizes the message history automatically.
+Every `create_deep_agent` call includes @[`SummarizationMiddleware`] in the [bare stack](/oss/deepagents/customization#bare-stack). When the context size crosses the model's context window limit (for example 85% of `max_input_tokens`), and there is no more context eligible for offloading, the deep agent summarizes the message history automatically.
 
 This process has two components:
 
@@ -324,7 +331,7 @@ for await (const [namespace, chunk] of await agent.stream(
 By default, automatic summarization runs when context thresholds are reached.
 Separately, you can give the agent a `compact_conversation` [tool](/oss/langchain/tools) so it can trigger compaction on demand, for example between tasks, instead of waiting for the 85% threshold.
 
-Enable the tool by passing @[`create_summarization_tool_middleware`] using the `middleware` argument on `create_deep_agent`. Custom middleware is inserted into the [default stack](/oss/deepagents/customization#default-stack-main-agent) after @[`PatchToolCallsMiddleware`]:
+Enable the tool by passing @[`create_summarization_tool_middleware`] using the `middleware` argument on `create_deep_agent`. Custom middleware is inserted into the [Deep Agents stack](/oss/deepagents/customization#deep-agents-stack) after @[`PatchToolCallsMiddleware`]:
 
 <ContextEngineeringSummarizationToolPy />
 
@@ -390,20 +397,21 @@ See [Long-term memory](/oss/deepagents/memory) for setup and use cases.
 
 ## Best practices
 
-1. **Start with the right input context** – Keep memory minimal for always-relevant conventions; use focused skills for task-specific capabilities.
-2. **Leverage subagents for heavy work** – Delegate multi-step, output-heavy tasks to keep the main agent's context clean.
-3. **Adjust subagent outputs in configuration** – If you notice when debugging that subagents generate long output, you can add guidance to the subagent's `system_prompt` to create summaries and synthesized findings.
-4. **Use the filesystem** – Persist large outputs to files (for example subagent writes or [automatic offloading](#offloading)) so the active context stays small; the model can pull in fragments with `read_file` and `grep` when it needs details.
-5. **Document long-term memory structure** – Tell the agent what lives in `/memories/` and how to use it.
-6. **Pass runtime context for tools** – Use `context` for user metadata, API keys, and other static configuration that tools need.
+1. **Start with the right input context**: Keep memory minimal for always-relevant conventions; use focused skills for task-specific capabilities.
+2. **Leverage subagents for heavy work**: Delegate multi-step, output-heavy tasks to keep the main agent's context clean.
+3. **Adjust subagent outputs in configuration**: If you notice when debugging that subagents generate long output, you can add guidance to the subagent's `system_prompt` to create summaries and synthesized findings.
+4. **Use the filesystem**: Persist large outputs to files (for example subagent writes or [automatic offloading](#offloading)) so the active context stays small; the model can pull in fragments with `read_file` and `grep` when it needs details.
+5. **Document long-term memory structure**: Tell the agent what lives in `/memories/` and how to use it.
+6. **Pass runtime context for tools**: Use `context` for user metadata, API keys, and other static configuration that tools need.
 
 ## Related resources
 
-- [Harness](/oss/deepagents/overview) – Context management overview, offloading,
+- [Harness](/oss/deepagents/overview): Context management overview, offloading,
 summarization
-- [Multimodal](/oss/deepagents/multimodal) — images, audio, video, and multimodal tool outputs
-- [Subagents](/oss/deepagents/subagents) — Context isolation, runtime context propagation
-- [Long-term memory](/oss/deepagents/memory) – Cross-thread persistence
-- [Skills](/oss/deepagents/skills) – Progressive disclosure and skill authoring
-- [Backends](/oss/deepagents/backends) – Filesystem backends and CompositeBackend
-- [Context conceptual overview](/oss/concepts/context) – Context types and lifecycle
+- [Multimodal](/oss/deepagents/multimodal): images, audio, video, and multimodal tool outputs
+- [Subagents](/oss/deepagents/subagents): Context isolation, runtime context propagation
+- [Long-term memory](/oss/deepagents/memory): Cross-thread persistence
+- - [OpenWiki](/oss/openwiki/overview): Repository wikis that coding agents find through `AGENTS.md`
+- [Skills](/oss/deepagents/skills): Progressive disclosure and skill authoring
+- [Backends](/oss/deepagents/backends): Filesystem backends and CompositeBackend
+- [Context conceptual overview](/oss/concepts/context): Context types and lifecycle

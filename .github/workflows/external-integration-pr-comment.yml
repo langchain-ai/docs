@@ -1,5 +1,6 @@
 # Post a patience comment on PRs from external contributors that add
-# new integration docs pages.
+# integration docs (hosted MDX pages or external listing YAML rows), and
+# apply the `integration` label to those PRs.
 #
 # NOTE: Uses `pull_request_target` so it can comment on PRs from forks.
 # The script only reads changed files from the GitHub API and checks org
@@ -46,6 +47,7 @@ jobs:
               'src/oss/python/integrations/',
               'src/oss/javascript/integrations/',
             ];
+            const externalListingPath = 'scripts/data/integration_external_docs.yaml';
 
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner,
@@ -64,15 +66,24 @@ jobs:
               return true;
             });
 
-            if (newIntegrationFiles.length === 0) {
-              console.log('No new integration files added; skipping comment');
+            const hasExternalListingChange = files.some(
+              (file) => file.filename === externalListingPath
+            );
+
+            if (newIntegrationFiles.length === 0 && !hasExternalListingChange) {
+              console.log('No integration contribution files found; skipping');
               return;
             }
 
-            console.log(
-              `Found ${newIntegrationFiles.length} new integration file(s): ` +
-              newIntegrationFiles.map((f) => f.filename).join(', ')
-            );
+            if (newIntegrationFiles.length > 0) {
+              console.log(
+                `Found ${newIntegrationFiles.length} new integration file(s): ` +
+                newIntegrationFiles.map((f) => f.filename).join(', ')
+              );
+            }
+            if (hasExternalListingChange) {
+              console.log(`Found changes to ${externalListingPath}`);
+            }
 
             const internalBots = new Set(['open-swe[bot]']);
             let isExternal;
@@ -97,8 +108,24 @@ jobs:
             }
 
             if (!isExternal) {
-              console.log(`Author ${author} is internal; skipping comment`);
+              console.log(`Author ${author} is internal; skipping`);
               return;
+            }
+
+            const hasIntegrationLabel = pr.labels.some(
+              (label) => label.name === 'integration'
+            );
+
+            if (hasIntegrationLabel) {
+              console.log(`PR #${pr.number} already has the integration label; skipping labeling`);
+            } else {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: pr.number,
+                labels: ['integration'],
+              });
+              console.log(`Added integration label to PR #${pr.number}`);
             }
 
             const marker = '<!-- external-integration-contribution -->';
@@ -110,13 +137,15 @@ jobs:
             });
 
             if (comments.some((comment) => comment.body.includes(marker))) {
-              console.log('Comment already posted; skipping');
+              console.log('Comment already posted; skipping comment');
               return;
             }
 
             const body = [
               marker,
               `Thanks for contributing a new integration docs page, @${author}!`,
+              '',
+              'As of July 28, 2026, we have changed how we accept external integrations submissions. Please review the [new integration submission process](https://docs.langchain.com/oss/python/contributing/publish-langchain#make-your-integration-discoverable) for more information.',
               '',
               'We receive a large number of PRs and review them as quickly as we can. Please bear with us as we work through the queue.',
               '',
