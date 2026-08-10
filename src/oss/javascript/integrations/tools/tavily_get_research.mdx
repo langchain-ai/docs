@@ -1,22 +1,32 @@
 ---
-title: Tavily Get Research
+title: Tavily get research integration
+description: Integrate with the Tavily get research tool using LangChain JavaScript.
+integration:
+  name: TavilyGetResearch
+  npm: '@langchain/tavily'
 ---
 
-[Tavily](https://tavily.com/) is a search engine built specifically for AI agents (LLMs), delivering real-time, accurate, and factual results at speed. Tavily offers multiple endpoints, one of which being Get Research, which allows you to retrieve previously generated research reports by their unique identifier.
+[Tavily](https://tavily.com/) is a search engine built specifically for AI agents (LLMs), delivering real-time, accurate, and factual results at speed. Tavily offers a [Get Research](https://docs.tavily.com/documentation/api-reference/endpoint/research-get) endpoint that retrieves previously created research reports by request ID.
 
-This guide provides a quick overview for getting started with the Tavily [tool](/oss/integrations/tools/). For a complete breakdown of the Tavily tool, you can find more detailed documentation in the [API reference](https://v03.api.js.langchain.com/modules/_langchain_tavily.html).
+Use this tool after [TavilyResearch](/oss/integrations/tools/tavily_research) to poll for status and fetch completed results.
 
 ## Overview
 
 ### Integration details
 
-| Class                                                                                              | Package                                                                | [PY support](https://python.langchain.com/docs/integrations/tools/tavily_search/) |                                            Version                                            |
-| :------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------- | :-------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------: |
-| [TavilyGetResearch](https://api.js.langchain.com/classes/_langchain_tavily.TavilyGetResearch.html) | [`@langchain/tavily`](https://www.npmjs.com/package/@langchain/tavily) |                                        ✅                                         | ![NPM - Version](https://img.shields.io/npm/v/@langchain/tavily?style=flat-square&label=%20&) |
+| Class | Package | [PY support](/oss/integrations/tools/tavily_search) | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: |
+| [`TavilyGetResearch`](https://reference.langchain.com/javascript/langchain-tavily/TavilyGetResearch) | [`@langchain/tavily`](https://www.npmjs.com/package/@langchain/tavily) | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/tavily?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/tavily?style=flat-square&label=%20&) |
+
+### Tool features
+
+| [Returns artifact](/oss/langchain/tools) | Native async | Return data | Pricing |
+| :---: | :---: | :---: | :---: |
+| ❌ | ✅ | Research status, report content, sources | 1,000 free credits / month |
 
 ## Setup
 
-The integration lives in the `@langchain/tavily` package, which you can install as shown below:
+The integration lives in the `@langchain/tavily` package:
 
 <CodeGroup>
 ```bash npm
@@ -32,13 +42,13 @@ pnpm add @langchain/tavily @langchain/core
 
 ### Credentials
 
-Set up an API key [here](https://app.tavily.com) and set it as an environment variable named `TAVILY_API_KEY`.
+Set up an API key on the [Tavily dashboard](https://app.tavily.com) and set it as an environment variable named `TAVILY_API_KEY`.
 
 ```typescript
 process.env.TAVILY_API_KEY = "YOUR_API_KEY";
 ```
 
-It's also helpful (but not needed) to set up [LangSmith](https://smith.langchain.com/) for best-in-class observability:
+It is also helpful (but not needed) to set up [LangSmith](https://smith.langchain.com/) for observability:
 
 ```typescript
 process.env.LANGSMITH_TRACING = "true";
@@ -47,7 +57,7 @@ process.env.LANGSMITH_API_KEY = "your-api-key";
 
 ## Instantiation
 
-You can import and instantiate an instance of the `TavilyGetResearch` tool like this:
+You can import and instantiate `TavilyGetResearch` like this:
 
 ```typescript
 import { TavilyGetResearch } from "@langchain/tavily";
@@ -59,111 +69,75 @@ const tool = new TavilyGetResearch();
 
 ### [Invoke directly with args](/oss/langchain/tools)
 
-The Tavily get research tool accepts the following arguments during invocation:
+The Tavily get research tool accepts the following argument during invocation:
 
--   `requestId` (required): The unique identifier of the research report to retrieve
+- `requestId` (required): The unique identifier of the research task to retrieve
 
 ```typescript
 await tool.invoke({
-    researchId: "your-request-id-here",
+  requestId: "your-request-id-here",
 });
 ```
 
 ### [Invoke with ToolCall](/oss/langchain/tools)
 
-We can also invoke the tool with a model-generated `ToolCall`, in which case a @[`ToolMessage`] will be returned:
+You can also invoke the tool with a model-generated `ToolCall`, in which case a @[`ToolMessage`] is returned:
 
 ```typescript
 // This is usually generated by a model, but we'll create a tool call directly for demo purposes.
 const modelGeneratedToolCall = {
-    args: {
-        researchId: "your-request-id-here",
-    },
-    id: "1",
-    name: tool.name,
-    type: "tool_call",
+  args: {
+    requestId: "your-request-id-here",
+  },
+  id: "1",
+  name: tool.name,
+  type: "tool_call",
 };
 
 await tool.invoke(modelGeneratedToolCall);
 ```
 
-## Chaining
+## Use within an agent
 
-We can use our tool in a chain by first binding it to a [tool-calling model](/oss/langchain/tools/) and then calling it:
+Pass both research tools to `createAgent` so the agent can start a research task and retrieve results by request ID:
 
 ```typescript
 // @lc-docs-hide-cell
-
 import { ChatOpenAI } from "@langchain/openai";
 
 const llm = new ChatOpenAI({
-    model: "gpt-4o",
-    temperature: 0,
+  model: "gpt-5.5",
+  temperature: 0,
 });
 ```
 
 ```typescript
-import { HumanMessage } from "@langchain/core/messages";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { RunnableLambda } from "@langchain/core/runnables";
+import { TavilyGetResearch, TavilyResearch } from "@langchain/tavily";
+import { createAgent } from "langchain";
 
-const prompt = ChatPromptTemplate.fromMessages([
-    ["system", "You are a helpful assistant."],
-    ["placeholder", "{messages}"],
-]);
-
-const llmWithTools = llm.bindTools([tool]);
-
-const chain = prompt.pipe(llmWithTools);
-
-const toolChain = RunnableLambda.from(async (userInput: string, config) => {
-    const humanMessage = new HumanMessage(userInput);
-    const aiMsg = await chain.invoke(
-        {
-            messages: [new HumanMessage(userInput)],
-        },
-        config
-    );
-    const toolMsgs = await tool.batch(aiMsg.tool_calls, config);
-    return chain.invoke(
-        {
-            messages: [humanMessage, aiMsg, ...toolMsgs],
-        },
-        config
-    );
+const agent = createAgent({
+  model: llm,
+  tools: [new TavilyResearch({ model: "mini" }), new TavilyGetResearch()],
 });
 
-const toolChainResult = await toolChain.invoke("your-request-id-here");
-```
+const userInput =
+  "Start a research task on AI agents, then retrieve the results when ready.";
 
-```typescript
-const { tool_calls, content } = toolChainResult;
-
-console.log(
-    "AIMessage",
-    JSON.stringify(
-        {
-            tool_calls,
-            content,
-        },
-        null,
-        2
-    )
+const stream = await agent.streamEvents(
+  { messages: [["human", userInput]] },
+  { version: "v3" },
 );
+
+for await (const snapshot of stream.values) {
+  const lastMsg = snapshot.messages[snapshot.messages.length - 1];
+  if (lastMsg.tool_calls?.length) {
+    console.dir(lastMsg.tool_calls, { depth: null });
+  } else if (lastMsg.content) {
+    console.log(lastMsg.content);
+  }
+}
 ```
-
-## Agents
-
-For guides on how to use LangChain tools in agents, see the [LangGraph.js](https://langchain-ai.github.io/langgraphjs/how-tos/#tool-calling) docs.
-
----
 
 ## API reference
 
-For detailed documentation of all Tavily Get Research API features and configurations head to the API reference:
-
-[docs.tavily.com/documentation/api-reference/endpoint/research-get](https://docs.tavily.com/documentation/api-reference/endpoint/research-get)
-
-## Related
-
-[Tool docs](/oss/langchain/tools)
+For detailed documentation of all Tavily Get Research API features and configurations, see the API reference: [docs.tavily.com/documentation/api-reference/endpoint/research-get](https://docs.tavily.com/documentation/api-reference/endpoint/research-get)
