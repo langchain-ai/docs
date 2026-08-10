@@ -1,0 +1,120 @@
+---
+title: DomPruner
+description: Load web pages as pruned Markdown via DOM AST extraction. No API key required.
+integration:
+  name: DomPruner
+  pypi: dompruner
+---
+
+[dompruner](https://github.com/dong7812/dompruner-py) fetches a URL, strips DOM noise (nav, scripts, ads, footers) via AST parsing, and returns the original content as compact Markdown. It does not summarize or rewrite — the output is the original text, just with structural noise removed.
+
+Token counts from live measurements (8 documentation sites): raw HTML averages ~60K tokens; after pruning, ~1.6K tokens (97.3% reduction).
+
+For Next.js / Nuxt pages, it detects `__NEXT_DATA__` and walks the RSC tuple tree directly instead of parsing the DOM. When a `query` is provided, BM25+ section filtering returns only the sections most relevant to the query within a 1,200-token budget. If no sections match, the full clean content is returned.
+
+## Overview
+
+### Integration details
+
+| Class | Package | Local | Serializable | JS support |
+| :--- | :--- | :---: | :---: | :---: |
+| `DomPrunerLoader` | [`dompruner`](https://pypi.org/project/dompruner/) | ✅ | ❌ | ❌ |
+
+### Loader features
+
+| Source | Document Lazy Loading | Native Async Support |
+| :---: | :---: | :---: |
+| Web URL | ✅ | ✅ |
+
+## Setup
+
+<CodeGroup>
+```bash pip
+pip install dompruner
+```
+
+```bash uv
+uv add dompruner
+```
+
+</CodeGroup>
+
+No API key needed. For JavaScript-rendered pages:
+
+```bash
+pip install "dompruner[playwright]"
+playwright install chromium
+```
+
+## Instantiation
+
+```python
+from dompruner.langchain import DomPrunerLoader
+
+loader = DomPrunerLoader(url="https://docs.python.org/3/library/asyncio-task.html")
+
+# Optional: BM25 query to return only relevant sections
+loader = DomPrunerLoader(
+    url="https://docs.python.org/3/library/asyncio-task.html",
+    query="create_task",
+)
+```
+
+## Load
+
+```python
+docs = loader.load()
+doc = docs[0]
+
+print(doc.page_content[:300])
+print(doc.metadata)
+# {
+#   'source': 'https://docs.python.org/3/library/asyncio-task.html',
+#   'render_type': 'SSR',
+#   'original_tokens': 44315,
+#   'refined_tokens': 1275,
+#   'reduction_ratio': 0.971,
+#   'bm25_confidence': 1.24,
+# }
+```
+
+## Lazy load
+
+```python
+for doc in loader.lazy_load():
+    print(doc.page_content)
+```
+
+## Async load
+
+```python
+async for doc in loader.alazy_load():
+    print(doc.page_content)
+```
+
+## Use within a chain
+
+```python
+from dompruner.langchain import DomPrunerLoader
+from langchain_anthropic import ChatAnthropic
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
+loader = DomPrunerLoader(
+    url="https://fastapi.tiangolo.com/tutorial/body/",
+    query="request body",
+)
+docs = loader.load()
+context = docs[0].page_content
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer based only on the following context:\n\n{context}\n\nQuestion: {question}"
+)
+chain = prompt | ChatAnthropic(model="claude-haiku-4-5") | StrOutputParser()
+print(chain.invoke({"context": context, "question": "How do I declare a request body?"}))
+```
+
+## API reference
+
+- [`DomPrunerLoader`](https://github.com/dong7812/dompruner-py)
+- [`DomPrunerFetchTool`](/oss/python/integrations/tools/dompruner) — agent tool variant
