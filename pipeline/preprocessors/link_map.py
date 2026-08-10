@@ -500,6 +500,7 @@ LINK_MAPS: list[LinkMap] = [
             "WebsocketConnection": "langchain-mcp-adapters/sessions/WebsocketConnection",
             # JS-only references added here for cross-scope compatibility
             "createAgent": "https://reference.langchain.com/javascript/langchain/index/createAgent",
+            "createDeepAgent": "https://reference.langchain.com/javascript/deepagents/agent/createDeepAgent",
             # LangSmith SDK - Vitest/Jest references (JS-only, but added here for cross-scope compatibility)
             "langsmith.vitest": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html",
             "langsmith/vitest": "https://reference.langchain.com/javascript/modules/langsmith.vitest.html",
