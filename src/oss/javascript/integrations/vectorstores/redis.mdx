@@ -1,6 +1,6 @@
 ---
 title: "RedisVectorStore integration"
-description: "Integrate with the RedisVectorStore using LangChain JavaScript."
+description: "Integrate with FluentRedisVectorStore and RedisVectorStore using LangChain JavaScript."
 ---
 
 <Tip>
@@ -18,7 +18,7 @@ This guide provides a quick overview for getting started with Redis [vector stor
 
 | Class | Package | [PY support](https://python.langchain.com/docs/integrations/vectorstores/redis/) | Downloads | Version |
 | :--- | :--- | :---: | :---: | :---: |
-| [`FluentRedisVectorStore`](https://reference.langchain.com/javascript/langchain-redis/FluentRedisVectorStore) | [`@langchain/redis`](https://www.npmjs.com/package/@langchain/redis) | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/redis?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/redis?style=flat-square&label=%20&) |
+| [`FluentRedisVectorStore`](https://reference.langchain.com/javascript/langchain-redis/FluentRedisVectorStore) | [`@langchain/redis`](https://www.npmjs.com/package/@langchain/redis) | ❌ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/redis?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/redis?style=flat-square&label=%20&) |
 | [`RedisVectorStore`](https://reference.langchain.com/javascript/langchain-redis/RedisVectorStore) | [`@langchain/redis`](https://www.npmjs.com/package/@langchain/redis) | ✅ | ![NPM - Downloads](https://img.shields.io/npm/dm/@langchain/redis?style=flat-square&label=%20&) | ![NPM - Version](https://img.shields.io/npm/v/@langchain/redis?style=flat-square&label=%20&) |
 
 ## Setup
@@ -227,7 +227,7 @@ await client.disconnect();
 
 The `@langchain/redis` package provides two vector store implementations:
 
-- **`FluentRedisVectorStore`** (recommended): New implementation with type-safe fluent filtering API, array-based schema definition, and support for GEO and TIMESTAMP fields
+- **`FluentRedisVectorStore`** (recommended): New implementation with a type-safe fluent filtering API, array-based `customSchema`, GEO fields, and timestamp filtering
 - **`RedisVectorStore`** (legacy): Original implementation with object-based schema and basic filtering capabilities
 
 <Note>
@@ -283,26 +283,24 @@ const vectorStore = await FluentRedisVectorStore.fromDocuments(
   {
     redisClient: client,
     indexName: "products",
-    schema: customSchema,
+    customSchema,
   }
 );
 ```
 
 <Note>
-**Automatic schema inference:**
+**`customSchema` is required; inference is for validation only:**
 
-If you don't provide a `schema`, `FluentRedisVectorStore` can automatically infer the metadata schema from your documents based on the following rules:
+`FluentRedisVectorStore` requires a `customSchema`. When you create an index with documents, it also infers a schema from document metadata and logs a warning if that inferred schema differs from your `customSchema`.
+
+Inference rules used for that comparison:
 
 - **Strings in "lon,lat" format** (e.g., `"-122.4194,37.7749"`) → GEO fields
 - **Numbers or Date objects** → NUMERIC fields
 - **Arrays of any type** → TAG fields
 - **All other types** → TEXT fields
 
-While automatic inference is convenient for quick prototyping, explicitly defining your schema is recommended for production use cases to:
-- Ensure precise field type control (e.g., distinguishing between TEXT and TAG for strings)
-- Enable field-specific options like `sortable`, `weight`, or `caseSensitive`
-- Improve query performance with optimized indexing
-- Make your schema self-documenting and maintainable
+Define your schema explicitly so you control field types (for example, TEXT vs TAG for strings) and options such as `sortable`, `weight`, or `caseSensitive`.
 </Note>
 
 #### Using RedisVectorStore (legacy)
@@ -350,13 +348,14 @@ const vectorStoreWithSchema = new RedisVectorStore(embeddings, {
 
 #### Schema field types
 
-**FluentRedisVectorStore supports five field types:**
+**FluentRedisVectorStore supports four schema field types:**
 
 - **TEXT**: Full-text searchable fields with optional stemming, weighting, and sorting
 - **TAG**: Categorical fields for exact matching, with support for multiple values and custom separators
-- **NUMERIC**: Numeric fields supporting range queries and sorting
+- **NUMERIC**: Numeric fields supporting range queries and sorting. Use this for timestamps (store Unix epoch seconds; `Date` values are converted automatically)
 - **GEO**: Geographic coordinate fields for location-based queries (stored as `[longitude, latitude]`)
-- **TIMESTAMP**: Date/time fields stored as Unix epoch timestamps (automatically converted from Date objects)
+
+Use the `Timestamp()` filter helper against `numeric` timestamp fields.
 
 **RedisVectorStore (legacy) supports three field types:**
 
@@ -369,7 +368,7 @@ const vectorStoreWithSchema = new RedisVectorStore(embeddings, {
 **FluentRedisVectorStore (array-based schema):**
 
 - `name`: Field name (required)
-- `type`: Field type - `"text"`, `"tag"`, `"numeric"`, `"geo"`, or `"timestamp"` (required)
+- `type`: Field type - `"text"`, `"tag"`, `"numeric"`, or `"geo"` (required)
 - `options`: Optional configuration object:
   - `sortable`: Enable sorting on this field (boolean)
   - `separator`: For TAG fields, specify the separator for multiple values (string, default: ",")
@@ -653,7 +652,7 @@ const vectorStore = await FluentRedisVectorStore.fromDocuments(
   {
     redisClient: client,
     indexName: "advanced_products",
-    schema: [
+    customSchema: [
       { name: "category", type: "tag" },
       { name: "price", type: "numeric", options: { sortable: true } },
       { name: "title", type: "text", options: { weight: 2.0 } },
@@ -782,13 +781,16 @@ Both `RedisVectorStore` and `FluentRedisVectorStore` are currently supported and
 
 **Migration considerations:**
 
-- `FluentRedisVectorStore` uses `schema` config property instead of `customSchema`
-- Filter syntax is different - use fluent API (`Tag`, `Num`, etc.) instead of object-based filters
-- GEO and TIMESTAMP field types are only available in `FluentRedisVectorStore`
+- Keep the `customSchema` config key, but switch from the object-based format to an array of `{ name, type, options }` fields
+- Replace object or string filters with fluent filter expressions (`Tag`, `Num`, `Text`, `Geo`, `Timestamp`, `Custom`)
+- GEO schema fields and the `Timestamp()` filter helper are only available on `FluentRedisVectorStore`
+- Metadata storage differs: `FluentRedisVectorStore` indexes metadata as individual fields and is not compatible with legacy JSON-blob metadata. Create a new index and re-ingest documents rather than pointing `FluentRedisVectorStore` at an existing legacy index
 
 ---
 
 ## API reference
+
 For detailed documentation of all features and configurations:
-- `[RedisVectorStore` API reference](https://reference.langchain.com/javascript/langchain-redis/RedisVectorStore)
-- `[FluentRedisVectorStore` API reference](https://reference.langchain.com/javascript/langchain-redis/FluentRedisVectorStore)
+
+- [`RedisVectorStore` API reference](https://reference.langchain.com/javascript/langchain-redis/RedisVectorStore)
+- [`FluentRedisVectorStore` API reference](https://reference.langchain.com/javascript/langchain-redis/FluentRedisVectorStore)
