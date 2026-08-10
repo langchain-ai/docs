@@ -4,8 +4,8 @@
 import os
 import sys
 
-if not os.environ.get("OPENAI_API_KEY"):
-    print("[rag-deep-full] Skipping (OPENAI_API_KEY required).")
+if not os.environ.get("GOOGLE_API_KEY"):
+    print("[rag-deep-full] Skipping (GOOGLE_API_KEY required).")
     sys.exit(0)
 # :remove-end:
 
@@ -20,7 +20,7 @@ from langchain.messages import HumanMessage
 from langchain.tools import tool
 from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 DOCS_BASE = "https://docs.langchain.com"
@@ -69,7 +69,7 @@ all_splits = text_splitter.split_documents(docs)
 print(f"Split documentation into {len(all_splits)} chunks.")
 
 # KEEP MODEL
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 vector_store = InMemoryVectorStore(embedding=embeddings)
 vector_store.add_documents(documents=all_splits)
 print(f"Indexed {len(all_splits)} chunks.")
