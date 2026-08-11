@@ -1,0 +1,214 @@
+---
+title: Evaluate Managed Deep Agents
+sidebarTitle: Evals
+description: Create and run Harbor evals for Managed Deep Agents.
+---
+
+import ManagedDeepAgentsPrivateBetaNote from '/snippets/python/langsmith/managed-deep-agents-private-beta-note.mdx';
+
+Managed Deep Agents evals are [Harbor](https://www.harborframework.com/docs/tasks) evals. `evals/tasks/` is the canonical Harbor dataset. Author complete tasks there with Harbor's task format, environments, and verifiers.
+
+The `mda evals` commands do not introduce a separate eval format or run trials. They package the managed agent for Harbor and can optionally turn a minimal starter task under `evals/scaffold/` into a complete task under `evals/tasks/`.
+
+<ManagedDeepAgentsPrivateBetaNote />
+
+## Project structure
+
+Keep all eval files under one top-level `evals/` directory:
+
+```text
+my-agent/
+├── agent.py
+└── evals/                          # Harbor workspace
+    ├── tasks/                      # Canonical Harbor dataset
+    │   └── <task>/
+    └── scaffold/                   # Optional starter tasks
+        └── <task>/
+```
+
+
+
+
+An optional scaffold has a one-way relationship with its canonical Harbor task:
+
+```text
+evals/scaffold/<task>/ → mda evals compile → evals/tasks/<task>/
+```
+
+<Note>
+`evals/scaffold/` is not a second eval system. Harbor runs the tasks under `evals/tasks/`. Use scaffolding only when you want MDA to create a minimal starting point.
+</Note>
+
+## Choose an authoring workflow
+
+Use one of the following ways to populate the canonical Harbor dataset:
+
+- **Author a Harbor task directly**: Create a complete task under `evals/tasks/` and manage it with Harbor. Use this workflow when you need the full Harbor task format.
+- **Start from an optional scaffold**: Run `mda evals init <name>` to create a minimal task under `evals/scaffold/`, then compile it into `evals/tasks/` with the agent artifact and Harbor adapter.
+
+## Prerequisites
+
+- A Managed Deep Agents project created with `mda init`, or an existing project with an agent entry.
+- [Docker](https://docs.docker.com/get-docker/) running locally when using Harbor's default `docker` environment.
+- The `mda` CLI from `managed-deepagents`. See the [CLI reference](/langsmith/python/managed-deep-agents-cli#install).
+- [Harbor](https://www.harborframework.com/docs) on your `PATH`, or [`uv`](https://docs.astral.sh/uv/) so you can run `uv run --with harbor …`.
+- Model and tool credentials exported in the shell that runs Harbor.
+
+<Note>
+Harbor does not load values from the project `.env` file. When MDA generates a Harbor job config, it writes `${VAR}` placeholders for eligible `.env` keys, not their values. Export the required variables before you run Harbor.
+</Note>
+
+## Author Harbor evals directly
+
+Use Harbor's complete task format when you need full control. A task can define its instruction, environment, verifier, metadata, and other Harbor configuration:
+
+```text
+evals/
+  tasks/
+    my-task/
+      instruction.md
+      task.toml
+      environment/
+        Dockerfile
+      tests/
+        test.sh
+```
+
+Each task describes what the agent should do. Harbor runs the agent in the task environment, then runs `tests/test.sh` to grade the result. During grading, the main paths are:
+
+| Path | Purpose |
+| --- | --- |
+| `/app` | Agent working directory and task output. |
+| `/tests` | Task verifier files. |
+| `/logs/verifier/` | Verifier reward output. |
+
+The verifier must write a numeric reward to `/logs/verifier/reward.txt` or numeric metrics to `/logs/verifier/reward.json`. For the full task format and verifier options, see the [Harbor task documentation](https://www.harborframework.com/docs/tasks).
+
+Files you author directly under `evals/tasks/` are preserved when MDA compiles scaffolds with other names.
+
+## Scaffold a Harbor task
+
+This optional workflow creates a minimal source task that MDA can complete and copy into the canonical Harbor dataset.
+
+MDA scaffolds the task from an instruction and a Python test.
+
+
+
+
+Run the following command from the Managed Deep Agents project root:
+
+```bash
+mda evals init smoke
+```
+
+The task name can contain ASCII letters, numbers, `_`, and `-`. Run the command with another name to add another task. `mda init` does not create eval tasks automatically.
+
+The command creates the following layout:
+
+```text
+evals/
+  scaffold/
+    smoke/
+      instruction.md
+      tests/
+        test_answer.py
+```
+
+
+
+
+The starter task asks the agent to write `answer.txt` containing `PONG`. Replace the instruction and test with behavior that represents your application.
+
+```python
+from pathlib import Path
+
+
+def test_answer_is_pong():
+    assert Path("/app/answer.txt").read_text().strip() == "PONG"
+```
+
+
+
+
+### Compile scaffolded tasks
+
+Compile every scaffold under `evals/scaffold/`:
+
+```bash
+mda evals compile .
+```
+
+To refresh specific scaffolds, repeat `--task`:
+
+```bash
+mda evals compile . --task smoke --task regression
+```
+
+For each selected scaffold, MDA:
+
+1. Replaces the matching directory under `evals/tasks/`.
+2. Copies the complete scaffold from `evals/scaffold/`.
+3. Adds `tests/test.sh` when the scaffold does not provide one. The wrapper runs the language-native tests and writes a `1` or `0` reward.
+
+Unselected tasks under `evals/tasks/` are preserved, including tasks authored directly as Harbor tasks. The generated Harbor job uses all tasks under `evals/tasks/` as its dataset.
+
+<Warning>
+Treat `evals/scaffold/<name>/` as the source of truth for a scaffolded task. Compiling that scaffold replaces the entire matching `evals/tasks/<name>/` directory, including changes made only to the canonical copy.
+</Warning>
+
+You can add Harbor files such as `task.toml`, `environment/`, or a custom `tests/test.sh` to a scaffold under `evals/scaffold/<name>/`. MDA copies them into the canonical Harbor task during compilation.
+
+### Inspect the compiled handoff
+
+Compilation writes or updates the Harbor workspace:
+
+| Path | Contents |
+| --- | --- |
+| `evals/artifact/` | Compiled managed agent and artifact manifest. |
+| `evals/harbor-adapter/` | Embedded `mda_harbor` adapter that Harbor imports to run the agent. |
+| `evals/tasks/` | Canonical Harbor dataset, including compiled scaffolds and directly authored tasks. |
+| `evals/harbor-job.json` | Ready-to-edit Harbor job config. |
+| `evals/harbor-jobs/<id>/` | Local trial results for this compile. |
+
+Compile supports the following repeatable flags:
+
+| Flag | Purpose |
+| --- | --- |
+| `--task <name>` | Select one task. Repeat to select more tasks. If a selected task has a source under `evals/scaffold/`, MDA refreshes its canonical copy. Omit the flag to select all tasks and refresh every scaffold. |
+| `--model <provider:model>` | Record a model in the artifact manifest. The generated job config uses the first model. If omitted, MDA uses the agent's model when available. |
+
+Check in the Harbor definitions and configuration under `evals/` that your project uses. Keep local run output under `evals/harbor-jobs/` out of version control. The `evals/` directory is not included in the deployed agent build.
+
+## Run trials with Harbor
+
+`mda evals compile` prints a Harbor command configured for the compiled agent. Export the variables listed in the compile summary, then run the command from the project root:
+
+```bash
+export OPENAI_API_KEY="<OPENAI_API_KEY>"
+
+PYTHONPATH=evals/harbor-adapter \
+  uv run --with harbor harbor run --config evals/harbor-job.json --yes
+```
+
+If `harbor` is already on your `PATH`, the printed command uses `harbor run` directly instead of `uv run --with harbor`.
+
+Edit `evals/harbor-job.json` to change the task dataset, model, environment, concurrency, or attempts. Harbor owns trial orchestration, environments, and reporting. For job configuration and run options, see the [Harbor documentation](https://www.harborframework.com/docs).
+
+Running the same command again resumes the jobs directory referenced by the config. Recompile, or pass Harbor a fresh `--job-name`, to start a new run.
+
+## Next steps
+
+- [CLI reference](/langsmith/python/managed-deep-agents-cli): Review all `mda evals` commands and flags.
+- [Deploy an agent](/langsmith/python/managed-deep-agents-deploy): Deploy the agent after its evals pass.
+- [Harbor documentation](https://www.harborframework.com/docs): Configure tasks, environments, jobs, and verifiers.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-evals.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
