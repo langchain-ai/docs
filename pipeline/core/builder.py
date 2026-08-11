@@ -512,15 +512,23 @@ class DocumentationBuilder:
     def _build_unversioned_file(self, file_path: Path, relative_path: Path) -> None:
         """Build an unversioned file (langsmith).
 
+        Managed Deep Agents pages only emit language-prefixed routes
+        (``langsmith/python/...`` and ``langsmith/javascript/...``). The
+        unversioned ``/langsmith/managed-deep-agents*`` URLs redirect to the
+        Python routes via ``docs.json`` so Mintlify does not serve orphaned
+        pages outside the Managed Deep Agents nav.
+
         Args:
             file_path: Path to the source file.
             relative_path: Relative path from src_dir.
         """
+        if self.is_managed_deep_agents_file(file_path):
+            self._build_managed_deep_agents_variants(file_path)
+            return
+
         output_path = self.build_dir / relative_path
         if self._build_single_file_to_path(file_path, output_path, "python"):
             logger.debug("Built: %s", relative_path)
-        if self.is_managed_deep_agents_file(file_path):
-            self._build_managed_deep_agents_variants(file_path)
 
     def _build_shared_file(self, file_path: Path, relative_path: Path) -> None:
         """Build a shared file (images, docs.json, JS/CSS files).
@@ -898,6 +906,9 @@ class DocumentationBuilder:
             file_path
             for file_path in self._safe_source_files(src_path)
             if not self.is_shared_file(file_path)
+            # Managed Deep Agents emit language-prefixed routes only
+            # (see `_build_managed_deep_agents_versions`).
+            and not self.is_managed_deep_agents_file(file_path)
         ]
 
         if not all_files:
