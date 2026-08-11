@@ -18,6 +18,116 @@ If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/sel
 <Tabs>
 <Tab title="LangSmith Cloud">
 
+<Update label="August 3-10, 2026" rss={{ title: "2026-08-03 - LangSmith Cloud update" }}>
+
+## Access control
+
+- Access-policy endpoints now report errors as RFC 7807 problem details. Error messages move from the `error` field to `detail`, and semantically invalid request bodies return HTTP 422.
+- Set a resource tag key or value description to `null` to clear it through the PATCH API.
+- New connections to the hosted LangSmith MCP server failed to register when the client requested a confidential authentication method. Dynamic client registration now issues a public client in that case instead of returning an error, so connecting from Claude and other MCP clients works again.
+- Role permission and access policy changes now invalidate cached authorization results reliably, including when an older transaction commits after a newer update.
+- LangSmith now refreshes cached role access policies as soon as their permissions change, preventing stale authorization decisions in split-plane deployments.
+- The Active, Pending, and Deactivated tabs on the Members settings page now switch on the first click while keeping pagination and sorting in sync.
+
+## Datasets and experiments
+
+- Attachment and object downloads now always declare how the browser should handle the response. Files whose type is unrecognized, or that were stored without a type, are delivered as downloads instead of being rendered in the page.
+- Creating a dataset from the Datasets or Home empty state now opens the new dataset instead of briefly showing a Page not found screen.
+- Dataset JSON schema descriptions are now safely rendered in editor tooltips.
+- Creating or validating an example with a `dataset_id` that is not a well-formed UUID now returns a 422 naming the field instead of a 500.
+- Listing or counting examples with an unsupported `filter` expression, an unfilterable attribute, or a `has(...)` comparison whose value is not valid JSON, now returns a 422 naming the `filter` parameter instead of a 500.
+- Creating an experiment no longer converts an existing tracing project with the same name. Rename the experiment or choose a new project name when a conflict exists.
+- Scrolling through large experiment comparison results no longer re-fetches the first page of examples on every lazy-load, cutting redundant network traffic and reducing load time.
+
+## Monitoring and alerting
+
+- Chart headers on dashboards no longer overflow or wrap when the title or description is long, the description now truncates with a hover tooltip that reveals the full text. The expand-chart action also picks up the standard icon-button hover treatment.
+- Alert previews now treat integer metadata and its string representation consistently with alert evaluation.
+
+## Engine
+
+- Disabling Engine for an organization or pausing it for a project now offers a short prompt asking why, with an optional comment. It takes one tap and goes straight to the team building Engine.
+- Engine spend controls now explain that new runs pause at the monthly limit while runs already in progress may finish and increase billed spend beyond it.
+- The Engine tab is visible again on tracing projects before Engine is turned on, so admins can enable it, members can request access, and personal organizations can upgrade, all from the tab itself.
+- Engine GitHub settings now link to setup instructions for LangSmith Cloud and self-hosted deployments, with clearer guidance when a connection fails.
+- Engine scans on non-coding-agent boards apply the configured priority chips, user instructions, and trace-scope filter instead of reviewing the whole project.
+- Engine issue descriptions now preserve Markdown paragraph boundaries so updates, additional symptoms, and corrections remain easy to scan.
+
+## Feedback and evaluation
+
+- Feedback corrections can now reset a score to its original value, including zero.
+- Group by metadata and metadata columns are selectable again in the experiment comparison view.
+- A long evaluator name in a feedback card's Source row now truncates instead of extending past the card, and a corrected score keeps its edit control clear of the paging arrows when a key has several entries.
+- Switching a feedback value to a different category now saves even when both categories map to the same numeric score. Previously the change was silently dropped on run details and in annotation queue rubrics.
+- The pencil for correcting an evaluator score is now hidden unless you have permission to update feedback. Previously it appeared for anyone who could see the score, and saving the correction failed.
+- LangSmith now rejects credential-bearing and non-GitHub remote URLs when rendering evaluation commit links.
+- Attachments stored on a run now appear when you review it in an annotation queue, including pairwise queues. Previously only media inlined in the run's inputs or outputs was shown.
+- The evaluator spend table keeps the All runs filter badge inactive when an evaluator has no filters.
+- Daily evaluator spend, weekly totals, and spend limit monitoring on the Evaluators page now respect the currently selected application, instead of showing data across all applications.
+- The evaluator spend chart once again keeps its evaluator and project/dataset grouping control in the chart header for easier access.
+
+## Tracing and observability
+
+- Chat model runs sent through the gateway's unified endpoint with provider/model slugs now match model pricing rules, producing accurate trace costs.
+- Insights reports only analyze traces, so the "Is Trace" condition in a report's filter is now fixed. Setting it to false previously produced a report that ran successfully but never found any insights.
+- LangSmith Chat now respects the Provider API setting on workspace OpenAI model configurations. Models configured for the Responses API no longer fall back to Chat Completions, which made newer reasoning models fail when a reasoning effort was set.
+- Large PDF, JSON, and CSV previews on a message now render instead of showing an empty frame, and PDF and JSON previews gained an open-in-new-tab control next to the expand control.
+- Trace views now source token and feedback stats from SmithDB without attempting unavailable ClickHouse queries.
+- Waterfall filters in thread details now keep deeply nested matches visible and preserve filter controls while newly ingested traces are still appearing.
+- LangSmith MCP's `fetch_runs` tool can now include invocation parameters, including the tool and function schemas sent to an LLM, for easier tool-calling diagnosis.
+- PDF attachment icons now align consistently with other file types in attachment lists.
+- The thread query API now supports trace, run-tree, and thread-level filter expressions through `trace_filter`, `tree_filter`, and `thread_filter`.
+- Public shared-trace links now show a 'temporarily unavailable, try again' message when the trace query times out, instead of the misleading 'trace not found, ask the owner to re-share' message.
+- Clicking a starter prompt without the selected model's API key configured now shows the add-a-key form, the same as typing a message, instead of failing the request.
+
+## Prompts and playground
+
+- Claude models on Vertex AI now load successfully in the Playground when no credentials secret is configured, matching existing Gemini behavior under GCP Workload Identity or AWS IRSA.
+- The Prompts page now supports filtering by prompt type, prompt tags, and commit tags, so you can quickly narrow the list down to the prompts you're looking for.
+- Model configurations now show an inline error, instead of a silent save, when a required Bedrock, Azure OpenAI, or Vertex AI provider field is left blank.
+- Studio's chat pane no longer shows a 'No data' placeholder between sending a message and the first streamed token. The assistant message now appears once it has content to show.
+- The Playground now reports missing AWS credentials and other Bedrock rejections as request errors with the provider's own message, instead of a generic server error.
+- Studio chat now shows elapsed response status, preserves complete streamed responses, and follows new output without interrupting readers who scroll up.
+
+## Automations
+
+- Manually triggering an automation rule through the API now works. `POST /runs/rules/{rule_id}/trigger` and the `rule_ids` form of `POST /runs/rules/trigger` previously returned a 500 for every request.
+- You can manually trigger any automation in your workspace, including webhook-only, alert-only, and extend-retention rules. Previously the trigger endpoint only recognized a subset of actions and returned not found for the rest.
+- Online evaluators configured with an OpenAI-compatible or Anthropic-compatible custom endpoint now use that endpoint's own URL and API key on live traces instead of failing with an authentication error. Evaluators on custom endpoints are not counted toward evaluator spend limits.
+
+## Deployment
+
+- Self-hosted deployment forms now support Redis CPU and memory requests and limits. The configured values are applied to the Redis workload managed by the Kubernetes operator.
+- Deployments that use a platform-default LangGraph API version now correctly reuse matching images instead of starting unnecessary rebuilds.
+- Managed Deep Agent deployments entering public preview report their normal deployment usage.
+- Rolling back a deployment that was created from an uploaded source archive now redeploys that revision's archive instead of the most recent one.
+- A Managed Deep Agent deployment's Details sidebar now links to the Context Hub repo holding its deployed instructions, skills, and memories. Archived repos are labelled so it is clear when the context is no longer live.
+
+## Sandboxes
+
+- Resuming a suspended sandbox now checks your organization's real sandbox quota, including plan-specific limits, instead of the default cap. Requests that genuinely exceed quota return 429 with a quota message rather than 502 Bad Gateway.
+- Self-hosted LangSmith now enables sandbox API and UI access only when the deployment license includes sandbox access.
+- Online self-hosted LangSmith installations now report finalized sandbox uptime and resource usage for billing when phone-home usage reporting is enabled. Offline and opted-out installations do not send sandbox usage.
+
+## Administration
+
+- The organization submenu now opens when you hover over the organization row in the footer menu.
+- Self-hosted deployments refresh their license every 5 minutes instead of every 24 hours, so entitlement changes take effect shortly after they are made. A failed refresh no longer restarts the service, it keeps using the last verified license until that license's own expiry. The tuning knob is now LICENSE_REFRESH_INTERVAL_SECONDS (default 300), replacing LICENSE_REFRESH_INTERVAL_HOURS.
+- Searching workspaces with Cmd+K now highlights the query in the organization heading, making it clear why a term that matches an organization name returns all of that organization's workspaces.
+- The account menu now offers Get help. Enterprise users can submit a support request in LangSmith, while other cloud users are directed to the Support Portal.
+- The Plans and pricing page now preserves browser back and forward trackpad gestures and centers the plan cards.
+
+## LLM Gateway
+
+- Requests to moonshotai/kimi-k3 and moonshotai/kimi-k2.6 through gateway credit models in the LLM gateway are now matched against a price map when sent in user-traced code.
+- LLM Gateway Usage now provides interactive spend legends, consistent chart layouts, and tooltips that stay visible. Single-series views clearly explain spend that is not affiliated with a user instead of showing an empty chart.
+- You can now purchase as little as $4.50 in Gateway Credits, equivalent to 3 LCUs.
+- Bedrock requests through the LLM gateway now use the Amazon Bedrock price map so their costs are calculated correctly.
+- The credit balance now shows above the connect card, and the shortcut cards for cost controls, model fallbacks, and spend monitoring stay visible (locked, with an "Upgrade plan" prompt) instead of disappearing for Developer-plan orgs.
+- The Cost Controls, Rate Limiting, and Model Fallbacks tabs now explain what isn't in force yet, with a create button and a docs link above the policy tables. Each tab's create button, dialog title, and submit button also share one label, such as "Create spend limit" instead of a generic "Create policy".
+
+</Update>
+
 <Update label="July 27-31, 2026" rss={{ title: "2026-07-27 - LangSmith Cloud update" }}>
 
 ## Observability and evaluations
