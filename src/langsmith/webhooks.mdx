@@ -1,20 +1,21 @@
 ---
 title: Configure webhook notifications for rules
 sidebarTitle: Configure webhook notifications for rules
+description: Configure webhook notifications to receive POST requests when automation rules match new runs in LangSmith.
 ---
 
-When you add a webhook URL on an automation action, we will make a POST request to your webhook endpoint any time the rules you defined match any new runs.
+When you add a webhook URL on an automation action, LangSmith makes a POST request to your webhook endpoint any time the rules you defined match any new runs.
 
 ![Webhook](/langsmith/images/webhook.png)
 
 ## Webhook payload
 
-The payload we send to your webhook endpoint contains:
+The payload LangSmith sends to your webhook endpoint contains:
 
-- `"rule_id"`: this is the ID of the automation that sent this payload
-- `"start_time"` and `"end_time"`: these are the time boundaries where we found matching runs
-- `"runs"`: this is an array of runs, where each run is a dictionary. If you need more information about each run we suggest using our SDK in your endpoint to fetch it from our API.
-- `"feedback_stats"`: this is a dictionary with the feedback statistics for the runs. An example payload for this field is shown below.
+- `"rule_id"`: this is the ID of the automation that sent this payload.
+- `"start_time"` and `"end_time"`: these are the time boundaries where LangSmith found matching runs.
+- `"runs"`: this is an array of runs, where each run is a dictionary. If you need more information about each run, use the SDK in your endpoint to fetch it from the API.
+- `"feedback_stats"`: this is a dictionary with the feedback statistics for the runs. An example payload for this field is shown in the following code block.
 
 ```json
 "feedback_stats": {
@@ -55,7 +56,7 @@ Depending on how recent your runs are, the `inputs_s3_urls` and `outputs_s3_urls
 The `inputs` and `outputs` can be fetched by the `ROOT.presigned_url` provided in `inputs_s3_urls` and `outputs_s3_urls` respectively.
 </Note>
 
-This is an example of the entire payload we send to your webhook endpoint:
+This is an example of the entire payload LangSmith sends to your webhook endpoint:
 
 ```json
 {
@@ -105,7 +106,7 @@ This is an example of the entire payload we send to your webhook endpoint:
 
 ## Security
 
-We strongly recommend you add a secret query string parameter to the webhook URL, and verify it on any incoming request. This ensures that if someone discovers your webhook URL you can distinguish those calls from authentic webhook notifications.
+Add a secret query string parameter to the webhook URL and verify it on every incoming request. This ensures that if someone discovers your webhook URL, you can distinguish those calls from authentic webhook notifications.
 
 An example would be
 
@@ -125,13 +126,13 @@ Headers are stored in encrypted format.
 
 ### Webhook delivery
 
-When delivering events to your webhook endpoint we follow these guidelines
+When delivering events to your webhook endpoint, LangSmith follows these guidelines:
 
-- If we fail to connect to your endpoint, we retry the transport connection up to 2 times, before declaring the delivery failed.
-- If your endpoint takes longer than 5 seconds to reply we declare the delivery failed and do not .
-- If your endpoint returns a 5xx status code in less than 5 seconds we retry up to 2 times with exponential backoff.
-- If your endpoint returns a 4xx status code, we declare the delivery failed and do not retry.
-- Anything your endpoint returns in the body will be ignored
+- If LangSmith fails to connect to your endpoint, LangSmith retries the transport connection up to 2 times before declaring the delivery failed.
+- If your endpoint takes longer than 5 seconds to reply, LangSmith declares the delivery failed and does not retry.
+- If your endpoint returns a 5xx status code in less than 5 seconds, LangSmith retries up to 2 times with exponential backoff.
+- If your endpoint returns a 4xx status code, LangSmith declares the delivery failed and does not retry.
+- Anything your endpoint returns in the body will be ignored.
 
 ## Ensuring evaluations complete before the webhook fires
 
@@ -170,7 +171,7 @@ Within a single automation rule, actions execute in a fixed order: annotation qu
 
 ### Setup
 
-For an example of how to set this up, we will use [Modal](https://modal.com/). Modal provides autoscaling GPUs for inference and fine-tuning, secure containerization for code agents, and serverless Python web endpoints. We'll focus on the web endpoints here.
+For an example of how to set this up, this guide uses [Modal](https://modal.com/). Modal provides autoscaling GPUs for inference and fine-tuning, secure containerization for code agents, and serverless Python web endpoints. This guide focuses on the web endpoints.
 
 First, create a Modal account. Then, locally install the Modal SDK:
 
@@ -190,7 +191,7 @@ To finish setting up your account, run the command:
 modal setup
 ```
 
-and follow the instructions
+Follow the instructions to finish setting up your account.
 
 ### Secrets
 
@@ -198,18 +199,18 @@ Next, you will need to set up some secrets in Modal.
 
 First, LangSmith will need to authenticate to Modal by passing in a secret.
 The easiest way to do this is to pass in a secret in the query parameters.
-To validate this secret, we will need to add a secret in _Modal_ to validate it.
-We will do that by [creating a Modal secret](https://modal.com/docs/guide/secrets).
-For this purpose, let's call our secret `ls-webhook` and have it set an environment variable with the name `LS_WEBHOOK`.
+To validate this secret, add a secret in _Modal_ to validate it.
+Do this by [creating a Modal secret](https://modal.com/docs/guide/secrets).
+Name the secret `ls-webhook` and set an environment variable with the name `LS_WEBHOOK`.
 
-We can also set up a LangSmith secret - luckily there is already an integration template for this!
+You can also set up a LangSmith secret—luckily there is already an integration template for this!
 
 ![LangSmith Modal Template](/langsmith/images/modal-langsmith-secret.png)
 
 ### Service
 
 After that, you can create a Python file that will serve as your endpoint.
-An example is below, with comments explaining what is going on:
+An example is shown in the following code block, with comments explaining what is going on:
 
 ```python
 from fastapi import HTTPException, status, Request, Query
@@ -256,7 +257,7 @@ def f(data: dict, secret: str = Query(...)):
     return "success!"
 ```
 
-We can now deploy this easily with `modal deploy ...` (see [managing Modal deployments](https://modal.com/docs/guide/managing-deployments)).
+Deploy this with `modal deploy ...` (see [managing Modal deployments](https://modal.com/docs/guide/managing-deployments)).
 
 You should now get something like:
 
@@ -270,13 +271,13 @@ You should now get something like:
 View Deployment: https://modal.com/apps/hwchase17/auth-example
 ```
 
-The important thing to remember is `https://hwchase17--auth-example-f.modal.run` - the function we created to run.
+Note the function URL: `https://hwchase17--auth-example-f.modal.run`.
 NOTE: this is NOT the final deployment URL, make sure not to accidentally use that.
 
 ### Hooking it up
 
-We can now take the function URL we create above and add it as a webhook.
-We have to remember to also pass in the secret key as a query parameter.
+Take the function URL you created previously and add it as a webhook.
+Remember to also pass in the secret key as a query parameter.
 Putting it all together, it should look something like:
 
 ```

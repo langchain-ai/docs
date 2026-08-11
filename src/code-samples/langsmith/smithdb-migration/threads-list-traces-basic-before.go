@@ -1,0 +1,61 @@
+
+// :snippet-start: threads-list-traces-basic-before-go
+// :codegroup-tab: Before
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/langchain-ai/langsmith-go"
+)
+
+// :remove-start:
+func findThreadID(ctx context.Context, client *langsmith.Client, projectID string) string {
+	maxStart := time.Now().UTC()
+	minStart := maxStart.AddDate(0, -1, 0)
+	iter := client.Threads.QueryAutoPaging(ctx, langsmith.ThreadQueryParams{
+		ProjectID:    langsmith.F(projectID),
+		MinStartTime: langsmith.F(minStart),
+		MaxStartTime: langsmith.F(maxStart),
+	})
+	if iter.Next() {
+		return iter.Current().ThreadID
+	}
+	panic("no threads found")
+}
+// :remove-end:
+func main() {
+	ctx := context.Background()
+	client := langsmith.NewClient()
+
+	sessions, err := client.Sessions.List(ctx, langsmith.SessionListParams{
+		Name:  langsmith.F("default"),
+		Limit: langsmith.F(int64(1)),
+	})
+	if err != nil {
+		panic(err.Error())
+	}
+	projectID := sessions.Items[0].ID
+	threadID := "<thread-id>"
+	// :remove-start:
+	threadID = findThreadID(ctx, client, projectID)
+	// :remove-end:
+
+	runs, err := client.Runs.Query(ctx, langsmith.RunQueryParams{
+		Session: langsmith.F([]string{projectID}),
+		IsRoot:  langsmith.F(true),
+		Filter:  langsmith.F(fmt.Sprintf(`eq(thread_id, "%s")`, threadID)),
+	})
+	if err != nil {
+		panic(err.Error())
+	}
+	for _, run := range runs.Runs {
+		fmt.Println(run.ID, run.StartTime)
+		// :remove-start:
+		break
+		// :remove-end:
+	}
+}
+// :snippet-end:

@@ -3,7 +3,6 @@ title: Memory
 ---
 
 
-
 AI applications need [memory](/oss/concepts/memory) to share context across multiple interactions. In LangGraph, you can add two types of memory:
 
 * [Add short-term memory](#add-short-term-memory) as a part of your agent's [state](/oss/langgraph/graph-api#state) to enable multi-turn conversations.
@@ -54,7 +53,7 @@ In production, use a checkpointer backed by a database:
 ```python
 from langgraph.checkpoint.postgres import PostgresSaver
 
-DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 with PostgresSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight]
     builder = StateGraph(...)
     graph = builder.compile(checkpointer=checkpointer)  # [!code highlight]
@@ -62,15 +61,31 @@ with PostgresSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight
 :::
 
 :::js
-```typescript
-import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+<Tabs>
+  <Tab title="Postgres">
+    ```typescript
+    import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 
-const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
-const checkpointer = PostgresSaver.fromConnString(DB_URI);
+    const DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable";
+    const checkpointer = PostgresSaver.fromConnString(DB_URI);
 
-const builder = new StateGraph(...);
-const graph = builder.compile({ checkpointer });
-```
+    const builder = new StateGraph(...);
+    const graph = builder.compile({ checkpointer });
+    ```
+  </Tab>
+  <Tab title="MongoDB">
+    ```typescript
+    import { MongoClient } from "mongodb";
+    import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
+
+    const client = new MongoClient("mongodb://user:password@localhost:27017");
+    const checkpointer = new MongoDBSaver({ client });
+
+    const builder = new StateGraph(...);
+    const graph = builder.compile({ checkpointer });
+    ```
+  </Tab>
+</Tabs>
 :::
 
 <Accordion title="Example: using Postgres checkpointer">
@@ -92,7 +107,7 @@ const graph = builder.compile({ checkpointer });
 
       model = init_chat_model(model="claude-haiku-4-5-20251001")
 
-      DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+      DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
       with PostgresSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight]
           # checkpointer.setup()
 
@@ -112,19 +127,21 @@ const graph = builder.compile({ checkpointer });
               }
           }
 
-          for chunk in graph.stream(
+          stream = graph.stream_events(
               {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          for snapshot in stream.values:
+              print(snapshot)
 
-          for chunk in graph.stream(
+          stream = graph.stream_events(
               {"messages": [{"role": "user", "content": "what's my name?"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          for snapshot in stream.values:
+              print(snapshot)
 ```
         </Tab>
         <Tab title="Async">
@@ -135,7 +152,7 @@ const graph = builder.compile({ checkpointer });
 
       model = init_chat_model(model="claude-haiku-4-5-20251001")
 
-      DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+      DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
       async with AsyncPostgresSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight]
           # await checkpointer.setup()
 
@@ -155,19 +172,23 @@ const graph = builder.compile({ checkpointer });
               }
           }
 
-          async for chunk in graph.astream(
+          stream = await graph.astream_events(
               {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          async for message in stream.messages:
+              async for token in message.text:
+                  print(token, end="", flush=True)
 
-          async for chunk in graph.astream(
+          stream = await graph.astream_events(
               {"messages": [{"role": "user", "content": "what's my name?"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          async for message in stream.messages:
+              async for token in message.text:
+                  print(token, end="", flush=True)
 ```
         </Tab>
     </Tabs>
@@ -193,7 +214,7 @@ const graph = builder.compile({ checkpointer });
 
   const model = new ChatAnthropic({ model: "claude-haiku-4-5-20251001" });
 
-  const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+  const DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable";
   const checkpointer = PostgresSaver.fromConnString(DB_URI);
   // await checkpointer.setup();
 
@@ -214,33 +235,35 @@ const graph = builder.compile({ checkpointer });
     }
   };
 
-  for await (const chunk of await graph.stream(
+  const stream1 = await graph.streamEvents(
     { messages: [{ role: "user", content: "hi! I'm bob" }] },
-    { ...config, streamMode: "values" }
-  )) {
-    console.log(chunk.messages.at(-1)?.content);
+    { ...config, version: "v3" }
+  );
+  for await (const snapshot of stream1.values) {
+    console.log(snapshot);
   }
 
-  for await (const chunk of await graph.stream(
+  const stream2 = await graph.streamEvents(
     { messages: [{ role: "user", content: "what's my name?" }] },
-    { ...config, streamMode: "values" }
-  )) {
-    console.log(chunk.messages.at(-1)?.content);
+    { ...config, version: "v3" }
+  );
+  for await (const snapshot of stream2.values) {
+    console.log(snapshot);
   }
   ```
   :::
 </Accordion>
 
-:::python
 <Accordion title="Example: using MongoDB checkpointer">
+  :::python
   ```
   pip install -U pymongo langgraph langgraph-checkpoint-mongodb
   ```
 
-    <Note>
+    <Tip>
     **Setup**
     To use the [MongoDB checkpointer](https://pypi.org/project/langgraph-checkpoint-mongodb/), you will need a MongoDB cluster. Follow [this guide](https://www.mongodb.com/docs/guides/atlas/cluster/) to create a cluster if you don't already have one.
-    </Note>
+    </Tip>
 
     <Tabs>
         <Tab title="Sync">
@@ -251,8 +274,8 @@ const graph = builder.compile({ checkpointer });
 
       model = init_chat_model(model="claude-haiku-4-5-20251001")
 
-      DB_URI = "localhost:27017"
-      with MongoDBSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight]
+      MONGODB_URI = "localhost:27017"
+      with MongoDBSaver.from_conn_string(MONGODB_URI) as checkpointer:  # [!code highlight]
 
           def call_model(state: MessagesState):
               response = model.invoke(state["messages"])
@@ -270,19 +293,21 @@ const graph = builder.compile({ checkpointer });
               }
           }
 
-          for chunk in graph.stream(
+          stream = graph.stream_events(
               {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          for snapshot in stream.values:
+              print(snapshot)
 
-          for chunk in graph.stream(
+          stream = graph.stream_events(
               {"messages": [{"role": "user", "content": "what's my name?"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          for snapshot in stream.values:
+              print(snapshot)
 ```
         </Tab>
         <Tab title="Async">
@@ -293,8 +318,8 @@ const graph = builder.compile({ checkpointer });
 
       model = init_chat_model(model="claude-haiku-4-5-20251001")
 
-      DB_URI = "localhost:27017"
-      async with AsyncMongoDBSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight]
+      MONGODB_URI = "localhost:27017"
+      async with AsyncMongoDBSaver.from_conn_string(MONGODB_URI) as checkpointer:  # [!code highlight]
 
           async def call_model(state: MessagesState):
               response = await model.ainvoke(state["messages"])
@@ -312,24 +337,86 @@ const graph = builder.compile({ checkpointer });
               }
           }
 
-          async for chunk in graph.astream(
+          stream = await graph.astream_events(
               {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          async for message in stream.messages:
+              async for token in message.text:
+                  print(token, end="", flush=True)
 
-          async for chunk in graph.astream(
+          stream = await graph.astream_events(
               {"messages": [{"role": "user", "content": "what's my name?"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          async for message in stream.messages:
+              async for token in message.text:
+                  print(token, end="", flush=True)
 ```
         </Tab>
     </Tabs>
+  :::
+
+  :::js
+  ```
+  npm install @langchain/langgraph-checkpoint-mongodb
+  ```
+
+  <Tip>
+  **Setup**
+  To use `MongoDBSaver`, you will need a MongoDB cluster. Follow [this guide](https://www.mongodb.com/docs/guides/atlas/cluster/) to create a cluster if you don't already have one.
+  </Tip>
+
+  ```typescript
+  import { ChatAnthropic } from "@langchain/anthropic";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
+  import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
+  import { MongoClient } from "mongodb";
+
+  const State = new StateSchema({
+    messages: MessagesValue,
+  });
+
+  const model = new ChatAnthropic({ model: "claude-haiku-4-5-20251001" });
+
+  const client = new MongoClient("mongodb://user:password@localhost:27017");
+  const checkpointer = new MongoDBSaver({ client, dbName: "langgraph" });
+
+  const callModel: GraphNode<typeof State> = async (state) => {
+    const response = await model.invoke(state.messages);
+    return { messages: [response] };
+  };
+
+  const builder = new StateGraph(State)
+    .addNode("call_model", callModel)
+    .addEdge(START, "call_model");
+
+  const graph = builder.compile({ checkpointer });
+
+  const config = { configurable: { thread_id: "1" } };
+
+  const stream1 = await graph.streamEvents(
+    { messages: [{ role: "user", content: "hi! I'm bob" }] },
+    { ...config, version: "v3" }
+  );
+  for await (const snapshot of stream1.values) {
+    console.log(snapshot);
+  }
+
+  const stream2 = await graph.streamEvents(
+    { messages: [{ role: "user", content: "what's my name?" }] },
+    { ...config, version: "v3" }
+  );
+  for await (const snapshot of stream2.values) {
+    console.log(snapshot);
+  }
+  ```
+  :::
 </Accordion>
 
+:::python
 <Accordion title="Example: using Redis checkpointer">
   ```
   pip install -U langgraph langgraph-checkpoint-redis
@@ -368,20 +455,22 @@ const graph = builder.compile({ checkpointer });
               }
           }
 
-          for chunk in graph.stream(
+          stream = graph.stream_events(
               {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          for snapshot in stream.values:
+              print(snapshot)
 
-          for chunk in graph.stream(
+          stream = graph.stream_events(
               {"messages": [{"role": "user", "content": "what's my name?"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
-```
+              version="v3",
+          )
+          for snapshot in stream.values:
+              print(snapshot)
+      ```
         </Tab>
         <Tab title="Async">
       ```python
@@ -411,19 +500,133 @@ const graph = builder.compile({ checkpointer });
               }
           }
 
-          async for chunk in graph.astream(
+          stream = await graph.astream_events(
               {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          async for message in stream.messages:
+              async for token in message.text:
+                  print(token, end="", flush=True)
 
-          async for chunk in graph.astream(
+          stream = await graph.astream_events(
               {"messages": [{"role": "user", "content": "what's my name?"}]},
               config,  # [!code highlight]
-              stream_mode="values"
-          ):
-              chunk["messages"][-1].pretty_print()
+              version="v3",
+          )
+          async for message in stream.messages:
+              async for token in message.text:
+                  print(token, end="", flush=True)
+```
+        </Tab>
+    </Tabs>
+</Accordion>
+
+<Accordion title="Example: using Oracle checkpointer">
+  ```
+  pip install -U langgraph langgraph-oracledb
+  ```
+
+    <Note>
+    **Setup**
+    To use the [Oracle checkpointer](https://pypi.org/project/langgraph-oracledb/), you will need an Oracle AI Database instance. A local container (for example `gvenzl/oracle-free:23-slim`) or an Oracle Autonomous Database in OCI both work.
+    </Note>
+
+    <Tip>
+    You need to call `checkpointer.setup()` the first time you're using the Oracle checkpointer.
+    </Tip>
+
+    <Tabs>
+        <Tab title="Sync">
+      ```python
+      from langchain.chat_models import init_chat_model
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph_oracledb.checkpoint.oracle import OracleSaver  # [!code highlight]
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+      DB_URI = "user/password@localhost:1521/FREEPDB1"
+      with OracleSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight]
+          # checkpointer.setup()
+
+          def call_model(state: MessagesState):
+              response = model.invoke(state["messages"])
+              return {"messages": response}
+
+          builder = StateGraph(MessagesState)
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(checkpointer=checkpointer)  # [!code highlight]
+
+          config = {
+              "configurable": {
+                  "thread_id": "1"  # [!code highlight]
+              }
+          }
+
+          stream = graph.stream_events(
+              {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
+              config,  # [!code highlight]
+              version="v3",
+          )
+          for snapshot in stream.values:
+              print(snapshot)
+
+          stream = graph.stream_events(
+              {"messages": [{"role": "user", "content": "what's my name?"}]},
+              config,  # [!code highlight]
+              version="v3",
+          )
+          for snapshot in stream.values:
+              print(snapshot)
+```
+        </Tab>
+        <Tab title="Async">
+      ```python
+      from langchain.chat_models import init_chat_model
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph_oracledb.checkpoint.oracle import AsyncOracleSaver  # [!code highlight]
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+
+      DB_URI = "user/password@localhost:1521/FREEPDB1"
+      async with AsyncOracleSaver.from_conn_string(DB_URI) as checkpointer:  # [!code highlight]
+          # await checkpointer.setup()
+
+          async def call_model(state: MessagesState):
+              response = await model.ainvoke(state["messages"])
+              return {"messages": response}
+
+          builder = StateGraph(MessagesState)
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(checkpointer=checkpointer)  # [!code highlight]
+
+          config = {
+              "configurable": {
+                  "thread_id": "1"  # [!code highlight]
+              }
+          }
+
+          stream = await graph.astream_events(
+              {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
+              config,  # [!code highlight]
+              version="v3",
+          )
+          async for message in stream.messages:
+              async for token in message.text:
+                  print(token, end="", flush=True)
+
+          stream = await graph.astream_events(
+              {"messages": [{"role": "user", "content": "what's my name?"}]},
+              config,  # [!code highlight]
+              version="v3",
+          )
+          async for message in stream.messages:
+              async for token in message.text:
+                  print(token, end="", flush=True)
 ```
         </Tab>
     </Tabs>
@@ -579,7 +782,6 @@ graph.invoke(
 :::js
 ```typescript
 import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
-import { v4 as uuidv4 } from "uuid";
 
 const State = new StateSchema({
   messages: MessagesValue,
@@ -599,7 +801,7 @@ const callModel: GraphNode<typeof State> = async (state, runtime) => {
   // ... Use memories in model call
 
   // Store a new memory
-  await runtime.store?.put(namespace, uuidv4(), { data: "User prefers dark mode" });
+  await runtime.store?.put(namespace, crypto.randomUUID(), { data: "User prefers dark mode" });
 };
 
 const builder = new StateGraph(State)
@@ -624,7 +826,7 @@ In production, use a store backed by a database:
 ```python
 from langgraph.store.postgres import PostgresStore
 
-DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
     builder = StateGraph(...)
     graph = builder.compile(store=store)  # [!code highlight]
@@ -632,15 +834,33 @@ with PostgresStore.from_conn_string(DB_URI) as store:  # [!code highlight]
 :::
 
 :::js
-```typescript
-import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
+<Tabs>
+  <Tab title="Postgres">
+    ```typescript
+    import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
 
-const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
-const store = PostgresStore.fromConnString(DB_URI);
+    const DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable";
+    const store = PostgresStore.fromConnString(DB_URI);
 
-const builder = new StateGraph(...);
-const graph = builder.compile({ store });
-```
+    const builder = new StateGraph(...);
+    const graph = builder.compile({ store });
+    ```
+  </Tab>
+  <Tab title="MongoDB">
+    ```typescript
+    import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
+
+    const MONGODB_URI = "mongodb://user:password@localhost:27017";
+    const store = await MongoDBStore.fromConnString(MONGODB_URI, {
+      dbName: "langgraph",
+      collectionName: "store",
+    });
+
+    const builder = new StateGraph(...);
+    const graph = builder.compile({ store });
+    ```
+  </Tab>
+</Tabs>
 :::
 
 <Accordion title="Example: using Postgres store">
@@ -691,7 +911,7 @@ const graph = builder.compile({ store });
           )
           return {"messages": response}
 
-      DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+      DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 
       async with (
           AsyncPostgresStore.from_conn_string(DB_URI) as store,  # [!code highlight]
@@ -710,22 +930,26 @@ const graph = builder.compile({ store });
           )
 
           config = {"configurable": {"thread_id": "1"}}
-          async for chunk in graph.astream(
+          stream = await graph.astream_events(
               {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
               config,
-              stream_mode="values",
+              version="v3",
               context=Context(user_id="1"),  # [!code highlight]
-          ):
-              chunk["messages"][-1].pretty_print()
+          )
+          async for message in stream.messages:
+              async for token in message.text:
+                  print(token, end="", flush=True)
 
           config = {"configurable": {"thread_id": "2"}}
-          async for chunk in graph.astream(
+          stream = await graph.astream_events(
               {"messages": [{"role": "user", "content": "what is my name?"}]},
               config,
-              stream_mode="values",
+              version="v3",
               context=Context(user_id="1"),  # [!code highlight]
-          ):
-              chunk["messages"][-1].pretty_print()
+          )
+          async for message in stream.messages:
+              async for token in message.text:
+                  print(token, end="", flush=True)
 ```
         </Tab>
         <Tab title="Sync">
@@ -765,7 +989,7 @@ const graph = builder.compile({ store });
           )
           return {"messages": response}
 
-      DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+      DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 
       with (
           PostgresStore.from_conn_string(DB_URI) as store,  # [!code highlight]
@@ -784,22 +1008,24 @@ const graph = builder.compile({ store });
           )
 
           config = {"configurable": {"thread_id": "1"}}
-          for chunk in graph.stream(
+          stream = graph.stream_events(
               {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
               config,
-              stream_mode="values",
+              version="v3",
               context=Context(user_id="1"),  # [!code highlight]
-          ):
-              chunk["messages"][-1].pretty_print()
+          )
+          for snapshot in stream.values:
+              print(snapshot)
 
           config = {"configurable": {"thread_id": "2"}}
-          for chunk in graph.stream(
+          stream = graph.stream_events(
               {"messages": [{"role": "user", "content": "what is my name?"}]},
               config,
-              stream_mode="values",
+              version="v3",
               context=Context(user_id="1"),  # [!code highlight]
-          ):
-              chunk["messages"][-1].pretty_print()
+          )
+          for snapshot in stream.values:
+              print(snapshot)
 ```
         </Tab>
     </Tabs>
@@ -819,7 +1045,6 @@ const graph = builder.compile({ store });
   import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
   import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
   import { PostgresStore } from "@langchain/langgraph-checkpoint-postgres/store";
-  import { v4 as uuidv4 } from "uuid";
 
   const State = new StateSchema({
     messages: MessagesValue,
@@ -838,7 +1063,7 @@ const graph = builder.compile({ store });
     const lastMessage = state.messages.at(-1);
     if (lastMessage?.content?.toLowerCase().includes("remember")) {
       const memory = "User name is Bob";
-      await runtime.store?.put(namespace, uuidv4(), { data: memory });
+      await runtime.store?.put(namespace, crypto.randomUUID(), { data: memory });
     }
 
     const response = await model.invoke([
@@ -848,7 +1073,7 @@ const graph = builder.compile({ store });
     return { messages: [response] };
   };
 
-  const DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable";
+  const DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable";
 
   const store = PostgresStore.fromConnString(DB_URI);
   const checkpointer = PostgresSaver.fromConnString(DB_URI);
@@ -864,18 +1089,92 @@ const graph = builder.compile({ store });
     store,
   });
 
-  for await (const chunk of await graph.stream(
+  const stream1 = await graph.streamEvents(
     { messages: [{ role: "user", content: "Hi! Remember: my name is Bob" }] },
-    { configurable: { thread_id: "1" }, context: { userId: "1" }, streamMode: "values" }
-  )) {
-    console.log(chunk.messages.at(-1)?.content);
+    { configurable: { thread_id: "1" }, context: { userId: "1" }, version: "v3" }
+  );
+  for await (const snapshot of stream1.values) {
+    console.log(snapshot);
   }
 
-  for await (const chunk of await graph.stream(
+  const stream2 = await graph.streamEvents(
     { messages: [{ role: "user", content: "what is my name?" }] },
-    { configurable: { thread_id: "2" }, context: { userId: "1" }, streamMode: "values" }
-  )) {
-    console.log(chunk.messages.at(-1)?.content);
+    { configurable: { thread_id: "2" }, context: { userId: "1" }, version: "v3" }
+  );
+  for await (const snapshot of stream2.values) {
+    console.log(snapshot);
+  }
+  ```
+  :::
+</Accordion>
+
+<Accordion title="Example: using MongoDB store">
+  :::js
+  ```
+  npm install @langchain/langgraph-checkpoint-mongodb
+  ```
+
+  ```typescript
+  import { ChatAnthropic } from "@langchain/anthropic";
+  import { MemorySaver, StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
+  import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
+
+  const State = new StateSchema({
+    messages: MessagesValue,
+  });
+
+  const model = new ChatAnthropic({ model: "claude-sonnet-4-6" });
+
+  const callModel: GraphNode<typeof State> = async (state, runtime) => {
+    const userId = runtime.context?.userId;
+    const namespace = ["memories", userId];
+    const memories = await runtime.store?.search(namespace);
+    const info = memories?.map(d => d.value.data).join("\n") || "n/a";
+    const systemMsg = `You are a helpful assistant talking to the user. User info: ${info}`;
+
+    // Store new memories if the user asks the model to remember
+    const lastMessage = state.messages.at(-1);
+    if (lastMessage?.content?.toLowerCase().includes("remember")) {
+      const memory = "User name is Bob";
+      await runtime.store?.put(namespace, crypto.randomUUID(), { data: memory });
+    }
+
+    const response = await model.invoke([
+      { role: "system", content: systemMsg },
+      ...state.messages
+    ]);
+    return { messages: [response] };
+  };
+
+  const MONGODB_URI = "mongodb://user:password@localhost:27017";
+
+  const store = await MongoDBStore.fromConnString(MONGODB_URI, {
+    dbName: "langgraph",
+    collectionName: "store",
+  });
+
+  const checkpointer = new MemorySaver();
+
+  const builder = new StateGraph(State)
+    .addNode("call_model", callModel)
+    .addEdge(START, "call_model");
+
+  const graph = builder.compile({ checkpointer, store });
+
+  const stream1 = await graph.streamEvents(
+    { messages: [{ role: "user", content: "Hi! Remember: my name is Bob" }] },
+    { configurable: { thread_id: "1" }, context: { userId: "1" }, version: "v3" }
+  );
+  for await (const snapshot of stream1.values) {
+    console.log(snapshot);
+  }
+
+  const stream2 = await graph.streamEvents(
+    { messages: [{ role: "user", content: "what is my name?" }] },
+    { configurable: { thread_id: "2" }, context: { userId: "1" }, version: "v3" }
+  );
+  for await (const snapshot of stream2.values) {
+    console.log(snapshot);
   }
   ```
   :::
@@ -949,22 +1248,24 @@ const graph = builder.compile({ store });
           )
 
           config = {"configurable": {"thread_id": "1"}}
-          async for chunk in graph.astream(
+          stream = await graph.astream_events(
               {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
               config,
-              stream_mode="values",
+              version="v3",
               context=Context(user_id="1"),  # [!code highlight]
-          ):
-              chunk["messages"][-1].pretty_print()
+          )
+          async for snapshot in stream.values:
+              snapshot["messages"][-1].pretty_print()
 
           config = {"configurable": {"thread_id": "2"}}
-          async for chunk in graph.astream(
+          stream = await graph.astream_events(
               {"messages": [{"role": "user", "content": "what is my name?"}]},
               config,
-              stream_mode="values",
+              version="v3",
               context=Context(user_id="1"),  # [!code highlight]
-          ):
-              chunk["messages"][-1].pretty_print()
+          )
+          async for snapshot in stream.values:
+              snapshot["messages"][-1].pretty_print()
 ```
         </Tab>
         <Tab title="Sync">
@@ -1023,22 +1324,221 @@ const graph = builder.compile({ store });
           )
 
           config = {"configurable": {"thread_id": "1"}}
-          for chunk in graph.stream(
+          stream = graph.stream_events(
               {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
               config,
-              stream_mode="values",
+              version="v3",
               context=Context(user_id="1"),  # [!code highlight]
-          ):
-              chunk["messages"][-1].pretty_print()
+          )
+          for snapshot in stream.values:
+              snapshot["messages"][-1].pretty_print()
 
           config = {"configurable": {"thread_id": "2"}}
-          for chunk in graph.stream(
+          stream = graph.stream_events(
               {"messages": [{"role": "user", "content": "what is my name?"}]},
               config,
-              stream_mode="values",
+              version="v3",
               context=Context(user_id="1"),  # [!code highlight]
+          )
+          for snapshot in stream.values:
+              snapshot["messages"][-1].pretty_print()
+```
+        </Tab>
+    </Tabs>
+</Accordion>
+
+<Accordion title="Example: using Oracle store">
+
+  ```
+  pip install -U langgraph langgraph-oracledb langchain-openai
+  ```
+
+    <Note>
+    **Setup**
+    To use the [Oracle store](https://pypi.org/project/langgraph-oracledb/), you will need an Oracle AI Database instance — the vector index used for semantic `search` requires [Oracle AI Vector Search](https://docs.oracle.com/en/database/oracle/oracle-database/23/vecse/).
+    </Note>
+
+    <Tip>
+    You need to call `store.setup()` and `checkpointer.setup()` the first time you're using the Oracle store and checkpointer.
+    </Tip>
+
+    <Tabs>
+        <Tab title="Sync">
+      ```python
+      import uuid
+
+      from langchain.chat_models import init_chat_model
+      from langchain.embeddings import init_embeddings
+      from langchain_core.runnables import RunnableConfig
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph.store.base import BaseStore
+      from langgraph_oracledb.checkpoint.oracle import OracleSaver
+      from langgraph_oracledb.store.oracle import OracleStore  # [!code highlight]
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+      embeddings = init_embeddings("openai:text-embedding-3-small")
+
+      DB_URI = "user/password@localhost:1521/FREEPDB1"
+
+      with (
+          OracleStore.from_conn_string(  # [!code highlight]
+              DB_URI,
+              index={"embed": embeddings, "dims": 1536},  # [!code highlight]
+          ) as store,
+          OracleSaver.from_conn_string(DB_URI) as checkpointer,
+      ):
+          store.setup()
+          checkpointer.setup()
+
+          def call_model(
+              state: MessagesState,
+              config: RunnableConfig,
+              *,
+              store: BaseStore,  # [!code highlight]
           ):
-              chunk["messages"][-1].pretty_print()
+              user_id = config["configurable"]["user_id"]
+              namespace = ("memories", user_id)
+              memories = store.search(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+              info = "\n".join([d.value["data"] for d in memories])
+              system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
+
+              # Store new memories if the user asks the model to remember
+              last_message = state["messages"][-1]
+              if "remember" in last_message.content.lower():
+                  memory = "User name is Bob"
+                  store.put(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
+
+              response = model.invoke(
+                  [{"role": "system", "content": system_msg}] + state["messages"]
+              )
+              return {"messages": response}
+
+          builder = StateGraph(MessagesState)
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(
+              checkpointer=checkpointer,
+              store=store,  # [!code highlight]
+          )
+
+          config = {
+              "configurable": {
+                  "thread_id": "1",  # [!code highlight]
+                  "user_id": "1",  # [!code highlight]
+              }
+          }
+          stream = graph.stream_events(
+              {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
+              config,  # [!code highlight]
+              version="v3",
+          )
+          for snapshot in stream.values:
+              snapshot["messages"][-1].pretty_print()
+
+          config = {
+              "configurable": {
+                  "thread_id": "2",  # [!code highlight]
+                  "user_id": "1",
+              }
+          }
+
+          stream = graph.stream_events(
+              {"messages": [{"role": "user", "content": "what is my name?"}]},
+              config,  # [!code highlight]
+              version="v3",
+          )
+          for snapshot in stream.values:
+              snapshot["messages"][-1].pretty_print()
+```
+        </Tab>
+        <Tab title="Async">
+      ```python
+      import uuid
+
+      from langchain.chat_models import init_chat_model
+      from langchain.embeddings import init_embeddings
+      from langchain_core.runnables import RunnableConfig
+      from langgraph.graph import StateGraph, MessagesState, START
+      from langgraph.store.base import BaseStore
+      from langgraph_oracledb.checkpoint.oracle import AsyncOracleSaver
+      from langgraph_oracledb.store.oracle import AsyncOracleStore  # [!code highlight]
+
+      model = init_chat_model(model="claude-haiku-4-5-20251001")
+      embeddings = init_embeddings("openai:text-embedding-3-small")
+
+      DB_URI = "user/password@localhost:1521/FREEPDB1"
+
+      async with (
+          AsyncOracleStore.from_conn_string(  # [!code highlight]
+              DB_URI,
+              index={"embed": embeddings, "dims": 1536},  # [!code highlight]
+          ) as store,
+          AsyncOracleSaver.from_conn_string(DB_URI) as checkpointer,
+      ):
+          await store.setup()
+          await checkpointer.setup()
+
+          async def call_model(
+              state: MessagesState,
+              config: RunnableConfig,
+              *,
+              store: BaseStore,  # [!code highlight]
+          ):
+              user_id = config["configurable"]["user_id"]
+              namespace = ("memories", user_id)
+              memories = await store.asearch(namespace, query=str(state["messages"][-1].content))  # [!code highlight]
+              info = "\n".join([d.value["data"] for d in memories])
+              system_msg = f"You are a helpful assistant talking to the user. User info: {info}"
+
+              # Store new memories if the user asks the model to remember
+              last_message = state["messages"][-1]
+              if "remember" in last_message.content.lower():
+                  memory = "User name is Bob"
+                  await store.aput(namespace, str(uuid.uuid4()), {"data": memory})  # [!code highlight]
+
+              response = await model.ainvoke(
+                  [{"role": "system", "content": system_msg}] + state["messages"]
+              )
+              return {"messages": response}
+
+          builder = StateGraph(MessagesState)
+          builder.add_node(call_model)
+          builder.add_edge(START, "call_model")
+
+          graph = builder.compile(
+              checkpointer=checkpointer,
+              store=store,  # [!code highlight]
+          )
+
+          config = {
+              "configurable": {
+                  "thread_id": "1",  # [!code highlight]
+                  "user_id": "1",  # [!code highlight]
+              }
+          }
+          stream = await graph.astream_events(
+              {"messages": [{"role": "user", "content": "Hi! Remember: my name is Bob"}]},
+              config,  # [!code highlight]
+              version="v3",
+          )
+          async for snapshot in stream.values:
+              snapshot["messages"][-1].pretty_print()
+
+          config = {
+              "configurable": {
+                  "thread_id": "2",  # [!code highlight]
+                  "user_id": "1",
+              }
+          }
+
+          stream = await graph.astream_events(
+              {"messages": [{"role": "user", "content": "what is my name?"}]},
+              config,  # [!code highlight]
+              version="v3",
+          )
+          async for snapshot in stream.values:
+              snapshot["messages"][-1].pretty_print()
 ```
         </Tab>
     </Tabs>
@@ -1096,6 +1596,12 @@ const items = await store.search(["user_123", "memories"], {
 ```
 :::
 
+:::js
+<Tip>
+`InMemoryStore` is suitable for development. For production, use a persistent store like `PostgresStore`, `MongoDBStore`, or `RedisStore`.
+</Tip>
+:::
+
 <Accordion title="Long-term memory with semantic search">
     :::python
 
@@ -1142,69 +1648,202 @@ const items = await store.search(["user_123", "memories"], {
     builder.add_edge(START, "chat")
     graph = builder.compile(store=store)
 
-    async for message, metadata in graph.astream(
-        input={"messages": [{"role": "user", "content": "I'm hungry"}]},
-        stream_mode="messages",
-    ):
-        print(message.content, end="")
+    stream = await graph.astream_events(
+        {"messages": [{"role": "user", "content": "I'm hungry"}]},
+        version="v3",
+    )
+    async for message in stream.messages:
+        async for token in message.text:
+            print(token, end="", flush=True)
     ```
     :::
 
     :::js
+    <Tabs>
+      <Tab title="InMemoryStore">
+        ```typescript
+        import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
+        import { StateGraph, StateSchema, MessagesValue, GraphNode, START, InMemoryStore } from "@langchain/langgraph";
 
-    ```typescript
-    import { OpenAIEmbeddings, ChatOpenAI } from "@langchain/openai";
-    import { StateGraph, StateSchema, MessagesValue, GraphNode, START, InMemoryStore } from "@langchain/langgraph";
+        const State = new StateSchema({
+          messages: MessagesValue,
+        });
 
-    const State = new StateSchema({
-      messages: MessagesValue,
-    });
+        const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
 
-    const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
+        // Create store with semantic search enabled
+        const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
+        const store = new InMemoryStore({
+          index: {
+            embeddings,
+            dims: 1536,
+          }
+        });
 
-    // Create store with semantic search enabled
-    const embeddings = new OpenAIEmbeddings({ model: "text-embedding-3-small" });
-    const store = new InMemoryStore({
-      index: {
-        embeddings,
-        dims: 1536,
-      }
-    });
+        await store.put(["user_123", "memories"], "1", { text: "I love pizza" });
+        await store.put(["user_123", "memories"], "2", { text: "I am a plumber" });
 
-    await store.put(["user_123", "memories"], "1", { text: "I love pizza" });
-    await store.put(["user_123", "memories"], "2", { text: "I am a plumber" });
+        const chat: GraphNode<typeof State> = async (state, runtime) => {
+          // Search based on user's last message
+          const items = await runtime.store.search(
+            ["user_123", "memories"],
+            { query: state.messages.at(-1)?.content, limit: 2 }
+          );
+          const memories = items.map(item => item.value.text).join("\n");
+          const memoriesText = memories ? `## Memories of user\n${memories}` : "";
 
-    const chat: GraphNode<typeof State> = async (state, runtime) => {
-      // Search based on user's last message
-      const items = await runtime.store.search(
-        ["user_123", "memories"],
-        { query: state.messages.at(-1)?.content, limit: 2 }
-      );
-      const memories = items.map(item => item.value.text).join("\n");
-      const memoriesText = memories ? `## Memories of user\n${memories}` : "";
+          const response = await model.invoke([
+            { role: "system", content: `You are a helpful assistant.\n${memoriesText}` },
+            ...state.messages,
+          ]);
 
-      const response = await model.invoke([
-        { role: "system", content: `You are a helpful assistant.\n${memoriesText}` },
-        ...state.messages,
-      ]);
+          return { messages: [response] };
+        };
 
-      return { messages: [response] };
-    };
+        const builder = new StateGraph(State)
+          .addNode("chat", chat)
+          .addEdge(START, "chat");
+        const graph = builder.compile({ store });
 
-    const builder = new StateGraph(State)
-      .addNode("chat", chat)
-      .addEdge(START, "chat");
-    const graph = builder.compile({ store });
+        const stream = await graph.streamEvents(
+          { messages: [{ role: "user", content: "I'm hungry" }] },
+          { version: "v3" }
+        );
+        for await (const message of stream.messages) {
+          for await (const token of message.text) {
+            process.stdout.write(token);
+          }
+        }
+        ```
+      </Tab>
+      <Tab title="MongoDB (manual embedding)">
+        ```typescript
+        import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
+        import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
+        import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
 
-    for await (const [message, metadata] of await graph.stream(
-      { messages: [{ role: "user", content: "I'm hungry" }] },
-      { streamMode: "messages" }
-    )) {
-      if (message.content) {
-        console.log(message.content);
-      }
-    }
-    ```
+        const State = new StateSchema({
+          messages: MessagesValue,
+        });
+
+        const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
+
+        // Create store with semantic search enabled
+        const MONGODB_URI = "mongodb://user:password@localhost:27017";
+        const store = await MongoDBStore.fromConnString(MONGODB_URI, {
+          dbName: "langgraph",
+          collectionName: "store",
+          embeddings: new OpenAIEmbeddings({ model: "text-embedding-3-small" }),
+          indexConfig: {
+            name: "store_vector_index",
+            dims: 1536,
+            embeddingKey: "text",
+          },
+        });
+
+        await store.put(["user_123", "memories"], "1", { text: "I love pizza" });
+        await store.put(["user_123", "memories"], "2", { text: "I am a plumber" });
+
+        const chat: GraphNode<typeof State> = async (state, runtime) => {
+          // Search based on user's last message
+          const items = await runtime.store.search(
+            ["user_123", "memories"],
+            { query: state.messages.at(-1)?.content, limit: 2 }
+          );
+          const memories = items.map(item => item.value.text).join("\n");
+          const memoriesText = memories ? `## Memories of user\n${memories}` : "";
+
+          const response = await model.invoke([
+            { role: "system", content: `You are a helpful assistant.\n${memoriesText}` },
+            ...state.messages,
+          ]);
+
+          return { messages: [response] };
+        };
+
+        const builder = new StateGraph(State)
+          .addNode("chat", chat)
+          .addEdge(START, "chat");
+        const graph = builder.compile({ store });
+
+        const stream = await graph.streamEvents(
+          { messages: [{ role: "user", content: "I'm hungry" }] },
+          { version: "v3" }
+        );
+        for await (const message of stream.messages) {
+          for await (const token of message.text) {
+            process.stdout.write(token);
+          }
+        }
+        ```
+      </Tab>
+      <Tab title="MongoDB (auto embedding)">
+        <Note>
+        Auto embedding requires MongoDB Atlas. MongoDB generates embeddings server-side via Voyage AI. See the [Automated Embedding documentation](https://www.mongodb.com/docs/atlas/atlas-vector-search/automated-embedding/) for more information.
+        </Note>
+
+        ```typescript
+        import { StateGraph, StateSchema, MessagesValue, GraphNode, START } from "@langchain/langgraph";
+        import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
+        import { ChatOpenAI } from "@langchain/openai";
+
+        const State = new StateSchema({
+          messages: MessagesValue,
+        });
+
+        const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
+
+        // Auto embedding: no embeddings instance needed.
+        // Configure the Voyage AI model and the field path MongoDB will read server-side.
+        const MONGODB_URI = "mongodb://user:password@localhost:27017";
+        const store = await MongoDBStore.fromConnString(MONGODB_URI, {
+          dbName: "langgraph",
+          collectionName: "store",
+          indexConfig: {
+            name: "store_vector_index",
+            path: "value.content",  // MongoDB reads this field and embeds it server-side
+            model: "voyage-4",      // Voyage AI model used by MongoDB Atlas
+          },
+        });
+
+        // Values must have the content field matching the configured path (value.content)
+        await store.put(["user_123", "memories"], "1", { content: "I love pizza" });
+        await store.put(["user_123", "memories"], "2", { content: "I am a plumber" });
+
+        const chat: GraphNode<typeof State> = async (state, runtime) => {
+          // MongoDB generates the query embedding server-side
+          const items = await runtime.store.search(
+            ["user_123", "memories"],
+            { query: state.messages.at(-1)?.content, limit: 2 }
+          );
+          const memories = items.map(item => item.value.content).join("\n");
+          const memoriesText = memories ? `## Memories of user\n${memories}` : "";
+
+          const response = await model.invoke([
+            { role: "system", content: `You are a helpful assistant.\n${memoriesText}` },
+            ...state.messages,
+          ]);
+
+          return { messages: [response] };
+        };
+
+        const builder = new StateGraph(State)
+          .addNode("chat", chat)
+          .addEdge(START, "chat");
+        const graph = builder.compile({ store });
+
+        const stream = await graph.streamEvents(
+          { messages: [{ role: "user", content: "I'm hungry" }] },
+          { version: "v3" }
+        );
+        for await (const message of stream.messages) {
+          for await (const token of message.text) {
+            process.stdout.write(token);
+          }
+        }
+        ```
+      </Tab>
+    </Tabs>
     :::
 </Accordion>
 
@@ -1456,19 +2095,21 @@ When deleting messages, **make sure** that the resulting message history is vali
   checkpointer = InMemorySaver()
   app = builder.compile(checkpointer=checkpointer)
 
-  for event in app.stream(
+  stream = app.stream_events(
       {"messages": [{"role": "user", "content": "hi! I'm bob"}]},
       config,
-      stream_mode="values"
-  ):
-      print([(message.type, message.content) for message in event["messages"]])
+      version="v3"
+  )
+  for snapshot in stream.values:
+      print([(message.type, message.content) for message in snapshot["messages"]])
 
-  for event in app.stream(
+  stream = app.stream_events(
       {"messages": [{"role": "user", "content": "what's my name?"}]},
       config,
-      stream_mode="values"
-  ):
-      print([(message.type, message.content) for message in event["messages"]])
+      version="v3"
+  )
+  for snapshot in stream.values:
+      print([(message.type, message.content) for message in snapshot["messages"]])
 ```
 
   ```
@@ -1517,18 +2158,20 @@ When deleting messages, **make sure** that the resulting message history is vali
 
   const config = { configurable: { thread_id: "1" } };
 
-  for await (const event of await app.stream(
+  const stream1 = await app.streamEvents(
     { messages: [{ role: "user", content: "hi! I'm bob" }] },
-    { ...config, streamMode: "values" }
-  )) {
-    console.log(event.messages.map(message => [message.getType(), message.content]));
+    { ...config, version: "v3" }
+  );
+  for await (const snapshot of stream1.values) {
+    console.log(snapshot.messages.map(message => [message.getType(), message.content]));
   }
 
-  for await (const event of await app.stream(
+  const stream2 = await app.streamEvents(
     { messages: [{ role: "user", content: "what's my name?" }] },
-    { ...config, streamMode: "values" }
-  )) {
-    console.log(event.messages.map(message => [message.getType(), message.content]));
+    { ...config, version: "v3" }
+  );
+  for await (const snapshot of stream2.values) {
+    console.log(snapshot.messages.map(message => [message.getType(), message.content]));
   }
   ```
 
@@ -1732,7 +2375,6 @@ const summarizeConversation: GraphNode<typeof State> = async (state) => {
     MemorySaver,
   } from "@langchain/langgraph";
   import * as z from "zod";
-  import { v4 as uuidv4 } from "uuid";
 
   const memory = new MemorySaver();
 
@@ -1752,7 +2394,7 @@ const summarizeConversation: GraphNode<typeof State> = async (state) => {
     let { messages } = state;
     if (summary) {
       const systemMessage = new SystemMessage({
-        id: uuidv4(),
+        id: crypto.randomUUID(),
         content: `Summary of conversation earlier: ${summary}`,
       });
       messages = [systemMessage, ...messages];
@@ -1789,7 +2431,7 @@ const summarizeConversation: GraphNode<typeof State> = async (state) => {
 
     const allMessages = [
       ...messages,
-      new HumanMessage({ id: uuidv4(), content: summaryMessage }),
+      new HumanMessage({ id: crypto.randomUUID(), content: summaryMessage }),
     ];
 
     const response = await model.invoke(allMessages);
@@ -2160,7 +2802,7 @@ await checkpointer.deleteThread(threadId);
 
 ## Database management
 
-If you are using any database-backed persistence implementation (such as Postgres or Redis) to store short and/or long-term memory, you will need to run migrations to set up the required schema before you can use it with your database.
+If you are using any database-backed persistence implementation (such as Postgres, Redis, or Oracle) to store short and/or long-term memory, you will need to run migrations to set up the required schema before you can use it with your database.
 
 By convention, most database-specific libraries define a `setup()` method on the checkpointer or store instance that runs the required migrations. However, you should check with your specific implementation of @[`BaseCheckpointSaver`] or @[`BaseStore`] to confirm the exact method name and usage.
 

@@ -1,6 +1,13 @@
 ---
-title: "ChatBedrock integration"
-description: "Integrate with the ChatBedrock chat model using LangChain Python."
+title: ChatBedrock integration
+description: Integrate with the ChatBedrock chat model using LangChain Python.
+integration:
+  name: ChatBedrock
+  pypi: langchain-aws
+  stream: true
+  tool_calling: true
+  structured_output: true
+  multimodal: true
 ---
 
 This doc will help you get started with AWS Bedrock [chat models](/oss/langchain/models). Amazon Bedrock is a fully managed service that offers a choice of high-performing foundation models (FMs) from leading AI companies like AI21 Labs, Anthropic, Cohere, Meta, Stability AI, and Amazon via a single API, along with a broad set of capabilities you need to build generative AI applications with security, privacy, and responsible AI. Using Amazon Bedrock, you can easily experiment with and evaluate top FMs for your use case, privately customize them with your data using techniques such as fine-tuning and Retrieval Augmented Generation (RAG), and build agents that execute tasks using your enterprise systems and data sources. Since Amazon Bedrock is serverless, you don't have to manage any infrastructure, and you can securely integrate and deploy generative AI capabilities into your applications using the AWS services you are already familiar with.
@@ -57,7 +64,7 @@ Alternatively, `ChatBedrockConverse` will read from the following environment va
 
 You'll also need to turn on model access for your account, which you can do by following [these instructions](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html).
 
-To enable automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/observability) API key:
 
 ```python
 os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
@@ -80,7 +87,7 @@ Now we can instantiate our model object and generate chat completions:
 from langchain_aws import ChatBedrockConverse
 
 llm = ChatBedrockConverse(
-    model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",
+    model_id="us.anthropic.claude-sonnet-4-6",
     # region_name=...,
     # aws_access_key_id=...,
     # aws_secret_access_key=...,
@@ -106,7 +113,7 @@ ai_msg
 ```
 
 ```text
-AIMessage(content="J'adore la programmation.", additional_kwargs={}, response_metadata={'ResponseMetadata': {'RequestId': 'b07d1630-06f2-44b1-82bf-e82538dd2215', 'HTTPStatusCode': 200, 'HTTPHeaders': {'date': 'Wed, 16 Apr 2025 19:35:34 GMT', 'content-type': 'application/json', 'content-length': '206', 'connection': 'keep-alive', 'x-amzn-requestid': 'b07d1630-06f2-44b1-82bf-e82538dd2215'}, 'RetryAttempts': 0}, 'stopReason': 'end_turn', 'metrics': {'latencyMs': [488]}, 'model_name': 'anthropic.claude-3-5-sonnet-20240620-v1:0'}, id='run-d09ed928-146a-4336-b1fd-b63c9e623494-0', usage_metadata={'input_tokens': 29, 'output_tokens': 11, 'total_tokens': 40, 'input_token_details': {'cache_creation': 0, 'cache_read': 0}})
+AIMessage(content="J'adore la programmation.", additional_kwargs={}, response_metadata={'ResponseMetadata': {'RequestId': 'b07d1630-06f2-44b1-82bf-e82538dd2215', 'HTTPStatusCode': 200, 'HTTPHeaders': {'date': 'Wed, 16 Apr 2025 19:35:34 GMT', 'content-type': 'application/json', 'content-length': '206', 'connection': 'keep-alive', 'x-amzn-requestid': 'b07d1630-06f2-44b1-82bf-e82538dd2215'}, 'RetryAttempts': 0}, 'stopReason': 'end_turn', 'metrics': {'latencyMs': [488]}, 'model_name': 'us.anthropic.claude-sonnet-4-6'}, id='run-d09ed928-146a-4336-b1fd-b63c9e623494-0', usage_metadata={'input_tokens': 29, 'output_tokens': 11, 'total_tokens': 40, 'input_token_details': {'cache_creation': 0, 'cache_read': 0}})
 ```
 
 ```python
@@ -119,32 +126,16 @@ J'adore la programmation.
 
 ### Streaming
 
-Note that `ChatBedrockConverse` emits content blocks while streaming:
+Use `stream_events` to stream tokens directly:
 
 ```python
-for chunk in llm.stream(messages):
-    print(chunk)
+stream = llm.stream_events(messages, version="v3")
+for token in stream.text:
+    print(token, end="|")
 ```
 
 ```text
-content=[] additional_kwargs={} response_metadata={} id='run-d0e0836e-7146-4c3d-97c7-ad23dac6febd'
-content=[{'type': 'text', 'text': 'J', 'index': 0}] additional_kwargs={} response_metadata={} id='run-d0e0836e-7146-4c3d-97c7-ad23dac6febd'
-content=[{'type': 'text', 'text': "'adore la", 'index': 0}] additional_kwargs={} response_metadata={} id='run-d0e0836e-7146-4c3d-97c7-ad23dac6febd'
-content=[{'type': 'text', 'text': ' programmation.', 'index': 0}] additional_kwargs={} response_metadata={} id='run-d0e0836e-7146-4c3d-97c7-ad23dac6febd'
-content=[{'index': 0}] additional_kwargs={} response_metadata={} id='run-d0e0836e-7146-4c3d-97c7-ad23dac6febd'
-content=[] additional_kwargs={} response_metadata={'stopReason': 'end_turn'} id='run-d0e0836e-7146-4c3d-97c7-ad23dac6febd'
-content=[] additional_kwargs={} response_metadata={'metrics': {'latencyMs': 600}, 'model_name': 'anthropic.claude-3-5-sonnet-20240620-v1:0'} id='run-d0e0836e-7146-4c3d-97c7-ad23dac6febd' usage_metadata={'input_tokens': 29, 'output_tokens': 11, 'total_tokens': 40, 'input_token_details': {'cache_creation': 0, 'cache_read': 0}}
-```
-
-You can filter to text using the [`text`](https://reference.langchain.com/python/langchain-core/messages/ai/AIMessage) property on the output:
-
-```python
-for chunk in llm.stream(messages):
-    print(chunk.text, end="|")
-```
-
-```text
-|J|'adore la| programmation.||||
+J|'adore la| programmation.|
 ```
 
 ### Streaming tool calls and structured output
@@ -227,12 +218,44 @@ ai_msg.content_blocks
  {'type': 'text', 'text': "J'aime l'IA."}]
 ```
 
+## Reasoning effort
+
+<Note>
+    `reasoning_effort` requires `langchain-aws>=1.6.5`.
+</Note>
+
+[`ChatBedrockConverse`](https://reference.langchain.com/python/langchain-aws/chat_models/bedrock_converse/ChatBedrockConverse) supports the standard [`reasoning_effort`](/oss/langchain/models#reasoning) parameter for models with configurable reasoning, including Claude (Opus 5, Sonnet 5), Amazon Nova 2, and OpenAI gpt-oss and Moonshot Kimi K2 models on Bedrock. Like `temperature`, it can be set at model construction or per invocation, and it is translated into the request format for the underlying model family:
+
+```python
+from langchain_aws import ChatBedrockConverse
+
+llm = ChatBedrockConverse(
+    model="us.anthropic.claude-sonnet-5",
+    region_name="us-west-2",
+    reasoning_effort="high",
+)
+
+response = llm.invoke("What is the cube root of 50.653?")
+```
+
+Supported effort levels vary by model. Check a model's [profile](/oss/langchain/models#model-profiles) for the levels it supports:
+
+```python
+llm.profile["reasoning_effort_levels"]  # e.g. ['low', 'medium', 'high', 'xhigh', 'max']
+```
+
+An explicit `additional_model_request_fields` value takes precedence over the fields derived from `reasoning_effort`. Models without a known translation ignore `reasoning_effort` and emit a warning.
+
 ## Prompt caching
 
-Bedrock supports [caching](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html) of elements of your prompts, including messages and tools. This allows you to re-use large documents, instructions, [few-shot documents](/langsmith/create-few-shot-evaluators), and other data to reduce latency and costs.
+Bedrock supports [caching](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html) of elements of your prompts, including messages and tools. This allows you to reuse large documents, instructions, [few-shot documents](/langsmith/create-few-shot-evaluators), and other data to reduce latency and costs.
 
 <Note>
     **Not all models support prompt caching. See [Bedrock prompt caching supported models](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html#prompt-caching-models).**
+</Note>
+
+<Note>
+    For LangChain agents, use [`BedrockPromptCachingMiddleware`](/oss/integrations/middleware/aws#prompt-caching) to let LangChain optimize stable system prompt and tool content. For direct model calls, use manual `cachePoint` blocks or invocation-level `cache_control`, depending on the model and API.
 </Note>
 
 To enable caching on an element of a prompt, mark its associated content block using the `cachePoint` key. See example below:
@@ -245,7 +268,7 @@ llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
 
 # Pull LangChain readme
 get_response = requests.get(
-    "https://raw.githubusercontent.com/langchain-ai/langchain/master/README.md"
+    "https://raw.githubusercontent.com/langchain-ai/langchain/b476fdb54aa6e6f5f0b24a68c2f4a94e43b369f9/README.md"
 )
 readme = get_response.text
 

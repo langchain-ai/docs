@@ -10,6 +10,7 @@ structured, type-safe UI cards for every tool call your agent makes, complete
 with loading states and error handling.
 
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+import UseStreamTypeInference from '/snippets/oss/use-stream-type-inference.mdx';
 
 <PatternEmbed pattern="tool-calling" />
 
@@ -23,38 +24,16 @@ When a LangGraph agent decides it needs external data, it emits one or more
 - **id**: a unique identifier linking the call to its result
 
 The agent runtime executes the tool, and the result comes back as a
-`ToolMessage`. The `useStream` hook unifies all of this into a single
+`ToolMessage`. The @[`useStream`] hook unifies all of this into a single
 `toolCalls` array you can render directly.
 
-## Setting up useStream
+## Setting up `useStream`
 
-The first step is wiring up `useStream` to your agent backend. The hook returns
+The first step is wiring up @[`useStream`] to your agent backend. The hook returns
 reactive state including a `toolCalls` array that updates in real time as the
 agent streams.
 
-:::python
-
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
-
-```ts
-import type { BaseMessage } from "@langchain/core/messages";
-
-interface AgentState {
-  messages: BaseMessage[];
-}
-```
-
-:::
-
-:::js
-
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
-
-```ts
-import type { myAgent } from "./agent";
-```
-
-:::
+<UseStreamTypeInference />
 
 <CodeGroup>
 ```tsx React
@@ -108,22 +87,22 @@ const stream = useStream<typeof myAgent>({
 
   const AGENT_URL = "http://localhost:2024";
 
-  const { messages, toolCalls, submit } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "tool_calling",
   });
 </script>
 
 <div>
-  {#each $messages as msg (msg.id)}
-    <Message message={msg} toolCalls={$toolCalls} />
+  {#each stream.messages as msg (msg.id)}
+    <Message message={msg} toolCalls={stream.toolCalls} />
   {/each}
 </div>
 ```
 
 ```ts Angular
 import { Component } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream } from "@langchain/angular";
 
 const AGENT_URL = "http://localhost:2024";
 
@@ -136,7 +115,7 @@ const AGENT_URL = "http://localhost:2024";
   `,
 })
 export class ChatComponent {
-  stream = useStream<typeof myAgent>({
+  stream = injectStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "tool_calling",
   });
@@ -144,35 +123,45 @@ export class ChatComponent {
 ```
 </CodeGroup>
 
-## The ToolCallWithResult type
+## The AssembledToolCall type
 
-Each entry in the `toolCalls` array is a `ToolCallWithResult` object:
+Each entry in the `toolCalls` array is an `AssembledToolCall` object:
 
 ```ts
-interface ToolCallWithResult {
-  call: {
-    id: string;
-    name: string;
-    args: Record<string, unknown>;
-  };
-  result: ToolMessage | undefined;
-  state: "pending" | "completed" | "error";
+interface AssembledToolCall<
+  TName extends string = string,
+  TInput = unknown,
+  TOutput = unknown,
+> {
+  name: TName;
+  callId: string;
+  id: string;
+  namespace: string[];
+  input: TInput;
+  args: TInput;
+  output: TOutput | null;
+  status: "running" | "finished" | "error";
+  error: string | undefined;
 }
 ```
 
 | Property | Description |
 | --- | --- |
-| `call.id` | Unique ID matching the AI message's `tool_calls` entry |
-| `call.name` | The name of the tool (e.g. `"get_weather"`) |
-| `call.args` | Structured arguments the agent passed to the tool |
-| `result` | The `ToolMessage` response, available once the tool finishes |
-| `state` | Lifecycle state: `"pending"` while running, `"completed"` on success, `"error"` on failure |
+| `name` | The name of the tool (e.g. `"get_weather"`) |
+| `callId` | Unique ID matching the AI message's `tool_calls` entry |
+| `id` | Alias for `callId`, matching message-level tool calls |
+| `namespace` | Namespace where the tool call was emitted |
+| `input` | Structured arguments the agent passed to the tool |
+| `args` | Alias for `input`, matching message-level tool calls |
+| `output` | Tool output after a successful call, or `null` while running or after an error |
+| `status` | Lifecycle state: `"running"`, `"finished"`, or `"error"` |
+| `error` | Error details when the tool call fails |
 
 ## Filtering tool calls per message
 
 An AI message may trigger multiple tool calls, and your chat may contain many AI
 messages. To render the right tool cards under each message, filter by matching
-`call.id` against the message's `tool_calls` array:
+`callId` against the message's `tool_calls` array:
 
 ```tsx
 function Message({
@@ -180,17 +169,17 @@ function Message({
   toolCalls,
 }: {
   message: AIMessage;
-  toolCalls: ToolCallWithResult[];
+  toolCalls: AssembledToolCall[];
 }) {
   const messageToolCalls = toolCalls.filter((tc) =>
-    message.tool_calls?.find((t) => t.id === tc.call.id)
+    message.tool_calls?.find((t) => t.id === tc.callId)
   );
 
   return (
     <div>
-      <p>{message.content}</p>
+      <p>{message.text}</p>
       {messageToolCalls.map((tc) => (
-        <ToolCard key={tc.call.id} toolCall={tc} />
+        <ToolCard key={tc.callId} toolCall={tc} />
       ))}
     </div>
   );
@@ -200,27 +189,27 @@ function Message({
 ## Building specialized tool cards
 
 Rather than dumping raw JSON, build dedicated UI components for each tool. Use
-`call.name` to select the right card:
+`name` to select the right card:
 
 ```tsx
-function ToolCard({ toolCall }: { toolCall: ToolCallWithResult }) {
-  if (toolCall.state === "pending") {
-    return <LoadingCard name={toolCall.call.name} />;
+function ToolCard({ toolCall }: { toolCall: AssembledToolCall }) {
+  if (toolCall.status === "running") {
+    return <LoadingCard name={toolCall.name} />;
   }
 
-  if (toolCall.state === "error") {
-    return <ErrorCard name={toolCall.call.name} error={toolCall.result} />;
+  if (toolCall.status === "error") {
+    return <ErrorCard name={toolCall.name} error={toolCall.error} />;
   }
 
-  switch (toolCall.call.name) {
+  switch (toolCall.name) {
     case "get_weather":
-      return <WeatherCard args={toolCall.call.args} result={toolCall.result} />;
+      return <WeatherCard input={toolCall.input} output={toolCall.output} />;
     case "calculator":
       return (
-        <CalculatorCard args={toolCall.call.args} result={toolCall.result} />
+        <CalculatorCard input={toolCall.input} output={toolCall.output} />
       );
     case "web_search":
-      return <SearchCard args={toolCall.call.args} result={toolCall.result} />;
+      return <SearchCard input={toolCall.input} output={toolCall.output} />;
     default:
       return <GenericToolCard toolCall={toolCall} />;
   }
@@ -231,22 +220,20 @@ function ToolCard({ toolCall }: { toolCall: ToolCallWithResult }) {
 
 ```tsx
 function WeatherCard({
-  args,
-  result,
+  input,
+  output,
 }: {
-  args: { location: string };
-  result: ToolMessage;
+  input: { location: string };
+  output: { temperature: number; condition: string };
 }) {
-  const data = JSON.parse(result.content as string);
-
   return (
     <div className="rounded-lg border p-4">
       <div className="flex items-center gap-2">
         <CloudIcon />
-        <h3 className="font-semibold">{args.location}</h3>
+        <h3 className="font-semibold">{input.location}</h3>
       </div>
-      <div className="mt-2 text-3xl font-bold">{data.temperature}°F</div>
-      <p className="text-muted-foreground">{data.condition}</p>
+      <div className="mt-2 text-3xl font-bold">{output.temperature}°F</div>
+      <p className="text-muted-foreground">{output.condition}</p>
     </div>
   );
 }
@@ -266,12 +253,12 @@ function LoadingCard({ name }: { name: string }) {
   );
 }
 
-function ErrorCard({ name, error }: { name: string; error?: ToolMessage }) {
+function ErrorCard({ name, error }: { name: string; error?: unknown }) {
   return (
     <div className="rounded-lg border border-red-300 bg-red-50 p-4">
       <h3 className="font-semibold text-red-700">Error in {name}</h3>
       <p className="text-sm text-red-600">
-        {error?.content ?? "Tool execution failed"}
+        {String(error ?? "Tool execution failed")}
       </p>
     </div>
   );
@@ -296,7 +283,7 @@ const getWeather = tool(async ({ location }) => { /* ... */ }, {
 });
 
 type WeatherToolCall = ToolCallFromTool<typeof getWeather>;
-// WeatherToolCall.call.args is now { location: string }
+// WeatherToolCall.input and WeatherToolCall.args are now { location: string }
 ```
 
 <Tip>
@@ -306,7 +293,7 @@ changes, your UI components will flag type errors immediately.
 
 ## Rendering tool calls inline with streaming text
 
-Tool calls often arrive interleaved with streamed text. The `useStream` hook
+Tool calls often arrive interleaved with streamed text. The @[`useStream`] hook
 keeps `toolCalls` in sync with the stream, so pending cards appear as soon as
 the agent emits the call, before the tool has finished executing.
 
@@ -317,29 +304,29 @@ This means users see:
 3. The card updates to show the result once the tool completes
 
 <Note>
-Tool calls update in place. The same `call.id` transitions from `"pending"` to
-`"completed"` (or `"error"`), so your UI re-renders the same component
+Tool calls update in place. The same `callId` transitions from `"running"` to
+`"finished"` (or `"error"`), so your UI re-renders the same component
 with new state.
 </Note>
 
 ## Handling multiple concurrent tool calls
 
 Agents can invoke several tools in parallel. The `toolCalls` array will contain
-multiple entries with `state: "pending"` simultaneously. Each resolves
+multiple entries with `status: "running"` simultaneously. Each resolves
 independently, so your UI should handle partial completion gracefully:
 
 ```tsx
-function ToolCallList({ toolCalls }: { toolCalls: ToolCallWithResult[] }) {
-  const pending = toolCalls.filter((tc) => tc.state === "pending");
-  const completed = toolCalls.filter((tc) => tc.state === "completed");
+function ToolCallList({ toolCalls }: { toolCalls: AssembledToolCall[] }) {
+  const pending = toolCalls.filter((tc) => tc.status === "running");
+  const completed = toolCalls.filter((tc) => tc.status === "finished");
 
   return (
     <div className="space-y-2">
       {completed.map((tc) => (
-        <ToolCard key={tc.call.id} toolCall={tc} />
+        <ToolCard key={tc.callId} toolCall={tc} />
       ))}
       {pending.map((tc) => (
-        <LoadingCard key={tc.call.id} name={tc.call.name} />
+        <LoadingCard key={tc.callId} name={tc.name} />
       ))}
     </div>
   );
@@ -350,10 +337,10 @@ function ToolCallList({ toolCalls }: { toolCalls: ToolCallWithResult[] }) {
 
 Follow these guidelines when building tool call UIs:
 
-- **Always handle all three states**: `pending`, `completed`, and `error`.
+- **Always handle all three states**: `running`, `finished`, and `error`.
   Users should never see a blank card.
-- **Parse results safely**. Tool results arrive as strings. Wrap
-  `JSON.parse()` in a try/catch and show a fallback on parse failure.
+- **Validate results safely**. Tool outputs are typed as `unknown` until you
+  narrow them for a specific card.
 - **Provide a generic fallback**. Not every tool needs a bespoke card. Render
   a collapsible JSON view for unknown tool names.
 - **Show the tool name and args during loading**. Users want to know *what*

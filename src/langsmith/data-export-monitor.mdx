@@ -14,9 +14,9 @@ This page covers:
 - [Troubleshooting failed exports](#troubleshooting-failed-exports).
 
 <Note>
-**For self-hosted, EU (GCP), and US (AWS) SaaS**
+**For self-hosted, GCP EU, GCP APAC, and AWS US SaaS**
 
-Update the LangSmith URL in the requests below for self-hosted installs, EU (GCP) (`eu.api.smith.langchain.com`), or US (AWS) (`aws.api.smith.langchain.com`).
+Update the LangSmith URL in the requests below for self-hosted installs, GCP EU (`eu.api.smith.langchain.com`), GCP APAC (`apac.api.smith.langchain.com`), or AWS US (`aws.api.smith.langchain.com`).
 </Note>
 
 ## Monitor export status
@@ -140,6 +140,27 @@ To ensure system stability, exports are subject to the following limits:
 
 If you have multiple exports running, new run jobs will queue until capacity becomes available.
 
+#### Self-hosted: tuning bulk export concurrency and payload size
+
+On [LangSmith Self-hosted](/langsmith/self-hosted), the concurrency limits are the defaults. To tune pod memory usage during bulk exports, configure the following environment variables on the `langsmith-backend` service:
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `BULK_EXPORT_MAX_CONCURRENT_RUNS` | `5` | Maximum number of partition runs enqueued in parallel within a single export, per scheduling pass. Reduce to limit peak memory when processing large date partitions. |
+| `DATA_EXPORT_RUN_LIMIT` | `500` | Page size (max rows) fetched from the runs store per query when paging through an export window. |
+| `DATA_EXPORT_MAX_BATCH_PAYLOAD_SIZE_KB` | `100000` (100 MB) | Maximum accumulated payload size (KB) before a batch is flushed during an export run. Reduce to lower the memory footprint of each batch. |
+
+**Example: conservative settings for memory-constrained deployments**
+
+```yaml
+# In your Helm values
+BULK_EXPORT_MAX_CONCURRENT_RUNS: "10"
+DATA_EXPORT_RUN_LIMIT: "5"
+DATA_EXPORT_MAX_BATCH_PAYLOAD_SIZE_KB: "512"
+```
+
+Lowering these values reduces parallelism and may increase total export time, but lowers peak memory usage per pod. If you encounter out-of-memory (OOM) errors on memory-constrained nodes, these settings can help.
+
 ### Progress tracking and resumability
 
 The export system maintains detailed progress metadata for each run:
@@ -156,7 +177,7 @@ This progress tracking enables:
 
 If your export fails, follow these steps:
 
-1. **Check the export status**: Use the [`GET /api/v1/bulk-exports/{export_id}` endpoint](https://api.smith.langchain.com/redoc#tag/bulk-exports) to retrieve the export details and status.
+1. **Check the export status**: Use the [`GET /api/v1/bulk-exports/{export_id}` endpoint](/langsmith/smith-api/bulk-exports/get-bulk-export) to retrieve the export details and status.
 2. **Review run errors**: You can monitor your runs using the [List Runs API](#list-runs-for-an-export). Each run includes an `errors` field with detailed error messages keyed by retry attempt (e.g., `retry_0`, `retry_1`).
 3. **Verify destination access**: Ensure your [destination bucket](/langsmith/data-export-destinations#configuration-fields) still exists and [credentials](/langsmith/data-export-destinations#credentials-configuration) are valid.
 4. **Check run size**: If you see timeout errors, your date partitions may contain too much data. It may be helpful to [limit the exported fields](/langsmith/data-export#limit-exported-fields).

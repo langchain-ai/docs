@@ -1,0 +1,114 @@
+///usr/bin/env jbang "$0" "$@" ; exit $?
+//JAVA 21
+//KOTLIN 2.0.21
+//DEPS com.langchain.smith:langsmith-java:0.1.0-alpha.25
+//DEPS com.openai:openai-java:4.30.0
+
+// :snippet-start: run-tree-example-kt
+// :codegroup-tab: Kotlin
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
+import com.langchain.smith.tracing.RunTree
+import com.langchain.smith.tracing.RunType
+import com.langchain.smith.tracing.TraceConfig
+import com.openai.client.okhttp.OpenAIOkHttpClient
+import com.openai.models.ChatModel
+import com.openai.models.chat.completions.ChatCompletionCreateParams
+import com.openai.models.chat.completions.ChatCompletionMessageParam
+import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
+import com.openai.models.chat.completions.ChatCompletionUserMessageParam
+import java.time.Instant
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+
+// :remove-start:
+fun main() {
+    if (System.getenv("OPENAI_API_KEY").isNullOrBlank()) {
+        println("[run-tree-example] Skipping (OPENAI_API_KEY is not set).")
+        return
+    }
+
+    if (System.getenv("LANGSMITH_API_KEY").isNullOrBlank()) {
+        println("[run-tree-example] Skipping (LANGSMITH_API_KEY is not set).")
+        return
+    }
+
+// :remove-end:
+val langsmith = LangsmithOkHttpClient.fromEnv()
+val openai = OpenAIOkHttpClient.fromEnv()
+val executor = Executors.newSingleThreadExecutor()
+
+try {
+    val question = "Can you summarize this morning's meetings?"
+    val runId = "01990f3e-7f97-74c5-a9b6-8d3f7e8e2f11"
+
+    val pipeline =
+        RunTree.builder()
+            .id(runId)
+            .name("Chat Pipeline")
+            .runType(RunType.CHAIN)
+            .inputs(mapOf("question" to question))
+            .client(langsmith)
+            .executor(executor)
+            .build()
+    println("[run-tree-example] Posting parent run to LangSmith…")
+    pipeline.postRun()
+
+    val context = "During this morning's meeting, we solved all world conflict."
+    val messages =
+        listOf(
+            ChatCompletionMessageParam.ofSystem(
+                ChatCompletionSystemMessageParam.builder()
+                    .content(
+                        "You are a helpful assistant. Please respond to the user's " +
+                            "request only based on the given context.",
+                    )
+                    .build(),
+            ),
+            ChatCompletionMessageParam.ofUser(
+                ChatCompletionUserMessageParam.builder()
+                    .content("Question: $question\nContext: $context")
+                    .build(),
+            ),
+        )
+
+    val childRun =
+        pipeline.createChild(
+            TraceConfig.builder().name("OpenAI Call").runType(RunType.LLM).build(),
+        )
+    childRun.inputs = mapOf("messages" to messages)
+    println("[run-tree-example] Posting child run to LangSmith…")
+    childRun.postRun()
+
+    val chatCompletion =
+        openai.chat().completions().create(
+            ChatCompletionCreateParams.builder()
+                .model(ChatModel.GPT_5_CHAT_LATEST)
+                .messages(messages)
+                .build(),
+        )
+
+    val answer = chatCompletion.choices()[0].message().content().orElse("")
+    println("[run-tree-example] Answer:")
+    println(answer)
+
+    childRun.outputs = mapOf("response" to chatCompletion.toString())
+    childRun.endTime = Instant.now().toString()
+    childRun.patchRun()
+
+    pipeline.outputs =
+        mapOf(
+            "answer" to answer,
+        )
+    pipeline.endTime = Instant.now().toString()
+    pipeline.patchRun()
+} finally {
+    executor.shutdown()
+    check(executor.awaitTermination(10, TimeUnit.SECONDS)) {
+        "Timed out waiting for LangSmith traces to submit"
+    }
+}
+// :remove-start:
+}
+// :remove-end:
+// :snippet-end:
+

@@ -8,11 +8,11 @@ import {
   CompositeBackend,
   createDeepAgent,
   type FileData,
+  LangSmithSandbox,
   StoreBackend,
 } from "deepagents";
 import { InMemoryStore } from "@langchain/langgraph";
-
-import { DaytonaSandbox } from "@langchain/daytona";
+import { SandboxClient } from "langsmith/sandbox";
 
 /** Identical skill bundles for every user: one shared store namespace. */
 const SKILLS_SHARED_NAMESPACE = ["skills", "builtin"] as const;
@@ -103,17 +103,18 @@ async function main() {
   const store = new InMemoryStore();
   await seedSkillStore(store);
 
-  const sandbox = await DaytonaSandbox.create({
-    language: "python",
-    timeout: 300,
-  });
+  const client = new SandboxClient();
+  const lsSandbox = await client.createSandbox();
 
-  const backend = new CompositeBackend(sandbox, {
-    "/skills/": new StoreBackend({
-      store,
-      namespace: () => [...SKILLS_SHARED_NAMESPACE],
-    } as any),
-  });
+  const backend = new CompositeBackend(
+    new LangSmithSandbox({ sandbox: lsSandbox }),
+    {
+      "/skills/": new StoreBackend({
+        store,
+        namespace: () => [...SKILLS_SHARED_NAMESPACE],
+      } as any),
+    },
+  );
 
   try {
     const agent = await createDeepAgent({
@@ -149,7 +150,7 @@ async function main() {
     }
     // :remove-end:
   } finally {
-    await sandbox.close();
+    await client.deleteSandbox(lsSandbox.name);
   }
 }
 

@@ -10,7 +10,7 @@ def embed(texts: Sequence[str]) -> list[list[float]]:
     return [[1.0, 2.0] for _ in texts]
 
 
-DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+DB_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 # :remove-start:
 import sys
 from pathlib import Path
