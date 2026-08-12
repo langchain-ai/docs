@@ -237,4 +237,3 @@ If adding a new group, ensure the root `index.mdx` is included in the `pages` ar
 ```
 
 If the trailing `/index` (no extension included) is omitted, the Mintlify parser will raise a warning even though the site will still build.
-
