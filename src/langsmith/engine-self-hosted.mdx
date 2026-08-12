@@ -48,7 +48,7 @@ Each request carries the trace content, code, and intermediate outputs Engine ne
 
 Your cluster must allow outbound HTTPS to that gateway. The connection can use public egress or private connectivity. On AWS, follow [Connect with AWS PrivateLink](#connect-with-aws-privatelink) to keep Engine traffic on private networking.
 
-If the connection to LSI is unavailable, Engine fails closed. There is no in-cluster model and no secondary provider to fall back on, so the affected run ends with an error rather than degrading to lower-quality output. The rest of your LangSmith deployment is unaffected, and Engine tries again on its next scheduled scan.
+If the connection to LSI is unavailable, Engine stops and returns an error rather than degrading to lower-quality output. There is no in-cluster model and no secondary provider to fall back on. The rest of your LangSmith deployment is unaffected, and Engine tries again on its next scheduled scan.
 
 ## What LangSmith Intelligence retains
 
