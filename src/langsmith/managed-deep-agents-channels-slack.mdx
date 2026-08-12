@@ -22,10 +22,10 @@ my-agent/
   agent.py
   channels/
     slack.py
-  slack-app-manifest.json
+  slack-app-manifest.json      # EDIT: checked-in template you own
   .mda/
     slack/
-      app-manifest.json
+      app-manifest.json        # IMPORT: generated file you upload to Slack
 ```
 :::
 
@@ -35,12 +35,17 @@ my-agent/
   agent.ts
   channels/
     slack.ts
-  slack-app-manifest.json
+  slack-app-manifest.json      # EDIT: checked-in template you own
   .mda/
     slack/
-      app-manifest.json
+      app-manifest.json        # IMPORT: generated file you upload to Slack
 ```
 :::
+
+The two manifests have similar names but different purposes:
+
+- **`slack-app-manifest.json`**: The template you edit and check in. It holds the app name, scopes, bot events, branding, and other Slack settings. It must not contain credentials or a Slack Events request URL.
+- **`.mda/slack/app-manifest.json`**: The manifest MDA generates from the template. It adds the deployed Events request URL, and it is the file you import into Slack. Do not edit it, and do not commit files under `.mda/`.
 
 ## Add a Slack channel
 
@@ -74,46 +79,44 @@ After setting up the Slack channel, you need to create and deploy your Slack app
   <Step title="Deploy your Managed Deep Agent">
   First, [deploy your Managed Deep Agent](/langsmith/managed-deep-agents-deploy).
   
-  ```
+  ```bash
   mda deploy .
   ```
   
   Wait for the deployment to finish. The agent is deployed even though Slack is
-not active yet.
+not active yet, and the CLI warns that Slack stays inactive until its credentials exist.
   </Step>
-  <Step title="Generate the app manifest template">
-    Run a command to generate the Slack app manifest template.
+  <Step title="Generate the Slack app manifest">
+    Generate the manifest for the deployment:
     
     ```bash
     mda channel add slack .
     ```
-    MDA finds the existing deployment and writes two files:
-    - A "template" manifest to `slack-app-manifest.json`
-    - The full manifest to `.mda/slack/app-manifest.json`
-    
-    The template manifest is what you should edit directly to change scopes, etc. The full manifest is generated from this template manifest and includes information about the deployment.
-    If you make changes to the template manifest, you will need rerun `mda channel add slack .` to regenerate the full template. 
-    Do not directly edit the generated file at `.mda/slack/app-manifest.json`
-    
+
+    MDA finds the existing deployment, reads the `slack-app-manifest.json` template at the project root, and writes the generated manifest to `.mda/slack/app-manifest.json` with the deployed Events request URL. When the template does not exist yet, MDA creates it with default settings first and reports the path it created.
+
+    The command also prints a **Create the Slack app from this manifest** link that opens Slack with the generated manifest prefilled. Use the link, or import the file in the next step.
+
+    Edit `slack-app-manifest.json` to change scopes, bot events, or branding, then rerun `mda channel add slack .` to regenerate `.mda/slack/app-manifest.json`. Do not edit the generated file.
   </Step>
   <Step title="Create and install the Slack app once">
     1. Open https://api.slack.com/apps.
     2. Select **Create New App**.
     3. Select **From an app manifest**.
     4. Choose the target Slack workspace.
-    5. Import `.mda/slack/app-manifest.json` and create the app.
+    5. Import the generated `.mda/slack/app-manifest.json`, not the `slack-app-manifest.json` template, and create the app.
     6. Open **OAuth & Permissions** and select **Install to Workspace**.
     7. Approve the requested permissions.
     8. Copy the **Bot User OAuth Token** from **OAuth & Permissions**.
     9. Copy the **Signing Secret** from **Basic Information → App Credentials**.
     
     The Events request URL is already in the generated manifest, so there is no
-    bootstrap manifest and no second manifest import.  
+    second manifest import.  
   </Step>
   <Step title="Add the Slack credentials">
     Add the two values to the project .env:
     
-    ```
+    ```text .env
     SLACK_SIGNING_SECRET=...
     SLACK_BOT_TOKEN=xoxb-...
     ```
@@ -122,7 +125,7 @@ not active yet.
   </Step>
   <Step title="Redeploy to activate Slack">
   
-  ```
+  ```bash
   mda deploy .
   ```
   
@@ -130,22 +133,37 @@ not active yet.
 enables authenticated event handling.
     
   </Step>
-  <Step title="Updating Slack Bot Configurations">
-    The previous steps guide you through deploying the first iteration of your Managed Deepagent as a Slack bot. If you want to make any updates to the agent, you just simply rerun `mda deploy .` to update the deployed app.
+  <Step title="Update the Slack app configuration">
+    The previous steps deploy the first iteration of the agent as a Slack bot. To update the agent itself, rerun `mda deploy .`.
 
-    If you want to make any configuration changes to the Slack application itself, the recommended steps are:
+    To change the configuration of the Slack app, follow these steps:
     
-    1. Update the `slack-app-manifest.json` file locally
-    2. Run `mda channel add slack .` — this will regenerate the manifest with the latest changes. These changes are written to the `.mda/slack/app-manifest.json` file
-    3. On https://api.slack.com/apps → locate your app → App Manifest 
-    4. Replace the contents of the manifest with the new `.mda/slack/app-manifest.json` file → Click **Save Changes**
-    5. Navigate to the **OAuth & Permissions** tab. Click on **Reinstall to Workspace**
+    1. Update the `slack-app-manifest.json` template locally.
+    2. Run `mda channel add slack .` to regenerate `.mda/slack/app-manifest.json` with the latest changes.
+    3. Open https://api.slack.com/apps, locate the app, and open **App Manifest**.
+    4. Replace the contents of the manifest with the new `.mda/slack/app-manifest.json` file, then select **Save Changes**.
+    5. Open the **OAuth & Permissions** tab and select **Reinstall to Workspace**.
     
-    This ensures the manifest in your mda filesystem remains as the source of truth for the Slack app.
+    This keeps `slack-app-manifest.json` in the project as the source of truth for the Slack app.
   </Step>
 </Steps>
 
-Treat `slack-app-manifest.json` as the source of truth. When you change its scopes, bot events, branding, or other settings, rerun `mda deploy . --configure-slack`, apply the regenerated `.mda/slack/app-manifest.json`, and reinstall the app if Slack requests it. The generated files under `.mda/` are build artifacts; do not commit them.
+Treat `slack-app-manifest.json` as the source of truth. When you change its scopes, bot events, branding, or other settings, rerun `mda channel add slack .`, apply the regenerated `.mda/slack/app-manifest.json`, and reinstall the app if Slack requests it. The generated files under `.mda/` are build artifacts; do not commit them.
+
+## Set the app name and branding
+
+Slack reads the app name, bot name, and other branding from the manifest, not from the deployment. Edit these fields in `slack-app-manifest.json`:
+
+- **`display_information.name`**: Name of the Slack app. Defaults to `Managed Deep Agent`.
+- **`display_information.description`**: Short description shown in Slack.
+- **`display_information.background_color`**: Hex color used for the app's branding.
+- **`features.bot_user.display_name`**: Name shown for the bot user in conversations. Defaults to `Managed Deep Agent`.
+
+The default template that `mda channel add slack` creates sets both names to `Managed Deep Agent`, so rename them before creating the app. The `--name` flag on `mda deploy` and `mda channel add slack` sets the LangSmith deployment name and has no effect on the Slack app or bot name.
+
+After changing branding, rerun `mda channel add slack .` and apply the regenerated manifest to the existing app.
+
+For the full list of supported fields, see [Slack's app manifest reference](https://docs.slack.dev/app-manifests/).
 
 ## Configure Slack behavior
 
@@ -312,7 +330,7 @@ A Slack event runs as an identity derived from the Slack workspace and user, suc
 
 ## Deploy changes
 
-Redeploy after changing the channel declaration, secrets, or identity configuration. Include `--configure-slack` when you change `slack-app-manifest.json`, the channel name, or the deployment so MDA can regenerate the final manifest with the current Events URL. Apply the generated manifest to the existing Slack app after the deployment completes.
+Redeploy with `mda deploy .` after changing the channel declaration, secrets, or identity configuration. Rerun `mda channel add slack .` when you change `slack-app-manifest.json`, the channel name, or the deployment so MDA can regenerate the manifest with the current Events URL. Apply the generated manifest to the existing Slack app after the deployment completes.
 
 Avoid making lasting configuration changes only in the Slack dashboard. A later manifest update can replace settings that are not present in the checked-in template.
 
@@ -330,11 +348,11 @@ Design channel-triggered tools as idempotent when they perform external side eff
 ## Troubleshoot Slack channels
 
 :::python
-- **`--configure-slack` reports that it needs exactly one channel**: Keep exactly one `channels.slack(...)` declaration in the project when using the manifest workflow.
+- **`mda channel add slack` reports that it needs exactly one Slack channel**: Keep exactly one `channels.slack(...)` declaration in the project when using the manifest workflow.
 - **MDA cannot read the template**: Confirm `slack-app-manifest.json` is a regular JSON file at the project root. Remove credentials and any `settings.event_subscriptions.request_url`, and keep Socket Mode disabled.
-- **The first deploy writes a bootstrap manifest and exits**: This is expected when the Slack credentials do not exist yet. Create and install the app, add both credentials, then rerun the same command.
-- **MDA does not write the final manifest**: Rerun `mda deploy . --configure-slack` without `--no-wait`. The CLI needs the deployed Agent Server URL.
-- **Slack cannot verify the request URL**: Confirm the deployment is healthy, the URL on the app's **Event Subscriptions** page matches `https://<agent-server>/channels/<name>/events`, and `SLACK_SIGNING_SECRET` belongs to that app. Redeploy after adding the Slack credentials, then apply the regenerated final manifest.
+- **The first deploy warns that Slack is not configured**: This is expected when the Slack credentials do not exist yet. The agent deploys with Slack events disabled. Run `mda channel add slack .`, create and install the app, add both credentials, then rerun `mda deploy .`.
+- **`mda channel add slack` cannot find a deployment or an Agent Server URL**: Run `mda deploy .` first and let it finish without `--no-wait`. The CLI needs the deployed Agent Server URL, and it matches the deployment by name, so pass the same `-n <name>` and `--workspace-id <id>` values you deployed with.
+- **Slack cannot verify the request URL**: Confirm the deployment is healthy, the URL on the app's **Event Subscriptions** page matches `https://<agent-server>/channels/<name>/events`, and `SLACK_SIGNING_SECRET` belongs to that app. Redeploy after adding the Slack credentials, then apply the regenerated manifest.
 - **Mentions do not start runs**: Subscribe to `app_mention`, add `app_mentions:read`, invite the bot to the conversation, and reinstall the app after changing scopes.
 - **Direct messages do not start runs**: Subscribe to `message.im` and add `im:history`.
 - **Thread replies do not start runs**: Reply inside a thread where the agent previously participated. Subscribe to `message.channels` or `message.groups`, add the matching history scope, and confirm the bot remains in the conversation.
@@ -342,11 +360,11 @@ Design channel-triggered tools as idempotent when they perform external side eff
 :::
 
 :::js
-- **`--configure-slack` reports that it needs exactly one channel**: Keep exactly one `channels.slack(...)` declaration in the project when using the manifest workflow.
+- **`mda channel add slack` reports that it needs exactly one Slack channel**: Keep exactly one `channels.slack(...)` declaration in the project when using the manifest workflow.
 - **MDA cannot read the template**: Confirm `slack-app-manifest.json` is a regular JSON file at the project root. Remove credentials and any `settings.event_subscriptions.request_url`, and keep Socket Mode disabled.
-- **The first deploy writes a bootstrap manifest and exits**: This is expected when the Slack credentials do not exist yet. Create and install the app, add both credentials, then rerun the same command.
-- **MDA does not write the final manifest**: Rerun `mda deploy . --configure-slack` without `--no-wait`. The CLI needs the deployed Agent Server URL.
-- **Slack cannot verify the request URL**: Confirm the deployment is healthy, the URL on the app's **Event Subscriptions** page matches `https://<agent-server>/channels/<name>/events`, and `SLACK_SIGNING_SECRET` belongs to that app. Redeploy after adding the Slack credentials, then apply the regenerated final manifest.
+- **The first deploy warns that Slack is not configured**: This is expected when the Slack credentials do not exist yet. The agent deploys with Slack events disabled. Run `mda channel add slack .`, create and install the app, add both credentials, then rerun `mda deploy .`.
+- **`mda channel add slack` cannot find a deployment or an Agent Server URL**: Run `mda deploy .` first and let it finish without `--no-wait`. The CLI needs the deployed Agent Server URL, and it matches the deployment by name, so pass the same `-n <name>` and `--workspace-id <id>` values you deployed with.
+- **Slack cannot verify the request URL**: Confirm the deployment is healthy, the URL on the app's **Event Subscriptions** page matches `https://<agent-server>/channels/<name>/events`, and `SLACK_SIGNING_SECRET` belongs to that app. Redeploy after adding the Slack credentials, then apply the regenerated manifest.
 - **Mentions do not start runs**: Subscribe to `app_mention`, add `app_mentions:read`, invite the bot to the conversation, and reinstall the app after changing scopes.
 - **Direct messages do not start runs**: Subscribe to `message.im` and add `im:history`.
 - **Thread replies do not start runs**: Reply inside a thread where the agent previously participated. Subscribe to `message.channels` or `message.groups`, add the matching history scope, and confirm the bot remains in the conversation.
