@@ -8,18 +8,14 @@ import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-a
 
 This tutorial builds a research assistant one capability at a time. Complete the [quickstart](/langsmith/managed-deep-agents-quickstart) first to scaffold a project, add API keys, and run `mda dev` locally. Then add a search tool, use durable memory, run the agent on a daily schedule, and deploy it to LangSmith.
 
-For a complete project that combines common features, see the [example project](/langsmith/managed-deep-agents-examples).
-
-<Note>
 <ManagedDeepAgentsPrivateBetaNote />
-</Note>
 
 ## Build the agent
 
 <Steps>
   <Step title="Write the instructions" id="instructions">
 
-Replace `instructions.md` with the research assistant's behavior. The instructions reference the tool you add next and the durable memory the runtime provides:
+Replace `instructions.md` with the research assistant's behavior. The instructions reference the tool you add next and the shared durable memory you explicitly enable later in this tutorial:
 
 ```markdown instructions.md
 # Research assistant
@@ -34,8 +30,9 @@ concise answers with citations.
 
 ## Memory
 
-- Remember the user's topics of interest and preferred answer format.
-- Never store secrets, API keys, or credentials in memory.
+- Record reusable research procedures and project knowledge that can improve future work.
+- For release research, check the project's official changelog before secondary sources.
+- Never store personal data or secrets in memory.
 ```
 
   </Step>
@@ -44,8 +41,7 @@ concise answers with citations.
 
 Create a `tools/` module with a search tool, then import it into the agent entry. This example returns a placeholder result, so it runs without an external API. Replace the body with a call to your search provider.
 
-<CodeGroup>
-
+:::python
 ```python tools/search.py
 from langchain.tools import tool
 
@@ -60,7 +56,9 @@ def web_search(query: str) -> str:
     # Replace this stub with a call to your search provider.
     return f"Top results for '{query}': ..."
 ```
+:::
 
+:::js
 ```ts tools/search.ts
 import { tool } from "langchain";
 import { z } from "zod";
@@ -79,13 +77,11 @@ export const webSearch = tool(
   },
 );
 ```
-
-</CodeGroup>
+:::
 
 Import the tool into the agent entry and pass it to the definition:
 
-<CodeGroup>
-
+:::python
 ```python agent.py
 from managed_deepagents import define_deep_agent
 
@@ -97,7 +93,9 @@ agent = define_deep_agent(
     tools=[web_search],
 )
 ```
+:::
 
+:::js
 ```ts agent.ts
 import { defineDeepAgent } from "managed-deepagents";
 
@@ -109,8 +107,7 @@ export const agent = defineDeepAgent({
   tools: [webSearch],
 });
 ```
-
-</CodeGroup>
+:::
 
 For more on authored tools, see [Custom tools](/langsmith/managed-deep-agents-tools).
 
@@ -120,29 +117,49 @@ For more on authored tools, see [Custom tools](/langsmith/managed-deep-agents-to
 
 Install dependencies and start the local dev server:
 
-<CodeGroup>
-
+:::python
 ```bash uv
 uv sync
 mda dev .
 ```
+:::
 
+:::js
 ```bash npm
 npm install
 mda dev .
 ```
-
-</CodeGroup>
+:::
 
 `mda dev` opens the agent in LangSmith Studio. Send a question and confirm the agent calls `web_search` and answers with the returned snippets.
 
   </Step>
 
-  <Step title="Use durable memory" id="memory">
+  <Step title="Enable and use durable memory" id="memory">
 
-Managed memory is on by default, so you do not configure a backend. The runtime stores durable memory in Context Hub, and the agent reads and writes it during runs. Because the instructions tell the agent to remember topics of interest, tell it a preference in one turn ("I only care about open-source releases"), then start a new conversation and confirm it recalls the preference.
+Durable memory is opt-in. Before asking the agent to remember anything, add a memory declaration at the project root:
 
-To turn off managed memory, set `disable_memory=True` or `disableMemory: true` in the agent definition. For more information about hot/cold tiers, identity remounts, and org memory, see [Memory](/langsmith/managed-deep-agents-memory).
+:::python
+```python memory.py
+from managed_deepagents import define_memory
+
+memory = define_memory(scope="agent")
+```
+:::
+
+:::js
+```ts memory.ts
+import { defineMemory } from "managed-deepagents";
+
+export const memory = defineMemory({ scope: "agent" });
+```
+:::
+
+Memory is shared across the deployment and visible to all callers, so do not store personal data or secrets.
+
+Restart `mda dev` so it discovers the new file. In one thread, ask the agent to research a release and to record a reusable project rule, such as "For release research, check the official changelog before secondary sources." Then create a **new thread** in Studio and ask how it will research the next release. Confirm that it applies the shared rule even though the new thread has no conversation history.
+
+See [Memory](/langsmith/managed-deep-agents-memory) for details.
 
   </Step>
 
@@ -150,8 +167,7 @@ To turn off managed memory, set `disable_memory=True` or `disableMemory: true` i
 
 Add a `schedules/` module so the agent runs on a cron cadence without a user message. This schedule runs every weekday at 8am Pacific:
 
-<CodeGroup>
-
+:::python
 ```python schedules/daily_digest.py
 from managed_deepagents import define_schedule
 
@@ -161,7 +177,9 @@ schedule = define_schedule(
     prompt="Summarize what you learned yesterday and list open questions.",
 )
 ```
+:::
 
+:::js
 ```ts schedules/daily-digest.ts
 import { defineSchedule } from "managed-deepagents";
 
@@ -171,8 +189,7 @@ export const schedule = defineSchedule({
   prompt: "Summarize what you learned yesterday and list open questions.",
 });
 ```
-
-</CodeGroup>
+:::
 
 `mda deploy` reconciles this schedule into a LangSmith cron job after the deployment is live. For thread behavior and constraints, see [Schedules](/langsmith/managed-deep-agents-schedules).
 
@@ -204,21 +221,15 @@ Open the printed URL in LangSmith to inspect build status and revisions. Open tr
     Add logging, retries, limits, and guardrails around model and tool calls.
   </Card>
   <Card title="Identity" icon="fingerprint" href="/langsmith/managed-deep-agents-identity">
-    Scope threads and memory to the authenticated caller.
+    Authenticate callers and use verified identity in tools and middleware.
   </Card>
   <Card title="Memory" icon="brain" href="/langsmith/managed-deep-agents-memory">
-    Persist preferences across threads with Context Hub `/memories`.
+    Persist shared procedural and project knowledge across threads.
   </Card>
   <Card title="Evals" icon="flask" href="/langsmith/managed-deep-agents-evals">
-    Compile a Harbor handoff and run Harbor-style tasks.
+    Author Harbor tasks and compile the managed agent for Harbor.
   </Card>
-  <Card title="Connectors" icon="plug" href="/langsmith/managed-deep-agents-connectors">
-    Load MCP tools or constrained LangSmith capabilities.
-  </Card>
-  <Card title="Channels" icon="messages" href="/langsmith/managed-deep-agents-channels">
-    Receive Slack Events and reply from messaging channels.
-  </Card>
-  <Card title="Example project" icon="apps" href="/langsmith/managed-deep-agents-examples">
-    See a complete project that combines common features.
+  <Card title="Sandboxes" icon="box" href="/langsmith/managed-deep-agents-sandboxes">
+    Configure isolated filesystem and shell access for agent work.
   </Card>
 </CardGroup>

@@ -105,12 +105,18 @@ class DocumentationBuilder:
         logger.debug("Building LangGraph JavaScript version...")
         self._build_langgraph_version("oss/javascript", "js")
 
-        # Deep Agents Code is language-agnostic (no python/javascript URL split)
+        # Language-agnostic OSS products (no python/javascript URL split)
         logger.debug("Building Deep Agents Code (unversioned)...")
         self._build_unversioned_oss_code()
 
+        logger.debug("Building OpenWiki (unversioned)...")
+        self._build_unversioned_oss_openwiki()
+
         logger.debug("Building LangSmith content...")
         self._build_unversioned_content("langsmith", "langsmith")
+
+        logger.debug("Building Managed Deep Agents language variants...")
+        self._build_managed_deep_agents_versions()
 
         # Copy shared files (docs.json, images, etc.)
         logger.debug("Copying shared files...")
@@ -175,8 +181,8 @@ class DocumentationBuilder:
             # unversioned langsmith pages to /oss/python/... or
             # /oss/javascript/...), otherwise the language is inserted a second
             # time and produces broken URLs like /oss/python/python/...
-            # Also skip Deep Agents Code paths: those pages are language-agnostic
-            # at /oss/deepagents/code/... (not duplicated under python/javascript).
+            # Also skip language-agnostic OSS product paths (Deep Agents Code,
+            # OpenWiki): those pages are not duplicated under python/javascript.
             if (
                 url.startswith("/oss/")
                 and "images" not in url
@@ -184,6 +190,8 @@ class DocumentationBuilder:
                 and not url.startswith("/oss/javascript/")
                 and not url.startswith("/oss/deepagents/code/")
                 and url != "/oss/deepagents/code"
+                and not url.startswith("/oss/openwiki/")
+                and url != "/oss/openwiki"
             ):
                 parts = url.split("/")
                 # Insert full language name after "oss"
@@ -195,6 +203,27 @@ class DocumentationBuilder:
         # Match markdown links and HTML links/anchors
         # This handles both [text](/oss/path) and <a href="/oss/path">
         pattern = r'(\[.*?\]\(|\bhref="|")(/oss/[^")\s]+)([")\s])'
+        return re.sub(pattern, rewrite_link, content)
+
+    def _rewrite_managed_deep_agents_links(
+        self, content: str, target_language: str | None
+    ) -> str:
+        """Rewrite Managed Deep Agents links to the target language route."""
+        if not target_language:
+            return content
+
+        language = self.language_url_names[target_language]
+
+        def rewrite_link(match: re.Match) -> str:
+            prefix, url, suffix = match.groups()
+            relative_url = url.removeprefix("/langsmith/")
+            return f"{prefix}/langsmith/{language}/{relative_url}{suffix}"
+
+        pattern = (
+            r'(\[.*?\]\(|\bhref="|")'
+            r'(/langsmith/managed-deep-agents[^"\)\s]*)'
+            r'(["\)\s])'
+        )
         return re.sub(pattern, rewrite_link, content)
 
     def _add_suggested_edits_link(self, content: str, input_path: Path) -> str:
@@ -310,8 +339,8 @@ class DocumentationBuilder:
                     content, target_language
                 )
 
-            # Then rewrite /oss/ links to include language
-            return self._rewrite_oss_links(content, target_language)
+            content = self._rewrite_oss_links(content, target_language)
+            return self._rewrite_managed_deep_agents_links(content, target_language)
 
         except Exception:
             logger.exception("Failed to process markdown content from %s", file_path)
@@ -394,20 +423,22 @@ class DocumentationBuilder:
     def is_unversioned_oss_file(self, file_path: Path) -> bool:
         """Return True for OSS files that must not be duplicated per language.
 
-        Deep Agents Code (dcode) ships one set of pages at
-        ``/oss/deepagents/code/...`` rather than python/ and javascript/ copies.
+        Deep Agents Code ships one set of pages at ``/oss/deepagents/code/...``.
+        OpenWiki ships one set of pages at ``/oss/openwiki/...``.
         """
         try:
             relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
         except ValueError:
             return False
         parts = relative_path.parts
-        return (
+        if (
             len(parts) >= 3
             and parts[0] == "oss"
             and parts[1] == "deepagents"
             and parts[2] == "code"
-        )
+        ):
+            return True
+        return len(parts) >= 2 and parts[0] == "oss" and parts[1] == "openwiki"
 
     def _build_oss_file(self, file_path: Path, relative_path: Path) -> None:
         """Build an OSS file for both Python and JavaScript versions.
@@ -443,13 +474,58 @@ class DocumentationBuilder:
         if self._build_single_file_to_path(file_path, js_output, "js"):
             logger.debug("Built JavaScript version: oss/javascript/%s", oss_relative)
 
+    def is_managed_deep_agents_file(self, file_path: Path) -> bool:
+        """Return whether a source file is a Managed Deep Agents page."""
+        try:
+            relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
+        except ValueError:
+            return False
+        return (
+            relative_path.parent == Path("langsmith")
+            and relative_path.name.startswith("managed-deep-agents")
+            and relative_path.suffix.lower() in {".md", ".mdx"}
+        )
+
+    def _build_managed_deep_agents_variants(self, file_path: Path) -> None:
+        """Build Python and JavaScript routes for a Managed Deep Agents page."""
+        relative_path = file_path.absolute().relative_to(self.src_dir.absolute())
+        langsmith_relative = relative_path.relative_to("langsmith")
+        for language, output_name in self.language_url_names.items():
+            output_path = (
+                self.build_dir / "langsmith" / output_name / langsmith_relative
+            )
+            if self._build_single_file_to_path(file_path, output_path, language):
+                logger.debug(
+                    "Built Managed Deep Agents %s version: %s",
+                    output_name,
+                    langsmith_relative,
+                )
+
+    def _build_managed_deep_agents_versions(self) -> None:
+        """Build language-specific routes for all Managed Deep Agents pages."""
+        langsmith_dir = self.src_dir / "langsmith"
+        if not langsmith_dir.exists():
+            return
+        for file_path in langsmith_dir.glob("managed-deep-agents*.mdx"):
+            self._build_managed_deep_agents_variants(file_path)
+
     def _build_unversioned_file(self, file_path: Path, relative_path: Path) -> None:
         """Build an unversioned file (langsmith).
+
+        Managed Deep Agents pages only emit language-prefixed routes
+        (``langsmith/python/...`` and ``langsmith/javascript/...``). The
+        unversioned ``/langsmith/managed-deep-agents*`` URLs redirect to the
+        Python routes via ``docs.json`` so Mintlify does not serve orphaned
+        pages outside the Managed Deep Agents nav.
 
         Args:
             file_path: Path to the source file.
             relative_path: Relative path from src_dir.
         """
+        if self.is_managed_deep_agents_file(file_path):
+            self._build_managed_deep_agents_variants(file_path)
+            return
+
         output_path = self.build_dir / relative_path
         if self._build_single_file_to_path(file_path, output_path, "python"):
             logger.debug("Built: %s", relative_path)
@@ -554,7 +630,10 @@ class DocumentationBuilder:
         if file_path.suffix.lower() in self.copy_extensions:
             # Handle markdown files with preprocessing
             if file_path.suffix.lower() in {".md", ".mdx"}:
-                self._process_markdown_file(file_path, output_path)
+                if self.is_managed_deep_agents_file(file_path):
+                    self._build_unversioned_file(file_path, relative_path)
+                else:
+                    self._process_markdown_file(file_path, output_path)
                 return True
             shutil.copy2(file_path, output_path)
             return True
@@ -623,8 +702,8 @@ class DocumentationBuilder:
 
         all_files = [
             file_path
-            for file_path in oss_dir.rglob("*")
-            if file_path.is_file() and not self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(oss_dir)
+            if not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -665,8 +744,12 @@ class DocumentationBuilder:
                         # e.g., "python/concepts/low_level.md" > "concepts/low_level.md"
                         relative_path = Path(*relative_path.parts[1:])
 
-                # Deep Agents Code is built once under oss/deepagents/code/
+                # Language-agnostic OSS products are built once under their
+                # own paths (not duplicated into python/javascript trees).
                 if relative_path.parts[:2] == ("deepagents", "code"):
+                    pbar.update(1)
+                    continue
+                if relative_path.parts[:1] == ("openwiki",):
                     pbar.update(1)
                     continue
 
@@ -707,8 +790,8 @@ class DocumentationBuilder:
 
         all_files = [
             file_path
-            for file_path in code_dir.rglob("*")
-            if file_path.is_file() and not self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(code_dir)
+            if not self.is_shared_file(file_path)
         ]
 
         if not all_files:
@@ -750,6 +833,63 @@ class DocumentationBuilder:
             skipped_count,
         )
 
+    def _build_unversioned_oss_openwiki(self) -> None:
+        """Build OpenWiki once at ``oss/openwiki/``.
+
+        These pages are language-agnostic (no python/javascript URL split).
+        Conditional blocks use the Python branch; ``/oss/openwiki/`` links are
+        left unprefixed by ``_rewrite_oss_links``.
+        """
+        openwiki_dir = self.src_dir / "oss" / "openwiki"
+        if not openwiki_dir.exists():
+            logger.warning("oss/openwiki/ directory not found, skipping")
+            return
+
+        all_files = [
+            file_path
+            for file_path in self._safe_source_files(openwiki_dir)
+            if not self.is_shared_file(file_path)
+        ]
+
+        if not all_files:
+            logger.info("No files found in oss/openwiki/")
+            return
+
+        copied_count = 0
+        skipped_count = 0
+        output_root = self.build_dir / "oss" / "openwiki"
+
+        with tqdm(
+            total=len(all_files),
+            desc="Building oss/openwiki files",
+            unit="file",
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
+            leave=False,
+            disable=_IS_CI,
+        ) as pbar:
+            for file_path in all_files:
+                relative_path = file_path.relative_to(openwiki_dir)
+                output_path = output_root / relative_path
+                result = self._build_single_file(
+                    file_path,
+                    output_path,
+                    "python",
+                    pbar,
+                    f"oss/openwiki/{relative_path}",
+                )
+                if result:
+                    copied_count += 1
+                else:
+                    skipped_count += 1
+                pbar.update(1)
+
+        logger.info(
+            "✅ oss/openwiki complete: %d files copied, %d files skipped",
+            copied_count,
+            skipped_count,
+        )
+
     def _build_unversioned_content(self, source_dir: str, output_dir: str) -> None:
         """Build unversioned content (langsmith/).
 
@@ -764,8 +904,11 @@ class DocumentationBuilder:
 
         all_files = [
             file_path
-            for file_path in src_path.rglob("*")
-            if file_path.is_file() and not self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(src_path)
+            if not self.is_shared_file(file_path)
+            # Managed Deep Agents emit language-prefixed routes only
+            # (see `_build_managed_deep_agents_versions`).
+            and not self.is_managed_deep_agents_file(file_path)
         ]
 
         if not all_files:
@@ -899,6 +1042,39 @@ class DocumentationBuilder:
             return True
         return False
 
+    def _safe_source_files(self, root: Path) -> list[Path]:
+        """Collect regular files under ``root``, rejecting symlinks.
+
+        Symlinks are skipped even when they target regular files, so a
+        committed symlink cannot pull host paths (for example
+        ``/proc/self/environ``) into build artifacts. Resolved paths must
+        stay under ``root``.
+        """
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            logger.warning("Could not resolve source root %s", root)
+            return []
+
+        files: list[Path] = []
+        for file_path in root.rglob("*"):
+            if file_path.is_symlink():
+                logger.warning("Skipping symlink in source tree: %s", file_path)
+                continue
+            if not file_path.is_file():
+                continue
+            try:
+                file_path.resolve().relative_to(root_resolved)
+            except ValueError:
+                logger.warning(
+                    "Skipping file that resolves outside %s: %s",
+                    root,
+                    file_path,
+                )
+                continue
+            files.append(file_path)
+        return files
+
     def is_shared_file(self, file_path: Path) -> bool:
         """Check if a file should be shared between versions rather than duplicated.
 
@@ -940,8 +1116,8 @@ class DocumentationBuilder:
         # Collect shared files
         shared_files = [
             file_path
-            for file_path in self.src_dir.rglob("*")
-            if file_path.is_file() and self.is_shared_file(file_path)
+            for file_path in self._safe_source_files(self.src_dir)
+            if self.is_shared_file(file_path)
         ]
 
         if not shared_files:
@@ -1052,10 +1228,6 @@ class DocumentationBuilder:
             with input_path.open("r", encoding="utf-8") as f:
                 content = f.read()
 
-            processed_content = preprocess_markdown(
-                content, input_path, target_language=None
-            )
-
             if input_path.suffix.lower() == ".md":
                 output_path = output_path.with_suffix(".mdx")
 
@@ -1065,14 +1237,26 @@ class DocumentationBuilder:
             )
 
             for lang_key, lang_name in self.language_url_names.items():
-                lang_content = self._rewrite_oss_links(processed_content, lang_key)
+                lang_content = preprocess_markdown(
+                    content, input_path, target_language=lang_key
+                )
+                lang_content = self._rewrite_oss_links(lang_content, lang_key)
+                lang_content = self._rewrite_managed_deep_agents_links(
+                    lang_content, lang_key
+                )
                 lang_output = snippets_root / lang_name / relative_snippet
                 lang_output.parent.mkdir(parents=True, exist_ok=True)
                 with lang_output.open("w", encoding="utf-8") as f:
                     f.write(lang_content)
 
             # Default path: Python-prefixed absolute links for unversioned pages.
-            default_content = self._rewrite_oss_links(processed_content, "python")
+            default_content = preprocess_markdown(
+                content, input_path, target_language="python"
+            )
+            default_content = self._rewrite_oss_links(default_content, "python")
+            default_content = self._rewrite_managed_deep_agents_links(
+                default_content, "python"
+            )
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with output_path.open("w", encoding="utf-8") as f:
                 f.write(default_content)

@@ -1,4 +1,9 @@
 > **Keep in sync:** `AGENTS.md` and `CLAUDE.md` contain identical guidelines. If you update one, update the other.
+>
+> Four files derive from this one, for agents that do not read `CLAUDE.md` or `AGENTS.md`. When you change a section listed below, update its copies in the same PR:
+>
+> - **Style guide** (through Product and feature name capitalization) is mirrored verbatim in `.cursor/rules/docs-style.mdc` and `.github/instructions/docs-style.instructions.md`. Both are path-scoped to `src/**/*.mdx`, so they load only when a page is edited.
+> - **Critical rules, Repository structure, Quick reference, Frontmatter, and Syntax** are summarized in `.cursorrules` and `.github/copilot-instructions.md`.
 
 # LangChain Documentation Guidelines
 
@@ -266,7 +271,7 @@ Match these patterns, drawn from established pages, when authoring new content:
 - **Open with definition, then benefit, then task** — start a section (and the page) with a one-sentence statement of what the feature is or does, follow with a sentence on what it enables for the reader, then give the procedure or detail. When a page has a sibling variant (for example, a paid or self-hosted version), link it in the opening lines.
 - **Introduce procedures with a colon lead-in** — precede steps with a phrase such as "To add a channel:", then a numbered list (or the `<Steps>` component) of imperative steps. State a step's result as a follow-on line when it matters ("The Add User modal displays."). Flag optional steps inline with "(Optional)". For long, multi-stage tasks, use `### Step N. <verb>` headings.
 - **Use bold-led definition lists for options** — for parameters, permissions, secrets, or enumerated types, write `- **Term**: Explanation.` and end each explanation with a period.
-- **Link on first mention, and point forward at section ends** — link a feature, class, or term on first mention only, not on repeats. Use the pointer phrasing "For more information, see [Page](/path)". Close substantial pages with a `## See also` list of related links.
+- **Link on first mention, and point forward at section ends** — link a feature, class, or term on first mention only, not on repeats. Two pointer forms are established, and neither is canonical, so do not mass-convert one into the other. Use the long form ("For more information, see [Page](/path)") at section ends and for standalone pointers. Use the short form ("See [Page](/path)") where the pointer trails an already-complete thought, such as an FAQ answer or a table cell, and especially in a run where nearly every item ends in a pointer. Close substantial pages with a `## See also` list of related links.
 - **State requirements and constraints up front** — put permission, plan tier, or preview requirements before the steps they govern ("Adding MCP servers requires admin permissions."). Write hard constraints as plain facts ("Once an agent identity is set, it cannot be changed.").
 
 ### Model references
@@ -333,7 +338,10 @@ When in doubt, ask: is this word the product's proper name, or is it describing 
 **Add a reusable snippet:**
 
 1. Create `src/snippets/<product>/<name>.mdx`
-2. Reference with `<Snippet file="<product>/<name>.mdx" />`
+2. Import it below the frontmatter of the consuming page: `import PascalCaseName from '/snippets/<product>/<name>.mdx';`
+3. Render it where the content belongs: `<PascalCaseName />`
+
+Use the import form, not Mintlify's `<Snippet file="..." />`. The build pipeline rewrites snippet imports to language-specific copies under `/snippets/{python,javascript}/` (`_rewrite_snippet_imports_for_language` in `pipeline/core/builder.py`), and that rewrite only matches `from '/snippets/...'` imports. Every snippet reference in `src/` uses the import form.
 
 ## Debugging
 

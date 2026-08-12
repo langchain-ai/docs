@@ -1,84 +1,41 @@
 ---
 title: Managed Deep Agents
 sidebarTitle: Overview
-description: Overview of Managed Deep Agents private beta features, workflows, and limits.
+description: Overview of Managed Deep Agents public beta features, workflows, and limits.
 ---
 
-import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
-import ManagedDeepAgentsNextSteps from '/snippets/langsmith/managed-deep-agents-next-steps.mdx';
+Managed Deep Agents lets you define an agent as a folder and run it on managed LangSmith infrastructure. You provide the business logic, and Managed Deep Agents provides the agent harness and production infrastructure.
 
-Managed Deep Agents is a hosted runtime for deploying and operating code-first Deep Agents in LangSmith, pairing the [Deep Agents](/oss/deepagents/overview) harness with managed infrastructure. It lets you run a production agent without standing up your own agent server or infrastructure. You author an agent in Python or TypeScript, then use the `mda` CLI to test and deploy it to the managed runtime.
+## Define your agent
 
-The managed runtime provides:
+An agent starts as a project folder that contains the business logic for its behavior:
 
-- Durable runs
-- [LangSmith sandboxes](/langsmith/sandboxes)
-- [Context Hub](/langsmith/use-the-context-hub)-backed instructions, skills, and memory
-- Traces
-- Hosted LangGraph deployment
+- **[Instructions](/langsmith/managed-deep-agents-instructions)**: The prompt that defines what the agent does and how it behaves.
+- **[Tools](/langsmith/managed-deep-agents-tools)**: Functions the agent can call to interact with other systems or take actions.
+- **[MCP connectors](/langsmith/managed-deep-agents-mcp-connectors)**: Remote MCP servers that provide tools to the agent.
+- **[Skills](/langsmith/managed-deep-agents-skills)**: Reusable, task-specific instructions and resources.
 
-To deploy your first agent, see the [quickstart](/langsmith/managed-deep-agents-quickstart).
+You can add other capabilities as needed. For the complete folder layout, see [Project structure](/langsmith/managed-deep-agents-project-structure).
 
-<Note>
-<ManagedDeepAgentsPrivateBetaNote />
+## Run on a managed harness
 
-**Private beta access:** During private beta, Managed Deep Agents is CLI-first while LangChain finalizes the supported API. API-driven creation, update, and invocation examples have been removed. To use agents programmatically, contact your LangChain team at the address in your beta access email.
-</Note>
+Managed Deep Agents combines three layers:
 
-## When to use Managed Deep Agents
+- **Your business logic**: The instructions, tools, and skills in your project folder.
+- **Agent harness**: The battle-tested [Deep Agents harness](/oss/deepagents/overview) that runs the agent and connects its business logic.
+- **Managed infrastructure**: LangSmith infrastructure that operates the agent at scale for production and multi-user applications.
 
-Choose the path that matches your control and infrastructure needs:
+This separation lets you focus on what the agent should do instead of building and operating the systems required to run it.
 
-| Path | Use when | You manage | LangSmith manages |
-|------|----------|------------|-------------------|
-| **Managed Deep Agents** | You want a code-first Deep Agent deployed quickly on managed infrastructure. | Agent code, tools, middleware, instructions, schedules, optional identity. | Backend, store, checkpointer, memory, skills, sandbox, hosted deployment, identity auth when declared. |
-| **[LangSmith Deployment](/langsmith/deployment-quickstart)** | You need custom application code, custom routes, advanced authentication, stronger isolation controls, or maximum scalability. | Application code, server, deployment configuration. | Hosted infrastructure and scaling. |
-| **[OSS Deep Agents](/oss/deepagents/overview)** | You want to run the Deep Agents harness in your own environment. | Everything, including hosting and persistence. | Nothing (self-managed). |
+## Managed infrastructure
 
-## Structure your agent project
+The opinionated infrastructure consists of several pieces:
 
-A Managed Deep Agent is a local project directory. A file's location determines its role: the CLI reads the directory to find the agent entry, managed instructions, skills, connectors, channels, schedules, optional identity, sandbox configuration, and local eval tasks, then packages the deploy-owned pieces into a hosted deployment.
+- **Runtime**: [LangSmith Agent Server](/langsmith/agent-server) runs agents in a durable, fault-tolerant manner.
+- **Sandboxes**: [LangSmith Sandboxes](/langsmith/sandboxes) let agents write and execute untrusted code in an isolated environment.
+- **Evals**: Managed Deep Agents uses [Harbor tasks](/langsmith/managed-deep-agents-evals) to test agent behavior.
+- **Channels**: The [channels abstraction](/langsmith/managed-deep-agents-channels) connects an agent to platforms where its users work.
+- **Memory**: [Managed memory](/langsmith/managed-deep-agents-memory) lets agents remember information across interactions.
+- **Context management**: [LangSmith Context Hub](/langsmith/use-the-context-hub) manages agent instructions and skills. You can update them in the LangSmith UI without redeploying the agent.
 
-For the full directory layout and packaging rules, see the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference). For how the CLI compiles this directory and what a deploy creates, see [How Managed Deep Agents work](/langsmith/managed-deep-agents-how-it-works).
-
-## Recommended workflow
-
-1. Install `managed-deepagents` for Python or TypeScript.
-2. Create a local code-first agent project with `mda init`.
-3. Put the agent system prompt in `instructions.md`.
-4. Add authored tools, middleware, schedules, skills, connectors, messaging channels, optional identity, and an optional sandbox.
-5. Optionally compile Harbor-style [evals](/langsmith/managed-deep-agents-evals) with `mda evals compile` and run them with Harbor.
-6. Use `mda dev` to test your agent locally in LangSmith Studio, then `mda deploy` to deploy to LangSmith.
-7. Inspect the deployment, traces, and runtime state in LangSmith.
-
-New to Managed Deep Agents? Start with the [quickstart](/langsmith/managed-deep-agents-quickstart), then build a complete agent step by step in the [tutorial](/langsmith/managed-deep-agents-tutorial).
-
-## Beta notes and limits
-
-Operational notes that apply during private beta. Behavior may change before general availability.
-
-### Supported models
-
-Pass model identifiers in the form `{provider}:{model_id}`. For example, `openai:gpt-5.5`. The runtime resolves models with `init_chat_model`, so any provider that `init_chat_model` supports is usable from Managed Deep Agents, as long as the runtime has credentials for that provider. See [Supported providers and models](/oss/langchain/models#supported-providers-and-models) for the current list.
-
-Put local keys in `.env`, export them in your shell, or configure them as LangSmith workspace secrets before deploying.
-
-### Context Hub memory
-
-Managed memory lives in the same Context Hub repo as the deployed instructions and skills. The runtime remounts one Hub slice as `/memories/user/` (hot `/memories/user/AGENTS.md`, cold files under that mount) and optional org facts as `/memories/org/` (read-only). Deploy syncs `instructions.md` and `skills/**`, but preserves existing `memories/**` and does not overwrite runtime-created memory. Set `disableMemory: true` or `disable_memory=True` to disable managed memory. For more information about hot/cold tiers, identity remounts, and org memory, see [Memory](/langsmith/managed-deep-agents-memory). To partition memory per caller, see [Identity](/langsmith/managed-deep-agents-identity).
-
-### Rate limits and quotas
-
-During private beta, Managed Deep Agents does not publish per-key, per-workspace, or per-agent request rate limits. For workspace-specific limits, contact your LangChain team at the address in your beta access email.
-
-### Support and feedback
-
-Beta access includes direct support. The contact for bug reports and feature requests is included in the email you receive when access is granted.
-
-### Private beta scope
-
-Managed Deep Agents is available on LangSmith Cloud in the US region only during private beta. Self-hosted and Hybrid deployments are not supported.
-
-## Next steps
-
-<ManagedDeepAgentsNextSteps />
+To create and deploy an agent, follow the [Managed Deep Agents quickstart](/langsmith/managed-deep-agents-quickstart).
