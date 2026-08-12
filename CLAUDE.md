@@ -333,7 +333,10 @@ When in doubt, ask: is this word the product's proper name, or is it describing 
 **Add a reusable snippet:**
 
 1. Create `src/snippets/<product>/<name>.mdx`
-2. Reference with `<Snippet file="<product>/<name>.mdx" />`
+2. Import it below the frontmatter of the consuming page: `import PascalCaseName from '/snippets/<product>/<name>.mdx';`
+3. Render it where the content belongs: `<PascalCaseName />`
+
+Use the import form, not Mintlify's `<Snippet file="..." />`. The build pipeline rewrites snippet imports to language-specific copies under `/snippets/{python,javascript}/` (`_rewrite_snippet_imports_for_language` in `pipeline/core/builder.py`), and that rewrite only matches `from '/snippets/...'` imports. Every snippet reference in `src/` uses the import form.
 
 ## Debugging
 
