@@ -1,0 +1,37 @@
+```python
+from typing import TypedDict
+
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
+
+
+class State(TypedDict):
+    messages: list[dict]
+
+
+def human_review(state: State):
+    # Pauses the graph and waits for a value
+    answer = interrupt("Do you approve?")
+    return {"messages": [{"role": "user", "content": answer}]}
+
+
+graph = (
+    StateGraph(State)
+    .add_node("human_review", human_review)
+    .add_edge(START, "human_review")
+    .add_edge("human_review", END)
+    .compile(checkpointer=InMemorySaver())
+)
+
+config = {"configurable": {"thread_id": "graph-api-resume"}}
+
+# First run - hits the interrupt and pauses
+stream = graph.stream_events({"messages": []}, config, version="v3")
+_ = stream.output  # drive the stream to completion
+print(stream.interrupts)
+
+# Resume with a value - the interrupt() call returns "yes"
+resumed = graph.stream_events(Command(resume="yes"), config, version="v3")
+final = resumed.output
+```
