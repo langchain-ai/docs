@@ -1129,8 +1129,26 @@ class DocumentationBuilder:
 
     @staticmethod
     def _slugify(value: str) -> str:
-        """Lowercase, hyphenate, and strip a string for use in a URL path."""
-        return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", value.lower())).strip("-")
+        """Lowercase, hyphenate, and strip a string for use in a URL path.
+
+        Apostrophes are dropped rather than turned into separators, matching
+        Mintlify: "Get the authenticated user's provider user ID" slugs to
+        ``...-users-provider-user-id``, not ``...-user-s-...``.
+        """
+        cleaned = re.sub(r"['’]", "", value.lower())
+        return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", cleaned)).strip("-")
+
+    @staticmethod
+    def _tag_slug(value: str) -> str:
+        """Slug an OpenAPI tag the way Mintlify does, preserving underscores.
+
+        Mintlify lowercases the tag and replaces whitespace, but otherwise uses
+        it verbatim. Underscores must survive: the LangSmith spec carries both
+        ``annotation-queues`` and ``annotation_queues`` as distinct tags that
+        render to different directories, so normalising them together would
+        point at pages that do not exist.
+        """
+        return re.sub(r"[^a-z0-9_-]+", "-", value.lower()).strip("-")
 
     def _read_frontmatter(self, path: Path) -> dict:
         """Return the YAML frontmatter of an MDX file, or an empty dict."""
@@ -1214,17 +1232,25 @@ class DocumentationBuilder:
                 for operation in item.values():
                     if not isinstance(operation, dict) or "responses" not in operation:
                         continue
+                    # Mintlify renders no page for hidden operations.
+                    if operation.get("x-hidden"):
+                        continue
                     summary = operation.get("summary") or operation.get("operationId")
                     if not summary:
                         continue
                     tags = operation.get("tags") or ["default"]
                     slug = (
-                        f"{self._slugify(str(tags[0]))}/{self._slugify(str(summary))}"
+                        f"{self._tag_slug(str(tags[0]))}/{self._slugify(str(summary))}"
                     )
-                    if slug in seen:
-                        continue
-                    seen.add(slug)
-                    entries.append((label, f"{base}/{slug}", str(summary)))
+                    # Two operations can share a summary. Mintlify keeps both
+                    # and disambiguates with a numeric suffix, so mirror that
+                    # rather than dropping the second page.
+                    unique, duplicate_index = slug, 0
+                    while unique in seen:
+                        duplicate_index += 1
+                        unique = f"{slug}-{duplicate_index}"
+                    seen.add(unique)
+                    entries.append((label, f"{base}/{unique}", str(summary)))
         return entries
 
     def _generate_llms_txt(self) -> None:

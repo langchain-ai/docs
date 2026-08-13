@@ -5,6 +5,7 @@ covering all methods and edge cases including file extension handling,
 directory structure preservation, and error conditions.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -704,3 +705,72 @@ def test_build_all_writes_llms_txt() -> None:
         # noindex pages and snippets are not real pages, so they stay out.
         assert "hidden.md" not in llms_txt
         assert "snippets/shared.md" not in llms_txt
+
+
+def test_tag_slug_preserves_underscores() -> None:
+    """Test that OpenAPI tag slugs keep underscores but normalize case and spaces.
+
+    The LangSmith spec carries both `annotation-queues` and `annotation_queues`
+    as distinct tags that Mintlify renders to different directories, so
+    collapsing them together would generate URLs for pages that do not exist.
+    """
+    slug = DocumentationBuilder._tag_slug
+    assert slug("annotation_queues") == "annotation_queues"
+    assert slug("annotation-queues") == "annotation-queues"
+    assert slug("SCIM Tokens") == "scim-tokens"
+    assert slug("A2A") == "a2a"
+
+
+def test_slugify_drops_apostrophes() -> None:
+    """Test that apostrophes are removed rather than turned into separators."""
+    slug = DocumentationBuilder._slugify
+    assert slug("Get the authenticated user's provider user ID") == (
+        "get-the-authenticated-users-provider-user-id"
+    )
+    assert slug("Get company info") == "get-company-info"
+
+
+def test_openapi_entries_skip_hidden_and_number_duplicates() -> None:
+    """Test that hidden operations are omitted and duplicate slugs get suffixes.
+
+    Mintlify renders no page for `x-hidden` operations, and disambiguates two
+    operations sharing a summary with a numeric suffix instead of dropping one.
+    """
+    spec = {
+        "paths": {
+            "/a": {"get": {"tags": ["orgs"], "summary": "Get info", "responses": {}}},
+            "/b": {"get": {"tags": ["orgs"], "summary": "Get info", "responses": {}}},
+            "/c": {
+                "get": {
+                    "tags": ["fleet orgs"],
+                    "summary": "Hidden op",
+                    "responses": {},
+                    "x-hidden": True,
+                }
+            },
+        }
+    }
+    docs_json = {
+        "navigation": {
+            "pages": [
+                {
+                    "group": "REST API",
+                    "openapi": {
+                        "source": "langsmith/spec.json",
+                        "directory": "langsmith/api",
+                    },
+                }
+            ]
+        }
+    }
+    files: list[File] = [
+        {"path": "docs.json", "content": json.dumps(docs_json)},
+        {"path": "langsmith/spec.json", "content": json.dumps(spec)},
+        {"path": "langsmith/page.mdx", "content": "---\ntitle: Page\n---\n\nBody.\n"},
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+        slugs = [slug for _, slug, _ in builder._openapi_entries()]
+
+    assert slugs == ["langsmith/api/orgs/get-info", "langsmith/api/orgs/get-info-1"]
