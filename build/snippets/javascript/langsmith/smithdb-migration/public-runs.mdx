@@ -1,0 +1,138 @@
+import SmithdbPublicRunsBeforePy from '/snippets/code-samples/smithdb-migration/public-runs-before-py.mdx';
+import SmithdbPublicRunsAfterPy from '/snippets/code-samples/smithdb-migration/public-runs-after-py.mdx';
+import SmithdbPublicRunsBeforeJs from '/snippets/code-samples/smithdb-migration/public-runs-before-js.mdx';
+import SmithdbPublicRunsAfterJs from '/snippets/code-samples/smithdb-migration/public-runs-after-js.mdx';
+import SmithdbPublicRunsBeforeSh from '/snippets/code-samples/smithdb-migration/public-runs-before-sh.mdx';
+import SmithdbPublicRunsAfterSh from '/snippets/code-samples/smithdb-migration/public-runs-after-sh.mdx';
+
+## Share and read public runs
+
+Share a trace, remove its public access, or read the runs in a publicly shared trace. The v2 methods use explicit SmithDB coordinates and return select-driven run objects.
+
+Public read methods do not require a LangSmith API key. Treat the share token as a secret because anyone with the token can read the shared trace.
+
+### Main changes
+
+#### Method names
+
+<Tabs>
+  <Tab title="Python">
+    | Before | After |
+    |---|---|
+    | `client.share_run()` | `client.runs.share.create()` |
+    | `client.unshare_run()` | `client.runs.share.delete()` |
+    | `client.list_shared_runs()` | `client.public.runs.query()` |
+    | `client.read_shared_run()` | `client.public.runs.retrieve()` |
+    | `client.read_run_shared_link()` | `client.runs.retrieve(selects=["SHARE_URL"])` |
+
+    <Note>
+    The v2 resource methods are async. Call them with `await`.
+    </Note>
+  </Tab>
+  <Tab title="TypeScript">
+    | Before | After |
+    |---|---|
+    | `client.shareRun()` | `client.runs.share.create()` |
+    | `client.unshareRun()` | `client.runs.share.delete()` |
+    | `client.listSharedRuns()` | `client.public.runs.query()` |
+    | `client.listSharedRuns({ runIds: [...] })` | `client.public.runs.retrieve()` |
+    | `client.readRunSharedLink()` | `client.runs.retrieve({ selects: ["SHARE_URL"] })` |
+
+    TypeScript did not have a direct equivalent of Python's `read_shared_run`. Filtered `listSharedRuns` calls migrate to the point-read method.
+  </Tab>
+  <Tab title="Java">
+    The Java SDK has no legacy convenience methods to migrate. Use [`ShareService`](https://javadoc.io/doc/com.langchain.smith/langsmith-java/latest/com/langchain/smith/services/blocking/runs/ShareService.html) and the public [`RunService`](https://javadoc.io/doc/com.langchain.smith/langsmith-java/latest/com/langchain/smith/services/blocking/public_/RunService.html) for v2 access. Kotlin uses the Java SDK; there is no separate Kotlin reference site.
+  </Tab>
+  <Tab title="Go">
+    The Go SDK has no legacy convenience methods to migrate. Use [`RunShareService`](https://pkg.go.dev/github.com/langchain-ai/langsmith-go#RunShareService) and [`PublicRunService`](https://pkg.go.dev/github.com/langchain-ai/langsmith-go#PublicRunService) for v2 access.
+  </Tab>
+  <Tab title="cURL">
+    | Operation | Before | After |
+    |---|---|---|
+    | Share | `PUT /api/v1/runs/{run_id}/share` | `POST /api/v2/runs/{run_id}/share` |
+    | Unshare | `DELETE /api/v1/runs/{run_id}/share` | `DELETE /api/v2/runs/{trace_id}/share` |
+    | Query public runs | `POST /api/v1/public/{share_token}/runs/query` | `POST /api/v2/public/{share_token}/runs/query` |
+    | Retrieve a public run | `GET /api/v1/public/{share_token}/run/{run_id}` | `GET /api/v2/public/{share_token}/run/{run_id}` |
+    | Read share state | `GET /api/v1/runs/{run_id}/share` | `GET /api/v2/runs/{run_id}?selects=SHARE_URL` |
+
+    The legacy `GET /api/v1/public/{share_token}/run` endpoint without a run ID has no direct v2 equivalent.
+  </Tab>
+</Tabs>
+
+#### Share and unshare parameters
+
+<Tabs>
+  <Tab title="Python">
+    - `runs.share.create` takes the run ID as its positional argument. Pass `session_id` (the tracing project UUID) and `trace_id` (the root trace UUID).
+    - `runs.share.delete` takes the root trace ID, not an arbitrary child run ID. Pass the tracing project UUID as `session_id`.
+    - `share_id` is removed. The server generates the share token.
+  </Tab>
+  <Tab title="TypeScript">
+    - `runs.share.create` takes the run ID as its positional argument. Pass `session_id` and the root `trace_id` in the options object.
+    - `runs.share.delete` takes the root trace ID and an options object containing `session_id`.
+    - `shareId` is removed. The server generates the share token.
+  </Tab>
+  <Tab title="cURL">
+    - The v2 share request body contains `session_id` and `trace_id`.
+    - The v2 unshare path identifies the root trace. Its request body contains `session_id`.
+    - The v2 unshare operation is idempotent and returns `204 No Content`.
+  </Tab>
+</Tabs>
+
+Although generated parameter types may mark these coordinates as optional, provide `session_id` and `trace_id` when sharing, and provide `session_id` when unsharing. SmithDB uses these coordinates for the lookup.
+
+#### Public read parameters
+
+- `public.runs.query` takes the share token and a `selects` list. The token scopes the query to the complete shared trace. The legacy run-ID filter and cursor response are removed.
+- `public.runs.retrieve` requires the run ID, share token, exact run `start_time`, and a `selects` list. Obtain the exact stored start time from `public.runs.query`.
+- The public point read returns only selected fields. Use `ID`, `NAME`, `RUN_TYPE`, `STATUS`, and `START_TIME` for the examples below.
+- To retrieve the public URL for an authenticated run, call `runs.retrieve` with `selects=["SHARE_URL"]`, then read `run.share_url`. Supplying `start_time` gives SmithDB the most efficient lookup.
+
+Do not construct the public URL from the API origin. Retrieving `share_url` uses the deployment's configured application origin and works for both Cloud and self-hosted deployments.
+
+#### Responses
+
+| Operation | Before | After |
+|---|---|---|
+| Share | Run ID, shared trace ID, and share token | `share_token` |
+| Unshare | `{"message": "Run unshared"}` | `204 No Content` |
+| Query public runs | `runs` and `cursors` | `items` |
+| Retrieve a public run | Full legacy run | Select-driven run object |
+| Read share state | Share-state object or `null` | Run object with `share_url` when shared |
+
+### Examples
+
+The examples query the public trace before the point read because `public.runs.retrieve` requires the run's exact stored `start_time`.
+
+<Tabs>
+  <Tab title="Python">
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbPublicRunsBeforePy />
+      </Tab>
+      <Tab title="After">
+        <SmithdbPublicRunsAfterPy />
+      </Tab>
+    </Tabs>
+  </Tab>
+  <Tab title="TypeScript">
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbPublicRunsBeforeJs />
+      </Tab>
+      <Tab title="After">
+        <SmithdbPublicRunsAfterJs />
+      </Tab>
+    </Tabs>
+  </Tab>
+  <Tab title="cURL">
+    <Tabs sync={false}>
+      <Tab title="Before">
+        <SmithdbPublicRunsBeforeSh />
+      </Tab>
+      <Tab title="After">
+        <SmithdbPublicRunsAfterSh />
+      </Tab>
+    </Tabs>
+  </Tab>
+</Tabs>
