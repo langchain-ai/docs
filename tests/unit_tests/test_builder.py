@@ -668,3 +668,39 @@ def test_build_all_creates_managed_deep_agents_language_routes() -> None:
         assert "/langsmith/javascript/managed-deep-agents-tools" in js_snippet
         assert "TypeScript only." in js_snippet
         assert "Python only." not in js_snippet
+
+
+def test_build_all_writes_llms_txt() -> None:
+    """Test that build_all emits a custom llms.txt indexing every page.
+
+    Mintlify truncates its auto-generated llms.txt at 100,000 characters, so
+    the pipeline writes its own uncapped file at the build root.
+    """
+    files: list[File] = [
+        {
+            "path": "langsmith/tracing.mdx",
+            "content": "---\ntitle: Tracing\ndescription: Trace runs.\n---\n\nBody.\n",
+        },
+        {
+            "path": "langsmith/hidden.mdx",
+            "content": "---\ntitle: Hidden\nnoindex: true\n---\n\nBody.\n",
+        },
+        {
+            "path": "snippets/shared.mdx",
+            "content": "---\ntitle: Shared\n---\n\nSnippet body.\n",
+        },
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        llms_txt = (fs.build_dir / "llms.txt").read_text(encoding="utf-8")
+
+        assert llms_txt.startswith("# ")
+        assert (
+            "- [Tracing](https://docs.langchain.com/langsmith/tracing.md): Trace runs."
+            in llms_txt
+        )
+        # noindex pages and snippets are not real pages, so they stay out.
+        assert "hidden.md" not in llms_txt
+        assert "snippets/shared.md" not in llms_txt
