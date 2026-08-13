@@ -15,25 +15,25 @@ The following middleware work with any LLM provider:
 
 | Middleware | Description |
 |------------|-------------|
+| [Tool error](#tool-error) | Catch tool execution exceptions and convert them to error messages for the model. |
+| [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
+| [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
+| [Model fallback](#model-fallback) | Automatically fallback to alternative models when primary fails. |
 | [Summarization](#summarization) | Automatically summarize conversation history when approaching token limits. |
 | [Human-in-the-loop](#human-in-the-loop) | Pause execution for human approval of tool calls. |
 | [Model call limit](#model-call-limit) | Limit the number of model calls to prevent excessive costs. |
 | [Tool call limit](#tool-call-limit) | Control tool execution by limiting call counts. |
-| [Model fallback](#model-fallback) | Automatically fallback to alternative models when primary fails. |
 | [PII detection](#pii-detection) | Detect and handle Personally Identifiable Information (PII). |
 | [To-do list](#to-do-list) | Equip agents with task planning and tracking capabilities. |
 | [LLM tool selector](#llm-tool-selector) | Use an LLM to select relevant tools before calling main model. |
-| [Tool error](#tool-error) | Catch tool execution exceptions and convert them to error messages for the model. |
-| [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
-| [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
-| [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
-| [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
 | [Provider tool search](#provider-tool-search) | Defer tools behind providers' server-side tool search, surfacing them on demand. |
 | [Shell tool](#shell-tool) | Expose a persistent shell session to agents for command execution. |
-| [File search](#file-search) | Provide Glob and Grep search tools over filesystem files. |
 | [Filesystem](#filesystem-middleware) | Provide agents with a filesystem for storing context and long-term memories. |
 | [Subagent](#subagent) | Add the ability to spawn subagents. |
 | [Rubric grading (Beta)](#rubric-grading) | Apply LLM-as-a-judge grading so agents self-evaluate and iterate until a rubric is satisfied. |
+| [File search](#file-search) | Provide Glob and Grep search tools over filesystem files. |
+| [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
+| [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
 
 :::
 
@@ -41,23 +41,747 @@ The following middleware work with any LLM provider:
 
 | Middleware | Description |
 |------------|-------------|
+| [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
+| [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
+| [Model fallback](#model-fallback) | Automatically fallback to alternative models when primary fails. |
 | [Summarization](#summarization) | Automatically summarize conversation history when approaching token limits. |
 | [Human-in-the-loop](#human-in-the-loop) | Pause execution for human approval of tool calls. |
 | [Model call limit](#model-call-limit) | Limit the number of model calls to prevent excessive costs. |
 | [Tool call limit](#tool-call-limit) | Control tool execution by limiting call counts. |
-| [Model fallback](#model-fallback) | Automatically fallback to alternative models when primary fails. |
 | [PII detection](#pii-detection) | Detect and handle Personally Identifiable Information (PII). |
 | [To-do list](#to-do-list) | Equip agents with task planning and tracking capabilities. |
 | [LLM tool selector](#llm-tool-selector) | Use an LLM to select relevant tools before calling main model. |
-| [Tool retry](#tool-retry) | Automatically retry failed tool calls with exponential backoff. |
-| [Model retry](#model-retry) | Automatically retry failed model calls with exponential backoff. |
-| [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
-| [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
 | [Provider tool search](#provider-tool-search) | Defer tools behind providers' server-side tool search, surfacing them on demand. |
 | [Filesystem](#filesystem-middleware) | Provide agents with a filesystem for storing context and long-term memories. |
 | [Subagent middleware](#subagent) | Add the ability to spawn subagents. |
+| [Context editing](#context-editing) | Manage conversation context by trimming or clearing tool uses. |
+| [LLM tool emulator](#llm-tool-emulator) | Emulate tool execution using an LLM for testing purposes. |
 
 :::
+
+### Tool error
+
+:::python
+
+Catch exceptions raised during tool execution and convert them into error `ToolMessage`s that the model can see and recover from, instead of halting the agent run. Tool error is useful for the following:
+
+- Letting the model retry a failed tool call with corrected arguments.
+- Surfacing controlled, sanitized error messages instead of raw exception details.
+- Preventing unexpected tool exceptions from crashing the agent.
+
+<Note>
+Tool error middleware does not automatically retry failed calls. For retries, compose with [Tool retry](#tool-retry) middleware placed *inner* (earlier in the `middleware` list) and configured with `on_failure="error"` so that exceptions reach the tool error middleware. See the [full example](#tool-error-full-example) below.
+</Note>
+
+**API reference:** @[`ToolErrorMiddleware`]
+
+<Note>
+`ToolErrorMiddleware` requires `langchain>=1.3.14`.
+</Note>
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ToolErrorMiddleware
+
+
+def on_error(exc: Exception, request: ToolCallRequest) -> str | None:
+    if isinstance(exc, ValueError):
+        return f"`{request.tool_call['name']}` failed with {type(exc).__name__}."
+    # propagate everything else
+
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[your_tools],
+    middleware=[ToolErrorMiddleware(on_error)],
+)
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="on_error" type="Callable[[Exception, ToolCallRequest], str | list[ContentBlock] | None]">
+    Sync handler called for each exception raised by tool execution. Return content (a `str` or list of content blocks) to convert the exception into a `ToolMessage(status="error")`. Return `None` or omit a return statement to let the exception propagate. Used on the sync path and, unless `aon_error` is given, on the async path.
+</ParamField>
+
+<ParamField body="aon_error" type="Callable[[Exception, ToolCallRequest], Awaitable[str | list[ContentBlock] | None]]">
+    Optional async handler, used on the async execution path. Falls back to `on_error` when not provided.
+</ParamField>
+
+<ParamField body="tools" type="list[BaseTool | str]">
+    Optional list of tools or tool names to apply error handling to. If `None`, applies to all tools.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Tool error full example">
+
+The `on_error` handler receives the exception and the `ToolCallRequest` (which includes the tool call dict with name, args, and call ID). Return `None` for exceptions you do not want to handle, and they will propagate normally.
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ToolErrorMiddleware, ToolRetryMiddleware
+
+
+def on_error(exc: Exception, request: ToolCallRequest) -> str | None:
+    # Surface ValueError to the model so it can correct the input
+    if isinstance(exc, ValueError):
+        return f"`{request.tool_call['name']}` failed: {type(exc).__name__}. Fix the input and retry."
+    # Let all other exceptions propagate (halts the run)
+    return None
+
+
+# Async-only usage
+async def aon_error(exc: Exception, request: ToolCallRequest) -> str | None:
+    if isinstance(exc, ConnectionError):
+        return f"Tool `{request.tool_call['name']}` encountered a connection error."
+    return None
+
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[search_tool, database_tool],
+    middleware=[
+        # Place retry inner so exceptions reach ToolErrorMiddleware after retries are exhausted
+        ToolRetryMiddleware(max_retries=3, on_failure="error"),
+        ToolErrorMiddleware(on_error=on_error, tools=["search_tool"]),
+    ],
+)
+
+# Async-only: pass aon_error alone (do not pass on_error)
+async_agent = create_agent(
+    model="gpt-5.5",
+    tools=[api_tool],
+    middleware=[ToolErrorMiddleware(aon_error=aon_error)],
+)
+```
+
+<Note>
+Prefer returning content that names the exception type over the raw exception message, which may carry sensitive or internal detail. The `on_error` handler controls disclosure: the raw exception message is never sent to the model unless you choose to include it.
+</Note>
+
+</Accordion>
+:::
+
+### Tool retry
+
+Automatically retry failed tool calls with configurable exponential backoff. Tool retry is useful for the following:
+
+- Handling transient failures in external API calls.
+- Improving reliability of network-dependent tools.
+- Building resilient agents that gracefully handle temporary errors.
+
+:::python
+**API reference:** @[`ToolRetryMiddleware`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ToolRetryMiddleware
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[search_tool, database_tool],
+    middleware=[
+        ToolRetryMiddleware(
+            max_retries=3,
+            backoff_factor=2.0,
+            initial_delay=1.0,
+        ),
+    ],
+)
+```
+:::
+
+:::js
+**API reference:** @[`toolRetryMiddleware`]
+
+```typescript
+import { createAgent, toolRetryMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [searchTool, databaseTool],
+  middleware: [
+    toolRetryMiddleware({
+      maxRetries: 3,
+      backoffFactor: 2.0,
+      initialDelayMs: 1000,
+    }),
+  ],
+});
+```
+:::
+
+<Accordion title="Configuration options">
+
+:::python
+<ParamField body="max_retries" type="number" default="2">
+    Maximum number of retry attempts after the initial call (3 total attempts with default)
+</ParamField>
+
+<ParamField body="tools" type="list[BaseTool | str]">
+    Optional list of tools or tool names to apply retry logic to. If `None`, applies to all tools.
+</ParamField>
+
+<ParamField body="retry_on" type="tuple[type[Exception], ...] | callable" default="(Exception,)">
+    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried. By default, all exceptions are retried. Exceptions that do not match propagate immediately and are not handled by `on_failure`.
+</ParamField>
+
+<ParamField body="on_failure" type="string | callable" default="continue">
+    Behavior when all retries are exhausted. Options:
+    - `'continue'` (default) - Return a `ToolMessage` with error details, allowing the LLM to handle the failure
+    - `'error'` - Re-raise the exception, stopping agent execution
+    - Custom callable - Function that takes the exception and returns a string for the `ToolMessage` content
+
+    **Deprecated values:** `'return_message'` (use `'continue'` instead) and `'raise'` (use `'error'` instead).
+</ParamField>
+
+<ParamField body="backoff_factor" type="number" default="2.0">
+    Multiplier for exponential backoff. Each retry waits `initial_delay * (backoff_factor ** retry_number)` seconds. Set to `0.0` for constant delay.
+</ParamField>
+
+<ParamField body="initial_delay" type="number" default="1.0">
+    Initial delay in seconds before first retry
+</ParamField>
+
+<ParamField body="max_delay" type="number" default="60.0">
+    Maximum delay in seconds between retries (caps exponential backoff growth)
+</ParamField>
+
+<ParamField body="jitter" type="boolean" default="true">
+    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
+</ParamField>
+:::
+
+:::js
+<ParamField body="maxRetries" type="number" default="2">
+    Maximum number of retry attempts after the initial call (3 total attempts with default). Must be >= 0.
+</ParamField>
+
+<ParamField body="tools" type="(ClientTool | ServerTool | string)[]">
+    Optional array of tools or tool names to apply retry logic to. Can be a list of `BaseTool` instances or tool name strings. If `undefined`, applies to all tools.
+</ParamField>
+
+<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
+    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
+</ParamField>
+
+<ParamField body="onFailure" type="'error' | 'continue' | ((error: Error) => string)" default="continue">
+    Behavior when all retries are exhausted. Options:
+    - `'continue'` (default) - Return a `ToolMessage` with error details, allowing the LLM to handle the failure and potentially recover
+    - `'error'` - Re-raise the exception, stopping agent execution
+    - Custom function - Function that takes the exception and returns a string for the `ToolMessage` content, allowing custom error formatting
+
+    **Deprecated values:** `'raise'` (use `'error'` instead) and `'return_message'` (use `'continue'` instead). These deprecated values still work but will show a warning.
+</ParamField>
+
+<ParamField body="backoffFactor" type="number" default="2.0">
+    Multiplier for exponential backoff. Each retry waits `initialDelayMs * (backoffFactor ** retryNumber)` milliseconds. Set to `0.0` for constant delay. Must be >= 0.
+</ParamField>
+
+<ParamField body="initialDelayMs" type="number" default="1000">
+    Initial delay in milliseconds before first retry. Must be >= 0.
+</ParamField>
+
+<ParamField body="maxDelayMs" type="number" default="60000">
+    Maximum delay in milliseconds between retries (caps exponential backoff growth). Must be >= 0.
+</ParamField>
+
+<ParamField body="jitter" type="boolean" default="true">
+    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
+</ParamField>
+:::
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware automatically retries failed tool calls with exponential backoff.
+
+:::python
+**Key configuration:**
+- `max_retries` - Number of retry attempts (default: 2)
+- `backoff_factor` - Multiplier for exponential backoff (default: 2.0)
+- `initial_delay` - Starting delay in seconds (default: 1.0)
+- `max_delay` - Cap on delay growth (default: 60.0)
+- `jitter` - Add random variation (default: True)
+
+**Failure handling:**
+- `on_failure='continue'` (default) - Return error message
+- `on_failure='error'` - Re-raise exception
+- Custom function - Function returning error message
+:::
+:::js
+**Key configuration:**
+- `maxRetries` - Number of retry attempts (default: 2)
+- `backoffFactor` - Multiplier for exponential backoff (default: 2.0)
+- `initialDelayMs` - Starting delay in milliseconds (default: 1000ms)
+- `maxDelayMs` - Cap on delay growth (default: 60000ms)
+- `jitter` - Add random variation (default: true)
+
+**Failure handling:**
+- `onFailure: "continue"` (default) - Return error message
+- `onFailure: "error"` - Re-raise exception
+- Custom function - Function returning error message
+:::
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ToolRetryMiddleware
+
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[search_tool, database_tool, api_tool],
+    middleware=[
+        ToolRetryMiddleware(
+            max_retries=3,
+            backoff_factor=2.0,
+            initial_delay=1.0,
+            max_delay=60.0,
+            jitter=True,
+            tools=["api_tool"],
+            retry_on=(ConnectionError, TimeoutError),
+            on_failure="continue",
+        ),
+    ],
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, toolRetryMiddleware } from "langchain";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+// Basic usage with default settings (2 retries, exponential backoff)
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [searchTool, databaseTool],
+  middleware: [toolRetryMiddleware()],
+});
+
+// Retry specific exceptions only
+const retry = toolRetryMiddleware({
+  maxRetries: 4,
+  retryOn: [TimeoutError, NetworkError],
+  backoffFactor: 1.5,
+});
+
+// Custom exception filtering
+function shouldRetry(error: Error): boolean {
+  // Only retry on 5xx errors
+  if (error.name === "HTTPError" && "statusCode" in error) {
+    const statusCode = (error as any).statusCode;
+    return 500 <= statusCode && statusCode < 600;
+  }
+  return false;
+}
+
+const retryWithFilter = toolRetryMiddleware({
+  maxRetries: 3,
+  retryOn: shouldRetry,
+});
+
+// Apply to specific tools with custom error handling
+const formatError = (error: Error) =>
+  "Database temporarily unavailable. Please try again later.";
+
+const retrySpecificTools = toolRetryMiddleware({
+  maxRetries: 4,
+  tools: ["search_database"],
+  onFailure: formatError,
+});
+
+// Apply to specific tools using BaseTool instances
+const searchDatabase = tool(
+  async ({ query }) => {
+    // Search implementation
+    return results;
+  },
+  {
+    name: "search_database",
+    description: "Search the database",
+    schema: z.object({ query: z.string() }),
+  }
+);
+
+const retryWithToolInstance = toolRetryMiddleware({
+  maxRetries: 4,
+  tools: [searchDatabase], // Pass BaseTool instance
+});
+
+// Constant backoff (no exponential growth)
+const constantBackoff = toolRetryMiddleware({
+  maxRetries: 5,
+  backoffFactor: 0.0, // No exponential growth
+  initialDelayMs: 2000, // Always wait 2 seconds
+});
+
+// Raise exception on failure
+const strictRetry = toolRetryMiddleware({
+  maxRetries: 2,
+  onFailure: "error", // Re-raise exception instead of returning message
+});
+```
+:::
+
+</Accordion>
+
+### Model retry
+
+Automatically retry failed model calls with configurable exponential backoff. Model retry is useful for the following:
+
+- Handling transient failures in model API calls.
+- Improving reliability of network-dependent model requests.
+- Building resilient agents that gracefully handle temporary model errors.
+
+:::python
+**API reference:** @[`ModelRetryMiddleware`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelRetryMiddleware
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[search_tool, database_tool],
+    middleware=[
+        ModelRetryMiddleware(
+            max_retries=3,
+            backoff_factor=2.0,
+            initial_delay=1.0,
+        ),
+    ],
+)
+```
+:::
+
+:::js
+**API reference:** @[`modelRetryMiddleware`]
+
+```typescript
+import { createAgent, modelRetryMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [searchTool, databaseTool],
+  middleware: [
+    modelRetryMiddleware({
+      maxRetries: 3,
+      backoffFactor: 2.0,
+      initialDelayMs: 1000,
+    }),
+  ],
+});
+```
+:::
+
+<Accordion title="Configuration options">
+
+:::python
+<ParamField body="max_retries" type="number" default="2">
+    Maximum number of retry attempts after the initial call (3 total attempts with default)
+</ParamField>
+
+<ParamField body="retry_on" type="tuple[type[Exception], ...] | callable" default="(Exception,)">
+    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried.
+</ParamField>
+
+<ParamField body="on_failure" type="string | callable" default="continue">
+    Behavior when all retries are exhausted. Options:
+    - `'continue'` (default) - Return an `AIMessage` with error details, allowing the agent to potentially handle the failure gracefully
+    - `'error'` - Re-raise the exception (stops agent execution)
+    - Custom callable - Function that takes the exception and returns a string for the `AIMessage` content
+</ParamField>
+
+<ParamField body="backoff_factor" type="number" default="2.0">
+    Multiplier for exponential backoff. Each retry waits `initial_delay * (backoff_factor ** retry_number)` seconds. Set to `0.0` for constant delay.
+</ParamField>
+
+<ParamField body="initial_delay" type="number" default="1.0">
+    Initial delay in seconds before first retry
+</ParamField>
+
+<ParamField body="max_delay" type="number" default="60.0">
+    Maximum delay in seconds between retries (caps exponential backoff growth)
+</ParamField>
+
+<ParamField body="jitter" type="boolean" default="true">
+    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
+</ParamField>
+:::
+
+:::js
+<ParamField body="maxRetries" type="number" default="2">
+    Maximum number of retry attempts after the initial call (3 total attempts with default). Must be >= 0.
+</ParamField>
+
+<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
+    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
+</ParamField>
+
+<ParamField body="onFailure" type="'error' | 'continue' | ((error: Error) => string)" default="continue">
+    Behavior when all retries are exhausted. Options:
+    - `'continue'` (default) - Return an `AIMessage` with error details, allowing the agent to potentially handle the failure gracefully
+    - `'error'` - Re-raise the exception, stopping agent execution
+    - Custom function - Function that takes the exception and returns a string for the `AIMessage` content, allowing custom error formatting
+</ParamField>
+
+<ParamField body="backoffFactor" type="number" default="2.0">
+    Multiplier for exponential backoff. Each retry waits `initialDelayMs * (backoffFactor ** retryNumber)` milliseconds. Set to `0.0` for constant delay. Must be >= 0.
+</ParamField>
+
+<ParamField body="initialDelayMs" type="number" default="1000">
+    Initial delay in milliseconds before first retry. Must be >= 0.
+</ParamField>
+
+<ParamField body="maxDelayMs" type="number" default="60000">
+    Maximum delay in milliseconds between retries (caps exponential backoff growth). Must be >= 0.
+</ParamField>
+
+<ParamField body="jitter" type="boolean" default="true">
+    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
+</ParamField>
+:::
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware automatically retries failed model calls with exponential backoff.
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelRetryMiddleware
+
+
+# Basic usage with default settings (2 retries, exponential backoff)
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[search_tool],
+    middleware=[ModelRetryMiddleware()],
+)
+
+# Custom exception filtering
+class TimeoutError(Exception):
+    """Custom exception for timeout errors."""
+    pass
+
+class ConnectionError(Exception):
+    """Custom exception for connection errors."""
+    pass
+
+# Retry specific exceptions only
+retry = ModelRetryMiddleware(
+    max_retries=4,
+    retry_on=(TimeoutError, ConnectionError),
+    backoff_factor=1.5,
+)
+
+
+def should_retry(error: Exception) -> bool:
+    # Only retry on rate limit errors
+    if isinstance(error, TimeoutError):
+        return True
+    # Or check for specific HTTP status codes
+    if hasattr(error, "status_code"):
+        return error.status_code in (429, 503)
+    return False
+
+retry_with_filter = ModelRetryMiddleware(
+    max_retries=3,
+    retry_on=should_retry,
+)
+
+# Return error message instead of raising
+retry_continue = ModelRetryMiddleware(
+    max_retries=4,
+    on_failure="continue",  # Return AIMessage with error instead of raising
+)
+
+# Custom error message formatting
+def format_error(error: Exception) -> str:
+    return f"Model call failed: {error}. Please try again later."
+
+retry_with_formatter = ModelRetryMiddleware(
+    max_retries=4,
+    on_failure=format_error,
+)
+
+# Constant backoff (no exponential growth)
+constant_backoff = ModelRetryMiddleware(
+    max_retries=5,
+    backoff_factor=0.0,  # No exponential growth
+    initial_delay=2.0,  # Always wait 2 seconds
+)
+
+# Raise exception on failure
+strict_retry = ModelRetryMiddleware(
+    max_retries=2,
+    on_failure="error",  # Re-raise exception instead of returning message
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, modelRetryMiddleware } from "langchain";
+
+// Basic usage with default settings (2 retries, exponential backoff)
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [searchTool],
+  middleware: [modelRetryMiddleware()],
+});
+
+class TimeoutError extends Error {
+    // ...
+}
+class NetworkError extends Error {
+    // ...
+}
+
+// Retry specific exceptions only
+const retry = modelRetryMiddleware({
+  maxRetries: 4,
+  retryOn: [TimeoutError, NetworkError],
+  backoffFactor: 1.5,
+});
+
+// Custom exception filtering
+function shouldRetry(error: Error): boolean {
+  // Only retry on rate limit errors
+  if (error.name === "RateLimitError") {
+    return true;
+  }
+  // Or check for specific HTTP status codes
+  if (error.name === "HTTPError" && "statusCode" in error) {
+    const statusCode = (error as any).statusCode;
+    return statusCode === 429 || statusCode === 503;
+  }
+  return false;
+}
+
+const retryWithFilter = modelRetryMiddleware({
+  maxRetries: 3,
+  retryOn: shouldRetry,
+});
+
+// Return error message instead of raising
+const retryContinue = modelRetryMiddleware({
+  maxRetries: 4,
+  onFailure: "continue", // Return AIMessage with error instead of throwing
+});
+
+// Custom error message formatting
+const formatError = (error: Error) =>
+  `Model call failed: ${error.message}. Please try again later.`;
+
+const retryWithFormatter = modelRetryMiddleware({
+  maxRetries: 4,
+  onFailure: formatError,
+});
+
+// Constant backoff (no exponential growth)
+const constantBackoff = modelRetryMiddleware({
+  maxRetries: 5,
+  backoffFactor: 0.0, // No exponential growth
+  initialDelayMs: 2000, // Always wait 2 seconds
+});
+
+// Raise exception on failure
+const strictRetry = modelRetryMiddleware({
+  maxRetries: 2,
+  onFailure: "error", // Re-raise exception instead of returning message
+});
+```
+:::
+
+</Accordion>
+
+### Model fallback
+
+Automatically fallback to alternative models when the primary model fails. Model fallback is useful for the following:
+
+- Building resilient agents that handle model outages.
+- Cost optimization by falling back to cheaper models.
+- Provider redundancy across OpenAI, Anthropic, etc.
+
+:::python
+**API reference:** @[`ModelFallbackMiddleware`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ModelFallbackMiddleware
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[],
+    middleware=[
+        ModelFallbackMiddleware(
+            "gpt-5.4-mini",
+            "claude-3-5-sonnet-20241022",
+        ),
+    ],
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, modelFallbackMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [],
+  middleware: [
+    modelFallbackMiddleware(
+      "gpt-5.4-mini",
+      "claude-3-5-sonnet-20241022"
+    ),
+  ],
+});
+```
+:::
+
+:::python
+<Callout icon="player-play" iconType="solid">
+    Watch this [video guide](https://www.youtube.com/watch?v=8rCRO0DUeIM) demonstrating Model Fallback middleware behavior.
+</Callout>
+:::
+
+<Accordion title="Configuration options">
+
+:::python
+<ParamField body="first_model" type="string | BaseChatModel" required>
+    First fallback model to try when the primary model fails. Can be a model identifier string (e.g., `'openai:gpt-5.4-mini'`) or a `BaseChatModel` instance.
+</ParamField>
+
+<ParamField body="*additional_models" type="string | BaseChatModel">
+    Additional fallback models to try in order if previous models fail
+</ParamField>
+:::
+
+:::js
+The middleware accepts a variable number of string arguments representing fallback models in order:
+
+<ParamField body="...models" type="string[]" required>
+  One or more fallback model strings to try in order when the primary model fails
+
+  ```typescript
+  modelFallbackMiddleware(
+    "first-fallback-model",
+    "second-fallback-model",
+    // ... more models
+  )
+  ```
+</ParamField>
+:::
+
+</Accordion>
 
 ### Summarization
 
@@ -755,87 +1479,6 @@ const agent = createAgent({
 </Accordion>
 
 
-### Model fallback
-
-Automatically fallback to alternative models when the primary model fails. Model fallback is useful for the following:
-
-- Building resilient agents that handle model outages.
-- Cost optimization by falling back to cheaper models.
-- Provider redundancy across OpenAI, Anthropic, etc.
-
-:::python
-**API reference:** @[`ModelFallbackMiddleware`]
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ModelFallbackMiddleware
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[],
-    middleware=[
-        ModelFallbackMiddleware(
-            "gpt-5.4-mini",
-            "claude-3-5-sonnet-20241022",
-        ),
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, modelFallbackMiddleware } from "langchain";
-
-const agent = createAgent({
-  model: "gpt-5.5",
-  tools: [],
-  middleware: [
-    modelFallbackMiddleware(
-      "gpt-5.4-mini",
-      "claude-3-5-sonnet-20241022"
-    ),
-  ],
-});
-```
-:::
-
-:::python
-<Callout icon="player-play" iconType="solid">
-    Watch this [video guide](https://www.youtube.com/watch?v=8rCRO0DUeIM) demonstrating Model Fallback middleware behavior.
-</Callout>
-:::
-
-<Accordion title="Configuration options">
-
-:::python
-<ParamField body="first_model" type="string | BaseChatModel" required>
-    First fallback model to try when the primary model fails. Can be a model identifier string (e.g., `'openai:gpt-5.4-mini'`) or a `BaseChatModel` instance.
-</ParamField>
-
-<ParamField body="*additional_models" type="string | BaseChatModel">
-    Additional fallback models to try in order if previous models fail
-</ParamField>
-:::
-
-:::js
-The middleware accepts a variable number of string arguments representing fallback models in order:
-
-<ParamField body="...models" type="string[]" required>
-  One or more fallback model strings to try in order when the primary model fails
-
-  ```typescript
-  modelFallbackMiddleware(
-    "first-fallback-model",
-    "second-fallback-model",
-    // ... more models
-  )
-  ```
-</ParamField>
-:::
-
-</Accordion>
-
 ### PII detection
 
 Detect and handle Personally Identifiable Information (PII) in conversations using configurable strategies. PII detection is useful for the following:
@@ -1296,1015 +1939,6 @@ const agent = createAgent({
 </Accordion>
 
 
-### Tool error
-
-:::python
-
-Catch exceptions raised during tool execution and convert them into error `ToolMessage`s that the model can see and recover from, instead of halting the agent run. Tool error is useful for the following:
-
-- Letting the model retry a failed tool call with corrected arguments.
-- Surfacing controlled, sanitized error messages instead of raw exception details.
-- Preventing unexpected tool exceptions from crashing the agent.
-
-<Note>
-Tool error middleware does not automatically retry failed calls. For retries, compose with [Tool retry](#tool-retry) middleware placed *inner* (earlier in the `middleware` list) and configured with `on_failure="error"` so that exceptions reach the tool error middleware. See the [full example](#tool-error-full-example) below.
-</Note>
-
-**API reference:** @[`ToolErrorMiddleware`]
-
-<Note>
-`ToolErrorMiddleware` requires `langchain>=1.3.14`.
-</Note>
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ToolErrorMiddleware
-
-
-def on_error(exc: Exception, request: ToolCallRequest) -> str | None:
-    if isinstance(exc, ValueError):
-        return f"`{request.tool_call['name']}` failed with {type(exc).__name__}."
-    # propagate everything else
-
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[your_tools],
-    middleware=[ToolErrorMiddleware(on_error)],
-)
-```
-
-<Accordion title="Configuration options">
-
-<ParamField body="on_error" type="Callable[[Exception, ToolCallRequest], str | list[ContentBlock] | None]">
-    Sync handler called for each exception raised by tool execution. Return content (a `str` or list of content blocks) to convert the exception into a `ToolMessage(status="error")`. Return `None` or omit a return statement to let the exception propagate. Used on the sync path and, unless `aon_error` is given, on the async path.
-</ParamField>
-
-<ParamField body="aon_error" type="Callable[[Exception, ToolCallRequest], Awaitable[str | list[ContentBlock] | None]]">
-    Optional async handler, used on the async execution path. Falls back to `on_error` when not provided.
-</ParamField>
-
-<ParamField body="tools" type="list[BaseTool | str]">
-    Optional list of tools or tool names to apply error handling to. If `None`, applies to all tools.
-</ParamField>
-
-</Accordion>
-
-<Accordion title="Tool error full example">
-
-The `on_error` handler receives the exception and the `ToolCallRequest` (which includes the tool call dict with name, args, and call ID). Return `None` for exceptions you do not want to handle, and they will propagate normally.
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ToolErrorMiddleware, ToolRetryMiddleware
-
-
-def on_error(exc: Exception, request: ToolCallRequest) -> str | None:
-    # Surface ValueError to the model so it can correct the input
-    if isinstance(exc, ValueError):
-        return f"`{request.tool_call['name']}` failed: {type(exc).__name__}. Fix the input and retry."
-    # Let all other exceptions propagate (halts the run)
-    return None
-
-
-# Async-only usage
-async def aon_error(exc: Exception, request: ToolCallRequest) -> str | None:
-    if isinstance(exc, ConnectionError):
-        return f"Tool `{request.tool_call['name']}` encountered a connection error."
-    return None
-
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[search_tool, database_tool],
-    middleware=[
-        # Place retry inner so exceptions reach ToolErrorMiddleware after retries are exhausted
-        ToolRetryMiddleware(max_retries=3, on_failure="error"),
-        ToolErrorMiddleware(on_error=on_error, tools=["search_tool"]),
-    ],
-)
-
-# Async-only: pass aon_error alone (do not pass on_error)
-async_agent = create_agent(
-    model="gpt-5.5",
-    tools=[api_tool],
-    middleware=[ToolErrorMiddleware(aon_error=aon_error)],
-)
-```
-
-<Note>
-Prefer returning content that names the exception type over the raw exception message, which may carry sensitive or internal detail. The `on_error` handler controls disclosure: the raw exception message is never sent to the model unless you choose to include it.
-</Note>
-
-</Accordion>
-:::
-
-### Tool retry
-
-Automatically retry failed tool calls with configurable exponential backoff. Tool retry is useful for the following:
-
-- Handling transient failures in external API calls.
-- Improving reliability of network-dependent tools.
-- Building resilient agents that gracefully handle temporary errors.
-
-:::python
-**API reference:** @[`ToolRetryMiddleware`]
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ToolRetryMiddleware
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[search_tool, database_tool],
-    middleware=[
-        ToolRetryMiddleware(
-            max_retries=3,
-            backoff_factor=2.0,
-            initial_delay=1.0,
-        ),
-    ],
-)
-```
-:::
-
-:::js
-**API reference:** @[`toolRetryMiddleware`]
-
-```typescript
-import { createAgent, toolRetryMiddleware } from "langchain";
-
-const agent = createAgent({
-  model: "gpt-5.5",
-  tools: [searchTool, databaseTool],
-  middleware: [
-    toolRetryMiddleware({
-      maxRetries: 3,
-      backoffFactor: 2.0,
-      initialDelayMs: 1000,
-    }),
-  ],
-});
-```
-:::
-
-<Accordion title="Configuration options">
-
-:::python
-<ParamField body="max_retries" type="number" default="2">
-    Maximum number of retry attempts after the initial call (3 total attempts with default)
-</ParamField>
-
-<ParamField body="tools" type="list[BaseTool | str]">
-    Optional list of tools or tool names to apply retry logic to. If `None`, applies to all tools.
-</ParamField>
-
-<ParamField body="retry_on" type="tuple[type[Exception], ...] | callable" default="(Exception,)">
-    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried. By default, all exceptions are retried. Exceptions that do not match propagate immediately and are not handled by `on_failure`.
-</ParamField>
-
-<ParamField body="on_failure" type="string | callable" default="continue">
-    Behavior when all retries are exhausted. Options:
-    - `'continue'` (default) - Return a `ToolMessage` with error details, allowing the LLM to handle the failure
-    - `'error'` - Re-raise the exception, stopping agent execution
-    - Custom callable - Function that takes the exception and returns a string for the `ToolMessage` content
-
-    **Deprecated values:** `'return_message'` (use `'continue'` instead) and `'raise'` (use `'error'` instead).
-</ParamField>
-
-<ParamField body="backoff_factor" type="number" default="2.0">
-    Multiplier for exponential backoff. Each retry waits `initial_delay * (backoff_factor ** retry_number)` seconds. Set to `0.0` for constant delay.
-</ParamField>
-
-<ParamField body="initial_delay" type="number" default="1.0">
-    Initial delay in seconds before first retry
-</ParamField>
-
-<ParamField body="max_delay" type="number" default="60.0">
-    Maximum delay in seconds between retries (caps exponential backoff growth)
-</ParamField>
-
-<ParamField body="jitter" type="boolean" default="true">
-    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
-</ParamField>
-:::
-
-:::js
-<ParamField body="maxRetries" type="number" default="2">
-    Maximum number of retry attempts after the initial call (3 total attempts with default). Must be >= 0.
-</ParamField>
-
-<ParamField body="tools" type="(ClientTool | ServerTool | string)[]">
-    Optional array of tools or tool names to apply retry logic to. Can be a list of `BaseTool` instances or tool name strings. If `undefined`, applies to all tools.
-</ParamField>
-
-<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
-    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
-</ParamField>
-
-<ParamField body="onFailure" type="'error' | 'continue' | ((error: Error) => string)" default="continue">
-    Behavior when all retries are exhausted. Options:
-    - `'continue'` (default) - Return a `ToolMessage` with error details, allowing the LLM to handle the failure and potentially recover
-    - `'error'` - Re-raise the exception, stopping agent execution
-    - Custom function - Function that takes the exception and returns a string for the `ToolMessage` content, allowing custom error formatting
-
-    **Deprecated values:** `'raise'` (use `'error'` instead) and `'return_message'` (use `'continue'` instead). These deprecated values still work but will show a warning.
-</ParamField>
-
-<ParamField body="backoffFactor" type="number" default="2.0">
-    Multiplier for exponential backoff. Each retry waits `initialDelayMs * (backoffFactor ** retryNumber)` milliseconds. Set to `0.0` for constant delay. Must be >= 0.
-</ParamField>
-
-<ParamField body="initialDelayMs" type="number" default="1000">
-    Initial delay in milliseconds before first retry. Must be >= 0.
-</ParamField>
-
-<ParamField body="maxDelayMs" type="number" default="60000">
-    Maximum delay in milliseconds between retries (caps exponential backoff growth). Must be >= 0.
-</ParamField>
-
-<ParamField body="jitter" type="boolean" default="true">
-    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
-</ParamField>
-:::
-
-</Accordion>
-
-<Accordion title="Full example">
-
-The middleware automatically retries failed tool calls with exponential backoff.
-
-:::python
-**Key configuration:**
-- `max_retries` - Number of retry attempts (default: 2)
-- `backoff_factor` - Multiplier for exponential backoff (default: 2.0)
-- `initial_delay` - Starting delay in seconds (default: 1.0)
-- `max_delay` - Cap on delay growth (default: 60.0)
-- `jitter` - Add random variation (default: True)
-
-**Failure handling:**
-- `on_failure='continue'` (default) - Return error message
-- `on_failure='error'` - Re-raise exception
-- Custom function - Function returning error message
-:::
-:::js
-**Key configuration:**
-- `maxRetries` - Number of retry attempts (default: 2)
-- `backoffFactor` - Multiplier for exponential backoff (default: 2.0)
-- `initialDelayMs` - Starting delay in milliseconds (default: 1000ms)
-- `maxDelayMs` - Cap on delay growth (default: 60000ms)
-- `jitter` - Add random variation (default: true)
-
-**Failure handling:**
-- `onFailure: "continue"` (default) - Return error message
-- `onFailure: "error"` - Re-raise exception
-- Custom function - Function returning error message
-:::
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ToolRetryMiddleware
-
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[search_tool, database_tool, api_tool],
-    middleware=[
-        ToolRetryMiddleware(
-            max_retries=3,
-            backoff_factor=2.0,
-            initial_delay=1.0,
-            max_delay=60.0,
-            jitter=True,
-            tools=["api_tool"],
-            retry_on=(ConnectionError, TimeoutError),
-            on_failure="continue",
-        ),
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, toolRetryMiddleware } from "langchain";
-import { tool } from "@langchain/core/tools";
-import { z } from "zod";
-
-// Basic usage with default settings (2 retries, exponential backoff)
-const agent = createAgent({
-  model: "gpt-5.5",
-  tools: [searchTool, databaseTool],
-  middleware: [toolRetryMiddleware()],
-});
-
-// Retry specific exceptions only
-const retry = toolRetryMiddleware({
-  maxRetries: 4,
-  retryOn: [TimeoutError, NetworkError],
-  backoffFactor: 1.5,
-});
-
-// Custom exception filtering
-function shouldRetry(error: Error): boolean {
-  // Only retry on 5xx errors
-  if (error.name === "HTTPError" && "statusCode" in error) {
-    const statusCode = (error as any).statusCode;
-    return 500 <= statusCode && statusCode < 600;
-  }
-  return false;
-}
-
-const retryWithFilter = toolRetryMiddleware({
-  maxRetries: 3,
-  retryOn: shouldRetry,
-});
-
-// Apply to specific tools with custom error handling
-const formatError = (error: Error) =>
-  "Database temporarily unavailable. Please try again later.";
-
-const retrySpecificTools = toolRetryMiddleware({
-  maxRetries: 4,
-  tools: ["search_database"],
-  onFailure: formatError,
-});
-
-// Apply to specific tools using BaseTool instances
-const searchDatabase = tool(
-  async ({ query }) => {
-    // Search implementation
-    return results;
-  },
-  {
-    name: "search_database",
-    description: "Search the database",
-    schema: z.object({ query: z.string() }),
-  }
-);
-
-const retryWithToolInstance = toolRetryMiddleware({
-  maxRetries: 4,
-  tools: [searchDatabase], // Pass BaseTool instance
-});
-
-// Constant backoff (no exponential growth)
-const constantBackoff = toolRetryMiddleware({
-  maxRetries: 5,
-  backoffFactor: 0.0, // No exponential growth
-  initialDelayMs: 2000, // Always wait 2 seconds
-});
-
-// Raise exception on failure
-const strictRetry = toolRetryMiddleware({
-  maxRetries: 2,
-  onFailure: "error", // Re-raise exception instead of returning message
-});
-```
-:::
-
-</Accordion>
-
-### Model retry
-
-Automatically retry failed model calls with configurable exponential backoff. Model retry is useful for the following:
-
-- Handling transient failures in model API calls.
-- Improving reliability of network-dependent model requests.
-- Building resilient agents that gracefully handle temporary model errors.
-
-:::python
-**API reference:** @[`ModelRetryMiddleware`]
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ModelRetryMiddleware
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[search_tool, database_tool],
-    middleware=[
-        ModelRetryMiddleware(
-            max_retries=3,
-            backoff_factor=2.0,
-            initial_delay=1.0,
-        ),
-    ],
-)
-```
-:::
-
-:::js
-**API reference:** @[`modelRetryMiddleware`]
-
-```typescript
-import { createAgent, modelRetryMiddleware } from "langchain";
-
-const agent = createAgent({
-  model: "gpt-5.5",
-  tools: [searchTool, databaseTool],
-  middleware: [
-    modelRetryMiddleware({
-      maxRetries: 3,
-      backoffFactor: 2.0,
-      initialDelayMs: 1000,
-    }),
-  ],
-});
-```
-:::
-
-<Accordion title="Configuration options">
-
-:::python
-<ParamField body="max_retries" type="number" default="2">
-    Maximum number of retry attempts after the initial call (3 total attempts with default)
-</ParamField>
-
-<ParamField body="retry_on" type="tuple[type[Exception], ...] | callable" default="(Exception,)">
-    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried.
-</ParamField>
-
-<ParamField body="on_failure" type="string | callable" default="continue">
-    Behavior when all retries are exhausted. Options:
-    - `'continue'` (default) - Return an `AIMessage` with error details, allowing the agent to potentially handle the failure gracefully
-    - `'error'` - Re-raise the exception (stops agent execution)
-    - Custom callable - Function that takes the exception and returns a string for the `AIMessage` content
-</ParamField>
-
-<ParamField body="backoff_factor" type="number" default="2.0">
-    Multiplier for exponential backoff. Each retry waits `initial_delay * (backoff_factor ** retry_number)` seconds. Set to `0.0` for constant delay.
-</ParamField>
-
-<ParamField body="initial_delay" type="number" default="1.0">
-    Initial delay in seconds before first retry
-</ParamField>
-
-<ParamField body="max_delay" type="number" default="60.0">
-    Maximum delay in seconds between retries (caps exponential backoff growth)
-</ParamField>
-
-<ParamField body="jitter" type="boolean" default="true">
-    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
-</ParamField>
-:::
-
-:::js
-<ParamField body="maxRetries" type="number" default="2">
-    Maximum number of retry attempts after the initial call (3 total attempts with default). Must be >= 0.
-</ParamField>
-
-<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
-    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
-</ParamField>
-
-<ParamField body="onFailure" type="'error' | 'continue' | ((error: Error) => string)" default="continue">
-    Behavior when all retries are exhausted. Options:
-    - `'continue'` (default) - Return an `AIMessage` with error details, allowing the agent to potentially handle the failure gracefully
-    - `'error'` - Re-raise the exception, stopping agent execution
-    - Custom function - Function that takes the exception and returns a string for the `AIMessage` content, allowing custom error formatting
-</ParamField>
-
-<ParamField body="backoffFactor" type="number" default="2.0">
-    Multiplier for exponential backoff. Each retry waits `initialDelayMs * (backoffFactor ** retryNumber)` milliseconds. Set to `0.0` for constant delay. Must be >= 0.
-</ParamField>
-
-<ParamField body="initialDelayMs" type="number" default="1000">
-    Initial delay in milliseconds before first retry. Must be >= 0.
-</ParamField>
-
-<ParamField body="maxDelayMs" type="number" default="60000">
-    Maximum delay in milliseconds between retries (caps exponential backoff growth). Must be >= 0.
-</ParamField>
-
-<ParamField body="jitter" type="boolean" default="true">
-    Whether to add random jitter (`±25%`) to delay to avoid thundering herd
-</ParamField>
-:::
-
-</Accordion>
-
-<Accordion title="Full example">
-
-The middleware automatically retries failed model calls with exponential backoff.
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ModelRetryMiddleware
-
-
-# Basic usage with default settings (2 retries, exponential backoff)
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[search_tool],
-    middleware=[ModelRetryMiddleware()],
-)
-
-# Custom exception filtering
-class TimeoutError(Exception):
-    """Custom exception for timeout errors."""
-    pass
-
-class ConnectionError(Exception):
-    """Custom exception for connection errors."""
-    pass
-
-# Retry specific exceptions only
-retry = ModelRetryMiddleware(
-    max_retries=4,
-    retry_on=(TimeoutError, ConnectionError),
-    backoff_factor=1.5,
-)
-
-
-def should_retry(error: Exception) -> bool:
-    # Only retry on rate limit errors
-    if isinstance(error, TimeoutError):
-        return True
-    # Or check for specific HTTP status codes
-    if hasattr(error, "status_code"):
-        return error.status_code in (429, 503)
-    return False
-
-retry_with_filter = ModelRetryMiddleware(
-    max_retries=3,
-    retry_on=should_retry,
-)
-
-# Return error message instead of raising
-retry_continue = ModelRetryMiddleware(
-    max_retries=4,
-    on_failure="continue",  # Return AIMessage with error instead of raising
-)
-
-# Custom error message formatting
-def format_error(error: Exception) -> str:
-    return f"Model call failed: {error}. Please try again later."
-
-retry_with_formatter = ModelRetryMiddleware(
-    max_retries=4,
-    on_failure=format_error,
-)
-
-# Constant backoff (no exponential growth)
-constant_backoff = ModelRetryMiddleware(
-    max_retries=5,
-    backoff_factor=0.0,  # No exponential growth
-    initial_delay=2.0,  # Always wait 2 seconds
-)
-
-# Raise exception on failure
-strict_retry = ModelRetryMiddleware(
-    max_retries=2,
-    on_failure="error",  # Re-raise exception instead of returning message
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, modelRetryMiddleware } from "langchain";
-
-// Basic usage with default settings (2 retries, exponential backoff)
-const agent = createAgent({
-  model: "gpt-5.5",
-  tools: [searchTool],
-  middleware: [modelRetryMiddleware()],
-});
-
-class TimeoutError extends Error {
-    // ...
-}
-class NetworkError extends Error {
-    // ...
-}
-
-// Retry specific exceptions only
-const retry = modelRetryMiddleware({
-  maxRetries: 4,
-  retryOn: [TimeoutError, NetworkError],
-  backoffFactor: 1.5,
-});
-
-// Custom exception filtering
-function shouldRetry(error: Error): boolean {
-  // Only retry on rate limit errors
-  if (error.name === "RateLimitError") {
-    return true;
-  }
-  // Or check for specific HTTP status codes
-  if (error.name === "HTTPError" && "statusCode" in error) {
-    const statusCode = (error as any).statusCode;
-    return statusCode === 429 || statusCode === 503;
-  }
-  return false;
-}
-
-const retryWithFilter = modelRetryMiddleware({
-  maxRetries: 3,
-  retryOn: shouldRetry,
-});
-
-// Return error message instead of raising
-const retryContinue = modelRetryMiddleware({
-  maxRetries: 4,
-  onFailure: "continue", // Return AIMessage with error instead of throwing
-});
-
-// Custom error message formatting
-const formatError = (error: Error) =>
-  `Model call failed: ${error.message}. Please try again later.`;
-
-const retryWithFormatter = modelRetryMiddleware({
-  maxRetries: 4,
-  onFailure: formatError,
-});
-
-// Constant backoff (no exponential growth)
-const constantBackoff = modelRetryMiddleware({
-  maxRetries: 5,
-  backoffFactor: 0.0, // No exponential growth
-  initialDelayMs: 2000, // Always wait 2 seconds
-});
-
-// Raise exception on failure
-const strictRetry = modelRetryMiddleware({
-  maxRetries: 2,
-  onFailure: "error", // Re-raise exception instead of returning message
-});
-```
-:::
-
-</Accordion>
-
-### LLM tool emulator
-
-Emulate tool execution using an LLM for testing purposes, replacing actual tool calls with AI-generated responses. LLM tool emulators are useful for the following:
-
-- Testing agent behavior without executing real tools.
-- Developing agents when external tools are unavailable or expensive.
-- Prototyping agent workflows before implementing actual tools.
-
-:::python
-**API reference:** @[`LLMToolEmulator`]
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import LLMToolEmulator
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[get_weather, search_database, send_email],
-    middleware=[
-        LLMToolEmulator(),  # Emulate all tools
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, toolEmulatorMiddleware } from "langchain";
-
-const agent = createAgent({
-  model: "gpt-5.5",
-  tools: [getWeather, searchDatabase, sendEmail],
-  middleware: [
-    toolEmulatorMiddleware(), // Emulate all tools
-  ],
-});
-```
-:::
-
-<Accordion title="Configuration options">
-
-:::python
-<ParamField body="tools" type="list[str | BaseTool]">
-    List of tool names (str) or BaseTool instances to emulate. If `None` (default), ALL tools will be emulated. If empty list `[]`, no tools will be emulated. If array with tool names/instances, only those tools will be emulated.
-</ParamField>
-
-<ParamField body="model" type="string | BaseChatModel">
-    Model to use for generating emulated tool responses. Can be a model identifier string (e.g., `'google_genai:gemini-3.6-flash'`) or a `BaseChatModel` instance. Defaults to the agent's model if not specified. See @[`init_chat_model`][init_chat_model(model)] for more information.
-</ParamField>
-:::
-
-:::js
-<ParamField body="tools" type="(string | ClientTool | ServerTool)[]">
-    List of tool names (string) or tool instances to emulate. If `undefined` (default), ALL tools will be emulated. If empty array `[]`, no tools will be emulated. If array with tool names/instances, only those tools will be emulated.
-</ParamField>
-
-<ParamField body="model" type="string | BaseChatModel">
-    Model to use for generating emulated tool responses. Can be a model identifier string (e.g., `'google_genai:gemini-3.6-flash'`) or a `BaseChatModel` instance. Defaults to the agent's model if not specified.
-</ParamField>
-:::
-
-</Accordion>
-
-<Accordion title="Full example">
-
-The middleware uses an LLM to generate plausible responses for tool calls instead of executing the actual tools.
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import LLMToolEmulator
-from langchain.tools import tool
-
-
-@tool
-def get_weather(location: str) -> str:
-    """Get the current weather for a location."""
-    return f"Weather in {location}"
-
-@tool
-def send_email(to: str, subject: str, body: str) -> str:
-    """Send an email."""
-    return "Email sent"
-
-
-# Emulate all tools (default behavior)
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[get_weather, send_email],
-    middleware=[LLMToolEmulator()],
-)
-
-# Emulate specific tools only
-agent2 = create_agent(
-    model="gpt-5.5",
-    tools=[get_weather, send_email],
-    middleware=[LLMToolEmulator(tools=["get_weather"])],
-)
-
-# Use custom model for emulation
-agent4 = create_agent(
-    model="gpt-5.5",
-    tools=[get_weather, send_email],
-    middleware=[LLMToolEmulator(model="claude-sonnet-4-6")],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, toolEmulatorMiddleware, tool } from "langchain";
-import * as z from "zod";
-
-const getWeather = tool(
-  async ({ location }) => `Weather in ${location}`,
-  {
-    name: "get_weather",
-    description: "Get the current weather for a location",
-    schema: z.object({ location: z.string() }),
-  }
-);
-
-const sendEmail = tool(
-  async ({ to, subject, body }) => "Email sent",
-  {
-    name: "send_email",
-    description: "Send an email",
-    schema: z.object({
-      to: z.string(),
-      subject: z.string(),
-      body: z.string(),
-    }),
-  }
-);
-
-// Emulate all tools (default behavior)
-const agent = createAgent({
-  model: "gpt-5.5",
-  tools: [getWeather, sendEmail],
-  middleware: [toolEmulatorMiddleware()],
-});
-
-// Emulate specific tools by name
-const agent2 = createAgent({
-  model: "gpt-5.5",
-  tools: [getWeather, sendEmail],
-  middleware: [
-    toolEmulatorMiddleware({
-      tools: ["get_weather"],
-    }),
-  ],
-});
-
-// Emulate specific tools by passing tool instances
-const agent3 = createAgent({
-  model: "gpt-5.5",
-  tools: [getWeather, sendEmail],
-  middleware: [
-    toolEmulatorMiddleware({
-      tools: [getWeather],
-    }),
-  ],
-});
-
-// Use custom model for emulation
-const agent5 = createAgent({
-  model: "gpt-5.5",
-  tools: [getWeather, sendEmail],
-  middleware: [
-    toolEmulatorMiddleware({
-      model: "claude-sonnet-4-6",
-    }),
-  ],
-});
-```
-:::
-
-</Accordion>
-
-### Context editing
-
-Manage conversation context by clearing older tool call outputs when token limits are reached, while preserving recent results. This helps keep context windows manageable in long conversations with many tool calls. Context editing is useful for the following:
-
-- Long conversations with many tool calls that exceed token limits
-- Reducing token costs by removing older tool outputs that are no longer relevant
-- Maintaining only the most recent N tool results in context
-
-:::python
-**API reference:** @[`ContextEditingMiddleware`], @[`ClearToolUsesEdit`]
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ContextEditingMiddleware, ClearToolUsesEdit
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[],
-    middleware=[
-        ContextEditingMiddleware(
-            edits=[
-                ClearToolUsesEdit(
-                    trigger=100000,
-                    keep=3,
-                ),
-            ],
-        ),
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, contextEditingMiddleware, ClearToolUsesEdit } from "langchain";
-
-const agent = createAgent({
-  model: "gpt-5.5",
-  tools: [],
-  middleware: [
-    contextEditingMiddleware({
-      edits: [
-        new ClearToolUsesEdit({
-          triggerTokens: 100000,
-          keep: 3,
-        }),
-      ],
-    }),
-  ],
-});
-```
-:::
-
-<Accordion title="Configuration options">
-
-:::python
-<ParamField body="edits" type="list[ContextEdit]" default="[ClearToolUsesEdit()]">
-    List of @[`ContextEdit`] strategies to apply
-</ParamField>
-
-<ParamField body="token_count_method" type="string" default="approximate">
-    Token counting method. Options: `'approximate'` or `'model'`
-</ParamField>
-
-**@[`ClearToolUsesEdit`] options:**
-
-<ParamField body="trigger" type="number" default="100000">
-    Token count that triggers the edit. When the conversation exceeds this token count, older tool outputs will be cleared.
-</ParamField>
-
-<ParamField body="clear_at_least" type="number" default="0">
-    Minimum number of tokens to reclaim when the edit runs. If set to 0, clears as much as needed.
-</ParamField>
-
-<ParamField body="keep" type="number" default="3">
-    Number of most recent tool results that must be preserved. These will never be cleared.
-</ParamField>
-
-<ParamField body="clear_tool_inputs" type="boolean" default="False">
-    Whether to clear the originating tool call parameters on the AI message. When `True`, tool call arguments are replaced with empty objects.
-</ParamField>
-
-<ParamField body="exclude_tools" type="list[string]" default="()">
-    List of tool names to exclude from clearing. These tools will never have their outputs cleared.
-</ParamField>
-
-<ParamField body="placeholder" type="string" default="[cleared]">
-    Placeholder text inserted for cleared tool outputs. This replaces the original tool message content.
-</ParamField>
-:::
-
-:::js
-<ParamField body="edits" type="ContextEdit[]" default="[new ClearToolUsesEdit()]">
-    Array of @[`ContextEdit`] strategies to apply
-</ParamField>
-
-**@[`ClearToolUsesEdit`] options:**
-
-<ParamField body="triggerTokens" type="number" default="100000">
-    Token count that triggers the edit. When the conversation exceeds this token count, older tool outputs will be cleared.
-</ParamField>
-
-<ParamField body="clearAtLeast" type="number" default="0">
-    Minimum number of tokens to reclaim when the edit runs. If set to 0, clears as much as needed.
-</ParamField>
-
-<ParamField body="keep" type="number" default="3">
-    Number of most recent tool results that must be preserved. These will never be cleared.
-</ParamField>
-
-<ParamField body="clearToolInputs" type="boolean" default="false">
-    Whether to clear the originating tool call parameters on the AI message. When `true`, tool call arguments are replaced with empty objects.
-</ParamField>
-
-<ParamField body="excludeTools" type="string[]" default="[]">
-    List of tool names to exclude from clearing. These tools will never have their outputs cleared.
-</ParamField>
-
-<ParamField body="placeholder" type="string" default="[cleared]">
-    Placeholder text inserted for cleared tool outputs. This replaces the original tool message content.
-</ParamField>
-:::
-
-</Accordion>
-
-<Accordion title="Full example">
-
-The middleware applies context editing strategies when token limits are reached. The most common strategy is `ClearToolUsesEdit`, which clears older tool results while preserving recent ones.
-
-**How it works:**
-1. Monitor token count in conversation
-2. When threshold is reached, clear older tool outputs
-3. Keep most recent N tool results
-4. Optionally preserve tool call arguments for context
-
-:::python
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import ContextEditingMiddleware, ClearToolUsesEdit
-
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[search_tool, your_calculator_tool, database_tool],
-    middleware=[
-        ContextEditingMiddleware(
-            edits=[
-                ClearToolUsesEdit(
-                    trigger=2000,
-                    keep=3,
-                    clear_tool_inputs=False,
-                    exclude_tools=[],
-                    placeholder="[cleared]",
-                ),
-            ],
-        ),
-    ],
-)
-```
-:::
-
-:::js
-```typescript
-import { createAgent, contextEditingMiddleware, ClearToolUsesEdit } from "langchain";
-
-const agent = createAgent({
-  model: "gpt-5.5",
-  tools: [searchTool, calculatorTool, databaseTool],
-  middleware: [
-    contextEditingMiddleware({
-      edits: [
-        new ClearToolUsesEdit({
-          triggerTokens: 2000,
-          keep: 3,
-          clearToolInputs: false,
-          excludeTools: [],
-          placeholder: "[cleared]",
-        }),
-      ],
-    }),
-  ],
-});
-```
-:::
-
-</Accordion>
-
 :::python
 ### Provider tool search
 
@@ -2592,92 +2226,8 @@ agent_redacted = create_agent(
 
 </Accordion>
 
-### File search
-
-Provide Glob and Grep search tools over a filesystem. File search middleware is useful for the following:
-
-- Code exploration and analysis
-- Finding files by name patterns
-- Searching code content with regex
-- Large codebases where file discovery is needed
-
-**API reference:** @[`FilesystemFileSearchMiddleware`]
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import FilesystemFileSearchMiddleware
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[],
-    middleware=[
-        FilesystemFileSearchMiddleware(
-            root_path="/workspace",
-            use_ripgrep=True,
-        ),
-    ],
-)
-```
-
-<Accordion title="Configuration options">
-
-<ParamField body="root_path" type="str" required>
-    Root directory to search. All file operations are relative to this path.
-</ParamField>
-
-<ParamField body="use_ripgrep" type="bool" default="True">
-    Whether to use ripgrep for search. Falls back to Python regex if ripgrep is unavailable.
-</ParamField>
-
-<ParamField body="max_file_size_mb" type="int" default="10">
-    Maximum file size to search in MB. Files larger than this are skipped.
-</ParamField>
-
-</Accordion>
-
-<Accordion title="Full example">
-
-The middleware adds two search tools to agents:
-
-**Glob tool** - Fast file pattern matching:
-- Supports patterns like `**/*.py`, `src/**/*.ts`
-- Returns matching file paths sorted by modification time
-
-**Grep tool** - Content search with regex:
-- Full regex syntax support
-- Filter by file patterns with `include` parameter
-- Three output modes: `files_with_matches`, `content`, `count`
-
-```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import FilesystemFileSearchMiddleware
-from langchain.messages import HumanMessage
-
-
-agent = create_agent(
-    model="gpt-5.5",
-    tools=[],
-    middleware=[
-        FilesystemFileSearchMiddleware(
-            root_path="/workspace",
-            use_ripgrep=True,
-            max_file_size_mb=10,
-        ),
-    ],
-)
-
-# Agent can now use glob_search and grep_search tools
-result = agent.invoke({
-    "messages": [HumanMessage("Find all Python files containing 'async def'")]
-})
-
-# The agent will use:
-# 1. glob_search(pattern="**/*.py") to find Python files
-# 2. grep_search(pattern="async def", include="*.py") to find async functions
-```
-</Accordion>
-
 :::
+
 
 ### Filesystem middleware
 
@@ -2978,6 +2528,460 @@ Some tasks have a clear definition of "done" that an agent cannot reliably hit o
 
 For full configuration options, streaming events, and a complete code generation example, see [Grading rubrics](/oss/deepagents/rubric).
 :::
+
+:::python
+### File search
+
+Provide Glob and Grep search tools over a filesystem. File search middleware is useful for the following:
+
+- Code exploration and analysis
+- Finding files by name patterns
+- Searching code content with regex
+- Large codebases where file discovery is needed
+
+**API reference:** @[`FilesystemFileSearchMiddleware`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import FilesystemFileSearchMiddleware
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[],
+    middleware=[
+        FilesystemFileSearchMiddleware(
+            root_path="/workspace",
+            use_ripgrep=True,
+        ),
+    ],
+)
+```
+
+<Accordion title="Configuration options">
+
+<ParamField body="root_path" type="str" required>
+    Root directory to search. All file operations are relative to this path.
+</ParamField>
+
+<ParamField body="use_ripgrep" type="bool" default="True">
+    Whether to use ripgrep for search. Falls back to Python regex if ripgrep is unavailable.
+</ParamField>
+
+<ParamField body="max_file_size_mb" type="int" default="10">
+    Maximum file size to search in MB. Files larger than this are skipped.
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware adds two search tools to agents:
+
+**Glob tool** - Fast file pattern matching:
+- Supports patterns like `**/*.py`, `src/**/*.ts`
+- Returns matching file paths sorted by modification time
+
+**Grep tool** - Content search with regex:
+- Full regex syntax support
+- Filter by file patterns with `include` parameter
+- Three output modes: `files_with_matches`, `content`, `count`
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import FilesystemFileSearchMiddleware
+from langchain.messages import HumanMessage
+
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[],
+    middleware=[
+        FilesystemFileSearchMiddleware(
+            root_path="/workspace",
+            use_ripgrep=True,
+            max_file_size_mb=10,
+        ),
+    ],
+)
+
+# Agent can now use glob_search and grep_search tools
+result = agent.invoke({
+    "messages": [HumanMessage("Find all Python files containing 'async def'")]
+})
+
+# The agent will use:
+# 1. glob_search(pattern="**/*.py") to find Python files
+# 2. grep_search(pattern="async def", include="*.py") to find async functions
+```
+</Accordion>
+
+:::
+
+### Context editing
+
+Manage conversation context by clearing older tool call outputs when token limits are reached, while preserving recent results. This helps keep context windows manageable in long conversations with many tool calls. Context editing is useful for the following:
+
+- Long conversations with many tool calls that exceed token limits
+- Reducing token costs by removing older tool outputs that are no longer relevant
+- Maintaining only the most recent N tool results in context
+
+:::python
+**API reference:** @[`ContextEditingMiddleware`], @[`ClearToolUsesEdit`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ContextEditingMiddleware, ClearToolUsesEdit
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[],
+    middleware=[
+        ContextEditingMiddleware(
+            edits=[
+                ClearToolUsesEdit(
+                    trigger=100000,
+                    keep=3,
+                ),
+            ],
+        ),
+    ],
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, contextEditingMiddleware, ClearToolUsesEdit } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [],
+  middleware: [
+    contextEditingMiddleware({
+      edits: [
+        new ClearToolUsesEdit({
+          triggerTokens: 100000,
+          keep: 3,
+        }),
+      ],
+    }),
+  ],
+});
+```
+:::
+
+<Accordion title="Configuration options">
+
+:::python
+<ParamField body="edits" type="list[ContextEdit]" default="[ClearToolUsesEdit()]">
+    List of @[`ContextEdit`] strategies to apply
+</ParamField>
+
+<ParamField body="token_count_method" type="string" default="approximate">
+    Token counting method. Options: `'approximate'` or `'model'`
+</ParamField>
+
+**@[`ClearToolUsesEdit`] options:**
+
+<ParamField body="trigger" type="number" default="100000">
+    Token count that triggers the edit. When the conversation exceeds this token count, older tool outputs will be cleared.
+</ParamField>
+
+<ParamField body="clear_at_least" type="number" default="0">
+    Minimum number of tokens to reclaim when the edit runs. If set to 0, clears as much as needed.
+</ParamField>
+
+<ParamField body="keep" type="number" default="3">
+    Number of most recent tool results that must be preserved. These will never be cleared.
+</ParamField>
+
+<ParamField body="clear_tool_inputs" type="boolean" default="False">
+    Whether to clear the originating tool call parameters on the AI message. When `True`, tool call arguments are replaced with empty objects.
+</ParamField>
+
+<ParamField body="exclude_tools" type="list[string]" default="()">
+    List of tool names to exclude from clearing. These tools will never have their outputs cleared.
+</ParamField>
+
+<ParamField body="placeholder" type="string" default="[cleared]">
+    Placeholder text inserted for cleared tool outputs. This replaces the original tool message content.
+</ParamField>
+:::
+
+:::js
+<ParamField body="edits" type="ContextEdit[]" default="[new ClearToolUsesEdit()]">
+    Array of @[`ContextEdit`] strategies to apply
+</ParamField>
+
+**@[`ClearToolUsesEdit`] options:**
+
+<ParamField body="triggerTokens" type="number" default="100000">
+    Token count that triggers the edit. When the conversation exceeds this token count, older tool outputs will be cleared.
+</ParamField>
+
+<ParamField body="clearAtLeast" type="number" default="0">
+    Minimum number of tokens to reclaim when the edit runs. If set to 0, clears as much as needed.
+</ParamField>
+
+<ParamField body="keep" type="number" default="3">
+    Number of most recent tool results that must be preserved. These will never be cleared.
+</ParamField>
+
+<ParamField body="clearToolInputs" type="boolean" default="false">
+    Whether to clear the originating tool call parameters on the AI message. When `true`, tool call arguments are replaced with empty objects.
+</ParamField>
+
+<ParamField body="excludeTools" type="string[]" default="[]">
+    List of tool names to exclude from clearing. These tools will never have their outputs cleared.
+</ParamField>
+
+<ParamField body="placeholder" type="string" default="[cleared]">
+    Placeholder text inserted for cleared tool outputs. This replaces the original tool message content.
+</ParamField>
+:::
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware applies context editing strategies when token limits are reached. The most common strategy is `ClearToolUsesEdit`, which clears older tool results while preserving recent ones.
+
+**How it works:**
+1. Monitor token count in conversation
+2. When threshold is reached, clear older tool outputs
+3. Keep most recent N tool results
+4. Optionally preserve tool call arguments for context
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import ContextEditingMiddleware, ClearToolUsesEdit
+
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[search_tool, your_calculator_tool, database_tool],
+    middleware=[
+        ContextEditingMiddleware(
+            edits=[
+                ClearToolUsesEdit(
+                    trigger=2000,
+                    keep=3,
+                    clear_tool_inputs=False,
+                    exclude_tools=[],
+                    placeholder="[cleared]",
+                ),
+            ],
+        ),
+    ],
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, contextEditingMiddleware, ClearToolUsesEdit } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [searchTool, calculatorTool, databaseTool],
+  middleware: [
+    contextEditingMiddleware({
+      edits: [
+        new ClearToolUsesEdit({
+          triggerTokens: 2000,
+          keep: 3,
+          clearToolInputs: false,
+          excludeTools: [],
+          placeholder: "[cleared]",
+        }),
+      ],
+    }),
+  ],
+});
+```
+:::
+
+</Accordion>
+
+### LLM tool emulator
+
+Emulate tool execution using an LLM for testing purposes, replacing actual tool calls with AI-generated responses. LLM tool emulators are useful for the following:
+
+- Testing agent behavior without executing real tools.
+- Developing agents when external tools are unavailable or expensive.
+- Prototyping agent workflows before implementing actual tools.
+
+:::python
+**API reference:** @[`LLMToolEmulator`]
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import LLMToolEmulator
+
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[get_weather, search_database, send_email],
+    middleware=[
+        LLMToolEmulator(),  # Emulate all tools
+    ],
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, toolEmulatorMiddleware } from "langchain";
+
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [getWeather, searchDatabase, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware(), // Emulate all tools
+  ],
+});
+```
+:::
+
+<Accordion title="Configuration options">
+
+:::python
+<ParamField body="tools" type="list[str | BaseTool]">
+    List of tool names (str) or BaseTool instances to emulate. If `None` (default), ALL tools will be emulated. If empty list `[]`, no tools will be emulated. If array with tool names/instances, only those tools will be emulated.
+</ParamField>
+
+<ParamField body="model" type="string | BaseChatModel">
+    Model to use for generating emulated tool responses. Can be a model identifier string (e.g., `'google_genai:gemini-3.6-flash'`) or a `BaseChatModel` instance. Defaults to the agent's model if not specified. See @[`init_chat_model`][init_chat_model(model)] for more information.
+</ParamField>
+:::
+
+:::js
+<ParamField body="tools" type="(string | ClientTool | ServerTool)[]">
+    List of tool names (string) or tool instances to emulate. If `undefined` (default), ALL tools will be emulated. If empty array `[]`, no tools will be emulated. If array with tool names/instances, only those tools will be emulated.
+</ParamField>
+
+<ParamField body="model" type="string | BaseChatModel">
+    Model to use for generating emulated tool responses. Can be a model identifier string (e.g., `'google_genai:gemini-3.6-flash'`) or a `BaseChatModel` instance. Defaults to the agent's model if not specified.
+</ParamField>
+:::
+
+</Accordion>
+
+<Accordion title="Full example">
+
+The middleware uses an LLM to generate plausible responses for tool calls instead of executing the actual tools.
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import LLMToolEmulator
+from langchain.tools import tool
+
+
+@tool
+def get_weather(location: str) -> str:
+    """Get the current weather for a location."""
+    return f"Weather in {location}"
+
+@tool
+def send_email(to: str, subject: str, body: str) -> str:
+    """Send an email."""
+    return "Email sent"
+
+
+# Emulate all tools (default behavior)
+agent = create_agent(
+    model="gpt-5.5",
+    tools=[get_weather, send_email],
+    middleware=[LLMToolEmulator()],
+)
+
+# Emulate specific tools only
+agent2 = create_agent(
+    model="gpt-5.5",
+    tools=[get_weather, send_email],
+    middleware=[LLMToolEmulator(tools=["get_weather"])],
+)
+
+# Use custom model for emulation
+agent4 = create_agent(
+    model="gpt-5.5",
+    tools=[get_weather, send_email],
+    middleware=[LLMToolEmulator(model="claude-sonnet-4-6")],
+)
+```
+:::
+
+:::js
+```typescript
+import { createAgent, toolEmulatorMiddleware, tool } from "langchain";
+import * as z from "zod";
+
+const getWeather = tool(
+  async ({ location }) => `Weather in ${location}`,
+  {
+    name: "get_weather",
+    description: "Get the current weather for a location",
+    schema: z.object({ location: z.string() }),
+  }
+);
+
+const sendEmail = tool(
+  async ({ to, subject, body }) => "Email sent",
+  {
+    name: "send_email",
+    description: "Send an email",
+    schema: z.object({
+      to: z.string(),
+      subject: z.string(),
+      body: z.string(),
+    }),
+  }
+);
+
+// Emulate all tools (default behavior)
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [getWeather, sendEmail],
+  middleware: [toolEmulatorMiddleware()],
+});
+
+// Emulate specific tools by name
+const agent2 = createAgent({
+  model: "gpt-5.5",
+  tools: [getWeather, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware({
+      tools: ["get_weather"],
+    }),
+  ],
+});
+
+// Emulate specific tools by passing tool instances
+const agent3 = createAgent({
+  model: "gpt-5.5",
+  tools: [getWeather, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware({
+      tools: [getWeather],
+    }),
+  ],
+});
+
+// Use custom model for emulation
+const agent5 = createAgent({
+  model: "gpt-5.5",
+  tools: [getWeather, sendEmail],
+  middleware: [
+    toolEmulatorMiddleware({
+      model: "claude-sonnet-4-6",
+    }),
+  ],
+});
+```
+:::
+
+</Accordion>
 
 ## Provider-specific middleware
 
