@@ -1,0 +1,77 @@
+---
+title: Rate limit policies
+description: Limit the number of requests or tokens a user, workspace, or API key can send through the LLM Gateway in a rolling time window.
+---
+
+<Note>
+**Private beta:** The LLM Gateway is in private [beta](/langsmith/release-stages). [Sign up for the waitlist](https://www.langchain.com/langsmith-llm-gateway-waitlist) to get access.
+</Note>
+
+A rate limit policy restricts how many **requests** or **tokens** a subject can consume through the [LLM Gateway](/langsmith/llm-gateway) in a short rolling time window. The gateway enforces the limit in real time and blocks any request that would push the subject past it, returning a `429` response with a `Retry-After` header:
+
+```
+API Error: 429 request blocked by gateway policies: Dev Team Rate Limit
+Retry-After: 42
+```
+
+The `Retry-After` value is the number of seconds until the current window resets. Clients should honor this header and back off before retrying.
+
+Rate limit policies and [spend cap policies](/langsmith/llm-gateway-spend-policies) are complementary and can be applied together—spend caps for cost control, rate limits for throughput and traffic control.
+
+## Policy dimensions
+
+Rate limit policies are evaluated for every incoming request. You can set a policy as a default (applying a blanket rate limit to all users, [workspaces](/langsmith/administration-overview#workspaces), or [API keys](/langsmith/create-account-api-key) or as a granular policy (an individual limit or a limit on a group of subjects).
+
+| Subject | What it limits | Example |
+| --- | --- | --- |
+| **User** | Requests or tokens from a single user or group of users (resolved from the API key's identity) | "No individual developer can send more than 100 requests per minute" |
+| **Workspace** | Requests or tokens within a single workspace or group of workspaces | "The R&D workspace cannot exceed 1,000,000 tokens per hour" |
+| **API key** | Requests or tokens from a single API key or group of API keys | "The customer support agent keys share a limit of 200 requests per minute" |
+
+### Defaults vs. granular policies
+
+Rate limit policies have two modes:
+
+1. **Default policies** apply automatically to every member of a subject dimension. Example: "Every user in this workspace gets a default cap of 100 requests per minute." No need to create a policy per person.
+2. **Granular policies** target a named subject and override the default for that subject only. Example: "The on-call engineer gets 500 requests per minute." Editing the default updates everyone still on it.
+
+### Independent enforcement
+
+Each subject is tracked and enforced separately. One user hitting their limit does not affect other users.
+
+## Limits
+
+A single rate limit policy can enforce **multiple limits at once**. For example, one policy can enforce both *100 requests per minute* and *1,000,000 tokens per hour* simultaneously.
+
+Each limit has three fields:
+
+| Field | Allowed values |
+| --- | --- |
+| **Metric** | `requests` or `tokens` (total tokens as reported by the provider) |
+| **Window** | `minute` or `hour` |
+| **Value** | A positive integer (the cap) |
+
+Rules:
+
+- At least one limit is required per policy.
+- You cannot have two limits with the same metric and window combination within one policy.
+
+## Create a rate limit policy
+
+<Warning>
+Creating and managing policies requires `organization:manage` permission. For the full permissions breakdown, refer to [Traces, Engine, and access control](/langsmith/llm-gateway-access).
+</Warning>
+
+1. Go to **Settings → Gateway → LLM Gateway**.
+1. Click **Create policy**.
+1. Select **Rate limit** as the policy type.
+1. Select the subject scope (user, workspace, or API key).
+1. Add one or more limits, each with a metric, window, and value.
+1. Save.
+
+Policies take effect immediately.
+
+## Next steps
+
+- [Spend policies](/langsmith/llm-gateway-spend-policies): set cost caps alongside rate limits.
+- [PII and secrets redaction](/langsmith/llm-gateway-redaction): add data protection policies.

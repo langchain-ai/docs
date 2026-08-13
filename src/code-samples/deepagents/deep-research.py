@@ -64,6 +64,8 @@ def tavily_search(
 
 # :snippet-end:
 
+# :snippet-start: deep-research-workflow-instructions-py
+# :codegroup-fence-mods: expandable wrap
 RESEARCH_WORKFLOW_INSTRUCTIONS = """# Research Workflow
 
 Follow this workflow for all research requests:
@@ -127,8 +129,10 @@ Simply list items with details - no introduction needed:
  [1] AI Research Paper: https://example.com/paper
  [2] Industry Analysis: https://example.com/analysis
 """
+# :snippet-end:
 
-# :snippet-start: researcher-instructions-py
+# :snippet-start: deep-research-researcher-instructions-py
+# :codegroup-fence-mods: expandable wrap
 RESEARCHER_INSTRUCTIONS = """You are a research assistant conducting research on the user's input topic. For context, today's date is {date}.
 
 Your job is to use tools to gather information about the user's input topic.
@@ -175,6 +179,8 @@ The orchestrator will consolidate citations from all sub-agents into the final r
 """
 # :snippet-end:
 
+# :snippet-start: deep-research-subagent-delegation-instructions-py
+# :codegroup-fence-mods: expandable wrap
 SUBAGENT_DELEGATION_INSTRUCTIONS = """# Sub-Agent Research Coordination
 
 Your role is to coordinate research by delegating tasks from your TODO list to specialized research sub-agents.
@@ -211,6 +217,7 @@ Your role is to coordinate research by delegating tasks from your TODO list to s
 - Stop after {max_researcher_iterations} delegation rounds if you haven't found adequate sources
 - Stop when you have sufficient information to answer comprehensively
 - Bias towards focused research over exhaustive exploration"""
+# :snippet-end:
 
 # :snippet-start: deep-research-agent-claude-py
 from datetime import datetime
@@ -241,6 +248,7 @@ research_sub_agent = {
     "tools": [tavily_search],
 }
 
+# KEEP MODEL
 model = init_chat_model(model="anthropic:claude-sonnet-4-5-20250929", temperature=0.0)
 
 agent = create_deep_agent(
@@ -251,62 +259,17 @@ agent = create_deep_agent(
 )
 # :snippet-end:
 
-# :snippet-start: deep-research-run-sync-py
-from langchain.messages import HumanMessage
-
-if __name__ == "__main__":
-    result = agent.invoke(
-        {
-            "messages": [
-                HumanMessage(
-                    content="What are the main differences between RAG and fine-tuning for LLM applications?"
-                )
-            ]
-        }
-    )
-
-    for msg in result.get("messages", []):
-        if hasattr(msg, "content") and msg.content:
-            print(msg.content)
-    # :remove-start:
-    assert result is not None
-    # :remove-end:
-# :snippet-end:
-
-# :snippet-start: deep-research-run-stream-py
-from langchain.messages import HumanMessage
-
-if __name__ == "__main__":
-    stream = agent.stream_events(
-        {
-            "messages": [
-                HumanMessage(content="Compare Python vs JavaScript for web development")
-            ]
-        },
-        version="v3",
-    )
-    for message in stream.messages:
-        for token in message.text:
-            print(token, end="", flush=True)
-        # :remove-start:
-        if os.environ.get("CI"):
-            break  # Don't wait for full response in CI
-        # :remove-end:
-# :snippet-end:
-
 
 # :remove-start:
-if __name__ == "__main__":
-    # Test that components are defined correctly
-    assert tavily_search.name == "tavily_search"
-    assert len(RESEARCH_WORKFLOW_INSTRUCTIONS) > 0
-    assert len(RESEARCHER_INSTRUCTIONS) > 0
-    assert len(SUBAGENT_DELEGATION_INSTRUCTIONS) > 0
-    assert len(INSTRUCTIONS) > 0
-    assert research_sub_agent is not None
-    assert model is not None
-    assert agent is not None
-    assert hasattr(agent, "invoke")
-    assert hasattr(agent, "stream")
-    print("✓ Deep research agent components defined correctly")
+assert tavily_search.name == "tavily_search"
+assert len(RESEARCH_WORKFLOW_INSTRUCTIONS) > 0
+assert len(RESEARCHER_INSTRUCTIONS) > 0
+assert len(SUBAGENT_DELEGATION_INSTRUCTIONS) > 0
+assert len(INSTRUCTIONS) > 0
+assert research_sub_agent is not None
+assert model is not None
+assert agent is not None
+assert hasattr(agent, "invoke")
+assert hasattr(agent, "stream_events")
+print("✓ Deep research agent components defined correctly")
 # :remove-end:

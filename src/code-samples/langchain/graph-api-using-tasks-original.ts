@@ -1,5 +1,4 @@
 // :snippet-start: graph-api-using-tasks-original-js
-import { v7 as uuid7 } from "uuid";
 import * as z from "zod";
 
 import {
@@ -17,7 +16,7 @@ const State = new StateSchema({
 });
 
 const callApi: GraphNode<typeof State> = async (state) => {
-  const response = await fetch(state.url);  // [!code highlight]
+  const response = await fetch(state.url); // [!code highlight]
   const text = await response.text();
   const result = text.slice(0, 100);
   return { result };
@@ -31,7 +30,7 @@ const builder = new StateGraph(State)
 const checkpointer = new MemorySaver();
 const graph = builder.compile({ checkpointer });
 
-const threadId = uuid7();
+const threadId = crypto.randomUUID();
 const config = { configurable: { thread_id: threadId } };
 
 // :remove-start:

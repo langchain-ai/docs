@@ -4,6 +4,12 @@ sidebarTitle: Data Analysis
 description: Build an agent that analyzes data files, generates visualizations, and shares results
 ---
 
+import DataAnalysisBackendLangsmithPy from '/snippets/code-samples/data-analysis-backend-langsmith-py.mdx';
+import DataAnalysisBackendLocalShellPy from '/snippets/code-samples/data-analysis-backend-local-shell-py.mdx';
+import DataAnalysisUploadSampleDataPy from '/snippets/code-samples/data-analysis-upload-sample-data-py.mdx';
+import DataAnalysisSlackToolPy from '/snippets/code-samples/data-analysis-slack-tool-py.mdx';
+import DataAnalysisCreateAgentPy from '/snippets/code-samples/data-analysis-create-agent-py.mdx';
+
 ## Overview
 
 This guide demonstrates how to build a data analysis agent using a [deep agent](/oss/deepagents). Data analysis tasks typically require planning, code execution, and working with artifacts such as scripts, reports, and plots—capabilities that deep agents are designed to handle.
@@ -94,14 +100,7 @@ The examples below use a [LangSmith sandbox](/langsmith/sandboxes). For other pr
     ```
     </CodeGroup>
 
-    ```python
-    from deepagents.backends.langsmith import LangSmithSandbox
-    from langsmith.sandbox import SandboxClient
-
-    client = SandboxClient()
-    ls_sandbox = client.create_sandbox()
-    backend = LangSmithSandbox(sandbox=ls_sandbox)
-    ```
+    <DataAnalysisBackendLangsmithPy />
 
   </Tab>
 <Tab title="Local shell">
@@ -109,11 +108,7 @@ The examples below use a [LangSmith sandbox](/langsmith/sandboxes). For other pr
 This backend provides unrestricted filesystem and shell access. Use only in controlled environments for development and testing. See the [security considerations](/oss/deepagents/backends#localshellbackend-local-shell) for more details.
 </Warning>
 
-```python
-from deepagents.backends import LocalShellBackend
-
-backend = LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"})
-```
+<DataAnalysisBackendLocalShellPy />
 </Tab>
   <Tab title="AgentCore">
 
@@ -228,30 +223,8 @@ backend = RunloopSandbox(devbox=devbox)
 ### Upload sample data
 
 Create and upload sample sales data to the backend:
-```python
-import csv
-import io
 
-# Create sample sales data
-data = [
-    ["Date", "Product", "Units Sold", "Revenue"],
-    ["2025-08-01", "Widget A", 10, 250],
-    ["2025-08-02", "Widget B", 5, 125],
-    ["2025-08-03", "Widget A", 7, 175],
-    ["2025-08-04", "Widget C", 3, 90],
-    ["2025-08-05", "Widget B", 8, 200],
-]
-
-# Convert to CSV bytes
-text_buf = io.StringIO()
-writer = csv.writer(text_buf)
-writer.writerows(data)
-csv_bytes = text_buf.getvalue().encode("utf-8")
-text_buf.close()
-
-# Upload to backend
-backend.upload_files([("/root/data/sales_data.csv", csv_bytes)])
-```
+<DataAnalysisUploadSampleDataPy />
 
 ## Implement custom tools
 
@@ -259,35 +232,8 @@ Data analysis tasks might produce artifacts, like reports or plots.
 The following simple [tool](/oss/langchain/tools) downloads them with `backend.download_files` and then uploads them using the Slack SDK.
 We could also ask our agent to list the relevant file paths instead of uploading them, so interested parties can obtain them separately as needed.
 
-```python
-from langchain.tools import tool
-from slack_sdk import WebClient
+<DataAnalysisSlackToolPy />
 
-
-slack_token = os.environ["SLACK_USER_TOKEN"]
-slack_client = WebClient(token=slack_token)
-
-
-@tool(parse_docstring=True)
-def slack_send_message(text: str, file_path: str | None = None) -> str:
-    """Send message, optionally including attachments such as images.
-
-    Args:
-        text: (str) text content of the message
-        file_path: (str) file path of attachment in the filesystem.
-    """
-    if not file_path:
-        slack_client.chat_postMessage(channel=channel, text=text)
-    else:
-        fp = backend.download_files([file_path])
-        slack_client.files_upload_v2(
-            channel="C0123456ABC",  # specify your own channel here
-            content=fp[0].content,
-            initial_comment=text,
-        )
-
-    return "Message sent."
-```
 <Note>
 It is generally good practice to avoid adding credentials and other secrets to the sandbox. Here we manage the Slack token outside the sandbox in a tool.
 </Note>
@@ -296,25 +242,7 @@ It is generally good practice to avoid adding credentials and other secrets to t
 
 Let's instantiate an agent:
 
-```python
-from langchain_core.utils.uuid import uuid7
-
-from langgraph.checkpoint.memory import InMemorySaver
-from deepagents import create_deep_agent
-
-
-checkpointer = InMemorySaver()
-
-agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    tools=[slack_send_message],
-    backend=backend,
-    checkpointer=checkpointer,
-)
-
-thread_id = str(uuid7())
-config={"configurable": {"thread_id": thread_id}}
-```
+<DataAnalysisCreateAgentPy />
 
 We include:
 - A choice of [model](/oss/deepagents/customization#model)

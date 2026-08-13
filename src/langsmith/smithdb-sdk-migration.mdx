@@ -1,0 +1,163 @@
+---
+title: Migrate to SmithDB-backed SDK methods
+description: Migrate your existing LangSmith SDK methods to their SmithDB-backed equivalents for faster agent observability.
+noindex: true
+---
+
+import SmithdbMigrationRunsQuery from '/snippets/langsmith/smithdb-migration/runs-query.mdx';
+import SmithdbMigrationRunsRetrieve from '/snippets/langsmith/smithdb-migration/runs-retrieve.mdx';
+import SmithdbMigrationRunsGetUrl from '/snippets/langsmith/smithdb-migration/runs-geturl.mdx';
+import SmithdbMigrationRunsAddToAnnotationQueue from '/snippets/langsmith/smithdb-migration/runs-add-to-annotation-queue.mdx';
+import SmithdbMigrationThreadsQuery from '/snippets/langsmith/smithdb-migration/threads-query.mdx';
+import SmithdbMigrationThreadsListTraces from '/snippets/langsmith/smithdb-migration/threads-list-traces.mdx';
+import SmithdbMigrationExperimentRunsQuery from '/snippets/langsmith/smithdb-migration/experiment-runs-query.mdx';
+import SmithdbMigrationTracesQuery from '/snippets/langsmith/smithdb-migration/traces-query.mdx';
+import SmithdbMigrationTracesListRuns from '/snippets/langsmith/smithdb-migration/traces-list-runs.mdx';
+
+## Context
+
+<Warning>This migration guide, including the deprecation and removal dates below, is in **preview** and subject to change before general availability later this month.</Warning>
+
+In May 2026, we released [SmithDB](https://www.langchain.com/blog/introducing-smithdb?utm_source=docs), a new observability database built for modern AI agents. SmithDB delivers industry-leading performance across every key observability workload, making core LangSmith experiences dramatically faster.
+
+SmithDB-powered methods are now available to SDK users in eligible regions.
+
+## Deployment support
+
+| Deployment | Status |
+|---|---|
+| GCP `us-central` Cloud | Available. New methods are fully SmithDB-backed. |
+| Other Cloud regions | Available. SmithDB-backed later this year. |
+| Self-Hosted | New methods require version `>=v0.16` and SmithDB enabled. |
+
+## Deprecation and removal
+
+Each SDK method and its underlying endpoint share the same deprecation date.
+
+| Deployment | Deprecation | Removal |
+|---|---|---|
+| All Cloud regions | End of July 2026 | 31 Jan 2027 |
+| Self-Hosted | `>=v0.16` | `>=v0.18` |
+
+A detailed deprecation process will be linked here before the general availability of this guide.
+
+## Minimum SDK version
+
+The SmithDB-backed methods require a minimum SDK version:
+
+| Language | Package | Minimum version |
+|---|---|---|
+| Python | `langsmith` | `>=0.10.7` |
+| TypeScript | `langsmith` | `>=0.8.4` |
+| Java | `langsmith-java` | `0.1.0-beta.18` |
+| Go | `langsmith-go` | `v0.22.0` |
+
+## Migrate with an AI agent
+
+This guide is written to be fetched and applied directly by an AI coding agent. Copy the following prompt into your agent to migrate your codebase to the SmithDB-backed methods.
+
+```text
+Migrate this codebase's LangSmith SDK usage to the new SmithDB-backed methods.
+
+Fetch https://docs.langchain.com/langsmith/smithdb-sdk-migration.md and treat it
+as the source of truth for what changed, including which methods and
+parameters are affected, what replaces them, and deployment support.
+
+1. Check the installed LangSmith SDK version against the minimum version
+   required for the SmithDB-backed methods per the guide, and upgrade the
+   dependency if it does not meet that minimum.
+2. Identify every call site in this codebase that uses a method the guide
+   marks as migrated, in whichever language(s) this codebase uses.
+3. For each call site, apply the corresponding before/after change from the
+   guide, including any added, removed, or renamed parameters.
+
+If a call site or parameter is not covered by the guide, stop and ask rather
+than guessing.
+```
+
+## Exceptions
+
+<Tabs>
+  <Tab title="Python">
+    The SmithDB-backed methods raise new exception classes instead of the legacy `langsmith.utils` exception classes.
+
+    | Before (`langsmith.utils`) | After (`langsmith`) | Notes |
+    |---|---|---|
+    | `LangSmithError` | `LangsmithError` | Base exception class for the SDK; casing changed |
+    | `LangSmithAPIError` | `InternalServerError` | 5xx |
+    | `LangSmithRequestTimeout` | `APITimeoutError` | Raised when a request times out |
+    | `LangSmithUserError` | *(removed)* | No direct equivalent. The 403 org-scoped-key case now raises `PermissionDeniedError`; client-side argument validation now raises a standard `ValueError` or `TypeError` |
+    | `LangSmithRateLimitError` | `RateLimitError` | 429; unchanged name |
+    | `LangSmithAuthError` | `AuthenticationError` | 401 |
+    | `LangSmithNotFoundError` | `NotFoundError` | 404; unchanged name |
+    | `LangSmithConflictError` | `ConflictError` | 409; unchanged name |
+    | `LangSmithConnectionError` | `APIConnectionError` | Raised when the client cannot connect to the API |
+    | `LangSmithExceptionGroup` | *(removed)* | No equivalent |
+    | *(not available)* | `APIError` | New: base class for all API-related errors, with `message`, `request`, and `body` attributes |
+    | *(not available)* | `APIStatusError` | New: base class for all 4xx/5xx status errors |
+    | *(not available)* | `BadRequestError` | New: 400 |
+    | *(not available)* | `PermissionDeniedError` | New: 403 |
+    | *(not available)* | `UnprocessableEntityError` | New: 422 |
+    | *(not available)* | `APIResponseValidationError` | New: raised when a response does not match the expected schema |
+  </Tab>
+  <Tab title="TypeScript">
+    The SmithDB-backed methods raise new exception classes instead of plain `Error`.
+
+    | Before (plain `Error`) | After (`langsmith`) | Notes |
+    |---|---|---|
+    | *(not available)* | `LangsmithError` | base class for all SDK errors |
+    | *(not available)* | `InternalServerError` | 5xx |
+    | *(not available)* | `APIConnectionTimeoutError` | Raised when a request times out |
+    | *(not available)* | `RateLimitError` | 429 |
+    | *(not available)* | `AuthenticationError` | 401 |
+    | *(not available)* | `NotFoundError` | 404 |
+    | *(not available)* | `ConflictError` | 409 |
+    | *(not available)* | `APIConnectionError` | Raised when the client cannot connect to the API |
+    | *(not available)* | `APIError` | base class for all API-related errors, with `status`, `headers`, and `error` properties |
+    | *(not available)* | `BadRequestError` | 400 |
+    | *(not available)* | `PermissionDeniedError` | 403 |
+    | *(not available)* | `UnprocessableEntityError` | 422 |
+    | *(not available)* | `APIUserAbortError` | Raised when a request is aborted via an `AbortController` |
+  </Tab>
+  <Tab title="Java">
+    No change. Error handling is unaffected by this migration.
+  </Tab>
+  <Tab title="Go">
+    No change. Error handling is unaffected by this migration.
+  </Tab>
+  <Tab title="cURL">
+    No change. Error handling is unaffected by this migration.
+  </Tab>
+</Tabs>
+
+<SmithdbMigrationRunsQuery />
+
+<SmithdbMigrationRunsRetrieve />
+
+<SmithdbMigrationRunsGetUrl />
+
+<SmithdbMigrationTracesQuery />
+
+<SmithdbMigrationTracesListRuns />
+
+<SmithdbMigrationThreadsQuery />
+
+<SmithdbMigrationThreadsListTraces />
+
+<SmithdbMigrationExperimentRunsQuery />
+
+<SmithdbMigrationRunsAddToAnnotationQueue />
+
+## Soon to be deprecated
+
+The following methods may be deprecated before the end of this month. Preview customers will be notified when changes are made.
+
+### Share run methods
+
+| Python | TypeScript |
+|---|---|
+| [`share_run`](https://reference.langchain.com/python/langsmith/client/Client/share_run) | [`shareRun`](https://reference.langchain.com/javascript/langsmith/client/Client/shareRun) |
+| [`unshare_run`](https://reference.langchain.com/python/langsmith/client/Client/unshare_run) | [`unshareRun`](https://reference.langchain.com/javascript/langsmith/client/Client/unshareRun) |
+| [`list_shared_runs`](https://reference.langchain.com/python/langsmith/client/Client/list_shared_runs) | [`listSharedRuns`](https://reference.langchain.com/javascript/langsmith/client/Client/listSharedRuns) |
+| [`read_run_shared_link`](https://reference.langchain.com/python/langsmith/client/Client/read_run_shared_link) | [`readRunSharedLink`](https://reference.langchain.com/javascript/langsmith/client/Client/readRunSharedLink) |
+| [`read_shared_run`](https://reference.langchain.com/python/langsmith/client/Client/read_shared_run) | No TypeScript equivalent |

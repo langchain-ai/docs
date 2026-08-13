@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import ssl
 import sys
 import urllib.error
@@ -88,6 +89,34 @@ HIDDEN_PATH_PREFIXES: list[str] = [
     "/v1/platform/nps/",
     "/v2/sandboxes/internal/",
 ]
+
+# v2 API endpoints (paths under ``/v2/``) carry their backend resource tag
+# (runs, datasets, threads), so they group with their v1 siblings automatically.
+# Append a "(v2)" marker to their titles so the two versions are distinguishable
+# in the sidebar. Sandboxes are a v2-only feature with no v1 counterpart, so they
+# are excluded from the marker.
+V2_PATH_PREFIX = "/v2/"
+V2_LABEL_SUFFIX = " (v2)"
+V2_LABEL_EXCLUDE_PREFIXES: list[str] = [
+    "/v2/sandboxes/",
+]
+
+# Canonical base titles for v2 operations whose backend wording diverges from
+# their v1 sibling, so the two versions read identically (the "(v2)" suffix is
+# added automatically). Keyed by (HTTP method, path).
+V2_TITLE_OVERRIDES: dict[tuple[str, str], str] = {
+    ("POST", "/v2/runs/query"): "Query runs",
+    ("GET", "/v2/runs/{run_id}"): "Read run",
+    ("POST", "/v2/runs/{run_id}/share"): "Share run",
+}
+
+# Acronyms and proper nouns to preserve verbatim when sentence-casing titles.
+TITLE_PRESERVE: set[str] = {
+    "API", "AWS", "GitHub", "HTTP", "HTTPS", "ID", "JSON", "LangGraph",
+    "LangSmith", "LCU", "LLM", "MCP", "NPS", "OAuth2", "SCIM", "SDK", "SSO",
+    "TCP", "TTL", "UI", "URI", "URL", "WebSocket",
+}
+_TITLE_PRESERVE_BY_UPPER: dict[str, str] = {t.upper(): t for t in TITLE_PRESERVE}
 
 # Map raw tag names to human-readable group headings (``x-group``).
 # Tags not listed here keep their original name as the group heading.
@@ -170,13 +199,15 @@ TAG_GROUPS: dict[str, str] = {
     "public": "System",
     "ace": "System",
     "backfills": "System",
-    "threads": "System",
+    # Threads
+    "threads": "Threads",
 }
 
 # Display order for groups in the generated docs sidebar.
 # Groups not listed here are appended alphabetically after the listed ones.
 GROUP_ORDER: list[str] = [
     "Tracing",
+    "Threads",
     "Datasets",
     "Evaluation",
     "Feedback & Annotation",
@@ -211,6 +242,68 @@ def _should_hide_by_tags(tags: list[str]) -> bool:
     return any(tag in HIDDEN_TAGS for tag in tags)
 
 
+_BETA_PREFIX_RE = re.compile(r"^\[Beta\]\s*(.+)$")
+_TRAILING_V2_RE = re.compile(r"^(.*\S)\s+V2$")
+_TRAILING_MARKER_RE = re.compile(r"\s*\((Beta|v2)\)\s*$", re.IGNORECASE)
+
+
+def _sentence_case(text: str) -> str:
+    """Sentence-case *text*, preserving allow-listed acronyms and proper nouns."""
+    words = text.split()
+    out = []
+    for i, word in enumerate(words):
+        canonical = _TITLE_PRESERVE_BY_UPPER.get(word.upper())
+        if canonical:
+            out.append(canonical)
+        elif i == 0:
+            out.append(word[:1].upper() + word[1:].lower())
+        else:
+            out.append(word.lower())
+    return " ".join(out)
+
+
+def _standardize_title(
+    summary: str, *, override: str | None = None, v2_path: bool = False
+) -> str:
+    """Return a sentence-cased title with a trailing ``(Beta)``/``(v2)`` marker.
+
+    Strips a ``"[Beta] "`` prefix and a trailing ``" V2"`` and re-adds them as
+    consistent suffixes. ``override`` replaces the base title (used to make a v2
+    endpoint read identically to its v1 sibling); ``v2_path`` forces the
+    ``(v2)`` suffix for operations under ``/v2/``.
+    """
+    text = summary.strip()
+    beta = False
+    v2 = v2_path
+    # Strip any markers applied by a previous run so re-processing is idempotent.
+    while True:
+        match = _TRAILING_MARKER_RE.search(text)
+        if not match:
+            break
+        if match.group(1).lower() == "beta":
+            beta = True
+        else:
+            v2 = True
+        text = text[: match.start()].strip()
+    # Strip the raw backend markers ("[Beta] " prefix, trailing " V2").
+    prefix = _BETA_PREFIX_RE.match(text)
+    if prefix:
+        beta = True
+        text = prefix.group(1).strip()
+    trailing_v2 = _TRAILING_V2_RE.match(text)
+    if trailing_v2:
+        v2 = True
+        text = trailing_v2.group(1).strip()
+    if override:
+        text = override
+    text = _sentence_case(text)
+    if beta:
+        text += " (Beta)"
+    if v2:
+        text += V2_LABEL_SUFFIX
+    return text
+
+
 def process_spec(spec: dict) -> dict:
     """Add ``x-hidden`` and ``x-group`` annotations to *spec* in place."""
     hidden_count = 0
@@ -229,6 +322,29 @@ def process_spec(spec: dict) -> dict:
             if _should_hide_by_path(path) or _should_hide_by_tags(tags):
                 operation["x-hidden"] = True
                 hidden_count += 1
+
+    # 1b. Standardize endpoint titles: sentence-case them, normalize inline
+    # markers to a trailing "(Beta)"/"(v2)" suffix, and force the "(v2)" suffix
+    # on visible non-sandbox /v2/ operations so they are distinguishable from
+    # their v1 siblings. Idempotent on re-runs.
+    v2_count = 0
+    for path, methods in spec.get("paths", {}).items():
+        is_v2 = path.startswith(V2_PATH_PREFIX) and not any(
+            path.startswith(p) for p in V2_LABEL_EXCLUDE_PREFIXES
+        )
+        for method, operation in methods.items():
+            if not isinstance(operation, dict):
+                continue
+            if method in ("parameters", "summary", "description", "servers"):
+                continue
+            v2_path = is_v2 and not operation.get("x-hidden")
+            raw = operation.get("summary") or f"{method.upper()} {path}"
+            override = V2_TITLE_OVERRIDES.get((method.upper(), path))
+            operation["summary"] = _standardize_title(
+                raw, override=override, v2_path=v2_path
+            )
+            if v2_path:
+                v2_count += 1
 
     # 2. Ensure top-level tags array exists and add x-group.
     if "tags" not in spec:
@@ -272,7 +388,8 @@ def process_spec(spec: dict) -> dict:
 
     print(
         f"Processed {total_count} operations: "
-        f"{hidden_count} hidden, {total_count - hidden_count} public",
+        f"{hidden_count} hidden, {total_count - hidden_count} public "
+        f"({v2_count} labeled '(v2)')",
         file=sys.stderr,
     )
 

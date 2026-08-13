@@ -35,6 +35,7 @@ LINK_MAPS: list[LinkMap] = [
             # Deep Agents
             "create_deep_agent": "deepagents/graph/create_deep_agent",
             "DeepAgentState": "deepagents/graph/DeepAgentState",
+            "SystemPromptConfig": "deepagents/graph/SystemPromptConfig",
             "SubAgent": "deepagents/middleware/subagents/SubAgent",
             "CompiledSubAgent": "deepagents/middleware/subagents/CompiledSubAgent",
             "SubAgentMiddleware": "deepagents/middleware/subagents/SubAgentMiddleware",
@@ -89,6 +90,7 @@ LINK_MAPS: list[LinkMap] = [
             "TodoListMiddleware": "langchain/agents/middleware/todo/TodoListMiddleware",
             "LLMToolSelectorMiddleware": "langchain/agents/middleware/tool_selection/LLMToolSelectorMiddleware",
             "ToolRetryMiddleware": "langchain/agents/middleware/tool_retry/ToolRetryMiddleware",
+            "ToolErrorMiddleware": "langchain/agents/middleware/tool_error/ToolErrorMiddleware",
             "ModelRetryMiddleware": "langchain/agents/middleware/model_retry/ModelRetryMiddleware",
             "LLMToolEmulator": "langchain/agents/middleware/tool_emulator/LLMToolEmulator",
             "ContextEditingMiddleware": "langchain/agents/middleware/context_editing/ContextEditingMiddleware",
@@ -595,6 +597,7 @@ LINK_MAPS: list[LinkMap] = [
             "InMemorySaver": "classes/_langchain_langgraph-checkpoint.MemorySaver.html",
             "MemorySaver": "langchain-langgraph/index/MemorySaver",
             "AsyncPostgresSaver": "classes/_langchain_langgraph-checkpoint-postgres.AsyncPostgresSaver.html",
+            "MongoDBSaver": "langchain-langgraph-checkpoint-mongodb/MongoDBSaver",
             "PostgresSaver": "langchain-langgraph-checkpoint-postgres/index/PostgresSaver",
             "PostgresStore": "langchain-langgraph-checkpoint-postgres/store/PostgresStore",
             "protocol": "interfaces/_langchain_langgraph-checkpoint.SerializerProtocol.html",

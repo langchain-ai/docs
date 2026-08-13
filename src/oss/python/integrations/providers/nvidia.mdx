@@ -3,12 +3,14 @@ title: "NVIDIA"
 description: "Integrate with NVIDIA using LangChain Python."
 ---
 
-LangChain and NVIDIA have partnered to accelerate agents through four mechanisms:
+LangChain and NVIDIA have partnered across the agent stack:
 
 1. [Components](#components)
-2. [LangGraph acceleration primitives](#accelerate-langgraph-with-nvidia)
-3. [NeMo Agent Toolkit optimizations](#nemo-agent-toolkit-optimizations-with-langsmith-telemetry)
-4. [Full Stack blueprints](#full-stack-blueprints)
+2. [Sandboxed agents with OpenShell](#sandboxed-agents-with-openshell)
+3. [LangGraph acceleration primitives](#accelerate-langgraph-with-nvidia)
+4. [NeMo Agent Toolkit optimizations](#nemo-agent-toolkit-optimizations-with-langsmith-telemetry)
+5. [Post-training agent workflows](#post-training-agent-workflows)
+6. [Full Stack blueprints](#full-stack-blueprints)
 
 ## Components
 
@@ -64,8 +66,8 @@ else:
 ```python
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
-# Nemotron 3 Super — efficient reasoning and agentic tasks
-llm = ChatNVIDIA(model="nvidia/nemotron-3-super-120b-a12b")
+# Nemotron 3 Ultra - frontier reasoning and agentic workflows
+llm = ChatNVIDIA(model="nvidia/nemotron-3-ultra-550b-a55b")
 result = llm.invoke("Plan a three-step research workflow for competitive analysis.")
 print(result.content)
 ```
@@ -82,7 +84,7 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIADynamo
 
 llm = ChatNVIDIADynamo(
     base_url="http://localhost:8099/v1",
-    model="nvidia/nemotron-3-super-120b-a12b",
+    model="nvidia/nemotron-3-ultra-550b-a55b",
     osl=512,             # expected output sequence length (tokens)
     iat=250,             # expected inter-arrival time (ms)
     latency_sensitivity=1.0,
@@ -147,13 +149,41 @@ When you are ready to deploy your AI application, you can self-host models with 
 from langchain_nvidia_ai_endpoints import ChatNVIDIA, NVIDIAEmbeddings, NVIDIARerank
 
 # connect to a chat NIM running at localhost:8000, specifying a model
-llm = ChatNVIDIA(base_url="http://localhost:8000/v1", model="nvidia/nemotron-3-super-120b-a12b")
+llm = ChatNVIDIA(base_url="http://localhost:8000/v1", model="nvidia/nemotron-3-ultra-550b-a55b")
 
 # connect to an embedding NIM running at localhost:8080
 embedder = NVIDIAEmbeddings(base_url="http://localhost:8080/v1")
 
 # connect to a reranking NIM running at localhost:2016
 ranker = NVIDIARerank(base_url="http://localhost:2016/v1")
+```
+
+
+## Sandboxed Agents with OpenShell
+
+[OpenShell](https://github.com/NVIDIA/OpenShell) gives LangChain agents a policy-governed Linux sandbox for code execution, file access, process permissions, and network egress. This is useful for deep agents that need to inspect data, write code, run commands, or use tools against local resources while keeping the execution environment isolated from the host.
+
+For LangChain applications, the [`langchain-nvidia-openshell`](https://github.com/langchain-ai/langchain-nvidia/tree/main/libs/openshell) package adapts OpenShell to the Deep Agents sandbox interface. The agent can run on the host with `ChatNVIDIA`, while tool execution is dispatched into an OpenShell sandbox through the `OpenShellSandbox` backend.
+
+Resources:
+
+- [LangChain NVIDIA samples](https://github.com/langchain-samples/langchain-nvidia-samples) includes runnable NVIDIA examples, including an OpenShell incident-analysis agent.
+- [OpenShell Deep Agent](https://github.com/langchain-ai/openshell-deepagent) is a reference coding agent that runs inside an OpenShell sandbox, orchestrated by Deep Agents and powered by NVIDIA Nemotron.
+- [`langchain-nvidia-openshell`](https://github.com/langchain-ai/langchain-nvidia/tree/main/libs/openshell) provides the Python adapter, setup notes, policy guidance, and notebook walkthroughs for sandboxed Deep Agents.
+
+```python
+import openshell
+from deepagents import create_deep_agent
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from langchain_nvidia_openshell import OpenShellSandbox
+
+with openshell.Sandbox() as sandbox:
+    backend = OpenShellSandbox(sandbox=sandbox)
+    agent = create_deep_agent(
+        model=ChatNVIDIA(model="nvidia/nemotron-3-ultra-550b-a55b"),
+        system_prompt="You are a careful coding agent.",
+        backend=backend,
+    )
 ```
 
 
@@ -228,6 +258,12 @@ The NVIDIA NeMo Agent Toolkit is an open-source AI toolkit for building, profili
 
 - [Optimize LangChain with NeMo Agent Toolkit and LangSmith](https://github.com/NVIDIA/NeMo-Agent-Toolkit/blob/develop/docs/source/run-workflows/observe/observe-workflow-with-langsmith.md)
 
+## Post-training Agent Workflows
+
+NVIDIA NeMo Gym provides post-training workflows for agentic systems, including examples that pair LangGraph agents with Responses API-style training data and evaluation loops. Use these workflows when you want to improve agent behavior after initial prompting and harness tuning, especially for tool-use and multi-step reasoning tasks.
+
+- [NeMo Gym LangGraph agent example](https://github.com/NVIDIA-NeMo/Gym/tree/main/responses_api_agents/langgraph_agent)
+
 ## Full Stack Blueprints
 
 NVIDIA and LangChain have collaborated on [full stack examples](https://github.com/langchain-ai/deepagents/tree/main/examples) showing how all these components are combined for two enterprise use cases, with focus on production readiness:
@@ -240,6 +276,10 @@ NVIDIA and LangChain have collaborated on [full stack examples](https://github.c
 - [`langchain-nvidia-ai-endpoints` package README](https://github.com/langchain-ai/langchain-nvidia/blob/main/libs/ai-endpoints/README.md)
 - [`langchain-nvidia-langgraph` package](https://github.com/langchain-ai/langchain-nvidia/tree/main/libs/langgraph)
 - [Nemotron model family](https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/)
+- [`langchain-nvidia-openshell` package](https://github.com/langchain-ai/langchain-nvidia/tree/main/libs/openshell)
+- [LangChain NVIDIA samples](https://github.com/langchain-samples/langchain-nvidia-samples)
+- [OpenShell Deep Agent](https://github.com/langchain-ai/openshell-deepagent)
+- [NeMo Gym LangGraph agent example](https://github.com/NVIDIA-NeMo/Gym/tree/main/responses_api_agents/langgraph_agent)
 - [Overview of NVIDIA NIM for Large Language Models (LLMs)](https://docs.nvidia.com/nim/large-language-models/latest/introduction.html)
 - [Overview of NeMo Retriever Embedding NIM](https://docs.nvidia.com/nim/nemo-retriever/text-embedding/latest/overview.html)
 - [Overview of NeMo Retriever Reranking NIM](https://docs.nvidia.com/nim/nemo-retriever/text-reranking/latest/overview.html)

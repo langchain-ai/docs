@@ -67,13 +67,119 @@ os.environ["LANGSMITH_TRACING"] = "true"
 
 ## Instantiation
 
-The toolkit is created using a factory function:
+The toolkit is created using a factory function. In its simplest form, only the AWS region is required:
 
 ```python
 from langchain_aws.tools import create_browser_toolkit
 
 # Create toolkit and get tools
 toolkit, browser_tools = create_browser_toolkit(region="us-west-2")
+```
+
+The factory function also accepts optional parameters for [proxy configuration](#proxy-configuration), [browser extensions](#browser-extensions), and [browser profiles](#browser-profiles). See the sections below for details.
+
+## Proxy configuration
+
+Route browser traffic through external proxies using the `proxy_configuration` parameter. This is useful for geo-targeting, IP rotation, or accessing region-restricted content.
+
+```python
+from langchain_aws.tools import create_browser_toolkit
+
+toolkit, browser_tools = create_browser_toolkit(
+    region="us-west-2",
+    proxy_configuration={
+        "proxies": [{
+            "externalProxy": {
+                "server": "proxy.example.com",
+                "port": 8080,
+                "credentials": {
+                    "basicAuth": {
+                        "secretArn": "arn:aws:secretsmanager:us-west-2:123456789012:secret:proxy-creds"
+                    }
+                },
+            }
+        }],
+    },
+)
+```
+
+The `proxy_configuration` parameter accepts either a `ProxyConfiguration` dataclass from `bedrock-agentcore` or an equivalent dictionary with `proxies` and optional `bypass` keys. Proxy credentials are stored securely in AWS Secrets Manager.
+
+For more details, see the [AWS documentation on browser proxies](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-proxies.html).
+
+## Browser extensions
+
+Load browser extensions from S3 into the managed browser session using the `extensions` parameter. Extensions are packaged as ZIP files and hosted in an S3 bucket.
+
+```python
+from langchain_aws.tools import create_browser_toolkit
+
+toolkit, browser_tools = create_browser_toolkit(
+    region="us-west-2",
+    extensions=[{
+        "location": {
+            "s3": {"bucket": "my-extensions-bucket", "prefix": "my-extension.zip"}
+        }
+    }],
+)
+```
+
+The `extensions` parameter accepts a list of `BrowserExtension` dataclasses or equivalent dictionaries, each with an S3 `location` specifying the bucket and prefix.
+
+For more details, see the [AWS documentation on browser extensions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-extensions.html).
+
+## Browser profiles
+
+Persist browser state (cookies, local storage, cached data) across sessions using the `profile_configuration` parameter. This allows agents to resume where they left off without re-authenticating or losing context.
+
+Create a profile using the AWS CLI or Boto3, then pass the returned profile ID:
+
+```python
+from langchain_aws.tools import create_browser_toolkit
+
+toolkit, browser_tools = create_browser_toolkit(
+    region="us-west-2",
+    profile_configuration={
+        "profileIdentifier": "my_profile-AbC1234567"
+    },
+)
+```
+
+The `profile_configuration` parameter accepts either a `ProfileConfiguration` dataclass from `bedrock-agentcore` or an equivalent dictionary with a `profileIdentifier` key. Profile IDs follow the format `<name>-<10-char-suffix>` and are returned when you create a profile via the Bedrock AgentCore control plane API.
+
+For more details, see the [AWS documentation on browser profiles](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-profiles.html).
+
+## Combining configuration options
+
+All three configuration options can be used together:
+
+```python
+from langchain_aws.tools import create_browser_toolkit
+
+toolkit, browser_tools = create_browser_toolkit(
+    region="us-west-2",
+    proxy_configuration={
+        "proxies": [{
+            "externalProxy": {
+                "server": "proxy.example.com",
+                "port": 8080,
+                "credentials": {
+                    "basicAuth": {
+                        "secretArn": "arn:aws:secretsmanager:us-west-2:123456789012:secret:proxy-creds"
+                    }
+                },
+            }
+        }],
+    },
+    extensions=[{
+        "location": {
+            "s3": {"bucket": "my-extensions-bucket", "prefix": "my-extension.zip"}
+        }
+    }],
+    profile_configuration={
+        "profileIdentifier": "my_profile-AbC1234567"
+    },
+)
 ```
 
 ## Invocation
@@ -276,3 +382,6 @@ For detailed documentation of all features and configurations, see:
 
 - [langchain-aws API reference](https://reference.langchain.com/python/langchain-aws)
 - [Amazon Bedrock AgentCore documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html)
+- [Browser proxies](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-proxies.html)
+- [Browser extensions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-extensions.html)
+- [Browser profiles](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-profiles.html)
