@@ -1,0 +1,242 @@
+# Docs by LangChain: Open source (TypeScript)
+
+> Markdown index of the Open source (TypeScript) documentation.
+
+## Open source (TypeScript)
+
+- [Errors](https://docs.langchain.com/oss/javascript/common-errors.md)
+- [Context overview](https://docs.langchain.com/oss/javascript/concepts/context.md)
+- [Memory overview](https://docs.langchain.com/oss/javascript/concepts/memory.md)
+- [Runtimes, frameworks, and harnesses](https://docs.langchain.com/oss/javascript/concepts/products.md): Understand the differences between LangChain, LangGraph, and Deep Agents and when to use each one
+- [Providers and models](https://docs.langchain.com/oss/javascript/concepts/providers-and-models.md): Understand how LangChain uses providers to give you a single API for any model from any provider
+- [Contributing to code](https://docs.langchain.com/oss/javascript/contributing/code.md)
+- [Co-marketing](https://docs.langchain.com/oss/javascript/contributing/comarketing.md)
+- [Contributing to documentation](https://docs.langchain.com/oss/javascript/contributing/documentation.md)
+- [Implement a LangChain integration](https://docs.langchain.com/oss/javascript/contributing/implement-langchain.md)
+- [Contributing integrations](https://docs.langchain.com/oss/javascript/contributing/integrations-langchain.md)
+- [Contributing](https://docs.langchain.com/oss/javascript/contributing/overview.md)
+- [Publish an integration](https://docs.langchain.com/oss/javascript/contributing/publish-langchain.md)
+- [Using standard tests](https://docs.langchain.com/oss/javascript/contributing/standard-tests-langchain.md)
+- [A2A server](https://docs.langchain.com/oss/javascript/deepagents/a2a.md)
+- [Agent Client Protocol (ACP)](https://docs.langchain.com/oss/javascript/deepagents/acp.md): Expose Deep Agents over the Agent Client Protocol (ACP) to integrate with code editors and IDEs.
+- [Async subagents](https://docs.langchain.com/oss/javascript/deepagents/async-subagents.md): Launch background subagents that run concurrently while the supervisor continues interacting with the user
+- [Backends](https://docs.langchain.com/oss/javascript/deepagents/backends.md): Choose and configure filesystem backends for Deep Agents. You can specify routes to different backends, implement virtual filesystems, and enforce policies.
+- [Changelog](https://docs.langchain.com/oss/javascript/deepagents/changelog-js.md)
+- [Changelog](https://docs.langchain.com/oss/javascript/deepagents/changelog-py.md)
+- [Deep Agents Code](https://docs.langchain.com/oss/javascript/deepagents/code-link.md): Terminal coding agent built on the Deep Agents SDK
+- [Comparison with Claude Agent SDK](https://docs.langchain.com/oss/javascript/deepagents/comparison.md): Compare LangChain Deep Agents with the Claude Agent SDK to choose the right tool for your use case.
+- [Build a content builder agent](https://docs.langchain.com/oss/javascript/deepagents/content-builder.md): Build a content writing agent with brand memory, skills, subagents, and image generation
+- [Context engineering in Deep Agents](https://docs.langchain.com/oss/javascript/deepagents/context-engineering.md): Control what context your deep agent has access to and how it is managed across long-running tasks
+- [Customize Deep Agents](https://docs.langchain.com/oss/javascript/deepagents/customization.md): Learn how to customize Deep Agents with system prompts, tools, subagents, and more
+- [Build a data analysis agent](https://docs.langchain.com/oss/javascript/deepagents/data-analysis.md): Build an agent that analyzes data files, generates visualizations, and shares results
+- [Build a deep research agent](https://docs.langchain.com/oss/javascript/deepagents/deep-research.md): Build a multi-step web research agent with subagent delegation
+- [Dynamic subagents](https://docs.langchain.com/oss/javascript/deepagents/dynamic-subagents.md): Use interpreters to dispatch and orchestrate Deep Agents subagents from code
+- [Event streaming](https://docs.langchain.com/oss/javascript/deepagents/event-streaming.md): Stream subagents, messages, tool calls, and final output from Deep Agents.
+- [Fault tolerance](https://docs.langchain.com/oss/javascript/deepagents/fault-tolerance.md): Make your deep agent resilient with rate limiting, retries, fallbacks, and error handling
+- [Overview](https://docs.langchain.com/oss/javascript/deepagents/frontend/overview.md): Build UIs that display real-time subagent streams, task progress, and sandbox for Deep Agents
+- [Sandbox](https://docs.langchain.com/oss/javascript/deepagents/frontend/sandbox.md): Build an IDE-like UI for a coding agent backed by a sandbox environment
+- [Subagent streaming](https://docs.langchain.com/oss/javascript/deepagents/frontend/subagent-streaming.md): Display specialist subagents with streaming content, progress tracking, and collapsible cards
+- [Todo list](https://docs.langchain.com/oss/javascript/deepagents/frontend/todo-list.md): Track agent progress with a real-time todo list synced from agent state
+- [Going to production](https://docs.langchain.com/oss/javascript/deepagents/going-to-production.md): Take your deep agent to production with persistent memory, sandboxes, resilience middleware, and deployment options
+- [Human-in-the-loop](https://docs.langchain.com/oss/javascript/deepagents/human-in-the-loop.md): Learn how to configure human approval for sensitive tool operations
+- [Interpreters](https://docs.langchain.com/oss/javascript/deepagents/interpreters.md): Run lightweight code inside Deep Agents to compose tools, orchestrate subagents, and transform structured data
+- [Model Context Protocol](https://docs.langchain.com/oss/javascript/deepagents/mcp.md)
+- [Memory](https://docs.langchain.com/oss/javascript/deepagents/memory.md): Add persistent memory to agents built with Deep Agents so they learn and improve across conversations
+- [Models](https://docs.langchain.com/oss/javascript/deepagents/models.md): Configure model providers and parameters for Deep Agents
+- [Multimodal inputs and outputs](https://docs.langchain.com/oss/javascript/deepagents/multimodal.md): Use images, audio, video, and documents with Deep Agents when your model supports multimodal inputs and tool results
+- [OpenWiki](https://docs.langchain.com/oss/javascript/deepagents/openwiki.md): Generate and maintain repository wikis that coding agents discover through AGENTS.md
+- [Deep Agents overview](https://docs.langchain.com/oss/javascript/deepagents/overview.md): Build agents that can plan, use subagents, and leverage file systems for complex tasks
+- [Permissions](https://docs.langchain.com/oss/javascript/deepagents/permissions.md): Control filesystem access with declarative permission rules for Deep Agents
+- [Profiles](https://docs.langchain.com/oss/javascript/deepagents/profiles.md): Package per-provider and per-model defaults that Deep Agents applies when a model is selected
+- [Quickstart](https://docs.langchain.com/oss/javascript/deepagents/quickstart.md): Build your first deep agent in minutes
+- [Retrieval Augmented Generation (RAG) with Deep Agents](https://docs.langchain.com/oss/javascript/deepagents/rag.md): RAG patterns for Deep Agents, including skills-guided retrieval, rubric grading, and a tutorial that indexes LangChain docs, offloads chunks to the filesystem, and delegates analysis to subagents
+- [Retrieval](https://docs.langchain.com/oss/javascript/deepagents/retrieval.md)
+- [Grading rubrics](https://docs.langchain.com/oss/javascript/deepagents/rubric.md): LLM-as-a-judge grading for agents that iterate against a rubric until done
+- [Sandboxes](https://docs.langchain.com/oss/javascript/deepagents/sandboxes.md): Execute code in isolated environments with sandbox backends
+- [Skills](https://docs.langchain.com/oss/javascript/deepagents/skills.md): Learn how to extend your deep agent's capabilities with skills
+- [Streaming](https://docs.langchain.com/oss/javascript/deepagents/streaming.md): Stream real-time updates from deep agent runs and subagent execution
+- [Subagents](https://docs.langchain.com/oss/javascript/deepagents/subagents.md): Learn how to use subagents to delegate work and keep context clean
+- [Tools](https://docs.langchain.com/oss/javascript/deepagents/tools.md): Connect Deep Agents to custom functions, APIs, databases, and any MCP server
+- [Question Answering with HanaSparqlQAAgent](https://docs.langchain.com/oss/javascript/integrations/agents/sap_hana_sparql_qa_agent.md): Integrate with the HanaSparqlQAAgent type using LangChain JavaScript.
+- [Backend integrations](https://docs.langchain.com/oss/javascript/integrations/backends/index.md): Community-built filesystem backends for Deep Agents.
+- [Question Answering with `HanaSparqlQAChain`](https://docs.langchain.com/oss/javascript/integrations/chains/sap_hana_sparql_qa_chain.md)
+- [ChatAnthropic integration](https://docs.langchain.com/oss/javascript/integrations/chat/anthropic.md): Integrate with the ChatAnthropic chat model using LangChain JavaScript.
+- [AzureChatOpenAI integration](https://docs.langchain.com/oss/javascript/integrations/chat/azure.md): Integrate with the AzureChatOpenAI chat model using LangChain JavaScript.
+- [ChatBaiduQianfan integration](https://docs.langchain.com/oss/javascript/integrations/chat/baidu_qianfan.md): Integrate with the ChatBaiduQianfan chat model using LangChain JavaScript.
+- [ChatBedrockConverse integration](https://docs.langchain.com/oss/javascript/integrations/chat/bedrock_converse.md): Integrate with the ChatBedrockConverse chat model using LangChain JavaScript.
+- [ChatCerebras integration](https://docs.langchain.com/oss/javascript/integrations/chat/cerebras.md): Integrate with the ChatCerebras chat model using LangChain JavaScript.
+- [ChatCloudflareWorkersAI integration](https://docs.langchain.com/oss/javascript/integrations/chat/cloudflare_workersai.md): Integrate with the ChatCloudflareWorkersAI chat model using LangChain JavaScript.
+- [ChatCohere integration](https://docs.langchain.com/oss/javascript/integrations/chat/cohere.md): Integrate with the ChatCohere chat model using LangChain JavaScript.
+- [ChatDeepSeek integration](https://docs.langchain.com/oss/javascript/integrations/chat/deepseek.md): Integrate with the ChatDeepSeek chat model using LangChain JavaScript.
+- [Fake integration](https://docs.langchain.com/oss/javascript/integrations/chat/fake.md): Integrate with the Fake chat model using LangChain JavaScript.
+- [ChatFireworks integration](https://docs.langchain.com/oss/javascript/integrations/chat/fireworks.md): Integrate with the ChatFireworks chat model using LangChain JavaScript.
+- [ChatGoogle integration](https://docs.langchain.com/oss/javascript/integrations/chat/google.md): Integrate with the ChatGoogle chat model using LangChain JavaScript.
+- [ChatGoogleGenerativeAI integration](https://docs.langchain.com/oss/javascript/integrations/chat/google_generative_ai.md): Integrate with the ChatGoogleGenerativeAI chat model using LangChain JavaScript.
+- [ChatVertexAI integration](https://docs.langchain.com/oss/javascript/integrations/chat/google_vertex_ai.md): Integrate with the ChatVertexAI chat model using LangChain JavaScript.
+- [ChatGroq integration](https://docs.langchain.com/oss/javascript/integrations/chat/groq.md): Integrate with the ChatGroq chat model using LangChain JavaScript.
+- [IBM watsonx.ai integration](https://docs.langchain.com/oss/javascript/integrations/chat/ibm.md): Integrate with the IBM watsonx.ai chat model using LangChain JavaScript.
+- [Chat model integrations](https://docs.langchain.com/oss/javascript/integrations/chat/index.md): Integrate with chat models using LangChain JavaScript.
+- [ChatMistralAI integration](https://docs.langchain.com/oss/javascript/integrations/chat/mistral.md): Integrate with the ChatMistralAI chat model using LangChain JavaScript.
+- [ChatOllama integration](https://docs.langchain.com/oss/javascript/integrations/chat/ollama.md): Integrate with the ChatOllama chat model using LangChain JavaScript.
+- [ChatOpenAI integration](https://docs.langchain.com/oss/javascript/integrations/chat/openai.md): Integrate with the ChatOpenAI chat model using LangChain JavaScript.
+- [ChatOpenRouter integration](https://docs.langchain.com/oss/javascript/integrations/chat/openrouter.md): Integrate with the ChatOpenRouter chat model using LangChain JavaScript.
+- [ChatPerplexity integration](https://docs.langchain.com/oss/javascript/integrations/chat/perplexity.md): Integrate with the ChatPerplexity chat model using LangChain JavaScript.
+- [ChatTogetherAI integration](https://docs.langchain.com/oss/javascript/integrations/chat/togetherai.md): Integrate with the ChatTogetherAI chat model using LangChain JavaScript.
+- [ChatXAI integration](https://docs.langchain.com/oss/javascript/integrations/chat/xai.md): Integrate with the ChatXAI chat model using LangChain JavaScript.
+- [ChatYandexGPT integration](https://docs.langchain.com/oss/javascript/integrations/chat/yandex.md): Integrate with the ChatYandexGPT chat model using LangChain JavaScript.
+- [Cohere rerank integration](https://docs.langchain.com/oss/javascript/integrations/document_compressors/cohere_rerank.md): Integrate with the Cohere rerank document compressor using LangChain JavaScript.
+- [IBM watsonx.ai integration](https://docs.langchain.com/oss/javascript/integrations/document_compressors/ibm.md): Integrate with the IBM watsonx.ai document compressor using LangChain JavaScript.
+- [Mixedbread AI reranking integration](https://docs.langchain.com/oss/javascript/integrations/document_compressors/mixedbread_ai.md): Integrate with the Mixedbread AI reranking document compressor using LangChain JavaScript.
+- [DirectoryLoader integration](https://docs.langchain.com/oss/javascript/integrations/document_loaders/file_loaders/directory.md): Integrate with the DirectoryLoader document loader using LangChain JavaScript.
+- [File loader integrations](https://docs.langchain.com/oss/javascript/integrations/document_loaders/file_loaders/index.md): Integrate with file loaders using LangChain JavaScript.
+- [JSON files integration](https://docs.langchain.com/oss/javascript/integrations/document_loaders/file_loaders/json.md): Integrate with the JSON files document loader using LangChain JavaScript.
+- [Jsonlines files - integration](https://docs.langchain.com/oss/javascript/integrations/document_loaders/file_loaders/jsonlines.md): Integrate with the Jsonlines files - document loader using LangChain JavaScript.
+- [Multiple individual files - integration](https://docs.langchain.com/oss/javascript/integrations/document_loaders/file_loaders/multi_file.md): Integrate with the Multiple individual files - document loader using LangChain JavaScript.
+- [OracleDocLoader integration](https://docs.langchain.com/oss/javascript/integrations/document_loaders/file_loaders/oracleai.md): Integrate with the OracleDocLoader document loader using LangChain JavaScript.
+- [TextLoader integration](https://docs.langchain.com/oss/javascript/integrations/document_loaders/file_loaders/text.md): Integrate with the TextLoader document loader using LangChain JavaScript.
+- [Document loader integrations](https://docs.langchain.com/oss/javascript/integrations/document_loaders/index.md): Integrate with document loaders using LangChain JavaScript.
+- [Google cloud SQL for postgresql integration](https://docs.langchain.com/oss/javascript/integrations/document_loaders/web_loaders/google_cloudsql_pg.md): Integrate with the Google cloud SQL for postgresql document loader using LangChain JavaScript.
+- [Web loader integrations](https://docs.langchain.com/oss/javascript/integrations/document_loaders/web_loaders/index.md): Integrate with web loaders using LangChain JavaScript.
+- [LangSmithLoader integration](https://docs.langchain.com/oss/javascript/integrations/document_loaders/web_loaders/langsmith.md): Integrate with the LangSmithLoader document loader using LangChain JavaScript.
+- [Soniox](https://docs.langchain.com/oss/javascript/integrations/document_loaders/web_loaders/soniox.md)
+- [Document transformer integrations](https://docs.langchain.com/oss/javascript/integrations/document_transformers/index.md): Integrate with document transformers using LangChain JavaScript.
+- [OpenAI functions metadata tagger - integration](https://docs.langchain.com/oss/javascript/integrations/document_transformers/openai_metadata_tagger.md): Integrate with the OpenAI functions metadata tagger - document transformer using LangChain JavaScript.
+- [AzureOpenAIEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/azure_openai.md): Integrate with the AzureOpenAIEmbeddings embedding model using LangChain JavaScript.
+- [Baidu qianfan integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/baidu_qianfan.md): Integrate with the Baidu qianfan embedding model using LangChain JavaScript.
+- [BedrockEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/bedrock.md): Integrate with the BedrockEmbeddings embedding model using LangChain JavaScript.
+- [CloudflareWorkersAIEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/cloudflare_ai.md): Integrate with the CloudflareWorkersAIEmbeddings embedding model using LangChain JavaScript.
+- [CohereEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/cohere.md): Integrate with the CohereEmbeddings embedding model using LangChain JavaScript.
+- [FireworksEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/fireworks.md): Integrate with the FireworksEmbeddings embedding model using LangChain JavaScript.
+- [GoogleGenerativeAIEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/google_generative_ai.md): Integrate with the GoogleGenerativeAIEmbeddings embedding model using LangChain JavaScript.
+- [VertexAIEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/google_vertex_ai.md): Integrate with the VertexAIEmbeddings embedding model using LangChain JavaScript.
+- [IBM watsonx.ai integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/ibm.md): Integrate with the IBM watsonx.ai embedding model using LangChain JavaScript.
+- [Embedding model integrations](https://docs.langchain.com/oss/javascript/integrations/embeddings/index.md): Integrate with embedding models using LangChain JavaScript.
+- [Minimax integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/minimax.md): Integrate with the Minimax embedding model using LangChain JavaScript.
+- [MistralAIEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/mistralai.md): Integrate with the MistralAIEmbeddings embedding model using LangChain JavaScript.
+- [Mixedbread AI integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/mixedbread_ai.md): Integrate with the Mixedbread AI embedding model using LangChain JavaScript.
+- [Nomic integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/nomic.md): Integrate with the Nomic embedding model using LangChain JavaScript.
+- [OllamaEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/ollama.md): Integrate with the OllamaEmbeddings embedding model using LangChain JavaScript.
+- [OpenAIEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/openai.md): Integrate with the OpenAIEmbeddings embedding model using LangChain JavaScript.
+- [OracleEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/oracleai.md): Integrate with the OracleEmbeddings embedding model using LangChain JavaScript.
+- [PineconeEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/pinecone.md): Integrate with the PineconeEmbeddings embedding model using LangChain JavaScript.
+- [TogetherAIEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/togetherai.md): Integrate with the TogetherAIEmbeddings embedding model using LangChain JavaScript.
+- [VoyageEmbeddings integration](https://docs.langchain.com/oss/javascript/integrations/embeddings/voyageai.md): Integrate with the VoyageEmbeddings embedding model using LangChain JavaScript.
+- [SAP HANA Cloud Knowledge Graph Engine](https://docs.langchain.com/oss/javascript/integrations/graphs/sap_hana_rdf_graph.md)
+- [Azure Cosmos DB NoSQL semantic integration](https://docs.langchain.com/oss/javascript/integrations/llm_caching/azure_cosmosdb_nosql.md): Integrate with the Azure Cosmos DB NoSQL semantic cache using LangChain JavaScript.
+- [Cache integrations](https://docs.langchain.com/oss/javascript/integrations/llm_caching/index.md): Integrate with caches using LangChain JavaScript.
+- [Azure OpenAI integration](https://docs.langchain.com/oss/javascript/integrations/llms/azure.md): Integrate with the Azure OpenAI LLM using LangChain JavaScript.
+- [CloudflareWorkersAI integration](https://docs.langchain.com/oss/javascript/integrations/llms/cloudflare_workersai.md): Integrate with the CloudflareWorkersAI LLM using LangChain JavaScript.
+- [Cohere integration](https://docs.langchain.com/oss/javascript/integrations/llms/cohere.md): Integrate with the Cohere LLM using LangChain JavaScript.
+- [Fireworks integration](https://docs.langchain.com/oss/javascript/integrations/llms/fireworks.md): Integrate with the Fireworks LLM using LangChain JavaScript.
+- [Google Vertex AI integration](https://docs.langchain.com/oss/javascript/integrations/llms/google_vertex_ai.md): Integrate with the Google Vertex AI LLM using LangChain JavaScript.
+- [IBM watsonx.ai integration](https://docs.langchain.com/oss/javascript/integrations/llms/ibm.md): Integrate with the IBM watsonx.ai LLM using LangChain JavaScript.
+- [LLM integrations](https://docs.langchain.com/oss/javascript/integrations/llms/index.md): Integrate with LLMs using LangChain JavaScript.
+- [Jigsawstack prompt engine integration](https://docs.langchain.com/oss/javascript/integrations/llms/jigsawstack.md): Integrate with the Jigsawstack prompt engine LLM using LangChain JavaScript.
+- [MistralAI integration](https://docs.langchain.com/oss/javascript/integrations/llms/mistral.md): Integrate with the MistralAI LLM using LangChain JavaScript.
+- [Ollama integration](https://docs.langchain.com/oss/javascript/integrations/llms/ollama.md): Integrate with the Ollama LLM using LangChain JavaScript.
+- [OpenAI integration](https://docs.langchain.com/oss/javascript/integrations/llms/openai.md): Integrate with the OpenAI LLM using LangChain JavaScript.
+- [TogetherAI integration](https://docs.langchain.com/oss/javascript/integrations/llms/together.md): Integrate with the TogetherAI LLM using LangChain JavaScript.
+- [Yandexgpt integration](https://docs.langchain.com/oss/javascript/integrations/llms/yandex.md): Integrate with the Yandexgpt LLM using LangChain JavaScript.
+- [Anthropic integration](https://docs.langchain.com/oss/javascript/integrations/middleware/anthropic.md): Integrate with the Anthropic middleware using LangChain JavaScript.
+- [AWS middleware integration](https://docs.langchain.com/oss/javascript/integrations/middleware/aws.md): Integrate with AWS middleware using LangChain JavaScript.
+- [Middleware integrations](https://docs.langchain.com/oss/javascript/integrations/middleware/index.md): Integrate with middleware using LangChain JavaScript.
+- [All LangChain JavaScript integration providers](https://docs.langchain.com/oss/javascript/integrations/providers/all_providers.md)
+- [Anthropic integrations](https://docs.langchain.com/oss/javascript/integrations/providers/anthropic.md): Integrate with Anthropic using LangChain JavaScript.
+- [AWS integrations](https://docs.langchain.com/oss/javascript/integrations/providers/aws.md): Integrate with AWS using LangChain JavaScript.
+- [Cala](https://docs.langchain.com/oss/javascript/integrations/providers/cala.md)
+- [Daytona](https://docs.langchain.com/oss/javascript/integrations/providers/daytona.md): Use Daytona sandbox backends with deepagents for isolated code execution with fast cold starts
+- [Deno](https://docs.langchain.com/oss/javascript/integrations/providers/deno.md): Use Deno sandbox backends with deepagents for isolated code execution in Linux microVMs
+- [Google integrations](https://docs.langchain.com/oss/javascript/integrations/providers/google.md): Integrate with Google using LangChain JavaScript.
+- [Microsoft integrations](https://docs.langchain.com/oss/javascript/integrations/providers/microsoft.md): Integrate with Microsoft using LangChain JavaScript.
+- [Modal](https://docs.langchain.com/oss/javascript/integrations/providers/modal.md): Use Modal sandbox backends with deepagents for isolated code execution with GPU support
+- [Node VFS](https://docs.langchain.com/oss/javascript/integrations/providers/node-vfs.md): Use the Node.js VFS sandbox backend with deepagents for local development and testing
+- [OpenAI integrations](https://docs.langchain.com/oss/javascript/integrations/providers/openai.md): Integrate with OpenAI using LangChain JavaScript.
+- [OpenRouter integrations](https://docs.langchain.com/oss/javascript/integrations/providers/openrouter.md): Access models from multiple providers through OpenRouter's unified API using LangChain JavaScript.
+- [LangChain JavaScript integrations](https://docs.langchain.com/oss/javascript/integrations/providers/overview.md): Integrate with providers using LangChain JavaScript/TypeScript.
+- [Perplexity integrations](https://docs.langchain.com/oss/javascript/integrations/providers/perplexity.md): Integrate with Perplexity using LangChain JavaScript.
+- [Sap integrations](https://docs.langchain.com/oss/javascript/integrations/providers/sap.md): Integrate with Sap using LangChain Python.
+- [Sourcey integrations](https://docs.langchain.com/oss/javascript/integrations/providers/sourcey.md): Retrieve from published Sourcey docs sites using LangChain JavaScript.
+- [Supadata](https://docs.langchain.com/oss/javascript/integrations/providers/supadata.md)
+- [Tavily integrations](https://docs.langchain.com/oss/javascript/integrations/providers/tavily.md): Integrate with Tavily using LangChain JavaScript.
+- [Knowledge bases for Amazon Bedrock integration](https://docs.langchain.com/oss/javascript/integrations/retrievers/bedrock-knowledge-bases.md): Integrate with the Knowledge bases for Amazon Bedrock retriever using LangChain JavaScript.
+- [ExaRetriever integration](https://docs.langchain.com/oss/javascript/integrations/retrievers/exa.md): Integrate with the ExaRetriever retriever using LangChain JavaScript.
+- [Hyde integration](https://docs.langchain.com/oss/javascript/integrations/retrievers/hyde.md): Integrate with the Hyde retriever using LangChain JavaScript.
+- [Retriever integrations](https://docs.langchain.com/oss/javascript/integrations/retrievers/index.md): Integrate with retrievers using LangChain JavaScript.
+- [AWSKendraRetriever integration](https://docs.langchain.com/oss/javascript/integrations/retrievers/kendra-retriever.md): Integrate with the AWSKendraRetriever retriever using LangChain JavaScript.
+- [PerplexitySearchRetriever integration](https://docs.langchain.com/oss/javascript/integrations/retrievers/perplexity_search.md): Integrate with the PerplexitySearchRetriever retriever using LangChain JavaScript.
+- [Self Querying with SAP HANA Cloud Vector Engine](https://docs.langchain.com/oss/javascript/integrations/retrievers/self_query/hanavector_self_query.md)
+- [SourceyRetriever integration](https://docs.langchain.com/oss/javascript/integrations/retrievers/sourcey.md): Integrate with the SourceyRetriever retriever using LangChain JavaScript.
+- [Time-weighted integration](https://docs.langchain.com/oss/javascript/integrations/retrievers/time-weighted-retriever.md): Integrate with the Time-weighted retriever using LangChain JavaScript.
+- [Sandbox integrations](https://docs.langchain.com/oss/javascript/integrations/sandboxes/index.md): Integrate with sandbox providers using LangChain JavaScript.
+- [Splitting by character - Text splitter integration guide](https://docs.langchain.com/oss/javascript/integrations/splitters/character_text_splitter.md)
+- [Splitting code text splitter integration guide](https://docs.langchain.com/oss/javascript/integrations/splitters/code_splitter.md)
+- [Text splitter integrations](https://docs.langchain.com/oss/javascript/integrations/splitters/index.md): Integrate with text splitters using LangChain.
+- [Splitting recursively - Text splitter integration guide](https://docs.langchain.com/oss/javascript/integrations/splitters/recursive_text_splitter.md)
+- [Splitting by token - Text splitter integration guide](https://docs.langchain.com/oss/javascript/integrations/splitters/split_by_token.md)
+- [LocalFileStore integration](https://docs.langchain.com/oss/javascript/integrations/stores/file_system.md): Integrate with the LocalFileStore store using LangChain JavaScript.
+- [InMemoryStore integration](https://docs.langchain.com/oss/javascript/integrations/stores/in_memory.md): Integrate with the InMemoryStore store using LangChain JavaScript.
+- [Store integrations](https://docs.langchain.com/oss/javascript/integrations/stores/index.md): Integrate with stores using LangChain JavaScript.
+- [Anthropic integration](https://docs.langchain.com/oss/javascript/integrations/tools/anthropic.md): Integrate with the Anthropic tool using LangChain JavaScript.
+- [Azure container apps dynamic sessions integration](https://docs.langchain.com/oss/javascript/integrations/tools/azure_dynamic_sessions.md): Integrate with the Azure container apps dynamic sessions tool using LangChain JavaScript.
+- [ClickSend integration](https://docs.langchain.com/oss/javascript/integrations/tools/clicksend.md): Send SMS, Email, and Voice messages from LangChain agents using ClickSend's communications platform.
+- [Composio integration](https://docs.langchain.com/oss/javascript/integrations/tools/composio.md): Access 500+ tools and integrations through Composio's unified API platform for AI agents, with OAuth handling, event-driven workflows, and multi-user support.
+- [Dall-e integration](https://docs.langchain.com/oss/javascript/integrations/tools/dalle.md): Integrate with the Dall-e tool using LangChain JavaScript.
+- [Decodo integration](https://docs.langchain.com/oss/javascript/integrations/tools/decodo.md): Integrate with the Decodo tool using LangChain JavaScript.
+- [ExaSearchResults integration](https://docs.langchain.com/oss/javascript/integrations/tools/exa_search.md): Integrate with the ExaSearchResults tool using LangChain JavaScript.
+- [Falkordb integration](https://docs.langchain.com/oss/javascript/integrations/tools/falkordb.md): Use FalkorDB's ultra-fast graph database with LangChain for natural language queries over knowledge graphs using Cypher
+- [Google integration](https://docs.langchain.com/oss/javascript/integrations/tools/google.md): Integrate with Google Gemini tools using LangChain JavaScript.
+- [WatsonxToolkit integration](https://docs.langchain.com/oss/javascript/integrations/tools/ibm.md): Integrate with the WatsonxToolkit tool using LangChain JavaScript.
+- [Tool integrations](https://docs.langchain.com/oss/javascript/integrations/tools/index.md): Integrate with tools using LangChain JavaScript.
+- [Jigsawstack integration](https://docs.langchain.com/oss/javascript/integrations/tools/jigsawstack.md): Integrate with the Jigsawstack tool using LangChain JavaScript.
+- [JSON agent toolkit integration](https://docs.langchain.com/oss/javascript/integrations/tools/json.md): Integrate with the JSON agent toolkit using LangChain JavaScript.
+- [Agent with AWS lambda integration](https://docs.langchain.com/oss/javascript/integrations/tools/lambda_agent.md): Integrate with the Agent with AWS lambda tool using LangChain JavaScript.
+- [Mcp toolbox for databases integration](https://docs.langchain.com/oss/javascript/integrations/tools/mcp_toolbox.md): Integrate with the Mcp toolbox for databases tool using LangChain JavaScript.
+- [Nia Toolkit integration](https://docs.langchain.com/oss/javascript/integrations/tools/nia.md): Integrate with the Nia search and index API using LangChain JavaScript.
+- [OpenAI integration](https://docs.langchain.com/oss/javascript/integrations/tools/openai.md): Integrate with the OpenAI tool using LangChain JavaScript.
+- [OpenAPI toolkit integration](https://docs.langchain.com/oss/javascript/integrations/tools/openapi.md): Integrate with the OpenAPI toolkit using LangChain JavaScript.
+- [OracleSummary integration](https://docs.langchain.com/oss/javascript/integrations/tools/oracleai.md): Integrate with the OracleSummary tool using LangChain JavaScript.
+- [PerplexitySearchResults integration](https://docs.langchain.com/oss/javascript/integrations/tools/perplexity_search.md): Integrate with the PerplexitySearchResults tool using LangChain JavaScript.
+- [SQLToolkit integration](https://docs.langchain.com/oss/javascript/integrations/tools/sql.md): Integrate with the SQLToolkit tool using LangChain JavaScript.
+- [Tavily crawl integration](https://docs.langchain.com/oss/javascript/integrations/tools/tavily_crawl.md): Integrate with the Tavily crawl tool using LangChain JavaScript.
+- [Tavily extract integration](https://docs.langchain.com/oss/javascript/integrations/tools/tavily_extract.md): Integrate with the Tavily extract tool using LangChain JavaScript.
+- [Tavily get research integration](https://docs.langchain.com/oss/javascript/integrations/tools/tavily_get_research.md): Integrate with the Tavily get research tool using LangChain JavaScript.
+- [Tavily map integration](https://docs.langchain.com/oss/javascript/integrations/tools/tavily_map.md): Integrate with the Tavily map tool using LangChain JavaScript.
+- [Tavily research integration](https://docs.langchain.com/oss/javascript/integrations/tools/tavily_research.md): Integrate with the Tavily research tool using LangChain JavaScript.
+- [Tavily search integration](https://docs.langchain.com/oss/javascript/integrations/tools/tavily_search.md): Integrate with the Tavily search tool using LangChain JavaScript.
+- [VectorStoreToolkit integration](https://docs.langchain.com/oss/javascript/integrations/tools/vectorstore.md): Integrate with the VectorStoreToolkit tool using LangChain JavaScript.
+- [Web browser integration](https://docs.langchain.com/oss/javascript/integrations/tools/webbrowser.md): Integrate with the Web browser tool using LangChain JavaScript.
+- [Azure Cosmos DB for MongoDB vCore (deprecated)](https://docs.langchain.com/oss/javascript/integrations/vectorstores/azure_cosmosdb_mongodb.md): Integrate with the Azure Cosmos DB for MongoDB vcore vector store using LangChain JavaScript.
+- [Azure Cosmos DB for NoSQL integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/azure_cosmosdb_nosql.md): Integrate with the Azure Cosmos DB for NoSQL vector store using LangChain JavaScript.
+- [Azure DocumentDB](https://docs.langchain.com/oss/javascript/integrations/vectorstores/azure_documentdb.md): Vector store integration for Azure DocumentDB
+- [Cloudflare vectorize integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/cloudflare_vectorize.md): Integrate with the Cloudflare vectorize vector store using LangChain JavaScript.
+- [Google cloud SQL for postgresql integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/google_cloudsql_pg.md): Integrate with the Google cloud SQL for postgresql vector store using LangChain JavaScript.
+- [Vector store integrations](https://docs.langchain.com/oss/javascript/integrations/vectorstores/index.md): Integrate with vector stores using LangChain JavaScript.
+- [MemoryVectorStore integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/memory.md): Integrate with the MemoryVectorStore using LangChain JavaScript.
+- [MongoDB Atlas integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/mongodb_atlas.md): Integrate with the MongoDB Atlas vector store using LangChain JavaScript.
+- [Neo4j vector index integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/neo4jvector.md): Integrate with the Neo4j vector index vector store using LangChain JavaScript.
+- [OracleVS integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/oracleai.md): Integrate with the OracleVS vector store using LangChain JavaScript.
+- [PGVectorStore integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/pgvector.md): Integrate with the PGVectorStore using LangChain JavaScript.
+- [PineconeStore integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/pinecone.md): Integrate with the PineconeStore using LangChain JavaScript.
+- [QdrantVectorStore integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/qdrant.md): Integrate with the QdrantVectorStore using LangChain JavaScript.
+- [RedisVectorStore integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/redis.md): Integrate with FluentRedisVectorStore and RedisVectorStore using LangChain JavaScript.
+- [SAP HANA Cloud Vector Engine](https://docs.langchain.com/oss/javascript/integrations/vectorstores/sap_hanavector.md)
+- [TurbopufferVectorStore integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/turbopuffer.md): Integrate with the TurbopufferVectorStore using LangChain JavaScript.
+- [WeaviateStore integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/weaviate.md): Integrate with the WeaviateStore using LangChain JavaScript.
+- [YDB integration](https://docs.langchain.com/oss/javascript/integrations/vectorstores/ydb.md): Integrate with the YDBVectorStore vector store using LangChain JavaScript.
+- [LangChain Academy](https://docs.langchain.com/oss/javascript/langchain/academy.md)
+- [Agents](https://docs.langchain.com/oss/javascript/langchain/agents.md)
+- [Changelog](https://docs.langchain.com/oss/javascript/langchain/changelog-js.md)
+- [Changelog](https://docs.langchain.com/oss/javascript/langchain/changelog-py.md)
+- [Component architecture](https://docs.langchain.com/oss/javascript/langchain/component-architecture.md)
+- [Context engineering in agents](https://docs.langchain.com/oss/javascript/langchain/context-engineering.md)
+- [Build a data analysis agent from scratch](https://docs.langchain.com/oss/javascript/langchain/deep-agent-from-scratch.md): Build a data analysis agent step by step using create_agent and Deep Agents middleware.
+- [Deployment](https://docs.langchain.com/oss/javascript/langchain/deploy.md): Deploy LangChain agents to production with LangSmith Cloud or JavaScript frameworks and hosting platforms.
+- [INVALID_PROMPT_INPUT](https://docs.langchain.com/oss/javascript/langchain/errors/INVALID_PROMPT_INPUT.md)
+- [INVALID_TOOL_RESULTS](https://docs.langchain.com/oss/javascript/langchain/errors/INVALID_TOOL_RESULTS.md)
+- [MESSAGE_COERCION_FAILURE](https://docs.langchain.com/oss/javascript/langchain/errors/MESSAGE_COERCION_FAILURE.md)
+- [MODEL_AUTHENTICATION](https://docs.langchain.com/oss/javascript/langchain/errors/MODEL_AUTHENTICATION.md)
+- [MODEL_NOT_FOUND](https://docs.langchain.com/oss/javascript/langchain/errors/MODEL_NOT_FOUND.md)
+- [MODEL_RATE_LIMIT](https://docs.langchain.com/oss/javascript/langchain/errors/MODEL_RATE_LIMIT.md)
+- [OUTPUT_PARSING_FAILURE](https://docs.langchain.com/oss/javascript/langchain/errors/OUTPUT_PARSING_FAILURE.md)
+- [Event streaming](https://docs.langchain.com/oss/javascript/langchain/event-streaming.md): Stream real-time updates from LangChain agent runs
+- [Branching chat](https://docs.langchain.com/oss/javascript/langchain/frontend/branching-chat.md): Edit messages and regenerate responses by forking from checkpoints
