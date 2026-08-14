@@ -105,6 +105,33 @@ def main() -> int:
     derived, pages = collect_urls(args.build_dir, args.base_url)
     print(f"index lists {len(derived):,} derived API URLs, {len(pages):,} page URLs")
 
+    # Check the section indexes themselves first. Mintlify serves the exact
+    # filename llms.txt at any path but 404s on anything else, so a rename or
+    # a routing change makes whole sections invisible to coverage walkers
+    # while every local check still passes.
+    root = (args.build_dir / "llms.txt").read_text(encoding="utf-8")
+    section_urls = sorted(set(TXT_LINK.findall(root)))
+    print(f"checking {len(section_urls)} section indexes are served\n")
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        section_results = list(pool.map(status_of, section_urls))
+    unserved = [
+        (url, status)
+        for url, status in zip(section_urls, section_results, strict=True)
+        if status != 200
+    ]
+    if unserved:
+        print(
+            f"❌ {len(unserved)} of {len(section_urls)} section indexes are not served:\n"
+        )
+        for url, status in unserved[:20]:
+            print(f"  {status or 'no response'}  {url}")
+        print(
+            "\nEvery section index must be named exactly llms.txt. Mintlify "
+            "404s other .txt filenames, which hides those pages from coverage."
+        )
+        return 1
+    print(f"✅ all {len(section_urls)} section indexes are served\n")
+
     # Sampling picks which URLs to spot-check; nothing here is security-relevant.
     rng = random.Random(args.seed)  # noqa: S311
     if args.all:
