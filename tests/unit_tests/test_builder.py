@@ -6,6 +6,7 @@ directory structure preservation, and error conditions.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -774,3 +775,236 @@ def test_openapi_entries_skip_hidden_and_number_duplicates() -> None:
         slugs = [slug for _, slug, _ in builder._openapi_entries()]
 
     assert slugs == ["langsmith/api/orgs/get-info", "langsmith/api/orgs/get-info-1"]
+
+
+def test_llms_txt_splits_large_sections_into_section_indexes() -> None:
+    """Test that a large section becomes linked section files, not root bulk.
+
+    AFDocs passes `llms-txt-size` only under 50,000 characters, and its
+    coverage walker descends exactly one level into linked .txt files, so
+    section indexes must sit one hop from the root and must not nest further.
+    """
+    files: list[File] = [
+        {
+            "path": f"langsmith/page-{i:03d}.mdx",
+            "content": (
+                f"---\ntitle: Page {i}\ndescription: {'x' * 250}\n---\n\nBody.\n"
+            ),
+        }
+        for i in range(400)
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        root = (fs.build_dir / "llms.txt").read_text(encoding="utf-8")
+        sections = sorted(
+            p.name for p in (fs.build_dir / "langsmith").glob("llms*.txt")
+        )
+
+        # Root stays under the pass threshold and delegates to section files.
+        assert len(root) < 50_000
+        assert sections, "expected at least one section index"
+        for name in sections:
+            section = (fs.build_dir / "langsmith" / name).read_text(encoding="utf-8")
+            assert len(section) < 50_000
+            assert "llms.txt" not in section.replace("# ", ""), "must not nest deeper"
+            assert f"({builder._SITE_URL}/langsmith/{name})" in root
+
+        # Every page is listed exactly once across root plus sections.
+        listed = re.findall(r"\((https://\S+?\.md)\)", root)
+        for name in sections:
+            body = (fs.build_dir / "langsmith" / name).read_text(encoding="utf-8")
+            listed += re.findall(r"\((https://\S+?\.md)\)", body)
+        assert len(listed) == len(set(listed)) == 400
+
+
+def test_llms_full_txt_splits_languages_and_inlines_snippets() -> None:
+    """Test that llms-full.txt splits language corpora and expands snippets.
+
+    Mintlify expands snippet imports when it renders, so a corpus built from
+    the raw build tree would silently drop content from every page that
+    imports one. The root file must also open with the site title as an H1.
+    """
+    files: list[File] = [
+        {"path": "docs.json", "content": json.dumps({"name": "Test Docs"})},
+        {
+            "path": "snippets/shared-block.mdx",
+            "content": "UNIQUE_SNIPPET_CONTENT\n",
+        },
+        {
+            "path": "oss/guide.mdx",
+            "content": (
+                "---\ntitle: Guide\n---\n\n"
+                "import SharedBlock from '/snippets/shared-block.mdx';\n\n"
+                "Intro.\n\n<SharedBlock />\n"
+            ),
+        },
+        {"path": "langsmith/core.mdx", "content": "---\ntitle: Core\n---\n\nCore.\n"},
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        root = (fs.build_dir / "llms-full.txt").read_text(encoding="utf-8")
+        py = (fs.build_dir / "oss/python/llms-full.txt").read_text(encoding="utf-8")
+        js = (fs.build_dir / "oss/javascript/llms-full.txt").read_text(encoding="utf-8")
+
+    # Root opens with the site title and points at the language corpora.
+    assert root.startswith("# Test Docs")
+    assert "oss/python/llms-full.txt" in root
+    assert "oss/javascript/llms-full.txt" in root
+
+    # Language pages live in their own corpus, not the root.
+    assert "Source: https://docs.langchain.com/oss/python/guide" in py
+    assert "Source: https://docs.langchain.com/oss/python/guide" not in root
+    assert "Source: https://docs.langchain.com/langsmith/core" in root
+
+    # Snippets are inlined, and the import line itself is gone.
+    assert "UNIQUE_SNIPPET_CONTENT" in py
+    assert "UNIQUE_SNIPPET_CONTENT" in js
+    assert "import SharedBlock" not in py
+
+
+def _write_index(build_dir: Path, name: str, body: str) -> None:
+    """Write an llms index file into a build directory for validator tests."""
+    path = build_dir / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
+def test_validate_llms_indexes_accepts_a_well_formed_index() -> None:
+    """Test that the validator passes a root plus section index that is correct."""
+    with file_system([]) as fs:
+        fs.build_dir.mkdir(parents=True, exist_ok=True)
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        site = builder._SITE_URL
+        _write_index(
+            fs.build_dir,
+            "llms.txt",
+            f"# Site\n\n- [A]({site}/a.md)\n- [Section]({site}/oss/llms.txt)\n",
+        )
+        _write_index(fs.build_dir, "oss/llms.txt", f"# Site\n\n- [B]({site}/b.md)\n")
+
+        builder._validate_llms_indexes(2)  # does not raise
+
+
+def test_validate_llms_indexes_rejects_oversized_root() -> None:
+    """Test that a root over the truncation threshold fails the build."""
+    with file_system([]) as fs:
+        fs.build_dir.mkdir(parents=True, exist_ok=True)
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        padding = "x" * builder._LLMS_MAX
+        _write_index(
+            fs.build_dir,
+            "llms.txt",
+            f"# Site\n\n{padding}\n- [A]({builder._SITE_URL}/a.md)\n",
+        )
+
+        with pytest.raises(ValueError, match="over the 50,000 threshold"):
+            builder._validate_llms_indexes(1)
+
+
+def test_validate_llms_indexes_rejects_second_level_nesting() -> None:
+    """Test that a section index linking to further .txt files fails.
+
+    Coverage walkers descend one level, so pages behind a second hop drop out
+    of the index entirely.
+    """
+    with file_system([]) as fs:
+        fs.build_dir.mkdir(parents=True, exist_ok=True)
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        site = builder._SITE_URL
+        _write_index(
+            fs.build_dir, "llms.txt", f"# Site\n\n- [S]({site}/oss/llms.txt)\n"
+        )
+        _write_index(
+            fs.build_dir,
+            "oss/llms.txt",
+            f"# Site\n\n- [A]({site}/a.md)\n- [Deeper]({site}/oss/py/llms.txt)\n",
+        )
+
+        with pytest.raises(ValueError, match="descend only one level"):
+            builder._validate_llms_indexes(1)
+
+
+def test_validate_llms_indexes_rejects_duplicate_and_missing_pages() -> None:
+    """Test that a page listed twice, or a page count mismatch, fails."""
+    with file_system([]) as fs:
+        fs.build_dir.mkdir(parents=True, exist_ok=True)
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        site = builder._SITE_URL
+        _write_index(
+            fs.build_dir, "llms.txt", f"# Site\n\n- [S]({site}/oss/llms.txt)\n"
+        )
+        _write_index(
+            fs.build_dir,
+            "oss/llms.txt",
+            f"# Site\n\n- [A]({site}/a.md)\n- [A again]({site}/a.md)\n",
+        )
+
+        with pytest.raises(ValueError, match="listed more than once"):
+            builder._validate_llms_indexes(1)
+
+        _write_index(fs.build_dir, "oss/llms.txt", f"# Site\n\n- [A]({site}/a.md)\n")
+        with pytest.raises(ValueError, match="but 5 were built"):
+            builder._validate_llms_indexes(5)
+
+
+def test_page_body_rejects_snippet_imports_outside_the_build_tree() -> None:
+    """Test that a traversing snippet import cannot read files outside build/.
+
+    Snippet import paths come from MDX text, which is editable in a pull
+    request, and CI commits build/ to a pushed preview branch. Path joins do
+    not collapse "..", so an unvalidated import would publish any readable
+    file on the build host.
+    """
+    files: list[File] = [
+        # A real snippet, so build/snippets/ exists and ".." can actually
+        # traverse out of it. Without this the read fails for the wrong reason
+        # and the test passes even when the containment check is removed.
+        {"path": "snippets/real.mdx", "content": "Legitimate snippet.\n"},
+        {
+            "path": "langsmith/evil.mdx",
+            "content": (
+                "---\ntitle: Evil\n---\n\n"
+                "import Leak from '/snippets/../../secret.txt';\n\n"
+                "Body.\n\n<Leak />\n"
+            ),
+        },
+    ]
+    with file_system(files) as fs:
+        secret = fs.temp_dir / "secret.txt"
+        secret.write_text("TOP_SECRET_TOKEN_VALUE", encoding="utf-8")
+
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        page = fs.build_dir / "langsmith/evil.mdx"
+        body = builder._page_body(page)
+        corpus = (fs.build_dir / "llms-full.txt").read_text(encoding="utf-8")
+
+    # The traversing import is dropped, not followed.
+    assert "TOP_SECRET_TOKEN_VALUE" not in body
+    assert "TOP_SECRET_TOKEN_VALUE" not in corpus
+    # The page itself still renders, minus the rejected import.
+    assert "Body." in body
+
+
+def test_resolve_within_blocks_escapes_and_allows_children() -> None:
+    """Test the containment helper directly, including symlink-free traversal."""
+    with file_system([]) as fs:
+        fs.build_dir.mkdir(parents=True, exist_ok=True)
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        (fs.build_dir / "snippets").mkdir(parents=True, exist_ok=True)
+        (fs.build_dir / "snippets/ok.mdx").write_text("fine", encoding="utf-8")
+        (fs.temp_dir / "outside.txt").write_text("nope", encoding="utf-8")
+
+        root = fs.build_dir / "snippets"
+        inside = builder._resolve_within(fs.build_dir / "snippets/ok.mdx", root)
+        escape = builder._resolve_within(
+            fs.build_dir / "snippets/../../outside.txt", root
+        )
+
+    assert inside is not None
+    assert escape is None
