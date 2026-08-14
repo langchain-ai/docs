@@ -126,6 +126,10 @@ class DocumentationBuilder:
         logger.debug("Copying npm snippet components...")
         self._copy_npm_snippets()
 
+        # Emit a custom llms.txt so the index is not truncated at 100K characters
+        logger.debug("Generating llms.txt...")
+        self._generate_llms_txt()
+
         logger.debug("New structure build complete")
 
     def _convert_yaml_to_json(self, yaml_file_path: Path, output_path: Path) -> None:
@@ -1110,6 +1114,223 @@ class DocumentationBuilder:
 
         # JavaScript and CSS files should be shared (custom scripts/styles)
         return file_path.suffix.lower() in {".js", ".css"}
+
+    # llms.txt sections, in emission order. Hand-authored docs come before
+    # generated API reference so the most useful pages are read first.
+    _LLMS_SECTIONS: ClassVar[list[tuple[str, str]]] = [
+        ("oss/python", "Open source (Python)"),
+        ("oss/javascript", "Open source (TypeScript)"),
+        ("oss", "Open source"),
+        ("langsmith/fleet", "LangSmith Fleet"),
+        ("langsmith", "LangSmith"),
+    ]
+
+    _SITE_URL = "https://docs.langchain.com"
+
+    @staticmethod
+    def _slugify(value: str) -> str:
+        """Lowercase, hyphenate, and strip a string for use in a URL path.
+
+        Apostrophes are dropped rather than turned into separators, matching
+        Mintlify: "Get the authenticated user's provider user ID" slugs to
+        ``...-users-provider-user-id``, not ``...-user-s-...``.
+        """
+        cleaned = re.sub(r"['’]", "", value.lower())
+        return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", cleaned)).strip("-")
+
+    @staticmethod
+    def _tag_slug(value: str) -> str:
+        """Slug an OpenAPI tag the way Mintlify does, preserving underscores.
+
+        Mintlify lowercases the tag and replaces whitespace, but otherwise uses
+        it verbatim. Underscores must survive: the LangSmith spec carries both
+        ``annotation-queues`` and ``annotation_queues`` as distinct tags that
+        render to different directories, so normalising them together would
+        point at pages that do not exist.
+        """
+        return re.sub(r"[^a-z0-9_-]+", "-", value.lower()).strip("-")
+
+    def _read_frontmatter(self, path: Path) -> dict:
+        """Return the YAML frontmatter of an MDX file, or an empty dict."""
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return {}
+        if not text.startswith("---"):
+            return {}
+        end = text.find("\n---", 3)
+        if end == -1:
+            return {}
+        try:
+            data = yaml.safe_load(text[3:end])
+        except yaml.YAMLError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _openapi_entries(self) -> list[tuple[str, str, str]]:
+        """Return (section, url, title) for every Mintlify-generated API page.
+
+        Mintlify renders one page per OpenAPI operation under the group's
+        ``directory``, slugged as ``<directory>/<tag>/<summary>``. Those pages
+        never exist as MDX, so they have to be derived from the spec itself or
+        they are missing from llms.txt entirely.
+        """
+        docs_json = self.build_dir / "docs.json"
+        if not docs_json.exists():
+            return []
+        try:
+            config = json.loads(docs_json.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Could not read docs.json for OpenAPI entries")
+            return []
+
+        # (section label, spec source path, output directory)
+        groups: list[tuple[str, str, str]] = []
+
+        def find_openapi(node: object) -> None:
+            if isinstance(node, dict):
+                mapping: dict[str, object] = {str(k): v for k, v in node.items()}
+                spec = mapping.get("openapi")
+                if isinstance(spec, dict):
+                    fields: dict[str, object] = {str(k): v for k, v in spec.items()}
+                    source = fields.get("source")
+                    directory = fields.get("directory")
+                    if isinstance(source, str) and isinstance(directory, str):
+                        label = mapping.get("group")
+                        groups.append(
+                            (
+                                label if isinstance(label, str) else "API reference",
+                                source,
+                                directory,
+                            )
+                        )
+                for value in mapping.values():
+                    find_openapi(value)
+            elif isinstance(node, list):
+                for item in node:
+                    find_openapi(item)
+
+        find_openapi(config.get("navigation"))
+
+        entries: list[tuple[str, str, str]] = []
+        for label, source, directory in groups:
+            spec_path = self.build_dir / source
+            if not spec_path.exists():
+                logger.warning("OpenAPI spec not found: %s", source)
+                continue
+            try:
+                spec = json.loads(spec_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                logger.warning("Could not parse OpenAPI spec: %s", source)
+                continue
+
+            base = directory.strip("/")
+            seen: set[str] = set()
+            for item in spec.get("paths", {}).values():
+                if not isinstance(item, dict):
+                    continue
+                for operation in item.values():
+                    if not isinstance(operation, dict) or "responses" not in operation:
+                        continue
+                    # Mintlify renders no page for hidden operations.
+                    if operation.get("x-hidden"):
+                        continue
+                    summary = operation.get("summary") or operation.get("operationId")
+                    if not summary:
+                        continue
+                    tags = operation.get("tags") or ["default"]
+                    slug = (
+                        f"{self._tag_slug(str(tags[0]))}/{self._slugify(str(summary))}"
+                    )
+                    # Two operations can share a summary. Mintlify keeps both
+                    # and disambiguates with a numeric suffix, so mirror that
+                    # rather than dropping the second page.
+                    unique, duplicate_index = slug, 0
+                    while unique in seen:
+                        duplicate_index += 1
+                        unique = f"{slug}-{duplicate_index}"
+                    seen.add(unique)
+                    entries.append((label, f"{base}/{unique}", str(summary)))
+        return entries
+
+    def _generate_llms_txt(self) -> None:
+        """Write a custom llms.txt listing every published page.
+
+        Mintlify caps its auto-generated llms.txt at 100,000 characters and
+        silently truncates past that, which drops several hundred pages. A
+        custom file at the project root overrides the generated one and is not
+        capped, so this emits the complete index instead.
+        """
+        docs_json = self.build_dir / "docs.json"
+        title, description = "Docs by LangChain", ""
+        if docs_json.exists():
+            try:
+                config = json.loads(docs_json.read_text(encoding="utf-8"))
+                title = config.get("name", title)
+                description = config.get("description", "")
+            except (OSError, json.JSONDecodeError):
+                logger.warning("Could not read docs.json for llms.txt metadata")
+
+        # section label -> list of "- [Title](url): description" lines
+        sections: dict[str, list[str]] = {}
+        page_count = 0
+
+        for mdx in sorted(self.build_dir.rglob("*.mdx")):
+            relative = mdx.relative_to(self.build_dir)
+            if relative.parts and relative.parts[0] == "snippets":
+                continue
+            meta = self._read_frontmatter(mdx)
+            if meta.get("noindex") is True:
+                continue
+
+            slug = relative.with_suffix("").as_posix()
+            url = f"{self._SITE_URL}/{slug}.md"
+            name = str(
+                meta.get("title")
+                or meta.get("sidebarTitle")
+                or slug.rsplit("/", 1)[-1].replace("-", " ").title()
+            )
+            summary = str(meta.get("description") or "").replace("\n", " ").strip()
+
+            label = "Docs"
+            for prefix, section_label in self._LLMS_SECTIONS:
+                if slug == prefix or slug.startswith(f"{prefix}/"):
+                    label = section_label
+                    break
+
+            line = f"- [{name}]({url})"
+            if summary:
+                line += f": {summary[:300]}"
+            sections.setdefault(label, []).append(line)
+            page_count += 1
+
+        for group_label, slug, name in self._openapi_entries():
+            sections.setdefault(group_label, []).append(
+                f"- [{name}]({self._SITE_URL}/{slug}.md)"
+            )
+            page_count += 1
+
+        if not page_count:
+            logger.debug("No pages found, skipping llms.txt")
+            return
+
+        ordered = ["Docs", *[label for _, label in self._LLMS_SECTIONS]]
+        ordered += [label for label in sections if label not in ordered]
+
+        out = [f"# {title}", ""]
+        if description:
+            out += [f"> {description}", ""]
+        for label in ordered:
+            lines = sections.get(label)
+            if not lines:
+                continue
+            out += [f"## {label}", "", *lines, ""]
+
+        content = "\n".join(out)
+        (self.build_dir / "llms.txt").write_text(content, encoding="utf-8")
+        logger.info(
+            "✅ llms.txt written: %d pages, %d characters", page_count, len(content)
+        )
 
     def _copy_shared_files(self) -> None:
         """Copy files that should be shared between versions."""
