@@ -1008,3 +1008,41 @@ def test_resolve_within_blocks_escapes_and_allows_children() -> None:
 
     assert inside is not None
     assert escape is None
+
+
+def test_section_indexes_are_always_named_llms_txt() -> None:
+    """Test that oversized sections split by directory, never by filename.
+
+    Mintlify serves the exact filename llms.txt at any path but 404s on
+    anything else, so numbered variants like llms-2.txt are silently
+    unreachable and every page in them drops out of coverage.
+    """
+    # Enough pages across real subdirectories to force a split.
+    files: list[File] = [
+        {
+            "path": f"langsmith/{area}/page-{i:03d}.mdx",
+            "content": f"---\ntitle: {area} {i}\n---\n\nBody.\n",
+        }
+        for area in ("alpha", "beta", "gamma")
+        for i in range(250)
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        indexes = sorted(
+            p.relative_to(fs.build_dir).as_posix()
+            for p in fs.build_dir.rglob("llms*.txt")
+            if p.name != "llms-full.txt"
+        )
+        root = (fs.build_dir / "llms.txt").read_text(encoding="utf-8")
+
+    assert len(indexes) > 1, "expected the section to split"
+    # Every index, at every depth, is named exactly llms.txt.
+    for path in indexes:
+        assert path.endswith("llms.txt"), path
+        assert "llms-" not in path, f"numbered index would 404: {path}"
+    # And each split index is reachable in one hop from the root.
+    for path in indexes:
+        if path != "llms.txt":
+            assert f"({builder._SITE_URL}/{path})" in root

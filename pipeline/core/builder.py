@@ -1317,29 +1317,57 @@ class DocumentationBuilder:
                 return ""
         return "/".join(shared)
 
-    def _chunk_section(
-        self, prefix: str, lines: list[str]
-    ) -> list[tuple[str, list[str]]]:
-        """Split a section's lines into files that each stay under budget.
+    @staticmethod
+    def _weigh(entries: list[tuple[str, str]]) -> int:
+        """Return the byte size a set of index entries would occupy."""
+        return sum(len(line) + 1 for _, line in entries)
 
-        Returns (build-relative path, lines) pairs. Entries arrive sorted by
-        URL, so sequential chunking keeps pages from the same subtree together.
-        Every file sits exactly one directory level below the root index:
-        AFDocs's coverage walker descends one level into linked .txt files, and
-        anything deeper is dropped from the coverage denominator.
+    def _chunk_section(
+        self, prefix: str, entries: list[tuple[str, str]]
+    ) -> list[tuple[str, list[tuple[str, str]]]]:
+        """Split a section into index files that each stay under budget.
+
+        Returns (directory prefix, entries) pairs. Every index is written as
+        ``<prefix>/llms.txt``, because Mintlify serves that exact filename at
+        any path but 404s on anything else: numbered variants like
+        ``llms-2.txt`` are not served, which silently hid 802 pages from the
+        coverage walker.
+
+        An oversized section sheds its largest child directories into their own
+        indexes until the remainder fits, rather than giving every child a file.
+        That keeps the number of fetches an agent makes proportional to how
+        much content there actually is.
         """
-        chunks: list[list[str]] = [[]]
-        size = 0
-        for line in lines:
-            if chunks[-1] and size + len(line) + 1 > self._LLMS_SECTION_BUDGET:
-                chunks.append([])
-                size = 0
-            chunks[-1].append(line)
-            size += len(line) + 1
-        return [
-            (f"{prefix}/llms.txt" if i == 0 else f"{prefix}/llms-{i + 1}.txt", chunk)
-            for i, chunk in enumerate(chunks)
-        ]
+        if self._weigh(entries) <= self._LLMS_SECTION_BUDGET:
+            return [(prefix, entries)]
+
+        depth = len(prefix.split("/")) if prefix else 0
+        children: dict[str, list[tuple[str, str]]] = {}
+        remainder: list[tuple[str, str]] = []
+        for slug, line in entries:
+            parts = slug.split("/")
+            if len(parts) > depth + 1:
+                children.setdefault("/".join(parts[: depth + 1]), []).append(
+                    (slug, line)
+                )
+            else:
+                remainder.append((slug, line))
+
+        if not children:
+            # A flat directory cannot be subdivided further. Keep it whole:
+            # oversized beats invisible, and the validator will flag it.
+            return [(prefix, entries)]
+
+        out: list[tuple[str, list[tuple[str, str]]]] = []
+        # Shed the heaviest children first so the fewest files are created.
+        for key in sorted(children, key=lambda k: -self._weigh(children[k])):
+            if self._weigh(remainder) + self._weigh(children[key]) <= (
+                self._LLMS_SECTION_BUDGET
+            ):
+                remainder += children[key]
+            else:
+                out += self._chunk_section(key, children[key])
+        return [(prefix, remainder), *out] if remainder else out
 
     def _write_section_index(
         self, path: str, title: str, label: str, lines: list[str]
@@ -1594,8 +1622,10 @@ class DocumentationBuilder:
             except (OSError, json.JSONDecodeError):
                 logger.warning("Could not read docs.json for llms.txt metadata")
 
-        # section label -> list of (slug, "- [Title](url): description") pairs
+        # section label -> list of (slug, "- [Title](url)") pairs
         sections: dict[str, list[tuple[str, str]]] = {}
+        # plain entry -> the same entry with its description, for the root file
+        described_lines: dict[str, str] = {}
         page_count = 0
 
         for mdx in sorted(self.build_dir.rglob("*.mdx")):
@@ -1621,9 +1651,12 @@ class DocumentationBuilder:
                     label = section_label
                     break
 
+            # Descriptions roughly double an entry. They stay in the root file,
+            # where there is room, and are dropped from section indexes so more
+            # pages fit per file and fewer files are needed.
             line = f"- [{name}]({url})"
             if summary:
-                line += f": {summary[:300]}"
+                described_lines[line] = f"{line}: {summary[:300]}"
             sections.setdefault(label, []).append((slug, line))
             page_count += 1
 
@@ -1654,11 +1687,18 @@ class DocumentationBuilder:
             # a fetch for a handful of pages. A section with no shared
             # directory has nowhere to live but the root.
             if not prefix or size <= self._LLMS_INLINE_MAX:
-                inline.append((label, lines))
+                inline.append(
+                    (label, [described_lines.get(line, line) for line in lines])
+                )
             else:
-                for path, chunk in self._chunk_section(prefix, lines):
-                    self._write_section_index(path, title, label, chunk)
-                    linked.append((label, path, len(chunk)))
+                for section_prefix, chunk in self._chunk_section(prefix, entries):
+                    if not chunk:
+                        continue
+                    path = f"{section_prefix}/llms.txt"
+                    self._write_section_index(
+                        path, title, label, [line for _, line in chunk]
+                    )
+                    linked.append((section_prefix, path, len(chunk)))
 
         out = [f"# {title}", ""]
         if description:
@@ -1671,16 +1711,9 @@ class DocumentationBuilder:
                 "## Section indexes",
                 "",
             ]
-            seen_labels: dict[str, int] = {}
-            for label, path, count in linked:
-                seen_labels[label] = seen_labels.get(label, 0) + 1
-                suffix = (
-                    f" (part {seen_labels[label]})"
-                    if sum(1 for entry in linked if entry[0] == label) > 1
-                    else ""
-                )
+            for section_prefix, path, count in sorted(linked):
                 out.append(
-                    f"- [{label}{suffix}]({self._SITE_URL}/{path}): {count} pages"
+                    f"- [/{section_prefix}]({self._SITE_URL}/{path}): {count} pages"
                 )
             out.append("")
         for label, lines in inline:
