@@ -1240,9 +1240,9 @@ class DocumentationBuilder:
 
         entries: list[tuple[str, str, str]] = []
         for label, source, directory in groups:
-            spec_path = self.build_dir / source
-            if not spec_path.exists():
-                logger.warning("OpenAPI spec not found: %s", source)
+            spec_path = self._resolve_within(self.build_dir / source, self.build_dir)
+            if spec_path is None or not spec_path.exists():
+                logger.warning("OpenAPI spec not found or outside build: %s", source)
                 continue
             try:
                 spec = json.loads(spec_path.read_text(encoding="utf-8"))
@@ -1278,6 +1278,26 @@ class DocumentationBuilder:
                     seen.add(unique)
                     entries.append((label, f"{base}/{unique}", str(summary)))
         return entries
+
+    @staticmethod
+    def _resolve_within(candidate: Path, root: Path) -> Path | None:
+        """Resolve *candidate* and return it only if it stays inside *root*.
+
+        Paths that reach this point come from MDX text and docs.json, both of
+        which are editable in a pull request. ``Path.__truediv__`` does not
+        collapse ``..``, so joining an unvalidated path and reading it would
+        let a crafted import escape the build tree. CI commits ``build/`` to a
+        pushed preview branch, so anything read would be published.
+
+        Returns:
+            The resolved path, or None if it escapes *root* or cannot resolve.
+        """
+        try:
+            resolved = candidate.resolve()
+            resolved.relative_to(root.resolve())
+        except (ValueError, OSError):
+            return None
+        return resolved
 
     @staticmethod
     def _common_directory(slugs: list[str]) -> str:
@@ -1325,7 +1345,10 @@ class DocumentationBuilder:
         self, path: str, title: str, label: str, lines: list[str]
     ) -> None:
         """Write one section-level llms.txt."""
-        destination = self.build_dir / path
+        destination = self._resolve_within(self.build_dir / path, self.build_dir)
+        if destination is None:
+            logger.warning("Refusing to write section index outside build: %s", path)
+            return
         destination.parent.mkdir(parents=True, exist_ok=True)
         body = "\n".join(
             [
@@ -1371,8 +1394,10 @@ class DocumentationBuilder:
         urls = md_link.findall(root)
         for url in txt_link.findall(root):
             relative = url.removeprefix(f"{self._SITE_URL}/")
-            section_path = self.build_dir / relative
-            if not section_path.exists():
+            section_path = self._resolve_within(
+                self.build_dir / relative, self.build_dir
+            )
+            if section_path is None or not section_path.exists():
                 problems.append(f"{relative} is linked from llms.txt but missing")
                 continue
             section = section_path.read_text(encoding="utf-8")
@@ -1445,10 +1470,22 @@ class DocumentationBuilder:
         if depth > 6:
             return text.strip()
 
-        imports = {
-            name: self.build_dir / target.lstrip("/")
-            for name, target in self._SNIPPET_IMPORT.findall(text)
-        }
+        snippets_root = self.build_dir / "snippets"
+        imports: dict[str, Path] = {}
+        for name, target in self._SNIPPET_IMPORT.findall(text):
+            snippet = self._resolve_within(
+                self.build_dir / target.lstrip("/"), snippets_root
+            )
+            if snippet is None:
+                logger.warning(
+                    "Ignoring snippet import outside %s in %s: %s",
+                    snippets_root,
+                    path,
+                    target,
+                )
+                continue
+            imports[name] = snippet
+
         text = self._SNIPPET_IMPORT.sub("", text)
         for name, snippet in imports.items():
             body = self._page_body(snippet, depth + 1) if snippet.exists() else ""

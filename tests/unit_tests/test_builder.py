@@ -949,3 +949,62 @@ def test_validate_llms_indexes_rejects_duplicate_and_missing_pages() -> None:
         _write_index(fs.build_dir, "oss/llms.txt", f"# Site\n\n- [A]({site}/a.md)\n")
         with pytest.raises(ValueError, match="but 5 were built"):
             builder._validate_llms_indexes(5)
+
+
+def test_page_body_rejects_snippet_imports_outside_the_build_tree() -> None:
+    """Test that a traversing snippet import cannot read files outside build/.
+
+    Snippet import paths come from MDX text, which is editable in a pull
+    request, and CI commits build/ to a pushed preview branch. Path joins do
+    not collapse "..", so an unvalidated import would publish any readable
+    file on the build host.
+    """
+    files: list[File] = [
+        # A real snippet, so build/snippets/ exists and ".." can actually
+        # traverse out of it. Without this the read fails for the wrong reason
+        # and the test passes even when the containment check is removed.
+        {"path": "snippets/real.mdx", "content": "Legitimate snippet.\n"},
+        {
+            "path": "langsmith/evil.mdx",
+            "content": (
+                "---\ntitle: Evil\n---\n\n"
+                "import Leak from '/snippets/../../secret.txt';\n\n"
+                "Body.\n\n<Leak />\n"
+            ),
+        },
+    ]
+    with file_system(files) as fs:
+        secret = fs.temp_dir / "secret.txt"
+        secret.write_text("TOP_SECRET_TOKEN_VALUE", encoding="utf-8")
+
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        page = fs.build_dir / "langsmith/evil.mdx"
+        body = builder._page_body(page)
+        corpus = (fs.build_dir / "llms-full.txt").read_text(encoding="utf-8")
+
+    # The traversing import is dropped, not followed.
+    assert "TOP_SECRET_TOKEN_VALUE" not in body
+    assert "TOP_SECRET_TOKEN_VALUE" not in corpus
+    # The page itself still renders, minus the rejected import.
+    assert "Body." in body
+
+
+def test_resolve_within_blocks_escapes_and_allows_children() -> None:
+    """Test the containment helper directly, including symlink-free traversal."""
+    with file_system([]) as fs:
+        fs.build_dir.mkdir(parents=True, exist_ok=True)
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        (fs.build_dir / "snippets").mkdir(parents=True, exist_ok=True)
+        (fs.build_dir / "snippets/ok.mdx").write_text("fine", encoding="utf-8")
+        (fs.temp_dir / "outside.txt").write_text("nope", encoding="utf-8")
+
+        root = fs.build_dir / "snippets"
+        inside = builder._resolve_within(fs.build_dir / "snippets/ok.mdx", root)
+        escape = builder._resolve_within(
+            fs.build_dir / "snippets/../../outside.txt", root
+        )
+
+    assert inside is not None
+    assert escape is None
