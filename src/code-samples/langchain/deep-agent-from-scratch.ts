@@ -4,7 +4,7 @@
 import { createAgent } from "langchain";
 
 let agent = createAgent({
-  model: "openai:gpt-4.1",
+  model: "google-genai:gemini-3.6-flash",
   tools: [],
 });
 // :snippet-end:
@@ -64,7 +64,7 @@ process.once("exit", () => {
 const backend = new LangSmithSandbox({ sandbox });
 
 agent = createAgent({
-  model: "openai:gpt-4.1",
+  model: "google-genai:gemini-3.6-flash",
   tools: [],
   middleware: [createFilesystemMiddleware({ backend })],
 });
@@ -109,13 +109,15 @@ await Promise.all([
 // :snippet-start: deep-agent-from-scratch-summarization-js
 import { createSummarizationMiddleware } from "deepagents";
 
+model = "google-genai:gemini-3.6-flash";
+
 agent = createAgent({
-  model: "openai:gpt-4.1",
+  model,
   tools: [],
   middleware: [
     createFilesystemMiddleware({ backend }),
     createSummarizationMiddleware({
-      model: "openai:gpt-4.1",
+      model,
       backend,
     }),
   ],
@@ -152,7 +154,7 @@ await backend.uploadFiles(skillFiles);
 // :snippet-start: deep-agent-from-scratch-skills-js
 import { createSkillsMiddleware } from "deepagents";
 
-let model = "openai:gpt-4.1";
+model = "google-genai:gemini-3.6-flash";
 
 agent = createAgent({
   model,
@@ -169,6 +171,8 @@ agent = createAgent({
 import { todoListMiddleware } from "langchain";
 import { createSubAgentMiddleware, type SubAgent } from "deepagents";
 
+model = "google-genai:gemini-3.6-flash";
+
 const visualizer: SubAgent = {
   name: "visualizer",
   description:
@@ -176,7 +180,7 @@ const visualizer: SubAgent = {
   systemPrompt:
     "You are a data visualization specialist. Write Python scripts using matplotlib and seaborn. Save all figures as PNG files.",
   tools: [],
-  model: "openai:gpt-4.1",
+  model,
 };
 
 agent = createAgent({
