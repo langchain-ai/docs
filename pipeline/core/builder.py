@@ -130,6 +130,9 @@ class DocumentationBuilder:
         logger.debug("Generating llms.txt...")
         self._generate_llms_txt()
 
+        logger.debug("Generating llms-full.txt...")
+        self._generate_llms_full_txt()
+
         logger.debug("New structure build complete")
 
     def _convert_yaml_to_json(self, yaml_file_path: Path, output_path: Path) -> None:
@@ -1135,6 +1138,17 @@ class DocumentationBuilder:
     # so a section does not cross it as pages are added between splits.
     _LLMS_SECTION_BUDGET = 40_000
 
+    # Page-path prefixes lifted out of the root llms-full.txt into their own
+    # corpus file, with the label used to point at them from the root.
+    _LLMS_FULL_SPLITS: ClassVar[list[tuple[str, str]]] = [
+        ("oss/python", "Open source (Python)"),
+        ("oss/javascript", "Open source (TypeScript)"),
+    ]
+
+    _SNIPPET_IMPORT = re.compile(
+        r"^import\s+(\w+)\s+from\s+'(/snippets/[^']+)';[ \t]*\n?", re.MULTILINE
+    )
+
     @staticmethod
     def _slugify(value: str) -> str:
         """Lowercase, hyphenate, and strip a string for use in a URL path.
@@ -1322,6 +1336,132 @@ class DocumentationBuilder:
             ]
         )
         destination.write_text(body, encoding="utf-8")
+
+    def _site_metadata(self) -> tuple[str, str]:
+        """Return the site title and description from docs.json."""
+        docs_json = self.build_dir / "docs.json"
+        title, description = "Docs by LangChain", ""
+        if docs_json.exists():
+            try:
+                config = json.loads(docs_json.read_text(encoding="utf-8"))
+                title = config.get("name", title)
+                description = config.get("description", "")
+            except (OSError, json.JSONDecodeError):
+                logger.warning("Could not read docs.json for site metadata")
+        return title, description
+
+    def _page_body(self, path: Path, depth: int = 0) -> str:
+        """Return an MDX page's body with frontmatter stripped, snippets inlined.
+
+        Mintlify expands snippet imports when it renders, so a corpus built
+        from the raw build tree would silently drop content from the ~300
+        pages that import snippets. Component props are ignored: the snippet
+        body is the content, and the corpus is plain text.
+        """
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return ""
+        if text.startswith("---"):
+            end = text.find("\n---", 3)
+            if end != -1:
+                text = text[end + 4 :]
+        if depth > 6:
+            return text.strip()
+
+        imports = {
+            name: self.build_dir / target.lstrip("/")
+            for name, target in self._SNIPPET_IMPORT.findall(text)
+        }
+        text = self._SNIPPET_IMPORT.sub("", text)
+        for name, snippet in imports.items():
+            body = self._page_body(snippet, depth + 1) if snippet.exists() else ""
+            text = re.sub(rf"<{name}(?:\s[^/>]*)?\s*/>", lambda _, b=body: b, text)
+        return text.strip()
+
+    def _generate_llms_full_txt(self) -> None:
+        """Write llms-full.txt, splitting language variants into their own files.
+
+        The combined corpus is dominated by the Python and TypeScript renders
+        of the same documentation. Keeping both in one file makes it far larger
+        than long-context agents can ingest, so the TypeScript pages move to
+        their own corpus and the root points at it.
+        """
+        title, description = self._site_metadata()
+        buckets: dict[str, list[str]] = {"": []}
+        for prefix, _ in self._LLMS_FULL_SPLITS:
+            buckets[prefix] = []
+
+        for mdx in sorted(self.build_dir.rglob("*.mdx")):
+            relative = mdx.relative_to(self.build_dir)
+            if relative.parts and relative.parts[0] == "snippets":
+                continue
+            meta = self._read_frontmatter(mdx)
+            if meta.get("noindex") is True:
+                continue
+            slug = relative.with_suffix("").as_posix()
+            name = str(
+                meta.get("title")
+                or meta.get("sidebarTitle")
+                or slug.rsplit("/", 1)[-1].replace("-", " ").title()
+            )
+            key = next(
+                (p for p, _ in self._LLMS_FULL_SPLITS if slug.startswith(f"{p}/")), ""
+            )
+            body = self._page_body(mdx)
+            buckets[key].append(
+                f"# {name}\nSource: {self._SITE_URL}/{slug}\n\n{body}\n\n"
+            )
+
+        # Generated API reference pages have no MDX to read, so record their
+        # identity and let the index in llms.txt carry the detail.
+        for _, slug, name in self._openapi_entries():
+            buckets[""].append(f"# {name}\nSource: {self._SITE_URL}/{slug}\n\n")
+
+        if not any(buckets.values()):
+            logger.debug("No pages found, skipping llms-full.txt")
+            return
+
+        pointers = []
+        for prefix, label in self._LLMS_FULL_SPLITS:
+            if not buckets[prefix]:
+                continue
+            target = f"{prefix}/llms-full.txt"
+            destination = self.build_dir / target
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(
+                f"# {title}: {label}\n\n"
+                f"> Full text of the {label} documentation.\n\n"
+                + "\n".join(buckets[prefix]),
+                encoding="utf-8",
+            )
+            pointers.append(f"- {label} documentation: {self._SITE_URL}/{target}")
+            logger.info(
+                "✅ %s written: %d pages, %d characters",
+                target,
+                len(buckets[prefix]),
+                destination.stat().st_size,
+            )
+
+        # A custom llms-full.txt has to open with the site title as an H1, or
+        # the first page heading in the corpus reads as the site title.
+        header = [f"# {title}", ""]
+        if description:
+            header += [f"> {description}", ""]
+        if pointers:
+            header += [
+                "Language-specific documentation is published as a separate corpus:",
+                "",
+                *pointers,
+                "",
+            ]
+        content = "\n".join(header) + "\n" + "\n".join(buckets[""])
+        (self.build_dir / "llms-full.txt").write_text(content, encoding="utf-8")
+        logger.info(
+            "✅ llms-full.txt written: %d pages, %d characters",
+            len(buckets[""]),
+            len(content),
+        )
 
     def _generate_llms_txt(self) -> None:
         """Write a custom llms.txt listing every published page.

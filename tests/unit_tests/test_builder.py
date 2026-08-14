@@ -817,3 +817,50 @@ def test_llms_txt_splits_large_sections_into_section_indexes() -> None:
             body = (fs.build_dir / "langsmith" / name).read_text(encoding="utf-8")
             listed += re.findall(r"\((https://\S+?\.md)\)", body)
         assert len(listed) == len(set(listed)) == 400
+
+
+def test_llms_full_txt_splits_languages_and_inlines_snippets() -> None:
+    """Test that llms-full.txt splits language corpora and expands snippets.
+
+    Mintlify expands snippet imports when it renders, so a corpus built from
+    the raw build tree would silently drop content from every page that
+    imports one. The root file must also open with the site title as an H1.
+    """
+    files: list[File] = [
+        {"path": "docs.json", "content": json.dumps({"name": "Test Docs"})},
+        {
+            "path": "snippets/shared-block.mdx",
+            "content": "UNIQUE_SNIPPET_CONTENT\n",
+        },
+        {
+            "path": "oss/guide.mdx",
+            "content": (
+                "---\ntitle: Guide\n---\n\n"
+                "import SharedBlock from '/snippets/shared-block.mdx';\n\n"
+                "Intro.\n\n<SharedBlock />\n"
+            ),
+        },
+        {"path": "langsmith/core.mdx", "content": "---\ntitle: Core\n---\n\nCore.\n"},
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        root = (fs.build_dir / "llms-full.txt").read_text(encoding="utf-8")
+        py = (fs.build_dir / "oss/python/llms-full.txt").read_text(encoding="utf-8")
+        js = (fs.build_dir / "oss/javascript/llms-full.txt").read_text(encoding="utf-8")
+
+    # Root opens with the site title and points at the language corpora.
+    assert root.startswith("# Test Docs")
+    assert "oss/python/llms-full.txt" in root
+    assert "oss/javascript/llms-full.txt" in root
+
+    # Language pages live in their own corpus, not the root.
+    assert "Source: https://docs.langchain.com/oss/python/guide" in py
+    assert "Source: https://docs.langchain.com/oss/python/guide" not in root
+    assert "Source: https://docs.langchain.com/langsmith/core" in root
+
+    # Snippets are inlined, and the import line itself is gone.
+    assert "UNIQUE_SNIPPET_CONTENT" in py
+    assert "UNIQUE_SNIPPET_CONTENT" in js
+    assert "import SharedBlock" not in py
