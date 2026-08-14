@@ -1,19 +1,16 @@
 ---
 title: Add a sandbox to Managed Deep Agents
 sidebarTitle: Sandboxes
-description: Configure an isolated filesystem and shell for Managed Deep Agents.
+description: Configure an isolated filesystem and shell for a managed deep agent.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 
-Agents often want to write or execute code when doing their job.
-A sandbox gives a Managed Deep Agent an isolated filesystem and shell for working with files, running code, and executing commands.
+A sandbox gives a managed deep agent an isolated filesystem and shell for working with files, running code, and executing commands.
 
 <ManagedDeepAgentsPrivateBetaNote />
 
-## Project structure
-
-Keep the agent entry point at the project root and the sandbox declaration under `sandbox/`:
+Put the sandbox declaration under `sandbox/`:
 
 :::python
 ```text
@@ -33,13 +30,21 @@ my-agent/
 ```
 :::
 
+For the full project layout, see [Project structure](/langsmith/managed-deep-agents-project-structure).
+
 ## Configure a sandbox
 
-`mda init` scaffolds a sandbox declaration. Managed Deep Agents enables the sandbox only while the `sandbox/` directory is present. Delete the directory to opt out, such as for an agent that only needs its prompt, memory, and tools.
+Use a sandbox when the agent needs to write files, run code, or execute shell commands.
 
-Declare the sandbox with `define_sandbox` (Python) or `defineSandbox` (TypeScript). Managed Deep Agents uses [LangSmith Sandboxes](/langsmith/sandboxes) for this backend:
+`mda init` scaffolds a sandbox declaration. Managed Deep Agents enables the sandbox only while the `sandbox/` directory is present.
+
+<Steps>
+  <Step title="Declare the sandbox" id="declare-the-sandbox">
 
 :::python
+
+Declare the sandbox with `define_sandbox`. Managed Deep Agents uses [LangSmith Sandboxes](/langsmith/sandboxes) for this backend:
+
 ```python sandbox/__init__.py
 from managed_deepagents import define_sandbox
 
@@ -52,6 +57,9 @@ sandbox = define_sandbox(
 :::
 
 :::js
+
+Declare the sandbox with `defineSandbox`. Managed Deep Agents uses [LangSmith Sandboxes](/langsmith/sandboxes) for this backend:
+
 ```ts sandbox/index.ts
 import { defineSandbox } from "managed-deepagents";
 
@@ -63,17 +71,10 @@ export const sandbox = defineSandbox({
 ```
 :::
 
-LangSmith uses its default sandbox template unless you set a custom template or snapshot. Set only one creation source.
+LangSmith uses its default sandbox template unless you pass a custom template or snapshot. For the full option list, see [Parameters](#parameters).
 
-:::python
-Use `template_name` or `snapshot_id` to set the creation source.
-:::
-
-:::js
-Use `templateName` or `snapshotId` to set the creation source.
-:::
-
-## Choose a scope
+  </Step>
+  <Step title="Choose a scope (Optional)" id="choose-a-scope">
 
 | Scope | Behavior |
 | --- | --- |
@@ -84,18 +85,61 @@ Use `templateName` or `snapshotId` to set the creation source.
 An agent-scoped sandbox lets threads read and modify the same files. Use it only for intentionally shared state.
 </Warning>
 
+  </Step>
+</Steps>
+
+## Parameters
+
 :::python
-Use `idle_ttl_seconds` to control when an idle sandbox can be reclaimed. Use `default_timeout` to bound each command.
+| Parameter | Description |
+| --- | --- |
+| `scope=` | Reuse boundary. `"thread"` creates one sandbox per durable thread. `"agent"` shares one sandbox across threads handled by the agent process. Default: `"thread"`. |
+| `idle_ttl_seconds=` | Seconds of inactivity before MDA may reclaim the sandbox. |
+| `default_timeout=` | Default timeout for each command, in seconds. |
+| `template_name=` | _Optional_. LangSmith sandbox template to boot from. Do not set this together with `snapshot_id`. |
+| `snapshot_id=` | _Optional_. LangSmith snapshot ID to boot from. Do not set this together with `template_name`. |
+| `api_key=` | _Optional_. LangSmith API key for sandbox provisioning. Prefer `.env` when possible. |
 :::
 
 :::js
-Use `idleTtlSeconds` to control when an idle sandbox can be reclaimed. Use `defaultTimeout` to bound each command.
+| Parameter | Description |
+| --- | --- |
+| `scope` | Reuse boundary. `"thread"` (default) creates one sandbox per durable thread. `"agent"` shares one sandbox across threads handled by the agent process. |
+| `idleTtlSeconds` | Seconds of inactivity before MDA may reclaim the sandbox. |
+| `defaultTimeout` | Default timeout for each command, in seconds. |
+| `templateName` | _Optional_. LangSmith sandbox template to boot from. Do not set this together with `snapshotId`. |
+| `snapshotId` | _Optional_. LangSmith snapshot ID to boot from. Do not set this together with `templateName`. |
+| `apiKey` | _Optional_. LangSmith API key for sandbox provisioning. Prefer `.env` when possible. |
+:::
+
+:::python
+Do not set `name`, `image`, `snapshot`, or `image_name`. The managed runtime owns those.
+:::
+
+:::js
+Do not set `name`, `image`, `snapshot`, or `imageName`. The managed runtime owns those.
 :::
 
 ## How the agent uses the sandbox
 
-The agent uses filesystem tools such as `ls`, `read_file`, `write_file`, `edit_file`, `glob`, and `grep`, and runs shell commands with `execute`. Use `instructions.md` to specify where the agent should work and what it must not modify.
+The agent uses built-in filesystem tools such as [`ls`](/oss/deepagents/tools#built-in-harness-tools), [`read_file`](/oss/deepagents/tools#built-in-harness-tools), [`write_file`](/oss/deepagents/tools#built-in-harness-tools), [`edit_file`](/oss/deepagents/tools#built-in-harness-tools), [`glob`](/oss/deepagents/tools#built-in-harness-tools), and [`grep`](/oss/deepagents/tools#built-in-harness-tools), and runs shell commands with [`execute`](/oss/deepagents/tools#built-in-harness-tools). Use [instructions](/langsmith/managed-deep-agents-instructions) to specify where the agent should work and what it must not modify.
 
-## Sandbox lifecycle
+## Disable the sandbox
 
-Managed Deep Agents owns sandbox naming, reuse, recovery, and cleanup. Deleting the deployment with `mda delete` also deletes the managed sandboxes associated with it. For platform-level lifecycle details, see [Sandboxes](/langsmith/sandboxes).
+Delete the `sandbox/` directory to opt out, such as for an agent that only needs its prompt, memory, and tools.
+
+For existing deployments, deleting the deployment with `mda delete` also deletes the managed sandboxes associated with it.
+
+## Deployment
+
+Managed Deep Agents owns sandbox naming, reuse, recovery, and cleanup. For platform-level lifecycle details, see [Sandboxes](/langsmith/sandboxes).
+
+## When to use a sandbox
+
+| Goal | Use |
+| --- | --- |
+| Write files, run code, or execute shell commands in isolation | Sandbox |
+| Store durable knowledge across threads | [Memory](/langsmith/managed-deep-agents-memory) |
+| Always-on behavior without a filesystem | [Instructions](/langsmith/managed-deep-agents-instructions) |
+
+For more information, see [Project structure](/langsmith/managed-deep-agents-project-structure).

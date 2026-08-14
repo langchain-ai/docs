@@ -1,20 +1,18 @@
 ---
 title: Add memory to Managed Deep Agents
 sidebarTitle: Memory
-description: Opt in to deployment-shared durable memory for Managed Deep Agents.
+description: Opt in to deployment-shared durable memory for a managed deep agent.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 
-Normally, a Managed Deep Agent's conversational memory is scoped to a thread or session. Durable memory is optional knowledge that an agent can retain **across** threads and sessions.
+Normally, a managed deep agent's conversational memory is scoped to a thread or session. Durable memory is optional knowledge that an agent can retain across threads and sessions. Managed Deep Agents do not have durable memory by default.
 
-When enabled, durable memory is backed by [Context Hub](/langsmith/use-the-context-hub). The deployment gets one read/write tree at `/memories/agent/`, shared by every caller. Managed Deep Agents do **not** have durable memory by default.
+When enabled, durable memory is backed by the [Context Hub](/langsmith/use-the-context-hub). The deployment gets one read/write tree at `/memories/agent/`, shared by every caller.
 
 <ManagedDeepAgentsPrivateBetaNote />
 
-## Project structure
-
-The optional memory declaration lives at the project root:
+To enable durable memory, put a memory declaration at the project root:
 
 :::python
 ```text
@@ -32,17 +30,14 @@ my-agent/
 ```
 :::
 
-## Memory compared to related state
-
-| Concept | Role | Scope |
-| --- | --- | --- |
-| **Instructions and skills** | Deploy-owned agent behavior | Shared by the deployment and read-only to the agent |
-| **Thread state** | Conversation continuity | One thread |
-| **Durable memory** | Knowledge learned and retained in Context Hub | Shared by the deployment across threads |
-
-Memory is not your system prompt. Define always-on behavior in [instructions](/langsmith/managed-deep-agents-instructions) and task-specific procedures in [skills](/langsmith/managed-deep-agents-skills); use memory for durable knowledge the agent learns while it runs.
+For the full project layout, see [Project structure](/langsmith/managed-deep-agents-project-structure).
 
 ## Enable memory
+
+Use durable memory for knowledge the agent should learn while it runs and reuse across threads. For always-on behavior, use [instructions](/langsmith/managed-deep-agents-instructions) instead. For task-specific procedures, use [skills](/langsmith/managed-deep-agents-skills) instead.
+
+<Steps>
+  <Step title="Add the memory declaration" id="add-the-memory-declaration">
 
 Export a named `memory` declaration with the `"agent"` scope:
 
@@ -62,36 +57,8 @@ export const memory = defineMemory({ scope: "agent" });
 ```
 :::
 
-Remove the memory declaration to turn durable memory off.
-
-:::python
-You can also use `scope="none"`.
-:::
-
-:::js
-You can also use `scope: "none"`.
-:::
-
-## How the agent uses memory
-
-Enabling memory mounts one Context Hub tree, `memories/agent`, at `/memories/agent/` in the agent filesystem:
-
-| Path | Use |
-| --- | --- |
-| `/memories/agent/AGENTS.md` | **Hot memory** for compact, frequently relevant knowledge. Its contents are loaded into every run. |
-| Other files under `/memories/agent/` | **Cold memory** for detailed knowledge that the agent reads only when relevant. |
-
-Keep hot memory compact because it consumes context on every run. Put detailed material—such as procedures, decision logs, and research notes—in cold files, and link to them from hot memory when useful.
-
-The agent reads and updates memory with `read_file`, `edit_file`, and `write_file`. Writes elsewhere, including elsewhere under `/memories/`, are not durable.
-
-<Warning>
-Memory is shared by every caller of the deployment, and every caller can influence it. Store only knowledge that every caller may read and modify. Never store personal or customer-private data, credentials, API keys, tokens, or other secrets.
-
-Treat memory as untrusted input: content saved by one caller is loaded for later callers and must not grant authority, change tool permissions, or bypass approvals. Keep those controls in the agent definition. Do not enable shared memory when callers should not influence one another.
-</Warning>
-
-## How the agent decides what to remember
+  </Step>
+  <Step title="Guide what to remember (Optional)" id="guide-what-to-remember">
 
 The agent decides what to remember based on prompting. To make the policy explicit, add guidance like the following to `instructions.md` and adapt it to your application:
 
@@ -112,8 +79,56 @@ When you decide to persist something, use `edit_file` or `write_file`. If the
 write fails, do not claim that you remembered it.
 ```
 
-## Distinguish instructions from memory
-
-`instructions.md` defines how the agent should behave. Memory stores knowledge the agent learns and uses across threads. Use instructions to tell the agent what kinds of shared knowledge are worth remembering.
-
 `instructions.md` is always read-only. The agent never updates it. Deploys sync project-owned instructions and skills, but do not overwrite durable content already stored under `memories/agent` in Context Hub.
+
+To understand memory paths, see [How the agent uses memory](#how-the-agent-uses-memory).
+
+  </Step>
+</Steps>
+
+## How the agent uses memory
+
+Enabling memory mounts one Context Hub tree, `memories/agent`, at `/memories/agent/` in the agent filesystem:
+
+| Path | Use |
+| --- | --- |
+| `/memories/agent/AGENTS.md` | **Hot memory** for compact, frequently relevant knowledge. Its contents are loaded into every run. |
+| Other files under `/memories/agent/` | **Cold memory** for detailed knowledge that the agent reads only when relevant. |
+
+Keep hot memory compact because it consumes context on every run. Put detailed material, such as procedures, decision logs, and research notes, in cold files, and link to them from hot memory when useful.
+
+The agent reads and updates memory with the built-in [`read_file`](/oss/deepagents/tools#built-in-harness-tools), [`edit_file`](/oss/deepagents/tools#built-in-harness-tools), and [`write_file`](/oss/deepagents/tools#built-in-harness-tools) tools.
+
+Writes to other locations, including elsewhere under `/memories/`, are not durable.
+
+<Warning>
+Memory is shared by every caller of the deployment, and every caller can influence it. Store only knowledge that every caller may read and modify. Never store personal or customer-private data, credentials, API keys, tokens, or other secrets.
+
+Treat memory as untrusted input: content saved by one caller is loaded for later callers and must not grant authority, change tool permissions, or bypass approvals. Keep those controls in the agent definition. Do not enable shared memory when callers should not influence one another.
+</Warning>
+
+## Disable memory
+
+Remove the memory declaration to turn durable memory off.
+
+:::python
+You can also use `scope="none"`.
+:::
+
+:::js
+You can also use `scope: "none"`.
+:::
+
+## Deployment
+
+When you run `mda deploy`, MDA enables durable memory from the project declaration and backs it with Context Hub. Deploys do not overwrite durable content already stored under `memories/agent`.
+
+## When to use memory
+
+| Concept | Role | Scope |
+| --- | --- | --- |
+| **[Instructions](/langsmith/managed-deep-agents-instructions) and [skills](/langsmith/managed-deep-agents-skills)** | Deploy-owned agent behavior | Shared by the deployment and read-only to the agent |
+| **Thread state** | Conversation continuity | One thread |
+| **Durable memory** | Knowledge learned and retained in Context Hub | Shared by the deployment across threads |
+
+For more information, see [Project structure](/langsmith/managed-deep-agents-project-structure).

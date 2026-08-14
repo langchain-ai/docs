@@ -1,16 +1,14 @@
 ---
 title: Connect to MCP servers
 sidebarTitle: MCP connectors
-description: Add tools from remote MCP servers to Managed Deep Agents.
+description: Add tools from remote MCP servers to a managed deep agent.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 
-An MCP connector adds tools from remote [Model Context Protocol (MCP)](/oss/deepagents/mcp) servers to a Managed Deep Agent. Managed Deep Agents creates the MCP client, loads the tools, and adds them to the agent.
+An MCP connector adds tools from remote [Model Context Protocol (MCP)](/oss/deepagents/mcp) servers to a managed deep agent. MDA creates the MCP client, loads the tools, and adds them to the agent.
 
 <ManagedDeepAgentsPrivateBetaNote />
-
-## Project structure
 
 Declare MCP servers in a module directly under `connectors/`:
 
@@ -21,8 +19,6 @@ my-agent/
   connectors/
     mcp.py
 ```
-
-The module must export a module-level `connector`.
 :::
 
 :::js
@@ -32,11 +28,18 @@ my-agent/
   connectors/
     mcp.ts
 ```
-
-The module must export a named `connector`.
 :::
 
+For the full project layout, see [Project structure](/langsmith/managed-deep-agents-project-structure).
+
+To implement application logic in the project instead, use an [authored tool](/langsmith/managed-deep-agents-tools).
+
 ## Add an MCP connector
+
+Use an MCP connector when tools already live on a remote MCP server and you want MDA to load them without importing them into the agent definition.
+
+<Steps>
+  <Step title="Declare the connector" id="declare-the-connector">
 
 Use `connectors.mcp` to declare one or more remote servers:
 
@@ -70,9 +73,20 @@ export const connector = connectors.mcp({
 ```
 :::
 
-Managed Deep Agents supports Streamable HTTP (`"http"`) and legacy SSE (`"sse"`) transports. Stdio MCP servers are not supported. Expose a stdio server over HTTP or implement its operation as an [authored tool](/langsmith/managed-deep-agents-tools).
+:::python
+The module must export a module-level `connector`.
+:::
 
-## Select tools
+:::js
+The module must export a named `connector`.
+:::
+
+Managed Deep Agents supports Streamable HTTP (`"http"`) and legacy SSE (`"sse"`) transports. Stdio MCP servers are not supported. Expose a stdio server over HTTP or implement its operation as an [authored tool](/langsmith/managed-deep-agents-tools) instead.
+
+For connection options, see [Configure connections](#configure-connections).
+
+  </Step>
+  <Step title="Select tools (Optional)" id="select-tools">
 
 By default, the connector exposes every tool from each server. To expose only selected tools, set an allowlist inside that server's configuration:
 
@@ -104,6 +118,14 @@ You can use both options together. The denylist applies after the allowlist, and
 
 Selection uses raw MCP tool names before Managed Deep Agents prefixes them. Tool names are prefixed with the server name by default to avoid collisions. For example, the `search_docs_by_lang_chain` tool from the `langchainDocs` server is exposed as `langchainDocs__search_docs_by_lang_chain`.
 
+  </Step>
+  <Step title="Pass credentials (Optional)" id="pass-credentials">
+
+If a server requires credentials, read them from environment variables and pass them through `headers`. Keep local values in `.env` for `mda dev`; `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets. Do not hard-code credentials in the connector declaration.
+
+  </Step>
+</Steps>
+
 ## Configure connections
 
 Each server accepts the following options:
@@ -126,10 +148,16 @@ The connector also accepts these options:
 | `prefix_tool_name_with_server_name` / `prefixToolNameWithServerName` | `true` | Prefix each tool with `{server}__`. |
 | `throw_on_load_error` / `throwOnLoadError` | `true` | Fail loading instead of starting with a partial tool set. |
 
-If a server requires credentials, read them from environment variables and pass them through `headers`. Keep local values in `.env`; Managed Deep Agents forwards eligible values as deployment secrets. Do not hard-code credentials in the connector declaration.
+## Deployment
 
-## Distinguish connectors from other capabilities
+`mda dev` and `mda deploy` discover connector modules under `connectors/` and include them in the managed configuration. Connectors are not synced to Context Hub.
 
-- **MCP connectors** add tools hosted by remote MCP servers.
-- **[Authored tools](/langsmith/managed-deep-agents-tools)** implement application logic in the project and are passed through the agent definition.
-- **[Channels](/langsmith/managed-deep-agents-channels)** receive external messages that start agent runs and deliver responses.
+## When to use MCP connectors
+
+| Concept | Kind | How it reaches the agent |
+| --- | --- | --- |
+| **MCP connectors** | Managed configuration | Declared under `connectors/`; no import into the agent entry |
+| **[Authored tools](/langsmith/managed-deep-agents-tools)** | Application code | Import and pass in the agent definition |
+| **[Channels](/langsmith/managed-deep-agents-channels)** | Managed configuration | Receive external messages that start agent runs and deliver responses |
+
+For more information, see [Project structure](/langsmith/managed-deep-agents-project-structure).
