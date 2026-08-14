@@ -10,6 +10,7 @@ import ToolReturnCommandPy from '/snippets/python/code-samples/tool-return-comma
 import ToolReturnCommandJs from '/snippets/python/code-samples/tool-return-command-js.mdx';
 import ToolReturnDirectPy from '/snippets/python/code-samples/tool-return-direct-py.mdx';
 import ToolReturnDirectJs from '/snippets/python/code-samples/tool-return-direct-js.mdx';
+import ToolReturnDirectCommandPy from '/snippets/python/code-samples/tool-return-direct-command-py.mdx';
 import ToolUpdateStatePy from '/snippets/python/code-samples/tool-update-state-py.mdx';
 import ToolErrorHandlingPy from '/snippets/python/code-samples/tool-error-handling-py.mdx';
 import ToolErrorHandlingJs from '/snippets/python/code-samples/tool-error-handling-js.mdx';
@@ -548,8 +549,13 @@ For block types and provider-specific requirements, see [Multimodal messages](/o
 #### Return a Command
 
 Return a [`Command`](https://reference.langchain.com/python/langgraph/types/Command) when the tool needs to update graph state (for example, setting user preferences or app state).
-You can return a `Command` with or without including a `ToolMessage`.
-If the model needs to see that the tool succeeded (for example, to confirm a preference change), include a `ToolMessage` in the update, using `runtime.tool_call_id` for the `tool_call_id` parameter.
+When the `Command` targets the current graph, include a `ToolMessage` in the update whose tool call ID matches the current tool call.
+Every tool call in the message history must have a corresponding `ToolMessage`.
+
+Use `runtime.tool_call_id` for the `tool_call_id` parameter. `ToolNode` enforces this requirement: if the update has no `ToolMessage` matching the tool call, it raises a `ValueError`.
+
+
+
 
 <ToolReturnCommandPy />
 
@@ -579,17 +585,31 @@ Behavior:
 
 - The tool executes normally and its output is wrapped in a `ToolMessage`.
 - The agent stops looping and returns the tool's output as the final response, bypassing any additional model call.
-- If the model calls multiple tools in a single turn, `return_direct` takes effect only when **all** called tools have `return_direct=True`.
+- **Multiple parallel tool calls:** When the model calls several tools in one step, all of them execute first. After all tools finish, the agent routes to `END` only if **every** tool in that batch has `return_direct=True`. The final response includes the `ToolMessage` outputs of every tool that was called in that step.
 
 Use this when:
 
 - The tool's output is the complete, user-ready answer (for example, a lookup that returns a ready-to-display result).
 - You want to avoid an extra model call when no additional reasoning is needed.
-- You need deterministic, unmodified output — the model cannot rephrase, summarize, or act on the tool result.
+- You need deterministic, unmodified output: the model cannot rephrase, summarize, or act on the tool result.
 
 <Warning>
     Because the model does not process the tool's output, `return_direct=True` is not suitable for tools whose results require further reasoning, summarization, or chaining with other tool calls.
 </Warning>
+
+<Warning>
+    **Mixed parallel calls:** If the model calls a `return_direct=True` tool alongside tools that do not have `return_direct=True`, the agent does **not** exit after that step. It routes back to the model with every `ToolMessage` from the batch, so the model can reason over all results. `return_direct` only short-circuits the loop when every tool call in the step has `return_direct=True`.
+</Warning>
+
+#### Return a Command with return_direct
+
+A tool with `return_direct=True` can also return a [`Command`](https://reference.langchain.com/python/langgraph/types/Command) to update graph state before the agent exits. Unlike a plain return value, a `Command` is not automatically converted into a `ToolMessage`. When the `Command` targets the current graph (`graph` is not set or is `None`), include a `ToolMessage` in `Command.update` matching the tool call's `tool_call_id`. Omitting it causes `ToolNode` to raise a `ValueError`, because every `AIMessage` tool call must have a corresponding `ToolMessage` in the message history.
+
+<ToolReturnDirectCommandPy />
+
+To write to a parent graph instead, set `graph=Command.PARENT`. In that case the `ToolMessage` requirement is lifted because execution leaves the current graph entirely.
+
+
 
 ### Error handling
 
