@@ -1,29 +1,16 @@
 ---
 title: Add custom tools to Managed Deep Agents
 sidebarTitle: Tools
-description: Define authored tools for Managed Deep Agents projects.
+description: Define authored tools for managed deep agents projects.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
-import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-Managed Deep Agents support the normal Deep Agents `tools` configuration surface.
-
-:::python
-Define LangChain tools in your project, import them into `agent.py`, and pass them to `define_deep_agent`.
-:::
-
-:::js
-Define LangChain tools in your project, import them into `agent.ts`, and pass them to `defineDeepAgent`.
-:::
-
-To load tools from a remote MCP server instead, use an [MCP connector](/langsmith/managed-deep-agents-mcp-connectors).
+Custom tools are application code the agent can call. Unlike [instructions](/langsmith/managed-deep-agents-instructions) and [skills](/langsmith/managed-deep-agents-skills), MDA does not discover them automatically.
 
 <ManagedDeepAgentsPrivateBetaNote />
 
-## Project structure
-
-Keep the agent entry point at the project root and authored tools under `tools/`:
+Put authored tools under `tools/`, import them into the agent entry, and pass them to the agent definition:
 
 :::python
 ```text
@@ -43,13 +30,16 @@ my-agent/
 ```
 :::
 
-## Add authored tools
+For the full project layout, see [Project structure](/langsmith/managed-deep-agents-project-structure).
 
-Use authored tools for business logic, private APIs, database access, and other code that belongs in your agent project. Managed Deep Agents copies the source into the compiled build and passes the tools to Deep Agents.
+To load tools from a remote MCP server without importing them into the agent entry, use an [MCP connector](/langsmith/managed-deep-agents-mcp-connectors) instead.
 
-For more about LangChain tool definitions, see [Tools](/oss/langchain/tools).
+## Add a tool
 
-## Add a tool module
+Use authored tools for business logic, private APIs, database access, and other code that belongs in your agent project.
+
+<Steps>
+  <Step title="Define a tool module" id="define-a-tool-module">
 
 :::python
 ```python tools/customer.py
@@ -85,9 +75,12 @@ export const lookupCustomer = tool(
 ```
 :::
 
-## Attach tools to the agent
+Use clear, unique tool names to avoid collisions. For more about LangChain tool definitions, see [Tools](/oss/langchain/tools).
 
-Import the tools into the project-root agent entry and pass them in the `tools` list.
+  </Step>
+  <Step title="Attach the tool to the agent" id="attach-the-tool">
+
+Import the tool into the project-root agent entry and pass it in the `tools` list:
 
 :::python
 ```python agent.py
@@ -117,8 +110,6 @@ export const agent = defineDeepAgent({
 ```
 :::
 
-`mda dev` and `mda deploy` copy the project files into the compiled build.
-
 :::python
 Your imports should work the same way they do in a normal local Python project.
 :::
@@ -127,18 +118,17 @@ Your imports should work the same way they do in a normal local Python project.
 Your imports should work the same way they do in a normal local TypeScript project.
 :::
 
-Use clear, unique tool names to avoid collisions.
-
-## Human-in-the-loop
+  </Step>
+  <Step title="Add human-in-the-loop (Optional)" id="human-in-the-loop">
 
 Pause the agent before sensitive tool calls so a person can approve, edit, or reject them.
 
 :::python
-Set `interrupt_on` in the agent definition, and optionally set `permissions` to gate tool and filesystem access.
+Set `interrupt_on` in the agent definition, and optionally set `permissions` to gate tool and filesystem access:
 :::
 
 :::js
-Set `interruptOn` in the agent definition, and optionally set `permissions` to gate tool and filesystem access.
+Set `interruptOn` in the agent definition, and optionally set `permissions` to gate tool and filesystem access:
 :::
 
 :::python
@@ -183,7 +173,33 @@ The `interruptOn` field applies the same interrupt behavior as LangChain's [huma
 
 For decision types (approve, edit, reject), conditional interrupts, and permission rules, see the Deep Agents [Human-in-the-loop](/oss/deepagents/human-in-the-loop) and [Permissions](/oss/deepagents/permissions) guides.
 
-### Respond to an interrupt
+To resume a paused run, see [Respond to an interrupt](#respond-to-an-interrupt).
+
+  </Step>
+</Steps>
+
+## Use secrets and context
+
+Tools can read deployment secrets from environment variables. Put local values in `.env` for `mda dev`; `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets.
+
+For per-run values such as request metadata or feature flags, use the normal LangChain runtime context patterns for tools. See [how to access context from within your tools](/oss/langchain/tools#access-context).
+
+## Deployment
+
+`mda dev` and `mda deploy` copy project files into the compiled build, including modules under `tools/`. Tools are not synced to Context Hub; they ship with the agent code.
+
+## When to use tools
+
+| Concept | Kind | How it reaches the agent |
+| --- | --- | --- |
+| **Tools** | Application code | Import and pass in the agent definition |
+| **[MCP connectors](/langsmith/managed-deep-agents-mcp-connectors)** | Managed configuration | Declared under `connectors/`; no import into the agent entry |
+| **[Skills](/langsmith/managed-deep-agents-skills)** | Managed context | Procedures the agent loads when relevant |
+| **[Instructions](/langsmith/managed-deep-agents-instructions)** | Managed context | Always-on system prompt |
+
+For more information, see [Project structure](/langsmith/managed-deep-agents-project-structure).
+
+## Respond to an interrupt
 
 When a run hits an interrupt, it pauses and waits for a human response before continuing.
 
@@ -200,9 +216,3 @@ During public beta, Managed Deep Agents is CLI-first and programmatic invocation
 </Note>
 
 Human-in-the-loop needs durable thread state to pause and resume. The managed runtime owns the checkpointer, so no extra setup is required.
-
-## Use secrets and context
-
-Tools can read deployment secrets from environment variables. Put local values in `.env` for `mda dev`; `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets.
-
-For per-run values such as request metadata or feature flags, use the normal LangChain runtime context patterns for tools. See [how to access context from within your tools](/oss/langchain/tools#access-context).
