@@ -773,8 +773,16 @@ For block types and provider-specific requirements, see [Multimodal messages](/o
 #### Return a Command
 
 Return a @[`Command`] when the tool needs to update graph state (for example, setting user preferences or app state).
-You can return a `Command` with or without including a `ToolMessage`.
-If the model needs to see that the tool succeeded (for example, to confirm a preference change), include a `ToolMessage` in the update, using `runtime.tool_call_id` for the `tool_call_id` parameter.
+When the `Command` targets the current graph, include a `ToolMessage` in the update whose tool call ID matches the current tool call.
+Every tool call in the message history must have a corresponding `ToolMessage`.
+
+:::python
+Use `runtime.tool_call_id` for the `tool_call_id` parameter. `ToolNode` enforces this requirement: if the update has no `ToolMessage` matching the tool call, it raises a `ValueError`.
+:::
+
+:::js
+Use `runtime.toolCallId` for the `tool_call_id` parameter.
+:::
 
 :::python
 
@@ -832,17 +840,17 @@ Use this when:
     **Mixed parallel calls:** If the model calls a `return_direct=True` tool alongside tools that do not have `return_direct=True`, the agent does **not** exit after that step. It routes back to the model with every `ToolMessage` from the batch, so the model can reason over all results. `return_direct` only short-circuits the loop when every tool call in the step has `return_direct=True`.
 </Warning>
 
-#### Returning a Command with return_direct
-
-A tool with `return_direct=True` can also return a @[`Command`] to update graph state before the agent exits. Unlike a plain return value, a `Command` is not automatically converted into a `ToolMessage`. When targeting the current graph (`graph` is not set or is `None`), you **must** include a `ToolMessage` in `Command.update`: one entry matching the tool call's `tool_call_id`. Omitting it causes `ToolNode` to raise a `ValueError` because every `AIMessage` tool call must have a corresponding `ToolMessage` in the message history.
-
 :::python
+
+#### Return a Command with return_direct
+
+A tool with `return_direct=True` can also return a @[`Command`] to update graph state before the agent exits. Unlike a plain return value, a `Command` is not automatically converted into a `ToolMessage`. When the `Command` targets the current graph (`graph` is not set or is `None`), include a `ToolMessage` in `Command.update` matching the tool call's `tool_call_id`. Omitting it causes `ToolNode` to raise a `ValueError`, because every `AIMessage` tool call must have a corresponding `ToolMessage` in the message history.
 
 <ToolReturnDirectCommandPy />
 
-:::
-
 To write to a parent graph instead, set `graph=Command.PARENT`. In that case the `ToolMessage` requirement is lifted because execution leaves the current graph entirely.
+
+:::
 
 ### Error handling
 
