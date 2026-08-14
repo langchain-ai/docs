@@ -864,3 +864,88 @@ def test_llms_full_txt_splits_languages_and_inlines_snippets() -> None:
     assert "UNIQUE_SNIPPET_CONTENT" in py
     assert "UNIQUE_SNIPPET_CONTENT" in js
     assert "import SharedBlock" not in py
+
+
+def _write_index(build_dir: Path, name: str, body: str) -> None:
+    """Write an llms index file into a build directory for validator tests."""
+    path = build_dir / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
+def test_validate_llms_indexes_accepts_a_well_formed_index() -> None:
+    """Test that the validator passes a root plus section index that is correct."""
+    with file_system([]) as fs:
+        fs.build_dir.mkdir(parents=True, exist_ok=True)
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        site = builder._SITE_URL
+        _write_index(
+            fs.build_dir,
+            "llms.txt",
+            f"# Site\n\n- [A]({site}/a.md)\n- [Section]({site}/oss/llms.txt)\n",
+        )
+        _write_index(fs.build_dir, "oss/llms.txt", f"# Site\n\n- [B]({site}/b.md)\n")
+
+        builder._validate_llms_indexes(2)  # does not raise
+
+
+def test_validate_llms_indexes_rejects_oversized_root() -> None:
+    """Test that a root over the truncation threshold fails the build."""
+    with file_system([]) as fs:
+        fs.build_dir.mkdir(parents=True, exist_ok=True)
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        padding = "x" * builder._LLMS_MAX
+        _write_index(
+            fs.build_dir,
+            "llms.txt",
+            f"# Site\n\n{padding}\n- [A]({builder._SITE_URL}/a.md)\n",
+        )
+
+        with pytest.raises(ValueError, match="over the 50,000 threshold"):
+            builder._validate_llms_indexes(1)
+
+
+def test_validate_llms_indexes_rejects_second_level_nesting() -> None:
+    """Test that a section index linking to further .txt files fails.
+
+    Coverage walkers descend one level, so pages behind a second hop drop out
+    of the index entirely.
+    """
+    with file_system([]) as fs:
+        fs.build_dir.mkdir(parents=True, exist_ok=True)
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        site = builder._SITE_URL
+        _write_index(
+            fs.build_dir, "llms.txt", f"# Site\n\n- [S]({site}/oss/llms.txt)\n"
+        )
+        _write_index(
+            fs.build_dir,
+            "oss/llms.txt",
+            f"# Site\n\n- [A]({site}/a.md)\n- [Deeper]({site}/oss/py/llms.txt)\n",
+        )
+
+        with pytest.raises(ValueError, match="descend only one level"):
+            builder._validate_llms_indexes(1)
+
+
+def test_validate_llms_indexes_rejects_duplicate_and_missing_pages() -> None:
+    """Test that a page listed twice, or a page count mismatch, fails."""
+    with file_system([]) as fs:
+        fs.build_dir.mkdir(parents=True, exist_ok=True)
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        site = builder._SITE_URL
+        _write_index(
+            fs.build_dir, "llms.txt", f"# Site\n\n- [S]({site}/oss/llms.txt)\n"
+        )
+        _write_index(
+            fs.build_dir,
+            "oss/llms.txt",
+            f"# Site\n\n- [A]({site}/a.md)\n- [A again]({site}/a.md)\n",
+        )
+
+        with pytest.raises(ValueError, match="listed more than once"):
+            builder._validate_llms_indexes(1)
+
+        _write_index(fs.build_dir, "oss/llms.txt", f"# Site\n\n- [A]({site}/a.md)\n")
+        with pytest.raises(ValueError, match="but 5 were built"):
+            builder._validate_llms_indexes(5)

@@ -1138,6 +1138,10 @@ class DocumentationBuilder:
     # so a section does not cross it as pages are added between splits.
     _LLMS_SECTION_BUDGET = 40_000
 
+    # Size at which agent platforms start truncating an index. Every emitted
+    # file has to stay under it, not just the root.
+    _LLMS_MAX = 50_000
+
     # Page-path prefixes lifted out of the root llms-full.txt into their own
     # corpus file, with the label used to point at them from the root.
     _LLMS_FULL_SPLITS: ClassVar[list[tuple[str, str]]] = [
@@ -1336,6 +1340,78 @@ class DocumentationBuilder:
             ]
         )
         destination.write_text(body, encoding="utf-8")
+
+    def _validate_llms_indexes(self, expected_pages: int) -> None:
+        """Check the generated indexes against the invariants agents rely on.
+
+        These are properties of the emitted files, not of the code that emits
+        them, so they catch drift the unit tests cannot: a root that creeps
+        over the size threshold as pages are added, a section index that
+        accidentally nests, or a page that lands in two indexes or none.
+
+        Raises:
+            ValueError: If any invariant is violated.
+        """
+        root_path = self.build_dir / "llms.txt"
+        if not root_path.exists():
+            return
+
+        md_link = re.compile(r"\((https://\S+?\.md)\)")
+        txt_link = re.compile(r"\((https://\S+?llms[\w-]*\.txt)\)")
+
+        root = root_path.read_text(encoding="utf-8")
+        problems: list[str] = []
+
+        if len(root) > self._LLMS_MAX:
+            problems.append(
+                f"llms.txt is {len(root):,} characters, over the "
+                f"{self._LLMS_MAX:,} threshold agents truncate at"
+            )
+
+        urls = md_link.findall(root)
+        for url in txt_link.findall(root):
+            relative = url.removeprefix(f"{self._SITE_URL}/")
+            section_path = self.build_dir / relative
+            if not section_path.exists():
+                problems.append(f"{relative} is linked from llms.txt but missing")
+                continue
+            section = section_path.read_text(encoding="utf-8")
+            if len(section) > self._LLMS_MAX:
+                problems.append(
+                    f"{relative} is {len(section):,} characters, over the "
+                    f"{self._LLMS_MAX:,} threshold"
+                )
+            nested = txt_link.findall(section)
+            if nested:
+                problems.append(
+                    f"{relative} links to {len(nested)} further .txt files; "
+                    "coverage walkers descend only one level, so those pages "
+                    "would drop out of the index"
+                )
+            urls += md_link.findall(section)
+
+        duplicates = {url for url in urls if urls.count(url) > 1}
+        if duplicates:
+            sample = ", ".join(sorted(duplicates)[:3])
+            problems.append(f"{len(duplicates)} pages listed more than once: {sample}")
+
+        if len(set(urls)) != expected_pages:
+            problems.append(
+                f"indexes list {len(set(urls)):,} unique pages "
+                f"but {expected_pages:,} were built"
+            )
+
+        if problems:
+            detail = "\n  - ".join(problems)
+            msg = f"Generated llms.txt indexes are invalid:\n  - {detail}"
+            raise ValueError(msg)
+
+        logger.info(
+            "✅ llms.txt indexes valid: %d pages, root %d/%d characters",
+            expected_pages,
+            len(root),
+            self._LLMS_MAX,
+        )
 
     def _site_metadata(self) -> tuple[str, str]:
         """Return the site title and description from docs.json."""
@@ -1581,6 +1657,7 @@ class DocumentationBuilder:
             len(content),
             len(linked),
         )
+        self._validate_llms_indexes(page_count)
 
     def _copy_shared_files(self) -> None:
         """Copy files that should be shared between versions."""
