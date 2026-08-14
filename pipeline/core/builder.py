@@ -1127,6 +1127,14 @@ class DocumentationBuilder:
 
     _SITE_URL = "https://docs.langchain.com"
 
+    # A section smaller than this stays in the root file rather than becoming a
+    # separate fetch. Root stays far below the 50,000-character pass threshold.
+    _LLMS_INLINE_MAX = 8_000
+
+    # Per-section-file ceiling. Headroom under the 50,000-character threshold
+    # so a section does not cross it as pages are added between splits.
+    _LLMS_SECTION_BUDGET = 40_000
+
     @staticmethod
     def _slugify(value: str) -> str:
         """Lowercase, hyphenate, and strip a string for use in a URL path.
@@ -1253,6 +1261,68 @@ class DocumentationBuilder:
                     entries.append((label, f"{base}/{unique}", str(summary)))
         return entries
 
+    @staticmethod
+    def _common_directory(slugs: list[str]) -> str:
+        """Return the deepest directory shared by every slug, or "" if none."""
+        if not slugs:
+            return ""
+        parts = [slug.split("/")[:-1] for slug in slugs]
+        shared = parts[0]
+        for candidate in parts[1:]:
+            keep = 0
+            for a, b in zip(shared, candidate):
+                if a != b:
+                    break
+                keep += 1
+            shared = shared[:keep]
+            if not shared:
+                return ""
+        return "/".join(shared)
+
+    def _chunk_section(
+        self, prefix: str, lines: list[str]
+    ) -> list[tuple[str, list[str]]]:
+        """Split a section's lines into files that each stay under budget.
+
+        Returns (build-relative path, lines) pairs. Entries arrive sorted by
+        URL, so sequential chunking keeps pages from the same subtree together.
+        Every file sits exactly one directory level below the root index:
+        AFDocs's coverage walker descends one level into linked .txt files, and
+        anything deeper is dropped from the coverage denominator.
+        """
+        chunks: list[list[str]] = [[]]
+        size = 0
+        for line in lines:
+            if chunks[-1] and size + len(line) + 1 > self._LLMS_SECTION_BUDGET:
+                chunks.append([])
+                size = 0
+            chunks[-1].append(line)
+            size += len(line) + 1
+        return [
+            (f"{prefix}/llms.txt" if i == 0 else f"{prefix}/llms-{i + 1}.txt", chunk)
+            for i, chunk in enumerate(chunks)
+        ]
+
+    def _write_section_index(
+        self, path: str, title: str, label: str, lines: list[str]
+    ) -> None:
+        """Write one section-level llms.txt."""
+        destination = self.build_dir / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        body = "\n".join(
+            [
+                f"# {title}: {label}",
+                "",
+                f"> Markdown index of the {label} documentation.",
+                "",
+                f"## {label}",
+                "",
+                *lines,
+                "",
+            ]
+        )
+        destination.write_text(body, encoding="utf-8")
+
     def _generate_llms_txt(self) -> None:
         """Write a custom llms.txt listing every published page.
 
@@ -1271,8 +1341,8 @@ class DocumentationBuilder:
             except (OSError, json.JSONDecodeError):
                 logger.warning("Could not read docs.json for llms.txt metadata")
 
-        # section label -> list of "- [Title](url): description" lines
-        sections: dict[str, list[str]] = {}
+        # section label -> list of (slug, "- [Title](url): description") pairs
+        sections: dict[str, list[tuple[str, str]]] = {}
         page_count = 0
 
         for mdx in sorted(self.build_dir.rglob("*.mdx")):
@@ -1301,12 +1371,12 @@ class DocumentationBuilder:
             line = f"- [{name}]({url})"
             if summary:
                 line += f": {summary[:300]}"
-            sections.setdefault(label, []).append(line)
+            sections.setdefault(label, []).append((slug, line))
             page_count += 1
 
-        for group_label, slug, name in self._openapi_entries():
+        for group_label, api_slug, name in self._openapi_entries():
             sections.setdefault(group_label, []).append(
-                f"- [{name}]({self._SITE_URL}/{slug}.md)"
+                (api_slug, f"- [{name}]({self._SITE_URL}/{api_slug}.md)")
             )
             page_count += 1
 
@@ -1316,20 +1386,60 @@ class DocumentationBuilder:
 
         ordered = ["Docs", *[label for _, label in self._LLMS_SECTIONS]]
         ordered += [label for label in sections if label not in ordered]
+        ordered = [label for label in ordered if sections.get(label)]
+
+        inline: list[tuple[str, list[str]]] = []
+        linked: list[tuple[str, str, int]] = []  # (label, section path, page count)
+
+        for label in ordered:
+            entries = sections[label]
+            lines = [line for _, line in entries]
+            size = sum(len(line) + 1 for line in lines)
+            prefix = self._common_directory([slug for slug, _ in entries])
+            # Small sections ride along in the root file. That keeps real .md
+            # links in the canonical index for link sampling, and saves agents
+            # a fetch for a handful of pages. A section with no shared
+            # directory has nowhere to live but the root.
+            if not prefix or size <= self._LLMS_INLINE_MAX:
+                inline.append((label, lines))
+            else:
+                for path, chunk in self._chunk_section(prefix, lines):
+                    self._write_section_index(path, title, label, chunk)
+                    linked.append((label, path, len(chunk)))
 
         out = [f"# {title}", ""]
         if description:
             out += [f"> {description}", ""]
-        for label in ordered:
-            lines = sections.get(label)
-            if not lines:
-                continue
+        if linked:
+            out += [
+                "Each section index below lists the markdown version of every "
+                "page in that section.",
+                "",
+                "## Section indexes",
+                "",
+            ]
+            seen_labels: dict[str, int] = {}
+            for label, path, count in linked:
+                seen_labels[label] = seen_labels.get(label, 0) + 1
+                suffix = (
+                    f" (part {seen_labels[label]})"
+                    if sum(1 for entry in linked if entry[0] == label) > 1
+                    else ""
+                )
+                out.append(
+                    f"- [{label}{suffix}]({self._SITE_URL}/{path}): {count} pages"
+                )
+            out.append("")
+        for label, lines in inline:
             out += [f"## {label}", "", *lines, ""]
 
         content = "\n".join(out)
         (self.build_dir / "llms.txt").write_text(content, encoding="utf-8")
         logger.info(
-            "✅ llms.txt written: %d pages, %d characters", page_count, len(content)
+            "✅ llms.txt written: %d pages, %d characters in root, %d section indexes",
+            page_count,
+            len(content),
+            len(linked),
         )
 
     def _copy_shared_files(self) -> None:

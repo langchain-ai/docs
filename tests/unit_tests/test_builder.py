@@ -6,6 +6,7 @@ directory structure preservation, and error conditions.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -774,3 +775,45 @@ def test_openapi_entries_skip_hidden_and_number_duplicates() -> None:
         slugs = [slug for _, slug, _ in builder._openapi_entries()]
 
     assert slugs == ["langsmith/api/orgs/get-info", "langsmith/api/orgs/get-info-1"]
+
+
+def test_llms_txt_splits_large_sections_into_section_indexes() -> None:
+    """Test that a large section becomes linked section files, not root bulk.
+
+    AFDocs passes `llms-txt-size` only under 50,000 characters, and its
+    coverage walker descends exactly one level into linked .txt files, so
+    section indexes must sit one hop from the root and must not nest further.
+    """
+    files: list[File] = [
+        {
+            "path": f"langsmith/page-{i:03d}.mdx",
+            "content": (
+                f"---\ntitle: Page {i}\ndescription: {'x' * 250}\n---\n\nBody.\n"
+            ),
+        }
+        for i in range(400)
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+
+        root = (fs.build_dir / "llms.txt").read_text(encoding="utf-8")
+        sections = sorted(
+            p.name for p in (fs.build_dir / "langsmith").glob("llms*.txt")
+        )
+
+        # Root stays under the pass threshold and delegates to section files.
+        assert len(root) < 50_000
+        assert sections, "expected at least one section index"
+        for name in sections:
+            section = (fs.build_dir / "langsmith" / name).read_text(encoding="utf-8")
+            assert len(section) < 50_000
+            assert "llms.txt" not in section.replace("# ", ""), "must not nest deeper"
+            assert f"({builder._SITE_URL}/langsmith/{name})" in root
+
+        # Every page is listed exactly once across root plus sections.
+        listed = re.findall(r"\((https://\S+?\.md)\)", root)
+        for name in sections:
+            body = (fs.build_dir / "langsmith" / name).read_text(encoding="utf-8")
+            listed += re.findall(r"\((https://\S+?\.md)\)", body)
+        assert len(listed) == len(set(listed)) == 400
