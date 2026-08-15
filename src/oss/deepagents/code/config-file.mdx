@@ -52,24 +52,20 @@ session_cost_threshold_usd = 25
 Anthropic and OpenAI cache the conversation prefix between turns, so a follow-up sent while the cache is warm re-processes only new tokens. That cache expires after a provider-specific idle window. When an interactive chat message would be sent to a thread whose cache has likely expired (or whose model or cache settings changed since the last turn), Deep Agents Code estimates the re-warm cost and, if it reaches a threshold, asks before sending:
 
 - **Send anyway**: send this turn; the warning still appears on future cold-cache turns.
-- **Send and don't warn again this session**: send this turn and mute the warning until the app restarts.
-- **Send and never warn again**: send this turn and persistently suppress the warning by adding `cold-cache` to `[warnings].suppress` in `config.toml`. Re-enable it from the `/notifications` settings screen.
+- **Send and don't warn again this session**: mute the warning until the app restarts.
+- **Send and never warn again**: persistently suppress the warning. Re-enable it from the `/notifications` settings screen.
 - **Don't send (keep draft)**: restore the message to the chat input so you can `/clear` first.
 
-Use the arrow keys or `Tab` to move between choices, `Enter` to select, and `Esc` to cancel.
+The warning fires only for Anthropic and OpenAI models on endpoints with a documented cache policy:
 
-The estimate prices the current context against the provider's documented cache behavior, so the warning fires only when the endpoint and retention window are known:
+| Provider | Condition | Retention window |
+|----------|-----------|------------------|
+| Anthropic | Any | 5 minutes |
+| OpenAI | GPT-5.6 or newer | 30 minutes |
+| OpenAI | `prompt_cache_retention: in_memory` | 1 hour |
+| OpenAI | `prompt_cache_retention: 24h` | 24 hours |
 
-| Provider | Condition | Retention window | Warning wording |
-|----------|-----------|------------------|-----------------|
-| Anthropic | Any | 5 minutes | "likely expired" |
-| OpenAI | GPT-5.6 or newer | 30 minutes (documented minimum) | "may be cold" |
-| OpenAI | `prompt_cache_retention: in_memory` | 1 hour | "likely expired" |
-| OpenAI | `prompt_cache_retention: 24h` | 24 hours | "likely expired" |
-
-A 30-minute window is a guaranteed minimum that OpenAI may exceed, so past it the cache is only "may be cold". The other windows are documented maximums, so past them the entry is gone. For Anthropic, the window is always 5 minutes: Deep Agents Code's prompt-caching middleware sets the `cache_control` TTL itself, so a `cache_control.ttl` value in [model constructor params](#model-constructor-params) never reaches the API.
-
-The warning is skipped entirely for slash commands, prompts sent programmatically (for example, through [ACP](/oss/deepagents/acp) from an editor), contexts below the provider's minimum cacheable size, custom endpoints that are not [trusted](#trust-a-gateway-endpoint-for-cache-policies), and models without pricing information. When the warning cannot be displayed, the message is not sent and the draft is restored instead.
+Slash commands and programmatic prompts (for example, through [ACP](/oss/deepagents/acp)) never trigger the warning.
 
 Set the minimum estimated extra cost (cold versus warm cache) that triggers the warning, in USD. The default is `0.50`; set it to `0` to disable:
 
@@ -80,16 +76,14 @@ cold_cache_min_delta_usd = 1.00
 
 ### Trust a gateway endpoint for cache policies
 
-If requests reach the provider through a gateway or corporate proxy instead of the official API, the cold-cache warning stays silent, because the warning's dollar estimates are only accurate when the endpoint forwards cache settings (`cache_control`, `prompt_cache_key`, `prompt_cache_retention`) untouched and honors the provider's documented retention. Declare the endpoints you have verified with `[warnings].trusted_cache_endpoints`:
+If requests reach the provider through a gateway or proxy instead of the official API, the cold-cache warning stays silent. Declaring an endpoint trusted asserts that it forwards cache settings untouched and honors the provider's documented retention:
 
 ```toml title="~/.deepagents/config.toml"
 [warnings]
 trusted_cache_endpoints = ["smith.langchain.com"]
 ```
 
-Entries are hostnames (full `http(s)` URLs are also accepted and reduced to their host). Matching is per exact host: trusting `example.com` does not trust `gw.example.com`, so list each host requests may actually reach. One entry covers every provider routed through that endpoint. Malformed entries are ignored and logged.
-
-One case stays silent even on a trusted endpoint: the LangSmith gateway can translate between API formats, such as an OpenAI-format request answered by an Anthropic model (the model name carries a cross-provider prefix like `anthropic/claude-...` in OpenAI format). Translation rewrites or drops the cache settings the estimate assumes, so Deep Agents Code skips the warning for cross-format routes rather than show numbers built on wrong assumptions. Same-format routes are forwarded untranslated, and their warnings are exactly as accurate as going direct.
+Entries are hostnames matched exactly — trusting `example.com` does not trust `gw.example.com`. One entry covers every provider routed through that endpoint. Cross-format routes through the LangSmith gateway (for example, an OpenAI-format request routed to an Anthropic model) stay silent even when trusted, because translation rewrites the cache settings the estimate assumes.
 
 ## Diff line numbers
 
