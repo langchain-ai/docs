@@ -153,6 +153,107 @@ const response = await client.responses.create({
 
 </CodeGroup>
 
+## Enable prompt caching
+
+OpenAI models (Chat Completions and Responses) support implicit prompt caching automatically, no extra parameters are required.
+
+Anthropic models and some older OpenAI models require explicit opt-in to prompt caching. Pass provider-specific fields in your request body when calling these models through any standard gateway endpoint.
+
+<Note>
+Explicit caching support is a temporary measure while a gateway-level caching policy is being developed. The following fields are passed through to the upstream provider.
+</Note>
+
+### Anthropic models
+
+Include `prompt_cache_options` with a `ttl` value:
+
+<CodeGroup>
+
+```bash cURL
+curl https://gateway.smith.langchain.com/v1/responses \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "anthropic/claude-opus-5",
+      "input": "Hello!",
+      "prompt_cache_options": {"ttl": "30m"}
+    }'
+```
+
+```python Python
+import os
+
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://gateway.smith.langchain.com/v1",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+response = client.responses.create(
+    model="anthropic/claude-opus-5",
+    input="Hello!",
+    extra_body={"prompt_cache_options": {"ttl": "30m"}},
+)
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://gateway.smith.langchain.com/v1",
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+const response = await client.responses.create({
+  model: "anthropic/claude-opus-5",
+  input: "Hello!",
+  // @ts-ignore — provider-specific field
+  prompt_cache_options: { ttl: "30m" },
+});
+```
+
+</CodeGroup>
+
+The same field works with the Chat Completions endpoint:
+
+```bash cURL
+curl https://gateway.smith.langchain.com/v1/chat/completions \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "anthropic/claude-opus-5",
+      "messages": [{"role": "user", "content": "Hello!"}],
+      "prompt_cache_options": {"ttl": "30m"}
+    }'
+```
+
+### Older OpenAI models
+
+Some older OpenAI models support explicit cache control via `prompt_cache_retention`. Set it to `"in_memory"` for most models. For `gpt-5.5` specifically, use `"24h"`:
+
+```bash cURL (most older models)
+curl https://gateway.smith.langchain.com/v1/responses \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "openai/gpt-5.4-mini",
+      "input": "Hello!",
+      "prompt_cache_retention": "in_memory"
+    }'
+```
+
+```bash cURL (gpt-5.5 specifically)
+curl https://gateway.smith.langchain.com/v1/responses \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "openai/gpt-5.5",
+      "input": "Hello!",
+      "prompt_cache_retention": "24h"
+    }'
+```
+
+For full `prompt_cache_retention` documentation, see the [OpenAI prompt caching guide](https://developers.openai.com/api/docs/guides/prompt-caching#prompt-cache-retention).
+
 ## Understand translation behavior
 
 The endpoint determines the format your application sends and receives. The model ID determines the upstream provider.
@@ -198,6 +299,107 @@ Replace `gateway.smith.langchain.com` with the hostname for your LangSmith regio
 | AWS US | `aws.gateway.smith.langchain.com` |
 
 Keep the same path for the selected API format.
+
+## Use a BYOC data plane
+
+The LLM Gateway is also available on [BYOC](/langsmith/byoc), where it runs inside your data plane so model requests and their traces stay in your VPC. Replace the gateway hostname with your [data plane endpoint](/langsmith/byoc-usage#find-your-data-plane-endpoint) and prefix the path with `/gateway`:
+
+| API format | Base URL | Prompt endpoint |
+| --- | --- | --- |
+| OpenAI Chat Completions | `https://<data_plane_host>/gateway/v1` | `POST /chat/completions` |
+| Anthropic Messages | `https://<data_plane_host>/gateway` | `POST /v1/messages` |
+| OpenAI Responses | `https://<data_plane_host>/gateway/v1` | `POST /responses` |
+
+Authenticate with an API key scoped to a workspace in that data plane. Pass it as an `Authorization: Bearer` token:
+
+<CodeGroup>
+
+```bash cURL
+curl https://<data_plane_host>/gateway/v1/chat/completions \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"anthropic/claude-sonnet-4-6","messages":[{"role":"user","content":"Hello!"}]}'
+```
+
+```python Python
+import os
+
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://<data_plane_host>/gateway/v1",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+response = client.chat.completions.create(
+    model="anthropic/claude-sonnet-4-6",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://<data_plane_host>/gateway/v1",
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+const response = await client.chat.completions.create({
+  model: "anthropic/claude-sonnet-4-6",
+  messages: [{ role: "user", content: "Hello!" }],
+});
+```
+
+</CodeGroup>
+
+Or pass it as the provider API key. For example, an Anthropic Messages request sends the key in the `X-Api-Key` header:
+
+<CodeGroup>
+
+```bash cURL
+curl https://<data_plane_host>/gateway/v1/messages \
+    -H "X-Api-Key: $LANGSMITH_API_KEY" \
+    -H "Anthropic-Version: 2023-06-01" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"openai/gpt-5.4-mini","max_tokens":1024,"messages":[{"role":"user","content":"Hello!"}]}'
+```
+
+```python Python
+import os
+
+import anthropic
+
+client = anthropic.Anthropic(
+    base_url="https://<data_plane_host>/gateway",
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+message = client.messages.create(
+    model="openai/gpt-5.4-mini",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+```
+
+```typescript TypeScript
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  baseURL: "https://<data_plane_host>/gateway",
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+const message = await client.messages.create({
+  model: "openai/gpt-5.4-mini",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Hello!" }],
+});
+```
+
+</CodeGroup>
+
+Provider secrets, model IDs, policies, and tracing behave the same as on Cloud.
+
+<Warning>
+Data planes are provisioned with a private endpoint by default, so you need private connectivity to reach the base URL, such as Tailscale, AWS PrivateLink, or VPC peering.
+</Warning>
 
 ## Handle errors
 

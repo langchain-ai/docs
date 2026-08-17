@@ -1,84 +1,193 @@
 ---
 title: Managed Deep Agents
 sidebarTitle: Overview
-description: Overview of Managed Deep Agents private beta features, workflows, and limits.
+description: Build your agent as a directory of files while LangSmith runs the harness and runtime.
 ---
 
-import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
-import ManagedDeepAgentsNextSteps from '/snippets/langsmith/managed-deep-agents-next-steps.mdx';
+Managed Deep Agents (MDA) is the simplest way to build and deploy production agents. You focus on what your agent does. MDA runs it. There are no servers to run and no infrastructure to wire together.
 
-Managed Deep Agents is a hosted runtime for deploying and operating code-first Deep Agents in LangSmith, pairing the [Deep Agents](/oss/deepagents/overview) harness with managed infrastructure. It lets you run a production agent without standing up your own agent server or infrastructure. You author an agent in Python or TypeScript, then use the `mda` CLI to test and deploy it to the managed runtime.
+You write the agent's intelligence: its instructions, the tools it can call, the skills it follows, and you select the model that drives it. MDA provides everything underneath:
 
-The managed runtime provides:
+- **The Deep Agents harness**: The agent loop that plans, calls tools, manages a filesystem, and delegates to subagents. See [Deep Agents](/oss/deepagents/overview).
+- **A managed runtime**: LangSmith Agent Server hosts and operates the agent, and keeps sessions running across restarts.
 
-- Durable runs
-- [LangSmith sandboxes](/langsmith/sandboxes)
-- [Context Hub](/langsmith/use-the-context-hub)-backed instructions, skills, and memory
-- Traces
-- Hosted LangGraph deployment
+```mermaid actions={false}
+%%{init: {"theme": "base", "themeVariables": {"lineColor": "#40668D", "primaryColor": "#E5F4FF", "primaryTextColor": "#030710", "primaryBorderColor": "#006DDD"}}}%%
+flowchart LR
+    subgraph you["You provide"]
+        Logic["<div style='text-align:left'>Business logic<br/>- Instructions<br/>- Tools<br/>- Skills<br/>- Model</div>"]
+    end
+    subgraph mda["Managed Deep Agents"]
+        direction TB
+        Harness["<div style='text-align:left'>Deep Agents harness<br/>- Agent loop<br/>- Filesystem<br/>- Subagents</div>"]
+        Runtime["<div style='text-align:left'>Managed runtime<br/>- Agent Server<br/>- Sandboxes<br/>- Schedules</div>"]
+        Harness --> Runtime
+    end
 
-To deploy your first agent, see the [quickstart](/langsmith/managed-deep-agents-quickstart).
+    Logic --> mda
 
-<Note>
-<ManagedDeepAgentsPrivateBetaNote />
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
+    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
 
-**Private beta access:** During private beta, Managed Deep Agents is CLI-first while LangChain finalizes the supported API. API-driven creation, update, and invocation examples have been removed. To use agents programmatically, contact your LangChain team at the address in your beta access email.
-</Note>
+    class Logic trigger
+    class Harness process
+    class Runtime output
 
-## When to use Managed Deep Agents
+    style you fill:none,stroke:#40668D,stroke-width:1px
+    style mda fill:none,stroke:#40668D,stroke-width:1px
+```
 
-Choose the path that matches your control and infrastructure needs:
+## Example agent
 
-| Path | Use when | You manage | LangSmith manages |
-|------|----------|------------|-------------------|
-| **Managed Deep Agents** | You want a code-first Deep Agent deployed quickly on managed infrastructure. | Agent code, tools, middleware, instructions, schedules, optional identity. | Backend, store, checkpointer, memory, skills, sandbox, hosted deployment, identity auth when declared. |
-| **[LangSmith Deployment](/langsmith/deployment-quickstart)** | You need custom application code, custom routes, advanced authentication, stronger isolation controls, or maximum scalability. | Application code, server, deployment configuration. | Hosted infrastructure and scaling. |
-| **[OSS Deep Agents](/oss/deepagents/overview)** | You want to run the Deep Agents harness in your own environment. | Everything, including hosting and persistence. | Nothing (self-managed). |
+A managed deep agent consists of a project folder that contains the business logic for its behavior:
 
-## Structure your agent project
+:::python
+<Tabs>
+  <Tab title="Model & Configuration">
+```python agent.py
+from managed_deepagents import define_deep_agent
 
-You organize a Managed Deep Agent as a local project directory. A file's location determines its role: the CLI reads the directory to find the agent entry, managed instructions, skills, connectors, channels, schedules, optional identity, sandbox configuration, and local eval tasks, then packages the deploy-owned pieces into a hosted deployment.
+from middleware.audit import log_tool_calls
+from tools.search import internet_search
 
-For the full directory layout and packaging rules, see the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference). For how the CLI compiles this directory and what a deploy creates, see [How Managed Deep Agents work](/langsmith/managed-deep-agents-how-it-works).
+agent = define_deep_agent(
+    name="research-assistant",
+    model="openai:gpt-5.5",
+    tools=[internet_search],
+    middleware=[log_tool_calls],
+)
+```
+  </Tab>
+  <Tab title="Instructions">
+```markdown instructions.md
+# Assistant
 
-## Recommended workflow
+You are a helpful assistant.
+```
+  </Tab>
+  <Tab title="Skills">
+```markdown skills/research/SKILL.md
+---
+name: research
+description: Gather and synthesize context before answering complex questions.
+---
 
-1. Install `managed-deepagents` for Python or TypeScript.
-2. Create a local code-first agent project with `mda init`.
-3. Put the agent system prompt in `instructions.md`.
-4. Add authored tools, middleware, schedules, skills, connectors, messaging channels, optional identity, and an optional sandbox.
-5. Optionally compile Harbor-style [evals](/langsmith/managed-deep-agents-evals) with `mda evals compile` and run them with Harbor.
-6. Use `mda dev` to test your agent locally in LangSmith Studio, then `mda deploy` to deploy to LangSmith.
-7. Inspect the deployment, traces, and runtime state in LangSmith.
+# Research
 
-New to Managed Deep Agents? Start with the [quickstart](/langsmith/managed-deep-agents-quickstart), then build a complete agent step by step in the [tutorial](/langsmith/managed-deep-agents-tutorial).
+Use this skill when a task needs more than a direct answer.
 
-## Beta notes and limits
+1. Identify what information is missing.
+2. Search LangChain docs when the question is about LangChain, LangGraph, or LangSmith.
+3. Summarize findings before responding to the user.
+```
+  </Tab>
+  <Tab title="Tools">
+```python tools/search.py
+from langchain.tools import tool
 
-Operational notes that apply during private beta. Behavior may change before general availability.
 
-### Supported models
+@tool(parse_docstring=True)
+def internet_search(query: str) -> str:
+    """Search the internet for relevant sources.
 
-Pass model identifiers in the form `{provider}:{model_id}`. For example, `openai:gpt-5.5`. The runtime resolves models with `init_chat_model`, so any provider that `init_chat_model` supports is usable from Managed Deep Agents, as long as the runtime has credentials for that provider. See [Supported providers and models](/oss/langchain/models#supported-providers-and-models) for the current list.
+    Args:
+        query: The search query.
+    """
+    return f"Results for: {query}"
+```
+  </Tab>
+  <Tab title="Middleware">
+```python middleware/audit.py
+from collections.abc import Awaitable, Callable
 
-Put local keys in `.env`, export them in your shell, or configure them as LangSmith workspace secrets before deploying.
+from langchain.agents.middleware import wrap_tool_call
+from langchain.messages import ToolMessage
+from langchain.tools.tool_node import ToolCallRequest
+from langgraph.types import Command
 
-### Context Hub memory
 
-Managed memory lives in the same Context Hub repo as the deployed instructions and skills. The runtime remounts one Hub slice as `/memories/user/` (hot `/memories/user/AGENTS.md`, cold files under that mount) and optional org facts as `/memories/org/` (read-only). Deploy syncs `instructions.md` and `skills/**`, but preserves existing `memories/**` and does not overwrite runtime-created memory. Set `disableMemory: true` or `disable_memory=True` to disable managed memory. For more information about hot/cold tiers, identity remounts, and org memory, see [Memory](/langsmith/managed-deep-agents-memory). To partition memory per caller, see [Identity](/langsmith/managed-deep-agents-identity).
+@wrap_tool_call
+async def log_tool_calls(
+    request: ToolCallRequest,
+    handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
+) -> ToolMessage | Command:
+    print(f"Calling tool: {request.tool_call['name']}")
+    result = await handler(request)
+    print(f"Finished tool: {request.tool_call['name']}")
+    return result
+```
+  </Tab>
+  <Tab title="MCP Connectors">
+```python connectors/mcp.py
+from managed_deepagents import connectors
 
-### Rate limits and quotas
+connector = connectors.mcp(
+    mcp_servers={
+        "langchainDocs": {
+            "transport": "http",
+            "url": "https://docs.langchain.com/mcp",
+            "include_tools": ["search_docs_by_lang_chain"],
+        },
+    },
+)
+```
+  </Tab>
+</Tabs>
+:::
 
-During private beta, Managed Deep Agents does not publish per-key, per-workspace, or per-agent request rate limits. For workspace-specific limits, contact your LangChain team at the address in your beta access email.
+When you upload this folder with the `mda` CLI, it will automatically run on managed LangSmith infrastructure.
+You provide the business logic, and Managed Deep Agents provides the agent harness and production infrastructure.
 
-### Support and feedback
+To get started, see the [Managed Deep Agents quickstart](/langsmith/managed-deep-agents-quickstart).
 
-Beta access includes direct support. The contact for bug reports and feature requests is included in the email you receive when access is granted.
+## Core capabilities
 
-### Private beta scope
+Each part of the agent maps to a file or directory. Add the ones your agent needs:
 
-Managed Deep Agents is available on LangSmith Cloud in the US region only during private beta. Self-hosted and Hybrid deployments are not supported.
+:::python
+| Capability | Path | Description |
+| --- | --- | --- |
+| [Model and configuration](/langsmith/managed-deep-agents-agent-definition) | `agent.py` | The model and core options. Required. |
+| [Instructions](/langsmith/managed-deep-agents-instructions) | `instructions.md` | The system prompt that defines how the agent behaves. |
+| [Skills](/langsmith/managed-deep-agents-skills) | `skills/` | Task-specific playbooks the agent loads when they are relevant. |
+| [Tools](/langsmith/managed-deep-agents-tools) | `tools/` | Functions the agent calls to run your application logic or reach external services. |
+| [MCP connectors](/langsmith/managed-deep-agents-mcp-connectors) | `connectors/` | Remote MCP servers that provide tools to the agent. |
+| [Middleware](/langsmith/managed-deep-agents-middleware) | `middleware/` | Custom logic that runs around model and tool calls. |
+| [Sandbox](/langsmith/managed-deep-agents-sandboxes) | `sandbox/` | An isolated filesystem and shell for running agent-written code. |
+| [Memory](/langsmith/managed-deep-agents-memory) | `memory.py` | Preferences and knowledge that persist across threads. |
+| [Identity](/langsmith/managed-deep-agents-identity) | `identity.py` | Per-caller private threads, memory, and credentials for multi-user deployments. |
+| [Channels](/langsmith/managed-deep-agents-channels) | `channels/` | Connections to messaging services, such as Slack, that start runs and receive responses. |
+| [Schedules](/langsmith/managed-deep-agents-schedules) | `schedules/` | Managed cron schedules that run the agent on a recurring basis. |
+| [Evals](/langsmith/managed-deep-agents-evals) | `evals/` | Harbor-style tasks that test the agent. |
+:::
+
+:::js
+| Capability | Path | Description |
+| --- | --- | --- |
+| [Model and configuration](/langsmith/managed-deep-agents-agent-definition) | `agent.ts` | The model and core options. Required. |
+| [Instructions](/langsmith/managed-deep-agents-instructions) | `instructions.md` | The system prompt that defines how the agent behaves. |
+| [Skills](/langsmith/managed-deep-agents-skills) | `skills/` | Task-specific playbooks the agent loads when they are relevant. |
+| [Tools](/langsmith/managed-deep-agents-tools) | `tools/` | Functions the agent calls to run your application logic or reach external services. |
+| [MCP connectors](/langsmith/managed-deep-agents-mcp-connectors) | `connectors/` | Remote MCP servers that provide tools to the agent. |
+| [Middleware](/langsmith/managed-deep-agents-middleware) | `middleware/` | Custom logic that runs around model and tool calls. |
+| [Sandbox](/langsmith/managed-deep-agents-sandboxes) | `sandbox/` | An isolated filesystem and shell for running agent-written code. |
+| [Memory](/langsmith/managed-deep-agents-memory) | `memory.ts` | Preferences and knowledge that persist across threads. |
+| [Identity](/langsmith/managed-deep-agents-identity) | `identity.ts` | Per-caller private threads, memory, and credentials for multi-user deployments. |
+| [Channels](/langsmith/managed-deep-agents-channels) | `channels/` | Connections to messaging services, such as Slack, that start runs and receive responses. |
+| [Schedules](/langsmith/managed-deep-agents-schedules) | `schedules/` | Managed cron schedules that run the agent on a recurring basis. |
+| [Evals](/langsmith/managed-deep-agents-evals) | `evals/` | Harbor-style tasks that test the agent. |
+:::
+
+For the full layout, see [Project structure](/langsmith/managed-deep-agents-project-structure).
 
 ## Next steps
 
-<ManagedDeepAgentsNextSteps />
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/langsmith/managed-deep-agents-quickstart">
+    Create and deploy your first Managed Deep Agent with the `mda` CLI.
+  </Card>
+  <Card title="Tutorial" icon="book" href="/langsmith/managed-deep-agents-tutorial">
+    Add a custom search tool, durable memory, and a daily schedule.
+  </Card>
+</CardGroup>

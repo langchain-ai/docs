@@ -1,37 +1,57 @@
 ---
 title: Add custom tools to Managed Deep Agents
-sidebarTitle: Custom tools
+sidebarTitle: Tools
 description: Define authored tools for Managed Deep Agents projects.
 ---
 
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-Managed Deep Agents support the normal Deep Agents `tools` configuration surface. Define LangChain tools in your project, import them into `agent.py` or `agent.ts`, and pass them to `define_deep_agent` or `defineDeepAgent`.
+Managed Deep Agents support the normal Deep Agents `tools` configuration surface.
 
-<Note>
+:::python
+Define LangChain tools in your project, import them into `agent.py`, and pass them to `define_deep_agent`.
+:::
+
+:::js
+Define LangChain tools in your project, import them into `agent.ts`, and pass them to `defineDeepAgent`.
+:::
+
+To load tools from a remote MCP server instead, use an [MCP connector](/langsmith/managed-deep-agents-mcp-connectors).
+
 <ManagedDeepAgentsPrivateBetaNote />
-</Note>
 
-## Authored tools and connector tools
+## Project structure
 
-Managed Deep Agents can use two kinds of tools:
+Keep the agent entry point at the project root and authored tools under `tools/`:
 
-| Tool source | Where you configure it | Runtime behavior |
-| --- | --- | --- |
-| Authored tools | `agent.py` or `agent.ts` imports from your project source | Managed Deep Agents copies the source into the compiled build and passes the tools to Deep Agents. |
-| MCP connector tools | `connectors/mcp.py` or `connectors/mcp.ts` | Managed Deep Agents loads remote MCP tools at runtime and appends them to authored tools. |
+:::python
+```text
+my-agent/
+  agent.py
+  tools/
+    customer.py
+```
+:::
 
-Use authored tools for business logic, private APIs, database access, and other code that belongs in your agent project. Use [MCP connectors](/langsmith/managed-deep-agents-connectors/mcp) when the tool surface is exposed by a remote MCP server.
+:::js
+```text
+my-agent/
+  agent.ts
+  tools/
+    customer.ts
+```
+:::
+
+## Add authored tools
+
+Use authored tools for business logic, private APIs, database access, and other code that belongs in your agent project. Managed Deep Agents copies the source into the compiled build and passes the tools to Deep Agents.
 
 For more about LangChain tool definitions, see [Tools](/oss/langchain/tools).
 
 ## Add a tool module
 
-Put custom tool code under `tools/` in your project and import it from the agent entry. For the full project layout, see the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference).
-
-<CodeGroup>
-
+:::python
 ```python tools/customer.py
 from langchain.tools import tool
 
@@ -45,7 +65,9 @@ def lookup_customer(customer_id: str) -> str:
     """
     return f"Customer {customer_id} is on the enterprise plan."
 ```
+:::
 
+:::js
 ```ts tools/customer.ts
 import { tool } from "langchain";
 import { z } from "zod";
@@ -61,15 +83,13 @@ export const lookupCustomer = tool(
   },
 );
 ```
-
-</CodeGroup>
+:::
 
 ## Attach tools to the agent
 
 Import the tools into the project-root agent entry and pass them in the `tools` list.
 
-<CodeGroup>
-
+:::python
 ```python agent.py
 from managed_deepagents import define_deep_agent
 
@@ -81,7 +101,9 @@ agent = define_deep_agent(
     tools=[lookup_customer],
 )
 ```
+:::
 
+:::js
 ```ts agent.ts
 import { defineDeepAgent } from "managed-deepagents";
 
@@ -93,23 +115,94 @@ export const agent = defineDeepAgent({
   tools: [lookupCustomer],
 });
 ```
+:::
 
-</CodeGroup>
+`mda dev` and `mda deploy` copy the project files into the compiled build.
 
-`mda dev` and `mda deploy` copy the project files into the compiled build. Your imports should work the same way they do in a normal local Python or TypeScript project.
+:::python
+Your imports should work the same way they do in a normal local Python project.
+:::
 
-<Tip>
-Use clear, unique tool names. MCP connector tools are appended after authored tools, and connector names are prefixed by default to avoid collisions.
-</Tip>
+:::js
+Your imports should work the same way they do in a normal local TypeScript project.
+:::
+
+Use clear, unique tool names to avoid collisions.
+
+## Human-in-the-loop
+
+Pause the agent before sensitive tool calls so a person can approve, edit, or reject them.
+
+:::python
+Set `interrupt_on` in the agent definition, and optionally set `permissions` to gate tool and filesystem access.
+:::
+
+:::js
+Set `interruptOn` in the agent definition, and optionally set `permissions` to gate tool and filesystem access.
+:::
+
+:::python
+```python agent.py
+from managed_deepagents import define_deep_agent
+
+from tools.customer import lookup_customer
+
+agent = define_deep_agent(
+    name="support-agent",
+    model="openai:gpt-5.5",
+    tools=[lookup_customer],
+    interrupt_on={"lookup_customer": True},
+)
+```
+:::
+
+:::js
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
+
+import { lookupCustomer } from "./tools/customer";
+
+export const agent = defineDeepAgent({
+  name: "support-agent",
+  model: "openai:gpt-5.5",
+  tools: [lookupCustomer],
+  interruptOn: {
+    lookup_customer: true,
+  },
+});
+```
+:::
+
+:::python
+The `interrupt_on` field applies the same interrupt behavior as LangChain's [human-in-the-loop middleware](/oss/langchain/guardrails#human-in-the-loop).
+:::
+
+:::js
+The `interruptOn` field applies the same interrupt behavior as LangChain's [human-in-the-loop middleware](/oss/langchain/guardrails#human-in-the-loop).
+:::
+
+For decision types (approve, edit, reject), conditional interrupts, and permission rules, see the Deep Agents [Human-in-the-loop](/oss/deepagents/human-in-the-loop) and [Permissions](/oss/deepagents/permissions) guides.
+
+### Respond to an interrupt
+
+When a run hits an interrupt, it pauses and waits for a human response before continuing.
+
+- **During local development**, `mda dev` runs the agent in LangSmith Studio, which surfaces the interrupt so you can inspect the pending tool call and resume the run.
+:::python
+- **On a deployed agent**, resume the paused run through the LangGraph server API with a `Command(resume=...)` payload. See [Human-in-the-loop using server API](/langsmith/add-human-in-the-loop).
+:::
+:::js
+- **On a deployed agent**, resume the paused run through the LangGraph server API with a resume payload. See [Human-in-the-loop using server API](/langsmith/add-human-in-the-loop).
+:::
+
+<Note>
+During public beta, Managed Deep Agents is CLI-first and programmatic invocation is not yet documented. To resume runs programmatically from your own application, contact your LangChain team.
+</Note>
+
+Human-in-the-loop needs durable thread state to pause and resume. The managed runtime owns the checkpointer, so no extra setup is required.
 
 ## Use secrets and context
 
 Tools can read deployment secrets from environment variables. Put local values in `.env` for `mda dev`; `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets.
 
-When the project declares [identity](/langsmith/managed-deep-agents-identity), tools and middleware receive a frozen `runtime.identity` envelope for the authenticated caller. Prefer that over client-supplied configurable keys for actor or tenant ids.
-
-For other per-run values such as request metadata or feature flags, use the normal LangChain runtime context patterns for tools. See [how to access context from within your tools](/oss/langchain/tools#access-context).
-
-## Test and deploy
-
-<ManagedDeepAgentsTestAndDeploy />
+For per-run values such as request metadata or feature flags, use the normal LangChain runtime context patterns for tools. See [how to access context from within your tools](/oss/langchain/tools#access-context).
