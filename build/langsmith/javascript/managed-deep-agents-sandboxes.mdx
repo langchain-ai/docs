@@ -69,7 +69,7 @@ Use `idleTtlSeconds` to control when an idle sandbox can be reclaimed. Use `defa
 
 ## How the agent uses the sandbox
 
-The agent uses filesystem tools such as `ls`, `read_file`, `write_file`, `edit_file`, `glob`, and `grep`, and runs shell commands with `execute`. Use `instructions.md` to specify where the agent should work and what it must not modify.
+The agent uses filesystem tools such as `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, and `grep`, and runs shell commands with `execute`. Use `instructions.md` to specify where the agent should work and what it must not modify.
 
 ## Sandbox lifecycle
 
