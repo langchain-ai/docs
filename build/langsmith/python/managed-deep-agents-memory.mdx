@@ -66,7 +66,7 @@ Enabling memory mounts one Context Hub tree, `memories/agent`, at `/memories/age
 
 Keep hot memory compact because it consumes context on every run. Put detailed material—such as procedures, decision logs, and research notes—in cold files, and link to them from hot memory when useful.
 
-The agent reads and updates memory with `read_file`, `edit_file`, and `write_file`. Writes elsewhere, including elsewhere under `/memories/`, are not durable.
+The agent reads and updates memory with `read_file`, `edit_file`, and `write_file`. Only writes to the `memories/agent` Context Hub tree, mounted at `/memories/agent/` in the agent filesystem, are durable and available across future threads and sessions. Writes elsewhere in the agent filesystem, including elsewhere under `/memories/`, are runtime-only and may be discarded after the current run.
 
 <Warning>
 Memory is shared by every caller of the deployment, and every caller can influence it. Store only knowledge that every caller may read and modify. Never store personal or customer-private data, credentials, API keys, tokens, or other secrets.
