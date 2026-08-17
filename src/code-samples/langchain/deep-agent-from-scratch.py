@@ -3,7 +3,7 @@
 # :snippet-start: deep-agent-from-scratch-minimal-py
 from langchain.agents import create_agent
 
-agent = create_agent("anthropic:claude-sonnet-4-6", tools=[])
+agent = create_agent(model="google_genai:gemini-3.6-flash", tools=[])
 # :snippet-end:
 
 # :snippet-start: deep-agent-from-scratch-sandbox-py
@@ -56,7 +56,7 @@ sandbox = client.create_sandbox(name="langchain-docs", snapshot_name="docs-test-
 backend = LangSmithSandbox(sandbox=sandbox)
 
 agent = create_agent(
-    "anthropic:claude-sonnet-4-6",
+    model="google_genai:gemini-3.6-flash",
     tools=[],
     middleware=[FilesystemMiddleware(backend=backend)],
 )
@@ -101,7 +101,7 @@ upload_stream.output
 # :snippet-start: deep-agent-from-scratch-summarization-py
 from deepagents.middleware import FilesystemMiddleware, SummarizationMiddleware
 
-model = "anthropic:claude-sonnet-4-6"
+model = "google_genai:gemini-3.6-flash"
 
 agent = create_agent(
     model=model,
@@ -132,6 +132,8 @@ backend.upload_files(skill_files)
 # :snippet-start: deep-agent-from-scratch-skills-py
 from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware, SummarizationMiddleware
 
+model = "google_genai:gemini-3.6-flash"
+
 agent = create_agent(
     model=model,
     tools=[],
@@ -153,12 +155,14 @@ from deepagents.middleware import (
 )
 from langchain.agents.middleware import TodoListMiddleware
 
+model = "google_genai:gemini-3.6-flash"
+
 visualizer: SubAgent = {
     "name": "visualizer",
     "description": "Generates charts and visualizations from data files in the sandbox.",
     "system_prompt": "You are a data visualization specialist. Write Python scripts using matplotlib and seaborn. Save all figures as PNG files.",
     "tools": [],
-    "model": "anthropic:claude-sonnet-4-6",
+    "model": model,
 }
 
 agent = create_agent(

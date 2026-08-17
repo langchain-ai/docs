@@ -150,7 +150,7 @@ Place `:remove-start:` blocks **after** the snippet when you can, so the harness
 # :snippet-start: example-py
 from deepagents import create_deep_agent
 
-agent = create_deep_agent(model="google_genai:gemini-3.5-flash")
+agent = create_deep_agent(model="google_genai:gemini-3.6-flash")
 # :snippet-end:
 
 # :remove-start:
@@ -328,6 +328,11 @@ Replace the inline code blocks with the snippet components:
 
 - Reads `*.snippet.*.py` and `*.snippet.*.ts` from `src/code-samples-generated/`
 - Wraps content in fenced code blocks (`` ```python `` or `` ```ts ``)
+- When a snippet contains a model string, expands it into a Mintlify `<CodeGroup>` with the seven quickstart provider tabs (Google, OpenAI, Anthropic, OpenRouter, Fireworks, Baseten, Ollama):
+  - Python: `model="…"` or `model = "…"`
+  - TypeScript: `model: "…"` or `model = "…"` (including `let model = "…"`)
+  - Only the quoted model ID is swapped per tab, so assignment vs property syntax is preserved
+  - Put `# KEEP MODEL` / `// KEEP MODEL` on the line before a model string to leave that occurrence unchanged
 - Writes to `src/snippets/code-samples/{snippet-name}-py.mdx` or `-js.mdx`
 
 To support additional languages, add config entries in that script.

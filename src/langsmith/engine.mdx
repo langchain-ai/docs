@@ -6,6 +6,8 @@ description: Automatically detect and resolve recurring issues in your tracing p
 
 LangSmith Engine helps you ship more reliable agents without manually searching through traces. It is the LangSmith Agent for agent engineering: working from your production traces, it surfaces recurring issues, diagnoses their root cause, and drives the fix across every stage of the development lifecycle. For a product overview, see [Engine](/langsmith/engine-overview).
 
+## How Engine works
+
 Each issue moves through a closed loop in which Engine:
 
 1. Detects a recurring issue in your traces.
@@ -30,9 +32,25 @@ flowchart LR
 
 This page covers how to set up Engine, work through the fix and evaluation loop, control costs, and route notifications.
 
+## How Engine samples and prioritizes traces
+
+Engine analyzes both trace content and run feedback when selecting and ranking traces for each scan. It treats feedback—including online evaluator scores, annotation queue scores, and user feedback submitted via the SDK—as a high-priority signal, not supplementary data.
+
+To apply this signal, Engine:
+
+- Reads the feedback keys present in your project and performs a dedicated pull of low-scoring traces for each key, so the sample includes traces with poor evaluator scores rather than leaving them to recency.
+- Prioritizes traces with non-empty feedback scores ahead of other traces when screening the sample.
+- Preserves feedback scores on every trace in the analysis context, even when trace payloads are compacted to fit within context limits.
+
+Any source that writes feedback to a run contributes to this prioritization automatically. Engine requires no setup beyond evaluators or annotation queues.
+
 ## Set up Engine
 
 Setting up Engine is a two-step process: an [Organization Admin](/langsmith/rbac#organization-admin) first enables Engine for the [workspace](/langsmith/administration-overview#workspaces), then any user can configure Engine for each tracing project.
+
+<Note>
+On Self-hosted LangSmith, an operator must enable Engine in the LangSmith Helm chart before either step is available. Refer to [Enable Engine](/langsmith/deploy-self-hosted-full-platform#enable-engine) and [Engine on Self-hosted](/langsmith/engine-self-hosted).
+</Note>
 
 ### Enable Engine for your organization
 
@@ -46,6 +64,7 @@ Setting up Engine is a two-step process: an [Organization Admin](/langsmith/rbac
     Toggle **Enable Engine** on and acknowledge the AI features terms of use. The dialog displays the following in-product notice verbatim:
 
     > LangSmith AI features, powered by LangChain-managed inference, bring intelligence to your observability workflow. With LangSmith AI enabled, your team can surface issues faster, run smarter evaluations, and build more reliable LLM applications. By enabling this feature, your organization's trace data will be processed using LangChain-managed LLM keys. Subject to our Terms of Service.
+
   </Step>
 </Steps>
 
@@ -63,10 +82,10 @@ Engine runs in two phases:
 
 | Phase | Trigger | Typical LCU usage |
 |---|---|---|
-| **Initialization** | First time you enable Engine on a project | 30–40 LCUs |
-| **Recurring scans** | Every 6 hours automatically | 10–15 LCUs |
+| **Initialization** | First time you enable Engine on a project | 30-40 LCUs |
+| **Recurring scans** | Automatically, on a dynamic schedule | 10-15 LCUs |
 
-On initialization, Engine audits past traces, clusters and prioritizes issues by severity, and proposes fixes to your prompts or code (if a repository is connected). Recurring scans run on the 6-hour schedule whether or not new issues are found, and surface new issues not previously detected.
+On initialization, Engine audits past traces, clusters and prioritizes issues by severity, and proposes fixes to your prompts or code (if a repository is connected). Recurring scans run on a dynamic schedule tuned to balance cost and performance, whether or not new issues are found, and surface new issues not previously detected.
 
 ### Set spend limits and monitor usage
 
@@ -88,7 +107,7 @@ To monitor usage, you can view your organization's monthly LCU spend on the **En
     In the [LangSmith console](https://smith.langchain.com), navigate to **Tracing** in the UI sidebar, select a project, then click the **Engine** tab in the project navigation.
   </Step>
   <Step title="Connect a code repository (optional)">
-    Although optional, connecting a code repository is recommended. Engine reads your source code to locate the code path behind a failing trace, ground its proposed fixes in the actual implementation, and open pull requests directly from issues. Under **Connect your agent's code repository**, select a repository in the **GitHub Repository** field. Only repositories the GitHub app can access are shown. Click **Manage app access →** to update permissions. To give Engine additional project context, select a repository in the **Context Hub repository** field. You can update either repository at any time from the [**Engine Settings**](#configure-engine) panel.
+    Although optional, connecting a code repository is recommended. Engine reads your source code to locate the code path behind a failing trace, ground its proposed fixes in the actual implementation, and open pull requests directly from issues. Under **Connect your agent's code repository**, select a repository in the **GitHub Repository** field. Only repositories the GitHub app can access are shown. Click **Manage app access →** to update permissions. For GitHub App setup and organization approval, see [Connect Engine to GitHub](/langsmith/engine-github). To give Engine additional project context, select a repository in the **Context Hub repository** field. You can update either repository at any time from the [**Engine Settings**](#configure-engine) panel.
   </Step>
   <Step title="Select preference categories (optional)">
     Under **What matters most to you?**, select categories to prioritize for your review (for example, **Tool Call Failures** or **Latency**). Click **+ Add something specific** to describe a custom concern. You can update **Preferences** at any time from the [**Engine Settings**](#configure-engine) panel.
@@ -133,7 +152,11 @@ Add scope conditions with the same [filter editor](/langsmith/filter-traces-in-a
 
 To add a condition, choose its kind from the field selector, fill in the values, then click **Add**. Each condition appears as a chip, for example `Run Name is chatbot` or `env is prod`. Click the **×** on a chip to remove that condition.
 
-Scope determines which traces Engine analyzes to detect issues and build the agent overview document. Scope set during initial setup applies to Engine's first scan. Scope changed later in the [**Engine Settings**](#configure-engine) panel does not re-run Engine immediately; it applies on the next scan, which runs every 6 hours.
+<Note>
+**Scope limitation:** The scope filter only accepts run name and metadata conditions. You cannot scope Engine's scan by feedback key, evaluator name, or score threshold. To focus Engine on traces with a specific evaluator's low scores, use the [**Preferences** and **Agent overview** settings](#configure-engine) to tell Engine what to prioritize. Engine already factors in all feedback signals automatically. See [How Engine samples and prioritizes traces](#how-engine-samples-and-prioritizes-traces).
+</Note>
+
+Scope determines which traces Engine analyzes to detect issues and build the agent overview document. Scope set during initial setup applies to Engine's first scan. Scope changed later in the [**Engine Settings**](#configure-engine) panel does not re-run Engine immediately; it applies on the next scan.
 
 ## Browse and filter issues
 
@@ -266,16 +289,17 @@ Within a tracing project, click the **Engine Settings** <Icon icon="settings"/> 
 - **Agent overview**: Edit your agent overview document to keep Engine's understanding of your project accurate as your application evolves.
 - **Preferences**: Areas Engine should focus on, prioritize, or ignore. Engine treats these as authoritative and folds them into the agent overview document on the next scan. Select category chips such as **Cost & Tokens**, **Latency**, or **Tool Call Failures**, or click **+ Add something specific** to describe a custom concern. Changes take effect on the next scan.
 - **Engine spend**: View the month-to-date Engine LCU spend for this project. Click **Set limit** to cap monthly spend. New runs pause when the monthly limit is reached.
-- **Focus on specific traces**: Narrow Engine's attention to a subset of runs by run name or metadata. Edits save automatically and take effect on the next scan. See [Focus on specific traces](#focus-on-specific-traces).
+- **Focus on specific traces**: Narrow Engine's attention to a subset of runs by run name or metadata. Edits save automatically and take effect on the next scan. Scope conditions accept only run name and metadata; you cannot filter by feedback key or score. See [Focus on specific traces](#focus-on-specific-traces).
 - **Notifications**: Click **Add destination** to add a Slack channel or webhook destination that receives a notification when Engine detects a new issue. Set a minimum priority level per destination to control which issues trigger a notification. See [Get notified about new issues](#get-notified-about-new-issues).
-- **Code repository**: Connect or update a GitHub repository so the agent can reference source code when diagnosing issues. Optionally set a **Subfolder** and a **Branch** (defaults to the repository default).
+- **Code repository**: Connect or update a GitHub repository so the agent can reference source code when diagnosing issues. Optionally set a **Subfolder** and a **Branch** (defaults to the repository default). For setup, see [Connect Engine to GitHub](/langsmith/engine-github).
 - **Context repository**: Connect a Context Hub repository so Engine can propose fixes to instructions, docs, and linked skills.
-- **Pause**: Engine scans your traces every 6 hours by default. Click **Pause** to stop scanning without deleting the existing issues, or **Resume** to resume scanning.
+- **Pause**: Engine scans your traces on a dynamic schedule tuned to balance cost and performance. Click **Pause** to stop scanning without deleting the existing issues, or **Resume** to resume scanning.
 - **Delete all issues**: This action cannot be undone. All issues and settings will be permanently removed.
 
 ## See also
 
 - [Engine](/langsmith/engine-overview): Product overview and where Engine fits in the development lifecycle.
+- [Connect Engine to GitHub](/langsmith/engine-github): Connect repositories in LangSmith Cloud, or create and configure your own GitHub App for a self-hosted deployment.
 - [Engine issue categories](/langsmith/engine-issue-categories): Reference for the failure categories Engine assigns to detected issues.
 - [Engine webhook events](/langsmith/engine-webhooks): Event payload reference, signing-secret verification, and delivery semantics.
 - [Engine on self-hosted](/langsmith/engine-self-hosted): Self-hosted architecture and data handling.

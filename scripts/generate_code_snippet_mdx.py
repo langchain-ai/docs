@@ -4,19 +4,26 @@ Reads .snippet.*.py, .snippet.*.ts, .snippet.*.java, .snippet.*.kt, .snippet.*.g
 (produced by ``scripts/extract_code_snippets.py``, Bluehawk-compatible layout).
 and creates corresponding MDX files in src/snippets/code-samples/ for use in docs.
 
-When a snippet uses a LangChain-style model argument (`model="…"` in Python or
-`model: "…"` in TypeScript), the generated MDX can be wrapped in <CodeGroup> with the same
-seven provider/model options as /oss/deepagents/quickstart (Google, OpenAI, Anthropic,
-OpenRouter, Fireworks, Baseten, Ollama). Both `provider:model-id` and bare model names
-(for example `claude-sonnet-4-5-20250929`) are recognized.
+When a snippet uses a LangChain-style model string, the generated MDX can be wrapped in
+<CodeGroup> with the same seven provider/model options as /oss/deepagents/quickstart
+(Google, OpenAI, Anthropic, OpenRouter, Fireworks, Baseten, Ollama). Recognized forms:
 
-Snippets are left as a single fenced block when no model argument is found, or when all
-model arguments are marked to keep.
+- Python: ``model="…"`` / ``model = "…"`` (kwargs or assignments)
+- TypeScript: ``model: "…"`` (object properties) or ``model = "…"`` (assignments,
+  including ``let model = "…"`` / ``const model = "…"``)
+
+The quoted model ID is what gets swapped per tab, so assignment vs property syntax is
+preserved. Every non-kept occurrence of that same ID in the snippet is updated together
+(so a shared ``model = "…"`` plus later ``model`` references stay consistent).
+
+Snippets are left as a single fenced block when no model string is found, or when all
+model strings are marked to keep.
 
 To keep a specific model line:
 
 - In Python, put `# KEEP MODEL` on the line immediately before the `model="..."` line.
-- In TypeScript, put `// KEEP MODEL` on the line immediately before the `model: "..."` line.
+- In TypeScript, put `// KEEP MODEL` on the line immediately before the `model: "..."`
+  or `model = "..."` line.
 
 The marker line is stripped during processing and that model occurrence is not
 replaced/expanded.
@@ -43,60 +50,34 @@ _CODEGROUP_FENCE_MODS_RE = re.compile(
     r"^\s*(?:#|//)\s*:codegroup-fence-mods:\s*(.+?)\s*$",
 )
 
-# Python: keyword argument model="…" (init_chat_model / create_deep_agent / etc.).
+# Python: keyword argument or assignment model="…" / model = "…".
 DEEPAGENTS_PY_MODEL_KWARG_RE = re.compile(r'\bmodel\s*=\s*"([^"]+)"')
 
-# TypeScript: object property model: "…" (ChatAnthropic, createDeepAgent, …).
-DEEPAGENTS_TS_MODEL_KWARG_RE = re.compile(r'\bmodel\s*:\s*"([^"]+)"')
+# TypeScript: object property model: "…" or assignment model = "…"
+# (also matches let/const/var model = "…").
+DEEPAGENTS_TS_MODEL_KWARG_RE = re.compile(r'\bmodel\s*(?::|=)\s*"([^"]+)"')
 
-# Tab title and full `model=` / `model:` token for each variant (matches
-# src/oss/deepagents/quickstart.mdx Python tabs; JS uses google-genai spelling).
+# Tab title and model ID for each variant (matches /oss/deepagents/quickstart;
+# JS uses google-genai spelling).
 DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
-    ("Google", 'model="google_genai:gemini-3.5-flash"'),
-    ("OpenAI", 'model="openai:gpt-5.5"'),
-    ("Anthropic", 'model="anthropic:claude-sonnet-4-6"'),
-    ("OpenRouter", 'model="openrouter:z-ai/glm-5.2"'),
-    ("Fireworks", 'model="fireworks:accounts/fireworks/models/glm-5p2"'),
-    ("Baseten", 'model="baseten:zai-org/GLM-5.2"'),
-    ("Ollama", 'model="ollama:north-mini-code-1.0"'),
+    ("Google", "google_genai:gemini-3.6-flash"),
+    ("OpenAI", "openai:gpt-5.5"),
+    ("Anthropic", "anthropic:claude-sonnet-4-6"),
+    ("OpenRouter", "openrouter:z-ai/glm-5.2"),
+    ("Fireworks", "fireworks:accounts/fireworks/models/glm-5p2"),
+    ("Baseten", "baseten:zai-org/GLM-5.2"),
+    ("Ollama", "ollama:north-mini-code-1.0"),
 ]
 
 DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
-    ("Google", 'model: "google-genai:gemini-3.5-flash"'),
-    ("OpenAI", 'model: "openai:gpt-5.5"'),
-    ("Anthropic", 'model: "anthropic:claude-sonnet-4-6"'),
-    ("OpenRouter", 'model: "openrouter:openrouter:z-ai/glm-5.2"'),
-    ("Fireworks", 'model: "fireworks:accounts/fireworks/models/glm-5p2"'),
-    ("Baseten", 'model: "baseten:zai-org/GLM-5.2"'),
-    ("Ollama", 'model: "ollama:north-mini-code-1.0"'),
+    ("Google", "google-genai:gemini-3.6-flash"),
+    ("OpenAI", "openai:gpt-5.5"),
+    ("Anthropic", "anthropic:claude-sonnet-4-6"),
+    ("OpenRouter", "openrouter:openrouter:z-ai/glm-5.2"),
+    ("Fireworks", "fireworks:accounts/fireworks/models/glm-5p2"),
+    ("Baseten", "baseten:zai-org/GLM-5.2"),
+    ("Ollama", "ollama:north-mini-code-1.0"),
 ]
-
-
-def _model_id_from_py_tab_token(tab_token: str) -> str:
-    m = re.match(r'model="([^"]+)"', tab_token)
-    if not m:
-        msg = f"expected model= tab token, got {tab_token!r}"
-        raise ValueError(msg)
-    return m.group(1)
-
-
-def _model_id_from_ts_tab_token(tab_token: str) -> str:
-    m = re.match(r'model:\s*"([^"]+)"', tab_token)
-    if not m:
-        msg = f"expected model: tab token, got {tab_token!r}"
-        raise ValueError(msg)
-    return m.group(1)
-
-
-DEEPAGENTS_PY_SKIP_EXPAND_MODEL_IDS: frozenset[str] = frozenset()
-DEEPAGENTS_TS_SKIP_EXPAND_MODEL_IDS: frozenset[str] = frozenset()
-
-
-def _id_after_first_colon(tab_id: str) -> str:
-    """For openai:gpt-5.4 return gpt-5.4; for bare ids return as-is."""
-    if ":" not in tab_id:
-        return tab_id
-    return tab_id.split(":", 1)[1]
 
 
 KEEP_MODEL_MARKER_PY = "# KEEP MODEL"
@@ -153,18 +134,21 @@ def _replace_span(text: str, start: int, end: int, replacement: str) -> str:
 def _expand_to_deepagents_codegroup(
     content: str,
     *,
-    canonical_span: tuple[int, int],
+    model_id_spans: list[tuple[int, int]],
     tab_definitions: list[tuple[str, str]],
     fence_lang: str,
 ) -> str:
-    """Wrap `content` in a CodeGroup, one tab per quickstart model variant."""
-    start, end = canonical_span
-    parts = [
-        _codegroup_fence(
-            title, fence_lang, _replace_span(content, start, end, model_token)
-        )
-        for title, model_token in tab_definitions
-    ]
+    """Wrap `content` in a CodeGroup, one tab per quickstart model variant.
+
+    ``model_id_spans`` are character ranges of the quoted model ID only (not the
+    ``model=`` / ``model:`` prefix), so assignment and property syntax are preserved.
+    """
+    parts: list[str] = []
+    for title, model_id in tab_definitions:
+        code = content
+        for start, end in reversed(model_id_spans):
+            code = _replace_span(code, start, end, model_id)
+        parts.append(_codegroup_fence(title, fence_lang, code))
     return "<CodeGroup>\n" + "\n\n".join(parts) + "\n</CodeGroup>\n"
 
 
@@ -189,10 +173,11 @@ def maybe_expand_deepagents_quickstart_codegroup(
     else:
         return None, content
 
-    # Strip marker lines while recording which model occurrence to expand.
+    # Strip marker lines while recording which model ID occurrences to expand.
     out_lines: list[str] = []
     keep_next_model = False
-    canonical_span: tuple[int, int] | None = None
+    canonical_model_id: str | None = None
+    model_id_spans: list[tuple[int, int]] = []
 
     for line in content.splitlines(keepends=True):
         if line.strip() == keep_marker:
@@ -200,23 +185,28 @@ def maybe_expand_deepagents_quickstart_codegroup(
             continue
 
         out_offset = sum(len(l) for l in out_lines)
-        m = model_re.search(line)
-        if m is not None:
+        for m in model_re.finditer(line):
             if keep_next_model:
                 keep_next_model = False
-            elif canonical_span is None:
-                canonical_span = (out_offset + m.start(), out_offset + m.end())
+                continue
+            model_id = m.group(1)
+            if canonical_model_id is None:
+                canonical_model_id = model_id
+            if model_id == canonical_model_id:
+                model_id_spans.append(
+                    (out_offset + m.start(1), out_offset + m.end(1))
+                )
 
         out_lines.append(line)
 
     stripped = "".join(out_lines)
-    if canonical_span is None:
+    if not model_id_spans:
         return None, stripped
 
     return (
         _expand_to_deepagents_codegroup(
             stripped,
-            canonical_span=canonical_span,
+            model_id_spans=model_id_spans,
             tab_definitions=tab_definitions,
             fence_lang=fence_lang,
         ),

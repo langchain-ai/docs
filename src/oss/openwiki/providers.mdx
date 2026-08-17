@@ -1,0 +1,119 @@
+---
+title: Model providers
+sidebarTitle: Providers
+description: Configure inference providers and credentials for OpenWiki
+---
+
+OpenWiki supports the following providers:.
+
+| Provider | Credential | Notes |
+| --- | --- | --- |
+| `openai` | `OPENAI_API_KEY` | Optional `OPENAI_BASE_URL` for OpenAI-compatible gateways that expose the Responses API |
+| `openai-chatgpt` | ChatGPT OAuth tokens | Sign in with ChatGPT; usage draws on Plus/Pro/Team Codex allowance |
+| `copilot` | GitHub CLI session or `COPILOT_API_KEY` | Optional `COPILOT_BASE_URL`. CI needs an OAuth token, not a classic PAT |
+| `openrouter` | `OPENROUTER_API_KEY` | Optional `OPENWIKI_OPENROUTER_PROVIDER_ONLY` allowlist |
+| `anthropic` | `ANTHROPIC_API_KEY` | Optional `ANTHROPIC_BASE_URL` |
+| `gemini` | `GEMINI_API_KEY` | Google AI Studio |
+| `gemini-enterprise` | Google ADC + `GOOGLE_CLOUD_PROJECT` | Optional `GOOGLE_CLOUD_LOCATION` (defaults to `global`) |
+| `bedrock` | AWS credentials + region | Explicit Bedrock keys or the AWS SDK default chain |
+| `baseten` | `BASETEN_API_KEY` | Optional `BASETEN_BASE_URL` |
+| `fireworks` | `FIREWORKS_API_KEY` | Optional `FIREWORKS_BASE_URL` |
+| `nebius` | `NEBIUS_API_KEY` | Nebius Token Factory |
+| `nvidia` | `NVIDIA_API_KEY` | Optional `NVIDIA_BASE_URL` |
+| `openai-compatible` | `OPENAI_COMPATIBLE_API_KEY` | Requires `OPENAI_COMPATIBLE_BASE_URL` and a custom model ID |
+
+Credentials and defaults are stored in `~/.openwiki/.env`. Process environment values take priority over file values.
+
+You can set the active provider and model with:
+
+```bash
+OPENWIKI_PROVIDER=openai
+OPENWIKI_MODEL_ID=gpt-5.6-terra
+```
+
+### Provider retries
+
+Override retries after the first provider request:
+
+```bash
+OPENWIKI_PROVIDER_RETRY_ATTEMPTS=3
+```
+
+The value must be a positive integer. If unset, OpenWiki defaults to 3 retries.
+
+## GitHub Copilot
+
+To use GitHub Copilot:
+
+1. Select GitHub Copilot during `openwiki --init`. If you have an active GitHub CLI session, OpenWiki can reuse it. Otherwise, run `gh auth login` from the credential prompt.
+2. Choose a model (for example `gpt-5.5`).
+
+OpenWiki leaves the GitHub CLI token in the GitHub CLI credential store. It does not copy that token into `~/.openwiki/.env`. For CI or headless environments without a GitHub CLI session, set `COPILOT_API_KEY` to a GitHub **OAuth token**. Personal Access Tokens (classic or fine-grained) are rejected by the Copilot API for third-party integrations.
+
+```bash
+OPENWIKI_PROVIDER=copilot
+OPENWIKI_MODEL_ID=gpt-5.5
+```
+
+## OpenAI (ChatGPT login)
+
+The `openai-chatgpt` provider calls OpenAI's Codex backend using your ChatGPT subscription instead of a metered API key:
+
+```bash
+OPENWIKI_PROVIDER=openai-chatgpt openwiki code --init
+```
+
+The wizard opens the OpenAI auth page in your browser (and prints the URL for headless use). After sign-in, OpenWiki stores managed OAuth tokens in `~/.openwiki/.env` and refreshes the access token automatically. Treat the refresh token like a password.
+
+## Gemini Enterprise (Vertex AI)
+
+The `gemini-enterprise` provider uses Google Application Default Credentials. No API key is required:
+
+```bash
+OPENWIKI_PROVIDER=gemini-enterprise
+GOOGLE_CLOUD_PROJECT=your-gcp-project
+GOOGLE_CLOUD_LOCATION=global
+```
+
+The credentials need Vertex AI access (`roles/aiplatform.user`), and the models you use must be enabled in Model Garden. Partner/open-weight (MaaS) models are region-specific, so set `GOOGLE_CLOUD_LOCATION` explicitly when using them.
+
+## AWS Bedrock
+
+```bash
+OPENWIKI_PROVIDER=bedrock
+BEDROCK_AWS_ACCESS_KEY_ID=your-access-key-id
+BEDROCK_AWS_SECRET_ACCESS_KEY=your-secret-access-key
+BEDROCK_AWS_REGION=us-east-1
+OPENWIKI_MODEL_ID=anthropic.claude-sonnet-5
+```
+
+When explicit Bedrock credentials are not set, OpenWiki uses the AWS SDK default credential provider chain. Paste the Bedrock model ID directly. Some newer models require a cross-region inference profile ID (for example `us.anthropic.claude-sonnet-5`) instead of the bare model ID.
+
+## OpenAI-compatible endpoints
+
+Use the `openai-compatible` provider for gateways or local servers that expose OpenAI-compatible chat completions:
+
+```bash
+OPENWIKI_PROVIDER=openai-compatible
+OPENAI_COMPATIBLE_API_KEY=your-gateway-key
+OPENAI_COMPATIBLE_BASE_URL=https://your-gateway.example.com/v1
+OPENWIKI_MODEL_ID=your-gateway-model-name
+```
+
+Local examples such as Ollama (`http://localhost:11434/v1`) and LM Studio (`http://localhost:1234/v1`) use the same pattern. OpenWiki still requires `OPENAI_COMPATIBLE_API_KEY` even when the local server ignores the key value.
+
+## OpenRouter provider pinning
+
+When OpenRouter serves a model through multiple upstream providers, restrict routing:
+
+```bash
+OPENWIKI_PROVIDER=openrouter
+OPENROUTER_API_KEY=your-key
+OPENWIKI_OPENROUTER_PROVIDER_ONLY=Novita
+```
+
+## See also
+
+- [Quickstart](/oss/openwiki/quickstart)
+- [CLI reference](/oss/openwiki/cli-reference)
+- [Customize OpenWiki](/oss/openwiki/customize)
