@@ -130,7 +130,7 @@ mda build .
 
 ## Evaluate projects
 
-`evals/tasks/` is the canonical Harbor dataset. Author complete Harbor tasks there directly. The `mda eval` command, also available as `mda evals`, can scaffold a starter task and package the managed agent for Harbor. MDA prints a `harbor run` command but does not run trials.
+`evals/tasks/` is the canonical Harbor dataset. Author complete Harbor tasks there directly. The `mda eval` command, also available as `mda evals`, can scaffold a starter task and package the managed agent for Harbor. Managed Deep Agents prints a `harbor run` command but does not run trials.
 
 ```bash
 mda evals init smoke

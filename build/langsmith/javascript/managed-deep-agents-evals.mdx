@@ -36,7 +36,7 @@ evals/scaffold/<task>/ → mda evals compile → evals/tasks/<task>/
 ```
 
 <Note>
-`evals/scaffold/` is not a second eval system. Harbor runs the tasks under `evals/tasks/`. Use scaffolding only when you want MDA to create a minimal starting point.
+`evals/scaffold/` is not a second eval system. Harbor runs the tasks under `evals/tasks/`. Use scaffolding only when you want Managed Deep Agents to create a minimal starting point.
 </Note>
 
 ## Choose an authoring workflow
@@ -55,7 +55,7 @@ Use one of the following ways to populate the canonical Harbor dataset:
 - Model and tool credentials exported in the shell that runs Harbor.
 
 <Note>
-Harbor does not load values from the project `.env` file. When MDA generates a Harbor job config, it writes `${VAR}` placeholders for eligible `.env` keys, not their values. Export the required variables before you run Harbor.
+Harbor does not load values from the project `.env` file. When Managed Deep Agents generates a Harbor job config, it writes `${VAR}` placeholders for eligible `.env` keys, not their values. Export the required variables before you run Harbor.
 </Note>
 
 ## Author Harbor evals directly
@@ -84,15 +84,15 @@ Each task describes what the agent should do. Harbor runs the agent in the task 
 
 The verifier must write a numeric reward to `/logs/verifier/reward.txt` or numeric metrics to `/logs/verifier/reward.json`. For the full task format and verifier options, see the [Harbor task documentation](https://www.harborframework.com/docs/tasks).
 
-Files you author directly under `evals/tasks/` are preserved when MDA compiles scaffolds with other names.
+Files you author directly under `evals/tasks/` are preserved when Managed Deep Agents compiles scaffolds with other names.
 
 ## Scaffold a Harbor task
 
-This optional workflow creates a minimal source task that MDA can complete and copy into the canonical Harbor dataset.
+This optional workflow creates a minimal source task that Managed Deep Agents can complete and copy into the canonical Harbor dataset.
 
 
 
-MDA scaffolds the task from an instruction and a TypeScript test.
+Managed Deep Agents scaffolds the task from an instruction and a TypeScript test.
 
 
 Run the following command from the Managed Deep Agents project root:
@@ -147,7 +147,7 @@ To refresh specific scaffolds, repeat `--task`:
 mda evals compile . --task smoke --task regression
 ```
 
-For each selected scaffold, MDA:
+For each selected scaffold, Managed Deep Agents:
 
 1. Replaces the matching directory under `evals/tasks/`.
 2. Copies the complete scaffold from `evals/scaffold/`.
@@ -159,7 +159,7 @@ Unselected tasks under `evals/tasks/` are preserved, including tasks authored di
 Treat `evals/scaffold/<name>/` as the source of truth for a scaffolded task. Compiling that scaffold replaces the entire matching `evals/tasks/<name>/` directory, including changes made only to the canonical copy.
 </Warning>
 
-You can add Harbor files such as `task.toml`, `environment/`, or a custom `tests/test.sh` to a scaffold under `evals/scaffold/<name>/`. MDA copies them into the canonical Harbor task during compilation.
+You can add Harbor files such as `task.toml`, `environment/`, or a custom `tests/test.sh` to a scaffold under `evals/scaffold/<name>/`. Managed Deep Agents copies them into the canonical Harbor task during compilation.
 
 ### Inspect the compiled handoff
 
@@ -177,8 +177,8 @@ Compile supports the following repeatable flags:
 
 | Flag | Purpose |
 | --- | --- |
-| `--task <name>` | Select one task. Repeat to select more tasks. If a selected task has a source under `evals/scaffold/`, MDA refreshes its canonical copy. Omit the flag to select all tasks and refresh every scaffold. |
-| `--model <provider:model>` | Record a model in the artifact manifest. The generated job config uses the first model. If omitted, MDA uses the agent's model when available. |
+| `--task <name>` | Select one task. Repeat to select more tasks. If a selected task has a source under `evals/scaffold/`, Managed Deep Agents refreshes its canonical copy. Omit the flag to select all tasks and refresh every scaffold. |
+| `--model <provider:model>` | Record a model in the artifact manifest. The generated job config uses the first model. If omitted, Managed Deep Agents uses the agent's model when available. |
 
 Check in the Harbor definitions and configuration under `evals/` that your project uses. Keep local run output under `evals/harbor-jobs/` out of version control. The `evals/` directory is not included in the deployed agent build.
 
