@@ -59,7 +59,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "db-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "access_control": {
         "allow_list": [
@@ -72,6 +71,10 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
 ```
 
 The connection to `db.example.com:5432` is passed through at the TCP layer with no interception, so the PostgreSQL wire protocol—and TLS, host-key checking, and any other end-to-end protocol on top of it—works unchanged.
+
+<Note>
+Creating a sandbox boots it and returns once it reports `ready`, so there is no wait step to add. `GET /api/v2/sandboxes/boxes/{name}/status` reports the current state if you need to re-check it later.
+</Note>
 
 ### Configure via SDK
 
@@ -169,7 +172,7 @@ AWS auth rules are different from header injection rules:
 - Set `type` to `aws`.
 - Put credentials under the `aws` object.
 - Do not set `match_hosts`, `match_paths`, or `headers`; AWS host matching is built into the proxy.
-- Configure at most one AWS auth rule per sandbox.
+- Configure at most one AWS auth rule per sandbox. The limit counts every AWS rule, including disabled ones.
 
 ```bash
 curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
@@ -177,7 +180,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "aws-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "rules": [
         {
@@ -274,7 +276,7 @@ GCP auth rules are different from header injection rules:
 - Put credentials under `gcp.service_account_json`.
 - Set `gcp.scopes` to a non-empty list of OAuth scopes.
 - The proxy matches Google API hosts automatically and authenticates those requests with the configured service account.
-- Configure at most one enabled GCP auth rule per sandbox.
+- Configure at most one GCP auth rule per sandbox. The limit counts every GCP rule, including disabled ones.
 
 The SDK `gcp_auth` and `gcpAuth` helpers build this same rule shape.
 
@@ -284,7 +286,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "gcp-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "rules": [
         {
@@ -370,7 +371,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "openai-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "rules": [
         {
@@ -401,7 +401,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "multi-api-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "rules": [
         {
@@ -632,7 +631,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -d '{
     "snapshot_id": "<snapshot-uuid>",
     "name": "callback-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "callbacks": [
         {

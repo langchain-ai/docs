@@ -196,7 +196,7 @@ const snapshot = await client.createSnapshotFromDockerfile(
 
 ### Speed up cold builds
 
-`vcpus` / `vCpus` and `mem_bytes` / `memBytes` size the temporary builder sandbox. The build runs BuildKit plus the native snapshotter's layer copies inside it, which contend for a single core by default, so giving the builder an extra vCPU can cut a cold build's wall time substantially.
+`vcpus` / `vCpus` and `mem_bytes` / `memBytes` size the temporary builder sandbox. The build runs BuildKit plus the native snapshotter's layer copies inside it, which contend for the builder's default 0.5 vCPU, so giving the builder more CPU can cut a cold build's wall time substantially. Memory is tied to CPU at 4 GiB per vCPU and must stay within 50% of that target, so a 2-vCPU builder accepts 4 to 12 GiB. Omit memory and it follows the ratio.
 
 <CodeGroup>
 
@@ -206,7 +206,7 @@ snapshot = client.create_snapshot_from_dockerfile(
     dockerfile="Dockerfile",
     fs_capacity_bytes=2 * 1024**3,
     vcpus=2,
-    mem_bytes=4 * 1024**3,  # 4 GiB
+    mem_bytes=8 * 1024**3,  # 8 GiB
     timeout=600,
 )
 ```
@@ -218,7 +218,7 @@ const snapshot = await client.createSnapshotFromDockerfile(
   2_147_483_648,
   {
     vCpus: 2,
-    memBytes: 4_294_967_296, // 4 GiB
+    memBytes: 8_589_934_592, // 8 GiB
     timeout: 600,
   },
 );
@@ -276,7 +276,7 @@ try {
 </CodeGroup>
 
 <Note>
-Capture preserves the **persistent filesystem only**. Installed packages (under `/usr/local`, `/root`, `/opt`, the home directory, etc.) and files you wrote to those locations are kept. Running processes, open sockets, in-memory state, and anything under `/tmp` (which is a tmpfs) are **not** carried over — boot the new sandbox and start the processes you need again.
+By default, capture preserves the **filesystem only**. Installed packages (under `/usr/local`, `/root`, `/opt`, the home directory, etc.) and files you wrote to those locations are kept, as is `/tmp`. Only `/dev/shm` is a tmpfs, so everything else lives on the sandbox's disk. Running processes, open sockets, and in-memory state are **not** carried over: boot the new sandbox and start the processes you need again, or [capture memory too](#resume-from-memory).
 </Note>
 
 <Tip>
@@ -312,6 +312,49 @@ const snapshot = await sb.captureSnapshot("ml-ready-v2", { timeout: 600 });
 ```
 
 </CodeGroup>
+
+### Resume from memory
+
+A snapshot can carry the sandbox's RAM alongside its filesystem. Boot from one and the sandbox resumes where it left off, with its processes still running, instead of cold-booting. Use this for environments that are slow to warm up, such as a loaded model or a started database.
+
+<Note>
+Memory snapshots are available over the REST API only. The `langsmith.sandbox` Python and TypeScript clients do not expose these fields yet.
+</Note>
+
+Capture memory by setting `include_memory` on a capture:
+
+```bash
+curl -X POST \
+  "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes/my-vm/snapshot" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "warm-model", "include_memory": true}'
+```
+
+The response reports `memory_snapshot_size_bytes` when memory was captured. `include_memory` requires a sandbox that is running or stopped, and it cannot be combined with `checkpoint` or `docker_image`.
+
+Some sandboxes run on an overlay filesystem runtime that cannot carry a memory image. Capturing one returns `include_memory is not supported for overlay-rootfs sandboxes`. LangSmith assigns that runtime, so it is not something you select per sandbox.
+
+Two fields on create control the other half:
+
+| Field | What it does |
+|-------|--------------|
+| `restore_memory` | Omit it to resume from memory when the snapshot has it and cold-boot when it does not. `true` requires memory and fails the request if the snapshot has none. `false` always cold-boots. |
+| `preserve_memory_on_stop` | `true` suspends RAM on a voluntary stop (idle timeout or explicit stop) so the sandbox resumes where it left off when it next wakes, rather than cold-booting. Defaults to `false`, which keeps only the filesystem. Restarts triggered by infrastructure maintenance preserve memory either way. |
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "warm-vm",
+    "snapshot": "warm-model",
+    "restore_memory": true,
+    "preserve_memory_on_stop": true
+  }'
+```
+
+Capturing memory from a **stopped** sandbox only works when that sandbox was created with `preserve_memory_on_stop`. Without it, the stop discards RAM and there is nothing to capture.
 
 ## List, fetch, and delete snapshots
 
@@ -360,9 +403,9 @@ const page = await client.listSnapshots({ nameContains: "ml", limit: 100 });
 
 </Note>
 
-## Stop and start sandboxes
+## Stopped sandboxes
 
-Sandboxes can be stopped and restarted without losing filesystem state. Files you wrote during the previous run are still there when the sandbox comes back up.
+A stopped sandbox keeps its filesystem, and the next request wakes it automatically. You do not need to start it yourself: send the command you wanted to run and the sandbox comes back up to serve it.
 
 <CodeGroup>
 
@@ -370,12 +413,10 @@ Sandboxes can be stopped and restarted without losing filesystem state. Files yo
 sb = client.create_sandbox(snapshot_id=snapshot.id, name="my-vm")
 sb.run("echo 'hello' > /tmp/state.txt")
 
-# Stop the sandbox — preserves files on disk
+# Stop early to release resources. The idle timeout does this for you.
 sb.stop()
 
-# Later: start it again (blocks until ready, default timeout=120s)
-sb.start()
-
+# No start call: this wakes the sandbox and runs once it is up.
 result = sb.run("cat /tmp/state.txt")
 assert result.stdout.strip() == "hello"
 ```
@@ -386,15 +427,13 @@ await sb.run("echo 'hello' > /tmp/state.txt");
 
 await sb.stop();
 
-await sb.start();
-
 const result = await sb.run("cat /tmp/state.txt");
 console.log(result.stdout.trim()); // "hello"
 ```
 
 </CodeGroup>
 
-You can also stop and start by name via the client directly (`client.stop_sandbox(name)` / `client.start_sandbox(name)` in Python, `client.stopSandbox(name)` / `client.startSandbox(name)` in TypeScript).
+The first request after a stop pays the boot cost, so it is slower than the ones that follow. Create the sandbox with `preserve_memory_on_stop` to [resume from memory](#resume-from-memory) instead of cold-booting.
 
 ## Next steps
 

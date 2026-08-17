@@ -405,6 +405,44 @@ try {
 
 Pass `initial_pull_only` / `initialPullOnly` to sync once at startup instead of polling for repo updates.
 
+## Size a sandbox
+
+Pass `vcpus`, `mem_bytes`, and `fs_capacity_bytes` (`vCpus`, `memBytes`, `fsCapacityBytes` in TypeScript) to size a sandbox at creation. Omit them and the sandbox gets the defaults below.
+
+<CodeGroup>
+
+```python Python
+sb = client.create_sandbox(
+    name="big-vm",
+    vcpus=4,
+    mem_bytes=16 * 1024**3,        # 16 GiB
+    fs_capacity_bytes=32 * 1024**3, # 32 GiB
+)
+```
+
+```ts TypeScript
+const sb = await client.createSandbox({
+  name: "big-vm",
+  vCpus: 4,
+  memBytes: 17_179_869_184,        // 16 GiB
+  fsCapacityBytes: 34_359_738_368, // 32 GiB
+});
+```
+
+</CodeGroup>
+
+| Resource | Default | Range |
+|----------|---------|-------|
+| CPU | 0.5 vCPU | 0.05 to 16 vCPU. Use `cpu_millicores` for sub-core requests (`500` is 0.5 vCPU); it takes precedence over `vcpus`. |
+| Memory | 4 GiB per vCPU | Up to 64 GiB. Must stay within 50% of the per-vCPU target, so a 1 vCPU sandbox accepts 2 to 6 GiB. Set memory without CPU and the CPU is derived from the same ratio. |
+| Filesystem | Snapshot capacity | Up to 64 GiB, and never smaller than the snapshot it boots from. |
+
+Sandboxes burst to twice their requested CPU when the host has spare capacity. Resizing an existing sandbox with `update_sandbox` / `updateSandbox` takes effect at its next start, and a resize enforces only the 64 GiB ceiling rather than the per-vCPU ratio.
+
+<Note>
+Free-form `labels` (up to 128 per sandbox, 256 bytes per key and 4096 bytes per value) can be set through the REST API on create. Sandboxes inherit their snapshot's labels unless overridden. The `langsmith.sandbox` clients do not expose this field yet.
+</Note>
+
 ## Sandbox lifetime and retention
 
 Sandboxes are governed by a two-stage retention model anchored to **idle
@@ -415,14 +453,13 @@ activity** and the **`stopped`** state.
 | `idle_ttl_seconds` | The launcher stops the sandbox after this many seconds of inactivity. Any command execution or file I/O resets the timer. `0` disables the idle stop. | Default `600` (10 minutes) when omitted. |
 | `delete_after_stop_seconds` | Once the sandbox enters the `stopped` state, this timer starts. After it elapses, the sandbox row + filesystem clone are permanently deleted by a server-side sweep. `0` disables stop-anchored deletion (manual cleanup required). | Server applies its configured default (typically 14 days) when omitted. |
 
-Both values must be multiples of 60 (minute resolution). The full lifecycle is:
+Both values must be multiples of 60 (minute resolution), and `delete_after_stop_seconds` caps at 2592000 (30 days). The full lifecycle is:
 
 ```
 running ──(idle for idle_ttl_seconds)──▶ stopped ──(delete_after_stop_seconds)──▶ deleted
 ```
 
-You can also call `stop_sandbox` / `stopSandbox` explicitly — that also
-populates `stopped_at` and starts the deletion timer.
+You can also call `stop_sandbox` / `stopSandbox` explicitly to release resources before the idle timeout fires; that also populates `stopped_at` and starts the deletion timer. You do not need to start it again afterwards: a stopped sandbox wakes on the next command, file operation, or service-URL request.
 
 <CodeGroup>
 
@@ -480,8 +517,8 @@ await client.updateSandbox(sb.name, {
 
 The sandbox daemon manages command session lifecycles with two timeout mechanisms:
 
-- **Session TTL (finished commands)**: After a command finishes, its session remains in memory for a TTL period. During this window you can reconnect to retrieve output. After the TTL expires, the session is cleaned up.
-- **Idle timeout (running commands)**: Running commands with no connected clients are killed after an idle timeout (default: 5 minutes). The idle timer resets each time a client connects. Set to `-1` for no idle timeout.
+- **Session TTL (finished commands)**: After a command finishes, its session remains in memory for a TTL period (default: 5 minutes). During this window you can reconnect to retrieve output. After the TTL expires, the session is cleaned up. Set `ttl_seconds` to `-1` to keep the session indefinitely.
+- **Idle timeout (running commands)**: Running commands with no connected clients are killed after an idle timeout (default: 1 hour). The idle timer resets each time a client connects. Set `idle_timeout` to `-1` for no idle timeout.
 
 ### Combine lifecycle options
 

@@ -56296,7 +56296,7 @@ Source: https://docs.langchain.com/langsmith/langgraph-python-sdk
 # LangSmith CLI
 Source: https://docs.langchain.com/langsmith/langsmith-cli
 
-The LangSmith CLI is a command-line tool for querying and managing your LangSmith data. It's designed for both developers and AI coding agents and outputs JSON by default for scripting, with a `--format pretty` option for human-readable tables. Use it when you need scriptable access to your LangSmith data, such as bulk exports, automation, or giving a coding agent direct access to your [traces, runs, and datasets](/langsmith/observability-concepts).
+The LangSmith CLI is a command-line tool for querying and managing your LangSmith data. It's designed for both developers and AI coding agents and outputs human-readable tables by default, with a `--format json` option for scripting. Use it when you need scriptable access to your LangSmith data, such as bulk exports, automation, or giving a coding agent direct access to your [traces, runs, and datasets](/langsmith/observability-concepts).
 
 ## Install
 
@@ -56482,18 +56482,18 @@ langsmith sandbox tunnel my-vm --remote-port 5432
 
 **Default**
 
-JSON to stdout — easy to pipe, script, or feed to an agent:
+Human-readable tables:
 
   ```bash
   langsmith trace list --project my-app
   ```
 
-**Pretty tables**
+**JSON**
 
-`--format pretty` for human-readable output:
+`--format json` to pipe, script, or feed output to an agent:
 
   ```bash
-  langsmith --format pretty trace list --project my-app
+  langsmith --format json trace list --project my-app
   ```
 
 **Write to file**
@@ -56515,7 +56515,7 @@ Returns up to 20 projects by default, sorted by most recent activity. Lists trac
 ```bash
 langsmith project list
 langsmith project list --limit 50 --name-contains chatbot
-langsmith --format pretty project list
+langsmith --format json project list
 ```
 
 ### Query traces
@@ -76197,10 +76197,10 @@ Common profile commands:
 | `langsmith profile set-workspace <workspace-id>` | Set the default workspace for the selected profile. |
 | `langsmith profile delete <name>` | Delete a saved profile. |
 
-Use `--format pretty` for human-readable tables:
+Output is a human-readable table by default. Use `--format json` for scriptable output:
 
 ```shell
-langsmith --format pretty profile list
+langsmith --format json profile list
 ```
 
 ## Authenticate with `langsmith auth login`
@@ -85450,7 +85450,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "db-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "access_control": {
         "allow_list": [
@@ -85463,6 +85462,10 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
 ```
 
 The connection to `db.example.com:5432` is passed through at the TCP layer with no interception, so the PostgreSQL wire protocol—and TLS, host-key checking, and any other end-to-end protocol on top of it—works unchanged.
+
+<Note>
+Creating a sandbox boots it and returns once it reports `ready`, so there is no wait step to add. `GET /api/v2/sandboxes/boxes/{name}/status` reports the current state if you need to re-check it later.
+</Note>
 
 ### Configure via SDK
 
@@ -85560,7 +85563,7 @@ AWS auth rules are different from header injection rules:
 - Set `type` to `aws`.
 - Put credentials under the `aws` object.
 - Do not set `match_hosts`, `match_paths`, or `headers`; AWS host matching is built into the proxy.
-- Configure at most one AWS auth rule per sandbox.
+- Configure at most one AWS auth rule per sandbox. The limit counts every AWS rule, including disabled ones.
 
 ```bash
 curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
@@ -85568,7 +85571,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "aws-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "rules": [
         {
@@ -85665,7 +85667,7 @@ GCP auth rules are different from header injection rules:
 - Put credentials under `gcp.service_account_json`.
 - Set `gcp.scopes` to a non-empty list of OAuth scopes.
 - The proxy matches Google API hosts automatically and authenticates those requests with the configured service account.
-- Configure at most one enabled GCP auth rule per sandbox.
+- Configure at most one GCP auth rule per sandbox. The limit counts every GCP rule, including disabled ones.
 
 The SDK `gcp_auth` and `gcpAuth` helpers build this same rule shape.
 
@@ -85675,7 +85677,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "gcp-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "rules": [
         {
@@ -85761,7 +85762,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "openai-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "rules": [
         {
@@ -85792,7 +85792,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "multi-api-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "rules": [
         {
@@ -86023,7 +86022,6 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   -d '{
     "snapshot_id": "<snapshot-uuid>",
     "name": "callback-sandbox",
-    "wait_for_ready": true,
     "proxy_config": {
       "callbacks": [
         {
@@ -86138,10 +86136,10 @@ export LANGSMITH_ENDPOINT="<LANGSMITH_ENDPOINT>"
 
 `LANGSMITH_ENDPOINT` defaults to `https://api.smith.langchain.com` (GCP US). Set it to your data plane URL on [BYOC](/langsmith/byoc), your instance URL on [self-hosted](/langsmith/self-hosted), or the [API URL for your region](/langsmith/create-account-api-key#configure-the-sdk) on other Cloud regions.
 
-CLI output is JSON by default. Add `--format pretty` to list commands for human-readable tables:
+CLI output is human-readable tables by default. Add `--format json` for scriptable output:
 
 ```bash
-langsmith --format pretty sandbox list
+langsmith --format json sandbox list
 ```
 
 ## End-to-end workflow
@@ -86149,10 +86147,12 @@ langsmith --format pretty sandbox list
 Create a sandbox, then run commands inside it:
 
 ```bash
-langsmith sandbox create my-vm --wait
+langsmith sandbox create my-vm
 
 langsmith sandbox exec my-vm -- python --version
 ```
+
+`create` boots the sandbox and returns once it reports `ready`, so the next command can run straight away. There is no separate wait step. Pass `--console` to drop into an interactive shell as soon as the sandbox comes up.
 
 When you are done with a sandbox, delete it:
 
@@ -86167,33 +86167,30 @@ Build snapshots from Docker images:
 ```bash
 langsmith sandbox snapshot build my-snapshot \
   --docker-image ubuntu:24.04 \
-  --capacity 8gb \
-  --wait
+  --capacity 8gb
 ```
+
+`build` queues the build and returns immediately with the snapshot's `status`. Poll `langsmith sandbox snapshot get <SNAPSHOT_ID>` until it reports `ready`. `--capacity` defaults to `4gb` and caps at `64gb`.
 
 For private images, create a registry first (see [Private registries](/langsmith/sandbox-snapshots#private-registries)), then pass its id with `--registry-id`:
 
 ```bash
 langsmith sandbox snapshot build internal-python \
   --docker-image registry.example.com/internal/python:3.12 \
-  --registry-id "$REGISTRY_ID" \
-  --wait
+  --registry-id "$REGISTRY_ID"
 ```
 
 Capture the filesystem from a running sandbox:
 
 ```bash
-langsmith sandbox snapshot capture ml-ready \
-  --box my-vm \
-  --wait
+langsmith sandbox snapshot capture ml-ready --box my-vm
 ```
 
-List, inspect, wait for, and delete snapshots:
+List, inspect, and delete snapshots:
 
 ```bash
 langsmith sandbox snapshot list
 langsmith sandbox snapshot get <SNAPSHOT_ID>
-langsmith sandbox snapshot wait <SNAPSHOT_ID>
 langsmith sandbox snapshot delete <SNAPSHOT_ID>
 ```
 
@@ -86202,9 +86199,13 @@ langsmith sandbox snapshot delete <SNAPSHOT_ID>
 Create a sandbox with the default runtime. Add `--snapshot-id` only when you want to boot from a reusable custom snapshot:
 
 ```bash
-langsmith sandbox create my-vm \
-  --rootfs-capacity 8gb \
-  --wait
+langsmith sandbox create my-vm --rootfs-capacity 8gb
+```
+
+Size the sandbox with `--vcpus` and `--memory`. Memory is tied to CPU at 4 GiB per vCPU and must stay within 50% of that target, so a 2-vCPU sandbox accepts 4 to 12 GiB. Omit `--memory` and it follows the ratio.
+
+```bash
+langsmith sandbox create my-vm --vcpus 2 --memory 8gb
 ```
 
 List and inspect sandboxes:
@@ -86212,14 +86213,13 @@ List and inspect sandboxes:
 ```bash
 langsmith sandbox list
 langsmith sandbox get my-vm
-langsmith sandbox wait my-vm
 ```
 
-Stop and start a sandbox while preserving its filesystem:
+Stop a sandbox to release resources early. Its filesystem is preserved, and the next `exec`, `console`, or service request wakes it automatically, so there is no start step to run:
 
 ```bash
 langsmith sandbox stop my-vm
-langsmith sandbox start my-vm --wait
+langsmith sandbox exec my-vm -- echo awake
 ```
 
 Update resources or proxy configuration:
@@ -86229,7 +86229,7 @@ langsmith sandbox update my-vm --rootfs-capacity 16gb
 langsmith sandbox update my-vm --proxy-config @proxy.json
 ```
 
-Resource changes take effect the next time the sandbox starts. Proxy configuration changes take effect immediately.
+Resource changes take effect the next time the sandbox boots. Proxy configuration changes take effect immediately.
 
 ### Proxy configuration
 
@@ -86358,15 +86358,12 @@ The sandbox image must run `sshd` on port `22`. If `sshd` is not running, `ssh-s
 | `langsmith sandbox snapshot build <name> --docker-image <image>` | Build a snapshot from a Docker image. |
 | `langsmith sandbox snapshot capture <name> --box <sandbox>` | Capture a snapshot from a running sandbox. |
 | `langsmith sandbox snapshot get <snapshot-id>` | Inspect a snapshot. |
-| `langsmith sandbox snapshot wait <snapshot-id>` | Wait for a snapshot to become ready. |
 | `langsmith sandbox snapshot delete <snapshot-id>` | Delete a snapshot. |
 | `langsmith sandbox create <name>` | Create a sandbox with the default runtime. |
 | `langsmith sandbox list` | List sandboxes. |
 | `langsmith sandbox get <name>` | Inspect a sandbox. |
 | `langsmith sandbox update <name>` | Update sandbox resources or proxy config. |
-| `langsmith sandbox wait <name>` | Wait for a sandbox to become ready. |
-| `langsmith sandbox start <name>` | Start a stopped sandbox. |
-| `langsmith sandbox stop <name>` | Stop a running sandbox while preserving filesystem state. |
+| `langsmith sandbox stop <name>` | Stop a running sandbox while preserving filesystem state. A later `exec`, `console`, or service request wakes it again. |
 | `langsmith sandbox delete <name>` | Delete a sandbox. |
 | `langsmith sandbox exec <name> -- <command>` | Run a one-off command inside a sandbox. |
 | `langsmith sandbox console <name>` | Open an interactive shell inside a sandbox. |
@@ -86504,7 +86501,9 @@ try {
 
 ## Mount a GCS bucket
 
-GCS mounts require GCP auth. Read/write mounts require the `https://www.googleapis.com/auth/devstorage.read_write` or `https://www.googleapis.com/auth/cloud-platform` OAuth scope. Read-only mounts can use `https://www.googleapis.com/auth/devstorage.read_only`.
+GCS mounts require GCP auth. The OAuth scope is supplied by the backend, derived from the mounts themselves: read-only mounts get `devstorage.read_only` and writable mounts get `devstorage.read_write`.
+
+Because a single `mount_config` resolves to one scope, all of its GCS mounts must agree: mixing read-only and writable GCS mounts in one config is rejected. Use writable mounts throughout, or create separate sandboxes.
 
 <CodeGroup>
 
@@ -86525,7 +86524,6 @@ mount_cfg = mount_config(
             service_account_json=workspace_secret(
                 "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
             ),
-            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
         )
     ],
     mounts=[
@@ -86559,7 +86557,6 @@ const mountCfg = mountConfig({
   auth: [
     gcpAuth({
       serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
     }),
   ],
   mounts: [
@@ -86677,7 +86674,6 @@ mount_cfg = mount_config(
             service_account_json=workspace_secret(
                 "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
             ),
-            scopes=["https://www.googleapis.com/auth/devstorage.read_write"],
         ),
     ],
     mounts=[
@@ -86719,7 +86715,6 @@ const mountCfg = mountConfig({
     }),
     gcpAuth({
       serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
-      scopes: ["https://www.googleapis.com/auth/devstorage.read_write"],
     }),
   ],
   mounts: [
@@ -87298,6 +87293,44 @@ try {
 
 Pass `initial_pull_only` / `initialPullOnly` to sync once at startup instead of polling for repo updates.
 
+## Size a sandbox
+
+Pass `vcpus`, `mem_bytes`, and `fs_capacity_bytes` (`vCpus`, `memBytes`, `fsCapacityBytes` in TypeScript) to size a sandbox at creation. Omit them and the sandbox gets the defaults below.
+
+<CodeGroup>
+
+```python Python
+sb = client.create_sandbox(
+    name="big-vm",
+    vcpus=4,
+    mem_bytes=16 * 1024**3,        # 16 GiB
+    fs_capacity_bytes=32 * 1024**3, # 32 GiB
+)
+```
+
+```ts TypeScript
+const sb = await client.createSandbox({
+  name: "big-vm",
+  vCpus: 4,
+  memBytes: 17_179_869_184,        // 16 GiB
+  fsCapacityBytes: 34_359_738_368, // 32 GiB
+});
+```
+
+</CodeGroup>
+
+| Resource | Default | Range |
+|----------|---------|-------|
+| CPU | 0.5 vCPU | 0.05 to 16 vCPU. Use `cpu_millicores` for sub-core requests (`500` is 0.5 vCPU); it takes precedence over `vcpus`. |
+| Memory | 4 GiB per vCPU | Up to 64 GiB. Must stay within 50% of the per-vCPU target, so a 1 vCPU sandbox accepts 2 to 6 GiB. Set memory without CPU and the CPU is derived from the same ratio. |
+| Filesystem | Snapshot capacity | Up to 64 GiB, and never smaller than the snapshot it boots from. |
+
+Sandboxes burst to twice their requested CPU when the host has spare capacity. Resizing an existing sandbox with `update_sandbox` / `updateSandbox` takes effect at its next start, and a resize enforces only the 64 GiB ceiling rather than the per-vCPU ratio.
+
+<Note>
+Free-form `labels` (up to 128 per sandbox, 256 bytes per key and 4096 bytes per value) can be set through the REST API on create. Sandboxes inherit their snapshot's labels unless overridden. The `langsmith.sandbox` clients do not expose this field yet.
+</Note>
+
 ## Sandbox lifetime and retention
 
 Sandboxes are governed by a two-stage retention model anchored to **idle
@@ -87308,14 +87341,13 @@ activity** and the **`stopped`** state.
 | `idle_ttl_seconds` | The launcher stops the sandbox after this many seconds of inactivity. Any command execution or file I/O resets the timer. `0` disables the idle stop. | Default `600` (10 minutes) when omitted. |
 | `delete_after_stop_seconds` | Once the sandbox enters the `stopped` state, this timer starts. After it elapses, the sandbox row + filesystem clone are permanently deleted by a server-side sweep. `0` disables stop-anchored deletion (manual cleanup required). | Server applies its configured default (typically 14 days) when omitted. |
 
-Both values must be multiples of 60 (minute resolution). The full lifecycle is:
+Both values must be multiples of 60 (minute resolution), and `delete_after_stop_seconds` caps at 2592000 (30 days). The full lifecycle is:
 
 ```
 running ──(idle for idle_ttl_seconds)──▶ stopped ──(delete_after_stop_seconds)──▶ deleted
 ```
 
-You can also call `stop_sandbox` / `stopSandbox` explicitly — that also
-populates `stopped_at` and starts the deletion timer.
+You can also call `stop_sandbox` / `stopSandbox` explicitly to release resources before the idle timeout fires; that also populates `stopped_at` and starts the deletion timer. You do not need to start it again afterwards: a stopped sandbox wakes on the next command, file operation, or service-URL request.
 
 <CodeGroup>
 
@@ -87373,8 +87405,8 @@ await client.updateSandbox(sb.name, {
 
 The sandbox daemon manages command session lifecycles with two timeout mechanisms:
 
-- **Session TTL (finished commands)**: After a command finishes, its session remains in memory for a TTL period. During this window you can reconnect to retrieve output. After the TTL expires, the session is cleaned up.
-- **Idle timeout (running commands)**: Running commands with no connected clients are killed after an idle timeout (default: 5 minutes). The idle timer resets each time a client connects. Set to `-1` for no idle timeout.
+- **Session TTL (finished commands)**: After a command finishes, its session remains in memory for a TTL period (default: 5 minutes). During this window you can reconnect to retrieve output. After the TTL expires, the session is cleaned up. Set `ttl_seconds` to `-1` to keep the session indefinitely.
+- **Idle timeout (running commands)**: Running commands with no connected clients are killed after an idle timeout (default: 1 hour). The idle timer resets each time a client connects. Set `idle_timeout` to `-1` for no idle timeout.
 
 ### Combine lifecycle options
 
@@ -88051,7 +88083,7 @@ const snapshot = await client.createSnapshotFromDockerfile(
 
 ### Speed up cold builds
 
-`vcpus` / `vCpus` and `mem_bytes` / `memBytes` size the temporary builder sandbox. The build runs BuildKit plus the native snapshotter's layer copies inside it, which contend for a single core by default, so giving the builder an extra vCPU can cut a cold build's wall time substantially.
+`vcpus` / `vCpus` and `mem_bytes` / `memBytes` size the temporary builder sandbox. The build runs BuildKit plus the native snapshotter's layer copies inside it, which contend for the builder's default 0.5 vCPU, so giving the builder more CPU can cut a cold build's wall time substantially. Memory is tied to CPU at 4 GiB per vCPU and must stay within 50% of that target, so a 2-vCPU builder accepts 4 to 12 GiB. Omit memory and it follows the ratio.
 
 <CodeGroup>
 
@@ -88061,7 +88093,7 @@ snapshot = client.create_snapshot_from_dockerfile(
     dockerfile="Dockerfile",
     fs_capacity_bytes=2 * 1024**3,
     vcpus=2,
-    mem_bytes=4 * 1024**3,  # 4 GiB
+    mem_bytes=8 * 1024**3,  # 8 GiB
     timeout=600,
 )
 ```
@@ -88073,7 +88105,7 @@ const snapshot = await client.createSnapshotFromDockerfile(
   2_147_483_648,
   {
     vCpus: 2,
-    memBytes: 4_294_967_296, // 4 GiB
+    memBytes: 8_589_934_592, // 8 GiB
     timeout: 600,
   },
 );
@@ -88131,7 +88163,7 @@ try {
 </CodeGroup>
 
 <Note>
-Capture preserves the **persistent filesystem only**. Installed packages (under `/usr/local`, `/root`, `/opt`, the home directory, etc.) and files you wrote to those locations are kept. Running processes, open sockets, in-memory state, and anything under `/tmp` (which is a tmpfs) are **not** carried over — boot the new sandbox and start the processes you need again.
+By default, capture preserves the **filesystem only**. Installed packages (under `/usr/local`, `/root`, `/opt`, the home directory, etc.) and files you wrote to those locations are kept, as is `/tmp`. Only `/dev/shm` is a tmpfs, so everything else lives on the sandbox's disk. Running processes, open sockets, and in-memory state are **not** carried over: boot the new sandbox and start the processes you need again, or [capture memory too](#resume-from-memory).
 </Note>
 
 <Tip>
@@ -88167,6 +88199,49 @@ const snapshot = await sb.captureSnapshot("ml-ready-v2", { timeout: 600 });
 ```
 
 </CodeGroup>
+
+### Resume from memory
+
+A snapshot can carry the sandbox's RAM alongside its filesystem. Boot from one and the sandbox resumes where it left off, with its processes still running, instead of cold-booting. Use this for environments that are slow to warm up, such as a loaded model or a started database.
+
+<Note>
+Memory snapshots are available over the REST API only. The `langsmith.sandbox` Python and TypeScript clients do not expose these fields yet.
+</Note>
+
+Capture memory by setting `include_memory` on a capture:
+
+```bash
+curl -X POST \
+  "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes/my-vm/snapshot" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "warm-model", "include_memory": true}'
+```
+
+The response reports `memory_snapshot_size_bytes` when memory was captured. `include_memory` requires a sandbox that is running or stopped, and it cannot be combined with `checkpoint` or `docker_image`.
+
+Some sandboxes run on an overlay filesystem runtime that cannot carry a memory image. Capturing one returns `include_memory is not supported for overlay-rootfs sandboxes`. LangSmith assigns that runtime, so it is not something you select per sandbox.
+
+Two fields on create control the other half:
+
+| Field | What it does |
+|-------|--------------|
+| `restore_memory` | Omit it to resume from memory when the snapshot has it and cold-boot when it does not. `true` requires memory and fails the request if the snapshot has none. `false` always cold-boots. |
+| `preserve_memory_on_stop` | `true` suspends RAM on a voluntary stop (idle timeout or explicit stop) so the sandbox resumes where it left off when it next wakes, rather than cold-booting. Defaults to `false`, which keeps only the filesystem. Restarts triggered by infrastructure maintenance preserve memory either way. |
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "warm-vm",
+    "snapshot": "warm-model",
+    "restore_memory": true,
+    "preserve_memory_on_stop": true
+  }'
+```
+
+Capturing memory from a **stopped** sandbox only works when that sandbox was created with `preserve_memory_on_stop`. Without it, the stop discards RAM and there is nothing to capture.
 
 ## List, fetch, and delete snapshots
 
@@ -88215,9 +88290,9 @@ const page = await client.listSnapshots({ nameContains: "ml", limit: 100 });
 
 </Note>
 
-## Stop and start sandboxes
+## Stopped sandboxes
 
-Sandboxes can be stopped and restarted without losing filesystem state. Files you wrote during the previous run are still there when the sandbox comes back up.
+A stopped sandbox keeps its filesystem, and the next request wakes it automatically. You do not need to start it yourself: send the command you wanted to run and the sandbox comes back up to serve it.
 
 <CodeGroup>
 
@@ -88225,12 +88300,10 @@ Sandboxes can be stopped and restarted without losing filesystem state. Files yo
 sb = client.create_sandbox(snapshot_id=snapshot.id, name="my-vm")
 sb.run("echo 'hello' > /tmp/state.txt")
 
-# Stop the sandbox — preserves files on disk
+# Stop early to release resources. The idle timeout does this for you.
 sb.stop()
 
-# Later: start it again (blocks until ready, default timeout=120s)
-sb.start()
-
+# No start call: this wakes the sandbox and runs once it is up.
 result = sb.run("cat /tmp/state.txt")
 assert result.stdout.strip() == "hello"
 ```
@@ -88241,15 +88314,13 @@ await sb.run("echo 'hello' > /tmp/state.txt");
 
 await sb.stop();
 
-await sb.start();
-
 const result = await sb.run("cat /tmp/state.txt");
 console.log(result.stdout.trim()); // "hello"
 ```
 
 </CodeGroup>
 
-You can also stop and start by name via the client directly (`client.stop_sandbox(name)` / `client.start_sandbox(name)` in Python, `client.stopSandbox(name)` / `client.startSandbox(name)` in TypeScript).
+The first request after a stop pays the boot cost, so it is slower than the ones that follow. Create the sandbox with `preserve_memory_on_stop` to [resume from memory](#resume-from-memory) instead of cold-booting.
 
 ## Next steps
 
