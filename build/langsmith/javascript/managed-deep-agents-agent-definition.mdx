@@ -125,7 +125,7 @@ You can use [LLM Gateway](langsmith/llm-gateway) to control rate limits, fallbac
 In order to use LLM Gateway, you should:
 - Use the ChatOpenAI model directly
 - Set a base url of `https://gateway.smith.langchain.com/v1`
-- Set an environment variable of `LANGSMITH_GATEWAY_API_KEY` to be your LangSmith API key.
+- Use your `LANGSMITH_API_KEY` for authentication. Set `LANGSMITH_GATEWAY_API_KEY` only if you need a different key for gateway calls.
 
 
 
@@ -134,7 +134,9 @@ import { defineDeepAgent } from "managed-deepagents";
 import { ChatOpenAI } from "@langchain/openai";
 
 const apiKey =
-  process.env.LANGSMITH_GATEWAY_API_KEY ?? "missing-langsmith-gateway-api-key";
+  process.env.LANGSMITH_GATEWAY_API_KEY ??
+  process.env.LANGSMITH_API_KEY ??
+  "missing-langsmith-api-key";
 const baseURL = "https://gateway.smith.langchain.com/v1";
 
 export const agent = defineDeepAgent({
