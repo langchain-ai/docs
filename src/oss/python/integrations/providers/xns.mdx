@@ -1,0 +1,124 @@
+---
+title: "XNS integrations"
+description: "Integrate with XNS object storage using LangChain Python."
+---
+
+[XNS](https://xns.tech) is S3-compatible, distributed object storage built for the AI stack.
+Data is encrypted and erasure-split across independent nodes, and **egress is always $0** —
+reading your data back is free at any volume, so the retrieval side of a RAG or agent pipeline
+costs nothing to run repeatedly.
+
+XNS storage is served by a **Relayer**, the S3 gateway you run yourself and reach at a domain
+you control. There is no shared XNS hostname and no vendor API key: a connection is an endpoint
+plus an S3 access key and secret.
+
+### Installation and setup
+
+<CodeGroup>
+```bash pip
+pip install -U langchain-xns
+```
+
+```bash uv
+uv add langchain-xns
+```
+</CodeGroup>
+
+## Authentication
+
+Configuration is resolved per field, highest wins:
+
+1. Arguments passed to the loader or store.
+2. `XNS_ENDPOINT`, `XNS_ACCESS_KEY_ID`, `XNS_SECRET_ACCESS_KEY`, `XNS_REGION`, `XNS_PROFILE`.
+3. `~/.xns/credentials`, written during setup by the XNS MCP server or by `xns auth login`.
+
+Because of step 3, a loader usually needs nothing but a bucket name. If you have not set XNS up
+yet, an agent can do the install for you:
+
+```bash
+claude mcp add relayer -- npx @xns-cloud/relayer-mcp@latest
+```
+
+Then ask it to set up XNS storage. It checks prerequisites, registers the account, installs and
+starts the Relayer on your Docker host, provisions S3 credentials, and writes the credentials
+file the package reads.
+
+## Document loaders
+
+### XNSLoader
+
+Streams text objects out of a bucket as `Document` objects.
+
+```python
+from langchain_xns import XNSLoader
+
+loader = XNSLoader(
+    "corporate-strategy",
+    prefix="2026/",
+    suffixes=(".md", ".txt"),
+)
+
+for doc in loader.lazy_load():
+    print(doc.metadata["source"], len(doc.page_content))
+```
+
+`prefix` is pushed to the server. `suffixes`, `glob`, and the `max_bytes` limit are applied to
+the listing response, so an excluded key is never downloaded. Each document carries
+`id="s3://bucket/key"`, stable across re-indexing, plus `bucket`, `key`, `size`, `etag`,
+`last_modified`, and `content_type` metadata.
+
+### XNSBlobLoader
+
+Yields `Blob` objects for parser pipelines, with `mimetype` taken from the object's
+`Content-Type`.
+
+```python
+from langchain_xns import XNSBlobLoader
+from langchain_community.document_loaders.parsers import PyPDFParser
+
+for blob in XNSBlobLoader("research", suffixes=(".pdf",)).yield_blobs():
+    docs = list(PyPDFParser().lazy_parse(blob))
+```
+
+## Stores
+
+### XNSByteStore
+
+A `ByteStore` implementing the full `BaseStore[str, bytes]` contract, for embedding caches and
+multi-vector retrieval.
+
+```python
+from langchain_classic.embeddings import CacheBackedEmbeddings
+from langchain_xns import XNSByteStore
+
+store = XNSByteStore("agent-cache", prefix="embeddings/")
+embedder = CacheBackedEmbeddings.from_bytes_store(
+    underlying_embeddings, store, namespace="text-embedding-3-small", key_encoder="sha256"
+)
+```
+
+As of LangChain 1.x, `CacheBackedEmbeddings` ships in `langchain-classic` rather than
+`langchain`, and its `key_encoder` defaults to SHA-1 with a warning.
+
+It also serves as the document store behind a retriever:
+
+```python
+from langchain_classic.retrievers.multi_vector import MultiVectorRetriever
+
+retriever = MultiVectorRetriever(
+    vectorstore=vectorstore,
+    byte_store=XNSByteStore("parents", prefix="mv/"),
+    id_key="doc_id",
+)
+```
+
+`mget` returns `None` for absent keys, `mdelete` batches at S3's 1000-key limit, and `prefix`
+namespaces several stores into one bucket.
+
+## API reference
+
+Source, changelog, and full option documentation:
+[github.com/xns-cloud/langchain-xns](https://github.com/xns-cloud/langchain-xns).
+
+XNS is validated against the ceph/s3-tests conformance suite on real hardware; per-capability
+results are published at [xns.tech/s3-compatibility](https://xns.tech/s3-compatibility).
