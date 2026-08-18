@@ -2508,6 +2508,18 @@ Adding "D" to ['A', 'B', 'C', 'B_2']
 ```
 
 In the above example, nodes `"b"` and `"c"` are executed concurrently in the same superstep. We set `defer=True` on node `d` so it will not execute until all pending tasks are finished. In this case, this means that `"d"` waits to execute until the entire `"b"` branch is finished.
+
+`add_edge` also accepts a list of start nodes. This is not shorthand for separate `add_edge` calls — the two forms behave differently:
+
+```python
+builder.add_edge(["b_2", "c"], "d")  # d runs once, after both b_2 and c complete
+```
+
+- **A list of start nodes** runs `d` once, after all of the listed nodes have completed. If one of them never runs — for example, a conditional edge does not select its branch — `d` never runs, no error is raised, and the values written by the branches that did complete are not passed on.
+- **Separate edges** run `d` once per superstep in which any incoming branch completes. With branches of equal length that is a single run; with branches of different lengths, `d` runs more than once.
+- **Separate edges with `defer=True`** (the pattern in the example above) run `d` once, after every selected branch has completed — whether the fan-out selected all of the branches or only some of them.
+
+Note that `defer=True` postpones the node until no tasks are pending anywhere in the graph, not only in the branches that feed it, and a `Send` addressed to the node still invokes it separately.
 :::
 
 ### Conditional branching
