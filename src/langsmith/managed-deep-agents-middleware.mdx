@@ -7,7 +7,7 @@ description: Add built-in or custom middleware to Managed Deep Agents projects.
 import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
 import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
 
-Managed Deep Agents support the normal Deep Agents `middleware` configuration surface.
+Managed Deep Agents support the Deep Agents `middleware` configuration surface.
 
 :::python
 Add LangChain middleware to `define_deep_agent` to monitor tool calls, add guardrails, redact data, retry transient failures, or customize model calls.
@@ -47,7 +47,7 @@ For deeper hook, state, and context details, see [custom middleware](/oss/langch
 
 ## Use prebuilt middleware
 
-You can use LangChain prebuilt middleware directly in the agent definition.
+You can use LangChain [prebuilt middleware](/oss/langchain/middleware/built-in) directly in the agent definition.
 
 :::python
 ```python agent.py
@@ -89,8 +89,12 @@ Middleware is the right place for cross-cutting behavior such as PII handling, r
 For a more advanced option, you can also define [custom middleware](/oss/langchain/middleware/custom).
 
 :::python
+<Note>
+Managed Deep Agents use `ainvoke` and `astream`, so custom middleware must use async hooks. Synchronous hooks remain supported with Deep Agents `invoke` and `stream`.
+</Note>
+
 ```python middleware/audit.py
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from langchain.agents.middleware import wrap_tool_call
 from langchain.messages import ToolMessage
@@ -99,12 +103,12 @@ from langgraph.types import Command
 
 
 @wrap_tool_call
-def log_tool_calls(
+async def log_tool_calls(
     request: ToolCallRequest,
-    handler: Callable[[ToolCallRequest], ToolMessage | Command],
+    handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
 ) -> ToolMessage | Command:
     print(f"Calling tool: {request.tool_call['name']}")
-    result = handler(request)
+    result = await handler(request)
     print(f"Finished tool: {request.tool_call['name']}")
     return result
 ```

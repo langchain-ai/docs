@@ -33,12 +33,32 @@
     },
   ];
 
+  // Language-agnostic Build tabs still live under the Python/TypeScript
+  // dropdowns (so they appear in Build), but must not show the switcher.
+  const HIDE_LANGUAGE_DROPDOWN_PREFIXES = ["/oss/openwiki"];
+
+  // Toggled on <html>; paired with a CSS rule that hides .nav-dropdown-trigger.
+  const HIDE_LANGUAGE_DROPDOWN_CLASS = "hide-language-dropdown";
+
   // sessionStorage key holding a pending language switch (survives a reload).
   const PENDING_KEY = "lc-language-toggle-pending";
 
   // A pending switch older than this (ms) is ignored, so a stored record can
   // never trigger a stray redirect on some later, unrelated navigation.
   const PENDING_TTL_MS = 8000;
+
+  function shouldHideLanguageDropdown(path) {
+    return HIDE_LANGUAGE_DROPDOWN_PREFIXES.some(
+      (prefix) => path === prefix || path.startsWith(prefix + "/"),
+    );
+  }
+
+  function syncLanguageDropdownVisibility() {
+    document.documentElement.classList.toggle(
+      HIDE_LANGUAGE_DROPDOWN_CLASS,
+      shouldHideLanguageDropdown(location.pathname),
+    );
+  }
 
   /**
    * Detect which language a path belongs to.
@@ -219,6 +239,7 @@
       lastPath = location.pathname;
       applyPendingSwitch();
     }
+    syncLanguageDropdownVisibility();
   }
 
   window.addEventListener("popstate", onPathChange);
@@ -240,4 +261,5 @@
 
   // Handle the full-page-reload case: apply any pending switch on initial load.
   applyPendingSwitch();
+  syncLanguageDropdownVisibility();
 })();

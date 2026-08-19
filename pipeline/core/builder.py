@@ -126,6 +126,13 @@ class DocumentationBuilder:
         logger.debug("Copying npm snippet components...")
         self._copy_npm_snippets()
 
+        # Emit a custom llms.txt so the index is not truncated at 100K characters
+        logger.debug("Generating llms.txt...")
+        self._generate_llms_txt()
+
+        logger.debug("Generating llms-full.txt...")
+        self._generate_llms_full_txt()
+
         logger.debug("New structure build complete")
 
     def _convert_yaml_to_json(self, yaml_file_path: Path, output_path: Path) -> None:
@@ -1110,6 +1117,617 @@ class DocumentationBuilder:
 
         # JavaScript and CSS files should be shared (custom scripts/styles)
         return file_path.suffix.lower() in {".js", ".css"}
+
+    # llms.txt sections, in emission order. Hand-authored docs come before
+    # generated API reference so the most useful pages are read first.
+    _LLMS_SECTIONS: ClassVar[list[tuple[str, str]]] = [
+        ("oss/python", "Open source (Python)"),
+        ("oss/javascript", "Open source (TypeScript)"),
+        ("oss", "Open source"),
+        ("langsmith/fleet", "LangSmith Fleet"),
+        ("langsmith", "LangSmith"),
+    ]
+
+    _SITE_URL = "https://docs.langchain.com"
+
+    # A section smaller than this stays in the root file rather than becoming a
+    # separate fetch. Root stays far below the 50,000-character pass threshold.
+    _LLMS_INLINE_MAX = 8_000
+
+    # Per-section-file ceiling. Headroom under the 50,000-character threshold
+    # so a section does not cross it as pages are added between splits.
+    _LLMS_SECTION_BUDGET = 40_000
+
+    # Size at which agent platforms start truncating an index. Every emitted
+    # file has to stay under it, not just the root.
+    _LLMS_MAX = 50_000
+
+    # Page-path prefixes lifted out of the root llms-full.txt into their own
+    # corpus file, with the label used to point at them from the root.
+    _LLMS_FULL_SPLITS: ClassVar[list[tuple[str, str]]] = [
+        ("oss/python", "Open source (Python)"),
+        ("oss/javascript", "Open source (TypeScript)"),
+    ]
+
+    _SNIPPET_IMPORT = re.compile(
+        r"^import\s+(\w+)\s+from\s+'(/snippets/[^']+)';[ \t]*\n?", re.MULTILINE
+    )
+
+    @staticmethod
+    def _slugify(value: str) -> str:
+        """Lowercase, hyphenate, and strip a string for use in a URL path.
+
+        Apostrophes are dropped rather than turned into separators, matching
+        Mintlify: "Get the authenticated user's provider user ID" slugs to
+        ``...-users-provider-user-id``, not ``...-user-s-...``.
+        """
+        cleaned = re.sub(r"['’]", "", value.lower())
+        return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", cleaned)).strip("-")
+
+    @staticmethod
+    def _tag_slug(value: str) -> str:
+        """Slug an OpenAPI tag the way Mintlify does, preserving underscores.
+
+        Mintlify lowercases the tag and replaces whitespace, but otherwise uses
+        it verbatim. Underscores must survive: the LangSmith spec carries both
+        ``annotation-queues`` and ``annotation_queues`` as distinct tags that
+        render to different directories, so normalising them together would
+        point at pages that do not exist.
+        """
+        return re.sub(r"[^a-z0-9_-]+", "-", value.lower()).strip("-")
+
+    def _read_frontmatter(self, path: Path) -> dict:
+        """Return the YAML frontmatter of an MDX file, or an empty dict."""
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return {}
+        if not text.startswith("---"):
+            return {}
+        end = text.find("\n---", 3)
+        if end == -1:
+            return {}
+        try:
+            data = yaml.safe_load(text[3:end])
+        except yaml.YAMLError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _openapi_entries(self) -> list[tuple[str, str, str]]:
+        """Return (section, url, title) for every Mintlify-generated API page.
+
+        Mintlify renders one page per OpenAPI operation under the group's
+        ``directory``, slugged as ``<directory>/<tag>/<summary>``. Those pages
+        never exist as MDX, so they have to be derived from the spec itself or
+        they are missing from llms.txt entirely.
+        """
+        docs_json = self.build_dir / "docs.json"
+        if not docs_json.exists():
+            return []
+        try:
+            config = json.loads(docs_json.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Could not read docs.json for OpenAPI entries")
+            return []
+
+        # (section label, spec source path, output directory)
+        groups: list[tuple[str, str, str]] = []
+
+        def find_openapi(node: object) -> None:
+            if isinstance(node, dict):
+                mapping: dict[str, object] = {str(k): v for k, v in node.items()}
+                spec = mapping.get("openapi")
+                if isinstance(spec, dict):
+                    fields: dict[str, object] = {str(k): v for k, v in spec.items()}
+                    source = fields.get("source")
+                    directory = fields.get("directory")
+                    if isinstance(source, str) and isinstance(directory, str):
+                        label = mapping.get("group")
+                        groups.append(
+                            (
+                                label if isinstance(label, str) else "API reference",
+                                source,
+                                directory,
+                            )
+                        )
+                for value in mapping.values():
+                    find_openapi(value)
+            elif isinstance(node, list):
+                for item in node:
+                    find_openapi(item)
+
+        find_openapi(config.get("navigation"))
+
+        entries: list[tuple[str, str, str]] = []
+        for label, source, directory in groups:
+            spec_path = self._resolve_within(self.build_dir / source, self.build_dir)
+            if spec_path is None or not spec_path.exists():
+                logger.warning("OpenAPI spec not found or outside build: %s", source)
+                continue
+            try:
+                spec = json.loads(spec_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                logger.warning("Could not parse OpenAPI spec: %s", source)
+                continue
+
+            base = directory.strip("/")
+            seen: set[str] = set()
+            for item in spec.get("paths", {}).values():
+                if not isinstance(item, dict):
+                    continue
+                for operation in item.values():
+                    if not isinstance(operation, dict) or "responses" not in operation:
+                        continue
+                    # Mintlify renders no page for hidden operations.
+                    if operation.get("x-hidden"):
+                        continue
+                    summary = operation.get("summary") or operation.get("operationId")
+                    if not summary:
+                        continue
+                    tags = operation.get("tags") or ["default"]
+                    slug = (
+                        f"{self._tag_slug(str(tags[0]))}/{self._slugify(str(summary))}"
+                    )
+                    # Two operations can share a summary. Mintlify keeps both
+                    # and disambiguates with a numeric suffix, so mirror that
+                    # rather than dropping the second page.
+                    unique, duplicate_index = slug, 0
+                    while unique in seen:
+                        duplicate_index += 1
+                        unique = f"{slug}-{duplicate_index}"
+                    seen.add(unique)
+                    entries.append((label, f"{base}/{unique}", str(summary)))
+        return entries
+
+    @staticmethod
+    def _resolve_within(candidate: Path, root: Path) -> Path | None:
+        """Resolve *candidate* and return it only if it stays inside *root*.
+
+        Paths that reach this point come from MDX text and docs.json, both of
+        which are editable in a pull request. ``Path.__truediv__`` does not
+        collapse ``..``, so joining an unvalidated path and reading it would
+        let a crafted import escape the build tree. CI commits ``build/`` to a
+        pushed preview branch, so anything read would be published.
+
+        Returns:
+            The resolved path, or None if it escapes *root* or cannot resolve.
+        """
+        try:
+            resolved = candidate.resolve()
+            resolved.relative_to(root.resolve())
+        except (ValueError, OSError):
+            return None
+        return resolved
+
+    @staticmethod
+    def _common_directory(slugs: list[str]) -> str:
+        """Return the deepest directory shared by every slug, or "" if none."""
+        if not slugs:
+            return ""
+        parts = [slug.split("/")[:-1] for slug in slugs]
+        shared = parts[0]
+        for candidate in parts[1:]:
+            keep = 0
+            for a, b in zip(shared, candidate):
+                if a != b:
+                    break
+                keep += 1
+            shared = shared[:keep]
+            if not shared:
+                return ""
+        return "/".join(shared)
+
+    @staticmethod
+    def _weigh(entries: list[tuple[str, str]]) -> int:
+        """Return the byte size a set of index entries would occupy."""
+        return sum(len(line) + 1 for _, line in entries)
+
+    def _chunk_section(
+        self, prefix: str, entries: list[tuple[str, str]]
+    ) -> list[tuple[str, list[tuple[str, str]]]]:
+        """Split a section into index files that each stay under budget.
+
+        Returns (directory prefix, entries) pairs. Every index is written as
+        ``<prefix>/llms.txt``, because Mintlify serves that exact filename at
+        any path but 404s on anything else: numbered variants like
+        ``llms-2.txt`` are not served, which silently hid 802 pages from the
+        coverage walker.
+
+        An oversized section sheds its largest child directories into their own
+        indexes until the remainder fits, rather than giving every child a file.
+        That keeps the number of fetches an agent makes proportional to how
+        much content there actually is.
+        """
+        if self._weigh(entries) <= self._LLMS_SECTION_BUDGET:
+            return [(prefix, entries)]
+
+        depth = len(prefix.split("/")) if prefix else 0
+        children: dict[str, list[tuple[str, str]]] = {}
+        remainder: list[tuple[str, str]] = []
+        for slug, line in entries:
+            parts = slug.split("/")
+            if len(parts) > depth + 1:
+                children.setdefault("/".join(parts[: depth + 1]), []).append(
+                    (slug, line)
+                )
+            else:
+                remainder.append((slug, line))
+
+        if not children:
+            # A flat directory cannot be subdivided further. Keep it whole:
+            # oversized beats invisible, and the validator will flag it.
+            return [(prefix, entries)]
+
+        out: list[tuple[str, list[tuple[str, str]]]] = []
+        # Shed the heaviest children first so the fewest files are created.
+        for key in sorted(children, key=lambda k: -self._weigh(children[k])):
+            if self._weigh(remainder) + self._weigh(children[key]) <= (
+                self._LLMS_SECTION_BUDGET
+            ):
+                remainder += children[key]
+            else:
+                out += self._chunk_section(key, children[key])
+        return [(prefix, remainder), *out] if remainder else out
+
+    def _write_section_index(
+        self, path: str, title: str, label: str, lines: list[str]
+    ) -> None:
+        """Write one section-level llms.txt."""
+        destination = self._resolve_within(self.build_dir / path, self.build_dir)
+        if destination is None:
+            logger.warning("Refusing to write section index outside build: %s", path)
+            return
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        body = "\n".join(
+            [
+                f"# {title}: {label}",
+                "",
+                f"> Markdown index of the {label} documentation.",
+                "",
+                f"## {label}",
+                "",
+                *lines,
+                "",
+            ]
+        )
+        destination.write_text(body, encoding="utf-8")
+
+    def _validate_llms_indexes(self, expected_pages: int) -> None:
+        """Check the generated indexes against the invariants agents rely on.
+
+        These are properties of the emitted files, not of the code that emits
+        them, so they catch drift the unit tests cannot: a root that creeps
+        over the size threshold as pages are added, a section index that
+        accidentally nests, or a page that lands in two indexes or none.
+
+        Raises:
+            ValueError: If any invariant is violated.
+        """
+        root_path = self.build_dir / "llms.txt"
+        if not root_path.exists():
+            return
+
+        md_link = re.compile(r"\((https://\S+?\.md)\)")
+        txt_link = re.compile(r"\((https://\S+?llms[\w-]*\.txt)\)")
+
+        root = root_path.read_text(encoding="utf-8")
+        problems: list[str] = []
+
+        if len(root) > self._LLMS_MAX:
+            problems.append(
+                f"llms.txt is {len(root):,} characters, over the "
+                f"{self._LLMS_MAX:,} threshold agents truncate at"
+            )
+
+        urls = md_link.findall(root)
+        for url in txt_link.findall(root):
+            relative = url.removeprefix(f"{self._SITE_URL}/")
+            section_path = self._resolve_within(
+                self.build_dir / relative, self.build_dir
+            )
+            if section_path is None or not section_path.exists():
+                problems.append(f"{relative} is linked from llms.txt but missing")
+                continue
+            section = section_path.read_text(encoding="utf-8")
+            if len(section) > self._LLMS_MAX:
+                problems.append(
+                    f"{relative} is {len(section):,} characters, over the "
+                    f"{self._LLMS_MAX:,} threshold"
+                )
+            nested = txt_link.findall(section)
+            if nested:
+                problems.append(
+                    f"{relative} links to {len(nested)} further .txt files; "
+                    "coverage walkers descend only one level, so those pages "
+                    "would drop out of the index"
+                )
+            urls += md_link.findall(section)
+
+        duplicates = {url for url in urls if urls.count(url) > 1}
+        if duplicates:
+            sample = ", ".join(sorted(duplicates)[:3])
+            problems.append(f"{len(duplicates)} pages listed more than once: {sample}")
+
+        if len(set(urls)) != expected_pages:
+            problems.append(
+                f"indexes list {len(set(urls)):,} unique pages "
+                f"but {expected_pages:,} were built"
+            )
+
+        if problems:
+            detail = "\n  - ".join(problems)
+            msg = f"Generated llms.txt indexes are invalid:\n  - {detail}"
+            raise ValueError(msg)
+
+        logger.info(
+            "✅ llms.txt indexes valid: %d pages, root %d/%d characters",
+            expected_pages,
+            len(root),
+            self._LLMS_MAX,
+        )
+
+    def _site_metadata(self) -> tuple[str, str]:
+        """Return the site title and description from docs.json."""
+        docs_json = self.build_dir / "docs.json"
+        title, description = "Docs by LangChain", ""
+        if docs_json.exists():
+            try:
+                config = json.loads(docs_json.read_text(encoding="utf-8"))
+                title = config.get("name", title)
+                description = config.get("description", "")
+            except (OSError, json.JSONDecodeError):
+                logger.warning("Could not read docs.json for site metadata")
+        return title, description
+
+    def _page_body(self, path: Path, depth: int = 0) -> str:
+        """Return an MDX page's body with frontmatter stripped, snippets inlined.
+
+        Mintlify expands snippet imports when it renders, so a corpus built
+        from the raw build tree would silently drop content from the ~300
+        pages that import snippets. Component props are ignored: the snippet
+        body is the content, and the corpus is plain text.
+        """
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return ""
+        if text.startswith("---"):
+            end = text.find("\n---", 3)
+            if end != -1:
+                text = text[end + 4 :]
+        if depth > 6:
+            return text.strip()
+
+        snippets_root = self.build_dir / "snippets"
+        imports: dict[str, Path] = {}
+        for name, target in self._SNIPPET_IMPORT.findall(text):
+            snippet = self._resolve_within(
+                self.build_dir / target.lstrip("/"), snippets_root
+            )
+            if snippet is None:
+                logger.warning(
+                    "Ignoring snippet import outside %s in %s: %s",
+                    snippets_root,
+                    path,
+                    target,
+                )
+                continue
+            imports[name] = snippet
+
+        text = self._SNIPPET_IMPORT.sub("", text)
+        for name, snippet in imports.items():
+            body = self._page_body(snippet, depth + 1) if snippet.exists() else ""
+            text = re.sub(rf"<{name}(?:\s[^/>]*)?\s*/>", lambda _, b=body: b, text)
+        return text.strip()
+
+    def _generate_llms_full_txt(self) -> None:
+        """Write llms-full.txt, splitting language variants into their own files.
+
+        The combined corpus is dominated by the Python and TypeScript renders
+        of the same documentation. Keeping both in one file makes it far larger
+        than long-context agents can ingest, so the TypeScript pages move to
+        their own corpus and the root points at it.
+        """
+        title, description = self._site_metadata()
+        buckets: dict[str, list[str]] = {"": []}
+        for prefix, _ in self._LLMS_FULL_SPLITS:
+            buckets[prefix] = []
+
+        for mdx in sorted(self.build_dir.rglob("*.mdx")):
+            relative = mdx.relative_to(self.build_dir)
+            if relative.parts and relative.parts[0] == "snippets":
+                continue
+            meta = self._read_frontmatter(mdx)
+            if meta.get("noindex") is True:
+                continue
+            slug = relative.with_suffix("").as_posix()
+            name = str(
+                meta.get("title")
+                or meta.get("sidebarTitle")
+                or slug.rsplit("/", 1)[-1].replace("-", " ").title()
+            )
+            key = next(
+                (p for p, _ in self._LLMS_FULL_SPLITS if slug.startswith(f"{p}/")), ""
+            )
+            body = self._page_body(mdx)
+            buckets[key].append(
+                f"# {name}\nSource: {self._SITE_URL}/{slug}\n\n{body}\n\n"
+            )
+
+        # Generated API reference pages have no MDX to read, so record their
+        # identity and let the index in llms.txt carry the detail.
+        for _, slug, name in self._openapi_entries():
+            buckets[""].append(f"# {name}\nSource: {self._SITE_URL}/{slug}\n\n")
+
+        if not any(buckets.values()):
+            logger.debug("No pages found, skipping llms-full.txt")
+            return
+
+        pointers = []
+        for prefix, label in self._LLMS_FULL_SPLITS:
+            if not buckets[prefix]:
+                continue
+            target = f"{prefix}/llms-full.txt"
+            destination = self.build_dir / target
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(
+                f"# {title}: {label}\n\n"
+                f"> Full text of the {label} documentation.\n\n"
+                + "\n".join(buckets[prefix]),
+                encoding="utf-8",
+            )
+            pointers.append(f"- {label} documentation: {self._SITE_URL}/{target}")
+            logger.info(
+                "✅ %s written: %d pages, %d characters",
+                target,
+                len(buckets[prefix]),
+                destination.stat().st_size,
+            )
+
+        # A custom llms-full.txt has to open with the site title as an H1, or
+        # the first page heading in the corpus reads as the site title.
+        header = [f"# {title}", ""]
+        if description:
+            header += [f"> {description}", ""]
+        if pointers:
+            header += [
+                "Language-specific documentation is published as a separate corpus:",
+                "",
+                *pointers,
+                "",
+            ]
+        content = "\n".join(header) + "\n" + "\n".join(buckets[""])
+        (self.build_dir / "llms-full.txt").write_text(content, encoding="utf-8")
+        logger.info(
+            "✅ llms-full.txt written: %d pages, %d characters",
+            len(buckets[""]),
+            len(content),
+        )
+
+    def _generate_llms_txt(self) -> None:
+        """Write a custom llms.txt listing every published page.
+
+        Mintlify caps its auto-generated llms.txt at 100,000 characters and
+        silently truncates past that, which drops several hundred pages. A
+        custom file at the project root overrides the generated one and is not
+        capped, so this emits the complete index instead.
+        """
+        docs_json = self.build_dir / "docs.json"
+        title, description = "Docs by LangChain", ""
+        if docs_json.exists():
+            try:
+                config = json.loads(docs_json.read_text(encoding="utf-8"))
+                title = config.get("name", title)
+                description = config.get("description", "")
+            except (OSError, json.JSONDecodeError):
+                logger.warning("Could not read docs.json for llms.txt metadata")
+
+        # section label -> list of (slug, "- [Title](url)") pairs
+        sections: dict[str, list[tuple[str, str]]] = {}
+        # plain entry -> the same entry with its description, for the root file
+        described_lines: dict[str, str] = {}
+        page_count = 0
+
+        for mdx in sorted(self.build_dir.rglob("*.mdx")):
+            relative = mdx.relative_to(self.build_dir)
+            if relative.parts and relative.parts[0] == "snippets":
+                continue
+            meta = self._read_frontmatter(mdx)
+            if meta.get("noindex") is True:
+                continue
+
+            slug = relative.with_suffix("").as_posix()
+            url = f"{self._SITE_URL}/{slug}.md"
+            name = str(
+                meta.get("title")
+                or meta.get("sidebarTitle")
+                or slug.rsplit("/", 1)[-1].replace("-", " ").title()
+            )
+            summary = str(meta.get("description") or "").replace("\n", " ").strip()
+
+            label = "Docs"
+            for prefix, section_label in self._LLMS_SECTIONS:
+                if slug == prefix or slug.startswith(f"{prefix}/"):
+                    label = section_label
+                    break
+
+            # Descriptions roughly double an entry. They stay in the root file,
+            # where there is room, and are dropped from section indexes so more
+            # pages fit per file and fewer files are needed.
+            line = f"- [{name}]({url})"
+            if summary:
+                described_lines[line] = f"{line}: {summary[:300]}"
+            sections.setdefault(label, []).append((slug, line))
+            page_count += 1
+
+        for group_label, api_slug, name in self._openapi_entries():
+            sections.setdefault(group_label, []).append(
+                (api_slug, f"- [{name}]({self._SITE_URL}/{api_slug}.md)")
+            )
+            page_count += 1
+
+        if not page_count:
+            logger.debug("No pages found, skipping llms.txt")
+            return
+
+        ordered = ["Docs", *[label for _, label in self._LLMS_SECTIONS]]
+        ordered += [label for label in sections if label not in ordered]
+        ordered = [label for label in ordered if sections.get(label)]
+
+        inline: list[tuple[str, list[str]]] = []
+        linked: list[tuple[str, str, int]] = []  # (label, section path, page count)
+
+        for label in ordered:
+            entries = sections[label]
+            lines = [line for _, line in entries]
+            size = sum(len(line) + 1 for line in lines)
+            prefix = self._common_directory([slug for slug, _ in entries])
+            # Small sections ride along in the root file. That keeps real .md
+            # links in the canonical index for link sampling, and saves agents
+            # a fetch for a handful of pages. A section with no shared
+            # directory has nowhere to live but the root.
+            if not prefix or size <= self._LLMS_INLINE_MAX:
+                inline.append(
+                    (label, [described_lines.get(line, line) for line in lines])
+                )
+            else:
+                for section_prefix, chunk in self._chunk_section(prefix, entries):
+                    if not chunk:
+                        continue
+                    path = f"{section_prefix}/llms.txt"
+                    self._write_section_index(
+                        path, title, label, [line for _, line in chunk]
+                    )
+                    linked.append((section_prefix, path, len(chunk)))
+
+        out = [f"# {title}", ""]
+        if description:
+            out += [f"> {description}", ""]
+        if linked:
+            out += [
+                "Each section index below lists the markdown version of every "
+                "page in that section.",
+                "",
+                "## Section indexes",
+                "",
+            ]
+            for section_prefix, path, count in sorted(linked):
+                out.append(
+                    f"- [/{section_prefix}]({self._SITE_URL}/{path}): {count} pages"
+                )
+            out.append("")
+        for label, lines in inline:
+            out += [f"## {label}", "", *lines, ""]
+
+        content = "\n".join(out)
+        (self.build_dir / "llms.txt").write_text(content, encoding="utf-8")
+        logger.info(
+            "✅ llms.txt written: %d pages, %d characters in root, %d section indexes",
+            page_count,
+            len(content),
+            len(linked),
+        )
+        self._validate_llms_indexes(page_count)
 
     def _copy_shared_files(self) -> None:
         """Copy files that should be shared between versions."""
