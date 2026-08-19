@@ -362,6 +362,62 @@ In some cases, you may want to bypass a reducer and directly overwrite a state v
 :::
 
 :::js
+#### Resetting a reducer field
+
+A common source of confusion with reducers: with a merging reducer such as `operator.add`, returning an empty value does **not** clear the field. Because the reducer merges the right argument into the left one, an empty update is merged in and previously accumulated values are kept:
+
+:::python
+```python
+import operator
+from typing import Annotated, TypedDict
+
+class State(TypedDict):
+    errors: Annotated[list[str], operator.add]
+
+# node A returns {"errors": ["bad sql"]}
+# node B returns {"errors": []}  # state["errors"] is still ["bad sql"]
+```
+:::
+
+:::js
+```typescript
+import { Annotation } from "@langchain/langgraph";
+
+const State = Annotation.Root({
+  errors: Annotation<string[]>({
+    reducer: (state: string[], update: string[]) => state.concat(update),
+  }),
+});
+
+// node A returns { errors: ["bad sql"] }
+// node B returns { errors: [] }  // state.errors is still ["bad sql"]
+```
+:::
+
+To let a node reset (clear) the field, define a custom reducer that replaces the accumulated value instead of merging it:
+
+:::python
+```python
+def overwrite(current: list[str], new: list[str]) -> list[str]:
+    return new
+
+class State(TypedDict):
+    errors: Annotated[list[str], overwrite]  # node can clear with {"errors": []}
+```
+:::
+
+:::js
+```typescript
+const State = Annotation.Root({
+  errors: Annotation<string[]>({
+    reducer: (_state: string[], update: string[]) => update,
+  }),
+});
+```
+:::
+
+This pattern is useful for error buffers or retry counters that must be cleared between retry attempts.
+
 ### Untracked values
 
 `UntrackedValue` is used for state fields that should exist during graph execution but should **never be checkpointed**. When a graph resumes from a checkpoint, untracked values will be reset to their initial state (or be unavailable).
