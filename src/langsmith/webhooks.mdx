@@ -1,10 +1,10 @@
 ---
 title: Configure webhook notifications for rules
 sidebarTitle: Configure webhook notifications for rules
-description: Configure webhook notifications to receive POST requests when automation rules match new runs in LangSmith.
+description: Configure webhook notifications to receive POST requests when automation rules match new runs or threads in LangSmith.
 ---
 
-When you add a webhook URL on an automation action, LangSmith makes a POST request to your webhook endpoint any time the rules you defined match any new runs.
+When you add a webhook URL on an automation action, LangSmith makes a POST request to your webhook endpoint any time the rules you defined match any new runs or threads.
 
 ![Webhook](/langsmith/images/webhook.png)
 
@@ -13,9 +13,10 @@ When you add a webhook URL on an automation action, LangSmith makes a POST reque
 The payload LangSmith sends to your webhook endpoint contains:
 
 - `"rule_id"`: this is the ID of the automation that sent this payload.
-- `"start_time"` and `"end_time"`: these are the time boundaries where LangSmith found matching runs.
-- `"runs"`: this is an array of runs, where each run is a dictionary. If you need more information about each run, use the SDK in your endpoint to fetch it from the API.
-- `"feedback_stats"`: this is a dictionary with the feedback statistics for the runs. An example payload for this field is shown in the following code block.
+- `"start_time"` and `"end_time"`: these are the time boundaries where LangSmith found matching items.
+- `"runs"`: this is an array of runs, where each run is a dictionary. If you need more information about each run, use the SDK in your endpoint to fetch it from the API. Each run dictionary includes:
+    - `"feedback_stats"`: a dictionary with the feedback statistics for that run. An example of this field is shown in the following code block.
+- `"threads"`: this is an array of threads, sent in place of `"runs"` when the rule's [item type](/langsmith/rules#set-the-item-type-to-runs-or-threads) is **Threads**. A payload carries one array or the other, never both. For more information, refer to [Read a thread rule payload](#read-a-thread-rule-payload).
 
 ```json
 "feedback_stats": {
@@ -99,6 +100,53 @@ This is an example of the entire payload LangSmith sends to your webhook endpoin
       "feedback_stats": null,
       "serialized": null,
       "share_token": null
+    }
+  ]
+}
+```
+
+### Handle batched payloads
+
+A payload covers a polling window rather than a single match. LangSmith collects every item the rule matched between `"start_time"` and `"end_time"` and delivers them in one POST, instead of sending one POST per item.
+
+Write your endpoint to iterate the array rather than reading only the first element. A thread rule delivers at most 500 threads per execution.
+
+### Read a thread rule payload
+
+A rule whose [item type](/langsmith/rules#set-the-item-type-to-runs-or-threads) is **Threads** replaces the top-level `"runs"` array with a `"threads"` array. Each entry in that array contains:
+
+- `"thread_id"`: the ID of the thread that went idle and matched the rule.
+- `"session_id"`: the ID of the tracing project the thread belongs to.
+- `"runs"`: an array of the thread's root runs, one per trace, each with the traced inputs and outputs. Child runs such as tool and model calls are not included. These run dictionaries also omit `"feedback_stats"`, which is present only on runs in a `"runs"` payload.
+
+This example is abbreviated, showing one thread with a single root run:
+
+```json
+{
+  "rule_id": "7f3e9c21-5b48-4a6d-8e12-9f0a1b2c3d4e",
+  "start_time": "2026-08-14T09:00:00.000000+00:00",
+  "end_time": "2026-08-14T09:01:00.000000+00:00",
+  "threads": [
+    {
+      "thread_id": "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6071",
+      "session_id": "2a9d6e4b-1c37-4f58-b0e9-6d5c4a3b2f10",
+      "runs": [
+        {
+          "trace_id": "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6072",
+          "start_time": "2026-08-14T08:57:12.412000",
+          "inputs": {
+            "messages": [
+              {
+                "type": "human",
+                "id": "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6073",
+                "content": "How do I group traces into a thread?",
+                "additional_kwargs": {},
+                "response_metadata": {}
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }
