@@ -32,6 +32,12 @@ curl -LO "<download_url>"
 
 The token encodes the sandbox, the tenant, the exact file path, and the response headers, so a link cannot be edited to point at a different file or a different sandbox. Each link serves exactly one path.
 
+A link is pinned to that path, not to a snapshot of the file. The file itself is not captured or copied when the link is minted.
+
+<Warning>
+Do not modify a file after minting a link for it. A later write to that path may or may not be reflected in what the link serves, so treat the file as immutable for the life of the link. When the contents change, write a new file and mint a new link for it.
+</Warning>
+
 Links are served from the sandbox service domain, on the sandbox's own host, never from the LangSmith API host. Downloaded content is therefore isolated from your LangSmith session.
 
 ## Create a link
@@ -150,6 +156,7 @@ A download link is a bearer credential embedded in a URL. Anyone who obtains it 
 
 - **Links cannot be revoked.** A minted link stays valid until it expires, even if the API key that created it is deleted or loses `sandboxes:exec`. Set an expiry when that matters.
 - **Links die with the sandbox.** Deleting the sandbox invalidates every link into it.
+- **The file must not change.** A link is pinned to a path, so a write to that path after minting may or may not be reflected in what the link serves.
 - **Guest headers are dropped.** The response is rebuilt from an allowlist of content, range, and validator headers. Cookies or other headers set by code inside the sandbox are never forwarded.
 - **Rendered content is sandboxed.** Every response carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`, so a file served with `content_disposition=inline` renders with no capabilities and no access to your LangSmith session.
 
@@ -173,3 +180,4 @@ Use a download link to hand one file to an outside consumer. Use `read()` to pul
 | **`403` on fetch** | The link expired, was altered, or was presented on the wrong host | Mint a fresh link; copy the URL verbatim |
 | **`404` on fetch** | The file no longer exists at that path | Links are pinned to a path, not to file contents. Mint a link for a path that exists |
 | **Browser downloads instead of rendering** | Default disposition is `attachment` | Mint with `content_disposition="inline"` and an explicit `content_type` |
+| **Stale or partial contents** | The file was written or replaced after the link was minted | Do not modify a file that a link points at. Write a new file and mint a new link |
