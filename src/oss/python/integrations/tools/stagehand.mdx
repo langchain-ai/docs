@@ -5,179 +5,130 @@ integration:
   name: Stagehand
 ---
 
-[Stagehand](https://stagehand.dev) is an open-source browser automation framework built on Playwright, backed by [Browserbase](https://browserbase.com) — a developer platform for running reliable, managed headless browsers. Together they give LangChain agents AI-powered browser tools for search, page retrieval, rendered extraction, and multi-step interactive browsing.
+[Stagehand](https://stagehand.dev) is an open-source browser automation framework built on Playwright, backed by [Browserbase](https://browserbase.com) — a developer platform for running reliable, managed headless browsers. The integration ships a ready-made MCP server that exposes three tools — `run`, `snapshot`, and `screenshot` — directly to your Deep Agent, with no custom tool definitions required.
 
-## Overview
+<Note>
+  Stagehand ships this integration from its own repository. Clone the repo and run the examples from `packages/integrations/deepagents`.
+</Note>
 
-The recommended pattern exposes four tools at different cost and capability tiers:
+## Tools
 
-| Tool | What it does | When to use |
-|------|-------------|-------------|
-| `browserbase_search` | Web search via Browserbase Search API | Discovery — always try first |
-| `browserbase_fetch` | Headless page retrieval via Browserbase Fetch API | Static pages, quick reads, no JS needed |
-| `browserbase_rendered_extract` | Full browser session + Stagehand extraction | JS-heavy or rendered pages (read-only) |
-| `browserbase_interactive_task` | Stagehand agent for multi-step browser tasks | Clicks, form fills, login flows |
+| Tool | Description |
+|------|-------------|
+| `run` | Execute JavaScript or snapshot actions against the active browser page |
+| `snapshot` | Inspect the active page and hydrate bracketed element IDs for use in `run` |
+| `screenshot` | Capture a screenshot of the rendered page |
 
 ## Setup
 
-### Credentials
+### Prerequisites
 
-Get an API key from [browserbase.com](https://browserbase.com) and export it:
+- Python 3.11–3.13
+- [uv](https://docs.astral.sh/uv/)
+- A model-provider API key (e.g. `OPENAI_API_KEY`)
+- Local Chrome, or a [Browserbase](https://browserbase.com) API key for a managed remote browser
 
-```bash
-export BROWSERBASE_API_KEY="bb_live_..."
-```
-
-Optionally override the models used by Stagehand:
-
-```bash
-export STAGEHAND_MODEL="google/gemini-3-flash-preview"
-export STAGEHAND_AGENT_MODEL="anthropic/claude-sonnet-4-6"
-```
-
-### Installation
+### Clone and install
 
 ```bash
-pip install browserbase stagehand beautifulsoup4 langchain-core
+git clone https://github.com/browserbase/stagehand.git
+cd stagehand/packages/integrations/deepagents
+uv sync --locked
+uv sync --project examples/local --locked
 ```
 
-## Defining the tools
+### Environment variables
+
+```bash
+# Model provider
+export OPENAI_API_KEY="..."
+
+# Browser: local Chrome (default) or Browserbase
+export STAGEHAND_BROWSER="browserbase"    # omit to use local Chrome
+export BROWSERBASE_API_KEY="bb_live_..."  # required for Browserbase
+```
+
+## Use with a Deep Agent
+
+The integration's MCP server (`stagehand-deepagents-mcp`) is launched over stdio by `MultiServerMCPClient`. Use `load_mcp_tools` to get the tools and pass them directly to `create_deep_agent` — no manual tool definitions needed:
 
 ```python
 import asyncio
-import os
-from browserbase import Browserbase
-from bs4 import BeautifulSoup
-from langchain.tools import tool
-from stagehand import AsyncStagehand
+import dotenv
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
+from deepagents import create_deep_agent
 
+dotenv.load_dotenv()
 
-@tool
-def browserbase_search(query: str, num_results: int = 5) -> str:
-    """Search the web with Browserbase. Use this first for discovery before opening pages."""
-    bb = Browserbase(api_key=os.environ["BROWSERBASE_API_KEY"])
-    response = bb.search.web(query=query, num_results=max(1, min(num_results, 10)))
-    results = [
-        {"title": r.title, "url": r.url}
-        for r in getattr(response, "results", [])
-    ]
-    return str({"query": query, "results": results})
+BROWSER_INSTRUCTIONS = """You control one persistent browser through exactly three tools:
+- snapshot: inspect the active page and hydrate bracketed element IDs.
+- run: provide either snapshot actions or JavaScript using the Playwright-shaped page API.
+- screenshot: inspect the rendered page visually.
 
+Use snapshot actions for simple interactions and run code for multi-step workflows.
+Snapshot IDs are valid only for the latest snapshot of the active page.
+Snapshot again after navigation or stale IDs. Do not launch another browser.
+"""
 
-@tool
-def browserbase_fetch(url: str, use_proxy: bool = False, max_chars: int = 12000) -> str:
-    """Fetch page content without a browser session. Best for static pages and quick reads."""
-    bb = Browserbase(api_key=os.environ["BROWSERBASE_API_KEY"])
-    response = bb.fetch_api.create(url=url, proxies=use_proxy)
-    content = str(getattr(response, "content", ""))
-    soup = BeautifulSoup(content, "html.parser")
-    for tag in soup(["script", "style"]):
-        tag.decompose()
-    text = (soup.body or soup).get_text("\n", strip=True)[:max_chars]
-    return str({"url": url, "status_code": response.status_code, "text": text})
-
-
-@tool
-def browserbase_rendered_extract(start_url: str, instruction: str) -> str:
-    """Open a full Browserbase browser session and extract rendered content with Stagehand."""
-    return asyncio.run(_rendered_extract(start_url, instruction))
-
-
-@tool
-def browserbase_interactive_task(start_url: str, task: str) -> str:
-    """Open a Browserbase-hosted Stagehand session and execute a multi-step browser task."""
-    return asyncio.run(_interactive_task(start_url, task))
-
-
-async def _rendered_extract(start_url: str, instruction: str) -> str:
-    client = AsyncStagehand(browserbase_api_key=os.environ["BROWSERBASE_API_KEY"])
-    resp = await client.sessions.start(
-        model_name=os.getenv("STAGEHAND_MODEL", "google/gemini-3-flash-preview")
-    )
-    session_id = resp.data.session_id
-    try:
-        await client.sessions.navigate(id=session_id, url=start_url, frame_id="")
-        result = await client.sessions.extract(id=session_id, instruction=instruction)
-        return str({
-            "session_id": session_id,
-            "result": getattr(getattr(result, "data", None), "result", None),
-        })
-    finally:
-        await client.sessions.end(id=session_id)
-
-
-async def _interactive_task(start_url: str, task: str) -> str:
-    model = os.getenv("STAGEHAND_AGENT_MODEL", "anthropic/claude-sonnet-4-6")
-    client = AsyncStagehand(browserbase_api_key=os.environ["BROWSERBASE_API_KEY"])
-    resp = await client.sessions.start(model_name=model)
-    session_id = resp.data.session_id
-    try:
-        await client.sessions.navigate(id=session_id, url=start_url, frame_id="")
-        result = await client.sessions.execute(
-            id=session_id,
-            execute_options={"instruction": task, "max_steps": 20},
-            agent_config={
-                "model": model,
-                "instructions": "Execute the browser task precisely and stop when done.",
+client = MultiServerMCPClient(
+    {
+        "stagehand_browser": {
+            "transport": "stdio",
+            "command": "uv",
+            "args": ["run", "--project", ".", "--locked", "stagehand-deepagents-mcp"],
+            "env": {
+                k: v for k, v in __import__("os").environ.items()
+                if k.startswith(("STAGEHAND_", "BROWSERBASE_")) and v
             },
-            timeout=300.0,
-        )
-        return str(result)
-    finally:
-        await client.sessions.end(id=session_id)
-```
-
-## Use with an agent
-
-Pass the tools directly to any LangChain agent:
-
-```python
-from langchain.agents import create_react_agent
-from langchain.chat_models import init_chat_model
-
-llm = init_chat_model("gpt-4o")
-
-agent = create_react_agent(
-    model=llm,
-    tools=[
-        browserbase_search,
-        browserbase_fetch,
-        browserbase_rendered_extract,
-        browserbase_interactive_task,
-    ],
+        }
+    }
 )
 
-result = agent.invoke({
-    "messages": [{
-        "role": "user",
-        "content": "Find the current Stagehand changelog and summarize the latest release.",
-    }]
-})
-print(result["messages"][-1].content)
+async def main():
+    async with client.session("stagehand_browser") as session:
+        tools = await load_mcp_tools(session)
+        agent = create_deep_agent(
+            model="openai:gpt-4o",
+            tools=tools,
+            system_prompt=BROWSER_INSTRUCTIONS,
+        )
+        result = await agent.ainvoke({
+            "messages": [{"role": "user", "content": "Go find me a summary of all main sports events today"}]
+        })
+    print(result["messages"][-1].content)
+
+asyncio.run(main())
 ```
 
-## Which tool to use
+<Warning>
+  Keep one persistent `ClientSession` for the duration of your agent run. Stateless tool loading (e.g. `MultiServerMCPClient.get_tools()`) starts a new stdio process per call and loses the browser and snapshot IDs.
+</Warning>
 
-```
-User query
-  └─ Is a specific URL already known?
-       ├─ No  → browserbase_search  (discover URLs first)
-       └─ Yes ↓
-            Is the page JavaScript-rendered?
-              ├─ No  → browserbase_fetch  (fast, stateless)
-              └─ Yes ↓
-                   Does the task require interaction (click / login / form)?
-                     ├─ No  → browserbase_rendered_extract  (read-only full browser)
-                     └─ Yes → browserbase_interactive_task  (Stagehand agent)
-```
+## Server configuration
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `STAGEHAND_BROWSER` | `local` | Select `local` or `browserbase` |
+| `STAGEHAND_HEADLESS` | `false` | Run local Chrome headlessly |
+| `STAGEHAND_START_URL` | Unset | URL to open when the server starts |
+| `STAGEHAND_MODEL` | Unset | Optional model for Stagehand AI methods called inside `run` |
+| `STAGEHAND_MODEL_API_KEY` | Unset | Required with `STAGEHAND_MODEL` |
+| `STAGEHAND_API_URL` | Unset | Optional Stagehand Model Gateway URL |
+| `STAGEHAND_RUN_TIMEOUT_MS` | `60000` | Timeout for JavaScript and snapshot-action batches |
+| `BROWSERBASE_API_KEY` | Unset | Required for Browserbase |
+
+<Note>
+  The MCP server and the agent run in separate Python environments. Stagehand requires `websockets>=16.1.1` while the current LangGraph SDK requires `websockets<16` — the stdio transport isolates these dependency sets.
+</Note>
 
 ## Related resources
 
 <CardGroup cols={2}>
-  <Card title="Browserbase provider page" icon="browser" href="/oss/integrations/providers/browserbase">
-    Full provider overview, stealth mode, session debugger, and live debug.
+  <Card title="Integration source + examples" icon="brand-github" href="https://github.com/browserbase/stagehand/tree/main/packages/integrations/deepagents">
+    MCP server, managed tools, and runnable agent examples.
   </Card>
-  <Card title="Stagehand docs" icon="book" href="https://docs.stagehand.dev">
-    Stagehand framework documentation and API reference.
+  <Card title="Browserbase provider page" icon="browser" href="/oss/integrations/providers/browserbase">
+    Full Browserbase provider overview and setup.
   </Card>
 </CardGroup>
