@@ -78,8 +78,8 @@ const agent = createAgent({
     Optional array of tools or tool names to apply retry logic to. Can be a list of `BaseTool` instances or tool name strings. If `undefined`, applies to all tools.
 </ParamField>
 
-<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
-    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
+<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="(error) => getRetryable(error) ?? true">
+    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. With `langchain>=1.5.9`, the default no longer retries errors that are marked non-retryable. Every other error is retried.
 </ParamField>
 
 <ParamField body="onFailure" type="'error' | 'continue' | ((error: Error) => string)" default="continue">
@@ -209,6 +209,61 @@ const strictRetry = toolRetryMiddleware({
 
 </Accordion>
 
+#### Mark an error as retryable
+
+<Note>
+Requires `@langchain/core>=1.2.8` and `langchain>=1.5.9`.
+</Note>
+
+Mark an error before throwing it and the retry middleware honors that verdict. This keeps retries from being spent on a failure that repeats identically, such as invalid input or a rejected credential.
+
+Use `stampRetryable` from `@langchain/core/errors`:
+
+```typescript
+import { stampRetryable } from "@langchain/core/errors";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const lookupRecord = tool(
+  async ({ id }) => {
+    const response = await fetch(`https://api.example.com/records/${id}`);
+
+    if (response.status === 422) {
+      // Retrying the same identifier fails the same way
+      throw stampRetryable(new Error("Malformed record identifier"), false);
+    }
+    if (response.status === 503) {
+      throw stampRetryable(new Error("Record service unavailable"), true);
+    }
+
+    return response.json();
+  },
+  {
+    name: "lookup_record",
+    description: "Look up a record by identifier",
+    schema: z.object({ id: z.string() }),
+  }
+);
+```
+
+Pass `false` for a failure that cannot succeed on another attempt, and `true` for a transient one. Errors that you do not mark are retried, so existing tools keep their current behavior.
+
+Marking an error does not change its type or shape, so `instanceof` checks against it continue to work. To read a mark back, call `getRetryable(error)`, which returns `true`, `false`, or `undefined` when the error was never marked.
+
+Chat model integrations already mark the failures they recognize, so you do not need to mark these yourself. The following fail on the first attempt rather than consuming retries:
+
+- **Authentication failures**: A missing, invalid, or expired API key.
+- **Permission denied**: Valid credentials without access to the requested resource.
+- **Unknown model**: A model identifier the provider does not recognize.
+- **Context window overflow**: Input longer than the model accepts.
+- **Invalid tool results**: A malformed tool result block.
+- **Payload too large**: A request body the provider rejects on size.
+- **Exhausted quota**: A billing or usage limit, as opposed to a rate limit.
+- **Cancelled calls**: A request stopped through an abort signal.
+
+Rate limits, timeouts, and server errors stay retryable. Anything a provider does not recognize is left unmarked and retries as before.
+
+
 ### Model retry
 
 Automatically retry failed model calls with configurable exponential backoff. Model retry is useful for the following:
@@ -246,8 +301,8 @@ const agent = createAgent({
     Maximum number of retry attempts after the initial call (3 total attempts with default). Must be >= 0.
 </ParamField>
 
-<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
-    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
+<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="(error) => getRetryable(error) ?? true">
+    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. With `langchain>=1.5.9`, the default no longer retries errors that are marked non-retryable. Every other error is retried.
 </ParamField>
 
 <ParamField body="onFailure" type="'error' | 'continue' | ((error: Error) => string)" default="continue">
