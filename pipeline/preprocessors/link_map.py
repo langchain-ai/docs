@@ -285,6 +285,15 @@ LINK_MAPS: list[LinkMap] = [
             # Exceptions
             "ContextOverflowError": "langchain-core/exceptions/ContextOverflowError",
             "OutputParserException": "langchain-core/exceptions/OutputParserException",
+            "ModelError": "langchain-core/exceptions/ModelError",
+            "ModelAuthenticationError": "langchain-core/exceptions/ModelAuthenticationError",
+            "ModelPermissionDeniedError": "langchain-core/exceptions/ModelPermissionDeniedError",
+            "ModelInvalidRequestError": "langchain-core/exceptions/ModelInvalidRequestError",
+            "ModelNotFoundError": "langchain-core/exceptions/ModelNotFoundError",
+            "ModelRateLimitError": "langchain-core/exceptions/ModelRateLimitError",
+            "ModelAPIError": "langchain-core/exceptions/ModelAPIError",
+            "ModelConnectionError": "langchain-core/exceptions/ModelConnectionError",
+            "ModelTimeoutError": "langchain-core/exceptions/ModelTimeoutError",
             # Rate limiters
             "InMemoryRateLimiter": "langchain-core/rate_limiters/InMemoryRateLimiter",
             # LangSmith SDK
