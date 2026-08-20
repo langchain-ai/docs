@@ -12,30 +12,30 @@ You write the agent's intelligence: its instructions, the tools it can call, the
 - **A managed runtime**: [LangSmith Deployment's Agent Server](/langsmith/agent-server-overview) hosts and operates the agent, and keeps sessions running across restarts.
 
 ```mermaid actions={false}
-%%{init: {"theme": "base", "themeVariables": {"lineColor": "#40668D", "primaryColor": "#E5F4FF", "primaryTextColor": "#030710", "primaryBorderColor": "#006DDD"}}}%%
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, system-ui, sans-serif","lineColor":"#40668D","primaryColor":"#E5F4FF","primaryTextColor":"#030710","primaryBorderColor":"#006DDD","clusterBkg":"transparent"}}}%%
 flowchart LR
-    subgraph you["You provide"]
-        Logic["<div style='text-align:left'>Business logic<br/>- Instructions<br/>- Tools<br/>- Skills<br/>- Model</div>"]
+    subgraph you["<b>You provide</b>"]
+        Logic(["<div style='text-align:left;padding:4px 8px'><b>Business logic</b><br/><br/>&nbsp;•&nbsp; Instructions<br/>&nbsp;•&nbsp; Tools<br/>&nbsp;•&nbsp; Skills<br/>&nbsp;•&nbsp; Model</div>"])
     end
-    subgraph mda["Managed Deep Agents"]
+    subgraph mda["<b>Managed Deep Agents</b>"]
         direction TB
-        Harness["<div style='text-align:left'>Deep Agents harness<br/>- Agent loop<br/>- Filesystem<br/>- Subagents</div>"]
-        Runtime["<div style='text-align:left'>Managed runtime<br/>- Agent Server<br/>- Sandboxes<br/>- Schedules</div>"]
+        Harness("<div style='text-align:left;padding:4px 8px'><b>Deep Agents harness</b><br/><br/>&nbsp;•&nbsp; Agent loop<br/>&nbsp;•&nbsp; Filesystem<br/>&nbsp;•&nbsp; Subagents</div>")
+        Runtime("<div style='text-align:left;padding:4px 8px'><b>Managed runtime</b><br/><br/>&nbsp;•&nbsp; Agent Server<br/>&nbsp;•&nbsp; Sandboxes<br/>&nbsp;•&nbsp; Schedules</div>")
         Harness --> Runtime
     end
 
-    Logic --> mda
+    Logic ==> mda
 
-    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
-    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
-    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710,rx:10,ry:10
+    classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900,rx:18,ry:18
+    classDef output fill:#F6E7FB,stroke:#885270,stroke-width:2px,color:#441E33,rx:10,ry:10
 
     class Logic trigger
     class Harness process
     class Runtime output
 
-    style you fill:none,stroke:#40668D,stroke-width:1px
-    style mda fill:none,stroke:#40668D,stroke-width:1px
+    style you fill:#FCFFF2,stroke:#B7C77A,stroke-width:1.5px,stroke-dasharray:4 4
+    style mda fill:#F5FAFF,stroke:#7FB2E5,stroke-width:1.5px,stroke-dasharray:4 4
 ```
 
 ## Example agent
