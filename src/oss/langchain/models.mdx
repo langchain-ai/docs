@@ -127,6 +127,8 @@ A chat model takes parameters that can be used to configure its behavior. The fu
 :::js
 <ParamField body="maxRetries" type="number" default="6">
     The maximum number of attempts the system will make to resend a request if it fails due to issues like network timeouts or rate limits. Retries use exponential backoff with jitter. Network errors, rate limits (429), and server errors (5xx) are retried automatically. Client errors such as 401 (unauthorized) or 404 are not retried. For long-running [agent](/oss/deepagents/overview) tasks on unreliable networks, consider increasing this to 10–15.
+
+    On providers that support it, [model retry middleware](/oss/langchain/middleware/built-in#model-retry) takes over retries for the calls it wraps, and this value does not apply to them.
 </ParamField>
 :::
 
@@ -1630,6 +1632,38 @@ console.log(message.contentBlocks);
 This represents a single conversational turn; there are no associated [ToolMessage](/oss/langchain/messages#tool-message) objects that need to be passed in as in client-side [tool-calling](#tool-calling).
 
 See the [integration page](/oss/integrations/chat) for your given provider for available tools and usage details.
+
+:::python
+### Model exceptions
+
+Major integration packages raise standard exception types from `langchain_core.exceptions` for common model failures such as authentication errors, rate limits, and timeouts. These exceptions inherit from both the LangChain base type and the provider SDK's own exception type, so you can catch either one:
+
+```python
+from langchain.chat_models import init_chat_model
+from langchain_core.exceptions import ModelTimeoutError
+
+model = init_chat_model("openai:gpt-5.6-luna", timeout=0.0001)
+
+try:
+    response = model.invoke("Hello")
+except ModelTimeoutError:
+    print("caught")
+```
+
+Each type carries an `is_retryable` attribute that [retry middleware](/oss/langchain/middleware/built-in#model-retry) respects by default.
+
+<Accordion title="Exception types">
+- @[`ModelAuthenticationError`] — missing, invalid, or expired API key (not retryable)
+- @[`ModelPermissionDeniedError`] — credentials lack permission (not retryable)
+- @[`ModelInvalidRequestError`] — provider rejects the request (not retryable)
+- @[`ModelNotFoundError`] — requested model not found (not retryable)
+- @[`ModelRateLimitError`] — provider rate limit exceeded (retryable)
+- @[`ModelAPIError`] — provider server failure (retryable)
+- @[`ModelConnectionError`] — provider cannot be reached (retryable)
+- @[`ModelTimeoutError`] — request times out (retryable)
+- @[`ContextOverflowError`] — input exceeds the model context limit (not retryable)
+</Accordion>
+:::
 
 :::python
 ### Rate limiting
