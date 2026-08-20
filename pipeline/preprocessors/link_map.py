@@ -526,7 +526,7 @@ LINK_MAPS: list[LinkMap] = [
             "useChannel": "https://reference.langchain.com/javascript/langchain-react/useChannel",
             "StreamTransformer": "langgraph/stream/_types/StreamTransformer",
             "StreamChannel": "langgraph/stream/stream_channel/StreamChannel",
-            "client.runs.cancel": "https://reference.langchain.com/javascript/langchain-langgraph-sdk/client/RunsClient/cancel",
+            "client.runs.cancel": "langsmith/deployment/sdk/#langgraph_sdk.client.RunsClient.cancel",
             "ThreadStateJS": "https://reference.langchain.com/javascript/langchain-langgraph-sdk/index/ThreadState",
         },
     },
