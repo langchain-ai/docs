@@ -695,7 +695,7 @@ LINK_MAPS: list[LinkMap] = [
             "ThreadsClient": "langchain-langgraph-sdk/client/ThreadsClient",
             "ThreadsClient.create": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#create",
             "ThreadsClient.copy": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#copy",
-            "ThreadsClient.get": "langchain-community/utils/convex/get",
+            "ThreadsClient.get": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#get",
             "ThreadsClient.get_state": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#getstate",
             "ThreadsClient.search": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#search",
             "ThreadsClient.get_history": "classes/_langchain_langgraph-sdk.client.ThreadsClient.html#gethistory",
