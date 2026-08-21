@@ -1,15 +1,18 @@
 ---
 title: Configuration
 sidebarTitle: Configuration
-description: Configure Deep Agents Code with config.toml, environment variables, hooks, and CLI flags
+description: Configure Deep Agents Code with config files, managed policy, environment variables, hooks, and CLI flags
 ---
 
-Deep Agents Code stores configuration under `~/.deepagents/` and in project-level dotfiles. For the full directory tree, session storage, and skill paths, see [Data locations](/oss/deepagents/code/configuration#data-locations).
+Deep Agents Code stores user configuration under `~/.deepagents/` and in project-level dotfiles. Administrators can enforce settings from a fixed system path with [`managed_config.toml`](#managed-configuration). For the full directory tree, session storage, and skill paths, see [Data locations](/oss/deepagents/code/configuration#data-locations).
 
 The main config files are:
 <CardGroup cols={2}>
     <Card title="Config file" icon="file-code" href="/oss/deepagents/code/config-file">
         Edit `config.toml` for model defaults, provider settings, themes, and update settings.
+    </Card>
+    <Card title="Managed configuration" icon="shield-lock" href="#managed-configuration">
+        Enforce fleet-wide settings with administrator-owned `managed_config.toml`.
     </Card>
     <Card title="Environment variables" icon="variable" href="/oss/deepagents/code/configuration#environment-variables">
         Set global API keys and secrets in `~/.deepagents/.env` or shell exports.
@@ -28,10 +31,11 @@ Deep Agents Code merges settings from several sources. Which source wins depends
 
 **General options** (interpreter limits, update settings, themes, and other `config.toml` keys) resolve in this order:
 
-1. `DEEPAGENTS_CODE_`-prefixed environment variable
-2. Canonical environment variable (when applicable)
-3. `~/.deepagents/config.toml`
-4. Built-in default
+1. Administrator-owned `managed_config.toml`
+2. `DEEPAGENTS_CODE_`-prefixed environment variable
+3. Canonical environment variable (when applicable)
+4. `~/.deepagents/config.toml`
+5. Built-in default
 
 Use `dcode config show` or `dcode config get <key>` to see the effective value and source. See [Inspect configuration](#inspect-configuration).
 
@@ -43,14 +47,14 @@ Use `dcode config show` or `dcode config get <key>` to see the effective value a
 
 ## Inspect configuration
 
-The `dcode config` command group reports what configuration is in effect and where each value comes from, without starting a session. This is useful for confirming that an environment variable or `config.toml` setting is being picked up, and for sharing a redacted snapshot in a bug report.
+The `dcode config` command group reports what configuration is in effect and where each value comes from, without starting a session. This is useful for confirming that managed policy, an environment variable, or a `config.toml` setting is being picked up, and for sharing a redacted snapshot in a bug report.
 
 | Command | Description |
 |---------|-------------|
-| `dcode config show` | Resolve every option against the live environment and `config.toml`, printing the effective value and which source provided it |
+| `dcode config show` | Resolve every option against managed policy, the live environment, and `config.toml`, printing the effective value and which source provided it |
 | `dcode config list` (alias `ls`) | List every available option with its type, default, and where it can be set, without resolving values |
 | `dcode config get <key>` | Show the effective value and source for a single option, e.g. `dcode config get interpreter.memory_limit_mb` |
-| `dcode config path` | Show the on-disk config file locations (`config.toml`, project and global `.env`, `hooks.json`, and managed state files) and whether each exists |
+| `dcode config path` | Show the on-disk config file locations (`managed_config.toml`, `config.toml`, project and global `.env`, `hooks.json`, and managed state files) and whether each exists |
 
 All four commands accept `--json` for machine-readable output. For the full list of management subcommands, see [CLI reference](/oss/deepagents/code/cli-reference).
 
@@ -254,6 +258,86 @@ The uninstall command does not remove user configuration or session data. Deep A
 rm -rf ~/.deepagents
 ```
 
+## Managed configuration
+
+Managed configuration lets an administrator enforce Deep Agents Code settings across a fleet. Deep Agents Code reads an administrator-owned `managed_config.toml` before user environment variables and `~/.deepagents/config.toml`, so users cannot override a managed value from those sources.
+
+<Note>
+    Managed configuration requires `deepagents-code>=0.1.59`.
+</Note>
+
+### Locate the managed config file
+
+Deep Agents Code reads managed policy from a fixed path for each operating system:
+
+| Operating system | Path |
+|------------------|------|
+| macOS | `/Library/Application Support/dcode/managed_config.toml` |
+| Linux | `/etc/dcode/managed_config.toml` |
+| Windows | `<ProgramData>\dcode\managed_config.toml` |
+
+On Windows, Deep Agents Code reads the ProgramData location from the system registry, not the `%ProgramData%` environment variable. Process environment variables cannot redirect any managed config path. A missing file means that no managed policy is configured.
+
+### Create a managed policy
+
+Use the same TOML sections and keys as `~/.deepagents/config.toml`. Run `dcode config list` to see the available options, their accepted types, and whether they support a config file value.
+
+For example, the following policy pins Manual approval mode, removes YOLO from the `Shift+Tab` mode cycle, limits shell auto-approval, disables the JavaScript interpreter, and enables client-side LangSmith secret redaction:
+
+```toml title="managed_config.toml"
+[startup]
+mode = "manual"
+yolo_switcher = false
+
+[shell]
+allow_list = ["git", "make"]
+
+[interpreter]
+enable_interpreter = false
+
+[tracing]
+langsmith_redact = true
+```
+
+Deploy the file with write access restricted to administrators. Deep Agents Code treats managed policy as read-only. A user can still save a preference to `config.toml`, but the managed value remains effective until the administrator removes it.
+
+<Warning>
+    `[sandboxes].default` selects the backend when a user launches with `--sandbox`. It does not force sandboxing. A launch without `--sandbox` runs on the host and reports that it did not use the managed backend.
+</Warning>
+
+### Validate a managed policy
+
+Use the configuration and diagnostic commands after deploying or changing policy:
+
+```bash
+dcode config path
+dcode config show
+dcode config get startup.mode
+dcode doctor
+```
+
+`dcode config path` reports the managed file path and health. `dcode config show` and `dcode config get` label values from the file as `managed config`. `dcode doctor` reports parse errors, rejected values, and the keys that need correction.
+
+### Handle invalid policy
+
+Deep Agents Code fails closed when a managed file cannot be read or parsed, or when its policy is unsafe to apply. Commands that use configuration exit with code `78`; `dcode config`, `dcode doctor`, `dcode auth path`, and help screens remain available for troubleshooting.
+
+A rejected value for one of the following policy-enforced keys also stops startup because falling through to a user value could grant a privilege or remove a boundary:
+
+- `interpreter.enable_interpreter`
+- `interpreter.ptc`
+- `interpreter.ptc_acknowledge_unsafe`
+- `models.auto_classifier`
+- `runtime.recursion_limit`
+- `sandboxes.default`
+- `shell.allow_list`
+- `skills.extra_allowed_dirs`
+- `startup.mode`
+- `startup.yolo_switcher`
+- `tracing.langsmith_redact`
+
+A known configuration section declared with the wrong TOML shape also stops startup. For other options, Deep Agents Code ignores an invalid managed value, uses the next valid lower-precedence source, and reports the rejected key through `dcode config` and `dcode doctor`.
+
 ## Managed deployments
 
 The [install script](https://github.com/langchain-ai/deepagents/blob/main/libs/code/scripts/install.sh) supports running as root, targeting macOS MDM tools (Kandji, Jamf, etc.) that execute scripts in a minimal root environment.
@@ -302,7 +386,7 @@ curl -LsSf https://langch.in/dcode | DEEPAGENTS_CODE_VERSION="0.1.16" bash
     Path to the uv binary. Auto-detected if unset.
 </ResponseField>
 
-Auto-update is enabled by default for managed installs. To opt out, set `DEEPAGENTS_CODE_AUTO_UPDATE=0` in the user's shell profile or deploy a `config.toml` with `[update] auto_update = false` to `~/.deepagents/config.toml`. To suppress automatic updates and update checks entirely, set `DEEPAGENTS_CODE_NO_UPDATE_CHECK=1` or deploy `[update] check = false`.
+Auto-update is enabled by default for managed installs. To manage update behavior fleet-wide, set `[update] auto_update = false` or `[update] check = false` in [`managed_config.toml`](#managed-configuration). For an unmanaged installation, use `DEEPAGENTS_CODE_AUTO_UPDATE=0`, `DEEPAGENTS_CODE_NO_UPDATE_CHECK=1`, or the corresponding keys in `~/.deepagents/config.toml`.
 
 To route every user's model traffic through a managed gateway (provisioning a gateway key and base URL fleet-wide), see [Managed gateways](/oss/deepagents/code/config-file#managed-gateways).
 
