@@ -26,7 +26,7 @@ Engine operates on data you have already chosen to share with LangChain: the tra
 
 Trace content sent to Engine can include user messages, tool outputs, and PII, and this content is sent to model subprocessors under zero data retention for each analysis task. To remove sensitive fields before traces reach LangSmith, use [client-side masking](/langsmith/mask-inputs-outputs).
 
-Engine outputs are advisory. It surfaces issues, proposes pull requests, and recommends evaluation assets such as evaluators and dataset examples. Your engineers and your branch-protection and review policies decide what ships.
+Engine outputs are advisory. It surfaces and tracks issues, proposes pull requests, and recommends dataset examples for offline evaluation. Your engineers and your branch-protection and review policies decide what ships.
 
 ## GitHub integration
 

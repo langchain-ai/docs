@@ -113,7 +113,7 @@ A better-fit tool existed but the agent chose the wrong one for the user's reque
 - [Find and fix your agent's issues](/langsmith/engine): Set up Engine, work through the issue lifecycle, and control costs.
 - [Engine](/langsmith/engine-overview): Product overview and where Engine fits in the development lifecycle.
 - [Engine webhook events](/langsmith/engine-webhooks): Forward detected issues to your incident-management, paging, or chat tools.
-- [Evaluators](/langsmith/evaluators): Deploy the suggested evaluator Engine generates for each issue.
+- [Manage datasets](/langsmith/manage-datasets): Turn the traces Engine links to an issue into ground truth examples for offline evaluation.
 
 ---
 

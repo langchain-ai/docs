@@ -13,14 +13,14 @@ Each issue moves through a closed loop in which Engine:
 1. Detects a recurring issue in your traces.
 2. Diagnoses the root cause against your traces and connected source code.
 3. Proposes a fix as a pull request.
-4. Generates an evaluator and ground truth [dataset examples](/langsmith/manage-datasets) to catch regressions.
+4. Tracks the issue over time, automatically adding new traces that match the same pattern, and generates ground truth [dataset examples](/langsmith/manage-datasets) so you can verify a fix.
 5. Reopens the issue automatically if it resurfaces after being closed.
 
 ```mermaid
 flowchart LR
     detect["Detect recurring issue"]:::trigger --> diagnose["Diagnose root cause"]:::process
     diagnose --> fix["Propose fix as PR"]:::process
-    fix --> prevent["Generate evaluator and dataset examples"]:::output
+    fix --> prevent["Track matching traces and generate dataset examples"]:::output
     prevent --> close["Close issue"]:::decision
     close -->|"resurfaces"| detect
 
@@ -177,6 +177,8 @@ If no issues appear after setup completes, Engine found no recurring patterns in
 Click any issue in the list to open its detail panel. At the top, a diagnosis describes the problem and its impact.
 
 The **Linked Traces** section lists the traces that support the diagnosis. Click any trace to open its detail panel. For more information, see [Manage a trace](/langsmith/manage-trace). Click [**Add offline examples**](#add-offline-examples) at the top right of this section to generate custom ground truth [dataset examples](/langsmith/manage-datasets) from the production trace inputs for offline evaluation.
+
+Engine keeps tracking an issue after it is filed. On later scans, any new trace that matches the issue's failure pattern is added to **Linked Traces** automatically, so the issue reflects how often the failure is still happening without you re-running anything.
 
 The **Proposed Fix** section describes the issue and suggests how to address it, which may include specific code or prompt changes if a repository is connected.
 
