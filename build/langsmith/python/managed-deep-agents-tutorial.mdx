@@ -199,7 +199,7 @@ For deploy flags and troubleshooting, see [Deploy an agent](/langsmith/python/ma
     Authenticate callers and use verified identity in tools and middleware.
   </Card>
   <Card title="Evals" icon="flask" href="/langsmith/python/managed-deep-agents-evals">
-    Author Harbor tasks and compile the managed agent for Harbor.
+    Develop Harbor evals with a coding agent and the eval-engineering skill.
   </Card>
 </CardGroup>
 
