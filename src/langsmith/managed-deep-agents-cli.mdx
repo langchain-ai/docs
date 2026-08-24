@@ -78,7 +78,7 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 | `mda eval …` / `mda evals …` | Initialize a Harbor workspace and continue eval authoring in a coding agent. |
 | `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
 | `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
-| `mda channel add slack [path]` | Configure Slack for a deployed agent. |
+| `mda channel init slack` | Add a Slack channel declaration to the current project. |
 | `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
 | `mda delete [path]` / `mda destroy [path]` | Delete a deployed agent and the LangSmith resources it created. |
 :::
@@ -93,7 +93,7 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 | `mda eval …` / `mda evals …` | Initialize a Harbor workspace and continue eval authoring in a coding agent. |
 | `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
 | `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
-| `mda channel add slack [path]` | Configure Slack for a deployed agent. |
+| `mda channel init slack` | Add a Slack channel declaration to the current project. |
 | `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
 | `mda delete [path]` / `mda destroy [path]` | Delete a deployed agent and the LangSmith resources it created. |
 :::
@@ -115,6 +115,13 @@ mda init my-agent
 | `--memory agent\|none` | Optionally write a root memory declaration. If omitted, no memory file is created and durable memory is off. |
 | `--model SPEC` | Model the agent runs on, as `provider:model`. |
 | `--no-sandbox` | Leave out the managed sandbox declaration. |
+| `--channel slack` | Initialize the agent with a Slack channel declaration. Repeatable; `--channels` is an alias. |
+
+To include Slack in a new project:
+
+```bash
+mda init my-agent --channel slack
+```
 
 The command detects the language from the current directory:
 
@@ -157,6 +164,16 @@ The scaffold creates:
 :::
 
 Eval tasks are opt-in and are not created by `mda init`. Run `mda evals init -i` from the project root to initialize the Harbor workspace and continue in a coding agent with the `eval-engineering` skill.
+
+## Initialize a Slack channel
+
+Run the following command from the root of an existing managed deep agent project:
+
+```bash
+mda channel init slack
+```
+
+The command creates a Slack channel declaration in the `channels/` directory. The next `mda deploy` sets up the resources the agent needs to appear in Slack. For the complete workflow, see [Connect a Managed Deep Agent to Slack](/langsmith/managed-deep-agents-channels-slack).
 
 ## Build projects
 
@@ -261,13 +278,14 @@ Deploy runs these steps:
 3. Collect non-reserved `.env` values as hosted deployment secrets.
 4. Verify the model provider API key is available from `.env`, the shell environment, or LangSmith workspace secrets.
 5. Sync deploy-owned context to Context Hub.
-6. Compile the project into `.mda/build` and extract optional `schedules/` declarations.
+6. Compile the project into `.mda/build` and extract optional `schedules/` and `channels/` declarations.
 7. Create or find a LangSmith hosted deployment by name.
 8. Archive the build, upload it, and trigger a remote build.
 9. Poll the revision until it reaches `DEPLOYED` unless `--no-wait` is set.
 10. Reconcile the managed LangSmith cron jobs for schedules unless `--no-wait` is set.
+11. Provision the declared Slack channel. If Slack authorization or workspace approval is required, display the action and continue after you complete it.
 
-Deploy does not configure Slack. Run `mda channel add slack .` after the deployment finishes. For the complete workflow, see [Slack channels](/langsmith/managed-deep-agents-channels-slack#create-and-deploy-the-slack-app).
+A project with a Slack channel cannot use `--no-wait` because Slack provisioning requires the deployed Agent Server URL. For the complete workflow, see [Connect a Managed Deep Agent to Slack](/langsmith/managed-deep-agents-channels-slack).
 
 On success, the CLI prints the LangSmith deployment dashboard URL. For secrets routing and deploy tips, see [Deploy an agent](/langsmith/managed-deep-agents-deploy).
 
