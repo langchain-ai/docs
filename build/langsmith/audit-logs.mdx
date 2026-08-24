@@ -26,6 +26,22 @@ Audit logs are useful for security reviews, compliance requirements, and general
 
 Audit logs record changes to organization settings, membership, credentials, workspaces, and other resources. Each event includes the timestamp, the actor, the operation name, the affected resources, and whether it succeeded. For the complete list of operation names, see the [tracked operations reference](#tracked-operations-reference).
 
+## View audit logs in the UI
+
+Organization Admins and Organization Operators can browse audit logs from **Organization Settings > Audit logs**.
+
+The table shows the time, actor, workspace, operation, status, and affected resources for each event. Click a row's timestamp to open the full raw event as JSON in a side panel.
+
+Use the filters above the table to narrow results:
+
+- **Time range**
+- **Workspace**
+- **Operation**
+- **Actor**—a specific user, API key, or service key
+- **Resource ID**
+
+Audit logs are also available via the [API](#query-audit-logs-via-api).
+
 ## Retention
 
 Audit logs are retained for up to **400 days**. Events older than 400 days may be removed automatically.
@@ -181,7 +197,7 @@ No. Audit logs are an Enterprise feature. See [pricing](https://www.langchain.co
 </Accordion>
 
 <Accordion title="Is there a UI for viewing audit logs?">
-Not currently. Audit logs are available via the [API](#query-audit-logs-via-api).
+Yes. See [View audit logs in the UI](#view-audit-logs-in-the-ui). Audit logs are also available via the [API](#query-audit-logs-via-api).
 </Accordion>
 
 <Accordion title="Are read operations logged?">
