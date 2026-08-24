@@ -256,6 +256,24 @@ Agent Server writes the replacement with a compare-and-swap operation, so it doe
 Lazy re-encryption only updates data as it is read. Keep old keys available while unread data may still require them.
 </Warning>
 
+### Monitor lazy re-encryption
+
+Agent Server emits the following INFO-tier [internal metrics](/langsmith/self-hosted-agent-server-metrics#internal-metrics) for replacement writebacks:
+
+| Metric | Meaning |
+|--------|---------|
+| `lg_api_reencrypt_writeback_succeeded_counter` | The replacement ciphertext was stored. |
+| `lg_api_reencrypt_writeback_cas_skipped_counter` | A concurrent update changed the stored value before writeback. Agent Server left the newer value unchanged. |
+| `lg_api_reencrypt_writeback_failed_counter` | Agent Server could not write the replacement. The read still succeeded. |
+
+Each metric includes `reencryption_table` and `reencryption_column` attributes. Use them to find surfaces that still read old ciphertext and to isolate writeback failures.
+
+CAS skips produce warning logs with `Re-encryption writeback skipped due to concurrent update`. Failures produce error logs with `Re-encryption writeback failed`. Both include the table and column. Successful writebacks do not produce logs.
+
+For Prometheus, set `EXPOSE_INTERNAL_METRICS_PROMETHEUS=true` and scrape the Agent Server `/metrics` endpoint. Internal metrics are also available through the documented Datadog export.
+
+These counters measure writeback outcomes, not the amount of old ciphertext remaining. A period without new writebacks does not prove that every record has been read and rotated. Keep old keys available until your retention policy or a separate exhaustive migration confirms that no unread data requires them.
+
 ### Envelope encryption with AWS Encryption SDK
 
 For production deployments on AWS, use the [AWS Encryption SDK](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/python.html) with AWS KMS, or an equivalent within your cloud provider. This approach:
