@@ -1,0 +1,132 @@
+---
+title: Set up automation rules
+sidebarTitle: Set up automation rules
+---
+
+While you can manually sift through and process production logs from your LLM application, it often becomes difficult as your application scales to more users. LangSmith provides **Automations** that allow you to trigger certain actions on your trace data. You define an automation by an **item type**, **filter**, **sampling rate**, and **action**.
+
+Automation rules can trigger actions such as: adding traces to a dataset, adding to an annotation queue, triggering a webhook (for example, for remote evaluations) or extending data retention. A rule matches either individual runs or entire [threads](/langsmith/observability-concepts#threads), depending on the item type you select. Some examples of automations you can set up:
+
+- Send all traces with negative feedback to an annotation queue for human review.
+- Send 10% of all traces or threads to an annotation queue for human review to spot check for issues.
+- Post all traces with a low evaluator score to your webhook endpoint.
+- Upgrade all traces with errors for extended data retention.
+
+<Info>
+To configure online evaluations, visit the [online evaluations](/langsmith/online-evaluations-llm-as-judge) page.
+</Info>
+
+<Note>
+An automation rule can upgrade matching traces to [extended data retention](/langsmith/usage-and-billing#data-retention-auto-upgrades) when retention extension is enabled for that rule. This upgrade impacts trace pricing, but ensures that traces meeting your automation criteria (typically those most valuable for analysis) are preserved for investigation. Each action type has its own default, refer to the [action-level retention settings](#create-a-rule) for details. For the full retention model, see [data retention auto-upgrades](/langsmith/usage-and-billing#data-retention-auto-upgrades).
+</Note>
+
+## How automation rules execute
+
+Each automation rule runs on an independent polling schedule. If you have multiple rules on the same project, a webhook rule may process a run before an evaluator rule has scored it, or vice versa.
+
+Within a single rule, if multiple actions are configured, they execute in this order:
+
+1. Add to annotation queue.
+1. Add to dataset.
+1. Trigger webhook.
+1. Run online evaluator.
+1. Run custom code evaluator.
+1. Extend data retention.
+1. Trigger alert.
+
+If your workflow requires data produced by one rule to be present when another fires—for example, you want a webhook to include an evaluation score—use a filter on the downstream rule to create that dependency explicitly. For an example, refer to [Ensuring evaluations complete before the webhook fires](/langsmith/webhooks#ensuring-evaluations-complete-before-the-webhook-fires).
+
+## Set the item type to runs or threads
+
+The **Item Type** control determines what a rule matches. Set it to **Runs** and the rule evaluates each matching run as it arrives. Set it to **Threads** and the rule waits until a conversation is complete, then applies its action once to the whole thread. Choose **Threads** when the unit you want to review or export is the full conversation rather than a single turn.
+
+Thread rules require a tracing project that groups traces into threads. For more information, refer to [Configure threads](/langsmith/threads).
+
+### Configure a thread rule
+
+Selecting **Threads** changes three parts of the rule form:
+
+- **Thread Filters**: The filter builder adds **Trace Count** and **Thread ID** to the available fields. Filter on **Trace Count** to scope a rule to conversations of a given length. The other fields evaluate each trace in the thread rather than the thread as a whole, so a thread matches when any of its traces match. For example, a filter on **Status** selects every thread that contains an errored trace, not only threads whose last trace errored.
+- **Action**: The form offers one action, either **Add to Annotation Queue** or **Trigger Webhooks**. **Add to Dataset** is currently not available.
+- **Apply to Past Runs**: Backfill is not currently offered for thread rules.
+
+The two thread actions behave as follows:
+
+- **Add to Annotation Queue**: Adds the thread to the queue as a thread item. Thread items display the conversation transcript and support rubric feedback only. For what differs between run items and thread items, refer to the [annotation queue capability table](/langsmith/annotation-queues#single-run-annotation-queues).
+- **Trigger Webhooks**: Sends a payload whose top-level `threads` array holds every matching thread. For more information, refer to [Read a thread rule payload](/langsmith/webhooks#read-a-thread-rule-payload).
+
+### Set the thread idle time
+
+A thread rule acts only after the thread goes idle. Once the last trace in a thread is ingested, LangSmith waits for the tracing project's configured idle time to elapse, which signals that the conversation is complete. The idle time defaults to 10 minutes and cannot be set below 2 minutes.
+
+The idle time is a project-level setting shared with [multi-turn online evaluators](/langsmith/online-evaluations-multi-turn). Creating the first thread rule on a project applies the default without overwriting a value already set for that project, and changing the value affects every thread evaluator and thread rule in it.
+
+These limits bound what a thread rule processes:
+
+- **Runs must be less than one week old**: When a thread becomes idle, only runs from the past 7 days are eligible.
+- **Maximum of 500 threads per execution**: A single execution processes at most 500 matching threads, ordered by most recent activity.
+
+### Extend data retention for a thread
+
+[Data retention](/langsmith/usage-and-billing#data-retention-auto-upgrades) is a property of a trace, not of a thread. When a thread rule has **Extend Data Retention** enabled, it upgrades **every trace in the matched thread** to extended retention, not only the most recent one.
+
+Because each trace is upgraded individually, a longer conversation costs more to retain. In exchange, the entire conversation is preserved for investigation instead of expiring turn by turn.
+
+## View automation rules
+
+In the [UI](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-rules), navigate to **Tracing** in the sidebar and select a tracing project. To view existing automation rules for that tracing project, click on the **Automations** tab.
+
+## Create a rule
+
+1. In the [UI](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-rules), navigate to **Tracing** in the sidebar and select a tracing project. Click on **+ New** in the top right corner of the tracing project page, then click on **New Automation**.
+1. Name your rule.
+1. Select an **Item Type**, either **Runs** or **Threads**. The item type determines which filter fields and actions are available, so set it before configuring either. For more information, refer to [Set the item type to runs or threads](#set-the-item-type-to-runs-or-threads).
+1. Create a filter. Automation rule filters work the same way as filters applied to traces in the project. For more information on filters, you can refer to [Filter traces](/langsmith/filter-traces-in-application).
+1. Configure a **Sampling Rate** to control what percentage of the filtered items trigger the automation action. The form accepts a percentage from 0 to 100. For example, a sampling rate of 50% sends half of the items that pass the filter to the action. The equivalent API field, `sampling_rate`, takes a decimal from 0 to 1.
+1. (Optional) Apply rule to past runs by toggling the **Apply to Past Runs** and entering a **Backfill From** date. This is only possible upon rule creation, and is not offered for rules whose item type is **Threads**.
+
+    <Note>
+    The backfill is processed as a background job, so you will not see the results immediately. In order to track progress of the backfill, you can [view logs for your automations](#view-logs-for-your-automations).
+    </Note>
+
+1. Select an action to trigger when the rule is applied. Rules whose item type is **Runs** offer all of the following actions. Rules whose item type is **Threads** offer **Add to Annotation Queue** and **Trigger Webhooks** only.
+
+    - **Add to Dataset**: Add the inputs and outputs of the trace to a [dataset](/langsmith/evaluation-concepts#datasets).
+    - **Add to Annotation Queue**: Add the matching run or trace to an [annotation queue](/langsmith/annotation-queues) as a run item. A thread rule adds the entire conversation as a thread item instead. To add a thread by hand, refer to [Assign runs and threads](/langsmith/annotation-queues#assign-runs-and-threads-to-a-single-run-queue).
+    - **Trigger Webhooks**: Post the matched items to every [webhook](/langsmith/webhooks) URL configured on the rule.
+    - **Extend Data Retention**: Extends the data retention period on matching traces that use base retention [(refer to the data retention docs for more details)](/langsmith/usage-and-billing#data-retention).
+
+        <Note>
+        Each action has an independent **Extend Data Retention** toggle that controls whether matching traces are upgraded to extended retention. The defaults are the same for both item types:
+
+        - **Add to Dataset**: opt-in (default: off). Enable the toggle to upgrade matching traces.
+        - **Add to Annotation Queue**: opt-out (default: on). Disable the toggle to skip upgrading matching traces.
+        - **Trigger Webhooks**: opt-in (default: off). Enable the toggle to upgrade matching traces.
+        - **Extend Data Retention** action and online/code evaluators: unchanged; always upgrade matching traces.
+
+        For a thread rule, an enabled toggle upgrades every trace in the matched thread. For more information, refer to [Extend data retention for a thread](#extend-data-retention-for-a-thread).
+
+        The retention toggle for each action is an admin-only control, gated by the [`rules:configure-retention`](/langsmith/organization-workspace-operations#rules) permission. Non-admin workspace members see the toggles as disabled and cannot change them, but can still create and edit rules without affecting retention settings. For the full retention model, refer to [data retention auto-upgrades](/langsmith/usage-and-billing#data-retention-auto-upgrades).
+        </Note>
+
+## View logs for your automations
+
+Logs allow you to gain confidence that your rules are working as expected. You can view logs for your automations by navigating to the **Automations** tab within a tracing project and clicking the **Logs** button for the rule you created.
+
+The logs tab allows you to:
+
+- View all runs processed by a given rule for the time period selected.
+- If a particular rule execution has triggered an error, you can view the error message by hovering over the error icon.
+- You can monitor the progress of a backfill job by filtering to the rule's creation timestamp. This is because the backfill starts from when the rule was created.
+- Inspect the run that the automation rule applied to using the **View run** button. For rules that add runs as examples to datasets, you can view the example produced.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/rules.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
