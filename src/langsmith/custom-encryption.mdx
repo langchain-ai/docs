@@ -27,9 +27,9 @@ Use custom encryption when you need:
 ### How it works
 
 1. [Configure](#configuration) the encryption module path in `langgraph.json`
-2. [Define your encryption module](#defining-your-encryption-module) with handlers for blob and JSON encryption
-3. [Pass encryption context](#passing-encryption-context) (like tenant ID) via the `X-Encryption-Context` header
-4. LangGraph calls your handlers before storing and after retrieving data
+2. [Define an encryption context handler](#define-encryption-context) that derives values such as a tenant ID from the authenticated user
+3. [Define your encryption module](#defining-your-encryption-module) with handlers for blob and JSON encryption
+4. Agent Server calls your handlers before storing and after retrieving data
 
 For production deployments with key rotation and audit logging, see [Envelope encryption with AWS Encryption SDK](#envelope-encryption-with-aws-encryption-sdk).
 
@@ -52,6 +52,27 @@ Add your encryption module to `langgraph.json`:
 <Note>
 If you're migrating from basic encryption, keep `LANGGRAPH_AES_KEY` configured. Custom encryption handles new writes while existing AES-encrypted data remains readable.
 </Note>
+
+### Define encryption context
+
+Use `@encryption.context` to derive encryption context from the authenticated user:
+
+```python
+from langgraph_sdk import Encryption, EncryptionContext
+from starlette.authentication import BaseUser
+
+encryption = Encryption()
+
+
+@encryption.context
+async def get_encryption_context(user: BaseUser, ctx: EncryptionContext) -> dict:
+    return {
+        **ctx.metadata,
+        "tenant_id": user["tenant_id"],
+    }
+```
+
+This handler runs once per request after authentication. The returned dictionary becomes `ctx.metadata` for every encryption operation in the request and is stored in plaintext so Agent Server can restore it during decryption.
 
 ### Defining your encryption module
 
@@ -90,7 +111,7 @@ async def decrypt_blob(ctx: EncryptionContext, data: bytes) -> bytes:
     return _get_fernet(ctx).decrypt(data)
 ```
 
-The `ctx.metadata` dict comes from the `X-Encryption-Context` header and is stored in plaintext alongside encrypted data, so the correct key is used on decryption.
+The `ctx.metadata` dictionary comes from the context handler, so each encryption handler can select the correct key.
 
 #### JSON encryption (metadata)
 
@@ -196,53 +217,6 @@ User-defined fields for authorization (e.g., `tenant_id`, `owner`) should genera
 
 **Blob handlers** (`@encryption.encrypt.blob` / `@encryption.decrypt.blob`) are applied to checkpoint blobs (graph execution state).
 
-
-#### Deriving context from authentication
-
-Instead of passing `X-Encryption-Context` explicitly, derive encryption context from the authenticated user:
-
-```python
-from langgraph_sdk import Encryption, EncryptionContext
-from starlette.authentication import BaseUser
-
-encryption = Encryption()
-
-@encryption.context
-async def get_encryption_context(user: BaseUser, ctx: EncryptionContext) -> dict:
-    return {
-        **ctx.metadata,
-        "tenant_id": user["tenant_id"],
-    }
-```
-
-This handler runs once per request after authentication. The returned dict becomes `ctx.metadata` for all encryption operations in that request.
-
-### Passing encryption context
-
-Pass encryption context via the `X-Encryption-Context` header. The context is arbitrary data that you define—you control the schema and can include any fields your encryption logic needs (e.g., `tenant_id`, `key_version`). The context is available in your handlers as `ctx.metadata` and is stored in plaintext for use during decryption.
-
-```python
-import base64
-import json
-from langgraph_sdk import get_client
-
-encryption_context = base64.b64encode(
-    json.dumps({"tenant_id": "tenant-a"}).encode()
-).decode()
-
-client = get_client(url="http://localhost:2024")
-
-result = await client.runs.wait(
-    thread_id=None,
-    assistant_id="agent",
-    input={"messages": [{"role": "user", "content": "Hello"}]},
-    headers={"X-Encryption-Context": encryption_context},
-)
-```
-
-<Note>
-The encryption context is stored in plaintext. On decryption, it's automatically restored—callers don't need to pass the header when reading.
-</Note>
 
 ### Rotate custom encryption keys lazily
 
