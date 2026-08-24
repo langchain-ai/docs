@@ -289,7 +289,7 @@ curl --request PATCH \
 
 The `session_token` field is optional, which you can include for [temporary credentials](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_use-resources.html).
 
-[**Required permission**](/langsmith/organization-workspace-operations): `bulk-exports:manage` (or `workspaces:manage`, which historically granted this access).
+[**Required permission**](/langsmith/organization-workspace-operations#bulk-exports): `bulk-exports:manage`.
 
 Before storing new credentials, LangSmith validates them by performing a test write to the bucket using the existing destination configuration. The request fails with `400` if the credentials do not have sufficient write permissions. If the request fails, refer to [Debug destination errors](#debug-destination-errors).
 
@@ -316,18 +316,24 @@ Returns the updated destination object. Credential values are never returned—o
 
 ## Switch authentication mode
 
-<Note>**Available only on GCP SaaS deployments.**</Note>
+<Note>**`aws_role_arn` is available only on GCP SaaS deployments.**</Note>
 
-Use `PATCH /api/v1/bulk-exports/destinations/{destination_id}` to switch an existing destination between authentication modes without recreating it. LangSmith supports two mutually exclusive modes:
+Switch an existing destination between static credentials and AWS IAM role assumption without recreating it. Use `PATCH /api/v1/bulk-exports/destinations/{destination_id}`.
+
+[**Required permission**](/langsmith/organization-workspace-operations#bulk-exports): `bulk-exports:manage`.
+
+LangSmith supports two mutually exclusive modes:
 
 - **Static credentials** (`credentials`): An `access_key_id` and `secret_access_key` (with an optional `session_token` for temporary credentials).
 - **IAM role assumption** (`aws_role_arn`): LangSmith assumes the specified AWS IAM role, so no static credentials are stored.
 
-To switch from one mode to the other, provide the new auth field in the PATCH body. Setting one mode automatically clears the other.
+To switch to AWS IAM role assumption, provide `aws_role_arn` in the PATCH body. To switch to static credentials, provide `credentials`. When either field is present and nonempty, LangSmith clears the other.
+
+Before switching, ensure the new authentication configuration has write access to the destination bucket. LangSmith validates the configuration with a test write before saving it.
 
 ### Switch from static credentials to AWS IAM role
 
-Provide `aws_role_arn` in the PATCH body. LangSmith will assume the specified role and discard any previously stored credentials.
+Provide `aws_role_arn` in the PATCH body. This clears any previously stored credentials.
 
 ```bash
 curl --request PATCH \
@@ -342,7 +348,7 @@ curl --request PATCH \
 
 ### Switch from AWS IAM role to static credentials
 
-Provide a `credentials` object in the PATCH body. LangSmith will use the new static credentials and clear the stored role ARN.
+Provide a `credentials` object in the PATCH body. This clears the stored role ARN.
 
 ```bash
 curl --request PATCH \
@@ -365,9 +371,7 @@ The same transition behavior described in [credential rotation](#credential-rota
 - **New bulk export runs** use the new authentication mode immediately after the PATCH completes.
 - **Already running bulk export runs** continue using the previous authentication mode until they finish.
 
-LangSmith validates the new auth configuration by performing a test write to the bucket before saving. The request fails with `400` if the new configuration does not have sufficient write permissions.
-
-[**Required permission**](/langsmith/organization-workspace-operations): `bulk-exports:manage` (or `workspaces:manage`, which historically granted this access).
+If the test write fails because the new configuration does not have sufficient write permissions, the request returns `400`.
 
 ## Debug destination errors
 
