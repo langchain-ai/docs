@@ -8,7 +8,7 @@ import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-a
 
 Managed Deep Agents evals are [Harbor](https://www.harborframework.com/docs/tasks) tasks. Use a coding agent with the [`eval-engineering` skill](https://github.com/langchain-ai/langchain-skills/blob/main/config/skills/eval-engineering/SKILL.md) to inspect the project, draft a Task Spec for your review, and write complete tasks under `evals/`.
 
-Managed Deep Agents initializes the Harbor workspace. Harbor compiles the managed agent when a job starts, runs each task in an isolated environment, and records the result.
+Managed Deep Agents initializes the Harbor workspace. Harbor runs the managed agent against each task in an isolated environment and records the result.
 
 <ManagedDeepAgentsPrivateBetaNote />
 
@@ -113,23 +113,7 @@ evals/
         └── <verifier>
 ```
 
-`Task.md` is the human-reviewed control-plane spec. Do not copy or mount it into the evaluated agent's environment. `instruction.md` tells the agent what to do. Harbor builds the task environment, runs the managed agent, and then runs `tests/test.sh`. The verifier writes a numeric reward to `/logs/verifier/reward.txt` or numeric metrics to `/logs/verifier/reward.json`.
-
-:::python
-Use a `python:3.12` task image and pytest verifier files named `tests/test_*.py`. Invoke them from `tests/test.sh` with:
-
-```bash
-python -m pytest /tests -q
-```
-:::
-
-:::js
-Use a `node:24` task image and Node test files named `tests/*.test.ts`. Invoke them from `tests/test.sh` with:
-
-```bash
-node --experimental-strip-types --test /tests/*.test.ts
-```
-:::
+`Task.md` is the human-reviewed spec. `instruction.md` tells the agent what to do. Harbor builds the task environment, runs the managed agent, and then runs `tests/test.sh`. The verifier writes a numeric reward to `/logs/verifier/reward.txt` or numeric metrics to `/logs/verifier/reward.json`.
 
 For the full task format, see the [Harbor task documentation](https://www.harborframework.com/docs/tasks).
 
@@ -150,9 +134,9 @@ uv run --env-file .env --python 3.12 --with 'harbor[langsmith]==0.21.0' harbor r
   --plugin mda_harbor.langsmith_plugin:LangSmithPlugin
 ```
 
-Replace `my-agent` with the project directory name. If the project has no `.env` file, omit `--env-file .env`. The generated command handles both details automatically and uses PowerShell syntax on Windows.
+Replace `my-agent` with the project directory name. The generated command fills in the name and uses PowerShell syntax on Windows.
 
-The MDA job plugin compiles a job-scoped agent artifact before Harbor starts any trials. Re-running the command after editing the agent picks up the project changes without a separate compile step.
+Re-running the command after editing the agent picks up the project changes.
 
   </Step>
 
@@ -174,23 +158,9 @@ Review failed trials with your coding agent. Update the task or verifier when th
 
 Edit `evals/harbor-job.json` to change datasets, attempts, concurrency, environment settings, or agent environment variables. Managed Deep Agents preserves the file when you run `mda evals init` again.
 
-Check in `evals/harbor-job.json` and the task directories under `evals/`. Do not check in `.mda/evals/` or Harbor job results.
+## Record runs in LangSmith
 
-## How the managed agent runs
-
-Harbor loads the generated `MDAJobPlugin` before it starts trials. The plugin invokes the internal Managed Deep Agents compiler and creates an isolated artifact for the Harbor job.
-
-:::python
-The custom Harbor adapter then runs the compiled Python managed graph inside each task environment.
-:::
-
-:::js
-The custom Harbor adapter then runs the compiled TypeScript managed graph inside each task environment.
-:::
-
-This keeps the eval on the same authored agent files, instructions, tools, middleware, connectors, and runtime wiring used by Managed Deep Agents. You do not maintain a separate agent implementation for evals.
-
-When `LANGSMITH_API_KEY` is available, the companion LangSmith plugin records the Harbor runs in the dataset named by `HARBOR_LANGSMITH_DATASET`.
+When `LANGSMITH_API_KEY` is available, the LangSmith plugin records the Harbor runs in the dataset named by `HARBOR_LANGSMITH_DATASET`.
 
 ## See also
 
