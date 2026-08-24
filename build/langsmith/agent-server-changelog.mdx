@@ -787,9 +787,10 @@ This minor version moves run queue polling from Postgres to Redis, saving databa
 
 Under the hood, Agent Server uses a durable run queue to manage run execution. Workers poll the queue for new runs and execute them. Previously, the queue polling logic went through Postgres. This could result in long running queries especially under high load. With this update, the queue polling logic now goes through Redis and then fetches run details from Postgres. This makes the hot path for queue polling substantially faster and reduces the load on the database.
 
-This is not a breaking change and does not require code changes to upgrade, but there are a couple of things to be aware of:
+This does not require code changes to upgrade, but there are a few things to be aware of:
 - In the deployment immediately after upgrading, the queue will shift over. There may be a brief window where threads are scheduled non-chronologically. Run execution order is still guaranteed within each thread.
 - **Self-hosted only:** Redis traffic may increase slightly. In internal testing, the increase was modest.
+- **Self-hosted only:** This release raises the minimum Redis version to 6.2. The Redis-backed run queue enqueues runs with the `ZADD ... LT` flag, which was added in Redis 6.2. On Redis 5.0 through 6.1, run enqueue fails with a generic `ERR syntax error` that does not indicate a version mismatch, so upgrade Redis to 6.2 or later before deploying this version. Valkey 8 includes the flag. See [self-hosted dependency versions](/langsmith/self-host-dependency-versions).
 </Update>
 
 <Update label="2026-04-15" tags={["agent-server"]}>
