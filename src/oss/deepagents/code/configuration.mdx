@@ -37,7 +37,7 @@ Deep Agents Code merges settings from several sources. Which source wins depends
 4. `~/.deepagents/config.toml`
 5. Built-in default
 
-Use `dcode config show` or `dcode config get <key>` to see the effective value and source. See [Inspect configuration](#inspect-configuration).
+Use `dcode config` or `dcode config get <key>` to see the effective value and source. See [Inspect configuration](#inspect-configuration).
 
 **Provider API keys** use a separate order. See [Key resolution order](/oss/deepagents/code/credentials#key-resolution-order).
 
@@ -51,15 +51,14 @@ The `dcode config` command group reports what configuration is in effect and whe
 
 | Command | Description |
 |---------|-------------|
-| `dcode config show` | Resolve every option against managed policy, the live environment, and `config.toml`, printing the effective value and which source provided it |
-| `dcode config list` (alias `ls`) | List every available option with its type, default, and where it can be set, without resolving values |
-| `dcode config get <key>` | Show the effective value and source for a single option, e.g. `dcode config get interpreter.memory_limit_mb` |
+| `dcode config` | Resolve every option against managed policy, the live environment, and `config.toml`, printing the effective value and source |
+| `dcode config get <key>` | Show the effective value and source for one option, for example, `dcode config get interpreter.memory_limit_mb` |
 | `dcode config path` | Show the on-disk config file locations (`managed_config.toml`, `config.toml`, project and global `.env`, `hooks.json`, and managed state files) and whether each exists |
 
-All four commands accept `--json` for machine-readable output. For the full list of management subcommands, see [CLI reference](/oss/deepagents/code/cli-reference).
+Add `--verbose` to `dcode config` or `dcode config get` to show option descriptions, defaults, and where each option can be set. Combine `--verbose` with `--json` to include accepted types and other catalog metadata. All three commands accept `--json` for machine-readable output. For the full list of management subcommands, see [CLI reference](/oss/deepagents/code/cli-reference).
 
 <Warning>
-    Provider credentials and other secrets are reported as configured / not configured only—their values are never printed by `config show` or `config get`, so the output is safe to paste into a bug report.
+    Provider credentials and other secrets are reported as configured / not configured only. Their values are never printed by `config` or `config get`, so the output is safe to paste into a bug report.
 </Warning>
 
 ## Environment variables
@@ -400,6 +399,10 @@ rm -rf ~/.deepagents
 
 ## Managed configuration
 
+<Note>
+    Managed configuration requires `deepagents-code>=0.1.59`. Model allowlists require `deepagents-code>=0.1.61`.
+</Note>
+
 Managed configuration lets an administrator enforce Deep Agents Code settings across a fleet. Deep Agents Code reads an administrator-owned `managed_config.toml` before user environment variables and `~/.deepagents/config.toml`, so users cannot override a managed value from those sources.
 
 ### Locate the managed config file
@@ -412,13 +415,13 @@ Deep Agents Code reads managed policy from a fixed path for each operating syste
 | Linux | `/etc/dcode/managed_config.toml` |
 | Windows | `<ProgramData>\dcode\managed_config.toml` |
 
-On Windows, Deep Agents Code reads the ProgramData location from the system registry, not the `%ProgramData%` environment variable. Process environment variables cannot redirect any managed config path. A missing file means that no managed policy is configured.
+On Windows, Deep Agents Code reads the ProgramData location from the system registry, not the `%ProgramData%` environment variable. Process environment variables cannot redirect any managed config path. When the registry lookup succeeds, a missing file means that no managed policy is configured. When the lookup fails, Deep Agents Code checks `C:\ProgramData\dcode\managed_config.toml`; if that fallback file is also missing, the policy state is indeterminate and commands that use configuration fail closed.
 
 ### Create a managed policy
 
-Use the same TOML sections and keys as `~/.deepagents/config.toml`. Run `dcode config list` to see the available options, their accepted types, and whether they support a config file value.
+Use the same TOML sections and keys as `~/.deepagents/config.toml`. Run `dcode config --verbose --json` to see the available options, their accepted types, and whether they support a config file value.
 
-For example, the following policy pins Manual approval mode, removes YOLO from the `Shift+Tab` mode cycle, limits shell auto-approval, disables the JavaScript interpreter, and enables client-side LangSmith secret redaction:
+For example, the following policy pins Manual approval mode, removes YOLO from the `Shift+Tab` mode cycle, limits shell auto-approval, restricts model use, disables the JavaScript interpreter, and enables client-side LangSmith secret redaction:
 
 ```toml title="managed_config.toml"
 [startup]
@@ -428,6 +431,9 @@ yolo_switcher = false
 [shell]
 allow_list = ["git", "make"]
 
+[models]
+allowed = ["acme:production", "openai:*"]
+
 [interpreter]
 enable_interpreter = false
 
@@ -436,6 +442,24 @@ langsmith_redact = true
 ```
 
 Deploy the file with write access restricted to administrators. Deep Agents Code treats managed policy as read-only. A user can still save a preference to `config.toml`, but the managed value remains effective until the administrator removes it.
+
+### Restrict model use
+
+Set `[models].allowed` to exact, case-sensitive `provider:model` specifications, or use `provider:*` to allow all discoverable models from one provider. The allowlist applies to launch defaults, `--model`, `/model`, saved defaults, Auto classifiers, rubric graders, and explicit local subagent models.
+
+```toml title="managed_config.toml"
+[models]
+allowed = [
+    "acme:production",
+    "openai:*",
+]
+default = "acme:production"
+auto_classifier = "openai:gpt-5.5"
+```
+
+A missing `allowed` key leaves model selection unrestricted. An empty list denies all model use. A malformed user list fails closed as deny-all; a malformed managed list invalidates the policy and blocks startup, reload, and commands that use configuration. A managed list replaces, rather than combines with, the user's list. Any managed `default`, `recent`, or `auto_classifier` value must also match the managed allowlist, or Deep Agents Code rejects the policy.
+
+Models added under `[models.providers.<name>].models` become discoverable but are not automatically allowed. Add an exact entry or a provider wildcard to the allowlist. A wildcard allows only models discovered or configured for that provider; if there are none, default resolution fails closed. Bare model names entered through supported user interfaces are resolved to `provider:model` before matching when Deep Agents Code can infer the provider. Use `bedrock:<id>` for Amazon Bedrock models because a bare Bedrock ID contains a version colon.
 
 <Warning>
     `[sandboxes].default` selects the backend when a user launches with `--sandbox`. It does not force sandboxing. A launch without `--sandbox` runs on the host and reports that it did not use the managed backend.
@@ -447,12 +471,12 @@ Use the configuration and diagnostic commands after deploying or changing policy
 
 ```bash
 dcode config path
-dcode config show
+dcode config
 dcode config get startup.mode
 dcode doctor
 ```
 
-`dcode config path` reports the managed file path and health. `dcode config show` and `dcode config get` label values from the file as `managed config`. `dcode doctor` reports parse errors, rejected values, and the keys that need correction.
+`dcode config path` reports the managed file path and health. `dcode config` and `dcode config get` label values from the file as `managed config`. `dcode doctor` reports parse errors, rejected values, and the keys that need correction.
 
 ### Handle invalid policy
 
@@ -463,6 +487,7 @@ A rejected value for one of the following policy-enforced keys also stops startu
 - `interpreter.enable_interpreter`
 - `interpreter.ptc`
 - `interpreter.ptc_acknowledge_unsafe`
+- `models.allowed`
 - `models.auto_classifier`
 - `runtime.recursion_limit`
 - `sandboxes.default`
@@ -663,12 +688,12 @@ Output:
   ├ Data directory: /Users/naomi/.deepagents (exists)
   └ Config file: /Users/naomi/.deepagents/config.toml (exists)
 
-  Tip: Run `dcode config show` or `dcode config get <key>` to drill into config details.
+  Tip: Run `dcode config` or `dcode config get <key>` to drill into config details.
        Run `dcode --version` (or `dcode -v`) for dependency versions.
 ```
 
 <Tip>
-    Pair `dcode doctor` with `dcode config show` when you need both a high-level health check and the exact source of a specific setting.
+    Pair `dcode doctor` with `dcode config` when you need both a high-level health check and the exact source of a specific setting.
 </Tip>
 
 ## Data locations
