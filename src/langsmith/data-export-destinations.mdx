@@ -324,43 +324,13 @@ Pass `aws_role_arn` instead of `credentials` to use IAM role assumption.
 IAM role assumption is available only on GCP-hosted LangSmith SaaS. It is not available on AWS-hosted SaaS or self-hosted deployments.
 </Note>
 
-### Select your LangSmith region
+### Create the AWS role
 
-Your role trust policy must allow all three subject IDs for your LangSmith region:
+Create an AWS IAM role with a trust policy that permits web identity federation from the three subject IDs for your region. Grant the role access to your export bucket. Select your LangSmith region to use the corresponding subject IDs. Each Terraform example uses the minimum required `s3:PutObject` permission:
 
 <CodeGroup>
 
 ```hcl US
-[
-  "110136955440523778103",
-  "116331607438151298187",
-  "115251468294701876731",
-]
-```
-
-```hcl EU
-[
-  "110207823358662523645",
-  "115689110758588220909",
-  "109691164801275818274",
-]
-```
-
-```hcl APAC
-[
-  "105923862603785245337",
-  "114288557158507552617",
-  "116622461022404604716",
-]
-```
-
-</CodeGroup>
-
-### Create the AWS role
-
-Create an AWS IAM role with a trust policy that permits web identity federation from the three subject IDs for your region. Grant the role access to your export bucket. This Terraform example uses the minimum required `s3:PutObject` permission:
-
-```hcl
 resource "aws_iam_role" "langsmith_bulk_export" {
   name                 = "langsmith-bulk-export"
   max_session_duration = 43200
@@ -375,9 +345,9 @@ resource "aws_iam_role" "langsmith_bulk_export" {
         StringEquals = {
           "accounts.google.com:oaud" = "langsmith-bulk-export"
           "accounts.google.com:sub" = [
-            "LANGSMITH_API_SERVER_SUBJECT_ID",
-            "LANGSMITH_SAQ_WORKER_SUBJECT_ID",
-            "LANGSMITH_ASYNQ_WORKER_SUBJECT_ID",
+            "110136955440523778103",
+            "116331607438151298187",
+            "115251468294701876731",
           ]
         }
       }
@@ -398,7 +368,85 @@ resource "aws_iam_role" "langsmith_bulk_export" {
 }
 ```
 
-Replace the subject ID placeholders with the values from the selected region. Add the optional permissions from [AWS S3 permissions](#aws-s3-permissions) if you want LangSmith to clean up test files, verify file sizes, or abort multipart uploads.
+```hcl EU
+resource "aws_iam_role" "langsmith_bulk_export" {
+  name                 = "langsmith-bulk-export"
+  max_session_duration = 43200
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = "accounts.google.com" }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "accounts.google.com:oaud" = "langsmith-bulk-export"
+          "accounts.google.com:sub" = [
+            "110207823358662523645",
+            "115689110758588220909",
+            "109691164801275818274",
+          ]
+        }
+      }
+    }]
+  })
+
+  inline_policy {
+    name = "langsmith-bulk-export-s3"
+    policy = jsonencode({
+      Version = "2012-10-17"
+      Statement = [{
+        Effect   = "Allow"
+        Action   = "s3:PutObject"
+        Resource = "arn:aws:s3:::YOUR_BUCKET_NAME/*"
+      }]
+    })
+  }
+}
+```
+
+```hcl APAC
+resource "aws_iam_role" "langsmith_bulk_export" {
+  name                 = "langsmith-bulk-export"
+  max_session_duration = 43200
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = "accounts.google.com" }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "accounts.google.com:oaud" = "langsmith-bulk-export"
+          "accounts.google.com:sub" = [
+            "105923862603785245337",
+            "114288557158507552617",
+            "116622461022404604716",
+          ]
+        }
+      }
+    }]
+  })
+
+  inline_policy {
+    name = "langsmith-bulk-export-s3"
+    policy = jsonencode({
+      Version = "2012-10-17"
+      Statement = [{
+        Effect   = "Allow"
+        Action   = "s3:PutObject"
+        Resource = "arn:aws:s3:::YOUR_BUCKET_NAME/*"
+      }]
+    })
+  }
+}
+```
+
+</CodeGroup>
+
+Add the optional permissions from [AWS S3 permissions](#aws-s3-permissions) if you want LangSmith to clean up test files, verify file sizes, or abort multipart uploads.
 
 ## Switch authentication mode
 
