@@ -17,6 +17,7 @@ This page covers:
 - Required bucket [permissions](#permissions-required) for AWS S3 and GCS.
 - How to [create a destination](#create-a-destination) via the API, including provider-specific examples and credential options.
 - How to [rotate destination credentials](#rotate-destination-credentials) without recreating the destination.
+- How to [switch authentication mode](#switch-authentication-mode) between static credentials and AWS IAM role assumption.
 - How to [debug destination errors](#debug-destination-errors).
 
 ## Configuration fields
@@ -288,7 +289,7 @@ curl --request PATCH \
 
 The `session_token` field is optional, which you can include for [temporary credentials](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_temp_use-resources.html).
 
-[**Required permission**](/langsmith/organization-workspace-operations): `bulk-exports:manage` (or `workspaces:manage`, which historically granted this access).
+[**Required permission**](/langsmith/organization-workspace-operations#bulk-exports): `bulk-exports:manage`.
 
 Before storing new credentials, LangSmith validates them by performing a test write to the bucket using the existing destination configuration. The request fails with `400` if the credentials do not have sufficient write permissions. If the request fails, refer to [Debug destination errors](#debug-destination-errors).
 
@@ -312,6 +313,65 @@ Returns the updated destination object. Credential values are never returned—o
 1. Call the PATCH endpoint with the new credentials. LangSmith validates them before saving.
 1. Keep old credentials active until all in-flight bulk export runs finish (up to the [maximum run duration](/langsmith/data-export-monitor#automatic-retry-behavior)).
 1. Revoke old credentials once no runs are using them.
+
+## Switch authentication mode
+
+<Note>**`aws_role_arn` is available only on GCP SaaS deployments.**</Note>
+
+Switch an existing destination between static credentials and AWS IAM role assumption without recreating it. Use `PATCH /api/v1/bulk-exports/destinations/{destination_id}`.
+
+[**Required permission**](/langsmith/organization-workspace-operations#bulk-exports): `bulk-exports:manage`.
+
+LangSmith supports two mutually exclusive modes:
+
+- **Static credentials** (`credentials`): An `access_key_id` and `secret_access_key` (with an optional `session_token` for temporary credentials).
+- **IAM role assumption** (`aws_role_arn`): LangSmith assumes the specified AWS IAM role, so no static credentials are stored.
+
+To switch to AWS IAM role assumption, provide `aws_role_arn` in the PATCH body. To switch to static credentials, provide `credentials`. When either field is present and nonempty, LangSmith clears the other.
+
+Before switching, ensure the new authentication configuration has write access to the destination bucket. LangSmith validates the configuration with a test write before saving it.
+
+### Switch from static credentials to AWS IAM role
+
+Provide `aws_role_arn` in the PATCH body. This clears any previously stored credentials.
+
+```bash
+curl --request PATCH \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations/{destination_id}' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "aws_role_arn": "arn:aws:iam::123456789012:role/LangSmithBulkExportRole"
+  }'
+```
+
+### Switch from AWS IAM role to static credentials
+
+Provide a `credentials` object in the PATCH body. This clears the stored role ARN.
+
+```bash
+curl --request PATCH \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations/{destination_id}' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "credentials": {
+      "access_key_id": "YOUR_NEW_ACCESS_KEY_ID",
+      "secret_access_key": "YOUR_NEW_SECRET_ACCESS_KEY"
+    }
+  }'
+```
+
+### Behavior during the switch
+
+The same transition behavior described in [credential rotation](#credential-rotation-behavior) applies when switching authentication modes:
+
+- **New bulk export runs** use the new authentication mode immediately after the PATCH completes.
+- **Already running bulk export runs** continue using the previous authentication mode until they finish.
+
+If the test write fails because the new configuration does not have sufficient write permissions, the request returns `400`.
 
 ## Debug destination errors
 
