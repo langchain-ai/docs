@@ -13,7 +13,7 @@ A sandbox gives a managed deep agent an isolated filesystem and shell for workin
 
 ## Project structure
 
-Keep the agent entry point at the project root and the sandbox declaration under `sandbox/`. Add `sandbox/setup.sh` only if you want to provision a recipe snapshot:
+Keep the agent entry point at the project root and the sandbox declaration under `sandbox/`. Add `sandbox/setup.sh` only if you want to provision a snapshot:
 
 :::python
 ```text
@@ -57,7 +57,7 @@ sandbox = define_sandbox(
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `idle_ttl_seconds` | `600` | Seconds of inactivity before the sandbox can be reclaimed. |
+| `idle_ttl_seconds` | `600` | Seconds of inactivity before the sandbox and its contents are deleted. Deletion is not recoverable. |
 | `default_timeout` | `600` | Seconds allowed for each command. |
 :::
 
@@ -75,15 +75,15 @@ export const sandbox = defineSandbox({
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `idleTtlSeconds` | `600` | Seconds of inactivity before the sandbox can be reclaimed. |
+| `idleTtlSeconds` | `600` | Seconds of inactivity before the sandbox and its contents are deleted. Deletion is not recoverable. |
 | `defaultTimeout` | `600` | Seconds allowed for each command. |
 :::
 
 ## Provision a snapshot
 
-If `sandbox/setup.sh` exists, `mda deploy` and `mda dev` bake it once into a recipe snapshot. New threads clone that snapshot instead of running `setup.sh`.
+If `sandbox/setup.sh` exists, `mda deploy` and `mda dev` run the script once and save the resulting environment as a snapshot. Modifications from that run, such as cloned repositories and installed packages, persist in the snapshot. New threads clone that snapshot instead of running `setup.sh`. The snapshot is reused until `setup.sh` changes, at which point it is rebuilt.
 
-The script runs with `bash -e`. A non-zero exit fails the bake and the deploy or `mda dev` session. The previous deployment pointer stays in place.
+The script runs with `bash -e`. A non-zero exit fails the snapshot and the deploy or `mda dev` session. LangSmith does not update the live deployment to the failed snapshot. Any previously successful snapshot continues to serve.
 
 ```bash sandbox/setup.sh
 #!/usr/bin/env bash
@@ -93,9 +93,9 @@ apt-get update && apt-get install -y jq
 mkdir -p /workspace
 ```
 
-Project `.env` values that deploy forwards are available as environment variables on the builder, for example a token used to clone a private repo. Thread sandboxes that clone the snapshot do not inherit those variables. Do not write secrets onto the filesystem during bake; anything on disk is part of every thread's image.
+Project `.env` values that deploy forwards are available as environment variables when `setup.sh` runs, for example a token used to clone a private repo. Thread sandboxes that clone the snapshot do not inherit those variables. Do not write secrets onto the filesystem while `setup.sh` runs; anything on disk is part of every thread's image.
 
-Editing `setup.sh` and redeploying does not wipe `/workspace` on live threads. Those boxes keep the files they already have. A new thread clones the new recipe.
+Editing `setup.sh` and redeploying does not wipe `/workspace` on live threads. Those boxes keep the files they already have. A new thread clones the new snapshot.
 
 ## Choose a bake base
 
