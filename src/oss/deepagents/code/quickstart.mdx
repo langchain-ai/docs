@@ -69,6 +69,7 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
         - `/clear`: Clear conversation history and start a new thread.
         - `/force-clear`: Stop active work, clear the chat, and start a new thread.
         - `/copy`: Copy the latest assistant message to the clipboard.
+        - `/prompts`: Search, preview, copy, and reuse previously submitted prompts.
         - `/threads`: Browse and resume previous conversation threads.
         - `/mcp [login <server> | reconnect]`: Show active MCP servers and tools. `login <server>` runs the OAuth flow for a server; `reconnect` loads deferred logins.
         - `/plugins`: Manage [plugins and marketplaces](/oss/deepagents/code/plugins).
@@ -130,6 +131,10 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
         | `Ctrl+K` | Delete from cursor to end of line |
         | `Ctrl+W` or `Ctrl+Backspace` | Delete word to the left |
         | `Ctrl+Left` / `Ctrl+Right` | Move cursor one word left/right |
+
+        **Search prompt history**
+
+        Prompt history search lets you find and reuse previously submitted prompts without leaving the chat input. Press `Ctrl+R` to open an inline search of prompts stored on your machine.
 
         <Note>
             **macOS `Cmd+Left` / `Cmd+Right` / `Cmd+Delete`**
