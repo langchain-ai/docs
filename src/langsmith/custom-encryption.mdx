@@ -5,10 +5,6 @@ sidebarTitle: Custom encryption
 
 Custom encryption lets Agent Server use your encryption handlers for per-tenant keys and external key management systems. Use [built-in AES encryption](/langsmith/encryption) unless you need these capabilities.
 
-<Note>
-Features documented on this page require Agent Server version 0.14.0 or later and Python SDK version `langgraph-sdk>=0.4.3`.
-</Note>
-
 <Warning>
 Agent Server versions 0.5.34–0.6.21 included a pre-release version of custom encryption. Data encrypted with these versions will be corrupted when upgrading to 0.6.22+. Do not use custom encryption on these versions.
 </Warning>
@@ -68,11 +64,11 @@ encryption = Encryption()
 async def get_encryption_context(user: BaseUser, ctx: EncryptionContext) -> dict:
     return {
         **ctx.metadata,
-        "tenant_id": user["tenant_id"],
+        "tenant_id": user.identity,
     }
 ```
 
-This handler runs once per request after authentication. The returned dictionary becomes `ctx.metadata` for every encryption operation in the request and is stored in plaintext so Agent Server can restore it during decryption.
+This handler runs once per request after authentication. The returned dictionary becomes `ctx.metadata` for every encryption operation in the request and is stored in plaintext so Agent Server can restore it during decryption. Include only non-secret identifiers and routing metadata, never keys, tokens, or credentials.
 
 ### Defining your encryption module
 
@@ -83,9 +79,7 @@ Blob handlers encrypt checkpoint data—the serialized state from graph executio
 ```python
 import os
 from cryptography.fernet import Fernet
-from langgraph_sdk import Encryption, EncryptionContext
-
-encryption = Encryption()
+from langgraph_sdk import EncryptionContext
 
 # In production, fetch from a secrets manager
 TENANT_KEYS = {
@@ -121,9 +115,7 @@ JSON handlers encrypt structured data like thread metadata, assistant context, a
 import json
 import os
 from cryptography.fernet import Fernet
-from langgraph_sdk import Encryption, EncryptionContext
-
-encryption = Encryption()
+from langgraph_sdk import EncryptionContext
 
 TENANT_KEYS = {
     "tenant-a": Fernet(os.environ["TENANT_A_KEY"]),
@@ -194,33 +186,72 @@ async def decrypt_json(ctx: EncryptionContext, data: dict) -> dict:
 **Performance consideration:** Per-key encryption means one encryption call per field. If your encryption involves round-trips to an external service (e.g., KMS), this can significantly impact latency. Consider caching data keys locally or using envelope encryption where you encrypt a local data key with KMS and use it for multiple fields.
 </Note>
 
-User-defined fields for authorization (e.g., `tenant_id`, `owner`) should generally be left **unencrypted**, as should fields used for search and filtering. Additionally, **some system-managed fields will never be encrypted**:
+Fields used by authorization filters (e.g., `tenant_id`, `owner`) must remain unchanged and **unencrypted**, as must fields used for search and filtering. Agent Server rejects writes if a custom encryptor changes an authorization-filter field. Additionally, **some system-managed fields will never be encrypted**:
 
 - Resource identifiers (`thread_id`, `run_id`, `assistant_id`, `graph_id`, `checkpoint_id`, `task_id`)
-- Most fields beginning with `langgraph_` (except for `langgraph_auth_user`)
+- Named LangGraph system fields (`langgraph_version`, `langgraph_api_version`, `langgraph_plan`, `langgraph_host`, `langgraph_api_url`, `langgraph_request_id`, `langgraph_auth_user`, `langgraph_auth_user_id`, `langgraph_auth_permissions`)
 - Required checkpoint metadata (`source`, `step`, `parents`, `run_attempt`)
-- Internal fields used for scheduling and orchestration (`__after_seconds__`, `__request_start_time_ms__`, most fields beginning with `__pregel`)
+- Named internal fields used for scheduling and orchestration, including `__after_seconds__` and `__request_start_time_ms__`
 - Run-level execution limits (`max_concurrency`, `recursion_limit`) specified in a run's `config`
 - Thread TTL updates (`ttl`) specified in a run's `config.configurable`
 
 
 #### What gets encrypted
 
-**JSON handlers** (`@encryption.encrypt.json` / `@encryption.decrypt.json`) are applied recursively to the following fields:
+**JSON handlers** (`@encryption.encrypt.json` / `@encryption.decrypt.json`) are applied recursively to fields including:
 - `thread.metadata`, `thread.values`
 - `assistant.metadata`, `assistant.context`
 - `run.metadata`, `run.kwargs`
 - `cron.metadata`, `cron.payload`
 - `store.value`
 
-[Some fields are excluded from encryption.](#what-gets-encrypted) Unless otherwise noted, these exclusions apply at every level of a nested JSON object, not just the root level.
+[Some fields are excluded from encryption.](#json-encryption-considerations) Unless otherwise noted, these exclusions apply at every level of a nested JSON object, not just the root level.
 
 **Blob handlers** (`@encryption.encrypt.blob` / `@encryption.decrypt.blob`) are applied to checkpoint blobs (graph execution state).
 
 
 ### Rotate custom encryption keys lazily
 
+<Note>
+Lazy re-encryption requires Agent Server version 0.14.0 or later and Python SDK version `langgraph-sdk>=0.4.3`.
+</Note>
+
 Return `DecryptResult` from a blob or JSON decrypt handler when the handler decrypts data with an old key. Its `plaintext` value is returned to the caller, and its `replacement` value is new ciphertext for Agent Server to persist.
+
+For example, replace the blob decrypt handler above with one that tries the current tenant key first, then returns replacement ciphertext when a legacy key succeeds:
+
+```python
+import os
+
+from cryptography.fernet import Fernet, InvalidToken
+from langgraph_sdk import DecryptResult, EncryptionContext
+
+LEGACY_TENANT_KEYS = {
+    "tenant-a": [Fernet(os.environ["TENANT_A_LEGACY_KEY"])],
+    "tenant-b": [Fernet(os.environ["TENANT_B_LEGACY_KEY"])],
+}
+
+
+@encryption.decrypt.blob
+async def decrypt_blob(
+    ctx: EncryptionContext, data: bytes
+) -> bytes | DecryptResult[bytes]:
+    current_key = _get_fernet(ctx)
+    try:
+        return current_key.decrypt(data)
+    except InvalidToken:
+        tenant_id = ctx.metadata["tenant_id"]
+        for legacy_key in LEGACY_TENANT_KEYS.get(tenant_id, []):
+            try:
+                plaintext = legacy_key.decrypt(data)
+                return DecryptResult(
+                    plaintext=plaintext,
+                    replacement=current_key.encrypt(plaintext),
+                )
+            except InvalidToken:
+                continue
+        raise
+```
 
 JSON decrypt handlers can return `DecryptResult[dict]` in the same way. The replacement must have the same shape as a normal result from the corresponding encrypt handler.
 
@@ -350,7 +381,7 @@ The `encryption_context` is cryptographically bound to the ciphertext via KMS—
 
 #### Key rotation
 
-KMS handles master key rotation automatically. When you enable automatic rotation on your KMS key, old encrypted data keys can still be decrypted while new operations use the rotated key material. No re-encryption of existing data is required.
+KMS rotates backing material for the same key ID automatically. Old encrypted data keys remain decryptable, so existing data does not need re-encryption.
 
 ## Related
 
