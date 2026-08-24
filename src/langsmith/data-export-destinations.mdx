@@ -314,11 +314,119 @@ Returns the updated destination object. Credential values are never returned—o
 1. Keep old credentials active until all in-flight bulk export runs finish (up to the [maximum run duration](/langsmith/data-export-monitor#automatic-retry-behavior)).
 1. Revoke old credentials once no runs are using them.
 
+## Authenticate with an AWS IAM role
+
+AWS IAM role assumption lets GCP-hosted LangSmith SaaS export to S3 without storing static AWS credentials. Configure an AWS role that trusts the LangSmith service accounts for your production region, then provide its ARN when you create or update a destination.
+
+<Note>
+IAM role assumption is available only on GCP-hosted LangSmith SaaS. It is not available on AWS-hosted SaaS or self-hosted deployments.
+</Note>
+
+### Select your LangSmith region
+
+Your role trust policy must allow all three service-account subject IDs for your LangSmith region. The API server validates the destination, the SAQ worker runs exports, and the asynq worker supports future export execution.
+
+<Tabs>
+<Tab title="US">
+
+| LangSmith service | `accounts.google.com:sub` |
+|---|---|
+| API server | `110136955440523778103` |
+| SAQ worker | `116331607438151298187` |
+| Asynq worker | `115251468294701876731` |
+
+</Tab>
+<Tab title="EU">
+
+| LangSmith service | `accounts.google.com:sub` |
+|---|---|
+| API server | `110207823358662523645` |
+| SAQ worker | `115689110758588220909` |
+| Asynq worker | `109691164801275818274` |
+
+</Tab>
+<Tab title="APAC">
+
+| LangSmith service | `accounts.google.com:sub` |
+|---|---|
+| API server | `105923862603785245337` |
+| SAQ worker | `114288557158507552617` |
+| Asynq worker | `116622461022404604716` |
+
+</Tab>
+</Tabs>
+
+### Create the AWS role
+
+Create an AWS IAM role with a trust policy that permits web identity federation from the three subject IDs for your region. Grant the role access to your export bucket. This Terraform example uses the minimum required `s3:PutObject` permission:
+
+```hcl
+resource "aws_iam_role" "langsmith_bulk_export" {
+  name                 = "langsmith-bulk-export"
+  max_session_duration = 43200
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = "accounts.google.com" }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "accounts.google.com:oaud" = "langsmith-bulk-export"
+          "accounts.google.com:sub" = [
+            "LANGSMITH_API_SERVER_SUBJECT_ID",
+            "LANGSMITH_SAQ_WORKER_SUBJECT_ID",
+            "LANGSMITH_ASYNQ_WORKER_SUBJECT_ID",
+          ]
+        }
+      }
+    }]
+  })
+
+  inline_policy {
+    name = "langsmith-bulk-export-s3"
+    policy = jsonencode({
+      Version = "2012-10-17"
+      Statement = [{
+        Effect   = "Allow"
+        Action   = "s3:PutObject"
+        Resource = "arn:aws:s3:::YOUR_BUCKET_NAME/*"
+      }]
+    })
+  }
+}
+```
+
+Replace the three subject ID placeholders with the values from the selected region tab. Add the optional permissions from [AWS S3 permissions](#aws-s3-permissions) if you want LangSmith to clean up test files, verify file sizes, or abort multipart uploads.
+
+### Create a destination with the role
+
+After you create the AWS role, pass its ARN as `aws_role_arn` instead of providing `credentials`:
+
+```bash
+curl --request POST \
+  --url 'https://api.smith.langchain.com/api/v1/bulk-exports/destinations' \
+  --header 'Content-Type: application/json' \
+  --header 'X-API-Key: YOUR_API_KEY' \
+  --header 'X-Tenant-Id: YOUR_WORKSPACE_ID' \
+  --data '{
+    "destination_type": "s3",
+    "display_name": "My AWS S3 Destination",
+    "config": {
+      "bucket_name": "YOUR_BUCKET_NAME",
+      "prefix": "data_exports",
+      "region": "YOUR_AWS_REGION"
+    },
+    "aws_role_arn": "arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/langsmith-bulk-export"
+  }'
+```
+
+LangSmith validates the role with a test write before saving the destination. The request fails with `400` if the trust policy or S3 permissions are insufficient.
+
 ## Switch authentication mode
 
-<Note>**`aws_role_arn` is available only on GCP SaaS deployments.**</Note>
-
-Switch an existing destination between static credentials and AWS IAM role assumption without recreating it. Use `PATCH /api/v1/bulk-exports/destinations/{destination_id}`.
+Switch an existing destination between static credentials and [AWS IAM role assumption](#authenticate-with-an-aws-iam-role) without recreating it. Use `PATCH /api/v1/bulk-exports/destinations/{destination_id}`.
 
 [**Required permission**](/langsmith/organization-workspace-operations#bulk-exports): `bulk-exports:manage`.
 
