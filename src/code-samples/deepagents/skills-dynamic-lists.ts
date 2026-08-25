@@ -2,17 +2,9 @@
 import { createDeepAgent } from "deepagents";
 
 const SKILLS_BY_ROLE: Record<string, string[]> = {
-  engineering: [
-    "/skills/code-review/",
-    "/skills/testing/",
-    "/skills/deployment/",
-  ],
-  data: [
-    "/skills/sql-analysis/",
-    "/skills/visualization/",
-    "/skills/data-pipeline/",
-  ],
-  support: ["/skills/ticket-triage/", "/skills/runbook/"],
+  engineering: ["/skills/shared/", "/skills/engineering/"],
+  data: ["/skills/shared/", "/skills/data/"],
+  support: ["/skills/shared/", "/skills/support/"],
 };
 
 function createAgentForUser(userRole: string) {

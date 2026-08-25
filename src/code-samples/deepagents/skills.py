@@ -30,9 +30,9 @@ agent = create_deep_agent(
 from deepagents import create_deep_agent
 
 SKILLS_BY_ROLE = {
-    "engineering": ["/skills/code-review/", "/skills/testing/", "/skills/deployment/"],
-    "data": ["/skills/sql-analysis/", "/skills/visualization/", "/skills/data-pipeline/"],
-    "support": ["/skills/ticket-triage/", "/skills/runbook/"],
+    "engineering": ["/skills/shared/", "/skills/engineering/"],
+    "data": ["/skills/shared/", "/skills/data/"],
+    "support": ["/skills/shared/", "/skills/support/"],
 }
 
 
