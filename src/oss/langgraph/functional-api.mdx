@@ -3,7 +3,10 @@ title: Functional API overview
 sidebarTitle: Functional API
 ---
 
-
+import LanggraphFunctionalApiInterruptStreamPy from '/snippets/code-samples/langgraph-functional-api-interrupt-stream-py.mdx';
+import LanggraphFunctionalApiInterruptResumePy from '/snippets/code-samples/langgraph-functional-api-interrupt-resume-py.mdx';
+import LanggraphFunctionalApiInterruptStreamJs from '/snippets/code-samples/langgraph-functional-api-interrupt-stream-js.mdx';
+import LanggraphFunctionalApiInterruptResumeJs from '/snippets/code-samples/langgraph-functional-api-interrupt-resume-js.mdx';
 
 The **Functional API** allows you to add LangGraph's key features ([persistence](/oss/langgraph/persistence), [memory](/oss/langgraph/add-memory), [human-in-the-loop](/oss/langgraph/interrupts), and [streaming](/oss/langgraph/streaming)) to your applications with minimal changes to your existing code.
 
@@ -114,157 +117,21 @@ const workflow = entrypoint(
   When the workflow is resumed, it executes from the very start, but because the result of the `writeEssay` task was already saved, the task result will be loaded from the checkpoint instead of being recomputed.
 
   :::python
-  ```python
-  import time
-  from langchain_core.utils.uuid import uuid7
-  from langgraph.func import entrypoint, task
-  from langgraph.types import interrupt
-  from langgraph.checkpoint.memory import InMemorySaver
-
-
-  @task
-  def write_essay(topic: str) -> str:
-      """Write an essay about the given topic."""
-      time.sleep(1)  # This is a placeholder for a long-running task.
-      return f"An essay about topic: {topic}"
-
-  @entrypoint(checkpointer=InMemorySaver())
-  def workflow(topic: str) -> dict:
-      """A simple workflow that writes an essay and asks for a review."""
-      essay = write_essay("cat").result()
-      is_approved = interrupt(
-          {
-              # Any json-serializable payload provided to interrupt as argument.
-              # It will be surfaced on the client side as an Interrupt when streaming data
-              # from the workflow.
-              "essay": essay,  # The essay we want reviewed.
-              # We can add any additional information that we need.
-              # For example, introduce a key called "action" with some instructions.
-              "action": "Please approve/reject the essay",
-          }
-      )
-      return {
-          "essay": essay,  # The essay that was generated
-          "is_approved": is_approved,  # Response from HIL
-      }
-
-
-  thread_id = str(uuid7())
-  config = {"configurable": {"thread_id": thread_id}}
-  for item in workflow.stream("cat", config):
-      print(item)
-  # > {'write_essay': 'An essay about topic: cat'}
-  # > {
-  # >     '__interrupt__': (
-  # >        Interrupt(
-  # >            value={
-  # >                'essay': 'An essay about topic: cat',
-  # >                'action': 'Please approve/reject the essay'
-  # >            },
-  # >            id='b9b2b9d788f482663ced6dc755c9e981'
-  # >        ),
-  # >    )
-  # > }
-  ```
+  <LanggraphFunctionalApiInterruptStreamPy />
 
   An essay has been written and is ready for review. Once the review is provided, we can resume the workflow:
 
-  ```python
-  from langgraph.types import Command
-
-  # Get review from a user (e.g., via a UI)
-  # In this case, we're using a bool, but this can be any json-serializable value.
-  human_review = True
-
-  for item in workflow.stream(Command(resume=human_review), config):
-      print(item)
-  ```
-
-  ```pycon
-  {'workflow': {'essay': 'An essay about topic: cat', 'is_approved': False}}
-  ```
+  <LanggraphFunctionalApiInterruptResumePy />
 
   The workflow has been completed and the review has been added to the essay.
   :::
 
   :::js
-  ```typescript
-  import { v7 as uuid7 } from "uuid";
-  import { MemorySaver, entrypoint, task, interrupt } from "@langchain/langgraph";
-
-  const writeEssay = task("writeEssay", async (topic: string) => {
-    // This is a placeholder for a long-running task.
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return `An essay about topic: ${topic}`;
-  });
-
-  const workflow = entrypoint(
-    { checkpointer: new MemorySaver(), name: "workflow" },
-    async (topic: string) => {
-      const essay = await writeEssay(topic);
-      const isApproved = interrupt({
-        // Any json-serializable payload provided to interrupt as argument.
-        // It will be surfaced on the client side as an Interrupt when streaming data
-        // from the workflow.
-        essay, // The essay we want reviewed.
-        // We can add any additional information that we need.
-        // For example, introduce a key called "action" with some instructions.
-        action: "Please approve/reject the essay",
-      });
-
-      return {
-        essay, // The essay that was generated
-        isApproved, // Response from HIL
-      };
-    }
-  );
-
-  const threadId = uuid7();
-
-  const config = {
-    configurable: {
-      thread_id: threadId
-    }
-  };
-
-  for await (const item of workflow.stream("cat", config)) {
-    console.log(item);
-  }
-  ```
-
-  ```console
-  { writeEssay: 'An essay about topic: cat' }
-  {
-    __interrupt__: [{
-      value: { essay: 'An essay about topic: cat', action: 'Please approve/reject the essay' },
-      resumable: true,
-      ns: ['workflow:f7b8508b-21c0-8b4c-5958-4e8de74d2684'],
-      when: 'during'
-    }]
-  }
-  ```
+  <LanggraphFunctionalApiInterruptStreamJs />
 
   An essay has been written and is ready for review. Once the review is provided, we can resume the workflow:
 
-  ```typescript
-  import { Command } from "@langchain/langgraph";
-
-  // Get review from a user (e.g., via a UI)
-  // In this case, we're using a bool, but this can be any json-serializable value.
-  const humanReview = true;
-
-  const stream = await workflow.stream(
-    new Command({ resume: humanReview }),
-    config
-  );
-  for await (const item of stream) {
-    console.log(item);
-  }
-  ```
-
-  ```console
-  { workflow: { essay: 'An essay about topic: cat', isApproved: true } }
-  ```
+  <LanggraphFunctionalApiInterruptResumeJs />
 
   The workflow has been completed and the review has been added to the essay.
   :::
@@ -425,8 +292,10 @@ Using the [`@entrypoint`](#entrypoint) yields a @[`Pregel`][Pregel.stream] objec
         }
     }
 
-    for chunk in my_workflow.stream(some_input, config):
-        print(chunk)
+    stream = my_workflow.stream_events(some_input, config, version="v3")
+    for message in stream.messages:
+        for token in message.text:
+            print(token, end="", flush=True)
     ```
     </Tab>
     <Tab title="Async Stream">
@@ -437,8 +306,10 @@ Using the [`@entrypoint`](#entrypoint) yields a @[`Pregel`][Pregel.stream] objec
         }
     }
 
-    async for chunk in my_workflow.astream(some_input, config):
-        print(chunk)
+    stream = await my_workflow.astream_events(some_input, config, version="v3")
+    async for message in stream.messages:
+        async for token in message.text:
+            print(token, end="", flush=True)
     ```
     </Tab>
 </Tabs>
@@ -466,8 +337,11 @@ Using the [`entrypoint`](#entrypoint) function will return an object that can be
       }
     };
 
-    for await (const chunk of myWorkflow.stream(someInput, config)) {
-      console.log(chunk);
+    const stream = await myWorkflow.streamEvents(someInput, config, { version: "v3" });
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
     }
     ```
     </Tab>
@@ -516,8 +390,10 @@ Resuming an execution after an @[interrupt][interrupt] can be done by passing a 
         }
     }
 
-    for chunk in my_workflow.stream(Command(resume=some_resume_value), config):
-        print(chunk)
+    stream = my_workflow.stream_events(Command(resume=some_resume_value), config, version="v3")
+    for message in stream.messages:
+        for token in message.text:
+            print(token, end="", flush=True)
     ```
     </Tab>
     <Tab title="Async Stream">
@@ -530,8 +406,10 @@ Resuming an execution after an @[interrupt][interrupt] can be done by passing a 
         }
     }
 
-    async for chunk in my_workflow.astream(Command(resume=some_resume_value), config):
-        print(chunk)
+    stream = await my_workflow.astream_events(Command(resume=some_resume_value), config, version="v3")
+    async for message in stream.messages:
+        async for token in message.text:
+            print(token, end="", flush=True)
     ```
     </Tab>
 </Tabs>
@@ -564,13 +442,16 @@ Resuming an execution after an @[interrupt][interrupt] can be done by passing a 
       }
     };
 
-    const stream = await myWorkflow.stream(
+    const stream = await myWorkflow.streamEvents(
       new Command({ resume: someResumableValue }),
       config,
-    )
+      { version: "v3" },
+    );
 
-    for await (const chunk of stream) {
-      console.log(chunk);
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
     }
     ```
     </Tab>
@@ -618,8 +499,10 @@ This assumes that the underlying **error** has been resolved and execution can p
         }
     }
 
-    for chunk in my_workflow.stream(None, config):
-        print(chunk)
+    stream = my_workflow.stream_events(None, config, version="v3")
+    for message in stream.messages:
+        for token in message.text:
+            print(token, end="", flush=True)
     ```
     </Tab>
     <Tab title="Async Stream">
@@ -631,8 +514,10 @@ This assumes that the underlying **error** has been resolved and execution can p
         }
     }
 
-    async for chunk in my_workflow.astream(None, config):
-        print(chunk)
+    stream = await my_workflow.astream_events(None, config, version="v3")
+    async for message in stream.messages:
+        async for token in message.text:
+            print(token, end="", flush=True)
     ```
     </Tab>
 </Tabs>
@@ -665,8 +550,11 @@ This assumes that the underlying **error** has been resolved and execution can p
       }
     };
 
-    for await (const chunk of myWorkflow.stream(null, config)) {
-      console.log(chunk);
+    const stream = await myWorkflow.streamEvents(null, config, { version: "v3" });
+    for await (const message of stream.messages) {
+      for await (const token of message.text) {
+        process.stdout.write(token);
+      }
     }
     ```
     </Tab>
@@ -675,7 +563,7 @@ This assumes that the underlying **error** has been resolved and execution can p
 
 ### Short-term memory
 
-When an `entrypoint` is defined with a `checkpointer`, it stores information between successive invocations on the same **thread id** in [checkpoints](/oss/langgraph/persistence#checkpoints).
+When an `entrypoint` is defined with a `checkpointer`, it stores information between successive invocations on the same **thread id** in [checkpoints](/oss/langgraph/checkpointers#checkpoints).
 
 :::python
 This allows accessing the state from the previous invocation using the `previous` parameter.
@@ -877,7 +765,7 @@ const myWorkflow = entrypoint(
 * **Checkpointing**: When you need to save the result of a long-running operation to a checkpoint, so you don't need to recompute it when resuming the workflow.
 * **Human-in-the-loop**: If you're building a workflow that requires human intervention, you MUST use **tasks** to encapsulate any randomness (e.g., API calls) to ensure that the workflow can be resumed correctly. See the [determinism](#determinism) section for more details.
 * **Parallel Execution**: For I/O-bound tasks, **tasks** enable parallel execution, allowing multiple operations to run concurrently without blocking (e.g., calling multiple APIs).
-* **Observability**: Wrapping operations in **tasks** provides a way to track the progress of the workflow and monitor the execution of individual operations using [LangSmith](/langsmith/home).
+* **Observability**: Wrapping operations in **tasks** provides a way to track the progress of the workflow and monitor the execution of individual operations using [LangSmith](/langsmith/observability).
 * **Retryable Work**: When work needs to be retried to handle failures or inconsistencies, **tasks** provide a way to encapsulate and manage the retry logic.
 
 ## Serialization
@@ -901,15 +789,25 @@ Providing non-serializable inputs or outputs will result in a runtime error when
 
 ## Determinism
 
-To utilize features like **human-in-the-loop**, any randomness should be encapsulated inside of **tasks**. This guarantees that when execution is halted (e.g., for human in the loop) and then resumed, it will follow the same _sequence of steps_, even if **task** results are non-deterministic.
+When you resume a workflow run, the code does **NOT** resume from the **same line of code** where execution stopped. Execution returns to a checkpoint boundary, and the workflow **replays** forward until it reaches the pause again.
 
-LangGraph achieves this behavior by persisting **task** and [**subgraph**](/oss/langgraph/use-subgraphs) results as they execute. A well-designed workflow ensures that resuming execution follows the _same sequence of steps_, allowing previously computed results to be retrieved correctly without having to re-execute them. This is particularly useful for long-running **tasks** or **tasks** with non-deterministic results, as it avoids repeating previously done work and allows resuming from essentially the same.
+For the Functional API, replay starts at the beginning of the **entrypoint** while LangGraph restores completed [**task**](/oss/langgraph/functional-api#task) and [**subgraph**](/oss/langgraph/use-subgraphs) results from the checkpointer instead of recomputing them. That preserves the recorded order of steps across pauses, including for long-running or non-deterministic **task** outputs.
 
-While different runs of a workflow can produce different results, resuming a **specific** run should always follow the same sequence of recorded steps. This allows LangGraph to efficiently look up **task** and **subgraph** results that were executed prior to the graph being interrupted and avoid recomputing them.
+To use features like **human-in-the-loop**, you must place non-deterministic work (for example, random values) and side effects (for example, file writes or API calls) in [**tasks**](/oss/langgraph/functional-api#task).
+
+Different runs of a workflow can produce different results, but resuming a **specific** thread should replay the same persisted **task** and **subgraph** results.
+
+To ensure that your workflow is deterministic and can be consistently replayed, follow these guidelines:
+
+* **Avoid repeating work**: In an **entrypoint**, if you chain several side effects (for example, logging, file writes, or network calls), give each its own **task** so resume restores their outputs from the checkpointer instead of running them again.
+* **Encapsulate non-deterministic operations**: Keep values that can change between attempts (for example, random numbers or wall-clock reads) inside **tasks**, so replay lines up with what was checkpointed.
+* **Use idempotent operations**: For partial task failures and retries, see [Idempotency](#idempotency).
 
 ## Idempotency
 
-Idempotency ensures that running the same operation multiple times produces the same result. This helps prevent duplicate API calls and redundant processing if a step is rerun due to a failure. Always place API calls inside **tasks** functions for checkpointing, and design them to be idempotent in case of re-execution. Re-execution can occur if a **task** starts, but does not complete successfully. Then, if the workflow is resumed, the **task** will run again. Use idempotency keys or verify existing results to avoid duplication.
+Idempotency ensures that running the same operation multiple times produces the same result. This helps prevent duplicate API calls and redundant processing if a step is rerun due to a failure. Always place API calls inside **tasks** functions for checkpointing, and design them to be idempotent in case of re-execution.
+This is particularly important for operations that result in data writes.
+When a workflow resumes, LangGraph replays completed **task** results from the checkpoint. A **task** that started but did not finish may run again on that resume, so design side effects to be idempotent. Use idempotency keys or verify existing results to avoid unintended duplication.
 
 ## Common pitfalls
 

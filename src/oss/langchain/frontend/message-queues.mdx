@@ -3,13 +3,14 @@ title: Message queues
 description: Queue multiple messages and manage them while the agent processes sequentially
 ---
 
-Message queuing lets users send multiple messages in rapid succession without waiting for the agent to finish processing the current one. Each message is enqueued server-side and processed sequentially, giving you full visibility and control over the pending queue.
+Message queuing lets users send multiple messages in rapid succession without waiting for the agent to finish processing the current one. Each message is accepted immediately, queued for the active thread, and processed sequentially, giving you full visibility and control over the pending work.
 
 import { PatternEmbed } from "/snippets/pattern-embed.jsx"
 
 <PatternEmbed pattern="message-queues" />
 
 import RequiresLanggraphServer from '/snippets/oss/requires-langgraph-server.mdx';
+import UseStreamTypeInference from '/snippets/oss/use-stream-type-inference.mdx';
 
 <RequiresLanggraphServer />
 
@@ -24,20 +25,28 @@ In a typical chat interface, users must wait for the agent to finish responding 
 
 Message queuing solves this by accepting all submissions immediately and processing them in order.
 
+This is an agent UX primitive rather than a cosmetic chat feature. The SDK keeps
+track of the queue as part of the stream controller, so your UI can show pending
+work, cancel stale requests, and keep the composer active while the current run
+continues.
+
 ## How it works
 
-Under the hood, LangGraph uses `multitaskStrategy: "enqueue"` to manage concurrent submissions. When a message is submitted while the agent is already processing, it gets added to a server-side queue. Once the current run completes, the next queued message is picked up automatically.
+Pass `multitaskStrategy: "enqueue"` when you want a submission to wait behind
+the currently running request. While the agent is processing, queued submissions
+are added to the active thread's queue. Once the current run completes, the
+next queued message is dispatched automatically.
 
-The `useStream` hook exposes a `queue` property that provides real-time visibility into pending messages:
+Read queue state with the companion queue helper for your framework:
 
 | Property | Type | Description |
 |---|---|---|
-| `queue.entries` | `QueueEntry[]` | Array of all pending queue entries |
+| `queue.entries` | `SubmissionQueueEntry[]` | Array of all pending queue entries |
 | `queue.size` | `number` | Number of entries currently in the queue |
 | `queue.cancel(id)` | `(id: string) => Promise<void>` | Cancel a specific queued entry by ID |
 | `queue.clear()` | `() => Promise<void>` | Cancel all queued entries |
 
-Each `QueueEntry` object contains:
+Each @[SubmissionQueueEntry] object contains:
 
 | Field | Type | Description |
 |---|---|---|
@@ -48,40 +57,26 @@ Each `QueueEntry` object contains:
 
 ## Setting up `useStream`
 
-:::python
+Connect @[`useStream`] to your agent, then pair it with the submission queue
+helper for your framework. Call `stream.submit()` to send messages while a run
+is in progress; pass `multitaskStrategy: "enqueue"` on submissions that should
+wait behind the active request. Read `queue.entries` and `queue.size` to render
+pending work, and use `queue.cancel()` or `queue.clear()` to remove items before
+they start processing.
 
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
-
-```ts
-import type { BaseMessage } from "@langchain/core/messages";
-
-interface AgentState {
-  messages: BaseMessage[];
-}
-```
-
-:::
-
-:::js
-
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
-
-```ts
-import type { myAgent } from "./agent";
-```
-
-:::
+<UseStreamTypeInference />
 
 <CodeGroup>
 
 ```tsx React
-import { useStream } from "@langchain/react";
+import { useStream, useSubmissionQueue } from "@langchain/react";
 
 function Chat() {
   const stream = useStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
-    assistantId: "message_queue",
+    assistantId: "simple_agent",
   });
+  const queue = useSubmissionQueue(stream);
 
   const handleSubmit = (text: string) => {
     stream.submit({
@@ -89,14 +84,13 @@ function Chat() {
     });
   };
 
-  // Access queue state
-  const pendingCount = stream.queue.size;
-  const entries = stream.queue.entries;
+  const pendingCount = queue.size;
+  const entries = queue.entries;
 
   return (
     <div>
       <MessageList messages={stream.messages} />
-      {pendingCount > 0 && <QueueList entries={entries} queue={stream.queue} />}
+      {pendingCount > 0 && <QueueList entries={entries} queue={queue} />}
       <ChatInput onSubmit={handleSubmit} />
     </div>
   );
@@ -105,12 +99,14 @@ function Chat() {
 
 ```vue Vue
 <script setup lang="ts">
-import { useStream } from "@langchain/vue";
+import { useStream, useSubmissionQueue } from "@langchain/vue";
+import { computed } from "vue";
 
 const stream = useStream<typeof myAgent>({
   apiUrl: "http://localhost:2024",
-  assistantId: "message_queue",
+  assistantId: "simple_agent",
 });
+const queue = useSubmissionQueue(stream);
 
 function handleSubmit(text: string) {
   stream.submit({
@@ -118,15 +114,14 @@ function handleSubmit(text: string) {
   });
 }
 
-// Access queue state via .value in script
-const pendingCount = computed(() => stream.queue.value.size);
-const entries = computed(() => stream.queue.value.entries);
+const pendingCount = computed(() => queue.size.value);
+const entries = computed(() => queue.entries.value);
 </script>
 
 <template>
   <div>
     <MessageList :messages="stream.messages" />
-    <QueueList v-if="stream.queue.size > 0" :entries="stream.queue.entries" :queue="stream.queue" />
+    <QueueList v-if="pendingCount > 0" :entries="entries" :queue="queue" />
     <ChatInput @submit="handleSubmit" />
   </div>
 </template>
@@ -134,24 +129,25 @@ const entries = computed(() => stream.queue.value.entries);
 
 ```svelte Svelte
 <script lang="ts">
-  import { useStream } from "@langchain/svelte";
+  import { useStream, useSubmissionQueue } from "@langchain/svelte";
 
-  const { messages, submit, queue } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
-    assistantId: "message_queue",
+    assistantId: "simple_agent",
   });
+  const queue = useSubmissionQueue(stream);
 
   function handleSubmit(text: string) {
-    submit({
+    stream.submit({
       messages: [{ type: "human", content: text }],
     });
   }
 </script>
 
 <div>
-  <MessageList messages={$messages} />
-  {#if $queue.size > 0}
-    <QueueList entries={$queue.entries} queue={$queue} />
+  <MessageList messages={stream.messages} />
+  {#if queue.size > 0}
+    <QueueList entries={queue.entries} {queue} />
   {/if}
   <ChatInput on:submit={(e) => handleSubmit(e.detail)} />
 </div>
@@ -159,23 +155,24 @@ const entries = computed(() => stream.queue.value.entries);
 
 ```ts Angular
 import { Component } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { injectStream, injectSubmissionQueue } from "@langchain/angular";
 
 @Component({
   selector: "app-chat",
   template: `
     <message-list [messages]="stream.messages()" />
-    @if (stream.queue().size > 0) {
-      <queue-list [entries]="stream.queue().entries" [queue]="stream.queue()" />
+    @if (queue.size() > 0) {
+      <queue-list [entries]="queue.entries()" [queue]="queue" />
     }
     <chat-input (onSubmit)="handleSubmit($event)" />
   `,
 })
 export class ChatComponent {
-  stream = useStream<typeof myAgent>({
+  stream = injectStream<typeof myAgent>({
     apiUrl: "http://localhost:2024",
-    assistantId: "message_queue",
+    assistantId: "simple_agent",
   });
+  queue = injectSubmissionQueue(this.stream);
 
   handleSubmit(text: string) {
     this.stream.submit({
@@ -201,7 +198,7 @@ function QueueList({ entries, queue }) {
       </div>
       <ul className="queue-entries">
         {entries.map((entry) => {
-          const text = entry.values?.messages?.[0]?.content ?? "Unknown";
+          const text = entry.values?.messages?.at(-1)?.content ?? "Pending...";
           return (
             <li key={entry.id} className="queue-entry">
               <span className="queue-text">{text}</span>
@@ -262,7 +259,7 @@ stream.submit(
   { messages: [{ type: "human", content: "What is quantum computing?" }] },
   {
     onCreated(run) {
-      console.log("Run created:", run.run_id);
+      console.log("Run created:", run.runId);
       // Chain a follow-up
       stream.submit({
         messages: [{ type: "human", content: "Give me a simple analogy." }],
@@ -277,16 +274,19 @@ immediately, and the follow-up is queued behind it.
 
 ## Starting a new thread
 
-When a user wants to begin a fresh conversation, use `switchThread(null)` to create a new thread. This clears the current message history and queue.
+When a user wants to begin a fresh conversation, update the reactive `threadId`
+that you pass into the stream. Passing `null` clears the current thread binding;
+the next submission creates a new thread.
 
 <CodeGroup>
 
 ```tsx React
 function NewThreadButton() {
-  const stream = useStream<typeof myAgent>({ /* ... */ });
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const stream = useStream<typeof myAgent>({ threadId, onThreadId: setThreadId });
 
   return (
-    <button onClick={() => stream.switchThread(null)}>
+    <button onClick={() => setThreadId(null)}>
       New conversation
     </button>
   );
@@ -295,91 +295,42 @@ function NewThreadButton() {
 
 ```vue Vue
 <script setup lang="ts">
-const stream = useStream<typeof myAgent>({ /* ... */ });
+const threadId = ref<string | null>(null);
+const stream = useStream<typeof myAgent>({
+  threadId,
+  onThreadId: (id) => (threadId.value = id),
+});
 </script>
 
 <template>
-  <button @click="stream.switchThread(null)">New conversation</button>
+  <button @click="threadId = null">New conversation</button>
 </template>
 ```
 
 ```svelte Svelte
 <script lang="ts">
-  const { switchThread } = useStream<typeof myAgent>({ /* ... */ });
+  let threadId = $state<string | null>(null);
+  const stream = useStream<typeof myAgent>({
+    threadId: () => threadId,
+    onThreadId: (id) => (threadId = id),
+  });
 </script>
 
-<button on:click={() => switchThread(null)}>New conversation</button>
+<button onclick={() => (threadId = null)}>New conversation</button>
 ```
 
 ```ts Angular
-stream = useStream<typeof myAgent>({ /* ... */ });
+threadId = signal<string | null>(null);
+stream = injectStream<typeof myAgent>({
+  threadId: this.threadId,
+  onThreadId: (id) => this.threadId.set(id),
+});
 
 // In template:
-// <button (click)="stream.switchThread(null)">New conversation</button>
+// <button (click)="threadId.set(null)">New conversation</button>
 ```
 
 </CodeGroup>
-
-## Complete example
-
-Putting it all together, here is a full chat component with queue management:
-
-```tsx
-function QueueChat() {
-  const stream = useStream<typeof myAgent>({
-    apiUrl: "http://localhost:2024",
-    assistantId: "message_queue",
-  });
-
-  const [input, setInput] = useState("");
-
-  const handleSubmit = () => {
-    if (!input.trim()) return;
-    stream.submit({
-      messages: [{ type: "human", content: input.trim() }],
-    });
-    setInput("");
-  };
-
-  return (
-    <div className="chat-container">
-      <header>
-        <h2>Queue Chat</h2>
-        <button onClick={() => stream.switchThread(null)}>New thread</button>
-      </header>
-
-      <div className="messages">
-        {stream.messages.map((msg, i) => (
-          <MessageBubble key={i} message={msg} />
-        ))}
-        {stream.isLoading && <TypingIndicator />}
-      </div>
-
-      {stream.queue.size > 0 && (
-        <div className="queue-panel">
-          <strong>Queued ({stream.queue.size})</strong>
-          <button onClick={() => stream.queue.clear()}>Clear all</button>
-          {stream.queue.entries.map((entry) => (
-            <div key={entry.id} className="queue-item">
-              <span>{entry.values?.messages?.[0]?.content}</span>
-              <button onClick={() => stream.queue.cancel(entry.id)}>×</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type a message (you can send multiple!)"
-        />
-        <button type="submit">Send</button>
-      </form>
-    </div>
-  );
-}
-```
 
 ## Best practices
 

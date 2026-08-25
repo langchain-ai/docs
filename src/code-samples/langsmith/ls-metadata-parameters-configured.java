@@ -28,7 +28,7 @@ class LsMetadataParametersConfigured {
 // :remove-end:
 Map<String, Object> metadata = new HashMap<>();
 metadata.put("ls_provider", "openai");
-metadata.put("ls_model_name", "gpt-5.4");
+metadata.put("ls_model_name", "gpt-5.5");
 metadata.put("ls_temperature", 0.7);
 metadata.put("ls_max_tokens", 4096);
 metadata.put("ls_stop", Collections.singletonList("END"));

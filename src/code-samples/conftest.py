@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-_DEFAULT_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
+_DEFAULT_URI = "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 
 
 def get_postgres_uri() -> str:
@@ -77,7 +77,7 @@ def get_postgres_uri() -> str:
                     "-e",
                     "POSTGRES_DB=postgres",
                     "-p",
-                    "5442:5432",
+                    "5432:5432",
                     "pgvector/pgvector:pg17",
                 ],
                 check=True,

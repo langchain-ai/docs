@@ -1,0 +1,87 @@
+// :snippet-start: langgraph-graph-api-stream-private-channel-js
+import { END, START, StateGraph, StateSchema } from "@langchain/langgraph";
+import * as z from "zod";
+
+const InputState = new StateSchema({
+  userInput: z.string(),
+});
+
+const OutputState = new StateSchema({
+  graphOutput: z.string(),
+});
+
+const OverallState = new StateSchema({
+  foo: z.string(),
+  userInput: z.string(),
+  graphOutput: z.string(),
+});
+
+const PrivateState = new StateSchema({
+  bar: z.string(),
+});
+
+const graph = new StateGraph({
+  state: OverallState,
+  input: InputState,
+  output: OutputState,
+})
+  .addNode("node1", (state) => {
+    return { foo: state.userInput + " name" };
+  })
+  .addNode("node2", (state) => {
+    return { bar: state.foo + " is" };
+  })
+  .addNode(
+    "node3",
+    (state) => {
+      return { graphOutput: state.bar + " Lance" };
+    },
+    { input: PrivateState },
+  )
+  .addEdge(START, "node1")
+  .addEdge("node1", "node2")
+  .addEdge("node2", "node3")
+  .addEdge("node3", END)
+  .compile();
+
+const stream = await graph.streamEvents({ userInput: "My" }, { version: "v3" });
+for await (const snapshot of stream.values) {
+  console.log(snapshot);
+}
+// { userInput: 'My' }
+// { foo: 'My name', userInput: 'My' }
+// { foo: 'My name', userInput: 'My', bar: 'My name is' }            // <-- private channel
+// { foo: 'My name', userInput: 'My', graphOutput: 'My name is Lance', bar: 'My name is' }
+// :snippet-end:
+
+// :remove-start:
+async function main() {
+  const testStream = await graph.streamEvents(
+    { userInput: "My" },
+    { version: "v3" },
+  );
+  const snapshots: Array<Record<string, unknown>> = [];
+  for await (const snapshot of testStream.values) {
+    snapshots.push(snapshot);
+  }
+  if ((snapshots[2] as { bar?: string }).bar !== "My name is") {
+    throw new Error(
+      `Expected private bar channel, got: ${JSON.stringify(snapshots[2])}`,
+    );
+  }
+  if (
+    (snapshots[snapshots.length - 1] as { graphOutput?: string })
+      .graphOutput !== "My name is Lance"
+  ) {
+    throw new Error(
+      `Expected graphOutput in final snapshot, got: ${JSON.stringify(snapshots[snapshots.length - 1])}`,
+    );
+  }
+  console.log("✓ langgraph-graph-api-stream-private-channel-js");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+// :remove-end:

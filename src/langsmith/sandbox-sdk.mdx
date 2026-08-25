@@ -4,9 +4,7 @@ sidebarTitle: SDK usage
 description: Create and manage sandboxes programmatically with the Python or TypeScript SDK.
 ---
 
-import SandboxPreview from "/snippets/langsmith/sandbox-preview-warning.mdx";
-
-<SandboxPreview />
+import LangsmithEndpointValues from '/snippets/langsmith/langsmith-endpoint-values.mdx';
 
 The [LangSmith SDK](/langsmith/reference) provides a programmatic interface to create and interact with sandboxes.
 
@@ -16,10 +14,10 @@ The [LangSmith SDK](/langsmith/reference) provides a programmatic interface to c
 
 ```bash Python
 # uv
-uv add "langsmith[sandbox] @ git+https://github.com/langchain-ai/langsmith-sdk#subdirectory=python"
+uv add "langsmith[sandbox]"
 
 # pip
-pip install "langsmith[sandbox] @ git+https://github.com/langchain-ai/langsmith-sdk#subdirectory=python"
+pip install "langsmith[sandbox]"
 ```
 
 ```bash TypeScript
@@ -38,7 +36,16 @@ npm install ws
 
 ## Create and run a sandbox
 
-Every sandbox boots from a **snapshot** — a filesystem image backed by a Docker image. Pick an existing snapshot or create a new one (see [Snapshots](/langsmith/sandbox-snapshots) for the full build / capture / CRUD flow); every example below uses a `snapshot_id` / `snapshotId` you already have.
+The client reads `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT` from the environment, so export both before you create a sandbox:
+
+```bash
+export LANGSMITH_API_KEY="<LANGSMITH_API_KEY>"
+export LANGSMITH_ENDPOINT="<LANGSMITH_ENDPOINT>"
+```
+
+<LangsmithEndpointValues />
+
+Pass a snapshot ID or name when you want to boot from a reusable custom filesystem image; see [Snapshots](/langsmith/sandbox-snapshots) for that flow.
 
 <CodeGroup>
 
@@ -48,27 +55,21 @@ from langsmith.sandbox import SandboxClient
 # Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
 client = SandboxClient()
 
-# Pick an existing snapshot, or build one with client.create_snapshot(...)
-snapshot_id = "550e8400-e29b-41d4-a716-446655440000"
-
-# Create a sandbox from the snapshot and run code
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+# Create a sandbox with the default runtime and run code
+with client.sandbox() as sb:
     result = sb.run("python -c 'print(2 + 2)'")
     print(result.stdout)  # "4\n"
     print(result.success)  # True
 ```
 
 ```ts TypeScript
-import { SandboxClient } from "langsmith/experimental/sandbox";
+import { SandboxClient } from "langsmith/sandbox";
 
 // Client uses LANGSMITH_ENDPOINT and LANGSMITH_API_KEY from environment
 const client = new SandboxClient();
 
-// Pick an existing snapshot, or build one with client.createSnapshot(...)
-const snapshotId = "550e8400-e29b-41d4-a716-446655440000";
-
-// Create a sandbox from the snapshot and run code
-const sandbox = await client.createSandbox(snapshotId);
+// Create a sandbox with the default runtime and run code
+const sandbox = await client.createSandbox();
 const result = await sandbox.run("node -e 'console.log(2 + 2)'");
 console.log(result.stdout); // "4\n"
 
@@ -85,7 +86,7 @@ Every `run()` call returns an `ExecutionResult` with `stdout`, `stderr`, `exit_c
 <CodeGroup>
 
 ```python Python
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+with client.sandbox() as sb:
     result = sb.run("echo 'Hello, World!'")
 
     print(result.stdout)     # "Hello, World!\n"
@@ -100,7 +101,7 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
 ```
 
 ```ts TypeScript
-const sandbox = await client.createSandbox(snapshotId);
+const sandbox = await client.createSandbox();
 try {
   const result = await sandbox.run("echo 'Hello, World!'");
 
@@ -131,7 +132,7 @@ For long-running commands, stream output in real time using callbacks or a `Comm
 ```python Python
 import sys
 
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+with client.sandbox() as sb:
     result = sb.run(
         "make build",
         timeout=600,
@@ -159,7 +160,7 @@ Set `wait=False` to get a `CommandHandle` for full control over the output strea
 <CodeGroup>
 
 ```python Python
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+with client.sandbox() as sb:
     handle = sb.run("make build", timeout=600, wait=False)
 
     print(f"Command ID: {handle.command_id}")
@@ -200,7 +201,7 @@ console.log(`Exit code: ${result.exit_code}`);
 <CodeGroup>
 
 ```python Python
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+with client.sandbox() as sb:
     handle = sb.run(
         "python -c 'name = input(\"Name: \"); print(f\"Hello {name}\")'",
         timeout=30,
@@ -234,7 +235,7 @@ Kill a running command:
 <CodeGroup>
 
 ```python Python
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+with client.sandbox() as sb:
     handle = sb.run("python server.py", timeout=0, wait=False)
 
     for chunk in handle:
@@ -262,7 +263,7 @@ If a client disconnects, reconnect using the command ID:
 <CodeGroup>
 
 ```python Python
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+with client.sandbox() as sb:
     handle = sb.run("make build", timeout=600, wait=False)
     command_id = handle.command_id
 
@@ -293,7 +294,7 @@ Read and write files in the sandbox:
 <CodeGroup>
 
 ```python Python
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+with client.sandbox() as sb:
     # Write a file
     sb.write("/app/script.py", "print('Hello from file!')")
 
@@ -310,7 +311,7 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
 ```
 
 ```ts TypeScript
-const sandbox = await client.createSandbox(snapshotId);
+const sandbox = await client.createSandbox();
 try {
   // Write a file (string content)
   await sandbox.write("/app/script.py", "print('Hello from file!')");
@@ -332,6 +333,116 @@ try {
 
 </CodeGroup>
 
+## Mount a Context Hub repo
+
+Mount a [Context Hub](/langsmith/use-the-context-hub) repo to give sandbox code filesystem access to your agents and skills. The repo's latest commit tree is mirrored into the mount path and kept in sync for the sandbox's lifetime, so a new commit shows up in the running sandbox without a restart.
+
+<Warning>
+Context Hub mounts are **read-only**. The sync is one-way, from the repo into the sandbox: files an agent writes under the mount path are never pushed back to the repo, and the next sync overwrites them. Write sandbox output to a path outside the mount, and [push it with the SDK](/langsmith/manage-contexts-sdk) if it belongs in the repo.
+</Warning>
+
+Pass the mount through `mount_config`. The API key that creates the sandbox must have access to the repo, otherwise creation fails with a `403`.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import AsyncSandboxClient, context_hub_mount, mount_config
+
+
+async def main():
+    async with AsyncSandboxClient() as client:
+        async with await client.sandbox(
+            name="context-hub-mount-sandbox",
+            mount_config=mount_config(
+                mounts=[
+                    context_hub_mount(
+                        id="memories",
+                        mount_path="/memories",
+                        repo="-/my-agent",
+                    )
+                ],
+            ),
+        ) as sb:
+            result = await sb.run("ls /memories")
+            print(result.stdout)
+```
+
+```ts TypeScript
+import {
+  SandboxClient,
+  contextHubMount,
+  mountConfig,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const sandbox = await client.createSandbox({
+  name: "context-hub-mount-sandbox",
+  mountConfig: mountConfig({
+    mounts: [
+      contextHubMount({
+        id: "memories",
+        mountPath: "/memories",
+        repo: "-/my-agent",
+      }),
+    ],
+  }),
+});
+
+try {
+  const result = await sandbox.run("ls /memories");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+`repo` is the repo handle, optionally qualified as `owner/repo`, where `-` is the current workspace.
+
+`mount_path` must be an absolute, clean path, and cannot be the filesystem root or sit at or under a system directory such as `/etc` or `/usr`. Any other path works — unlike bucket and Git mounts, Context Hub mounts are not restricted to `/mnt/mounts`.
+
+Pass `initial_pull_only` / `initialPullOnly` to sync once at startup instead of polling for repo updates.
+
+## Size a sandbox
+
+Pass `vcpus`, `mem_bytes`, and `fs_capacity_bytes` (`vCpus`, `memBytes`, `fsCapacityBytes` in TypeScript) to size a sandbox at creation. Omit them and the sandbox gets the defaults below.
+
+<CodeGroup>
+
+```python Python
+sb = client.create_sandbox(
+    name="big-vm",
+    vcpus=4,
+    mem_bytes=16 * 1024**3,        # 16 GiB
+    fs_capacity_bytes=32 * 1024**3, # 32 GiB
+)
+```
+
+```ts TypeScript
+const sb = await client.createSandbox({
+  name: "big-vm",
+  vCpus: 4,
+  memBytes: 17_179_869_184,        // 16 GiB
+  fsCapacityBytes: 34_359_738_368, // 32 GiB
+});
+```
+
+</CodeGroup>
+
+| Resource | Default | Range |
+|----------|---------|-------|
+| CPU | 0.5 vCPU | 0.05 to 16 vCPU. Use `cpu_millicores` for sub-core requests (`500` is 0.5 vCPU); it takes precedence over `vcpus`. |
+| Memory | 4 GiB per vCPU | Up to 64 GiB. Must stay within 50% of the per-vCPU target, so a 1 vCPU sandbox accepts 2 to 6 GiB. Set memory without CPU and the CPU is derived from the same ratio. |
+| Filesystem | Snapshot capacity | Up to 64 GiB, and never smaller than the snapshot it boots from. |
+
+Sandboxes burst to twice their requested CPU when the host has spare capacity. Resizing an existing sandbox with `update_sandbox` / `updateSandbox` takes effect at its next start, and a resize enforces only the 64 GiB ceiling rather than the per-vCPU ratio.
+
+<Note>
+Free-form `labels` (up to 128 per sandbox, 256 bytes per key and 4096 bytes per value) can be set through the REST API on create. Sandboxes inherit their snapshot's labels unless overridden. The `langsmith.sandbox` clients do not expose this field yet.
+</Note>
+
 ## Sandbox lifetime and retention
 
 Sandboxes are governed by a two-stage retention model anchored to **idle
@@ -342,32 +453,29 @@ activity** and the **`stopped`** state.
 | `idle_ttl_seconds` | The launcher stops the sandbox after this many seconds of inactivity. Any command execution or file I/O resets the timer. `0` disables the idle stop. | Default `600` (10 minutes) when omitted. |
 | `delete_after_stop_seconds` | Once the sandbox enters the `stopped` state, this timer starts. After it elapses, the sandbox row + filesystem clone are permanently deleted by a server-side sweep. `0` disables stop-anchored deletion (manual cleanup required). | Server applies its configured default (typically 14 days) when omitted. |
 
-Both values must be multiples of 60 (minute resolution). The full lifecycle is:
+Both values must be multiples of 60 (minute resolution), and `delete_after_stop_seconds` caps at 2592000 (30 days). The full lifecycle is:
 
 ```
 running ──(idle for idle_ttl_seconds)──▶ stopped ──(delete_after_stop_seconds)──▶ deleted
 ```
 
-You can also call `stop_sandbox` / `stopSandbox` explicitly — that also
-populates `stopped_at` and starts the deletion timer.
+You can also call `stop_sandbox` / `stopSandbox` explicitly to release resources before the idle timeout fires; that also populates `stopped_at` and starts the deletion timer. You do not need to start it again afterwards: a stopped sandbox wakes on the next command, file operation, or service-URL request.
 
 <CodeGroup>
 
 ```python Python
 # Default retention (server defaults: 10-min idle stop, 14-day delete)
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+with client.sandbox() as sb:
     sb.run("echo hello")
 
 # Aggressive: stop after 5 min idle, delete 1 hour after stop
 sb = client.create_sandbox(
-    snapshot_id=snapshot_id,
     idle_ttl_seconds=300,
     delete_after_stop_seconds=3600,
 )
 
 # Long-running: never auto-stop, delete 7 days after manual stop
 sb = client.create_sandbox(
-    snapshot_id=snapshot_id,
     idle_ttl_seconds=0,
     delete_after_stop_seconds=604800,
 )
@@ -382,16 +490,16 @@ sb = client.update_sandbox(
 
 ```ts TypeScript
 // Default retention (server defaults applied)
-const sandbox = await client.createSandbox(snapshotId);
+const sandbox = await client.createSandbox();
 
 // Aggressive: stop after 5 min idle, delete 1 hour after stop
-const sb = await client.createSandbox(snapshotId, {
+const sb = await client.createSandbox({
   idleTtlSeconds: 300,
   deleteAfterStopSeconds: 3600,
 });
 
 // Long-running: never auto-stop, delete 7 days after manual stop
-const longRunning = await client.createSandbox(snapshotId, {
+const longRunning = await client.createSandbox({
   idleTtlSeconds: 0,
   deleteAfterStopSeconds: 604800,
 });
@@ -409,15 +517,15 @@ await client.updateSandbox(sb.name, {
 
 The sandbox daemon manages command session lifecycles with two timeout mechanisms:
 
-- **Session TTL (finished commands)**: After a command finishes, its session remains in memory for a TTL period. During this window you can reconnect to retrieve output. After the TTL expires, the session is cleaned up.
-- **Idle timeout (running commands)**: Running commands with no connected clients are killed after an idle timeout (default: 5 minutes). The idle timer resets each time a client connects. Set to `-1` for no idle timeout.
+- **Session TTL (finished commands)**: After a command finishes, its session remains in memory for a TTL period (default: 5 minutes). During this window you can reconnect to retrieve output. After the TTL expires, the session is cleaned up. Set `ttl_seconds` to `-1` to keep the session indefinitely.
+- **Idle timeout (running commands)**: Running commands with no connected clients are killed after an idle timeout (default: 1 hour). The idle timer resets each time a client connects. Set `idle_timeout` to `-1` for no idle timeout.
 
 ### Combine lifecycle options
 
 <CodeGroup>
 
 ```python Python
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+with client.sandbox() as sb:
     # Long-running task: 30-min idle timeout, 1-hour session TTL
     handle = sb.run(
         "python train.py",
@@ -438,7 +546,7 @@ with client.sandbox(snapshot_id=snapshot_id) as sb:
 ```
 
 ```ts TypeScript
-const sandbox = await client.createSandbox(snapshotId);
+const sandbox = await client.createSandbox();
 try {
   // Long-running task: 30-min idle timeout, 1-hour session TTL
   const handle = await sandbox.run("python train.py", {
@@ -469,7 +577,7 @@ Set `kill_on_disconnect=True` (Python) or `killOnDisconnect: true` (TypeScript) 
 Access an HTTP service running inside a sandbox via an authenticated URL. You can open it in a browser, call it from code, or share it with a teammate.
 
 ```python
-with client.sandbox(snapshot_id=snapshot_id) as sb:
+with client.sandbox() as sb:
     sb.run("python -m http.server 8000", timeout=0, wait=False)
 
     svc = sb.service(port=8000)
@@ -534,7 +642,7 @@ from langsmith.sandbox import AsyncSandboxClient
 
 async def main():
     async with AsyncSandboxClient() as client:
-        async with await client.sandbox(snapshot_id=snapshot_id) as sb:
+        async with await client.sandbox() as sb:
             result = await sb.run("python -c 'print(1 + 1)'")
             print(result.stdout)  # "2\n"
 
@@ -573,14 +681,14 @@ tracing_env = {
     "LANGSMITH_PROJECT": "my-sandbox-traces",
 }
 
-with client.sandbox(snapshot_id=snapshot_id) as sandbox:
+with client.sandbox() as sandbox:
     sandbox.run("pip install langsmith", timeout=120, env=tracing_env)
     result = sandbox.run("python3 my_agent.py", env=tracing_env)
     print(result.stdout)
 ```
 
 ```ts TypeScript
-import { SandboxClient } from "langsmith/experimental/sandbox";
+import { SandboxClient } from "langsmith/sandbox";
 
 const client = new SandboxClient();
 
@@ -591,7 +699,7 @@ const tracingEnv = {
   LANGSMITH_PROJECT: "my-sandbox-traces",
 };
 
-const sandbox = await client.createSandbox(snapshotId);
+const sandbox = await client.createSandbox();
 try {
   await sandbox.run("pip install langsmith", { timeout: 120, env: tracingEnv });
   const result = await sandbox.run("python3 my_agent.py", { env: tracingEnv });
@@ -628,7 +736,7 @@ from langsmith.sandbox import (
 )
 
 try:
-    with client.sandbox(snapshot_id=snapshot_id) as sb:
+    with client.sandbox() as sb:
         result = sb.run("sleep 999", timeout=10)
 except CommandTimeoutError as e:
     print(f"Command timed out: {e}")
@@ -646,7 +754,7 @@ import {
   LangSmithSandboxConnectionError,
   LangSmithCommandTimeoutError,
   LangSmithQuotaExceededError,
-} from "langsmith/experimental/sandbox";
+} from "langsmith/sandbox";
 
 try {
   const sandbox = await client.createSandbox("not-a-real-snapshot");
@@ -665,5 +773,5 @@ try {
 </CodeGroup>
 
 <Note>
-For more details, see the sandbox SDK reference on GitHub for [Python](https://github.com/langchain-ai/langsmith-sdk/tree/main/python/langsmith/sandbox) or [TypeScript](https://github.com/langchain-ai/langsmith-sdk/tree/main/js/src/experimental/sandbox).
+For more details, see the sandbox SDK reference on GitHub for [Python](https://github.com/langchain-ai/langsmith-sdk/tree/main/python/langsmith/sandbox) or [TypeScript](https://github.com/langchain-ai/langsmith-sdk/tree/main/js/src/sandbox).
 </Note>
