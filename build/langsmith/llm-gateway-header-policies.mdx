@@ -7,9 +7,9 @@ description: Split gateway spend caps and rate limits by a custom request header
 **Beta:** The LLM Gateway is in [beta](/langsmith/release-stages).
 </Note>
 
-A [spend policy](/langsmith/llm-gateway-spend-policies) or [rate limit policy](/langsmith/llm-gateway-rate-limit-policies) can carry a condition on a custom request header, so traffic from a single subject splits into separate limits by header value. Use this to cap each of your own end customers, tenants, or teams without issuing a separate [LangSmith API key](/langsmith/create-account-api-key) for each one.
+A [spend policy](/langsmith/llm-gateway-spend-policies) can separate a default limit by custom request header, so each header value gets an independent limit. Spend and [rate limit policies](/langsmith/llm-gateway-rate-limit-policies) can also match one specific header value. Use these options to cap your own end customers, tenants, or teams without issuing a separate [LangSmith API key](/langsmith/create-account-api-key) for each one.
 
-For example, a policy scoped to a [workspace](/langsmith/administration-overview#workspaces) with the condition `X-Gateway-Customer-Id: acme` limits only the requests from that workspace that carry that header value. Requests from the same workspace carrying `X-Gateway-Customer-Id: globex` count against a different policy.
+For example, a default workspace spend limit separated by `X-Gateway-Customer-Id` gives `acme` and `globex` independent limits within each [workspace](/langsmith/administration-overview#workspaces). An explicit policy with the condition `X-Gateway-Customer-Id: acme` limits only requests that carry that exact value.
 
 ## Matchable headers
 
@@ -19,20 +19,48 @@ Header names are normalized before matching: the `X-Gateway-` prefix is stripped
 
 The gateway stamps caller identity itself and ignores client attempts to override it. Headers that resolve to `organization_id`, `workspace_id`, `workspace_handle`, `user_id`, `user_email`, `api_key_id`, `api_key_short`, `auth_mode`, `user_agent`, `applied_policy_ids`, or `applied_policy_names`, and any header whose normalized name starts with `gateway`, are discarded.
 
-## Header condition rules
-
-- **One condition per policy**: A policy accepts a single header key with a single value.
-- **Pairs with one subject scope**: Combine a header condition with an organization, workspace, user, or API key scope. The subject side accepts several values and matches any of them. The header side accepts exactly one value.
-- **Spend caps and rate limits only**: Default policies cannot carry a header condition, so the gateway never creates per-header policies on its own. To limit many header values, create one policy for each.
-- **A missing header matches nothing**: A request that does not carry the header does not match the policy. Pair per-header policies with a broader policy on the subject itself so untagged traffic is still limited.
-- **Every matching policy is enforced**: A request that matches both a plain subject policy and a policy with a header condition counts against both, and either one can block it.
-- **At most 10 conditions**: A policy carries no more than 10 subject conditions in total.
-
-## Add a header condition
+<Warning>
+The gateway trusts the `X-Gateway-*` headers on an incoming request. Set the header in your own backend after you authenticate the end user, and do not distribute the gateway API key to end users. A caller that controls both the key and the header can choose which limit to use.
+</Warning>
 
 <Warning>
 Creating and managing policies requires the `organization:manage` permission. For the full permissions breakdown, refer to [Traces, Engine, and access control](/langsmith/llm-gateway-access).
 </Warning>
+
+## Separate a default spend limit by header
+
+A default spend limit applies the same cap to every member of a subject dimension. Separating it by a header applies that cap independently to every subject and header-value pair, without requiring a policy for each value.
+
+Default spend bucketing follows these rules:
+
+- **One header per default**: Enter the header name only. The request supplies the value that identifies the bucket.
+- **Independent limits**: Each subject and header-value pair receives the configured spend limit.
+- **Fallback limit**: Requests without the configured header share a fallback limit for their subject.
+
+To separate a default spend limit by header:
+
+1. Go to **Settings → Gateway → LLM Gateway** and select **Cost Controls**.
+1. Click **Create spend limit**.
+1. Select **Workspace**, **User**, or **API Key**, then select the option to apply the limit to every subject of that type by default.
+1. Select **Separate limits by custom header**.
+1. Enter the **Header name** without its `X-Gateway-` prefix. For example, enter `Customer-Id` for the `X-Gateway-Customer-Id` request header.
+1. Set the spend limit, then click **Create spend limit**.
+
+The policy table displays the header used to separate the default limit. You can also edit an existing default spend limit to add, change, or remove the header.
+
+Use an explicit policy instead when different header values need different limits.
+
+## Add an explicit header condition
+
+An explicit spend or rate limit policy can match one exact header value. Use an explicit policy to assign different limits to different header values.
+
+Explicit header conditions follow these rules:
+
+- **One condition per policy**: A policy accepts one header name and one value.
+- **One subject scope**: Combine the condition with an organization, workspace, user, or API key scope. The subject side accepts several values and matches any of them.
+- **Missing headers do not match**: A request without the configured header does not match the policy.
+- **Every matching policy is enforced**: A request that matches both a plain subject policy and a policy with a header condition counts against both, and either one can block it.
+- **At most 10 conditions**: A policy carries no more than 10 subject conditions in total.
 
 1. Go to **Settings → Gateway → LLM Gateway**.
 1. Click **Create policy**.
@@ -44,11 +72,7 @@ You cannot edit the header condition in the UI after the policy is created. To c
 
 ## Cap spend per end customer
 
-A reseller or multi-tenant application usually calls the gateway from its own backend, using one workspace-scoped API key on behalf of many end customers. Header conditions give each of those end customers a separate cap under that single key.
-
-<Warning>
-The gateway trusts the `X-Gateway-*` headers on an incoming request. Set the header in your own backend after you authenticate the end user, and do not distribute the gateway API key to end users. A caller that controls both the key and the header can choose which cap to spend against.
-</Warning>
+A reseller or multi-tenant application usually calls the gateway from its own backend, using one workspace-scoped API key on behalf of many end customers. Use an explicit header condition when each customer needs a different cap. If every customer uses the same cap, [separate one default spend limit by header](#separate-a-default-spend-limit-by-header) instead.
 
 ### Step 1. Send a customer header on every call
 
