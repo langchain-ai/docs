@@ -5,9 +5,9 @@ description: Configure per-node timeouts, retries, and error handlers in LangGra
 
 When a node fails—from a slow external API, a transient network error, or an unhandled exception—LangGraph gives you three composable mechanisms to respond:
 
-- [**Retries**](#retries) — automatically re-run failed attempts based on exception type and backoff settings
-- [**Timeouts**](#timeouts) — cap how long a single attempt may run
-- [**Error handling**](#error-handling) — run a recovery function after all retries are exhausted
+- [**Retries**](#retries)—automatically re-run failed attempts based on exception type and backoff settings
+- [**Timeouts**](#timeouts)—cap how long a single attempt may run
+- [**Error handling**](#error-handling)—run a recovery function after all retries are exhausted
 
 :::python
 Use [**`set_node_defaults`**](#graph-defaults) to configure these mechanisms once for all nodes instead of repeating them on every `add_node` call.
@@ -268,6 +268,90 @@ const graph = new StateGraph(State)
 
 `executionInfo` is available even without a retry policy—`nodeAttempt` defaults to `1`.
 :::
+
+## Retry boundaries and idempotency
+
+Retries give LangGraph **at-least-once** semantics for node execution: when an attempt fails, the node function can be invoked again from its start. The retry mechanism guarantees *retries happen*, not that the side effects of a node happen exactly once.
+
+The most common source of production bugs with retries is a node that mixes graph state updates with side effects against systems outside the graph:
+
+```text
+attempt 1:  node starts -> call payment API -> payment succeeds -> process crashes
+attempt 2:  node starts -> call payment API -> payment succeeds AGAIN  (double charge!)
+```
+
+LangGraph checkpoints graph state at each superstep, so a resumed or retried node sees the same checkpointed state it started with. But the checkpointer has no visibility into—or transactional control over—external systems such as payment providers, email APIs, or message queues. **Application code is responsible for making external side effects idempotent.**
+
+### What a retry can repeat
+
+A retry re-runs the entire node function. Everything inside the function runs again:
+
+- External API calls (payments, emails, notifications, webhooks)
+- File or database writes outside the graph's checkpointer
+- Calls to other services that are not rolled back on failure
+
+Graph state written through the checkpointer is safe: it is saved atomically per superstep and rolled forward on resume. Side effects performed *during* the node are not part of that transaction.
+
+### Protect side effects with an idempotency key
+
+The standard pattern is to generate a stable idempotency key before the side effect and pass it to the external service, so a retried call with the same key is a no-op on the service side.
+
+:::python
+```python
+import uuid
+
+def charge_customer(state: State) -> State:
+    # Stable across retries: derive from checkpointed state, or persist a key in state.
+    idempotency_key = state.get("payment_key") or str(uuid.uuid4())
+
+    # Pass the key to the provider. Most payment/email APIs accept one and
+    # deduplicate identical requests with the same key.
+    provider.charge(
+        customer_id=state["customer_id"],
+        amount=state["amount"],
+        idempotency_key=idempotency_key,
+    )
+
+    return {"payment_key": idempotency_key, "charged": True}
+```
+:::
+
+:::js
+```typescript
+import { randomUUID } from "node:crypto";
+
+async function chargeCustomer(state: typeof State.State) {
+  // Stable across retries: derive from checkpointed state, or persist a key in state.
+  const idempotencyKey = state.paymentKey ?? randomUUID();
+
+  // Pass the key to the provider. Most payment/email APIs accept one and
+  // deduplicate identical requests with the same key.
+  await provider.charge({
+    customerId: state.customerId,
+    amount: state.amount,
+    idempotencyKey,
+  });
+
+  return { paymentKey: idempotencyKey, charged: true };
+}
+```
+:::
+
+Two properties make this safe:
+
+1. **The key is stable across retries.** Persist it in graph state (or derive it deterministically from state) before performing the side effect, so every retry of the same task sends the same key.
+2. **The external service honors the key.** Idempotency keys only help when the provider deduplicates by key. Check the service's documentation before relying on it.
+
+### Checkpoint state vs external state
+
+| State | Managed by LangGraph | Survives retries | Transactional with the run |
+| ----- | ------------------- | ---------------- | -------------------------- |
+| Graph state (checkpointer) | Yes | Yes | Yes |
+| External systems (payments, email, queues) | No | No | No |
+
+A retry that updates graph state only is automatically safe: the checkpointer ensures each superstep is applied exactly once on resume. A retry that touches an external system needs an application-owned idempotency boundary, because the external system has no knowledge of the graph's checkpoint.
+
+For side effects that cannot be made idempotent at the API level, move them out of retryable nodes—for example, into an error handler that runs after retries are exhausted, or into a separate worker that deduplicates by task ID.
 
 ## Timeouts
 
