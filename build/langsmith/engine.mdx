@@ -103,8 +103,8 @@ To monitor usage, you can view your organization's monthly LCU spend on the **En
 ### Set up Engine for a tracing project
 
 <Steps>
-  <Step title="Open the Engine tab">
-    In the [LangSmith console](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-engine), navigate to **Tracing** in the UI sidebar, select a project, then click the **Engine** tab in the project navigation.
+  <Step title="Open Engine and select a project">
+    In the [LangSmith console](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-engine), select **Engine** in the UI sidebar. The project selector lists projects that are already configured. To set up a project that is not listed, click **+ Set up another project**, then choose it under **Choose a project to analyze**. The **Engine** tab in a tracing project is also available.
   </Step>
   <Step title="Connect a code repository (optional)">
     Although optional, connecting a code repository is recommended. Engine reads your source code to locate the code path behind a failing trace, ground its proposed fixes in the actual implementation, and open pull requests directly from issues. Under **Connect your agent's code repository**, select a repository in the **GitHub Repository** field. Only repositories the GitHub app can access are shown. Click **Manage app access →** to update permissions. For GitHub App setup and organization approval, see [Connect Engine to GitHub](/langsmith/engine-github). To give Engine additional project context, select a repository in the **Context Hub repository** field. You can update either repository at any time from the [**Engine Settings**](#configure-engine) panel.
@@ -160,15 +160,17 @@ Scope determines which traces Engine analyzes to detect issues and build the age
 
 ## Browse and filter issues
 
-Once setup is complete, the **Engine** tab displays a list of automatically detected issues in the left panel. Each entry shows a title, a short description, the number of contributing traces, and how recently the issue was observed. Each issue is tagged with a failure category, such as **Silent tool error** or **Hallucination**. For the full list of categories Engine assigns, with descriptions and detection methods, see [Engine issue categories](/langsmith/engine-issue-categories).
+Once setup is complete, the **Engine** page displays a list of automatically detected issues in the left panel. Each entry shows a title, a short description, the number of contributing traces, and how recently the issue was observed. Each issue is tagged with a failure category, such as **Silent tool error** or **Hallucination**. For the full list of categories Engine assigns, with descriptions and detection methods, see [Engine issue categories](/langsmith/engine-issue-categories).
 
 At the top of the list, you can click:
 
 - **Filter issues** icon to filter by **Priority**, **Status** and **Tags**.
 - **Sort issues** icon to sort by **Severity**, **Last Updated**, and **Created**.
-- **Engine Settings** <Icon icon="settings"/> icon to [configure Engine](#configure-engine).
+- **Configure Engine** to [configure Engine](#configure-engine).
 
 Click any issue to display its details in the right panel.
+
+Open [LangSmith Chat](/langsmith/chat#engine) to ask questions across your issues, for example, which issues need the most attention or how many new issues are open.
 
 If no issues appear after setup completes, Engine found no recurring patterns in the analyzed traces. Try checking back after more traces have been collected.
 
@@ -176,44 +178,43 @@ If no issues appear after setup completes, Engine found no recurring patterns in
 
 Click any issue in the list to open its detail panel. At the top, a diagnosis describes the problem and its impact.
 
-The **Linked Traces** section lists the traces that support the diagnosis. Click any trace to open its detail panel. For more information, see [Manage a trace](/langsmith/manage-trace). Click [**Add offline examples**](#add-offline-examples) at the top right of this section to generate custom ground truth [dataset examples](/langsmith/manage-datasets) from the production trace inputs for offline evaluation.
+The **Evidence** section contains traces that support a diagnosis, including a snippet from each trace. From this section, you can:
 
-Engine keeps tracking an issue after it is filed. On later scans, any new trace that matches the issue's failure pattern is added to **Linked Traces** automatically, so the issue reflects how often the failure is still happening without you re-running anything.
+- **View a trace**: Click **View trace** to open an evidence trace. When Engine identifies the child run that caused the issue, it opens that exact run. The trace view includes a **View issue** link back to the Engine issue.
+- **Create offline examples**: Click [**Add offline examples**](#add-offline-examples) to generate custom ground truth [dataset examples](/langsmith/manage-datasets) from the production trace inputs for offline evaluation.
+- **View project evidence**: Click **View all in project** to view the evidence in the tracing project.
+
+For more information, see [Manage a trace](/langsmith/manage-trace).
+
+Engine keeps tracking an issue after it is filed. On later scans, any new trace that matches the issue's failure pattern is added to **Evidence** automatically, so the issue reflects how often the failure is still happening without you re-running anything.
 
 The **Proposed Fix** section describes the issue and suggests how to address it, which may include specific code or prompt changes if a repository is connected.
 
-The **Offline Examples** section proposes dataset examples generated from the production trace inputs that triggered the issue, for use in offline evaluation.
-
 ## Take action on an issue
 
-Each issue has a toolbar for acting on it: fix it, watch it, or close it (resolve or mark as incorrectly flagged), and set its priority.
+Each issue has a toolbar for opening or viewing a pull request, creating a Linear issue, watching the issue, closing it (resolve or mark as incorrectly flagged), and setting its priority.
 
 ### Change priority
 
 Select **Low**, **Medium**, or **High** from the priority dropdown to update an issue's priority. You can optionally provide a reason, which feeds back into Engine to help improve its analysis over time.
 
-### Fix: work through the proposed fix
+### Open or view a pull request
 
-Click **Fix** to start working through the proposed fix. Fixing an issue has two steps, so the fix is both shipped and testable:
+Click **Open PR** to open a GitHub pull request with the proposed code change in your connected repository. Connect a repository first if you haven't. Once a pull request exists, Engine replaces **Open PR** with **View PR #\<number\>**. Click **View PR #\<number\>** to open the pull request in GitHub. Engine reflects the PR's status (open, merged, or closed) throughout the issue. You can also copy the issue's fix context to your clipboard for use with an LLM or coding assistant. Engine can propose code changes to any connected repository, including agents built with [Deep Agents](/oss/python/deepagents/overview), [LangChain](/oss/python/langchain/overview), and [LangGraph](/oss/python/langgraph/overview).
 
-1. [**Apply the code change**](#open-a-pull-request): Open a pull request with the proposed fix.
-2. [**Add offline examples**](#add-offline-examples): Capture the traces that surfaced the issue as evaluation examples.
+### Create a Linear issue
 
-When you are done, you can mark the issue resolved directly from here, a shortcut for [resolving from Close](#close-or-reopen-an-issue). To abandon the fix without resolving the issue, discard it. Discarding also stops watching the issue if it was being watched.
+Before creating Linear issues, configure a Linear connection from **Configure Engine**. Under **Linear**, click **Connect**, select a team, optionally select a project, then click **Save changes**.
 
-<Note>
-Fixing is only available for open issues: [reopen](#close-or-reopen-an-issue) a resolved or incorrectly flagged issue first.
-</Note>
+To create an issue, click **Create in Linear** on an Engine issue. Engine shows **Linear creation pending** while it creates the issue. When creation completes, Engine displays the linked Linear issue identifier in the Engine issue and issue list.
 
-#### Open a pull request
+The Linear issue includes the Engine issue title and description, severity, category, tags, a **View issue in LangSmith** link, and evidence trace IDs. Engine retains the link to the Linear issue. If you close the Linear ticket, Engine closes the corresponding issue. If you cancel the Linear ticket, Engine marks the corresponding issue as incorrectly flagged. Engine also tracks a pull request linked to the Linear ticket on the corresponding Engine issue.
 
-Applying the fix means opening a GitHub pull request with the proposed code change in your connected repository. Connect a repository first if you haven't. Once a pull request exists, Engine links directly to it (with its branch), and reflects the PR's status (open, merged, or closed) throughout the issue. You can also copy the issue's fix context to your clipboard for use with an LLM or coding assistant. Engine closes the loop across the LangChain stack: it can propose code changes to any connected repository, including agents built with [Deep Agents](/oss/python/deepagents/overview), [LangChain](/oss/python/langchain/overview), and [LangGraph](/oss/python/langgraph/overview).
+### Add offline examples
 
-#### Add offline examples
+This step captures the traces that surfaced the issue as ground-truth [dataset examples](/langsmith/manage-datasets), so you can evaluate the fix offline before it reaches production. You can also start this from the **Evidence** section further down the page.
 
-This step captures the traces that surfaced the issue as ground-truth [dataset examples](/langsmith/manage-datasets), so you can evaluate the fix offline before it reaches production. You can also start this from the **Linked Traces** section further down the page.
-
-1. Click **Add offline examples** at the top right of the **Linked Traces** list to open the **Add as offline example** dialog.
+1. Click **Add offline examples** at the top right of the **Evidence** list to open the **Add as offline example** dialog.
 2. Review each trace. The dialog shows the input, the wrong output the agent produced, and the proposed expected output as a custom ground truth example.
 3. Click **Add to Dataset** to add them directly, or click **Edit in annotation queue** to review them first.
 4. In the annotation queue, each example shows the run inputs alongside reference outputs proposed by Engine, structured as named [assertions](/langsmith/assertions) generated from trace analysis. Each assertion is a short claim describing what a correct answer should or shouldn't include. Edit the assertions as needed, add new ones with **+ Add assertion**, then click **Add to Dataset & Continue** to work through each example.
@@ -256,7 +257,7 @@ langsmith project issues list --project <project-name>
 
 Engine can notify you when it opens a new issue, links a new trace to an existing issue, or fails to complete a run. Deliver these notifications to a **Slack channel**, an **HTTP webhook endpoint**, or both. Each destination has its own event types and minimum priority level, so you can route urgent issues to a paging webhook while sending every issue to a Slack channel.
 
-Manage notification destinations from the [**Engine Settings**](#configure-engine) panel: open the **Engine** tab for a tracing project, click the **Engine Settings** <Icon icon="settings"/> icon, and under **Notifications** click **+ Add destination**.
+Manage notification destinations from the [**Engine Settings**](#configure-engine) panel: on the **Engine** page, click **Configure Engine**, then under **Notifications** click **+ Add destination**.
 
 ### Notify a Slack channel
 
@@ -265,7 +266,7 @@ Manage notification destinations from the [**Engine Settings**](#configure-engin
     Connecting a Slack workspace is an organization-level action you perform once, not per project. Connecting or disconnecting a workspace requires the `organization:manage` permission. In the [LangSmith console](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-engine), open **Settings**, go to your organization's **General** settings, and under **Slack** click **Connect Slack**. Authorize the LangSmith app in Slack. You can connect more than one Slack workspace to an organization.
   </Step>
   <Step title="Add a Slack destination">
-    On the **Engine** tab of a tracing project, click the **Engine Settings** <Icon icon="settings"/> icon, then click **Add destination**. Set the **Deliver to** field to **Slack**, then choose the workspace and channel under **Channel**.
+    On the **Engine** page, click **Configure Engine**, then click **Add destination**. Set the **Deliver to** field to **Slack**, then choose the workspace and channel under **Channel**.
   </Step>
   <Step title="Choose events and priority">
     Under **Notify when**, select which [event types](/langsmith/engine-webhooks#event-types) post a message to the channel. Under **Minimum priority**, choose the lowest [severity](/langsmith/engine-webhooks#severity-filtering) that triggers a notification. Click **Add destination** to save.
@@ -286,15 +287,17 @@ To forward Engine events to your own incident-management, paging, or chat toolin
 Engine uses **LangChain-managed inference** exclusively. Bring Your Own Key (BYOK) is not supported; you cannot supply your own provider API keys for Engine.
 </Note>
 
-Within a tracing project, click the **Engine Settings** <Icon icon="settings"/> icon on the **Engine** tab to open the **Edit Engine Settings** panel. From here you can configure:
+On the **Engine** page, click **Configure Engine** to open the **Edit Engine Settings** panel. From here you can configure:
 
 - **Agent overview**: Edit your agent overview document to keep Engine's understanding of your project accurate as your application evolves.
 - **Preferences**: Areas Engine should focus on, prioritize, or ignore. Engine treats these as authoritative and folds them into the agent overview document on the next scan. Select category chips such as **Cost & Tokens**, **Latency**, or **Tool Call Failures**, or click **+ Add something specific** to describe a custom concern. Changes take effect on the next scan.
 - **Engine spend**: View the month-to-date Engine LCU spend for this project. Click **Set limit** to cap monthly spend. New runs pause when the monthly limit is reached.
+- **Analysis level**: Choose **Standard** or **Reduced**. Use **Reduced** to have Engine review fewer traces at a lower cost.
 - **Focus on specific traces**: Narrow Engine's attention to a subset of runs by run name or metadata. Edits save automatically and take effect on the next scan. Scope conditions accept only run name and metadata; you cannot filter by feedback key or score. See [Focus on specific traces](#focus-on-specific-traces).
 - **Notifications**: Click **Add destination** to add a Slack channel or webhook destination that receives a notification when Engine detects a new issue. Set a minimum priority level per destination to control which issues trigger a notification. See [Get notified about new issues](#get-notified-about-new-issues).
 - **Code repository**: Connect or update a GitHub repository so the agent can reference source code when diagnosing issues. Optionally set a **Subfolder** and a **Branch** (defaults to the repository default). For setup, see [Connect Engine to GitHub](/langsmith/engine-github).
 - **Context repository**: Connect a Context Hub repository so Engine can propose fixes to instructions, docs, and linked skills.
+- **Linear**: Connect Linear, then select a team and optional project for new issues. Engine retains durable links to the issues it creates, but does not synchronize later edits from Linear. Deleting all Engine issues does not delete existing Linear tickets. See [Create a Linear issue](#create-a-linear-issue).
 - **Pause**: Engine scans your traces on a dynamic schedule tuned to balance cost and performance. Click **Pause** to stop scanning without deleting the existing issues, or **Resume** to resume scanning.
 - **Delete all issues**: This action cannot be undone. All issues and settings will be permanently removed.
 
