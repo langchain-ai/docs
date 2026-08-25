@@ -116,7 +116,7 @@ gcloud config set project <your-project-id>
 gcloud auth application-default login
 ```
 
-You also need a LangSmith license key ([contact sales](https://www.langchain.com/contact-sales)) and a domain or subdomain that resolves to GCP.
+You also need a LangSmith license key ([contact our sales team](https://www.langchain.com/contact-sales)) and a domain or subdomain that resolves to GCP.
 
 ## Quickstart
 
