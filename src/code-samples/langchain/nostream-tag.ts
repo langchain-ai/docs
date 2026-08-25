@@ -22,11 +22,34 @@ const State = new StateSchema({
   notes: z.string().optional(),
 });
 
+const contentToText = (content: unknown): string => {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        if (
+          typeof block === "object" &&
+          block !== null &&
+          "text" in block &&
+          typeof (block as { text?: unknown }).text === "string"
+        ) {
+          return (block as { text: string }).text;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+};
+
 const writeAnswer = async (state: typeof State.State) => {
   const r = await streamModel.invoke([
     { role: "user", content: `Reply briefly about ${state.topic}` },
   ]);
-  return { answer: r.content };
+  return { answer: contentToText(r.content) };
 };
 
 const internalNotes = async (state: typeof State.State) => {
@@ -34,7 +57,7 @@ const internalNotes = async (state: typeof State.State) => {
   const r = await internalModel.invoke([
     { role: "user", content: `Private notes on ${state.topic}` },
   ]);
-  return { notes: r.content };
+  return { notes: contentToText(r.content) };
 };
 
 const graph = new StateGraph(State)
@@ -44,17 +67,17 @@ const graph = new StateGraph(State)
   .addEdge("writeAnswer", "internal_notes")
   .compile();
 
-const stream = await graph.stream(
+const stream = await graph.streamEvents(
   { topic: "AI", answer: "", notes: "" },
-  { streamMode: "messages" },
+  { version: "v3" },
 );
 // :snippet-end:
 
 // :remove-start:
 const streamedNodes: string[] = [];
-for await (const [msg, metadata] of stream) {
-  if (msg.content) {
-    streamedNodes.push(metadata.langgraph_node);
+for await (const message of stream.messages) {
+  if (message.node) {
+    streamedNodes.push(message.node);
   }
 }
 

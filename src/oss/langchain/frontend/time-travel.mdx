@@ -14,13 +14,14 @@ import { PatternEmbed } from "/snippets/pattern-embed.jsx"
 <PatternEmbed pattern="time-travel" />
 
 import RequiresLanggraphServer from '/snippets/oss/requires-langgraph-server.mdx';
+import UseStreamTypeInference from '/snippets/oss/use-stream-type-inference.mdx';
 
 <RequiresLanggraphServer />
 
 ## How checkpoints work
 
 LangGraph persists agent state after every node execution. Each persisted state
-is a `ThreadState` object that captures:
+is a @[ThreadState][ThreadStateJS] object that captures:
 
 - **checkpoint**: metadata identifying this specific snapshot (ID, timestamp)
 - **values**: the full agent state at this point (messages, custom keys)
@@ -31,57 +32,46 @@ This creates a linear timeline of every decision the agent made, every tool it
 called, and every response it produced. Your UI can render this timeline and let
 users jump to any point.
 
-## Setting up useStream
+## Setting up `useStream`
 
-Enable checkpoint history by passing `fetchStateHistory: true` to `useStream`.
-This tells the hook to load the full checkpoint timeline for the current thread.
+Create the stream for your agent, then fetch checkpoint history explicitly from
+the LangGraph client for the active thread. Resuming from a checkpoint uses
+`forkFrom: { checkpointId }`.
 
-:::python
-
-Define a TypeScript interface matching your agent's state schema and pass it as a type parameter to `useStream` for type-safe access to state values. In the examples below, replace `typeof myAgent` with your interface name:
-
-```ts
-import type { BaseMessage } from "@langchain/core/messages";
-
-interface AgentState {
-  messages: BaseMessage[];
-}
-```
-
-:::
-
-:::js
-
-Import your agent and pass `typeof myAgent` as a type parameter to `useStream` for type-safe access to state values:
-
-```ts
-import type { myAgent } from "./agent";
-```
-
-:::
+<UseStreamTypeInference />
 
 <CodeGroup>
 ```tsx React
 import { useStream } from "@langchain/react";
+import { useEffect, useState } from "react";
 
 const AGENT_URL = "http://localhost:2024";
 
 export function TimeTravelChat() {
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [history, setHistory] = useState<ThreadState[]>([]);
   const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "time_travel",
-    fetchStateHistory: true,
+    threadId,
+    onThreadId: setThreadId,
   });
 
-  const history = stream.history ?? [];
+  useEffect(() => {
+    if (!threadId || stream.isLoading) return;
+    stream.client.threads.getHistory(threadId).then(setHistory);
+  }, [stream.client, threadId, stream.isLoading]);
+
+  function resumeFrom(cp: ThreadState) {
+    stream.submit({}, {
+      forkFrom: { checkpointId: cp.checkpoint.checkpoint_id },
+    });
+  }
 
   return (
     <div className="flex h-screen">
       <ChatPanel messages={stream.messages} />
-      <TimelineSidebar
-        history={history}
-        onSelect={(cp) => stream.submit(null, { checkpoint: cp.checkpoint })}
-      />
+      <TimelineSidebar history={history} onSelect={resumeFrom} />
     </div>
   );
 }
@@ -90,20 +80,34 @@ export function TimeTravelChat() {
 ```vue Vue
 <script setup lang="ts">
 import { useStream } from "@langchain/vue";
-import { computed } from "vue";
+import { ref, watch } from "vue";
 
 const AGENT_URL = "http://localhost:2024";
+const threadId = ref<string | null>(null);
+const history = ref<ThreadState[]>([]);
 
 const stream = useStream<typeof myAgent>({
   apiUrl: AGENT_URL,
   assistantId: "time_travel",
-  fetchStateHistory: true,
+  threadId,
+  onThreadId: (id) => (threadId.value = id),
 });
 
-const history = computed(() => stream.history.value ?? []);
+watch(
+  [threadId, stream.isLoading],
+  async ([id, isLoading]) => {
+    if (isLoading) return;
+    history.value = id
+      ? ((await stream.client.threads.getHistory(id)) as ThreadState[])
+      : [];
+  },
+  { immediate: true },
+);
 
 function resumeFrom(cp: ThreadState) {
-  stream.submit(null, { checkpoint: cp.checkpoint });
+  stream.submit({}, {
+    forkFrom: { checkpointId: cp.checkpoint.checkpoint_id },
+  });
 }
 </script>
 
@@ -120,27 +124,43 @@ function resumeFrom(cp: ThreadState) {
   import { useStream } from "@langchain/svelte";
 
   const AGENT_URL = "http://localhost:2024";
+  let threadId = $state<string | null>(null);
+  let history = $state<ThreadState[]>([]);
 
-  const { messages, history, submit } = useStream<typeof myAgent>({
+  const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "time_travel",
-    fetchStateHistory: true,
+    threadId: () => threadId,
+    onThreadId: (id) => (threadId = id),
+  });
+
+  $effect(() => {
+    if (!threadId) {
+      history = [];
+      return;
+    }
+    if (stream.isLoading) return;
+    stream.client.threads.getHistory(threadId).then((states) => {
+      history = states as ThreadState[];
+    });
   });
 
   function resumeFrom(cp: ThreadState) {
-    submit(null, { checkpoint: cp.checkpoint });
+    stream.submit({}, {
+      forkFrom: { checkpointId: cp.checkpoint.checkpoint_id },
+    });
   }
 </script>
 
 <div class="flex h-screen">
-  <ChatPanel messages={$messages} />
-  <TimelineSidebar history={$history ?? []} onSelect={resumeFrom} />
+  <ChatPanel messages={stream.messages} />
+  <TimelineSidebar {history} onSelect={resumeFrom} />
 </div>
 ```
 
 ```ts Angular
-import { Component, computed } from "@angular/core";
-import { useStream } from "@langchain/angular";
+import { Component, effect, signal } from "@angular/core";
+import { injectStream } from "@langchain/angular";
 
 const AGENT_URL = "http://localhost:2024";
 
@@ -157,48 +177,37 @@ const AGENT_URL = "http://localhost:2024";
   `,
 })
 export class TimeTravelChatComponent {
-  stream = useStream<typeof myAgent>({
+  threadId = signal<string | null>(null);
+  history = signal<ThreadState[]>([]);
+
+  stream = injectStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "time_travel",
-    fetchStateHistory: true,
+    threadId: this.threadId,
+    onThreadId: (id) => this.threadId.set(id),
   });
 
-  history = computed(() => this.stream.history() ?? []);
+  constructor() {
+    effect(() => {
+      if (this.stream.isLoading()) return;
+      void this.refreshHistory(this.threadId());
+    });
+  }
+
+  async refreshHistory(id: string | null) {
+    this.history.set(id
+      ? ((await this.stream.client.threads.getHistory(id)) as ThreadState[])
+      : []);
+  }
 
   resumeFrom(cp: ThreadState) {
-    this.stream.submit(null, { checkpoint: cp.checkpoint });
+    this.stream.submit({}, {
+      forkFrom: { checkpointId: cp.checkpoint.checkpoint_id },
+    });
   }
 }
 ```
 </CodeGroup>
-
-## The ThreadState object
-
-Each entry in the `history` array is a `ThreadState` representing one checkpoint
-in the timeline:
-
-```ts
-interface ThreadState {
-  checkpoint: {
-    checkpoint_id: string;
-    checkpoint_ns: string;
-  };
-  values: Record<string, unknown>;
-  tasks: Array<{
-    id: string;
-    name: string;
-    interrupts?: unknown[];
-  }>;
-  next: string[];
-}
-```
-
-| Property | Description |
-| --- | --- |
-| `checkpoint` | Identifies this snapshot. Pass it to `submit` to resume from here |
-| `values` | The complete agent state at this point, including `messages` and any custom state keys |
-| `tasks` | The graph nodes that ran at this checkpoint, including their names and any interrupts |
-| `next` | Names of nodes scheduled to execute after this checkpoint |
 
 ## Building a checkpoint timeline
 
@@ -308,10 +317,12 @@ experience.
 
 The core of time travel is the ability to **resume execution from any prior
 checkpoint**. When a user selects a checkpoint, call `submit` with `null` input
-and pass the checkpoint reference:
+and pass the checkpoint ID:
 
 ```ts
-stream.submit(null, { checkpoint: selectedCheckpoint.checkpoint });
+stream.submit({}, {
+  forkFrom: { checkpointId: selectedCheckpoint.checkpoint.checkpoint_id },
+});
 ```
 
 This tells LangGraph to:
@@ -337,16 +348,22 @@ timeline on the right:
 
 ```tsx
 function TimeTravelLayout() {
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [history, setHistory] = useState<ThreadState[]>([]);
   const stream = useStream<typeof myAgent>({
     apiUrl: AGENT_URL,
     assistantId: "time_travel",
-    fetchStateHistory: true,
+    threadId,
+    onThreadId: setThreadId,
   });
 
   const [selectedCheckpoint, setSelectedCheckpoint] =
     useState<ThreadState | null>(null);
 
-  const history = stream.history ?? [];
+  useEffect(() => {
+    if (!threadId || stream.isLoading) return;
+    stream.client.threads.getHistory(threadId).then(setHistory);
+  }, [stream.client, threadId, stream.isLoading]);
 
   return (
     <div className="flex h-screen">
@@ -372,7 +389,9 @@ function TimeTravelLayout() {
           selected={selectedCheckpoint}
           onSelect={setSelectedCheckpoint}
           onResume={(cp) =>
-            stream.submit(null, { checkpoint: cp.checkpoint })
+            stream.submit({}, {
+              forkFrom: { checkpointId: cp.checkpoint.checkpoint_id },
+            })
           }
         />
         {selectedCheckpoint && (

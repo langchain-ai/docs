@@ -31,22 +31,6 @@ jobs:
             const pr = context.payload.pull_request;
             const author = pr.user.login;
 
-            // --- Auto-assign reviewers for bot-generated PRs ---
-            const botPatterns = [
-              '[LangGraph Server Changelog Bot]',
-              '[Self-Hosted Changelog Bot]'
-            ];
-            if (botPatterns.some(p => pr.title.includes(p))) {
-              const reviewers = ['lnhsingh', 'katmayb'];
-              await github.rest.pulls.requestReviewers({
-                owner, repo,
-                pull_number: pr.number,
-                reviewers
-              });
-              console.log(`Auto-assigned reviewers ${reviewers.join(', ')} on bot PR #${pr.number}`);
-              return;
-            }
-
             // --- Fetch OWNERS from the base branch ---
             let ownersContent;
             try {
@@ -211,19 +195,94 @@ jobs:
             }
 
             // --- Auto-assign reviewers for bot authors ---
-            const botAuthors = ['open-swe'];
-            if (botAuthors.includes(author.toLowerCase())) {
-              const reviewers = [...new Set(
-                [...productOwners.values()].flatMap(s => [...s])
-              )];
-              if (reviewers.length > 0) {
-                await github.rest.pulls.requestReviewers({
-                  owner, repo,
-                  pull_number: pr.number,
-                  reviewers
-                });
-                console.log(`Auto-assigned reviewers ${reviewers.join(', ')} on bot PR #${pr.number}`);
+            const senderType = context.payload.pull_request.user.type;
+            if (senderType === 'Bot') {
+              const changelogPatterns = [
+                '[LangGraph Server Changelog Bot]',
+                '[Self-Hosted Changelog Bot]'
+              ];
+              let reviewers;
+              if (changelogPatterns.some(p => pr.title.includes(p))) {
+                reviewers = ['lnhsingh', 'katmayb'];
+              } else {
+                const fromOwners = [...new Set(
+                  [...productOwners.values()].flatMap(s => [...s])
+                )];
+                const reviewerSet = new Set(fromOwners);
+
+                // Some bots name the humans who should review in the PR
+                // body. Each parser below extracts those reviewers from the
+                // PR. A bot with a parser skips the lnhsingh fallback and
+                // uses whatever its parser returns; any other bot falls back
+                // to lnhsingh.
+                const botReviewerParsers = {
+                  // open-swe names the triggering user by display name in an
+                  // "Opened collaboratively by <Name> and open-swe." line;
+                  // resolve it to a GitHub login via the search API.
+                  'open-swe[bot]': async () => {
+                    const collabMatch = (pr.body || '').match(
+                      /collaboratively by (.+?) and open-swe/i
+                    );
+                    if (!collabMatch) return [];
+                    const displayName = collabMatch[1].trim();
+                    try {
+                      const { data } = await github.rest.search.users({
+                        q: `fullname:${displayName} org:langchain-ai`
+                      });
+                      if (data.total_count === 1) {
+                        console.log(`Resolved "${displayName}" to @${data.items[0].login}`);
+                        return [data.items[0].login];
+                      }
+                      if (data.total_count === 0) {
+                        // Retry without org filter for private memberships
+                        const retry = await github.rest.search.users({
+                          q: `fullname:${displayName}`
+                        });
+                        if (retry.data.total_count === 1) {
+                          console.log(`Resolved "${displayName}" to @${retry.data.items[0].login}`);
+                          return [retry.data.items[0].login];
+                        }
+                        console.log(`Could not uniquely resolve "${displayName}" (${retry.data.total_count} results without org filter)`);
+                      } else {
+                        console.log(`Could not uniquely resolve "${displayName}" (${data.total_count} results in org)`);
+                      }
+                    } catch (error) {
+                      console.log(`Failed to resolve "${displayName}": ${error.message}`);
+                    }
+                    return [];
+                  },
+                  // langsmith-fleet lists reviewers directly in the PR body
+                  // as "Requested review from: @user1, @user2". The @-handle
+                  // regex only matches valid GitHub usernames.
+                  'langsmith-fleet[bot]': async () => {
+                    const line = (pr.body || '').match(/Requested review from:\s*(.+)/i);
+                    const handles = line ? line[1].match(/@[A-Za-z0-9-]+/g) || [] : [];
+                    console.log(`langsmith-fleet reviewers: ${handles.join(', ') || '(none found)'}`);
+                    return handles.map(h => h.slice(1));
+                  },
+                };
+
+                const parseBotReviewers = botReviewerParsers[author];
+                if (parseBotReviewers) {
+                  for (const u of await parseBotReviewers()) reviewerSet.add(u);
+                } else {
+                  reviewerSet.add('lnhsingh');
+                }
+
+                reviewers = [...reviewerSet];
               }
+              // requestReviewers rejects an empty list, so fall back to
+              // lnhsingh when no reviewer could be determined.
+              if (reviewers.length === 0) {
+                console.log(`No reviewers determined for bot PR #${pr.number}; defaulting to lnhsingh`);
+                reviewers = ['lnhsingh'];
+              }
+              await github.rest.pulls.requestReviewers({
+                owner, repo,
+                pull_number: pr.number,
+                reviewers
+              });
+              console.log(`Auto-assigned reviewers ${reviewers.join(', ')} on bot PR #${pr.number}`);
               return;
             }
 
