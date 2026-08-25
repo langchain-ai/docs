@@ -287,7 +287,7 @@ Test datasets with examples for evaluation.
 | Update dataset metadata | ✓ | ✓ | ✗ | `datasets:update` |
 | Delete a dataset | ✓ | ✗ | ✗ | `datasets:delete` |
 | Upload CSV dataset | ✓ | ✓ | ✗ | `datasets:create` |
-| Clone dataset | ✓ | ✓ | ✗ | `datasets:update` |
+| Clone dataset | ✓ | ✓ | ✗ | `datasets:clone` |
 | Get dataset version | ✓ | ✓ | ✓ | `datasets:read` |
 | Get dataset versions | ✓ | ✓ | ✓ | `datasets:read` |
 | Diff dataset versions | ✓ | ✓ | ✓ | `datasets:read` |
