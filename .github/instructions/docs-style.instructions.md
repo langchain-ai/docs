@@ -91,5 +91,11 @@ Capitalize a word when it refers to a **product or brand name**. Use lowercase w
 - "Create a dashboard" (dashboard = a thing you build, not a product name)
 - "a deep agent created using Deep Agents" (the first "deep agent" is a common noun; "Deep Agents" is the product name)
 - "Run an experiment", "View your traces", "Manage your projects"
+- "Build agents across the agent development lifecycle" (the lifecycle is a process, not a product; marketing materials capitalize it, docs do not)
+- "LangChain provides the open agent engineering platform" (the phrase describes what LangChain provides; it is not a product name)
 
 When in doubt, ask: is this word the product's proper name, or is it describing a thing the user creates or works with? If the latter, use lowercase.
+
+Spell out "agent development lifecycle" in prose. Do not use the "ADLC" acronym, which appears in marketing materials but not in the documentation.
+
+Reserve "the platform" for LangSmith. LangChain is the open agent engineering ecosystem, not a platform. Marketing's short blurb ("an open agent engineering platform") compresses the whole company into a single noun to fit the character limits of a search result. Docs have the room to be precise, so do not carry that phrasing onto pages.
