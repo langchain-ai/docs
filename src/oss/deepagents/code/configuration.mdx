@@ -1,7 +1,7 @@
 ---
 title: Configuration
 sidebarTitle: Configuration
-description: Configure Deep Agents Code with config files, managed policy, environment variables, hooks, and CLI flags
+description: Configure Deep Agents Code with config files, administrator settings, environment variables, hooks, and CLI flags
 ---
 
 Deep Agents Code stores user configuration under `~/.deepagents/` and in project-level dotfiles. Administrators can enforce settings from a fixed system path with [`managed_config.toml`](#managed-configuration). For the full directory tree, session storage, and skill paths, see [Data locations](/oss/deepagents/code/configuration#data-locations).
@@ -12,7 +12,7 @@ The main config files are:
         Edit `config.toml` for model defaults, provider settings, themes, and update settings.
     </Card>
     <Card title="Managed configuration" icon="shield-lock" href="#managed-configuration">
-        Enforce fleet-wide settings with administrator-owned `managed_config.toml`.
+        Set administrator-controlled settings for every user with `managed_config.toml`.
     </Card>
     <Card title="Environment variables" icon="variable" href="/oss/deepagents/code/configuration#environment-variables">
         Set global API keys and secrets in `~/.deepagents/.env` or shell exports.
@@ -27,9 +27,9 @@ The main config files are:
 
 ## How settings resolve
 
-Deep Agents Code merges settings from several sources. Which source wins depends on the setting type.
+Deep Agents Code reads settings from several places. The order depends on the setting type.
 
-**General options** (interpreter limits, update settings, themes, and other `config.toml` keys) resolve in this order:
+**General options** (interpreter limits, update settings, themes, and other `config.toml` keys) use the first available value in this order:
 
 1. Administrator-owned `managed_config.toml`
 2. `DEEPAGENTS_CODE_`-prefixed environment variable
@@ -37,7 +37,7 @@ Deep Agents Code merges settings from several sources. Which source wins depends
 4. `~/.deepagents/config.toml`
 5. Built-in default
 
-Use `dcode config` or `dcode config get <key>` to see the effective value and source. See [Inspect configuration](#inspect-configuration).
+Use `dcode config` or `dcode config get <key>` to see the current value and where it comes from. See [Inspect configuration](#inspect-configuration).
 
 **Provider API keys** use a separate order. See [Key resolution order](/oss/deepagents/code/credentials#key-resolution-order).
 
@@ -47,15 +47,15 @@ Use `dcode config` or `dcode config get <key>` to see the effective value and so
 
 ## Inspect configuration
 
-The `dcode config` command group reports what configuration is in effect and where each value comes from, without starting a session. This is useful for confirming that managed policy, an environment variable, or a `config.toml` setting is being picked up, and for sharing a redacted snapshot in a bug report.
+The `dcode config` commands show the settings Deep Agents Code uses and where each value comes from, without starting a session. Use them to confirm that an administrator setting, environment variable, or `config.toml` setting is active, or to create a redacted report for troubleshooting.
 
 | Command | Description |
 |---------|-------------|
-| `dcode config` | Resolve every option against managed policy, the live environment, and `config.toml`, printing the effective value and source |
-| `dcode config get <key>` | Show the effective value and source for one option, for example, `dcode config get interpreter.memory_limit_mb` |
-| `dcode config path` | Show the on-disk config file locations (`managed_config.toml`, `config.toml`, project and global `.env`, `hooks.json`, and managed state files) and whether each exists |
+| `dcode config` | Show every setting, its current value, and where that value comes from |
+| `dcode config get <key>` | Show the current value and source for one setting, for example, `dcode config get interpreter.memory_limit_mb` |
+| `dcode config path` | Show the file locations for `managed_config.toml`, `config.toml`, project and global `.env` files, `hooks.json`, and managed state, including whether each file exists |
 
-Add `--verbose` to `dcode config` or `dcode config get` to show option descriptions, defaults, and where each option can be set. Combine `--verbose` with `--json` to include accepted types and other catalog metadata. All three commands accept `--json` for machine-readable output. For the full list of management subcommands, see [CLI reference](/oss/deepagents/code/cli-reference).
+Add `--verbose` to `dcode config` or `dcode config get` to show descriptions, defaults, and where each setting can be defined. Combine `--verbose` with `--json` to include accepted types and other reference details. All three commands accept `--json` for machine-readable output. For the full list of commands, see [CLI reference](/oss/deepagents/code/cli-reference).
 
 <Warning>
     Provider credentials and other secrets are reported as configured / not configured only. Their values are never printed by `config` or `config get`, so the output is safe to paste into a bug report.
@@ -399,11 +399,11 @@ rm -rf ~/.deepagents
 
 ## Managed configuration
 
-Managed configuration lets an administrator enforce Deep Agents Code settings across a fleet. Deep Agents Code reads an administrator-owned `managed_config.toml` before user environment variables and `~/.deepagents/config.toml`, so users cannot override a managed value from those sources.
+Managed configuration lets administrators control Deep Agents Code settings across a fleet. Deep Agents Code checks the administrator-owned `managed_config.toml` before user environment variables and `~/.deepagents/config.toml`, so users cannot override settings defined there.
 
 ### Locate the managed config file
 
-Deep Agents Code reads managed policy from a fixed path for each operating system:
+Deep Agents Code looks for `managed_config.toml` in a fixed location on each operating system:
 
 | Operating system | Path |
 |------------------|------|
@@ -411,11 +411,11 @@ Deep Agents Code reads managed policy from a fixed path for each operating syste
 | Linux | `/etc/dcode/managed_config.toml` |
 | Windows | `<ProgramData>\dcode\managed_config.toml` |
 
-On Windows, Deep Agents Code reads the ProgramData location from the system registry, not the `%ProgramData%` environment variable. Process environment variables cannot redirect any managed config path. When the registry lookup succeeds, a missing file means that no managed policy is configured. When the lookup fails, Deep Agents Code checks `C:\ProgramData\dcode\managed_config.toml`; if that fallback file is also missing, the policy state is indeterminate and commands that use configuration fail closed.
+On Windows, Deep Agents Code finds ProgramData through the system registry, not the `%ProgramData%` environment variable. Environment variables cannot change the managed config location. If the registry is unavailable, Deep Agents Code checks `C:\ProgramData\dcode\managed_config.toml`. If that file is also missing, Deep Agents Code cannot determine whether an administrator configured a policy, so commands that use configuration stop instead of running without it.
 
 ### Create a managed policy
 
-Use the same TOML sections and keys as `~/.deepagents/config.toml`. Run `dcode config --verbose --json` to see the available options, their accepted types, and whether they support a config file value.
+Use the same TOML sections and keys as `~/.deepagents/config.toml`. Run `dcode config --verbose --json` to see the available settings, their accepted types, and whether they can be set in a config file.
 
 For example, the following policy pins Manual approval mode, removes YOLO from the `Shift+Tab` mode cycle, limits shell auto-approval, restricts model use, disables the JavaScript interpreter, and enables client-side LangSmith secret redaction:
 
@@ -437,27 +437,38 @@ enable_interpreter = false
 langsmith_redact = true
 ```
 
-Deploy the file with write access restricted to administrators. Deep Agents Code treats managed policy as read-only. A user can still save a preference to `config.toml`, but the managed value remains effective until the administrator removes it.
+Only administrators should have permission to edit this file. Deep Agents Code treats it as read-only. Users can still save preferences to `config.toml`, but administrator settings remain in effect until they are removed from `managed_config.toml`.
 
-### Load policy from HTTPS
+### Load policy remotely
 
-To host policy centrally, use the fixed local `managed_config.toml` as an administrator-owned descriptor:
+You can store the policy on a central server while keeping its location in the local `managed_config.toml`:
 
 ```toml title="managed_config.toml"
 [managed_config]
 source = "https://config.example.com/dcode-policy.toml"
 ```
 
-In descriptor mode, the local file must contain only `[managed_config].source`. The downloaded TOML document supplies the complete managed policy. Deep Agents Code does not merge it with local policy keys, and the remote document cannot declare another `[managed_config]` source.
+When you configure a remote policy, the local file can contain only the `[managed_config].source` setting. Put the complete policy in the remote TOML file. Deep Agents Code does not combine remote and local policy settings, and the remote file cannot point to another source.
 
-The source must be an absolute HTTPS URL of at most 2,048 ASCII characters. URLs with credentials, query strings, fragments, whitespace, or control characters are rejected. The fetch uses Python's default TLS trust store, bypasses environment proxies, refuses redirects and compressed responses, and applies a five-second end-to-end timeout and a 1 MiB response limit.
+The URL must meet these requirements:
 
-The server must return HTTP 200 with a complete response delimited by a matching `Content-Length` value or chunked transfer encoding. If the response includes `Content-Type`, it must be `application/toml`, `text/plain`, or `application/octet-stream`. A missing `Content-Type` is accepted. The response must contain a non-empty UTF-8 TOML policy.
+- Use HTTPS.
+- Use no more than 2,048 ASCII characters.
+- Do not include credentials, a query string, a fragment, whitespace, or control characters.
 
-Deep Agents Code does not store a disk cache or authentication material for the remote source.
+Deep Agents Code downloads the policy using Python's default trusted certificate authorities. It ignores proxy environment variables, does not follow redirects, rejects compressed responses, stops the request after five seconds, and accepts up to 1 MiB.
+
+The server must return:
+
+- HTTP status `200`.
+- A complete response that uses either `Content-Length` or chunked transfer encoding.
+- A non-empty UTF-8 TOML file.
+- One of the following `Content-Type` values, if provided: `application/toml`, `text/plain`, or `application/octet-stream`.
+
+Deep Agents Code does not save the remote policy or any authentication details to disk.
 
 <Warning>
-    The TLS trust store is not pinned. `SSL_CERT_FILE` and `SSL_CERT_DIR` can change the certificate authorities used for the request, so run Deep Agents Code in an environment controlled by the administrator when relying on remote managed policy.
+    `SSL_CERT_FILE` and `SSL_CERT_DIR` can change which certificate authorities Python trusts. When you use a remote policy, make sure users cannot change these environment variables for the Deep Agents Code process.
 </Warning>
 
 ### Restrict model use
@@ -474,9 +485,9 @@ default = "acme:production"
 auto_classifier = "openai:gpt-5.5"
 ```
 
-A missing `allowed` key leaves model selection unrestricted. An empty list denies all model use. A malformed user list fails closed as deny-all; a malformed managed list invalidates the policy and blocks startup, reload, and commands that use configuration. A managed list replaces, rather than combines with, the user's list. Any managed `default`, `recent`, or `auto_classifier` value must also match the managed allowlist, or Deep Agents Code rejects the policy.
+If you omit `allowed`, users can select any model. An empty list blocks all models. If a user's list is invalid, Deep Agents Code blocks all models. If the administrator's list is invalid, Deep Agents Code blocks startup, reload, and other commands that use configuration. The administrator's list replaces the user's list rather than combining with it. The managed `default`, `recent`, and `auto_classifier` values must also appear in the administrator's allowlist.
 
-Models added under `[models.providers.<name>].models` become discoverable but are not automatically allowed. Add an exact entry or a provider wildcard to the allowlist. A wildcard allows only models discovered or configured for that provider; if there are none, default resolution fails closed. Bare model names entered through supported user interfaces are resolved to `provider:model` before matching when Deep Agents Code can infer the provider. Use `bedrock:<id>` for Amazon Bedrock models because a bare Bedrock ID contains a version colon.
+Adding a model under `[models.providers.<name>].models` makes it available for selection but does not allow it automatically. Add the exact model or a provider wildcard to the allowlist. A wildcard covers only the models available for that provider. If no models are available, Deep Agents Code cannot choose a default. When Deep Agents Code can identify the provider for a bare model name entered in the interface, it converts the name to `provider:model` before checking the allowlist. For Amazon Bedrock models, use `bedrock:<id>` because the model ID itself contains a version colon.
 
 <Warning>
     `[sandboxes].default` selects the backend when a user launches with `--sandbox`. It does not force sandboxing. A launch without `--sandbox` runs on the host and reports that it did not use the managed backend.
@@ -493,15 +504,15 @@ dcode config get startup.mode
 dcode doctor
 ```
 
-`dcode config path` reports the managed file path and health. `dcode config` and `dcode config get` label values from the file as `managed config`. `dcode doctor` reports parse errors, rejected values, and the keys that need correction. For remote policy, `dcode doctor` shows the local descriptor and remote URL. If a refresh fails, it also reports whether the session is still enforcing the last enforceable policy.
+`dcode config path` shows the managed file location and whether Deep Agents Code can read it. `dcode config` and `dcode config get` label settings from the file as `managed config`. `dcode doctor` lists parsing errors, invalid values, and the settings that need correction. For a remote policy, it also shows the local file and remote URL. If an update fails, it confirms whether the session continues to use the previous valid policy.
 
-### Handle invalid policy
+### Fix an invalid policy
 
-Deep Agents Code fails closed when a managed file cannot be read or parsed, when a remote policy cannot be fetched completely, or when its policy is unsafe to apply. Commands that use configuration exit with code `78`; `dcode config`, `dcode doctor`, `dcode auth path`, and help screens remain available for troubleshooting.
+Deep Agents Code stops rather than run without required administrator settings when it cannot read or parse the managed file, cannot download the complete remote policy, or cannot safely apply the policy. Commands that use configuration exit with code `78`. You can still run `dcode config`, `dcode doctor`, `dcode auth path`, and help commands to troubleshoot the problem.
 
-A failed refresh does not replace policy that the current process already enforced. Deep Agents Code keeps the last enforceable generation and reports the failed refresh. A new process without an enforceable generation cannot start with an unavailable or invalid remote policy.
+If an update fails during a running session, Deep Agents Code continues to use the previous valid policy and reports the failure. A new process cannot start until it can load a valid policy.
 
-A rejected value for one of the following policy-enforced keys also stops startup because falling through to a user value could grant a privilege or remove a boundary:
+An invalid value for any of the following settings also stops startup because using a user value instead could remove a required restriction:
 
 - `interpreter.enable_interpreter`
 - `interpreter.ptc`
@@ -516,7 +527,7 @@ A rejected value for one of the following policy-enforced keys also stops startu
 - `startup.yolo_switcher`
 - `tracing.langsmith_redact`
 
-A known configuration section declared with the wrong TOML shape also stops startup. For other options, Deep Agents Code ignores an invalid managed value, uses the next valid lower-precedence source, and reports the rejected key through `dcode config` and `dcode doctor`.
+A known configuration section also stops startup if it has the wrong TOML structure. For other settings, Deep Agents Code ignores an invalid administrator value, uses the next valid source, and lists the ignored setting in `dcode config` and `dcode doctor`.
 
 ## Managed deployments
 
@@ -566,7 +577,7 @@ curl -LsSf https://langch.in/dcode | DEEPAGENTS_CODE_VERSION="0.1.16" bash
     Path to the uv binary. Auto-detected if unset.
 </ResponseField>
 
-Auto-update is enabled by default for managed installs. To manage update behavior fleet-wide, set `[update] auto_update = false` or `[update] check = false` in [`managed_config.toml`](#managed-configuration). For an unmanaged installation, use `DEEPAGENTS_CODE_AUTO_UPDATE=0`, `DEEPAGENTS_CODE_NO_UPDATE_CHECK=1`, or the corresponding keys in `~/.deepagents/config.toml`.
+Auto-update is enabled by default for managed installations. To control updates for every user, set `[update] auto_update = false` or `[update] check = false` in [`managed_config.toml`](#managed-configuration). For other installations, use `DEEPAGENTS_CODE_AUTO_UPDATE=0`, `DEEPAGENTS_CODE_NO_UPDATE_CHECK=1`, or the corresponding settings in `~/.deepagents/config.toml`.
 
 To route every user's model traffic through a managed gateway (provisioning a gateway key and base URL fleet-wide), see [Managed gateways](/oss/deepagents/code/config-file#managed-gateways).
 
@@ -712,7 +723,7 @@ Output:
 ```
 
 <Tip>
-    Pair `dcode doctor` with `dcode config` when you need both a high-level health check and the exact source of a specific setting.
+    Pair `dcode doctor` with `dcode config` to check overall health and see where a specific setting comes from.
 </Tip>
 
 ## Data locations
