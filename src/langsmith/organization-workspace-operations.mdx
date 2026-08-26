@@ -22,7 +22,7 @@ For an overview of LangSmith's RBAC system, role definitions, and permission con
 |-------------------------------|---------------------------|
 | **Core management:**<br/>• [Organization settings](#organization-settings): Org info and configuration<br/>• [Workspaces](#workspaces): Workspace management<br/>• [Organization members](#organization-members): Member management<br/>• [Roles and permissions](#roles-and-permissions): Custom roles | **Core resources:**<br/>• [Projects](#projects): Organize traces and runs<br/>• [Runs](#runs): Individual execution traces<br/>• [Datasets](#datasets): Test datasets for evaluation<br/>• [Examples](#examples): Individual dataset examples<br/>• [Experiments](#experiments): Comparative experiments |
 | **Security and authentication:**<br/>• [SSO and authentication](#sso-and-authentication): Single sign-on setup<br/>• [SCIM](#scim): Identity provisioning<br/>• [Access policies](#access-policies): Attribute-based access control | **Monitoring and analysis:**<br/>• [Rules](#rules): Automated run rules<br/>• [Alerts](#alerts): Alert rules for monitoring<br/>• [Feedback](#feedback): Scores and labels on outputs<br/>• [Annotation Queues](#annotation-queues): Human review queues<br/>• [Charts](#charts): Custom visualizations |
-| **Billing and accounts:**<br/>• [Billing and payments](#billing-and-payments): Subscription management<br/>• [API keys](#api-keys): Org-level keys | **Development and configuration:**<br/>• [Prompts](#prompts): Prompt templates (LangChain Hub)<br/>• [Deployments](#deployments): Deployment configurations<br/>• [MCP Servers](#mcp-servers): Model Context Protocol servers<br/>• [Fleet](#fleet): Fleet admin operations |
+| **Billing and accounts:**<br/>• [Billing and payments](#billing-and-payments): Subscription management<br/>• [API keys](#api-keys): Org-level keys | **Development and configuration:**<br/>• [Prompts](#prompts): Prompt templates (LangChain Hub)<br/>• [Custom apps](#custom-apps): User-authored mini web apps<br/>• [Deployments](#deployments): Deployment configurations<br/>• [MCP Servers](#mcp-servers): Model Context Protocol servers<br/>• [Fleet](#fleet): Fleet admin operations |
 | **Analytics:**<br/>• [Charts and dashboards](#organization-charts-and-dashboards): Org-level visualizations<br/>• [Usage and analytics](#usage-and-analytics): Usage tracking and TTL settings | **Workspace management:**<br/>• [Workspace settings](#workspace-settings-and-management): Members, settings<br/>• [Tags](#tags): Metadata tagging system<br/>• [Bulk Exports](#bulk-exports): Data export operations |
 
 **Additional information:**
@@ -412,6 +412,23 @@ Human review queues for LLM outputs.
 | Delete runs from queue (bulk) | ✓ | ✓ | ✗ | `annotation-queues:update` |
 | Create identity annotation queue run status | ✓ | ✓ | ✗ | `annotation-queues:update` |
 | Export archived runs | ✓ | ✓ | ✓ | `annotation-queues:read` |
+
+### Custom apps
+
+User-authored mini web apps rendered within LangSmith.
+
+| Operation | Workspace Admin | Workspace Editor | Workspace Viewer | Required Permission |
+|-----------|:---------------:|:--------------:|:----------------:|---------------------|
+| List custom apps | ✓ | ✓ | ✓ | `custom-apps:read` |
+| Get custom app | ✓ | ✓ | ✓ | `custom-apps:read` |
+| Create custom app | ✓ | ✓ | ✗ | `custom-apps:create` |
+| Update custom app | ✓ | ✓ | ✗ | `custom-apps:update` |
+| Delete custom app | ✓ | ✓ | ✗ | `custom-apps:delete` |
+| Delete custom apps (bulk) | ✓ | ✓ | ✗ | `custom-apps:delete` |
+| Download custom app source | ✓ | ✓ | ✗ | `custom-apps:download` |
+| Record custom app view | ✓ | ✓ | ✓ | `custom-apps:read` |
+| Share custom app org-wide | ✓ | ✓ | ✗ | `custom-apps:update` |
+| Claim (unshare) custom app | ✓ | ✓ | ✗ | `custom-apps:update` |
 
 ### Prompts
 
