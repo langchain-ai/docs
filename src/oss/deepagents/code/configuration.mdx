@@ -71,7 +71,37 @@ For provider keys specifically, see [Provider credentials](/oss/deepagents/code/
 
 ### Loading order and precedence
 
-At startup, Deep Agents Code reads the nearest project `.env`, found by searching the directory you launch from and walking up through its parents (the first `.env` found wins), then `~/.deepagents/.env` as a global fallback for all projects. A project `.env` wins over the global one, and neither overrides a value already set in your shell. Running `/reload` re-reads both `.env` files so you can change keys without restarting, with shell values still taking precedence. This applies to every variable Deep Agents Code reads (for example, `TAVILY_API_KEY` or the `DEEPAGENTS_CODE_*` settings), except `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS` and `DEEPAGENTS_CODE_DISABLED_PROJECT_MCP_SERVERS`. Deep Agents Code ignores these project MCP trust settings in a project `.env` so a repository cannot approve its own servers. Set them in your shell or the global `~/.deepagents/.env` instead.
+At startup, Deep Agents Code reads the nearest project `.env`, found by searching the directory you launch from and walking up through its parents (the first `.env` found wins), then `~/.deepagents/.env` as a global fallback for all projects. A project `.env` wins over the global one, and neither overrides a value already set in your shell. Running `/reload` re-reads both `.env` files so you can change keys without restarting, with shell values still taking precedence.
+
+To skip the project `.env` entirely (the global `~/.deepagents/.env` still loads), set `startup.read_project_dotenv`, available since `deepagents-code>=0.1.60`:
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml title="~/.deepagents/config.toml"
+        [startup]
+        read_project_dotenv = false
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_READ_PROJECT_DOTENV=0
+        ```
+    </Tab>
+</Tabs>
+
+The setting resolves from managed config, the environment variable, and the user `config.toml`. All of those are read before any project `.env` is applied, so a project `.env` cannot turn the toggle off (or back on) for itself.
+
+The loading rules above apply to every variable Deep Agents Code reads (for example, `TAVILY_API_KEY` or the `DEEPAGENTS_CODE_*` settings), except the following keys, which a `.env` file may never set. Deep Agents Code ignores these so that loading configuration cannot turn into code execution in child processes (`dcode` runs `git` and shells during startup, before any approval prompt):
+
+- Profile and trust roots: `DEEPAGENTS_HOME`, `DEEPAGENTS_HOME_IS_DEFAULT`, `DEEPAGENTS_CODE_READ_PROJECT_DOTENV`, `DEEPAGENTS_INHERITED_PYTHONPATH`
+- Dynamic-linker preload/audit: `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`, `LD_AUDIT`, `LD_LIBRARY_PATH`, `LD_PRELOAD`
+- Interpreter startup/path: `NODE_OPTIONS`, `PATH`, `PYTHONEXECUTABLE`, `PYTHONHOME`, `PYTHONPATH`, `PYTHONSTARTUP`
+- Shell startup hooks: `BASH_ENV`, `ENV`, `BASHOPTS`, `SHELLOPTS`, `CDPATH`, `GLOBIGNORE`
+- Credential-prompt hijack: `GIT_ASKPASS`, `SSH_ASKPASS`
+- Git config/exec injection: `GIT_DIR`, `GIT_WORK_TREE`, `GIT_OBJECT_DIRECTORY`, `GIT_EXEC_PATH`, `GIT_EDITOR`, `GIT_PAGER`, `GIT_SSH`, `GIT_SSH_COMMAND`, plus the prefix families `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, `GIT_CONFIG_VALUE_*`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_SYSTEM`, and `GIT_CONFIG_GLOBAL` (blocked since `deepagents-code>=0.1.60`)
+- Windows process variables: `COMSPEC`, `SYSTEMROOT`, `WINDIR`
+
+A project `.env` is additionally barred from setting `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS` and `DEEPAGENTS_CODE_DISABLED_PROJECT_MCP_SERVERS` (so a repository cannot approve or deny its own MCP servers), `DEEPAGENTS_CODE_AUTO_CLASSIFIER_MODEL` and `DEEPAGENTS_CODE_AUTO_CLASSIFIER_TIMEOUT` (so a repository cannot weaken the Auto approval reviewer), and `TERM_PROGRAM`. Set any of these in your shell or the global `~/.deepagents/.env` instead.
 
 <Warning>
     Running `dcode` inside an untrusted project directory exposes you to project-controlled files. A malicious `.env`, `Makefile`, or build script in that directory can influence the agent's process environment and what it runs. Treat any directory you would not run arbitrary scripts in as untrusted, and use a [remote sandbox](/oss/deepagents/code/remote-sandboxes) for untrusted repositories.
@@ -116,6 +146,27 @@ export DEEPAGENTS_CODE_EXTRA_SKILLS_DIRS="~/shared-skills:/opt/team-skills"
 ```
 
 When the environment variable is set, it takes precedence over the config file value. Changes take effect on `/reload`.
+
+## Profile location (`DEEPAGENTS_HOME`)
+
+Requires `deepagents-code>=0.1.62`.
+
+`DEEPAGENTS_HOME` selects the directory Deep Agents Code uses as its user profile — everything normally stored under `~/.deepagents/` moves under the configured path. This includes `config.toml`, the global `.env`, `~/.deepagents/.mcp.json` and `hooks.json`, per-agent directories (`AGENTS.md`, `skills/`, `memories/`, `agents/`), plugins, and `.state/` (sessions, input history, credentials, and locks). When unset, the profile defaults to `~/.deepagents`.
+
+Valid forms are an absolute path or a path beginning with `~/`:
+
+```bash
+export DEEPAGENTS_HOME="~/profiles/work"        # resolved against your home directory
+export DEEPAGENTS_HOME="/opt/dcode-profiles/work"  # absolute; works even with no resolvable home
+```
+
+Relative paths and `~user` forms are rejected. The resolved path must also not be the filesystem root, the home directory itself, an existing non-directory, an unreadable or unsearchable directory, or a symlink with a missing target — these fail at launch with an error.
+
+<Warning>
+    `DEEPAGENTS_HOME` is a trust boundary: it selects which `config.toml`, `.env`, and `.mcp.json` Deep Agents Code treats as user-trusted. It must be set in the inherited shell environment (for example, `export DEEPAGENTS_HOME=...` before launching). It is captured at launch, before dotenv loading, and no `.env` file may set or change it — a project-controlled `.env` could otherwise relocate the trust root to files it controls. Child processes inherit the resolved path.
+</Warning>
+
+The alias `~/.agents/skills/` (shared across AI CLI tools) is resolved from the launch home directory, not from `DEEPAGENTS_HOME`. See [Data locations](#data-locations) for the full directory tree.
 
 ## Themes
 
@@ -212,9 +263,27 @@ To opt out of automatic updates:
     </Tab>
 </Tabs>
 
-The environment variable takes precedence over the config file.
+The environment variable takes precedence over the config file. Setting the environment variable to an empty value disables the feature.
 
 When enabled (default), Deep Agents Code checks PyPI for a newer version at session start and automatically upgrades. When disabled, Deep Agents Code shows an update hint with the appropriate install command instead.
+
+### Pricing catalog auto-update
+
+Since `deepagents-code>=0.1.52`, Deep Agents Code refreshes its model pricing catalog from upstream hourly in the background so cost estimates stay current. To opt out:
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml
+        [update]
+        prices_auto_update = false
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_PRICES_AUTO_UPDATE=0
+        ```
+    </Tab>
+</Tabs>
 
 To suppress automatic update checks entirely:
 
@@ -239,6 +308,79 @@ You can still check for and install updates manually at any time with the `/upda
 After an upgrade, Deep Agents Code shows a "what's new" banner on the next launch with a link to the changelog.
 
 At session exit, if a newer version was detected during the session, an update banner is displayed as a reminder.
+
+## Display options
+
+These `[ui]` keys tune what the terminal UI shows.
+
+### Session usage stats
+
+Deep Agents Code shows session usage statistics when a session ends (default on; configurable since `deepagents-code>=0.1.59`):
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml
+        [ui]
+        show_usage_stats = false
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_SHOW_USAGE_STATS=0
+        ```
+    </Tab>
+</Tabs>
+
+The environment variable takes precedence; setting it to an empty value also disables the stats.
+
+### Collapse large pastes
+
+Large pastes into the chat input are collapsed into compact placeholders (default on; configurable since `deepagents-code>=0.1.32`). To keep the full pasted text visible:
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml
+        [ui]
+        collapse_pastes = false
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_COLLAPSE_PASTES=0
+        ```
+    </Tab>
+</Tabs>
+
+## Conversation history retention
+
+Offloading a thread with `/offload` writes a markdown archive under `~/.deepagents/conversation_history/`. Since `deepagents-code>=0.1.61`, a best-effort startup sweep deletes archives older than 30 days. The sweep only touches regular `.md` files directly inside the archive directory, never blocks startup, and logs and swallows filesystem errors.
+
+Change the retention window, or disable cleanup with `0`:
+
+<Tabs>
+    <Tab title="Config file">
+        ```toml title="~/.deepagents/config.toml"
+        [history]
+        retention_days = 90   # 0 disables the sweep
+        ```
+    </Tab>
+    <Tab title="Environment variable">
+        ```bash
+        export DEEPAGENTS_CODE_HISTORY_RETENTION_DAYS=90
+        ```
+    </Tab>
+</Tabs>
+
+The environment variable takes precedence over the config file. With a `DEEPAGENTS_HOME` profile, archives live under `$DEEPAGENTS_HOME/conversation_history/`.
+
+## Compact on resume
+
+Resuming a thread restores its full context, so the next turn pays for it. Since `deepagents-code>=0.1.53`, when a resumed thread's context exceeds a threshold, Deep Agents Code offers to compact it before your next message; declining is free and `/compact` (or `/offload`) remains available. The default threshold is 400,000 tokens; set it to `0` to disable the offer:
+
+```toml title="~/.deepagents/config.toml"
+[threads]
+compact_on_resume_threshold = 200000
+```
 
 ## Uninstall
 
@@ -311,7 +453,7 @@ To route every user's model traffic through a managed gateway (provisioning a ga
 All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` prefix. See [`DEEPAGENTS_CODE_` prefix](#deepagents_code_-prefix) for how the prefix also works as an override for third-party credentials.
 
 <ResponseField name="DEEPAGENTS_CODE_AUTO_UPDATE" type="string" post={["optional"]}>
-    Toggle automatic Deep Agents Code updates. Enabled by default; set to `0`, `false`, `no`, or `off` to opt out.
+    Toggle automatic Deep Agents Code updates. Enabled by default; set to `0`, `false`, `no`, or `off` (or an empty value) to opt out.
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_AUTO_CLASSIFIER_TIMEOUT" type="integer" post={["optional"]}>
@@ -342,28 +484,52 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
     Comma-separated project MCP server names to pre-approve by name for any project. This is a process-wide escape hatch: A different project, command change, or URL change under the same server name still matches. When set, this variable replaces saved approvals for the process. Prefer saved approvals from the project MCP prompt when possible.
 </ResponseField>
 
+<ResponseField name="DEEPAGENTS_CODE_COLLAPSE_PASTES" type="string" default="true" post={["optional"]}>
+    Collapse large chat-input pastes into compact placeholders. Set to a falsy value (or empty) to keep full pasted text visible. Overrides `[ui].collapse_pastes`. See [Collapse large pastes](#collapse-large-pastes).
+</ResponseField>
+
 <ResponseField name="DEEPAGENTS_CODE_EXTRA_SKILLS_DIRS" type="string" post={["optional"]}>
     Colon-separated paths added to the [skill containment allowlist](#skill-directory-allowlist).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_HISTORY_RETENTION_DAYS" type="integer" default="30" post={["optional"]}>
+    Days an offloaded conversation-history archive is kept before the startup sweep deletes it; `0` disables cleanup. Overrides `[history].retention_days`. See [Conversation history retention](#conversation-history-retention). Requires `deepagents-code>=0.1.61`.
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_LANGSMITH_PROJECT" type="string" post={["optional"]}>
     Override the LangSmith project name for Deep Agents Code's own agent traces. Shell commands still run with the user's original `LANGSMITH_PROJECT`, so app, test, or script traces can appear in a separate project. See [Trace with LangSmith](/oss/deepagents/code/quickstart#trace-with-langsmith).
 </ResponseField>
 
-<ResponseField name="DEEPAGENTS_CODE_LANGSMITH_REDACT" type="string" default="false" post={["optional"]}>
-    Toggle client-side secret redaction for Deep Agents Code's LangSmith agent-trace inputs and outputs. Accepts `1`, `true`, `yes`, or `on` to enable redaction and `0`, `false`, `no`, or `off` to disable it, case-insensitively. When redaction is enabled, tracing is disabled for that run if redaction cannot be configured. See [Configure LangSmith trace redaction](/oss/deepagents/code/config-file#redact-langsmith-trace-secrets).
+<ResponseField name="DEEPAGENTS_CODE_LANGSMITH_REDACT" type="string" default="true" post={["optional"]}>
+    Toggle client-side secret redaction for Deep Agents Code's LangSmith agent-trace inputs and outputs. Enabled by default since `deepagents-code>=0.1.62` (disabled by default in earlier versions). Accepts `1`, `true`, `yes`, or `on` to enable redaction and `0`, `false`, `no`, or `off` to disable it, case-insensitively. When redaction is enabled, tracing is disabled for that run if redaction cannot be configured. See [Configure LangSmith trace redaction](/oss/deepagents/code/config-file#redact-langsmith-trace-secrets).
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_LANGSMITH_REPLICA_PROJECTS" type="string" post={["optional"]}>
     A second LangSmith project to *also* write agent traces to. When set and tracing is active, each agent run is dual-written to the primary project (from `DEEPAGENTS_CODE_LANGSMITH_PROJECT`, or `deepagents-code` by default) and this project. Off by default. See [Trace with LangSmith](/oss/deepagents/code/quickstart#trace-with-langsmith).
 </ResponseField>
 
+<ResponseField name="DEEPAGENTS_CODE_MEMORY_AUTO_SAVE" type="string" default="true" post={["optional"]}>
+    Let the agent proactively save learnings to memory. Set to a falsy value (or empty) to keep loading memory while stopping unprompted auto-saving; explicit saves still work. Overrides `[memory].auto_save`. See [Automatic memory](/oss/deepagents/code/memory-and-skills#automatic-memory). Requires `deepagents-code>=0.1.38`.
+</ResponseField>
+
 <ResponseField name="DEEPAGENTS_CODE_NO_UPDATE_CHECK" type="string" post={["optional"]}>
     Disable automatic update checking when set. This also prevents automatic update installs at startup.
 </ResponseField>
 
+<ResponseField name="DEEPAGENTS_HOME" type="string" post={["optional"]}>
+    Select the user profile and trust root instead of the default `~/.deepagents`. Accepts an absolute path or a path beginning with `~/`; `~user` forms and relative paths are rejected. Must be set in the inherited shell environment — no `.env` file may set it. See [Profile location](#profile-location-deepagents_home). Requires `deepagents-code>=0.1.62`.
+</ResponseField>
+
 <ResponseField name="DEEPAGENTS_CODE_ONBOARDING" type="string" post={["optional"]}>
     Override the first-run onboarding flow. Set to a truthy value to force it open on every startup; set to a falsy value to suppress it entirely (useful for CI and provisioned machines). Leave unset for the default first-run behavior.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_PRICES_AUTO_UPDATE" type="string" default="true" post={["optional"]}>
+    Refresh the model pricing catalog from upstream hourly in the background. Set to a falsy value (or empty) to opt out. Overrides `[update].prices_auto_update`. See [Pricing catalog auto-update](#pricing-catalog-auto-update).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_READ_PROJECT_DOTENV" type="string" default="true" post={["optional"]}>
+    Load the project `.env` (found walking up from the working directory) into the process environment. Set to a falsy value to skip an untrusted repository's file; the global `~/.deepagents/.env` still loads. Overrides `[startup].read_project_dotenv`. See [Loading order and precedence](#loading-order-and-precedence). Requires `deepagents-code>=0.1.60`.
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_RECURSION_LIMIT" type="integer" post={["optional"]}>
@@ -372,6 +538,10 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
 
 <ResponseField name="DEEPAGENTS_CODE_SHELL_ALLOW_LIST" type="string" post={["optional"]}>
     Comma-separated shell commands to allow (or `recommended` / `all`).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_SHOW_USAGE_STATS" type="string" default="true" post={["optional"]}>
+    Show session usage statistics when a session ends. Set to a falsy value (or empty) to hide them. Overrides `[ui].show_usage_stats`. See [Session usage stats](#session-usage-stats).
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_USER_ID" type="string" post={["optional"]}>
@@ -427,7 +597,7 @@ Output:
 
 Deep Agents Code stores data in two directory hierarchies:
 
-- **`~/.deepagents/`** — Deep Agents-specific data (agent memory, skills, sessions)
+- **`~/.deepagents/`** — Deep Agents-specific data (agent memory, skills, sessions). Relocatable with [`DEEPAGENTS_HOME`](#profile-location-deepagents_home); the paths below are then rooted at that directory instead.
 - **`~/.agents/`** — Tool-agnostic data (skills shared across AI CLI tools)
 
 ### Directory structure

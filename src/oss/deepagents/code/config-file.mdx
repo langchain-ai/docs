@@ -6,8 +6,10 @@ description: Configure model providers, defaults, retries, and gateways in confi
 
 `~/.deepagents/config.toml` lets you customize model providers, set defaults, and pass extra parameters to model constructors. For environment variables and inspection commands, see [Configuration](/oss/deepagents/code/configuration). This page covers:
 
-- **Defaults**: pin a [default model](#default-and-recent-model) or [agent](#default-and-recent-agent).
+- **Defaults**: pin a [default model](#default-and-recent-model) or [agent](#default-and-recent-agent), or [restrict usable models](#allowed-models) with an allowlist.
 - **Warnings**: [session cost](#session-cost-warning) and [cold prompt-cache](#cold-prompt-cache-warning) thresholds, and [trusted gateway endpoints](#trust-a-gateway-endpoint-for-cache-policies).
+- **Interpreter**: the [`[interpreter]` settings](#js-interpreter) for the built-in QuickJS REPL.
+- **Tracing**: [client-side secret redaction](#redact-langsmith-trace-secrets) for LangSmith traces (on by default).
 - **Provider setup**: the [`[models.providers.<name>]` table](#provider-configuration), [constructor params](#model-constructor-params), [retries](#retries), [profile overrides](#profile-overrides-advanced), and [adding models to the `/model` switcher](#adding-models-to-the-interactive-switcher).
 - **Auto mode**: the [auto classifier timeout](#auto-classifier-timeout).
 - **Custom endpoints and providers**: [custom base URLs](#custom-base-url), [OpenAI- or Anthropic-compatible APIs](#compatible-apis), and [arbitrary providers](#arbitrary-providers).
@@ -85,26 +87,44 @@ show_diff_line_numbers = false
 
 Run `/line-numbers` in a session to toggle the preference and save it to `config.toml`. The change applies to new diffs; already rendered diffs do not change.
 
+## Allowed models
+
+Requires `deepagents-code>=0.1.61`.
+
+Restrict `dcode` to an approved set of models with the `[models].allowed` list:
+
+```toml title="~/.deepagents/config.toml"
+[models]
+allowed = ["anthropic:claude-sonnet-4-5", "openai:*"]
+```
+
+Entries are exact `provider:model` specs or `provider:*` wildcards that admit a provider's whole lineup. Write bare Bedrock model IDs as `bedrock:<id>`. When the list is set, every model the app tries to use is checked against it: the launch default, `--model`, `/model` selections, saved defaults, and subagent model declarations. Blocked entries are hidden from the `/model` switcher; a blocked selection is rejected with an error that lists the allowed entries. A malformed list fails closed (denies everything) with an error naming the defect, so a typo cannot silently disable the guardrail.
+
+When the key is unset, all models are allowed. An explicit empty list allows none:
+
+```toml
+[models]
+allowed = []   # no model may be used
+```
+
+A `provider:*` wildcard names no model itself, so default resolution expands it to the provider's discovered models (the bundled profile lineup merged with any configured `models` list). A wildcard for a provider with no discovered or configured models fails closed instead of prompting for credentials.
+
 ## Redact LangSmith trace secrets
 
-With LangSmith tracing enabled, Deep Agents Code sends agent-trace inputs and outputs without client-side secret redaction by default.
+With LangSmith tracing enabled, Deep Agents Code redacts detected secrets from agent-trace inputs and outputs before upload. This is enabled by default (since `deepagents-code>=0.1.62`); earlier versions send traces without client-side redaction unless opted in.
 
-<Warning>
-    Without redaction, secrets may be uploaded to LangSmith as part of agent traces.
-</Warning>
-
-To redact detected secrets before upload:
+To disable redaction:
 
 <Tabs>
     <Tab title="Config file">
         ```toml title="~/.deepagents/config.toml"
         [tracing]
-        langsmith_redact = true
+        langsmith_redact = false
         ```
     </Tab>
     <Tab title="Environment variable">
         ```bash
-        export DEEPAGENTS_CODE_LANGSMITH_REDACT=true
+        export DEEPAGENTS_CODE_LANGSMITH_REDACT=false
         ```
     </Tab>
 </Tabs>
@@ -511,6 +531,54 @@ DEEPAGENTS_CODE_OPENAI_BASE_URL=https://api.openai.com/v1
 On a machine provisioned with a model gateway (for example, the LangSmith gateway), the gateway typically exports a gateway key and the matching endpoint variable (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, or `GOOGLE_GEMINI_BASE_URL`) together. Deep Agents Code uses that pair by default, so no configuration is needed.
 
 To use your own key instead, store it with `/auth` (leave the base URL blank for the provider default, or set it explicitly), or set the `DEEPAGENTS_CODE_` prefixed key and endpoint. Both override the gateway pair without leaving a mismatched endpoint behind.
+
+## JS interpreter
+
+The `[interpreter]` section tunes the built-in JavaScript interpreter (the `js_eval` tool), which runs agent-written code in a QuickJS sandbox. These keys are `config.toml`-only; see [Command line options](/oss/deepagents/code/cli-reference#command-line-options) for the `--interpreter` and `--interpreter-tools` flag equivalents.
+
+```toml title="~/.deepagents/config.toml"
+[interpreter]
+enable_interpreter = true       # default
+timeout_seconds = 5.0           # default
+memory_limit_mb = 64            # default
+max_ptc_calls = 256             # default
+max_result_chars = 4000         # default
+ptc = "safe"                    # default: "safe"
+ptc_acknowledge_unsafe = false  # default
+```
+
+<ResponseField name="enable_interpreter" type="boolean" default="true" post={["optional"]}>
+    Wire the QuickJS REPL middleware (`js_eval`) into the main agent (local sessions only). Set to `false` to disable the interpreter entirely; re-enable for a session with `--interpreter`.
+</ResponseField>
+
+<ResponseField name="timeout_seconds" type="number" default="5.0" post={["optional"]}>
+    Per-call wall-clock timeout for the QuickJS REPL.
+</ResponseField>
+
+<ResponseField name="memory_limit_mb" type="integer" default="64" post={["optional"]}>
+    QuickJS heap memory cap in MB, shared across a session.
+</ResponseField>
+
+<ResponseField name="max_ptc_calls" type="integer" default="256" post={["optional"]}>
+    Maximum `tools.*` host-bridge invocations per `js_eval` call.
+</ResponseField>
+
+<ResponseField name="max_result_chars" type="integer" default="4000" post={["optional"]}>
+    Cap in characters on the `js_eval` result and captured stdout before truncation.
+</ResponseField>
+
+<ResponseField name="ptc" type="string | boolean | string[]" default='"safe"' post={["optional"]}>
+    [Programmatic tool calling](/oss/deepagents/interpreters#programmatic-tool-calling-ptc) allowlist for `js_eval`. Accepted values:
+
+    - `"safe"` (default): the read-only preset `read_file`, `glob`, `grep`. These tools are not approval-gated outside the REPL, so exposing them introduces no approval bypass. Network tools, subagent dispatch, shell execution, and file writes are deliberately excluded.
+    - `"all"`: every host tool. Requires `ptc_acknowledge_unsafe = true` unless approvals are globally disabled, because PTC calls bypass approval prompts.
+    - A list of tool names, e.g. `["safe", "web_search"]` — the `"safe"` entry expands to the preset. `"all"` is not allowed inside a list.
+    - `false` or `[]`: no tool access from the REPL (pure interpreter). `true` is rejected — use `"safe"`, `"all"`, or an explicit list.
+</ResponseField>
+
+<ResponseField name="ptc_acknowledge_unsafe" type="boolean" default="false" post={["optional"]}>
+    Acknowledge that `ptc = "all"` exposes every tool to PTC calls that bypass approval prompts. Required for `ptc = "all"` unless running with approvals disabled.
+</ResponseField>
 
 ## Agent runtime limits
 
