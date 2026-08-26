@@ -496,6 +496,8 @@ Always run `make lint_prose` (Vale) before handing off or committing doc changes
 
 Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"` (or pass space-separated paths). Run with no `FILES` arg to lint all of `src/`.
 
+The Vale version is pinned once, in `.mise.toml`. The `Makefile`, `scripts/install-vale.sh`, and the `lint-prose` workflow all read it from there, so local runs use the same engine as CI. Bump it only in `.mise.toml`. Do not hardcode a version in any of the three call sites.
+
 Also run `make broken-links` when adding or renaming links, pages, or nav entries.
 
 ## Changelog / Release notes
