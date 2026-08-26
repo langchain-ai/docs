@@ -299,6 +299,27 @@ langsmith_redact = true
 
 Deploy the file with write access restricted to administrators. Deep Agents Code treats managed policy as read-only. A user can still save a preference to `config.toml`, but the managed value remains effective until the administrator removes it.
 
+### Load policy from HTTPS
+
+To host policy centrally, use the fixed local `managed_config.toml` as an administrator-owned descriptor:
+
+```toml title="managed_config.toml"
+[managed_config]
+source = "https://config.example.com/dcode-policy.toml"
+```
+
+In descriptor mode, the local file must contain only `[managed_config].source`. The downloaded TOML document supplies the complete managed policy. Deep Agents Code does not merge it with local policy keys, and the remote document cannot declare another `[managed_config]` source.
+
+The source must be an absolute HTTPS URL of at most 2,048 ASCII characters. URLs with credentials, query strings, fragments, whitespace, or control characters are rejected. The fetch uses Python's default TLS trust store, bypasses environment proxies, refuses redirects and compressed responses, and applies a five-second end-to-end timeout and a 1 MiB response limit.
+
+The server must return HTTP 200 with a complete response delimited by a matching `Content-Length` value or chunked transfer encoding. If the response includes `Content-Type`, it must be `application/toml`, `text/plain`, or `application/octet-stream`. A missing `Content-Type` is accepted. The response must contain a non-empty UTF-8 TOML policy.
+
+Deep Agents Code does not store a disk cache or authentication material for the remote source.
+
+<Warning>
+    The TLS trust store is not pinned. `SSL_CERT_FILE` and `SSL_CERT_DIR` can change the certificate authorities used for the request, so run Deep Agents Code in an environment controlled by the administrator when relying on remote managed policy.
+</Warning>
+
 ### Restrict model use
 
 Set `[models].allowed` to exact, case-sensitive `provider:model` specifications, or use `provider:*` to allow all discoverable models from one provider. The allowlist applies to launch defaults, `--model`, `/model`, saved defaults, Auto classifiers, rubric graders, and explicit local subagent models.
@@ -332,11 +353,13 @@ dcode config get startup.mode
 dcode doctor
 ```
 
-`dcode config path` reports the managed file path and health. `dcode config` and `dcode config get` label values from the file as `managed config`. `dcode doctor` reports parse errors, rejected values, and the keys that need correction.
+`dcode config path` reports the managed file path and health. `dcode config` and `dcode config get` label values from the file as `managed config`. `dcode doctor` reports parse errors, rejected values, and the keys that need correction. For remote policy, `dcode doctor` shows the local descriptor and remote URL. If a refresh fails, it also reports whether the session is still enforcing the last enforceable policy.
 
 ### Handle invalid policy
 
-Deep Agents Code fails closed when a managed file cannot be read or parsed, or when its policy is unsafe to apply. Commands that use configuration exit with code `78`; `dcode config`, `dcode doctor`, `dcode auth path`, and help screens remain available for troubleshooting.
+Deep Agents Code fails closed when a managed file cannot be read or parsed, when a remote policy cannot be fetched completely, or when its policy is unsafe to apply. Commands that use configuration exit with code `78`; `dcode config`, `dcode doctor`, `dcode auth path`, and help screens remain available for troubleshooting.
+
+A failed refresh does not replace policy that the current process already enforced. Deep Agents Code keeps the last enforceable generation and reports the failed refresh. A new process without an enforceable generation cannot start with an unavailable or invalid remote policy.
 
 A rejected value for one of the following policy-enforced keys also stops startup because falling through to a user value could grant a privilege or remove a boundary:
 
