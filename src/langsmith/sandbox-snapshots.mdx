@@ -4,15 +4,83 @@ sidebarTitle: Snapshots
 description: Build and capture reusable filesystem images for sandboxes.
 ---
 
-A **snapshot** is a reusable filesystem bundle backed by a Docker image. Build or capture a snapshot when you want to boot sandboxes from a custom filesystem image.
+A **snapshot** is a reusable sandbox filesystem. Build a custom snapshot from a container image when you want to boot sandboxes from a custom filesystem image.
 
 You can also capture a snapshot from a running sandbox—install packages, write data files, or configure state, then snapshot the result and reuse it as a new starting point.
 
 ![Sandboxes snapshots page](/images/langsmith/sandboxes/sb-snapshots.png)
 
-## Build a snapshot from a Docker image
+## Understand the default snapshot
 
-Build a snapshot by pointing at any Docker image. The call blocks until the snapshot is ready (default timeout is 60 seconds; bump it for large images).
+When you create a sandbox without selecting a snapshot, LangSmith uses a built-in default snapshot. The default provides an Ubuntu 24.04 filesystem with common development tools. LangSmith may update the packages and tools included in the default snapshot over time.
+
+### Inspect the default snapshot filesystem in self-hosted deployments
+
+In a self-hosted deployment, LangSmith creates the default snapshot from a filesystem embedded in the sandbox runtime container image, `sandbox-host`:
+
+1. During the `sandbox-host` image build, LangSmith starts with Ubuntu 24.04 and installs the default development tools.
+2. LangSmith packages that filesystem as a compressed 16 GiB ext4 file at `/opt/sandbox-host/bin/builder-base.ext4.gz`.
+3. When `sandbox-host` starts, LangSmith uses the embedded filesystem to create the default snapshot.
+
+The compressed ext4 file, rather than a separately pulled container image, is the source of the default snapshot filesystem.
+
+Scanning the `sandbox-host` container image alone does not inspect the files inside this compressed artifact. To verify the default snapshot, extract and scan the embedded filesystem separately.
+
+<Note>
+This procedure verifies the default snapshot filesystem. LangSmith supplies other required runtime components separately when the sandbox starts; they are not part of the snapshot.
+</Note>
+
+To independently inspect the default snapshot, use the exact `sandbox-host` container image configured by your Helm release. If you mirror images, use the reference in `images.sandboxHostImage` from your private registry.
+
+You need:
+
+- Access to the deployed `sandbox-host` image.
+- Docker, `gzip`, GNU `dd`, and `debugfs` from the `e2fsprogs` package on a Linux system.
+- A local filesystem that supports sparse files, plus enough space for the compressed artifact and the extracted files. The ext4 image has a 16 GiB logical size, but sparse decompression avoids allocating its zero-filled free space.
+
+Extract the files into a temporary directory and scan the resulting directory with your preferred filesystem or software bill of materials (SBOM) scanner.
+
+Set the exact image reference used by your deployment and create a temporary working directory:
+
+```bash
+export SANDBOX_HOST_IMAGE="<sandbox-host-image-reference>"
+export SNAPSHOT_WORKDIR="$(mktemp -d)"
+
+docker pull "$SANDBOX_HOST_IMAGE"
+```
+
+Extract the compressed ext4 file without starting the `sandbox-host` process:
+
+```bash
+SANDBOX_HOST_CONTAINER="$(docker create "$SANDBOX_HOST_IMAGE")"
+docker cp \
+  "${SANDBOX_HOST_CONTAINER}:/opt/sandbox-host/bin/builder-base.ext4.gz" \
+  "$SNAPSHOT_WORKDIR/"
+docker rm "$SANDBOX_HOST_CONTAINER"
+```
+
+Decompress the filesystem as a sparse file:
+
+```bash
+gzip -dc "$SNAPSHOT_WORKDIR/builder-base.ext4.gz" | \
+  dd of="$SNAPSHOT_WORKDIR/builder-base.ext4" \
+    bs=1M conv=sparse status=progress
+```
+
+Extract the ext4 contents with `debugfs`. `debugfs` opens the filesystem read-only unless you pass `-w`:
+
+```bash
+mkdir -p "$SNAPSHOT_WORKDIR/rootfs"
+debugfs \
+  -R "rdump / $SNAPSHOT_WORKDIR/rootfs" \
+  "$SNAPSHOT_WORKDIR/builder-base.ext4"
+```
+
+Point your filesystem or SBOM scanner at `$SNAPSHOT_WORKDIR/rootfs`. The scanner reads the package databases and files from the same root filesystem that LangSmith uses for the default snapshot.
+
+## Build a snapshot from a container image
+
+Build a snapshot by pointing at any container image. The call blocks until the snapshot is ready (default timeout is 60 seconds; bump it for large images).
 
 <CodeGroup>
 
@@ -45,6 +113,16 @@ console.log(snapshot.id);
 ```
 
 </CodeGroup>
+
+### Verify a snapshot built from a container image
+
+LangSmith builds a custom snapshot from the filesystem in the container image you provide. To independently verify those contents:
+
+1. Resolve the source container image to an immutable reference, such as `registry.example.com/example/image@sha256:<digest>`.
+2. Inspect and scan that exact image.
+3. Use the same digest-qualified reference as `docker_image` when you create the snapshot.
+
+LangSmith supplies its required runtime tools separately when the sandbox starts. They are not added to the container image you provide or included in the custom snapshot.
 
 ### Private registries
 
