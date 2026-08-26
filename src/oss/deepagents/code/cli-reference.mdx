@@ -233,13 +233,126 @@ Valid names are `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, 
     ```
 </Note>
 
-Run `/tools` in a session to inspect the active tool set. From the shell, place tool-shaping flags before the subcommand:
+Run [`/tools`](#diagnose-and-audit-a-session) in a session to inspect the active tool set. From the shell, place tool-shaping flags before the subcommand:
 
 ```bash
 dcode tools list
 dcode --allow-fs-tools ls,read_file tools list
 dcode --allow-fs-tools ls,read_file tools list --json
 ```
+
+## Diagnose and audit a session
+
+Deep Agents Code exposes three read-only slash commands for inspecting what a session loads and spends: `/tools` lists the active tool set, `/context-doctor` audits the context injected before the conversation starts, and `/cost` reports the thread's estimated spend. Use them to confirm that a tool-shaping flag took effect or to find the source of unexpected context growth. None of these commands modify the session; all three queue behind active work.
+
+### List available tools
+
+<Note>
+    `/tools` requires `deepagents-code>=0.1.37`.
+</Note>
+
+Run `/tools` in a session to list the tools the current agent can call, grouped into built-in tools and tools from each MCP server:
+
+```text
+/tools
+```
+
+```text
+**7 tools available**
+
+### Built-in
+
+| Tool | Description |
+|---|---|
+| read_file | Read a file from the filesystem |
+| write_file | Write content to a file |
+| execute | Run a shell command |
+| web_search | Search the web |
+| task | Launch a subagent |
+
+### github
+
+- create_issue
+- search_repositories
+
+MCP tool descriptions are available in /mcp.
+
+### Unavailable MCP servers
+
+| Server | Status |
+|---|---|
+| slack | needs login |
+```
+
+MCP servers that are disabled, need login, or failed to load appear in a separate table instead of disappearing from the list, so you can tell a missing tool apart from one that never loaded. When a custom or remote agent cannot be inspected, `/tools` explains the limitation rather than reporting that no tools are available. MCP tool descriptions are available in `/mcp`.
+
+Use `/tools` to verify tool-shaping flags: the list reflects `--allow-fs-tools`, `--no-mcp`, `--mcp-config`, and `--trust-project-mcp`. For the non-interactive equivalent, see [Restrict filesystem tools](#restrict-filesystem-tools) and [`dcode tools list`](#cli-commands).
+
+### Audit injected context
+
+<Note>
+    `/context-doctor` requires `deepagents-code>=0.1.62`.
+</Note>
+
+Run `/context-doctor` in a session to audit what the session injects into every model request and its estimated token cost. The report breaks the injected context into the base system prompt, `AGENTS.md` memory files, the skills index, built-in tool schemas, and each MCP server's tool schemas, then totals what the agent carries before the conversation starts:
+
+```text
+/context-doctor
+```
+
+```text
+Fresh-session context audit (estimated tokens)
+
+System prompt (base)                      ~6
+AGENTS.md memory (1 files)            ~1,286
+Skills index (1 loaded)                 ~477  largest: code-review ~15
+Built-in tool schemas (1 tools)          ~13  sent with every request
+MCP: docs (1 tool)                       ~31
+MCP: broken                               ~0  connection failed
+TOTAL injected before conversation  ~     1,813
+Conversation history             ~     4,200
+Provider-reported context              9,000
+Unattributed / estimation delta       +2,987
+
+Approximate: section counts use about four characters per token.
+Trim skills or disable an MCP server, then run /context-doctor again.
+```
+
+When the provider reports context usage, the report reconciles the injected estimate and conversation history against the provider total and shows the difference as an unattributed delta. A large delta or an unexpectedly large injected total points at the component to trim, such as an oversized skill description or an MCP server with many tools. Trim the component, then run `/context-doctor` again to confirm. For custom or remote agents that Deep Agents Code cannot introspect, the affected rows are marked unavailable instead of guessed.
+
+`/context-doctor` complements two related commands:
+
+- [`/context`](/oss/deepagents/code/quickstart#inspect-context-window-usage) shows how full the context window is right now; `/context-doctor` shows why, by attributing tokens to each injected component.
+- [`dcode doctor`](#run-diagnostics-dcode-doctor) checks the health of the installation and configuration without launching a session; `/context-doctor` audits the context of a live session from inside it.
+
+### Track thread cost
+
+<Note>
+    `/cost` requires `deepagents-code>=0.1.51`.
+</Note>
+
+Run `/cost` in a session to show the thread's estimated cost in USD:
+
+```text
+/cost
+```
+
+```text
+Estimated thread cost: $1.03
+
+By type since this thread was loaded:
+- Assistant: $0.87
+- Subagents: $0.16
+
+By model since this thread was loaded:
+- anthropic:claude-sonnet-4-5: $1.03
+```
+
+The total covers every model call the thread makes: assistant turns, subagents, offload and summarization, the Auto mode classifier, and rubric grading. It persists in the thread's checkpoint, so it is restored when you resume a thread with `-r` or switch threads, and the same figure appears beside token usage in the status bar. Per-type and per-model breakdowns cover the period since the thread was loaded; restored usage is included only in the total.
+
+Estimates come from the [genai-prices](https://github.com/pydantic/genai-prices) catalog, with cache reads and writes priced separately. When the catalog has no rates for a model, that request is left out of the total and `/cost` reports how many of the recorded requests are included in the figure. Estimates are display-only: nothing caps spend or gates execution on them.
+
+Use `/tokens` for the token counts behind the estimate, or add your own rates for uncovered models in `~/.deepagents/prices.json`.
 
 ## Startup commands and initial prompts
 
@@ -389,7 +502,7 @@ Pair `dcode doctor` with `dcode config show` when you need both a high-level hea
 | `dcode agents reset --agent NAME` | Clear agent memory and reset to default. Supports `--dry-run` |
 | `dcode agents reset --agent NAME --target SOURCE` | Copy memory from another agent |
 | `dcode update`                  | Check for and install Deep Agents Code updates |
-| `dcode doctor`                  | Run diagnostics without launching a session |
+| `dcode doctor`                  | Run diagnostics without launching a session. See [Run diagnostics](#run-diagnostics-dcode-doctor) |
 | `dcode skills list [--project]`           | List all skills (alias: `ls`) |
 | `dcode skills create NAME [--project]`    | Create a new skill with template `SKILL.md`. Idempotent—re-creating an existing skill prints an informational message instead of an error |
 | `dcode skills info NAME [--project]`      | Show detailed information about a skill |
@@ -418,3 +531,4 @@ Destructive commands (`agents reset`, `skills delete`, `threads delete`) support
 - [Configuration](/oss/deepagents/code/configuration)
 - [Config file](/oss/deepagents/code/config-file)
 - [Provider credentials](/oss/deepagents/code/credentials)
+- [MCP tools](/oss/deepagents/code/mcp-tools)
