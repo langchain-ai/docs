@@ -172,15 +172,15 @@ For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
         **Required:** `command`. **Optional:** `args`, `env`, plus the shared [tool-filter fields](#tool-filtering).
 
         <ResponseField name="command" type="string" required>
-            The executable to run. Supports `${VAR}` and `${VAR:-default}` references to parent-shell environment variables. See [Environment variable interpolation](#environment-variable-interpolation).
+            The executable to run.
         </ResponseField>
 
         <ResponseField name="args" type="string[]">
-            Arguments passed to the command. Entries support `${VAR}` and `${VAR:-default}` references to parent-shell environment variables. See [Environment variable interpolation](#environment-variable-interpolation).
+            Arguments passed to the command.
         </ResponseField>
 
         <ResponseField name="env" type="object">
-            Environment variables set for the subprocess. Use this to pass API keys and other credentials without exposing them in shell history. Values support `${VAR}` and `${VAR:-default}` references to parent-shell environment variables. See [Environment variable interpolation](#environment-variable-interpolation).
+            Environment variables set for the subprocess. Use this to pass API keys and other credentials without exposing them in shell history.
         </ResponseField>
     </Accordion>
 
@@ -235,34 +235,11 @@ For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
 
 ### Environment variable interpolation
 
-String values in the `command`, `args`, `env`, `url`, and `headers` fields support `${VAR}` references to parent-shell environment variables, resolved at server activation rather than at config load. One unset variable only fails the server that needs it; the rest still come up.
+String values in `command`, `args`, `env`, `url`, and `headers` support `${VAR}` references to parent-shell environment variables. Use `${VAR:-default}` to provide a value when the variable is unset or empty.
 
 <Note>
     Environment variable expansion in MCP configs requires `deepagents-code>=0.1.37`.
 </Note>
-
-```json title=".mcp.json"
-{
-    "mcpServers": {
-        "internal-api": {
-            "type": "http",
-            "url": "https://api.example.com/mcp",
-            "headers": { "Authorization": "Bearer ${INTERNAL_API_TOKEN}" }
-        }
-    }
-}
-```
-
-#### Interpolation rules
-
-- Only the braced forms expand. A bare `$VAR` and a literal `$` pass through untouched.
-- `${VAR:-default}` uses `default` when `VAR` is unset or set to an empty value (POSIX `:-` semantics). An empty default (`${VAR:-}`) resolves to the empty string.
-- An unset `${VAR}` with no default fails that server with an error naming the field and the variable. Set the variable in the parent shell or in `~/.deepagents/.env`, or provide a default.
-- Malformed references such as `${VAR-default}`, `${VAR:default}`, or an unterminated `${VAR` are rejected at config load, so a typo cannot inject a garbage value into a command, URL, or header.
-
-#### Interpolation in stdio configs
-
-Interpolation also works in stdio server definitions, which lets you keep machine-specific paths and per-user values out of the config file:
 
 ```json title="~/.deepagents/.mcp.json"
 {
@@ -270,17 +247,11 @@ Interpolation also works in stdio server definitions, which lets you keep machin
         "work-docs": {
             "command": "npx",
             "args": ["-y", "@modelcontextprotocol/server-filesystem", "${WORK_DOCS_DIR:-/tmp/work-docs}"],
-            "env": {
-                "LOG_LEVEL": "${MCP_LOG_LEVEL:-info}"
-            }
+            "env": { "LOG_LEVEL": "${MCP_LOG_LEVEL:-info}" }
         }
     }
 }
 ```
-
-<Warning>
-    Project-level `.mcp.json` files are parsed before trust is granted: a malicious config can name any environment variable and exfiltrate its value through a header or a spawned stdio command. Review `${VAR}` references in project configs before approving them. See [Project-level trust](#project-level-trust).
-</Warning>
 
 ## Multiple servers
 
@@ -442,11 +413,7 @@ The `<sha256-16(url)>` segment is the first 16 hex characters of the SHA-256 of 
 
 When refresh fails at runtime (the refresh token expired or was revoked), Deep Agents Code marks the server as `unauthenticated` instead of crashing the agent. The welcome banner shows the count of unauthenticated servers, and `/mcp` reports the reason per server. Re-run `dcode mcp login <server>` to refresh credentials — your conversation continues without restarting.
 
-You can also re-authenticate an OAuth-backed remote server directly from the `/mcp` viewer: select the server header and press `Enter` (or click the selected header again). The footer shows `Enter re-auth` when the action is available. The viewer runs the same OAuth login flow in the app, always driving a fresh browser authorization rather than reusing a stored token. The action is only offered where it can take effect:
-
-- Servers behind a static `Authorization` header do not offer re-auth, because that header takes precedence over stored OAuth tokens.
-- Public servers with no OAuth flow, stdio servers, and disabled servers do not offer it either.
-- Selecting an `error` server header opens its detail modal instead.
+To re-authenticate an OAuth server without leaving your session, open `/mcp`, select the server, and press `Enter`.
 
 ## Server status
 
@@ -552,7 +519,7 @@ Connected MCP servers and their tools are automatically listed in the agent's sy
     </Accordion>
 
     <Accordion title="`${VAR}` references fail">
-        Interpolation runs at activation time, so an unset variable only fails the server that needs it. Export the variable in the parent shell, add it to `~/.deepagents/.env`, or give the reference a `${VAR:-default}` fallback. To debug, set `DEEPAGENTS_CODE_DEBUG=1` and inspect the per-session log path printed to stderr on shutdown.
+        Export the variable in the parent shell, add it to `~/.deepagents/.env`, or give the reference a `${VAR:-default}` fallback. To debug, set `DEEPAGENTS_CODE_DEBUG=1` and inspect the per-session log path printed to stderr on shutdown.
     </Accordion>
 </AccordionGroup>
 
