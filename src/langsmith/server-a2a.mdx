@@ -24,10 +24,12 @@ existing v0.3 clients keep working. The agent card declares one interface:
 ```
 
 <Warning>
-The method name you send also selects the response shape. A v1.0 name returns the task wrapped in
-`result.task` with SCREAMING_SNAKE_CASE enums (`TASK_STATE_WORKING`, `ROLE_AGENT`). A v0.3 name
-returns the task directly on `result` with lowercase enums (`working`, `agent`). Pick one family
-per client and stay on it.
+The method name you send also selects the enum case in the response. A v1.0 name returns
+SCREAMING_SNAKE_CASE (`TASK_STATE_WORKING`, `ROLE_AGENT`); a v0.3 name returns lowercase
+(`working`, `agent`). Pick one family per client and stay on it.
+
+The envelope varies by method, not by family: `SendMessage` wraps the task in `result.task`, while
+`GetTask` and all v0.3 methods return it directly on `result`. `ListTasks` returns `result.tasks`.
 </Warning>
 
 ## Supported methods
@@ -47,14 +49,70 @@ Only the JSON-RPC binding is available. gRPC and HTTP+JSON are not implemented.
 
 ### Task history in responses
 
-A context holds many tasks. `SendMessage`, `GetTask` and `ListTasks` return the history of the
-**whole context**, not just the task you asked about. The second task in a context replays the
-first task's messages, so a client that renders every history entry shows earlier turns again —
+A context holds many tasks. By default `SendMessage`, `GetTask` and `ListTasks` return the history
+of the **whole context**, not just the task you asked about. The second task in a context replays
+the first task's messages, so a client that renders every history entry shows earlier turns again —
 including earlier tool results and A2UI payloads.
 
-Two ways to work with this today: read only the entries after the ones you have already rendered,
-or start a new `contextId` when you want isolation. Per-task history is being added as a
-`historyScope` request option.
+Set `historyScope` to `task` to get back only the messages that belong to the task you asked about.
+The default stays `context`, so existing integrations are unaffected.
+
+Where the option goes depends on the method. `SendMessage` reads it from `configuration`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "1",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "role": "ROLE_USER",
+      "parts": [{"text": "Second request"}],
+      "messageId": "message-2",
+      "contextId": "8b1f0e5c-9a3d-4f27-b0c8-2e6a5d4c1b7a"
+    },
+    "configuration": {"historyScope": "task"}
+  }
+}
+```
+
+`GetTask` and `ListTasks` read it directly from `params`:
+
+```json
+{"jsonrpc": "2.0", "id": "2", "method": "GetTask",
+ "params": {"id": "<taskId>", "historyScope": "task"}}
+```
+
+If your client cannot add fields to the request body, send the header instead. An explicit value in
+the request wins over the header.
+
+```
+LangGraph-A2A-History-Scope: task
+```
+
+The agent card advertises this under `capabilities.extensions`, so you can detect support rather
+than assume it:
+
+```json
+{
+  "uri": "https://langchain.com/a2a/extensions/history-scope/v1",
+  "description": "Choose task-only or full-context response history",
+  "required": false,
+  "params": {
+    "header": "LangGraph-A2A-History-Scope",
+    "values": ["context", "task"],
+    "default": "context",
+    "methods": ["SendMessage", "GetTask", "ListTasks"]
+  }
+}
+```
+
+Four limits worth knowing:
+
+- Streaming does not support `historyScope: "task"`. `SendStreamingMessage` rejects it with `-32602`, because a streamed response cannot provide a final task-scoped snapshot.
+- `historyLength` caps at 10. A larger value returns `-32602` with `historyLength cannot exceed 10`.
+- Scope is applied before `historyLength`, so you get the last N messages *of that task*.
+- Option names are case-sensitive. `historyscope` returns `-32602` with `Unknown history option 'historyscope'; use 'historyScope'`.
 
 <Warning>
 Do not resend a `taskId` from a completed task. Each new turn starts a new task inside the same
@@ -150,13 +208,15 @@ Unset means all tool results are published. The filter applies to both task hist
 | `A2A_ALLOWED_TOOL_CALL_RESULTS` | `0.12.4` |
 | Outbound `FilePart`, configurable card modes | `0.13.0` |
 | A2UI v0.9 | `0.15.0` |
+| `historyScope` | `0.15.0` |
 
 ```bash
 pip install "langgraph-api>=0.13.0"
 ```
 
-A2UI v0.9 landed after the `0.14.0` release candidates were cut, so it arrives in `0.15.0`. That
-version is not published as a stable release yet.
+A2UI v0.9 and `historyScope` landed after the `0.14.0` release candidates were cut, so they arrive
+in `0.15.0`. That version is not published as a stable release yet — check
+`capabilities.extensions` on the agent card before relying on `historyScope`.
 
 Your graph's state must include a `messages` key to accept A2A text and file parts. An assistant
 whose input schema has no `messages` field is rejected with an explanatory error.
