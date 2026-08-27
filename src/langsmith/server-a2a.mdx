@@ -8,13 +8,42 @@ description: Use the A2A protocol to enable agent-to-agent communication with di
 
 The A2A endpoint is available in [Agent Server](/langsmith/agent-server) at `/a2a/{assistant_id}`.
 
+## Protocol version
+
+Agent Server speaks the A2A **v1.0** JSON-RPC binding and also accepts the v0.3 method names, so
+existing v0.3 clients keep working. The agent card declares one interface:
+
+```json
+"supportedInterfaces": [
+  {
+    "url": "https://your-deployment/a2a/{assistant_id}",
+    "protocolBinding": "JSONRPC",
+    "protocolVersion": "1.0"
+  }
+]
+```
+
+<Warning>
+The method name you send also selects the response shape. A v1.0 name returns the task wrapped in
+`result.task` with SCREAMING_SNAKE_CASE enums (`TASK_STATE_WORKING`, `ROLE_AGENT`). A v0.3 name
+returns the task directly on `result` with lowercase enums (`working`, `agent`). Pick one family
+per client and stay on it.
+</Warning>
+
 ## Supported methods
 
-Agent Server supports the following A2A RPC methods:
+| v1.0 name | v0.3 name | Supported |
+|---|---|---|
+| `SendMessage` | `message/send` | Yes |
+| `SendStreamingMessage` | `message/stream` | Yes — Server-Sent Events |
+| `GetTask` | `tasks/get` | Yes |
+| `CancelTask` | `tasks/cancel` | Yes |
+| `ListTasks` | — | Yes |
+| `GetExtendedAgentCard` | `agent/getAuthenticatedExtendedCard` | Yes |
+| `SubscribeToTask` | `tasks/resubscribe` | Not yet — returns `-32601` |
+| `*TaskPushNotificationConfig` | `tasks/pushNotificationConfig/*` | Not yet — returns `-32601` |
 
-- **message/send**: Send a message to an assistant and receive a complete response
-- **message/stream**: Send a message and stream responses in real-time using Server-Sent Events (SSE)
-- **tasks/get**: Retrieve the status and results of a previously created task
+Only the JSON-RPC binding is available. gRPC and HTTP+JSON are not implemented.
 
 ## Agent card discovery
 
@@ -26,25 +55,91 @@ GET /.well-known/agent-card.json?assistant_id={assistant_id}
 
 The agent card includes the assistant's name, description, available skills, supported input/output modes, and the A2A endpoint URL for communication.
 
-## Requirements
+## Optional capabilities
 
-To use A2A, ensure you have the following dependencies installed:
+These are configured per assistant through `metadata.a2a` on the Assistants API. `langgraph.json`
+cannot set assistant metadata, so patch the assistant after deploy.
 
-* `langgraph-api >= 0.4.21`
+### Declare input and output modes
 
-Install with:
-
-```bash
-pip install "langgraph-api>=0.4.21"
+```json
+{
+  "metadata": {
+    "a2a": {
+      "input_modes": ["text/plain", "application/pdf"],
+      "output_modes": ["text/plain", "application/pdf"]
+    }
+  }
+}
 ```
 
-## Usage overview
+The values feed both the card's `defaultInputModes`/`defaultOutputModes` and the generated skill's
+modes. They are advertisement only — an undeclared mode is still accepted. Replacement is per
+field, so send both if you want both overridden, and note that an empty list is rejected.
 
-To enable A2A:
+### File parts
 
-* Upgrade to use langgraph-api>=0.4.21.
-* Deploy your agent with message-based state structure.
-* Connect with other A2A-compatible agents using the endpoint.
+`FilePart` works in both directions. Inbound file, image, audio and video parts become LangChain
+content blocks. Outbound content blocks map back to `FilePart`, in task history and in the final
+streamed artifact. MIME types, URIs and filenames pass through unchanged; inline data is
+re-encoded as standard base64.
+
+### A2UI v0.9
+
+Opt in per assistant:
+
+```json
+{ "metadata": { "a2a": { "a2ui": true } } }
+```
+
+The card then advertises the extension and appends the canonical MIME type to both mode lists:
+
+```json
+"capabilities": {
+  "extensions": [
+    {
+      "uri": "https://a2ui.org/a2a-extension/a2ui/v0.9",
+      "description": "Ability to render A2UI v0.9",
+      "required": false
+    }
+  ]
+}
+```
+
+A client activates it by listing the URI in `message.extensions`. Payloads are validated in both
+directions against the v0.9 schemas, and A2UI parts are preserved in `message/send`, `tasks/get`
+and the final `message/stream` artifact. Responses carry
+`metadata.mimeType: "application/a2ui+json"`. `application/json+a2ui` is accepted as an alias on
+input.
+
+### Filter tool results
+
+By default every correlated tool result is published as a `DataPart`. To publish only some, set an
+allowlist of tool names on the deployment:
+
+```bash
+A2A_ALLOWED_TOOL_CALL_RESULTS=generative_ui_tool,another_tool
+```
+
+Unset means all tool results are published. The filter applies to both task history and streaming.
+
+## Requirements
+
+| Feature | Minimum version |
+|---|---|
+| A2A endpoint | `langgraph-api >= 0.4.21` |
+| Inbound `FilePart` | `0.12.0` |
+| Tool-result `DataPart`s | `0.12.2` |
+| `A2A_ALLOWED_TOOL_CALL_RESULTS` | `0.12.4` |
+| Outbound `FilePart`, configurable card modes | `0.13.0` |
+| A2UI v0.9 | `0.14.0` |
+
+```bash
+pip install "langgraph-api>=0.13.0"
+```
+
+Your graph's state must include a `messages` key to accept A2A text and file parts. An assistant
+whose input schema has no `messages` field is rejected with an explanatory error.
 
 ## Creating an A2A-compatible agent
 
@@ -416,6 +511,67 @@ Set `LANGSMITH_API_KEY` and optionally `LANGSMITH_PROJECT` in your environment t
 ### View traces in LangSmith
 
 After running a multi-agent conversation, open the [LangSmith UI](https://smith.langchain.com) and navigate to **Threads**. All turns from all participating agents will appear under a single thread, identified by the shared `thread_id`.
+
+## Test your integration
+
+### Against your own deployment
+
+Fetch the card, then send a message:
+
+```bash
+curl "https://your-deployment/a2a/{assistant_id}/.well-known/agent-card.json"
+```
+
+```bash
+curl -X POST "https://your-deployment/a2a/{assistant_id}" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "SendMessage",
+    "params": {
+      "message": {
+        "role": "ROLE_USER",
+        "parts": [{"text": "hello"}],
+        "messageId": "test-1"
+      }
+    }
+  }'
+```
+
+The response contains `result.task.id` and `result.task.contextId`. Reuse the `contextId` on the
+next message to continue the conversation.
+
+For streaming, send `Accept: text/event-stream` and use `SendStreamingMessage`. The first event is
+the `Task`; status and artifact updates follow.
+
+### Against the official conformance suite
+
+A2A publishes a Technology Compatibility Kit at
+[a2aproject/a2a-tck](https://github.com/a2aproject/a2a-tck). It grades an implementation by
+RFC 2119 level and works against any A2A endpoint, including yours.
+
+```bash
+./run_tck.py --sut-host https://your-deployment/a2a/{assistant_id} --transport jsonrpc
+```
+
+<Note>
+The TCK drives some scenarios through `messageId` prefixes such as `tck-input-required`, described
+in its `docs/SUT_REQUIREMENTS.md`. A graph that does not implement those prefixes will report those
+requirements as skipped rather than failed.
+</Note>
+
+### What Agent Server currently fails
+
+Agent Server runs the TCK on every CI build as a required check. Every known failure is listed,
+with a reason and an owner, in
+[`a2a-conformance-baseline.yml`](https://github.com/langchain-ai/langgraph-api/blob/main/a2a-conformance-baseline.yml).
+CI fails if a new failure appears, and also if a listed requirement starts passing, so the file
+cannot drift from reality.
+
+Read it before you build against a capability. The largest current group is the response wire
+shape: Agent Server declares v1.0 but still emits the v0.3 `kind` discriminator and part shape.
 
 ## Disable A2A
 
