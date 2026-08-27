@@ -51,17 +51,21 @@ OPENAI_API_KEY=<your-openai-api-key>
 Import `configure_livekit` and call it once before creating your `AgentServer`. It builds the tracer provider, registers the LangSmith span processor, and wires it into LiveKit:
 
 ```python
-from langsmith.integrations.livekit import configure_livekit
+from langsmith.integrations.livekit import configure_livekit, set_thread_id
 from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession
 
 # Enable tracing before creating agents.
-configure_livekit()
+processor = configure_livekit(recording_mode="none")
+
+async def on_session_end(ctx: agents.JobContext) -> None:
+    processor.attach_session_report(ctx.make_session_report(), thread_id=ctx.job.id)
 
 server = AgentServer()
 
-@server.rtc_session()
+@server.rtc_session(on_session_end=on_session_end)
 async def my_agent(ctx: agents.JobContext):
+    set_thread_id(ctx.job.id)
     session = AgentSession(
         stt="openai/gpt-4o-mini-transcribe",
         llm="openai/gpt-4o-mini",
@@ -89,14 +93,17 @@ telemetry.set_tracer_provider(provider)
 
 ## Group a conversation into a thread
 
-To group a conversation's runs into a LangSmith [thread](/langsmith/threads), for thread-level views and token and cost aggregation, call `set_thread_id` once per conversation, inside its `@server.rtc_session()` handler before its spans are emitted:
+To group a conversation's runs into a LangSmith [thread](/langsmith/threads), for thread-level views and token and cost aggregation, call `set_thread_id` once per conversation, inside its `@server.rtc_session()` handler before its spans are emitted. Use an ID that is unique among active LiveKit sessions because report and recording delivery use it to find the corresponding trace.
 
 ```python
 from langsmith.integrations.livekit import configure_livekit, set_thread_id
 
-configure_livekit()
+processor = configure_livekit(recording_mode="none")
 
-@server.rtc_session()
+async def on_session_end(ctx: agents.JobContext) -> None:
+    processor.attach_session_report(ctx.make_session_report(), thread_id=ctx.job.id)
+
+@server.rtc_session(on_session_end=on_session_end)
 async def my_agent(ctx: agents.JobContext):
     thread_id = ctx.job.id  # or any id that identifies the conversation
     set_thread_id(thread_id)
@@ -117,9 +124,12 @@ Call `instrument_session` once, right after creating the `AgentSession`, so the 
 from langsmith.integrations.livekit import configure_livekit, set_thread_id
 from livekit.plugins import openai as lk_openai
 
-processor = configure_livekit()
+processor = configure_livekit(recording_mode="none")
 
-@server.rtc_session()
+async def on_session_end(ctx: agents.JobContext) -> None:
+    processor.attach_session_report(ctx.make_session_report(), thread_id=ctx.job.id)
+
+@server.rtc_session(on_session_end=on_session_end)
 async def my_agent(ctx: agents.JobContext):
     thread_id = ctx.job.id  # or any id that identifies the conversation
     set_thread_id(thread_id)
@@ -138,7 +148,7 @@ The integration attaches the call recording to the conversation's root span, tog
 
 That timestamp matters. LiveKit's recorder starts inside `session.start()`, after room connect and agent setup, so the recording's first sample is captured a few seconds later than the trace itself begins. LangSmith uses the offset between the two to line the audio player up with the waterfall, so seeking to a span plays the moment that span describes.
 
-Each conversation's root span is held open until you deliver its recording, then exported with the audio attached. There are two ways to deliver it.
+Each conversation's root span is held until you deliver its session report. In Egress mode, the root waits for both the report and the separately delivered recording. There are two ways to deliver audio.
 
 ### Record with LiveKit's session recording
 
@@ -171,7 +181,7 @@ By the time `on_session_end` runs, LiveKit's recorder has closed, so the report 
 
 Pass the same `thread_id` you gave `set_thread_id`, so the recording is matched to the right conversation.
 
-Because nothing reads the recording file directly, this works unchanged in a deployed worker, where `ctx.session_directory` is a temporary directory LiveKit deletes when the session ends.
+`attach_session_report` reads and embeds the recording during the callback. This works in a deployed worker even though LiveKit deletes the temporary `ctx.session_directory` after session shutdown.
 
 <Note>
 In console mode, also pass `--record` on the command line (`python agent.py console --record`). Without it LiveKit creates the recorder but never starts it, so there is no file to attach. The recording reflects what was played to the client, so a barge-in shows up truncated.
@@ -185,10 +195,12 @@ In console mode, also pass `--record` on the command line (`python agent.py cons
 
 Record the room with [LiveKit Egress](https://docs.livekit.io/home/egress/overview/) when you want the file in your own object storage, or need video. Egress finishes uploading after the call ends, so download the finished file and pass the bytes to `complete_recording`, along with the time its first sample was captured.
 
-Call `attach_session_report` as well. A session report always carries the conversation's chat history, but only carries a recording when LiveKit's own recorder made one — so with egress the report gives you the transcript and `complete_recording` gives you the audio. The root span stays held until `complete_recording` runs, then exports with both.
+Call `attach_session_report` as well. A session report always carries the conversation's chat history, but only carries a recording when LiveKit's own recorder made one. With Egress, the report supplies the transcript and `complete_recording` supplies the audio. They can arrive in either order, and the root exports after both arrive.
 
 ```python
+import asyncio
 import os
+import time
 
 from livekit import agents, api
 from livekit.agents import Agent, AgentServer, AgentSession
@@ -196,8 +208,35 @@ from langsmith.integrations.livekit import configure_livekit, set_thread_id
 
 RECORDING_BUCKET = os.environ["RECORDING_BUCKET"]
 
-processor = configure_livekit()
+processor = configure_livekit(
+    recording_mode="egress",
+    recording_timeout_seconds=180,
+)
 server = AgentServer()
+
+async def wait_for_egress(
+    lkapi: api.LiveKitAPI,
+    egress_id: str,
+    timeout_seconds: float = 120,
+) -> api.EgressInfo:
+    deadline = time.monotonic() + timeout_seconds
+    failed_statuses = {
+        api.EgressStatus.EGRESS_FAILED,
+        api.EgressStatus.EGRESS_ABORTED,
+        api.EgressStatus.EGRESS_LIMIT_REACHED,
+    }
+    while time.monotonic() < deadline:
+        response = await lkapi.egress.list_egress(
+            api.ListEgressRequest(egress_id=egress_id)
+        )
+        if response.items:
+            info = response.items[0]
+            if info.status == api.EgressStatus.EGRESS_COMPLETE:
+                return info
+            if info.status in failed_statuses:
+                raise RuntimeError(f"Egress failed with status {info.status}")
+        await asyncio.sleep(1)
+    raise TimeoutError(f"Egress {egress_id} did not complete in time")
 
 async def on_session_end(ctx: agents.JobContext) -> None:
     # The report has no recording here (egress captured it, not LiveKit's own
@@ -238,15 +277,14 @@ async def my_agent(ctx: agents.JobContext):
             audio = download_from_storage(RECORDING_BUCKET, key)  # your storage client
             processor.complete_recording(
                 thread_id,
-                audio,
-                name="call.ogg",
-                # EgressInfo.started_at is a unix timestamp in nanoseconds. This is
+                data=audio,
+                # EgressInfo.started_at is a Unix timestamp in nanoseconds. This is
                 # when the egress worker began recording, which is what aligns the
                 # audio with the trace.
                 started_at=info.started_at / 1e9,
             )
         except Exception:
-            processor.complete_recording(thread_id, None)  # release without audio
+            processor.complete_recording(thread_id, data=None)  # release without audio
 
     ctx.add_shutdown_callback(attach_recording)
 
@@ -254,7 +292,9 @@ async def my_agent(ctx: agents.JobContext):
     await session.start(room=ctx.room, agent=Agent(instructions="..."))
 ```
 
-`wait_for_egress` polls [`list_egress`](https://docs.livekit.io/home/egress/api/) until the status is `EGRESS_COMPLETE` (or subscribe to the `egress_ended` webhook) and returns the `EgressInfo`, and `download_from_storage` reads the object with your cloud provider's client. LiveKit Egress also writes to [Google Cloud Storage and Azure](https://docs.livekit.io/home/egress/overview/): swap `s3=` for `gcp=api.GCPUpload(...)` or `azure=api.AzureBlobUpload(...)`.
+`wait_for_egress` polls [`list_egress`](https://docs.livekit.io/home/egress/api/) with a bounded timeout and returns the completed `EgressInfo`. For longer-running finalization, subscribe to the `egress_ended` webhook instead of waiting in a job shutdown callback. `download_from_storage` represents your cloud provider's storage client. LiveKit Egress also writes to [Google Cloud Storage and Azure](https://docs.livekit.io/home/egress/overview/): swap `s3=` for `gcp=api.GCPUpload(...)` or `azure=api.AzureBlobUpload(...)`.
+
+The default attachment name and MIME type are `recording.ogg` and `audio/ogg`. Set `name` or `mime_type` in `complete_recording` only when your Egress output uses another format.
 
 <Note>
 Always call `complete_recording`, including on failure with `data=None`, because the root span is held until it runs. If no recording arrives within `recording_timeout_seconds` (30 seconds by default), the trace is exported without audio and the root is marked `ls_audio_attach_status: timeout`.
@@ -262,10 +302,13 @@ Always call `complete_recording`, including on failure with `data=None`, because
 
 ### Trace a session with no audio
 
-If a session has no recording at all, pass `await_recording=False` so its traces export as soon as the session ends instead of waiting out the timeout:
+If a session has no audio, use `recording_mode="none"`. The integration still waits for the session report so it can attach the chat history:
 
 ```python
-configure_livekit(await_recording=False)
+processor = configure_livekit(recording_mode="none")
+
+async def on_session_end(ctx: agents.JobContext) -> None:
+    processor.attach_session_report(ctx.make_session_report(), thread_id=ctx.job.id)
 ```
 
 ## Next steps
