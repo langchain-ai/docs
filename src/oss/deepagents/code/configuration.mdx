@@ -27,7 +27,7 @@ The main config files are:
 
 ## How settings resolve
 
-Deep Agents Code reads settings from several places. The order depends on the setting type.
+Deep Agents Code uses tiered configuration. The precedence order depends on the setting type.
 
 **General options** (interpreter limits, update settings, themes, and other `config.toml` keys) use the first available value in this order:
 
@@ -358,7 +358,7 @@ Large pastes into the chat input are collapsed into compact placeholders (defaul
 
 ## Automatic memory
 
-Deep Agents Code automatically saves learnings to memory. To keep loading memory while stopping automatic saves:
+Deep Agents Code automatically saves learnings to memory. To keep loading memory while stopping automatic saves, change the [automatic memory setting](/oss/deepagents/code/memory-and-skills#automatic-memory):
 
 <Tabs>
     <Tab title="Config file">
@@ -378,7 +378,7 @@ You can still save memories explicitly with `/remember`. The environment variabl
 
 ## Conversation history retention
 
-Offloading a thread with `/offload` writes a markdown archive under `~/.deepagents/conversation_history/`. A best-effort startup sweep deletes archives older than 30 days. The sweep only touches regular `.md` files directly inside the archive directory, never blocks startup, and logs and swallows filesystem errors.
+Offloading a thread with `/offload` writes a markdown archive under `~/.deepagents/conversation_history/`. A startup sweep deletes archives older than 30 days. The sweep only touches regular `.md` files directly inside the archive directory, never blocks startup, and logs and swallows filesystem errors.
 
 Change the retention window, or disable cleanup with `0`:
 
@@ -479,7 +479,7 @@ auto_classifier = "openai:gpt-5.5"
 
 If you omit `allowed`, users can select any model. An empty list blocks all models. If a user's list is invalid, Deep Agents Code blocks all models. If the administrator's list is invalid, Deep Agents Code blocks startup, reload, and other commands that use configuration. The administrator's list replaces the user's list rather than combining with it. The managed `default`, `recent`, and `auto_classifier` values must also appear in the administrator's allowlist.
 
-Adding a model under `[models.providers.<name>].models` makes it available for selection but does not allow it automatically. Add the exact model or a provider wildcard to the allowlist. A wildcard covers only the models available for that provider. If no models are available, Deep Agents Code cannot choose a default. When Deep Agents Code can identify the provider for a bare model name entered in the interface, it converts the name to `provider:model` before checking the allowlist. For Amazon Bedrock models, use `bedrock:<id>` because the model ID itself contains a version colon.
+Adding a model under `[models.providers.<name>].models` makes it available for selection but does not allow it automatically. Add the exact model or a provider wildcard to the allowlist. A wildcard covers only the models available for that provider. If no models are available, Deep Agents Code cannot choose a default. When Deep Agents Code can identify the provider for a bare model name entered in the interface, it converts the name to `provider:model` before checking the allowlist.
 
 <Warning>
     `[sandboxes].default` selects the backend when a user launches with `--sandbox`. It does not force sandboxing. A launch without `--sandbox` runs on the host and reports that it did not use the managed backend.
@@ -496,26 +496,15 @@ source = "https://config.example.com/dcode-policy.toml"
 
 When you configure a remote policy, the local file can contain only the `[managed_config].source` setting. Put the complete policy in the remote TOML file. Deep Agents Code does not combine remote and local policy settings, and the remote file cannot point to another source.
 
-The URL must meet these requirements:
+<Accordion title="View remote policy requirements">
+    The URL must use HTTPS, contain no credentials or query parameters, and be no more than 2,048 ASCII characters. Deep Agents Code does not follow redirects, use proxy environment variables, or save the remote policy to disk.
 
-- Use HTTPS.
-- Use no more than 2,048 ASCII characters.
-- Do not include credentials, a query string, a fragment, whitespace, or control characters.
+    The server must return a non-empty UTF-8 TOML file with HTTP status `200`, no compression, and a maximum size of 1 MiB. Requests time out after five seconds.
 
-Deep Agents Code downloads the policy using Python's default trusted certificate authorities. It ignores proxy environment variables, does not follow redirects, rejects compressed responses, stops the request after five seconds, and accepts up to 1 MiB.
-
-The server must return:
-
-- HTTP status `200`.
-- A complete response that uses either `Content-Length` or chunked transfer encoding.
-- A non-empty UTF-8 TOML file.
-- One of the following `Content-Type` values, if provided: `application/toml`, `text/plain`, or `application/octet-stream`.
-
-Deep Agents Code does not save the remote policy or any authentication details to disk.
-
-<Warning>
-    `SSL_CERT_FILE` and `SSL_CERT_DIR` can change which certificate authorities Python trusts. When you use a remote policy, make sure users cannot change these environment variables for the Deep Agents Code process.
-</Warning>
+    <Warning>
+        `SSL_CERT_FILE` and `SSL_CERT_DIR` can change which certificate authorities Python trusts. Make sure users cannot change these variables for the Deep Agents Code process.
+    </Warning>
+</Accordion>
 
 ### Validate a managed policy
 
@@ -536,22 +525,24 @@ Deep Agents Code stops rather than run without required administrator settings w
 
 If an update fails during a running session, Deep Agents Code continues to use the previous valid policy and reports the failure. A new process cannot start until it can load a valid policy.
 
-An invalid value for any of the following settings also stops startup because using a user value instead could remove a required restriction:
+<Accordion title="View settings that fail closed">
+    An invalid value for any of the following settings stops startup because falling back to a user value could remove a required restriction:
 
-- `interpreter.enable_interpreter`
-- `interpreter.ptc`
-- `interpreter.ptc_acknowledge_unsafe`
-- `models.allowed`
-- `models.auto_classifier`
-- `runtime.recursion_limit`
-- `sandboxes.default`
-- `shell.allow_list`
-- `skills.extra_allowed_dirs`
-- `startup.mode`
-- `startup.yolo_switcher`
-- `tracing.langsmith_redact`
+    - `interpreter.enable_interpreter`
+    - `interpreter.ptc`
+    - `interpreter.ptc_acknowledge_unsafe`
+    - `models.allowed`
+    - `models.auto_classifier`
+    - `runtime.recursion_limit`
+    - `sandboxes.default`
+    - `shell.allow_list`
+    - `skills.extra_allowed_dirs`
+    - `startup.mode`
+    - `startup.yolo_switcher`
+    - `tracing.langsmith_redact`
 
-A known configuration section also stops startup if it has the wrong TOML structure. For other settings, Deep Agents Code ignores an invalid administrator value, uses the next valid source, and lists the ignored setting in `dcode config` and `dcode doctor`.
+    A known configuration section also stops startup if it has the wrong TOML structure. For other settings, Deep Agents Code ignores an invalid administrator value, uses the next valid source, and lists the ignored setting in `dcode config` and `dcode doctor`.
+</Accordion>
 
 ## Managed deployments
 
@@ -690,7 +681,7 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_RECURSION_LIMIT" type="integer" post={["optional"]}>
-    LangGraph graph step budget, which is the maximum number of node invocations the `dcode` agent graph may execute per turn. Valid range: `25`–`100000`. Invalid values log a warning and resolution continues to the next source. The `--recursion-limit` CLI flag takes precedence unless administrator-owned managed configuration sets the value. When no source sets a valid value, Deep Agents Code leaves the limit to the LangGraph server. See [Agent runtime limits](/oss/deepagents/code/config-file#agent-runtime-limits).
+    LangGraph graph step budget, which is the maximum number of node invocations the `dcode` agent graph may execute per turn. Valid range: `25`–`100000`. Invalid values log a warning and resolution continues to the next source. When unset, the LangGraph server default applies. See [Agent runtime limits](/oss/deepagents/code/config-file#agent-runtime-limits).
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_SHELL_ALLOW_LIST" type="string" post={["optional"]}>
