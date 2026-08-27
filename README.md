@@ -147,6 +147,11 @@ These can be used directly using the `Makefile` or via the `docs` CLI tool:
 
 After running `make install`, you can use `make lint_prose` to ensure your writing meets our style guide rules.
 
+`make lint_prose` installs the Vale version pinned in `.mise.toml` to `.bin/vale`, which is the same version the
+`lint-prose` CI workflow uses. Bump the pin in `.mise.toml` only; the `Makefile`, `scripts/install-vale.sh`, and
+the workflow all read it from there. If you already have a different `vale` on your `PATH` (from Homebrew, say),
+the pinned copy in `.bin/` takes precedence, so local results match CI.
+
 ### Codespell
 
 `make lint` runs `uv run codespell src` to check source documentation for common spelling errors.

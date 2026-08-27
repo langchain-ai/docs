@@ -1139,7 +1139,7 @@ Sandboxes are not proactively restarted. They start again when a user or API act
 ## Enable Engine
 
 <Info>
-Self-hosted deployments require LangSmith Helm chart `0.16.0` or later and a license that includes the Engine entitlement. Engine is licensed separately and meters its own usage in LCUs. [Contact your account team](https://www.langchain.com/contact-sales) to have it added to your order.
+Self-hosted deployments require LangSmith Helm chart `0.16.0` or later and a license that includes the Engine entitlement. Engine is licensed separately and meters its own usage in LCUs. [Contact our sales team](https://www.langchain.com/contact-sales) to have it added to your order.
 </Info>
 
 [Engine](/langsmith/engine-overview) watches production traces, clusters recurring failures into issues, diagnoses each issue, and proposes fixes. Engine is disabled by default.
@@ -1195,7 +1195,7 @@ Engine also adds configuration to `platform-backend` and `ingest-queue`, which d
     On GCP, this uses the same host LangSmith already uses for license verification and billing telemetry, so Engine adds a path rather than a new egress destination.
 
     <Note>
-    Engine is available for self-hosted deployments in **AWS US** and **GCP US**. Check [Availability by cloud and region](/langsmith/engine-self-hosted#availability-by-cloud-and-region) and confirm coverage with your account team before planning a rollout.
+    Engine is available for self-hosted deployments in **AWS US** and **GCP US**. Check [Availability by cloud and region](/langsmith/engine-self-hosted#availability-by-cloud-and-region) and confirm coverage with [our sales team](https://www.langchain.com/contact-sales) before planning a rollout.
     </Note>
 
     Add the gateway as a specific allowlist entry rather than opening general egress. To keep AWS traffic on private networking, [connect to LangSmith Intelligence with AWS PrivateLink](/langsmith/engine-self-hosted#connect-with-aws-privatelink). Requests use a short-lived license JWT obtained during LangSmith license verification. Engine's traffic is separate from the billing and operational telemetry described in [Configure egress](/langsmith/self-host-egress), even where it shares a host.

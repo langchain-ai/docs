@@ -71,7 +71,9 @@ The service must be running and listening on the specified port before you reque
 
 ### Make requests
 
-The returned `ServiceURL` object has built-in HTTP helpers that handle authentication automatically. Tokens refresh transparently before they expire, so no manual management is needed.
+The returned `ServiceURL` object has built-in HTTP helpers that inject the auth header for you.
+
+Tokens are short-lived (default 10 minutes, max 24 hours) and there is no server-side refresh mechanism. When a token expires, request a new one by calling `sb.service(port=...)` again.
 
 ```python
 svc = sb.service(port=8000)
