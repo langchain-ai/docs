@@ -28,6 +28,8 @@ As you use the agent, it automatically stores information in `~/.deepagents/<age
 2. **Response**: Checks memory when uncertain during execution
 3. **Learning**: Automatically saves new information for future sessions
 
+To keep loading memory while stopping automatic saves, see [Automatic memory](/oss/deepagents/code/configuration#automatic-memory).
+
 The agent organizes its memories by topic with descriptive filenames:
 
 ```
