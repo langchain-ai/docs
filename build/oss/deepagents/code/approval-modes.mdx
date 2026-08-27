@@ -22,25 +22,15 @@ Read-only tools such as `ls`, `read_file`, `glob`, and `grep` always run without
 | **Auto** | Approves routine actions automatically; asks the model to review anything uncertain; falls back to you after repeated denials or failures |
 | **YOLO** | Runs gated actions with no review at all |
 
-Toggle between Manual and Auto at any time during a session with `Shift+Tab` or `Ctrl+T`. YOLO cannot be entered through the keyboard toggle.
-
 <Warning>
     Auto is an authorization heuristic for a local coding agent. It is **not** sandbox containment, an operating-system boundary, or a guarantee that model-generated actions are safe.
 </Warning>
 
 ## Enable Auto
 
-Auto is an experimental beta. To use it, set the opt-in flag and then choose Auto for your session.
+Auto is eligible only in interactive, unsandboxed sessions.
 
 <Steps>
-
-    <Step title="Set the experimental opt-in" icon="key">
-        Add the environment variable to your shell or `~/.deepagents/.env`:
-
-        ```bash
-        export DEEPAGENTS_CODE_EXPERIMENTAL=1
-        ```
-    </Step>
 
     <Step title="Launch with Auto" icon="terminal">
         ```bash
@@ -54,11 +44,9 @@ Auto is an experimental beta. To use it, set the opt-in flag and then choose Aut
         mode = "auto"
         ```
 
-        You can also toggle Auto on and off mid-session with `Shift+Tab` or `Ctrl+T`.
+        You can also cycle to Auto mid-session with `Shift+Tab`.
     </Step>
 </Steps>
-
-If Auto is requested without the experimental opt-in, or in a sandboxed session, it falls back to Manual with a warning.
 
 ## Enable YOLO
 
@@ -82,14 +70,14 @@ YOLO runs gated actions without any review. Use it only when you accept that the
     </Step>
 </Steps>
 
-A session launched in YOLO moves to Manual when you press `Shift+Tab` or `Ctrl+T`. You cannot switch back to YOLO with the keyboard toggle.
+Press `Shift+Tab` to cycle YOLO → Manual → Auto → YOLO. Set [`startup.yolo_switcher = false`](/oss/deepagents/code/config-file#startup-approval-mode) to omit YOLO from the cycle.
 
 ## How Auto works
 
 Auto keeps the same gated-action rules as Manual but changes how those actions are reviewed. It uses two stages:
 
 1. **Routine actions run automatically.** A write to a source file like `src/parser.py` or a read-only Git command like `git status` proceeds without a prompt. Sensitive targets like `.github/workflows/ci.yml` or mutating commands like `git commit` go to the next stage.
-2. **The model reviews the rest.** For anything not clearly routine, the active model checks whether the action matches what you asked for. Only your literal prompt can authorize an action. If the model denies a call, the agent gets an error result and can revise its plan.
+2. **The model reviews the rest.** For anything not clearly routine, the active model checks whether the action matches your requested outcome. Ordinary steps reasonably necessary for that outcome can proceed even when you did not name each implementation detail. High-risk effects, such as sending local content to an unconfigured destination, still require explicit authorization. If the model denies a call, the agent gets an error result and can revise its plan.
 
 After repeated denials or classifier failures, Auto stops and shows you the normal approval prompt for the next batch, then continues in Auto mode.
 
@@ -202,27 +190,15 @@ The decision plan is bound to the thread, mode, batch, and exact gated calls. Mi
 
 ## Where Auto and YOLO are available
 
-Auto and YOLO are interactive-mode features. They are not available in non-interactive mode (`-n` or piped stdin) or in ACP server mode. Headless runs use fail-closed MCP routing and `--shell-allow-list` for shell access.
+Auto and YOLO are interactive-mode features. Auto is eligible only in an interactive, unsandboxed session; a remote `--sandbox` forces it to Manual. YOLO is interactive-only as well and requires the risk acknowledgement regardless of sandbox. Headless runs use fail-closed MCP routing and `--shell-allow-list` for shell access.
 
-Auto also falls back to Manual when:
+In non-interactive mode (`-n` or piped stdin), `-y`/`--auto-approve` and `--yolo` are ignored. Headless runs use fail-closed MCP routing and `--shell-allow-list` for shell access.
 
-- `DEEPAGENTS_CODE_EXPERIMENTAL=1` is not set.
-- A remote `--sandbox` is active (Auto is for unsandboxed local sessions only).
+### Remember the last mode across sessions
 
-## Reference
+When no flag or configured mode applies, Deep Agents Code restores the last selected Manual or Auto mode. YOLO must be explicitly selected. See [Startup approval mode](/oss/deepagents/code/config-file#startup-approval-mode).
 
-### Flag and config precedence
-
-`--yolo` takes priority over `-y`/`--auto-approve`, which takes priority over `[startup].mode`.
-
-| Source | Value | Selects |
-|---|---|---|
-| `--yolo` | flag | YOLO (interactive only, after acknowledgement) |
-| `-y`, `--auto-approve` | flag | Auto (requires `DEEPAGENTS_CODE_EXPERIMENTAL=1`) |
-| `[startup].mode` | `"manual"` | Manual |
-| `[startup].mode` | `"auto"` | Auto |
-| `[startup].mode` | `"yolo"` | YOLO |
-| `Shift+Tab`, `Ctrl+T` | toggle | Manual and Auto (never enters YOLO) |
+For flag and configuration precedence, see [Startup approval mode](/oss/deepagents/code/config-file#startup-approval-mode).
 
 ## See also
 
