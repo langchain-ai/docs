@@ -233,13 +233,105 @@ Valid names are `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, 
     ```
 </Note>
 
-Run `/tools` in a session to inspect the active tool set. From the shell, place tool-shaping flags before the subcommand:
+Run [`/tools`](#diagnose-and-audit-a-session) in a session to inspect the active tool set. From the shell, place tool-shaping flags before the subcommand:
 
 ```bash
 dcode tools list
 dcode --allow-fs-tools ls,read_file tools list
 dcode --allow-fs-tools ls,read_file tools list --json
 ```
+
+## Diagnose and audit a session
+
+Deep Agents Code exposes read-only slash commands for inspecting what a session loads and spends: `/tools` lists the active tool set, `/context-doctor` audits the context injected before the conversation starts, and `/cost` reports the thread's estimated spend. Use them to confirm that a tool-shaping flag took effect or to find the source of unexpected context growth.
+
+### List available tools
+
+Run `/tools` in a session to list the tools the current agent can call, grouped into built-in tools and tools from each MCP server:
+
+```text
+/tools
+```
+
+```text
+**7 tools available**
+
+### Built-in
+
+| Tool | Description |
+|---|---|
+| read_file | Read a file from the filesystem |
+| write_file | Write content to a file |
+| execute | Run a shell command |
+| web_search | Search the web |
+| task | Launch a subagent |
+
+### github
+
+- create_issue
+- search_repositories
+
+MCP tool descriptions are available in /mcp.
+
+### Unavailable MCP servers
+
+| Server | Status |
+|---|---|
+| slack | needs login |
+```
+
+Unavailable MCP servers appear in a separate table. Run `/reload` after changing MCP configuration, then use `/tools` to verify the active tool set. For the non-interactive equivalent, see [`dcode tools list`](#cli-commands).
+
+### Audit injected context
+
+Run `/context-doctor` in a session to audit what the session injects into every model request and its estimated token cost. The report breaks the injected context into the base system prompt, `AGENTS.md` memory files, the skills index, built-in tool schemas, and each MCP server's tool schemas, then totals what the agent carries before the conversation starts:
+
+```text
+/context-doctor
+```
+
+```text
+Fresh-session context audit (estimated tokens)
+
+System prompt (base)                      ~6
+AGENTS.md memory (1 files)            ~1,286
+Skills index (1 loaded)                 ~477  largest: code-review ~15
+Built-in tool schemas (1 tools)          ~13  sent with every request
+MCP: docs (1 tool)                       ~31
+MCP: broken                               ~0  connection failed
+TOTAL injected before conversation  ~     1,813
+Conversation history             ~     4,200
+Provider-reported context              9,000
+Unattributed / estimation delta       +2,987
+
+Approximate: section counts use about four characters per token.
+Trim skills or disable an MCP server, then run /context-doctor again.
+```
+
+A large unattributed delta or injected total points to context you may want to trim. After changing skills or MCP configuration, run `/context-doctor` again to confirm.
+
+### Track thread cost
+
+Run `/cost` in a session to show the thread's estimated cost in USD:
+
+```text
+/cost
+```
+
+```text
+Estimated thread cost: $1.03
+
+By type since this thread was loaded:
+- Assistant: $0.87
+- Subagents: $0.16
+
+By model since this thread was loaded:
+- anthropic:claude-sonnet-4-5: $1.03
+```
+
+The total includes model calls from the assistant, subagents, offloading, Auto classification, and rubric grading. It persists when you resume or switch threads. Estimates use the [genai-prices](https://github.com/pydantic/genai-prices) catalog; requests without pricing are excluded.
+
+Use `/tokens` for the token counts behind the estimate. For uncovered models, [add a custom pricing override](/oss/deepagents/code/configuration#custom-pricing-overrides).
 
 ## Startup commands and initial prompts
 
@@ -389,7 +481,7 @@ Pair `dcode doctor` with `dcode config show` when you need both a high-level hea
 | `dcode agents reset --agent NAME` | Clear agent memory and reset to default. Supports `--dry-run` |
 | `dcode agents reset --agent NAME --target SOURCE` | Copy memory from another agent |
 | `dcode update`                  | Check for and install Deep Agents Code updates |
-| `dcode doctor`                  | Run diagnostics without launching a session |
+| `dcode doctor`                  | Run diagnostics without launching a session. See [Run diagnostics](#run-diagnostics-dcode-doctor) |
 | `dcode skills list [--project]`           | List all skills (alias: `ls`) |
 | `dcode skills create NAME [--project]`    | Create a new skill with template `SKILL.md`. Idempotent—re-creating an existing skill prints an informational message instead of an error |
 | `dcode skills info NAME [--project]`      | Show detailed information about a skill |
@@ -418,3 +510,4 @@ Destructive commands (`agents reset`, `skills delete`, `threads delete`) support
 - [Configuration](/oss/deepagents/code/configuration)
 - [Config file](/oss/deepagents/code/config-file)
 - [Provider credentials](/oss/deepagents/code/credentials)
+- [MCP tools](/oss/deepagents/code/mcp-tools)
