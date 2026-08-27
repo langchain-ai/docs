@@ -65,9 +65,12 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
         - `/skill-creator [task]`: Guide for creating effective agent skills.
         - `/offload` (alias `/compact`) - Free up context window space by offloading messages to storage with a summary placeholder. The agent can retrieve the full history from the offloaded file if needed.
         - `/context`: Open a color-coded context-window usage report with model capacity, usage categories, and remaining space.
+        - `/context-doctor`: Audit the context injected into the session and its estimated token cost. See [Audit injected context](/oss/deepagents/code/cli-reference#audit-injected-context).
+        - `/tools`: List the built-in and MCP tools available to the current agent. See [List available tools](/oss/deepagents/code/cli-reference#list-available-tools).
+        - `/cost`: Show the thread's estimated cost. See [Track thread cost](/oss/deepagents/code/cli-reference#track-thread-cost).
         - `/tokens`: Display current context window token usage breakdown.
-        - `/clear`: Clear conversation history and start a new thread.
-        - `/force-clear`: Stop active work, clear the chat, and start a new thread.
+        - `/clear`: Start a fresh thread.
+        - `/force-clear`: Recover a stuck session with a fresh thread.
         - `/copy`: Copy the latest assistant message to the clipboard.
         - `/prompts`: Search, preview, copy, and reuse previously submitted prompts.
         - `/threads`: Browse and resume previous conversation threads.
@@ -111,9 +114,10 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
         | `Enter` | Submit prompt |
         | `Shift+Enter`, `Ctrl+J`, `Alt+Enter`, or `Ctrl+Enter` | Insert newline |
         | `@filename` | Auto-complete files and inject content |
-        | `Shift+Tab` or `Ctrl+T` | Toggle between Manual and Auto [approval mode](/oss/deepagents/code/approval-modes) |
-        | `Ctrl+X` | Open prompt in external editor |
-        | `Ctrl+N` | Review pending notifications |
+        | `Shift+Tab` | Cycle [approval modes](/oss/deepagents/code/approval-modes) |
+        | `Ctrl+G` | Open prompt in external editor |
+        | `Ctrl+T` | Expand or collapse the subagent panel when one is present |
+        | `Ctrl+N` | Review pending notifications when the panel is open |
         | `Ctrl+O` | Expand/collapse the most recent tool output |
         | `Escape` | Interrupt current operation |
         | `Ctrl+C` | Interrupt or quit |
@@ -159,9 +163,11 @@ Run `/context` to open a color-coded report of the current model's context-windo
 
 Provider-reported totals remain distinct from local conversation estimates. When a provider total is unavailable, the report labels the conversation count as an estimate and marks the total usage as unavailable. Use `/tokens` when you want a text summary in the conversation transcript instead.
 
+When usage grows faster than expected, run `/context-doctor` to attribute tokens to each injected component: the base system prompt, memory files, the skills index, built-in tool schemas, and MCP tool schemas. To confirm which tools the agent can currently call, run `/tools`. For the thread's running cost estimate, run `/cost`; the same figure appears in the status bar. See [Diagnose and audit a session](/oss/deepagents/code/cli-reference#diagnose-and-audit-a-session).
+
 ### External editor
 
-Press `Ctrl+X` or type `/editor` to compose prompts in an external editor. Deep Agents Code checks `$VISUAL`, then `$EDITOR`, then falls back to `vi` (macOS/Linux) or `notepad` (Windows). GUI editors (VS Code, Cursor, Zed, etc.) automatically receive a `--wait` flag so Deep Agents Code blocks until you close the file.
+Press `Ctrl+G` or type `/editor` to compose prompts in an external editor. Deep Agents Code checks `$VISUAL`, then `$EDITOR`, then falls back to `vi` (macOS/Linux) or `notepad` (Windows). GUI editors (VS Code, Cursor, Zed, etc.) automatically receive a `--wait` flag so Deep Agents Code blocks until you close the file.
 
 ```bash
 # Set in your shell profile (~/.zshrc, ~/.bashrc, etc.)
