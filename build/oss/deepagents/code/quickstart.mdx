@@ -67,6 +67,7 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
         - `/context`: Open a color-coded context-window usage report with model capacity, usage categories, and remaining space.
         - `/context-doctor`: Audit the context injected into the session and its estimated token cost. See [Audit injected context](/oss/deepagents/code/cli-reference#audit-injected-context).
         - `/tools`: List the built-in and MCP tools available to the current agent. See [List available tools](/oss/deepagents/code/cli-reference#list-available-tools).
+        - `/extensions`: List loaded [Python extensions](/oss/deepagents/code/extensions), their registrations, and their source paths. Requires `DEEPAGENTS_CODE_EXPERIMENTAL=1`.
         - `/cost`: Show the thread's estimated cost. See [Track thread cost](/oss/deepagents/code/cli-reference#track-thread-cost).
         - `/tokens`: Display current context window token usage breakdown.
         - `/clear`: Start a fresh thread.
