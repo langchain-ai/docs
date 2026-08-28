@@ -64,6 +64,25 @@ dcode --clear-default-model
 
 You can also pin a default from the interactive `/model` switcher (`Ctrl+S`) or set `[models].default` in `config.toml`. See [Set a default model](/oss/deepagents/code/providers#set-a-default-model).
 
+### Choose a summarization model
+
+Use a separate model for automatic context compaction, `/offload`, and `/compact` without changing the main agent model:
+
+```bash
+# Set the summarization model for this launch
+dcode --summarization-model openai:gpt-5.6-sol
+```
+
+In an interactive session, run `/summarization-model` to open the model picker, pass a model spec to switch directly, or pass `clear` to reuse the main agent model:
+
+```text
+/summarization-model
+/summarization-model openai:gpt-5.6-sol
+/summarization-model clear
+```
+
+The summarization model resolves from `--summarization-model`, then `[models].summarization_default` in `config.toml`, then the main agent model. See [Set a summarization model](/oss/deepagents/code/config-file#set-a-summarization-model).
+
 ### Model parameters and profile overrides
 
 Pass extra constructor kwargs to the model with `--model-params` as a JSON string. These apply for the current session only and override `config.toml` provider params:
@@ -93,6 +112,23 @@ dcode --install ollama
 ```
 
 Add `--package` to install an arbitrary provider package via `uv --with` (see [Arbitrary providers](/oss/deepagents/code/config-file#arbitrary-providers)), and `--yes` to skip confirmation prompts. To preinstall extras during the initial CLI install, set `DEEPAGENTS_CODE_EXTRAS` (for example, `DEEPAGENTS_CODE_EXTRAS="groq,fireworks"`).
+
+### Remove an optional extra
+
+Remove one installed extra while preserving the rest of the Deep Agents Code installation:
+
+<CodeGroup>
+    ```bash Shell
+    dcode uninstall groq
+    dcode --uninstall groq
+    ```
+
+    ```text In session
+    /uninstall groq
+    ```
+</CodeGroup>
+
+Removal rebuilds a uv tool installation without the selected extra while preserving the interpreter, release channel, other extras, and packages installed with `--package`.
 
 ## Agents and sessions
 
@@ -137,6 +173,8 @@ Use `-q`/`--quiet` to emit only the agent's response on stdout (for piping into 
 dcode -n "Generate a .gitignore for Python" -q > .gitignore
 dcode -n "List dependencies" -q --no-stream | sort
 ```
+
+Add `--show-reasoning` to display provider-visible reasoning. In an interactive session, reasoning streams into a separate row that collapses when the phase ends; press `Ctrl+O` to reopen it. In non-interactive mode, reasoning goes to stderr so the final answer on stdout remains pipeable. This setting is off by default and applies for the full session. See [Show provider-visible reasoning](/oss/deepagents/code/config-file#show-provider-visible-reasoning) for persistent configuration.
 
 Cap agent runs in CI with `--max-turns` or `--timeout`. Both exit with code 124 when the budget is exceeded. Requires `-n` or piped stdin:
 
@@ -396,6 +434,7 @@ Run OAuth login for an MCP server marked `auth: "oauth"` with `dcode mcp login <
 |------------------------|-------------------------------------------------------------|
 | `-a`, `--agent NAME`   | Use named agent with separate memory. Overrides `[agents].recent` and `[agents].default` in `config.toml`. Default: `agent` (or the most recently used agent if `[agents].recent` is set) |
 | `-M`, `--model MODEL`  | Use a specific model (`provider:model`)                    |
+| `--summarization-model MODEL` | Model used for context-compaction summaries. Overrides `[models].summarization_default`; defaults to the main agent model |
 | `--model-params JSON`  | Extra kwargs to pass to the model as a JSON string (e.g., `'{"temperature": 0.7}'`) |
 | `--max-retries N`      | Override retries after a transient model error. Default: `5`; set to `0` to disable retries |
 | `--default-model [MODEL]` | Set the [default model](/oss/deepagents/code/providers#set-a-default-model) (omit `MODEL` to view the current default) |
@@ -413,6 +452,7 @@ Run OAuth login for an MCP server marked `auth: "oauth"` with `dcode mcp login <
 | `--timeout SECONDS`    | Hard wall-clock timeout for non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Non-interactive mode and piping](#non-interactive-mode-and-piping) |
 | `-q`, `--quiet`        | Clean output for piping—only the agent's response goes to stdout. Requires `-n` or piped stdin |
 | `--no-stream`          | Buffer the full response and write to stdout at once instead of streaming. Requires `-n` or piped stdin |
+| `--show-reasoning`     | Show provider-visible reasoning in the interactive transcript or on stderr in non-interactive mode. Off by default |
 | `--stdin`              | Read input from stdin explicitly instead of auto-detection. Errors clearly when stdin is unavailable or is a TTY |
 | `-y`, `--auto-approve` | Enable classifier-backed [Auto](/oss/deepagents/code/approval-modes) mode. Requires an interactive local session; toggle with `Shift+Tab` during an interactive session |
 | `--auto-classifier-model MODEL` | Model used by the [Auto classifier](/oss/deepagents/code/approval-modes#select-a-classifier-model) to review gated tool calls (`provider:model` format). Overrides `DEEPAGENTS_CODE_AUTO_CLASSIFIER_MODEL` and `[models].auto_classifier` in `config.toml`. Interactive TUI sessions only |
@@ -434,6 +474,7 @@ Run OAuth login for an MCP server marked `auth: "oauth"` with `dcode mcp login <
 | `--update`             | Check for and install updates, then exit                    |
 | `--auto-update`        | Toggle automatic updates on or off, then exit               |
 | `--install NAME`       | Install an optional extra (e.g., `quickjs`, `daytona`, `fireworks`), then exit. Add `--package` to treat `NAME` as a custom provider package installed via `uv --with` rather than an extra (see [arbitrary providers](/oss/deepagents/code/config-file#arbitrary-providers)), and `--yes` to skip confirmation prompts |
+| `--uninstall NAME`     | Remove an installed optional extra and exit. Alias for `dcode uninstall NAME` |
 | `-v`, `--version`      | Display version                                             |
 | `-h`, `--help`         | Show help                                                   |
 
@@ -485,6 +526,7 @@ Pair `dcode doctor` with `dcode config show` when you need both a high-level hea
 | `dcode agents list`             | List all agents (alias: `ls`)          |
 | `dcode agents reset --agent NAME` | Clear agent memory and reset to default. Supports `--dry-run` |
 | `dcode agents reset --agent NAME --target SOURCE` | Copy memory from another agent |
+| `dcode uninstall NAME`         | Remove one installed optional extra while preserving the rest of the tool environment |
 | `dcode update`                  | Check for and install Deep Agents Code updates |
 | `dcode doctor`                  | Run diagnostics without launching a session. See [Run diagnostics](#run-diagnostics-dcode-doctor) |
 | `dcode skills list [--project]`           | List all skills (alias: `ls`) |
