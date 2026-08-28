@@ -138277,6 +138277,11 @@ Trim skills or disable an MCP server, then run /context-doctor again.
 
 A large unattributed delta or injected total points to context you may want to trim. After changing skills or MCP configuration, run `/context-doctor` again to confirm.
 
+`/context-doctor` complements two related commands:
+
+- [`/context`](/oss/deepagents/code/quickstart#inspect-context-window-usage) shows how full the context window is right now; `/context-doctor` shows why, by attributing tokens to each injected component.
+- [`dcode doctor`](#run-diagnostics-dcode-doctor) checks the health of the installation and configuration without launching a session; `/context-doctor` audits the context of a live session from inside it.
+
 ### Track thread cost
 
 Run `/cost` in a session to show the thread's estimated cost in USD:
@@ -138350,7 +138355,7 @@ dcode --trust-project-mcp
 dcode -n "run tests" --trust-project-mcp
 ```
 
-Run OAuth login for MCP servers marked `auth: "oauth"` with `dcode mcp login <server>`. See [MCP tools](/oss/deepagents/code/mcp-tools).
+Run OAuth login for an MCP server marked `auth: "oauth"` with `dcode mcp login <server>`. Run `dcode mcp login` without a server name to list configured OAuth servers that need login. See [MCP tools](/oss/deepagents/code/mcp-tools).
 
 ## Command-line options
 
@@ -138455,7 +138460,7 @@ Pair `dcode doctor` with `dcode config show` when you need both a high-level hea
 | `dcode skills delete NAME [--project] [-f]` | Delete a skill and its contents. Supports `--dry-run` |
 | `dcode threads list [--agent NAME] [--limit N]` | List sessions (alias: `ls`). Default limit: 20. `-n` is a short flag for `--limit`. Additional flags: `--sort {created,updated}`, `--branch TEXT` (filter by git branch), `--cwd [PATH]` (filter by working directory; bare flag uses current directory), `-v`/`--verbose` (show all columns including branch, created time, and initial prompt), `-r`/`--relative` (relative timestamps) |
 | `dcode threads delete ID`       | Delete a session. Supports `--dry-run` |
-| `dcode mcp login NAME [--mcp-config PATH]` | Run the OAuth login flow for an MCP server marked `auth: "oauth"`. See [MCP tools](/oss/deepagents/code/mcp-tools#oauth-login) |
+| `dcode mcp login [NAME] [--mcp-config PATH]` | With `NAME`, run the OAuth login flow for a server marked `auth: "oauth"`. Omit `NAME` to list configured OAuth servers that need login. See [MCP tools](/oss/deepagents/code/mcp-tools#oauth-login) |
 | `dcode mcp config`              | Show MCP config discovery paths        |
 | `dcode config show`             | Show every config option's effective value and the source it resolves from. See [Inspect configuration](#inspect-configuration-dcode-config) |
 | `dcode config list`             | List all available config options with their type, default, and where each can be set (alias: `ls`) |
@@ -141104,17 +141109,17 @@ For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
     Server names must match `[A-Za-z0-9_-]+`. Names are used as on-disk basenames for OAuth token files, so path separators and other shell metacharacters are rejected at config load.
 </Note>
 
-### Header environment variables
+### Environment variable interpolation
 
-Header values support `${VAR}` substitution from the parent shell, resolved at server activation rather than at config load. One unset variable only fails the server that needs it; the rest still come up.
+String values in `command`, `args`, `env`, `url`, and `headers` support `${VAR}` references to parent-shell environment variables. Use `${VAR:-default}` to provide a value when the variable is unset or empty.
 
-```json title=".mcp.json"
+```json title="~/.deepagents/.mcp.json"
 {
     "mcpServers": {
-        "internal-api": {
-            "type": "http",
-            "url": "https://api.example.com/mcp",
-            "headers": { "Authorization": "Bearer ${INTERNAL_API_TOKEN}" }
+        "work-docs": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem", "${WORK_DOCS_DIR:-/tmp/work-docs}"],
+            "env": { "LOG_LEVEL": "${MCP_LOG_LEVEL:-info}" }
         }
     }
 }
@@ -141242,9 +141247,19 @@ To connect Deep Agents Code to LangSmith, use the [LangSmith Remote MCP](/langsm
 
 ### Run the login flow
 
+List configured OAuth servers without stored credentials:
+
+```bash
+dcode mcp login
+```
+
+Then run the login flow for a server:
+
 ```bash
 dcode mcp login linear
 ```
+
+The list uses the same trust-gated configuration as the login flow. It reports servers that have `auth: "oauth"` but no stored token. It does not check token expiration.
 
 What happens depends on the server's host:
 
@@ -141279,6 +141294,8 @@ The `<sha256-16(url)>` segment is the first 16 hex characters of the SHA-256 of 
 ### Re-authentication
 
 When refresh fails at runtime (the refresh token expired or was revoked), Deep Agents Code marks the server as `unauthenticated` instead of crashing the agent. The welcome banner shows the count of unauthenticated servers, and `/mcp` reports the reason per server. Re-run `dcode mcp login <server>` to refresh credentials — your conversation continues without restarting.
+
+To re-authenticate an OAuth server without leaving your session, open `/mcp`, select the server, and press `Enter`.
 
 ## Server status
 
@@ -141383,8 +141400,8 @@ Connected MCP servers and their tools are automatically listed in the agent's sy
         A pre-flight validation rejected `--mcp-config` (or an auto-discovered `.mcp.json`). Common causes: an unsupported server name (must match `[A-Za-z0-9_-]+`), `auth: oauth` on a stdio server, both `command` and `url` set on the same entry, or a header value that isn't a string. Fix the highlighted reason and relaunch — Deep Agents Code no longer dumps a multi-page subprocess trace for config errors.
     </Accordion>
 
-    <Accordion title="`${VAR}` header references fail">
-        Header interpolation runs at activation time, so an unset variable only fails the server that needs it. Export the variable in the parent shell or add it to `~/.deepagents/.env`. To debug, set `DEEPAGENTS_CODE_DEBUG=1` and inspect the per-session log path printed to stderr on shutdown.
+    <Accordion title="`${VAR}` references fail">
+        Export the variable in the parent shell, add it to `~/.deepagents/.env`, or give the reference a `${VAR:-default}` fallback. To debug, set `DEEPAGENTS_CODE_DEBUG=1` and inspect the per-session log path printed to stderr on shutdown.
     </Accordion>
 </AccordionGroup>
 

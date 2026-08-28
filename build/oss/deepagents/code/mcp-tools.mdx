@@ -233,17 +233,17 @@ For remote MCP servers, set `type` to `"sse"` or `"http"` and provide a `url`:
     Server names must match `[A-Za-z0-9_-]+`. Names are used as on-disk basenames for OAuth token files, so path separators and other shell metacharacters are rejected at config load.
 </Note>
 
-### Header environment variables
+### Environment variable interpolation
 
-Header values support `${VAR}` substitution from the parent shell, resolved at server activation rather than at config load. One unset variable only fails the server that needs it; the rest still come up.
+String values in `command`, `args`, `env`, `url`, and `headers` support `${VAR}` references to parent-shell environment variables. Use `${VAR:-default}` to provide a value when the variable is unset or empty.
 
-```json title=".mcp.json"
+```json title="~/.deepagents/.mcp.json"
 {
     "mcpServers": {
-        "internal-api": {
-            "type": "http",
-            "url": "https://api.example.com/mcp",
-            "headers": { "Authorization": "Bearer ${INTERNAL_API_TOKEN}" }
+        "work-docs": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem", "${WORK_DOCS_DIR:-/tmp/work-docs}"],
+            "env": { "LOG_LEVEL": "${MCP_LOG_LEVEL:-info}" }
         }
     }
 }
@@ -371,9 +371,19 @@ To connect Deep Agents Code to LangSmith, use the [LangSmith Remote MCP](/langsm
 
 ### Run the login flow
 
+List configured OAuth servers without stored credentials:
+
+```bash
+dcode mcp login
+```
+
+Then run the login flow for a server:
+
 ```bash
 dcode mcp login linear
 ```
+
+The list uses the same trust-gated configuration as the login flow. It reports servers that have `auth: "oauth"` but no stored token. It does not check token expiration.
 
 What happens depends on the server's host:
 
@@ -408,6 +418,8 @@ The `<sha256-16(url)>` segment is the first 16 hex characters of the SHA-256 of 
 ### Re-authentication
 
 When refresh fails at runtime (the refresh token expired or was revoked), Deep Agents Code marks the server as `unauthenticated` instead of crashing the agent. The welcome banner shows the count of unauthenticated servers, and `/mcp` reports the reason per server. Re-run `dcode mcp login <server>` to refresh credentials — your conversation continues without restarting.
+
+To re-authenticate an OAuth server without leaving your session, open `/mcp`, select the server, and press `Enter`.
 
 ## Server status
 
@@ -512,8 +524,8 @@ Connected MCP servers and their tools are automatically listed in the agent's sy
         A pre-flight validation rejected `--mcp-config` (or an auto-discovered `.mcp.json`). Common causes: an unsupported server name (must match `[A-Za-z0-9_-]+`), `auth: oauth` on a stdio server, both `command` and `url` set on the same entry, or a header value that isn't a string. Fix the highlighted reason and relaunch — Deep Agents Code no longer dumps a multi-page subprocess trace for config errors.
     </Accordion>
 
-    <Accordion title="`${VAR}` header references fail">
-        Header interpolation runs at activation time, so an unset variable only fails the server that needs it. Export the variable in the parent shell or add it to `~/.deepagents/.env`. To debug, set `DEEPAGENTS_CODE_DEBUG=1` and inspect the per-session log path printed to stderr on shutdown.
+    <Accordion title="`${VAR}` references fail">
+        Export the variable in the parent shell, add it to `~/.deepagents/.env`, or give the reference a `${VAR:-default}` fallback. To debug, set `DEEPAGENTS_CODE_DEBUG=1` and inspect the per-session log path printed to stderr on shutdown.
     </Accordion>
 </AccordionGroup>
 
