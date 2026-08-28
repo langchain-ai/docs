@@ -233,13 +233,110 @@ Valid names are `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, 
     ```
 </Note>
 
-Run `/tools` in a session to inspect the active tool set. From the shell, place tool-shaping flags before the subcommand:
+Run [`/tools`](#diagnose-and-audit-a-session) in a session to inspect the active tool set. From the shell, place tool-shaping flags before the subcommand:
 
 ```bash
 dcode tools list
 dcode --allow-fs-tools ls,read_file tools list
 dcode --allow-fs-tools ls,read_file tools list --json
 ```
+
+## Diagnose and audit a session
+
+Deep Agents Code exposes read-only slash commands for inspecting what a session loads and spends: `/tools` lists the active tool set, `/context-doctor` audits the context injected before the conversation starts, and `/cost` reports the thread's estimated spend. Use them to confirm that a tool-shaping flag took effect or to find the source of unexpected context growth.
+
+### List available tools
+
+Run `/tools` in a session to list the tools the current agent can call, grouped into built-in tools and tools from each MCP server:
+
+```text
+/tools
+```
+
+```text
+**7 tools available**
+
+### Built-in
+
+| Tool | Description |
+|---|---|
+| read_file | Read a file from the filesystem |
+| write_file | Write content to a file |
+| execute | Run a shell command |
+| web_search | Search the web |
+| task | Launch a subagent |
+
+### github
+
+- create_issue
+- search_repositories
+
+MCP tool descriptions are available in /mcp.
+
+### Unavailable MCP servers
+
+| Server | Status |
+|---|---|
+| slack | needs login |
+```
+
+Unavailable MCP servers appear in a separate table. Run `/reload` after changing MCP configuration, then use `/tools` to verify the active tool set. For the non-interactive equivalent, see [`dcode tools list`](#cli-commands).
+
+### Audit injected context
+
+Run `/context-doctor` in a session to audit what the session injects into every model request and its estimated token cost. The report breaks the injected context into the base system prompt, `AGENTS.md` memory files, the skills index, built-in tool schemas, and each MCP server's tool schemas, then totals what the agent carries before the conversation starts:
+
+```text
+/context-doctor
+```
+
+```text
+Fresh-session context audit (estimated tokens)
+
+System prompt (base)                      ~6
+AGENTS.md memory (1 files)            ~1,286
+Skills index (1 loaded)                 ~477  largest: code-review ~15
+Built-in tool schemas (1 tools)          ~13  sent with every request
+MCP: docs (1 tool)                       ~31
+MCP: broken                               ~0  connection failed
+TOTAL injected before conversation  ~     1,813
+Conversation history             ~     4,200
+Provider-reported context              9,000
+Unattributed / estimation delta       +2,987
+
+Approximate: section counts use about four characters per token.
+Trim skills or disable an MCP server, then run /context-doctor again.
+```
+
+A large unattributed delta or injected total points to context you may want to trim. After changing skills or MCP configuration, run `/context-doctor` again to confirm.
+
+`/context-doctor` complements two related commands:
+
+- [`/context`](/oss/deepagents/code/quickstart#inspect-context-window-usage) shows how full the context window is right now; `/context-doctor` shows why, by attributing tokens to each injected component.
+- [`dcode doctor`](#run-diagnostics-dcode-doctor) checks the health of the installation and configuration without launching a session; `/context-doctor` audits the context of a live session from inside it.
+
+### Track thread cost
+
+Run `/cost` in a session to show the thread's estimated cost in USD:
+
+```text
+/cost
+```
+
+```text
+Estimated thread cost: $1.03
+
+By type since this thread was loaded:
+- Assistant: $0.87
+- Subagents: $0.16
+
+By model since this thread was loaded:
+- anthropic:claude-sonnet-4-5: $1.03
+```
+
+The total includes model calls from the assistant, subagents, offloading, Auto classification, and rubric grading. It persists when you resume or switch threads. Estimates use the [genai-prices](https://github.com/pydantic/genai-prices) catalog; requests without pricing are excluded.
+
+Use `/tokens` for the token counts behind the estimate. For uncovered models, [add a custom pricing override](/oss/deepagents/code/configuration#custom-pricing-overrides).
 
 ## Startup commands and initial prompts
 
@@ -291,7 +388,7 @@ dcode --trust-project-mcp
 dcode -n "run tests" --trust-project-mcp
 ```
 
-Run OAuth login for MCP servers marked `auth: "oauth"` with `dcode mcp login <server>`. See [MCP tools](/oss/deepagents/code/mcp-tools).
+Run OAuth login for an MCP server marked `auth: "oauth"` with `dcode mcp login <server>`. Run `dcode mcp login` without a server name to list configured OAuth servers that need login. See [MCP tools](/oss/deepagents/code/mcp-tools).
 
 ## Command-line options
 
@@ -300,7 +397,7 @@ Run OAuth login for MCP servers marked `auth: "oauth"` with `dcode mcp login <se
 | `-a`, `--agent NAME`   | Use named agent with separate memory. Overrides `[agents].recent` and `[agents].default` in `config.toml`. Default: `agent` (or the most recently used agent if `[agents].recent` is set) |
 | `-M`, `--model MODEL`  | Use a specific model (`provider:model`)                    |
 | `--model-params JSON`  | Extra kwargs to pass to the model as a JSON string (e.g., `'{"temperature": 0.7}'`) |
-| `--max-retries N`      | Override the max retries for transient model errors |
+| `--max-retries N`      | Override retries after a transient model error. Default: `5`; set to `0` to disable retries |
 | `--default-model [MODEL]` | Set the [default model](/oss/deepagents/code/providers#set-a-default-model) (omit `MODEL` to view the current default) |
 | `--clear-default-model` | Clear the [default model](/oss/deepagents/code/providers#set-a-default-model) |
 | `-r`, `--resume [ID]`  | Resume a session: `-r` for most recent, `-r <ID>` for a specific thread |
@@ -311,7 +408,7 @@ Run OAuth login for MCP servers marked `auth: "oauth"` with `dcode mcp login <se
 | `--rubric-model MODEL` | Model the rubric grader uses. Defaults to the main agent model. Requires `-n` or piped stdin |
 | `--rubric-max-iterations N` | Grader iterations per rubric attempt before stopping. Requires `-n` or piped stdin |
 | `-n`, `--non-interactive TEXT` | Run a single task non-interactively and exit. Shell is disabled unless `--shell-allow-list` is set |
-| `--recursion-limit N`  | LangGraph graph step budget (max node invocations per turn). Valid range: `25`–`100000`. Out-of-range or non-integer values log a warning and fall back to the default (`2000`). Overrides `DEEPAGENTS_CODE_RECURSION_LIMIT` and `[runtime].recursion_limit` in `config.toml` |
+| `--recursion-limit N`  | Set the LangGraph graph step budget (maximum node invocations per turn). When unset, the LangGraph server default applies |
 | `--max-turns N`        | Cap agentic turns in non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Non-interactive mode and piping](#non-interactive-mode-and-piping) |
 | `--timeout SECONDS`    | Hard wall-clock timeout for non-interactive mode. Exits with code 124 when exceeded. Requires `-n` or piped stdin. See [Non-interactive mode and piping](#non-interactive-mode-and-piping) |
 | `-q`, `--quiet`        | Clean output for piping—only the agent's response goes to stdout. Requires `-n` or piped stdin |
@@ -331,7 +428,7 @@ Run OAuth login for MCP servers marked `auth: "oauth"` with `dcode mcp login <se
 | `--no-mcp`             | Disable all MCP tool loading                                |
 | `--trust-project-mcp`  | Trust project-level MCP servers without prompting for the current run. Explicit denies still apply. |
 | `--interpreter`        | Enable the JS interpreter (`js_eval`) middleware on the main agent when it has been disabled in config. `js_eval` is enabled by default. |
-| `--interpreter-tools VALUE` | PTC allowlist for `js_eval`: `safe`, `all`, or a comma-separated list of tool names. Default: no PTC (pure REPL) |
+| `--interpreter-tools VALUE` | PTC allowlist for `js_eval`: `safe`, `all`, or a comma-separated list of tool names. Default: `safe` (read-only `read_file`/`glob`/`grep` preset). See [JS interpreter](/oss/deepagents/code/config-file#js-interpreter) |
 | `--profile-override JSON` | Override model profile fields as a JSON string (e.g., `'{"max_input_tokens": 4096}'`). Merged on top of config file profile overrides |
 | `--acp`                | Run as an ACP server over stdio instead of launching the interactive UI |
 | `--update`             | Check for and install updates, then exit                    |
@@ -389,14 +486,14 @@ Pair `dcode doctor` with `dcode config show` when you need both a high-level hea
 | `dcode agents reset --agent NAME` | Clear agent memory and reset to default. Supports `--dry-run` |
 | `dcode agents reset --agent NAME --target SOURCE` | Copy memory from another agent |
 | `dcode update`                  | Check for and install Deep Agents Code updates |
-| `dcode doctor`                  | Run diagnostics without launching a session |
+| `dcode doctor`                  | Run diagnostics without launching a session. See [Run diagnostics](#run-diagnostics-dcode-doctor) |
 | `dcode skills list [--project]`           | List all skills (alias: `ls`) |
 | `dcode skills create NAME [--project]`    | Create a new skill with template `SKILL.md`. Idempotent—re-creating an existing skill prints an informational message instead of an error |
 | `dcode skills info NAME [--project]`      | Show detailed information about a skill |
 | `dcode skills delete NAME [--project] [-f]` | Delete a skill and its contents. Supports `--dry-run` |
 | `dcode threads list [--agent NAME] [--limit N]` | List sessions (alias: `ls`). Default limit: 20. `-n` is a short flag for `--limit`. Additional flags: `--sort {created,updated}`, `--branch TEXT` (filter by git branch), `--cwd [PATH]` (filter by working directory; bare flag uses current directory), `-v`/`--verbose` (show all columns including branch, created time, and initial prompt), `-r`/`--relative` (relative timestamps) |
 | `dcode threads delete ID`       | Delete a session. Supports `--dry-run` |
-| `dcode mcp login NAME [--mcp-config PATH]` | Run the OAuth login flow for an MCP server marked `auth: "oauth"`. See [MCP tools](/oss/deepagents/code/mcp-tools#oauth-login) |
+| `dcode mcp login [NAME] [--mcp-config PATH]` | With `NAME`, run the OAuth login flow for a server marked `auth: "oauth"`. Omit `NAME` to list configured OAuth servers that need login. See [MCP tools](/oss/deepagents/code/mcp-tools#oauth-login) |
 | `dcode mcp config`              | Show MCP config discovery paths        |
 | `dcode config show`             | Show every config option's effective value and the source it resolves from. See [Inspect configuration](#inspect-configuration-dcode-config) |
 | `dcode config list`             | List all available config options with their type, default, and where each can be set (alias: `ls`) |
@@ -418,3 +515,4 @@ Destructive commands (`agents reset`, `skills delete`, `threads delete`) support
 - [Configuration](/oss/deepagents/code/configuration)
 - [Config file](/oss/deepagents/code/config-file)
 - [Provider credentials](/oss/deepagents/code/credentials)
+- [MCP tools](/oss/deepagents/code/mcp-tools)
