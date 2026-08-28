@@ -61,11 +61,43 @@ The registrar also exposes this read-only context:
 
 Do not open long-lived connections or start background tasks during module import. If setup opens a session resource, register an idempotent `on_shutdown` callback to release it.
 
-### Apply runtime changes
+### Register middleware
 
-Tools registered after startup appear on the next model request. Middleware and backend routes change agent graph construction and require `/reload`. Run `/extensions` to list registrations, their source paths and scopes, load failures, and whether a restart is required.
+Register LangChain middleware to add model or tool behavior to the agent. dcode loads middleware when it builds the agent graph.
 
-A separately managed remote agent server must be restarted or redeployed by its operator.
+```python
+from langchain.agents.middleware import AgentMiddleware
+
+from deepagents_code.extensions import ExtensionAPI
+
+
+class ExampleMiddleware(AgentMiddleware):
+    name = "example-middleware"
+
+
+async def extension(d: ExtensionAPI) -> None:
+    d.register_middleware(ExampleMiddleware())
+```
+
+Use an `AgentMiddleware` instance when construction needs configuration. You can also pass a middleware class that has a zero-argument constructor.
+
+### Register tools
+
+Register a callable or `BaseTool` to make it available to the model.
+
+```python
+from deepagents_code.extensions import ExtensionAPI
+
+
+async def extension(d: ExtensionAPI) -> None:
+    def current_directory() -> str:
+        """Return the working directory for the current dcode session."""
+        return str(d.cwd)
+
+    d.register_tool(current_directory)
+```
+
+dcode converts plain callables into LangChain tools by inferring their schema from the function signature and docstring. Extension tools can replace same-named built-in tools. Between extensions, the first registration for a tool name wins.
 
 ### Route virtual storage
 
@@ -74,6 +106,12 @@ Backend route prefixes must be lowercase absolute paths with leading and trailin
 Routed content is available through the model's file tools. Shell `execute` remains attached to the default local or sandbox storage, so shell commands cannot access virtual routed content. A sandboxed agent also rejects a route backed directly by `FilesystemBackend`, because that would expose host storage while shell execution remains in the sandbox.
 
 Extension tools and middleware replace same-named built-ins. Between extensions, the first registration of a route prefix or unit name wins.
+
+### Apply runtime changes
+
+Tools registered after startup appear on the next model request. Middleware and backend routes change agent graph construction and require `/reload`. Run `/extensions` to list registrations, their source paths and scopes, load failures, and whether a restart is required.
+
+A separately managed remote agent server must be restarted or redeployed by its operator.
 
 ## Choose an extension source
 
