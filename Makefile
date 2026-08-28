@@ -71,9 +71,9 @@ lint_prose:
 	@echo "Linting prose with Vale..."
 	@bash scripts/install-vale.sh "$(VALE_BIN)" "$(VALE_VERSION)"
 	@if [ -n "$(FILES)" ]; then \
-		"$(VALE_BIN)" --glob='!**/node_modules/**' $(FILES); \
+		"$(VALE_BIN)" --glob='!{**/node_modules/**,src/code-samples/**}' $(FILES); \
 	else \
-		"$(VALE_BIN)" --glob='!**/node_modules/**' src/; \
+		"$(VALE_BIN)" --glob='!{**/node_modules/**,src/code-samples/**}' src/; \
 	fi
 
 test:
