@@ -515,7 +515,6 @@ LINK_MAPS: list[LinkMap] = [
             "Client.listExamples": "https://reference.langchain.com/javascript/classes/langsmith.client.Client.html#listexamples",
             "evaluate()": "https://reference.langchain.com/javascript/langsmith/evaluation/evaluate",
             "Example": "https://reference.langchain.com/javascript/interfaces/langsmith.Example.html",
-            "HITLRequest": "https://reference.langchain.com/javascript/langchain/index/HITLRequest",
             "MessageMetadata": "https://reference.langchain.com/javascript/langchain-react/MessageMetadata",
             "SubagentDiscoverySnapshot": "https://reference.langchain.com/javascript/langchain-react/SubagentDiscoverySnapshot",
             "SubgraphDiscoverySnapshot": "https://reference.langchain.com/javascript/langchain-react/SubgraphDiscoverySnapshot",
@@ -526,8 +525,10 @@ LINK_MAPS: list[LinkMap] = [
             "useChannel": "https://reference.langchain.com/javascript/langchain-react/useChannel",
             "StreamTransformer": "langgraph/stream/_types/StreamTransformer",
             "StreamChannel": "langgraph/stream/stream_channel/StreamChannel",
-            "client.runs.cancel": "langsmith/deployment/sdk/#langgraph_sdk.client.RunsClient.cancel",
             "ThreadStateJS": "https://reference.langchain.com/javascript/langchain-langgraph-sdk/index/ThreadState",
+            # END JS references
+            "HITLRequest": "langchain/agents/middleware/human_in_the_loop/HITLRequest",
+            "client.runs.cancel": "langgraph-sdk/_async/runs/RunsClient/cancel",
         },
     },
     {
