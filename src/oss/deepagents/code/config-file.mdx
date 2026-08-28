@@ -6,8 +6,9 @@ description: Configure model providers, defaults, retries, and gateways in confi
 
 `~/.deepagents/config.toml` lets you customize model providers, set defaults, and pass extra parameters to model constructors. For environment variables and inspection commands, see [Configuration](/oss/deepagents/code/configuration). This page covers:
 
-- **Defaults**: pin a [default model](#default-and-recent-model) or [agent](#default-and-recent-agent), or [restrict usable models](#allowed-models) with an allowlist.
+- **Defaults**: pin a [default model](#default-and-recent-model), [summarization model](#set-a-summarization-model), or [agent](#default-and-recent-agent), or [restrict usable models](#allowed-models) with an allowlist.
 - **Warnings**: [session cost](#session-cost-warning) and [cold prompt-cache](#cold-prompt-cache-warning) thresholds, and [trusted gateway endpoints](#trust-a-gateway-endpoint-for-cache-policies).
+- **Display**: [provider-visible reasoning](#show-provider-visible-reasoning) and diff line numbers.
 - **Interpreter**: the [`[interpreter]` settings](#js-interpreter) for the built-in QuickJS REPL.
 - **Python extensions**: [discovery and project trust](#python-extensions) for custom tools, middleware, and storage routes.
 - **Tracing**: [client-side secret redaction](#redact-langsmith-trace-secrets) for LangSmith traces.
@@ -28,6 +29,23 @@ auto_classifier = "openai:gpt-5.6-luna"  # optional: cheaper model for Auto appr
 `[models].default` always takes priority over `[models].recent`. The `/model` command only writes to `[models].recent`, so your configured default is never overwritten by mid-session switches. To remove the default, use `/model --default --clear` or delete the `default` key from the config file.
 
 `[models].auto_classifier` sets the model used by the [Auto approval classifier](/oss/deepagents/code/approval-modes#select-a-classifier-model) to review gated tool calls. When unset, the classifier inherits the main agent model. You can override this at runtime with `--auto-classifier-model` or `/auto model`. See [Select a classifier model](/oss/deepagents/code/approval-modes#select-a-classifier-model) for full precedence and security notes.
+
+## Set a summarization model
+
+Set a dedicated model for automatic context compaction, `/offload`, and `/compact`:
+
+```toml title="~/.deepagents/config.toml"
+[models]
+summarization_default = "openai:gpt-5.6-sol"
+```
+
+The summarization model resolves in this order:
+
+1. `--summarization-model` for the current launch.
+2. `[models].summarization_default`.
+3. The main agent model.
+
+In an interactive session, run `/summarization-model` to open the model picker, `/summarization-model <provider:model>` to switch directly, or `/summarization-model clear` to follow the main agent model again. Changing the summarization model does not change the main agent model.
 
 ## Default and recent agent
 
@@ -76,6 +94,23 @@ trusted_cache_endpoints = ["smith.langchain.com"]
 ```
 
 Entries are hostnames matched exactly — trusting `example.com` does not trust `gw.example.com`. One entry covers every provider routed through that endpoint. Cross-format routes through the LangSmith gateway (for example, an OpenAI-format request routed to an Anthropic model) stay silent even when trusted, because translation rewrites the cache settings the estimate assumes.
+
+## Show provider-visible reasoning
+
+Provider-visible reasoning is hidden by default. To show it in the interactive transcript and non-interactive output, set:
+
+```toml title="~/.deepagents/config.toml"
+[ui]
+show_reasoning = true
+```
+
+In an interactive session, reasoning streams into a separate row that collapses when the phase ends. Click the row or press `Ctrl+O` to reopen it. In non-interactive mode, reasoning goes to stderr so the final answer on stdout remains pipeable.
+
+Set `DEEPAGENTS_CODE_SHOW_REASONING=1` to override `config.toml`, or pass `--show-reasoning` to enable the setting for one launch. The launch flag takes precedence over the environment variable, which takes precedence over `config.toml`.
+
+<Note>
+    Deep Agents Code displays only reasoning content that the model provider exposes. Redacted or opaque reasoning remains hidden.
+</Note>
 
 ## Diff line numbers
 
