@@ -824,9 +824,9 @@ polly:
 
 ## Enable Sandboxes
 
-<Info>
-Self-hosted Sandboxes require LangSmith Helm chart `0.16.0` or later.
-</Info>
+<Note>
+Self-hosted Sandboxes require LangSmith Helm chart v17 (`0.17.x`).
+</Note>
 
 Sandboxes are disabled by default. After installation, see [LangSmith Sandboxes](/langsmith/sandboxes) for user workflows in the LangSmith UI and APIs.
 
@@ -836,16 +836,14 @@ Self-hosted Sandboxes are supported on:
 
 - Amazon Elastic Kubernetes Service (EKS)
 - Google Kubernetes Engine (GKE)
-
-Azure Kubernetes Service (AKS) is supported by the base LangSmith chart, but self-hosted Sandboxes are not supported on AKS.
+- Azure Kubernetes Service (AKS)
 
 ### Components
 
 Enabling Sandboxes provisions the following resources:
 
 - Sandbox runtime pods that run sandbox workloads on KVM-capable nodes.
-- The JuiceFS CSI driver and a JuiceFS-backed volume for sandbox files and snapshots.
-- A JuiceFS metadata store backed by Redis and object storage backed by S3 or GCS.
+- A JuiceFS metadata store backed by Redis and object storage backed by S3, GCS, or Azure Blob Storage.
 - Optional wildcard ingress for services exposed from inside Sandboxes.
 
 ### Prerequisites
@@ -888,18 +886,15 @@ Enabling Sandboxes provisions the following resources:
 
     - A Redis-compatible metadata store.
     - An object storage bucket or bucket root.
-    - A JuiceFS CSI configuration Secret, or enough Helm values for the chart to create one.
+    - A JuiceFS configuration Secret, or enough Helm values for the chart to create one.
 
-    <Warning>
-    Enabling Sandboxes installs the JuiceFS CSI driver. The CSI driver includes cluster-scoped Kubernetes resources. Only one sandbox-enabled LangSmith release should manage the JuiceFS CSI driver in a cluster unless you have verified resource ownership.
-    </Warning>
+    Use these object storage backends for `sandboxes.juicefs.storage` and `sandboxes.juicefs.bucket`:
 
-    Supported object storage backends:
-
-    | Platform | `sandboxes.juicefs.storage` | `sandboxes.juicefs.bucket` format |
+    | **Platform** | **Storage value** | **Bucket format** |
     | --- | --- | --- |
     | AWS | `s3` | Region-explicit HTTPS S3 endpoint, such as `https://bucket-name.s3.us-west-2.amazonaws.com` |
     | GCP | `gs` | GCS URL, such as `gs://bucket-name` |
+    | Azure | `wasb` | Azure Blob Storage URL, such as `https://container-name.core.windows.net` |
 
     Do not use object-store subpaths in `sandboxes.juicefs.name`. Use a flat name, such as `sandbox-juicefs`. JuiceFS stores objects under that name inside the configured bucket.
 
@@ -927,9 +922,8 @@ Enabling Sandboxes provisions the following resources:
         If the Helm chart manages your LangSmith app Secret, set the sandbox secret values directly in your config file. Avoid committing this file to version control.
 
         ```yaml
-        config:
-          sandboxes:
-            callbackSigningJwk: '<ed25519-private-jwk>'
+        sandboxes:
+          callbackSigningJwk: '<ed25519-private-jwk>'
         ```
       </Tab>
     </Tabs>
@@ -938,6 +932,8 @@ Enabling Sandboxes provisions the following resources:
   </Step>
 
   <Step title="Choose a proxy CA mode">
+    The sandbox egress authentication proxy uses this CA for TLS interception and credential injection.
+
     The chart supports two proxy CA modes:
 
     | Mode | Use when |
@@ -953,6 +949,9 @@ Enabling Sandboxes provisions the following resources:
 
 Add the following values to your `langsmith_config.yaml`, along with the sandbox secret values described in the [Prerequisites](#prerequisites-2). Replace placeholders with your deployment-specific values.
 
+<Tabs>
+  <Tab title="AWS">
+
 ```yaml
 images:
   sandboxHostImage:
@@ -966,29 +965,76 @@ sandboxes:
     bucket: "https://bucket-name.s3.us-west-2.amazonaws.com"
     redis:
       metaURL: "redis://redis-host:6379/1"
-  proxyCa:
-    mode: "generatedSecret"
+  sandboxHost:
+    deployment:
+      nodeSelector:
+        kubernetes.io/arch: "amd64"
+        sandbox.langsmith.com/host: "true"
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: "<role_arn>"
 ```
 
-If you create the JuiceFS CSI config Secret yourself, set `sandboxes.juicefs.csi.existingSecretName` and omit `sandboxes.juicefs.name`, `storage`, `bucket`, and `redis.metaURL` from the Helm values:
+  </Tab>
+  <Tab title="GCP">
 
 ```yaml
+images:
+  sandboxHostImage:
+    tag: "<same-release-tag-as-your-langsmith-images>"
+
 sandboxes:
   enabled: true
   juicefs:
-    csi:
-      existingSecretName: "juicefs-csi-config"
+    name: "sandbox-juicefs"
+    storage: "gs"
+    bucket: "gs://bucket-name"
+    redis:
+      metaURL: "redis://redis-host:6379/1"
+  sandboxHost:
+    deployment:
+      nodeSelector:
+        kubernetes.io/arch: "amd64"
+        sandbox.langsmith.com/host: "true"
+    serviceAccount:
+      annotations:
+        iam.gke.io/gcp-service-account: "<gsa_name>@<project_id>.iam.gserviceaccount.com"
 ```
 
-The existing Secret must be in the LangSmith release namespace and contain these keys:
+  </Tab>
+  <Tab title="Azure">
 
 ```yaml
-stringData:
-  name: "sandbox-juicefs"
-  metaurl: "redis://redis-host:6379/1"
-  storage: "s3"
-  bucket: "https://bucket-name.s3.us-west-2.amazonaws.com"
+images:
+  sandboxHostImage:
+    tag: "<same-release-tag-as-your-langsmith-images>"
+
+sandboxes:
+  enabled: true
+  juicefs:
+    name: "sandbox-juicefs"
+    storage: "wasb"
+    bucket: "https://container-name.core.windows.net"
+    accessKey: "<storage-account-name>" # Account name, not a credential.
+    redis:
+      metaURL: "redis://redis-host:6379/1"
+  juicefsFormatJob:
+    labels:
+      azure.workload.identity/use: "true"
+  sandboxHost:
+    deployment:
+      labels:
+        azure.workload.identity/use: "true"
+      nodeSelector:
+        kubernetes.io/arch: "amd64"
+        sandbox.langsmith.com/host: "true"
+    serviceAccount:
+      annotations:
+        azure.workload.identity/client-id: "<client_id>"
 ```
+
+  </Tab>
+</Tabs>
 
 Apply the updated chart:
 
@@ -1002,9 +1048,12 @@ helm upgrade -i langsmith langchain/langsmith \
 
 ### Enable with Terraform
 
+<div className="my-6 rounded-xl border border-gray-200 bg-gray-50 p-6 dark:border-gray-700 dark:bg-gray-900/40">
+
 The LangSmith Terraform modules can provision the required AWS and GCP infrastructure and generate the corresponding Helm values.
 
-#### AWS
+<Tabs>
+  <Tab title="AWS">
 
 In `modules/aws/infra/terraform.tfvars`, enable Sandboxes and configure the sandbox node capacity:
 
@@ -1027,7 +1076,7 @@ AWS Sandboxes require `redis_source = "external"`. The Terraform module:
 - Creates a dedicated ElastiCache Redis instance for JuiceFS sandbox metadata.
 - Configures that dedicated instance with the recommended `noeviction` policy.
 - Reuses the LangSmith S3 bucket for sandbox object storage.
-- Creates the JuiceFS CSI config Secret.
+- Creates the JuiceFS configuration Secret.
 - Adds the expected node label and taint.
 
 The AWS setup script generates the sandbox service-auth secret, callback signing JWK, and dedicated JuiceFS Redis auth token through the normal SSM-backed setup flow. Run the infra setup script before applying Terraform if those values do not exist yet.
@@ -1036,21 +1085,22 @@ If you deploy the Helm release with the Terraform app module, set the sandbox ap
 
 ```hcl
 enable_sandboxes      = true
-chart_version          = "~0.16.0"
+chart_version          = "~0.17.0"
 sandbox_host_image_tag = "<same-release-tag-as-your-langsmith-images>"
 ```
 
-When `enable_sandboxes = true`, the Terraform app module requires an explicit LangSmith Helm chart version `0.16.0` or later and a sandbox runtime image tag.
+When `enable_sandboxes = true`, the Terraform app module requires an explicit LangSmith Helm chart v17 release and a sandbox runtime image tag.
 
 Run the normal AWS flow:
 
 ```bash
 make apply
 make init-values
-CHART_VERSION="~0.16.0" make deploy
+CHART_VERSION="~0.17.0" make deploy
 ```
 
-#### GCP
+  </Tab>
+  <Tab title="GCP">
 
 In `modules/gcp/infra/terraform.tfvars`, enable Sandboxes and configure a Standard GKE node pool:
 
@@ -1077,7 +1127,7 @@ GCP Sandboxes require `redis_source = "external"`. The Terraform module:
 - Creates a dedicated Memorystore Redis instance for JuiceFS sandbox metadata.
 - Configures that dedicated instance with the recommended `noeviction` policy.
 - Reuses the LangSmith GCS bucket for sandbox object storage.
-- Creates the JuiceFS CSI config Secret.
+- Creates the JuiceFS configuration Secret.
 - Adds the expected node label and taint.
 
 The GCP setup script generates the sandbox service-auth secret and callback signing JWK through the normal Secret Manager setup flow. Run the infra setup script before applying Terraform if those values do not exist yet.
@@ -1086,19 +1136,24 @@ If you deploy the Helm release with the Terraform app module, set the sandbox ap
 
 ```hcl
 enable_sandboxes      = true
-chart_version          = "~0.16.0"
+chart_version          = "~0.17.0"
 sandbox_host_image_tag = "<same-release-tag-as-your-langsmith-images>"
 ```
 
-When `enable_sandboxes = true`, the Terraform app module requires an explicit LangSmith Helm chart version `0.16.0` or later and a sandbox runtime image tag.
+When `enable_sandboxes = true`, the Terraform app module requires an explicit LangSmith Helm chart v17 release and a sandbox runtime image tag.
 
 Run the normal GCP flow:
 
 ```bash
 make apply
 make init-values
-CHART_VERSION="~0.16.0" make deploy
+CHART_VERSION="~0.17.0" make deploy
 ```
+
+  </Tab>
+</Tabs>
+
+</div>
 
 ### Optional: enable service URLs
 
