@@ -8,13 +8,13 @@ tag: Beta
 This integration is in beta, so its API may change.
 </Note>
 
-Trace your [LiveKit Agents](https://docs.livekit.io/agents/) voice agents to LangSmith with the LangSmith LiveKit integration. For high-level conventions, see [Voice tracing fundamentals](/langsmith/trace-voice-fundamentals).
+Use the LangSmith LiveKit integration to trace your [LiveKit Agents](https://docs.livekit.io/agents/) voice agents, including their transcripts and audio recordings. For high-level conventions, see [Voice tracing fundamentals](/langsmith/trace-voice-fundamentals).
 
 <Note>
-The LiveKit integration requires `langsmith[livekit]>=0.9.7`.
+This setup requires `langsmith[livekit]>=0.11.2` and `livekit-agents>=1.6`.
 </Note>
 
-The integration hooks into the spans LiveKit already emits and maps them onto LangSmith's tracing format, so each conversation becomes a single LangSmith trace: a span per pipeline event, plus LiveKit's latency and token metrics.
+Each conversation appears as one LangSmith trace with its pipeline events, latency, and token metrics.
 
 ## Install
 
@@ -48,7 +48,7 @@ OPENAI_API_KEY=<your-openai-api-key>
 
 ## Set up tracing
 
-Import `configure_livekit` and call it once before creating your `AgentServer`. It builds the tracer provider, registers the LangSmith span processor, and wires it into LiveKit:
+Call `configure_livekit` once before creating your `AgentServer`.
 
 ```python
 from langsmith.integrations.livekit import configure_livekit
@@ -67,29 +67,35 @@ async def my_agent(ctx: agents.JobContext):
         llm="openai/gpt-4o-mini",
         tts="openai/tts-1:alloy",
     )
-    await session.start(room=ctx.room, agent=Agent(instructions="You are a helpful assistant."))
+    await session.start(
+        room=ctx.room,
+        agent=Agent(instructions="You are a helpful assistant."),
+        record={"audio": True},
+    )
 ```
 
-This works for both the STT/LLM/TTS cascade and speech-to-speech (realtime) models. Realtime models (for example, `lk_openai.realtime.RealtimeModel(...)`) need one extra call to capture the user's transcript. Refer to [When using LiveKit with a realtime model](#when-using-livekit-with-a-realtime-model).
+`configure_livekit()` uses LiveKit session recordings by default. The `record={"audio": True}` option tells LiveKit to create the recording.
+
+This setup works for both STT/LLM/TTS cascades and speech-to-speech (realtime) models. Realtime models need one extra call to capture the user's transcript. For more information, see [Use a realtime model](#use-a-realtime-model).
 
 ### Use your own tracer provider
 
-`configure_livekit()` builds a `TracerProvider`, registers the LangSmith span processor, and wires it into LiveKit. To use a `TracerProvider` you already manage, construct the processor yourself, add it to your provider, and register that provider with LiveKit's tracer hook. LiveKit only emits spans through the provider its tracer is bound to:
+If your application already manages an OpenTelemetry `TracerProvider`, add the LangSmith processor to that provider and register it with LiveKit:
 
 ```python
+from langsmith.integrations.livekit import LiveKitLangSmithSpanProcessor
 from livekit.agents import telemetry
 from opentelemetry.sdk.trace import TracerProvider
 
-from langsmith.integrations.livekit import LiveKitLangSmithSpanProcessor
-
 provider = TracerProvider()  # your own provider
-provider.add_span_processor(LiveKitLangSmithSpanProcessor())
+processor = LiveKitLangSmithSpanProcessor()
+provider.add_span_processor(processor)
 telemetry.set_tracer_provider(provider)
 ```
 
 ## Group a conversation into a thread
 
-To group a conversation's runs into a LangSmith [thread](/langsmith/threads), for thread-level views and token and cost aggregation, call `set_thread_id` once per conversation, inside its `@server.rtc_session()` handler before its spans are emitted:
+To group a conversation's runs into a LangSmith [thread](/langsmith/threads), call `set_thread_id` inside the session handler. Use a unique ID for each active session:
 
 ```python
 from langsmith.integrations.livekit import configure_livekit, set_thread_id
@@ -103,15 +109,9 @@ async def my_agent(ctx: agents.JobContext):
     ...
 ```
 
-## When using LiveKit with a realtime model
+## Use a realtime model
 
-With a speech-to-speech (realtime) model there is no separate speech-to-text step, so LiveKit transcribes the user's audio asynchronously and delivers the transcript through the session's `user_input_transcribed` event rather than on the OTel traces it emits.
-
-<Note>
-`instrument_session` requires `langsmith[livekit]>=0.10.4`.
-</Note>
-
-Call `instrument_session` once, right after creating the `AgentSession`, so the SDK subscribes to that event for you and pairs each transcript with its turn. It correlates by thread id, so set that first with `set_thread_id`, and pass the same id:
+For a speech-to-speech (realtime) model, call `instrument_session` after creating the `AgentSession` to capture the user's transcript. Pass the same thread ID to `set_thread_id` and `instrument_session`:
 
 ```python
 from langsmith.integrations.livekit import configure_livekit, set_thread_id
@@ -127,29 +127,6 @@ async def my_agent(ctx: agents.JobContext):
     session = AgentSession(llm=lk_openai.realtime.RealtimeModel(voice="marin"))
     processor.instrument_session(session, thread_id)  # capture the user transcript
 
-    await session.start(room=ctx.room, agent=Agent(instructions="You are a helpful assistant."))
-```
-
-Only call `instrument_session` for realtime models. In the STT/LLM/TTS cascade the transcript is already captured (from the speech-to-text step), so calling it there would record the user's turns a second time.
-
-## Record the conversation audio
-
-The integration attaches the call recording to the conversation root span. How you capture that recording differs between local development and production.
-
-### Development: embed a local file
-
-In console and local development, enable LiveKit's session recording and point `audio_path_provider` at the `audio.ogg` LiveKit writes under `ctx.session_directory`. The integration reads that file and embeds the bytes in the trace.
-
-```python
-from pathlib import Path
-
-_audio_path: Path | None = None
-configure_livekit(audio_path_provider=lambda: _audio_path)
-
-@server.rtc_session()
-async def my_agent(ctx: agents.JobContext):
-    global _audio_path
-    _audio_path = ctx.session_directory / "audio.ogg"
     await session.start(
         room=ctx.room,
         agent=Agent(instructions="You are a helpful assistant."),
@@ -157,37 +134,90 @@ async def my_agent(ctx: agents.JobContext):
     )
 ```
 
-In console mode, also pass `--record` on the command line. The recording reflects what was played to the client, so a barge-in shows up truncated.
+Only call `instrument_session` for realtime models. STT/LLM/TTS cascades already capture the user's transcript, so calling it there records each user turn twice.
 
-<Warning>
-Do not use `audio_path_provider` in production. In a deployed worker, `ctx.session_directory` is an ephemeral temporary directory that LiveKit deletes when the session ends, so there is no durable file to embed.
-</Warning>
+## Record the conversation audio
 
-### Production: record with Egress and attach the file
+By default, the integration uses LiveKit's session recording. Use Egress mode when you record to external storage instead.
 
-In production, record the room with [LiveKit Egress](https://docs.livekit.io/home/egress/overview/) into your own object storage, then attach the finished recording to the trace as a real audio attachment. Egress finishes uploading after the call ends, so the integration holds the conversation's root span open until you supply the bytes:
+### Record with LiveKit's session recording
 
-1. Call `processor.expect_recording(thread_id)` when you start egress.
-2. After the call, wait for egress to complete, download the file from your storage, and call `processor.complete_recording(thread_id, audio_bytes)`. The integration embeds the bytes and exports the trace.
-
-You must use the same `thread_id` for expect_recording and complete_recording, so the recording is matched to the right conversation.
+Turn on LiveKit's session recording.
 
 ```python
-import os
-
-from livekit import agents, api
+from langsmith.integrations.livekit import configure_livekit
+from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession
-from langsmith.integrations.livekit import configure_livekit, set_thread_id
 
-RECORDING_BUCKET = os.environ["RECORDING_BUCKET"]
+configure_livekit()
 
-processor = configure_livekit()
 server = AgentServer()
 
 @server.rtc_session()
 async def my_agent(ctx: agents.JobContext):
+    session = AgentSession(...)
+    await session.start(
+        room=ctx.room,
+        agent=Agent(instructions="You are a helpful assistant."),
+        record={"audio": True},
+    )
+```
+
+By default, the LiveKit integration will capture the recording from LiveKit if present.
+
+<Note>
+In console mode, also pass `--record` on the command line (`python agent.py console --record`). Without it LiveKit creates the recorder but never starts it, so there is no file to attach. The recording reflects what was played to the client, so a barge-in shows up truncated.
+</Note>
+
+### Record with Egress
+
+Use [LiveKit Egress](https://docs.livekit.io/home/egress/overview/) when you want the recording in your own object storage or need video. Egress recording delivery requires a thread ID. Configure the integration for Egress, then call `complete_recording` after the Egress file is available:
+
+```python
+import asyncio
+import os
+import time
+
+from langsmith.integrations.livekit import configure_livekit, set_thread_id
+from livekit import agents, api
+from livekit.agents import Agent, AgentServer, AgentSession
+
+RECORDING_BUCKET = os.environ["RECORDING_BUCKET"]
+
+processor = configure_livekit(
+    recording_mode="egress",
+    recording_timeout_seconds=180,
+)
+server = AgentServer()
+
+async def wait_for_egress(
+    lkapi: api.LiveKitAPI,
+    egress_id: str,
+    timeout_seconds: float = 120,
+) -> api.EgressInfo:
+    deadline = time.monotonic() + timeout_seconds
+    failed_statuses = {
+        api.EgressStatus.EGRESS_FAILED,
+        api.EgressStatus.EGRESS_ABORTED,
+        api.EgressStatus.EGRESS_LIMIT_REACHED,
+    }
+    while time.monotonic() < deadline:
+        response = await lkapi.egress.list_egress(
+            api.ListEgressRequest(egress_id=egress_id)
+        )
+        if response.items:
+            info = response.items[0]
+            if info.status == api.EgressStatus.EGRESS_COMPLETE:
+                return info
+            if info.status in failed_statuses:
+                raise RuntimeError(f"Egress failed with status {info.status}")
+        await asyncio.sleep(1)
+    raise TimeoutError(f"Egress {egress_id} did not complete in time")
+
+@server.rtc_session()
+async def my_agent(ctx: agents.JobContext):
     thread_id = ctx.job.id  # unique per session; ctx.room.name is "console" in console mode
-    set_thread_id(thread_id)  # groups this conversation's spans into a thread
+    set_thread_id(thread_id)  # routes the Egress recording to this trace
     key = f"recordings/{thread_id}.ogg"
 
     # Start an audio-only room-composite egress to your storage.
@@ -210,16 +240,21 @@ async def my_agent(ctx: agents.JobContext):
             ],
         )
     )
-    # Hold the trace open until the recording is ready.
-    processor.expect_recording(thread_id)
 
     async def attach_recording():
         try:
-            await wait_for_egress(lkapi, egress.egress_id)  # poll until EGRESS_COMPLETE
+            info = await wait_for_egress(lkapi, egress.egress_id)  # poll until EGRESS_COMPLETE
             audio = download_from_storage(RECORDING_BUCKET, key)  # your storage client
-            processor.complete_recording(thread_id, audio, name="call.ogg")
+            processor.complete_recording(
+                thread_id,
+                data=audio,
+                # EgressInfo.started_at is a Unix timestamp in nanoseconds. This is
+                # when the egress worker began recording, which is what aligns the
+                # audio start with the trace.
+                started_at=info.started_at / 1e9,
+            )
         except Exception:
-            processor.complete_recording(thread_id, None)  # release without audio
+            processor.complete_recording(thread_id, data=None)
 
     ctx.add_shutdown_callback(attach_recording)
 
@@ -227,10 +262,11 @@ async def my_agent(ctx: agents.JobContext):
     await session.start(room=ctx.room, agent=Agent(instructions="..."))
 ```
 
-`wait_for_egress` polls [`list_egress`](https://docs.livekit.io/home/egress/api/) until the status is `EGRESS_COMPLETE` (or subscribe to the `egress_ended` webhook), and `download_from_storage` reads the object with your cloud provider's client. LiveKit Egress also writes to [Google Cloud Storage and Azure](https://docs.livekit.io/home/egress/overview/): swap `s3=` for `gcp=api.GCPUpload(...)` or `azure=api.AzureBlobUpload(...)`.
+`download_from_storage` represents your storage client's download operation. The default attachment name and MIME type are `recording.ogg` and `audio/ogg`. Set `name` or `mime_type` in `complete_recording` if your Egress output uses another format.
+
 
 <Note>
-Always call `complete_recording` because the trace's root span is held until it runs, including on failure with `data=None`. If the worker stops first, the integration will flush the trace without audio.
+Always call `complete_recording`, including on failure with `data=None`. Otherwise, the integration waits for `recording_timeout_seconds` (30 seconds by default) before exporting the trace without audio. Using `complete_recording` to capture Egress recordings requires setting a `thread_id`.
 </Note>
 
 ## Next steps
