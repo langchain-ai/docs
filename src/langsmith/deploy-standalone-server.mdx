@@ -46,6 +46,18 @@ Do not run standalone servers in serverless environments. Scale-to-zero may caus
 - **Kubernetes**: Use the LangSmith Helm chart to run Agent Servers in a Kubernetes cluster. This is the recommended option for production-grade deployments.
 - **Docker**: Run in any Docker-supported compute platform (local dev machine, VM, ECS, etc.). This is best suited for development or small-scale workloads.
 
+<Warning>
+For production deployments, use Kubernetes with the maintained LangSmith Helm chart. This is the production path that LangChain regularly tests. LangChain does not regularly test other orchestrators.
+
+Non-Kubernetes deployments have known gaps that you must implement and maintain yourself. These deployments may diverge further from the tested production path as the Helm chart evolves:
+
+- **Independent queue autoscaling**: Configure scaling policies and queue metrics for bursty, write-heavy workloads.
+- **Graceful run draining**: Configure shutdown draining and sufficient termination windows so in-flight runs can finish during deployments and scale-down events.
+- **Split-mode wiring**: Provision and connect separate API and queue services. The Helm chart handles this when `queue.enabled` is `true`.
+- **Reference scaling configuration**: Translate the [Agent Server scaling](/langsmith/agent-server-scale) settings, including `api.replicas`, `queue.replicas`, `numberOfJobsPerWorker`, and read replicas, into your orchestrator's task definitions and scaling policies.
+- **Version upgrades and support**: Maintain task definitions and apply version updates. LangChain tests and ships supported Helm chart version updates.
+</Warning>
+
 ## Prerequisites
 
 1. Use the [LangGraph CLI](/langsmith/cli) to [test your application locally](/langsmith/local-dev-testing).
@@ -70,8 +82,12 @@ Do not run standalone servers in serverless environments. Scale-to-zero may caus
         </Tip>
   3. `LANGSMITH_API_KEY`: LangSmith API key.
   4. `LANGGRAPH_CLOUD_LICENSE_KEY`: LangSmith license key. This will be used to authenticate ONCE at server start up.
-  5. `LANGSMITH_ENDPOINT`: To send traces to a [self-hosted LangSmith](/langsmith/self-hosted) instance, set `LANGSMITH_ENDPOINT` to the hostname of the self-hosted LangSmith instance.
+  5. `LANGSMITH_ENDPOINT`: To send traces to a [self-hosted LangSmith](/langsmith/self-hosted) instance, set `LANGSMITH_ENDPOINT` to the hostname of the self-hosted LangSmith instance. Do not add a trailing slash to the URL, as this can cause authentication errors.
 4. Egress to `https://beacon.langchain.com` from your network. This is required for license verification and usage reporting if not running in air-gapped mode. See the [Egress documentation](/langsmith/self-host-egress) for more details.
+
+<Note>
+Agent Server services listen on both IPv4 and IPv6 by default as of 0.14.0. No additional configuration is required for dual-stack clusters. To listen on a single address family, set `LANGGRAPH_SERVER_HOST` to `0.0.0.0` for IPv4 only or `::` for IPv6 only. See [Self-hosted Agent Server environment variables](/langsmith/env-var-self-hosted).
+</Note>
 
 <a id="helm"></a>
 ## Kubernetes
@@ -82,7 +98,9 @@ The Helm chart (v0.2.6+) supports MongoDB checkpointing with a bundled instance 
 
 ## Docker
 
-This `docker` example is intended for local development and testing.
+<Warning>
+This Docker example is intended for local development and testing. For production, use the Kubernetes deployment.
+</Warning>
 
 Run the following `docker` command:
 
@@ -106,7 +124,9 @@ and you should provide appropriate values for `REDIS_URI`, `DATABASE_URI`, and `
 
 ## Docker Compose
 
-This Docker Compose example is intended for local development and testing.
+<Warning>
+This Docker Compose example is intended for local development and testing. For production, use the Kubernetes deployment.
+</Warning>
 
 Use the following Docker Compose file:
 
