@@ -84,12 +84,18 @@ def web_search(query: str) -> str:
 # :snippet-start: skills-subagents-py
 from deepagents import create_deep_agent
 
+# Each path is a container with one subdirectory per skill:
+# /skills/main/
+# └── overview/SKILL.md
+# /skills/researcher/
+# ├── research/SKILL.md
+# └── web-search/SKILL.md
 research_subagent = {
     "name": "researcher",
     "description": "Research assistant with specialized skills",
     "system_prompt": "You are a researcher.",
     "tools": [web_search],
-    "skills": ["/skills/research/", "/skills/web-search/"],  # Subagent-specific skills
+    "skills": ["/skills/researcher/"],  # Subagent-specific skills
 }
 
 # KEEP MODEL
