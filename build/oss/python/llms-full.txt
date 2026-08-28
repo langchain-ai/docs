@@ -19697,6 +19697,8 @@ Source: https://docs.langchain.com/oss/python/deepagents/openwiki
 # Deep Agents overview
 Source: https://docs.langchain.com/oss/python/deepagents/overview
 
+import { PatternEmbed } from "/snippets/pattern-embed.jsx"
+
 Deep Agents is the easiest way to start building agents and applications that are powered by LLMs—with built-in capabilities for file systems for context management, subagent-spawning, and long-term memory.
 Optional capabilities such as [task planning](#task-planning) and [skills](#skills) extend the harness when your use case needs them.
 You can use deep agents for any task, including complex, multi-step tasks.
@@ -19711,6 +19713,10 @@ Deep Agents comes with the following capabilities:
 - **Improve over time**: Update memory, skills, and prompts based on real usage
 
 See [Core capabilities](#core-capabilities) for a full breakdown of each component.
+
+## Try it
+
+<PatternEmbed pattern="deep-agents-comparison" />
 
 ## Quickstart
 
@@ -129775,9 +129781,10 @@ You can create custom PII types by providing a `detector` parameter. This allows
 1. **Custom function** - Complex detection logic with validation
 
 ```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import PIIMiddleware
 import re
+
+from langchain.agents import create_agent
+from langchain.agents.middleware import PIIMatch, PIIMiddleware
 
 
 # Method 1: Regex pattern string
@@ -129807,13 +129814,9 @@ agent2 = create_agent(
 )
 
 # Method 3: Custom detector function
-def detect_ssn(content: str) -> list[dict[str, str | int]]:
-    """Detect SSN with validation.
-
-    Returns a list of dictionaries with 'text', 'start', and 'end' keys.
-    """
-    import re
-    matches = []
+def detect_ssn(content: str) -> list[PIIMatch]:
+    """Detect SSNs with validation."""
+    matches: list[PIIMatch] = []
     pattern = r"\d{3}-\d{2}-\d{4}"
     for match in re.finditer(pattern, content):
         ssn = match.group(0)
@@ -129821,7 +129824,8 @@ def detect_ssn(content: str) -> list[dict[str, str | int]]:
         first_three = int(ssn[:3])
         if first_three not in [0, 666] and not (900 <= first_three <= 999):
             matches.append({
-                "text": ssn,
+                "type": "ssn",
+                "value": ssn,
                 "start": match.start(),
                 "end": match.end(),
             })
@@ -129847,11 +129851,19 @@ agent3 = create_agent(
 
 The detector function must accept a string (content) and return matches:
 
-Returns a list of dictionaries with `text`, `start`, and `end` keys:
+Returns a list of `PIIMatch` objects:
 ```python
-def detector(content: str) -> list[dict[str, str | int]]:
+from langchain.agents.middleware import PIIMatch
+
+
+def detector(content: str) -> list[PIIMatch]:
     return [
-        {"text": "matched_text", "start": 0, "end": 12},
+        {
+            "type": "custom_type",
+            "value": "matched_text",
+            "start": 0,
+            "end": 12,
+        },
         # ... more matches
     ]
 ```
