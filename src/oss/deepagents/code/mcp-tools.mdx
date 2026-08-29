@@ -388,7 +388,7 @@ The list uses the same trust-gated configuration as the login flow. It reports s
 What happens depends on the server's host:
 
 - **Spec-compliant servers** (the default): Deep Agents Code performs Dynamic Client Registration, opens an Authorization Code + PKCE flow in your browser, and asks you to paste the redirected URL back into the terminal.
-- **Slack** (`slack.com`, `*.slack.com`): same paste-back flow, but with Slack's public client preseeded. You're prompted for an optional team ID (e.g., `T01234567`) so the app installs into the right workspace.
+- **Slack** (`slack.com`, `*.slack.com`): same paste-back flow, but with Slack's public client preseeded. You are prompted for an optional team ID (e.g., `T01234567`) so the app installs into the right workspace.
 - **GitHub** (`api.githubcopilot.com`): RFC 8628 Device Authorization Grant. Deep Agents Code prints a verification URL and a user code; you enter the code in your browser and Deep Agents Code polls for completion.
 
 By default, `dcode mcp login` reads the same auto-discovered configs Deep Agents Code uses at runtime (subject to project-level trust gating). Pass `--mcp-config <path>` to use a specific file:
@@ -409,10 +409,10 @@ Tokens are written to:
 ~/.deepagents/.state/mcp-tokens/<server>-<sha256-16(url)>.json
 ```
 
-The `<sha256-16(url)>` segment is the first 16 hex characters of the SHA-256 of the server URL. The directory is locked to mode `0700` and each token file is mode `0600`. Files include the OAuth access token, refresh token, and the dynamically registered client info, all in a schema-versioned payload that's written atomically (write-to-temp + `rename`).
+The `<sha256-16(url)>` segment is the first 16 hex characters of the SHA-256 of the server URL. The directory is locked to mode `0700` and each token file is mode `0600`. Files include the OAuth access token, refresh token, and the dynamically registered client info, all in a schema-versioned payload that is written atomically (write-to-temp + `rename`).
 
 <Note>
-    Hashing the URL into the filename means the same server name pointing at different URLs (for example, dev vs. prod) gets independent token files and can't trample each other.
+    Hashing the URL into the filename means the same server name pointing at different URLs (for example, dev vs. prod) gets independent token files and cannot trample each other.
 </Note>
 
 ### Re-authentication
@@ -505,7 +505,7 @@ Connected MCP servers and their tools are automatically listed in the agent's sy
         npx -y @modelcontextprotocol/server-filesystem /tmp
         ```
 
-        Common causes: the package isn't installed, `npx` isn't on `PATH`, or required environment variables are missing.
+        Common causes: the package is not installed, `npx` is not on `PATH`, or required environment variables are missing.
     </Accordion>
 
     <Accordion title="Connection refused (SSE/HTTP)">
@@ -513,15 +513,15 @@ Connected MCP servers and their tools are automatically listed in the agent's sy
     </Accordion>
 
     <Accordion title="Tools not appearing">
-        Deep Agents Code prints the number of tools loaded at startup (e.g., `✓ Loaded 3 MCP tools`). If you see `0`, the server started successfully but didn't advertise any tools—check the server's own logs or documentation.
+        Deep Agents Code prints the number of tools loaded at startup (e.g., `✓ Loaded 3 MCP tools`). If you see `0`, the server started successfully but did not advertise any tools—check the server's own logs or documentation.
     </Accordion>
 
     <Accordion title="Server shows `unauthenticated` in /mcp">
-        Either you haven't run `dcode mcp login <server>` yet, or the persisted refresh token expired or was revoked server-side. Run the login command again — your session keeps running and the server will re-attach once tokens are refreshed.
+        Either you have not run `dcode mcp login <server>` yet, or the persisted refresh token expired or was revoked server-side. Run the login command again — your session keeps running and the server will re-attach once tokens are refreshed.
     </Accordion>
 
     <Accordion title="`Invalid MCP config at ...`">
-        A pre-flight validation rejected `--mcp-config` (or an auto-discovered `.mcp.json`). Common causes: an unsupported server name (must match `[A-Za-z0-9_-]+`), `auth: oauth` on a stdio server, both `command` and `url` set on the same entry, or a header value that isn't a string. Fix the highlighted reason and relaunch — Deep Agents Code no longer dumps a multi-page subprocess trace for config errors.
+        A pre-flight validation rejected `--mcp-config` (or an auto-discovered `.mcp.json`). Common causes: an unsupported server name (must match `[A-Za-z0-9_-]+`), `auth: oauth` on a stdio server, both `command` and `url` set on the same entry, or a header value that is not a string. Fix the highlighted reason and relaunch — Deep Agents Code no longer dumps a multi-page subprocess trace for config errors.
     </Accordion>
 
     <Accordion title="`${VAR}` references fail">
