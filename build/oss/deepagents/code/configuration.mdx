@@ -336,7 +336,7 @@ Disabling update checks also prevents automatic update installs at startup.
 
 You can still check for and install updates manually at any time with the `/update` slash command, which runs an on-demand check and reports success or failure inline.
 
-After an upgrade, Deep Agents Code shows a "what's new" banner on the next launch with a link to the changelog.
+After an upgrade, Deep Agents Code shows a "what is new" banner on the next launch with a link to the changelog.
 
 At session exit, if a newer version was detected during the session, an update banner is displayed as a reminder.
 
