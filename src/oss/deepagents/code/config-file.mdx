@@ -73,9 +73,9 @@ session_cost_threshold_usd = 25
 Some LLM providers automatically cache the conversation prefix between turns, so a follow-up sent while the cache is warm re-processes only new tokens. That cache expires after a provider-specific idle window. Deep Agents Code currently detects this for Anthropic and OpenAI models: when an interactive chat message would be sent to a thread whose cache has likely expired (or whose model or cache settings changed since the last turn), it estimates the re-warm cost and, if it reaches a threshold, asks before sending:
 
 - **Send anyway**: send this turn; the warning still appears on future cold-cache turns.
-- **Send and don't warn again this session**: mute the warning until the app restarts.
+- **Send and do not warn again this session**: mute the warning until the app restarts.
 - **Send and never warn again**: persistently suppress the warning. Re-enable it from the `/notifications` settings screen.
-- **Don't send (keep draft)**: restore the message to the chat input so you can `/clear` first.
+- **Do not send (keep draft)**: restore the message to the chat input so you can `/clear` first.
 
 Set the minimum estimated extra cost (cold versus warm cache) that triggers the warning, in USD. The default is `0.50`; set it to `0` to disable:
 
@@ -199,9 +199,9 @@ temperature = 0.7
 Providers have the following configuration options:
 
 <ResponseField name="models" type="string[]" post={["optional"]}>
-    A list of model names to show in the interactive `/model` switcher for the provider defined as `<name>`. For providers that already ship with model profiles, any names you add here appear in addition to bundled ones (useful for newly released models that haven't been added to the package yet). For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.
+    A list of model names to show in the interactive `/model` switcher for the provider defined as `<name>`. For providers that already ship with model profiles, any names you add here appear in addition to bundled ones (useful for newly released models that have not been added to the package yet). For [arbitrary providers](#arbitrary-providers), this list is the only source of models in the switcher.
 
-    Models listed here **bypass** any applied profile-based [filtering criteria](/oss/deepagents/code/providers#which-models-appear-in-the-switcher), always appearing in the switcher. This makes it the recommended way to surface models that are excluded because their profile lacks `tool_calling` support or doesn't exist yet.
+    Models listed here **bypass** any applied profile-based [filtering criteria](/oss/deepagents/code/providers#which-models-appear-in-the-switcher), always appearing in the switcher. This makes it the recommended way to surface models that are excluded because their profile lacks `tool_calling` support or does not exist yet.
 
     This key is optional. You can always pass any model name directly to `/model` or `--model` regardless of whether it appears in the switcher; the provider validates the name at request time.
 </ResponseField>
@@ -253,7 +253,7 @@ Providers have the following configuration options:
 </ResponseField>
 
 <ResponseField name="enabled" type="boolean" default="true" post={["optional"]}>
-    Whether this provider appears in the `/model` selector. Set to `false` to hide a provider that was auto-discovered from an installed package (e.g., a transitive dependency you don't want cluttering the model switcher). You can still use a disabled provider directly via `/model provider:model` or `--model`.
+    Whether this provider appears in the `/model` selector. Set to `false` to hide a provider that was auto-discovered from an installed package (e.g., a transitive dependency you do not want cluttering the model switcher). You can still use a disabled provider directly via `/model provider:model` or `--model`.
 </ResponseField>
 
 ## Model constructor params
@@ -397,7 +397,7 @@ Profile overrides are merged into the model's profile after creation. Any featur
 
 ## Adding models to the interactive switcher
 
-Some providers (e.g. `langchain-ollama`) don't bundle model profile data (see [Provider reference](/oss/deepagents/code/providers#provider-reference) for full listing). When this is the case, the interactive `/model` switcher won't list models for that provider. You can fill in the gap by defining a `models` list in your config file for the provider:
+Some providers (e.g. `langchain-ollama`) do not bundle model profile data (see [Provider reference](/oss/deepagents/code/providers#provider-reference) for full listing). When this is the case, the interactive `/model` switcher will not list models for that provider. You can fill in the gap by defining a `models` list in your config file for the provider:
 
 ```toml
 [models.providers.ollama]
@@ -492,7 +492,7 @@ temperature = 0
 With this config, switch to the model with `/model xyz:abc-xyz-1` or `--model xyz:abc-xyz-1`.
 
 <Note>
-    Deep Agents Code requires **tool calling** support. If your custom model supports tool calling but Deep Agents Code doesn't know about it, declare it in the provider profile:
+    Deep Agents Code requires **tool calling** support. If your custom model supports tool calling but Deep Agents Code does not know about it, declare it in the provider profile:
 
     ```toml
     [models.providers.xyz.profile]
