@@ -1,0 +1,152 @@
+---
+title: Set up coding agents
+description: Configure Claude Code, Codex, Gemini CLI, and Deep Agents Code to route LLM calls through the LLM Gateway.
+---
+
+<Note>
+**Beta:** The LLM Gateway is in [beta](/langsmith/release-stages).
+</Note>
+
+Configure coding agents to use the standard LLM Gateway endpoint for centralized cost controls, observability, and audit trails. The gateway authenticates each caller, routes by model ID, enforces policies, and traces each call.
+
+Claude Code can use the standard Anthropic Messages format, while Codex and Deep Agents Code can use the standard OpenAI-compatible formats. Gemini CLI uses Google's native API and requires [direct model access](/langsmith/llm-gateway-direct-model-access).
+
+## Prerequisites
+
+- Your [Organization admin](/langsmith/rbac#organization-admin) has enabled the gateway and completed any required [provider setup](/langsmith/llm-gateway-admin-setup).
+- You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations).
+- For bring-your-own-key models, your workspace has the corresponding provider secret. [Gateway Credits models](/langsmith/llm-gateway-credits) do not require a provider secret.
+
+Set your LangSmith API key before configuring a client:
+
+```bash
+export LANGSMITH_API_KEY="lsv2_..._....cbed3e"
+```
+
+## Claude Code CLI
+
+Choose the authentication method that matches how your organization pays for Anthropic usage.
+
+### Use a workspace provider key
+
+Point Claude Code at the standard Messages endpoint and use a provider-prefixed model ID:
+
+```bash
+export ANTHROPIC_BASE_URL="https://gateway.smith.langchain.com"
+export ANTHROPIC_API_KEY="$LANGSMITH_API_KEY"
+export ANTHROPIC_MODEL="anthropic/claude-opus-5"
+
+claude
+```
+
+Claude Code appends `/v1/messages` to `ANTHROPIC_BASE_URL`. The gateway uses the `anthropic/` prefix to resolve the workspace's Anthropic provider secret.
+
+### Use Claude subscription OAuth
+
+Claude Code Plus and Max users can send their saved Anthropic OAuth credential through the gateway. This mode is available to all organizations and does not require an `ANTHROPIC_API_KEY` in workspace provider secrets.
+
+Log in to Claude Code with your subscription, then configure the gateway:
+
+```bash
+export ANTHROPIC_BASE_URL="https://gateway.smith.langchain.com/anthropic"
+export ANTHROPIC_CUSTOM_HEADERS="X-Api-Key: $LANGSMITH_API_KEY"
+
+claude
+```
+
+Claude Code uses and refreshes the OAuth credential from its saved login. It also sends the required OAuth capability in the `anthropic-beta` header automatically.
+
+The LangSmith API key authenticates the gateway request and remains subject to gateway permissions and policies. The gateway forwards the OAuth bearer to Anthropic, so Anthropic bills the call to the user's Claude subscription instead of the workspace provider key.
+
+<Warning>
+Leave `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` unset for this mode. Either variable takes precedence over the saved subscription login.
+
+Claude Desktop plugins break when the gateway is configured.
+</Warning>
+
+## Codex CLI
+
+Codex uses the Responses API. Add the following to `~/.codex/config.toml` to call the hosted Kimi K3 model with Gateway Credits through the standard endpoint:
+
+```toml
+model = "moonshotai/kimi-k3"
+model_provider = "langsmith-gateway"
+
+[model_providers.langsmith-gateway]
+name = "LangSmith Gateway"
+base_url = "https://gateway.smith.langchain.com/v1"
+env_key = "LANGSMITH_API_KEY"
+wire_api = "responses"
+supports_websockets = false
+```
+
+Then run:
+
+```bash
+codex
+```
+
+To use a bring-your-own-key model instead, replace `model` with its provider-prefixed ID, such as `openai/gpt-5.4-mini`.
+
+<Warning>
+Codex Desktop plugins break when the gateway is configured. The TOML configuration forces authentication through the gateway, so OpenAI no longer handles plugin authentication directly.
+</Warning>
+
+## Gemini CLI
+
+Gemini CLI sends Google's native Generate Content requests, which the standard endpoint does not expose. Follow [Direct model access](/langsmith/llm-gateway-direct-model-access#configure-provider-sdks) to configure the `/gemini` route, then run:
+
+```bash
+gemini
+```
+
+## Deep Agents Code
+
+Use the OpenAI-compatible client with the standard endpoint, then pass the hosted model slug through the `openai` integration:
+
+```bash
+export OPENAI_BASE_URL="https://gateway.smith.langchain.com/v1"
+export OPENAI_API_KEY="$LANGSMITH_API_KEY"
+
+dcode --model openai:moonshotai/kimi-k3
+```
+
+To use a bring-your-own-key model, keep the standard base URL and pass a provider-prefixed model after `openai:`, for example, `openai:anthropic/claude-opus-5`. For provider-native integrations and model IDs, see [Direct model access](/langsmith/llm-gateway-direct-model-access#configure-langchain-and-deep-agents).
+
+## Company-wide deployment
+
+For organizations rolling the gateway out to all developers, distribute the configuration through mobile device management or a shared shell profile. Distribute:
+
+1. The standard gateway base URL for each client.
+1. A workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) per user or team, depending on your policy granularity.
+1. The model IDs approved for each coding agent.
+1. The Codex `config.toml` if your organization uses Codex.
+
+Provider API keys stay centralized in LangSmith workspace secrets. Gateway Credits models do not require provider API keys.
+
+## Verify the setup
+
+After configuring a coding agent, make a test call and confirm that:
+
+1. The call succeeds and the agent receives a response.
+1. A trace appears in the `gateway` or `gateway-<short_api_key>-<api_key_id>` tracing project in your LangSmith workspace.
+
+If the call fails with a `403`, check that your API key's role includes `gateway:invoke` and `workspaces:read`. If a bring-your-own-key call fails with a `400` mentioning a missing provider key, ask your organization admin to add the provider's key to workspace secrets.
+
+## Next steps
+
+- [Gateway Credits](/langsmith/llm-gateway-credits): call hosted models without a provider secret.
+- [Direct model access](/langsmith/llm-gateway-direct-model-access): configure provider-native routes for coding agents that require them.
+- [Spend policies](/langsmith/llm-gateway-spend-policies): set cost limits on developer LLM usage.
+- [Traces, Engine, and access control](/langsmith/llm-gateway-access): understand where gateway traces appear.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/llm-gateway-coding-agents.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
