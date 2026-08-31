@@ -722,6 +722,8 @@ LINK_MAPS: list[LinkMap] = [
             "ContextEdit": "langchain/index/ContextEdit",
             "toolRetryMiddleware": "langchain/index/toolRetryMiddleware",
             "ToolRetryMiddleware": "langchain/index/toolRetryMiddleware",
+            "toolErrorMiddleware": "langchain/index/toolErrorMiddleware",
+            "ToolErrorMiddleware": "langchain/index/toolErrorMiddleware",
             "modelRetryMiddleware": "langchain/index/modelRetryMiddleware",
             "ModelRetryMiddleware": "langchain/index/modelRetryMiddleware",
             "ModelFallbackMiddleware": "langchain/index/modelFallbackMiddleware",
