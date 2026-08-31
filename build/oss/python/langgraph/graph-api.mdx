@@ -18,6 +18,10 @@ import LanggraphGraphApiReducersAppendStringsJs from '/snippets/python/code-samp
 import LanggraphGraphApiReducersAppendStringsPy from '/snippets/python/code-samples/langgraph-graph-api-reducers-append-strings-py.mdx';
 import LanggraphGraphApiReducersCustomStateJs from '/snippets/python/code-samples/langgraph-graph-api-reducers-custom-state-js.mdx';
 import LanggraphGraphApiReducersCustomStatePy from '/snippets/python/code-samples/langgraph-graph-api-reducers-custom-state-py.mdx';
+import LanggraphGraphApiReducersMergeDoesNotClearJs from '/snippets/python/code-samples/langgraph-graph-api-reducers-merge-does-not-clear-js.mdx';
+import LanggraphGraphApiReducersMergeDoesNotClearPy from '/snippets/python/code-samples/langgraph-graph-api-reducers-merge-does-not-clear-py.mdx';
+import LanggraphGraphApiReducersOverwriteClearPy from '/snippets/python/code-samples/langgraph-graph-api-reducers-overwrite-clear-py.mdx';
+import LanggraphGraphApiReducersReplaceJs from '/snippets/python/code-samples/langgraph-graph-api-reducers-replace-js.mdx';
 import LanggraphGraphApiReducersDefaultStateJs from '/snippets/python/code-samples/langgraph-graph-api-reducers-default-state-js.mdx';
 import LanggraphGraphApiReducersDefaultStatePy from '/snippets/python/code-samples/langgraph-graph-api-reducers-default-state-py.mdx';
 
@@ -221,7 +225,166 @@ In some cases, you may want to bypass a reducer and directly overwrite a state v
 </Tip>
 
 
+#### Resetting a reducer field
 
+A common source of confusion with reducers: with a merging reducer, returning an empty value does **not** clear the field. Because the reducer merges the right argument into the left one, an empty update is merged in and previously accumulated values are kept.
+
+This pattern matters for error buffers or retry counters that must be cleared between retry attempts:
+
+<LanggraphGraphApiReducersMergeDoesNotClearPy />
+
+To clear the field while keeping a merging reducer, wrap the update with [`Overwrite`](https://reference.langchain.com/python/langgraph/types/):
+
+<LanggraphGraphApiReducersOverwriteClearPy />
+
+For more information, see [Bypass reducers with Overwrite](/oss/python/langgraph/use-graph-api#bypass-reducers-with-overwrite).
+
+
+
+
+### Untracked values
+
+`UntrackedValue` is used for state fields that should exist during graph execution but should **never be checkpointed**. When a graph resumes from a checkpoint, untracked values will be reset to their initial state (or be unavailable).
+
+This is useful for:
+- **Database connections** that can't be serialized
+- **Temporary caches** that should be rebuilt on resume
+- **Large objects** you don't want to persist
+- **Runtime-only configuration** that should be passed fresh each time
+
+```typescript
+import { StateSchema, UntrackedValue, MessagesValue } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  messages: MessagesValue,
+
+  // Untracked: throws if multiple nodes write in same step (guard: true is default)
+  dbConnection: new UntrackedValue<DatabaseConnection>(),
+
+  // Untracked with guard: false allows multiple writes, keeps last value
+  tempCache: new UntrackedValue(
+    z.record(z.string(), z.unknown()),
+    { guard: false }
+  ),
+
+  // Untracked without a schema (for maximum flexibility)
+  runtimeConfig: new UntrackedValue(),
+});
+```
+
+**Behavior:**
+- During execution: Values are stored and accessible like normal state
+- On checkpoint: Untracked values are **excluded** from the checkpoint data
+- On resume: Untracked values start fresh (empty or with their default value)
+- With `guard: true` (default): Throws error if multiple nodes write in the same step
+- With `guard: false`: Multiple writes allowed, last value wins
+
+<Warning>
+Don't use `UntrackedValue` for data you need to persist across interrupts or time travel. Use regular state fields or `ReducedValue` for persistent data.
+</Warning>
+
+### Type utilities
+
+LangGraph provides several type utilities for better TypeScript type safety when defining nodes and conditional edges.
+
+#### `GraphNode`
+
+Use `GraphNode` to type node functions defined outside the graph builder:
+
+```typescript
+import { GraphNode, StateSchema, Command } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  count: z.number().default(0),
+  result: z.string(),
+});
+
+// Basic node - receives state, returns partial update
+const incrementNode: GraphNode<typeof State> = (state) => {
+  return { count: state.count + 1 };
+};
+
+// Async node
+const fetchNode: GraphNode<typeof State> = async (state, config) => {
+  const response = await fetch(`/api/data/${state.count}`);
+  return { result: await response.text() };
+};
+
+// Node with Command routing - specify valid destinations
+const routerNode: GraphNode<{ InputSchema: typeof State; Nodes: "process" | "done" }> = (state) => {
+  if (state.count >= 10) {
+    return new Command({ goto: "done" });
+  }
+  return new Command({
+    update: { count: state.count + 1 },
+    goto: "process"
+  });
+};
+```
+
+#### `State.Node` shorthand
+
+Each `StateSchema` instance has a `Node` property that provides a shorthand for typing nodes:
+
+```typescript
+const State = new StateSchema({
+  messages: MessagesValue,
+  step: z.string(),
+});
+
+// These are equivalent:
+const myNode1: GraphNode<typeof State> = (state) => ({ step: "done" });
+const myNode2: typeof State.Node = (state) => ({ step: "done" });
+```
+
+#### `ConditionalEdgeRouter`
+
+Use `ConditionalEdgeRouter` for routing functions in conditional edges (no state updates, just routing):
+
+```typescript
+import { ConditionalEdgeRouter, END } from "@langchain/langgraph";
+
+const State = new StateSchema({
+  shouldContinue: z.boolean(),
+  step: z.string(),
+});
+
+// Router returns node name(s) or END
+const router: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "process" | "summarize" }> = (state) => {
+  if (!state.shouldContinue) {
+    return END;
+  }
+  return state.step === "initial" ? "process" : "summarize";
+};
+
+// Use in graph
+graph.addConditionalEdges("check", router);
+```
+
+#### `StateSchema.State` and `StateSchema.Update`
+
+Extract the state and update types from a schema for use in custom type definitions:
+
+```typescript
+import { StateSchema } from "@langchain/langgraph";
+
+const MyStateSchema = new StateSchema({
+  messages: MessagesValue,
+  count: z.number().default(0),
+});
+
+// Extract the full state type
+type MyState = typeof MyStateSchema.State;
+// { messages: BaseMessage[], count: number }
+
+// Extract the update type (partial, with reducer input types)
+type MyUpdate = typeof MyStateSchema.Update;
+// { messages?: Messages, count?: number }
+```
+
+:::
 
 ### Working with messages in graph state
 

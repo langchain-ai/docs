@@ -112575,6 +112575,48 @@ In this example, we've used `ReducedValue` to specify a reducer function for the
 
 
 
+#### Resetting a reducer field
+
+A common source of confusion with reducers: with a merging reducer, returning an empty value does **not** clear the field. Because the reducer merges the right argument into the left one, an empty update is merged in and previously accumulated values are kept.
+
+This pattern matters for error buffers or retry counters that must be cleared between retry attempts:
+
+
+
+```ts
+import { ReducedValue, StateSchema } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  errors: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (state: string[], update: string[]) => state.concat(update) },
+  ),
+});
+
+// node A returns { errors: ["bad sql"] }
+// node B returns { errors: [] }
+// state.errors is still ["bad sql"]; the empty array is merged in, not cleared
+```
+
+To let a node reset (clear) the field, define a custom reducer that replaces the accumulated value instead of merging it:
+
+```ts
+import { ReducedValue, StateSchema } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  errors: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (_state: string[], update: string[]) => update }
+  ),
+});
+
+// node can now clear the field with { errors: [] }
+```
+
+
+
 ### Untracked values
 
 `UntrackedValue` is used for state fields that should exist during graph execution but should **never be checkpointed**. When a graph resumes from a checkpoint, untracked values will be reset to their initial state (or be unavailable).
@@ -112717,7 +112759,7 @@ type MyUpdate = typeof MyStateSchema.Update;
 // { messages?: Messages, count?: number }
 ```
 
-
+:::
 
 ### Working with messages in graph state
 
