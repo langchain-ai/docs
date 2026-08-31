@@ -1510,6 +1510,18 @@ Adding "D" to ['A', 'B', 'C', 'B_2']
 
 In the above example, nodes `"b"` and `"c"` are executed concurrently in the same superstep. We set `defer=True` on node `d` so it will not execute until all pending tasks are finished. In this case, this means that `"d"` waits to execute until the entire `"b"` branch is finished.
 
+When every branch always runs, you can wait with a list-form edge instead of `defer=True`. `add_edge` also accepts a list of start nodes. This is not shorthand for separate `add_edge` calls; the two forms behave differently:
+
+```python
+builder.add_edge(["b_2", "c"], "d")  # d runs once, after both b_2 and c complete
+```
+
+- **A list of start nodes** runs `d` once, after all of the listed nodes have completed. If one of them never runs (for example, a conditional edge does not select its branch), `d` never runs and no error is raised. State updates from branches that did complete remain in the graph state, but `d` does not consume them.
+- **Separate edges** run `d` once per superstep in which any incoming branch completes. With branches of equal length, that is a single run; with branches of different lengths, `d` runs more than once.
+- **Separate edges with `defer=True`** (the pattern in the example above) run `d` once, after every selected branch has completed, whether the fan-out selected all of the branches or only some of them.
+
+`defer=True` postpones the node until no tasks are pending anywhere in the graph, not only in the branches that feed it. A `Send` addressed to the node still invokes it separately.
+
 
 ### Conditional branching
 
@@ -1929,7 +1941,7 @@ Recursion Error
   4. Node A
   5. ...
 
-  We have a loop of four supersteps, where nodes C and D are executed concurrently.
+  We have a loop of four supersteps, where nodes C and D are executed concurrently. The list-form edge waits for both `"c"` and `"d"` before returning to `"a"`. For how list-form edges differ from separate edges into the same node, see [Defer node execution](#defer-node-execution).
 
   Invoking the graph as before, we see that we complete two full "laps" before hitting the termination condition:
 
