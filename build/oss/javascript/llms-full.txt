@@ -9428,32 +9428,25 @@ const result = await agent.invoke(
 </Tab>
 <Tab title="StoreBackend">
 ```ts
-import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
+import { createDeepAgent, StoreBackend } from "deepagents";
 import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
 
 const checkpointer = new MemorySaver();
 const store = new InMemoryStore();
 const backend = new StoreBackend({
   namespace: () => ["filesystem"],
+  store,
 });
-
-function createFileData(content: string): FileData {
-  const now = new Date().toISOString();
-  return {
-    content: content.split("\n"),
-    created_at: now,
-    modified_at: now,
-  };
-}
 
 const skillUrl =
   "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
 
 const response = await fetch(skillUrl);
 const skillContent = await response.text();
-const fileData = createFileData(skillContent);
 
-await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
+await backend.uploadFiles([
+  ["/skills/langgraph-docs/SKILL.md", new TextEncoder().encode(skillContent)],
+]);
 
 const agent = await createDeepAgent({
   model: "google-genai:gemini-3.1-pro-preview",
@@ -9480,18 +9473,31 @@ import { createDeepAgent, FilesystemBackend } from "deepagents";
 import { MemorySaver } from "@langchain/langgraph";
 
 const checkpointer = new MemorySaver();
-const backend = new FilesystemBackend({ rootDir: process.cwd() });
+
+const skillUrl =
+  "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+const response = await fetch(skillUrl);
+const skillContent = await response.text();
+
+let backend = new FilesystemBackend({
+  rootDir: process.cwd(),
+  virtualMode: true,
+});
+await backend.uploadFiles([
+  ["/skills/langgraph-docs/SKILL.md", new TextEncoder().encode(skillContent)],
+]);
 
 const agent = await createDeepAgent({
   model: "google-genai:gemini-3.1-pro-preview",
   backend,
-  skills: ["./examples/skills/"],
+  // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+  skills: ["/skills/"],
   interruptOn: {
     read_file: true,
     write_file: true,
     delete_file: true,
   },
-  checkpointer, // Required!
+  checkpointer, // Required for filesystem operations!
 });
 
 const config = { configurable: { thread_id: `thread-${Date.now()}` } };
@@ -24429,7 +24435,9 @@ Each source path can point at a directory that contains skill directories, or di
 
     - If omitted, no skills are loaded.
     - When using `StateBackend` (default), provide skill files with `invoke(files={...})`. Use `create_file_data()` from `deepagents.backends.utils` to format file contents; raw strings are not supported.
-    - With `FilesystemBackend`, skills are loaded from disk relative to the backend's `root_dir`.
+
+    - With `FilesystemBackend` and `StoreBackend`, create the backend, call `backend.uploadFiles()` to add skill files, then pass the backend to `createDeepAgent`. For `FilesystemBackend`, use `virtualMode: true` to sandbox paths under `rootDir`. Skills already on disk under `rootDir` load without uploading.
+
 
     Later sources override earlier ones for skills with the same name (last one wins).
 
@@ -24666,32 +24674,25 @@ const result = await agent.invoke(
 </Tab>
 <Tab title="StoreBackend">
 ```ts
-import { createDeepAgent, StoreBackend, type FileData } from "deepagents";
+import { createDeepAgent, StoreBackend } from "deepagents";
 import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
 
 const checkpointer = new MemorySaver();
 const store = new InMemoryStore();
 const backend = new StoreBackend({
   namespace: () => ["filesystem"],
+  store,
 });
-
-function createFileData(content: string): FileData {
-  const now = new Date().toISOString();
-  return {
-    content: content.split("\n"),
-    created_at: now,
-    modified_at: now,
-  };
-}
 
 const skillUrl =
   "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
 
 const response = await fetch(skillUrl);
 const skillContent = await response.text();
-const fileData = createFileData(skillContent);
 
-await store.put(["filesystem"], "/skills/langgraph-docs/SKILL.md", fileData);
+await backend.uploadFiles([
+  ["/skills/langgraph-docs/SKILL.md", new TextEncoder().encode(skillContent)],
+]);
 
 const agent = await createDeepAgent({
   model: "google-genai:gemini-3.1-pro-preview",
@@ -24718,18 +24719,31 @@ import { createDeepAgent, FilesystemBackend } from "deepagents";
 import { MemorySaver } from "@langchain/langgraph";
 
 const checkpointer = new MemorySaver();
-const backend = new FilesystemBackend({ rootDir: process.cwd() });
+
+const skillUrl =
+  "https://raw.githubusercontent.com/langchain-ai/deepagentsjs/refs/heads/main/examples/skills/langgraph-docs/SKILL.md";
+const response = await fetch(skillUrl);
+const skillContent = await response.text();
+
+let backend = new FilesystemBackend({
+  rootDir: process.cwd(),
+  virtualMode: true,
+});
+await backend.uploadFiles([
+  ["/skills/langgraph-docs/SKILL.md", new TextEncoder().encode(skillContent)],
+]);
 
 const agent = await createDeepAgent({
   model: "google-genai:gemini-3.1-pro-preview",
   backend,
-  skills: ["./examples/skills/"],
+  // IMPORTANT: deepagents skill source paths are virtual (POSIX) paths relative to the backend root.
+  skills: ["/skills/"],
   interruptOn: {
     read_file: true,
     write_file: true,
     delete_file: true,
   },
-  checkpointer, // Required!
+  checkpointer, // Required for filesystem operations!
 });
 
 const config = { configurable: { thread_id: `thread-${Date.now()}` } };
