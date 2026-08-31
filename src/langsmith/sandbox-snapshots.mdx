@@ -4,15 +4,83 @@ sidebarTitle: Snapshots
 description: Build and capture reusable filesystem images for sandboxes.
 ---
 
-A **snapshot** is a reusable filesystem bundle backed by a Docker image. Build or capture a snapshot when you want to boot sandboxes from a custom filesystem image.
+A **snapshot** is a reusable sandbox filesystem. Build a custom snapshot from a container image when you want to boot sandboxes from a custom filesystem image.
 
 You can also capture a snapshot from a running sandbox—install packages, write data files, or configure state, then snapshot the result and reuse it as a new starting point.
 
 ![Sandboxes snapshots page](/images/langsmith/sandboxes/sb-snapshots.png)
 
-## Build a snapshot from a Docker image
+## Understand the default snapshot
 
-Build a snapshot by pointing at any Docker image. The call blocks until the snapshot is ready (default timeout is 60 seconds; bump it for large images).
+When you create a sandbox without selecting a snapshot, LangSmith uses a built-in default snapshot. The default provides an Ubuntu 24.04 filesystem with common development tools. LangSmith may update the packages and tools included in the default snapshot over time.
+
+### Inspect the default snapshot filesystem in self-hosted deployments
+
+In a self-hosted deployment, LangSmith creates the default snapshot from a filesystem embedded in the sandbox runtime container image, `sandbox-host`:
+
+1. During the `sandbox-host` image build, LangSmith starts with Ubuntu 24.04 and installs the default development tools.
+2. LangSmith packages that filesystem as a compressed 16 GiB ext4 file at `/opt/sandbox-host/bin/builder-base.ext4.gz`.
+3. When `sandbox-host` starts, LangSmith uses the embedded filesystem to create the default snapshot.
+
+The compressed ext4 file, rather than a separately pulled container image, is the source of the default snapshot filesystem.
+
+Scanning the `sandbox-host` container image alone does not inspect the files inside this compressed artifact. To verify the default snapshot, extract and scan the embedded filesystem separately.
+
+<Note>
+This procedure verifies the default snapshot filesystem. LangSmith supplies other required runtime components separately when the sandbox starts; they are not part of the snapshot.
+</Note>
+
+To independently inspect the default snapshot, use the exact `sandbox-host` container image configured by your Helm release. If you mirror images, use the reference in `images.sandboxHostImage` from your private registry.
+
+You need:
+
+- Access to the deployed `sandbox-host` image.
+- Docker, `gzip`, GNU `dd`, and `debugfs` from the `e2fsprogs` package on a Linux system.
+- A local filesystem that supports sparse files, plus enough space for the compressed artifact and the extracted files. The ext4 image has a 16 GiB logical size, but sparse decompression avoids allocating its zero-filled free space.
+
+Extract the files into a temporary directory and scan the resulting directory with your preferred filesystem or software bill of materials (SBOM) scanner.
+
+Set the exact image reference used by your deployment and create a temporary working directory:
+
+```bash
+export SANDBOX_HOST_IMAGE="<sandbox-host-image-reference>"
+export SNAPSHOT_WORKDIR="$(mktemp -d)"
+
+docker pull "$SANDBOX_HOST_IMAGE"
+```
+
+Extract the compressed ext4 file without starting the `sandbox-host` process:
+
+```bash
+SANDBOX_HOST_CONTAINER="$(docker create "$SANDBOX_HOST_IMAGE")"
+docker cp \
+  "${SANDBOX_HOST_CONTAINER}:/opt/sandbox-host/bin/builder-base.ext4.gz" \
+  "$SNAPSHOT_WORKDIR/"
+docker rm "$SANDBOX_HOST_CONTAINER"
+```
+
+Decompress the filesystem as a sparse file:
+
+```bash
+gzip -dc "$SNAPSHOT_WORKDIR/builder-base.ext4.gz" | \
+  dd of="$SNAPSHOT_WORKDIR/builder-base.ext4" \
+    bs=1M conv=sparse status=progress
+```
+
+Extract the ext4 contents with `debugfs`. `debugfs` opens the filesystem read-only unless you pass `-w`:
+
+```bash
+mkdir -p "$SNAPSHOT_WORKDIR/rootfs"
+debugfs \
+  -R "rdump / $SNAPSHOT_WORKDIR/rootfs" \
+  "$SNAPSHOT_WORKDIR/builder-base.ext4"
+```
+
+Point your filesystem or SBOM scanner at `$SNAPSHOT_WORKDIR/rootfs`. The scanner reads the package databases and files from the same root filesystem that LangSmith uses for the default snapshot.
+
+## Build a snapshot from a container image
+
+Build a snapshot by pointing at any container image. The call blocks until the snapshot is ready (default timeout is 60 seconds; bump it for large images).
 
 <CodeGroup>
 
@@ -45,6 +113,16 @@ console.log(snapshot.id);
 ```
 
 </CodeGroup>
+
+### Verify a snapshot built from a container image
+
+LangSmith builds a custom snapshot from the filesystem in the container image you provide. To independently verify those contents:
+
+1. Resolve the source container image to an immutable reference, such as `registry.example.com/example/image@sha256:<digest>`.
+2. Inspect and scan that exact image.
+3. Use the same digest-qualified reference as `docker_image` when you create the snapshot.
+
+LangSmith supplies its required runtime tools separately when the sandbox starts. They are not added to the container image you provide or included in the custom snapshot.
 
 ### Private registries
 
@@ -196,7 +274,7 @@ const snapshot = await client.createSnapshotFromDockerfile(
 
 ### Speed up cold builds
 
-`vcpus` / `vCpus` and `mem_bytes` / `memBytes` size the temporary builder sandbox. The build runs BuildKit plus the native snapshotter's layer copies inside it, which contend for a single core by default, so giving the builder an extra vCPU can cut a cold build's wall time substantially.
+`vcpus` / `vCpus` and `mem_bytes` / `memBytes` size the temporary builder sandbox. The build runs BuildKit plus the native snapshotter's layer copies inside it, which contend for the builder's default 0.5 vCPU, so giving the builder more CPU can cut a cold build's wall time substantially. Memory is tied to CPU at 4 GiB per vCPU and must stay within 50% of that target, so a 2-vCPU builder accepts 4 to 12 GiB. Omit memory and it follows the ratio.
 
 <CodeGroup>
 
@@ -206,7 +284,7 @@ snapshot = client.create_snapshot_from_dockerfile(
     dockerfile="Dockerfile",
     fs_capacity_bytes=2 * 1024**3,
     vcpus=2,
-    mem_bytes=4 * 1024**3,  # 4 GiB
+    mem_bytes=8 * 1024**3,  # 8 GiB
     timeout=600,
 )
 ```
@@ -218,7 +296,7 @@ const snapshot = await client.createSnapshotFromDockerfile(
   2_147_483_648,
   {
     vCpus: 2,
-    memBytes: 4_294_967_296, // 4 GiB
+    memBytes: 8_589_934_592, // 8 GiB
     timeout: 600,
   },
 );
@@ -276,7 +354,7 @@ try {
 </CodeGroup>
 
 <Note>
-Capture preserves the **persistent filesystem only**. Installed packages (under `/usr/local`, `/root`, `/opt`, the home directory, etc.) and files you wrote to those locations are kept. Running processes, open sockets, in-memory state, and anything under `/tmp` (which is a tmpfs) are **not** carried over — boot the new sandbox and start the processes you need again.
+By default, capture preserves the **filesystem only**. Installed packages (under `/usr/local`, `/root`, `/opt`, the home directory, etc.) and files you wrote to those locations are kept, as is `/tmp`. Only `/dev/shm` is a tmpfs, so everything else lives on the sandbox's disk. Running processes, open sockets, and in-memory state are **not** carried over: boot the new sandbox and start the processes you need again, or [capture memory too](#resume-from-memory).
 </Note>
 
 <Tip>
@@ -312,6 +390,49 @@ const snapshot = await sb.captureSnapshot("ml-ready-v2", { timeout: 600 });
 ```
 
 </CodeGroup>
+
+### Resume from memory
+
+A snapshot can carry the sandbox's RAM alongside its filesystem. Boot from one and the sandbox resumes where it left off, with its processes still running, instead of cold-booting. Use this for environments that are slow to warm up, such as a loaded model or a started database.
+
+<Note>
+Memory snapshots are available over the REST API only. The `langsmith.sandbox` Python and TypeScript clients do not expose these fields yet.
+</Note>
+
+Capture memory by setting `include_memory` on a capture:
+
+```bash
+curl -X POST \
+  "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes/my-vm/snapshot" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "warm-model", "include_memory": true}'
+```
+
+The response reports `memory_snapshot_size_bytes` when memory was captured. `include_memory` requires a sandbox that is running or stopped, and it cannot be combined with `checkpoint` or `docker_image`.
+
+Some sandboxes run on an overlay filesystem runtime that cannot carry a memory image. Capturing one returns `include_memory is not supported for overlay-rootfs sandboxes`. LangSmith assigns that runtime, so it is not something you select per sandbox.
+
+Two fields on create control the other half:
+
+| Field | What it does |
+|-------|--------------|
+| `restore_memory` | Omit it to resume from memory when the snapshot has it and cold-boot when it does not. `true` requires memory and fails the request if the snapshot has none. `false` always cold-boots. |
+| `preserve_memory_on_stop` | `true` suspends RAM on a voluntary stop (idle timeout or explicit stop) so the sandbox resumes where it left off when it next wakes, rather than cold-booting. Defaults to `false`, which keeps only the filesystem. Restarts triggered by infrastructure maintenance preserve memory either way. |
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/api/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "warm-vm",
+    "snapshot": "warm-model",
+    "restore_memory": true,
+    "preserve_memory_on_stop": true
+  }'
+```
+
+Capturing memory from a **stopped** sandbox only works when that sandbox was created with `preserve_memory_on_stop`. Without it, the stop discards RAM and there is nothing to capture.
 
 ## List, fetch, and delete snapshots
 
@@ -360,9 +481,9 @@ const page = await client.listSnapshots({ nameContains: "ml", limit: 100 });
 
 </Note>
 
-## Stop and start sandboxes
+## Stopped sandboxes
 
-Sandboxes can be stopped and restarted without losing filesystem state. Files you wrote during the previous run are still there when the sandbox comes back up.
+A stopped sandbox keeps its filesystem, and the next request wakes it automatically. You do not need to start it yourself: send the command you wanted to run and the sandbox comes back up to serve it.
 
 <CodeGroup>
 
@@ -370,12 +491,10 @@ Sandboxes can be stopped and restarted without losing filesystem state. Files yo
 sb = client.create_sandbox(snapshot_id=snapshot.id, name="my-vm")
 sb.run("echo 'hello' > /tmp/state.txt")
 
-# Stop the sandbox — preserves files on disk
+# Stop early to release resources. The idle timeout does this for you.
 sb.stop()
 
-# Later: start it again (blocks until ready, default timeout=120s)
-sb.start()
-
+# No start call: this wakes the sandbox and runs once it is up.
 result = sb.run("cat /tmp/state.txt")
 assert result.stdout.strip() == "hello"
 ```
@@ -386,15 +505,13 @@ await sb.run("echo 'hello' > /tmp/state.txt");
 
 await sb.stop();
 
-await sb.start();
-
 const result = await sb.run("cat /tmp/state.txt");
 console.log(result.stdout.trim()); // "hello"
 ```
 
 </CodeGroup>
 
-You can also stop and start by name via the client directly (`client.stop_sandbox(name)` / `client.start_sandbox(name)` in Python, `client.stopSandbox(name)` / `client.startSandbox(name)` in TypeScript).
+The first request after a stop pays the boot cost, so it is slower than the ones that follow. Create the sandbox with `preserve_memory_on_stop` to [resume from memory](#resume-from-memory) instead of cold-booting.
 
 ## Next steps
 

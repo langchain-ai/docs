@@ -26,8 +26,8 @@ docs/
 │   ├── index.mdx               # Home page
 │   ├── style.css               # Custom CSS
 │   ├── langsmith/              # LangSmith product docs
-│   │   └── fleet/              #   LangSmith Fleet
-│   ├── oss/                    # Open source docs (LangChain, LangGraph, Deep Agents)
+│   │   └── fleet/              #   Fleet (nav label: "No-code agents")
+│   ├── oss/                    # Open source docs (LangChain, LangGraph, Deep Agents, OpenWiki)
 │   ├── snippets/               # Reusable MDX snippets
 │   ├── images/                 # Documentation images
 │   └── fonts/                  # Font files
@@ -37,7 +37,7 @@ docs/
 └── tests/                      # Pipeline tests
 ```
 
-For the navigation map (every product, tab, and group), see `AGENTS.md`. Navigation is defined in `src/docs.json`, and new pages must be added to the correct product, tab, and group.
+For the navigation map (every product, menu item, tab, and group), see `AGENTS.md`. Navigation is defined in `src/docs.json` as 2 products: `AGENT DEVELOPMENT LIFECYCLE` (Home, Build, Test, Deploy, Monitor) and `PRODUCTS AND SETUP` (LangSmith setup, LLM Gateway, No-code agents, Engine, Deep Agents Code). Nav names do not match source directory names, so consult `AGENTS.md` before placing a new page.
 
 ## Quick reference
 
