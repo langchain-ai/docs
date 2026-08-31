@@ -1015,7 +1015,7 @@ sandboxes:
     name: "sandbox-juicefs"
     storage: "wasb"
     bucket: "https://container-name.core.windows.net"
-    accessKey: "<storage-account-name>" # Account name, not a credential.
+    storageAccountName: "<storage-account-name>"
     redis:
       metaURL: "redis://redis-host:6379/1"
   juicefsFormatJob:
