@@ -20,8 +20,11 @@ Python projects also require [`uv`](https://docs.astral.sh/uv/).
 From the project root, run:
 
 ```bash
-mda dev .
+uv run mda dev
 ```
+
+
+
 
 The CLI prints the local server and Studio URLs and opens Studio in your browser. Send messages in Studio to inspect model responses, tool calls, state, and interrupts.
 

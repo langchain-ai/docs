@@ -35,9 +35,19 @@ Install the Tavily client:
 
 
 
-```bash
-npm install @langchain/tavily
-```
+<CodeGroup>
+    ```bash npm
+    npm install @langchain/tavily
+    ```
+
+    ```bash pnpm
+    pnpm add @langchain/tavily
+    ```
+
+    ```bash bun
+    bun add @langchain/tavily
+    ```
+</CodeGroup>
 
 
 Create a custom `internet_search` tool:
@@ -172,9 +182,22 @@ For thread behavior and constraints, see [Schedules](/langsmith/javascript/manag
 
 Deploy the project to LangSmith:
 
-```bash
-mda deploy .
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda deploy
+    ```
+
+    ```bash pnpm
+    pnpm exec mda deploy
+    ```
+
+    ```bash bun
+    bunx mda deploy
+    ```
+</CodeGroup>
+
 
 On success, the CLI prints the deployment dashboard URL. The deploy syncs the instructions to Context Hub, uploads the compiled project, and reconciles the daily schedule.
 

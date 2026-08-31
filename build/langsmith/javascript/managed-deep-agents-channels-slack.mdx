@@ -35,15 +35,41 @@ The channel declaration lives at `channels/slack.ts`.
 
 To include Slack when you create a project, pass `--channel slack`:
 
-```bash
-mda init my-agent --channel slack
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx managed-deepagents init my-agent --channel slack
+    ```
+
+    ```bash pnpm
+    pnpm dlx managed-deepagents init my-agent --channel slack
+    ```
+
+    ```bash bun
+    bunx managed-deepagents init my-agent --channel slack
+    ```
+</CodeGroup>
+
 
 To add Slack to an existing project, run the channel initialization command from the project root:
 
-```bash
-mda channel init slack
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda channel init slack
+    ```
+
+    ```bash pnpm
+    pnpm exec mda channel init slack
+    ```
+
+    ```bash bun
+    bunx mda channel init slack
+    ```
+</CodeGroup>
+
 
 
 
@@ -122,9 +148,22 @@ During deployment, Managed Deep Agents provisions your agent in Slack from the c
   <Step title="Deploy your agent">
     Run the deployment command from the project root:
 
-    ```bash
-    mda deploy
-    ```
+
+
+    <CodeGroup>
+        ```bash npm
+        npx mda deploy
+        ```
+
+        ```bash pnpm
+        pnpm exec mda deploy
+        ```
+
+        ```bash bun
+        bunx mda deploy
+        ```
+    </CodeGroup>
+
 
     Managed Deep Agents deploys the agent and sets up the resources it needs to appear in Slack.
   </Step>

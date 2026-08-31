@@ -36,14 +36,20 @@ The channel declaration lives at `channels/slack.py`.
 To include Slack when you create a project, pass `--channel slack`:
 
 ```bash
-mda init my-agent --channel slack
+uvx --from managed-deepagents mda init my-agent --channel slack
 ```
+
+
+
 
 To add Slack to an existing project, run the channel initialization command from the project root:
 
 ```bash
-mda channel init slack
+uv run mda channel init slack
 ```
+
+
+
 
 ```python channels/slack.py
 from managed_deepagents import channels
@@ -123,8 +129,11 @@ During deployment, Managed Deep Agents provisions your agent in Slack from the c
     Run the deployment command from the project root:
 
     ```bash
-    mda deploy
+    uv run mda deploy
     ```
+
+
+
 
     Managed Deep Agents deploys the agent and sets up the resources it needs to appear in Slack.
   </Step>

@@ -52,8 +52,11 @@ See the [Deep Agents Code quickstart](/oss/deepagents/code/quickstart) for provi
 From the project root, run:
 
 ```bash
-mda evals init -i
+uv run mda evals init -i
 ```
+
+
+
 
 The interactive handoff lists detected coding agents, including Deep Agents Code, Claude Code, Codex, and Cursor. Selecting an agent starts that agent in the project directory and runs the eval-engineering prompt. You can also copy the prompt for another agent, or exit and return later.
 

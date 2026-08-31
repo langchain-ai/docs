@@ -19,15 +19,32 @@ For the fastest end-to-end path, see the [quickstart](/langsmith/javascript/mana
 
 ## Install
 
-Install the package for the language you use to author your agent. The package exposes the `mda` binary.
+`mda init` declares `managed-deepagents` as a project dependency, so run the `mda` binary from the project.
 
 
 
-For npm, install globally or run the binary with `npm exec`.
+<CodeGroup>
+    ```bash npm
+    npx managed-deepagents init my-agent
+    cd my-agent
+    npm install
+    npx mda --version
+    ```
 
-```bash npm
-npm install managed-deepagents
-```
+    ```bash pnpm
+    pnpm dlx managed-deepagents init my-agent
+    cd my-agent
+    pnpm install
+    pnpm exec mda --version
+    ```
+
+    ```bash bun
+    bunx managed-deepagents init my-agent
+    cd my-agent
+    bun install
+    bunx mda --version
+    ```
+</CodeGroup>
 
 The package provides agent, identity, schedule, and sandbox authoring APIs.
 
@@ -75,9 +92,22 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 
 Use `mda init` to create a new project directory:
 
-```bash
-mda init my-agent
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx managed-deepagents init my-agent
+    ```
+
+    ```bash pnpm
+    pnpm dlx managed-deepagents init my-agent
+    ```
+
+    ```bash bun
+    bunx managed-deepagents init my-agent
+    ```
+</CodeGroup>
+
 
 | Argument or flag | Use |
 | --- | --- |
@@ -92,18 +122,26 @@ mda init my-agent
 
 To include Slack in a new project:
 
-```bash
-mda init my-agent --channel slack
-```
-
-The command detects the language from the current directory:
 
 
+<CodeGroup>
+    ```bash npm
+    npx managed-deepagents init my-agent --channel slack
+    ```
 
-| Current directory contains | Result |
-| --- | --- |
-| `package.json` only | TypeScript scaffold. |
-| Both or neither | Interactive language prompt. |
+    ```bash pnpm
+    pnpm dlx managed-deepagents init my-agent --channel slack
+    ```
+
+    ```bash bun
+    bunx managed-deepagents init my-agent --channel slack
+    ```
+</CodeGroup>
+
+
+
+
+The scaffold language comes from the package you run, not from the current directory: the npm package always writes a TypeScript project. A CLI installed from npm refuses a Python project.
 
 
 The scaffold creates:
@@ -126,9 +164,22 @@ Eval tasks are opt-in and are not created by `mda init`. Run `mda evals init -i`
 
 Run the following command from the root of an existing managed deep agent project:
 
-```bash
-mda channel init slack
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda channel init slack
+    ```
+
+    ```bash pnpm
+    pnpm exec mda channel init slack
+    ```
+
+    ```bash bun
+    bunx mda channel init slack
+    ```
+</CodeGroup>
+
 
 The command creates a Slack channel declaration in the `channels/` directory. The next `mda deploy` sets up the resources the agent needs to appear in Slack. For the complete workflow, see [Connect a Managed Deep Agent to Slack](/langsmith/javascript/managed-deep-agents-channels-slack).
 
@@ -136,9 +187,22 @@ The command creates a Slack channel declaration in the `channels/` directory. Th
 
 Use `mda build` to compile a project into a managed LangGraph app without deploying it:
 
-```bash
-mda build .
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda build
+    ```
+
+    ```bash pnpm
+    pnpm exec mda build
+    ```
+
+    ```bash bun
+    bunx mda build
+    ```
+</CodeGroup>
+
 
 | Argument or flag | Use |
 | --- | --- |
@@ -149,9 +213,22 @@ mda build .
 
 Use `mda evals init` to initialize a Harbor workspace. The command is also available as `mda eval`. Use the interactive handoff to develop complete tasks with a coding agent and the `eval-engineering` skill.
 
-```bash
-mda evals init -i
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda evals init -i
+    ```
+
+    ```bash pnpm
+    pnpm exec mda evals init -i
+    ```
+
+    ```bash bun
+    bunx mda evals init -i
+    ```
+</CodeGroup>
+
 
 | Command or flag | Use |
 | --- | --- |
@@ -168,9 +245,22 @@ For workflow guidance, see [Evals](/langsmith/javascript/managed-deep-agents-eva
 
 Use `mda dev` to compile a project and run the local LangGraph dev server:
 
-```bash
-mda dev .
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda dev
+    ```
+
+    ```bash pnpm
+    pnpm exec mda dev
+    ```
+
+    ```bash bun
+    bunx mda dev
+    ```
+</CodeGroup>
+
 
 | Argument or flag | Use |
 | --- | --- |
@@ -197,9 +287,22 @@ For local development, `mda dev` stages the project `.env` file into `.mda/build
 
 Use `mda deploy` to compile and deploy a project to LangSmith:
 
-```bash
-mda deploy .
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda deploy
+    ```
+
+    ```bash pnpm
+    pnpm exec mda deploy
+    ```
+
+    ```bash bun
+    bunx mda deploy
+    ```
+</CodeGroup>
+
 
 
 
@@ -234,9 +337,22 @@ On success, the CLI prints the LangSmith deployment dashboard URL. For secrets r
 
 Use `mda logs` to tail Agent Server logs for a deployed agent:
 
-```bash
-mda logs .
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda logs
+    ```
+
+    ```bash pnpm
+    pnpm exec mda logs
+    ```
+
+    ```bash bun
+    bunx mda logs
+    ```
+</CodeGroup>
+
 
 | Argument or flag | Use |
 | --- | --- |
@@ -252,9 +368,22 @@ mda logs .
 
 Use `mda delete` to delete a deployed Managed Deep Agent and the LangSmith resources it created. `mda destroy` is an alias.
 
-```bash
-mda delete .
-```
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda delete
+    ```
+
+    ```bash pnpm
+    pnpm exec mda delete
+    ```
+
+    ```bash bun
+    bunx mda delete
+    ```
+</CodeGroup>
+
 
 
 

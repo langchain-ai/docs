@@ -173,8 +173,11 @@ For thread behavior and constraints, see [Schedules](/langsmith/python/managed-d
 Deploy the project to LangSmith:
 
 ```bash
-mda deploy .
+uv run mda deploy
 ```
+
+
+
 
 On success, the CLI prints the deployment dashboard URL. The deploy syncs the instructions to Context Hub, uploads the compiled project, and reconciles the daily schedule.
 
