@@ -116,7 +116,8 @@ Add the following to `commonEnv` in your [LangSmith `values.yaml`](https://githu
 
 ```yaml
 commonEnv:
-  DEFAULT_ORG_FEATURE_CAN_USE_LLM_AUTH_PROXY: "true"
+  - name: DEFAULT_ORG_FEATURE_CAN_USE_LLM_AUTH_PROXY
+    value: "true"
 ```
 
 <Note>
@@ -694,7 +695,8 @@ Add the following environment variables to your [LangSmith `values.yaml`](https:
 ```yaml
 # Allow all LLM-calling services to reach the auth proxy on private IPs
 commonEnv:
-  SSRF_ALLOW_K8S_INTERNAL: "true"
+  - name: SSRF_ALLOW_K8S_INTERNAL
+    value: "true"
 
 # Allow the playground service to reach the auth proxy on private IPs
 playground:
