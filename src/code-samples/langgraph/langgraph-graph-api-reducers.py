@@ -56,22 +56,21 @@ class State(TypedDict):
 # state["errors"] is still ["bad sql"]; the empty list is merged in, not cleared
 # :snippet-end:
 
-# :snippet-start: langgraph-graph-api-reducers-overwrite-py
+# :snippet-start: langgraph-graph-api-reducers-overwrite-clear-py
+from operator import add
 from typing import Annotated
 
+from langgraph.types import Overwrite
 from typing_extensions import TypedDict
 
 
-def overwrite(left: list[str], right: list[str]) -> list[str]:
-    """Replace the accumulated state value with the node update."""
-    return right
-
-
 class State(TypedDict):
-    errors: Annotated[list[str], overwrite]
+    errors: Annotated[list[str], add]
 
 
-# node can now clear the field with {"errors": []}
+def clear_errors(state: State):
+    # Bypass the merging reducer and clear the field
+    return {"errors": Overwrite([])}
 # :snippet-end:
 
 # :remove-start:
@@ -92,8 +91,8 @@ class MergeDoesNotClearState(TypedDict):
     errors: Annotated[list[str], add]
 
 
-class OverwriteReducerState(TypedDict):
-    errors: Annotated[list[str], overwrite]
+class OverwriteClearState(TypedDict):
+    errors: Annotated[list[str], add]
 
 
 def _build_two_node_graph(state_type):
@@ -133,9 +132,9 @@ if __name__ == "__main__":
     assert merge_result == {"errors": ["bad sql"]}
 
     overwrite_graph = (
-        StateGraph(OverwriteReducerState)
+        StateGraph(OverwriteClearState)
         .add_node("record_error", lambda _state: {"errors": ["bad sql"]})
-        .add_node("clear_errors", lambda _state: {"errors": []})
+        .add_node("clear_errors", clear_errors)
         .add_edge(START, "record_error")
         .add_edge("record_error", "clear_errors")
         .add_edge("clear_errors", END)

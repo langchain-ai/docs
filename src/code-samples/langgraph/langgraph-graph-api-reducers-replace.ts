@@ -1,11 +1,11 @@
-// :snippet-start: langgraph-graph-api-reducers-overwrite-js
+// :snippet-start: langgraph-graph-api-reducers-replace-js
 import { ReducedValue, StateSchema } from "@langchain/langgraph";
 import { z } from "zod/v4";
 
 const State = new StateSchema({
   errors: new ReducedValue(
     z.array(z.string()).default(() => []),
-    { reducer: (_state: string[], update: string[]) => update },
+    { reducer: (_state: string[], update: string[]) => update }
   ),
 });
 
@@ -27,10 +27,10 @@ async function main() {
   const result = await graph.invoke({ errors: [] });
   if (JSON.stringify(result.errors) !== JSON.stringify([])) {
     throw new Error(
-      `Expected overwrite reducer to clear errors, got: ${JSON.stringify(result.errors)}`,
+      `Expected replace reducer to clear errors, got: ${JSON.stringify(result.errors)}`
     );
   }
-  console.log("✓ langgraph-graph-api-reducers-overwrite-js");
+  console.log("✓ langgraph-graph-api-reducers-replace-js");
 }
 
 main().catch((error) => {
