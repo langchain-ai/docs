@@ -292,6 +292,11 @@ LINK_MAPS: list[LinkMap] = [
             "langsmith-python": "langsmith/observability/sdk/",
             "langsmith-js": "https://reference.langchain.com/javascript/modules/langsmith.html",
             "wrapGemini": "https://reference.langchain.com/javascript/functions/langsmith.wrappers_gemini.wrapGemini.html",
+            "wrapOpenAI": "https://reference.langchain.com/javascript/langsmith/wrappers/wrapOpenAI",
+            "wrapAnthropic": "https://reference.langchain.com/javascript/functions/langsmith.wrappers_anthropic.wrapAnthropic.html",
+            # Distinct key so shared prose can link the JS traceable helper
+            # without colliding with Python's traceable / @traceable entries.
+            "traceableJS": "https://reference.langchain.com/javascript/langsmith/traceable/traceable",
             "expect": "langsmith/observability/sdk/expect/",
             "Client": "langsmith/client/Client",
             "process_buffered_run_ops": "langsmith/client/Client",
@@ -582,6 +587,14 @@ LINK_MAPS: list[LinkMap] = [
             "langsmith": "langsmith/",
             "langsmith-js": "modules/langsmith.html",
             "langsmith-python": "https://reference.langchain.com/python/langsmith/observability/sdk/",
+            # Python-only wrapper / decorator names used in shared LangSmith
+            # snippets; point JS-scope builds at the Python reference.
+            "wrap_openai": "https://reference.langchain.com/python/langsmith/wrappers/_openai/wrap_openai",
+            "wrap_anthropic": "https://reference.langchain.com/python/langsmith/wrappers/_anthropic/wrap_anthropic",
+            "@traceable": "https://reference.langchain.com/python/langsmith/run_helpers/traceable",
+            "wrapOpenAI": "langsmith/wrappers/wrapOpenAI",
+            "wrapAnthropic": "functions/langsmith.wrappers_anthropic.wrapAnthropic.html",
+            "traceableJS": "langsmith/traceable/traceable",
             "tracingEnabled": "classes/langsmith.run_trees.RunTree.html#tracingenabled",
             "wrapGemini": "functions/langsmith.wrappers_gemini.wrapGemini.html",
             # LangGraph SDK references
