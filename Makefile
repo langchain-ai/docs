@@ -60,18 +60,20 @@ lint_md_fix:
 	fi
 
 VALE_BIN ?= .bin/vale
-VALE_VERSION ?= v3.9.6
+# Single source of truth for the Vale pin is .mise.toml. Override on the
+# command line only for a one-off test: make lint_prose VALE_VERSION=3.16.0
+VALE_VERSION ?= $(shell sed -n 's/^[[:space:]]*vale[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' .mise.toml | head -n 1)
 
 install_vale:
 	@bash scripts/install-vale.sh "$(VALE_BIN)" "$(VALE_VERSION)"
 
 lint_prose:
 	@echo "Linting prose with Vale..."
-	@if [ ! -x "$(VALE_BIN)" ]; then bash scripts/install-vale.sh "$(VALE_BIN)" "$(VALE_VERSION)"; fi
+	@bash scripts/install-vale.sh "$(VALE_BIN)" "$(VALE_VERSION)"
 	@if [ -n "$(FILES)" ]; then \
-		"$(VALE_BIN)" --glob='!**/node_modules/**' $(FILES); \
+		"$(VALE_BIN)" --glob='!{**/node_modules/**,src/code-samples/**}' $(FILES); \
 	else \
-		"$(VALE_BIN)" --glob='!**/node_modules/**' src/; \
+		"$(VALE_BIN)" --glob='!{**/node_modules/**,src/code-samples/**}' src/; \
 	fi
 
 test:

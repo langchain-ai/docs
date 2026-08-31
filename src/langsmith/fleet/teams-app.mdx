@@ -133,11 +133,11 @@ You can also ask your agent to add these tools itself. In the agent chat, try: "
 
 1. In the sidebar, expand the **Connections** drawer and click **Add connection**.
 1. Search for "Teams" and add the tools you need:
-   - **teams_bot_send_proactive_message** — Send messages back to the Teams conversation
-   - **microsoft_teams_list_my_teams** — List teams the authenticated user belongs to
-   - **microsoft_teams_list_channels** — List channels in a team
-   - **microsoft_teams_post_channel_message** — Post a message to a channel
-   - **microsoft_teams_read_channel_messages** — Read recent messages from a channel
+   - **teams_bot_send_proactive_message**: Send messages back to the Teams conversation
+   - **microsoft_teams_list_my_teams**: List teams the authenticated user belongs to
+   - **microsoft_teams_list_channels**: List channels in a team
+   - **microsoft_teams_post_channel_message**: Post a message to a channel
+   - **microsoft_teams_read_channel_messages**: Read recent messages from a channel
 1. If prompted, click **Connect** to authorize the Microsoft Graph tools.
 
 <Note>
