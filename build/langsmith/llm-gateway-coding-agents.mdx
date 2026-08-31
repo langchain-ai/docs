@@ -25,25 +25,52 @@ export LANGSMITH_API_KEY="lsv2_..._....cbed3e"
 
 ## Claude Code CLI
 
-Choose the authentication method that matches how your organization pays for Anthropic usage.
+Claude Code supports two separate authentication methods. Choose one before configuring:
 
-### Use a workspace provider key
+- **Workspace provider secret**: The organization manages billing and policies through a provider key stored in workspace secrets. Use this method for org-managed usage.
+- **Claude subscription OAuth**: Anthropic bills LLM calls to the user's personal Claude Plus or Max subscription instead of the workspace provider secret, while LangSmith still enforces gateway permissions, policies, and tracing. Use this method when developers have their own subscriptions.
 
-Point Claude Code at the standard Messages endpoint and use a provider-prefixed model ID:
+### Use a workspace provider secret
+
+Set `ANTHROPIC_API_KEY` to your LangSmith API key. Claude Code reads these variables from your shell environment or from the `env` block in `~/.claude/settings.json`.
+
+If your LangSmith deployment is on a regional or self-hosted instance, replace the gateway hostname in the examples below with your [regional gateway](/langsmith/llm-gateway-api-formats#use-a-regional-gateway) hostname.
+
+#### Use Anthropic models only
+
+Set `ANTHROPIC_BASE_URL` to the Anthropic-format gateway endpoint. The gateway infers the `anthropic/` provider prefix from the endpoint:
 
 ```bash
-export ANTHROPIC_BASE_URL="https://gateway.smith.langchain.com"
+export ANTHROPIC_BASE_URL="https://gateway.smith.langchain.com/anthropic/"
 export ANTHROPIC_API_KEY="$LANGSMITH_API_KEY"
-export ANTHROPIC_MODEL="anthropic/claude-opus-5"
 
 claude
 ```
 
-Claude Code appends `/v1/messages` to `ANTHROPIC_BASE_URL`. The gateway uses the `anthropic/` prefix to resolve the workspace's Anthropic provider secret.
+#### Route model tiers across providers
 
+Set `ANTHROPIC_BASE_URL` to the gateway root, then map each Claude model tier to a provider-prefixed gateway model ID:
+
+```bash
+export ANTHROPIC_BASE_URL="https://gateway.smith.langchain.com"
+export ANTHROPIC_API_KEY="$LANGSMITH_API_KEY"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="anthropic/claude-opus-5"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="openai/gpt-5.6-terra"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="fireworks/accounts/fireworks/models/glm-5p2"
+
+claude
+```
+
+The model IDs are examples. Map each tier to any model configured in your workspace secrets or available through [Gateway Credits](/langsmith/llm-gateway-credits); the gateway handles request translation across providers. For details, see [API formats](/langsmith/llm-gateway-api-formats#understand-translation-behavior).
+
+<a id="use-claude-subscription-oauth"></a>
 ### Use Claude subscription OAuth
 
-Claude Code Plus and Max users can send their saved Anthropic OAuth credential through the gateway. This mode is available to all organizations and does not require an `ANTHROPIC_API_KEY` in workspace provider secrets.
+<Note>
+Claude subscription OAuth requires an active Claude Code Plus or Max subscription. If you are using a workspace Anthropic API key, use the [workspace provider secret](#use-a-workspace-provider-secret) method instead.
+</Note>
+
+Claude Code Plus and Max users can send their saved Anthropic OAuth credential through the gateway. This mode does not require an `ANTHROPIC_API_KEY` in workspace provider secrets.
 
 Log in to Claude Code with your subscription, then configure the gateway:
 
@@ -54,13 +81,17 @@ export ANTHROPIC_CUSTOM_HEADERS="X-Api-Key: $LANGSMITH_API_KEY"
 claude
 ```
 
-Claude Code uses and refreshes the OAuth credential from its saved login. It also sends the required OAuth capability in the `anthropic-beta` header automatically.
+Treat the `ANTHROPIC_CUSTOM_HEADERS` value as a secret: it embeds your LangSmith API key, so keep it out of shell history, dotfiles, and shared configuration.
 
-The LangSmith API key authenticates the gateway request and remains subject to gateway permissions and policies. The gateway forwards the OAuth bearer to Anthropic, so Anthropic bills the call to the user's Claude subscription instead of the workspace provider key.
+Claude Code uses and refreshes the OAuth credential from its saved login, including the required OAuth capability in the `anthropic-beta` header.
+
+The LangSmith API key authenticates the gateway request and remains subject to gateway permissions and policies. The gateway forwards the OAuth bearer to Anthropic, so Anthropic bills the call to the user's Claude subscription instead of the workspace provider secret. To confirm calls route through the gateway, check that traces appear in the `gateway` tracing project as described in [Verify the setup](#verify-the-setup).
 
 <Warning>
 Leave `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` unset for this mode. Either variable takes precedence over the saved subscription login.
+</Warning>
 
+<Warning>
 Claude Desktop plugins break when the gateway is configured.
 </Warning>
 
