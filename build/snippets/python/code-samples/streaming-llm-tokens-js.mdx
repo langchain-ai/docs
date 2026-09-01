@@ -1,0 +1,43 @@
+```ts
+let currentSource = "";
+
+for await (const [namespace, chunk] of await agent.stream(
+  {
+    messages: [
+      {
+        role: "user",
+        content: "Research quantum computing advances",
+      },
+    ],
+  },
+  { streamMode: "messages", subgraphs: true },
+)) {
+  const [message] = chunk;
+
+  // Check if this event came from a subagent (namespace contains "tools:")
+  const isSubagent = namespace.some((s: string) => s.startsWith("tools:"));
+
+  if (isSubagent) {
+    // Token from a subagent
+    const subagentNs = namespace.find((s: string) => s.startsWith("tools:"))!;
+    if (subagentNs !== currentSource) {
+      process.stdout.write(`\n\n--- [subagent: ${subagentNs}] ---\n`);
+      currentSource = subagentNs;
+    }
+    if (message.text) {
+      process.stdout.write(message.text);
+    }
+  } else {
+    // Token from the main agent
+    if ("main" !== currentSource) {
+      process.stdout.write(`\n\n--- [main agent] ---\n`);
+      currentSource = "main";
+    }
+    if (message.text) {
+      process.stdout.write(message.text);
+    }
+  }
+}
+
+process.stdout.write("\n");
+```
