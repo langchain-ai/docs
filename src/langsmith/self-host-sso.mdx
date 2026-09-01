@@ -308,6 +308,22 @@ If unset, the default value for this configuration uses the `oid` claim when Azu
 ISSUER_SUB_CLAIM_OVERRIDES='{"https://login.microsoftonline.com/": "oid", "https://sts.windows.net/": "oid", "https://login.microsoftonline.us/": "oid", "https://login.partner.microsoftonline.cn/": "oid"}'
 ```
 
+### Migrate custom OIDC users to a new identity provider
+
+When you switch identity providers (for example, Google to Okta) or reconfigure an existing one, the new provider issues a different `sub` value for the same user. Existing custom-OIDC users are matched on the old `sub`, so after the switch they fail to log in — with **"Failed to create or link your account"** — even though their email address is unchanged.
+
+Set the `OIDC_ALLOW_SUB_MIGRATION` environment variable to `true` to let LangSmith re-link an existing user to the new provider identity by matched email on their next login, updating the stored `sub` in place:
+
+```
+OIDC_ALLOW_SUB_MIGRATION=true
+```
+
+This is **disabled by default** and only takes effect on **self-hosted** installations, where the OIDC provider is administrator-configured. It applies to custom-OIDC users, and the re-link occurs **only when the IdP asserts `email_verified: true`** in the token — a login with an unverified or missing `email_verified` claim is never re-linked, so a spoofable email cannot rebind an existing account. If you deploy with the LangSmith Helm chart, set the `config.oauth.allowSubMigration` value to `true` instead of setting the environment variable directly.
+
+<Note>
+SCIM-provisioned users whose stored `externalId` conflicts with the incoming `sub` are still refused. Realign those users through SCIM instead — either re-sync from your identity provider or issue a SCIM `PATCH` that sets `externalId` to the new provider user ID. If the mismatch is a claim-mapping issue rather than a provider change, see [Override sub claim](#override-sub-claim).
+</Note>
+
 ### SSO Groups Sync
 
 <Note>
