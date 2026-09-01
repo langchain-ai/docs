@@ -20,7 +20,7 @@ The standard LLM Gateway API supports three request and response formats. Choose
 
 All formats authenticate with a workspace-scoped LangSmith API key. Pass it as the provider API key or as an `Authorization: Bearer` token.
 
-For bring-your-own-key models, set `model` to `<provider>/<model>`, such as `openai/gpt-5.4-mini` or `anthropic/claude-sonnet-4-6`. For Gateway Credits models, pass a supported model name, such as `moonshotai/kimi-k3`.
+For bring-your-own-key models, set `model` to `<provider>/<model>`, such as `openai/gpt-5.4-mini`, `anthropic/claude-sonnet-4-6`, or `azure/<deployment-name>`. For Gateway Credits models, pass a supported model name, such as `moonshotai/kimi-k3`.
 
 ## Use Chat Completions
 
