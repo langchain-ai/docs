@@ -4,12 +4,17 @@ sidebarTitle: Filter traces
 description: Filter threads, traces, and runs in a LangSmith tracing project using the search bar query syntax, filter scopes, shortcuts, and saved views.
 ---
 
+import FilteringExperienceNote from '/snippets/langsmith/filtering-experience-note.mdx';
+
 Tracing projects accumulate large amounts of data across [threads](/langsmith/observability-concepts#threads), [traces](/langsmith/observability-concepts#traces), and [runs](/langsmith/observability-concepts#runs). The search bar at the top of a tracing project narrows that data down: write one or more `field:value` clauses, combine them with `AND` and `OR`, and choose which runs in the trace hierarchy each clause applies to.
+
+<FilteringExperienceNote />
 
 This page covers:
 
 - [Building a query](#build-a-query) in the search bar
 - [Query syntax](#query-syntax) and the [fields](#fields) available to filter on
+- [What full-text search indexes](#full-text-search-indexing)
 - [Choosing what a filter matches](#choose-what-a-filter-matches) with scopes
 - [Filtering in one click](#filter-with-shortcuts) from the **Shortcuts** panel
 - [Saving a filter](#save-a-filter) as a view
@@ -38,7 +43,7 @@ Each completed clause becomes a chip in the bar. Click a chip to edit it, or cli
 The time range control above the table applies independently of the query, as does the **Threads**, **Traces**, and **Runs** selection. Refer to [Choose what a filter matches](#choose-what-a-filter-matches).
 
 <Note>
-The search bar accepts only the syntax described on this page. It rejects the structured query language used by the SDK and REST API, such as `and(eq(name, "docs_agent"), eq(status, "error"))`, even when that query is valid. Refer to [Trace query syntax](/langsmith/trace-query-syntax) for that language, and to [Views saved with the previous syntax](#views-saved-with-the-previous-syntax) for views that already use it.
+The search bar uses the syntax described on this page, which is not the structured query language that the SDK and REST API accept. Refer to [Trace query syntax](/langsmith/trace-query-syntax) for that language.
 </Note>
 
 ## Query syntax
@@ -59,7 +64,7 @@ The operators a field accepts depend on its type.
 | is not | `-field:value` | Everything except an exact match. |
 | matches | `field:~value` | A full-text search of the field. Quote the value to search for a phrase. |
 | does not match | `-field:~value` | Everything the full-text search does not match. |
-| wildcard | `field:*value*` | A pattern, where `*` stands for any sequence of characters. |
+| wildcard | `field:value*` | A pattern, where `*` stands for any sequence of characters. |
 | exists | `field:*` | Records where the field is set. |
 | does not exist | `-field:*` | Records where the field is not set. |
 | greater than | `field:>value` | Values above the given value. |
@@ -69,11 +74,11 @@ The operators a field accepts depend on its type.
 | inclusive range | `field:[10 TO 20]` | Values from 10 to 20, including both bounds. |
 | exclusive range | `field:{10 TO 20}` | Values between 10 and 20, excluding both bounds. |
 | mixed range | `field:[10 TO 20}` | Values from 10 up to but not including 20. Swap the delimiters to invert which bound is inclusive. |
-| unbounded range | `field:[10 TO *]` | Values from 10 upward. Use `*` in place of either bound. |
 
-Two constraints govern which fields accept which operators:
+Some fields accept only a subset of these operators:
 
-- **Full-text fields**: `inputs`, `outputs`, `metadata`, and `error` accept `~` only.
+- **Full-text fields**: `input`, `output`, `metadata`, and `error` accept `~` only.
+- **`attachments`**: Accepts the exists and does not exist operators only.
 - **Comparison and range operators**: These apply to numeric and timestamp fields, and to numeric [`metadata` paths](#match-a-json-key).
 
 <Note>
@@ -102,7 +107,7 @@ name:"docs agent"
 tags:"env:prod"
 ```
 
-Quoting also turns off wildcard matching, so `name:"*docs*"` matches the literal string `*docs*`. As an alternative to quoting, escape the character with a backslash, as in `name:docs\ agent`.
+Quoting also turns off wildcard matching, so `name:"docs*"` matches the literal string `docs*`. As an alternative to quoting, escape the character with a backslash, as in `name:docs\ agent`.
 
 An unquoted value containing a space splits into two clauses. `name:docs agent` matches runs whose name is `docs` and whose indexed content contains `agent`.
 
@@ -137,11 +142,11 @@ These fields are available in the **Single run**, **Root run**, and **Any run** 
 
 | Field | Description |
 | ----- | ----------- |
-| `inputs` | Run inputs. Use `~` to search the text, or `inputs.<key>` to match a JSON key. |
-| `outputs` | Run outputs. Use `~` to search the text, or `outputs.<key>` to match a JSON key. |
+| `input` | Run inputs. Use `~` to search the text, or `input.<key>` to match a JSON key. |
+| `output` | Run outputs. Use `~` to search the text, or `output.<key>` to match a JSON key. |
 | `metadata` | Run metadata. Use `~` to search the text, or `metadata.<key>` to match a JSON key. |
 | `error` | Error text. Use `~` to search the text. |
-| `attachments` | Attachment names. |
+| `attachments` | Attachments on the run. Accepts the exists and does not exist operators only. |
 
 **Identity**
 
@@ -189,17 +194,17 @@ The **Thread** scope filters on attributes of the thread as a whole, so it suppo
 | `prompt_token_details`, `completion_token_details`, `prompt_cost_details`, `completion_cost_details` | Token and cost breakdowns across the thread. |
 
 <Note>
-Run fields such as `name`, `status`, and `inputs` are not available in the **Thread** scope. To filter threads by an attribute of the runs they contain, add a second filter row in the **Any run** scope. Refer to [Combine scopes](#combine-scopes).
+Run fields such as `name`, `status`, and `input` are not available in the **Thread** scope. To filter threads by an attribute of the runs they contain, add a second filter row in the **Any run** scope. Refer to [Combine scopes](#combine-scopes).
 </Note>
 
 ### Match a JSON key
 
-`inputs`, `outputs`, and `metadata` hold JSON. Address a key inside them with dot notation:
+`input`, `output`, and `metadata` hold JSON. Address a key inside them with dot notation:
 
 ```text
 metadata.env:production
-inputs.user_id:abc123
-outputs.status:success
+input.user_id:abc123
+output.status:success
 ```
 
 Nested paths work the same way, for example `metadata.config.temperature:0.7`. Quote a key that contains a dot, as in `metadata."my.key":production`.
@@ -230,6 +235,19 @@ Wrap several feedback conditions in `feedback:{…}` to group them:
 feedback:{correctness.score:>0.5}
 ```
 
+## Full-text search indexing
+
+The `~` operator and [bare-term searches](#search-without-naming-a-field) match against a derived search index rather than against the stored run data. LangSmith builds that index by extracting search tokens recursively from the string values in run inputs, outputs, and errors. Object keys are not indexed, and a value is neither rejected nor truncated because of its length.
+
+The following limits apply to the index:
+
+- **Tokens per field**: LangSmith retains up to 2,000 distinct search tokens for each indexed field, selected from up to 200,000 distinct candidates.
+- **Nesting depth**: LangSmith processes nested data to a maximum depth of 30.
+- **Token length**: A search token runs between 2 and 44 characters for typical ASCII text. Strings outside that range are not indexed.
+- **Excluded content**: URLs, image data URLs, common stopwords, and numeric-only tokens are not indexed.
+
+These limits govern the search index only. They place no limit on the run data LangSmith stores, so a value the index leaves out is still visible in the trace itself. To match on such a value, filter on its JSON key instead. Refer to [Match a JSON key](#match-a-json-key).
+
 ## Choose what a filter matches
 
 The **Threads**, **Traces**, and **Runs** selection above the table controls what each row represents. The scope selector, to the left of the search bar, separately controls which runs a clause is tested against. Together they replace the trace and tree filters of the previous filtering experience.
@@ -247,8 +265,8 @@ The scopes offered, and the one selected by default, depend on the table selecti
 
 | Table selection | Default scope | Available scopes |
 | --------------- | ------------- | ---------------- |
-| **Threads** | Thread | Thread, Root run, Any run |
-| **Traces** | Root run | Root run, Any run |
+| **Threads** | Any run | Thread, Root run, Any run |
+| **Traces** | Any run | Root run, Any run |
 | **Runs** | Single run | Single run, Root run, Any run |
 
 ### Combine scopes
@@ -296,13 +314,13 @@ To discard unsaved changes and return to the selected view, click **Reset**.
 
 Views saved before this filtering experience shipped continue to work. LangSmith still runs their original queries, and applying one restores its filters and selects a compatible table selection.
 
-Because those views use the structured query language rather than the syntax on this page, they are read-only in the search bar and cannot be renamed. A warning icon marks them in the **Views** dropdown. To move a view to the new syntax, rebuild its filters in the search bar and save the result as a new view.
-
 ## Filter the runs in a trace
 
 When a trace contains many runs, filter the run list inside it rather than scanning the whole tree. Open a thread or trace to reach the [Details view](/langsmith/view-traces#details-view), then use **Filter runs** above the run list.
 
 This search bar accepts the same fields and syntax as the **Single run** scope on the project page. It has no scope selector, because it always matches individual runs within the open trace. To remove the filter, click **Clear run filter**.
+
+A filter applied in the **Any run** scope carries over automatically, so opening a thread or trace from the table shows which of its runs matched.
 
 ## See also
 
