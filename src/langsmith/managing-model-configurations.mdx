@@ -91,3 +91,92 @@ The **Prompt Format** tab allows you to specify:
 
 - The **Prompt type**. For details on chat and completion prompts, refer to [Prompt engineering](/langsmith/prompt-engineering-concepts#prompt-types) concepts.
 - The **Template format**. For details on prompt templating and using variables, refer to [F-string vs. mustache](/langsmith/prompt-engineering-concepts#f-string-vs-mustache).
+
+## Manage model configurations programmatically
+
+You can create and manage model configurations through the LangSmith REST API. This is useful for provisioning configurations from infrastructure-as-code, syncing settings across workspaces, or scripting bulk updates.
+
+The full schema for each endpoint is in the [LangSmith API reference](https://api.smith.langchain.com/redoc#tag/playground-settings).
+
+### Authentication
+
+Pass a workspace API key in the `X-API-Key` header. The examples below use `https://api.smith.langchain.com`. If you are on the EU region or self-hosted, replace the host with your LangSmith API endpoint.
+
+### Create a model configuration
+
+Use `POST /api/v1/playground-settings` to create a configuration. The minimal payload requires `name`, `settings_type`, and a `settings` object whose shape depends on the type. For a simple configuration, supply the model identifier and the workspace secret name that holds the provider API key.
+
+```bash
+curl -X POST "https://api.smith.langchain.com/api/v1/playground-settings" \
+  -H "X-API-Key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "gpt-4o-mini-default",
+    "description": "Shared workspace configuration",
+    "settings_type": "simple",
+    "settings": {
+      "modelId": "openai:gpt-4o-mini",
+      "envVarName": "OPENAI_API_KEY"
+    }
+  }'
+```
+
+The response includes the generated `id`, which you use to reference the configuration in subsequent calls.
+
+To point the configuration at a custom or proxied OpenAI-compatible endpoint, add `baseUrl` to `settings`. For details on configuring a custom endpoint, see [Custom OpenAI-compliant model](/langsmith/custom-openai-compliant-model).
+
+### List, retrieve, update, and delete configurations
+
+| Operation | Endpoint |
+|-----------|----------|
+| List all configurations in the workspace | `GET /api/v1/playground-settings` |
+| Retrieve one configuration | `GET /api/v1/playground-settings/{id}` |
+| Update a configuration | `PATCH /api/v1/playground-settings/{id}` |
+| Delete a configuration | `DELETE /api/v1/playground-settings/{id}` |
+
+`PATCH` accepts a partial body. Send only the fields you want to change.
+
+### Toggle feature availability
+
+Each configuration carries a set of boolean flags that control which LangSmith features can use it. Update them with `PATCH /api/v1/playground-settings/{id}`:
+
+```bash
+curl -X PATCH "https://api.smith.langchain.com/api/v1/playground-settings/$CONFIG_ID" \
+  -H "X-API-Key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "available_in_playground": true,
+    "available_in_evaluators": true,
+    "available_in_polly": true
+  }'
+```
+
+| Flag | Feature |
+|------|---------|
+| `available_in_playground` | Playground |
+| `available_in_evaluators` | Online and offline evaluators |
+| `available_in_agent_builder` | Fleet |
+| `available_in_polly` | Polly prompt optimizer |
+| `available_in_insights_heavy` | Insights (Thinking) |
+| `available_in_insights_light` | Insights (Summarization) |
+
+### Set the default model for a feature
+
+Once a configuration is available to a feature, you can promote it to that feature's default. Defaults apply workspace-wide.
+
+```bash
+curl -X PUT "https://api.smith.langchain.com/v1/platform/features/polly/default-model" \
+  -H "X-API-Key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai:gpt-4o-mini"}'
+```
+
+Valid feature values are `playground`, `evaluators`, `agent-builder`, `polly`, `insights-heavy`, and `insights-light`.
+
+| Operation | Endpoint |
+|-----------|----------|
+| List current defaults across features | `GET /v1/platform/features` |
+| Set the default model for a feature | `PUT /v1/platform/features/{feature}/default-model` |
+| Clear the default model for a feature | `DELETE /v1/platform/features/{feature}/default-model` |
+
+The `model` value uses the same `provider:model-id` format as the `modelId` field on the configuration.
