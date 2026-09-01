@@ -58,50 +58,14 @@ Playground and Evals are available in v0.13.33+. Chat and Insights are available
 
 Skip this step for LangSmith SaaS. JWT signing is already configured.
 
-**Generate an Ed25519 key pair** using [step CLI](https://smallstep.com/docs/step-cli/installation/) (or an internal process if you prefer). Ed25519 is the signing algorithm LangSmith uses to sign JWTs. The private key signs each request; the auth proxy verifies the signature using only the public key.
+Follow [Configure a signing JWKS](/langsmith/self-host-signing-jwks) to generate the shared Ed25519 key and provide it to the LangSmith Helm chart. The private key signs each request, while the auth proxy fetches only the public key from LangSmith.
 
-```shell
-TMPDIR_KEYS="$(mktemp -d)"
-step crypto keypair "$TMPDIR_KEYS/pub.pem" "$TMPDIR_KEYS/priv.pem" \
-  --kty OKP --crv Ed25519 --no-password --insecure
-PRIV_JWK=$(step crypto key format --jwk --no-password --insecure < "$TMPDIR_KEYS/priv.pem")
-SIGNING_JWKS=$(echo "$PRIV_JWK" | jq -c '{keys: [. + {use: "sig", alg: "EdDSA"}]}')
-echo "$SIGNING_JWKS"
+Set the issuer for LLM auth proxy tokens in your LangSmith `values.yaml`:
+
+```yaml
+config:
+  llmAuthProxyIssuer: "langsmith"
 ```
-
-**Provide the JWKS to the LangSmith Helm chart.** LangSmith shares this signing JWKS with its OAuth Authorization Server and Remote MCP. For related configuration details, see [Enable Remote MCP for self-hosted LangSmith](/langsmith/langsmith-remote-mcp#enabling-remote-mcp). For chart version 0.16.0 or later, choose one of the following options:
-
-- **Chart-managed secret**: Set `config.signingJwks` in your LangSmith `values.yaml`. The chart stores the value in its managed Kubernetes Secret.
-
-  ```yaml
-  config:
-    signingJwks: |
-      {"keys":[...]}
-    llmAuthProxyIssuer: "langsmith"
-  ```
-
-- **Existing secret**: If your installation already uses `config.existingSecretName`, add the generated JWKS to that Secret under the exact key `langsmith_signing_jwks`, then configure the issuer in `values.yaml`:
-
-  ```yaml
-  # Add this key to the existing chart-wide Kubernetes Secret.
-  stringData:
-    langsmith_signing_jwks: |
-      {"keys":[...]}
-  ```
-
-  ```yaml
-  config:
-    existingSecretName: "langsmith-secrets"
-    llmAuthProxyIssuer: "langsmith"
-  ```
-
-  `config.existingSecretName` replaces the chart-managed Secret for the entire LangSmith installation. Do not point it to a JWKS-only Secret. Preserve all existing keys, including `langsmith_license_key` and `api_key_salt`. After updating an externally managed Secret, restart the platform-backend pods so they load the new environment variable.
-
-<Warning>
-Starting with chart version 0.16.0, the chart owns `LANGSMITH_SIGNING_JWKS`. When upgrading from an earlier chart version, remove this environment variable from `commonEnv` and `platformBackend.deployment.extraEnv`. Setting it there causes a duplicate environment-variable error. Configure it through `config.signingJwks` or the `langsmith_signing_jwks` key in `config.existingSecretName` instead.
-</Warning>
-
-A JWKS (JSON Web Key Set) is a standard JSON format for publishing cryptographic keys. `LANGSMITH_SIGNING_JWKS` contains the Ed25519 private key and is stored in a Kubernetes Secret. It is never exposed. LangSmith automatically extracts the corresponding public key and serves it at `/.well-known/jwks.json`. The auth proxy fetches this public endpoint to verify JWT signatures without receiving the private key.
 
 `config.llmAuthProxyIssuer` sets the `iss` claim in signed JWTs. Use `langsmith` to match the SaaS default, or a custom identifier like `langsmith:self-hosted:<short_identifier>` to distinguish your installation. The value must match `jwtIssuer` in the auth proxy chart in [Step 4](#4-install-the-auth-proxy-helm-chart).
 
