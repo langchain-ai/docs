@@ -119,6 +119,94 @@ class TestRewriteLinks:
                 ("target.md", "new/target.md"),
             ]
 
+    def test_rewrite_site_absolute_link(self) -> None:
+        """Site-absolute links must be resolved against docs_root.
+
+        Joining a Path with an absolute string discards the left-hand side
+        (`Path("/a/b") / "/c/d" == Path("/c/d")`), so treating a link like
+        `/oss/langchain/agents` the same way as a relative link would
+        resolve it against the filesystem root instead of docs_root and
+        never match the file being moved.
+        """
+        files: list[File] = [
+            {
+                "path": "oss/python/quickstart.md",
+                "content": "See the [Agents guide](/oss/langchain/agents) for details.",
+            },
+            {"path": "oss/langchain/agents.md", "content": "# Agents"},
+        ]
+        with temp_directory(files) as temp_dir:
+            old_abs = temp_dir / "oss" / "langchain" / "agents.md"
+            new_abs = temp_dir / "oss" / "langchain" / "tools.md"
+            md_file = temp_dir / "oss" / "python" / "quickstart.md"
+
+            changes = _rewrite_links(
+                md_file,
+                old_abs,
+                new_abs,
+                temp_dir,
+                dry_run=False,
+            )
+
+            updated_content = md_file.read_text(encoding="utf-8")
+            assert (
+                "See the [Agents guide](/oss/langchain/tools) for details."
+                in updated_content
+            )
+            assert changes == [("/oss/langchain/agents", "/oss/langchain/tools")]
+
+    def test_rewrite_site_absolute_link_with_anchor(self) -> None:
+        """Anchors on site-absolute links must be preserved after rewriting."""
+        files: list[File] = [
+            {
+                "path": "quickstart.md",
+                "content": "See [setup](/oss/langchain/agents#setup) below.",
+            },
+            {"path": "oss/langchain/agents.md", "content": "# Agents"},
+        ]
+        with temp_directory(files) as temp_dir:
+            old_abs = temp_dir / "oss" / "langchain" / "agents.md"
+            new_abs = temp_dir / "oss" / "langchain" / "tools.md"
+            md_file = temp_dir / "quickstart.md"
+
+            changes = _rewrite_links(md_file, old_abs, new_abs, temp_dir, dry_run=False)
+
+            updated_content = md_file.read_text(encoding="utf-8")
+            assert "See [setup](/oss/langchain/tools#setup) below." in updated_content
+            assert changes == [
+                ("/oss/langchain/agents#setup", "/oss/langchain/tools#setup")
+            ]
+
+    def test_unrelated_and_unresolvable_absolute_links_untouched(self) -> None:
+        """Unrelated or unresolvable absolute links are left unchanged.
+
+        Covers links that don't point at the moved file, and links that
+        don't resolve to any file at all (e.g. Mintlify-generated API
+        reference pages with no source file) -- neither should raise or be
+        mistakenly rewritten.
+        """
+        files: list[File] = [
+            {
+                "path": "quickstart.md",
+                "content": (
+                    "Unrelated: [other](/oss/langchain/other). "
+                    "No source file: [gone](/api-reference/agents)."
+                ),
+            },
+            {"path": "oss/langchain/agents.md", "content": "# Agents"},
+            {"path": "oss/langchain/other.md", "content": "# Other"},
+        ]
+        with temp_directory(files) as temp_dir:
+            old_abs = temp_dir / "oss" / "langchain" / "agents.md"
+            new_abs = temp_dir / "oss" / "langchain" / "tools.md"
+            md_file = temp_dir / "quickstart.md"
+
+            original_content = md_file.read_text(encoding="utf-8")
+            changes = _rewrite_links(md_file, old_abs, new_abs, temp_dir, dry_run=False)
+
+            assert md_file.read_text(encoding="utf-8") == original_content
+            assert changes == []
+
     def test_skip_external_links(self) -> None:
         """Test that external links are not modified."""
         files: list[File] = [
