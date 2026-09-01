@@ -4,7 +4,7 @@ sidebarTitle: Providers
 description: Configure inference providers and credentials for OpenWiki
 ---
 
-OpenWiki supports the following providers:.
+OpenWiki supports the following providers:
 
 | Provider | Credential | Notes |
 | --- | --- | --- |
@@ -40,6 +40,52 @@ OPENWIKI_PROVIDER_RETRY_ATTEMPTS=3
 ```
 
 The value must be a positive integer. If unset, OpenWiki defaults to 3 retries.
+
+### Output token limits
+
+`OPENWIKI_MAX_OUTPUT_TOKENS` is an optional override for the per-request output budget. When set, it must be a positive integer. OpenWiki maps it to the active provider's request shape:
+
+- **`maxOutputTokens`**: `gemini`
+- **`maxTokens`**: `anthropic`, `openai`, `openai-compatible`, `openrouter`, `bedrock`, Gemini Enterprise non-Google surfaces, `openai-chatgpt`, and `copilot`
+
+When unset, OpenWiki preserves each provider's SDK default except for these built-in ceilings:
+
+- **Anthropic**: modern Claude 4 and 5 models default to `16384` tokens because older LangChain metadata otherwise caps newer Claude aliases at `4096`
+- **Bedrock**: defaults to `16000` tokens. Override with `OPENWIKI_BEDROCK_MAX_TOKENS` when a model supports a lower ceiling
+
+To set one limit across whichever of those providers is active, set:
+
+```bash
+OPENWIKI_MAX_OUTPUT_TOKENS=16384
+```
+
+By default OpenRouter sends no `max_tokens`, so credit pre-checks budget for the model's full advertised output ceiling and low balances can fail with 402 errors. `OPENWIKI_OPENROUTER_MAX_TOKENS` takes precedence over `OPENWIKI_MAX_OUTPUT_TOKENS` on OpenRouter runs, you can set token limits with:
+
+```bash
+OPENWIKI_OPENROUTER_MAX_TOKENS=8192
+```
+
+Using a limit means that instead of 402 failures, you get possible truncation on long generations, so prefer the largest value your balance allows.
+
+### Reasoning effort
+
+`OPENWIKI_REASONING_EFFORT` is an optional global setting for models that advertise reasoning support.
+
+```bash
+OPENWIKI_REASONING_EFFORT=high
+```
+
+Leave it unset to preserve the provider default. Invalid provider, model, or effort combinations fail before a request is sent. An inherited value also fails when the active provider and model do not support it.
+
+| Provider | Model | Supported values | Request mapping |
+| --- | --- | --- | --- |
+| `openai` | `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-sol` | `none`, `low`, `medium`, `high`, `xhigh`, `max` | Responses API `reasoning.effort` |
+| `openai-chatgpt` | `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-sol` | `none`, `low`, `medium`, `high`, `xhigh`, `max` | Responses API `reasoning.effort` |
+| `nvidia` | `nvidia/nemotron-3-super-120b-a12b` | `none`, `low`, `high` | Chat Completions `reasoning_effort` |
+
+All other provider and model combinations, including OpenRouter, do not offer reasoning effort selection.
+
+In interactive chat, use `/effort` to choose an available value or `/effort default` to restore the provider default.
 
 ## GitHub Copilot
 
@@ -89,6 +135,10 @@ OPENWIKI_MODEL_ID=anthropic.claude-sonnet-5
 
 When explicit Bedrock credentials are not set, OpenWiki uses the AWS SDK default credential provider chain. Paste the Bedrock model ID directly. Some newer models require a cross-region inference profile ID (for example `us.anthropic.claude-sonnet-5`) instead of the bare model ID.
 
+Bedrock defaults to a `16000`-token output ceiling when neither `OPENWIKI_MAX_OUTPUT_TOKENS` nor `OPENWIKI_BEDROCK_MAX_TOKENS` is set. Without an explicit limit, the Converse API caps output at `4096` tokens and can truncate long wiki pages.
+
+For Bedrock stream idle timeout, set `OPENWIKI_STREAM_IDLE_TIMEOUT` in milliseconds (an integer from `0` to `2147483647`). Set `0` to disable the watchdog. If unset, OpenWiki preserves the `@langchain/aws` provider default.
+
 ## OpenAI-compatible endpoints
 
 Use the `openai-compatible` provider for gateways or local servers that expose OpenAI-compatible chat completions:
@@ -101,6 +151,22 @@ OPENWIKI_MODEL_ID=your-gateway-model-name
 ```
 
 Local examples such as Ollama (`http://localhost:11434/v1`) and LM Studio (`http://localhost:1234/v1`) use the same pattern. OpenWiki still requires `OPENAI_COMPATIBLE_API_KEY` even when the local server ignores the key value.
+
+OpenWiki sends non-streaming requests internally, even when you are not watching live output in the terminal. Some gateways accept only streaming requests, where the model returns output in chunks over an open connection. When OpenWiki hits one of those gateways with a non-streaming request, the gateway may reject the call or return HTTP 200 with empty content. A blank wiki with no error usually means you need to enable streaming.
+
+Enable streaming for the `openai-compatible` provider when your gateway requires it:
+
+```bash
+OPENWIKI_OPENAI_COMPATIBLE_STREAMING=true
+```
+
+Streaming stays off by default because this provider can point at arbitrary third-party endpoints, where streaming is not guaranteed to work through proxies and load balancers. Enabling it also makes the client report estimated rather than server-reported token counts.
+
+To opt the openai-compatible provider into the Responses API instead of chat completions:
+
+```bash
+OPENWIKI_OPENAI_COMPATIBLE_USE_RESPONSES_API=true
+```
 
 ## OpenRouter provider pinning
 

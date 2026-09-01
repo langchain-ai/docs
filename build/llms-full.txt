@@ -144707,12 +144707,15 @@ Provide credentials as repository secrets or CI variables. Typical values includ
 - `OPENWIKI_PROVIDER`
 - `OPENWIKI_MODEL_ID`
 - Optional `LANGSMITH_API_KEY` for tracing
+- Optional `OPENWIKI_LANGSMITH_API_KEY` when the repository uses the [LangSmith connector](/oss/openwiki/code-mode#langsmith-connector)
 
-The scheduled workflow includes generated wiki files, `AGENTS.md`, `CLAUDE.md`, and the workflow itself in the documentation pull request when those files change.
+The scheduled workflow includes generated wiki files, Claims under `openwiki/.claims/`, `AGENTS.md`, `CLAUDE.md`, and the workflow itself in the documentation pull request when those files change.
+
+Repository generation is resumable on persistent workspaces through `openwiki/.run.json` and `openwiki/.page-manifest.json`. Ephemeral CI runners start fresh after failure unless their workspace is preserved, and OpenWiki can still publish partial progress when a run fails after some pages complete.
 
 ## Empty updates
 
-OpenWiki automatically tracks wiki content in `openwiki/.last-update.json` and only rewrites that file when the wiki actually changed. If a scheduled `--update` run does not result in changes, the wiki files stay the same, and the CI does not open a pull request.
+A clean `--update` run skips model work and leaves wiki content untouched while refreshing `openwiki/.last-update.json` so freshness checks reflect that the check ran. If the wiki Markdown and Claims do not change, CI does not open a pull request.
 
 ## Telemetry in CI
 
@@ -144779,16 +144782,26 @@ openwiki code --init
 openwiki code --update
 openwiki code --update --print
 
-# Defaults to code mode
+# Defaults to code mode and specify a language
 openwiki --init
 openwiki --update
+openwiki --init --language ko
 
 # One-shot print mode
 openwiki -p "Summarize what you can do"
 
-# Explore the wiki locally
+# Explore the wiki locally or export a static visualizer
 openwiki visualize
 openwiki visualize openwiki --port 4400 --no-open
+openwiki visualize openwiki --export docs/openwiki-visualizer
+
+# Coding-agent integrations
+openwiki integrations list
+openwiki integrations install codex
+openwiki integrations install claude
+openwiki integrations install opencode
+openwiki integrations install cursor
+openwiki integrations uninstall codex
 
 # Help
 openwiki --help
@@ -144798,8 +144811,9 @@ openwiki --help
 
 | Flag | Description |
 | --- | --- |
-| `--init` | Generate initial documentation. Defaults to code mode. In a TTY without `--print`, streams agent output and exits automatically on success. `--init` and `--update` cannot be combined. |
+| `--init` | Generate initial documentation. Defaults to code mode. Re-running regenerates the repository wiki from scratch while preserving `openwiki/INSTRUCTIONS.md`. In a TTY without `--print`, streams agent output and exits automatically on success. `--init` and `--update` cannot be combined. |
 | `--update` | Update existing documentation. Defaults to code mode. In a TTY without `--print`, streams agent output and exits automatically on success. `--init` and `--update` cannot be combined. |
+| `-l`, `--language <locale>` | Generate wiki documentation in the given BCP-47 locale, for example `ko`, `zh-CN`, or `pt-BR`. Unrecognized values are rejected. |
 | `--mode <personal\|code>` | Choose personal brain or repository docs. |
 | `-p`, `--print` | Run once, print the final assistant output, and exit. Provide a message or command. Interactive chat without `--print` stays open for follow-ups. |
 | `--modelId` / `--model-id` | Choose a model ID for the run. |
@@ -144808,15 +144822,28 @@ openwiki --help
 
 ## Visualize
 
-You can visualize the generated wiki as an interactive node graph and live Markdown reader.
+You can visualize the generated wiki as an interactive node graph and live Markdown reader, or export a static site for hosting:
 
 ```bash
 openwiki visualize
 openwiki visualize openwiki --port 4400 --no-open
+openwiki visualize openwiki --export docs/openwiki-visualizer
 openwiki visualize ~/.openwiki/wiki
 ```
 
 For details, see [Visualize your wiki](/oss/openwiki/visualize).
+
+## Coding-agent integrations
+
+Install OpenWiki into a host coding agent so the host's model and repository tools drive generation while OpenWiki owns the durable page-job lifecycle:
+
+```bash
+openwiki integrations list [--project [path]]
+openwiki integrations install <codex|claude|opencode|cursor> [--force] [--project [path]]
+openwiki integrations uninstall <codex|claude|opencode|cursor> [--project [path]]
+```
+
+For details, see [Coding-agent integrations](/oss/openwiki/integrations).
 
 ## Auth and connectors
 
@@ -144863,11 +144890,13 @@ In interactive chat mode, you can use the following commands:
 - `/api-key`: Update the current provider API key (masked prompt)
 - `/langsmith-key`: Update or clear LangSmith tracing credentials (masked prompt)
 - `/provider` and `/model`: Change provider or model for the session (persisted to `~/.openwiki/.env`)
+- `/effort`: Set reasoning effort for supported OpenAI GPT-5.6 and NVIDIA NIM models, or `/effort default` to restore the provider default
 - `/init` and `/update`: Launch init or update from the session
 - `/exit`: Exit the app
 
 ## See also
 
+- [Coding-agent integrations](/oss/openwiki/integrations)
 - [Personal mode](/oss/openwiki/personal-mode)
 - [Model providers](/oss/openwiki/providers)
 - [Automate updates](/oss/openwiki/automate-updates)
@@ -144897,27 +144926,64 @@ openwiki code --update
 openwiki code --update --print
 ```
 
+Running `openwiki --init` again replaces the existing generated repository wiki and Claims with a new generation while preserving the user-authored `openwiki/INSTRUCTIONS.md` brief. On a persistent checkout, OpenWiki records in-progress generation in `openwiki/.run.json`, so rerunning the same command after an interruption resumes the durable page queue. Ephemeral CI runners start fresh after failure unless their workspace is preserved. A setup failure before the new run state is durable restores the previous wiki.
+
+To generate wiki pages in another language, pass a BCP-47 locale such as `ko`, `zh-CN`, or `pt-BR`:
+
+```bash
+openwiki --init --language ko
+```
+
+You can also run OpenWiki inside Codex, Claude Code, OpenCode, or Cursor. See [Coding-agent integrations](/oss/openwiki/integrations).
+
 ## What code mode produces
 
 After a successful init or update, the repository typically includes:
 
 - **`openwiki/`**: Generated Markdown wiki (quickstart, architecture, operations, and related topics)
 - **`openwiki/INSTRUCTIONS.md`**: User-authored brief for scope and priorities. OpenWiki reads it on init and update. Edit it yourself, or ask OpenWiki in chat to change it; normal `--init` and `--update` runs do not rewrite it
-- **`openwiki/.last-update.json`**: Metadata for the last successful documentation change (used to avoid no-op update loops)
+- **`openwiki/.claims/`**: Structured Claim sidecars that ground factual pages in versioned repository evidence
+- **`openwiki/.page-manifest.json`**: Per-page progress and source checkpoints for resumable generation
+- **`openwiki/.last-update.json`**: Metadata for the last successful documentation check (including no-op updates)
 - **`AGENTS.md` / `CLAUDE.md`**: OpenWiki inserts or refreshes an `<!-- OPENWIKI:START -->` … `<!-- OPENWIKI:END -->` block that tells coding agents when to consult the wiki. Existing content outside that block is left untouched
+
+During an active run, `openwiki/.run.json` checkpoints the ordered page queue. OpenWiki deletes that file after a successful finish.
+
+## Grounded Claims
+
+OpenWiki makes code wikis self-correcting by tracking the material propositions behind factual pages, not only when a Markdown file was last generated. Claims cover truths future agents rely on: behavior, responsibilities, architecture, data flow, invariants, failure semantics, configuration, and security boundaries. Each Claim points to exact repository evidence such as `repo://src/server.ts#L40-L82`, with the evidence version OpenWiki observed when the Claim was established.
+
+The Markdown stays clean. Structured Claim state lives under `openwiki/.claims/`. Page completion persists reconciled Claims, projects verification into OKF front matter, and proves the complete result before marking that page job complete. Grounded Claims apply to repository code wikis and repository evidence. Connector-derived facts, including LangSmith-only observations, are not included as Claims.
 
 ## Markdown output
 
-OpenWiki's durable output is Markdown (OKF), not a static HTML site. To explore the wiki in a browser, run [`openwiki visualize`](/oss/openwiki/visualize). The command serves a viewer only on your local machine (`127.0.0.1`). To host a human-readable site, render the Markdown with another tool (for example GitHub Pages, MkDocs, or an OKF-compatible viewer).
+OpenWiki's durable output is Markdown (OKF), not a static HTML site. To explore the wiki in a browser, run [`openwiki visualize`](/oss/openwiki/visualize). The command serves a viewer only on your local machine (`127.0.0.1`), or you can [export a static visualizer](/oss/openwiki/visualize#export-a-static-site) for hosting.
 
 ## Open Knowledge Format
 
-OpenWiki emits [Google Open Knowledge Format (OKF)](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing) v0.1 bundles in both code and personal modes:
+OpenWiki emits [Google Open Knowledge Format (OKF)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) v0.2 bundles in both code and personal modes:
 
 - A **concept** is an ordinary wiki Markdown page (one topic file). Every concept has YAML front matter with a non-empty `type`; other standard fields are optional
-- `index.md` and `log.md` are **reserved** scaffolding files, not concepts: `index.md` is a directory listing, and `log.md` is update history. Nested indexes contain no front matter, while the root index declares `okf_version: "0.1"`
-- Valid `timestamp` values and producer-defined extension fields are accepted and preserved during updates and migrations
+- New and freshly initialized pages receive `generated: {by, at}`. During updates, any body change, including whitespace, advances the stamp; an unchanged body retains its prior event, and front-matter-only changes do not advance it. The producer is stamped as `openwiki/<version>` (or the coding-agent host)
+- Repository pages project grounded Claims evidence into `sources`. OpenWiki reconciles its deterministically identified entries while preserving independently authored sources
+- Repository pages receive `verified: {by: openwiki/<version>, at: ...}` only after a successful page submission reconciles a non-empty complete Claims set, passes the final evidence recheck, and persists the Claims sidecar
+- `index.md` and `log.md` are **reserved** scaffolding files, not concepts. The root index declares `okf_version: "0.2"`
+- The optional v0.2 provenance, trust, and lifecycle families (`sources`, `verified`, `status`, `stale_after`) are validated when present. Producer-defined extension fields are preserved across updates and migrations
 - Standard Markdown links between concept documents express relationships
+
+## LangSmith connector
+
+The **LangSmith** connector enriches a code wiki: it pulls recent LangSmith traces (tool calls, outcomes, and latency) for the projects you choose, so repository docs reflect how the code behaves at runtime, not only what the source says.
+
+Configure it during `openwiki --init` in code mode. From the source menu, add LangSmith, pick your workspace region (US, EU, or APAC), and list the projects to document. OpenWiki writes a committed `openwiki/.langsmith.json` that names the workspaces and projects (never the key itself). The API key is read from the environment:
+
+```bash
+OPENWIKI_LANGSMITH_API_KEY="<your-langsmith-key>"
+```
+
+Locally the setup wizard can save this to `~/.openwiki/.env`. In CI, set it as a repository secret and export it for the run.
+
+A LangSmith key is workspace- and region-bound. To document projects across more than one workspace, add an entry per workspace, each with its own key named `OPENWIKI_LANGSMITH_API_KEY_2`, `OPENWIKI_LANGSMITH_API_KEY_3`, and so on. The connector talks to the official US (`api.smith.langchain.com`), EU (`eu.api.smith.langchain.com`), and APAC (`apac.api.smith.langchain.com`) hosts.
 
 ## Ignore paths
 
@@ -144959,6 +145025,7 @@ Normal `--init` and `--update` runs do not rewrite this file.
 
 ## See also
 
+- [Coding-agent integrations](/oss/openwiki/integrations)
 - [Visualize your wiki](/oss/openwiki/visualize)
 - [Automate updates](/oss/openwiki/automate-updates)
 - [Customize OpenWiki](/oss/openwiki/customize)
@@ -145008,7 +145075,7 @@ That block instructs coding agents to consult the generated wiki when they need 
 
 ## Local configuration directory
 
-Both code and personal mode store machine-local state under `~/.openwiki/`:
+Both code and personal mode store machine-local state under `~/.openwiki/` by default:
 
 | Path | Mode | Purpose |
 | --- | --- | --- |
@@ -145020,7 +145087,18 @@ Both code and personal mode store machine-local state under `~/.openwiki/`:
 | `~/.openwiki/onboarding.json` | Personal | Personal onboarding preferences and connector schedules |
 | `~/.openwiki/connectors/` | Mostly personal | Connector raw data and config. Personal sources use this path; code-mode LangSmith ingestion can also cache raw data here |
 
-Code-mode repository artifacts such as the generated wiki, `openwiki/INSTRUCTIONS.md`, and `openwiki/.last-update.json` live in the project, not under `~/.openwiki/`. For more detail, see [Code mode](/oss/openwiki/code-mode) and [Personal mode](/oss/openwiki/personal-mode).
+Code-mode repository artifacts such as the generated wiki, Claims under `openwiki/.claims/`, `openwiki/INSTRUCTIONS.md`, and `openwiki/.last-update.json` live in the project, not under `~/.openwiki/`. For more detail, see [Code mode](/oss/openwiki/code-mode) and [Personal mode](/oss/openwiki/personal-mode).
+
+
+### Override the state directory
+
+Set `OPENWIKI_CONFIG_DIR` before starting OpenWiki to use a different writable directory, such as a mounted container volume:
+
+```bash
+OPENWIKI_CONFIG_DIR=/data/openwiki openwiki personal --init
+```
+
+The override selects a separate state directory. OpenWiki does not move or delete an existing `~/.openwiki` directory. To preserve any state you wish to preserve, copy it yourself and point the variable at a dedicated directory because OpenWiki restricts its permissions for the current user.
 
 ## Telemetry
 
@@ -145066,6 +145144,67 @@ To inspect exactly what a run would send, add `--telemetry-file=<path>` to any r
 </div>
 
 
+# Coding-agent integrations
+Source: https://docs.langchain.com/oss/openwiki/integrations
+
+OpenWiki can run inside an existing coding agent instead of launching its own model. The coding agent investigates the repository, plans the wiki, and writes each assigned page with its native repository tools. OpenWiki owns the durable page-job lifecycle, Claims validation and persistence, source-drift handling, and deterministic finalization.
+
+Host-driven runs support only repository [code mode](/oss/openwiki/code-mode) wikis, not [personal mode](/oss/openwiki/personal-mode). They use the coding agent's authenticated model session, so OpenWiki provider credentials are not required. Connector-sourced context, including LangSmith, is not yet supported on this path.
+
+## Install an integration
+
+Supported hosts are **Codex**, **Claude Code**, **OpenCode**, and **Cursor**. Installations default to user level, so one install works from any Git repository:
+
+```bash
+openwiki integrations install codex
+openwiki integrations install claude
+openwiki integrations install opencode
+openwiki integrations install cursor
+```
+
+Restart the coding agent after installation. Then open the repository and ask:
+
+```txt
+Initialize this repository's OpenWiki from the current source and tests.
+```
+
+For an existing wiki, ask:
+
+```txt
+Update this repository's OpenWiki for changes since its last successful run.
+```
+
+### Inspect or uninstall
+
+```bash
+openwiki integrations list
+openwiki integrations uninstall <codex|claude|opencode|cursor>
+```
+
+Add `--project [path]` to `list`, `install`, or `uninstall` for repository-scoped state. Project paths resolve to the Git repository root. User-level OpenCode integrations live under `~/.config/opencode`.
+
+## How host-driven runs work
+
+Host-driven runs follow the same resumable page-job lifecycle as native `openwiki --init` and `openwiki --update`. The coding agent drives repository research and page authoring; OpenWiki validates each completion, persists [Grounded Claims](/oss/openwiki/code-mode#grounded-claims), and finalizes metadata through MCP.
+
+## See also
+
+- [Code mode](/oss/openwiki/code-mode)
+- [CLI reference](/oss/openwiki/cli-reference)
+- [Quickstart](/oss/openwiki/quickstart)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/openwiki/integrations.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
 # OpenWiki
 Source: https://docs.langchain.com/oss/openwiki/overview
 
@@ -145084,11 +145223,7 @@ npm install -g openwiki
 openwiki --init
 ```
 
-See the [Quickstart](/oss/openwiki/quickstart) to choose a model provider, generate docs, and keep them up to date.
-
-<Note>
-    OpenWiki does not provide a formal connector for Claude or Codex. In code mode, it adds pointers to the generated wiki in the repository-root `AGENTS.md` and `CLAUDE.md` files, so compatible coding agents can discover and consult the wiki.
-</Note>
+See the [Quickstart](/oss/openwiki/quickstart) to choose a model provider, generate docs, and keep them up to date. To run OpenWiki inside Codex, Claude Code, OpenCode, or Cursor instead of a standalone model session, see [Coding-agent integrations](/oss/openwiki/integrations).
 
 ## Modes
 
@@ -145107,8 +145242,14 @@ Bare `openwiki --init` and `openwiki --update` run in code mode. Use `openwiki p
     <Card title="Repository wikis" icon="folder-code" href="/oss/openwiki/code-mode">
         Generate Markdown docs under `openwiki/`, then wire them into `AGENTS.md` and `CLAUDE.md` so coding agents can find them.
     </Card>
+    <Card title="Coding-agent integrations" icon="robot" href="/oss/openwiki/integrations">
+        Run OpenWiki inside Codex, Claude Code, OpenCode, or Cursor using the host model and repository tools.
+    </Card>
     <Card title="Personal brain" icon="brain" href="/oss/openwiki/personal-mode">
-        Build a local wiki from git repos, Gmail, Notion, web search, Hacker News, and X/Twitter.
+        Build a local wiki from git repos, Custom MCP, Gmail, Notion, web search, Hacker News, and X/Twitter.
+    </Card>
+    <Card title="Grounded Claims" icon="link" href="/oss/openwiki/code-mode#grounded-claims">
+        Track material facts back to versioned source evidence and refresh pages when that evidence changes.
     </Card>
     <Card title="Automatic updates" icon="clock" href="/oss/openwiki/automate-updates">
         Refresh docs from GitHub Actions, GitLab CI, or Bitbucket Pipelines and open a PR when content changes.
@@ -145117,7 +145258,7 @@ Bare `openwiki --init` and `openwiki --update` run in code mode. Use `openwiki p
         Use OpenAI, Anthropic, Gemini, Bedrock, OpenRouter, GitHub Copilot, and other providers out of the box.
     </Card>
     <Card title="Open Knowledge Format" icon="file-text" href="/oss/openwiki/code-mode#open-knowledge-format">
-        Emit OKF v0.1 Markdown bundles with front matter, indexes, and linked concepts.
+        Emit OKF v0.2 Markdown bundles with front matter, indexes, and linked concepts.
     </Card>
     <Card title="LangSmith tracing" icon="chart-dots" href="/oss/openwiki/quickstart#trace-with-langsmith">
         Trace documentation runs with LangSmith.
@@ -145150,7 +145291,7 @@ Bare `openwiki --init` and `openwiki --update` run in code mode. Use `openwiki p
 # Personal mode
 Source: https://docs.langchain.com/oss/openwiki/personal-mode
 
-Personal mode builds a local personal brain wiki in `~/.openwiki/wiki` from configured sources such as local repositories, Gmail, Notion, web search, Hacker News, Slack, and X/Twitter.
+Personal mode builds a local personal brain wiki in `~/.openwiki/wiki` from configured sources such as local repositories, Custom MCP, Gmail, Notion, web search, Hacker News, Slack, and X/Twitter.
 
 ```bash
 openwiki personal
@@ -145158,6 +145299,8 @@ openwiki personal --init
 openwiki personal --update
 openwiki personal --update "Refresh the wiki from configured connectors"
 ```
+
+To store personal wiki state somewhere other than `~/.openwiki`, set `OPENWIKI_CONFIG_DIR`. See [Customize OpenWiki](/oss/openwiki/customize#override-the-state-directory).
 
 ## First-run onboarding
 
@@ -145174,7 +145317,7 @@ On macOS, OpenWiki can install supported schedules as user LaunchAgents under `~
 
 ## Connect your sources
 
-In personal mode, OpenWiki ingests knowledge from the tools you already use and synthesizes it into your local wiki under `~/.openwiki/wiki/`. First-run onboarding can set up local git repositories, Notion, Gmail, X/Twitter, web search, Hacker News, and Slack.
+In personal mode, OpenWiki ingests knowledge from the tools you already use and synthesizes it into your local wiki under `~/.openwiki/wiki/`. First-run onboarding can set up Custom MCP, local git repositories, Notion, Gmail, X/Twitter, web search, Hacker News, and Slack.
 
 During an ingestion run, connector tools write raw data and manifests under `~/.openwiki/connectors/<connector>/raw/`, then source-specific agent runs update the wiki from those local files.
 
@@ -145188,6 +145331,7 @@ Connector secrets are referenced by env var name and stored in `~/.openwiki/.env
 
 | Source | Credentials | Behavior |
 | --- | --- | --- |
+| `custom-mcp` | None required by default | Connects to any configured HTTP or stdio MCP server and permits only explicitly safe, read-only tools |
 | `git-repo` | Local paths | Reads configured local repository paths and writes compact manifests |
 | `x` | OAuth user-context credentials | Home timeline, user posts, mentions, bookmarks, and list posts via the X API |
 | `notion` | Notion OAuth (hosted MCP) | Authenticate through Notion OAuth instead of pasting a Notion token |
@@ -145200,7 +145344,7 @@ You can configure the same source more than once. For example, add one web searc
 
 ### Connect a source
 
-For sources that need credentials, authenticate first, then ingest. Sources such as Hacker News need no auth; web search needs `TAVILY_API_KEY` in `~/.openwiki/.env`.
+For sources that need credentials, authenticate first, then ingest. Sources such as Hacker News and Custom MCP need no auth by default; web search needs `TAVILY_API_KEY` in `~/.openwiki/.env`.
 
 <Steps>
     <Step title="Authenticate the provider" icon="key">
@@ -145299,7 +145443,7 @@ openwiki cron delete <source|all>
 # Model providers
 Source: https://docs.langchain.com/oss/openwiki/providers
 
-OpenWiki supports the following providers:.
+OpenWiki supports the following providers:
 
 | Provider | Credential | Notes |
 | --- | --- | --- |
@@ -145335,6 +145479,52 @@ OPENWIKI_PROVIDER_RETRY_ATTEMPTS=3
 ```
 
 The value must be a positive integer. If unset, OpenWiki defaults to 3 retries.
+
+### Output token limits
+
+`OPENWIKI_MAX_OUTPUT_TOKENS` is an optional override for the per-request output budget. When set, it must be a positive integer. OpenWiki maps it to the active provider's request shape:
+
+- **`maxOutputTokens`**: `gemini`
+- **`maxTokens`**: `anthropic`, `openai`, `openai-compatible`, `openrouter`, `bedrock`, Gemini Enterprise non-Google surfaces, `openai-chatgpt`, and `copilot`
+
+When unset, OpenWiki preserves each provider's SDK default except for these built-in ceilings:
+
+- **Anthropic**: modern Claude 4 and 5 models default to `16384` tokens because older LangChain metadata otherwise caps newer Claude aliases at `4096`
+- **Bedrock**: defaults to `16000` tokens. Override with `OPENWIKI_BEDROCK_MAX_TOKENS` when a model supports a lower ceiling
+
+To set one limit across whichever of those providers is active, set:
+
+```bash
+OPENWIKI_MAX_OUTPUT_TOKENS=16384
+```
+
+By default OpenRouter sends no `max_tokens`, so credit pre-checks budget for the model's full advertised output ceiling and low balances can fail with 402 errors. `OPENWIKI_OPENROUTER_MAX_TOKENS` takes precedence over `OPENWIKI_MAX_OUTPUT_TOKENS` on OpenRouter runs, you can set token limits with:
+
+```bash
+OPENWIKI_OPENROUTER_MAX_TOKENS=8192
+```
+
+Using a limit means that instead of 402 failures, you get possible truncation on long generations, so prefer the largest value your balance allows.
+
+### Reasoning effort
+
+`OPENWIKI_REASONING_EFFORT` is an optional global setting for models that advertise reasoning support.
+
+```bash
+OPENWIKI_REASONING_EFFORT=high
+```
+
+Leave it unset to preserve the provider default. Invalid provider, model, or effort combinations fail before a request is sent. An inherited value also fails when the active provider and model do not support it.
+
+| Provider | Model | Supported values | Request mapping |
+| --- | --- | --- | --- |
+| `openai` | `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-sol` | `none`, `low`, `medium`, `high`, `xhigh`, `max` | Responses API `reasoning.effort` |
+| `openai-chatgpt` | `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.6-sol` | `none`, `low`, `medium`, `high`, `xhigh`, `max` | Responses API `reasoning.effort` |
+| `nvidia` | `nvidia/nemotron-3-super-120b-a12b` | `none`, `low`, `high` | Chat Completions `reasoning_effort` |
+
+All other provider and model combinations, including OpenRouter, do not offer reasoning effort selection.
+
+In interactive chat, use `/effort` to choose an available value or `/effort default` to restore the provider default.
 
 ## GitHub Copilot
 
@@ -145384,6 +145574,10 @@ OPENWIKI_MODEL_ID=anthropic.claude-sonnet-5
 
 When explicit Bedrock credentials are not set, OpenWiki uses the AWS SDK default credential provider chain. Paste the Bedrock model ID directly. Some newer models require a cross-region inference profile ID (for example `us.anthropic.claude-sonnet-5`) instead of the bare model ID.
 
+Bedrock defaults to a `16000`-token output ceiling when neither `OPENWIKI_MAX_OUTPUT_TOKENS` nor `OPENWIKI_BEDROCK_MAX_TOKENS` is set. Without an explicit limit, the Converse API caps output at `4096` tokens and can truncate long wiki pages.
+
+For Bedrock stream idle timeout, set `OPENWIKI_STREAM_IDLE_TIMEOUT` in milliseconds (an integer from `0` to `2147483647`). Set `0` to disable the watchdog. If unset, OpenWiki preserves the `@langchain/aws` provider default.
+
 ## OpenAI-compatible endpoints
 
 Use the `openai-compatible` provider for gateways or local servers that expose OpenAI-compatible chat completions:
@@ -145396,6 +145590,22 @@ OPENWIKI_MODEL_ID=your-gateway-model-name
 ```
 
 Local examples such as Ollama (`http://localhost:11434/v1`) and LM Studio (`http://localhost:1234/v1`) use the same pattern. OpenWiki still requires `OPENAI_COMPATIBLE_API_KEY` even when the local server ignores the key value.
+
+OpenWiki sends non-streaming requests internally, even when you are not watching live output in the terminal. Some gateways accept only streaming requests, where the model returns output in chunks over an open connection. When OpenWiki hits one of those gateways with a non-streaming request, the gateway may reject the call or return HTTP 200 with empty content. A blank wiki with no error usually means you need to enable streaming.
+
+Enable streaming for the `openai-compatible` provider when your gateway requires it:
+
+```bash
+OPENWIKI_OPENAI_COMPATIBLE_STREAMING=true
+```
+
+Streaming stays off by default because this provider can point at arbitrary third-party endpoints, where streaming is not guaranteed to work through proxies and load balancers. Enabling it also makes the client report estimated rather than server-reported token counts.
+
+To opt the openai-compatible provider into the Responses API instead of chat completions:
+
+```bash
+OPENWIKI_OPENAI_COMPATIBLE_USE_RESPONSES_API=true
+```
 
 ## OpenRouter provider pinning
 
@@ -145453,12 +145663,17 @@ OpenWiki is a CLI that writes and maintains a Markdown wiki for your codebase or
         - An inference provider and model
         - The provider API key (or equivalent credentials)
         - An optional LangSmith API key for tracing
+        - LangSmith projects to enrich the wiki from runtime traces
 
         OpenWiki saves its configuration and secrets to `~/.openwiki/.env`.
+
+        Running `--init` again regenerates the repository wiki and Claims from scratch while preserving `openwiki/INSTRUCTIONS.md`. Interrupted runs on a persistent checkout resume from `openwiki/.run.json`.
+
+        To run OpenWiki inside Codex, Claude Code, OpenCode, or Cursor instead of a standalone model session, see [Coding-agent integrations](/oss/openwiki/integrations).
     </Step>
 
     <Step title="Review the generated wiki" icon="book">
-        OpenWiki writes documentation to `openwiki/` in the repository, including a quickstart entrypoint and topic pages. It also maintains an `AGENTS.md` and `CLAUDE.md` at the repository root, adding a block that instructs coding agents to consult the wiki for codebase context.
+        OpenWiki writes documentation to `openwiki/` in the repository, including a quickstart entrypoint and topic pages. It also maintains an `AGENTS.md` and `CLAUDE.md` at the repository root, adding a block that instructs coding agents to consult the wiki for codebase context. Factual pages are grounded with Claims under `openwiki/.claims/`.
 
         Repository-specific wiki instructions live in `openwiki/INSTRUCTIONS.md`. OpenWiki reads this file for scope and priorities. To change it, edit the file, or ask OpenWiki in chat to change the brief (for example, `openwiki "Update openwiki/INSTRUCTIONS.md to focus on the public API"`). Normal `--init` and `--update` runs do not rewrite it.
 
@@ -145478,7 +145693,7 @@ OpenWiki is a CLI that writes and maintains a Markdown wiki for your codebase or
         openwiki --update
         ```
 
-        For automated updates in CI, see [Automate updates](/oss/openwiki/automate-updates).
+        In code mode, updates also reconcile stale Claims when source evidence changes. For automated updates in CI, see [Automate updates](/oss/openwiki/automate-updates).
     </Step>
 </Steps>
 
@@ -145490,7 +145705,7 @@ To initialize a local personal brain instead of repository docs:
 openwiki personal --init
 ```
 
-Personal mode writes to `~/.openwiki/wiki` and can ingest configured connectors such as local git repositories, Gmail, Notion, web search, Hacker News, and X/Twitter. See [Personal mode](/oss/openwiki/personal-mode).
+Personal mode writes to `~/.openwiki/wiki` and can ingest configured connectors such as local git repositories, Custom MCP, Gmail, Notion, web search, Hacker News, and X/Twitter. See [Personal mode](/oss/openwiki/personal-mode).
 
 ## Interactive and one-shot runs
 
@@ -145506,7 +145721,7 @@ Use `-p` / `--print` for a one-shot non-interactive run that prints the final as
 openwiki -p "Summarize what you can do"
 ```
 
-In chat, use `/api-key` to update the current provider API key and `/langsmith-key` to update or clear LangSmith tracing credentials.
+In chat, use `/api-key` to update the current provider API key, `/langsmith-key` to update or clear LangSmith tracing credentials, and `/effort` to set reasoning effort for supported models.
 
 ## Trace with LangSmith
 
@@ -145518,9 +145733,12 @@ LANGCHAIN_TRACING_V2=true
 LANGCHAIN_PROJECT=openwiki
 ```
 
+To enrich the repository wiki from LangSmith traces (separate from tracing OpenWiki itself), see [LangSmith connector](/oss/openwiki/code-mode#langsmith-connector).
+
 ## Next steps
 
-- [Code mode](/oss/openwiki/code-mode): repository wikis, OKF output, and agent instruction files
+- [Code mode](/oss/openwiki/code-mode): repository wikis, Claims, OKF output, and agent instruction files
+- [Coding-agent integrations](/oss/openwiki/integrations): run OpenWiki inside Codex, Claude Code, OpenCode, or Cursor
 - [Personal mode](/oss/openwiki/personal-mode): local brain and connectors
 - [Model providers](/oss/openwiki/providers): supported providers and credentials
 - [Automate updates](/oss/openwiki/automate-updates): GitHub Actions, GitLab CI, and Bitbucket Pipelines
@@ -145541,7 +145759,7 @@ LANGCHAIN_PROJECT=openwiki
 # Visualize your wiki
 Source: https://docs.langchain.com/oss/openwiki/visualize
 
-For exploring OpenWiki Markdown wikis, `openwiki visualize` serves a local interactive node graph beside a live Markdown reader in your browser.
+For exploring OpenWiki Markdown wikis, `openwiki visualize` serves a local interactive node graph beside a live Markdown reader in your browser. You can also export the same graph and reader as a static directory for hosting.
 
 ## Open the visualizer
 
@@ -145551,7 +145769,7 @@ From a repository that already has an `openwiki/` directory:
 openwiki visualize
 ```
 
-This serves `./openwiki` on `127.0.0.1:4321` and opens your browser to the graph. Edits to wiki files are picked up automatically while the server runs.
+This serves `./openwiki` on `127.0.0.1:4321` and opens your browser to the graph. Edits to wiki files are picked up automatically while the server runs. The graph panel is resizable and collapsible beside the Markdown reader.
 
 ## Options
 
@@ -145564,6 +145782,7 @@ openwiki visualize openwiki --port 4400 --no-open
 | `[path]` | Wiki directory to serve. Defaults to `./openwiki` |
 | `--port <port>` | Preferred port. Defaults to `4321`. Increments if the port is already in use |
 | `--no-open` | Do not open the browser automatically |
+| `--export <dir>` | Write a static visualizer directory instead of starting the local server. Cannot be combined with `--port` or `--no-open` |
 
 To explore a personal wiki:
 
@@ -145584,6 +145803,20 @@ The visualizer shows:
 - A side-by-side live Markdown reader for the selected page
 
 The graph does not show `INSTRUCTIONS.md` and other scaffolding files.
+
+## Export a static site
+
+To publish the visualizer beside generated documentation, export a static directory instead of starting the server:
+
+```bash
+openwiki visualize <PATH> --export docs/openwiki-visualizer
+```
+
+The export contains `index.html`, `client.js`, `client-lib.js`, `styles.css`, and `graph.json`. Its client reads the sibling graph file and does not use live reload, so the directory can be hosted by GitHub Pages, MkDocs, or any other static host.
+
+<Note>
+    The page loads its graph, Markdown, and diagram libraries from a public CDN, so an internet connection is required for both local and static viewers.
+</Note>
 
 ## See also
 

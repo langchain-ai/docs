@@ -33,7 +33,7 @@ That block instructs coding agents to consult the generated wiki when they need 
 
 ## Local configuration directory
 
-Both code and personal mode store machine-local state under `~/.openwiki/`:
+Both code and personal mode store machine-local state under `~/.openwiki/` by default:
 
 | Path | Mode | Purpose |
 | --- | --- | --- |
@@ -45,7 +45,18 @@ Both code and personal mode store machine-local state under `~/.openwiki/`:
 | `~/.openwiki/onboarding.json` | Personal | Personal onboarding preferences and connector schedules |
 | `~/.openwiki/connectors/` | Mostly personal | Connector raw data and config. Personal sources use this path; code-mode LangSmith ingestion can also cache raw data here |
 
-Code-mode repository artifacts such as the generated wiki, `openwiki/INSTRUCTIONS.md`, and `openwiki/.last-update.json` live in the project, not under `~/.openwiki/`. For more detail, see [Code mode](/oss/openwiki/code-mode) and [Personal mode](/oss/openwiki/personal-mode).
+Code-mode repository artifacts such as the generated wiki, Claims under `openwiki/.claims/`, `openwiki/INSTRUCTIONS.md`, and `openwiki/.last-update.json` live in the project, not under `~/.openwiki/`. For more detail, see [Code mode](/oss/openwiki/code-mode) and [Personal mode](/oss/openwiki/personal-mode).
+
+
+### Override the state directory
+
+Set `OPENWIKI_CONFIG_DIR` before starting OpenWiki to use a different writable directory, such as a mounted container volume:
+
+```bash
+OPENWIKI_CONFIG_DIR=/data/openwiki openwiki personal --init
+```
+
+The override selects a separate state directory. OpenWiki does not move or delete an existing `~/.openwiki` directory. To preserve any state you wish to preserve, copy it yourself and point the variable at a dedicated directory because OpenWiki restricts its permissions for the current user.
 
 ## Telemetry
 
