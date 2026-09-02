@@ -1,0 +1,33 @@
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langchain.agents.middleware.human_in_the_loop import InterruptOnConfig
+from langchain.mcp import MCPAdapter
+from langchain.tools.tool_node import ToolCallRequest
+from langgraph.checkpoint.memory import InMemorySaver
+
+
+def _under_etc(request: ToolCallRequest) -> bool:
+    # `when` receives the pending tool call, so the gate can read its arguments.
+    return request.tool_call["args"].get("path", "").startswith("/etc")
+
+
+async def gate_on_arguments(server):
+    async with MCPAdapter(server) as adapter:
+        tools = await adapter.list_tools()
+
+        # Pause `delete_file` only when it targets a protected path; other
+        # calls to the same tool run untouched.
+        interrupt_on: dict[str, bool | InterruptOnConfig] = {
+            "delete_file": InterruptOnConfig(
+                allowed_decisions=["approve", "reject"], when=_under_etc
+            )
+        }
+        return create_agent(
+            "claude-sonnet-4-6",
+            tools,
+            middleware=[HumanInTheLoopMiddleware(interrupt_on=interrupt_on)],
+            checkpointer=InMemorySaver(),
+            system_prompt="Call delete_file with the exact path the user names.",
+        )
+```
