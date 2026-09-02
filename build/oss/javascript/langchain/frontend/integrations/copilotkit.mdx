@@ -1,6 +1,6 @@
 ---
 title: CopilotKit
-description: Use CopilotKit with LangGraph, Deep Agents, and React with custom endpoints, the Python AG-UI bridge, and structured generative UI
+description: Use CopilotKit with LangGraph, Deep Agents, and React with custom endpoints, the Python AG-UI bridge, structured generative UI, and messaging-platform channels
 ---
 
 [CopilotKit](https://www.copilotkit.ai/) provides a full React chat runtime and pairs especially well with LangGraph when you want the agent to return **structured UI payloads** instead of only plain text. In this pattern, your LangGraph deployment serves both the graph API and a custom CopilotKit endpoint, while the frontend parses assistant messages into dynamic React components.
@@ -22,6 +22,9 @@ This approach is useful when you want:
 </Info>
 
 import { ExampleEmbed } from "/snippets/example-embed.jsx"
+import ChannelsTsconfig from "/snippets/javascript/code-samples/copilotkit-channels-tsconfig.mdx"
+import ChannelsAgent from "/snippets/javascript/code-samples/copilotkit-channels-agent-js.mdx"
+import ChannelsChannel from "/snippets/javascript/code-samples/copilotkit-channels-channel-js.mdx"
 
 <ExampleEmbed example="copilotkit" minHeight={700} />
 
@@ -457,6 +460,86 @@ This renderer pattern is what makes the integration feel native:
 - CopilotKit handles chat state and transport
 - the custom renderer decides how assistant payloads become UI
 - [Hashbrown](https://hashbrown.dev/) turns validated structured data into concrete React elements
+
+## Channels
+
+The same agent that powers your in-app copilot can also run as a bot in Slack and other messaging platforms. [CopilotKit Channels](https://docs.copilotkit.ai/channels) connects your LangChain agent to a messaging platform through a managed CopilotKit Intelligence connection: Intelligence holds the platform credentials and message delivery, while your process runs the agent.
+
+<Note>
+  Channels require `@copilotkit/channels` 0.6.1 and `@copilotkit/runtime` 1.65.0, installed together as a tested pair, and Node.js 22 or later on a long-running host. The LangChain deployment the channel connects to can be Python or TypeScript.
+</Note>
+
+<Info>
+  This page shows how Channels fit together with a LangChain agent. For the full Slack walkthrough with a LangGraph backend, see [Connect and run your agent in Slack](https://docs.copilotkit.ai/slack/langgraph-typescript/connect). For other agent backends and platform coverage, see the [Channels overview](https://docs.copilotkit.ai/channels).
+</Info>
+
+### How it fits together
+
+CopilotKit Intelligence owns the platform connection (Slack, Microsoft Teams, and more) and its credentials. Your long-running Channels listener owns the agent, tools, and application logic. Each turn follows the same path:
+
+1. A person messages your app in Slack.
+2. Intelligence receives the platform event using the credentials configured for the Channel.
+3. A persistent Intelligence gateway connection delivers the turn to your Channels listener.
+4. The listener runs your LangChain agent over [AG-UI](https://docs.ag-ui.com/) and renders the reply.
+5. Intelligence sends the result back as native Slack Block Kit.
+
+Platform credentials never enter the agent process. Create a managed Channel in [CopilotKit Intelligence](https://docs.copilotkit.ai/slack/intelligence) and connect Slack: Intelligence stores the Slack credentials and gives you a **Channel code** (`CHANNEL_CODE`) and a project-scoped **Intelligence API key** (`INTELLIGENCE_API_KEY`) for the listener.
+
+### Install
+
+Install the tested SDK pair, then the TypeScript tooling:
+
+<CodeGroup>
+```bash npm
+npm install --save-exact @copilotkit/channels@0.6.1 @copilotkit/runtime@1.65.0
+npm install -D tsx typescript @types/node
+```
+
+```bash pnpm
+pnpm add --save-exact @copilotkit/channels@0.6.1 @copilotkit/runtime@1.65.0
+pnpm add -D tsx typescript @types/node
+```
+
+```bash yarn
+yarn add --exact @copilotkit/channels@0.6.1 @copilotkit/runtime@1.65.0
+yarn add -D tsx typescript @types/node
+```
+</CodeGroup>
+
+Use a NodeNext TypeScript configuration:
+
+<ChannelsTsconfig />
+
+### Connect your LangChain agent
+
+Return a fresh agent for each conversation, keyed by thread, so no state leaks across Slack threads. LangGraph Server speaks the LangGraph API, so use `LangGraphAgent` from `@copilotkit/runtime/langgraph`, not `HttpAgent`. Point it at the [deployment you already run](#extend-the-langgraph-deployment-with-a-custom-endpoint):
+
+<ChannelsAgent />
+
+### Run the Channel listener
+
+Declare the Channel with the `Code` from Intelligence and forward each message to the agent. Creating the Node listener is what connects the Channel. Register process teardown before you create the listener so a Ctrl-C during the connect window still stops the Channel cleanly.
+
+<ChannelsChannel />
+
+Set the runtime secrets, then start the process:
+
+```bash .env
+INTELLIGENCE_API_KEY=<project-api-key>
+CHANNEL_CODE=support-slack
+LANGGRAPH_DEPLOYMENT_URL=http://127.0.0.1:2024
+PORT=3000
+```
+
+```bash Terminal
+node --env-file=.env --import tsx channel.ts
+```
+
+The Channel moves from **Waiting for runtime** to **Online** in Intelligence once the process connects.
+
+### Other platforms
+
+Managed Slack is generally available. Managed Teams is a controlled integration target. The Channels SDK also ships direct adapters for Teams, Discord, Telegram, and WhatsApp. See the [Channels overview](https://docs.copilotkit.ai/slack) for the current platform list and per-platform setup.
 
 ## Resources
 
