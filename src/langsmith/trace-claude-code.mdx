@@ -153,9 +153,9 @@ You can also set an environment variable named `CC_LANGSMITH_PARENT_DOTTED_ORDER
 **Python**
 
 ```python
+import os
 import subprocess
 from langsmith import traceable, get_current_run_tree
-
 
 os.environ["LANGSMITH_TRACING"] = "true"
 os.environ["LANGSMITH_API_KEY"] = "<LangSmith API key>"
@@ -164,16 +164,18 @@ os.environ["LANGSMITH_PROJECT"] = "claude-code"
 @traceable
 def run_claude(prompt: str):
     run_tree = get_current_run_tree()
-    subprocess.run(
-        ["claude", "-p", prompt],
-        env={
-            **os.environ,
-            "TRACE_TO_LANGSMITH": "true",
-            "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
-            "CC_LANGSMITH_PROJECT": "claude-code",
-            "CC_LANGSMITH_PARENT_DOTTED_ORDER": run_tree.dotted_order,
-        },
-    )
+    # Build the subprocess environment explicitly to avoid variable shadowing.
+    # Start from the current environment, then add Claude Code plugin variables.
+    # Note: LANGSMITH_* SDK variables are not forwarded to the subprocess because
+    # the plugin uses its own CC_LANGSMITH_* variables for tracing configuration.
+    claude_env = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("LANGSMITH_")},
+        "TRACE_TO_LANGSMITH": "true",
+        "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
+        "CC_LANGSMITH_PROJECT": "claude-code",
+        "CC_LANGSMITH_PARENT_DOTTED_ORDER": run_tree.dotted_order,
+    }
+    subprocess.run(["claude", "-p", prompt], env=claude_env)
 ```
 
 **TypeScript**
