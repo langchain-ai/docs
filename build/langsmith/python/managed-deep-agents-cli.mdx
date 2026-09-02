@@ -62,10 +62,10 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 | `mda --version` | Show the installed CLI version. |
 | `mda init <name>` | Scaffold a Python Managed Deep Agents project. |
 | `mda build [path]` | Compile a project into a managed LangGraph app without deploying. |
-| `mda eval …` / `mda evals …` | Initialize a Harbor workspace and continue eval authoring in a coding agent. |
+| `mda evals …` | Initialize a Harbor workspace and continue eval authoring in a coding agent. |
 | `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
 | `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
-| `mda channel init slack` | Add a Slack channel declaration to the current project. |
+| `mda channels init slack` | Add a Slack channel declaration to the current project. |
 | `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
 | `mda delete [path]` / `mda destroy [path]` | Delete a deployed agent and the LangSmith resources it created. |
 
@@ -129,7 +129,7 @@ Eval tasks are opt-in and are not created by `mda init`. Run `mda evals init -i`
 Run the following command from the root of an existing managed deep agent project:
 
 ```bash
-uv run mda channel init slack
+uv run mda channels init slack
 ```
 
 
@@ -155,7 +155,7 @@ uv run mda build
 
 ## Evaluate projects
 
-Use `mda evals init` to initialize a Harbor workspace. The command is also available as `mda eval`. Use the interactive handoff to develop complete tasks with a coding agent and the `eval-engineering` skill.
+Use `mda evals init` to initialize a Harbor workspace. Use the interactive handoff to develop complete tasks with a coding agent and the `eval-engineering` skill.
 
 ```bash
 uv run mda evals init -i

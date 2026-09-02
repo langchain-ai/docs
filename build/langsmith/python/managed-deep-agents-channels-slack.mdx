@@ -45,7 +45,7 @@ uvx --from managed-deepagents mda init my-agent --channel slack
 To add Slack to an existing project, run the channel initialization command from the project root:
 
 ```bash
-uv run mda channel init slack
+uv run mda channels init slack
 ```
 
 
