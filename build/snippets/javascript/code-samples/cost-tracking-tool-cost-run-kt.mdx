@@ -1,0 +1,43 @@
+```kotlin Kotlin
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
+import com.langchain.smith.tracing.RunType
+import com.langchain.smith.tracing.TraceConfig
+import com.langchain.smith.tracing.getCurrentRunTree
+import com.langchain.smith.tracing.traceable
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+
+val langsmith = LangsmithOkHttpClient.fromEnv()
+val executor = Executors.newSingleThreadExecutor()
+
+try {
+    val getWeather =
+        traceable(
+            { city: String ->
+                val result =
+                    mapOf(
+                        "temperature_f" to 68,
+                        "condition" to "sunny",
+                        "city" to city,
+                    )
+                getCurrentRunTree()
+                    ?.metadata
+                    ?.put("usage_metadata", mapOf("total_cost" to 0.0015))
+                result
+            },
+            TraceConfig.builder()
+                .name("get_weather")
+                .runType(RunType.TOOL)
+                .client(langsmith)
+                .executor(executor)
+                .build(),
+        )
+
+    val toolResponse = getWeather("San Francisco")
+} finally {
+    executor.shutdown()
+    check(executor.awaitTermination(10, TimeUnit.SECONDS)) {
+        "Timed out waiting for LangSmith traces to submit"
+    }
+}
+```
