@@ -6,7 +6,7 @@ description: Configure and use API keys and OAuth connections with Managed Deep 
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-A connection gives a managed deep agent controlled access to an external service. Store connection material in LangSmith, then use its slug in agent code. The connection value does not appear in project source.
+A connection links a managed deep agent to an external service. At runtime, use `connections.get(...)` to resolve the connection value. The value does not appear in project source or CLI output.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -17,7 +17,7 @@ The owner controls which value `connections.get(...)` resolves:
 | Owner | Value | Setup |
 | --- | --- | --- |
 | `agent` | One API key or token shared by all callers of the agent. | An administrator creates the connection before deployment. |
-| `user` | An OAuth access token for the authenticated caller. | An administrator creates the OAuth connection before deployment. Each user authorizes access when the agent first needs it. |
+| `user` | An OAuth access token for the authenticated caller. | Each user authorizes access when the agent first needs it. |
 
 Connection slugs are unique within a workspace. Use lowercase letters, numbers, and single hyphens, such as `tavily` or `notion`.
 
@@ -65,10 +65,22 @@ uv run mda connection get tavily
 :::
 
 :::js
-```bash
-npx mda connection list
-npx mda connection get tavily
-```
+<CodeGroup>
+    ```bash npm
+    npx mda connection list
+    npx mda connection get tavily
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connection list
+    pnpm exec mda connection get tavily
+    ```
+
+    ```bash bun
+    bunx mda connection list
+    bunx mda connection get tavily
+    ```
+</CodeGroup>
 :::
 
 These commands do not return the stored value. Resolve the value only at runtime with `connections.get(...)`.
@@ -130,7 +142,7 @@ export const searchWeb = tool(
 ```
 :::
 
-Add `httpx` to the Python project dependencies before you use the Python example. See [Custom tools](/langsmith/managed-deep-agents-tools) to add the tool to the agent.
+See [Custom tools](/langsmith/managed-deep-agents-tools) to add the tool to the agent.
 
 ## Configure a user-owned OAuth connection
 
@@ -143,117 +155,140 @@ uv run mda connection catalog
 :::
 
 :::js
-```bash
-npx mda connection catalog
-```
+<CodeGroup>
+    ```bash npm
+    npx mda connection catalog
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connection catalog
+    ```
+
+    ```bash bun
+    bunx mda connection catalog
+    ```
+</CodeGroup>
 :::
 
-Create the connection before deployment. This example uses the built-in Notion service:
+Create the connection before deployment. This example uses the built-in GitHub service:
 
 :::python
 ```bash
-uv run mda connection create notion --oauth notion
+uv run mda connection create github --oauth github
 ```
 :::
 
 :::js
-```bash
-npx mda connection create notion --oauth notion
-```
+<CodeGroup>
+    ```bash npm
+    npx mda connection create github --oauth github
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connection create github --oauth github
+    ```
+
+    ```bash bun
+    bunx mda connection create github --oauth github
+    ```
+</CodeGroup>
 :::
 
 To use your own OAuth application, name the application and pass its client ID. Read the client secret from an environment variable:
 
 :::python
 ```bash
-uv run mda connection create notion \
-  --oauth notion \
-  --app company-notion \
-  --client-id "$NOTION_OAUTH_CLIENT_ID" \
-  --client-secret-env NOTION_OAUTH_CLIENT_SECRET
+uv run mda connection create github \
+  --oauth github \
+  --app company-github \
+  --client-id "$GITHUB_OAUTH_CLIENT_ID" \
+  --client-secret-env GITHUB_OAUTH_CLIENT_SECRET
 ```
 :::
 
 :::js
-```bash
-npx mda connection create notion \
-  --oauth notion \
-  --app company-notion \
-  --client-id "$NOTION_OAUTH_CLIENT_ID" \
-  --client-secret-env NOTION_OAUTH_CLIENT_SECRET
-```
+<CodeGroup>
+    ```bash npm
+    npx mda connection create github \
+      --oauth github \
+      --app company-github \
+      --client-id "$GITHUB_OAUTH_CLIENT_ID" \
+      --client-secret-env GITHUB_OAUTH_CLIENT_SECRET
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connection create github \
+      --oauth github \
+      --app company-github \
+      --client-id "$GITHUB_OAUTH_CLIENT_ID" \
+      --client-secret-env GITHUB_OAUTH_CLIENT_SECRET
+    ```
+
+    ```bash bun
+    bunx mda connection create github \
+      --oauth github \
+      --app company-github \
+      --client-id "$GITHUB_OAUTH_CLIENT_ID" \
+      --client-secret-env GITHUB_OAUTH_CLIENT_SECRET
+    ```
+</CodeGroup>
 :::
 
 Use `--scope SCOPE` to replace the catalog service's default scopes. Repeat the flag for each scope.
 
 ### Access an OAuth token in a custom tool
 
-Await a user-owned connection inside the tool. The runtime resolves the connection for the authenticated caller:
+This tool resolves the authenticated caller's GitHub connection and calls the GitHub REST API:
 
 :::python
-```python tools/search_notion.py
+```python tools/get_github_user.py
 import httpx
 from langchain.tools import tool
 from managed_deepagents import connections
 
 
-@tool(parse_docstring=True)
-async def search_notion(query: str) -> str:
-    """Search pages that the current user connected in Notion.
-
-    Args:
-        query: Text to find in Notion page titles.
-    """
-    access_token = await connections.get("notion", {"type": "user"})
+@tool
+async def get_github_user() -> str:
+    """Get the authenticated caller's GitHub login."""
+    access_token = await connections.get("github", {"type": "user"})
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            "https://api.notion.com/v1/search",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Notion-Version": "2022-06-28",
-            },
-            json={"query": query},
+        response = await client.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"Bearer {access_token}"},
         )
         response.raise_for_status()
-        return response.text
+        return response.json()["login"]
 ```
 :::
 
 :::js
-```ts tools/search-notion.ts
+```ts tools/get-github-user.ts
 import { tool } from "langchain";
 import { connections } from "managed-deepagents";
 import { z } from "zod";
 
-export const searchNotion = tool(
-  async ({ query }) => {
-    const accessToken = await connections.get("notion", { type: "user" });
-    const response = await fetch("https://api.notion.com/v1/search", {
-      method: "POST",
+export const getGitHubUser = tool(
+  async () => {
+    const accessToken = await connections.get("github", { type: "user" });
+    const response = await fetch("https://api.github.com/user", {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Notion-Version": "2022-06-28",
       },
-      body: JSON.stringify({ query }),
     });
     if (!response.ok) {
-      throw new Error(`Notion request failed with status ${response.status}`);
+      throw new Error(`GitHub request failed with status ${response.status}`);
     }
-    return await response.text();
+    const user = (await response.json()) as { login: string };
+    return user.login;
   },
   {
-    name: "search_notion",
-    description: "Search pages that the current user connected in Notion.",
-    schema: z.object({
-      query: z.string().describe("Text to find in Notion page titles."),
-    }),
+    name: "get_github_user",
+    description: "Get the authenticated caller's GitHub login.",
+    schema: z.object({}),
   },
 );
 ```
 :::
-
-User-owned connections require an authenticated caller. A custom tool can resolve a grant after the user has authorized it. The custom tool does not start the OAuth flow. An MCP connector can detect a missing grant and start the authorization flow before the first model call.
 
 ## Handle an OAuth authorization interrupt
 
@@ -276,9 +311,11 @@ If an MCP connector needs a user-owned OAuth connection that the caller has not 
 
 In Slack, the channel adapter shows an authorization prompt. The user opens the link, completes OAuth, and then continues the run.
 
-{/* TODO: Add the Slack OAuth authorization prompt screenshot before this PR is ready for review. */}
+<Frame caption="Slack OAuth authorization prompt">
+  **Screenshot placeholder:** Add the Slack OAuth authorization prompt screenshot here.
+</Frame>
 
-In a custom client, check the interrupt `type`. Show each `connect_url` to the user, wait for the user to complete authorization, and resume the same run. See [Human-in-the-loop using the server API](/langsmith/add-human-in-the-loop) for the general resume flow.
+In a custom client, check the interrupt `type` and show each `connect_url` to the user. During public beta, programmatic invocation of Managed Deep Agents is not documented. Contact your LangChain team for the supported resume flow.
 
 <Note>
 Connection authorization interrupts currently cover OAuth flows. Support for other user-provided connection types is planned.
@@ -286,7 +323,7 @@ Connection authorization interrupts currently cover OAuth flows. Support for oth
 
 ## Use a connection with an MCP connector
 
-An MCP connector can use a connection to add a bearer token without exposing the value in connector code. See [Connect to MCP servers](/langsmith/managed-deep-agents-mcp-connectors) for the Notion example and full connector configuration.
+An MCP connector can use a connection to add a bearer token without exposing the value in connector code. See [Connect to MCP servers](/langsmith/managed-deep-agents-mcp-connectors).
 
 ## Develop locally
 
