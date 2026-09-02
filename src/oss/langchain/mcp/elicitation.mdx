@@ -1,0 +1,67 @@
+---
+title: Elicitation and interrupts
+sidebarTitle: Elicitation
+description: Answer an MCP server's mid-call questions with a human in the loop, and gate destructive tools behind approval.
+---
+
+import McpElicitationPy from '/snippets/code-samples/mcp-elicitation-py.mdx';
+import McpDestructiveGatePy from '/snippets/code-samples/mcp-destructive-gate-py.mdx';
+
+:::python
+<Note>
+The `langchain.mcp` namespace requires `langchain[mcp]>=1.4.0` and is in beta. The API may change.
+</Note>
+
+Some MCP tools cannot finish without asking the caller something first, and some are dangerous enough to warrant approval before they run. Both bring a human into the loop mid-run. LangChain answers both through LangGraph [interrupts](/oss/langchain/human-in-the-loop): [elicitation](#elicitation) surfaces a server's own question, and [destructive-tool gating](#gate-destructive-tools) pauses a call for approval.
+
+## Elicitation
+
+[Elicitation](https://modelcontextprotocol.io/specification/draft/client/elicitation) is the MCP mechanism for a server to request input in the middle of a tool call. Pass `elicitation="interrupt"` to @[`MCPAdapter`] and the server's request surfaces as a LangGraph @[`interrupt`], so the person already reviewing the agent's work answers it and the run resumes:
+
+<McpElicitationPy />
+
+A few things to note:
+
+- **The capability is opt-in.** Declaring elicitation is a promise made on the wire, and a server only asks a client that made it. Left unset, a server whose tool requires an answer refuses the call rather than run without one.
+- **Resuming needs persistence.** Attach a [checkpointer](/oss/langchain/short-term-memory) so the interrupted run has somewhere to wait.
+- **Answers are keyed by the server's request key.** Resume with `Command(resume={"responses": {key: answer}})`. Each answer's `action` is `accept` (with `content` matching the request's schema), `decline` (answer refused, call continues), or `cancel` (the whole call is abandoned).
+
+The interrupt payload and answer types live in `langchain.mcp.elicitation`.
+
+<Note>
+Interrupt-driven elicitation answers a server that returns its request as an `InputRequiredResult` (the modern protocol's input-required round). A server that only pushes elicitation over a legacy handshake session cannot be answered this way.
+</Note>
+
+## Gate destructive tools
+
+An MCP server can flag a tool as destructive with the `destructiveHint` annotation. @[`MCPAdapter`] surfaces that on the LangChain tool under `metadata["mcp"]["tool"]["annotations"]["destructive_hint"]`, so you can decide how to treat a tool without hardcoding its name.
+
+Read the hint to build the `interrupt_on` map for @[`HumanInTheLoopMiddleware`]: destructive tools pause for approval, everything else runs untouched. Because the gate is derived from metadata, it covers whatever destructive tools a server happens to expose:
+
+<McpDestructiveGatePy />
+
+When the agent calls a gated tool, the run pauses. Approve it to let the tool run, or reject it to skip the tool and tell the model:
+
+```python
+from langgraph.types import Command
+
+# Approve the pending destructive call and resume.
+resumed = await agent.ainvoke(Command(resume={"decisions": [{"type": "approve"}]}), config)
+```
+
+For more on tool metadata, see [Tool results](/oss/langchain/mcp/tool-results#tool-metadata). For the full approval workflow, see [Human-in-the-loop](/oss/langchain/human-in-the-loop).
+
+## See also
+
+- [Human-in-the-loop](/oss/langchain/human-in-the-loop)
+- [FastMCP client elicitation](https://gofastmcp.com/clients/elicitation)
+- [FastMCP server elicitation](https://gofastmcp.com/servers/elicitation)
+- [MCP elicitation specification](https://modelcontextprotocol.io/specification/draft/client/elicitation)
+- [MCP tool annotations](https://modelcontextprotocol.io/specification/draft/server/tools)
+:::
+
+:::js
+<Note>
+The TypeScript MCP documentation is being updated. In the meantime, see the [`@langchain/mcp-adapters`](https://github.com/langchain-ai/langchainjs/tree/main/libs/langchain-mcp-adapters) README.
+</Note>
+:::

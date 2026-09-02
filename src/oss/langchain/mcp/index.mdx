@@ -1,0 +1,98 @@
+---
+title: Model Context Protocol (MCP)
+sidebarTitle: Overview
+description: Connect LangChain agents to MCP servers with the MCPAdapter, built on FastMCP.
+---
+
+import McpQuickstartPy from '/snippets/code-samples/mcp-quickstart-py.mdx';
+import McpTransportsPy from '/snippets/code-samples/mcp-transports-py.mdx';
+
+:::python
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open protocol that standardizes how applications provide tools and context to language models. LangChain agents call tools defined on MCP servers through @[`MCPAdapter`], which discovers a server's tools and adapts them into LangChain tools you can pass straight to @[`create_agent`].
+
+@[`MCPAdapter`] is built on [FastMCP](https://gofastmcp.com), which handles transport inference, protocol negotiation, connection management, and authentication. This section covers the LangChain-specific layer; it links out to the FastMCP client documentation for the connection details underneath.
+
+<Note>
+The `langchain.mcp` namespace requires `langchain[mcp]>=1.4.0` and is in beta. Importing from it raises a `LangChainBetaWarning` once per process. The API may change.
+</Note>
+
+## Install
+
+Install LangChain with the `mcp` extra, which pulls in FastMCP:
+
+<CodeGroup>
+```bash pip
+pip install "langchain[mcp]"
+```
+
+```bash uv
+uv add "langchain[mcp]"
+```
+</CodeGroup>
+
+## Quickstart
+
+Open an @[`MCPAdapter`] as an async context manager, discover the server's tools with `list_tools()`, and hand them to an agent. The tools hold the client, so they stay callable after the context exits:
+
+<McpQuickstartPy />
+
+Pass the resulting tools to @[`create_agent`]:
+
+```python
+from langchain.agents import create_agent
+
+tools = await load_tools("https://example.com/mcp")
+agent = create_agent("claude-sonnet-4-6", tools)
+result = await agent.ainvoke({"messages": [{"role": "user", "content": "..."}]})
+```
+
+## Transports
+
+@[`MCPAdapter`] infers the transport from the target you hand it, so the only thing that changes between an in-process server, a local script over stdio, and a remote URL is the target itself:
+
+<McpTransportsPy />
+
+A target can be any of the following:
+
+- **An `http`/`https` URL** (`str`): reached over streamable HTTP.
+- **A script path** (`Path`): launched as a subprocess over stdio.
+- **An in-process `FastMCP` server**: connected in-memory, with no subprocess or socket.
+- **An `MCPConfig` dict** (`{"mcpServers": {...}}`): several servers behind one adapter. See [Connections](/oss/langchain/mcp/connections#multiple-servers).
+- **A prebuilt `fastmcp.Client`**: for full control over transport, [caching](https://gofastmcp.com/clients/client#response-caching), and [protocol negotiation](https://gofastmcp.com/clients/client#protocol-negotiation).
+
+<Warning>
+A `str` target must be an `http` or `https` URL. FastMCP resolves a string by testing it as a filesystem path before testing it as a URL, so a string naming an existing `.py` or `.js` file would launch that file as a subprocess. Because strings are the form a target most often arrives in from configuration or from a model, @[`MCPAdapter`] rejects one that is not a URL. Reach a local server through `Path`, a `fastmcp` transport, or an `MCPConfig`, all of which say so explicitly.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Connections" icon="plug" href="/oss/langchain/mcp/connections">
+    Connection lifecycle, multiple servers, protocol eras, and caching.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/oss/langchain/mcp/auth">
+    Bearer tokens, OAuth 2.1, and per-user server auth.
+  </Card>
+  <Card title="Elicitation" icon="messages" href="/oss/langchain/mcp/elicitation">
+    Answer a server's mid-call questions with a human in the loop.
+  </Card>
+  <Card title="Tool results" icon="arrow-back-up" href="/oss/langchain/mcp/tool-results">
+    Errors, structured content, and multimodal tool output.
+  </Card>
+</CardGroup>
+
+## See also
+
+- [FastMCP client documentation](https://gofastmcp.com/clients/client) — the client @[`MCPAdapter`] is built on
+- [FastMCP client transports](https://gofastmcp.com/clients/transports) — configure how a client connects
+- [MCP specification](https://modelcontextprotocol.io) — the open protocol
+- [Migrate from `langchain-mcp-adapters`](/oss/migrate/langchain-mcp-adapters)
+:::
+
+:::js
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open protocol that standardizes how applications provide tools and context to language models. LangChain agents can use tools defined on MCP servers using the [`@langchain/mcp-adapters`](https://github.com/langchain-ai/langchainjs/tree/main/libs/langchain-mcp-adapters) library.
+
+<Note>
+The TypeScript MCP documentation is being updated. In the meantime, see the [`@langchain/mcp-adapters`](https://github.com/langchain-ai/langchainjs/tree/main/libs/langchain-mcp-adapters) README.
+</Note>
+:::

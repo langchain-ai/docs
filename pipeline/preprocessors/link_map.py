@@ -65,6 +65,10 @@ LINK_MAPS: list[LinkMap] = [
             "create_agent(response_format)": "langchain/agents/factory/create_agent",
             "create_agent(name)": "langchain/agents/factory/create_agent",
             "system_prompt": "langchain/agents/#langchain.agents.create_agent(system_prompt)",
+            # MCP
+            "MCPAdapter": "langchain/mcp/adapter/MCPAdapter",
+            "MCPToolArtifact": "langchain/mcp/tools/MCPToolArtifact",
+            "as_langchain_tool": "langchain/mcp/tools/as_langchain_tool",
             "AgentState": "langchain/agents/middleware/types/AgentState",
             "ModelRequest": "langchain/agents/middleware/types/ModelRequest",
             "ModelResponse": "langchain/agents/middleware/types/ModelResponse",

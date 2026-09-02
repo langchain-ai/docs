@@ -1,0 +1,171 @@
+---
+title: Migrate from langchain-mcp-adapters
+sidebarTitle: langchain-mcp-adapters
+description: Migrate from the standalone langchain-mcp-adapters package to the built-in langchain.mcp namespace.
+---
+
+MCP support now ships inside LangChain in the `langchain.mcp` namespace, built on [FastMCP](https://gofastmcp.com). It replaces the standalone [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) package, whose `MultiServerMCPClient` is collapsed into a single @[`MCPAdapter`] class.
+
+This guide is an exhaustive audit: every public feature of `langchain-mcp-adapters` (0.3.2) mapped to its `langchain.mcp` equivalent, or marked removed. For the full feature documentation, see [Model Context Protocol (MCP)](/oss/langchain/mcp).
+
+<Note>
+The `langchain.mcp` namespace requires `langchain[mcp]>=1.4.0` and is in beta. Importing from it raises a `LangChainBetaWarning`. The API may change.
+</Note>
+
+## Install
+
+Replace the standalone package with the `mcp` extra, which pulls in FastMCP:
+
+<CodeGroup>
+```bash pip
+pip uninstall langchain-mcp-adapters
+pip install "langchain[mcp]"
+```
+
+```bash uv
+uv remove langchain-mcp-adapters
+uv add "langchain[mcp]"
+```
+</CodeGroup>
+
+## Import paths
+
+| `langchain-mcp-adapters` | `langchain.mcp` |
+|---|---|
+| `from langchain_mcp_adapters.client import MultiServerMCPClient` | `from langchain.mcp import MCPAdapter` |
+| `from langchain_mcp_adapters.tools import load_mcp_tools` | `from langchain.mcp import MCPAdapter` (use `MCPAdapter(...).list_tools()`) |
+| `from langchain_mcp_adapters.tools import convert_mcp_tool_to_langchain_tool` | `from langchain.mcp import as_langchain_tool` (renamed) |
+| `from langchain_mcp_adapters.tools import MCPToolArtifact` | `from langchain.mcp import MCPToolArtifact` |
+
+## Client
+
+`MultiServerMCPClient` took a server config dict and exposed several methods. @[`MCPAdapter`] is an async context manager that infers the transport from its target and exposes `list_tools()`.
+
+Before:
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient(
+    {
+        "math": {"transport": "stdio", "command": "python", "args": ["/path/to/math_server.py"]},
+        "weather": {"transport": "http", "url": "http://localhost:8000/mcp"},
+    }
+)
+tools = await client.get_tools()
+```
+
+After:
+
+```python
+from langchain.mcp import MCPAdapter
+
+config = {
+    "mcpServers": {
+        "math": {"command": "python", "args": ["/path/to/math_server.py"]},
+        "weather": {"url": "http://localhost:8000/mcp"},
+    }
+}
+async with MCPAdapter(config) as adapter:
+    tools = await adapter.list_tools()
+```
+
+The config uses the standard [`MCPConfig`](https://gofastmcp.com/integrations/mcp-json-configuration) shape (`mcpServers`), and the transport is inferred from each entry rather than named with a `transport` key. For a single server, pass its URL, script path, or in-process server directly. See [Connections](/oss/langchain/mcp/connections#multiple-servers).
+
+### Client methods
+
+| `MultiServerMCPClient` method | `langchain.mcp` |
+|---|---|
+| `get_tools(server_name=...)` | `MCPAdapter(...).list_tools()`. Scope to one server by pointing the adapter at that server. |
+| `get_prompt(server_name, prompt_name, arguments=...)` | **Not supported.** See [Prompts and resources](#prompts-and-resources). |
+| `get_resources(server_name, uris=...)` | **Not supported.** See [Prompts and resources](#prompts-and-resources). |
+| `session(server_name, auto_initialize=...)` | Not exposed. `list_tools()` manages the session; each returned tool opens its own session per call. See [connection lifecycle](/oss/langchain/mcp/connections#connection-lifecycle). |
+
+### Constructor arguments
+
+| `MultiServerMCPClient(...)` argument | `langchain.mcp` |
+|---|---|
+| `connections` (dict of connection configs) | The adapter's `target`: a URL, `Path`, in-process server, `MCPConfig` dict, prebuilt `fastmcp.Client`, or `ClientGroup`. |
+| `tool_name_prefix` | Prefixing is automatic for a multi-server `MCPConfig` or a `ClientGroup` (`{server}_{tool}`). See [multiple servers](/oss/langchain/mcp/connections#multiple-servers). |
+| `handle_tool_errors` | **Removed as a flag.** Behavior is now fixed: `isError=True` becomes a `ToolMessage(status="error")`; transport failures raise. See [Tool results](/oss/langchain/mcp/tool-results#errors). |
+| `callbacks` (`Callbacks`) | **Removed.** See [Callbacks](#callbacks). |
+| `tool_interceptors` (`ToolCallInterceptor`) | **Removed.** No equivalent. Use LangChain [middleware](/oss/langchain/middleware) to intercept tool calls agent-side. |
+
+## Connection configuration
+
+`langchain-mcp-adapters` used typed connection classes. @[`MCPAdapter`] infers the transport, or you pass a `fastmcp` transport for full control.
+
+| `langchain-mcp-adapters` | `langchain.mcp` |
+|---|---|
+| `StdioConnection` | A `Path` target, or an `MCPConfig` entry with `command`/`args`. |
+| `StreamableHttpConnection` | An `http`/`https` URL target, or an `MCPConfig` entry with `url`. |
+| `SSEConnection` | **Deprecated transport.** See [Deprecated transports](#deprecated-transports). |
+| `WebsocketConnection` | **Deprecated transport.** See [Deprecated transports](#deprecated-transports). |
+| `httpx_client_factory` | Set on a `fastmcp` transport. See [shared connection pool](/oss/langchain/mcp/connections#shared-connection-pool). |
+| `auth` (per connection) | Set `auth` on a `fastmcp.Client`. See [Authentication](/oss/langchain/mcp/auth). |
+| `headers` (per connection) | Set on a `fastmcp` transport (`StreamableHttpTransport(url, headers=...)`). |
+
+### Deprecated transports
+
+The MCP specification [deprecated the HTTP+SSE transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#backwards-compatibility) (protocol version 2024-11-05) in favor of Streamable HTTP. `langchain.mcp` targets Streamable HTTP and stdio; `SSEConnection` and `WebsocketConnection` have no direct replacement. Migrate SSE servers to Streamable HTTP. If you depend on a transport that is not supported, [open an issue](https://github.com/langchain-ai/langchain/issues).
+
+## Elicitation
+
+Elicitation moved from a callback registered on the client to a LangGraph @[`interrupt`]. Pass `elicitation="interrupt"` and answer the server's request when the run pauses, resuming with `Command(resume={"responses": {key: answer}})`.
+
+| `langchain-mcp-adapters` | `langchain.mcp` |
+|---|---|
+| `Callbacks(on_elicitation=...)` | `MCPAdapter(target, elicitation="interrupt")` |
+
+See [Elicitation](/oss/langchain/mcp/elicitation).
+
+## Callbacks
+
+The `Callbacks` object is removed. Elicitation is redesigned as an interrupt; the notification callbacks have no `langchain.mcp` equivalent.
+
+| `Callbacks` field | `langchain.mcp` |
+|---|---|
+| `on_elicitation` | Redesigned as `elicitation="interrupt"`. See [Elicitation](/oss/langchain/mcp/elicitation). |
+| `on_progress` | **Removed.** Progress notifications are not surfaced. [Open an issue](https://github.com/langchain-ai/langchain/issues) if you need them. |
+| `on_logging_message` | **Removed.** Server log messages are not surfaced. [Open an issue](https://github.com/langchain-ai/langchain/issues) if you need them. |
+
+## Tool interceptors
+
+Tool interceptors (`tool_interceptors`, `ToolCallInterceptor`, `MCPToolCallRequest`, `MCPToolCallResult`) are removed with no MCP-specific replacement. Intercept tool calls agent-side with LangChain [middleware](/oss/langchain/middleware), which wraps every tool a `create_agent` runs, not only MCP tools.
+
+## Error handling
+
+The `handle_tool_errors` flag is gone. Behavior is now fixed: an MCP tool that reports `isError=True` reaches the model as a @[`ToolMessage`] with `status="error"` carrying the server's message, while transport failures raise. See [Tool results](/oss/langchain/mcp/tool-results#errors).
+
+## Authentication
+
+Auth moved onto the `fastmcp.Client`. Instead of `auth` and `headers` on the connection config, build a client with `auth` set to a bearer token, the literal `"oauth"`, or any `httpx.Auth`, and pass that client to @[`MCPAdapter`]. Per-server and per-user auth are both supported. See [Authentication](/oss/langchain/mcp/auth).
+
+## Tool results
+
+Tool result handling is preserved and extended.
+
+| `langchain-mcp-adapters` | `langchain.mcp` |
+|---|---|
+| `MCPToolArtifact` (structured content) | **Kept.** Exported from `langchain.mcp`. See [structured content](/oss/langchain/mcp/tool-results#structured-content). |
+| Multimodal content blocks | **Kept.** See [multimodal content](/oss/langchain/mcp/tool-results#multimodal-content). |
+| Tool metadata | **Extended.** Grouped under an `mcp` namespace on the tool's metadata, with annotations and server identity. See [tool metadata](/oss/langchain/mcp/tool-results#tool-metadata). |
+| `convert_mcp_tool_to_langchain_tool` | Renamed to @[`as_langchain_tool`]. |
+| `to_fastmcp` (LangChain tool → FastMCP tool) | **Removed.** [Open an issue](https://github.com/langchain-ai/langchain/issues) if you need it. |
+
+## Prompts and resources
+
+`langchain.mcp` does not have first-class support for MCP [prompts](https://modelcontextprotocol.io/specification/2025-06-18/server/prompts) or [resources](https://modelcontextprotocol.io/specification/2025-06-18/server/resources). The following have no direct replacement:
+
+| `langchain-mcp-adapters` | Status |
+|---|---|
+| `load_mcp_prompt`, `get_prompt`, `convert_mcp_prompt_message_to_langchain_message` | Not supported |
+| `load_mcp_resources`, `get_resources`, `get_mcp_resource`, `convert_mcp_resource_to_langchain_blob` | Not supported |
+
+If you need prompts or resources through LangChain, [open an issue](https://github.com/langchain-ai/langchain/issues) describing your use case. In the meantime, read them directly with a [`fastmcp.Client`](https://gofastmcp.com/clients/client) (`get_prompt`, `read_resource`).
+
+## See also
+
+- [Model Context Protocol (MCP)](/oss/langchain/mcp)
+- [FastMCP client documentation](https://gofastmcp.com/clients/client)
+- [MCP specification](https://modelcontextprotocol.io)
