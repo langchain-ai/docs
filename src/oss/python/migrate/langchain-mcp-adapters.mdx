@@ -119,6 +119,12 @@ Elicitation moved from a callback registered on the client to a LangGraph @[`int
 
 See [Elicitation](/oss/langchain/mcp/elicitation).
 
+## Sampling and roots
+
+`langchain.mcp` answers **elicitation** requests through interrupts, but not [sampling](https://modelcontextprotocol.io/specification/2025-06-18/client/sampling) (a server asking the client to run an LLM completion) or [roots](https://modelcontextprotocol.io/specification/2025-06-18/client/roots) (a server asking which local paths the client can reach). A tool call that returns either raises `NotImplementedError`.
+
+This follows the protocol. The modern MCP era is sessionless and has no live back-channel for a server to call into mid-request, so the pushed forms of sampling and roots exist only on the legacy handshake era. FastMCP 4 removed `ctx.sample()` and `ctx.list_roots()` from every era for that reason. If you need a server's sampling or roots request answered through LangChain, [open an issue](https://github.com/langchain-ai/langchain/issues).
+
 ## Callbacks
 
 The `Callbacks` object is removed. Elicitation is redesigned as an interrupt; the notification callbacks have no `langchain.mcp` equivalent.
@@ -163,6 +169,17 @@ Tool result handling is preserved and extended.
 | `load_mcp_resources`, `get_resources`, `get_mcp_resource`, `convert_mcp_resource_to_langchain_blob` | Not supported |
 
 If you need prompts or resources through LangChain, [open an issue](https://github.com/langchain-ai/langchain/issues) describing your use case. In the meantime, read them directly with a [`fastmcp.Client`](https://gofastmcp.com/clients/client) (`get_prompt`, `read_resource`).
+
+## Deprecated in the MCP protocol
+
+Some `langchain-mcp-adapters` features have no replacement because the MCP protocol itself deprecated or removed the mechanism they relied on, not because `langchain.mcp` chose to drop them. `langchain.mcp` targets the modern, sessionless protocol era through FastMCP 4.
+
+| Mechanism | Protocol status | Effect on migration |
+|---|---|---|
+| HTTP+SSE transport | [Deprecated](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#backwards-compatibility) (protocol 2024-11-05) in favor of Streamable HTTP | `SSEConnection` / `WebsocketConnection` have no replacement. Migrate servers to Streamable HTTP. |
+| Server-pushed sampling and roots | Removed from the modern era; the sessionless protocol has no live back-channel. FastMCP 4 removed `ctx.sample()` and `ctx.list_roots()` from every era | Not answered by `langchain.mcp`. See [Sampling and roots](#sampling-and-roots). |
+| Server-pushed elicitation | Modern era replaces the pushed request with input-required rounds | Answered through interrupts instead of a callback. See [Elicitation](#elicitation). |
+| JSON-RPC batching | [Removed](https://modelcontextprotocol.io/specification/2025-06-18/changelog) (protocol 2025-06-18) | Not applicable; requests are sent individually. |
 
 ## See also
 
