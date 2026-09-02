@@ -18,7 +18,7 @@ async def divide_by_zero(server):
 
 
 # :snippet-start: mcp-tool-metadata-py
-from langchain_core.tools import BaseTool
+from langchain.tools import BaseTool
 
 
 def is_destructive(tool: BaseTool) -> bool:

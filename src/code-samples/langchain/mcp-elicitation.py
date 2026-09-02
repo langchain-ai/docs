@@ -39,7 +39,7 @@ async def book_with_elicitation(server) -> dict:
 # :snippet-start: mcp-destructive-gate-py
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain.agents.middleware.human_in_the_loop import InterruptOnConfig
-from langchain_core.tools import BaseTool
+from langchain.tools import BaseTool
 
 
 def is_destructive(tool: BaseTool) -> bool:
