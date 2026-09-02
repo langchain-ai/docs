@@ -1,7 +1,7 @@
 ---
 title: Agent User Interaction Protocol (AG-UI)
 sidebarTitle: AG-UI
-description: Expose Deep Agents over the Agent User Interaction Protocol (AG-UI) to stream events to any AG-UI client or frontend.
+description: Expose deep agents over the Agent User Interaction Protocol (AG-UI) to stream events to any AG-UI client or frontend.
 ---
 
 [Agent User Interaction Protocol (AG-UI)](https://docs.ag-ui.com) is an open, lightweight, event-based protocol that standardizes how AI agents connect to user-facing applications.
@@ -18,9 +18,13 @@ Exposing a deep agent over AG-UI turns its run into a typed event stream (messag
 
 ## Quickstart
 
-Install the AG-UI integration for LangGraph alongside `deepagents`.
+Serve a deep agent as a LangGraph graph, then connect the TypeScript `@ag-ui/langgraph` adapter so AG-UI clients can drive it.
+
+### Install dependencies
 
 :::python
+Install Deep Agents and the LangGraph CLI to serve the graph. The AG-UI adapter used in later steps is TypeScript (`@ag-ui/langgraph`). For a Python CopilotKit or AG-UI FastAPI bridge, see [CopilotKit](/oss/langchain/frontend/integrations/copilotkit).
+
 <CodeGroup>
 ```bash pip
 pip install deepagents "langgraph-cli[inmem]"
@@ -33,6 +37,8 @@ uv add deepagents "langgraph-cli[inmem]"
 :::
 
 :::js
+Install Deep Agents, the LangGraph CLI, and the AG-UI LangGraph adapter:
+
 <CodeGroup>
 ```bash npm
 npm install @ag-ui/langgraph deepagents @langchain/langgraph-cli
@@ -60,7 +66,6 @@ from deepagents import create_deep_agent
 
 agent = create_deep_agent(
     model="anthropic:claude-sonnet-4-6",
-    tools=[internet_search],
     system_prompt="You are an expert researcher.",
 )
 ```
@@ -72,7 +77,6 @@ import { createDeepAgent } from "deepagents";
 
 export const agent = createDeepAgent({
   model: "anthropic:claude-sonnet-4-6",
-  tools: [internetSearch],
   systemPrompt: "You are an expert researcher.",
 });
 ```
@@ -122,7 +126,7 @@ npx @langchain/langgraph-cli dev
 
 ### Connect the AG-UI adapter
 
-The `@ag-ui/langgraph` adapter wraps the running graph as an AG-UI agent that any client can drive. Point it at the LangGraph server and name the graph to load.
+The TypeScript `@ag-ui/langgraph` adapter wraps the running graph as an AG-UI agent that any client can drive. Point it at the LangGraph server and name the graph to load. This works whether the graph was authored in Python or TypeScript.
 
 ```ts icon="plug" title="ag-ui agent"
 import { LangGraphAgent } from "@ag-ui/langgraph";
@@ -133,11 +137,11 @@ const agent = new LangGraphAgent({
 });
 ```
 
-<Card title="Deep Agents AG-UI adapter on npm" icon="brand-npm" href="https://www.npmjs.com/package/@ag-ui/langgraph">
+<Card title="AG-UI LangGraph adapter on npm" icon="brand-npm" href="https://www.npmjs.com/package/@ag-ui/langgraph">
   The `@ag-ui/langgraph` package implements the AG-UI protocol for LangGraph graphs, including deep agents.
 </Card>
 
-## Streaming and events
+## Stream events
 
 AG-UI is an event stream. As a deep agent runs, the adapter translates its LangGraph execution into typed AG-UI events. A client subscribes to those events and updates as they arrive, rather than waiting for the final answer.
 
@@ -187,7 +191,17 @@ await agent.runAgent(
 );
 ```
 
-When a deep agent pauses for human input, the pause surfaces in the stream as an interrupt. Resume the run by sending the standard AG-UI `resume` field on the next input:
+When a deep agent pauses for human input, the run finishes with an interrupt. By default, `@ag-ui/langgraph` emits a legacy `on_interrupt` custom event alongside `RUN_FINISHED`. To receive the structured AG-UI interrupt outcome on `RUN_FINISHED` (`outcome.type === "interrupt"`), set `emitInterruptOutcome: true` when you construct the agent:
+
+```ts icon="hand-stop"
+const agent = new LangGraphAgent({
+  graphId: "deep_agent",
+  deploymentUrl: "http://localhost:2024",
+  emitInterruptOutcome: true,
+});
+```
+
+Resume the run by sending the standard AG-UI `resume` field on the next input:
 
 ```ts icon="hand-stop"
 const input = {
@@ -211,8 +225,8 @@ For the interrupt model itself, see [Human-in-the-loop](/oss/deepagents/human-in
 Any AG-UI client can drive a deep agent exposed over the protocol, so you do not have to build message rendering, streaming, or state sync yourself. Point the client at the adapter (or a runtime that wraps it) and select the agent by its `graphId`.
 
 <CardGroup cols={2}>
-  <Card title="CopilotKit" icon="brand-react" href="https://docs.copilotkit.ai">
-    React components and hooks for chat, generative UI, and shared state, with built-in AG-UI support.
+  <Card title="CopilotKit" icon="brand-react" href="/oss/langchain/frontend/integrations/copilotkit">
+    React chat runtime with AG-UI support for LangGraph and Deep Agents, including the Python FastAPI bridge.
   </Card>
   <Card title="AG-UI clients" icon="apps" href="https://docs.ag-ui.com/integrations">
     The full list of AG-UI clients and SDKs, including terminal and mobile clients.
@@ -235,8 +249,16 @@ const agent = new LangGraphAgent({
 });
 ```
 
-- **`runAgent(parameters?, subscriber?)`**: Run the agent and stream AG-UI events to the subscriber's `on…Event` callbacks (see [Streaming and events](#streaming-and-events)). Resolves when the run finishes.
+- **`runAgent(parameters?, subscriber?)`**: Run the agent and stream AG-UI events to the subscriber's `on…Event` callbacks (see [Stream events](#stream-events)). Resolves when the run finishes.
 - **`subscribe(subscriber)`**: Attach a persistent subscriber that receives events across every run, rather than for a single call.
 - **`abortRun()`**: Cancel the run in progress.
 
 To seed input, pass `initialMessages` to the constructor, or call `addMessage` or `setMessages` before running.
+
+## See also
+
+- [CopilotKit](/oss/langchain/frontend/integrations/copilotkit): Python and TypeScript CopilotKit runtime patterns for Deep Agents over AG-UI
+- [Frontend overview](/oss/deepagents/frontend/overview): Build UIs that stream deep agent progress with the LangChain frontend SDKs
+- [Human-in-the-loop](/oss/deepagents/human-in-the-loop): Interrupt and resume model for deep agents
+- [Agent Client Protocol (ACP)](/oss/deepagents/acp): Connect deep agents to code editors and IDEs
+- [AG-UI documentation](https://docs.ag-ui.com): Protocol concepts, events, and client SDKs
