@@ -40,6 +40,7 @@ async def book_with_elicitation(server) -> dict:
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain.agents.middleware.human_in_the_loop import InterruptOnConfig
 from langchain.tools import BaseTool
+from langchain.tools.tool_node import ToolCallRequest
 
 
 def is_destructive(tool: BaseTool) -> bool:
@@ -50,24 +51,30 @@ def is_destructive(tool: BaseTool) -> bool:
     return annotations.get("destructive_hint", False)
 
 
-async def gate_destructive_tools(server) -> tuple:
+async def gate_destructive_tools(server):
     async with MCPAdapter(server) as adapter:
         tools = await adapter.list_tools()
 
-        # Build the interrupt map from metadata, not hardcoded tool names, so it
-        # covers whatever destructive tools a server happens to expose.
+        # Read the destructive hint from metadata once, then let a callable
+        # decide per call. One config covers whatever destructive tools a
+        # server exposes, without hardcoding tool names.
+        destructive = {tool.name for tool in tools if is_destructive(tool)}
+
+        def needs_approval(request: ToolCallRequest) -> bool:
+            return request.tool_call["name"] in destructive
+
+        gate = InterruptOnConfig(
+            allowed_decisions=["approve", "reject"], when=needs_approval
+        )
         interrupt_on: dict[str, bool | InterruptOnConfig] = {
-            tool.name: InterruptOnConfig(allowed_decisions=["approve", "reject"])
-            for tool in tools
-            if is_destructive(tool)
+            tool.name: gate for tool in tools
         }
-        agent = create_agent(
+        return create_agent(
             "claude-sonnet-4-6",
             tools,
             middleware=[HumanInTheLoopMiddleware(interrupt_on=interrupt_on)],
             checkpointer=InMemorySaver(),
         )
-        return agent, interrupt_on
 
 
 # :snippet-end:
@@ -155,17 +162,25 @@ async def _run() -> None:
     resumed = await book_with_elicitation(booking_server())
     assert resumed["messages"][-1].text
 
-    agent, interrupt_on = await gate_destructive_tools(files_server())
-    assert sorted(interrupt_on) == ["delete_file"]
-    config: Any = {"configurable": {"thread_id": "files-1"}}
+    agent = await gate_destructive_tools(files_server())
+
+    # A destructive tool pauses for approval.
+    destructive: Any = {"configurable": {"thread_id": "files-1"}}
     paused = await agent.ainvoke(
-        {"messages": [{"role": "user", "content": "Delete report.md."}]}, config
+        {"messages": [{"role": "user", "content": "Delete report.md."}]}, destructive
     )
     assert "__interrupt__" in paused
     resumed = await agent.ainvoke(
-        Command(resume={"decisions": [{"type": "approve"}]}), config
+        Command(resume={"decisions": [{"type": "approve"}]}), destructive
     )
     assert resumed["messages"][-1].text
+
+    # A non-destructive tool runs without pausing.
+    ordinary: Any = {"configurable": {"thread_id": "files-2"}}
+    done = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "List the files."}]}, ordinary
+    )
+    assert "__interrupt__" not in done
     print("✓ mcp-elicitation validated")
 
 

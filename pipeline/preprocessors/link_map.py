@@ -67,6 +67,7 @@ LINK_MAPS: list[LinkMap] = [
             "system_prompt": "langchain/agents/#langchain.agents.create_agent(system_prompt)",
             # MCP
             "MCPAdapter": "langchain/mcp/adapter/MCPAdapter",
+            "MCPAdapter.list_tools": "langchain/mcp/adapter/MCPAdapter/list_tools",
             "MCPToolArtifact": "langchain/mcp/tools/MCPToolArtifact",
             "as_langchain_tool": "langchain/mcp/tools/as_langchain_tool",
             "AgentState": "langchain/agents/middleware/types/AgentState",
@@ -509,7 +510,6 @@ LINK_MAPS: list[LinkMap] = [
             "load_mcp_tools": "langchain-mcp-adapters/tools/load_mcp_tools",
             "load_mcp_prompt": "langchain-mcp-adapters/prompts/load_mcp_prompt",
             "load_mcp_resources": "langchain-mcp-adapters/resources/load_mcp_resources",
-            "MCPToolArtifact": "langchain-mcp-adapters/tools/MCPToolArtifact",
             "ToolCallInterceptor": "langchain-mcp-adapters/interceptors/ToolCallInterceptor",
             "CallbackContext": "langchain-mcp-adapters/callbacks/CallbackContext",
             "Callbacks": "langchain-core/callbacks/base/Callbacks",

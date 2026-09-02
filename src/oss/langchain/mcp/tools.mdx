@@ -8,7 +8,6 @@ import McpToolMetadataPy from '/snippets/code-samples/mcp-tool-metadata-py.mdx';
 import McpMultimodalToolContentPy from '/snippets/code-samples/mcp-multimodal-tool-content-py.mdx';
 import McpElicitationPy from '/snippets/code-samples/mcp-elicitation-py.mdx';
 import McpDestructiveGatePy from '/snippets/code-samples/mcp-destructive-gate-py.mdx';
-import McpGateOnArgsPy from '/snippets/code-samples/mcp-gate-on-args-py.mdx';
 
 :::python
 <Note>
@@ -25,27 +24,44 @@ Discover the server's catalog with @[`MCPAdapter.list_tools`], then give the ret
 
 For general guidance on defining, binding, and using LangChain tools, see [Tools](/oss/langchain/tools). For several MCP servers and their namespaced tool catalogs, see [Connections](/oss/langchain/mcp/connections#multiple-servers).
 
-## Identify MCP tools
+## Tool metadata
 
-Every tool the adapter produces carries its MCP provenance under an `mcp` namespace on the LangChain tool's metadata:
+Each adapted tool may carry its MCP provenance under an `mcp` namespace on the LangChain tool's metadata:
 
-- **`metadata["mcp"]["tool"]["annotations"]`**: The tool's MCP annotations, such as `destructive_hint` or `read_only_hint`.
-- **`metadata["mcp"]["tool"]["_meta"]`**: The server's `_meta` payload for the tool.
-- **`metadata["mcp"]["server"]`**: The identity of the server that served the tool.
+```python
+tool.metadata
+# {
+#     "mcp": {
+#         "tool": {
+#             "annotations": {
+#                 "destructive_hint": True,
+#                 "read_only_hint": False,
+#             },
+#             "_meta": {"origin": "crm"},
+#         },
+#         "server": {
+#             "name": "crm",
+#             "version": "2.1.0",
+#         },
+#     },
+# }
+```
 
-Reading annotations lets you treat a tool based on what the server declares about it, rather than hardcoding tool names:
+Every nested field is optional: a server may provide tool annotations, `_meta`, server identity, any combination of those, or none. `annotations` contains MCP hints such as `read_only_hint` and `destructive_hint`; `_meta` is opaque metadata supplied by the server; and `server` identifies the MCP implementation that advertised the tool.
+
+Read optional metadata defensively, so a missing field returns a default rather than raising:
 
 <McpToolMetadataPy />
 
-## Control tool execution
+## Human-in-the-loop
 
-An MCP server can flag a tool as destructive with the `destructiveHint` annotation. @[`MCPAdapter`] surfaces that on the LangChain tool under `metadata["mcp"]["tool"]["annotations"]["destructive_hint"]`, so you can decide how to treat a tool without hardcoding its name.
+Reading annotations lets you gate a tool based on what the server declares about it, rather than hardcoding tool names. An MCP server can flag a tool as destructive with the `destructiveHint` annotation, which @[`MCPAdapter`] surfaces under `metadata["mcp"]["tool"]["annotations"]["destructive_hint"]`.
 
-Read the hint to build the `interrupt_on` map for @[`HumanInTheLoopMiddleware`]: destructive tools pause for approval, everything else runs untouched. Because the gate is derived from metadata, it covers whatever destructive tools a server happens to expose:
+Give an @[`InterruptOnConfig`] a `when` predicate: a callable that receives the pending @[`ToolCallRequest`] and returns whether that call needs approval. Read the destructive hint from metadata once at load time, then let the callable decide per call, so one config covers whatever destructive tools a server exposes without hardcoding tool names:
 
 <McpDestructiveGatePy />
 
-When the agent calls a gated tool, the run pauses. Approve it to let the tool run, or reject it to skip the tool and tell the model:
+When the agent calls a tool the predicate gates, the run pauses. Approve it to let the tool run, or reject it to skip the tool and tell the model:
 
 ```python
 from langgraph.types import Command
@@ -54,13 +70,7 @@ from langgraph.types import Command
 resumed = await agent.ainvoke(Command(resume={"decisions": [{"type": "approve"}]}), config)
 ```
 
-### Gate on tool-call arguments
-
-The gate above pauses a whole tool based on its metadata. To decide per call instead, give an @[`InterruptOnConfig`] a `when` predicate: a callable that receives the pending @[`ToolCallRequest`] and returns whether that specific call needs approval. The predicate sees the tool call's name and arguments, so a tool can run freely for safe inputs and pause only for risky ones:
-
-<McpGateOnArgsPy />
-
-Metadata such as the destructive hint is read at load time, as above, while `when` reads the call's arguments at runtime; combine them to gate a tool only when both its type and its arguments warrant it.
+The predicate also sees the call's arguments through `request.tool_call["args"]`, so a tool can run freely for safe inputs and pause only for risky ones, such as a `delete_file` call targeting a protected path. Combine both to gate a tool only when its type and its arguments warrant it.
 
 For the full approval workflow, see [Human-in-the-loop](/oss/langchain/human-in-the-loop).
 

@@ -22,12 +22,9 @@ from langchain.tools import BaseTool
 
 
 def is_destructive(tool: BaseTool) -> bool:
-    """Read the MCP destructive hint off the adapter's tool metadata.
-
-    Every MCP tool the adapter produces carries provenance under an `mcp`
-    namespace: annotations and `_meta` under `metadata["mcp"]["tool"]`, and the
-    serving server's identity under `metadata["mcp"]["server"]`.
-    """
+    """Read the MCP destructive hint off the adapter's tool metadata."""
+    # Chain `.get` with defaults so a tool missing any nested field returns
+    # False rather than raising.
     annotations = (
         (tool.metadata or {}).get("mcp", {}).get("tool", {}).get("annotations", {})
     )
