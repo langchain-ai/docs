@@ -3,7 +3,15 @@ title: Manage prompts programmatically
 sidebarTitle: Manage prompts programmatically
 ---
 
-You can use the LangSmith Python and TypeScript SDK to manage prompts programmatically.
+import ManagePromptsPushJava from '/snippets/code-samples/manage-prompts-push-java.mdx';
+import ManagePromptsPullJava from '/snippets/code-samples/manage-prompts-pull-java.mdx';
+import ManagePromptsPullCommitJava from '/snippets/code-samples/manage-prompts-pull-commit-java.mdx';
+import ManagePromptsPullPublicJava from '/snippets/code-samples/manage-prompts-pull-public-java.mdx';
+import ManagePromptsOpenAIJava from '/snippets/code-samples/manage-prompts-openai-java.mdx';
+import ManagePromptsAnthropicJava from '/snippets/code-samples/manage-prompts-anthropic-java.mdx';
+import ManagePromptsListDeleteJava from '/snippets/code-samples/manage-prompts-list-delete-java.mdx';
+
+You can use the LangSmith Python, TypeScript, and Java SDKs to manage prompts programmatically.
 
 <Note>
 Previously this functionality lived in the `langchainhub` package which is now deprecated. All functionality going forward will live in the `langsmith` package.
@@ -25,7 +33,11 @@ uv add langsmith  # version >= 0.1.99
 ```
 
 ```bash TypeScript
-yarn add langsmith langchain // langsmith version >= 0.1.99 and langchain version >= 0.2.14
+yarn add langsmith langchain # langsmith version >= 0.1.99 and langchain version >= 0.2.14
+```
+
+```kotlin Java/Kotlin (Gradle)
+implementation("com.langchain.smith:langsmith-java:0.1.0-beta.4")
 ```
 </CodeGroup>
 
@@ -84,20 +96,11 @@ const url = hub.push("joke-generator", {
 console.log(url);
 ```
 
-```java Java
-import com.langchain.smith.models.prompts.PromptPushParams;
-import com.langchain.smith.models.prompts.Prompt;
-
-Prompt prompt = Prompt.builder()
-    .name("joke-generator")
-    .object(prompt)
-    .build();
-var url = client.prompts().push(prompt);
-```
+<ManagePromptsPushJava />
 
 </CodeGroup>
 
-You can also push a prompt as a RunnableSequence of a prompt and a model. This is useful for storing the model configuration you want to use with this prompt. The provider must be supported by the LangSmith playground. (see settings here: [Supported Providers](https://langsmith.com/playground))
+You can also push a prompt as a RunnableSequence of a prompt and a model. This is useful for storing the model configuration you want to use with this prompt. The provider must be supported by the Playground, see [supported model providers](/langsmith/playground-model-providers).
 
 <CodeGroup>
 
@@ -107,7 +110,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 client = Client()
-model = ChatOpenAI(model="gpt-4.1-mini")
+model = ChatOpenAI(model="gpt-5.4-mini")
 prompt = ChatPromptTemplate.from_template("tell me a joke about {topic}")
 chain = prompt | model
 client.push_prompt("joke-generator-with-model", object=chain)
@@ -118,7 +121,7 @@ from langchain_classic import hub as prompts
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-model = ChatOpenAI(model="gpt-4.1-mini")
+model = ChatOpenAI(model="gpt-5.4-mini")
 prompt = ChatPromptTemplate.from_template("tell me a joke about {topic}")
 chain = prompt | model
 url = prompts.push("joke-generator-with-model", chain)
@@ -131,12 +134,106 @@ import * as hub from "langchain/hub";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
 
-const model = new ChatOpenAI({ model: "gpt-4.1-mini" });
+const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
 const prompt = ChatPromptTemplate.fromTemplate("tell me a joke about {topic}");
 const chain = prompt.pipe(model);
 await hub.push("joke-generator-with-model", {
   object: chain,
 });
+```
+
+</CodeGroup>
+
+## Push a StructuredPrompt
+
+A `StructuredPrompt` combines a prompt template with an output schema, ensuring the model returns data in a defined structure. Use `StructuredPrompt.from_messages_and_schema` (Python) or `StructuredPrompt.fromMessagesAndSchema` (TypeScript) to create one, then push it to the hub like any other prompt.
+
+### Without a model
+
+Push the structured prompt on its own when you want to store the template and schema independently of any model configuration.
+
+<CodeGroup>
+
+```python Python
+from langsmith import Client
+from langchain_core.prompts.structured import StructuredPrompt
+from pydantic import BaseModel, Field
+
+class ResponseSchema(BaseModel):
+    positive_sentiment: bool = Field(description="Was the user sentiment positive?")
+
+prompt = StructuredPrompt.from_messages_and_schema(
+    [
+        ("system", "Evaluate the sentiment of the following conversation."),
+        ("human", "{conversation}"),
+    ],
+    schema=ResponseSchema.model_json_schema(),
+)
+
+client = Client()
+url = client.push_prompt("sentiment-evaluator", object=prompt)
+print(url)
+```
+
+```typescript TypeScript
+import * as hub from "langchain/hub";
+import { StructuredPrompt } from "@langchain/core/prompts";
+
+const schema = {
+  title: "ResponseSchema",
+  type: "object",
+  properties: {
+    positive_sentiment: {
+      type: "boolean",
+      description: "Was the user sentiment positive?",
+    },
+  },
+  required: ["positive_sentiment"],
+};
+
+const prompt = StructuredPrompt.fromMessagesAndSchema(
+  [
+    ["system", "Evaluate the sentiment of the following conversation."],
+    ["human", "{conversation}"],
+  ],
+  schema
+);
+
+const url = await hub.push("sentiment-evaluator", prompt);
+console.log(url);
+```
+
+</CodeGroup>
+
+### With a model
+
+Push the structured prompt as a RunnableSequence with a model to store the full pipeline, including model configuration, in the hub.
+
+<CodeGroup>
+
+```python Python
+from langsmith import Client
+from langchain_core.prompts.structured import StructuredPrompt
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+
+class ResponseSchema(BaseModel):
+    positive_sentiment: bool = Field(description="Was the user sentiment positive?")
+
+prompt = StructuredPrompt.from_messages_and_schema(
+    [
+        ("system", "Evaluate the sentiment of the following conversation."),
+        ("human", "{conversation}"),
+    ],
+    schema=ResponseSchema.model_json_schema(),
+)
+
+model = ChatOpenAI(model="gpt-4o-mini")
+chain = prompt | model
+
+client = Client()
+url = client.push_prompt("sentiment-evaluator-with-model", object=chain)
+print(url)
 ```
 
 </CodeGroup>
@@ -157,7 +254,7 @@ from langchain_openai import ChatOpenAI
 
 client = Client()
 prompt = client.pull_prompt("joke-generator")
-model = ChatOpenAI(model="gpt-4.1-mini")
+model = ChatOpenAI(model="gpt-5.4-mini")
 chain = prompt | model
 chain.invoke({"topic": "cats"})
 ```
@@ -167,7 +264,7 @@ from langchain_classic import hub as prompts
 from langchain_openai import ChatOpenAI
 
 prompt = prompts.pull("joke-generator")
-model = ChatOpenAI(model="gpt-4.1-mini")
+model = ChatOpenAI(model="gpt-5.4-mini")
 chain = prompt | model
 chain.invoke({"topic": "cats"})
 ```
@@ -177,19 +274,12 @@ import * as hub from "langchain/hub";
 import { ChatOpenAI } from "@langchain/openai";
 
 const prompt = await hub.pull("joke-generator");
-const model = new ChatOpenAI({ model: "gpt-4.1-mini" });
+const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
 const chain = prompt.pipe(model);
 await chain.invoke({"topic": "cats"});
 ```
 
-```java Java
-RepoListPage jokePrompts = client.repos().list(
-    RepoListParams.builder()
-        .query("joke")
-        .isPublic(RepoListParams.IsPublic.FALSE)
-        .build()
-);
-```
+<ManagePromptsPullJava />
 
 </CodeGroup>
 
@@ -238,6 +328,8 @@ prompt = prompts.pull("joke-generator:12344e88")
 const prompt = await hub.pull("joke-generator:12344e88")
 ```
 
+<ManagePromptsPullCommitJava />
+
 </CodeGroup>
 
 To pull a public prompt from the LangChain Hub, you need to specify the handle of the prompt's author.
@@ -256,6 +348,8 @@ prompt = prompts.pull("efriis/my-first-prompt")
 const prompt = await hub.pull("efriis/my-first-prompt")
 ```
 
+<ManagePromptsPullPublicJava />
+
 </CodeGroup>
 
 <Note>
@@ -263,6 +357,44 @@ For pulling prompts, if you are using Node.js or an environment that supports dy
 
 If you are in a non-Node environment, "includeModel" is not supported for non-OpenAI models and you should use the base `langchain/hub` entrypoint.
 </Note>
+
+## Use with the LangSmith gateway
+
+If your workspace uses the [LangSmith LLM Gateway](/langsmith/llm-gateway), you can route prompt model calls through it by setting an environment variable before pulling and invoking your prompt. No other code changes are required.
+
+```bash
+export LANGSMITH_GATEWAY="true"
+```
+
+This uses your existing `LANGSMITH_API_KEY` for authentication. To use a regional gateway instance instead of the default, set `LANGSMITH_GATEWAY` to the full gateway URL:
+
+```bash
+export LANGSMITH_GATEWAY="https://eu.gateway.smith.langchain.com"
+```
+
+<Note>
+If you need to use a different API key for gateway calls than your default `LANGSMITH_API_KEY`, set `LANGSMITH_GATEWAY_API_KEY` as an override. It must be a workspace-scoped key with the `gateway:invoke` permission.
+</Note>
+
+Once the environment variables are set, pull and invoke a prompt with a model as normal:
+
+```python Python
+from langsmith import Client
+
+client = Client()
+
+# Pull a prompt that includes a stored model configuration
+prompt_with_model = client.pull_prompt("my-prompt", include_model=True)
+
+# The model call is routed through the gateway automatically
+result = prompt_with_model.invoke({"topic": "cats"})
+```
+
+<Note>
+Gateway routing for LangChain chat models requires Python and a supported `langchain-*` integration package at the minimum version listed in the [gateway quickstart](/langsmith/llm-gateway-quickstart#using-langchain-and-deep-agents). If the integration package is below the minimum version, the call will bypass the gateway and go directly to the provider.
+</Note>
+
+For full configuration options, provider support, and regional endpoints, see the [LLM Gateway quickstart](/langsmith/llm-gateway-quickstart).
 
 ## Prompt caching
 
@@ -600,7 +732,7 @@ pip install -U langchain_openai
 ```
 
 ```bash TypeScript
-yarn add @langchain/openai @langchain/core // @langchain/openai version >= 0.3.2
+yarn add @langchain/openai @langchain/core # @langchain/openai version >= 0.3.2
 ```
 
 </CodeGroup>
@@ -636,10 +768,12 @@ const { messages } = convertPromptToOpenAI(formattedPrompt);
 
 const openAIClient = new OpenAI();
 const openAIResponse = await openAIClient.chat.completions.create({
-  model: "gpt-4.1-mini",
+  model: "gpt-5.4-mini",
   messages,
 });
 ```
+
+<ManagePromptsOpenAIJava />
 
 </CodeGroup>
 
@@ -652,7 +786,7 @@ pip install -U langchain_anthropic
 ```
 
 ```bash TypeScript
-yarn add @langchain/anthropic @langchain/core // @langchain/anthropic version >= 0.3.3
+yarn add @langchain/anthropic @langchain/core # @langchain/anthropic version >= 0.3.3
 ```
 
 </CodeGroup>
@@ -695,6 +829,8 @@ const anthropicResponse = await anthropicClient.messages.create({
   stream: false,
 });
 ```
+
+<ManagePromptsAnthropicJava />
 
 </CodeGroup>
 
@@ -745,33 +881,6 @@ client.likePrompt("efriis/my-first-prompt");
 client.unlikePrompt("efriis/my-first-prompt");
 ```
 
-```java Java
-// List all prompts in my workspace
-RepoListPage prompts = client.repos().list();
-for (RepoWithLookups prompt : prompts.repos()) {
-    System.out.println(prompt.repoHandle());
-}
-
-// List my private prompts that include "joke"
-RepoListPage jokePrompts = client.repos().list(
-    RepoListParams.builder()
-        .query("joke")
-        .isPublic(RepoListParams.IsPublic.FALSE)
-        .build()
-);
-
-// Delete a prompt
-String promptId = "joke-generator";
-String[] parts = promptId.split("/", 2);
-String owner = parts.length > 1 ? parts[0] : "-";
-String repo = parts.length > 1 ? parts[1] : promptId;
-
-client.repos().delete(
-    RepoDeleteParams.builder()
-        .owner(owner)
-        .repo(repo)
-        .build()
-);
-```
+<ManagePromptsListDeleteJava />
 
 </CodeGroup>

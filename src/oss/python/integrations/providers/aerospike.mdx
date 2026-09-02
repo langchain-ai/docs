@@ -1,0 +1,129 @@
+---
+title: "Aerospike integrations"
+description: "Integrate with Aerospike for LangGraph checkpointing and store persistence using LangChain Python."
+---
+
+>[Aerospike](https://aerospike.com/) is a high-performance, distributed NoSQL database designed for real-time applications at scale. It provides sub-millisecond latency, strong consistency, and automatic data distribution across clusters, making it well-suited for AI workloads that require fast, reliable state persistence.
+
+Aerospike features a shared-nothing architecture with linear horizontal scaling, a Hybrid Memory Architecture (DRAM indexes with SSD/NVMe data storage), tunable strong or relaxed consistency per namespace, built-in TTL for automatic record expiration, active-active cross-datacenter replication, and multi-model support for key-value, document, graph, and vector data.
+
+The Aerospike LangGraph integrations provide a checkpointer for persisting graph execution state and a store for long-lived agent data such as user profiles, extracted entities, and cached tool outputs.
+
+## Get started
+
+The implementation is available in the [aerospike-community/aerospike-langgraph](https://github.com/aerospike-community/aerospike-langgraph) repository. It includes a Docker-based Aerospike setup, reference implementations of `AerospikeSaver` and `AerospikeStore`, and basic tests that exercise checkpoint resume, TTL behavior, and namespace-scoped store access.
+
+To try it, start an Aerospike container, configure the saver and store in a LangGraph app, and run the included examples to observe execution recovery and agent state persistence.
+
+## Installation
+
+Install both packages:
+
+```bash
+pip install -U langgraph-store-aerospike langgraph-checkpoint-aerospike
+```
+
+## Run Aerospike locally
+
+Start Aerospike using the Aerospike Docker Image:
+
+```bash
+docker run -d --name aerospike \
+  -p 3000-3002:3000-3002 \
+  container.aerospike.com/aerospike/aerospike-server
+```
+
+## Configuration
+
+Both the store and checkpointer use the same Aerospike connection settings:
+
+```bash
+export AEROSPIKE_HOST=127.0.0.1
+export AEROSPIKE_PORT=3000
+```
+
+## LangGraph checkpointer
+
+The Aerospike checkpointer persists LangGraph execution state and enables resume from any checkpoint.
+
+```python
+import aerospike
+from langgraph.checkpoint.aerospike import AerospikeSaver
+
+client = aerospike.client(
+    {"hosts": [("127.0.0.1", 3000)]}
+).connect()
+
+saver = AerospikeSaver(
+    client=client,
+    namespace="langgraph",
+)
+
+compiled = graph.compile(checkpointer=saver)
+
+compiled.invoke(
+    {"input": "hello"},
+    config={
+        "configurable": {
+            "thread_id": "demo-thread"
+        }
+    }
+)
+```
+
+## LangGraph store
+
+The Aerospike store is used for long-lived agent data such as user profiles, extracted entities, and cached tool outputs.
+
+```python
+import aerospike
+from langgraph.store.aerospike import AerospikeStore
+from langgraph.store.base import PutOp, GetOp, SearchOp
+
+client = aerospike.client(
+    {"hosts": [("127.0.0.1", 3000)]}
+).connect()
+
+store = AerospikeStore(
+    client=client,
+    namespace="langgraph",
+    set="store",
+)
+
+# Write data
+store.put(
+    namespace=("users", "profiles"),
+    key="user_123",
+    value={"name": "Alice", "age": 30},
+)
+
+# Read data
+item = store.get(
+    namespace=("users", "profiles"),
+    key="user_123",
+)
+print(item.value)
+
+# Batch operations
+results = store.batch([
+    PutOp(namespace=("documents",), key="doc1", value={"status": "draft"}),
+    GetOp(namespace=("documents",), key="doc1"),
+])
+
+# Search within a namespace
+search_results = store.search(
+    namespace_prefix=("documents",),
+    filter={"status": {"$eq": "draft"}},
+    limit=10,
+)
+
+# Delete data
+store.delete(namespace=("users", "profiles"), key="user_123")
+```
+
+## Resources
+
+- [langgraph-checkpoint-aerospike on PyPI](https://pypi.org/project/langgraph-checkpoint-aerospike/)
+- [langgraph-store-aerospike on PyPI](https://pypi.org/project/langgraph-store-aerospike/)
+- [aerospike-community/aerospike-langgraph on GitHub](https://github.com/aerospike-community/aerospike-langgraph)
+- [Aerospike documentation](https://aerospike.com/docs/)

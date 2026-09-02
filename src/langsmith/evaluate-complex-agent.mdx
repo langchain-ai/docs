@@ -3,15 +3,11 @@ title: Evaluate a complex agent
 sidebarTitle: Evaluate a complex agent
 ---
 
-<Info>
-[Agent evaluation](/langsmith/evaluation-concepts#agents) | [Evaluators](/langsmith/evaluation-concepts#evaluators) | [LLM-as-judge evaluators](/langsmith/evaluation-concepts#llm-as-judge)
-</Info>
-
 In this tutorial, we'll build a customer support bot that helps users navigate a digital music store. Then, we'll go through the three most effective types of evaluations to run on chat bots:
 
-* [Final response](/langsmith/evaluation-concepts#evaluating-an-agents-final-response): Evaluate the agent's final response.
-* [Trajectory](/langsmith/trajectory-evals): Evaluate whether the agent took the expected path (e.g., of tool calls) to arrive at the final answer.
-* [Single step](/langsmith/evaluation-concepts#evaluating-a-single-step-of-an-agent): Evaluate any agent step in isolation (e.g., whether it selects the appropriate first tool for a given step).
+* **[Final response](#final-response-evaluator)**: Evaluate the agent's final response.
+* **[Trajectory](#trajectory-evaluator)**: Evaluate whether the agent took the expected path (e.g., of tool calls) to arrive at the final answer.
+* **[Single step](#single-step-evaluators)**: Evaluate any agent step in isolation (e.g., whether it selects the appropriate first tool for a given step).
 
 We'll build our agent using [LangGraph](https://github.com/langchain-ai/langgraph), but the techniques and LangSmith functionality shown here are framework-agnostic.
 
@@ -48,7 +44,7 @@ _set_env("OPENAI_API_KEY")
 
 ### Download the database
 
-We will create a SQLite database for this tutorial. SQLite is a lightweight database that is easy to set up and use. We will load the `chinook` database, which is a sample database that represents a digital media store. Find more information about the database [here](https://www.sqlitetutorial.net/sqlite-sample-database/).
+We will create a SQLite database for this tutorial. SQLite is a lightweight database that is easy to set up and use. We will load the `chinook` database, which is a sample database that represents a digital media store. For more information, see [Chinook sample database](https://www.sqlitetutorial.net/sqlite-sample-database/).
 
 For convenience, we have hosted the database in a public GCS bucket:
 
@@ -200,7 +196,7 @@ class PurchaseInformation(TypedDict):
     ]
 
 # Model for performing extraction.
-info_llm = init_chat_model("gpt-4.1-mini").with_structured_output(
+info_llm = init_chat_model("gpt-5.4-mini").with_structured_output(
     PurchaseInformation, method="json_schema", include_raw=True
 )
 
@@ -348,7 +344,7 @@ class UserIntent(TypedDict):
     intent: Literal["refund", "question_answering"]
 
 # Routing model with structured output
-router_llm = init_chat_model("gpt-4.1-mini").with_structured_output(
+router_llm = init_chat_model("gpt-5.4-mini").with_structured_output(
     UserIntent, method="json_schema", strict=True
 )
 
@@ -438,9 +434,9 @@ Which of the following purchases would you like to be refunded for? ...
 
 Now that we've got a testable version of our agent, let's run some evaluations. Agent evaluation can focus on at least 3 things:
 
-* [Final response](/langsmith/evaluation-concepts#evaluating-an-agents-final-response): The inputs are a prompt and an optional list of tools. The output is the final agent response.
-* [Trajectory](/langsmith/trajectory-evals): As before, the inputs are a prompt and an optional list of tools. The output is the list of tool calls
-* [Single step](/langsmith/evaluation-concepts#evaluating-a-single-step-of-an-agent): As before, the inputs are a prompt and an optional list of tools. The output is the tool call.
+* [Final response](#final-response-evaluator): The inputs are a prompt and an optional list of tools. The output is the final agent response.
+* [Trajectory](#trajectory-evaluator): As before, the inputs are a prompt and an optional list of tools. The output is the list of tool calls
+* [Single step](#single-step-evaluators): As before, the inputs are a prompt and an optional list of tools. The output is the tool call.
 
 Let's run each type of evaluation:
 
@@ -538,7 +534,7 @@ class Grade(TypedDict):
     is_correct: Annotated[bool, ..., "True if the student response is mostly or exactly correct, otherwise False."]
 
 # Judge LLM
-grader_llm = init_chat_model("gpt-4.1-mini", temperature=0).with_structured_output(Grade, method="json_schema", strict=True)
+grader_llm = init_chat_model("gpt-5.4-mini", temperature=0).with_structured_output(Grade, method="json_schema", strict=True)
 
 # Evaluator function
 async def final_answer_correct(inputs: dict, outputs: dict, reference_outputs: dict) -> bool:
@@ -608,7 +604,7 @@ def trajectory_subsequence(outputs: dict, reference_outputs: dict) -> float:
     return i / len(reference_outputs['trajectory'])
 ```
 
-Now we can run our evaluation. Our evaluator assumes that our target function returns a 'trajectory' key, so lets define a target function that does so. We'll need to usage [LangGraph's streaming capabilities](https://langchain-ai.github.io/langgra/langsmith/observability-concepts/streaming/) to record the trajectory.
+Now we can run our evaluation. Our evaluator assumes that our target function returns a 'trajectory' key, so lets define a target function that does so. We'll need to usage [LangGraph's streaming capabilities](/oss/langgraph/streaming) to record the trajectory.
 
 Note that we are reusing the same dataset as for our final response evaluation, so we could have run both evaluators together and defined a target function that returns both "response" and "trajectory". In practice it's often useful to have separate datasets for each type of evaluation, which is why we show them separately here:
 
@@ -616,8 +612,8 @@ Note that we are reusing the same dataset as for our final response evaluation, 
 async def run_graph(inputs: dict) -> dict:
     """Run graph and track the trajectory it takes along with the final response."""
     trajectory = []
-    # Set subgraph=True to stream events from subgraphs of the main graph: https://langchain-ai.github.io/langgraph/how-tos/streaming-subgraphs/
-    # Set stream_mode="debug" to stream all possible events: https://langchain-ai.github.io/langgra/langsmith/observability-concepts/streaming
+    # Set subgraph=True to stream events from subgraphs of the main graph: https://docs.langchain.com/oss/langgraph/streaming#subgraph-outputs
+    # Set stream_mode="debug" to stream all possible events: https://docs.langchain.com/oss/langgraph/streaming#debug
     async for namespace, chunk in graph.astream({"messages": [
             {
                 "role": "user",
@@ -999,7 +995,7 @@ class PurchaseInformation(TypedDict):
 
 
 # Model for performing extraction.
-info_llm = init_chat_model("gpt-4.1-mini").with_structured_output(
+info_llm = init_chat_model("gpt-5.4-mini").with_structured_output(
     PurchaseInformation, method="json_schema", include_raw=True
 )
 
@@ -1276,7 +1272,7 @@ class UserIntent(TypedDict):
 
 
 # Routing model with structured output
-router_llm = init_chat_model("gpt-4.1-mini").with_structured_output(
+router_llm = init_chat_model("gpt-5.4-mini").with_structured_output(
     UserIntent, method="json_schema", strict=True
 )
 
@@ -1423,7 +1419,7 @@ class Grade(TypedDict):
 
 
 # Judge LLM
-grader_llm = init_chat_model("gpt-4.1-mini", temperature=0).with_structured_output(
+grader_llm = init_chat_model("gpt-5.4-mini", temperature=0).with_structured_output(
     Grade, method="json_schema", strict=True
 )
 
@@ -1492,8 +1488,8 @@ def trajectory_subsequence(outputs: dict, reference_outputs: dict) -> float:
 async def run_graph(inputs: dict) -> dict:
     """Run graph and track the trajectory it takes along with the final response."""
     trajectory = []
-    # Set subgraph=True to stream events from subgraphs of the main graph: https://langchain-ai.github.io/langgraph/how-tos/streaming-subgraphs/
-    # Set stream_mode="debug" to stream all possible events: https://langchain-ai.github.io/langgra/langsmith/observability-concepts/streaming
+    # Set subgraph=True to stream events from subgraphs of the main graph: https://docs.langchain.com/oss/langgraph/streaming#subgraph-outputs
+    # Set stream_mode="debug" to stream all possible events: https://docs.langchain.com/oss/langgraph/streaming#debug
     async for namespace, chunk in graph.astream(
         {
             "messages": [

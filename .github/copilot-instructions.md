@@ -1,94 +1,68 @@
-# LangChain's unified documentation overview
+# LangChain Documentation Guidelines
 
-This repository encompasses the comprehensive documentation for LangChain's products and services, hosted on the Mintlify platform. The documentation is divided into sections for each product. This is a shared set of guidelines to ensure consistency and quality across all content.
+Documentation for LangChain products hosted on Mintlify. These guidelines apply to manually authored content under `src/`, not Mintlify `build/` output.
 
-## Scope
+`AGENTS.md` in the repository root is the authoritative guide. Read it before making any non-trivial change. This file carries only the rules that apply to every task.
 
-**These instructions apply to manually authored documentation only. They do NOT apply to:**
+Prose style rules (voice, headings, terminology, page structure) live in `.github/instructions/docs-style.instructions.md` and load automatically when you edit `src/**/*.mdx`.
 
-- Files in `**/reference/**` directories (auto-generated API reference documentation)
-- Build artifacts and generated files
+## Critical rules
 
-For reference documentation, see `.github/instructions/reference-docs.instructions.md`.
+1. **Always ask for clarification** rather than making assumptions
+2. **Never fabricate** examples, JSON snippets, policy details, or use case descriptions — use only content from the user or existing source files
+3. **Never use markdown in frontmatter `description`** — breaks SEO
+4. **Never edit `build/`** — Mintlify build output (regenerate with `make build` or `make dev`)
+5. **Always update `src/docs.json`** when adding new pages
+6. **Use Tabler icons only** — not FontAwesome
+7. **Test code examples** before including them
+8. **Always run `make lint_prose`** on changed files before committing — CI blocks on it
 
-## Working relationship
+## Repository structure
 
-- You can push back on ideas-this can lead to better documentation. Cite sources and explain your reasoning when you do so
-- ALWAYS ask for clarification rather than making assumptions
-- NEVER lie, guess, or make up information
-
-## Project context
-
-- Format: MDX files with YAML frontmatter. Mintlify syntax.
-- Config: docs.json for navigation, theme, settings
-- Components: Mintlify components
-
-## Content strategy
-
-- Document just enough for user success - not too much, not too little
-- Prioritize accuracy and usability of information
-- Make content evergreen when possible
-- Search for existing information before adding new content. Avoid duplication unless it is done for a strategic reason. Reference existing content when possible
-- Check existing patterns for consistency
-- Start by making the smallest reasonable changes
-
-## docs.json
-
-- Refer to the [docs.json schema](https://mintlify.com/docs.json) when building the docs.json file and site navigation
-- If adding a new group, ensure the root `index.mdx` is included in the `pages` array like:
-
-```json
-{
-  "group": "New group",
-  "pages": ["new-group/index", "new-group/other-page"]
-}
+```txt
+docs/
+├── src/                        # All manually authored content
+│   ├── docs.json               # Mintlify config + navigation
+│   ├── index.mdx               # Home page
+│   ├── style.css               # Custom CSS
+│   ├── langsmith/              # LangSmith product docs
+│   │   └── fleet/              #   Fleet (nav label: "No-code agents")
+│   ├── oss/                    # Open source docs (LangChain, LangGraph, Deep Agents, OpenWiki)
+│   ├── snippets/               # Reusable MDX snippets
+│   ├── images/                 # Documentation images
+│   └── fonts/                  # Font files
+├── pipeline/                   # Python build system & preprocessors
+├── build/                      # Build output — do not edit
+├── scripts/                    # Helper utilities
+└── tests/                      # Pipeline tests
 ```
 
-If the trailing `/index` (no extension included) is omitted, the Mintlify parser will raise a warning even though the site will still build.
+For the navigation map (every product, menu item, tab, and group), see `AGENTS.md`. Navigation is defined in `src/docs.json` as 2 products: `AGENT DEVELOPMENT LIFECYCLE` (Home, Build, Test, Deploy, Monitor) and `PRODUCTS AND SETUP` (LangSmith setup, LLM Gateway, No-code agents, Engine, Deep Agents Code). Nav names do not match source directory names, so consult `AGENTS.md` before placing a new page.
 
-## Frontmatter requirements for pages
+## Quick reference
 
-- title: Clear, descriptive, concise page title
-- description: Concise summary for SEO/navigation
+| What | Where/How |
+|------|-----------|
+| Navigation config | `src/docs.json` |
+| Reusable snippets | `src/snippets/` |
+| Provider icons | `src/images/providers/` |
+| Icon library | Tabler, <https://tabler.io/icons> |
+| Mintlify components | <https://mintlify.com/docs/components> |
+| Auto-link syntax | `@[ClassName]`, defined in `pipeline/preprocessors/link_map.py` |
 
-## Custom code language fences
+## Frontmatter
 
-We have implemented custom code language fences for Python and JavaScript/TypeScript. They are used to tag content that is specific to that language. Use either `:::python` or `:::js` to tag content that is specific to that language. Both are closed with the `:::` fence.
+Every MDX file requires:
 
-If any code fences like this exist on the code page, then two outputs (one for each language) will be created. For example, if this syntax is on the page in `/concepts/foo.mdx`, two pages will be created at `/python/concepts/foo.mdx` and `/javascript/concepts/foo.mdx`.
+```yaml
+---
+title: Clear, concise page title
+description: SEO summary — no markdown allowed (no links, backticks, formatting)
+---
+```
 
-For implementation details, see `pipeline/preprocessors/markdown_preprocessor.py`.
+## Syntax
 
-## Snippets
-
-Snippet files in `src/snippets/` are reusable MDX content that can be imported into multiple pages. These snippets undergo special link preprocessing during the build process that converts absolute `/oss/` links to relative paths.
-
-**Important:** When writing links in snippets, be careful about path segments. Read the docstrings and comments in `pipeline/core/builder.py` method `_process_snippet_markdown_file` (lines 807-872) to understand how snippet link preprocessing works and why certain path structures are required.
-
-## Style guide
-
-In general, follow the [Google Developer Documentation Style Guide](https://developers.google.com/style). You can also access this style guide through the [Vale-compatible implementation](https://github.com/errata-ai/Google).
-
-- Second-person voice ("you")
-- Prerequisites at start of procedural content
-- Test all code examples before publishing
-- Match style and formatting of existing pages
-- Include both basic and advanced use cases
-- Language tags on all code blocks
-- Alt text on all images
-- Root relative paths for internal links
-- Correct spelling
-- Correct grammar
-- Sentence-case for headings
-- Ensure American English spelling
-
-## Do not
-
-- Do not skip frontmatter on any MDX file
-- Do not use absolute URLs for internal links
-- Do not review code blocks (denoted by ```), as they are often not full snippets
-- Do not include untested code examples
-- Do not make assumptions - always ask for clarification
-- Do not include localization in relative links (e.g., `/python/` or `/javascript/`) - these are resolved automatically by the build pipeline
-
-For questions, refer to the Mintlify docs (either via MCP, if available), or at the [Mintlify documentation](https://docs.mintlify.com/docs/introduction).
+- Language-specific content: `:::python` or `:::js` fences (generates separate Python and TypeScript pages)
+- Code highlighting: `# [!code highlight]`, `# [!code ++]`, `# [!code --]`
+- API reference links: `@[ClassName]` for the first mention of SDK classes or methods

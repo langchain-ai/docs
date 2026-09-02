@@ -1,3 +1,0 @@
-# Anonymizer
-
-::: langsmith.anonymizer
