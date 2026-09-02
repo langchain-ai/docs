@@ -1,0 +1,69 @@
+```ts
+import { AIMessage } from "@langchain/core/messages";
+import { tool, type ToolRuntime } from "@langchain/core/tools";
+import {
+  MessagesValue,
+  START,
+  StateGraph,
+  StateSchema,
+} from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import * as z from "zod";
+
+const State = new StateSchema({
+  messages: MessagesValue,
+  userId: z.string(),
+});
+
+const ContextSchema = z.object({
+  organizationId: z.string(),
+});
+
+const getUserInfo = tool(
+  async (
+    _input,
+    runtime: ToolRuntime<typeof State.Type, typeof ContextSchema>,
+  ) => {
+    // Read the current graph state passed to the ToolNode.
+    const userIdFromState = runtime.state?.userId;
+    const userIdFromTaskInput = (
+      runtime.configurable as {
+        __pregel_scratchpad?: { currentTaskInput?: { userId?: string } };
+      }
+    ).__pregel_scratchpad?.currentTaskInput?.userId;
+    const userId = userIdFromState ?? userIdFromTaskInput;
+    if (!userId) {
+      throw new Error("Missing userId in ToolRuntime state.");
+    }
+
+    // Use runtime context for explicit per-run values that are not part
+    // of graph state.
+    const organizationId = runtime.context.organizationId;
+
+    return `User ${userId} in organization ${organizationId}`;
+  },
+  {
+    name: "get_user_info",
+    description: "Look up user information.",
+    schema: z.object({}),
+  },
+);
+
+const graph = new StateGraph(State, ContextSchema)
+  .addNode("tools", new ToolNode([getUserInfo]))
+  .addEdge(START, "tools")
+  .compile();
+
+const result = await graph.invoke(
+  {
+    messages: [
+      new AIMessage({
+        content: "",
+        tool_calls: [{ name: "get_user_info", args: {}, id: "call_user_info" }],
+      }),
+    ],
+    userId: "user_123",
+  },
+  { context: { organizationId: "org_456" } },
+);
+```

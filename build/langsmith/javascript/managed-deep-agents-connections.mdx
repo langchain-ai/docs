@@ -1,0 +1,230 @@
+---
+title: Manage connections
+sidebarTitle: Connections
+description: Configure and use API keys and OAuth connections with Managed Deep Agents.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/javascript/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+A connection gives a managed deep agent controlled access to an external service. Store connection material in LangSmith, then use its slug in agent code. The connection value does not appear in project source.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## Choose a connection owner
+
+The owner controls which value `connections.get(...)` resolves:
+
+| Owner | Value | Setup |
+| --- | --- | --- |
+| `agent` | One API key or token shared by all callers of the agent. | An administrator creates the connection before deployment. |
+| `user` | An OAuth access token for the authenticated caller. | An administrator creates the OAuth connection before deployment. Each user authorizes access when the agent first needs it. |
+
+Connection slugs are unique within a workspace. Use lowercase letters, numbers, and single hyphens, such as `tavily` or `notion`.
+
+<Warning>
+Do not log, return, or add a resolved connection value to agent state or model context.
+</Warning>
+
+## Configure an agent-owned API key
+
+An administrator can store a fixed API key without putting the value in the command or shell history. Run the command from the project root. The CLI requires a LangSmith API key and workspace ID.
+
+First, put the source value in the shell environment or project `.env` file. Then create the connection from that variable:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connection create tavily --from-env TAVILY_API_KEY
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connection create tavily --from-env TAVILY_API_KEY
+    ```
+
+    ```bash bun
+    bunx mda connection create tavily --from-env TAVILY_API_KEY
+    ```
+</CodeGroup>
+
+
+You can also omit `--from-env` to enter the value in a masked prompt, or use `--from-file PATH` to read one value from a file.
+
+Use `list` or `get` to inspect connection metadata:
+
+
+
+```bash
+npx mda connection list
+npx mda connection get tavily
+```
+
+
+These commands do not return the stored value. Resolve the value only at runtime with `connections.get(...)`.
+
+### Use an API key in a custom tool
+
+The following tool resolves the `tavily` connection for the agent, then sends it directly to the Tavily API:
+
+
+
+```ts tools/search-web.ts
+import { tool } from "langchain";
+import { connections } from "managed-deepagents";
+import { z } from "zod";
+
+export const searchWeb = tool(
+  async ({ query }) => {
+    const apiKey = await connections.get("tavily", { type: "agent" });
+    const response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: apiKey, query, max_results: 5 }),
+    });
+    if (!response.ok) {
+      throw new Error(`Tavily request failed with status ${response.status}`);
+    }
+    return await response.text();
+  },
+  {
+    name: "search_web",
+    description: "Search the web.",
+    schema: z.object({ query: z.string().describe("Search query.") }),
+  },
+);
+```
+
+
+Add `httpx` to the Python project dependencies before you use the Python example. See [Custom tools](/langsmith/javascript/managed-deep-agents-tools) to add the tool to the agent.
+
+## Configure a user-owned OAuth connection
+
+A user-owned OAuth connection stores a separate grant for each authenticated caller. First, list the OAuth services built into the CLI:
+
+
+
+```bash
+npx mda connection catalog
+```
+
+
+Create the connection before deployment. This example uses the built-in Notion service:
+
+
+
+```bash
+npx mda connection create notion --oauth notion
+```
+
+
+To use your own OAuth application, name the application and pass its client ID. Read the client secret from an environment variable:
+
+
+
+```bash
+npx mda connection create notion \
+  --oauth notion \
+  --app company-notion \
+  --client-id "$NOTION_OAUTH_CLIENT_ID" \
+  --client-secret-env NOTION_OAUTH_CLIENT_SECRET
+```
+
+
+Use `--scope SCOPE` to replace the catalog service's default scopes. Repeat the flag for each scope.
+
+### Access an OAuth token in a custom tool
+
+Await a user-owned connection inside the tool. The runtime resolves the connection for the authenticated caller:
+
+
+
+```ts tools/search-notion.ts
+import { tool } from "langchain";
+import { connections } from "managed-deepagents";
+import { z } from "zod";
+
+export const searchNotion = tool(
+  async ({ query }) => {
+    const accessToken = await connections.get("notion", { type: "user" });
+    const response = await fetch("https://api.notion.com/v1/search", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+      },
+      body: JSON.stringify({ query }),
+    });
+    if (!response.ok) {
+      throw new Error(`Notion request failed with status ${response.status}`);
+    }
+    return await response.text();
+  },
+  {
+    name: "search_notion",
+    description: "Search pages that the current user connected in Notion.",
+    schema: z.object({
+      query: z.string().describe("Text to find in Notion page titles."),
+    }),
+  },
+);
+```
+
+
+User-owned connections require an authenticated caller. A custom tool can resolve a grant after the user has authorized it. The custom tool does not start the OAuth flow. An MCP connector can detect a missing grant and start the authorization flow before the first model call.
+
+## Handle an OAuth authorization interrupt
+
+If an MCP connector needs a user-owned OAuth connection that the caller has not authorized, Managed Deep Agents pauses the run. The connection interrupt contains the authorization URL and session ID:
+
+```json
+{
+  "type": "credential_authorization_required",
+  "message": "Connect the following integrations to continue.",
+  "credentials": [
+    {
+      "slug": "notion",
+      "kind": "oauth2",
+      "connect_url": "<authorization-url>",
+      "auth_id": "<authorization-session-id>"
+    }
+  ]
+}
+```
+
+In Slack, the channel adapter shows an authorization prompt. The user opens the link, completes OAuth, and then continues the run.
+
+{/* TODO: Add the Slack OAuth authorization prompt screenshot before this PR is ready for review. */}
+
+In a custom client, check the interrupt `type`. Show each `connect_url` to the user, wait for the user to complete authorization, and resume the same run. See [Human-in-the-loop using the server API](/langsmith/add-human-in-the-loop) for the general resume flow.
+
+<Note>
+Connection authorization interrupts currently cover OAuth flows. Support for other user-provided connection types is planned.
+</Note>
+
+## Use a connection with an MCP connector
+
+An MCP connector can use a connection to add a bearer token without exposing the value in connector code. See [Connect to MCP servers](/langsmith/javascript/managed-deep-agents-mcp-connectors) for the Notion example and full connector configuration.
+
+## Develop locally
+
+For `mda dev`, an agent-owned connection reads `MDA_DEV_<SLUG>`. The CLI converts the slug to uppercase and replaces hyphens with underscores. For example, `tavily-search` reads `MDA_DEV_TAVILY_SEARCH`.
+
+User-owned OAuth connections require an authenticated caller and a connection service. Deploy the agent to test the user authorization flow.
+
+## See also
+
+- [Managed Deep Agents CLI reference](/langsmith/javascript/managed-deep-agents-cli)
+- [Connect to MCP servers](/langsmith/javascript/managed-deep-agents-mcp-connectors)
+- [Add custom tools](/langsmith/javascript/managed-deep-agents-tools)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-connections.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
