@@ -43,19 +43,25 @@ const runtime = new CopilotRuntime({
   channels: [channel],
 });
 
+// Wire teardown before the listener exists, because creating it starts the
+// Channel. A Ctrl-C during the connect window then still tears it down.
+let teardown: (() => Promise<void>) | undefined;
+const shutdown = async () => {
+  await teardown?.();
+};
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
+
 const listener = createCopilotNodeListener({
   runtime,
   basePath: "/api/copilotkit",
 });
 const channels = listener.channels;
 const server = createServer(listener);
-
-const shutdown = async () => {
+teardown = async () => {
   await channels.stop();
   if (server.listening) server.close();
 };
-process.once("SIGINT", shutdown);
-process.once("SIGTERM", shutdown);
 
 // Creating the listener starts the Channel; there is no `channel.start()`.
 // `ready()` is optional; inspect `status()` before reporting the Channel online.
