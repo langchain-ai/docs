@@ -8,30 +8,29 @@ from langgraph.types import Command
 
 
 async def book_with_elicitation(server) -> dict:
-    # `elicitation="interrupt"` surfaces a server's mid-call question as a
-    # LangGraph `interrupt()`, so the person already reviewing the agent's work
-    # answers it and the run resumes. Declaring the capability is a promise on
-    # the wire: a server only asks a client that opted in.
-    async with MCPAdapter(server, elicitation="interrupt") as adapter:
+    # Elicitation is handled automatically: when a server needs input mid-call,
+    # the adapter surfaces the question as a LangGraph `interrupt()`, so the
+    # person already reviewing the agent's work answers it and the run resumes.
+    async with MCPAdapter(server) as adapter:
         tools = await adapter.list_tools()
 
-    # Resuming a paused run needs persistence, so the interrupted run has
-    # somewhere to wait.
-    agent = create_agent("claude-sonnet-4-6", tools, checkpointer=InMemorySaver())
-    config: Any = {"configurable": {"thread_id": "booking-1"}}
+        # Resuming a paused run needs persistence, so the interrupted run has
+        # somewhere to wait.
+        agent = create_agent("claude-sonnet-4-6", tools, checkpointer=InMemorySaver())
+        config: Any = {"configurable": {"thread_id": "booking-1"}}
 
-    paused = await agent.ainvoke(
-        {"messages": [{"role": "user", "content": "Book a table for 4."}]}, config
-    )
-    [interrupt] = paused["__interrupt__"]
-    [question] = interrupt.value["requests"]
+        paused = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "Book a table for 4."}]}, config
+        )
+        [interrupt] = paused["__interrupt__"]
+        [question] = interrupt.value["requests"]
 
-    # Answers are keyed by the server's own request key, so nothing has to be
-    # tracked across the pause. `decline` or `cancel` would refuse instead.
-    answer = {"action": "accept", "content": {"date": "2026-09-14"}}
-    return await agent.ainvoke(
-        Command(resume={"responses": {question["key"]: answer}}), config
-    )
+        # Answers are keyed by the server's own request key, so nothing has to
+        # be tracked across the pause. `decline` or `cancel` would refuse.
+        answer = {"action": "accept", "content": {"date": "2026-09-14"}}
+        return await agent.ainvoke(
+            Command(resume={"responses": {question["key"]: answer}}), config
+        )
 
 
 # :snippet-end:
@@ -55,20 +54,20 @@ async def gate_destructive_tools(server) -> tuple:
     async with MCPAdapter(server) as adapter:
         tools = await adapter.list_tools()
 
-    # Build the interrupt map from metadata, not hardcoded tool names, so it
-    # covers whatever destructive tools a server happens to expose.
-    interrupt_on: dict[str, bool | InterruptOnConfig] = {
-        tool.name: InterruptOnConfig(allowed_decisions=["approve", "reject"])
-        for tool in tools
-        if is_destructive(tool)
-    }
-    agent = create_agent(
-        "claude-sonnet-4-6",
-        tools,
-        middleware=[HumanInTheLoopMiddleware(interrupt_on=interrupt_on)],
-        checkpointer=InMemorySaver(),
-    )
-    return agent, interrupt_on
+        # Build the interrupt map from metadata, not hardcoded tool names, so it
+        # covers whatever destructive tools a server happens to expose.
+        interrupt_on: dict[str, bool | InterruptOnConfig] = {
+            tool.name: InterruptOnConfig(allowed_decisions=["approve", "reject"])
+            for tool in tools
+            if is_destructive(tool)
+        }
+        agent = create_agent(
+            "claude-sonnet-4-6",
+            tools,
+            middleware=[HumanInTheLoopMiddleware(interrupt_on=interrupt_on)],
+            checkpointer=InMemorySaver(),
+        )
+        return agent, interrupt_on
 
 
 # :snippet-end:

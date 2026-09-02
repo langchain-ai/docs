@@ -9,16 +9,18 @@ async def main():
     config = {"mcpServers": {"my_server": {"url": "http://localhost:8000/mcp"}}}
     async with MCPAdapter(config) as adapter:
         tools = await adapter.list_tools()
-
-    agent = create_deep_agent(
-        model="anthropic:claude-sonnet-4-6",
-        tools=tools,
-    )
-
-    await agent.ainvoke(
-        {"messages": [{"role": "user", "content": "Use the MCP server to help me."}]},
-        config={"configurable": {"thread_id": "1"}},
-    )
+        agent = create_deep_agent(
+            model="anthropic:claude-sonnet-4-6",
+            tools=tools,
+        )
+        await agent.ainvoke(
+            {
+                "messages": [
+                    {"role": "user", "content": "Use the MCP server to help me."}
+                ]
+            },
+            config={"configurable": {"thread_id": "1"}},
+        )
 
 
 # :snippet-end:

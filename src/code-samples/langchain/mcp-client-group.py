@@ -1,10 +1,11 @@
 # :snippet-start: mcp-client-group-py
 from fastmcp.client import Client
 from fastmcp.client.group import ClientGroup
+from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
 
 
-async def load_from_group(legacy_url: str, modern_url: str) -> list:
+async def agent_from_group(legacy_url: str, modern_url: str):
     # One connection per server: a `ClientGroup` keeps each server on its own
     # negotiated protocol era, so a legacy and a modern server run side by side.
     # It also namespaces every tool as `{server}_{tool}`, so two servers exposing
@@ -16,7 +17,8 @@ async def load_from_group(legacy_url: str, modern_url: str) -> list:
         }
     )
     async with MCPAdapter(group) as adapter:
-        return await adapter.list_tools()
+        tools = await adapter.list_tools()
+        return create_agent("claude-sonnet-4-6", tools)
 
 
 # :snippet-end:
@@ -44,7 +46,6 @@ def _server(name: str) -> FastMCP:
 
 
 async def _run() -> None:
-    # In-process servers stand in for the two URLs.
     group = ClientGroup(
         {
             "weather": Client(_server("weather"), mode="legacy"),

@@ -1,11 +1,13 @@
 # :snippet-start: mcp-quickstart-py
+from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
 
 
-async def load_tools(url: str) -> list:
-    async with MCPAdapter(url) as adapter:
-        # Tools hold the client, so they stay callable after the context exits.
-        return await adapter.list_tools()
+async def main():
+    async with MCPAdapter("https://example.com/mcp") as adapter:
+        tools = await adapter.list_tools()
+        agent = create_agent("claude-sonnet-4-6", tools)
+        return await agent.ainvoke({"messages": [{"role": "user", "content": "..."}]})
 
 
 # :snippet-end:
@@ -35,10 +37,10 @@ def weather_server() -> FastMCP:
 async def _run() -> None:
     async with MCPAdapter(weather_server()) as adapter:
         tools = await adapter.list_tools()
-    assert [t.name for t in tools] == ["get_forecast"]
-    [forecast] = tools
-    blocks = await forecast.ainvoke({"city": "Oslo"})
-    assert blocks[0]["text"] == "Oslo: 18C and clear."
+        assert [t.name for t in tools] == ["get_forecast"]
+        [forecast] = tools
+        blocks = await forecast.ainvoke({"city": "Oslo"})
+        assert blocks[0]["text"] == "Oslo: 18C and clear."
     print("✓ mcp-quickstart validated")
 
 

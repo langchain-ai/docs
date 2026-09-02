@@ -1,4 +1,5 @@
 # :snippet-start: mcp-multi-server-py
+from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
 
 CONFIG = {
@@ -9,11 +10,12 @@ CONFIG = {
 }
 
 
-async def load_fleet_tools(config: dict) -> list:
+async def fleet_agent(config):
     async with MCPAdapter(config) as adapter:
         # Every tool is prefixed with its config key (`weather_...`, `calc_...`),
         # so two servers exposing the same tool name stay distinguishable.
-        return await adapter.list_tools()
+        tools = await adapter.list_tools()
+        return create_agent("claude-sonnet-4-6", tools)
 
 
 # :snippet-end:
@@ -64,7 +66,8 @@ async def _run() -> None:
                 "calc": {"command": sys.executable, "args": [str(calc)]},
             }
         }
-        tools = await load_fleet_tools(config)
+        async with MCPAdapter(config) as adapter:
+            tools = await adapter.list_tools()
         assert sorted(t.name for t in tools) == ["calc_forecast", "weather_forecast"]
     finally:
         weather.unlink(missing_ok=True)

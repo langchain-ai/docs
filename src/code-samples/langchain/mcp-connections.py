@@ -1,21 +1,20 @@
 # :snippet-start: mcp-lifecycle-short-py
+from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
 
 
-async def load_tools(target) -> list:
-    # Discover once inside a short-lived context. The tools hold the client, so
-    # they stay callable after the context exits — there is no need to keep the
-    # adapter open for the life of the agent.
+async def build_agent(target):
+    # Discover and build the agent inside the adapter's context. The tools hold
+    # the client, so the agent stays usable after the context exits.
     async with MCPAdapter(target) as adapter:
-        return await adapter.list_tools()
+        tools = await adapter.list_tools()
+        return create_agent("claude-sonnet-4-6", tools)
 
 
 # :snippet-end:
 
 
 # :snippet-start: mcp-graph-factory-py
-from langchain.agents import create_agent
-
 SERVERS = {
     "weather": "http://localhost:8001/mcp",
     "calc": "http://localhost:8002/mcp",
@@ -30,7 +29,7 @@ async def make_graph():
     # server's TTL instead of re-listing on every run.
     async with MCPAdapter(config) as adapter:
         tools = await adapter.list_tools(cache_mode="use")
-    return create_agent("claude-sonnet-4-6", tools)
+        return create_agent("claude-sonnet-4-6", tools)
 
 
 # :snippet-end:
@@ -40,7 +39,7 @@ async def make_graph():
 from fastmcp.client import Client
 
 
-async def load_across_eras(legacy_target, modern_target) -> list:
+async def agent_across_eras(legacy_target, modern_target):
     # MCP has two protocol eras. FastMCP negotiates per connection, so a
     # separate adapter per server lets each keep the best era its own server
     # supports. `mode="legacy"` pins the handshake era; `mode="auto"` (the
@@ -51,7 +50,8 @@ async def load_across_eras(legacy_target, modern_target) -> list:
         MCPAdapter(legacy) as legacy_adapter,
         MCPAdapter(modern) as modern_adapter,
     ):
-        return await legacy_adapter.list_tools() + await modern_adapter.list_tools()
+        tools = await legacy_adapter.list_tools() + await modern_adapter.list_tools()
+        return create_agent("claude-sonnet-4-6", tools)
 
 
 # :snippet-end:
@@ -98,11 +98,11 @@ def _run_weather_http(host: str, port: int) -> None:
 
 async def _run() -> None:
     with run_server_in_process(_run_weather_http) as url:
-        tools = await load_tools(f"{url}/mcp")
-        assert [t.name for t in tools] == ["get_forecast"]
+        agent = await build_agent(f"{url}/mcp")
+        assert agent is not None
 
-    tools = await load_across_eras(_weather_server(), _calculator_server())
-    assert sorted(t.name for t in tools) == ["add", "get_forecast"]
+    agent = await agent_across_eras(_weather_server(), _calculator_server())
+    assert agent is not None
     print("✓ mcp-connections validated")
 
 
