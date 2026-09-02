@@ -150,7 +150,100 @@ This lets you correlate traces back to specific PRs, commits, and authors in Lan
 
 You can also set an environment variable named `CC_LANGSMITH_PARENT_DOTTED_ORDER` to nest all Claude Code traces as children of an existing LangSmith run. This is useful when Claude Code is invoked programmatically as part of a larger traced workflow.
 
-**Python**
+**Option 1: Settings file (recommended)**
+
+The recommended approach is to write the plugin configuration to a temporary settings file and pass it to Claude Code using the `--settings` flag. This keeps the Claude Code plugin config fully isolated from the parent process environment and avoids variable shadowing between the outer `LANGSMITH_*` SDK variables and the `CC_LANGSMITH_*` plugin variables.
+
+<Tabs>
+
+<Tab title="Python">
+
+```python
+import json
+import os
+import subprocess
+import tempfile
+from langsmith import traceable, get_current_run_tree
+
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = "<LangSmith API key>"
+os.environ["LANGSMITH_PROJECT"] = "claude-code"
+
+@traceable
+def run_claude(prompt: str):
+    run_tree = get_current_run_tree()
+    settings = {
+        "env": {
+            "TRACE_TO_LANGSMITH": "true",
+            "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
+            "CC_LANGSMITH_PROJECT": "claude-code",
+            "CC_LANGSMITH_PARENT_DOTTED_ORDER": run_tree.dotted_order,
+        }
+    }
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False
+    ) as f:
+        json.dump(settings, f)
+        settings_path = f.name
+    try:
+        subprocess.run(
+            ["claude", "-p", prompt, "--settings", settings_path],
+            check=True,
+        )
+    finally:
+        os.unlink(settings_path)
+```
+
+</Tab>
+
+<Tab title="TypeScript">
+
+```ts
+import { traceable, getCurrentRunTree } from "langsmith/traceable";
+import { execSync, spawnSync } from "node:child_process";
+import { writeFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+process.env.LANGSMITH_TRACING = "true";
+process.env.LANGSMITH_API_KEY = "<LangSmith API key>";
+process.env.LANGSMITH_PROJECT = "claude-code";
+
+const runClaude = traceable(
+  async (prompt: string) => {
+    const runTree = getCurrentRunTree();
+    const settings = {
+      env: {
+        TRACE_TO_LANGSMITH: "true",
+        CC_LANGSMITH_API_KEY: "<LangSmith API key>",
+        CC_LANGSMITH_PROJECT: "claude-code",
+        CC_LANGSMITH_PARENT_DOTTED_ORDER: runTree.dotted_order,
+      },
+    };
+    const settingsPath = join(tmpdir(), `langsmith-${Date.now()}.json`);
+    writeFileSync(settingsPath, JSON.stringify(settings));
+    try {
+      const res = spawnSync("claude", ["-p", prompt, "--settings", settingsPath]);
+      return res.stdout.toString();
+    } finally {
+      unlinkSync(settingsPath);
+    }
+  },
+  { name: "run_claude" },
+);
+```
+
+</Tab>
+
+</Tabs>
+
+**Option 2: Environment variables (fallback)**
+
+If you prefer to pass configuration directly through environment variables, take care to avoid variable shadowing between the outer `LANGSMITH_*` SDK variables and the `CC_LANGSMITH_*` plugin variables. Build the subprocess environment explicitly, excluding `LANGSMITH_*` keys so they don't conflict with the plugin's own variables.
+
+<Tabs>
+
+<Tab title="Python">
 
 ```python
 import os
@@ -164,10 +257,8 @@ os.environ["LANGSMITH_PROJECT"] = "claude-code"
 @traceable
 def run_claude(prompt: str):
     run_tree = get_current_run_tree()
-    # Build the subprocess environment explicitly to avoid variable shadowing.
-    # Start from the current environment, then add Claude Code plugin variables.
-    # Note: LANGSMITH_* SDK variables are not forwarded to the subprocess because
-    # the plugin uses its own CC_LANGSMITH_* variables for tracing configuration.
+    # Exclude LANGSMITH_* vars from the subprocess env to avoid shadowing
+    # the CC_LANGSMITH_* plugin variables.
     claude_env = {
         **{k: v for k, v in os.environ.items() if not k.startswith("LANGSMITH_")},
         "TRACE_TO_LANGSMITH": "true",
@@ -178,11 +269,13 @@ def run_claude(prompt: str):
     subprocess.run(["claude", "-p", prompt], env=claude_env)
 ```
 
-**TypeScript**
+</Tab>
+
+<Tab title="TypeScript">
 
 ```ts
 import { traceable, getCurrentRunTree } from "langsmith/traceable";
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 process.env.LANGSMITH_TRACING = "true";
 process.env.LANGSMITH_API_KEY = "<LangSmith API key>";
@@ -191,21 +284,29 @@ process.env.LANGSMITH_PROJECT = "claude-code";
 const runClaude = traceable(
   async (prompt: string) => {
     const runTree = getCurrentRunTree();
-    const pluginDir = new URL(".", import.meta.url).pathname;
-    const res = execSync(`claude -p "${prompt}" --plugin-dir '${pluginDir}'`, {
+    // Exclude LANGSMITH_* vars from the subprocess env to avoid shadowing
+    // the CC_LANGSMITH_* plugin variables.
+    const claudeEnv = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) => !k.startsWith("LANGSMITH_"))
+    ) as Record<string, string>;
+    const res = spawnSync("claude", ["-p", prompt], {
       env: {
-        ...process.env,
+        ...claudeEnv,
         TRACE_TO_LANGSMITH: "true",
         CC_LANGSMITH_API_KEY: "<LangSmith API key>",
         CC_LANGSMITH_PROJECT: "claude-code",
         CC_LANGSMITH_PARENT_DOTTED_ORDER: runTree.dotted_order,
       },
     });
-    return res.toString();
+    return res.stdout.toString();
   },
   { name: "run_claude" },
 );
 ```
+
+</Tab>
+
+</Tabs>
 
 The resulting trace hierarchy looks like:
 
