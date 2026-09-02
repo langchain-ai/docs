@@ -42,13 +42,18 @@ Use `connectors.mcp` to declare one or more remote servers:
 
 :::python
 ```python connectors/mcp.py
-from managed_deepagents import connectors
+from managed_deepagents import connections, connectors
 
 connector = connectors.mcp(
     mcp_servers={
         "langchainDocs": {
             "transport": "http",
             "url": "https://docs.langchain.com/mcp",
+        },
+        "notion": {
+            "transport": "http",
+            "url": "https://mcp.notion.com/mcp",
+            "connection": connections.get("notion", {"type": "user"}),
         },
     },
 )
@@ -57,7 +62,7 @@ connector = connectors.mcp(
 
 :::js
 ```ts connectors/mcp.ts
-import { connectors } from "managed-deepagents";
+import { connections, connectors } from "managed-deepagents";
 
 export const connector = connectors.mcp({
   mcpServers: {
@@ -65,12 +70,35 @@ export const connector = connectors.mcp({
       transport: "http",
       url: "https://docs.langchain.com/mcp",
     },
+    notion: {
+      transport: "http",
+      url: "https://mcp.notion.com/mcp",
+      connection: connections.get("notion", { type: "user" }),
+    },
   },
 });
 ```
 :::
 
 Managed Deep Agents supports Streamable HTTP (`"http"`) and legacy SSE (`"sse"`) transports. Stdio MCP servers are not supported. Expose a stdio server over HTTP or implement its operation as an [authored tool](/langsmith/managed-deep-agents-tools).
+
+The `notion` server uses a user-owned OAuth connection. Create the connection before deployment:
+
+:::python
+```bash
+uv run mda connection create notion --oauth notion
+uv run mda connection check
+```
+:::
+
+:::js
+```bash
+npx mda connection create notion --oauth notion
+npx mda connection check
+```
+:::
+
+For connection scopes, OAuth authorization interrupts, and custom tool examples, see [Manage connections](/langsmith/managed-deep-agents-connections).
 
 ## Select tools
 
@@ -113,6 +141,7 @@ Each server accepts the following options:
 | `transport` | Required. Use `http` for Streamable HTTP or `sse` for legacy SSE. |
 | `url` | Required. The remote MCP endpoint URL. |
 | `headers` | Static headers to send to the server, such as an authorization header. |
+| `connection` | A bearer connection created with `connections.get(slug, owner)`. |
 | `include_tools` / `includeTools` | Raw MCP tool names to expose. |
 | `exclude_tools` / `excludeTools` | Raw MCP tool names to hide. |
 | `default_tool_timeout` / `defaultToolTimeout` | Timeout for each tool call, in seconds for Python and milliseconds for TypeScript. |
@@ -126,7 +155,9 @@ The connector also accepts these options:
 | `prefix_tool_name_with_server_name` / `prefixToolNameWithServerName` | `true` | Prefix each tool with `{server}__`. |
 | `throw_on_load_error` / `throwOnLoadError` | `true` | Fail loading instead of starting with a partial tool set. |
 
-If a server requires credentials, read them from environment variables and pass them through `headers`. Keep local values in `.env`; Managed Deep Agents forwards eligible values as deployment secrets. Do not hard-code credentials in the connector declaration.
+If a server requires a bearer token, use a managed connection. Managed Deep Agents resolves the value and adds the `Authorization` header. Do not hard-code credentials in the connector declaration.
+
+Use `headers` for static, non-secret headers. If you add an `Authorization` header and a managed connection, the managed connection replaces that header.
 
 ## Distinguish connectors from other capabilities
 
