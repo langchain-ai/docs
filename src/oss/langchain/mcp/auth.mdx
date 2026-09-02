@@ -16,7 +16,7 @@ Most remote MCP servers require authentication. @[`MCPAdapter`] delegates auth t
 
 ## Bearer token
 
-The simplest case: the server verifies a token you provisioned out of band and present in the `Authorization: Bearer <token>` header. There is no discovery, browser, or refresh. Pass the token as the client's `auth`:
+The simplest case: the server verifies a token you provisioned and adds it in the `Authorization: Bearer <token>` header. There is no discovery, browser, or refresh. Pass the token as the client's `auth`:
 
 <McpAuthBearerPy />
 
@@ -34,7 +34,8 @@ By default tokens are held in memory, so each run repeats the browser step. Pass
 from fastmcp.client import Client
 from fastmcp.client.auth import OAuth
 
-client = Client("https://example.com/mcp", auth=OAuth(mcp_url="https://example.com/mcp", token_storage=...))
+oauth = OAuth(mcp_url="https://example.com/mcp", token_storage=...)
+client = Client("https://example.com/mcp", auth=oauth)
 ```
 
 FastMCP ships providers for common identity providers (Auth0, WorkOS, Okta, and more); the flow the client runs is identical across them. See [OAuth authentication](https://gofastmcp.com/clients/auth/oauth) in the FastMCP documentation.
@@ -45,7 +46,6 @@ When one agent talks to several servers, each server may need its own credential
 
 <McpAuthPerServerPy />
 
-This differs from an `MCPConfig` fleet, which shares one aggregate connection. Reach for a `ClientGroup` whenever servers authenticate separately.
 
 ## Per-user authentication
 
@@ -58,13 +58,18 @@ In a deployment, each run should reach the MCP server as the user who initiated 
 from fastmcp.client import Client
 from fastmcp.client.auth import BearerAuth
 
+CONFIG = {
+    "mcpServers": {
+        "docs": { "url": "https://example.com/mcp" }
+    }
+}
+
 async def make_graph(runtime):
     user = runtime.user.identity if runtime.user is not None else "anonymous"
     auth = BearerAuth(token_for(user))  # exchange for a per-user token
-    config = {"mcpServers": {"docs": {"url": "https://example.com/mcp"}}}
-    async with MCPAdapter(Client(config, auth=auth)) as adapter:
+    async with MCPAdapter(Client(CONFIG, auth=auth)) as adapter:
         tools = await adapter.list_tools()
-    return create_agent("claude-sonnet-4-6", tools)
+        return create_agent("claude-sonnet-4-6", tools)
 ```
 
 In production, `token_for` stands in for whatever the deployment already has: an OAuth gateway that exchanges the session for a per-user token, or a `fastmcp.client.auth` provider that runs the authorization-code flow per identity. Isolate any [cached responses](/oss/langchain/mcp/connections#caching) per user, keyed off the verified identity, so one user never sees another's cached tool list.
