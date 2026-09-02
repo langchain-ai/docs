@@ -155,9 +155,8 @@ Using your existing [secret-management workflow](/langsmith/self-host-using-an-e
 ## See also
 
 - [Find and fix your agent's issues](/langsmith/engine): Engine setup, costs, and the issue workflow.
-- [Engine on self-hosted](/langsmith/engine-self-hosted): Self-hosted architecture and data handling.
+- [Engine on self-hosted](/langsmith/engine-self-hosted): Installation, architecture, and data handling.
 - [Engine security](/langsmith/engine-security): How Engine handles your data and GitHub access.
-- [Enable Engine](/langsmith/deploy-self-hosted-full-platform#enable-engine): Enable Engine in the LangSmith Helm chart.
 
 ---
 
