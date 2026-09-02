@@ -1,0 +1,204 @@
+---
+title: Manage connections
+sidebarTitle: Connections
+description: Configure and use API keys and OAuth connections with Managed Deep Agents.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/python/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+A connection links a managed deep agent to an external service. At runtime, use `connections.get(...)` to resolve the connection value. The value does not appear in project source or CLI output.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## Choose a connection owner
+
+The owner controls which value `connections.get(...)` resolves:
+
+| Owner | Value | Setup |
+| --- | --- | --- |
+| `agent` | One API key or token shared by all callers of the agent. | An administrator creates the connection before deployment. |
+| `user` | An OAuth access token for the authenticated caller. | Each user authorizes access when the agent first needs it. |
+
+Connection slugs are unique within a workspace. Use lowercase letters, numbers, and single hyphens, such as `tavily` or `notion`.
+
+<Warning>
+Do not log, return, or add a resolved connection value to agent state or model context.
+</Warning>
+
+## Configure an agent-owned API key
+
+An administrator can store a fixed API key without putting the value in the command or shell history. Run the command from the project root. The CLI requires a LangSmith API key and workspace ID.
+
+First, put the source value in the shell environment or project `.env` file. Then create the connection from that variable:
+
+```bash
+uv run mda connection create tavily --from-env TAVILY_API_KEY
+```
+
+
+
+
+You can also omit `--from-env` to enter the value in a masked prompt, or use `--from-file PATH` to read one value from a file.
+
+Use `list` or `get` to inspect connection metadata:
+
+```bash
+uv run mda connection list
+uv run mda connection get tavily
+```
+
+
+
+
+These commands do not return the stored value. Resolve the value only at runtime with `connections.get(...)`.
+
+### Use an API key in a custom tool
+
+The following tool resolves the `tavily` connection for the agent, then sends it directly to the Tavily API:
+
+```python tools/search_web.py
+import httpx
+from langchain.tools import tool
+from managed_deepagents import connections
+
+
+@tool(parse_docstring=True)
+async def search_web(query: str) -> str:
+    """Search the web.
+
+    Args:
+        query: Search query.
+    """
+    api_key = await connections.get("tavily", {"type": "agent"})
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            "https://api.tavily.com/search",
+            json={"api_key": api_key, "query": query, "max_results": 5},
+        )
+        response.raise_for_status()
+        return response.text
+```
+
+
+
+
+See [Custom tools](/langsmith/python/managed-deep-agents-tools) to add the tool to the agent.
+
+## Configure a user-owned OAuth connection
+
+A user-owned OAuth connection stores a separate grant for each authenticated caller. First, list the OAuth services built into the CLI:
+
+```bash
+uv run mda connection catalog
+```
+
+
+
+
+Create the connection before deployment. This example uses the built-in GitHub service:
+
+```bash
+uv run mda connection create github --oauth github
+```
+
+
+
+
+To use your own OAuth application, name the application and pass its client ID. Read the client secret from an environment variable:
+
+```bash
+uv run mda connection create github \
+  --oauth github \
+  --app company-github \
+  --client-id "$GITHUB_OAUTH_CLIENT_ID" \
+  --client-secret-env GITHUB_OAUTH_CLIENT_SECRET
+```
+
+
+
+
+Use `--scope SCOPE` to replace the catalog service's default scopes. Repeat the flag for each scope.
+
+### Access an OAuth token in a custom tool
+
+This tool resolves the authenticated caller's GitHub connection and calls the GitHub REST API:
+
+```python tools/get_github_user.py
+import httpx
+from langchain.tools import tool
+from managed_deepagents import connections
+
+
+@tool
+async def get_github_user() -> str:
+    """Get the authenticated caller's GitHub login."""
+    access_token = await connections.get("github", {"type": "user"})
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        response.raise_for_status()
+        return response.json()["login"]
+```
+
+
+
+
+## Handle an OAuth authorization interrupt
+
+If an MCP connector needs a user-owned OAuth connection that the caller has not authorized, Managed Deep Agents pauses the run. The connection interrupt contains the authorization URL and session ID:
+
+```json
+{
+  "type": "credential_authorization_required",
+  "message": "Connect the following integrations to continue.",
+  "credentials": [
+    {
+      "slug": "notion",
+      "kind": "oauth2",
+      "connect_url": "<authorization-url>",
+      "auth_id": "<authorization-session-id>"
+    }
+  ]
+}
+```
+
+In Slack, the channel adapter shows an authorization prompt. The user opens the link, completes OAuth, and then continues the run.
+
+<Frame caption="Slack OAuth authorization prompt">
+  **Screenshot placeholder:** Add the Slack OAuth authorization prompt screenshot here.
+</Frame>
+
+In a custom client, check the interrupt `type` and show each `connect_url` to the user. During public beta, programmatic invocation of Managed Deep Agents is not documented. Contact your LangChain team for the supported resume flow.
+
+<Note>
+Connection authorization interrupts currently cover OAuth flows. Support for other user-provided connection types is planned.
+</Note>
+
+## Use a connection with an MCP connector
+
+An MCP connector can use a connection to add a bearer token without exposing the value in connector code. See [Connect to MCP servers](/langsmith/python/managed-deep-agents-mcp-connectors).
+
+## Develop locally
+
+For `mda dev`, an agent-owned connection reads `MDA_DEV_<SLUG>`. The CLI converts the slug to uppercase and replaces hyphens with underscores. For example, `tavily-search` reads `MDA_DEV_TAVILY_SEARCH`.
+
+User-owned OAuth connections require an authenticated caller and a connection service. Deploy the agent to test the user authorization flow.
+
+## See also
+
+- [Managed Deep Agents CLI reference](/langsmith/python/managed-deep-agents-cli)
+- [Connect to MCP servers](/langsmith/python/managed-deep-agents-mcp-connectors)
+- [Add custom tools](/langsmith/python/managed-deep-agents-tools)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-connections.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
