@@ -8,6 +8,26 @@ import MigrateLanggraphSupervisorBasicPy from '/snippets/code-samples/migrate-la
 import MigrateLanggraphSupervisorInterruptPy from '/snippets/code-samples/migrate-langgraph-supervisor-interrupt-py.mdx';
 import MigrateLanggraphSupervisorNestedPy from '/snippets/code-samples/migrate-langgraph-supervisor-nested-py.mdx';
 
+<Prompt
+    description="Migrate a codebase from langgraph-supervisor to the create_agent subagents pattern."
+    icon="arrow-right"
+    actions={["copy"]}
+>
+Migrate this codebase from `langgraph-supervisor` (`create_supervisor`) to the LangChain subagents pattern using `create_agent` with tool-wrapped subagents.
+
+Key changes:
+
+1. Replace `create_supervisor([worker1, worker2], model=model, prompt=...)` with a top-level `create_agent(model, tools=[...], system_prompt=...)` where each worker is wrapped as a `@tool` function that calls `worker_agent.invoke(...)`.
+2. Wrap each worker agent as a `@tool`. The tool's docstring becomes the supervisor's routing instruction for that worker. Return the worker's final message content (or a formatted summary) from the tool.
+3. Remove `create_handoff_tool` — routing is now implicit: the supervisor calls the appropriate worker tool directly.
+4. For `output_mode="last_message"` behavior, return only the final assistant message from the tool wrapper. For `output_mode="full_history"` behavior, return a formatted summary of all messages.
+5. For nested supervisors, wrap middle-tier `create_agent` instances as tools on the top-level supervisor instead of passing compiled subgraphs to `create_supervisor`.
+6. For interrupt/resume flows: compile only the outermost graph with a checkpointer. Leave inner `create_agent` calls without `checkpointer=`. Pass `thread_id` in `configurable` on the outer invoke. `interrupt()` inside a subagent tool will bubble up automatically.
+7. Remove the `langgraph-supervisor` package (`pip uninstall langgraph-supervisor` / `uv remove langgraph-supervisor`).
+
+Search the codebase for all usages of `create_supervisor`, `create_handoff_tool`, `output_mode`, and imports from `langgraph_supervisor`, and apply the necessary changes. Flag anything that cannot be migrated automatically.
+</Prompt>
+
 The [`langgraph-supervisor`](https://github.com/langchain-ai/langgraph-supervisor-py) package is no longer actively maintained. Instead use the [subagents](/oss/langchain/multi-agent/subagents) pattern: a main agent coordinates specialized workers by calling them as [tools](/oss/langchain/tools).
 
 This guide covers how to migrate from `create_supervisor` to @[`create_agent`], including setups that use @[`interrupt`] and external API callbacks.

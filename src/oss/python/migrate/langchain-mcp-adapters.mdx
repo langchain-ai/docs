@@ -6,6 +6,28 @@ description: Migrate from the standalone langchain-mcp-adapters package to the b
 
 import McpWrapToolCallPy from '/snippets/code-samples/mcp-wrap-tool-call-py.mdx';
 
+<Prompt
+    description="Migrate a codebase from langchain-mcp-adapters to langchain.mcp."
+    icon="arrow-right"
+    actions={["copy"]}
+>
+Migrate this codebase from `langchain-mcp-adapters` to the built-in `langchain.mcp` namespace (requires `langchain[mcp]>=1.4.0`).
+
+Key changes:
+
+1. Uninstall `langchain-mcp-adapters` and install `langchain[mcp]`.
+2. Replace `MultiServerMCPClient` with `MCPAdapter`. `MCPAdapter` is an async context manager — use it with `async with MCPAdapter(config) as adapter:` and call `adapter.list_tools()` instead of `client.get_tools()`.
+3. Update the config shape from `{"server": {"transport": "...", ...}}` to the standard `MCPConfig` shape: `{"mcpServers": {"server": {"command": ..., "args": ...}}}` for stdio or `{"mcpServers": {"server": {"url": ...}}}` for HTTP. The transport is now inferred automatically.
+4. Update imports: `from langchain_mcp_adapters.client import MultiServerMCPClient` → `from langchain.mcp import MCPAdapter`; `convert_mcp_tool_to_langchain_tool` is now `as_langchain_tool` (also a coroutine: `await as_langchain_tool(tool, client)`).
+5. Remove `handle_tool_errors` — error handling is now fixed: `isError=True` becomes a `ToolMessage(status="error")`.
+6. Replace `tool_interceptors` / `ToolCallInterceptor` with LangChain `@wrap_tool_call` middleware.
+7. Elicitation is now automatic via LangGraph `interrupt` — no `Callbacks(on_elicitation=...)` needed.
+8. For `on_progress` or `on_logging_message` callbacks, build a `fastmcp.Client` with `progress_handler=` or `log_handler=` and pass it to `MCPAdapter`.
+9. `get_prompt` and `get_resources` have no `langchain.mcp` equivalent yet — access them directly via the FastMCP client (`client.get_prompt(...)`, `client.read_resource(...)`).
+
+Search the codebase for all usages of `langchain_mcp_adapters`, `MultiServerMCPClient`, `StdioConnection`, `StreamableHttpConnection`, `SSEConnection`, `WebsocketConnection`, `ToolCallInterceptor`, `handle_tool_errors`, and `Callbacks`, and apply the necessary changes. Flag anything that cannot be migrated automatically.
+</Prompt>
+
 MCP support now ships inside LangChain in the `langchain.mcp` namespace, built on [FastMCP](https://gofastmcp.com). It replaces the standalone [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) package, whose `MultiServerMCPClient` is collapsed into a single @[`MCPAdapter`] class.
 
 For the full feature documentation, see [Model Context Protocol (MCP)](/oss/langchain/mcp).
