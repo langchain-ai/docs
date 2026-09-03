@@ -56,27 +56,6 @@ Read optional metadata defensively, so a missing field returns a default rather 
 
 <McpToolMetadataPy />
 
-## Human-in-the-loop
-
-Reading annotations lets you gate a tool based on what the server declares about it, rather than hardcoding tool names. An MCP server can flag a tool as destructive with the `destructiveHint` annotation, which @[`MCPAdapter`] surfaces under `metadata["mcp"]["tool"]["annotations"]["destructive_hint"]`.
-
-Give an @[`InterruptOnConfig`] a `when` predicate: a callable that receives the pending @[`ToolCallRequest`] and returns whether that call needs approval. Read the destructive hint from metadata once at load time, then let the callable decide per call, so one config covers whatever destructive tools a server exposes without hardcoding tool names:
-
-<McpDestructiveGatePy />
-
-When the agent calls a tool the predicate gates, the run pauses. Approve it to let the tool run, or reject it to skip the tool and tell the model:
-
-```python
-from langgraph.types import Command
-
-# Approve the pending destructive call and resume.
-resumed = await agent.ainvoke(Command(resume={"decisions": [{"type": "approve"}]}), config)
-```
-
-The predicate also sees the call's arguments through `request.tool_call["args"]`, so a tool can run freely for safe inputs and pause only for risky ones, such as a `delete_file` call targeting a protected path. Combine both to gate a tool only when its type and its arguments warrant it.
-
-For the full approval workflow, see [Human-in-the-loop](/oss/langchain/human-in-the-loop).
-
 ## Handle tool outputs
 
 MCP tool results become LangChain-native values: content the model can read, an artifact for structured output, and a @[`ToolMessage`] status that distinguishes a server-reported error from a transport failure.
@@ -107,17 +86,40 @@ An MCP tool result carries an `isError` flag. When a server reports `isError=Tru
 
 A server-reported error reaches the model as a failed tool message, but a transport or session failure raises instead, because a model cannot act on a dropped connection.
 
+## Human-in-the-loop
+
+Reading annotations lets you gate a tool based on what the server declares about it, rather than hardcoding tool names. An MCP server can flag a tool as destructive with the `destructiveHint` annotation, which @[`MCPAdapter`] surfaces under `metadata["mcp"]["tool"]["annotations"]["destructive_hint"]`.
+
+Give an @[`InterruptOnConfig`] a `when` predicate: a callable that receives the pending @[`ToolCallRequest`] and returns whether that call needs approval. Read the destructive hint from metadata once at load time, then let the callable decide per call, so one config covers whatever destructive tools a server exposes without hardcoding tool names:
+
+<McpDestructiveGatePy />
+
+When the agent calls a tool the predicate gates, the run pauses. Approve it to let the tool run, or reject it to skip the tool and tell the model:
+
+```python
+from langgraph.types import Command
+
+# Approve the pending destructive call and resume.
+resumed = await agent.ainvoke(Command(resume={"decisions": [{"type": "approve"}]}), config)
+```
+
+The predicate also sees the call's arguments through `request.tool_call["args"]`, so a tool can run freely for safe inputs and pause only for risky ones, such as a `delete_file` call targeting a protected path. Combine both to gate a tool only when its type and its arguments warrant it.
+
+For the full approval workflow, see [Human-in-the-loop](/oss/langchain/human-in-the-loop).
+
 ## Server requests during tool execution
+
+Most tools finish without asking the client for anything mid-call. When a server does need input, @[`MCPAdapter`] answers [elicitation](https://modelcontextprotocol.io/specification/draft/client/elicitation) automatically through a LangGraph @[`interrupt`].
 
 ### Elicitation
 
-[Elicitation](https://modelcontextprotocol.io/specification/draft/client/elicitation) is the MCP mechanism for a server to request input in the middle of a tool call. @[`MCPAdapter`] handles it automatically: when a server needs input, the request surfaces as a LangGraph @[`interrupt`], so the person already reviewing the agent's work answers it and the run resumes:
+[Elicitation](https://modelcontextprotocol.io/specification/draft/client/elicitation) is the MCP mechanism for a server to request input in the middle of a tool call. When a server needs input, the request surfaces as a LangGraph interrupt so the person already reviewing the agent's work answers it and the run resumes:
 
 <McpElicitationPy />
 
 A few things to note:
 
-- **Elicitation is on by default.** The adapter arms every client it builds to advertise the capability and drives the interrupt loop, so you do not opt in. A prebuilt client that already carries its own elicitation handler is honored instead of overridden.
+- **Elicitation is on by default.** The adapter arms every client it builds to advertise the capability and drives the interrupt loop. A prebuilt client that already carries its own elicitation handler is honored instead of overridden.
 - **Resuming needs persistence.** Attach a [checkpointer](/oss/langchain/short-term-memory) so the interrupted run has somewhere to wait.
 - **Answers are keyed by the server's request key.** Resume with `Command(resume={"responses": {key: answer}})`. Each answer's `action` is `accept` (with `content` matching the request's schema), `decline` (answer refused, call continues), or `cancel` (the whole call is abandoned).
 

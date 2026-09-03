@@ -1,6 +1,6 @@
 ---
 title: Connections
-description: Connection lifecycle, connection pooling, multiple servers, protocol eras, and caching for MCP in LangChain.
+description: Connection lifecycle, multiple servers, deployment scaling, protocol eras, and caching for MCP in LangChain.
 ---
 
 import McpLifecycleShortPy from '/snippets/code-samples/mcp-lifecycle-short-py.mdx';
@@ -15,17 +15,39 @@ import McpProtocolErasPy from '/snippets/code-samples/mcp-protocol-eras-py.mdx';
 The `langchain.mcp` namespace requires `langchain[mcp]>=1.4.0` and is in beta. The API may change.
 </Note>
 
-@[`MCPAdapter`] manages an MCP connection for you, but how long that connection lives depends on how you use it. This page covers the connection lifecycle, pooling connections across a fleet, running against several servers at once, the two MCP protocol eras, and response caching. The connection itself is FastMCP's; each section links out to the relevant FastMCP client documentation.
+@[`MCPAdapter`] opens an MCP connection, discovers tools, and returns LangChain tools your agent can call. How you pass servers in, and how long you keep the adapter open, depends on the shape of your app. The connection itself is FastMCP's; this page covers the LangChain patterns and links out to FastMCP for transport and client details.
+
+Prefer the [default lifecycle](#connection-lifecycle) unless you are connecting to several servers or deploying many concurrent runs. For what a single target can be (URL, script path, in-process server), see [Transports](/oss/langchain/mcp#transports).
+
+## Choose a pattern
+
+Pick one row from each table. Server shape and connection lifetime are independent; any shape works with any lifetime.
+
+**Server shape**
+
+| If you need… | Use | Go to |
+| --- | --- | --- |
+| One server | A URL, `Path`, or in-process target | [Transports](/oss/langchain/mcp#transports) |
+| Several servers behind one connection | An `MCPConfig` dict | [MCPConfig](#one-aggregate-connection-with-mcpconfig) |
+| Several servers with separate auth, protocol eras, or pools | A [`ClientGroup`](https://gofastmcp.com/clients/client-groups) | [ClientGroup](#independent-connections-with-clientgroup) |
+
+**Connection lifetime**
+
+| Situation | Pattern | Go to |
+| --- | --- | --- |
+| Script, notebook, or most agents | Discover inside `async with`, then exit | [Connection lifecycle](#connection-lifecycle) |
+| Hold one session across several tool calls in a run | Keep the adapter open around the agent call | [One session per invocation](#one-session-per-invocation) |
+| Many concurrent runs in a deployment | Discover per run; reuse a [shared pool](#shared-connection-pool) and [cache](#caching) | [Scale a deployment](#scale-a-deployment) |
 
 ## Connection lifecycle
 
 @[`MCPAdapter`] is an async context manager. Entering it connects the underlying client; exiting it releases the connection. Discovery happens inside the context, but the tools it returns hold the client, so they stay callable after the context exits.
 
-For most applications, open the adapter only long enough to discover the tools:
+To discover tools and build an agent (the default pattern):
 
 <McpLifecycleShortPy />
 
-You do not need to keep the adapter open for the life of the agent.
+You do not need to keep the adapter open for the life of the agent. Prefer this pattern unless you are [holding a session open](#one-session-per-invocation) or [scaling a deployment](#scale-a-deployment).
 
 ### One session per invocation
 
@@ -33,10 +55,27 @@ The tools @[`MCPAdapter`] returns are reentrant: each time a tool is invoked, it
 
 If you want a session held open across several calls, keep the adapter's context open when you call the agent. The reentrant client reuses the existing connection rather than opening a second one.
 
+## Multiple servers
 
-### Long-lived connections
+To give one agent tools from several servers, choose `MCPConfig` when a single aggregate connection is enough, or `ClientGroup` when each server needs its own connection (different [protocol eras](#protocol-eras), [per-server authentication](/oss/langchain/mcp/auth#per-server-authentication), or a [shared pool](#shared-connection-pool) configured per client).
 
-A deployment that serves many runs should discover per run but reuse its connections underneath, rather than reconnecting on every request. In a [`langgraph dev`](/oss/langgraph/local-server) graph factory, build the agent inside the factory function so each run picks up the current tool catalog, and let a [shared connection pool](#shared-connection-pool) and [response cache](#caching) absorb the cost:
+### One aggregate connection with `MCPConfig`
+
+Give the adapter an `MCPConfig` dict to connect to several servers behind one aggregate endpoint. FastMCP prefixes every tool with its config key, so two servers exposing the same tool name stay distinguishable in the list handed to a model:
+
+<McpMultiServerPy />
+
+Each backend is addressed independently, so a fleet can mix transports: one server over stdio, another over HTTP. An `MCPConfig` fleet shares a single negotiated [protocol era](#protocol-eras) across every backend, though: add a legacy-only server and the whole fleet drops to the legacy era.
+
+### Independent connections with `ClientGroup`
+
+To keep each server on its own connection, pass a [`ClientGroup`](https://gofastmcp.com/clients/client-groups). Each member keeps its own negotiated protocol era, authentication, and handlers, and the group routes each call back to the client that advertised the tool. This is what lets a legacy and a modern server run side by side, and it namespaces tools the same way so identical tool names across servers never collide:
+
+<McpClientGroupPy />
+
+## Scale a deployment
+
+A deployment that serves many runs should discover per run but reuse its connections underneath, rather than reconnecting on every request. Build the agent inside a [`langgraph dev`](/oss/langgraph/local-server) graph factory so each run picks up the current tool catalog, and let a [shared connection pool](#shared-connection-pool) and [response cache](#caching) absorb the cost:
 
 <McpGraphFactoryPy />
 
@@ -54,39 +93,7 @@ By default each FastMCP client manages its own HTTP connections. Across a fleet 
 
 Because every client borrows from `_POOL`, the deployment opens one set of HTTP connections for the whole fleet rather than one per server.
 
-## Multiple servers
-
-There are two ways to give one agent the tools of several servers, and they differ in how the connections are managed.
-
-### One aggregate connection with `MCPConfig`
-
-Give the adapter an `MCPConfig` dict to connect to several servers behind one aggregate endpoint. FastMCP prefixes every tool with its config key, so two servers exposing the same tool name stay distinguishable in the list handed to a model:
-
-<McpMultiServerPy />
-
-Each backend is addressed independently, so a fleet can mix transports: one server over stdio, another over HTTP. An `MCPConfig` fleet shares a single negotiated [protocol era](#protocol-eras) across every backend, though: add a legacy-only server and the whole fleet drops to the legacy era.
-
-### Independent connections with `ClientGroup`
-
-To keep each server on its own connection, pass a [`ClientGroup`](https://gofastmcp.com/clients/client-groups). Each member keeps its own negotiated protocol era, authentication, and handlers, and the group routes each call back to the client that advertised the tool. This is what lets a legacy and a modern server run side by side, and it namespaces tools the same way so identical tool names across servers never collide:
-
-<McpClientGroupPy />
-
-Use `ClientGroup` when servers need independent connections: different [protocol eras](#protocol-eras), [per-server authentication](/oss/langchain/mcp/auth#per-server-authentication), or a [shared pool](#shared-connection-pool) configured per client. Use an `MCPConfig` dict when a single aggregate connection is enough.
-
-## Protocol eras
-
-MCP changed how a client and server agree on what each supports. The **legacy** era begins every connection with an `initialize` handshake; the **modern** era (protocol version `2026-07-28` and later) discovers support by probing the server's `server/discover` endpoint. FastMCP negotiates the era per connection, so nothing on the LangChain side has to know which a given server speaks.
-
-To hold tools from servers on different eras in one agent, give each its own connection so it keeps the best era its server supports, either through a [`ClientGroup`](#independent-connections-with-clientgroup) or one adapter per server. A prebuilt `fastmcp.Client` selects the era with its `mode` parameter:
-
-<McpProtocolErasPy />
-
-Passing both servers as a single `MCPConfig` fleet instead would negotiate one era for everything the fleet holds, dropping every server to the oldest era any member requires.
-
-For the full negotiation rules, see [Protocol negotiation](https://gofastmcp.com/clients/client#protocol-negotiation) in the FastMCP documentation.
-
-## Caching
+### Caching
 
 FastMCP can cache the result of `list_tools` so repeated discovery avoids a network round trip. Caching is opt-in and honors the server's own cache hints, so it only takes effect against modern-era servers that advertise them.
 
@@ -102,13 +109,22 @@ tools = await adapter.list_tools(cache_mode="refresh")
 
 The cache and its per-principal isolation are configured on the client itself, with `Client(cache=...)`. For a shared store across a fleet of replicas, or partitioning cached responses per user, see [Response caching](https://gofastmcp.com/clients/client#response-caching) in the FastMCP documentation.
 
+## Protocol eras
+
+MCP changed how a client and server agree on what each supports. The **legacy** era begins every connection with an `initialize` handshake; the **modern** era (protocol version `2026-07-28` and later) discovers support by probing the server's `server/discover` endpoint. FastMCP negotiates the era per connection, so nothing on the LangChain side has to know which a given server speaks.
+
+To hold tools from servers on different eras in one agent, give each its own connection so it keeps the best era its server supports, either through a [`ClientGroup`](#independent-connections-with-clientgroup) or one adapter per server. A prebuilt `fastmcp.Client` selects the era with its `mode` parameter:
+
+<McpProtocolErasPy />
+
+Passing both servers as a single `MCPConfig` fleet instead would negotiate one era for everything the fleet holds, dropping every server to the oldest era any member requires.
+
+For the full negotiation rules, see [Protocol negotiation](https://gofastmcp.com/clients/client#protocol-negotiation) in the FastMCP documentation.
+
 ## See also
 
+- [Authentication](/oss/langchain/mcp/auth) — bearer, OAuth, and per-user credentials
+- [Deploy a LangGraph server](/oss/langgraph/local-server) — graph factories for long-lived deployments
 - [FastMCP connection lifecycle](https://gofastmcp.com/clients/client#connection-lifecycle)
-- [FastMCP client groups](https://gofastmcp.com/clients/client-groups) — several independent connections under one catalog
-- [FastMCP client transports](https://gofastmcp.com/clients/transports) — pooling and per-transport configuration
-- [FastMCP protocol negotiation](https://gofastmcp.com/clients/client#protocol-negotiation)
-- [FastMCP response caching](https://gofastmcp.com/clients/client#response-caching)
 - [MCP configuration format](https://gofastmcp.com/integrations/mcp-json-configuration)
-- [Deploy a LangGraph server](/oss/langgraph/local-server)
 :::
