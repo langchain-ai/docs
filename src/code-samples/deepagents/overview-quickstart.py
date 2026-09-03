@@ -10,7 +10,7 @@ def get_weather(city: str) -> str:
 
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.6-flash",
+    model="fireworks:fireworks/glm-5p3",
     tools=[get_weather],
     system_prompt="You are a helpful assistant",
 )
