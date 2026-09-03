@@ -150,7 +150,7 @@ Set the scope in either of two places, using the same control:
 - **Engine setup**: In the **Find and fix your agent's issues** panel, under **Focus on specific traces**.
 - **Engine Settings**: In the **Focus on specific traces** section of the [**Engine Settings**](#configure-engine) panel. Edits here save automatically.
 
-Add scope conditions with the same [filter editor](/langsmith/filter-traces-in-application#create-and-apply-filters) used on the tracing project's **Tracing** tab. You can add one condition of each kind, **up to two**:
+Add scope conditions with the filter editor. You can add one condition of each kind, **up to two**:
 
 - **Run Name**: Pick a run or agent name. The value field autocompletes from the run names in your project's recent traces.
 - **Metadata**: Pick a metadata key, then a value. Both autocomplete from the metadata present on your project's recent runs.
