@@ -25,7 +25,7 @@ def log_mcp_calls(
 async def agent_with_interception(target):
     async with MCPAdapter(target) as adapter:
         tools = await adapter.list_tools()
-        return create_agent("claude-sonnet-4-6", tools, middleware=[log_mcp_calls])
+        return create_agent("claude-sonnet-5", tools, middleware=[log_mcp_calls])
 
 
 # :snippet-end:

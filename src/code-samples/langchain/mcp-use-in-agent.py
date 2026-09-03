@@ -9,7 +9,7 @@ async def run_agent(server) -> dict:
     # for the life of the adapter context.
     async with MCPAdapter(server) as adapter:
         tools = await adapter.list_tools()
-        agent = create_agent("claude-sonnet-4-6", tools)
+        agent = create_agent("claude-sonnet-5", tools)
         return await agent.ainvoke(
             {
                 "messages": [

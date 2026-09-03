@@ -16,7 +16,7 @@ async def book_with_elicitation(server) -> dict:
 
         # Resuming a paused run needs persistence, so the interrupted run has
         # somewhere to wait.
-        agent = create_agent("claude-sonnet-4-6", tools, checkpointer=InMemorySaver())
+        agent = create_agent("claude-sonnet-5", tools, checkpointer=InMemorySaver())
         config: Any = {"configurable": {"thread_id": "booking-1"}}
 
         paused = await agent.ainvoke(
@@ -70,7 +70,7 @@ async def gate_destructive_tools(server):
             tool.name: gate for tool in tools
         }
         return create_agent(
-            "claude-sonnet-4-6",
+            "claude-sonnet-5",
             tools,
             middleware=[HumanInTheLoopMiddleware(interrupt_on=interrupt_on)],
             checkpointer=InMemorySaver(),

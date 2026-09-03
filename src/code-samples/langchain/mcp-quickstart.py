@@ -6,7 +6,7 @@ from langchain.mcp import MCPAdapter
 async def main():
     async with MCPAdapter("https://example.com/mcp") as adapter:
         tools = await adapter.list_tools()
-        agent = create_agent("claude-sonnet-4-6", tools)
+        agent = create_agent("claude-sonnet-5", tools)
         return await agent.ainvoke({"messages": [{"role": "user", "content": "..."}]})
 
 

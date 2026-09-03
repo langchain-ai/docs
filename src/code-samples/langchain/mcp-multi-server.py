@@ -15,7 +15,7 @@ async def fleet_agent(config):
         # Every tool is prefixed with its config key (`weather_...`, `calc_...`),
         # so two servers exposing the same tool name stay distinguishable.
         tools = await adapter.list_tools()
-        return create_agent("claude-sonnet-4-6", tools)
+        return create_agent("claude-sonnet-5", tools)
 
 
 # :snippet-end:

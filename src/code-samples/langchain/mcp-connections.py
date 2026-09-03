@@ -8,7 +8,7 @@ async def build_agent(target):
     # the client, so the agent stays usable after the context exits.
     async with MCPAdapter(target) as adapter:
         tools = await adapter.list_tools()
-        return create_agent("claude-sonnet-4-6", tools)
+        return create_agent("claude-sonnet-5", tools)
 
 
 # :snippet-end:
@@ -29,7 +29,7 @@ async def make_graph():
     # server's TTL instead of re-listing on every run.
     async with MCPAdapter(config) as adapter:
         tools = await adapter.list_tools(cache_mode="use")
-        return create_agent("claude-sonnet-4-6", tools)
+        return create_agent("claude-sonnet-5", tools)
 
 
 # :snippet-end:
@@ -51,7 +51,7 @@ async def agent_across_eras(legacy_target, modern_target):
         MCPAdapter(modern) as modern_adapter,
     ):
         tools = await legacy_adapter.list_tools() + await modern_adapter.list_tools()
-        return create_agent("claude-sonnet-4-6", tools)
+        return create_agent("claude-sonnet-5", tools)
 
 
 # :snippet-end:
