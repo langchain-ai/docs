@@ -532,7 +532,7 @@ Connected MCP servers and their tools are automatically listed in the agent's sy
 ## Further reading
 
 - [LangSmith Remote MCP](/langsmith/langsmith-remote-mcp): connect Deep Agents Code to LangSmith tools over OAuth
-- [LangChain MCP guide](/oss/python/langchain/mcp): protocol details, building custom servers, and using `langchain-mcp-adapters` programmatically
+- [LangChain MCP guide](/oss/python/langchain/mcp): connecting agents to MCP servers with the `MCPAdapter`
 - [MCP specification](https://modelcontextprotocol.io/): the official protocol spec and server registry
 
 ---
