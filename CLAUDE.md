@@ -509,3 +509,11 @@ When extracting data from PRs or changelogs, use the "Release Note:" section in 
 - Explain the "why" of changes
 - Highlight areas needing careful review
 - Disclose AI agent involvement in description
+
+<!-- OPENWIKI:START -->
+
+## OpenWiki
+
+See [AGENTS.md](AGENTS.md) for OpenWiki agent instructions.
+
+<!-- OPENWIKI:END -->
