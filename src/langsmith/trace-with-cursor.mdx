@@ -58,6 +58,17 @@ Restart Cursor after installing so it reloads `hooks.json`.
 
 Tracing is disabled until both `enabled` (or `TRACE_TO_LANGSMITH=true`) and an API key are set. Configure credentials with [environment variables](#environment-variables), a [JSON config file](#config-file), or both.
 
+The master switch uses the first source that defines it:
+
+| Priority | Source | Enabled value |
+| --- | --- | --- |
+| 1 | `TRACE_TO_LANGSMITH` environment variable | `"true"` |
+| 2 | Project `.cursor/langsmith.json` | `{"enabled": true}` |
+| 3 | User `~/.cursor/langsmith.json` | `{"enabled": true}` |
+| 4 | Default | Disabled |
+
+A higher-precedence `false` overrides lower-precedence `true`. A malformed higher-precedence config disables tracing instead of falling back to a lower-precedence source.
+
 ### Environment variables
 
 Every `LANGSMITH_CURSOR_*` variable also accepts the shorter `LANGSMITH_*` form. When both are set, `LANGSMITH_CURSOR_*` takes precedence.
@@ -116,9 +127,41 @@ Use `~/.cursor/langsmith.json` for global defaults or `./.cursor/langsmith.json`
 
 Keep config files that include API keys out of version control.
 
+## Control tracing per thread
+
+<Note>
+Per-thread trace controls require version 0.4.0 or later of the `langsmith-tracing` marketplace plugin.
+</Note>
+
+Use these exact lowercase prompts in a Cursor conversation:
+
+| Command | Stored thread mode | Effective behavior when the master switch is enabled |
+| --- | --- | --- |
+| `/trace on` | Full | Uploads trace content and metadata. |
+| `/trace off` | Metadata only | Uploads only the safe metadata listed below, with trace topology and timing. |
+| `/trace status` | Unchanged | Reports the effective master-disabled condition when the master switch is off; otherwise reports the stored mode. |
+
+The master switch remains dominant. While it is disabled, `/trace on` and `/trace off` can update the stored per-thread preference, but no command can cause an upload. Control prompts are intercepted and are not traced.
+
+The plugin snapshots the mode for the current turn when you submit its prompt. Mode transitions apply only to later turns and do not backfill or alter earlier turns. Subagents inherit the mode of the turn that launches them.
+
+The preference persists in `~/.cursor/langsmith-state.json`, or the path set by `LANGSMITH_CURSOR_STATE_FILE`. If this state is corrupt, tracing fails closed to metadata-only mode until `/trace on` or `/trace off` safely recovers the state.
+
+### Metadata-only allowlist
+
+Metadata-only mode retains run topology and timing, sets every run's inputs and outputs to `{}`, and permits only these operational metadata keys:
+
+| Scope | Allowed keys |
+| --- | --- |
+| Every run | `thread_id`, `turn_number`, `status`, `ls_agent_purpose`, `ls_agent_type`, `ls_agent_runtime`, `ls_tracing_mode` |
+| Model runs | `ls_model_name`, `usage_metadata` |
+| Tool runs | `ls_tool_name` |
+
+It does not upload prompts, responses, thoughts, tool inputs or outputs, attachments, system prompts, subagent tasks, descriptions, or results, raw errors, custom metadata, or tags. Replica routing overrides are preserved, but their `updates` are ignored in metadata-only mode.
+
 ## What gets traced
 
-The plugin listens to Cursor hooks and assembles one trace per agent turn:
+In full mode, the plugin listens to Cursor hooks and assembles one trace per agent turn:
 
 - **Turns**: each turn becomes its own trace, grouped into a thread using `thread_id` = Cursor's `conversation_id`. The trace nests the model run and any tool or subagent runs underneath the turn.
 - **Token usage**: per-turn `usage_metadata` on the model run.
@@ -132,7 +175,7 @@ The plugin does not compute cost locally. Because `ls_model_name` is normalized 
 </Note>
 
 <Warning>
-The plugin uploads Cursor conversation data, including prompts, model responses, tool inputs and outputs, and recovered attachments. Do not enable tracing for sessions that contain data you do not want stored in LangSmith.
+In full mode, the plugin uploads Cursor conversation data, including prompts, model responses, tool inputs and outputs, and recovered attachments. Metadata-only mode uploads only the allowlisted operational metadata above. When the master switch is off, the plugin uploads nothing.
 </Warning>
 
 ### Trace metadata

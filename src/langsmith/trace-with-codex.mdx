@@ -35,6 +35,17 @@ enabled = true
 
 Tracing is disabled until either `TRACE_TO_LANGSMITH` is `"true"` or `enabled` is `true` in a config file. Configure credentials with environment variables, a JSON config file, or both.
 
+The master switch uses the first source that defines it:
+
+| Priority | Source | Enabled value |
+| --- | --- | --- |
+| 1 | `TRACE_TO_LANGSMITH` environment variable | `"true"` |
+| 2 | Project `.codex/langsmith.json` | `{"enabled": true}` |
+| 3 | User `~/.codex/langsmith.json` | `{"enabled": true}` |
+| 4 | Default | Disabled |
+
+A higher-precedence `false` overrides lower-precedence `true`. Any malformed configured source disables tracing.
+
 ### Environment variables
 
 The plugin reads Codex-specific variables first, then falls back to the generic LangSmith SDK variables.
@@ -144,11 +155,44 @@ Each replica object supports the following fields:
 | `apiUrl` | Yes | LangSmith API URL (typically `https://api.smith.langchain.com`). |
 | `apiKey` | Yes | API key for the destination workspace. |
 | `projectName` | Yes | Project name in the destination workspace. |
-| `updates` | No | Optional run fields to override on replicated runs, such as extra metadata. |
+| `updates` | No | Optional run fields to override on replicated runs, such as extra metadata. Ignored in metadata-only mode. |
+
+## Control tracing per thread
+
+<Note>
+Per-thread trace controls require version 0.0.8 or later of the `tracing` marketplace plugin.
+</Note>
+
+Use these exact lowercase prompts in a Codex session:
+
+| Command | Stored thread mode | Effective behavior when the master switch is enabled |
+| --- | --- | --- |
+| `/trace on` | Full | Uploads trace content and metadata. |
+| `/trace off` | Metadata only | Uploads only the safe metadata listed below, with trace topology and timing. |
+| `/trace status` | Unchanged | Reports the effective master-disabled condition when the master switch is off; otherwise reports the stored mode. |
+
+The master switch remains dominant. While it is disabled, `/trace on` and `/trace off` can update the stored per-thread preference, but no command can cause an upload. Control prompts are intercepted and are not traced.
+
+The plugin snapshots the mode for the current turn when you submit its prompt. Mode transitions apply only to later turns and do not backfill or alter earlier turns. Subagents inherit the mode of the turn that launches them.
+
+The preference persists in `~/.codex/langsmith-state.json`. If this state is corrupt, tracing fails closed to metadata-only mode until `/trace on` or `/trace off` safely recovers the state.
+
+### Metadata-only allowlist
+
+Metadata-only mode retains run topology and timing, sets every run's inputs and outputs to `{}`, and permits only these operational metadata keys:
+
+| Scope | Allowed keys |
+| --- | --- |
+| Trace and turn identity | `thread_id`, `turn_id`, `turn_number`, `status`, `ls_tracing_mode` |
+| Integration identity | `ls_agent_purpose`, `ls_agent_type`, `ls_agent_runtime`, `ls_agent_runtime_version`, `ls_integration`, `ls_integration_version`, `ls_trace_schema_version` |
+| Model and tool operations | `ls_model_name`, `ls_tool_name`, `usage_metadata`, `ls_raw_aggregated_usage` |
+| Subagents | `ls_subagent_id`, `ls_subagent_type` |
+
+It does not upload prompts, responses, thoughts, tool inputs or outputs, attachments, system prompts, subagent tasks, descriptions, or results, raw errors, custom metadata, or tags. Replica routing overrides are preserved, but their `updates` are ignored in metadata-only mode.
 
 ## What gets traced
 
-Each LLM run includes:
+In full mode, each LLM run includes:
 
 - **Inputs**: accumulated conversation messages.
 - **Outputs**: assistant response content.
@@ -160,10 +204,10 @@ Interrupted turns where the user cancels mid-response are still uploaded once th
 
 ## View traces in LangSmith
 
-Open the configured LangSmith project and complete a Codex turn. By default traces appear in the `codex` project. The plugin uploads completed Codex transcript data, including messages, tool call inputs and outputs, model metadata, token usage, and subagent thread structure.
+Open the configured LangSmith project and complete a Codex turn. By default, traces appear in the `codex` project. In full mode, the plugin uploads completed Codex transcript data, including messages, tool call inputs and outputs, model metadata, token usage, and subagent thread structure.
 
 <Warning>
-The plugin uploads full Codex transcript data to LangSmith. Do not enable tracing for sessions that contain data you do not want stored in LangSmith.
+In full mode, the plugin uploads full Codex transcript data to LangSmith. Metadata-only mode uploads only the allowlisted operational metadata above. When the master switch is off, the plugin uploads nothing.
 </Warning>
 
 ## Troubleshooting
