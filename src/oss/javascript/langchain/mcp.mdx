@@ -1,11 +1,15 @@
 ---
 title: Model Context Protocol (MCP)
+description: Legacy MCP documentation for the langchain-mcp-adapters package.
 ---
 
-import McpMultimodalToolContentPy from '/snippets/code-samples/mcp-multimodal-tool-content-py.mdx';
 import McpMultimodalToolContentJs from '/snippets/code-samples/mcp-multimodal-tool-content-js.mdx';
 
 :::python
+<Warning>
+This page documents the standalone [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) package. LangChain now ships MCP support in the built-in `langchain.mcp` namespace, built on FastMCP. See the [current MCP documentation](/oss/langchain/mcp) and the [migration guide](/oss/migrate/langchain-mcp-adapters).
+</Warning>
+
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) is an open protocol that standardizes how applications provide tools and context to LLMs. LangChain agents can use tools defined on MCP servers using the [`langchain-mcp-adapters`](https://github.com/langchain-ai/langchain-mcp-adapters) library.
 :::
 :::js
@@ -57,7 +61,7 @@ async def main():
 
     tools = await client.get_tools()  # [!code highlight]
     agent = create_agent(
-        "claude-sonnet-4-6",
+        "claude-sonnet-5",
         tools  # [!code highlight]
     )
     math_response = await agent.ainvoke(
@@ -122,7 +126,7 @@ const client = new MultiServerMCPClient({  // [!code highlight]
 
 const tools = await client.getTools();  // [!code highlight]
 const agent = createAgent({
-    model: "claude-sonnet-4-6",
+    model: "claude-sonnet-5",
     tools,  // [!code highlight]
 });
 
@@ -590,7 +594,7 @@ from langchain.agents import create_agent
 
 client = MultiServerMCPClient({...})
 tools = await client.get_tools()  # [!code highlight]
-agent = create_agent("claude-sonnet-4-6", tools)
+agent = create_agent("claude-sonnet-5", tools)
 ```
 
 By default, when an MCP tool fails, the error is passed back to the model as a tool message with `status="error"` instead of raising an exception. This lets the agent read the error and try again. To raise an exception instead, set `handle_tool_errors=False` on `MultiServerMCPClient` or `load_mcp_tools`.
@@ -611,7 +615,7 @@ import { createAgent } from "langchain";
 
 const client = new MultiServerMCPClient({...});
 const tools = await client.getTools();  // [!code highlight]
-const agent = createAgent({ model: "claude-sonnet-4-6", tools });
+const agent = createAgent({ model: "claude-sonnet-5", tools });
 ```
 
 When an MCP tool execution fails (`CallToolResult` with `isError: true`), `@langchain/mcp-adapters` raises a `ToolException`. Wrap tool calls in a try/catch to handle these errors. Unlike the Python adapter, the TypeScript adapter does not return the error to the model as a failed tool message.
@@ -636,7 +640,7 @@ from langchain.messages import ToolMessage
 
 client = MultiServerMCPClient({...})
 tools = await client.get_tools()
-agent = create_agent("claude-sonnet-4-6", tools)
+agent = create_agent("claude-sonnet-5", tools)
 
 result = await agent.ainvoke(
     {"messages": [{"role": "user", "content": "Get data from the server"}]}
@@ -675,7 +679,33 @@ client = MultiServerMCPClient({...}, tool_interceptors=[append_structured_conten
 
 MCP tools can return [multimodal content](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#tool-result) (images, text, etc.) in their responses. When an MCP server returns content with multiple parts (e.g., text and images), the adapter converts them to LangChain's [standard content blocks](/oss/langchain/messages#standard-content-blocks). You can access the standardized representation via the `content_blocks` property on the `ToolMessage`:
 
-<McpMultimodalToolContentPy />
+```python
+from langchain.agents import create_agent
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+async def access_multimodal_tool_content():
+    client = MultiServerMCPClient({})
+    tools = await client.get_tools()
+    agent = create_agent("claude-sonnet-5", tools)
+
+    result = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "Take a screenshot of the current page"}]}
+    )
+
+    # Access multimodal content from tool messages
+    for message in result["messages"]:
+        if message.type == "tool":
+            # Raw content in provider-native format
+            print(f"Raw content: {message.content}")
+
+            # Standardized content blocks
+            for block in message.content_blocks:
+                if block["type"] == "text":
+                    print(f"Text: {block['text']}")
+                elif block["type"] == "image":
+                    print(f"Image URL: {block.get('url')}")
+                    print(f"Image base64: {block.get('base64', '')[:50]}...")
+```
 
 This allows you to handle multimodal tool responses in a provider-agnostic way, regardless of how the underlying MCP server formats its content.
 

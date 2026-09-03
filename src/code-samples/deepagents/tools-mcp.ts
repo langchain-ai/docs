@@ -2,7 +2,7 @@
 import { createDeepAgent } from "deepagents";
 
 const testAgent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
+  model: "anthropic:claude-sonnet-5",
   tools: [],
 });
 if (!testAgent) throw new Error("agent not created");
