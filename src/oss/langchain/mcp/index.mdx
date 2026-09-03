@@ -6,6 +6,8 @@ description: Connect LangChain agents to MCP servers with the MCPAdapter, built 
 
 import McpQuickstartPy from '/snippets/code-samples/mcp-quickstart-py.mdx';
 import McpTransportsPy from '/snippets/code-samples/mcp-transports-py.mdx';
+import McpAuthBearerPy from '/snippets/code-samples/mcp-auth-bearer-py.mdx';
+import McpMultimodalToolContentPy from '/snippets/code-samples/mcp-multimodal-tool-content-py.mdx';
 
 :::python
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open protocol that standardizes how applications provide tools and context to language models. LangChain agents call tools defined on MCP servers through @[`MCPAdapter`], which discovers a server's tools and adapts them into LangChain tools you can pass straight to @[`create_agent`].
@@ -38,11 +40,15 @@ Open an @[`MCPAdapter`], discover the server's tools with `list_tools()`, and bu
 
 <McpQuickstartPy />
 
-## Transports
-
-@[`MCPAdapter`] infers the transport from the target you hand it, so the only thing that changes between an in-process server, a local script over stdio, and a remote URL is the target itself:
+@[`MCPAdapter`] infers the transport from the target you hand it:
 
 <McpTransportsPy />
+
+A target can be a URL, a script `Path`, an in-process FastMCP server, a transport object, an `MCPConfig` dict, or a prebuilt `fastmcp.Client`. For the full list and the string-URL warning, see [Transports](#transports-and-targets).
+
+<Accordion title="Transports and targets">
+
+## Transports
 
 A target can be any of the following:
 
@@ -54,20 +60,79 @@ A target can be any of the following:
 - **A prebuilt `fastmcp.Client`**: for full control over transport, [caching](https://gofastmcp.com/clients/client#response-caching), and [protocol negotiation](https://gofastmcp.com/clients/client#protocol-negotiation).
 
 <Warning>
-A `str` target must be an `http` or `https` URL. FastMCP resolves a string by testing it as a filesystem path before testing it as a URL, so a string naming an existing `.py` or `.js` file would launch that file as a subprocess. Because strings are the form a target most often arrives in from configuration or from a model, @[`MCPAdapter`] rejects strings that don't match the shape of a URL.
+A `str` target must be an `http` or `https` URL. FastMCP resolves a string by testing it as a filesystem path before testing it as a URL, so a string naming an existing `.py` or `.js` file would launch that file as a subprocess. Because strings are the form a target most often arrives in from configuration or from a model, @[`MCPAdapter`] rejects strings that do not match the shape of a URL.
 </Warning>
+
+</Accordion>
+
+After the quickstart, work through these decisions in order. Most apps only need the first three; gate destructive tools when a server can change or delete data.
+
+## Authenticate to the MCP server
+
+Most remote MCP servers require authentication. Pass credentials on a `fastmcp.Client` and hand that client to @[`MCPAdapter`]. Local stdio and in-process servers often need none.
+
+Choose a pattern:
+
+<Tabs>
+  <Tab title="Bearer token">
+The server verifies a token you provisioned and present in the `Authorization` header. There is no browser or refresh flow:
+
+<McpAuthBearerPy />
+  </Tab>
+  <Tab title="OAuth 2.1">
+Pass `auth="oauth"` for discovery, dynamic client registration, the browser redirect, and token exchange:
+
+```python
+from fastmcp.client import Client
+from langchain.mcp import MCPAdapter
+
+
+async def load_tools_with_oauth(url: str) -> list:
+    async with MCPAdapter(Client(url, auth="oauth")) as adapter:
+        return await adapter.list_tools()
+```
+  </Tab>
+</Tabs>
+
+For per-server credentials, per-user tokens in a deployment, custom `httpx.Auth`, and token storage, see [Authentication](/oss/langchain/mcp/auth).
+
+## Choose a connection lifecycle
+
+Decide how long the adapter stays open and whether you talk to one server or many:
+
+- **Default:** discover tools inside `async with MCPAdapter(...)`, build the agent, then exit. The tools keep working after the context closes. Start here for scripts, notebooks, and most agents.
+- **Hold a session open** when several tool calls in one run should share one live connection.
+- **Scale a deployment** by discovering per run and reusing a shared HTTP pool and tool-list cache underneath.
+
+Server shape (one target, `MCPConfig`, or `ClientGroup`) is independent of lifetime; pick one of each. For the decision tables, multi-server patterns, pooling, and caching, see [Connections](/oss/langchain/mcp/connections).
+
+## Handle tool results
+
+MCP tool results become LangChain-native values: [content blocks](/oss/langchain/messages#standard-content-blocks) the model can read, an optional structured artifact, and a @[`ToolMessage`] status for server-reported errors.
+
+For example, image and file content arrive as standardized blocks alongside text:
+
+<McpMultimodalToolContentPy />
+
+For errors, structured content, and tool metadata, see [Tools](/oss/langchain/mcp/tools#handle-tool-outputs).
+
+## Gate destructive tool calls
+
+(Optional) If a server exposes tools that change or delete data, check whether it sets the MCP `destructiveHint` annotation. @[`MCPAdapter`] surfaces that under tool metadata so you can pause those calls for human approval with @[`HumanInTheLoopMiddleware`], instead of hardcoding tool names.
+
+Ask whether any loaded tools can be destructive, and whether approval should depend on the tool type, the call arguments, or both. For the metadata shape and a working gate, see [Human-in-the-loop](/oss/langchain/mcp/tools#human-in-the-loop).
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Connections" icon="plug" href="/oss/langchain/mcp/connections">
-    Connection lifecycle, multiple servers, protocol eras, and caching.
-  </Card>
   <Card title="Authentication" icon="lock" href="/oss/langchain/mcp/auth">
-    Bearer tokens, OAuth 2.1, and per-user server auth.
+    Bearer tokens, OAuth 2.1, per-server, and per-user auth.
+  </Card>
+  <Card title="Connections" icon="plug" href="/oss/langchain/mcp/connections">
+    Lifetimes, multiple servers, pooling, and caching.
   </Card>
   <Card title="Tools" icon="tool" href="/oss/langchain/mcp/tools">
-    Load MCP tools into agents, control their execution, and handle their outputs.
+    Tool outputs, human-in-the-loop, and elicitation.
   </Card>
 </CardGroup>
 
