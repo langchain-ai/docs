@@ -21,6 +21,10 @@ For the access and retention model of the managed app, see [Engine security](/la
 
 ## Self-hosted
 
+<Note>
+Engine connects to `github.com` only. GitHub Enterprise Server is not supported: Engine's sandboxes reach `github.com` and `api.github.com`, and the sandbox auth proxy injects repository credentials for those hosts alone. A GitHub App created on a GitHub Enterprise Server instance cannot be used.
+</Note>
+
 To create and configure a GitHub App for a self-hosted deployment:
 
 ### Create a GitHub App
