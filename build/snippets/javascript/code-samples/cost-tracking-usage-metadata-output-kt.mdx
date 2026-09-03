@@ -1,0 +1,66 @@
+```kotlin Kotlin expandable wrap
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
+import com.langchain.smith.tracing.RunType
+import com.langchain.smith.tracing.TraceConfig
+import com.langchain.smith.tracing.traceable
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+
+val langsmith = LangsmithOkHttpClient.fromEnv()
+val executor = Executors.newSingleThreadExecutor()
+
+fun message(role: String, content: String) = mapOf("role" to role, "content" to content)
+
+val output =
+    mapOf(
+        "choices" to
+            listOf(
+                mapOf(
+                    "message" to
+                        message(
+                            "assistant",
+                            "Sure, what time would you like to book the table for?",
+                        ),
+                ),
+            ),
+        "usage_metadata" to
+            mapOf(
+                "input_tokens" to 27,
+                "output_tokens" to 13,
+                "total_tokens" to 40,
+                "input_token_details" to mapOf("cache_read" to 10),
+            ),
+    )
+
+try {
+    val messages =
+        listOf(
+            message("system", "You are a helpful assistant."),
+            message("user", "I'd like to book a table for two."),
+        )
+
+    val chatModel =
+        traceable(
+            { _: List<Map<String, String>> -> output },
+            TraceConfig.builder()
+                .name("chat_model")
+                .runType(RunType.LLM)
+                .client(langsmith)
+                .executor(executor)
+                .metadata(
+                    mapOf(
+                        "ls_provider" to "my_provider",
+                        "ls_model_name" to "my_model",
+                    ),
+                )
+                .build(),
+        )
+
+    chatModel(messages)
+} finally {
+    executor.shutdown()
+    check(executor.awaitTermination(10, TimeUnit.SECONDS)) {
+        "Timed out waiting for LangSmith traces to submit"
+    }
+}
+```
