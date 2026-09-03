@@ -19,6 +19,16 @@ Each subagent lives in its own folder with an `AGENTS.md` file:
 
 Project subagents override user subagents with the same name (see [precedence rules](/oss/deepagents/code/configuration#subagents)).
 
+## Continue the parent conversation
+
+The built-in `general-purpose` subagent inherits the parent agent's conversation and system prompt. This context lets delegated work continue without repeating the investigation, decisions, or other details already established in the parent conversation.
+
+To run the built-in `general-purpose` subagent in isolated mode instead, set the following variable in your shell or global `~/.deepagents/.env`:
+
+```bash
+export DEEPAGENTS_CODE_FORKED_SUBAGENTS=false
+```
+
 The frontmatter requires `name` and `description` (same as the [`SubAgent` dictionary spec](/oss/python/deepagents/subagents#subagent-dictionary-based)). The markdown body becomes the subagent's `system_prompt`. In addition to the base spec, `AGENTS.md` files support an optional `model` frontmatter field that overrides the main agent's model for this subagent. Use the `provider:model-name` format (e.g., `anthropic:claude-opus-4-8`, `openai:gpt-5.5`). Omit it to inherit the main agent's model.
 
 <Note>
