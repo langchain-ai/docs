@@ -1,0 +1,35 @@
+```ts
+import { StateBackend } from "deepagents";
+import { tool } from "langchain";
+import * as z from "zod";
+
+const backend = new StateBackend();
+
+const searchDocumentation = tool(
+  async ({ query }) => {
+    const retrievedDocs = await vectorStore.similaritySearch(query, 4);
+    const batchId = crypto.randomUUID().slice(0, 8);
+    const uploads: Array<[string, Uint8Array]> = [];
+    const savedPaths: string[] = [];
+    const encoder = new TextEncoder();
+
+    retrievedDocs.forEach((doc, index) => {
+      const path = `/retrieved/${batchId}/chunk_${index + 1}.md`;
+      const content = `# Source: ${doc.metadata.source ?? "unknown"}\n\n${doc.pageContent}`;
+      uploads.push([path, encoder.encode(content)]);
+      savedPaths.push(path);
+    });
+
+    backend.uploadFiles(uploads);
+    return `Saved ${savedPaths.length} documentation chunks:\n${savedPaths.join("\n")}`;
+  },
+  {
+    name: "search_documentation",
+    description:
+      "Search LangChain documentation and save matching chunks to the agent filesystem.",
+    schema: z.object({
+      query: z.string().describe("Natural language search query."),
+    }),
+  },
+);
+```
