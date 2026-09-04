@@ -1,0 +1,562 @@
+---
+title: Sandbox mounts
+sidebarTitle: Mounts
+description: Mount S3 buckets, GCS buckets, public Git repositories, and Context Hub repos into LangSmith sandboxes.
+---
+
+Sandbox mounts attach external data sources to a sandbox filesystem when the sandbox is created. Use mounts when sandbox code needs direct file access to object storage buckets, public Git repositories, or [Context Hub](/langsmith/use-the-context-hub) repos without copying the data into the sandbox image.
+
+Mounts are configured through `mount_config` in Python or `mountConfig` in TypeScript. The SDK sends the mount specs to LangSmith and composes the required [auth proxy](/langsmith/sandbox-auth-proxy) rules for provider credentials.
+
+<Note>
+Sandbox mounts require `langsmith[sandbox]>=0.8.16` for Python or `langsmith>=0.7.10` for TypeScript. Context Hub mounts require `langsmith[sandbox]>=0.11.0` for Python or `langsmith>=0.8.11` for TypeScript.
+</Note>
+
+<Warning>
+Store cloud credentials as LangSmith workspace secrets before creating a sandbox that mounts S3 or GCS. Do not pass real cloud credentials as sandbox environment variables, command arguments, or files.
+</Warning>
+
+## Configure mount paths
+
+Each mount has an `id`, a `type`, and a `mount_path` / `mountPath`. Bucket and Git mount paths must be absolute paths under `/mnt/mounts`. Context Hub mount paths can be any absolute path outside the system directories, so an agent can read its context from the location it already expects.
+
+Use stable paths that describe the mounted source:
+
+| Source | Example path |
+|--------|--------------|
+| S3 bucket prefix | `/mnt/mounts/customer-data` |
+| GCS bucket prefix | `/mnt/mounts/eval-datasets` |
+| Git repository | `/mnt/mounts/repo` |
+| Context Hub repo | `/memories` |
+
+Mount IDs can contain ASCII letters, digits, underscores, and hyphens. Do not reuse an ID or mount path within the same sandbox.
+
+## Mount an S3 bucket
+
+S3 mounts require AWS auth. The SDK creates an AWS auth proxy rule from `aws_auth` / `awsAuth`, so the sandbox can access the bucket without seeing the real access keys.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import (
+    SandboxClient,
+    aws_auth,
+    mount_config,
+    s3_mount,
+    workspace_secret,
+)
+
+client = SandboxClient()
+
+mount_cfg = mount_config(
+    auth=[
+        aws_auth(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        )
+    ],
+    mounts=[
+        s3_mount(
+            id="customer_data",
+            mount_path="/mnt/mounts/customer-data",
+            bucket="example-bucket",
+            prefix="datasets/customer-data",
+            region="us-east-1",
+            path_style=False,
+            read_only=True,
+        )
+    ],
+)
+
+with client.sandbox(name="s3-mount-sandbox", mount_config=mount_cfg) as sb:
+    result = sb.run("ls /mnt/mounts/customer-data")
+    print(result.stdout)
+```
+
+```ts TypeScript
+import {
+  SandboxClient,
+  awsAuth,
+  mountConfig,
+  s3Mount,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const mountCfg = mountConfig({
+  auth: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+  ],
+  mounts: [
+    s3Mount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+      region: "us-east-1",
+      pathStyle: false,
+      readOnly: true,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "s3-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/customer-data");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+## Mount a GCS bucket
+
+GCS mounts require GCP auth. The OAuth scope is supplied by the backend, derived from the mounts themselves: read-only mounts get `devstorage.read_only` and writable mounts get `devstorage.read_write`.
+
+Because a single `mount_config` resolves to one scope, all of its GCS mounts must agree: mixing read-only and writable GCS mounts in one config is rejected. Use writable mounts throughout, or create separate sandboxes.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import (
+    SandboxClient,
+    gcp_auth,
+    gcs_mount,
+    mount_config,
+    workspace_secret,
+)
+
+client = SandboxClient()
+
+mount_cfg = mount_config(
+    auth=[
+        gcp_auth(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            ),
+        )
+    ],
+    mounts=[
+        gcs_mount(
+            id="eval_datasets",
+            mount_path="/mnt/mounts/eval-datasets",
+            bucket="example-bucket",
+            prefix="datasets/evals",
+            read_only=False,
+        )
+    ],
+)
+
+with client.sandbox(name="gcs-mount-sandbox", mount_config=mount_cfg) as sb:
+    result = sb.run("ls /mnt/mounts/eval-datasets")
+    print(result.stdout)
+```
+
+```ts TypeScript
+import {
+  SandboxClient,
+  gcpAuth,
+  gcsMount,
+  mountConfig,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const mountCfg = mountConfig({
+  auth: [
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+    }),
+  ],
+  mounts: [
+    gcsMount({
+      id: "eval_datasets",
+      mountPath: "/mnt/mounts/eval-datasets",
+      bucket: "example-bucket",
+      prefix: "datasets/evals",
+      readOnly: false,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "gcs-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/eval-datasets");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+## Mount a public Git repository
+
+Public Git mounts do not require AWS or GCP auth. Use an HTTPS remote URL and optionally pin a branch or tag.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient, git_mount, mount_config
+
+client = SandboxClient()
+
+mount_cfg = mount_config(
+    mounts=[
+        git_mount(
+            id="repo",
+            mount_path="/mnt/mounts/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+            ref={"type": "branch", "name": "main"},
+            refresh_interval_seconds=60,
+        )
+    ],
+)
+
+with client.sandbox(name="git-mount-sandbox", mount_config=mount_cfg) as sb:
+    result = sb.run("ls /mnt/mounts/repo")
+    print(result.stdout)
+```
+
+```ts TypeScript
+import { SandboxClient, gitMount, mountConfig } from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const mountCfg = mountConfig({
+  mounts: [
+    gitMount({
+      id: "repo",
+      mountPath: "/mnt/mounts/repo",
+      remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+      ref: { type: "branch", name: "main" },
+      refreshIntervalSeconds: 60,
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "git-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /mnt/mounts/repo");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+Private Git repositories can use low-level `proxy_config` / `proxyConfig` rules when the remote requires proxy-managed auth. There is not yet a high-level private Git auth helper.
+
+## Mount a Context Hub repo
+
+A Context Hub mount mirrors the latest commit of an agent or skill repo into the sandbox filesystem. Use it to give sandbox code the same instructions, skills, and tools your production agents pull, without packaging them into the sandbox image or copying them in at startup.
+
+Identify the repo as `owner/name`. Use `-` as the owner for a repo in the current workspace, such as `-/my-agent`. The caller's API key must have read access to the repo: LangSmith rejects sandbox creation for a repo that is private to another workspace, and reports missing and inaccessible repos identically. Context Hub mounts need no AWS or GCP auth.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient, context_hub_mount, mount_config
+
+client = SandboxClient()
+
+mount_cfg = mount_config(
+    mounts=[
+        context_hub_mount(
+            id="memories",
+            mount_path="/memories",
+            repo="-/my-agent",
+        )
+    ],
+)
+
+with client.sandbox(
+    name="context-hub-mount-sandbox", mount_config=mount_cfg
+) as sb:
+    result = sb.run("ls /memories")
+    print(result.stdout)
+```
+
+```ts TypeScript
+import { SandboxClient, contextHubMount, mountConfig } from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const mountCfg = mountConfig({
+  mounts: [
+    contextHubMount({
+      id: "memories",
+      mountPath: "/memories",
+      repo: "-/my-agent",
+    }),
+  ],
+});
+
+const sandbox = await client.createSandbox({
+  name: "context-hub-mount-sandbox",
+  mountConfig: mountCfg,
+});
+
+try {
+  const result = await sandbox.run("ls /memories");
+  console.log(result.stdout);
+} finally {
+  await sandbox.delete();
+}
+```
+
+</CodeGroup>
+
+The mount contains the flattened file tree of the repo's latest commit. Files that the repo links from another agent or skill repo appear at the path where the parent repo references them, so a mounted agent also carries the skills it composes. For more information on composing repos, see [Manage contexts with the SDK](/langsmith/manage-contexts-sdk).
+
+### Read a repo as it changes
+
+Context Hub mounts are read-only, and the sync is one-way. Files written under the mount path inside the sandbox have nowhere to go, and the next refresh overwrites them. Write sandbox output somewhere else, and push it with the Context Hub SDK when it belongs in the repo.
+
+LangSmith keeps the mount in sync for the sandbox's lifetime. New commits reach a running sandbox within roughly 30 seconds. Treat that cadence as best effort rather than a freshness guarantee, because a refresh replaces the whole tree at once: a reader sees either the previous commit or the new one, never a mix.
+
+A mount always tracks the latest commit. To read a fixed version, pull the commit or environment tag you want with the Context Hub SDK instead of mounting the repo.
+
+Pass `initial_pull_only` / `initialPullOnly` to sync once at startup and then stop polling:
+
+<CodeGroup>
+
+```python Python
+context_hub_mount(
+    id="memories",
+    mount_path="/memories",
+    repo="-/my-agent",
+    initial_pull_only=True,
+)
+```
+
+```ts TypeScript
+contextHubMount({
+  id: "memories",
+  mountPath: "/memories",
+  repo: "-/my-agent",
+  initialPullOnly: true,
+});
+```
+
+</CodeGroup>
+
+Use a single pull for a run that must read one commit from start to finish, such as an evaluation whose results you compare against a specific version of an agent.
+
+### Handle startup and failures
+
+The mount directory exists as soon as the sandbox is ready, but reads under it block until the first commit tree arrives. Code that reads the mount immediately at startup waits for the initial sync rather than seeing an empty directory.
+
+LangSmith retries a failed refresh and keeps serving the last commit it published, so a transient error does not empty a working mount. Two conditions do surface to sandbox code:
+
+- **A rejected request**: reads fail with `EIO`. Revoking the caller's access to the repo after the sandbox starts rejects later refreshes, because LangSmith re-checks access on every one.
+- **A repo that exceeds the sync limits**: the mount serves no tree. A synced commit can hold at most 2500 files and 25 MiB of file content, counting everything the repo links.
+
+## Combine mounts
+
+A sandbox can mount multiple sources, including a Context Hub repo alongside bucket and Git mounts. Build one `mount_config` / `mountConfig` with all mount specs, and include provider auth for every bucket provider used by those specs.
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import (
+    aws_auth,
+    git_mount,
+    gcp_auth,
+    gcs_mount,
+    mount_config,
+    s3_mount,
+    workspace_secret,
+)
+
+mount_cfg = mount_config(
+    auth=[
+        aws_auth(
+            access_key_id=workspace_secret("SANDBOX_AWS_ACCESS_KEY_ID"),
+            secret_access_key=workspace_secret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+        ),
+        gcp_auth(
+            service_account_json=workspace_secret(
+                "SANDBOX_GCP_SERVICE_ACCOUNT_JSON"
+            ),
+        ),
+    ],
+    mounts=[
+        s3_mount(
+            id="s3_data",
+            mount_path="/mnt/mounts/s3-data",
+            bucket="example-s3-bucket",
+        ),
+        gcs_mount(
+            id="gcs_data",
+            mount_path="/mnt/mounts/gcs-data",
+            bucket="example-gcs-bucket",
+        ),
+        git_mount(
+            id="repo",
+            mount_path="/mnt/mounts/repo",
+            remote_url="https://github.com/langchain-ai/langsmith-sdk.git",
+        ),
+    ],
+)
+```
+
+```ts TypeScript
+import {
+  awsAuth,
+  gitMount,
+  gcpAuth,
+  gcsMount,
+  mountConfig,
+  s3Mount,
+  workspaceSecret,
+} from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    awsAuth({
+      accessKeyId: workspaceSecret("SANDBOX_AWS_ACCESS_KEY_ID"),
+      secretAccessKey: workspaceSecret("SANDBOX_AWS_SECRET_ACCESS_KEY"),
+    }),
+    gcpAuth({
+      serviceAccountJson: workspaceSecret("SANDBOX_GCP_SERVICE_ACCOUNT_JSON"),
+    }),
+  ],
+  mounts: [
+    s3Mount({
+      id: "s3_data",
+      mountPath: "/mnt/mounts/s3-data",
+      bucket: "example-s3-bucket",
+    }),
+    gcsMount({
+      id: "gcs_data",
+      mountPath: "/mnt/mounts/gcs-data",
+      bucket: "example-gcs-bucket",
+    }),
+    gitMount({
+      id: "repo",
+      mountPath: "/mnt/mounts/repo",
+      remoteUrl: "https://github.com/langchain-ai/langsmith-sdk.git",
+    }),
+  ],
+});
+```
+
+</CodeGroup>
+
+## Cache bucket mounts
+
+S3 and GCS mounts support optional cache settings. Cache settings tune the local
+VFS cache used by the bucket mount; the bucket remains the source of truth. Use
+cache settings to control local disk usage and writeback timing, not as a
+separate persistence layer. Cache settings do not apply to Git mounts.
+
+| Field | Description |
+|-------|-------------|
+| `max_size_bytes` | Optional maximum size, in bytes, for the local mount cache. Set a positive value to add an explicit cap; omit it to leave the runtime default. |
+| `writeback_seconds` | Optional delay, in seconds, before cached writes are written back to the bucket. The default is `0`. Lower values make writes visible to the bucket sooner; higher values can reduce write traffic for workloads that rewrite the same files. |
+
+For read-only dataset mounts, configure `max_size_bytes` only when you need a
+specific local cache cap. For writable mounts, keep `writeback_seconds` low when
+another process needs to read the objects from S3 or GCS soon after the sandbox
+writes them.
+
+<CodeGroup>
+
+```python Python
+s3_mount(
+    id="customer_data",
+    mount_path="/mnt/mounts/customer-data",
+    bucket="example-bucket",
+    cache={
+        "max_size_bytes": 2 * 1024**3,
+        "writeback_seconds": 5,
+    },
+)
+```
+
+```ts TypeScript
+s3Mount({
+  id: "customer_data",
+  mountPath: "/mnt/mounts/customer-data",
+  bucket: "example-bucket",
+  cache: {
+    max_size_bytes: 2 * 1024 ** 3,
+    writeback_seconds: 5,
+  },
+});
+```
+
+</CodeGroup>
+
+The same cache settings can be used on GCS mounts:
+
+<CodeGroup>
+
+```python Python
+gcs_mount(
+    id="eval_datasets",
+    mount_path="/mnt/mounts/eval-datasets",
+    bucket="example-bucket",
+    cache={
+        "max_size_bytes": 2 * 1024**3,
+        "writeback_seconds": 5,
+    },
+)
+```
+
+```ts TypeScript
+gcsMount({
+  id: "eval_datasets",
+  mountPath: "/mnt/mounts/eval-datasets",
+  bucket: "example-bucket",
+  cache: {
+    max_size_bytes: 2 * 1024 ** 3,
+    writeback_seconds: 5,
+  },
+});
+```
+
+</CodeGroup>
+
+## Limits
+
+- Mounts are attached when the sandbox is created. Create a new sandbox to change mounts.
+- Configure each cloud provider's credentials in one auth surface per sandbox. If mount auth supplies AWS or GCP credentials, do not also add an auth proxy rule for the same provider.
+- Git refs can be omitted or set to a branch or tag. Commit refs are not supported.
+- Git mounts do not support `read_only` / `readOnly` or cache settings.
+- Context Hub mounts are always read-only, and do not support cache settings.
+- Context Hub mounts accept agent and skill repos. Other repo types, and a repo with no commits, are rejected.
+- A Context Hub mount path cannot be the filesystem root, or at or under a system directory such as `/etc`, `/usr`, or `/var`.
+- Restoring a sandbox reconnects each Context Hub mount at its configured path. A restored process that holds an open file or working directory inside the mount must reopen it.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/sandbox-mounts.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
