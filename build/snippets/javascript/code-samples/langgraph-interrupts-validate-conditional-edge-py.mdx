@@ -1,0 +1,49 @@
+```python
+from typing import TypedDict
+
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
+
+
+class FormState(TypedDict):
+    age: int | None
+    pending_question: str | None
+
+
+def get_age_node(state: FormState):
+    question = state.get("pending_question") or "What is your age?"
+    answer = interrupt(question)  # called exactly once per node invocation
+    print(f"I got {answer}")  # runs exactly once per resume
+    if isinstance(answer, int) and answer > 0:
+        return {"age": answer, "pending_question": None}
+    return {"pending_question": f"'{answer}' is not a valid age. Please enter a positive number."}
+
+
+def route(state: FormState):
+    # Loop back to collect_age until we have a valid age
+    return END if state.get("age") is not None else "collect_age"
+
+
+builder = StateGraph(FormState)
+builder.add_node("collect_age", get_age_node)
+builder.add_edge(START, "collect_age")
+builder.add_conditional_edges("collect_age", route)
+
+checkpointer = InMemorySaver()
+graph = builder.compile(checkpointer=checkpointer)
+
+config = {"configurable": {"thread_id": "form-1"}}
+first = graph.stream_events({"age": None, "pending_question": None}, config=config, version="v3")
+_ = first.output  # drive the stream to completion
+print(first.interrupts)  # -> (Interrupt(value='What is your age?', ...),)
+
+# Provide invalid data; the node re-prompts via the conditional edge
+retry = graph.stream_events(Command(resume="thirty"), config=config, version="v3")
+_ = retry.output
+print(retry.interrupts)  # -> (Interrupt(value="'thirty' is not a valid age...", ...),)
+
+# Provide valid data; route() returns END and the graph finishes
+final = graph.stream_events(Command(resume=30), config=config, version="v3")
+print(final.output["age"])  # -> 30
+```
