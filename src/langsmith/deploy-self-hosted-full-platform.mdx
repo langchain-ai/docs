@@ -840,11 +840,16 @@ Self-hosted Sandboxes are supported on:
 
 ### Components
 
-Enabling Sandboxes provisions the following resources:
+The LangSmith cluster always runs the Sandbox API, placement logic, background workers, and user-facing proxy routes. The Sandbox runtime runs `sandbox-host` on KVM-capable nodes and uses JuiceFS with Redis metadata and S3, GCS, or Azure Blob Storage.
 
-- Sandbox runtime pods that run sandbox workloads on KVM-capable nodes.
-- A JuiceFS metadata store backed by Redis and object storage backed by S3, GCS, or Azure Blob Storage.
-- Optional wildcard ingress for services exposed from inside Sandboxes.
+You can deploy the runtime in either topology:
+
+| Topology | Helm value | Runtime location |
+| --- | --- | --- |
+| Same cluster (default) | `sandboxes.deploymentMode: sameCluster` | The `langsmith` release deploys `sandbox-host` in the LangSmith namespace and cluster. |
+| Separate cluster | `sandboxes.deploymentMode: separateCluster` | A second `langsmith-sandbox` release deploys the runtime in a dedicated Kubernetes cluster. |
+
+Optional wildcard ingress for services exposed from inside Sandboxes remains on the LangSmith cluster in both topologies. LangSmith authenticates requests and proxies them to the assigned runtime host.
 
 ### Prerequisites
 
@@ -852,7 +857,7 @@ Enabling Sandboxes provisions the following resources:
   <Step title="Install the base LangSmith platform">
     Install LangSmith on Kubernetes before enabling Sandboxes. See [Self-host LangSmith on Kubernetes](/langsmith/kubernetes).
 
-    Sandboxes run in the same Kubernetes cluster and namespace as the LangSmith release.
+    For the default `sameCluster` topology, add KVM-capable nodes to this cluster. For `separateCluster`, provision a second cluster with network access to the LangSmith API and either private routing from the LangSmith cluster to sandbox node IPs on TCP port `19190` or an authenticated Sandbox host ingress.
   </Step>
 
   <Step title="Add KVM-capable nodes">
@@ -878,7 +883,7 @@ Enabling Sandboxes provisions the following resources:
       effect: NoSchedule
     ```
 
-    If your nodes use different labels or taints, override `sandboxes.sandboxHost.deployment.nodeSelector` and `sandboxes.sandboxHost.deployment.tolerations`.
+    If your nodes use different labels or taints, override `sandboxes.sandboxHost.deployment.nodeSelector` and `sandboxes.sandboxHost.deployment.tolerations` for `sameCluster`, or `sandboxHost.deployment.nodeSelector` and `sandboxHost.deployment.tolerations` in the standalone runtime values for `separateCluster`.
   </Step>
 
   <Step title="Configure JuiceFS storage">
@@ -888,7 +893,7 @@ Enabling Sandboxes provisions the following resources:
     - An object storage bucket or bucket root.
     - A JuiceFS configuration Secret, or enough Helm values for the chart to create one.
 
-    Use these object storage backends for `sandboxes.juicefs.storage` and `sandboxes.juicefs.bucket`:
+    In `sameCluster` values, configure `sandboxes.juicefs`. In standalone `separateCluster` values, configure the equivalent `juicefs` block.
 
     | **Platform** | **Storage value** | **Bucket format** |
     | --- | --- | --- |
@@ -896,7 +901,7 @@ Enabling Sandboxes provisions the following resources:
     | GCP | `gs` | GCS URL, such as `gs://bucket-name` |
     | Azure | `wasb` | Azure Blob Storage URL, such as `https://container-name.core.windows.net` |
 
-    Do not use object-store subpaths in `sandboxes.juicefs.name`. Use a flat name, such as `sandbox-juicefs`. JuiceFS stores objects under that name inside the configured bucket.
+    Do not use object-store subpaths in the JuiceFS `name`. Use a flat name, such as `sandbox-juicefs`. JuiceFS stores objects under that name inside the configured bucket.
 
     <Tip>
     For the Redis metadata store, we recommend setting `maxmemory-policy` to `noeviction`. This avoids evicting JuiceFS metadata under memory pressure. Monitor Redis capacity and scale it before it reaches memory limits.
@@ -909,14 +914,30 @@ Enabling Sandboxes provisions the following resources:
     Sandboxes need additional secret material for service-to-service authentication and callback signing.
 
     <Tabs>
-      <Tab title="Using Kubernetes secrets (recommended)">
-        If you use `config.existingSecretName`, add the sandbox keys to the same LangSmith app Secret. Do not set the secret values directly in Helm.
+      <Tab title="Same cluster secret (recommended)">
+        If you use `config.existingSecretName`, add the callback key to the same LangSmith app Secret. Do not set the secret value directly in Helm.
 
         ```yaml
         stringData:
           sandbox_callback_signing_jwk: '<ed25519-private-jwk>'
-          # Optional, only during service-auth secret rotation:
         ```
+      </Tab>
+      <Tab title="Separate cluster secret">
+        Create a minimal Secret in the Sandbox cluster. Copy only the existing API key salt and callback-signing JWK values; do not copy the entire LangSmith application Secret.
+
+        ```yaml
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: langsmith-sandbox-runtime
+          namespace: langsmith-sandbox
+        type: Opaque
+        stringData:
+          api_key_salt: '<same-api-key-salt-as-langsmith>'
+          sandbox_callback_signing_jwk: '<same-ed25519-private-jwk-as-langsmith>'
+        ```
+
+        Set `serviceAuth.existingSecretName: langsmith-sandbox-runtime` in the standalone chart values.
       </Tab>
       <Tab title="Using inline values">
         If the Helm chart manages your LangSmith app Secret, set the sandbox secret values directly in your config file. Avoid committing this file to version control.
@@ -945,7 +966,7 @@ Enabling Sandboxes provisions the following resources:
   </Step>
 </Steps>
 
-### Enable with Helm
+### Same cluster with Helm
 
 Add the following values to your `langsmith_config.yaml`, along with the sandbox secret values described in the [Prerequisites](#prerequisites-2). Replace placeholders with your deployment-specific values.
 
@@ -959,6 +980,7 @@ images:
 
 sandboxes:
   enabled: true
+  deploymentMode: sameCluster
   juicefs:
     name: "sandbox-juicefs"
     storage: "s3"
@@ -985,6 +1007,7 @@ images:
 
 sandboxes:
   enabled: true
+  deploymentMode: sameCluster
   juicefs:
     name: "sandbox-juicefs"
     storage: "gs"
@@ -1011,6 +1034,7 @@ images:
 
 sandboxes:
   enabled: true
+  deploymentMode: sameCluster
   juicefs:
     name: "sandbox-juicefs"
     storage: "wasb"
@@ -1046,6 +1070,72 @@ helm upgrade -i langsmith langchain/langsmith \
   --wait
 ```
 
+### Separate cluster with Helm
+
+Use two Helm releases. In the LangSmith cluster, enable the Sandbox control plane but omit the embedded runtime:
+
+```yaml
+sandboxes:
+  enabled: true
+  deploymentMode: separateCluster
+```
+
+Create a JuiceFS configuration Secret in the Sandbox cluster with the keys `name`, `metaurl`, `storage`, and `bucket`. Then create `langsmith_sandbox_config.yaml`:
+
+```yaml
+platform:
+  endpoint: "https://langsmith.example.com/api"
+
+serviceAuth:
+  existingSecretName: "langsmith-sandbox-runtime"
+
+images:
+  sandboxHost:
+    tag: "<same-release-tag-as-your-langsmith-images>"
+
+juicefs:
+  existingSecretName: "langsmith-sandbox-juicefs"
+
+sandboxHost:
+  enabled: true
+  deployment:
+    nodeSelector:
+      kubernetes.io/arch: "amd64"
+      sandbox.langsmith.com/host: "true"
+```
+
+Add the provider-specific workload identity annotation shown in the same-cluster examples to `sandboxHost.serviceAccount.annotations`.
+
+Install both releases against their respective contexts:
+
+```bash
+helm upgrade -i langsmith langchain/langsmith \
+  --kube-context <langsmith-context> \
+  --values langsmith_config.yaml \
+  --version <langsmith-version> \
+  --namespace <langsmith-namespace> \
+  --wait
+
+helm upgrade -i langsmith-sandbox langchain/langsmith-sandbox \
+  --kube-context <sandbox-context> \
+  --values langsmith_sandbox_config.yaml \
+  --version <sandbox-chart-version> \
+  --namespace langsmith-sandbox \
+  --create-namespace \
+  --wait
+```
+
+By default, the LangSmith control plane connects to the node IPs advertised by `sandbox-host`. Configure private routing and allow TCP port `19190` from the LangSmith cluster to the Sandbox cluster.
+
+If direct node routing is unavailable, enable `sandboxHost.ingress` in the standalone chart and set the resulting origin in the core values:
+
+```yaml
+sandboxes:
+  hostIngressEndpoint: "https://sandbox-host.example.com"
+```
+
+The host ingress must support large uploads, long-running requests, and WebSocket upgrades. Restrict its network source where possible; `sandbox-host` still requires a signed service-auth token for every control and data-plane request.
+
 ### Enable with Terraform
 
 <div className="my-6 rounded-xl border border-gray-200 bg-gray-50 p-6 dark:border-gray-700 dark:bg-gray-900/40">
@@ -1055,49 +1145,52 @@ The LangSmith Terraform modules can provision the required AWS and GCP infrastru
 <Tabs>
   <Tab title="AWS">
 
-In `modules/aws/infra/terraform.tfvars`, enable Sandboxes and configure the sandbox node capacity:
+In `modules/aws/infra/terraform.tfvars`, enable Sandboxes and configure the sandbox node capacity. `same_cluster` is the default and preserves the existing deployment:
 
 ```hcl
-enable_sandboxes = true
-redis_source     = "external"
+enable_sandboxes        = true
+sandbox_deployment_mode = "same_cluster"
+redis_source            = "external"
 
-sandbox_juicefs_redis_instance_type             = "cache.m6g.large"
-sandbox_juicefs_redis_snapshot_retention_limit  = 7
+sandbox_juicefs_redis_instance_type            = "cache.m6g.large"
+sandbox_juicefs_redis_snapshot_retention_limit = 7
 
-sandbox_host_node_count               = 1
-sandbox_host_instance_types           = ["m5d.metal"]
-sandbox_host_configure_instance_store = true
-
-sandbox_host_image_tag = "<same-release-tag-as-your-langsmith-images>"
+sandbox_host_node_count                       = 1
+sandbox_host_instance_types                   = ["m5d.metal"]
+sandbox_host_local_nvme_bootstrap_enabled     = true
+sandbox_host_local_nvme_expected_device_count = 4
 ```
 
-AWS Sandboxes require `redis_source = "external"`. The Terraform module:
+To create a dedicated Sandbox EKS cluster in the same VPC, use:
 
-- Creates a dedicated ElastiCache Redis instance for JuiceFS sandbox metadata.
-- Configures that dedicated instance with the recommended `noeviction` policy.
-- Reuses the LangSmith S3 bucket for sandbox object storage.
-- Creates the JuiceFS configuration Secret.
+```hcl
+enable_sandboxes        = true
+sandbox_deployment_mode = "separate_cluster"
+sandbox_namespace       = "langsmith-sandbox"
+
+langsmith_helm_chart_version         = "0.17.0-rc.22"
+langsmith_sandbox_helm_chart_version = "0.1.0-rc.1"
+```
+
+The AWS Terraform module:
+
+- Creates a dedicated ElastiCache Redis instance for JuiceFS metadata with the recommended `noeviction` policy.
+- Reuses the private LangSmith S3 bucket for Sandbox object storage.
 - Adds the expected node label and taint.
+- In `separate_cluster` mode, creates a second EKS cluster, a Sandbox-scoped IRSA role, minimal runtime and JuiceFS Secrets, and a security-group rule allowing only the LangSmith cluster to reach Sandbox nodes on TCP port `19190`.
 
-The AWS setup script generates the sandbox service-auth secret, callback signing JWK, and dedicated JuiceFS Redis auth token through the normal SSM-backed setup flow. Run the infra setup script before applying Terraform if those values do not exist yet.
-
-If you deploy the Helm release with the Terraform app module, set the sandbox app values in `modules/aws/app/terraform.tfvars` as well:
-
-```hcl
-enable_sandboxes      = true
-chart_version          = "~0.17.0"
-sandbox_host_image_tag = "<same-release-tag-as-your-langsmith-images>"
-```
-
-When `enable_sandboxes = true`, the Terraform app module requires an explicit LangSmith Helm chart v17 release and a sandbox runtime image tag.
+The setup script generates the API key salt, callback-signing JWK, and dedicated JuiceFS Redis auth token through the normal SSM-backed setup flow. Run it before applying Terraform if those values do not exist yet.
 
 Run the normal AWS flow:
 
 ```bash
+source infra/scripts/setup-env.sh
 make apply
 make init-values
-CHART_VERSION="~0.17.0" make deploy
+make deploy
 ```
+
+For `separate_cluster`, `make deploy` installs the core LangSmith release, switches to the dedicated EKS cluster for the `langsmith-sandbox` release, and restores the main cluster context.
 
   </Tab>
   <Tab title="GCP">
@@ -1168,11 +1261,19 @@ This requires wildcard DNS and TLS for `*.sandbox-services.example.com`. When `i
 
 ### Verify the installation
 
-After the upgrade completes, verify that the sandbox runtime pods and JuiceFS volumes are ready:
+For the same-cluster topology, verify the runtime in the LangSmith namespace:
 
 ```bash
-kubectl rollout status deployment/sandbox-host -n <namespace>
-kubectl get pods,pvc -n <namespace>
+kubectl --context <langsmith-context> rollout status deployment/langsmith-sandbox-host -n <langsmith-namespace>
+kubectl --context <langsmith-context> get pods -n <langsmith-namespace>
+```
+
+For the separate-cluster topology, verify both releases and the runtime deployment:
+
+```bash
+helm --kube-context <langsmith-context> status langsmith -n <langsmith-namespace>
+helm --kube-context <sandbox-context> status langsmith-sandbox -n langsmith-sandbox
+kubectl --context <sandbox-context> rollout status deployment/langsmith-sandbox-sandbox-host -n langsmith-sandbox
 ```
 
 Then run a sandbox smoke test:
@@ -1186,6 +1287,10 @@ Then run a sandbox smoke test:
 ### Upgrade notes
 
 Sandbox runtime image changes roll out through the `sandbox-host` Kubernetes Deployment. The chart uses a no-surge rolling update strategy by default, so hosts are replaced one at a time.
+
+<Warning>
+Changing `sandboxes.deploymentMode` is a runtime migration, not a normal rolling upgrade. Preserve the same JuiceFS metadata store, object storage, callback-signing JWK, service-auth value, and logical cluster identity if existing Sandboxes must remain usable. Drain the embedded hosts before removing them, then bring up the standalone runtime against the shared storage.
+</Warning>
 
 During a normal Helm upgrade, a terminating host stops accepting new Sandboxes, attempts to save each running Sandbox's VM memory to JuiceFS, and then stops those VMs before the pod exits. This shutdown is bounded by the `sandbox-host` pod termination grace period, which defaults to 300 seconds. This is not live migration: Sandboxes on that host are interrupted during the restart.
 
