@@ -1,0 +1,368 @@
+---
+title: ChatOllama integration
+description: Integrate with the ChatOllama chat model using LangChain Python.
+integration:
+  name: ChatOllama
+  pypi: langchain-ollama
+  featured: true
+  stream: true
+  tool_calling: true
+  structured_output: true
+  multimodal: true
+---
+
+[Ollama](https://ollama.com/) allows you to run open-source Large Language Models (LLMs), such as `gpt-oss`, locally.
+
+Ollama bundles model weights, configuration, and data into a single package, defined by a Modelfile. It optimizes setup and configuration details, including GPU usage.
+
+For a complete list of supported models and model variants, see the [Ollama model library](https://ollama.com/search).
+
+<Tip>
+    **API Reference**
+
+    For detailed documentation of all features and configuration options, head to the [`ChatOllama`](https://reference.langchain.com/python/langchain-community/chat_models/ollama/ChatOllama) API reference.
+</Tip>
+
+## Overview
+
+### Integration details
+
+| Class | Package | Serializable | [JS support](https://js.langchain.com/docs/integrations/chat/ollama) | Downloads | Version |
+| :--- | :--- | :---: |  :---: | :---: | :---: |
+| [`ChatOllama`](https://reference.langchain.com/python/langchain-community/chat_models/ollama/ChatOllama) | [`langchain-ollama`](https://reference.langchain.com/python/langchain-ollama/) | ❌ | ✅ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-ollama?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-ollama?style=flat-square&label=%20) |
+
+### Model features
+
+| [Tool calling](/oss/python/langchain/tools/) | [Structured output](/oss/python/langchain/structured-output) | [Image input](/oss/python/langchain/messages#multimodal) | Audio input | Video input | [Token-level streaming](/oss/python/langchain/streaming/) | Native async | [Token usage](/oss/python/langchain/models#token-usage) | [Logprobs](/oss/python/langchain/models#log-probabilities) |
+| :---: |:----------------------------------------------------:| :---: |  :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ |                          ✅                           | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ |
+
+## Setup
+
+First, follow [these instructions](https://github.com/ollama/ollama?tab=readme-ov-file#ollama) to set up and run a local Ollama instance:
+
+* [Download](https://ollama.ai/download) and install Ollama onto the available supported platforms (including Windows Subsystem for Linux aka WSL, macOS, and Linux)
+  * macOS users can install via Homebrew with `brew install ollama` and start with `brew services start ollama`
+* Fetch available LLM model via `ollama pull <name-of-model>`
+  * View a list of available models via the [model library](https://ollama.ai/library)
+  * e.g., `ollama pull gpt-oss:20b`
+* This will download the default tagged version of the model. Typically, the default points to the latest, smallest sized-parameter model.
+
+> On Mac, the models will be download to `~/.ollama/models`
+>
+> On Linux (or WSL), the models will be stored at `/usr/share/ollama/.ollama/models`
+
+* Specify the exact version of the model of interest as such `ollama pull gpt-oss:20b` (View the [various tags for the `Vicuna`](https://ollama.ai/library/vicuna/tags) model in this instance)
+* To view all pulled models, use `ollama list`
+* To chat directly with a model from the command line, use `ollama run <name-of-model>`
+* View the [Ollama documentation](https://github.com/ollama/ollama/blob/main/docs/README.md) for more commands. You can run `ollama help` in the terminal to see available commands.
+
+To enable automated tracing of your model calls, set your [LangSmith](/langsmith/observability) API key:
+
+```python
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+```
+
+### Installation
+
+The LangChain Ollama integration lives in the `langchain-ollama` package:
+
+```python
+pip install -qU langchain-ollama
+```
+
+## Instantiation
+
+Now we can instantiate our model object and generate chat completions:
+
+```python
+from langchain_ollama import ChatOllama
+
+llm = ChatOllama(
+    model="llama3.1",
+    temperature=0,
+    # other params...
+)
+```
+
+## Invocation
+
+```python
+messages = [
+    (
+        "system",
+        "You are a helpful assistant that translates English to French. Translate the user sentence.",
+    ),
+    ("human", "I love programming."),
+]
+ai_msg = llm.invoke(messages)
+ai_msg
+```
+
+```text
+AIMessage(content='The translation of "I love programming" in French is:\n\n"J\'adore la programmation."', additional_kwargs={}, response_metadata={'model': 'llama3.1', 'created_at': '2025-06-25T18:43:00.483666Z', 'done': True, 'done_reason': 'stop', 'total_duration': 619971208, 'load_duration': 27793125, 'prompt_eval_count': 35, 'prompt_eval_duration': 36354583, 'eval_count': 22, 'eval_duration': 555182667, 'model_name': 'llama3.1'}, id='run--348bb5ef-9dd9-4271-bc7e-a9ddb54c28c1-0', usage_metadata={'input_tokens': 35, 'output_tokens': 22, 'total_tokens': 57})
+```
+
+```python
+print(ai_msg.content)
+```
+
+```text
+The translation of "I love programming" in French is:
+
+"J'adore le programmation."
+```
+
+## Tool calling
+
+[Ollama tool calling](https://ollama.com/blog/tool-support) uses the OpenAI compatible web server specification, and you can use it with the default `BaseChatModel.bind_tools()` methods as described in the [LangChain tools documentation](/oss/python/langchain/tools/).
+
+Make sure to select an ollama model that supports [tool calling](https://ollama.com/search?&c=tools).
+
+We can use [tool calling](/oss/python/langchain/tools/) with an LLM [that has been fine-tuned for tool use](https://ollama.com/search?&c=tools) such as `gpt-oss`:
+
+```
+ollama pull gpt-oss:20b
+```
+
+Details on creating custom tools are available in [Customize tool properties](/oss/python/langchain/tools#customize-tool-properties). Below, we demonstrate how to create a tool using the [`@tool`](https://reference.langchain.com/python/langchain-core/tools/convert/tool) decorator on a normal python function.
+
+```python
+from typing import List
+
+from langchain.messages import AIMessage
+from langchain.tools import tool
+from langchain_ollama import ChatOllama
+
+
+@tool
+def validate_user(user_id: int, addresses: List[str]) -> bool:
+    """Validate user using historical addresses.
+
+    Args:
+        user_id (int): the user ID.
+        addresses (List[str]): Previous addresses as a list of strings.
+    """
+    return True
+
+
+llm = ChatOllama(
+    model="gpt-oss:20b",
+    validate_model_on_init=True,
+    temperature=0,
+).bind_tools([validate_user])
+
+result = llm.invoke(
+    "Could you validate user 123? They previously lived at "
+    "123 Fake St in Boston MA and 234 Pretend Boulevard in "
+    "Houston TX."
+)
+
+if isinstance(result, AIMessage) and result.tool_calls:
+    print(result.tool_calls)
+```
+
+```text
+[{'name': 'validate_user', 'args': {'addresses': ['123 Fake St, Boston, MA', '234 Pretend Boulevard, Houston, TX'], 'user_id': '123'}, 'id': 'aef33a32-a34b-4b37-b054-e0d85584772f', 'type': 'tool_call'}]
+```
+
+## Multi-modal
+
+Ollama has limited support for multi-modal LLMs, such as [gemma3](https://ollama.com/library/gemma3)
+
+Be sure to update Ollama so that you have the most recent version to support multi-modal.
+
+```python
+pip install pillow
+```
+
+```python
+import base64
+from io import BytesIO
+
+from IPython.display import HTML, display
+from PIL import Image
+
+
+def convert_to_base64(pil_image):
+    """
+    Convert PIL images to Base64 encoded strings
+
+    :param pil_image: PIL image
+    :return: Re-sized Base64 string
+    """
+
+    buffered = BytesIO()
+    pil_image.save(buffered, format="JPEG")  # You can change the format if needed
+    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    return img_str
+
+
+def plt_img_base64(img_base64):
+    """
+    Display base64 encoded string as image
+
+    :param img_base64:  Base64 string
+    """
+    # Create an HTML img tag with the base64 string as the source
+    image_html = f'<img src="data:image/jpeg;base64,{img_base64}" />'
+    # Display the image by rendering the HTML
+    display(HTML(image_html))
+
+
+file_path = "../../../static/img/ollama_example_img.jpg"
+pil_image = Image.open(file_path)
+
+image_b64 = convert_to_base64(pil_image)
+plt_img_base64(image_b64)
+```
+
+```html
+<img src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJ..." />
+```
+
+```python
+from langchain.messages import HumanMessage
+from langchain_ollama import ChatOllama
+
+llm = ChatOllama(model="bakllava", temperature=0)
+
+
+def prompt_func(data):
+    text = data["text"]
+    image = data["image"]
+
+    image_part = {
+        "type": "image_url",
+        "image_url": f"data:image/jpeg;base64,{image}",
+    }
+
+    content_parts = []
+
+    text_part = {"type": "text", "text": text}
+
+    content_parts.append(image_part)
+    content_parts.append(text_part)
+
+    return [HumanMessage(content=content_parts)]
+
+
+from langchain_core.output_parsers import StrOutputParser
+
+chain = prompt_func | llm | StrOutputParser()
+
+query_chain = chain.invoke(
+    {"text": "What is the Dollar-based gross retention rate?", "image": image_b64}
+)
+
+print(query_chain)
+```
+
+```text
+90%
+```
+
+## Log probabilities
+
+`ChatOllama` supports token-level log probabilities via the `logprobs` and `top_logprobs` parameters. Log probabilities indicate how likely each token was at each generation step.
+
+### Basic usage
+
+```python
+from langchain_ollama import ChatOllama
+
+llm = ChatOllama(model="llama3.1", logprobs=True)
+
+response = llm.invoke("What color is the sky?")
+logprobs = response.response_metadata["logprobs"]
+for entry in logprobs[:5]:
+    print(f"Token: {entry['token']!r:>15}  logprob: {entry['logprob']:.4f}")
+```
+
+```text
+Token:           'The'  logprob: -0.1094
+Token:       ' answer'  logprob: -1.7309
+Token:             ','  logprob: -1.5854
+Token:           ' of'  logprob: -0.4066
+Token:       ' course'  logprob: -0.0000
+```
+
+### Top-K alternatives per token
+
+Use `top_logprobs` to return the most likely alternative tokens at each position:
+
+```python
+llm = ChatOllama(model="llama3.1", logprobs=True, top_logprobs=3)
+
+response = llm.invoke("The capital of France is")
+logprobs = response.response_metadata["logprobs"]
+for entry in logprobs[:3]:
+    print(f"Chosen: {entry['token']!r}")
+    if entry.get("top_logprobs"):
+        for alt in entry["top_logprobs"]:
+            print(f"    {alt['token']!r:>12}  logprob: {alt['logprob']:.4f}")
+```
+
+```text
+Chosen: 'Paris'
+         'Paris'  logprob: -0.5567
+           'The'  logprob: -0.9152
+            '**'  logprob: -4.0410
+Chosen: '.'
+             '.'  logprob: -0.3831
+    '<|eot_id|>'  logprob: -1.5511
+             '!'  logprob: -2.3379
+```
+
+## Reasoning models and custom message roles
+
+Some models, such as IBM's [Granite 3.2](https://ollama.com/library/granite3.2), support custom message roles to enable thinking processes.
+
+To access Granite 3.2's thinking features, pass a message with a `"control"` role with content set to `"thinking"`. Because `"control"` is a non-standard message role, we can use a [ChatMessage](https://reference.langchain.com/python/langchain-core/messages/chat/ChatMessage) object to implement it:
+
+```python
+from langchain.messages import HumanMessage
+from langchain_core.messages import ChatMessage
+from langchain_ollama import ChatOllama
+
+llm = ChatOllama(model="granite3.2:8b")
+
+messages = [
+    ChatMessage(role="control", content="thinking"),
+    HumanMessage("What is 3^3?"),
+]
+
+response = llm.invoke(messages)
+print(response.content)
+```
+
+```text
+Here is my thought process:
+The user is asking for the value of 3 raised to the power of 3, which is a basic exponentiation operation.
+
+Here is my response:
+
+3^3 (read as "3 to the power of 3") equals 27.
+
+This calculation is performed by multiplying 3 by itself three times: 3*3*3 = 27.
+```
+
+Note that the model exposes its thought process in addition to its final response.
+
+---
+
+## API reference
+
+For detailed documentation of all `ChatOllama` features and configurations head to the [API reference](https://reference.langchain.com/python/langchain-ollama/chat_models/ChatOllama).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/chat/ollama.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
