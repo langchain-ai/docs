@@ -1,0 +1,285 @@
+---
+title: Manage connections
+sidebarTitle: Connections
+description: Configure and use API keys and OAuth connections with Managed Deep Agents.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/javascript/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+Managed deep agents often need to authenticate with external services. A connection defines how the agent authenticates with one service.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## Choose a credential owner
+
+Each time your code accesses a connection, it specifies who owns the credential:
+
+| Owner | Use |
+| --- | --- |
+| `agent` | Use a credential shared by all users of the agent. A developer configures it before deployment. |
+| `user` | Use a credential for the current user. Each user authorizes their own account. |
+
+Use `connections.get(...)` to access a connection at runtime.
+
+
+
+```typescript
+const value = await connections.get("connection-name", { type: "agent" }); // Or "user"
+```
+
+
+If the user has not authorized a `user` connection, the run interrupts and requests authorization in the current channel.
+
+Connection slugs are unique within a workspace. Use lowercase letters, numbers, and single hyphens, such as `organization-tavily` or `engineering-notion`.
+
+## Configure an agent-owned API key
+
+A developer can store a fixed API key for a custom tool. This example stores a Tavily API key for the web search tool below. Run the command from the project root. The CLI requires a LangSmith API key and workspace ID.
+
+First, put the source value in the shell environment or project `.env` file. Then create the connection from that variable:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+
+    ```bash bun
+    bunx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+</CodeGroup>
+
+
+This command creates the `organization-tavily` connection in the current LangSmith workspace. It stores the value from `TAVILY_API_KEY` as an agent-owned secret. Runtime code can resolve the value with `connections.get(...)`.
+
+To enter the value interactively, omit `--secret-from-env`. The CLI hides the input so the secret does not appear on screen or in shell history. You can also use `--secret-from-file PATH` to read one value from a file.
+
+Use `list` or `get` to inspect connection metadata:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections list
+    npx mda connections get organization-tavily
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections list
+    pnpm exec mda connections get organization-tavily
+    ```
+
+    ```bash bun
+    bunx mda connections list
+    bunx mda connections get organization-tavily
+    ```
+</CodeGroup>
+
+
+### Use an API key in a custom tool
+
+The following tool resolves the `organization-tavily` connection for the agent, then sends it directly to the Tavily API:
+
+
+
+```ts tools/search-web.ts
+import { tool } from "langchain";
+import { connections } from "managed-deepagents";
+import { z } from "zod";
+
+export const searchWeb = tool(
+  async ({ query }) => {
+    const apiKey = await connections.get("organization-tavily", { type: "agent" });
+    const response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: apiKey, query, max_results: 5 }),
+    });
+    if (!response.ok) {
+      throw new Error(`Tavily request failed with status ${response.status}`);
+    }
+    return await response.text();
+  },
+  {
+    name: "search_web",
+    description: "Search the web.",
+    schema: z.object({ query: z.string().describe("Search query.") }),
+  },
+);
+```
+
+
+See [Custom tools](/langsmith/javascript/managed-deep-agents-tools) to add the tool to the agent.
+
+## Configure a user-owned OAuth connection
+
+A user-owned OAuth connection resolves to an access token for the authenticated user. The OAuth catalog lists services with preconfigured settings. When you pass a listed service to `--oauth`, the CLI supplies its authorization URL, token URL, token endpoint authentication method, authorization parameters, and default scopes. List the catalog:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections catalog
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections catalog
+    ```
+
+    ```bash bun
+    bunx mda connections catalog
+    ```
+</CodeGroup>
+
+
+GitHub requires an OAuth client ID and client secret. Set `GITHUB_CLIENT_SECRET`, then create the connection before deployment. Replace `********` with the client ID:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections create frontend-github \
+      --oauth github \
+      --client-id "********" \
+      --secret-from-env GITHUB_CLIENT_SECRET
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create frontend-github \
+      --oauth github \
+      --client-id "********" \
+      --secret-from-env GITHUB_CLIENT_SECRET
+    ```
+
+    ```bash bun
+    bunx mda connections create frontend-github \
+      --oauth github \
+      --client-id "********" \
+      --secret-from-env GITHUB_CLIENT_SECRET
+    ```
+</CodeGroup>
+
+
+Use `--scope SCOPE` to replace the catalog service's default scopes. Repeat the flag for each scope.
+
+### Access an OAuth token in a custom tool
+
+This tool resolves the authenticated caller's GitHub connection and calls the GitHub REST API:
+
+
+
+```ts tools/get-github-user.ts
+import { tool } from "langchain";
+import { connections } from "managed-deepagents";
+import { z } from "zod";
+
+export const getGitHubUser = tool(
+  async () => {
+    // Replace `frontend-github` with the name of your connection.
+    const accessToken = await connections.get("frontend-github", { type: "user" });
+    const response = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`GitHub request failed with status ${response.status}`);
+    }
+    const user = (await response.json()) as { login: string };
+    return user.login;
+  },
+  {
+    name: "get_github_user",
+    description: "Get the authenticated caller's GitHub login.",
+    schema: z.object({}),
+  },
+);
+```
+
+
+## Authorize an OAuth connection in Slack
+
+If a user has not authorized a required OAuth connection, the Slack channel adapter shows an authorization prompt. The user opens the link and completes the OAuth flow. Slack then continues the run.
+
+<Frame caption="Slack OAuth authorization prompt">
+  **Screenshot placeholder:** Add the Slack OAuth authorization prompt screenshot here.
+</Frame>
+
+## Authenticate an MCP server
+
+The following example creates a user-owned Notion OAuth connection and uses it to authenticate an MCP server. Set `NOTION_CLIENT_SECRET`, then create the connection before deployment. Replace `********` with the client ID:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections create engineering-notion \
+      --oauth notion \
+      --client-id "********" \
+      --secret-from-env NOTION_CLIENT_SECRET
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create engineering-notion \
+      --oauth notion \
+      --client-id "********" \
+      --secret-from-env NOTION_CLIENT_SECRET
+    ```
+
+    ```bash bun
+    bunx mda connections create engineering-notion \
+      --oauth notion \
+      --client-id "********" \
+      --secret-from-env NOTION_CLIENT_SECRET
+    ```
+</CodeGroup>
+
+
+Use the connection slug in the MCP server configuration:
+
+
+
+```ts connectors/mcp.ts
+import { connections, connectors } from "managed-deepagents";
+
+export const connector = connectors.mcp({
+  mcpServers: {
+    notion: {
+      transport: "http",
+      url: "https://mcp.notion.com/mcp",
+      connection: connections.get("engineering-notion", { type: "user" }),
+    },
+  },
+});
+```
+
+
+For other MCP server options, see [Connect to MCP servers](/langsmith/javascript/managed-deep-agents-mcp-connectors).
+
+## Develop locally
+
+For `mda dev`, an agent-owned connection reads `MDA_DEV_<SLUG>`. The CLI converts the slug to uppercase and replaces hyphens with underscores. For example, `organization-tavily` reads `MDA_DEV_ORGANIZATION_TAVILY`.
+
+User-owned OAuth connections require an authenticated caller and a connection service. Deploy the agent to test the user authorization flow.
+
+## See also
+
+- [Managed Deep Agents CLI reference](/langsmith/javascript/managed-deep-agents-cli)
+- [Connect to MCP servers](/langsmith/javascript/managed-deep-agents-mcp-connectors)
+- [Add custom tools](/langsmith/javascript/managed-deep-agents-tools)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-connections.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
