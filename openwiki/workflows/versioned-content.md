@@ -371,7 +371,7 @@ Always show language-specific imports:
 
 :::python
 ```python
-from langchain_core.tools import tool
+from langchain.tools import tool
 ```
 :::
 
