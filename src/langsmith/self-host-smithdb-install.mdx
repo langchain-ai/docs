@@ -5,17 +5,17 @@ description: Enable SmithDB on an existing ClickHouse-backed self-hosted LangSmi
 ---
 
 <Note>
-SmithDB is opt-in. The minimum LangSmith version depends on your cloud, and what ClickHouse requires depends on your LangSmith version. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support) and [Storage requirements](/langsmith/self-host-smithdb#storage-requirements).
+SmithDB is opt-in. ClickHouse remains required and cannot be removed after you enable SmithDB. The minimum LangSmith version depends on your cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
 </Note>
 
 SmithDB can serve LangSmith trace ingestion and queries alongside ClickHouse in an existing self-hosted deployment. This guide introduces SmithDB in stages so you can validate each change before continuing.
 
-Upgrading an existing LangSmith installation from ClickHouse to SmithDB has five parts: prepare SmithDB infrastructure, deploy SmithDB services, enable dual ingestion, optionally migrate ClickHouse data, and switch queries after validation. Historical ClickHouse data can be backfilled before query cutover or left in ClickHouse, but it is not accessible through SmithDB-backed queries unless you migrate it.
+Upgrading an existing LangSmith installation from ClickHouse to SmithDB has six parts: prepare SmithDB infrastructure, upgrade LangSmith, deploy SmithDB services, enable dual ingestion, optionally migrate ClickHouse data, and switch queries after validation. Historical ClickHouse data can be backfilled before query cutover or left in ClickHouse, but it is not accessible through SmithDB-backed queries unless you migrate it.
 
-Apply each stage separately.
+Apply each stage separately. Each stage is a rolling Helm update, so applying one restarts the affected pods without LangSmith downtime.
 
 <Warning>
-After query cutover, LangSmith trace reads no longer go to ClickHouse. On LangSmith 0.16, keep the ClickHouse datastore in place regardless.
+After query cutover, LangSmith trace reads no longer go to ClickHouse. Keep the ClickHouse datastore in place regardless.
 </Warning>
 
 ## Before you begin
@@ -207,13 +207,16 @@ smithdb:
       enabled: false
 ```
 
-Apply the chart, then verify:
+Apply the chart, then confirm every SmithDB pod is running and the metastore migration Job has completed:
 
-- SmithDB pods become Ready.
-- The SmithDB metastore migration Job completes.
-- The pods can reach the metastore and object store.
-- Cache workloads schedule onto nodes with the expected ephemeral-storage capacity.
-- The cluster retains enough headroom to add replicas as load grows.
+```bash
+kubectl get pods -n NAMESPACE | grep smithdb
+kubectl get job -n NAMESPACE HELM_RELEASE-smithdb-metastore-migration
+```
+
+SmithDB components verify metastore and object-store connectivity at startup, so a running pod has already confirmed both. A pod stuck in `Pending` or `CrashLoopBackOff` has not. See [Troubleshoot supporting infrastructure](/langsmith/self-host-smithdb-infrastructure#troubleshoot-supporting-infrastructure).
+
+Also confirm the cluster retains enough headroom to add replicas as load grows.
 
 Do not enable LangSmith integration flags until these checks pass.
 
@@ -236,7 +239,23 @@ smithdb:
       enabled: false
 ```
 
-Confirm that SmithDB ingestion remains healthy and that new writes continue to reach ClickHouse. You can verify ingestion traffic is reaching SmithDB by tailing the SmithDB ingestion pod logs. Resolve any sustained ingestion errors before continuing.
+Confirm that SmithDB ingestion remains healthy and that new writes continue to reach ClickHouse.
+
+The clearest signal that writes are landing is the `ingest_flush_count` metric, which rises as SmithDB flushes batches to object storage. If you have not configured metrics yet, tail the ingestion pod logs for flush activity:
+
+```bash
+kubectl logs -n NAMESPACE -l app.kubernetes.io/component=HELM_RELEASE-smithdb-ingestion --tail=50
+```
+
+Healthy output includes lines such as `Finished flushing batch`.
+
+You can also confirm which paths LangSmith has switched over:
+
+```bash
+curl -s https://LANGSMITH_HOST/api/v1/info | jq '.instance_flags | {sdb_ingestion_enabled, sdb_query_enabled}'
+```
+
+At this stage `sdb_ingestion_enabled` is `true` and `sdb_query_enabled` is `false`. Resolve any sustained ingestion errors before continuing.
 
 ### Step 5. Choose how to handle historical data
 
@@ -248,7 +267,7 @@ After dual ingestion is confirmed stable and healthy, follow [Migrate ClickHouse
 
 #### Continue without backfill
 
-Skip migration if historical ClickHouse data does not need to be available through SmithDB-backed queries. Existing data stays in ClickHouse and is reachable only while ClickHouse is enabled.
+Skip migration if historical ClickHouse data does not need to be available through SmithDB-backed queries. Existing data stays in ClickHouse and remains reachable there.
 
 ### Step 6. Switch queries to SmithDB
 
@@ -265,15 +284,23 @@ smithdb:
       enabled: true
 ```
 
-Validate traces, projects, filters, and time ranges in the LangSmith UI and API. Continue monitoring ingestion and query errors after cutover.
+Confirm both paths now report as enabled:
+
+```bash
+curl -s https://LANGSMITH_HOST/api/v1/info | jq '.instance_flags | {sdb_ingestion_enabled, sdb_query_enabled}'
+```
+
+Both values are `true` after cutover. Then validate traces, projects, filters, and time ranges in the LangSmith UI and API, and continue monitoring ingestion and query errors.
 
 <Warning>
-On LangSmith 0.16, do not disable or remove ClickHouse after query cutover. This applies to both in-cluster and external ClickHouse deployments. Preserve the existing ClickHouse configuration throughout and after this process. On LangSmith 0.17, you can disable ClickHouse once cutover is complete, but any history you did not migrate becomes unreachable when you do.
+Do not disable or remove ClickHouse after query cutover. This applies to both in-cluster and external ClickHouse deployments. Preserve the existing ClickHouse configuration throughout and after this process. Support for disabling ClickHouse is planned for a future release.
 </Warning>
 
-## Troubleshooting
+## After installation
 
-Use [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting) or contact LangChain through the [Support Portal](https://support.langchain.com/) before continuing.
+Upgrading LangSmith after you enable SmithDB follows the standard process. See [Upgrade a self-hosted LangSmith installation](/langsmith/self-host-upgrades). Any version-specific steps appear in the upgrade notes for that release.
+
+If something fails during or after installation, see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting) or contact LangChain through the [Support Portal](https://support.langchain.com/).
 
 ## See also
 

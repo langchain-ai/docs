@@ -407,6 +407,8 @@ spec:
 
 In this example, `instanceStorePolicy: RAID0` makes local NVMe available as node ephemeral storage. The `smithdb-instance-store` NodePool requires at least 800 GiB and consolidates only when empty, avoiding unnecessary churn of nodes with warm caches.
 
+That 800 GiB floor suits the `medium` tier. Size the requirement against the largest per-replica ephemeral-storage request in your chosen tier, plus node headroom. See [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale).
+
 </Accordion>
 
 Other provisioners must provide equivalent labels, taints, Kubernetes-visible ephemeral storage, and disruption behavior. With custom AMIs, bootstrap must format and mount instance-store devices for kubelet and container-runtime storage.
@@ -745,6 +747,35 @@ resource "azurerm_kubernetes_cluster_node_pool" "smithdb_cache" {
 ```
 
 </Accordion>
+
+## Troubleshoot supporting infrastructure
+
+Most SmithDB installation failures trace back to one of the following.
+
+**Pods stay `Pending`.** The ephemeral-storage request exceeds what the node reports as allocatable. Compare the tier's per-replica request against the node:
+
+```bash
+kubectl get node NODE_NAME -o jsonpath='{.status.allocatable.ephemeral-storage}{"\n"}'
+kubectl describe pod -n NAMESPACE POD_NAME | grep -A5 Events
+```
+
+Either provision larger local SSD nodes or select a smaller tier. A node also needs headroom above the pod request for images, logs, and Kubernetes reservations.
+
+**Object-store access is denied.** The workload identity binding does not match the ServiceAccount SmithDB actually runs as. The trust policy must name the release namespace and the ServiceAccount name, which defaults to `HELM_RELEASE-smithdb`. Confirm what the pod is using:
+
+```bash
+kubectl get pod -n NAMESPACE POD_NAME -o jsonpath='{.spec.serviceAccountName}{"\n"}'
+```
+
+With `create: false`, `name` is required. Otherwise pods fall back to the `default` ServiceAccount and the binding never applies.
+
+**The metastore refuses connections.** Check that the database is reachable from the cluster, that `useSsl` matches what the server requires, and that the Secret keys named in `smithdb.config.metastore` match the keys actually present in the Secret.
+
+**Cache I/O is slow.** The `emptyDir` is backed by the boot disk rather than local SSD. Confirm the cache filesystem inside a running pod:
+
+```bash
+kubectl exec -n NAMESPACE POD_NAME -- df -h /data
+```
 
 ## See also
 
