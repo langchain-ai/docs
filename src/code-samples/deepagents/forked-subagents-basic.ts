@@ -30,7 +30,8 @@ const result = await agent.invoke({
   messages: [
     {
       role: "user",
-      content: "Review PR #482 and hand it off to comment-writer to draft comments for the issues found",
+      content:
+        "Review PR #482 and hand it off to comment-writer to draft comments for the issues found",
     },
   ],
 });
