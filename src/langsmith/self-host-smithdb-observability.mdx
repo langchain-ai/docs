@@ -52,11 +52,7 @@ If your monitoring provider does not discover standard Prometheus annotations, u
 
 ## Metrics reference
 
-Thresholds are omitted on purpose. What counts as unhealthy scales with your resource tier and ingest volume, so baseline against your own deployment before setting alert values.
-
 Names are as they appear on `/metrics`. If your collector adds a namespace or prefix, adjust accordingly.
-
-On request metrics, `status` holds the gRPC status when a `grpc-status` header is present, and the HTTP status otherwise, so success is `0` for gRPC and `200` for HTTP. Transport failures record `error`. Filter by `type`, `grpc` or `http`, to avoid mixing protocols.
 
 ### Start here
 
@@ -76,13 +72,12 @@ Compaction has two entries because the failure modes are separate: jobs can fail
 
 | Metric | Type | Description |
 | --- | --- | --- |
-| `ingest_batch_latency` | Histogram | End-to-end latency from batch received to flush completed. The closest thing to a user-facing write latency. Watch p50 and p90. |
+| `ingest_batch_latency` | Histogram | End-to-end latency from batch received to flush completed. |
 | `ingest_flush_count` | Counter | Flushes to object storage. A flat rate while traffic arrives means writes are not landing. |
 | `ingest_flush_rows` | Histogram | Rows per flush, by level. Falling rows at a steady flush rate suggests premature flushing. |
 | `ingest_flush_duration` | Histogram | How long flushes take. Rising durations point at object store latency or undersized ingestion. |
-| `ingest_flush_reason` | Counter | What triggered each flush, labelled `reason` (`size`, `time`, or `shutdown`) and `level` (`L0` or `L1`). L1 flushes on accumulated run count, or on a partition timeout that defaults to 10 minutes. |
-| `ingest_pending_segment_entry_count` | Gauge | Entries not yet flushed. Sustained growth means flushes are losing to arrivals. |
-| `ingest_flushing_segment_entry_count` | Gauge | Entries mid-flush. Sustained growth means flushes start but do not complete. |
+| `ingest_flush_reason` | Counter | What triggered each flush, labeled `reason` (`size`, `time`, or `shutdown`) and `level` (`L0` or `L1`). L1 flushes on accumulated run count, or a timeout. |
+| `ingest_pending_segment_entry_count` | Gauge | Entries not yet flushed. Sustained growth means flushing is backlogged. |
 | `semaphore_permits_in_use` | Gauge | Concurrency permits held, against `semaphore_max_permits`. Sustained saturation means writes are queuing. |
 | `server_requests_duration` | Histogram | Ingestion request latency. Split by `status` for success and failure counts. |
 
@@ -90,10 +85,10 @@ Compaction has two entries because the failure modes are separate: jobs can fail
 
 | Metric | Type | Description |
 | --- | --- | --- |
-| `server_requests_duration` | Histogram | Query latency. Split by `status` for success and failure counts, and by `path` to find the slow endpoint. |
+| `server_requests_duration` | Histogram | Query latency. Split by `status` for success and failure counts, where `status` is the gRPC code (`0` is success) or the HTTP code, and by `path` to find the slow endpoint. |
 | `query_fanout_partitions` | Histogram | Active scan partitions per query. Rising fanout drives both latency and memory. |
 | `query_fanout_limit_exceeded_total` | Counter | Queries rejected for excessive fanout. Any sustained rate means queries are failing outright. |
-| `query_execution_max_mem_used_bytes` | Histogram | Peak memory for the largest operator in a query plan. Approaching the pod limit precedes OOM kills. |
+| `query_execution_max_mem_used_bytes` | Histogram | Peak memory for the largest operator in a query plan. Approaching the configured limit precedes termination. |
 
 ### Compaction
 
@@ -102,7 +97,7 @@ Compaction has two entries because the failure modes are separate: jobs can fail
 | `compaction_queue_job_count` | Gauge | Jobs waiting in the compaction queue. Sustained growth means compaction is falling behind. |
 | `compaction_jobs_scheduled` | Counter | Work created by the pipeline. Compare against jobs executed. |
 | `compaction_jobs_executed` | Counter | Work consumed. Persistently below scheduled means under-provisioned workers. |
-| `compaction_job_completion` | Counter | Job outcomes, labelled `status` (`success` or `failure`) and `job_kind`. A `job_kind` dropping to zero means that job type has stopped running. |
+| `compaction_job_completion` | Counter | Job outcomes, labeled `status` (`success` or `failure`) and `job_kind`. A `job_kind` dropping to zero means that job type has stopped running. |
 | `compaction_queue_jobs_skipped_capacity` | Counter | Jobs skipped for exceeding a worker's remaining capacity. A sustained rate means worker capacity is too small for the jobs being produced. |
 | `compaction_queue_oldest_pending_created_at_seconds` | Gauge | Unix timestamp when the oldest pending job was enqueued, or zero when the queue is empty. Compute age as `time() - metric`, and exclude the zero case. |
 | `compaction_job_latency_seconds` | Histogram | Job creation to completion. Includes queue wait, so it rises when workers saturate as well as when jobs are slow. |
@@ -113,24 +108,25 @@ Compaction has two entries because the failure modes are separate: jobs can fail
 
 | Metric | Type | Description |
 | --- | --- | --- |
-| `object_store_op_duration` | Histogram | Object store operation latency. Rarely the cause on its own, but worth ruling out when several components degrade together. |
+| `object_store_op_duration` | Histogram | Object store operation latency. |
 | `sys_jemalloc_resident_bytes` | Gauge | Resident process memory. Track against the pod memory limit. |
 
 ### LangSmith ingestion path
 
-LangSmith emits these, not SmithDB. They are labelled `store="clickhouse|smithdb"`, so the two stores can be compared directly while [dual ingestion](/langsmith/self-host-smithdb-install#step-4-enable-dual-ingestion) is enabled.
+Emitted by LangSmith rather than by SmithDB, and labeled `store="clickhouse|smithdb"`, so the two stores can be compared directly during [dual ingestion](/langsmith/self-host-smithdb-install#step-4-enable-dual-ingestion).
 
 | Metric | Type | Description |
 | --- | --- | --- |
-| `ingestion_e2e_latency_seconds` | Histogram | API receipt to store write ack, per run. The user-facing number. Compare `store="smithdb"` against `store="clickhouse"`. |
+| `ingestion_e2e_latency_seconds` | Histogram | API receipt to store write ack, per run. The user-facing number; compare `store="smithdb"` against `store="clickhouse"`. |
 | `ingestion_api_to_worker_latency_seconds` | Histogram | Queue wait before the worker starts. Rising here is a queue problem, not a SmithDB problem. |
 | `ingestion_worker_to_store_latency_seconds` | Histogram | Store write time alone. Isolates SmithDB from queue delay. |
 
 ### Not covered here
 
-Metastore lag is collected by querying the metastore PostgreSQL directly, so it is not a SmithDB metric.
-
-Kubernetes signals are worth alerting on but come from your cluster rather than from SmithDB: OOM kills, container restarts, CPU and memory against limits, and SSD node disk usage. See [Troubleshoot supporting infrastructure](/langsmith/self-host-smithdb-infrastructure#troubleshoot-supporting-infrastructure).
+| Area | Why |
+| --- | --- |
+| Metastore lag | Collected by querying the metastore PostgreSQL directly, not exported by SmithDB. |
+| Kubernetes signals | OOM kills, container restarts, CPU and memory against limits, and SSD node disk usage. Worth alerting on, but not SmithDB metrics. See [Troubleshoot supporting infrastructure](/langsmith/self-host-smithdb-infrastructure#troubleshoot-supporting-infrastructure). |
 
 ## Logs and traces
 
