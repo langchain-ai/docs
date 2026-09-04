@@ -1,0 +1,289 @@
+---
+title: "Google Classroom integration"
+description: "Integrate with the Google Classroom document loader using LangChain Python."
+integration:
+  name: Google Classroom
+  pypi: langchain-google-classroom
+---
+
+> [Google Classroom](https://edu.google.com/workspace-for-education/classroom/) is a free learning management system developed by Google as part of Google Workspace for Education. It helps educators manage coursework, assignments, and communication.
+
+This page covers how to load data from Google Classroom using the `GoogleClassroomLoader`. The loader fetches courses, assignments (courseWork), announcements, course materials, student submissions, rubrics, topics, and class rosters from the [Classroom API](https://developers.google.com/classroom) and converts each item into a LangChain `Document`.
+
+When file attachments are present on classroom items, the loader automatically downloads and parses them from Google Drive—supporting PDF, DOCX, CSV, plain text, Google Docs, Sheets, Slides, and images.
+
+Learn more about the package on [GitHub](https://github.com/ayanokojix21/langchain-google-classroom).
+
+## Overview
+
+| Class | Package | Serializable |
+|:------|:--------|:-------------|
+| `GoogleClassroomLoader` | [`langchain-google-classroom`](https://pypi.org/project/langchain-google-classroom/) | ✅ |
+
+### Integration details
+
+| Source | Document Lazy Loading | Async Support |
+|:-------|:---------------------:|:-------------:|
+| `GoogleClassroomLoader` | ✅ | ✅ |
+
+## Prerequisites
+
+To use this loader, you will need:
+
+1. A [Google Cloud project](https://developers.google.com/workspace/guides/create-project)
+2. The [Classroom API](https://console.cloud.google.com/apis/library/classroom.googleapis.com) enabled
+3. The [Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com) enabled (for file attachments)
+4. One of the following authentication methods:
+   - **OAuth 2.0 credentials**—for personal Google accounts or testing
+   - **Service Account credentials**—for Google Workspace domains (production)
+
+## Installation
+
+Install the integration package:
+
+```bash
+pip install -qU langchain-google-classroom
+```
+
+To enable parsing of PDF and DOCX attachments, install with the optional `parsers` extra:
+
+```bash
+pip install -qU "langchain-google-classroom[parsers]"
+```
+
+## Credentials
+
+### Option A: OAuth 2.0 (personal accounts)
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an **OAuth 2.0 Client ID** (Desktop application).
+2. Download the client secrets file and save it as `credentials.json` in your working directory.
+3. On first run, a browser window will open for user consent. The resulting token is cached to `token.json` for subsequent runs.
+
+```python
+from langchain_google_classroom import GoogleClassroomLoader
+
+loader = GoogleClassroomLoader()
+# Opens browser for OAuth consent on first run
+docs = loader.load()
+```
+
+### Option B: Service Account (Google Workspace)
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/iam-admin/serviceaccounts), create a Service Account.
+2. Enable [Domain-Wide Delegation](https://developers.google.com/identity/protocols/oauth2/service-account#delegatingauthority) for the service account.
+3. Download the key file and save it as `service_account.json`.
+
+```python
+from langchain_google_classroom import GoogleClassroomLoader
+
+loader = GoogleClassroomLoader(
+    service_account_file="service_account.json",
+)
+docs = loader.load()
+```
+
+## Instantiation
+
+```python
+from langchain_google_classroom import GoogleClassroomLoader
+
+loader = GoogleClassroomLoader(
+    course_ids=["123456789"],  # Optional: specific courses. Loads all if omitted.
+    load_assignments=True,     # courseWork items (default: True)
+    load_announcements=True,   # announcements (default: True)
+    load_materials=True,       # courseWorkMaterials (default: True)
+    load_attachments=True,     # resolve Drive file attachments (default: True)
+)
+```
+
+### Constructor parameters
+
+| Parameter | Type | Default | Description |
+|:----------|:-----|:--------|:------------|
+| `course_ids` | `list[str]` or `None` | `None` | Course IDs to load. Loads all accessible courses when `None`. |
+| `load_assignments` | `bool` | `True` | Load courseWork items. |
+| `load_announcements` | `bool` | `True` | Load announcements. |
+| `load_materials` | `bool` | `True` | Load courseWork materials. |
+| `load_attachments` | `bool` | `True` | Download and yield Drive file attachments. |
+| `parse_attachments` | `bool` | `True` | Parse attachment content using built-in parsers (install `langchain-google-classroom[parsers]` for PDF/DOCX support, or set `parse_attachments=False` to skip parsing). |
+| `file_parser_cls` | `type[BaseBlobParser]` or `None` | `None` | Custom parser class to use for attachments (replaces built-in parsers). |
+| `load_submissions` | `bool` | `False` | Load student submissions. Adds the required scope automatically. |
+| `load_topics` | `bool` | `False` | Load course topics. Adds the required scope automatically. |
+| `load_roster` | `bool` | `False` | Load student and teacher roster. Adds the required scope automatically. |
+| `load_images` | `bool` | `False` | Process image attachments (requires a `vision_model`). |
+| `vision_model` | `BaseChatModel` or `None` | `None` | Vision-capable LLM for image understanding in PDFs and images. |
+| `max_file_size` | `int` | `50000000` | Maximum attachment file size in bytes. Files larger than this are skipped. |
+| `service_account_file` | `str` or `None` | `None` | Path to a service-account key JSON file. |
+| `token_file` | `str` or `None` | `None` | Path to a cached OAuth token JSON file. |
+| `client_secrets_file` | `str` or `None` | `None` | Path to an OAuth client-secrets JSON file. |
+
+## Load documents
+
+Use `load()` to fetch all documents at once:
+
+```python
+from langchain_google_classroom import GoogleClassroomLoader
+
+loader = GoogleClassroomLoader(
+    course_ids=["123456789"],
+)
+docs = loader.load()
+print(f"Loaded {len(docs)} documents")
+```
+
+Each `Document` has structured `page_content` and rich `metadata`:
+
+```python
+doc = docs[0]
+print(doc.page_content[:200])
+print(doc.metadata)
+```
+
+```python
+# Example metadata
+{
+    "source": "google_classroom",
+    "content_type": "assignment",
+    "course_id": "123456789",
+    "course_name": "Introduction to Computer Science",
+    "title": "Week 3: Data Structures",
+    "created_time": "2025-03-15T10:30:00.000Z",
+    "updated_time": "2025-03-15T10:30:00.000Z",
+    "alternate_link": "https://classroom.google.com/...",
+}
+```
+
+## Lazy loading
+
+For large courses or memory-constrained environments, use `lazy_load()` to stream documents one at a time:
+
+```python
+from langchain_google_classroom import GoogleClassroomLoader
+
+loader = GoogleClassroomLoader(
+    course_ids=["123456789"],
+)
+
+for doc in loader.lazy_load():
+    print(f"[{doc.metadata['content_type']}] {doc.metadata.get('title', '')}")
+```
+
+## Async loading
+
+The loader supports async iteration via `alazy_load()`:
+
+```python
+import asyncio
+from langchain_google_classroom import GoogleClassroomLoader
+
+
+async def main():
+    loader = GoogleClassroomLoader(
+        course_ids=["123456789"],
+    )
+    docs = []
+    async for doc in loader.alazy_load():
+        docs.append(doc)
+    return docs
+
+
+docs = asyncio.run(main())
+```
+
+## Loading additional data types
+
+### Student submissions
+
+```python
+loader = GoogleClassroomLoader(
+    course_ids=["123456789"],
+    load_submissions=True,
+)
+docs = loader.load()
+# Includes documents with content_type="submission"
+```
+
+### Topics
+
+```python
+loader = GoogleClassroomLoader(
+    course_ids=["123456789"],
+    load_topics=True,
+)
+docs = loader.load()
+# Includes documents with content_type="topic"
+```
+
+### Class roster (students and teachers)
+
+```python
+loader = GoogleClassroomLoader(
+    course_ids=["123456789"],
+    load_roster=True,
+)
+docs = loader.load()
+# Includes documents with content_type="student" and content_type="teacher"
+```
+
+## File attachment parsing
+
+When `load_attachments=True` (the default), the loader resolves Google Drive file attachments on each classroom item and parses them into additional `Document` objects.
+
+### Supported formats
+
+| Format | Parser | Notes |
+|:-------|:-------|:------|
+| PDF | `PDFParser` | Extracts text; optional vision LLM for embedded images |
+| DOCX | `DocxParser` | Extracts text and tables |
+| CSV | `CSVParser` | One document per row with header-aware formatting |
+| Plain text | `TextParser` | UTF-8 decoding |
+| Images (PNG, JPEG, etc.) | `ImageParser` | Requires `vision_model` and `load_images=True` |
+| Google Docs/Sheets/Slides | Exported then parsed | Auto-exported to PDF/CSV/plain text via Drive API |
+
+### Using a vision LLM for images
+
+To process image attachments and extract visual context from PDF pages, provide a vision-capable model:
+
+```python
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_classroom import GoogleClassroomLoader
+
+loader = GoogleClassroomLoader(
+    course_ids=["123456789"],
+    load_attachments=True,
+    load_images=True,
+    vision_model=ChatGoogleGenerativeAI(model="gemini-2.0-flash"),
+)
+docs = loader.load()
+```
+
+### Using a custom file parser
+
+You can replace the built-in parsers with any `BaseBlobParser` subclass:
+
+```python
+from langchain_community.document_loaders.parsers.pdf import PyMuPDFParser
+from langchain_google_classroom import GoogleClassroomLoader
+
+loader = GoogleClassroomLoader(
+    course_ids=["123456789"],
+    file_parser_cls=PyMuPDFParser,
+)
+docs = loader.load()
+```
+
+## API reference
+
+- **PyPI:** [`langchain-google-classroom`](https://pypi.org/project/langchain-google-classroom/)
+- **Source:** [GitHub](https://github.com/ayanokojix21/langchain-google-classroom)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/document_loaders/google_classroom.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

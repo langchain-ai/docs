@@ -1,0 +1,135 @@
+---
+title: Migrate ClickHouse history to SmithDB
+sidebarTitle: Migrate historical data
+description: Run the historical ClickHouse-to-SmithDB migration for a self-hosted LangSmith installation.
+---
+
+<Note>
+Use this guide only when ClickHouse history must be available through SmithDB-backed queries.
+</Note>
+
+This guide covers running the historical ClickHouse-to-SmithDB migration.
+
+<Note>
+Complete stages 1 through 4 of [Install LangSmith with SmithDB](/langsmith/self-host-smithdb-install) before starting this guide. Return there for **Switch queries to SmithDB** after migration cleanup.
+</Note>
+
+## Scope and prerequisites
+
+Before starting:
+
+- Keep the existing ClickHouse configuration enabled and unchanged.
+- Confirm SmithDB services and dual ingestion are healthy, and that new writes continue to reach ClickHouse.
+- Keep SmithDB-backed queries disabled until migration cleanup completes.
+- If LangSmith blob storage is enabled, grant the SmithDB ServiceAccount (`smithdb.serviceAccount`) read and list access to the LangSmith blob-storage bucket in addition to the SmithDB object-store bucket.
+
+### What is TaskDB?
+
+TaskDB is the migration's durable coordinator. It tracks work and progress so migration pods can safely share work, recover from interruptions, and resume without starting over. Migrated data is written to SmithDB object storage and promoted to the metastore after validation. TaskDB is separate from LangSmith PostgreSQL and the SmithDB metastore, and is only used during the data migration job.
+
+## Plan migration capacity
+
+### Size migration workers
+
+Scale migration with these Helm controls:
+
+- **`smithdb.migration.job.parallelism`**: The number of migration Job pods that may run concurrently.
+- **`smithdb.migration.deployment.resources`**: The CPU, memory, and ephemeral storage allocated to each migration pod.
+
+Use this formula as a rule of thumb:
+
+```text
+estimated allocated vCPUs = historical run count / 5,000,000 / target duration in days
+starting memory GiB = estimated allocated vCPUs × 2
+```
+
+The memory ratio follows the chart's 8-vCPU/16-GiB migration pod default. Migrating 100 million runs in one day therefore suggests about 20 allocated vCPUs and 40 GiB memory across the Job pods. These estimate total capacity, not pod count or per-pod resources. Actual requirements vary by data and environment.
+
+You can run a single worker, and TaskDB persists its progress, but substantial histories may take impractically long that way. Choose parallelism and per-pod resources together based on estimated vCPUs and available capacity.
+
+### Scale TaskDB
+
+<Note>
+For migrations with `smithdb.migration.job.parallelism` greater than `4`, tune `max_connections` on the chart-managed TaskDB or consider a dedicated external TaskDB. The chart-managed PostgreSQL default is `100`.
+
+Monitor TaskDB CPU, memory, and active connections as parallelism increases, and scale `smithdb.migration.taskdb.postgres.statefulSet.resources` as needed. Do not use the main LangSmith PostgreSQL database or the SmithDB metastore as TaskDB.
+</Note>
+
+<Accordion title="Configure chart-managed max_connections">
+
+Set PostgreSQL arguments through `extraContainerConfig.args`:
+
+```yaml
+smithdb:
+  migration:
+    taskdb:
+      postgres:
+        statefulSet:
+          extraContainerConfig:
+            args: ["-c", "max_connections=200"]
+```
+
+</Accordion>
+
+## Enable migration
+
+For chart-managed TaskDB, create a Secret in the LangSmith namespace with a strong generated password under `postgres_password`. Never store it in Helm values or source control. See [Use an existing secret for your installation](/langsmith/self-host-using-an-existing-secret). For external PostgreSQL, use the chart's external TaskDB settings instead.
+
+Reference the TaskDB Secret and enable migration while keeping dual ingestion on and SmithDB-backed queries off:
+
+```yaml
+smithdb:
+  enabled: true
+  langsmith:
+    ingestion:
+      enabled: true
+    migration:
+      enabled: true
+    query:
+      enabled: false
+  migration:
+    taskdb:
+      postgres:
+        auth:
+          existingSecretName: "smithdb-migration-taskdb"
+          passwordSecretKey: "postgres_password"
+```
+
+Apply the chart through your normal workflow. It creates TaskDB and a one-shot migration Job that initializes TaskDB, discovers tenants, processes the work queue, validates the migrated data, synchronizes the SmithDB metastore, promotes the work, and exits.
+
+## Wait for completion
+
+Keep SmithDB-backed queries disabled until the historical migration Job reports Kubernetes condition `Complete`.
+
+Finished migration Jobs remain for seven days by default so you can inspect their logs. The logs are diagnostic only; the `Complete` condition is the signal that migration finished. Retain TaskDB only if needed for diagnosis.
+
+Return to [Install LangSmith with SmithDB](/langsmith/self-host-smithdb-install#step-6-switch-queries-to-smithdb) and complete the **Switch queries to SmithDB** step.
+
+### Handle failures
+
+The migration Job defaults to `backoffLimit: 3`, allowing retries before Kubernetes marks it failed.
+
+If the Job failed from under-provisioning, adjust both `smithdb.migration.job.parallelism` and `smithdb.migration.deployment.resources`. Preserve TaskDB, delete only the migration Job, and run the normal Helm upgrade. Deleting an active Job may leave a small amount of orphaned object-storage data from in-flight writes. The recreated Job resumes progress tracked in TaskDB.
+
+<Warning>
+When resetting the SmithDB metastore or object store, reset TaskDB too. The chart-managed TaskDB PVC is deleted by default when SmithDB is disabled. Clear an external or retained TaskDB manually, or stale migration state can cause work to be skipped.
+</Warning>
+
+<Warning>
+For validation failures, unclear causes, or issues other than under-provisioning, stop and escalate. Keep queries disabled and migration enabled. Preserve the failed Job, TaskDB, SmithDB metastore, and object storage. Contact LangChain through the [Support Portal](https://support.langchain.com/).
+</Warning>
+
+## See also
+
+- [Use an existing secret for your installation](/langsmith/self-host-using-an-existing-secret)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-smithdb-migrate.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
