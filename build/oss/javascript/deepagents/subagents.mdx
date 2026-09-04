@@ -9,6 +9,8 @@ import SubagentStreamProgressPy from '/snippets/javascript/code-samples/subagent
 import SubagentStreamProgressJs from '/snippets/javascript/code-samples/subagent-stream-progress-js.mdx';
 import SubagentsCompiledSubagentPy from '/snippets/javascript/code-samples/subagents-compiled-subagent-py.mdx';
 import SubagentsCompiledSubagentJs from '/snippets/javascript/code-samples/subagents-compiled-subagent-js.mdx';
+import ForkedSubagentsBasicPy from '/snippets/javascript/code-samples/forked-subagents-basic-py.mdx';
+import ForkedSubagentsBasicJs from '/snippets/javascript/code-samples/forked-subagents-basic-js.mdx';
 import DynamicSubagentsQuickstartPy from '/snippets/javascript/code-samples/dynamic-subagents-quickstart-py.mdx';
 import DynamicSubagentsQuickstartJs from '/snippets/javascript/code-samples/dynamic-subagents-quickstart-js.mdx';
 import DynamicSubagentsInvokePy from '/snippets/javascript/code-samples/dynamic-subagents-invoke-py.mdx';
@@ -131,7 +133,8 @@ Define subagents as dictionaries matching the [`SubAgent`](https://reference.lan
 |-------|------|-------------|
 | `name` | `string` | Required. Unique identifier for the subagent. The main agent uses this name when calling the `task()` tool. The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents. |
 | `description` | `string` | Required. Description of what this subagent does. Be specific and action-oriented. The main agent uses this to decide when to delegate. |
-| `systemPrompt` | `string` | Required. Instructions for the subagent. Custom subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. |
+| `systemPrompt` | `string` | Required for `mode: "isolated"` (the default). Instructions for the subagent. Custom isolated subagents must define their own. Include tool usage guidance and output format requirements.<br></br>Does not inherit from main agent. For `mode: "fork"`, omit this field unless you need a fork-only addendum. See [Forked subagents](#forked-subagents). |
+| `mode` | `"isolated"` \| `"fork"` | Optional. Context mode. Defaults to `"isolated"`, where the subagent only sees the delegated task. Set to `"fork"` to inherit the parent's conversation and system prompt instead. See [Forked subagents](#forked-subagents). |
 | `tools` | `StructuredTool[]` | Optional. Tools the subagent can use. Keep this minimal and include only what's needed.<br></br>Inherits from main agent by default. When specified, overrides the inherited tools entirely. |
 | `model` | `LanguageModelLike \| string` | Optional. Overrides the main agent's model. Omit to use the main agent's model.<br></br>Inherits from main agent by default. You can pass either a model identifier string like `'openai:gpt-5.5'` (using the `'provider:model'` format) or a LangChain chat model object (`await initChatModel("gpt-5.5")` or `new ChatOpenAI({ model: "gpt-5.5" })`). |
 | `middleware` | `AgentMiddleware[]` | Optional. Additional middleware for custom behavior, logging, or rate limiting.<br></br>Does not inherit from the main agent. Appended to the [synchronous subagent stack](/oss/javascript/deepagents/customization#synchronous-subagent-stack). |
@@ -151,6 +154,7 @@ For complex workflows, use a prebuilt LangGraph graph as a [`CompiledSubAgent`](
 | `name` | `str` | Required. Unique identifier for the subagent. The subagent name becomes metadata for `AIMessage`s and for streaming, which helps to differentiate between agents. |
 | `description` | `str` | Required. What this subagent does. |
 | `runnable` | `Runnable` | Required. A compiled LangGraph graph (must call `.compile()` first). |
+| `mode` | `"isolated"` \| `"fork"` | Optional. Defaults to `"isolated"`. Set to `"fork"` to inherit the parent's message history. The compiled graph keeps its own system prompt either way. See [Forked subagents](#forked-subagents). |
 
 ## Using SubAgent
 
@@ -170,6 +174,100 @@ If you're creating a custom LangGraph graph, make sure that the graph has a [sta
 
 <SubagentsCompiledSubagentJs />
 
+
+## Forked subagents
+
+By default, a subagent runs with `mode: "isolated"`: it sees only the task description you give it and has no memory of the conversation that led up to the delegation. A **forked subagent** (`mode: "fork"`) inherits the parent's full conversation history and exact system prompt instead.
+
+Use forked subagents when the subagent's task is to continue the work the parent already started, like a worker agent that picks up a fix the parent has already diagnosed, or a subagent that drafts the postmortem for an incident investigation. Since forking is a mode you set on the subagent itself, that's a decision you make when you define it.
+
+```mermaid
+%%{init: {"flowchart": {"subGraphTitleMargin": {"top": 12, "bottom": 4}}}}%%
+graph TD
+    Message["'Review PR #482'"]
+    Analysis["Parent already found:<br/>tokens logged in plaintext,<br/>no expiry check on refresh"]
+    Delegate["Delegate: draft comments<br/>for the issues found"]
+    Message --> Analysis --> Delegate
+
+    subgraph Isolated["`**Isolated subagent**`"]
+        IOut["Sees only the task description<br/>starts from nothing, re-reviews the diff"]
+    end
+
+    subgraph Forked["`**Forked subagent**`"]
+        FOut["Sees parent history + continuation preamble<br/>already knows the issues, writes comments directly"]
+    end
+
+    Delegate -->|task description only| Isolated
+    Delegate -->|parent history + continuation preamble| Forked
+
+    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
+    classDef output fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
+    class Message,Analysis,Delegate process
+    class IOut,FOut output
+```
+
+
+
+<Note>
+    Subagent forking requires `deepagents>=1.13.3`. It is in [**beta**](/oss/javascript/versioning); APIs and behavior may change between releases.
+</Note>
+
+
+### Configure a forked subagent
+
+
+
+Set `mode: "fork"` on a [`SubAgent`](https://reference.langchain.com/javascript/deepagents/middleware/SubAgent) (the default is `mode: "isolated"`). All [`SubAgent`](https://reference.langchain.com/javascript/deepagents/middleware/SubAgent) fields are available:
+`name`, `description`, `tools`, `model`, `middleware`, `interruptOn`, `permissions`, and `responseFormat`.
+
+`skills` is rejected if provided. `systemPrompt` is allowed and is appended to the parent's inherited prompt as an addendum, but doing so typically breaks the prompt cache, so leave it unset unless you have a specific need for fork-only instructions.
+
+<ForkedSubagentsBasicJs />
+
+
+### How it works
+
+A fork does not get a fresh task description. It gets the parent's own conversation, with one change: the trailing call that delegated to it is dropped and replaced with a short preamble marking the messages above as a continuation, not a fresh request. When the fork finishes, its answer comes back as a normal tool result, and the parent picks up right where it left off.
+
+
+
+```javascript
+// What the parent has, right before delegating
+[
+  new HumanMessage("Review the changes in PR #482"),
+  new AIMessage({ content: "", tool_calls: [{ name: "read_diff", args: { path: "src/auth/session.py" } }] }),
+  new ToolMessage({ content: "- session tokens are logged in plaintext\n- no expiry check on refresh", tool_call_id: "1" }),
+  new AIMessage("Found two issues: session tokens are logged in plaintext, and there's no expiry check on refresh."),
+  new HumanMessage("Good catch. Draft review comments for those."),
+  new AIMessage({ content: "", tool_calls: [{ name: "task", args: { subagentType: "comment-writer", description: "Draft review comments for the two issues found above." } }] }),
+]
+
+// What the fork actually sees
+[
+  new HumanMessage("Review the changes in PR #482"),
+  new AIMessage({ content: "", tool_calls: [{ name: "read_diff", args: { path: "src/auth/session.py" } }] }),
+  new ToolMessage({ content: "- session tokens are logged in plaintext\n- no expiry check on refresh", tool_call_id: "1" }),
+  new AIMessage("Found two issues: session tokens are logged in plaintext, and there's no expiry check on refresh."),
+  new HumanMessage("Good catch. Draft review comments for those."),
+  new HumanMessage("Continuing as the subagent that was just invoked. Draft review comments for the two issues found above."),
+]
+```
+
+
+Reusing the parent's exact prefix also means the fork can reuse the parent's prompt cache instead of starting cold, though tool use that diverges from the parent's will still miss.
+
+A [`CompiledSubAgent`](https://reference.langchain.com/javascript/deepagents/middleware/CompiledSubAgent) supports `mode: "fork"` too, though it keeps its own system prompt since the graph is already built.
+
+### When to use forking
+
+Compare isolated and forked modes along these dimensions:
+
+| Dimension | Isolated (default) | Forked |
+|-----------|---------------------|--------|
+| **Context** | Only the task description you pass in | The parent's full conversation history and system prompt |
+| **System prompt and skills** | You set them on the subagent | Skills not settable; system prompt appends to the parent's (breaks caching, so usually left unset) |
+| **Calling other subagents** | Can use the `task` tool | Cannot use `task`; must finish the work itself |
+| **Best for** | Focused work that needs little prior context | Continuing an investigation the parent has already started |
 
 ## Dynamic subagents
 
