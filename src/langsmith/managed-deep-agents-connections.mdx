@@ -6,7 +6,21 @@ description: Configure and use API keys and OAuth connections with Managed Deep 
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-A connection links a managed deep agent to an external service. At runtime, use `connections.get(...)` to resolve the connection value. The value does not appear in project source or CLI output.
+A connection links a managed deep agent to an external service. At runtime, await `connections.get(...)` to resolve the connection value as a string. Set the owner type to `agent` or `user`:
+
+:::python
+```python
+agent_value: str = await connections.get("organization-tavily", {"type": "agent"})
+user_value: str = await connections.get("engineering-notion", {"type": "user"})
+```
+:::
+
+:::js
+```ts
+const agentValue: string = await connections.get("organization-tavily", { type: "agent" });
+const userValue: string = await connections.get("engineering-notion", { type: "user" });
+```
+:::
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -16,18 +30,14 @@ The developer controls which value `connections.get(...)` resolves:
 
 | Owner | Value | Setup |
 | --- | --- | --- |
-| `agent` | One API key or token that the agent uses for all users. The agent acts as itself. | An administrator configures the connection before deployment. |
-| `user` | An OAuth access token that the agent uses on behalf of the authenticated user. | Each user authorizes an OAuth account. Slack requests authorization when the agent first needs it. |
+| `agent` | A shared API key or token. Use it for capabilities such as [Tavily](https://www.tavily.com/) web search. The agent acts as itself. | An administrator configures the connection before deployment. |
+| `user` | An OAuth access token for the authenticated user. Use it to search the user's Notion workspace or send email as the user. | Each user authorizes an OAuth account. Slack requests authorization when the agent first needs it. |
 
 Connection slugs are unique within a workspace. Use lowercase letters, numbers, and single hyphens, such as `organization-tavily` or `engineering-notion`.
 
-<Warning>
-Do not log, return, or add a resolved connection value to agent state or model context.
-</Warning>
-
 ## Configure an agent-owned API key
 
-An administrator can store a fixed API key without putting the value in the command or shell history. Run the command from the project root. The CLI requires a LangSmith API key and workspace ID.
+An administrator can store a fixed API key for a custom tool. This example stores a Tavily API key for the web search tool below. Run the command from the project root. The CLI requires a LangSmith API key and workspace ID.
 
 First, put the source value in the shell environment or project `.env` file. Then create the connection from that variable:
 
@@ -53,7 +63,9 @@ uv run mda connections create organization-tavily --secret-from-env TAVILY_API_K
 </CodeGroup>
 :::
 
-You can also omit `--secret-from-env` to enter the value in a masked prompt, or use `--secret-from-file PATH` to read one value from a file.
+This command creates the `organization-tavily` connection in the current LangSmith workspace. It stores the value from `TAVILY_API_KEY` as an agent-owned secret. Runtime code can resolve the value with `connections.get(...)`.
+
+To enter the value interactively, omit `--secret-from-env`. The CLI hides the input so the secret does not appear on screen or in shell history. You can also use `--secret-from-file PATH` to read one value from a file.
 
 Use `list` or `get` to inspect connection metadata:
 
@@ -82,8 +94,6 @@ uv run mda connections get organization-tavily
     ```
 </CodeGroup>
 :::
-
-These commands do not return the stored value. Resolve the value only at runtime with `connections.get(...)`.
 
 ### Use an API key in a custom tool
 
@@ -171,38 +181,14 @@ uv run mda connections catalog
 </CodeGroup>
 :::
 
-Create the connection before deployment. This example uses the built-in GitHub service:
-
-:::python
-```bash
-uv run mda connections create frontend-github --oauth github
-```
-:::
-
-:::js
-<CodeGroup>
-    ```bash npm
-    npx mda connections create frontend-github --oauth github
-    ```
-
-    ```bash pnpm
-    pnpm exec mda connections create frontend-github --oauth github
-    ```
-
-    ```bash bun
-    bunx mda connections create frontend-github --oauth github
-    ```
-</CodeGroup>
-:::
-
-To use your own OAuth application, pass its client ID. Read the client secret from an environment variable:
+GitHub requires an OAuth client ID and client secret. Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, then create the connection before deployment:
 
 :::python
 ```bash
 uv run mda connections create frontend-github \
   --oauth github \
-  --client-id "$GITHUB_OAUTH_CLIENT_ID" \
-  --secret-from-env GITHUB_OAUTH_CLIENT_SECRET
+  --client-id "$GITHUB_CLIENT_ID" \
+  --secret-from-env GITHUB_CLIENT_SECRET
 ```
 :::
 
@@ -211,22 +197,22 @@ uv run mda connections create frontend-github \
     ```bash npm
     npx mda connections create frontend-github \
       --oauth github \
-      --client-id "$GITHUB_OAUTH_CLIENT_ID" \
-      --secret-from-env GITHUB_OAUTH_CLIENT_SECRET
+      --client-id "$GITHUB_CLIENT_ID" \
+      --secret-from-env GITHUB_CLIENT_SECRET
     ```
 
     ```bash pnpm
     pnpm exec mda connections create frontend-github \
       --oauth github \
-      --client-id "$GITHUB_OAUTH_CLIENT_ID" \
-      --secret-from-env GITHUB_OAUTH_CLIENT_SECRET
+      --client-id "$GITHUB_CLIENT_ID" \
+      --secret-from-env GITHUB_CLIENT_SECRET
     ```
 
     ```bash bun
     bunx mda connections create frontend-github \
       --oauth github \
-      --client-id "$GITHUB_OAUTH_CLIENT_ID" \
-      --secret-from-env GITHUB_OAUTH_CLIENT_SECRET
+      --client-id "$GITHUB_CLIENT_ID" \
+      --secret-from-env GITHUB_CLIENT_SECRET
     ```
 </CodeGroup>
 :::
@@ -247,6 +233,7 @@ from managed_deepagents import connections
 @tool
 async def get_github_user() -> str:
     """Get the authenticated caller's GitHub login."""
+    # Replace `frontend-github` with the name of your connection.
     access_token = await connections.get("frontend-github", {"type": "user"})
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(
@@ -266,6 +253,7 @@ import { z } from "zod";
 
 export const getGitHubUser = tool(
   async () => {
+    // Replace `frontend-github` with the name of your connection.
     const accessToken = await connections.get("frontend-github", { type: "user" });
     const response = await fetch("https://api.github.com/user", {
       headers: {
