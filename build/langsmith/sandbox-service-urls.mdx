@@ -187,13 +187,15 @@ def create_item(item: dict):
 | | Service URLs | TCP tunnels |
 |---|---|---|
 | **Protocol** | HTTP | Any TCP (databases, Redis, SSH, HTTP) |
-| **Setup** | Zero — just a URL | Requires SDK or CLI |
+| **Setup** | Zero—just a URL | Requires SDK or CLI |
 | **Access from** | Browser, scripts, CI, anywhere | Local machine only |
 | **Sharing** | Copy the URL and send it | Not shareable |
 | **Multi-page web apps** | Full support (subdomain routing) | Full support (local port) |
 | **Non-HTTP services** | Not supported | Full support |
 
 Use **service URLs** for HTTP services you want to access from a browser or share with others. Use **[TCP tunnels](/langsmith/sandbox-sdk#tcp-tunnels-python)** for non-HTTP protocols (like `psql` or `redis-cli`) or when you need local-only access.
+
+To share a single file rather than a running service, use a **[download link](/langsmith/sandbox-download-links)**.
 
 ## Troubleshoot
 
