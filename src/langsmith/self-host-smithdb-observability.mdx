@@ -1,0 +1,159 @@
+---
+title: Configure SmithDB observability
+sidebarTitle: Configure observability
+description: Scrape SmithDB application metrics and export logs and traces to your existing observability stack.
+---
+
+SmithDB components expose application metrics and can export logs and traces to your existing observability stack. Set this up after you deploy SmithDB services and before you tune capacity or migrate historical data. It provides the signals to validate those changes and investigate failures.
+
+## Metrics
+
+Each SmithDB component exposes application metrics at the fixed `/metrics` path on its HTTP port. Configure your monitoring stack to discover the pods by adding scrape annotations to each component:
+
+<Accordion title="Sample Prometheus configuration">
+
+```yaml
+smithdb:
+  query:
+    deployment:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8060"
+  ingestion:
+    deployment:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8050"
+  compaction:
+    deployment:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8070"
+  compactionWorker:
+    deployment:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "9000"
+  clusterManager:
+    deployment:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8090"
+```
+
+</Accordion>
+
+If your monitoring provider does not discover standard Prometheus annotations, use its own pod annotations instead. Monitor the PostgreSQL metastore, Kubernetes nodes, and cloud services with your existing infrastructure monitoring.
+
+## Metrics reference
+
+Names are as they appear on `/metrics`. If your collector adds a namespace or prefix, adjust accordingly.
+
+### Start here
+
+If the full reference is more than you need, these five answer whether SmithDB is healthy. Every other metric below exists to explain why one of them moved.
+
+| Question | Metric | Component |
+| --- | --- | --- |
+| Are queries succeeding, and fast? | `server_requests_duration` | Query |
+| Are writes landing, and fast? | `ingest_batch_latency` | Ingestion |
+| Is ingestion keeping up with arrivals? | `ingest_pending_segment_entry_count` | Ingestion |
+| Is compaction keeping up? | `compaction_queue_job_count` | Compaction |
+| Is compaction succeeding? | `compaction_job_completion` | Compaction |
+
+Compaction has two entries because the failure modes are separate: jobs can fail repeatedly while the queue length stays flat, and the queue can grow while every job that runs succeeds.
+
+### Ingestion
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `ingest_batch_latency` | Histogram | End-to-end latency from batch received to flush completed. |
+| `ingest_flush_count` | Counter | Flushes to object storage. A flat rate while traffic arrives means writes are not landing. |
+| `ingest_flush_rows` | Histogram | Rows per flush, by level. Falling rows at a steady flush rate suggests premature flushing. |
+| `ingest_flush_duration` | Histogram | How long flushes take. Rising durations point at object store latency or undersized ingestion. |
+| `ingest_flush_reason` | Counter | What triggered each flush, labeled `reason` (`size`, `time`, or `shutdown`) and `level` (`L0` or `L1`). L1 flushes on accumulated run count, or a timeout. |
+| `ingest_pending_segment_entry_count` | Gauge | Entries not yet flushed. Sustained growth means flushing is backlogged. |
+| `semaphore_permits_in_use` | Gauge | Concurrency permits held, against `semaphore_max_permits`. Sustained saturation means writes are queuing. |
+| `server_requests_duration` | Histogram | Ingestion request latency. Split by `status` for success and failure counts. |
+
+### Query
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `server_requests_duration` | Histogram | Query latency. Split by `status` for success and failure counts, where `status` is the gRPC code (`0` is success) or the HTTP code, and by `path` to find the slow endpoint. |
+| `query_fanout_partitions` | Histogram | Active scan partitions per query. Rising fanout drives both latency and memory. |
+| `query_fanout_limit_exceeded_total` | Counter | Queries rejected for excessive fanout. Any sustained rate means queries are failing outright. |
+| `query_execution_max_mem_used_bytes` | Histogram | Peak memory for the largest operator in a query plan. Approaching the configured limit precedes termination. |
+
+### Compaction
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `compaction_queue_job_count` | Gauge | Jobs waiting in the compaction queue. Sustained growth means compaction is falling behind. |
+| `compaction_jobs_scheduled` | Counter | Work created by the pipeline. Compare against jobs executed. |
+| `compaction_jobs_executed` | Counter | Work consumed. Persistently below scheduled means under-provisioned workers. |
+| `compaction_job_completion` | Counter | Job outcomes, labeled `status` (`success` or `failure`) and `job_kind`. A `job_kind` dropping to zero means that job type has stopped running. |
+| `compaction_queue_jobs_skipped_capacity` | Counter | Jobs skipped for exceeding a worker's remaining capacity. A sustained rate means worker capacity is too small for the jobs being produced. |
+| `compaction_queue_oldest_pending_created_at_seconds` | Gauge | Unix timestamp when the oldest pending job was enqueued, or zero when the queue is empty. Compute age as `time() - metric`, and exclude the zero case. |
+| `compaction_job_latency_seconds` | Histogram | Job creation to completion. Includes queue wait, so it rises when workers saturate as well as when jobs are slow. |
+| `compaction_worker_capacity_used` | Gauge | In-flight capacity cost by `job_kind`, against `compaction_worker_capacity_limit`. Sustained use near the limit explains skipped jobs and a growing queue. |
+| `compaction_worker_running_tasks` | Gauge | Tasks running by `job_kind`. Zero while the queue is non-empty means workers are stalled, not busy. |
+
+### All components
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `object_store_op_duration` | Histogram | Object store operation latency. |
+| `sys_jemalloc_resident_bytes` | Gauge | Resident process memory. Track against the pod memory limit. |
+
+### LangSmith ingestion path
+
+Emitted by LangSmith rather than by SmithDB, and labeled `store="clickhouse|smithdb"`, so the two stores can be compared directly during [dual ingestion](/langsmith/self-host-smithdb-install#step-4-enable-dual-ingestion).
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `ingestion_e2e_latency_seconds` | Histogram | API receipt to store write ack, per run. The user-facing number; compare `store="smithdb"` against `store="clickhouse"`. |
+| `ingestion_api_to_worker_latency_seconds` | Histogram | Queue wait before the worker starts. Rising here is a queue problem, not a SmithDB problem. |
+| `ingestion_worker_to_store_latency_seconds` | Histogram | Store write time alone. Isolates SmithDB from queue delay. |
+
+### Not covered here
+
+| Area | Why |
+| --- | --- |
+| Metastore lag | Collected by querying the metastore PostgreSQL directly, not exported by SmithDB. |
+| Kubernetes signals | OOM kills, container restarts, CPU and memory against limits, and SSD node disk usage. Worth alerting on, but not SmithDB metrics. See [Troubleshoot supporting infrastructure](/langsmith/self-host-smithdb-infrastructure#troubleshoot-supporting-infrastructure). |
+
+## Logs and traces
+
+SmithDB reads the chart-level OpenTelemetry tracing configuration and exports over OTLP gRPC only. It exports logs and traces when `config.observability.tracing.enabled` is `true` and `config.observability.tracing.exporter` is `grpc`:
+
+```yaml
+config:
+  observability:
+    tracing:
+      enabled: true
+      endpoint: "otel-collector.observability.svc.cluster.local:4317"
+      exporter: "grpc"
+```
+
+With the chart-level exporter set to `http`, SmithDB export stays disabled and SmithDB logs remain console-only. The chart includes SmithDB pod and container names as OpenTelemetry resource attributes automatically.
+
+To customize SmithDB log filtering, set `RUST_LOG` for all SmithDB workloads through `smithdb.commonEnv`:
+
+```yaml
+smithdb:
+  commonEnv:
+    - name: RUST_LOG
+      value: "warn,smithdb_query=debug,vortex=warn"
+```
+
+Confirm the collector is reachable from the LangSmith namespace, apply the chart, then confirm telemetry arrives.
+
+## Telemetry for the rest of the deployment
+
+This page covers SmithDB components only. For logs, metrics, and traces from the rest of a LangSmith deployment, see [Export LangSmith telemetry to your observability backend](/langsmith/export-backend). To set up or tune a collector, see [Configure your collector for LangSmith telemetry](/langsmith/langsmith-collector).

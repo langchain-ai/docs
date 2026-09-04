@@ -1,0 +1,77 @@
+---
+title: Enable SmithDB on self-hosted LangSmith
+sidebarTitle: Overview
+description: Run SmithDB alongside ClickHouse on a self-hosted LangSmith Kubernetes installation.
+---
+
+<Note>
+SmithDB is an opt-in datastore for self-hosted LangSmith. ClickHouse remains required and cannot be removed after you enable SmithDB. The minimum LangSmith version depends on your cloud. See [Check cloud support](#check-cloud-support).
+</Note>
+
+SmithDB is a columnar datastore built for agent trace data: deeply nested spans, multi-modal content, and spans that stay open for hours. It keeps durable data in object storage with node-local SSD caching, and serves LangSmith trace ingestion and queries alongside the existing ClickHouse datastore.
+
+You can enable SmithDB on any LangSmith Kubernetes installation, whether it is brand new or already serving traffic. [Self-host LangSmith on Kubernetes](/langsmith/kubernetes) covers the base installation; this section covers everything SmithDB adds on top of it.
+
+## Check cloud support
+
+SmithDB examples in this section cover managed Kubernetes on AWS, GCP, and Azure. They do not cover self-managed clusters.
+
+| Cloud | Minimum version |
+|---|---|
+| AWS (EKS) | LangSmith 0.16, Helm chart `0.16.14` or later |
+| GCP (GKE) | LangSmith 0.16, Helm chart `0.16.14` or later |
+| Azure (AKS) | LangSmith 0.17 |
+
+## Guides
+
+<CardGroup cols={2}>
+<Card title="Install SmithDB" icon="download" href="/langsmith/self-host-smithdb-install">
+  Stage infrastructure, deploy SmithDB services, enable dual ingestion, and switch queries after validation.
+</Card>
+<Card title="Prepare supporting infrastructure" icon="server" href="/langsmith/self-host-smithdb-infrastructure">
+  Provide a dedicated PostgreSQL metastore, object storage, and local SSD cache capacity.
+</Card>
+<Card title="Configure for scale" icon="chart-bar" href="/langsmith/self-host-smithdb-scale">
+  Choose a tested resource tier and size SmithDB workloads.
+</Card>
+<Card title="Configure observability" icon="activity" href="/langsmith/self-host-smithdb-observability">
+  Scrape SmithDB metrics and export logs and traces to your stack.
+</Card>
+<Card title="Migrate historical data" icon="transfer" href="/langsmith/self-host-smithdb-migrate">
+  Backfill ClickHouse history into SmithDB before query cutover.
+</Card>
+<Card title="Troubleshoot SmithDB" icon="tool" href="/langsmith/self-host-smithdb-troubleshooting">
+  Gather context, disable SmithDB, or reset a deployment safely.
+</Card>
+</CardGroup>
+
+## Components
+
+Enabling SmithDB adds the following workloads to your cluster. Three of them cache trace data on disk and belong on local SSD nodes; the other two are small and run on general compute. See [Schedule SmithDB workloads](/langsmith/self-host-smithdb-infrastructure#schedule-smithdb-workloads).
+
+| Component | What it does | Node pool | Scaling |
+| --- | --- | --- | --- |
+| Ingestion | Writes incoming traces to object storage | Local SSD | Horizontal |
+| Query | Serves trace reads for the LangSmith UI and API | Local SSD | Horizontal |
+| Compaction worker | Reorganizes stored traces in the background so queries stay fast | Local SSD | Horizontal |
+| Compaction | Schedules the background work that compaction workers carry out | Compute | Single instance |
+| Cluster manager | Coordinates the other SmithDB services | Compute | Single instance |
+
+Two more workloads run as Kubernetes Jobs rather than as services. One prepares the SmithDB metastore during installation. The other backfills ClickHouse history and runs only if you choose to [migrate historical data](/langsmith/self-host-smithdb-migrate).
+
+## Storage requirements
+
+A self-hosted LangSmith instance uses ClickHouse for traces and feedback, PostgreSQL for operational data, Redis or Valkey for queuing and caching, and optional blob storage. SmithDB adds its own metastore, object store, and cache nodes. It does not replace those services.
+
+ClickHouse remains required after you enable SmithDB. Keep it configured and running, including after query cutover. Support for disabling ClickHouse is planned for a future release.
+
+For SDK method changes that work with both ClickHouse and SmithDB, see [Migrate to SmithDB-backed SDK methods](/langsmith/smithdb-sdk-migration).
+
+## See also
+
+- [Self-hosted LangSmith overview](/langsmith/self-hosted)
+- [Self-host LangSmith on Kubernetes](/langsmith/kubernetes)
+- [Upgrade a self-hosted LangSmith installation](/langsmith/self-host-upgrades)
+- [We built SmithDB, the data layer for agent observability](https://www.langchain.com/blog/introducing-smithdb)
+- [Full text search in SmithDB, part 1: designing an inverted index for object storage](https://www.langchain.com/blog/full-text-search-in-smithdb-designing-an-inverted-index-for-object-storage)
+- [Full text search in SmithDB, part 2: constructing and querying our inverted index](https://www.langchain.com/blog/full-text-search-in-smithdb-constructing-and-querying-our-inverted-index-pt-2)

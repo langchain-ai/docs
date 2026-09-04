@@ -1,0 +1,84 @@
+---
+title: Troubleshoot SmithDB
+sidebarTitle: Troubleshoot
+description: Gather troubleshooting context or disable and reset a SmithDB deployment on self-hosted LangSmith.
+---
+
+<Note>
+Keep ClickHouse configured and available throughout everything on this page.
+</Note>
+
+Use this page to gather context before you escalate, or to back SmithDB out of a deployment: return traffic to ClickHouse, disable the SmithDB services, and optionally remove SmithDB data.
+
+## Before making changes
+
+- Stop at the current installation or migration stage until you understand the issue.
+- Record the LangSmith and Helm chart versions and the most recent configuration change.
+- Preserve failed Jobs, TaskDB, and relevant logs before deleting or recreating resources.
+- Do not delete the SmithDB metastore or object-storage data while troubleshooting.
+
+## Find the right page
+
+Known failures are documented alongside the configuration that causes them:
+
+- Pods stuck `Pending`, object-store access denied, metastore connection failures, and slow cache I/O: [Troubleshoot supporting infrastructure](/langsmith/self-host-smithdb-infrastructure#troubleshoot-supporting-infrastructure)
+- Migration Job failures and retries: [Handle failures](/langsmith/self-host-smithdb-migrate#handle-failures)
+- Capacity and replica sizing: [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale)
+
+## Support
+
+If no documented issue matches, contact LangChain through the [Support Portal](https://support.langchain.com/).
+
+## Disable or reset SmithDB
+
+Use this section to route LangSmith traffic back to ClickHouse and disable the SmithDB services. For the installation and cutover sequence, see [Install LangSmith with SmithDB](/langsmith/self-host-smithdb-install).
+
+<Warning>
+If a historical migration is active or its progress must be preserved, stop before disabling SmithDB. Disabling migration removes chart-managed TaskDB resources and, by default, its PVC. Contact LangChain through the [Support Portal](https://support.langchain.com/) if you need to preserve migration progress.
+</Warning>
+
+If you re-enable SmithDB ingestion later, you need to run another migration to bring it back in sync with ClickHouse.
+
+### Step 1. Route traffic back to ClickHouse
+
+Keep the SmithDB services enabled, but disable query, ingestion, and migration:
+
+```yaml
+smithdb:
+  enabled: true
+  langsmith:
+    ingestion:
+      enabled: false
+    migration:
+      enabled: false
+    query:
+      enabled: false
+```
+
+Apply the chart through your normal deployment workflow and wait for the rollout to complete. This routes all query and ingestion traffic back to ClickHouse before any SmithDB workloads are removed.
+
+### Step 2. Disable SmithDB services
+
+After the first Helm update completes, disable SmithDB services while leaving the integration flags off:
+
+```yaml
+smithdb:
+  enabled: false
+  langsmith:
+    ingestion:
+      enabled: false
+    migration:
+      enabled: false
+    query:
+      enabled: false
+```
+
+Apply the chart again. Separating traffic cutover from workload removal avoids requests racing with SmithDB shutdown.
+
+### Step 3. (Optional) Remove SmithDB data
+
+<Danger>
+This cleanup is destructive. Continue only after the SmithDB services are disabled and you no longer need the data for re-enablement, diagnosis, or recovery.
+</Danger>
+
+Optionally remove the dedicated SmithDB object-storage data and PostgreSQL metastore. Re-enabling SmithDB after this cleanup requires recreating its supporting infrastructure and re-migrating data from ClickHouse.
