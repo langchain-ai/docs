@@ -2,18 +2,15 @@
 title: Prepare SmithDB supporting infrastructure
 sidebarTitle: Supporting infrastructure
 description: Provide a dedicated PostgreSQL metastore, object storage, and local SSD cache capacity before enabling SmithDB.
-tag: "Beta"
 ---
 
 <Note>
-SmithDB is optional and available in beta. These requirements apply only if you choose to enable SmithDB on an existing Kubernetes installation.
+These requirements apply only if you choose to enable SmithDB on an existing Kubernetes installation.
 </Note>
 
 SmithDB adds three infrastructure dependencies to an existing LangSmith self-hosted deployment: a PostgreSQL metastore, object storage, and node-local SSD cache capacity.
 
-<Note>
-These are integration requirements and practical recommendations, not a prescribed cloud architecture. Provider examples cover AWS (EKS), GCP (GKE), and Azure (AKS). Minimum LangSmith version depends on cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
-</Note>
+Treat what follows as integration requirements and practical recommendations, not a prescribed cloud architecture. Provider examples cover AWS (EKS), GCP (GKE), and Azure (AKS). The minimum LangSmith version depends on your cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
 
 ## Requirements
 
@@ -31,7 +28,7 @@ The metastore holds SmithDB catalog and coordination data. Start with an empty d
 SmithDB requires PostgreSQL 18 or later on a service reachable from the cluster. Common choices include Amazon RDS for PostgreSQL, Aurora PostgreSQL, AlloyDB, Cloud SQL for PostgreSQL, and Azure Database for PostgreSQL.
 
 <Note>
-AlloyDB Auth Proxy sidecar configuration is not included in this guide. Provide a reachable PostgreSQL 18 or later instance and an empty dedicated database. If you need Auth Proxy support, contact LangChain through the [Support Portal](https://support.langchain.com/).
+This guide does not cover AlloyDB Auth Proxy sidecar configuration. Provide a reachable PostgreSQL 18 or later instance and an empty dedicated database. If you need Auth Proxy support, contact LangChain through the [Support Portal](https://support.langchain.com/).
 </Note>
 
 ### Metastore Secret
@@ -77,29 +74,25 @@ smithdb:
 
 Object storage is SmithDB's durable data layer. Use a bucket reserved for SmithDB data. A regional bucket near the Kubernetes cluster is a practical starting point for lower latency and transfer costs.
 
-<Note>
-**Use private object-storage connectivity**
+### Use private object-storage connectivity
 
 Keep SmithDB traffic off public egress paths to avoid unnecessary data-transfer and NAT gateway costs:
 
-- **AWS:** Use an S3 Gateway VPC endpoint on the cluster's private route tables.
-- **GCP:** Use Private Google Access with private Google APIs DNS.
-- **Azure:** Use a private endpoint for Blob Storage.
-</Note>
+- **AWS**: Use an S3 Gateway VPC endpoint on the cluster's private route tables.
+- **GCP**: Use Private Google Access with private Google APIs DNS.
+- **Azure**: Use a private endpoint for Blob Storage.
 
 Configure access so SmithDB can list the bucket and read, write, and delete objects. Prefer IRSA on EKS, Workload Identity on GKE, or Azure Workload Identity on AKS over static credentials. Block public access and require encrypted transport.
 
-<Note>
-**ServiceAccount selection**
+### Select a ServiceAccount
 
 SmithDB workloads share `smithdb.serviceAccount`.
 
-- **Default:** The chart creates `<HELM_RELEASE>-smithdb`.
-- **Custom:** Set `name` to create a differently named account.
-- **Existing:** Set `create: false` and `name`. Configure workload identity externally.
+- **Default**: The chart creates `<HELM_RELEASE>-smithdb`.
+- **Custom**: Set `name` to create a differently named account.
+- **Existing**: Set `create: false` and `name`, then configure workload identity externally.
 
 Workload identity must target the selected namespace and name. With `create: false`, `name` is required. Otherwise pods use the `default` ServiceAccount.
-</Note>
 
 Do not expire objects independently of SmithDB's data lifecycle. Deleting live objects can make data unavailable.
 
@@ -267,7 +260,7 @@ smithdb:
 
 #### Provision EKS nodes with Karpenter
 
-Karpenter is a recommended way to provision SmithDB capacity on EKS, but it is not required. Other node provisioners must produce the same labels, taints, and Kubernetes-visible ephemeral-storage capacity.
+Karpenter is the recommended way to provision SmithDB capacity on EKS, but it is not required. Other node provisioners must produce the same labels, taints, and Kubernetes-visible ephemeral-storage capacity.
 
 Install Karpenter v1 and its CRDs by following the [Karpenter EKS guide](https://karpenter.sh/docs/getting-started/getting-started-with-karpenter/). Before applying the example below:
 
@@ -656,10 +649,6 @@ Supported disk counts and machine types vary by zone and machine generation. Ver
 
 ### Azure
 
-<Warning>
-Azure (AKS) support for SmithDB requires LangSmith 0.17. Do not enable SmithDB on AKS at 0.16.
-</Warning>
-
 A common Azure mapping is AKS, Azure Database for PostgreSQL, Azure Blob Storage, Workload Identity, and the VM temporary disk as Kubernetes ephemeral storage. Grant `Storage Blob Data Contributor` on the SmithDB storage account. For migration source reads, grant `Storage Blob Data Reader` on the LangSmith blob-storage account.
 
 #### Configure Blob Storage workload identity
@@ -763,6 +752,4 @@ resource "azurerm_kubernetes_cluster_node_pool" "smithdb_cache" {
 
 ## See also
 
-- [Install LangSmith with SmithDB](/langsmith/self-host-smithdb-install)
-- [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale)
 - [Enable blob storage](/langsmith/self-host-blob-storage)

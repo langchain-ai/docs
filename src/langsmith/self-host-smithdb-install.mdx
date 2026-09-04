@@ -2,11 +2,10 @@
 title: Install LangSmith with SmithDB
 sidebarTitle: Install SmithDB
 description: Enable SmithDB on an existing ClickHouse-backed self-hosted LangSmith Kubernetes installation in staged Helm updates.
-tag: "Beta"
 ---
 
 <Note>
-SmithDB is optional and available in beta. ClickHouse remains required. You cannot remove ClickHouse after enabling SmithDB. Minimum LangSmith version depends on cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
+SmithDB is opt-in. ClickHouse remains required. You cannot remove ClickHouse after enabling SmithDB. Minimum LangSmith version depends on cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
 </Note>
 
 SmithDB can serve LangSmith trace ingestion and queries alongside ClickHouse in an existing self-hosted deployment. This guide introduces SmithDB in stages so you can validate each change before continuing.
@@ -16,7 +15,7 @@ Upgrading an existing LangSmith installation from ClickHouse to SmithDB has five
 Apply each stage separately.
 
 <Warning>
-ClickHouse query load is reduced with SmithDB enabled. Removing the ClickHouse datastore is not supported.
+After query cutover, LangSmith trace reads no longer go to ClickHouse. Removing the ClickHouse datastore is still not supported.
 </Warning>
 
 ## Before you begin
@@ -24,7 +23,7 @@ ClickHouse query load is reduced with SmithDB enabled. Removing the ClickHouse d
 - Use an existing ClickHouse-backed LangSmith installation on Kubernetes.
 - Upgrade one major version at a time until the installation meets the [cloud support](/langsmith/self-host-smithdb#check-cloud-support) minimum: LangSmith 0.16 with Helm chart `0.16.14` or later on AWS (EKS) and GCP (GKE), or LangSmith 0.17 on Azure (AKS). Follow the [upgrade guide](/langsmith/self-host-upgrades).
 - Retain the Helm values used for the current installation. This guide adds SmithDB configuration to those existing values.
-- Ensure administrative capabilities on the EKS, GKE, or AKS cluster.
+- You need cluster-admin on the EKS, GKE, or AKS cluster.
 - Review the [SDK migration guide](/langsmith/smithdb-sdk-migration) and plan your SDK upgrade alongside this installation. New SmithDB-backed methods require LangSmith `0.16` or later.
 
 SmithDB is opt-in and can be disabled. To return query and ingestion traffic to ClickHouse and disable SmithDB services, see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting#disable-or-reset-smithdb).
@@ -35,10 +34,10 @@ SmithDB is opt-in and can be disabled. To return query and ingestion traffic to 
 
 Follow [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure) to provide:
 
-- A dedicated PostgreSQL 18 or later metastore.
-- Dedicated object storage with workload identity or equivalent credentials.
-- Local SSD-backed Kubernetes ephemeral storage for SmithDB caches.
-- Network connectivity and a Kubernetes Secret containing the metastore connection details.
+- A dedicated PostgreSQL 18 or later metastore
+- Dedicated object storage with workload identity or equivalent credentials
+- Local SSD-backed Kubernetes ephemeral storage for SmithDB caches
+- Network connectivity and a Kubernetes Secret containing the metastore connection details
 
 Record the object-store configuration, metastore Secret and key mappings, service-account identity, and scheduling values needed by the Helm chart.
 
@@ -243,7 +242,7 @@ Confirm that SmithDB ingestion remains healthy and that new writes continue to r
 
 #### Migrate ClickHouse data
 
-TaskDB stores migration progress and task state. It is required only during historical migration and may be retained afterward for diagnostics. SmithDB does not depend on it for normal operation.
+The migration uses TaskDB, a separate PostgreSQL database that coordinates the work and tracks progress. You need it only during historical migration, and SmithDB does not depend on it for normal operation. See [What is TaskDB?](/langsmith/self-host-smithdb-migrate#what-is-taskdb).
 
 After dual ingestion is confirmed stable and healthy, follow [Migrate ClickHouse history to SmithDB](/langsmith/self-host-smithdb-migrate) to configure TaskDB, run and monitor the historical migration, and clean up migration resources. Return here for query cutover after the migration completes.
 
@@ -269,7 +268,7 @@ smithdb:
 Validate traces, projects, filters, and time ranges in the LangSmith UI and API. Continue monitoring ingestion and query errors after cutover.
 
 <Warning>
-Query cutover does not permit disabling or removing the ClickHouse datastore. This applies to both in-cluster and external ClickHouse deployments. Preserve the existing in-cluster or external ClickHouse configuration throughout and after this process. ClickHouse removal is expected to be recommended after the v17 release of LangSmith.
+Do not disable or remove ClickHouse after query cutover. This applies to both in-cluster and external ClickHouse deployments. Preserve the existing ClickHouse configuration throughout and after this process. Removing ClickHouse is not supported today.
 </Warning>
 
 ## Troubleshooting
@@ -278,12 +277,6 @@ Use [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting) or cont
 
 ## See also
 
-- [Enable SmithDB on self-hosted LangSmith](/langsmith/self-host-smithdb)
-- [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure)
-- [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale)
-- [Configure SmithDB observability](/langsmith/self-host-smithdb-observability)
-- [Migrate ClickHouse history to SmithDB](/langsmith/self-host-smithdb-migrate)
-- [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting)
 - [Migrate to SmithDB-backed SDK methods](/langsmith/smithdb-sdk-migration)
 - [Upgrade a self-hosted LangSmith installation](/langsmith/self-host-upgrades)
 - [Self-host LangSmith on Kubernetes](/langsmith/kubernetes)
