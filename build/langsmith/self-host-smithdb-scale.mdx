@@ -1,0 +1,142 @@
+---
+title: Configure SmithDB for scale
+sidebarTitle: Configure for scale
+description: Choose tested SmithDB resource tiers and size Kubernetes workloads and the PostgreSQL metastore.
+---
+
+<Note>
+Use these tiers only after you decide to enable SmithDB. For non-SmithDB LangSmith services, see [Configure LangSmith for scale](/langsmith/self-host-scale).
+</Note>
+
+Use these tested tiers as starting configurations for SmithDB. Connect SmithDB to your monitoring stack before you tune capacity, so you can see what your changes do. See [Configure SmithDB observability](/langsmith/self-host-smithdb-observability).
+
+## Choose and scale a tier
+
+These tiers are starting points, not fixed throughput limits or prescribed configurations. CPU, memory, and ephemeral-storage values are per replica.
+
+Choose the tier whose tested ingestion and query rates most closely match or exceed your expected steady-state load.
+
+Apply the per-replica resources and starting replica counts from the selected tier. If the workload later outgrows that starting point, SmithDB compute can be scaled horizontally.
+
+<Note>
+SmithDB query, ingestion, and compaction-worker HPAs are enabled by default. They require Kubernetes Metrics Server or another `metrics.k8s.io` provider. Verify availability with `kubectl get --raw /apis/metrics.k8s.io/v1beta1`.
+</Note>
+
+## Baseline tiers
+
+| Component | Small<br />10 ingest / 10 query QPS | Medium<br />100 ingest / 40 query QPS | Large<br />1000 ingest / 100 query QPS |
+| --- | --- | --- | --- |
+| Ingestion | 1 replica<br />4 CPU<br />8 Gi memory<br />100 Gi ephemeral | 1 replica<br />16 CPU<br />32 Gi memory<br />100 Gi ephemeral | 2 replicas<br />56 CPU<br />150 Gi memory<br />1000 Gi ephemeral |
+| Query | 1 replica<br />4 CPU<br />8 Gi memory<br />200 Gi ephemeral | 1 replica<br />28 CPU<br />48 Gi memory<br />200 Gi ephemeral | 4 replicas<br />28 CPU<br />50 Gi memory<br />1000 Gi ephemeral |
+| Compaction | 1 replica<br />2 CPU<br />4 Gi memory | 1 replica<br />4 CPU<br />8 Gi memory | 1 replica<br />8 CPU<br />16 Gi memory |
+| Compaction worker | 1 replica<br />8 CPU<br />16 Gi memory<br />100 Gi ephemeral | 1 replica<br />16 CPU<br />32 Gi memory<br />100 Gi ephemeral | 4 replicas<br />28 CPU<br />50 Gi memory<br />300 Gi ephemeral |
+| Cluster manager | 1 replica<br />250m CPU<br />256 Mi memory | 1 replica<br />250m CPU<br />256 Mi memory | 1 replica<br />2 CPU<br />2 Gi memory |
+
+## Configure resources with Helm
+
+The chart defaults to `small`. Select `small`, `medium`, or `large`:
+
+```yaml
+smithdb:
+  resourceTier: medium
+```
+
+A tier sets per-replica CPU, memory, and ephemeral-storage requests and limits. Replica counts and autoscaling are configured separately. The chart enables autoscaling for query, ingestion, and compaction worker by default.
+
+For local-disk components, the ephemeral-storage limit also sizes the generated `emptyDir`. Explicit component `resources` or `volumes` settings take precedence.
+
+See [SmithDB resource tiers](https://github.com/langchain-ai/helm/tree/main/charts/langsmith#smithdb-resource-tiers) for current values and chart details.
+
+<Accordion title="Example explicit resource configuration">
+
+To configure resources without `smithdb.resourceTier`, use the component-level values directly. This medium-tier example is also a copyable reference for overriding individual components:
+
+```yaml
+smithdb:
+  query:
+    deployment:
+      resources:
+        requests:
+          cpu: "28"
+          memory: "48Gi"
+          ephemeral-storage: "200Gi"
+        limits:
+          cpu: "28"
+          memory: "48Gi"
+          ephemeral-storage: "200Gi"
+
+  ingestion:
+    deployment:
+      resources:
+        requests:
+          cpu: "16"
+          memory: "32Gi"
+          ephemeral-storage: "100Gi"
+        limits:
+          cpu: "16"
+          memory: "32Gi"
+          ephemeral-storage: "100Gi"
+
+  compaction:
+    deployment:
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+
+  compactionWorker:
+    deployment:
+      resources:
+        requests:
+          cpu: "16"
+          memory: "32Gi"
+          ephemeral-storage: "100Gi"
+        limits:
+          cpu: "16"
+          memory: "32Gi"
+          ephemeral-storage: "100Gi"
+
+  clusterManager:
+    deployment:
+      resources:
+        requests:
+          cpu: "250m"
+          memory: "256Mi"
+        limits:
+          cpu: "250m"
+          memory: "256Mi"
+```
+
+When configuring local-disk components manually, keep `limits.ephemeral-storage` and any explicit `emptyDir.sizeLimit` consistent with your Kubernetes policy.
+
+</Accordion>
+
+## Metastore capacity
+
+The baseline tiers cover SmithDB Kubernetes workloads only. They do not include the PostgreSQL metastore. Use these starting points for a dedicated metastore:
+
+| Tier | vCPU | Memory |
+| --- | --- | --- |
+| Small | 2 | 16 GiB |
+| Medium | 4 | 32 GiB |
+| Large | 8 | 64 GiB |
+
+Choose the nearest supported PostgreSQL instance shape from your provider and monitor database resource use and transaction latency during rollout.
+
+## See also
+
+- [Configure LangSmith for scale](/langsmith/self-host-scale)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-smithdb-scale.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

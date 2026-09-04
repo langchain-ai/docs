@@ -1,0 +1,766 @@
+---
+title: Prepare SmithDB supporting infrastructure
+sidebarTitle: Supporting infrastructure
+description: Provide a dedicated PostgreSQL metastore, object storage, and local SSD cache capacity before enabling SmithDB.
+---
+
+<Note>
+These requirements apply only if you choose to enable SmithDB on an existing Kubernetes installation.
+</Note>
+
+SmithDB adds three infrastructure dependencies to an existing LangSmith self-hosted deployment: a PostgreSQL metastore, object storage, and node-local SSD cache capacity.
+
+Treat what follows as integration requirements and practical recommendations, not a prescribed cloud architecture. Provider examples cover AWS (EKS), GCP (GKE), and Azure (AKS). The minimum LangSmith version depends on your cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
+
+## Requirements
+
+Before enabling SmithDB, provide:
+
+- A **dedicated, empty PostgreSQL database** for the SmithDB metastore. Do not use the PostgreSQL database that stores the rest of LangSmith operational data.
+- A **dedicated object-storage bucket** for SmithDB durable data.
+- A Kubernetes cluster that can provision enough **local SSD-backed ephemeral storage** for SmithDB caches.
+- Private network connectivity to the database and object store, plus credentials or workload identity for both.
+
+## PostgreSQL metastore
+
+The metastore holds SmithDB catalog and coordination data. Start with an empty database. The SmithDB migration Job owns its schema.
+
+SmithDB requires PostgreSQL 18 or later on a service reachable from the cluster. Common choices include Amazon RDS for PostgreSQL, Aurora PostgreSQL, AlloyDB, Cloud SQL for PostgreSQL, and Azure Database for PostgreSQL.
+
+<Note>
+This guide does not cover AlloyDB Auth Proxy sidecar configuration. Provide a reachable PostgreSQL 18 or later instance and an empty dedicated database. If you need Auth Proxy support, contact LangChain through the [Support Portal](https://support.langchain.com/).
+</Note>
+
+### Metastore Secret
+
+Create an existing Kubernetes Secret in the LangSmith release namespace containing the database host, name, username, and password. Map its keys through `smithdb.config.metastore`.
+
+<Accordion title="Metastore Secret and Helm values">
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: smithdb-metastore
+  namespace: NAMESPACE
+type: Opaque
+stringData:
+  smithdb_metastore_db_host: DB_HOST
+  smithdb_metastore_db_name: DB_NAME
+  smithdb_metastore_db_username: DB_USERNAME
+  smithdb_metastore_db_password: DB_PASSWORD
+```
+
+Configure the chart to use the corresponding keys:
+
+```yaml
+smithdb:
+  config:
+    existingSecretName: smithdb-metastore
+    metastore:
+      hostSecretKey: smithdb_metastore_db_host
+      databaseSecretKey: smithdb_metastore_db_name
+      usernameSecretKey: smithdb_metastore_db_username
+      passwordSecretKey: smithdb_metastore_db_password
+      port: "5432"
+      useSsl: true
+```
+
+`DB_NAME` may be any dedicated, empty PostgreSQL database, such as `smithdb`. The chart does not require these exact Secret key names. The Helm values map your chosen names.
+
+</Accordion>
+
+## Object storage
+
+Object storage is SmithDB's durable data layer. Use a bucket reserved for SmithDB data. A regional bucket near the Kubernetes cluster is a practical starting point for lower latency and transfer costs.
+
+### Use private object-storage connectivity
+
+Keep SmithDB traffic off public egress paths to avoid unnecessary data-transfer and NAT gateway costs:
+
+- **AWS**: Use an S3 Gateway VPC endpoint on the cluster's private route tables.
+- **GCP**: Use Private Google Access with private Google APIs DNS.
+- **Azure**: Use a private endpoint for Blob Storage.
+
+Configure access so SmithDB can list the bucket and read, write, and delete objects. Prefer IRSA on EKS, Workload Identity on GKE, or Azure Workload Identity on AKS over static credentials. Block public access and require encrypted transport.
+
+### Select a ServiceAccount
+
+SmithDB workloads share `smithdb.serviceAccount`.
+
+- **Default**: The chart creates `<HELM_RELEASE>-smithdb`.
+- **Custom**: Set `name` to create a differently named account.
+- **Existing**: Set `create: false` and `name`, then configure workload identity externally.
+
+Workload identity must target the selected namespace and name. With `create: false`, `name` is required. Otherwise pods use the `default` ServiceAccount.
+
+Do not expire objects independently of SmithDB's data lifecycle. Deleting live objects can make data unavailable.
+
+This bucket is separate from optional [LangSmith blob storage](/langsmith/self-host-blob-storage), which stores payloads and attachments for the broader LangSmith deployment.
+
+### Migration source-bucket access
+
+When migration and LangSmith blob storage are enabled, grant `smithdb.serviceAccount` read access to the existing LangSmith blob-storage bucket in addition to its access to the SmithDB destination bucket.
+
+Prefer Workload Identity for GCS blob access. If LangSmith must use GCS HMAC keys, set `smithdb.migration.deployment.extraEnv` to force the S3-compatible source and reference the existing LangSmith secret (`blob_storage_access_key` / `blob_storage_access_key_secret`):
+
+<Accordion title="GCS HMAC migration configuration">
+
+```yaml
+smithdb:
+  migration:
+    deployment:
+      extraEnv:
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__TYPE
+          value: "s3"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__BUCKET
+          value: "BLOB_BUCKET_NAME"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ROOT_FOLDER
+          value: "/"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ENDPOINT
+          value: "https://storage.googleapis.com"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: LANGSMITH_SECRETS_NAME
+              key: blob_storage_access_key
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: LANGSMITH_SECRETS_NAME
+              key: blob_storage_access_key_secret
+```
+
+</Accordion>
+
+## Local SSD cache
+
+Local SSD is volatile cache capacity. Losing a pod or node can discard the cache without deleting the durable object-storage copy.
+
+Attaching an SSD is not sufficient. Its filesystem must back Kubernetes local ephemeral storage, and usable capacity must appear as node allocatable `ephemeral-storage`. SmithDB consumes that capacity through `emptyDir` volumes.
+
+Use scheduling controls to keep SmithDB cache workloads on SSD-backed nodes. Size nodes with headroom above pod requests, images, logs, and Kubernetes reservations.
+
+### Schedule SmithDB workloads
+
+Place query, ingestion, compaction worker, and migration on the local SSD pool. Place compaction and cluster manager on the general compute pool. Node-pool labels and taints must match the Helm selectors and tolerations. Keep `metastoreMigration` unpinned so the pre-install hook can run on any available node.
+
+<Accordion title="Helm scheduling values">
+
+```yaml
+smithdb:
+  query:
+    deployment:
+      nodeSelector:
+        smithdb-local/instance-store: "true"
+      tolerations:
+        - key: smithdb-local/instance-store
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+
+  ingestion:
+    deployment:
+      nodeSelector:
+        smithdb-local/instance-store: "true"
+      tolerations:
+        - key: smithdb-local/instance-store
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+
+  compactionWorker:
+    deployment:
+      nodeSelector:
+        smithdb-local/instance-store: "true"
+      tolerations:
+        - key: smithdb-local/instance-store
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+
+  migration:
+    deployment:
+      nodeSelector:
+        smithdb-local/instance-store: "true"
+      tolerations:
+        - key: smithdb-local/instance-store
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+
+  compaction:
+    deployment:
+      nodeSelector:
+        smithdb-local/compute: "true"
+      tolerations:
+        - key: smithdb-local/compute
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+
+  clusterManager:
+    deployment:
+      nodeSelector:
+        smithdb-local/compute: "true"
+      tolerations:
+        - key: smithdb-local/compute
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+```
+
+</Accordion>
+
+<Accordion title="Verify local SSD capacity">
+
+Confirm the intended labels, taints, scheduler-visible capacity, pod placement, and cache filesystem:
+
+```bash
+kubectl get nodes --show-labels
+kubectl describe node NODE_NAME
+kubectl get node NODE_NAME \
+  -o jsonpath='{.status.allocatable.ephemeral-storage}{"\n"}'
+kubectl get pods -n NAMESPACE -o wide
+kubectl exec -n NAMESPACE POD_NAME -- df -h /data
+```
+
+Common symptoms are pods remaining pending when requests exceed allocatable capacity, slow cache I/O when `emptyDir` uses the boot disk, and evictions when the node lacks headroom.
+
+</Accordion>
+
+## Provider notes
+
+### AWS
+
+A common AWS mapping is EKS, RDS for PostgreSQL, S3, IRSA, and EC2 instance store. Scope S3 access to bucket listing and location plus object read, write, delete, and multipart operations. For migration source reads, grant `s3:ListBucket` and `s3:GetObject` on the LangSmith blob-storage bucket.
+
+#### Configure S3 workload identity
+
+Choose IRSA or EKS Pod Identity. IRSA requires the role annotation and trust for `system:serviceaccount:<NAMESPACE>:<HELM_RELEASE>-smithdb`. Pod Identity uses an external association and no annotation.
+
+<Accordion title="IRSA Helm values">
+
+```yaml
+smithdb:
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::<ACCOUNT_ID>:role/<ROLE_NAME>"
+  config:
+    objectStore:
+      type: s3
+      bucket: "<BUCKET_NAME>"
+      s3:
+        region: "<AWS_REGION>"
+        accessKeyIdSecretKey: ""
+        secretAccessKeySecretKey: ""
+```
+
+</Accordion>
+
+#### Provision EKS nodes with Karpenter
+
+Karpenter is the recommended way to provision SmithDB capacity on EKS, but it is not required. Other node provisioners must produce the same labels, taints, and Kubernetes-visible ephemeral-storage capacity.
+
+Install Karpenter v1 and its CRDs by following the [Karpenter EKS guide](https://karpenter.sh/docs/getting-started/getting-started-with-karpenter/). Before applying the example below:
+
+- Replace `CLUSTER_NAME` and `KarpenterNodeRole-CLUSTER_NAME`.
+- Tag the selected subnets and security group with `karpenter.sh/discovery: CLUSTER_NAME`, or replace the selectors with tags or IDs used by your environment.
+- Confirm the node IAM role and EKS access entry are configured for Karpenter-provisioned nodes.
+
+<Note>
+Applying these manifests creates provisioning configuration. EC2 nodes launch when matching SmithDB pods require capacity.
+</Note>
+
+<Accordion title="Karpenter EC2NodeClass and NodePool example">
+
+```yaml
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: smithdb-instance-store
+spec:
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: KarpenterNodeRole-CLUSTER_NAME
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: CLUSTER_NAME
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: CLUSTER_NAME
+  associatePublicIPAddress: false
+  instanceStorePolicy: RAID0
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 1
+    httpTokens: required
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 100Gi
+        volumeType: gp3
+        encrypted: true
+        deleteOnTermination: true
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: smithdb-instance-store
+spec:
+  template:
+    metadata:
+      labels:
+        smithdb-local/instance-store: "true"
+    spec:
+      taints:
+        - key: smithdb-local/instance-store
+          value: "true"
+          effect: NoSchedule
+      requirements:
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: karpenter.k8s.aws/instance-local-nvme
+          operator: Gt
+          values: ["799"]
+        - key: karpenter.k8s.aws/instance-size
+          operator: In
+          values: ["4xlarge", "8xlarge"]
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: smithdb-instance-store
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 2m
+---
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: smithdb-compute
+spec:
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: KarpenterNodeRole-CLUSTER_NAME
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: CLUSTER_NAME
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: CLUSTER_NAME
+  associatePublicIPAddress: false
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 1
+    httpTokens: required
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 100Gi
+        volumeType: gp3
+        encrypted: true
+        deleteOnTermination: true
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: smithdb-compute
+spec:
+  template:
+    metadata:
+      labels:
+        smithdb-local/compute: "true"
+    spec:
+      taints:
+        - key: smithdb-local/compute
+          value: "true"
+          effect: NoSchedule
+      requirements:
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["2"]
+        - key: karpenter.k8s.aws/instance-size
+          operator: In
+          values: ["2xlarge", "4xlarge", "8xlarge"]
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: smithdb-compute
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 2m
+```
+
+In this example, `instanceStorePolicy: RAID0` makes local NVMe available as node ephemeral storage. The `smithdb-instance-store` NodePool requires at least 800 GiB and consolidates only when empty, avoiding unnecessary churn of nodes with warm caches.
+
+</Accordion>
+
+Other provisioners must provide equivalent labels, taints, Kubernetes-visible ephemeral storage, and disruption behavior. With custom AMIs, bootstrap must format and mount instance-store devices for kubelet and container-runtime storage.
+
+#### Provision EKS managed node groups
+
+For cases where Karpenter is unavailable, these examples use EKS Managed Node Groups to configure instance-store NVMe as RAID0 and apply the label and taint used by the Helm scheduling values.
+
+<Warning>
+**Example only:** Replace uppercase placeholders. Choose instance type and capacity based on your sizing baseline and regional availability. Match `AMI_TYPE` to the instance architecture. For example, `i8g.4xlarge` uses `AL2023_ARM_64_STANDARD`.
+</Warning>
+
+<Accordion title="AWS CLI">
+
+AWS CLI requires an EC2 launch template for the `nodeadm` configuration.
+
+```bash
+USER_DATA="$(
+  base64 <<'EOF' | tr -d '\n'
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY"
+
+--BOUNDARY
+Content-Type: application/node.eks.aws
+
+---
+apiVersion: node.eks.aws/v1alpha1
+kind: NodeConfig
+spec:
+  instance:
+    localStorage:
+      strategy: RAID0
+
+--BOUNDARY--
+EOF
+)"
+
+LT_ID="$(aws ec2 create-launch-template \
+  --region AWS_REGION \
+  --launch-template-name smithdb-instance-store \
+  --launch-template-data "{
+    \"InstanceType\": \"INSTANCE_TYPE\",
+    \"UserData\": \"$USER_DATA\",
+    \"MetadataOptions\": {
+      \"HttpEndpoint\": \"enabled\",
+      \"HttpTokens\": \"required\",
+      \"HttpPutResponseHopLimit\": 2
+    }
+  }" \
+  --query 'LaunchTemplate.LaunchTemplateId' \
+  --output text)"
+
+aws eks create-nodegroup \
+  --region AWS_REGION \
+  --cluster-name CLUSTER_NAME \
+  --nodegroup-name smithdb-instance-store \
+  --node-role NODE_ROLE_ARN \
+  --subnets SUBNET_ID_1 SUBNET_ID_2 \
+  --launch-template id="$LT_ID",version=1 \
+  --ami-type AMI_TYPE \
+  --capacity-type ON_DEMAND \
+  --scaling-config minSize=1,maxSize=NODE_COUNT,desiredSize=NODE_COUNT \
+  --labels smithdb-local/instance-store=true \
+  --taints key=smithdb-local/instance-store,value=true,effect=NO_SCHEDULE
+```
+
+</Accordion>
+
+<Accordion title="eksctl 0.199.0+">
+
+```yaml
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: CLUSTER_NAME
+  region: AWS_REGION
+
+managedNodeGroups:
+  - name: smithdb-instance-store
+    amiFamily: AmazonLinux2023
+    instanceType: INSTANCE_TYPE
+    privateNetworking: true
+    minSize: 1
+    maxSize: NODE_COUNT
+    desiredCapacity: NODE_COUNT
+    labels:
+      smithdb-local/instance-store: "true"
+    taints:
+      - key: smithdb-local/instance-store
+        value: "true"
+        effect: NoSchedule
+    overrideBootstrapCommand: |
+      apiVersion: node.eks.aws/v1alpha1
+      kind: NodeConfig
+      spec:
+        instance:
+          localStorage:
+            strategy: RAID0
+```
+
+```bash
+eksctl create nodegroup --config-file=smithdb-nodegroup.yaml
+```
+
+</Accordion>
+
+<Accordion title="Terraform">
+
+```hcl
+module "eks" {
+  source = "terraform-aws-modules/eks/aws"
+
+  # Existing module version and cluster configuration...
+
+  eks_managed_node_groups = {
+    # Existing node groups...
+
+    smithdb_instance_store = {
+      ami_type       = "AMI_TYPE"
+      instance_types = ["INSTANCE_TYPE"]
+      min_size       = 1
+      max_size       = NODE_COUNT
+      desired_size   = NODE_COUNT
+
+      labels = {
+        "smithdb-local/instance-store" = "true"
+      }
+
+      taints = {
+        smithdb = {
+          key    = "smithdb-local/instance-store"
+          value  = "true"
+          effect = "NO_SCHEDULE"
+        }
+      }
+
+      cloudinit_pre_nodeadm = [{
+        content_type = "application/node.eks.aws"
+        content = <<-EOT
+          apiVersion: node.eks.aws/v1alpha1
+          kind: NodeConfig
+          spec:
+            instance:
+              localStorage:
+                strategy: RAID0
+        EOT
+      }]
+    }
+  }
+}
+```
+
+</Accordion>
+
+### GCP
+
+A common GCP mapping is GKE Standard, AlloyDB or another compatible PostgreSQL service, Cloud Storage, Workload Identity, and Local SSD-backed ephemeral storage. Grant `roles/storage.objectAdmin`, or an equivalent custom role, on the SmithDB destination bucket. For migration source reads, grant `roles/storage.objectViewer` on the LangSmith blob-storage bucket.
+
+#### Configure Cloud Storage workload identity
+
+<Note>
+Use a single-region bucket to avoid data replication costs and provide predictable tail latencies.
+</Note>
+
+Grant a Google service account access to the bucket, then allow `serviceAccount:<PROJECT_ID>.svc.id.goog[<NAMESPACE>/<HELM_RELEASE>-smithdb]` to impersonate it.
+
+<Accordion title="GKE Workload Identity Helm values">
+
+```yaml
+smithdb:
+  serviceAccount:
+    annotations:
+      iam.gke.io/gcp-service-account: "<GSA_NAME>@<PROJECT_ID>.iam.gserviceaccount.com"
+  config:
+    objectStore:
+      type: gcs
+      bucket: "<BUCKET_NAME>"
+```
+
+</Accordion>
+
+#### Provision GKE Local SSD nodes
+
+Use [Local SSD-backed ephemeral storage](https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/local-ssd), which integrates with `emptyDir`, container layers, and scheduler capacity. Raw block Local SSD does not provide the same integration.
+
+<Accordion title="GKE Local SSD node-pool example">
+
+```bash
+gcloud container node-pools create POOL_NAME \
+  --cluster=CLUSTER_NAME \
+  --machine-type=MACHINE_TYPE \
+  --num-nodes=NODE_COUNT \
+  --ephemeral-storage-local-ssd count=DISK_COUNT \
+  --node-labels=smithdb-local/instance-store=true \
+  --node-taints=smithdb-local/instance-store=true:NoSchedule
+```
+
+</Accordion>
+
+<Accordion title="Terraform GKE Local SSD node-pool example">
+
+<Warning>
+This example only configures Local SSD and workload scheduling. Configure node IAM, networking, security settings, and scaling separately. Values are illustrative. For regional clusters, `node_count` applies per zone.
+</Warning>
+
+```hcl
+resource "google_container_node_pool" "smithdb_local_ssd" {
+  name       = "POOL_NAME"
+  cluster    = google_container_cluster.primary.id
+  node_count = NODE_COUNT
+
+  node_config {
+    machine_type = "MACHINE_TYPE"
+
+    ephemeral_storage_local_ssd_config {
+      local_ssd_count = DISK_COUNT
+    }
+
+    labels = {
+      "smithdb-local/instance-store" = "true"
+    }
+
+    taint {
+      key    = "smithdb-local/instance-store"
+      value  = "true"
+      effect = "NO_SCHEDULE"
+    }
+  }
+}
+```
+
+</Accordion>
+
+Supported disk counts and machine types vary by zone and machine generation. Verify availability in every zone used by the node pool.
+
+### Azure
+
+A common Azure mapping is AKS, Azure Database for PostgreSQL, Azure Blob Storage, Workload Identity, and the VM temporary disk as Kubernetes ephemeral storage. Grant `Storage Blob Data Contributor` on the SmithDB storage account. For migration source reads, grant `Storage Blob Data Reader` on the LangSmith blob-storage account.
+
+#### Configure Blob Storage workload identity
+
+`smithdb.config.objectStore.bucket` is the Blob container name. `azure.accountName` is required. Leave `accessKeySecretKey` empty when using Workload Identity.
+
+Annotate the SmithDB ServiceAccount with the user-assigned managed identity client ID. Add the `azure.workload.identity/use: "true"` label to every SmithDB workload.
+
+<Accordion title="AKS Workload Identity Helm values">
+
+```yaml
+smithdb:
+  serviceAccount:
+    annotations:
+      azure.workload.identity/client-id: "<CLIENT_ID>"
+  config:
+    objectStore:
+      type: azure
+      bucket: "<CONTAINER_NAME>"
+      azure:
+        accountName: "<STORAGE_ACCOUNT_NAME>"
+        accessKeySecretKey: ""
+  query:
+    deployment:
+      labels:
+        azure.workload.identity/use: "true"
+  ingestion:
+    deployment:
+      labels:
+        azure.workload.identity/use: "true"
+  compaction:
+    deployment:
+      labels:
+        azure.workload.identity/use: "true"
+  compactionWorker:
+    deployment:
+      labels:
+        azure.workload.identity/use: "true"
+  clusterManager:
+    deployment:
+      labels:
+        azure.workload.identity/use: "true"
+  metastoreMigration:
+    job:
+      labels:
+        azure.workload.identity/use: "true"
+  migration:
+    deployment:
+      labels:
+        azure.workload.identity/use: "true"
+```
+
+</Accordion>
+
+#### Provision AKS nodes with a temporary disk
+
+AKS does not attach a separate Local SSD volume for `emptyDir`. Set `kubelet-disk-type` to `Temporary` so kubelet, container images, logs, and `emptyDir` use the VM temporary disk. That disk is local SSD or NVMe and is wiped on deallocate or host move.
+
+Use a VM size with enough temporary-disk capacity for SmithDB cache requests. `Standard_L16s_v3` is an L-series size with a large local NVMe temporary disk. A SKU without a suitable temporary disk leaves `emptyDir` too small even if AKS accepts the node pool. Confirm allocatable `ephemeral-storage` after the pool is ready.
+
+<Accordion title="Azure CLI node-pool example">
+
+```bash
+az aks nodepool add \
+  --resource-group RESOURCE_GROUP \
+  --cluster-name CLUSTER_NAME \
+  --name smithcache \
+  --node-vm-size Standard_L16s_v3 \
+  --kubelet-disk-type Temporary \
+  --labels smithdb-local/instance-store=true \
+  --node-taints smithdb-local/instance-store=true:NoSchedule
+```
+
+</Accordion>
+
+<Accordion title="Terraform AKS node-pool example">
+
+<Warning>
+This example only configures the temporary-disk cache pool and workload scheduling. Configure node IAM, networking, security settings, and scaling separately. Values are illustrative. Confirm that `Standard_L16s_v3`, or an equivalent SKU with enough temporary-disk capacity, is available in the target region.
+</Warning>
+
+```hcl
+resource "azurerm_kubernetes_cluster_node_pool" "smithdb_cache" {
+  name                  = "smithcache"
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.primary.id
+  vm_size               = "Standard_L16s_v3"
+  kubelet_disk_type     = "Temporary"
+  node_count            = NODE_COUNT
+
+  node_labels = {
+    "smithdb-local/instance-store" = "true"
+  }
+
+  node_taints = [
+    "smithdb-local/instance-store=true:NoSchedule",
+  ]
+}
+```
+
+</Accordion>
+
+## See also
+
+- [Enable blob storage](/langsmith/self-host-blob-storage)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-smithdb-infrastructure.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
