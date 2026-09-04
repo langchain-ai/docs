@@ -43,7 +43,7 @@ When Deep Agents Code starts without `--model`, it resolves the model in this or
 1. **`--model` flag** when provided.
 2. **`[models].default`** in `~/.deepagents/config.toml`.
 3. **`[models].recent`** in `~/.deepagents/config.toml` (written automatically when you switch models in a session).
-4. **Environment auto-detection**: the first available credential among `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, and `GOOGLE_CLOUD_PROJECT` (Vertex AI).
+4. **Environment auto-detection**: the first available credential among `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, and `GOOGLE_CLOUD_PROJECT` (Gemini Enterprise Agent Platform).
 
 Other providers (for example, Groq or Fireworks) are still available via `--model` or saved defaults even though they are not part of the startup auto-detection list. See [Model providers](/oss/deepagents/code/providers) for the full provider list and credential setup.
 
