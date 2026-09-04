@@ -21,7 +21,7 @@ const commentWriter = {
 
 const agent = await createDeepAgent({
   // KEEP MODEL
-  model: "claude-opus-5",
+  model: "google-genai:gemini-3.7-flash",
   tools: [readDiff],
   subagents: [commentWriter],
 });

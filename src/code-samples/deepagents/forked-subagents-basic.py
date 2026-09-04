@@ -20,7 +20,7 @@ comment_writer = {
 
 agent = create_deep_agent(
     # KEEP MODEL
-    model="claude-opus-5",
+    model="google_genai:gemini-3.7-flash",
     tools=[read_diff],
     subagents=[comment_writer],
 )
