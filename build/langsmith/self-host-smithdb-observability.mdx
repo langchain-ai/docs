@@ -1,0 +1,92 @@
+---
+title: Configure SmithDB observability
+sidebarTitle: Configure observability
+description: Scrape SmithDB application metrics and export logs and traces to your existing observability stack.
+---
+
+SmithDB components expose application metrics and can export logs and traces to your existing observability stack. Set this up after you deploy SmithDB services and before you tune capacity or migrate historical data. It provides the signals to validate those changes and investigate failures.
+
+## Metrics
+
+Each SmithDB component exposes application metrics at the fixed `/metrics` path on its HTTP port. Configure your monitoring stack to discover the pods by adding scrape annotations to each component:
+
+<Accordion title="Sample Prometheus configuration">
+
+```yaml
+smithdb:
+  query:
+    deployment:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8060"
+  ingestion:
+    deployment:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8050"
+  compaction:
+    deployment:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8070"
+  compactionWorker:
+    deployment:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "9000"
+  clusterManager:
+    deployment:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8090"
+```
+
+</Accordion>
+
+If your monitoring provider does not discover standard Prometheus annotations, use its own pod annotations instead. Monitor the PostgreSQL metastore, Kubernetes nodes, and cloud services with your existing infrastructure monitoring.
+
+## Logs and traces
+
+SmithDB reads the chart-level OpenTelemetry tracing configuration and exports over OTLP gRPC only. It exports logs and traces when `config.observability.tracing.enabled` is `true` and `config.observability.tracing.exporter` is `grpc`:
+
+```yaml
+config:
+  observability:
+    tracing:
+      enabled: true
+      endpoint: "otel-collector.observability.svc.cluster.local:4317"
+      exporter: "grpc"
+```
+
+With the chart-level exporter set to `http`, SmithDB export stays disabled and SmithDB logs remain console-only. The chart includes SmithDB pod and container names as OpenTelemetry resource attributes automatically.
+
+To customize SmithDB log filtering, set `RUST_LOG` for all SmithDB workloads through `smithdb.commonEnv`:
+
+```yaml
+smithdb:
+  commonEnv:
+    - name: RUST_LOG
+      value: "warn,smithdb_query=debug,vortex=warn"
+```
+
+Confirm the collector is reachable from the LangSmith namespace, apply the chart, then confirm telemetry arrives.
+
+## Telemetry for the rest of the deployment
+
+This page covers SmithDB components only. For logs, metrics, and traces from the rest of a LangSmith deployment, see [Export LangSmith telemetry to your observability backend](/langsmith/export-backend). To set up or tune a collector, see [Configure your collector for LangSmith telemetry](/langsmith/langsmith-collector).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-smithdb-observability.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
