@@ -1,18 +1,18 @@
 ---
 title: Install LangSmith with SmithDB
 sidebarTitle: Install SmithDB
-description: Enable SmithDB on an existing ClickHouse-backed self-hosted LangSmith Kubernetes installation in staged Helm updates.
+description: Enable SmithDB on a self-hosted LangSmith Kubernetes installation through staged Helm updates.
 ---
 
 <Note>
 SmithDB is opt-in. ClickHouse remains required and cannot be removed after you enable SmithDB. The minimum LangSmith version depends on your cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
 </Note>
 
-SmithDB can serve LangSmith trace ingestion and queries alongside ClickHouse in an existing self-hosted deployment. This guide introduces SmithDB in stages so you can validate each change before continuing.
+This guide enables SmithDB on a LangSmith Kubernetes installation in stages, so you can validate each change before continuing.
 
-Upgrading an existing LangSmith installation from ClickHouse to SmithDB has six parts: prepare SmithDB infrastructure, upgrade LangSmith, deploy SmithDB services, enable dual ingestion, optionally migrate ClickHouse data, and switch queries after validation. Historical ClickHouse data can be backfilled before query cutover or left in ClickHouse, but it is not accessible through SmithDB-backed queries unless you migrate it.
+Apply each stage separately. Each stage is a Helm update that rolls the affected pods.
 
-Apply each stage separately. Each stage is a rolling Helm update, so applying one restarts the affected pods without LangSmith downtime.
+Migrating historical ClickHouse data is optional. History left in ClickHouse is not reachable through SmithDB-backed queries unless you migrate it.
 
 <Warning>
 After query cutover, LangSmith trace reads no longer go to ClickHouse. Keep the ClickHouse datastore in place regardless.
@@ -20,13 +20,13 @@ After query cutover, LangSmith trace reads no longer go to ClickHouse. Keep the 
 
 ## Before you begin
 
-- Use an existing ClickHouse-backed LangSmith installation on Kubernetes.
+- Start from a running LangSmith installation on Kubernetes.
 - Upgrade one major version at a time until the installation meets the [cloud support](/langsmith/self-host-smithdb#check-cloud-support) minimum: LangSmith 0.16 with Helm chart `0.16.14` or later on AWS (EKS) and GCP (GKE), or LangSmith 0.17 on Azure (AKS). Follow the [upgrade guide](/langsmith/self-host-upgrades).
-- Retain the Helm values used for the current installation. This guide adds SmithDB configuration to those existing values.
+- Keep the Helm values from your current installation. This guide adds SmithDB configuration to them.
 - You need cluster-admin on the EKS, GKE, or AKS cluster.
 - Review the [SDK migration guide](/langsmith/smithdb-sdk-migration) and plan your SDK upgrade alongside this installation. New SmithDB-backed methods require LangSmith `0.16` or later.
 
-SmithDB is opt-in and can be disabled. To return query and ingestion traffic to ClickHouse and disable SmithDB services, see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting#disable-or-reset-smithdb).
+You can disable SmithDB later. To return query and ingestion traffic to ClickHouse and disable SmithDB services, see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting#disable-or-reset-smithdb).
 
 ## Installation sequence
 
@@ -190,7 +190,7 @@ Apply the upgrade and verify that the existing LangSmith pods are running and mi
 Before enabling SmithDB, choose a tested baseline from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale). Configure its replica counts and per-replica CPU, memory, and ephemeral-storage requests, and confirm the cluster can provision the aggregate capacity.
 
 <Warning>
-Scale configuration is required. Insufficient CPU, memory, or ephemeral storage can prevent SmithDB components from operating successfully when traffic is enabled.
+Scale configuration is required. Insufficient CPU, memory, or ephemeral storage can cause SmithDB components to fail once traffic is enabled.
 </Warning>
 
 Merge the infrastructure values prepared in Step 1 and your selected sizing baseline into the existing LangSmith values. Leave the existing ClickHouse configuration unchanged, then enable the SmithDB services without changing LangSmith ingestion or queries:
@@ -220,9 +220,9 @@ Also confirm the cluster retains enough headroom to add replicas as load grows.
 
 Do not enable LangSmith integration flags until these checks pass.
 
-#### Optional: configure observability
+#### (Optional) Configure observability
 
-Before enabling dual ingestion, connect SmithDB to your existing monitoring stack. This is optional for installation but recommended for validating migration and scaling changes. See [Configure SmithDB observability](/langsmith/self-host-smithdb-observability).
+Before enabling dual ingestion, connect SmithDB to your existing monitoring stack. Installation works without it, but the migration and scaling steps rely on these signals. See [Configure SmithDB observability](/langsmith/self-host-smithdb-observability).
 
 ### Step 4. Enable dual ingestion
 
@@ -263,7 +263,7 @@ At this stage `sdb_ingestion_enabled` is `true` and `sdb_query_enabled` is `fals
 
 The migration uses TaskDB, a separate PostgreSQL database that coordinates the work and tracks progress. You need it only during historical migration, and SmithDB does not depend on it for normal operation. See [What is TaskDB?](/langsmith/self-host-smithdb-migrate#what-is-taskdb).
 
-After dual ingestion is confirmed stable and healthy, follow [Migrate ClickHouse history to SmithDB](/langsmith/self-host-smithdb-migrate) to configure TaskDB, run and monitor the historical migration, and clean up migration resources. Return here for query cutover after the migration completes.
+Once dual ingestion is stable, follow [Migrate ClickHouse history to SmithDB](/langsmith/self-host-smithdb-migrate) to configure TaskDB, run and monitor the historical migration, and clean up migration resources. Return here for query cutover after the migration completes.
 
 #### Continue without backfill
 

@@ -4,9 +4,9 @@ sidebarTitle: Supporting infrastructure
 description: Provide a dedicated PostgreSQL metastore, object storage, and local SSD cache capacity before enabling SmithDB.
 ---
 
-SmithDB adds three infrastructure dependencies to an existing LangSmith self-hosted deployment: a PostgreSQL metastore, object storage, and node-local SSD cache capacity.
+SmithDB adds three infrastructure dependencies to a self-hosted LangSmith deployment: a PostgreSQL metastore, object storage, and node-local SSD cache capacity.
 
-Treat what follows as integration requirements and practical recommendations, not a prescribed cloud architecture. Provider examples cover AWS (EKS), GCP (GKE), and Azure (AKS). The minimum LangSmith version depends on your cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
+These are integration requirements and practical recommendations, not a prescribed cloud architecture. Provider examples cover AWS (EKS), GCP (GKE), and Azure (AKS). The minimum LangSmith version depends on your cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
 
 ## Requirements
 
@@ -29,7 +29,7 @@ This guide does not cover AlloyDB Auth Proxy sidecar configuration. Provide a re
 
 ### Metastore Secret
 
-Create an existing Kubernetes Secret in the LangSmith release namespace containing the database host, name, username, and password. Map its keys through `smithdb.config.metastore`.
+Create a Kubernetes Secret in the LangSmith release namespace containing the database host, name, username, and password. Map its keys through `smithdb.config.metastore`.
 
 <Accordion title="Metastore Secret and Helm values">
 
@@ -62,7 +62,7 @@ smithdb:
       useSsl: true
 ```
 
-`DB_NAME` may be any dedicated, empty PostgreSQL database, such as `smithdb`. The chart does not require these exact Secret key names. The Helm values map your chosen names.
+`DB_NAME` can be any name for the dedicated, empty database, such as `smithdb`. The chart does not require these exact Secret key names; the Helm values map whatever names you choose.
 
 </Accordion>
 
@@ -90,7 +90,7 @@ SmithDB workloads share `smithdb.serviceAccount`.
 
 Workload identity must target the selected namespace and name. With `create: false`, `name` is required. Otherwise pods use the `default` ServiceAccount.
 
-Do not expire objects independently of SmithDB's data lifecycle. Deleting live objects can make data unavailable.
+Do not add bucket lifecycle rules that expire objects on their own schedule. Deleting live objects can make data unavailable.
 
 This bucket is separate from optional [LangSmith blob storage](/langsmith/self-host-blob-storage), which stores payloads and attachments for the broader LangSmith deployment.
 
@@ -229,7 +229,7 @@ Common symptoms are pods remaining pending when requests exceed allocatable capa
 
 ### AWS
 
-A common AWS mapping is EKS, RDS for PostgreSQL, S3, IRSA, and EC2 instance store. Scope S3 access to bucket listing and location plus object read, write, delete, and multipart operations. For migration source reads, grant `s3:ListBucket` and `s3:GetObject` on the LangSmith blob-storage bucket.
+A common AWS mapping is EKS, RDS for PostgreSQL, S3, IRSA, and EC2 instance store. Scope S3 access to listing the bucket and reading its location, plus object read, write, delete, and multipart operations. For migration source reads, grant `s3:ListBucket` and `s3:GetObject` on the LangSmith blob-storage bucket.
 
 #### Configure S3 workload identity
 
@@ -415,7 +415,7 @@ Other provisioners must provide equivalent labels, taints, Kubernetes-visible ep
 
 #### Provision EKS managed node groups
 
-For cases where Karpenter is unavailable, these examples use EKS Managed Node Groups to configure instance-store NVMe as RAID0 and apply the label and taint used by the Helm scheduling values.
+If Karpenter is unavailable, use EKS Managed Node Groups instead. These examples configure instance-store NVMe as RAID0 and apply the label and taint used by the Helm scheduling values.
 
 <Warning>
 **Example only:** Replace uppercase placeholders. Choose instance type and capacity based on your sizing baseline and regional availability. Match `AMI_TYPE` to the instance architecture. For example, `i8g.4xlarge` uses `AL2023_ARM_64_STANDARD`.
@@ -703,7 +703,7 @@ smithdb:
 
 #### Provision AKS nodes with a temporary disk
 
-AKS does not attach a separate Local SSD volume for `emptyDir`. Set `kubelet-disk-type` to `Temporary` so kubelet, container images, logs, and `emptyDir` use the VM temporary disk. That disk is local SSD or NVMe and is wiped on deallocate or host move.
+AKS does not attach a separate Local SSD volume for `emptyDir`. Set `kubelet-disk-type` to `Temporary` so kubelet, container images, logs, and `emptyDir` use the VM temporary disk. That disk is local SSD or NVMe and is wiped when the VM is deallocated or moved to another host.
 
 Use a VM size with enough temporary-disk capacity for SmithDB cache requests. `Standard_L16s_v3` is an L-series size with a large local NVMe temporary disk. A SKU without a suitable temporary disk leaves `emptyDir` too small even if AKS accepts the node pool. Confirm allocatable `ephemeral-storage` after the pool is ready.
 
