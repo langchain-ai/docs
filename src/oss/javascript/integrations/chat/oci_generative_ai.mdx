@@ -1,0 +1,390 @@
+---
+title: OciGenAiGenericChat integration
+sidebarTitle: Chat
+description: Integrate with OciGenAiGenericChat using LangChain JavaScript.
+integration:
+  name: OciGenAiGenericChat
+  npm: '@oracle/langchain-oci'
+  stream: true
+  tool_calling: true
+  structured_output: true
+  multimodal: false
+---
+
+This guide helps you get started with Oracle Cloud Infrastructure (OCI) Generative AI [chat models](/oss/langchain/models) using LangChain JavaScript.
+
+`OciGenAiGenericChat` connects LangChain to OCI's Generic chat API. It supports text chat, streaming, token usage metadata, LangChain tool calling, tool-result turns, and structured output.
+
+<Note>
+  This integration currently handles text-only message content. Multimodal message content is not supported by `OciGenAiGenericChat`.
+</Note>
+
+For detailed documentation of all options, see the [`@oracle/langchain-oci` package README](https://github.com/oracle/langchain-oracle/tree/main/libs/js/oci).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Node.js |
+| :--- | :--- | :---: |
+| `OciGenAiGenericChat` | [`@oracle/langchain-oci`](https://www.npmjs.com/package/@oracle/langchain-oci) | 18+ |
+
+### Model features
+
+| Tool calling | Structured output | Image input | Audio input | Video input | Token-level streaming | Token usage |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ |
+
+## Setup
+
+To access OCI Generative AI chat models you need an OCI tenancy, a compartment with permission to use Generative AI, a supported OCI region, and OCI credentials.
+
+### Credentials
+
+The default client uses the OCI configuration file at `~/.oci/config` and the `DEFAULT` profile. The OCI TypeScript SDK also supports instance principals, resource principals, and session authentication.
+
+See the [OCI SDK authentication methods](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdk_authentication_methods.htm) for authentication setup.
+
+<Note>
+  Initializing `OciGenAiGenericChat` is resource-intensive. Reuse an instance across your application for optimal performance.
+</Note>
+
+### Installation
+
+The LangChain OCI integration lives in the `@oracle/langchain-oci` package:
+
+<CodeGroup>
+```bash npm
+npm install @oracle/langchain-oci @langchain/core
+```
+```bash yarn
+yarn add @oracle/langchain-oci @langchain/core
+```
+```bash pnpm
+pnpm add @oracle/langchain-oci @langchain/core
+```
+</CodeGroup>
+
+## Instantiation
+
+OCI Generic chat models require a `compartmentId` and exactly one serving target: either `onDemandModelId` or `dedicatedEndpointId`.
+
+```typescript
+import { OciGenAiGenericChat } from "@oracle/langchain-oci";
+
+const model = new OciGenAiGenericChat({
+  compartmentId: "ocid1.compartment.oc1..example",
+  onDemandModelId: "meta.llama-3.3-70b-instruct",
+});
+```
+
+For dedicated AI cluster models, use `dedicatedEndpointId` instead:
+
+```typescript
+const model = new OciGenAiGenericChat({
+  compartmentId: "ocid1.compartment.oc1..example",
+  dedicatedEndpointId: "ocid1.generativeaidedicatedendpoint.oc1..example",
+});
+```
+
+## Invocation
+
+You can invoke the model with a string or a sequence of LangChain messages.
+
+```typescript
+const response = await model.invoke("Tell me a joke about beagles");
+
+console.log(response.content);
+```
+
+OCI-specific request parameters can be passed under `requestParams` in the call options. For example:
+
+```typescript
+const response = await model.invoke("Tell me a joke about beagles", {
+  requestParams: {
+    temperature: 1,
+    maxTokens: 300,
+  },
+});
+```
+
+## Streaming
+
+`OciGenAiGenericChat` supports LangChain streaming APIs and converts OCI streaming events into standard `AIMessageChunk` objects.
+
+```typescript
+for await (const chunk of model.stream("Write a haiku about clouds")) {
+  process.stdout.write(chunk.content.toString());
+}
+```
+
+Streaming also exposes tool-call chunks and usage metadata when returned by OCI.
+
+## Tool calling
+
+Use [`bindTools`](/oss/langchain/tools) to bind LangChain tools to the OCI Generic model.
+
+```typescript
+const tools = [
+  {
+    type: "function" as const,
+    function: {
+      name: "get_weather",
+      description: "Get weather information for a location.",
+      parameters: {
+        type: "object",
+        properties: {
+          location: {
+            type: "string",
+            description: "The city and country to check.",
+          },
+        },
+        required: ["location"],
+      },
+    },
+  },
+];
+
+const modelWithTools = model.bindTools(tools);
+
+const response = await modelWithTools.invoke(
+  "What's the weather in Bengaluru?"
+);
+
+console.log(response.tool_calls);
+```
+
+The integration also converts LangChain `ToolMessage` turns back into the OCI Generic API format, allowing tool calls to participate in an agent loop.
+
+<Info>
+  Tool calling support depends on the selected OCI model. Check the [OCI Generative AI model catalog](https://docs.oracle.com/en-us/iaas/Content/generative-ai/pretrained-models.htm) for model-specific capabilities.
+</Info>
+
+## Create an agent
+
+`OciGenAiGenericChat` supports the tool-call and tool-result turns required by LangChain agents.
+
+Install `langchain` and `zod`:
+
+```bash npm
+npm install langchain zod
+```
+
+```typescript
+import { OciGenAiGenericChat } from "@oracle/langchain-oci";
+import { createAgent, tool } from "langchain";
+import { z } from "zod";
+
+const model = new OciGenAiGenericChat({
+  compartmentId: process.env.OCI_COMPARTMENT_ID!,
+  onDemandModelId: "meta.llama-3.3-70b-instruct",
+});
+
+const queryInfrastructure = tool(
+  async ({
+    resourceType,
+    region,
+  }: {
+    resourceType: string;
+    region: string;
+  }) => ({
+    status: "healthy",
+    active_instances: 12,
+    alerts: [],
+    cpu_utilization: "45%",
+    region,
+    resource_type: resourceType,
+  }),
+  {
+    name: "query_infrastructure",
+    description: "Query OCI infrastructure status and health metrics.",
+    schema: z.object({
+      resourceType: z.string(),
+      region: z.string(),
+    }),
+  }
+);
+
+const agent = createAgent({
+  model,
+  tools: [queryInfrastructure],
+  systemPrompt:
+    "You are an infrastructure monitoring assistant. Use query_infrastructure when the user asks about OCI infrastructure health.",
+});
+
+const result = await agent.invoke({
+  messages: [
+    {
+      role: "user",
+      content:
+        "Check compute resource health in us-ashburn-1 and summarize the result.",
+    },
+  ],
+});
+
+const lastMessage = result.messages[result.messages.length - 1];
+console.log(lastMessage?.content);
+```
+
+## Structured output
+
+You can use LangChain's standard `withStructuredOutput` interface with OCI Generic models.
+
+Install `zod` before using the following schema:
+
+```bash npm
+npm install zod
+```
+
+```typescript
+import { z } from "zod";
+
+const schema = z.object({
+  summary: z.string(),
+  sentiment: z.enum(["positive", "neutral", "negative"]),
+});
+
+const structuredModel = model.withStructuredOutput(schema);
+
+const result = await structuredModel.invoke(
+  "Summarize this feedback: The new dashboard is fast and easy to use."
+);
+
+console.log(result);
+```
+
+Structured output uses the Generic model's tool/function calling support. The integration does not implement the `jsonMode`, `jsonSchema`, or `strict` structured-output options.
+
+## Authentication
+
+The integration creates an OCI SDK client automatically. To use a different authentication method, set `newClientParams`.
+
+### API key (default)
+
+The default configuration uses the API-key credentials in `~/.oci/config` and the `DEFAULT` profile:
+
+```typescript
+import { OciGenAiGenericChat } from "@oracle/langchain-oci";
+
+const model = new OciGenAiGenericChat({
+  compartmentId: "ocid1.compartment.oc1..example",
+  onDemandModelId: "meta.llama-3.3-70b-instruct",
+});
+```
+
+### Security token
+
+Create a session profile with the OCI CLI:
+
+```bash
+oci session authenticate --profile-name MY_PROFILE
+```
+
+Configure the integration to use that profile:
+
+```typescript
+import {
+  OciGenAiGenericChat,
+  OciGenAiNewClientAuthType,
+} from "@oracle/langchain-oci";
+
+const model = new OciGenAiGenericChat({
+  compartmentId: "ocid1.compartment.oc1..example",
+  onDemandModelId: "meta.llama-3.3-70b-instruct",
+  newClientParams: {
+    authType: OciGenAiNewClientAuthType.Session,
+    authParams: {
+      clientConfigFilePath: "/path/to/config",
+      clientProfile: "MY_PROFILE",
+    },
+  },
+});
+```
+
+### Instance Principal
+
+For applications running on OCI compute instances:
+
+```typescript
+import {
+  OciGenAiGenericChat,
+  OciGenAiNewClientAuthType,
+} from "@oracle/langchain-oci";
+
+const model = new OciGenAiGenericChat({
+  compartmentId: "ocid1.compartment.oc1..example",
+  onDemandModelId: "meta.llama-3.3-70b-instruct",
+  newClientParams: {
+    authType: OciGenAiNewClientAuthType.InstancePrincipal,
+  },
+});
+```
+
+### Resource Principal
+
+For OCI Functions, Data Science, and other resources that provide Resource Principal credentials:
+
+```typescript
+import {
+  OciGenAiGenericChat,
+  OciGenAiNewClientAuthType,
+} from "@oracle/langchain-oci";
+
+const model = new OciGenAiGenericChat({
+  compartmentId: "ocid1.compartment.oc1..example",
+  onDemandModelId: "meta.llama-3.3-70b-instruct",
+  newClientParams: {
+    authType: OciGenAiNewClientAuthType.ResourcePrincipal,
+  },
+});
+```
+
+### Custom configuration file
+
+Use a custom OCI configuration file and API-key profile when needed:
+
+```typescript
+import {
+  OciGenAiGenericChat,
+  OciGenAiNewClientAuthType,
+} from "@oracle/langchain-oci";
+
+const model = new OciGenAiGenericChat({
+  compartmentId: "ocid1.compartment.oc1..example",
+  onDemandModelId: "meta.llama-3.3-70b-instruct",
+  newClientParams: {
+    authType: OciGenAiNewClientAuthType.ConfigFile,
+    authParams: {
+      clientConfigFilePath: "/path/to/config",
+      clientProfile: "MY_PROFILE_IN_CONFIG_FILE",
+    },
+  },
+});
+```
+
+You can also pass a caller-created `GenerativeAiInferenceClient` when you need complete control over OCI SDK client construction.
+
+## On-demand models and dedicated AI clusters
+
+OCI supports two serving modes in this integration:
+
+| Serving mode | Parameter | Description |
+| :--- | :--- | :--- |
+| On-demand | `onDemandModelId` | Use an OCI pretrained model by its model ID. |
+| Dedicated | `dedicatedEndpointId` | Invoke a model deployed on a dedicated AI cluster endpoint. |
+
+Exactly one of these parameters must be provided.
+
+See the [OCI Generative AI model documentation](https://docs.oracle.com/en-us/iaas/Content/generative-ai/pretrained-models.htm) and [dedicated AI cluster documentation](https://docs.oracle.com/en-us/iaas/Content/generative-ai/ai-cluster.htm) for more information.
+
+## Limitations
+
+The separate `OciGenAiCohereChat` integration uses OCI's legacy Cohere V1 API format. Current Cohere models that require the V2 API are not supported by that class, and the legacy Cohere path does not support the tool-result round trip. Use `OciGenAiGenericChat` for OCI Generic models such as Meta and other Generic-family models.
+
+## Related resources
+
+- [Oracle Cloud Infrastructure (OCI) provider overview](/oss/integrations/providers/oci)
+- [OCI Generative AI documentation](https://docs.oracle.com/en-us/iaas/Content/generative-ai/home.htm)
+- [OCI Generative AI model catalog](https://docs.oracle.com/en-us/iaas/Content/generative-ai/pretrained-models.htm)
+- [`@oracle/langchain-oci` on npm](https://www.npmjs.com/package/@oracle/langchain-oci)
+- [Oracle LangChain integrations on GitHub](https://github.com/oracle/langchain-oracle/tree/main/libs/js/oci)
