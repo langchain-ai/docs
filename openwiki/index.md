@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Entry point for engineers joining the docs repository. Learn the repository's purpose, major sections, and key development tasks.
+- [Quickstart](quickstart.md) - Start here to route documentation changes to the correct source, generation, build, validation, and CI workflow. Covers local setup, navigation, preprocessing, executable samples, and integration catalog maintenance.
 
 # Directories
 
