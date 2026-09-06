@@ -1,11 +1,11 @@
 ---
-type: architecture
-title: Markdown Preprocessing Pipeline
-description: Multi-stage transformation of markdown source into final output through conditional rendering, cross-references, link rewriting, UTM decoration, and snippet import rewriting.
-tags: [build, markdown, cross-references, conditional-rendering, link-rewriting, utm-tracking]
+type: transformation pipeline
+title: Markdown Transformation and Cross-Reference Semantics
+description: How the documentation build transforms Markdown and MDX, including scoped @[] references, language rendering, UTM tagging, URL and import rewrites, and source-edit footers. It also defines the cross-reference checker’s authoring invariant and its relationship to the large link registry.
+tags: [markdown, preprocessing, cross-references, documentation-build, conditional-rendering, link-rewriting]
 verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:00:58.567Z
+  - by: openwiki/0.4.3
+    at: 2026-09-06T08:18:19.246Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -17,177 +17,96 @@ sources:
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-3ae8d89866d72418f1bdab6b
     resource: repo://pipeline/preprocessors/utm_links.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:00:58.567Z" }
+  - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
+    resource: repo://scripts/check_cross_refs.py
+  - id: openwiki-source-24e5f74f0f40e9bfd381871f
+    resource: repo://tests/unit_tests/test_builder.py
+  - id: openwiki-source-c2764a7369c8fbf3e49da6f8
+    resource: repo://tests/unit_tests/test_check_cross_refs.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-06T08:18:19.246Z" }
 ---
 
-## Overview
+## Purpose and entrypoints
 
-The markdown preprocessing pipeline applies a sequence of six transformation layers to documentation source files before they are written to the build directory. Each layer solves a specific problem: rendering language-specific content, resolving semantic references, maintaining links in versioned products, supporting language-specific imports, tracking conversion links, and preserving source editability.
+The documentation builder turns source Markdown/MDX into build output rather than copying it verbatim. `DocumentationBuilder._process_markdown_file()` reads a Markdown-family source, delegates content transformation to `_process_markdown_content()`, appends the contribution footer when applicable, changes `.md` output to `.mdx`, and writes the result. Exceptions from content processing are logged with the source path and re-raised, so an unexpected preprocessing failure fails the build rather than producing a partial file.
 
-Preprocessing is orchestrated by `preprocess_markdown()` in `pipeline/preprocessors/markdown_preprocessor.py` and invoked from the `DocumentationBuilder` in `pipeline/core/builder.py` for every markdown/MDX file during the build. Parse errors, missing link references, and other failures are logged with file and line context; build exceptions abort the entire build.
+`preprocess_markdown()` is the core preprocessor. Its `target_language` is `python` or `js`; when the caller omits it, it reads `TARGET_LANGUAGE`, defaulting to `python`. Unless explicitly supplied, the cross-reference default scope is the target language. This is the coupling that makes one source file produce language-specific prose and API links.
 
-## Pipeline Layers
+```mermaid
+flowchart TD
+    A["Markdown or MDX source"] --> B["replace_autolinks"]
+    B --> C["add_utm_to_cta_links"]
+    C --> D["conditional rendering"]
+    D --> E{"target language supplied"}
+    E -->|yes| F["rewrite snippet imports"]
+    E -->|no| G["skip snippet import rewrite"]
+    F --> H["rewrite OSS links"]
+    G --> H
+    H --> I["rewrite managed Deep Agents links"]
+    I --> J["append source footer when eligible"]
+    J --> K["write build output"]
+```
 
-### Layer 1: Conditional Rendering
+This is the actual per-file transformation order. In particular, references and CTA URLs are processed **before** conditional blocks are retained or removed; the conditional pass is last within `preprocess_markdown()` so escaped `\:::` markers can be unescaped in the final content. The builder then applies the post-processing rewrites in the order shown.
 
-Markdown may contain conditional blocks for language-specific content:
+## Scoped `@[]` references
+
+Authors use semantic references instead of embedding reference-doc URLs:
 
 ```markdown
-:::python
-This section is only shown to Python users.
-:::
-
-:::js
-This section is only shown to JavaScript users.
-:::
+@[StateGraph]
+@[state management][StateGraph]
+@[`StateGraph`]
 ```
 
-The `_apply_conditional_rendering()` function processes these blocks based on a `target_language` parameter ("python" or "js"). Blocks matching the target language are retained; non-matching blocks are removed entirely. Escaped blocks (with a leading backslash `\:::`) are treated as literal text and unescaped in the output.
+These become normal Markdown links using the active scope’s entry in `SCOPE_LINK_MAPS`. The simple form uses the key as its label; the two-part form uses the first bracket as custom text; and backticks in the simple form are retained in the generated label. The registry is assembled from `LINK_MAPS`: every entry supplies a host, scope, and key-to-path mapping, with relative paths expanded against the host. It provides separate `python` and `js` maps, including core APIs, Deep Agents APIs, and integration symbols. Adding or moving an API reference is therefore a registry change, not a sweep of authored URLs.
 
-**Key properties:**
-- Conditional blocks may be nested or indented.
-- If `target_language` is invalid (neither "python" nor "js"), a `ValueError` is raised.
-- Unsupported language specifiers (neither "python" nor "js") are left unchanged.
-- Content inside regular code fences (``` or ~~~) is never affected.
+`replace_autolinks()` is line-oriented. It starts in `default_scope`; an unescaped `:::python` or `:::js` fence changes the scope for later ordinary lines, while a bare `:::` resets it to the default scope. Other fence names are also assigned as scopes by the renderer, which means their references ordinarily miss the two registered maps. The special `global` scope is not a combined lookup: it logs an error and falls back to Python.
 
-### Layer 2: Cross-Reference Resolution
+Regular fenced code blocks—three or more backticks or tildes, including indented fences—are passed through and do not change scope. An unclosed code fence consequently prevents reference replacement for the rest of the file. A missing key is an info-level diagnostic containing file, line, name, and scope; its original `@[]` syntax remains in the output. Escape `\@[` suppresses replacement and is later unescaped.
 
-Authors write semantic references like `@[StateGraph]` instead of hardcoding URLs. These are resolved to actual links based on the current scope (typically "python" or "js").
+### The checker turns diagnostics into an authoring gate
 
-The `replace_autolinks()` function transforms `@[link_name]` patterns using scope-specific link maps. Supports two formats:
+Build-time unresolved references are non-fatal by design, but `scripts/check_cross_refs.py` validates source ahead of time. It scans `.md` and `.mdx` below `src/`, ignores `snippets/code-samples/` and `node_modules`, and shares the renderer’s fence and reference patterns. It ignores escaped references and references in code fences.
 
-<!-- openwiki: broken internal link [url] file "url" does not exist. Fix the href or restore the target, then delete this comment. -->
-- `@[link_name]` → `[link_name](url)`
-<!-- openwiki: broken internal link [url] file "url" does not exist. Fix the href or restore the target, then delete this comment. -->
-- `@[Custom Title][link_name]` → `[Custom Title](url)`
+The check chooses scopes from the source path: `oss/python/` is Python-only, `oss/javascript/` is JS-only, shared `oss/` content is checked in **both** scopes, and other content defaults to Python. A language conditional overrides that current scope; any other conditional fence restores the path-derived defaults. Crucially, unfenced shared-OSS content must resolve in *all* of its build scopes, not merely one. The command exits 0 when no failures exist; otherwise it prints every file, line, key, and scopes and exits 1. Fix a reported reference by correcting it or adding the appropriate map entry.
 
-<!-- openwiki: broken internal link [url] file "url" does not exist. Fix the href or restore the target, then delete this comment. -->
-Optional backticks in the link name become part of the title: `@[`CustomClass`]` → `[`CustomClass`](url)`.
+## Conditional rendering: a regex pass, not a Markdown parser
 
-**Resolution behavior:**
-- Scope is determined at the top level by a "python" or "js" conditional fence, or defaults to `default_scope`.
-- The current scope persists across lines until a new conditional fence is encountered.
-- Scope changes inside code fences (``` or ~~~) do not affect line processing—the code fence state takes precedence.
-- Links not found in the scope's link map are logged as info-level warnings and left unchanged.
-- The "global" scope defaults to "python" (with an error-level log).
+`:::python` and `:::js` blocks allow a shared source page to contain alternative content. `_apply_conditional_rendering()` requires target language `python` or `js`, retaining the matching block body and removing the nonmatching body. It leaves unsupported opening language names unchanged. The opening and closing fences must have matching indentation; escaped `\:::` markers are preserved literally after their backslashes are removed.
 
-Link mappings live in `SCOPE_LINK_MAPS`, derived from `LINK_MAPS` in `pipeline/preprocessors/link_map.py`. Mappings exist for "python" and "js" scopes and reference both OSS and managed product APIs (Deep Agents, LangSmith agents/middleware).
+There is an important implementation boundary: conditional rendering uses one multiline regular expression over the complete text. Unlike autolink and UTM handling, it does **not** track Markdown code-fence state. Thus an apparent conditional block inside a fenced code example can still match and be rendered; authors who need literal conditional syntax must escape its `:::` markers. The expression is non-nesting: it pairs an opening fence with the next same-indentation unescaped closing fence. Do not rely on nested conditional blocks or malformed/unclosed fences for structured behavior.
 
-### Layer 3: UTM Link Decoration
+An invalid target language raises `ValueError`. At the builder boundary that exception is logged and re-raised. There is no recover-and-continue behavior for conditional parsing errors.
 
-Conversion-oriented links to `smith.langchain.com` (signup, agent onboarding pages) are tagged with UTM parameters at build time; functional links (settings, hub, traces) are left untouched.
+## CTA decoration and post-processing rewrites
 
-The `add_utm_to_cta_links()` function identifies markdown links `[text](https://smith.langchain.com/path)` and, if the path is a CTA path ("", "/", "/agents", "/agents/"), appends UTM query parameters:
+### LangSmith CTA UTM parameters
 
-- `utm_source=docs`
-- `utm_medium=cta`
-- `utm_campaign=langsmith-signup`
-- `utm_content=<derived-from-file-path>`
+`add_utm_to_cta_links()` recognizes Markdown links whose URL begins exactly with `https://smith.langchain.com`. It decorates only the root and `/agents` paths (with or without a trailing slash), appending `utm_source=docs`, `utm_medium=cta`, `utm_campaign=langsmith-signup`, and a `utm_content` value derived from the source path after `src/` (for example, `src/langsmith/home.mdx` becomes `langsmith-home`). Existing query text and an optional Markdown link title are retained.
 
-The `utm_content` value is derived from the file path: e.g., `src/langsmith/home.mdx` becomes `langsmith-home`.
+This narrow path allowlist intentionally leaves functional or deep links—such as settings, hubs, projects, public runs, and studio—alone, as well as other hosts such as `api.smith.langchain.com`. The transform tracks backtick and tilde code fences and does not decorate their contents. As with autolinks, a malformed unclosed fence suppresses later CTA decoration.
 
-**Key properties:**
-- Content inside code blocks (``` or ~~~ fences) is skipped.
-- Existing query parameters are preserved and the UTM params are appended with "&".
-- Non-smith.langchain.com URLs are unaffected.
+### Build-route rewrites
 
-### Layer 4: Link Rewriting for Versioned OSS Content
+After core preprocessing, language-targeted builds rewrite supported MDX snippet imports from `/snippets/path.mdx` to `/snippets/{python|javascript}/path.mdx`. Only `from` imports ending in `.md` or `.mdx` match; already prefixed imports remain unchanged. This makes a versioned page consume the corresponding generated snippet variant.
 
-After core preprocessing, the builder rewrites absolute `/oss/` paths to include language prefixes when appropriate.
+The next pass rewrites matched Markdown and HTML absolute `/oss/` links by inserting the target URL name (`python` or `javascript`). It skips rewrites when there is no target language, the URL contains `images`, the route already starts with either language, or it is an unversioned `/oss/deepagents/code` or `/oss/openwiki` route. A final route pass rewrites `/langsmith/managed-deep-agents...` links to the target language’s managed-Deep-Agents route. These passes are regex-based URL rewriting, so use the supported Markdown/HTML link forms rather than expecting arbitrary URL text to change.
 
-The `_rewrite_oss_links()` method in `DocumentationBuilder` transforms links like `/oss/langgraph/overview` → `/oss/python/langgraph/overview` (for Python target language). This allows version-specific builds to link to language-specific OSS content.
+### Generated contribution footer
 
-**Exceptions:** Links are left unchanged if they:
-- Already specify a language (`/oss/python/...` or `/oss/javascript/...`)
-- Reference language-agnostic paths (`/oss/deepagents/code/...` or `/oss/openwiki/...`)
-- Contain "images"
+For source paths inside the builder’s `src_dir`, `_add_suggested_edits_link()` appends a Mintlify `source-links` section. It includes an MCP connection callout plus GitHub links to edit the exact repository-relative source path and to open an issue. The root `index.mdx` and any path component named `snippets` receive no footer; paths outside `src_dir` are returned unchanged. Footer generation is deliberately best-effort: unexpected errors are logged and leave the original content intact.
 
-### Layer 5: Snippet Import Path Rewriting
+## Build variants and safe changes
 
-Snippets are short markdown fragments imported into pages. The build system generates language-specific copies at `build/snippets/{python|javascript}/...`. Versioned pages must import these language-prefixed copies.
+The builder creates Python and JavaScript variants for ordinary `oss/` pages. `oss/deepagents/code/...` and `oss/openwiki/...` are deliberately built once, using Python to resolve conditionals while preserving their language-agnostic route. Normal `langsmith/` pages are built once with Python; managed Deep Agents pages are an exception and emit both language-prefixed routes. These output decisions explain both the post-processing target language and the checker’s path-derived scope rules.
 
-The `_rewrite_snippet_imports_for_language()` method rewrites import statements:
+When changing this system:
 
-```mdx
-import MySnippet from '/snippets/my-snippet.mdx'
-```
+1. Add a cross-reference key to the correct scoped map and run `python scripts/check_cross_refs.py`; shared unfenced OSS prose needs an entry in both maps.
+2. Put language-specific references inside the matching `:::python` or `:::js` fence. Do not put live conditional syntax in code samples without escaping it.
+3. Extend `_CTA_PATHS` only for genuine conversion destinations; it controls tracking behavior globally.
+4. Preserve the transformation order when adding a pass. A pass that needs original conditional alternatives must run before rendering; a pass that needs final route-specific text belongs afterward.
+5. Exercise focused tests: `tests/unit_tests/test_handle_auto_links.py`, `tests/unit_tests/test_utm_links.py`, `tests/unit_tests/test_check_cross_refs.py`, and the link/import rewrite tests in `tests/unit_tests/test_builder.py` cover the principal invariants and regressions.
 
-becomes (for Python target):
-
-```mdx
-import MySnippet from '/snippets/python/my-snippet.mdx'
-```
-
-Already-scoped imports (containing "python/" or "javascript/") are left unchanged.
-
-### Layer 6: Source Edit Links
-
-The builder appends GitHub edit and issue links to the end of markdown files, enabling readers to contribute corrections or improvements directly. These links are added by `_add_suggested_edits_link()` after all other preprocessing.
-
-**Exceptions:** Links are not appended to:
-- The home page (`index.mdx`)
-- Snippet files (anything under "snippets" in the path)
-- Files outside the `src/` directory
-
-## Integration with Build
-
-The preprocessing pipeline is invoked from two code paths:
-
-1. **Regular markdown files:** `_process_markdown_file()` reads the source, calls `_process_markdown_content()` to apply all layers, and writes the result.
-
-2. **Snippet files:** `_build_unversioned_file()` processes each snippet with every supported language, writing language-prefixed copies. Then it writes a Python-default copy at the base path.
-
-The `target_language` parameter flows through the chain:
-- `_process_markdown_content()` passes it to `preprocess_markdown()` for layers 1–3.
-- After preprocessing returns, layers 4–5 are applied in `_process_markdown_content()`.
-- Layer 6 is applied in `_process_markdown_file()` before writing.
-
-## Error Handling
-
-Parse errors and transformation failures are handled as follows:
-
-- **Link resolution failures:** If a cross-reference like `@[UnknownClass]` is not found in the scope's link map, an info-level log is written with file and line context. The link is left unchanged (appears as literal `@[UnknownClass]` text).
-
-- **Regex errors:** Invalid regex patterns in conditional block processing trigger an exception that is logged with the file path. The build continues (exception is caught), but the file's output is incomplete.
-
-- **Build-time exceptions:** File I/O errors, decoding errors, and unexpected exceptions in `_process_markdown_content()` are caught, logged with context, and re-raised. This aborts the entire build.
-
-The logging uses Python's standard `logging` module. Loggers are created per module (e.g., `__name__`).
-
-## Key Invariants
-
-1. **Code fence protection:** Content inside regular code blocks (``` or ~~~) is never processed for conditional rendering or cross-references. Scope changes inside code blocks do not apply.
-
-2. **Order preservation:** Transformations occur in a strict order (layers 1–6). Each layer works on the output of the previous layer.
-
-3. **Conditional block closure:** A `:::` fence without a language identifier closes the current conditional block and resets scope to the default. Nested blocks are not supported; the innermost `:::` closes the current block.
-
-4. **Escaping:** Backslash-escaped markers (`\@[...]` and `\:::...`) are preserved as literal text by removing the escape character. Escaping is resolved in the final pass of each layer.
-
-5. **Idempotence of rewrites:** The OSS link rewrite and snippet import rewrite are designed to not double-rewrite already-rewritten content (checking for "python/" or "javascript/" prefixes already present).
-
-## Extension Points
-
-The pipeline is extensible:
-
-- **New scopes:** Add entries to `SCOPE_LINK_MAPS` in `link_map.py` to support new language/framework targets and their API reference links.
-- **New CTA paths:** Extend `_CTA_PATHS` in `utm_links.py` to tag additional smith.langchain.com endpoints.
-- **New transforms:** Insert new layers in `_process_markdown_content()` or after `preprocess_markdown()` returns.
-
-## Configuration and Operations
-
-**Environment variables:**
-
-- `TARGET_LANGUAGE`: If not passed as a parameter to `preprocess_markdown()`, defaults to this environment variable (or "python" if unset).
-
-**Link maps:**
-
-The link map is a list of dictionaries mapping symbol names to URLs, grouped by host and scope. Currently defined scopes are "python" and "js", with hosts pointing to langchain.com reference docs and integration points. The map includes:
-- Core LangChain modules (agents, tools, embeddings, messages)
-- Deep Agents APIs (middleware, backends, graph)
-- Third-party integrations (OpenAI, Anthropic, Google, etc.)
-- Utility types and functions
-
-**Versioning:**
-
-The build system calls preprocessing separately for each language target (e.g., "python", "js"). Unversioned files (shared across all versions) receive the "python" default. This allows a single source page to produce multiple output versions with language-specific content and links.
+For build layout and target variants, see [Build System](/openwiki/architecture/build-system.md). For author-facing reference use and operational remediation, see [Reference Docs](/openwiki/integrations/reference-docs.md) and [Cross-References](/openwiki/operations/cross-references.md).

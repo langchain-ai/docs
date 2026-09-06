@@ -1,12 +1,18 @@
 ---
-type: guide
+type: task-routing guide
 title: Quickstart
-description: Entry point for engineers joining the docs repository. Learn the repository's purpose, major sections, and key development tasks.
-tags: [quickstart, getting-started, workflows, setup, documentation]
+description: Start here to route documentation changes to the correct source, generation, build, validation, and CI workflow. Covers local setup, navigation, preprocessing, executable samples, and integration catalog maintenance.
+tags: [quickstart, documentation, workflows, build, validation]
 verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:00:58.567Z
+  - by: openwiki/0.4.3
+    at: 2026-09-06T08:18:19.246Z
 sources:
+  - id: openwiki-source-164e2da859b5277df81c7d94
+    resource: repo://.github/workflows/ci.yml
+  - id: openwiki-source-97746d8f3662d803e625550e
+    resource: repo://.github/workflows/test-code-samples.yml
+  - id: openwiki-source-4de47c60d7e3210385c34d35
+    resource: repo://.github/workflows/update-package-downloads.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -15,206 +21,105 @@ sources:
     resource: repo://pipeline/core/builder.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:00:58.567Z" }
+  - id: openwiki-source-63d8ba810a7c0181c548a307
+    resource: repo://scripts/refresh_integration_downloads.py
+  - id: openwiki-source-2b15ecffacad911ef9db112f
+    resource: repo://scripts/test_code_samples.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-06T08:18:19.246Z" }
 ---
 
 # Quickstart
 
-Welcome to the LangChain documentation repository! This page orients you to the repository structure, major domains, and common development tasks.
+This repository builds the Mintlify site at [docs.langchain.com](https://docs.langchain.com) from authored files in `src/`. It covers LangChain, LangGraph, LangSmith, Deep Agents, and OpenWiki. `reference.langchain.com` is a separate, externally built API-reference site; do not look for its build output here.
 
-## What Is This Repository?
-
-This repository builds and hosts documentation for LangChain products. It has two main responsibilities:
-
-1. **Build and deploy `docs.langchain.com`** — A Mintlify-based documentation site that consolidates documentation for LangChain, LangGraph, LangSmith, Deep Agents, and OpenWiki. The `/build` directory contains the final Mintlify output ready for deployment.
-
-2. **Provide source documentation** — Engineers and writers work in `/src` to create and maintain markdown and MDX files. The build pipeline preprocesses, versions, and transforms these sources into the final documentation output.
-
-## Quick Setup
-
-Get your development environment running in minutes:
+## Start a local preview
 
 ```bash
-# Clone the repository
 git clone https://github.com/langchain-ai/docs.git
 cd docs
-
-# Install dependencies (Python, Node.js, and the Mintlify CLI)
 make install
-
-# Start local development server
 make dev
 ```
 
-After `make dev` completes, open `http://localhost:3000` to preview the documentation locally.
+`make install` synchronizes Python dependencies, installs Node dependencies, and installs the Mint CLI. `make dev` runs the pipeline development command; use the Mintlify preview at `http://localhost:3000`. Edit `src/`, never `build/`: the pipeline regenerates `build/`, which Mintlify deploys.
 
-## Repository Structure
+## Choose the task, then its owner
 
-```
-docs/
-├── src/                           # All manually authored content
-│   ├── docs.json                  # Mintlify navigation and site config
-│   ├── index.mdx                  # Home page
-│   ├── langsmith/                 # LangSmith product docs
-│   ├── oss/                       # Open source docs (LangChain, LangGraph, Deep Agents, OpenWiki)
-│   ├── snippets/                  # Reusable MDX components
-│   └── images/                    # Documentation images and icons
-├── pipeline/                      # Python build pipeline and preprocessors
-│   ├── core/                      # Core builder and watcher classes
-│   ├── commands/                  # CLI commands (build, dev, migrate)
-│   └── preprocessors/             # Markdown preprocessing (links, versioning, UTM)
-├── build/                         # Generated Mintlify output (do NOT edit)
-├── tests/                         # Test suite (pytest)
-└── Makefile                       # Build targets and commands
-```
+| If you need to… | Start here | Key boundary |
+| --- | --- | --- |
+| Understand source locations, emitted routes, assets, or `docs.json` navigation | [Source, Navigation, and Output Map](/openwiki/architecture/source-map.md) | Source path and sidebar placement are separate contracts; `docs.json` names built routes and owns redirects. |
+| Change build routing, language variants, or generated output | [Build System Architecture](/openwiki/architecture/build-system.md) | `pipeline/` transforms `src/` into `build/`; ordinary OSS content has Python and JavaScript variants, while OpenWiki and Deep Agents Code are unversioned exceptions. |
+| Author `@[...]` references, conditional prose, CTA links, or imports | [Markdown Transformation and Cross-Reference Semantics](/openwiki/concepts/preprocessing.md) | Preprocessing resolves references and conditionals, then applies route and snippet-import rewrites; validate references from source rather than waiting for a build diagnostic. |
+| Add, move, or retire a page | [Adding, Moving, and Retiring Documentation Pages](/openwiki/operations/adding-pages.md) | Update navigation and public redirects as well as source; use `uv run docs mv <old> <new>` for a move with link updates. |
+| Make a runnable example appear as a documentation snippet | [Executable Code Samples to Embedded Snippets](/openwiki/workflows/code-samples.md) | The runnable program in `src/code-samples/` is the source of truth; generated snippet components are derived output. |
+| Change providers, package metadata, or integration download tables | [Integration Catalog and Download-Data Generation](/openwiki/workflows/integration-catalog.md) | Update catalog inputs and regenerate outputs; do not hand-edit generated provider or download tables. |
+| Select tests and validation for a change | [Testing and Validation Strategy](/openwiki/testing/test-overview.md) | Unit tests, build/link checks, generated catalogs, and live samples have intentionally different network and secret policies. |
+| Understand PR checks and recurring automation | [GitHub Actions, CI, and Scheduled Maintenance](/openwiki/integrations/github-actions.md) | Core CI is separate from credentialed sample execution and scheduled maintenance that creates reviewable updates. |
 
-## The Five Major Sections
+## The normal content-change loop
 
-The documentation is organized into five main areas for engineers and writers:
+1. Locate the authored page under `src/` and its destination in `src/docs.json`. Navigation labels do not necessarily match source directories.
+2. Make the source change. For shared OSS pages, account for both Python and JavaScript output; use `:::python` and `:::js` only where content or references differ. Do not language-split OpenWiki or Deep Agents Code pages.
+3. Use semantic `@[Reference]` links when an API symbol is in the link map. Run `make check-cross-refs` after changing those references or their map entries.
+4. Build and validate the emitted site. Run focused tests first, then build-dependent checks when routes, imports, links, navigation, or OpenAPI inputs change.
+5. Review generated changes rather than editing output. Commit source and the generated artifacts that the owning workflow requires.
 
-### 1. **Architecture & Design** — How the build system works
-Learn how the documentation pipeline preprocesses source files, creates language-specific variants, and generates final output.
+The build order matters: `DocumentationBuilder` clears `build/`, emits versioned and unversioned content, copies shared resources, and produces Mintlify-ready output. Markdown processing resolves scoped references and conditional content before build-route rewrites select the target language. See [Build System Architecture](/openwiki/architecture/build-system.md) and [Markdown Transformation and Cross-Reference Semantics](/openwiki/concepts/preprocessing.md) before changing those behaviors.
 
-- [**Build System Architecture**](/openwiki/architecture/build-system.md) — Pipeline overview, content branching strategy (Python/JavaScript), and preprocessing stages
-- [**Source Directory Map**](/openwiki/architecture/source-map.md) — Visual guide to `/src` structure and how it maps to output routes
+## Commands by intent
 
-### 2. **Core Concepts** — Key technical ideas
-Understand the versioning strategy, preprocessing pipeline, and how conditional content works.
+| Intent | Command | Notes |
+| --- | --- | --- |
+| Install prerequisites | `make install` | Installs all dependency groups, Node packages, and Mint. |
+| Preview while editing | `make dev` | Builds/watches the documentation and serves the local preview. |
+| Create fresh output | `make build` | Regenerates `build/`. |
+| Run deterministic pipeline tests | `make test` | Pytest runs with network sockets disabled; optionally narrow with `TEST_FILE=tests/unit_tests/test_builder.py`. |
+| Check source API references | `make check-cross-refs` | Ensures `@[...]` resolves in each applicable language scope. |
+| Validate built links and anchors | `make broken-links-with-anchors` | Builds first, then runs Mint from `build/` and filters documented false positives. |
+| Validate the Agent Server OpenAPI input | `make check-openapi` | Builds first, then runs Mint's OpenAPI checker. |
+| Check prose | `make lint_prose` | Installs and uses the Vale version pinned by repository configuration. |
+| Run one executable example | `make test-code-samples FILES="src/code-samples/path/example.py"` | This is a live-runtime path, not a socket-isolated unit test. |
+| Extract and generate sample snippets | `make code-snippets` | Produces tracked MDX snippets from marker-delimited executable sources. |
 
-- [**Language Versioning Strategy**](/openwiki/concepts/versioning.md) — How Python and JavaScript documentation are created from shared sources
-- [**Markdown Preprocessing Pipeline**](/openwiki/concepts/preprocessing.md) — Cross-references, conditional rendering, link rewriting, and UTM parameters
+`make broken-links`, `make broken-links-with-anchors`, and `make check-openapi` own their required build step. Run `make build` directly when you need to inspect output or test a pipeline change independently.
 
-### 3. **Integration Points** — External systems
-See how this repository integrates with Mintlify, GitHub Actions, NPM packages, and external API reference sites.
+## Executable samples: run, then generate
 
-- [**Mintlify Integration**](/openwiki/integrations/mintlify.md) — Site rendering, deployment, and component usage
-- [**GitHub Actions and CI/CD**](/openwiki/integrations/github-actions.md) — Workflows, PR checks, and deployment pipelines
-- [**NPM Snippet Components**](/openwiki/integrations/npm-snippets.md) — Reusable React/TypeScript snippet components
-- [**API Reference Integration**](/openwiki/integrations/reference-docs.md) — Linking to reference.langchain.com and managing API specs
-
-### 4. **Operations & Workflows** — Day-to-day tasks
-Step-by-step guides for common development activities: adding pages, writing versioned content, understanding CLI tools, and using cross-reference links.
-
-- [**Local Development Workflow**](/openwiki/workflows/local-development.md) — Clone, install, and develop locally
-- [**Writing Versioned Content**](/openwiki/workflows/versioned-content.md) — Best practices for Python/JavaScript conditional content
-- [**Adding and Modifying Pages**](/openwiki/operations/adding-pages.md) — Creating new pages and moving existing ones
-- [**CLI Tools Reference**](/openwiki/operations/cli-tools.md) — The `docs` Python CLI (dev, build, migrate, mv)
-- [**Cross-Reference Links**](/openwiki/operations/cross-references.md) — Using `@[ClassName]` syntax for resilient API links
-
-### 5. **Testing** — Quality assurance
-Understand the test suite, how to run tests, and how to test conditional content and preprocessing.
-
-- [**Testing Overview**](/openwiki/testing/test-overview.md) — Test suite structure, categories, and how to run tests
-- [**Builder Tests**](/openwiki/testing/builder-tests.md) — Testing file versioning, preprocessing, and directory structure
-- [**Testing Conditional Rendering**](/openwiki/testing/conditional-rendering.md) — Validating Python and JavaScript variants
-
-## Key Tasks
-
-### Task: Set Up Local Development
-**Purpose**: Start previewing changes instantly as you write.
+For a change beneath `src/code-samples/`, keep the complete executable program working before updating what readers see. The sample runner executes the source program; snippet markers select reader-facing fragments but do not alter runtime control flow. The generation flow is:
 
 ```bash
-make install        # Install all dependencies
-make dev            # Start development server at localhost:3000
+make test-code-samples FILES="src/code-samples/path/example.py"
+make code-snippets
 ```
 
-The dev server watches for changes in `/src/` and automatically rebuilds and refreshes the browser.
+`make code-snippets` extracts marker-delimited fragments into a gitignored intermediate directory and generates MDX components under `src/snippets/code-samples/`. Update the importing authored page when a snippet ID, path, or language suffix changes, then run build/link validation. Samples may require provider keys, live services, or `POSTGRES_URI`; CI executes eligible same-repository PR samples with secrets and PostgreSQL, but skips fork PRs to protect those secrets.
 
-**Related**: [Local Development Workflow](/openwiki/workflows/local-development.md)
+## Integration catalog: change inputs, not tables
 
-### Task: Understand Versioning
-**Purpose**: Know why some content appears in Python docs and other content in JavaScript docs.
+Two generated catalog families have different inputs:
 
-The build system creates two separate documentation sites from a shared source:
-- **Python docs**: `oss/python/...` (via build preprocessing)
-- **JavaScript docs**: `oss/javascript/...` (via build preprocessing)
+- `packages.yml` drives the Python Popular providers overview. Regenerate it with `uv run python pipeline/tools/partner_pkg_table.py` after changing package metadata.
+- Integration-page `integration:` frontmatter plus `scripts/data/integration_external_docs.yaml` drive language/component download snippets. Regenerate with `uv run python scripts/refresh_integration_downloads.py --write`; validate external documentation URL schemes with `uv run python scripts/refresh_integration_downloads.py --check-docs-urls`.
 
-Language-specific blocks (`::: and :::js`) are processed during the build. Shared content (images, integrations, concepts) is copied once.
+The provider-overview regeneration is an ordinary PR drift check. Download data also has a weekly automation path that refreshes package counts and generated tables, then opens a PR when tracked output changes. External package services can be unavailable or rate-limited, so catalog refresh is not equivalent to an offline unit test.
 
-**Related**: [Language Versioning Strategy](/openwiki/concepts/versioning.md), [Writing Versioned Content](/openwiki/workflows/versioned-content.md)
+## Before opening a PR
 
-### Task: Build and Test
-**Purpose**: Ensure your changes work correctly before opening a pull request.
+Use the smallest relevant checks, then expand to downstream checks when output is affected:
 
 ```bash
-make build                       # Build to /build directory
-make test                        # Run all tests
-make lint_prose                  # Check writing style
-uv run pytest tests/ -vv         # Run tests with verbose output
+make test
+make check-cross-refs
+make broken-links-with-anchors
+make check-openapi
 ```
 
-All tests must pass before merging. PR checks run these commands automatically via GitHub Actions.
+Add `make test-code-samples FILES="..."` for changed samples and regenerate the appropriate catalog outputs for metadata or generator changes. GitHub Actions separately runs tests, linting, built-document link/OpenAPI validation, cross-reference checking, external-link safety, and provider-overview drift checks. Passing `make test` does not cover live samples; conversely, live samples are intentionally outside ordinary socket-isolated test execution.
 
-**Related**: [Testing Overview](/openwiki/testing/test-overview.md), [Build System Architecture](/openwiki/architecture/build-system.md)
+## Non-negotiable conventions
 
-### Task: Add or Move Pages
-**Purpose**: Create new documentation pages and keep links working when you move existing pages.
-
-```bash
-# Use the CLI to move files and update cross-references automatically
-uv run docs mv src/oss/old-path.mdx src/oss/new-path.mdx
-
-# Then update src/docs.json navigation to reflect the new location
-```
-
-**Related**: [Adding and Modifying Pages](/openwiki/operations/adding-pages.md), [CLI Tools Reference](/openwiki/operations/cli-tools.md)
-
-### Task: Use Cross-References for API Links
-**Purpose**: Create resilient links to API documentation that update automatically.
-
-Instead of hardcoded URLs, use the `@[ClassName]` syntax:
-
-```markdown
-The @[StateGraph] class is used to build LangGraph applications.
-```
-
-The build system resolves this to the correct reference documentation URL for the target language (Python or JavaScript).
-
-**Related**: [Cross-Reference Links](/openwiki/operations/cross-references.md), [Build System Architecture](/openwiki/architecture/build-system.md)
-
-## Common Commands
-
-| Command | Purpose |
-|---------|---------|
-| `make dev` | Start local dev server with file watching (localhost:3000) |
-| `make build` | Build documentation to `/build` directory |
-| `make test` | Run test suite |
-| `make install` | Install all dependencies |
-| `make lint_prose` | Check writing style with Vale |
-| `make format` | Auto-format Python code |
-| `uv run docs build` | Build with custom options |
-| `uv run docs dev` | Start dev server (alias for `make dev`) |
-| `uv run docs mv <old> <new>` | Move file and update cross-references |
-| `uv run docs migrate <path>` | Convert Docusaurus/MkDocs to Mintlify format |
-
-See the [Makefile](/Makefile) for the complete list.
-
-## Important Conventions
-
-1. **Never edit `/build/`** — This directory is generated by the build pipeline. Always edit files in `/src/`.
-
-2. **Always update `src/docs.json`** — When adding new pages, update the Mintlify navigation configuration so they appear in the sidebar.
-
-3. **Test before opening a PR** — Run `make test` and `make build` locally to catch issues early.
-
-4. **Use Tabler icons only** — The documentation uses Tabler icons (`https://tabler.io/icons`). FontAwesome icons are not supported.
-
-5. **Write versioned content carefully** — Use `::: and :::js blocks to branch content. See [Writing Versioned Content](/openwiki/workflows/versioned-content.md) for best practices.
-
-## Getting Help
-
-- **Architecture questions**: See [Build System Architecture](/openwiki/architecture/build-system.md)
-- **How to add a page**: See [Adding and Modifying Pages](/openwiki/operations/adding-pages.md)
-- **Tests not passing**: See [Testing Overview](/openwiki/testing/test-overview.md)
-- **Conditional content issues**: See [Testing Conditional Rendering](/openwiki/testing/conditional-rendering.md)
-- **Link questions**: See [Cross-Reference Links](/openwiki/operations/cross-references.md)
-- **CLI questions**: See [CLI Tools Reference](/openwiki/operations/cli-tools.md)
-
-## Next Steps
-
-1. **Run `make install` and `make dev`** to start the local development server
-2. **Read [Local Development Workflow](/openwiki/workflows/local-development.md)** for detailed setup steps
-3. **Explore the [Build System Architecture](/openwiki/architecture/build-system.md)** to understand how the pipeline works
-4. **Check out [Writing Versioned Content](/openwiki/workflows/versioned-content.md)** if you're working on language-specific documentation
-
-Happy documenting! 🦜
+- Author content in `src/`; treat `build/` and generated tables/snippets as outputs.
+- Add a new navigable page to the appropriate `src/docs.json` product/menu/tab/group, using the correct built route. Preserve public moves with redirects.
+- Use Tabler icons, not FontAwesome icons, and keep frontmatter descriptions free of Markdown.
+- Test code examples before documenting them. Do not assume an extracted visible fragment was tested unless the executable path actually reaches it.
+- Use the related pages above for the detailed contract before changing pipeline behavior, generated content, or CI.
