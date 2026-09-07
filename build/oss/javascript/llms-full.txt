@@ -50803,6 +50803,403 @@ console.log({ res });
 </div>
 
 
+# Store integrations
+Source: https://docs.langchain.com/oss/javascript/integrations/long-term-memory/index
+
+Stores enable [long-term memory](/oss/javascript/langgraph/stores) in LangGraph, allowing agents to persist and retrieve information across threads.
+
+To implement your own store for a custom storage backend, extend the [BaseStore](https://reference.langchain.com/javascript/langchain-langgraph-checkpoint/BaseStore) interface. To deploy a custom store on Agent Server, see [Add a custom store](/langsmith/custom-store).
+
+| Backend | Package | Source |
+|---------|---------|--------|
+| [In-memory](https://reference.langchain.com/javascript/langchain-langgraph-checkpoint/InMemoryStore) | [`@langchain/langgraph-checkpoint`](https://www.npmjs.com/package/@langchain/langgraph-checkpoint) | [langchain-ai/langgraphjs](https://github.com/langchain-ai/langgraphjs/tree/main/libs/checkpoint) |
+| [PostgreSQL](https://reference.langchain.com/javascript/langchain-langgraph-checkpoint-postgres/store/PostgresStore) | [`@langchain/langgraph-checkpoint-postgres`](https://www.npmjs.com/package/@langchain/langgraph-checkpoint-postgres) | [langchain-ai/langgraphjs](https://github.com/langchain-ai/langgraphjs/tree/main/libs/checkpoint-postgres) |
+| [Redis](https://reference.langchain.com/javascript/langchain-langgraph-checkpoint-redis/store/RedisStore) | [`@langchain/langgraph-checkpoint-redis`](https://www.npmjs.com/package/@langchain/langgraph-checkpoint-redis) | [langchain-ai/langgraphjs](https://github.com/langchain-ai/langgraphjs/tree/main/libs/checkpoint-redis) |
+| [MongoDB](/oss/javascript/integrations/memory/mongodb-long-term-memory) | [`@langchain/langgraph-checkpoint-mongodb`](https://www.npmjs.com/package/@langchain/langgraph-checkpoint-mongodb) | [langchain-ai/langgraphjs](https://github.com/langchain-ai/langgraphjs/tree/main/libs/checkpoint-mongodb) |
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/long-term-memory/index.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
+# Memory integrations
+Source: https://docs.langchain.com/oss/javascript/integrations/memory/index
+
+Memory integrations provide persistent backends for [short-term memory](/oss/javascript/langchain/short-term-memory) (checkpointers) and [long-term memory](/oss/javascript/langchain/long-term-memory) (stores).
+
+## Short-term memory (checkpointers)
+
+| Backend | Guide |
+|---------|-------|
+| MongoDB Atlas | [Short-term memory with MongoDB Atlas](/oss/javascript/integrations/memory/mongodb-short-term-memory) |
+
+## Long-term memory (stores)
+
+| Backend | Guide |
+|---------|-------|
+| MongoDB Atlas | [Long-term memory with MongoDB Atlas](/oss/javascript/integrations/memory/mongodb-long-term-memory) |
+
+See also the full [store integrations](/oss/javascript/integrations/long-term-memory) list.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/memory/index.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
+# Long-term memory with MongoDB Atlas
+Source: https://docs.langchain.com/oss/javascript/integrations/memory/mongodb-long-term-memory
+
+[Long-term memory](/oss/javascript/langchain/long-term-memory) lets your agent store and recall information across different conversations and sessions. This guide shows how to use [MongoDB Atlas](https://www.mongodb.com/docs/atlas/) as the persistent store backend.
+
+MongoDB stores memories as documents in a collection. With an Atlas Vector Search index, the same store can run semantic search over stored memories.
+
+<Tip>
+For a deeper dive into memory types and strategies for writing memories, see the [Memory conceptual guide](/oss/javascript/concepts/memory#long-term-memory).
+</Tip>
+
+## Setup
+
+### Installation
+
+`MongoDBStore` ships in the same package as the MongoDB checkpointer:
+
+<CodeGroup>
+```bash npm
+npm install @langchain/langgraph-checkpoint-mongodb
+```
+
+```bash yarn
+yarn add @langchain/langgraph-checkpoint-mongodb
+```
+
+```bash pnpm
+pnpm add @langchain/langgraph-checkpoint-mongodb
+```
+</CodeGroup>
+
+### Credentials
+
+Set your Atlas connection string:
+
+```bash
+export MONGODB_ATLAS_URI="your-atlas-connection-string"
+```
+
+If you want automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```bash
+export LANGSMITH_API_KEY="your-api-key"
+export LANGSMITH_TRACING="true"
+```
+
+## Usage
+
+Create a `MongoDBStore` with `fromConnString` (await the promise) and pass it to `createAgent`. `fromConnString` connects the client and calls `start()` to ensure indexes exist. Import `MongoDBStore` from the package root; there is no `/store` subpath export.
+
+```typescript
+import { createAgent } from "langchain";
+import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
+
+const MONGODB_ATLAS_URI = process.env.MONGODB_ATLAS_URI;
+if (!MONGODB_ATLAS_URI) {
+  throw new Error("MONGODB_ATLAS_URI is required");
+}
+
+const store = await MongoDBStore.fromConnString(MONGODB_ATLAS_URI);
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [],
+  store,
+});
+```
+
+## Memory storage
+
+LangGraph stores memories as JSON documents organized by `namespace` and `key`. Namespaces typically include a user or org ID to keep memories scoped.
+
+The example below configures vector indexing so `store.search` can run semantic queries. Pass an embeddings instance and `indexConfig`. Install `@langchain/openai` if you use `OpenAIEmbeddings` (or swap in another embeddings class):
+
+```typescript
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
+
+const MONGODB_ATLAS_URI = process.env.MONGODB_ATLAS_URI;
+if (!MONGODB_ATLAS_URI) {
+  throw new Error("MONGODB_ATLAS_URI is required");
+}
+
+const store = await MongoDBStore.fromConnString(MONGODB_ATLAS_URI, {
+  embeddings: new OpenAIEmbeddings({ model: "text-embedding-3-small" }),
+  indexConfig: {
+    name: "store_vector_index",
+    dims: 1536,
+    similarityFunction: "cosine",
+  },
+});
+
+const userId = "my-user";
+const applicationContext = "chitchat";
+const namespace = [userId, applicationContext];
+
+await store.put(namespace, "a-memory", {
+  rules: [
+    "User likes short, direct language",
+    "User only speaks English and TypeScript",
+  ],
+  "my-key": "my-value",
+});
+
+const item = await store.get(namespace, "a-memory");
+const items = await store.search(namespace, {
+  filter: { "my-key": "my-value" },
+  query: "language preferences",
+});
+```
+
+For more information about store operations, see the [Stores](/oss/javascript/langgraph/stores) guide.
+
+## Read long-term memory in tools
+
+Tools can read from the store using the `runtime` parameter, which LangGraph injects automatically:
+
+```typescript
+import * as z from "zod";
+import { createAgent, tool, type ToolRuntime } from "langchain";
+import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
+
+const MONGODB_ATLAS_URI = process.env.MONGODB_ATLAS_URI;
+if (!MONGODB_ATLAS_URI) {
+  throw new Error("MONGODB_ATLAS_URI is required");
+}
+
+const store = await MongoDBStore.fromConnString(MONGODB_ATLAS_URI);
+
+const contextSchema = z.object({ userId: z.string() });
+
+await store.put(["users"], "user_123", {
+  name: "John Smith",
+  language: "English",
+});
+
+const getUserInfo = tool(
+  async (_, runtime: ToolRuntime<unknown, z.infer<typeof contextSchema>>) => {
+    const userId = runtime.context.userId;
+    if (!userId) throw new Error("userId is required");
+    const userInfo = await runtime.store?.get(["users"], userId);
+    return userInfo?.value ? JSON.stringify(userInfo.value) : "Unknown user";
+  },
+  {
+    name: "getUserInfo",
+    description: "Look up user info by userId from the store.",
+    schema: z.object({}),
+  },
+);
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [getUserInfo],
+  contextSchema,
+  store,
+});
+
+await agent.invoke(
+  { messages: [{ role: "user", content: "look up user information" }] },
+  { context: { userId: "user_123" } },
+);
+```
+
+## Write long-term memory from tools
+
+Tools can also write to the store using `runtime.store.put`, persisting data that survives across threads:
+
+```typescript
+import * as z from "zod";
+import { tool, createAgent, type ToolRuntime } from "langchain";
+import { MongoDBStore } from "@langchain/langgraph-checkpoint-mongodb";
+
+const MONGODB_ATLAS_URI = process.env.MONGODB_ATLAS_URI;
+if (!MONGODB_ATLAS_URI) {
+  throw new Error("MONGODB_ATLAS_URI is required");
+}
+
+const store = await MongoDBStore.fromConnString(MONGODB_ATLAS_URI);
+
+const contextSchema = z.object({ userId: z.string() });
+
+const UserInfo = z.object({ name: z.string() });
+
+const saveUserInfo = tool(
+  async (
+    userInfo: z.infer<typeof UserInfo>,
+    runtime: ToolRuntime<unknown, z.infer<typeof contextSchema>>,
+  ) => {
+    const userId = runtime.context.userId;
+    if (!userId) throw new Error("userId is required");
+    await runtime.store?.put(["users"], userId, userInfo);
+    return "Successfully saved user info.";
+  },
+  { name: "save_user_info", description: "Save user info", schema: UserInfo },
+);
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [saveUserInfo],
+  contextSchema,
+  store,
+});
+
+await agent.invoke(
+  { messages: [{ role: "user", content: "My name is John Smith" }] },
+  { context: { userId: "user_123" } },
+);
+
+const result = await store.get(["users"], "user_123");
+console.log(result?.value);
+```
+
+## See also
+
+- [Long-term memory](/oss/javascript/langchain/long-term-memory)
+- [Stores](/oss/javascript/langgraph/stores)
+- [Store integrations](/oss/javascript/integrations/long-term-memory)
+- [Short-term memory with MongoDB Atlas](/oss/javascript/integrations/memory/mongodb-short-term-memory)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/memory/mongodb-long-term-memory.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
+# Short-term memory with MongoDB Atlas
+Source: https://docs.langchain.com/oss/javascript/integrations/memory/mongodb-short-term-memory
+
+[Short-term memory](/oss/javascript/langchain/short-term-memory) lets your agent remember previous interactions within a single thread or conversation. This guide shows how to use [MongoDB Atlas](https://www.mongodb.com/docs/atlas/) as the persistent checkpointer backend.
+
+MongoDB stores conversation state as documents in a collection, so threads can resume across process restarts and deployments.
+
+<Tip>
+Need to remember information **across** conversations? Use [long-term memory with MongoDB Atlas](/oss/javascript/integrations/memory/mongodb-long-term-memory) to store and recall data across different threads and sessions.
+</Tip>
+
+## Setup
+
+### Installation
+
+<CodeGroup>
+```bash npm
+npm install @langchain/langgraph-checkpoint-mongodb mongodb
+```
+
+```bash yarn
+yarn add @langchain/langgraph-checkpoint-mongodb mongodb
+```
+
+```bash pnpm
+pnpm add @langchain/langgraph-checkpoint-mongodb mongodb
+```
+</CodeGroup>
+
+### Credentials
+
+Set your Atlas connection string:
+
+```bash
+export MONGODB_ATLAS_URI="your-atlas-connection-string"
+```
+
+If you want automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```bash
+export LANGSMITH_API_KEY="your-api-key"
+export LANGSMITH_TRACING="true"
+```
+
+## Usage
+
+Create a `MongoClient`, construct `MongoDBSaver`, and call `setup()` once so indexes exist. There is no `MongoDBSaver.fromConnString` helper.
+
+```typescript
+import { createAgent, tool } from "langchain";
+import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
+import { MongoClient } from "mongodb";
+import * as z from "zod";
+
+const getUserInfo = tool(() => "No user profile on file.", {
+  name: "get_user_info",
+  description: "Look up information about the current user.",
+  schema: z.object({}),
+});
+
+const MONGODB_ATLAS_URI = process.env.MONGODB_ATLAS_URI;
+if (!MONGODB_ATLAS_URI) {
+  throw new Error("MONGODB_ATLAS_URI is required");
+}
+
+const client = new MongoClient(MONGODB_ATLAS_URI);
+const checkpointer = new MongoDBSaver({ client });
+await checkpointer.setup();
+
+const agent = createAgent({
+  model: "anthropic:claude-sonnet-4-6",
+  tools: [getUserInfo],
+  checkpointer,
+});
+
+const threadConfig = { configurable: { thread_id: "1" } };
+let result = await agent.invoke(
+  { messages: [{ role: "user", content: "Hi! My name is Bob." }] },
+  threadConfig,
+);
+console.log(result.messages.at(-1)?.content);
+
+result = await agent.invoke(
+  { messages: [{ role: "user", content: "What's my name?" }] },
+  threadConfig,
+);
+console.log(result.messages.at(-1)?.content);
+
+await client.close();
+```
+
+## Next steps
+
+- Customize agent state, trim or summarize history, and access memory from tools in the [short-term memory](/oss/javascript/langchain/short-term-memory) guide. Pass the same `MongoDBSaver` as `checkpointer`.
+- For cross-thread persistence, see [long-term memory with MongoDB Atlas](/oss/javascript/integrations/memory/mongodb-long-term-memory).
+- See the [checkpointer libraries](/oss/javascript/langgraph/checkpointers#checkpointer-libraries) list for other backends.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/memory/mongodb-short-term-memory.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
 # Anthropic integration
 Source: https://docs.langchain.com/oss/javascript/integrations/middleware/anthropic
 
@@ -82899,6 +83296,10 @@ npm install @langchain/langgraph-checkpoint-postgres
     </Tab>
 </Tabs>
 
+<Note>
+    For other store backends, including Redis and MongoDB, see the [store integrations](/oss/javascript/integrations/long-term-memory) list. For a MongoDB walkthrough, see [long-term memory with MongoDB](/oss/javascript/integrations/memory/mongodb-long-term-memory).
+</Note>
+
 Tools can then read from and write to the store using the `runtime.store` parameter. See [Read long-term memory in tools](#read-long-term-memory-in-tools) and [Write long-term memory from tools](#write-long-term-memory-from-tools) for examples.
 
 <Tip>
@@ -106318,7 +106719,7 @@ In production, use a checkpointer backed by a database:
 
   <Tip>
   **Setup**
-  To use `MongoDBSaver`, you will need a MongoDB cluster. Follow [this guide](https://www.mongodb.com/docs/guides/atlas/cluster/) to create a cluster if you don't already have one.
+  To use `MongoDBSaver`, you will need a MongoDB cluster. Follow [this guide](https://www.mongodb.com/docs/guides/atlas/cluster/) to create a cluster if you don't already have one. For an agent-focused walkthrough, see [short-term memory with MongoDB Atlas](/oss/javascript/integrations/memory/mongodb-short-term-memory).
   </Tip>
 
   ```typescript
@@ -106586,6 +106987,10 @@ In production, use a store backed by a database:
   ```
   npm install @langchain/langgraph-checkpoint-mongodb
   ```
+
+  <Tip>
+  For an agent-focused walkthrough, see [long-term memory with MongoDB Atlas](/oss/javascript/integrations/memory/mongodb-long-term-memory).
+  </Tip>
 
   ```typescript
   import { ChatAnthropic } from "@langchain/anthropic";
@@ -118324,7 +118729,9 @@ When using the [Agent Server](/langsmith/agent-server), you do not need to imple
 [InMemoryStore](https://reference.langchain.com/javascript/langchain-core/stores/InMemoryStore) is suitable for development and testing. For production, use a persistent store like `PostgresStore`, `MongoDBStore`, `RedisStore`, or `UpstashStore`. All implementations extend [BaseStore](https://reference.langchain.com/javascript/langchain-core/stores/BaseStore), which is the type annotation to use in node function signatures.
 </Note>
 
-
+<Note>
+See [store integrations](/oss/javascript/integrations/long-term-memory/index) for the full list of available providers.
+</Note>
 
 ## Basic usage
 
