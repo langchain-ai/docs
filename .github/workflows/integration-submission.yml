@@ -1,15 +1,18 @@
 # Open a docs PR for integration listing requests filed via the
-# "Integration listing" issue form (label: integration-submission).
+# "Integration listing" issue form.
+#
+# Maintainers start the agent by applying the `integration-run` label (or via
+# workflow_dispatch). Issue open alone does not run the agent, so untrusted
+# issue text cannot start a privileged job until a maintainer opts in.
 #
 # Uses Deep Agents Code (dcode) with the repo skill `submit-integration`.
-# Structured issue fields are parsed to JSON before the agent runs so the
-# prompt does not rely on free-form issue markdown.
+# Structured issue fields are parsed to JSON before the agent runs.
 
 name: Integration submission
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [labeled]
   workflow_dispatch:
     inputs:
       issue_number:
@@ -32,20 +35,18 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' &&
-       github.event.action == 'opened' &&
-       contains(join(github.event.issue.labels.*.name, ','), 'integration-submission')) ||
-      (github.event_name == 'issues' &&
        github.event.action == 'labeled' &&
-       github.event.label.name == 'integration-submission')
+       github.event.label.name == 'integration-run')
 
     steps:
-      - name: Resolve issue metadata
+      - name: Resolve issue metadata and authorize maintainer
         id: meta
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
           INPUT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+          ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
@@ -53,6 +54,29 @@ jobs:
           else
             NUMBER="$EVENT_ISSUE_NUMBER"
           fi
+
+          # Only maintainers/collaborators with write+ may start the agent.
+          PERM=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq .permission 2>/dev/null || echo "none")
+          case "$PERM" in
+            admin|maintain|write)
+              echo "Authorized actor=${ACTOR} permission=${PERM}"
+              ;;
+            *)
+              echo "Actor ${ACTOR} permission=${PERM} is not allowed to run integration automation"
+              if [ "$EVENT_NAME" = "issues" ]; then
+                gh issue edit "$NUMBER" --remove-label "integration-run" || true
+                gh issue comment "$NUMBER" --body "$(cat <<EOF
+          <!-- integration-submission-unauthorized -->
+          The \`integration-run\` label can only be applied by maintainers. Removed the label.
+
+          Authors: thanks for the submission — a maintainer will apply \`integration-run\` when ready to generate the listing PR.
+          EOF
+          )"
+              fi
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
 
           BODY_JSON=$(gh api "repos/${{ github.repository }}/issues/${NUMBER}")
           AUTHOR=$(printf '%s' "$BODY_JSON" | jq -r .user.login)
@@ -73,6 +97,7 @@ jobs:
             echo "author=$AUTHOR"
             echo "url=$URL"
             echo "title=$TITLE"
+            echo "actor=$ACTOR"
           } >> "$GITHUB_OUTPUT"
 
       - name: Check out repository
@@ -116,7 +141,7 @@ jobs:
 
           ${ERRORS}
 
-          Edit the issue so the form fields are complete, then remove the \`integration-automation\` label if present and re-apply \`integration-submission\`.
+          Fix the form fields, remove \`integration-automation\` if present, then a maintainer can re-apply \`integration-run\`.
           EOF
           )"
             echo "parse_ok=false" >> "$GITHUB_OUTPUT"
@@ -135,6 +160,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ steps.meta.outputs.number }}
           AUTHOR: ${{ steps.meta.outputs.author }}
+          ACTOR: ${{ steps.meta.outputs.actor }}
           DISPLAY_NAME: ${{ steps.parse.outputs.display_name }}
         run: |
           set -euo pipefail
@@ -142,9 +168,9 @@ jobs:
           gh issue edit "$NUMBER" --add-label "integration-automation"
           gh issue comment "$NUMBER" --body "$(cat <<EOF
           <!-- integration-submission-started -->
-          Thanks @${AUTHOR} — starting automated docs listing for **${DISPLAY_NAME}**.
+          @${ACTOR} started automated docs listing for **${DISPLAY_NAME}** (author @${AUTHOR}).
 
-          A pull request will tag @npentrel and you when it is ready for review.
+          A pull request will tag @npentrel and @${AUTHOR} when it is ready for review.
           EOF
           )"
 
@@ -226,6 +252,8 @@ jobs:
 
           Check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for logs.
 
+          To retry: remove \`integration-automation\`, then re-apply \`integration-run\`.
+
           @npentrel
           EOF
           )"
@@ -237,6 +265,8 @@ jobs:
             gh issue comment "$NUMBER" --body "$(cat <<EOF
           <!-- integration-submission-no-changes -->
           Automation finished but produced no file changes. Please check the submission fields or the workflow logs.
+
+          To retry: remove \`integration-automation\`, then re-apply \`integration-run\`.
 
           @npentrel
           EOF
@@ -281,7 +311,7 @@ jobs:
             - [ ] Confirm docs URL and provider card
             - [ ] Confirm downloads table / YAML / packages.yml (or hosted MDX) look correct
 
-            Generated by workflow `integration-submission.yml`.
+            Generated by workflow `integration-submission.yml` after maintainer applied `integration-run`.
 
       - name: Comment PR link on issue
         if: steps.meta.outputs.skip != 'true' && steps.parse.outputs.parse_ok == 'true' && steps.result.outputs.has_changes == 'true' && steps.cpr.outputs.pull-request-number != ''
