@@ -1,0 +1,116 @@
+---
+title: Operating Deep Agents on OCI
+sidebarTitle: Operations
+description: Configure, operate, and troubleshoot Deep Agents with OCI services
+---
+
+:::python
+
+For OCI agent setup, see
+[Deep Agents on OCI](/oss/deepagents/oci).
+
+For datastore configuration and Oracle Database persistence, see
+[OCI retrieval](/oss/deepagents/oci-retrieval) and
+[OCI persistence](/oss/deepagents/oci-persistence).
+
+## Bring your own model
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_oci import create_deepagents_agent
+
+agent = create_deepagents_agent(
+    datastores={"research": store},
+    model=ChatAnthropic(model="claude-opus-4-8"),
+    embedding_model=my_embeddings,   # otherwise OCI auth is still needed for embeddings
+)
+```
+
+- `model=` is used **as-is**; `model_id`, `temperature`, `max_tokens`,
+  `**model_kwargs`, and the OCI inference auth options are all ignored —
+  configure them on the model you pass.
+- `compartment_id` stops being required — but is still resolved
+  opportunistically because **default datastore embeddings are OCI-backed**.
+  Pass `embedding_model=` to sever the last OCI dependency.
+- Works with any tool-calling LangChain chat model: Anthropic, OpenAI, a
+  self-hosted vLLM endpoint via `ChatOpenAI(base_url=...)`, or a
+  custom-configured `ChatOCIGenAI` (e.g. kwargs the factory doesn't expose).
+  The model must support tool calling; for the deep path, models with strong
+  multi-step tool use work markedly better.
+- Same `model=` parameter exists on `create_oci_agent`.
+
+## Async usage & resource cleanup
+
+- The compiled graph supports `await agent.ainvoke(...)` / `astream(...)`.
+  With `ChatOCIGenAI`, native async is used where available.
+- The factory attaches the built model as **`agent._oci_llm`** so long-lived
+  processes can release the async HTTP session:
+
+```python
+llm = getattr(agent, "_oci_llm", None)
+if llm is not None and hasattr(llm, "aclose"):
+    await llm.aclose()
+```
+
+  Skipping this in long-lived async apps produces "unclosed client session"
+  warnings at shutdown. With BYO models, `_oci_llm` is your model — close it
+  per its own API.
+- `ADB` stores hold a real DB connection: `store.close()` (idempotent) or use
+  the store as a context manager.
+
+## Sharp edges & built-in workarounds
+
+- **`middleware=None` ≠ `middleware=[]`.** Default `None` takes the deep path;
+  only the explicit empty list is the lightweight opt-out.
+- **`interrupt_before/after` vs `interrupt_on`** are path-specific and
+  silently unused on the other path (see the
+  [parameter reference](/oss/deepagents/oci#langgraph-options)).
+- **`max_input_tokens` is accepted and ignored.**
+- **Factory-time network I/O:** datastore connections and description
+  embeddings happen inside `create_deepagents_agent`.
+- **ADB `update()` is not transactional** (delete commits before re-insert;
+  snapshot-restore on failure).
+- **OpenSearch `bulk_insert` may partially succeed** — compare the returned
+  count.
+- **Routing selects one store per query** — multi-store coverage emerges
+  across agent steps, not within one `search` call.
+
+## Logging & observability
+
+Component-scoped loggers, all under standard `logging`:
+
+| Logger | Emits |
+|---|---|
+| `langchain_oci.datastores.vectorstores.adb.ADB` | connect/close, backend init, search requests (DEBUG), index-creation warnings |
+| `langchain_oci.datastores.tools.*.HybridSearchTool` (etc.) | per-call start/success at INFO (`store=… top_k=… query=…`), failures with stack traces |
+| `langchain_oci.agents.common` | schema-fallback events at DEBUG |
+
+```python
+import logging
+logging.getLogger("langchain_oci.datastores").setLevel(logging.INFO)
+```
+
+For step-level agent tracing use LangSmith or
+`agent.stream(..., stream_mode="updates")`; `debug=True` enables LangGraph's
+debug output.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ValueError: compartment_id must be provided…` | No `compartment_id` arg, no `$OCI_COMPARTMENT_ID`, no `model=` | Pass one of the three |
+| `RuntimeError: Deepagents requires Python 3.11+` | Deep path on old Python | Upgrade, or opt into `middleware=[]` |
+| `ImportError: …'deepagents' package` | Deep path without the extra | `pip install 'langchain-oci[deepagents]'` |
+| `ImportError: oracledb required` / `langchain-oracledb required` / `opensearch-py required` | ADB / OpenSearch store without its driver | Install the named package |
+| Factory call hangs or fails before any invoke | Store connectivity (wallet path, DSN, endpoint) — connections open at build time | Test `oracledb.connect(...)` / `curl` the OpenSearch endpoint directly |
+| `RuntimeError: ADB datastore is not connected` | Adapter used before `connect()` / after `close()` | Let the factory connect it, or call `connect(embedding_model)` |
+| Search returns nothing relevant | Index/query embedding model mismatch, or empty table | Same model both sides; `stats` tool to check counts |
+| Every query routes to the same store | Missing/similar `datastore_description`s | Distinct, content-focused descriptions |
+| `get_document` "not found" for an ID seen in results | Doc lives in a non-default store | Pass `store=` — `get_document` does not route |
+| Truncated final reports | Output-token ceiling | Raise `max_tokens` (e.g. 65536 on Gemini 2.5 Pro) |
+| `Unclosed client session` warnings | Async model client never closed | `await agent._oci_llm.aclose()` |
+| Slow `get`/`delete` on ADB at scale | `metadata.id` index couldn't be created (check warning log) | Create the function-based index manually |
+| `ORA-00955` in logs | Index already exists | Benign — silently handled |
+| Deep path + Gemini model 400s: `Unknown name "exclusiveMinimum" at 'tools[0]...'` | `deepagents>=0.7` ships a built-in `grep` tool whose `max_count` field (`gt=0`) emits `exclusiveMinimum`, which Gemini's function-declaration API rejects (verified live 2026-08) | Fixed by [#291](https://github.com/oracle/langchain-oracle/pull/291) (Gemini provider rewrites the bounds), but unreleased as of `langchain-oci==0.3.2`. On releases without it: use a non-Gemini model on the deep path (e.g. `meta.llama-3.3-70b-instruct` — verified working), pin `deepagents<0.7`, or use the lightweight path (`middleware=[]`) with Gemini |
+
+:::
