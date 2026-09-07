@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from scripts.parse_integration_submission_issue import parse_issue_body
 
-
 SAMPLE_BODY = """\
 ### Display or class name
 
