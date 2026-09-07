@@ -524,6 +524,10 @@ Similar to how messages can be removed from the state by appending a RemoveMessa
     </Tab>
 </Tabs>
 
+## Learn more
+
+* [JS/TS SDK Reference](https://reference.langchain.com/javascript/langchain-langgraph-sdk/)
+
 ---
 
 <div className="source-links">
