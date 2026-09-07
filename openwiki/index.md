@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Entry point for engineers joining the docs repository. Learn the repository's purpose, major sections, and key development tasks.
+- [Quickstart](quickstart.md) - Set up and safely change the LangChain documentation repository, then choose the focused build, link, cross-reference, and test checks for the change.
 
 # Directories
 
