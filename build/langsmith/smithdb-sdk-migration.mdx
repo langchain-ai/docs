@@ -69,7 +69,11 @@ The before and after change for each method is documented on the page for its ar
 
 This guide is written to be fetched and applied directly by an AI coding agent. Copy the following prompt into your agent to migrate your codebase to the SmithDB-backed methods.
 
-```text
+<Prompt
+    description="Migrate LangSmith SDK usage to SmithDB methods"
+    icon="arrow-right"
+    actions={["copy", "cursor"]}
+>
 Migrate this codebase's LangSmith SDK usage to the new SmithDB-backed methods.
 
 Fetch https://docs.langchain.com/langsmith/smithdb-sdk-migration.md first. It
@@ -112,7 +116,7 @@ support.
 
 If a call site or parameter is not covered by the guide, stop and ask rather
 than guessing.
-```
+</Prompt>
 
 ## Exceptions
 
