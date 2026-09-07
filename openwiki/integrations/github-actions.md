@@ -1,250 +1,121 @@
 ---
-type: continuous-integration-workflows
+type: CI and scheduled automation
 title: GitHub Actions and CI/CD
-description: Continuous integration and deployment workflows for PR checks, documentation builds, testing, and scheduled tasks with secrets management.
-tags: [ci-cd, github-actions, automation, testing, deployment, quality-assurance]
+description: GitHub Actions validates documentation changes and operates scheduled refresh workflows for live examples, package data, OpenAPI, and OpenWiki documentation.
+tags: [github-actions, ci-cd, automation, documentation, testing]
 verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:00:58.567Z
+  - by: openwiki/0.4.3
+    at: 2026-09-07T08:24:09.165Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
-  - id: openwiki-source-f35e7c44cc1805709393a581
-    resource: repo://.github/workflows/_lint.yml
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
-  - id: openwiki-source-ef6344124ed2f526c8578c0b
-    resource: repo://.github/workflows/check-pr-imports.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
-  - id: openwiki-source-9db08afb765c73035414b518
-    resource: repo://.github/workflows/lint-prose.yml
-  - id: openwiki-source-f2608d0d515da097485b6ec5
-    resource: repo://.github/workflows/publish.yml
+  - id: openwiki-source-6d4b4e707b8d60b6ccfa3425
+    resource: repo://.github/workflows/openwiki-update.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
-  - id: openwiki-source-5ee763b2f4cade1e8b64a3c3
-    resource: repo://.markdownlint.json
-  - id: openwiki-source-4d1645cb6317345817452838
-    resource: repo://.pre-commit-config.yaml
-  - id: openwiki-source-635a4d4537a9628cdea912c0
-    resource: repo://.vale.ini
+  - id: openwiki-source-4de47c60d7e3210385c34d35
+    resource: repo://.github/workflows/update-package-downloads.yml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
-  - id: openwiki-source-05ccef8d4cf1698187f20464
-    resource: repo://pyproject.toml
+  - id: openwiki-source-d4fdd9dfc4cf980ce0889985
+    resource: repo://scripts/packages_yml_get_downloads.py
   - id: openwiki-source-697851c98229599f97376bfb
     resource: repo://scripts/process_langsmith_openapi.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:00:58.567Z" }
+  - id: openwiki-source-2b15ecffacad911ef9db112f
+    resource: repo://scripts/test_code_samples.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-07T08:24:09.165Z" }
 ---
 
 ## Overview
 
-This repository uses GitHub Actions to automate continuous integration, testing, documentation builds, deployments, and scheduled maintenance tasks. All workflows are defined in `.github/workflows/` and follow a consistent pattern: PR checks must pass before merge, and successful merges to `main` trigger documentation deployment to the Mintlify platform.
+GitHub Actions has two deliberately different roles in this repository:
 
-## Core CI Pipeline
+- **deterministic validation** runs for pushes to `main`, pull requests, or manually through `ci.yml`; it checks the repository checkout without provider credentials;
+- **scheduled automation** refreshes data or documentation that depends on external services and opens pull requests when an output changes.
 
-The main CI workflow (`ci.yml`) runs on pull requests and pushes to `main`, with concurrency control to cancel outdated runs in favor of newer ones.
+The primary workflow cancels an earlier run for the same workflow and Git ref when a newer push arrives. This keeps the reported result focused on the current commit rather than consuming runners on obsolete commits.
 
-### PR Checks
-
-All of the following checks must pass before a PR can merge:
-
-**Linting and Code Quality**
-- **Ruff** (Python): Lints and formats Python code across the repository, configured to check all rules with selective per-file exceptions defined in `pyproject.toml`. Runs via the `_lint.yml` reusable workflow.
-- **Codespell**: Validates spelling across source files, excluding code samples and generated content.
-- **Vale**: Prose linting that enforces style, grammar, and terminology rules from `.vale.ini`, which applies LangChain-specific and industry-standard styles. The `lint-prose.yml` workflow runs on changed markdown files in PRs.
-
-**Testing**
-- **pytest**: Core test suite runs with socket communication disabled (except Unix sockets) via `pytest --disable-socket`. Tests are located in `tests/` and configured in `pyproject.toml`. The `_test.yml` reusable workflow handles execution.
-
-**Documentation and Link Integrity**
-- **Link validation**: The `_check-links.yml` reusable workflow builds documentation using `make build`, then validates all internal and external links using Mintlify's link checker. Anchor validation ensures links to specific sections are valid.
-- **OpenAPI spec validation**: Mintlify checks the validity of the LangSmith OpenAPI specification.
-- **Merge conflict detection**: Scans for unresolved merge conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`).
-- **Cross-reference validation**: Custom checks ensure docs.json entries exist for all referenced pages.
-- **External docs URLs**: Validates URL schemes in integration_external_docs.yaml.
-- **Generated file integrity**: Verifies that regenerated files (e.g., partner package tables) match checked-in versions, with bypass capability via `bypass-auto-check` label.
-
-**Import Validation**
-- **Import mappings** (`check-pr-imports.yml`): Ensures Python imports use correct packages, preventing obsolete `langchain_core` direct imports. Generates mappings if missing and validates against base branch.
-
-**Code Sample Testing**
-- **Code samples** (`test-code-samples.yml`): Tests executable code samples in `src/code-samples/` by running them against live dependencies. Tests run on schedule (weekly), manual trigger, and on PR changes to code samples. Secrets (API keys) are only available on non-fork PRs to prevent credential leaks.
-
-## Documentation Build and Deployment
-
-### Build Process
-
-Documentation is built by running `make build`, which:
-1. Calls `pipeline build` (the pipeline CLI)
-2. Generates the `/build` directory from `/src` source files
-3. Includes extraction of code snippets and generation of supplementary content
-
-### Deployment Pipeline
-
-The `publish.yml` workflow automatically deploys built documentation on successful merges to `main`:
-
-1. **Build**: Creates the `/build` directory with all generated documentation
-2. **Verify**: Confirms the build directory exists and is non-empty
-3. **Prepare**: Copies `/build` into a `/public/build` directory structure
-4. **Publish**: Uses `peaceiris/actions-gh-pages@v4` to push to the `prod` branch with `GITHUB_TOKEN`, which Mintlify monitors for deployment
-
-The deployment uses the default `GITHUB_TOKEN` (no external secrets required for the push itself).
-
-## Scheduled Tasks
-
-### LangSmith OpenAPI Spec Refresh
-
-The `refresh-langsmith-openapi.yml` workflow runs daily at 10:00 AM UTC and can be triggered manually:
-
-1. **Fetch**: Calls `scripts/process_langsmith_openapi.py --write` to fetch the latest OpenAPI spec from `api.smith.langchain.com`
-2. **Post-process**: The script filters fleet and internal endpoints (adds `x-hidden: true`) and injects human-readable group tags for Mintlify auto-generated pages
-3. **Manage PR**: Creates or updates a standing refresh PR (`chore/refresh-langsmith-openapi`) by:
-   - Reusing an existing PR if one is open, appending a new commit
-   - Creating a fresh PR from `main` if none exists
-   - Skipping commit and PR operations if the spec has not changed
-
-This automation ensures API documentation stays synchronized with the live platform without manual intervention.
-
-## Lint Configuration
-
-### Markdown Linting (`.markdownlint.json`)
-
-Default rules enabled with selective exceptions:
-- Disables rules for: MD001 (heading hierarchy), MD013 (line length), MD025 (multiple top-level headings), MD033 (inline HTML), MD041 (first line heading), MD051 (link fragments)
-
-### Prose Linting (`.vale.ini`)
-
-Applies style validation to all markdown and MDX files:
-- **Styles**: LangChain, proselint, vale, write-good
-- **Skip scopes**: Frontmatter (YAML) is excluded from validation
-- **Block ignores**: Code blocks are excluded to avoid linting code comments
-- **Min alert level**: Errors only (warnings ignored)
-
-The configuration enforces clear, inclusive, professional writing with strong attention to terminology consistency.
-
-### Python Linting (via `pyproject.toml`)
-
-**Ruff** configuration:
-- Line length: 88 characters
-- Select all rules with exceptions for complexity checks (C901, PLR0912, PLR0915) and comma handling (COM812)
-- Per-file exclusions for scripts, generated content, and test fixtures
-- Test files allow assertions, private member access, and magic values
-
-**Codespell** configuration:
-- Uses ignore list from `src/.codespellignore`
-- Skips code samples, generated files, SVG, and JSON files
-
-**Pytest** configuration:
-- Async mode: auto
-- Async default scope: function
-- Reports all test outcomes with verbose output
-- Displays slowest 5 tests for performance analysis
-
-## Local Development and Pre-commit Hooks
-
-### Pre-commit Framework
-
-The `.pre-commit-config.yaml` defines local hooks via `prek` (installed through `mise`):
-
-**Hooks**:
-- `check-removed-pages-redirects`: Verifies that removed docs.json pages have redirect entries
-- `vale`: Runs prose linting on changed markdown files, mirroring the CI check
-- `broken-links-with-anchors`: Manual-stage hook for full link validation before pushing
-
-Install local hooks:
-```bash
-mise install
-prek install --hook-type pre-commit --hook-type pre-push
+```mermaid
+flowchart TD
+  Change["Push, pull request, or manual dispatch"] --> CI["ci.yml"]
+  CI --> Test["Reusable test workflow"]
+  CI --> Lint["Reusable lint workflow"]
+  CI --> Links["Documentation and link validation"]
+  CI --> Checks["Conflict, cross-reference, URL, and generated-file checks"]
+  Schedule["Schedules or manual dispatch"] --> Live["Live samples, OpenAPI, package data, or OpenWiki update"]
+  Live --> PR["Create or update pull request when output changes"]
 ```
 
-Run the expensive broken-links check manually:
+This shows the separation between checkout-based CI and scheduled workflows that may contact external systems.
+
+## Core CI
+
+`.github/workflows/ci.yml` runs on `main` pushes, pull requests, and manual dispatch. It invokes reusable workflows for Python 3.13 testing, linting, and documentation validation, then performs repository-specific checks:
+
+- `test` delegates to `_test.yml`, which installs the test dependency group and runs `make test`. The target runs pytest on `tests/unit_tests` with network sockets disabled, except Unix sockets. This makes core tests reproducible without unintended network access.
+- `lint` delegates to `_lint.yml` and runs `make lint` with frozen uv resolution and GitHub-formatted Ruff diagnostics. `make lint` checks Ruff formatting and rules, `ty`, and Codespell.
+- `links` delegates to `_check-links.yml`. It installs the Mintlify CLI (cached by workflow definition), builds the documentation through `make broken-links-with-anchors`, validates anchors after filtering known generated/snippet cases, and runs `make check-openapi`.
+- `check-merge-conflicts` fails if tracked files contain unresolved conflict-marker lines.
+- `check-cross-refs` runs `make check-cross-refs`, resolving source `@[ref]` references via the repository mapping.
+- `check-external-docs-urls` checks accepted `docs_url` schemes in the external integration metadata.
+- `check-generated-files` regenerates `src/oss/python/integrations/providers/overview.mdx` and fails when it differs from the checked-in generated file. It skips only package-download bot PRs or PRs explicitly carrying `bypass-auto-check`; otherwise the generated artifact is an invariant, not a hand-edited page.
+
+CI is not itself a merge policy: branch protection determines which checks are required. The workflow supplies the validation signal.
+
+### Reproducing checkout-based checks
+
+The Makefile is the common local entrypoint. The closest commands are:
+
 ```bash
-prek run --hook-stage manual broken-links-with-anchors --all-files
+make lint
+make test
+make broken-links-with-anchors
+make check-cross-refs
+uv run python pipeline/tools/partner_pkg_table.py
 ```
 
-## Build and Make Targets
+`make broken-links-with-anchors` builds first, so failures can result from the documentation pipeline as well as a broken link. It runs Mintlify from `build/`, filters documented false-positive classes, and fails only if remaining link lines are reported. Unlike the workflows below, these commands do not need service credentials; installing the declared Python/Node tooling is still required.
 
-Key `Makefile` targets used by CI workflows:
+## Executable code samples
 
-- `make build`: Builds documentation via `pipeline build`
-- `make lint`: Runs ruff, type checking, and codespell
-- `make test`: Runs pytest with socket disabled
-- `make lint_prose`: Runs Vale with optional `FILES` parameter
-- `make broken-links`: Checks for broken links (excludes OpenAPI-generated pages and snippet files)
-- `make broken-links-with-anchors`: Checks links including anchor validation
-- `make check-openapi`: Validates OpenAPI spec syntax with Mintlify
+`test-code-samples.yml` is intentionally separate from core CI because samples run against real dependencies. It runs every Sunday at 00:00 UTC, on manual dispatch, and for pull requests that change `src/code-samples/**` or its workflow. A PostgreSQL/pgvector service is provided, and the job provisions Python, Node, Java/JBang, and Go for the supported sample languages.
 
-## Secrets Management
+Scheduled and manual runs set `RUN_ALL` and test all samples. For a qualifying same-repository PR, the workflow computes the diff from the PR merge base and passes only changed `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` sample paths through `FILES` to `make test-code-samples`. No changed executable sample is a successful no-op.
 
-### GitHub Secrets
+The job is skipped for fork pull requests. GitHub does not expose repository secrets to those runs, and some samples require provider keys. This is isolation rather than an indication that fork samples passed; contributors should rely on deterministic checks or maintainers can run the credentialed workflow after review.
 
-- **GITHUB_TOKEN**: Automatically provided by GitHub Actions; used for PR operations, pushing to branches, and creating releases. Not stored as an explicit secret.
-- **API keys** (external services): Not required for core CI/CD pipelines. Code sample tests receive provider keys only when running on non-fork PRs.
+The runner validates paths under `src/code-samples/`, excludes dependency/cache directories, executes each language using its native launcher, and imposes a 600-second per-sample timeout. Non-rate-limit failures fail the job. A persistent LangSmith HTTP 429 is retried up to three times with backoff and then reported as skipped rather than failed, because it measures shared live-service capacity rather than sample correctness.
 
-### Security Best Practices
+## Generated package and integration tables
 
-- **Never commit credentials**: All secrets are managed via GitHub's encrypted secret store
-- **Fork PR isolation**: Secrets are not exposed to PRs from forks to prevent credential leakage through workflow logs
-- **Public branches**: The `prod` branch (deployment target) is public and may not contain sensitive data
+`update-package-downloads.yml` runs Sundays at 23:59 UTC or manually. Its first job updates package download metadata, regenerates the provider overview and integration snippets, and transfers the resulting files as a one-day artifact to a second job. The second job creates a timestamped `chore/update-package-downloads-*` branch and PR only if those outputs differ, then enables squash auto-merge.
 
-## Failure Scenarios and Debugging
+The data refresh is external-service work. `scripts/packages_yml_get_downloads.py` requests Pepy monthly badge data only for package records whose `downloads_updated_at` is at least 24 hours old; an unindexed package (404) is recorded as zero, while other request errors fail the script. `refresh_integration_downloads.py` derives tables from hosted integration frontmatter and third-party metadata. The workflow can optionally create deduplicated Linear issues for candidates over the hosted-docs threshold; without both the repository secret and configured team variable it explicitly runs that step in dry-run mode.
 
-### Common Failure Causes
+This workflow uses the GitHub token for repository write and PR operations. The Linear API value is never printed or embedded in generated files.
 
-**Broken links**: Lint check identifies missing or malformed links, anchor references, and external URL validity. Re-run `make broken-links-with-anchors` locally to reproduce.
+## LangSmith OpenAPI refresh
 
-**Missing cross-references**: The `check-cross-refs` job ensures all pages referenced in narrative text exist in docs.json.
+`refresh-langsmith-openapi.yml` runs daily at 10:00 UTC or manually. It invokes `scripts/process_langsmith_openapi.py --write`, which fetches only from its allowlisted `api.smith.langchain.com` host and writes `src/langsmith/langsmith-platform-openapi.json`. Post-processing marks fleet, internal, and health-style operations hidden and applies human-readable groups to tags for generated public API navigation.
 
-**Formatting violations**: Ruff, Vale, or markdownlint report style issues with inline annotations on the PR. Run `make lint` and `make lint_prose` locally to fix.
+When the generated spec differs, the workflow maintains one standing `chore/refresh-langsmith-openapi` PR: it appends to an open PR on that branch, or starts a branch from the checkout and opens a PR to `main`. An unchanged spec exits without a commit. The job has repository contents and pull-request write permission and uses `github.token` through `GH_TOKEN`; it does not require a separately disclosed API credential for the spec fetch.
 
-**Missing docs.json entries**: Generated content or renamed files must have corresponding docs.json entries for navigation.
+## Daily OpenWiki update PR
 
-**Test failures**: Pytest reports failures with stack traces. Run `make test` locally with `pytest --disable-socket` to debug. The socket disable flag prevents accidental external network calls.
+`openwiki-update.yml` runs daily at 08:00 UTC and can be dispatched manually. It checks out **full history** (`fetch-depth: 0`), rather than a shallow clone, because `openwiki code --update` compares `HEAD` with the commit that was last documented. With shallow history that commit is hidden and the update receives an empty change summary.
 
-**Import issues**: The `check-pr-imports` workflow identifies incorrect package imports. Review scripts/import_mappings.json and run scripts/check_pr_imports.py to validate.
+The job installs the pinned OpenWiki, Mermaid, and jsdom packages, runs `openwiki code --update --print`, then uses `create-pull-request` to maintain `openwiki/update` with the intended documentation and configuration paths. Its token permissions allow content and PR writes.
 
-### Debugging Workflow Runs
+OpenWiki needs an `OPENAI_API_KEY` to use its configured provider and an `OPENWIKI_LANGSMITH_API_KEY` for authenticated LangSmith connector pulls; optional LangSmith tracing uses a separate key. These are repository secrets passed as environment variables, never values to place in a page, command line, or PR. As a scheduled workflow in the base repository it can use those secrets; do not repurpose it for untrusted fork code.
 
-- View logs in the GitHub Actions UI for any failed job
-- Inspect the "Annotations" tab for inline lint feedback
-- For link issues, examine `filter_mint_broken_links.py` output to distinguish real vs. ignored broken links
-- Code sample failures log the full execution output including error messages from external services
+## Operating and extending workflows
 
-## Related Workflows and Tools
+Keep fast, deterministic checks in `ci.yml` or its reusable workflows, and place externally dependent or credentialed work in a separately triggered workflow with the least required permissions. Reuse Make targets where practical so maintainers can reproduce failures locally. For a new generated artifact, add both a scheduled producer and a CI freshness check (unless there is a documented reason to bypass it), and ensure no-change runs exit before creating noise PRs.
 
-- **Code sample testing**: `test-code-samples.yml` executes documentation examples against live environments
-- **PR enhancement workflows**: Additional workflows provide PR comments, labeling, and import validation
-- **OpenWiki integration**: The system supports integration with external documentation frameworks through carefully managed build outputs and metadata
-- **Mintlify platform**: Deployment target that consumes `/build` artifacts and serves the final documentation site
-
-## Integration Points
-
-### Incoming
-
-- GitHub pushes to `main` and pull requests trigger CI pipelines
-- Scheduled cron jobs for daily OpenAPI refresh and weekly code sample tests
-- Manual workflow dispatch for on-demand builds and deployments
-
-### Outgoing
-
-- Documentation built to `/build` is published to the `prod` branch
-- OpenAPI refresh PRs created to the main repository
-- PR comments, labels, and annotations provide feedback to developers
-- Mintlify platform deployment consumes the published branch
-
-## Configuration and Operations
-
-**Environment variables** in workflows:
-- `UV_FROZEN`: Locks uv to a specific dependency resolution (prevents unexpected updates in CI)
-- `RUFF_OUTPUT_FORMAT`: Set to `github` for inline PR annotations
-- `PYTHONPATH`: Set to repository root when running pipeline commands
-
-**Concurrency**: The CI workflow uses GitHub's concurrency feature to cancel outdated runs, reducing CI queue time and resource usage.
-
-**Timeouts**: Workflows have conservative timeout limits (typically 5–20 minutes per job) to fail fast on hangs or infinite loops.
-
-**Python versioning**: Tests and linting run on Python 3.13 (minimum and maximum supported versions defined in pyproject.toml).
+For failures, start with the failed Action step and run its Make/script command locally when it is checkout-only. For scheduled failures, distinguish an actual transformation or credentials error from external availability, rate limits, or the 24-hour package-refresh gate. Avoid retrying a fork PR merely to obtain secrets; use a reviewed base-repository run instead.
