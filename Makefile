@@ -16,18 +16,31 @@ build:
 # Offline zip via Mintlify (https://www.mintlify.com/docs/deploy/export).
 # Must run from build/: docs.json paths are oss/python/... and oss/javascript/... but sources live under src/oss/... until the pipeline emits build/oss/{python,javascript}/...
 # Default mint output when run from build/ is build/export.zip. Override with MINT_EXPORT_ARGS='--output other.zip' (path relative to build/) and matching EXPORT_ZIP=build/other.zip for htmltest.
+# Requires: recent mint CLI (mint export), Node LTS 20/22 (Node 25+ unsupported), Enterprise Mintlify plan.
 export: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run: npm install -g mint@latest"; exit 1; }
+	@mint help 2>&1 | grep -q 'mint export' || { \
+		echo "Error: 'mint export' is missing from mint $$(mint --version 2>/dev/null || echo unknown)."; \
+		echo "Upgrade: npm install -g mint@latest"; \
+		echo "Also needs Node LTS (20 or 22; Node 25 is unsupported) and an Enterprise Mintlify plan."; \
+		exit 1; \
+	}
+	@NODE_MAJOR=$$(node -p "process.versions.node.split('.')[0]"); \
+	if [ "$$NODE_MAJOR" -ge 25 ]; then \
+		echo "Error: mint does not support Node $$NODE_MAJOR. Switch to Node 20 or 22 (e.g. nvm use 22), install mint for that Node (npm install -g mint@latest), then retry."; \
+		exit 1; \
+	fi
 	@cd build && mint export $(MINT_EXPORT_ARGS)
 
 # Zip produced by make export (default Mintlify name: export.zip in build/). Override if you used --output.
 EXPORT_ZIP ?= build/export.zip
 # Unpacked copy for htmltest (gitignored under build/).
 HTMLTEST_UNPACK_DIR ?= build/mint-export-htmltest-unpacked
-# Default: skip external link checks (faster, no network). Full crawl: make htmltest HTMLTEST_ARGS=
-HTMLTEST_ARGS ?= -s
+# Extra htmltest CLI flags (config already checks external URLs only). Example: HTMLTEST_ARGS='-l 1'
+HTMLTEST_ARGS ?=
 
 # Unzip EXPORT_ZIP and run htmltest (https://github.com/wjdp/htmltest). Run after make export.
+# Uses htmltest-mint-export.yml: external URLs only (mint export omits many pages, so internals are noisy).
 htmltest:
 	@command -v htmltest >/dev/null 2>&1 || { echo "Error: htmltest not found. Install: brew install htmltest  OR  curl https://htmltest.wjdp.uk | sudo bash -s -- -b /usr/local/bin"; exit 1; }
 	@command -v unzip >/dev/null 2>&1 || { echo "Error: unzip not found."; exit 1; }
@@ -192,7 +205,7 @@ help:
 	@echo "  make dev                - Start development mode with file watching and mint dev"
 	@echo "  make build              - Build documentation to ./build directory"
 	@echo "  make export             - Run mint export from ./build (optional: MINT_EXPORT_ARGS)"
-	@echo "  make htmltest           - Unzip EXPORT_ZIP (default build/export.zip), run htmltest (HTMLTEST_ARGS)"
+	@echo "  make htmltest           - Unzip EXPORT_ZIP, run htmltest on external URLs only (HTMLTEST_ARGS)"
 	@echo "  make export-htmltest    - make export then make htmltest"
 	@echo "  make broken-links       - Check for broken links in built documentation"
 	@echo "  make check-cross-refs   - Check for unresolved @[ref] cross-references"
