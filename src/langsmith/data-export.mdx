@@ -225,7 +225,7 @@ Set the `compression` field to control how exported Parquet files are compressed
 Allowed values: `zstandard`, `gzip`, `snappy`, `none`. Use `snappy` when loading into BigQuery, see [Export trace data to BigQuery](/langsmith/big-query-bulk-export).
 
 <Note>
-On [Self-hosted LangSmith](/langsmith/self-hosted), the default is `gzip`. Set the `FF_BULK_EXPORT_DEFAULT_COMPRESSION` environment variable to change the default.
+As of LangSmith 0.16.0, [Self-hosted LangSmith](/langsmith/self-hosted) also defaults to `zstandard` when `compression` is omitted. This is a breaking change from previous versions, which defaulted to `gzip`. To override the default, set the `FF_BULK_EXPORT_DEFAULT_COMPRESSION` environment variable.
 </Note>
 
 ### Exportable fields
