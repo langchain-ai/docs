@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Entry point for engineers joining the docs repository. Learn the repository's purpose, major sections, and key development tasks.
+- [Quickstart](quickstart.md) - Set up the LangChain documentation monorepo, use the source-to-preview loop safely, and select proportionate validation or the right contributor workflow.
 
 # Directories
 

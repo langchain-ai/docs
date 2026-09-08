@@ -1,14 +1,18 @@
 ---
 type: integration
-title: API Reference Integration
-description: How documentation links to generated API reference on reference.langchain.com and how OpenAPI specifications are managed.
-tags: [api-reference, openapi, cross-references, reference.langchain.com, link-maps]
+title: Reference Documentation Integration
+description: Explains the boundary between hand-authored documentation, separately generated SDK reference sites, semantic SDK links, and deployment-generated OpenAPI pages.
+tags: [api-reference, openapi, cross-references, mintlify, langsmith]
 verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:00:58.567Z
+  - by: openwiki/0.4.3
+    at: 2026-09-08T08:21:44.568Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
+  - id: openwiki-source-5c124605ed6e394bffee862c
+    resource: repo://.github/workflows/_check-links.yml
+  - id: openwiki-source-5153f86e64d6ee0b305f72b3
+    resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -17,190 +21,117 @@ sources:
     resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-dca59d03b9433eea9242c2e4
     resource: repo://pipeline/preprocessors/link_map.py
+  - id: openwiki-source-06a4c757b1153b7de4f47a0e
+    resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:00:58.567Z" }
+  - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
+    resource: repo://scripts/check_cross_refs.py
+  - id: openwiki-source-49f717adb7cc59501f5c17ac
+    resource: repo://scripts/filter_mint_broken_links.py
+  - id: openwiki-source-697851c98229599f97376bfb
+    resource: repo://scripts/process_langsmith_openapi.py
+  - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
+    resource: repo://src/docs.json
+  - id: openwiki-source-c2764a7369c8fbf3e49da6f8
+    resource: repo://tests/unit_tests/test_check_cross_refs.py
+  - id: openwiki-source-38d325b9c51f3c8dfd528917
+    resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
 ---
 
-## Overview
+## Boundary and ownership
 
-The LangChain documentation on `docs.langchain.com` integrates with auto-generated API reference hosted separately at `reference.langchain.com`. This page explains the relationship between the two sites, how cross-references work, and how OpenAPI specifications are versioned and updated.
+`docs.langchain.com` is this repository's hand-authored documentation and build pipeline. Generated API reference for LangChain, LangGraph, LangSmith, and integrations is deployed separately at [reference.langchain.com](https://reference.langchain.com/python/), with distinct [Python](https://reference.langchain.com/python/) and [JavaScript/TypeScript](https://reference.langchain.com/javascript/) sites. It is **not** built from this repository: no reference-generation scripts or output live here. Do not try to repair a missing generated reference page or an incorrect signature by changing this documentation build.
 
-**Key facts:**
-- API reference is **generated and deployed outside this repository** for both [Python](https://reference.langchain.com/python/) and [JavaScript/TypeScript](https://reference.langchain.com/javascript/)
-- Documentation links to reference via semantic cross-references like `@[StateGraph]`, resolved at build time
-- Three OpenAPI specifications power LangSmith API documentation: one committed locally (Agent Server), one refreshed daily (LangSmith REST API), and one fetched at deploy time (Control Plane)
-- Issues with reference.langchain.com are reported via a dedicated issue template; fixes happen in the reference docs repo, not here
+This repository owns two adjacent integration layers:
 
-## Cross-Reference Links to Reference.langchain.com
+1. Markdown and MDX authors can name an SDK symbol semantically; preprocessing turns it into an external reference URL.
+2. `src/docs.json` configures Mintlify OpenAPI sections for product HTTP APIs. Mintlify creates their endpoint pages when it deploys.
 
-### Semantic Link Syntax
-
-Authors write language-agnostic cross-references in markdown using the `@[ClassName]` syntax. These are resolved during the preprocessing pipeline to actual URLs on `reference.langchain.com`:
-
-```markdown
-Use @[StateGraph] to define your graph structure.
+```mermaid
+flowchart TD
+  Author["Authored MDX with semantic reference"] --> Preprocess["Documentation preprocessor"]
+  Preprocess --> Map["Scoped link map"]
+  Map --> External["reference.langchain.com"]
+  Spec["OpenAPI input"] --> MintConfig["docs.json OpenAPI section"]
+  MintConfig --> Deploy["Mintlify deployment"]
+  Deploy --> ApiPages["Generated endpoint pages"]
 ```
 
-Becomes (for Python scope):
+This diagram separates authored semantic links to the external SDK-reference service from OpenAPI endpoint pages generated during deployment.
+
+## Semantic links in authored documentation
+
+Use `@[ClassName]` for the first useful mention of an SDK class, method, or function instead of hard-coding a `reference.langchain.com` URL. Supported forms include a default title, custom title, and code-formatted default title:
 
 ```markdown
-Use [StateGraph](https://reference.langchain.com/python/langgraph/graph/state/StateGraph) to define your graph structure.
+@[StateGraph]
+@[Build a graph][StateGraph]
+@[`StateGraph`]
 ```
 
-### Link Map Resolution
+The autolink preprocessor substitutes a Markdown link from the current scope's `SCOPE_LINK_MAPS` entry. `LINK_MAPS` holds a host and symbol-to-path mapping for each scope, while `_enumerate_links` prefixes relative paths with that host and retains absolute mapped URLs. The Python and JavaScript maps therefore direct symbols such as `StateGraph`, `ChatOpenAI`, and `@traceable` to their respective external reference pages.
 
-The preprocessor resolves cross-references using `SCOPE_LINK_MAPS`, which is built from `LINK_MAPS` in `pipeline/preprocessors/link_map.py`. The link map contains:
+Scope starts with the target language and changes at `:::python` or `:::js` fences. Autolinking runs before conditional rendering. References in ordinary fenced code blocks are not changed, and a backslash-escaped reference such as `\@[StateGraph]` remains literal after its escape is removed. An unresolved reference produces an info-level message with its source location and stays `@[...]` rather than receiving a guessed URL. The unhandled `global` scope falls back to Python and logs an error, so use explicit language fences where a symbol differs by language.
 
-- **Python scope** (`"python"`): Maps to `https://reference.langchain.com/python/`
-- **JavaScript scope** (`"js"`): Maps to `https://reference.langchain.com/javascript/`
+### Keep maps and source in sync
 
-Each scope maps symbol names (like `"StateGraph"`, `"ChatOpenAI"`, `"@[traceable]"`) to their reference page paths.
+`make check-cross-refs` is the strict authoring guardrail. It scans Markdown and MDX beneath `src/`, reuses the autolink and fence patterns, and exits nonzero for unresolved symbols. It ignores ordinary fenced code, escaped references, `snippets/code-samples/`, and `node_modules`.
 
-**Resolution behavior:**
-- Scope is determined by language-specific conditional fences (`:::python` or `:::js`) in the markdown
-- If a cross-reference is not found in the scope's link map, an info-level warning is logged and the reference is left unchanged (appears as literal `@[ClassName]` text)
-- Some symbols are scope-agnostic and point to absolute URLs (e.g., cross-scope references like `"ModelProfile"` which has no JS equivalent, pointing to the Python reference)
+The checker derives its default scope from the file path: `oss/python/` uses Python, `oss/javascript/` uses JavaScript, shared `oss/` content is checked in **both** scopes, and non-OSS content uses Python. An unfenced reference in shared content must resolve in every scope in which it is built, not merely one. Fix an entry in `pipeline/preprocessors/link_map.py`, or put a language-specific reference inside the appropriate fence, before merging. Focused tests cover scope selection, shared files, custom-title and backtick forms, multiple references, and the code, escaped-reference, and code-sample exclusions.
 
-### Custom Titles
+## Mintlify OpenAPI sections
 
-Cross-references support custom titles:
+`src/docs.json` is the configuration boundary between an OpenAPI input and Mintlify-generated endpoint pages. The three configured sections have deliberately different input lifecycles:
 
-```markdown
-@[Custom Title][StateGraph]
-```
+| Section | Navigation location | Input ownership and lifecycle | Generated path |
+| --- | --- | --- | --- |
+| Agent Server API | Deploy → Get started → Reference | `src/langsmith/agent-server-openapi.json` is committed. Updates arrive in `langgraph-api` PRs titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. | `/langsmith/agent-server-api/` |
+| Control Plane API | Deploy → Get started → Reference | `https://api.host.langchain.com/openapi.json` is remotely fetched at deployment; there is no local committed file. | `/api-reference/` |
+| LangSmith REST API | Monitor → Reference | `src/langsmith/langsmith-platform-openapi.json` is committed and refreshed by automation. | `/langsmith/smith-api/` |
 
-Resolves to:
+Mintlify generates these endpoint pages at deployment, so they do not exist in local `build/` output. The remote Control Plane input remains service-owned; do not copy it into this repository. This deploy-time generation is separate from the external `reference.langchain.com` SDK-reference build.
 
-```markdown
-[Custom Title](https://reference.langchain.com/python/langgraph/graph/state/StateGraph)
-```
+### Agent Server validation
 
-<!-- openwiki: broken internal link [url] file "url" does not exist. Fix the href or restore the target, then delete this comment. -->
-Backticks are automatically preserved: `@[`CustomClass`]` becomes `[`CustomClass`](url)`.
-
-## OpenAPI Specifications
-
-Three OpenAPI specifications power API reference sections embedded in the docs site:
-
-| Section | Location in Nav | Spec source | Generated under | Status |
-|---------|-----------------|-------------|-----------------|--------|
-| **Agent Server API** | Deploy → Get started → Reference | `src/langsmith/agent-server-openapi.json` | `/langsmith/agent-server-api/` | Committed locally |
-| **Control Plane API** | Deploy → Get started → Reference | `https://api.host.langchain.com/openapi.json` | `/api-reference/` | Fetched at deploy time |
-| **LangSmith REST API** | Monitor → Reference | `src/langsmith/langsmith-platform-openapi.json` | `/langsmith/smith-api/` | Refreshed daily |
-
-### Agent Server OpenAPI
-
-**Source:** `src/langsmith/agent-server-openapi.json` (committed to this repo)
-
-**Updates:** Updated by PRs from the `langgraph-api` repository, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. The spec captures the HTTP interface for the agent server.
-
-**Validation:** Run `make check-openapi` before merging to ensure the spec is valid.
-
-### Control Plane API
-
-**Source:** `https://api.host.langchain.com/openapi.json` (no local file; fetched at deploy time)
-
-**Updates:** The spec is fetched dynamically from the control plane service on every deployment. No local versioning.
-
-**Rationale:** The control plane is a managed service; its API evolves independently of the docs repository.
-
-### LangSmith REST API
-
-**Source:** `src/langsmith/langsmith-platform-openapi.json` (committed to this repo)
-
-**Updates:** Refreshed daily via GitHub Actions workflow (`.github/workflows/refresh-langsmith-openapi.yml`). The workflow:
-1. Fetches the latest spec from the LangSmith platform
-2. Runs `scripts/process_langsmith_openapi.py` to normalize it
-3. Opens or appends to a standing `chore/refresh-langsmith-openapi` PR
-
-**Important:** Do not edit this file by hand. It is overwritten automatically.
-
-**Validation:** Run `make check-openapi` before merging to ensure the spec is valid.
-
-## Building and Testing
-
-### Local Development
-
-During `make dev` or `make build`, Mintlify generates endpoint documentation pages from the OpenAPI specs at build time. These pages exist only in the `build/` output, not in the source tree.
-
-### Broken Links Filtering
-
-The `make broken-links` target runs Mintlify's link checker but filters out false positives:
-
-- **Excluded by pattern:** `/langsmith/agent-server-api/`, `/api-reference/` (these are Mintlify-generated pages, not local files)
-- **Snippet files:** Also excluded as they are imported with language-specific rewrites
-
-The filtering is applied by `scripts/filter_mint_broken_links.py` after the Mintlify check completes.
-
-### Validation
-
-Before merging PRs that touch OpenAPI specs, always run:
+Before merging an Agent Server spec update, run:
 
 ```bash
 make check-openapi
 ```
 
-This validates that all three specs are syntactically correct JSON Schema / OpenAPI 3.1.0 documents.
+The target first builds the documentation, then invokes `mint openapi-check langsmith/agent-server-openapi.json` from `build/`. Despite its general name and older guidance that mentions either committed spec, the current target validates **only** the Agent Server specification. The link-check workflow invokes this target. Validate an additional specification explicitly or deliberately extend the target; do not assume it checks all three inputs.
 
-## Reporting Issues with reference.langchain.com
+### LangSmith REST refresh and public-doc shaping
 
-Issues with **generated API reference content** (missing pages, broken links, incorrect type signatures) are reported to the **reference docs issue template** in this repo:
+Do **not** hand-edit `src/langsmith/langsmith-platform-openapi.json`. Daily at 10:00 UTC, and when manually dispatched, the refresh workflow runs:
 
-[Open a reference docs issue](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml)
+```bash
+uv run python scripts/process_langsmith_openapi.py --write
+```
 
-This template routes the issue to maintainers who coordinate with the reference docs generation pipeline, which runs in a separate repository.
+Without `--input`, the script fetches only `https://api.smith.langchain.com/openapi.json`. Its host allow-list and 30-second timeout prevent the normal refresh route from requesting an arbitrary host. `--input` accepts controlled local preview or test data; without `--write`, the transformed JSON is printed instead of replacing the committed file.
 
-**Common issues:**
-- Missing class or function pages
-- Incorrect docstring rendering
-- Broken or misleading type signatures
-- Outdated content
+The processing step shapes the service specification for public Mintlify navigation: it hides operations identified by fleet, internal, infrastructure, or health tags and paths; adds or updates human-readable `x-group` tag values; orders tag groups; and normalizes operation titles, including visible v2 labels. It removes existing Beta and v2 markers before adding normalized markers, making repeated processing idempotent.
 
-**Note:** These issues are routed *from* this docs repo *to* the reference docs maintainers. The actual fixes happen in the reference generation tooling, not in source files here.
+After generating a candidate, the workflow saves it while it resets the checked-out file, then checks out the standing `chore/refresh-langsmith-openapi` branch. It appends to that branch's open PR when one exists; otherwise it creates the branch and PR. If the regenerated committed file has no diff, it exits without a commit. Review the generated diff rather than manually editing the result.
 
-## Configuration and Maintenance
+## Link-check exceptions
 
-### Link Map Maintenance
+`make broken-links` and `make broken-links-with-anchors` build first, run Mintlify from `build/`, then filter its report through `scripts/filter_mint_broken_links.py`. The command fails only when filtered output still contains indented link entries.
 
-The `LINK_MAPS` list in `pipeline/preprocessors/link_map.py` must be updated whenever:
+The filter removes reports for deployment-generated OpenAPI destinations `/langsmith/agent-server-api/`, `/langsmith/smith-api`, and `/api-reference/`. It also drops whole snippet report sections, because snippets are checked standalone even though their rewritten links resolve when imported, and suppresses selected legacy relative-path false positives. In anchor mode it additionally suppresses only three named SmithDB migration anchor false positives; other anchor failures remain visible. These are narrow operational exceptions, not permission to ignore authored-page failures. Focused tests verify that exclusions disappear while a genuine unresolved `/oss/` link and a non-exempt anchor remain.
 
-1. **New symbols are added** to any LangChain, LangGraph, LangSmith, or Deep Agents packages
-2. **Symbol paths change** on reference.langchain.com (e.g., module reorganizations)
-3. **Cross-scope references** need to be maintained (e.g., Python-only symbols referenced in JS-scoped builds should point to the Python reference)
+## Reporting and change decisions
 
-Each link map entry includes:
-- **`host`**: The base URL for the reference site (with trailing slash)
-- **`scope`**: The language scope (`"python"` or `"js"`)
-- **`links`**: A dict mapping symbol names to relative paths under the host
+For a problem with generated external reference content—such as a missing page, broken generated link, incorrect signature, or stale content—open the repository's [Reference Documentation issue](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml). The template records the issue type, language, product, optional page URL, and detailed description so reference-docs maintainers can route it. The repair belongs in the separate reference-generation tooling.
 
-### Related Files
+Use this repository for a missing semantic-map entry, incorrect Markdown preprocessing behavior, Mintlify navigation configuration, or a committed OpenAPI refresh or Agent Server change. Keep the boundary explicit: semantic links let authored docs avoid hard-coded SDK-reference URLs, while committed, refreshed, and deploy-time OpenAPI inputs keep endpoint-page generation out of hand-authored documentation.
 
-| File | Purpose |
-|------|---------|
-| `pipeline/preprocessors/link_map.py` | Source of truth for cross-reference mappings |
-| `pipeline/preprocessors/handle_auto_links.py` | Resolves `@[ClassName]` syntax in markdown |
-| `pipeline/preprocessors/markdown_preprocessor.py` | Orchestrates preprocessing including cross-reference resolution |
-| `src/langsmith/agent-server-openapi.json` | Committed OpenAPI spec for Agent Server |
-| `src/langsmith/langsmith-platform-openapi.json` | Committed OpenAPI spec for LangSmith REST API (auto-refreshed) |
-| `.github/workflows/refresh-langsmith-openapi.yml` | Daily refresh job for LangSmith spec |
-| `scripts/process_langsmith_openapi.py` | Normalizes and processes the LangSmith spec |
-| `scripts/filter_mint_broken_links.py` | Filters OpenAPI-generated pages from broken link reports |
+## Related documentation
 
-## Invariants and Expectations
-
-1. **Cross-references resolve at build time:** All `@[ClassName]` references are converted to markdown links during preprocessing. Authors never hardcode URLs to reference.langchain.com.
-
-2. **OpenAPI specs are valid:** All committed specs pass `make check-openapi` validation. Specs are committed as valid JSON Schema / OpenAPI 3.1.0 documents.
-
-3. **API reference is external:** The reference site is generated and deployed outside this repo. Issues with reference content (missing pages, broken links) are reported via the reference docs issue template, not fixed here.
-
-4. **Local breaks are filtered:** `make broken-links` does not fail on Mintlify-generated pages that exist only in the build output (`/langsmith/agent-server-api/`, `/api-reference/`).
-
-5. **LangSmith spec is auto-refreshed:** `src/langsmith/langsmith-platform-openapi.json` is automatically refreshed daily and should never be manually edited.
-
-## Related Documentation
-
-- **[Markdown Preprocessing Pipeline](/openwiki/concepts/preprocessing.md):** Details on conditional rendering, cross-reference resolution, and other transformations
-- **[Build System](/openwiki/architecture/build-system.md):** Overview of the complete documentation build pipeline
-- **[Link Rewriting and Versioning](/openwiki/concepts/versioning.md):** How language-specific links are rewritten during builds
+- [Source map](/openwiki/architecture/source-map.md) — source ownership and build outputs.
+- [GitHub Actions](/openwiki/integrations/github-actions.md) — scheduled automation conventions.
+- [Mintlify](/openwiki/integrations/mintlify.md) — Mintlify configuration and deployment.
+- [Cross-reference operations](/openwiki/operations/cross-references.md) — diagnosing and maintaining internal references.

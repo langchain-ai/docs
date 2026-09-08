@@ -1,285 +1,151 @@
 ---
-type: guide
+type: validation guide
 title: Testing Overview
-description: Understand the test suite structure, categories, and how to run tests locally and in CI pipelines for the documentation pipeline.
-tags: [testing, pytest, CI, quality-assurance]
+description: Change-oriented guidance for isolated unit tests, generated documentation checks, integration-table metadata, and credentialed executable samples. Use the validation matrix to select the narrowest meaningful check and interpret CI failures correctly.
+tags: [testing, pytest, ci, documentation, code-samples]
 verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:00:58.567Z
+  - by: openwiki/0.4.3
+    at: 2026-09-08T08:21:44.568Z
 sources:
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
-  - id: openwiki-source-635a4d4537a9628cdea912c0
-    resource: repo://.vale.ini
+  - id: openwiki-source-97746d8f3662d803e625550e
+    resource: repo://.github/workflows/test-code-samples.yml
+  - id: openwiki-source-71ee7a4afbd2d6aa7b29f3d1
+    resource: repo://htmltest-mint-export.yml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-05ccef8d4cf1698187f20464
     resource: repo://pyproject.toml
+  - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
+    resource: repo://scripts/check_cross_refs.py
+  - id: openwiki-source-f36d9ac44867b9e853539abd
+    resource: repo://scripts/parse_integration_submission_issue.py
+  - id: openwiki-source-63d8ba810a7c0181c548a307
+    resource: repo://scripts/refresh_integration_downloads.py
+  - id: openwiki-source-2b15ecffacad911ef9db112f
+    resource: repo://scripts/test_code_samples.py
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-c2764a7369c8fbf3e49da6f8
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-2ecfcd33b729fccd843ab705
     resource: repo://tests/unit_tests/test_handle_auto_links.py
+  - id: openwiki-source-1d433bbfc6ab68d7ffc5522c
+    resource: repo://tests/unit_tests/test_parse_integration_submission_issue.py
   - id: openwiki-source-1e48075742e124afeca28fef
     resource: repo://tests/unit_tests/test_parser.py
+  - id: openwiki-source-7be0fdefc402d868b9f2fdca
+    resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
   - id: openwiki-source-16b92823fdcb07d686f2e27f
     resource: repo://tests/unit_tests/test_watcher.py
   - id: openwiki-source-0d0e77eb273a56717af74faa
     resource: repo://tests/unit_tests/utils.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:00:58.567Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
 ---
 
-## Overview
+## Choose validation by change boundary
 
-The documentation pipeline includes a comprehensive test suite organized by functionality area. Tests validate the build process, markdown parsing, link handling, and file system watching. All tests must pass before merging to main via GitHub Actions.
+The repository has intentionally separate validation paths. Select the narrowest path that covers the change; a passing unit test does not validate generated docs, external metadata, or a live code sample.
 
-## Test Suite Structure
+| Change | Run locally | What a pass establishes | Failure meaning |
+| --- | --- | --- | --- |
+| Pipeline, parser, preprocessor, watcher, or helper behavior | `make test` | Isolated behavior in `tests/unit_tests` | Regression, assertion failure, or prohibited network socket use |
+| Built docs, internal links, or anchors | `make broken-links-with-anchors` | A fresh `build/` passes Mintlify's filtered link and anchor check | Build, actionable link, or anchor failure |
+| Source `@[ref]` link-map use | `make check-cross-refs` | Each eligible reference resolves in every scope where it renders | Fix the reference or `pipeline/preprocessors/link_map.py` |
+| Generated provider overview | `uv run python pipeline/tools/partner_pkg_table.py` | The committed overview matches its generator and package metadata | Generated output is stale; do not hand-edit it |
+| External integration `docs_url` metadata | `uv run python scripts/refresh_integration_downloads.py --check-docs-urls` | External-listing URLs have an allowed href scheme, without requests or writes | Missing or unsafe metadata must be corrected |
+| Mint export external URLs | `make export-htmltest` | Exported HTML's configured external resources and anchors pass htmltest | External URL/resource failure; it does not validate internal navigation |
+| Runnable example | `make test-code-samples [FILES="..."]` | The selected program exits successfully in its real toolchain/environment | Program, dependency, credential, service, or live-provider failure |
 
-Tests are located in `/tests/unit_tests/` and use **pytest** as the testing framework. The test suite is organized by major functional areas:
+```mermaid
+flowchart TD
+  Change["Documentation or code change"] --> Unit["make test"]
+  Unit --> Isolated["pytest with network sockets disabled"]
+  Change --> Docs["make build"]
+  Docs --> Mint["Mint links and anchors"]
+  Change --> References["make check-cross-refs"]
+  References --> Maps["Check applicable link-map scopes"]
+  Change --> Metadata["Validate metadata or regenerate table"]
+  Metadata --> SafeURL["docs_url scheme check"]
+  Metadata --> Generated["Generated overview diff check"]
+  Change --> Samples["make test-code-samples"]
+  Samples --> Live["Toolchains, services, and provider environment"]
+```
 
-### Test Categories
+This diagram separates deterministic socket-isolated tests from generated metadata validation and intentionally live executable samples.
 
-#### Builder Tests (`test_builder.py`)
-Tests the `DocumentationBuilder` class, which is responsible for copying and processing source documentation files to the build directory. Key responsibilities tested:
+## Isolated pytest suite
 
-- File extension support and filtering
-- Directory structure preservation during copy operations
-- Versioned builds (Python and JavaScript language variants)
-- File preprocessing and markdown handling
-- File metadata preservation
+Run the core suite with:
 
-Key test modules cover:
-- Builder initialization and configuration
-- Building from empty directories
-- Handling of markdown, media, and configuration files
-- Support for TSX/JSX snippet components
-- Extension filtering (supported vs. unsupported file types)
-
-#### Parser Tests (`test_parser.py`)
-Tests the markdown parser (`pipeline.tools.parser.Parser`) that parses markdown syntax into an abstract syntax tree (AST) and converts to output formats. Coverage includes:
-
-- Heading and paragraph parsing
-- Front matter extraction and handling
-- Code block detection and preservation
-- Admonition/accordion elements (Python `???` syntax to Mintlify format)
-- Tab/conditional blocks (Tabs component)
-- Line number tracking for source mapping
-
-#### Autolinks Tests (`test_handle_auto_links.py`)
-Tests the autolink preprocessor that transforms `@[Reference]` syntax into markdown links while respecting code blocks. Key behaviors:
-
-- Autolink replacement outside code blocks
-- Code block protection (backticks, tildes, extended fences)
-- Language-scoped link resolution (Python vs. JavaScript)
-- Conditional fence handling (:::python, :::js)
-- Escaped autolink preservation
-- Empty line handling and output fidelity
-
-#### File Watcher Tests (`test_watcher.py`)
-Tests the `DocsFileHandler` class which monitors the source directory for file changes during development mode. Validates:
-
-- Backup file filtering (files ending with `~`)
-- Temporary file exclusion (`.bak`, `.orig`, `.swp`, `.tmp`)
-- Valid file recognition (documentation, media, configuration)
-- Edge cases (tildes in filenames, hidden files, multiple extensions)
-
-#### Cross-Reference Tests (`test_check_cross_refs.py`)
-Tests the cross-reference validation system that ensures `@[ref]` syntax resolves to known identifiers. Validates:
-
-- Scope-based resolution (Python, JavaScript, shared)
-- Code block and escaped reference protection
-- Titled ref format (`@[title][ref]`)
-- Language-specific and language-shared file scope detection
-
-#### Additional Test Files
-
-- **`test_lexer.py`**: Markdown token recognition and fence detection
-- **`test_check_pr_imports.py`**: Import validation for pull request changes
-- **`test_check_removed_pages_redirects.py`**: Redirect configuration for removed pages
-- **`test_utm_links.py`**: UTM parameter handling in links
-- **`test_filter_mint_broken_links.py`**: Broken link filtering for output validation
-- **`test_refresh_integration_downloads.py`**: Integration package download counts
-
-## Running Tests
-
-### Local Execution
-
-Run all tests:
 ```bash
 make test
 ```
 
-Run tests with verbose output:
-```bash
-uv run pytest tests/ -vv
-```
+`TEST_FILE` defaults to `tests/unit_tests`; narrow a regression with `make test TEST_FILE=tests/unit_tests/test_builder.py`. The target invokes `uv run pytest --disable-socket --allow-unix-socket $(TEST_FILE) -vv`. Pytest discovers `test_*.py` and `test_*`, uses asyncio auto mode with function-scoped fixture loops, reports additional outcomes, and displays slow tests. Install its dependencies with `uv sync --group test`.
 
-Run specific test file:
-```bash
-uv run pytest tests/unit_tests/test_builder.py -vv
-```
+Socket isolation is a suite invariant: unit tests must not make network calls. Use mocks, temporary files, or permitted Unix sockets instead. The `file_system` context manager supplies disposable `src/` and `build/` directories for file-system tests.
 
-Run specific test:
-```bash
-uv run pytest tests/unit_tests/test_builder.py::test_builder_initialization -vv
-```
+### Focused coverage to retain when changing behavior
 
-### pytest Configuration
+- **Builder:** test supported-file copying, ignored extensions, directory layout, preprocessing, and Python/JavaScript variants. Include adversarial source collection cases such as symlinks when changing source traversal.
+- **Parser and conditional rendering:** test both AST/source-location behavior and emitted Mintlify form for front matter, headings, code blocks, admonitions, tabs, and conditionals. Keep code fences opaque to transformations.
+- **Autolinks and cross-references:** verify language-scoped `@[Reference]` resolution and that escaped or fenced text is left alone; test unclosed-fence behavior when changing fence logic.
+- **Watcher:** retain filters for editor backup and temporary suffixes so non-document files do not trigger rebuild work.
+- **Integration issue-form parser:** add cases for `###` section boundaries, HTML-comment removal, `_No response_` optional values, checked confirmations, missing required fields, and language-specific PyPI/npm requirements. The parser maps text to data and does not execute form values.
+- **External `docs_url` safety:** test accepted `https://`, `http://`, and single-slash site-relative paths plus rejected empty, `javascript:`, `data:`, `vbscript:`, and protocol-relative `//` inputs. Test both validation errors and the fallback that prevents an unsafe URL from being emitted in a table link.
 
-The test suite uses `pytest` with socket isolation enabled via `--disable-socket` flag (set in Makefile). This prevents accidental network calls during tests.
+## Documentation gates: built links versus source references
 
-Key pytest configuration (from `pyproject.toml`):
-- **Python files**: `test_*.py` naming convention
-- **Test functions**: `test_*` naming convention
-- **Asyncio mode**: `auto` (automatic fixture scope detection)
-- **Default output**: Verbose (`-v`), with test outcome reports (`-ra`) and slowest tests display (`--durations=5`)
+`make broken-links-with-anchors` builds first, then runs `mint broken-links --check-anchors` from `build/`. Its wrapper filters known non-actionable reports for deployment-generated OpenAPI pages and snippets checked as standalone files; it fails only if filtered output still contains link-report lines. `make broken-links` omits anchor checking. The reusable link workflow also runs `make check-openapi`; it uses Node 22, installs/caches the Mint CLI, and applies its KaTeX installation workaround when needed.
 
-### Test Dependencies
+`make check-cross-refs` is a distinct source check. It scans Markdown below `src`, excluding code-sample snippets and `node_modules`, skips invalid UTF-8 input, and ignores fenced code and escaped references. Python and JavaScript OSS paths use their respective scope; shared OSS content outside a language conditional must resolve in both maps. It reports each unresolved file, line, name, and scope and exits 1.
 
-Install test dependencies:
-```bash
-uv sync --group test
-```
+Export checking is a third, external-facing option. `make export-htmltest` creates a Mint export, unpacks it, and runs htmltest with `htmltest-mint-export.yml`. That configuration enables external checks but disables internal paths and internal hashes because exports omit a complete page set; it limits external concurrency and timeout and ignores documented checker noise. Use Mint's built-tree check for internal navigation.
 
-Test group includes:
-- `pytest>=9.0.3`
-- `pytest-asyncio>=0.25.3`
-- `pytest-mock>=3.14.0`
-- `pytest-socket>=0.7.0` (prevents network calls)
-- `pytest-timeout>=2.3.1`
+## Generated integration metadata and tables
 
-## CI/CD Integration
+Two checks protect different generated-data contracts:
 
-### GitHub Actions Workflow
+1. CI regenerates `src/oss/python/integrations/providers/overview.mdx` with `pipeline/tools/partner_pkg_table.py` and rejects any diff. Change the generator or `packages.yml`, regenerate, and commit the resulting output rather than manually editing the overview. The check is bypassed only for the designated automated download-update PR or a `bypass-auto-check` label.
+2. `scripts/refresh_integration_downloads.py --check-docs-urls` reads external integration metadata and performs **no network requests and no writes**. It requires every external entry to have a safe `docs_url`; CI fails on missing or unsafe values. During full table generation, package download counts are a separate, networked registry concern: npm/PyPI lookups can retry on HTTP 429 and failures yield an unavailable download value. Do not confuse these registry requests with the offline safety check or the socket-isolated pytest suite.
 
-Tests run on every pull request and push to main via the CI workflow (`.github/workflows/ci.yml`). The test job:
+The generator merges hosted integration front matter with third-party external rows, renders name links from a validated `docs_url` where supplied, and otherwise uses the hosted integration route. Unsafe external values are rejected before external rows are collected; the rendering path also rechecks before emitting an href.
 
-1. **Triggers**: Pull requests, pushes to main, manual workflow dispatch
-2. **Python version**: 3.13 (minimum and maximum supported versions tested)
-3. **Timeout**: 20 minutes
-4. **Concurrency**: Cancels previous runs for the same PR/branch to avoid redundant testing
+## Executable code samples
 
-### CI Test Job
-
-The `test` job in `ci.yml` calls the reusable workflow `.github/workflows/_test.yml`, which:
-1. Sets up Python 3.13 and uv package manager
-2. Installs test dependencies
-3. Runs `make test` (executes `uv run pytest --disable-socket --allow-unix-socket tests/ -vv`)
-
-### Failure Conditions
-
-Tests must pass before merging. CI fails if:
-- Any test assertion fails
-- Socket/network calls are attempted (caught by `--disable-socket`)
-- Test timeout (20 minutes) is exceeded
-
-## Linting and Validation
-
-Beyond unit tests, CI runs several validation checks:
-
-### Code Linting
-
-```bash
-make lint
-```
-
-Runs:
-- **ruff format**: Code formatting check
-- **ruff check**: Linting rules enforcement
-- **mypy**: Type checking
-- **codespell**: Spelling validation
-
-**CI check**:
-```bash
-make format-check
-```
-
-### Prose Linting
-
-```bash
-make lint_prose
-```
-
-Validates markdown prose against Vale style rules defined in `.vale.ini` and `AGENTS.md`. Enforces:
-- LangChain style guide (terminology, tone, accessibility)
-- proselint, vale, and write-good rules
-- Excludes code blocks and code-samples directory
-
-### Link Validation
-
-```bash
-make broken-links          # Basic link validation
-make broken-links-with-anchors  # Including anchor fragments
-```
-
-Validates links in built documentation using Mintlify's lint tool. CI excludes:
-- OpenAPI-generated pages
-- Snippet files (processed separately)
-- Known false positives (filtered by `scripts/filter_mint_broken_links.py`)
-
-### Code Sample Testing
+Run all eligible samples with:
 
 ```bash
 make test-code-samples
 ```
 
-Validates code snippets in `src/code-samples` directory. CI runs this on multiple versions in parallel via `test-code-samples.yml`.
-
-### Cross-Reference Validation
+Or pass a space-separated explicit subset:
 
 ```bash
-make check-cross-refs
+make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 ```
 
-Ensures all `@[ref]` references in source markdown resolve to known identifiers. CI runs this as a separate job.
+The runner selects existing `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` files below `src/code-samples`; without `FILES`, it recursively runs all eligible files excluding `__pycache__` and `node_modules`. It preserves the caller environment, runs each sample for at most 600 seconds, and uses `uv`, `npx tsx`, `go run`, `bash`, or JBang with Java 21 as appropriate. A nonzero exit normally fails the runner. Unlike `make test`, this is expected to contact providers or local services when the example requires them.
 
-## Test Utilities
+CI provisions PostgreSQL 17 with pgvector and passes `POSTGRES_URI` plus provider credentials to the runner. It skips fork pull requests because those jobs cannot receive repository secrets. Pull requests test only changed eligible samples since the merge base; scheduled Sunday and manual runs test all samples. The job allows 60 minutes for PR runs and 90 minutes for full runs, while per-sample timeouts remain in effect.
 
-### FileSystem Context Manager
+The runner recognizes a LangSmith 429/rate-limit response, retries up to three attempts with 15-second delays, then records a persistently rate-limited sample as skipped and returns success if no other sample failed. Other unsuccessful samples produce output and a nonzero exit. Treat a green job with skips as evidence of runner health, not a successful live execution of every sample.
 
-Located in `tests/unit_tests/utils.py`, provides a temporary file system for testing:
+## CI selection and triage
 
-```python
-from tests.unit_tests.utils import file_system, File
+`ci.yml` runs on pull requests, pushes to `main`, and manual dispatch, cancelling older runs for the same workflow/ref. It calls reusable test, lint, and documentation-link workflows on Python 3.13; the test and link jobs have 20-minute limits. It separately checks merge-conflict markers, cross-references, external integration URLs, and generated files.
 
-with file_system([
-    File(path="index.mdx", content="# Hello"),
-    File(path="image.png", bytes=b"PNG_DATA")
-]) as fs:
-    builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-    builder.build_all()
-    assert fs.build_file_exists("index.mdx")
-```
+For a fast local reproduction, run the corresponding row in the matrix—not the code-sample workflow for a deterministic documentation change. Start with the command CI runs, inspect whether the failure is a transformation/metadata invariant or an integration dependency, and preserve the boundary: isolated unit tests must remain offline, while registry refreshes and executable samples have explicitly different network and credential semantics.
 
-The context manager creates:
-- Temporary directory with `src/` and `build/` subdirectories
-- Auto-cleanup on exit
-- Methods for listing files and checking existence
+## Related documentation
 
-## Test Coverage
-
-The test suite validates critical paths:
-
-- **Build process**: File copying, extension filtering, versioning
-- **Markdown parsing**: Syntax recognition, AST construction, format conversion
-- **Link processing**: Autolink replacement, code block protection, cross-references
-- **File system handling**: Watcher filtering, temporary file exclusion
-- **Integration**: End-to-end markdown to output conversion
-
-No network calls are permitted during testing (enforced by `--disable-socket` flag).
-
-## Related Documentation
-
-- [Builder Tests](/openwiki/testing/builder-tests.md): Detailed builder test reference
-- [Local Development](/openwiki/workflows/local-development.md): Development setup and workflow
-
-## Key Invariants
-
-1. **All tests must pass before merge**: CI enforces this requirement on pull requests
-2. **Socket isolation**: Tests cannot make network calls (pytest-socket enforcement)
-3. **Versioned builds**: Documentation is built in separate Python and JavaScript variants
-4. **Code block protection**: Preprocessors must preserve content inside fenced code blocks
-5. **Cross-reference validation**: All `@[ref]` syntax must resolve to known identifiers
+- [GitHub Actions](/openwiki/integrations/github-actions.md)
+- [Mintlify](/openwiki/integrations/mintlify.md)
+- [Quickstart](/openwiki/quickstart.md)
+- [Builder Tests](/openwiki/testing/builder-tests.md)
+- [Conditional Rendering](/openwiki/testing/conditional-rendering.md)
+- [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md)
