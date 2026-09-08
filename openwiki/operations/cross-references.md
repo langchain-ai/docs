@@ -1,306 +1,160 @@
 ---
 type: operations guide
-title: Cross-Reference Links (@[ClassName] Syntax)
-description: Use the @[ClassName] syntax to create resilient API reference links that update automatically with changes to the link registry, without hardcoding URLs.
-tags: [documentation, cross-references, links, markdown, build-system, api-reference]
+title: Cross-Reference Links
+description: Author and maintain semantic @[ref] links to external API reference documentation. Use the dedicated scope-aware validator to catch unresolved references separately from rendered-site link checking.
+tags: [documentation, cross-references, api-reference, markdown, validation]
 verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:00:58.567Z
+  - by: openwiki/0.4.3
+    at: 2026-09-08T08:21:44.568Z
 sources:
+  - id: openwiki-source-164e2da859b5277df81c7d94
+    resource: repo://.github/workflows/ci.yml
+  - id: openwiki-source-012f2c78e3b1446dfc35803f
+    resource: repo://Makefile
   - id: openwiki-source-17f3856bce97f37118963062
     resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-dca59d03b9433eea9242c2e4
     resource: repo://pipeline/preprocessors/link_map.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:00:58.567Z" }
+  - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
+    resource: repo://scripts/check_cross_refs.py
+  - id: openwiki-source-2ecfcd33b729fccd843ab705
+    resource: repo://tests/unit_tests/test_handle_auto_links.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
 ---
 
-# Cross-Reference Links: The @[ClassName] Syntax
+# Cross-Reference Links
 
-The cross-reference system lets writers create links to API documentation using semantic references instead of hardcoded URLs. When you write `@[StateGraph]` in your markdown, the build system automatically resolves it to the appropriate API reference link based on the current scope (typically Python or JavaScript).
+`@[ref]` is authoring syntax for a semantic link to an API reference symbol. It lets source Markdown and MDX name an API class, method, function, or module without embedding its destination URL. During preprocessing, a known name becomes an ordinary Markdown link using the active API scope; the registry, rather than every document, owns the destination.
 
-## Why Use Cross-References?
+This is not the same as a site link. `@[...]` targets are generally external SDK/API-reference URLs assembled from `pipeline/preprocessors/link_map.py`; `make check-cross-refs` verifies that the symbolic name exists in every applicable map. In contrast, `make broken-links` builds the documentation and asks Mintlify to check rendered links. Run the cross-reference check whenever `@[...]` syntax or map entries change; run the built-site check when routes, ordinary links, or anchors also need verification.
 
-Hardcoding URLs to API documentation creates maintenance burden: when reference pages move, URLs break silently across hundreds of pages. The cross-reference system solves this:
+## Authoring syntax
 
-- **Semantic, not positional:** You reference the API element by name, not by URL. If the reference docs restructure, update the link map once and all pages update automatically.
-- **Language-aware:** The same `@[StateGraph]` reference resolves to different URLs in Python and JavaScript builds, without duplicating source content.
-- **Resilient:** Missing references are logged (not silently broken), and the original `@[ClassName]` text appears in output if the reference cannot be resolved.
+Use one of these forms outside a regular fenced code block:
 
-## Basic Syntax
-
-### Simple Reference
 ```markdown
-You can use @[StateGraph] to define your graph structure.
+Use @[StateGraph] to define a graph.
+Read @[the graph reference][StateGraph].
+Pass @[`StateGraph`] to make code formatting part of the link text.
 ```
 
-Becomes:
+<!-- openwiki: broken internal link [url] file "url" does not exist. Fix the href or restore the target, then delete this comment. -->
+<!-- openwiki: broken internal link [url] file "url" does not exist. Fix the href or restore the target, then delete this comment. -->
+<!-- openwiki: broken internal link [url] file "url" does not exist. Fix the href or restore the target, then delete this comment. -->
+They render respectively as `[StateGraph](url)`, `[the graph reference](url)`, and ``[`StateGraph`](url)`` when `StateGraph` resolves in the active scope. The custom-title form is `@[title][ref]`; backticks may also wrap the reference name in that form, but backticks are only added automatically to the title for the simple backticked form.
+
+To show the marker itself rather than link it, escape the at sign:
+
 ```markdown
-You can use [StateGraph](https://reference.langchain.com/python/langgraph/graph/state/StateGraph) to define your graph structure.
+Write \@[StateGraph] when documenting the syntax.
 ```
 
-### Custom Link Text
-```markdown
-Learn about the @[state management system][StateGraph].
+The resolver skips the escaped marker and its final unescape pass removes the backslash, leaving literal `@[StateGraph]` in output. That final unescape also applies to escaped markers inside a fenced code block.
+
+## Resolution and scope
+
+`replace_autolinks()` is invoked by `preprocess_markdown()` for pages and language-specific snippet copies. It starts with `default_scope`, which defaults to the selected `target_language`; absent an explicit target, that target comes from `TARGET_LANGUAGE` and defaults to `python`. It then scans source line by line, replacing every recognized marker using the current scope. The later conditional-rendering pass removes or retains supported language blocks, so references must be resolved while their fences are still present.
+
+```mermaid
+flowchart TD
+    Source["Source Markdown or MDX"] --> Scope["Start at default scope"]
+    Scope --> Scan["Scan source line by line"]
+    Scan --> Code{"Regular code fence"}
+    Code -->|"inside"| Keep["Keep line unchanged"]
+    Code -->|"outside"| Fence{"Conditional fence"}
+    Fence -->|"language"| SetScope["Set current scope"]
+    Fence -->|"closing"| Reset["Reset to default scope"]
+    Fence -->|"content"| Lookup["Look up reference in scoped map"]
+    SetScope --> Scan
+    Reset --> Scan
+    Lookup --> Known{"Known name"}
+    Known -->|"yes"| Link["Emit Markdown link"]
+    Known -->|"no"| Literal["Log and retain marker"]
 ```
 
-Becomes:
-```markdown
-Learn about the [state management system](https://reference.langchain.com/python/langgraph/graph/state/StateGraph).
-```
+This diagram shows the autolink resolver's line-oriented scope and fence decisions before conditional rendering.
 
-The format is `@[Custom Title][ClassName]`.
-
-### With Backticks
-```markdown
-Use @[`StateGraph`] in your code.
-```
-
-Becomes:
-```markdown
-Use [`StateGraph`](https://reference.langchain.com/python/langgraph/graph/state/StateGraph) in your code.
-```
-
-Backticks are automatically preserved in the link title.
-
-## Scope Resolution
-
-The scope determines which API reference set is used. The build system supports two primary scopes:
-
-- **python:** Links to `https://reference.langchain.com/python/` API reference
-- **js:** Links to `https://reference.langchain.com/javascript/` API reference
-
-### How Scope Is Determined
-
-1. **Explicit conditional blocks:** If your page contains `:::python` or `:::js` fences, cross-references inside that block use the corresponding scope.
-
-2. **Default scope:** If no conditional block is active, the build system uses `target_language` (passed at build time, typically "python" for unversioned content or matched to the build language for versioned content).
-
-### Scope Persistence
-
-Scope persists across lines until a new conditional fence is encountered:
+A top-level `:::python` or `:::js` line changes the current scope, and a bare closing `:::` resets it to the default scope. The conditional marker itself is retained for the later rendering pass. Scope therefore remains in effect on subsequent lines until another matching conditional marker changes or resets it.
 
 ```markdown
 :::python
-@[StateGraph]        # Uses Python scope
-@[Command]           # Still uses Python scope
+@[StateGraph]
 :::
 
-@[create_agent]      # Reverts to default scope (python)
-
 :::js
-@[StateGraph]        # Uses JS scope
+@[StateGraph]
 :::
 ```
 
-### Code Block Protection
+The same name can produce distinct Python and JavaScript destinations. Do not use `global` as an authoring scope: the resolver currently logs an error and falls back to the Python map rather than combining both maps.
 
-Cross-references inside code fences (```python, ~~~js, etc.) are never transformed, even if the fence appears to change scope:
+### Fenced-code behavior
 
-```markdown
-:::python
-@[StateGraph]        # Transformed: Python scope
+This behavior is implementation-specific rather than general Markdown advice. The resolver treats a stripped line beginning with at least three backticks or tildes as a code-fence marker, toggles a single in-code state, and copies both markers and enclosed lines unchanged. Thus references in three-or-more backtick or tilde fences—including indented or language-labelled fences—are not transformed, and a conditional-looking line inside one cannot change scope. An unclosed recognized fence suppresses autolinking for the remainder of the document.
 
-```markdown
-:::js
-@[StateGraph]        # NOT transformed: inside code fence
-```
-```
+Because that state is only a toggle, keep fence delimiters balanced and consistent. The resolver does not validate matching delimiter type or length; it simply toggles whenever a line matches the fence pattern.
 
-The code fence state takes precedence over scope changes.
+## The link-map boundary
 
-## Link Map Organization
+`LINK_MAPS` is the editable registry. Each `LinkMap` has a `scope`, a `host`, and a `links` mapping from author-facing symbol name to destination path. Multiple entries may contribute to the same scope. At import time, `_enumerate_links()` merges those entries into `SCOPE_LINK_MAPS`: relative paths receive that entry's host, while values beginning with `http` are kept as absolute URLs. The resolver only consults this flattened map.
 
-Link mappings are defined in `SCOPE_LINK_MAPS` in `/pipeline/preprocessors/link_map.py`, derived from the `LINK_MAPS` list. Each mapping entry contains:
+To add or repair a link:
 
-- **scope:** "python", "js", or other language identifier
-- **host:** Base URL (e.g., `https://reference.langchain.com/python/`)
-- **links:** Dictionary mapping class/function names to relative paths
+1. Find the intended reference destination and choose the applicable scope or scopes.
+2. Add the exact authored name and a relative path under the relevant `LINK_MAPS` entry in `pipeline/preprocessors/link_map.py`. Use an absolute URL only when the target is outside that map's host.
+3. For shared OSS content, add the name to both maps when it is used outside a language fence. Otherwise, place a language-specific use inside `:::python` or `:::js` and map it only where it exists.
+4. Run the validator and focused tests below. If a reference site moved, update the registry entry rather than hard-coded document URLs.
 
-Example entry:
-```python
-"StateGraph": "langgraph/graph/state/StateGraph"
-```
+Name matching is exact and case-sensitive dictionary lookup. A map can deliberately send the same symbol to different destinations in the two scopes; it can also contain keys with punctuation, such as a method name or a decorator-style name, when the authoring pattern permits that name.
 
-With host `https://reference.langchain.com/python/`, this resolves to:
-```
-https://reference.langchain.com/python/langgraph/graph/state/StateGraph
-```
+## Unresolved references and validation
 
-## Examples
+Preprocessing is intentionally non-fatal for an unresolved reference. When a key is absent from the current map, `_transform_link()` writes an info-level message with the file path, line number, name, and scope, and retains the original `@[...]` text. This makes build output inspectable but is not a passing authoring result.
 
-The page-specific instructions list these examples:
-
-| Reference | Use Case |
-|-----------|----------|
-| `@[StateGraph]` | LangGraph state machine class |
-| `@[create_agent]` | Agent factory function |
-| `@[ChatOpenAI]` | OpenAI chat model integration |
-| `@[MemoryMiddleware]` | Deep Agents memory middleware |
-
-Other common references include `@[Command]`, `@[AIMessage]`, `@[BaseTool]`, `@[Runnable]`, and `@[VectorStore]`.
-
-## Handling Missing References
-
-If a reference like `@[UnknownClass]` is not found in the link map for the current scope:
-
-1. An **info-level log** is written with the file path and line number:
-   ```
-   file.mdx:42: Link 'UnknownClass' not found in scope 'python'.
-   ```
-
-2. The **original text appears verbatim** in the output:
-   ```
-   Use @[UnknownClass] here.
-   ```
-
-This allows writers to use semantic references even before link map entries are added, and CI logs guide the fix.
-
-## Adding a New Reference
-
-To add support for a new API element, follow this workflow:
-
-### Step 1: Locate the Reference Page
-Find where the API element is documented in the official reference docs. For example:
-- LangGraph classes: `https://reference.langchain.com/python/langgraph/graph/state/StateGraph`
-- LangChain tools: `https://reference.langchain.com/python/langchain-core/tools/`
-- Custom integrations: `https://reference.langchain.com/python/langchain-anthropic/chat_models/ChatAnthropic`
-
-Extract the relative path after the host. For `https://reference.langchain.com/python/langgraph/graph/state/StateGraph`, extract `langgraph/graph/state/StateGraph`.
-
-### Step 2: Add to SCOPE_LINK_MAPS
-Edit `/pipeline/preprocessors/link_map.py` and locate the appropriate scope in the `LINK_MAPS` list:
-
-```python
-LINK_MAPS: list[LinkMap] = [
-    {
-        "host": "https://reference.langchain.com/python/",
-        "scope": "python",
-        "links": {
-            # ... existing entries ...
-            "MyNewClass": "path/to/MyNewClass",  # Add here
-        },
-    },
-    {
-        "host": "https://reference.langchain.com/javascript/",
-        "scope": "js",
-        "links": {
-            # ... existing entries ...
-            "MyNewClass": "path/to/MyNewClass",  # Add if it exists in JS
-        },
-    },
-]
-```
-
-**Key guidelines:**
-- Use the **relative path** from the host, not the full URL.
-- If the class exists in only one language (e.g., Python-only), add it only to that scope.
-- For shared references (e.g., core LangChain types), add entries to both "python" and "js" scopes.
-- If a reference points to a full URL (cross-domain), include the complete URL prefixed with "http".
-
-### Step 3: Test
-Use `@[MyNewClass]` in your documentation and build locally:
+Use the strict source validator before merge:
 
 ```bash
-make build  # Or your build command
+make check-cross-refs
 ```
 
-Check the logs for confirmation or errors:
-- **Success:** No log entry appears; the reference is resolved.
-- **Missing:** An info-level log appears listing the file, line, scope, and missing reference name.
+The target runs `scripts/check_cross_refs.py`. It scans `src/` recursively for `.md` and `.mdx` files, shares the resolver's cross-reference and fence patterns, and exits 1 if any eligible reference is unresolved. Its report identifies the source-relative file, line, marker name, and scope list. Invalid UTF-8 files are skipped with a warning; `snippets/code-samples/` and paths containing `node_modules` are excluded.
 
-Commit the link map change and verify the reference works in the published docs.
+The validator assigns default scopes from path, independently of the build invocation:
 
-## Escaped References
+| Source-relative location | Scope(s) required for an unfenced reference |
+| --- | --- |
+| `oss/python/` | `python` |
+| `oss/javascript/` | `js` |
+| Other `oss/` content | `python` and `js` |
+| Non-OSS content | `python` |
 
-To display a literal `@[ClassName]` without linking, escape the @ symbol:
+Within a top-level `:::python` or `:::js` region it checks only that named scope; an unsupported or closing conditional marker restores the file's default scope list. In shared `oss/` content, an unfenced name must resolve in **all** applicable maps, not merely one—otherwise one emitted language version would retain the unresolved marker.
 
-```markdown
-If you want to show the literal text \@[ClassName], use a backslash.
+The checker deliberately ignores references inside recognized regular fenced code blocks and ignores escaped `\@[...]` markers. Like the resolver, an unclosed recognized code fence causes the remaining source to be ignored by this check. This exclusion is why an example containing an intentionally unknown marker belongs in a code fence or should be escaped, not left as an ordinary prose marker.
+
+The `check-cross-refs` CI job runs this command with Python dependencies installed, so an unresolved eligible reference fails that job even though preprocessing itself only logs it.
+
+## Maintenance and focused tests
+
+Use these focused tests when changing resolver, map, fence, or validator behavior:
+
+```bash
+uv run pytest tests/unit_tests/test_handle_auto_links.py tests/unit_tests/test_check_cross_refs.py -vv
 ```
 
-Output:
-```markdown
-If you want to show the literal text @[ClassName], use a backslash.
-```
+The resolver tests cover replacement outside fences; preservation in backtick, tilde, extended, indented, labelled, and unclosed fences; scope stability when a conditional-looking line occurs in code; whitespace preservation; escaped markers; and regex-like code text. The validator tests cover Python and JavaScript scope selection, the all-scopes invariant for shared OSS pages, titled and backticked syntax, multiple markers on one line, and the code-fence, escaped-marker, and code-sample exclusions.
 
-Escaped references work both inside and outside code blocks. The backslash is automatically removed during preprocessing.
-
-## Interaction with Conditional Content
-
-Cross-references work seamlessly with language-specific conditional blocks:
-
-```markdown
-:::python
-Use @[StateGraph] to build your graph.
-:::
-
-:::js
-Use @[StateGraph] to build your graph.
-:::
-```
-
-Inside the `:::python` block, `@[StateGraph]` resolves to the Python reference. Inside the `:::js` block, it resolves to the JavaScript reference. Writers maintain a single source file; the build system handles the translation.
-
-## Integration with the Build Pipeline
-
-Cross-reference resolution is **Layer 2 of the markdown preprocessing pipeline** (see [Markdown Preprocessing Pipeline](/openwiki/concepts/preprocessing.md) for full details).
-
-The pipeline applies transformations in this order:
-
-1. **Conditional Rendering:** Language-specific blocks are resolved
-<!-- openwiki: broken internal link [url] file "url" does not exist. Fix the href or restore the target, then delete this comment. -->
-2. **Cross-References** (this layer): `@[ClassName]` → `[ClassName](url)`
-3. UTM Link Decoration
-4. Link Rewriting for Versioned Content
-5. Snippet Import Rewriting
-6. Source Edit Links
-
-This means cross-references are transformed before link rewriting, so relative URLs in the link map are prefixed with the appropriate host at build time.
-
-## Best Practices
-
-1. **Use semantic references:** Prefer `@[StateGraph]` over hardcoding URLs. It's clearer to readers and maintainers, and automatically updates when the reference docs change.
-
-2. **Add custom titles for readability:** When the class name alone is awkward, use `@[custom description][ClassName]` to improve prose flow:
-   ```markdown
-   See the @[state update method][CompiledStateGraph.update_state] documentation.
-   ```
-
-3. **Group related references:** Collect API references in a "Related API" section at the end of pages.
-
-4. **Test missing references:** If you use a reference before it's added to the link map, the build logs will guide you. Use the logs to track down what needs to be added.
-
-5. **Keep link map entries minimal:** Store only the relative path in the link map. Hosts are defined once per scope and automatically prepended.
-
-6. **Document cross-repository references:** If a reference lives outside `reference.langchain.com`, store the full URL in the link map. This keeps maintenance centralized.
-
-## Scope-Specific Mappings
-
-The link map includes entries for multiple language ecosystems:
-
-- **LangChain core:** `@[BaseChatModel]`, `@[Runnable]`, `@[Document]`
-- **LangGraph:** `@[StateGraph]`, `@[Command]`, `@[Pregel]`
-- **Deep Agents:** `@[SubAgent]`, `@[MemoryMiddleware]`, `@[FilesystemBackend]`
-- **Integrations:** `@[ChatOpenAI]`, `@[ChatAnthropic]`, `@[ChatVertexAI]`
-- **Utilities:** `@[AIMessage]`, `@[BaseTool]`, `@[Embeddings]`
-
-Check `/pipeline/preprocessors/link_map.py` for the complete list of available references for your scope.
+For a documentation change, follow the page-authoring workflow in [Adding and Modifying Documentation Pages](/openwiki/operations/adding-pages.md). For pipeline ordering and the broader build lifecycle, see [Markdown Preprocessing Pipeline](/openwiki/concepts/preprocessing.md). The [Reference Documentation Integration](/openwiki/integrations/reference-docs.md) page explains the ownership boundary between this semantic-link registry and separately generated API-reference sites.
 
 ## Troubleshooting
 
-| Problem | Cause | Solution |
-|---------|-------|----------|
-| `@[ClassName]` appears literally in output | Reference not found in link map | Add the entry to `/pipeline/preprocessors/link_map.py` for the appropriate scope. |
-| Link points to wrong reference | Wrong relative path in link map | Verify the path matches the actual reference URL structure; update if needed. |
-| Info log: "Link not found" | Typo in the reference name or scope mismatch | Check the reference name spelling and ensure you're using the correct scope. |
-| Escaped reference `\@[ClassName]` not appearing as-is | Backslash not in source | Double-check the backslash is present in the markdown source. |
-| Different URLs for Python and JS | Expected behavior | Verify both scopes have the same reference name mapped (or intentionally different targets). |
-
-## See Also
-
-- [Markdown Preprocessing Pipeline](/openwiki/concepts/preprocessing.md) — Full details on how preprocessing layers interact
-- [Adding and Modifying Documentation Pages](/openwiki/operations/adding-pages.md) — Workflow for creating new pages with cross-references
-- `/pipeline/preprocessors/handle_auto_links.py` — Implementation of cross-reference transformation
-- `/pipeline/preprocessors/link_map.py` — Link map definitions and scope management
+| Symptom | Meaning and action |
+| --- | --- |
+| Literal `@[Name]` after preprocessing with an info log | `Name` is absent from the active map. Correct the spelling, select the intended fence scope, or add the map entry. |
+| Validator reports an unfenced shared OSS reference | It is missing from at least one of the Python and JavaScript maps. Add both entries or fence language-specific content. |
+| A marker in an example unexpectedly linked or failed validation | Put the example in a recognized backtick/tilde fence, or escape it as `\@[Name]` when it must remain prose. |
+| A later reference was not linked | Check for an unclosed regular code fence; it protects all remaining lines from resolver and validator processing. |
+| Link destination is wrong but the name resolves | Repair the scoped `LINK_MAPS` value. Do not substitute a hard-coded URL in each consuming page. |
+| `make broken-links` passes but semantic references fail | These are separate gates. Run `make check-cross-refs` to validate symbolic names and their applicable scopes. |

@@ -1,507 +1,164 @@
 ---
-type: guide
-title: Testing Conditional Rendering
-description: How to test :::python and :::js conditional blocks to ensure correct content appears in each language variant during the build process.
-tags: [testing, conditional-rendering, versioning, language-variants]
+type: testing guide
+title: Conditional Rendering Tests
+description: Test guidance for the build-time `:::python` and `:::js` renderer, including its regex fence semantics, scoped autolinks, code-fence boundary, and language-specific artifacts.
+tags: [testing, conditional-rendering, markdown-preprocessing, language-versioning]
 verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:00:58.567Z
+  - by: openwiki/0.4.3
+    at: 2026-09-08T08:21:44.568Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-17f3856bce97f37118963062
+    resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
+  - id: openwiki-source-3ae8d89866d72418f1bdab6b
+    resource: repo://pipeline/preprocessors/utm_links.py
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:00:58.567Z" }
+  - id: openwiki-source-2ecfcd33b729fccd843ab705
+    resource: repo://tests/unit_tests/test_handle_auto_links.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
 ---
 
-# Testing Conditional Rendering
+# Conditional Rendering Tests
 
-Conditional rendering—using `:::python` and `:::js` fence blocks to include language-specific content in a single source file—is a core feature of the documentation pipeline. This guide explains how to verify that conditional blocks are resolved correctly during the build process.
+Conditional rendering lets one Markdown or MDX source contain content for the Python and JavaScript documentation variants. It is a build-time transformation, not a Markdown parser feature: `_apply_conditional_rendering()` selects supported `:::python` and `:::js` blocks after the earlier autolink and CTA passes.
 
-## Overview
+## What a rendering test must prove
 
-Conditional blocks allow documentation authors to provide language-specific examples, explanations, and code samples from a single source file. During the build, the `_apply_conditional_rendering()` function in `/pipeline/preprocessors/markdown_preprocessor.py` resolves these blocks based on the target language:
+For a source containing both supported blocks, assert both positive and negative output properties:
 
-- When building with `target_language="python"`, `:::python` blocks are kept and `:::js` blocks are removed
-- When building with `target_language="js"`, `:::js` blocks are kept and `:::python` blocks are removed
-- The content between the opening fence and closing fence is kept or removed as a unit
-
-## How Conditional Rendering Works
-
-### Rendering Rule
-
-The processor uses a regex pattern to match non-escaped conditional blocks:
-
-```regex
-(?P<indent>[ \t]*)(?<!\\):::(?P<language>\w+)\s*\n
-(?P<content>((?:.*\n)*?))
-(?P=indent)[ \t]*(?<!\\):::
-```
-
-**Key properties:**
-
-- **Indentation matching** – The closing `:::` must have the same indentation as the opening `:::python` or `:::js`
-- **Content preservation** – All content between fences (including blank lines and nested code blocks) is kept or removed together
-- **Escape support** – A leading backslash (`\:::`) prevents fence processing; the backslash is removed during post-processing
-- **Language-specific** – Only recognized languages (`python` or `js`) are processed; unrecognized languages are left unchanged
-
-### Example: Basic Block Resolution
-
-**Source file** (single version):
 ```markdown
-# Installation
+Shared introduction.
 
 :::python
-pip install langchain
+Python only.
 :::
 
 :::js
-npm install langchain
+TypeScript only.
 :::
 ```
 
-**After build with `target_language="python"`** (file: `/build/oss/python/intro.mdx`):
-```markdown
-# Installation
+- The `python` target emits `Python only.` without its enclosing fences and removes `TypeScript only.`
+- The `js` target emits `TypeScript only.` without its enclosing fences and removes `Python only.`
+- Shared text remains in both artifacts.
 
-pip install langchain
+`python` and `js` are the only accepted target keys. Calling `_apply_conditional_rendering()` with another value raises `ValueError`; `preprocess_markdown()` obtains a missing target from `TARGET_LANGUAGE`, defaulting to `python`.
 
+```mermaid
+flowchart TD
+    Source["Markdown or MDX source"] --> Links["Resolve scoped autolinks"]
+    Links --> Cta["Add CTA attribution"]
+    Cta --> Render["Select Python or JS blocks"]
+    Render --> Py["Python artifact"]
+    Render --> Js["JavaScript artifact"]
 ```
 
-**After build with `target_language="js"`** (file: `/build/oss/javascript/intro.mdx`):
-```markdown
-# Installation
+This shows the preprocessing order: links resolve while conditional fences still exist, and rendering happens last.
 
-npm install langchain
+## The two fence mechanisms are deliberately different
 
-```
+Do not conflate conditional rendering with the autolink scanner's fence handling.
 
-Notice that the removed conditional block leaves an empty string; this may result in blank lines in the output.
+| Concern | `replace_autolinks()` | `_apply_conditional_rendering()` |
+| --- | --- | --- |
+| Processing model | Line scanner with a current language scope | One whole-document regular-expression substitution |
+| Regular backtick/tilde code fences | Detects fences of at least three backticks or tildes and leaves their contents untouched | Has no code-fence state, so it can match conditional-looking text inside a code fence |
+| Conditional fences | An opening `:::language` changes scope; a closing `:::` resets it to the default scope | Keeps/removes only supported-language blocks and drops their fences |
+| Nesting | Holds only one current scope, not a stack | Does not parse nesting; the first eligible closing marker terminates the match |
 
-## Setting Up a Test
+The code-fence protection is specifically an autolink (and CTA) property. A literal `:::js ... :::` example inside a triple-backtick fence is safe from autolink scope changes, but it is **not** protected from later conditional rendering. Escape literal conditional markers when they must survive the complete preprocessing pipeline.
 
-### Test Strategy
+## Scoped links: test before rendering
 
-The recommended test strategy has four steps:
+`preprocess_markdown()` calls `replace_autolinks()` before conditional rendering and passes `default_scope`, which otherwise defaults to the selected target. The line scanner starts in that scope. At an unescaped conditional opening, it changes the scope to the fence language; at a closing fence, it returns to the default. Consequently, an `@[Name]` inside `:::js` resolves against the JavaScript map even while producing a Python artifact, before the JavaScript block is removed.
 
-1. **Create a test file** with both `:::python` and `:::js` blocks in a source directory
-2. **Build the documentation** using `make build` to generate both language variants
-3. **Verify output files** exist in the correct language-prefixed directories
-4. **Assert correct content** – Python version contains Python-specific content and JavaScript version contains JS-specific content
-
-### Step 1: Create a Versioned Test Page
-
-Create a source file at `/src/oss/<product>/<test-page>.mdx`:
-
-```markdown
----
-title: Test Conditional Rendering
-description: Verify language-specific content appears correctly.
----
-
-# Configuration
-
-Here's how to configure the system:
-
-:::python
-```python
-from langchain import Config
-
-config = Config(debug=True)
-```
-:::
-
-:::js
-```javascript
-import { Config } from 'langchain';
-
-const config = new Config({ debug: true });
-```
-:::
-
-## Next Steps
-
-<!-- openwiki: broken internal link [/oss/python/guides/next-steps] file "/oss/python/guides/next-steps" does not exist. Fix the href or restore the target, then delete this comment. -->
-See the [guide](/oss/python/guides/next-steps) for more.
-```
-
-### Step 2: Build the Documentation
-
-Run the build command to generate both Python and JavaScript variants:
-
-```bash
-make build
-```
-
-This invokes `pipeline build`, which:
-1. Clears the existing `/build/` directory
-2. Processes all source files through the preprocessing pipeline
-3. For versioned OSS content, builds twice—once with `target_language="python"` and once with `target_language="js"`
-4. Writes both variants to language-prefixed output paths
-
-### Step 3: Verify Output Files Exist
-
-After the build completes, verify that both language-specific output files were created:
-
-```bash
-ls -la build/oss/python/<product>/
-ls -la build/oss/javascript/<product>/
-```
-
-For the example above, you should see:
-- `/build/oss/python/<product>/test-page.mdx`
-- `/build/oss/javascript/<product>/test-page.mdx`
-
-### Step 4: Assert Correct Content
-
-Read the output files and verify that the correct language-specific content appears in each:
-
-**Python version** should contain:
-```markdown
-```python
-from langchain import Config
-
-config = Config(debug=True)
-```
-```
-
-And should NOT contain the JavaScript block.
-
-**JavaScript version** should contain:
-```markdown
-```javascript
-import { Config } from 'langchain';
-
-const config = new Config({ debug: true });
-```
-```
-
-And should NOT contain the Python block.
-
-## Automated Unit Tests
-
-The build system includes unit tests that verify conditional rendering during integration tests. See `/tests/unit_tests/test_builder.py` for examples.
-
-### Example: Managed Deep Agents Test
-
-The test `test_build_all_creates_managed_deep_agents_language_routes()` verifies that conditional blocks in snippets are resolved correctly:
+A focused autolink test should cover all of these boundaries:
 
 ```python
-def test_build_all_creates_managed_deep_agents_language_routes() -> None:
-    """Managed Deep Agents pages and snippets build for both languages."""
-    files = [
-        File(
-            path="snippets/langsmith/managed-deep-agents-next-steps.mdx",
-            content=(
-<!-- openwiki: broken internal link [/langsmith/managed-deep-agents-tools] file "/langsmith/managed-deep-agents-tools" does not exist. Fix the href or restore the target, then delete this comment. -->
-                "[Tools](/langsmith/managed-deep-agents-tools)\n"
-<!-- openwiki: broken internal link [/oss/deepagents/overview] file "/oss/deepagents/overview" does not exist. Fix the href or restore the target, then delete this comment. -->
-                "[Deep Agents](/oss/deepagents/overview)\n"
-                ":::python\nPython only.\n:::\n"
-                ":::js\nTypeScript only.\n:::\n"
-            ),
-        ),
-    ]
-
-    with file_system(files) as fs:
-        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
-        builder.build_all()
-
-        # Verify Python version contains Python content
-        python_snippet = (
-            fs.build_dir
-            / "snippets"
-            / "python"
-            / "langsmith"
-            / "managed-deep-agents-next-steps.mdx"
-        ).read_text()
-        assert "Python only." in python_snippet
-        assert "TypeScript only." not in python_snippet
-
-        # Verify JavaScript version contains JavaScript content
-        js_snippet = (
-            fs.build_dir
-            / "snippets"
-            / "javascript"
-            / "langsmith"
-            / "managed-deep-agents-next-steps.mdx"
-        ).read_text()
-        assert "TypeScript only." in js_snippet
-        assert "Python only." not in js_snippet
+md = ":::python\n@[StateGraph]\n```\n:::js\n@[StateGraph]\n```\n@[Command]\n:::\n"
+result = replace_autolinks(md, "test.mdx")
 ```
 
-This pattern—create test files, build, extract output, assert presence/absence of specific strings—applies to any conditional rendering test.
+The outer `:::python` gives the first and final references Python scope. The conditional-looking line inside the backtick fence does not switch scope and its `@[StateGraph]` stays literal. The existing unit test asserts precisely those outcomes. An unclosed ordinary code fence similarly suppresses autolink replacement for the document remainder. These guarantees do not extend to the conditional-rendering regex.
 
-## Local Development Testing
+## Fence syntax and edge cases
 
-When working in development mode (`make dev`), the build system watches for changes and automatically rebuilds affected files. You can then check both language variants in the UI:
+### Supported, unsupported, and incomplete blocks
 
-1. **Start development mode**:
-   ```bash
-   make dev
-   ```
+The renderer recognizes an opening marker with a word-character language identifier. It only transforms blocks labelled `python` or `js`; a complete block with another identifier is returned unchanged. An opening with no matching closing marker does not satisfy the pattern and remains unchanged. This is not a validation error emitted by this function.
 
-2. **Open the documentation** in your browser (Mintlify dev server, typically `http://localhost:3000`)
+The matched content includes its internal newlines. A selected block is replaced by that captured content; a nonmatching supported block is replaced by an empty string. Thus do not rely on the transformation to normalize surrounding blank lines.
 
-3. **Locate your test page** in the navigation
+### Escaped markers
 
-4. **Check the Python tab** to verify Python-specific content appears and JavaScript content is absent
-
-5. **Check the JavaScript tab** to verify JavaScript-specific content appears and Python content is absent
-
-6. **Use browser DevTools** (F12) to inspect the rendered content and confirm the HTML structure matches expected output
-
-## Common Mistakes and Pitfalls
-
-### Indentation Mismatch
-
-**Mistake:** Opening and closing fences have different indentation levels.
+Prefix a literal marker with a backslash in authored text:
 
 ```markdown
-:::python
-Some content
-  :::
-```
-
-**Result:** The closing `:::` is not recognized as the block terminator. The pattern requires the closing fence to be at the exact same indentation as the opening fence (including space/tab characters).
-
-**Fix:** Ensure indentation matches:
-```markdown
-:::python
-Some content
-:::
-```
-
-### Forgetting the Closing Fence
-
-**Mistake:** A conditional block is not closed.
-
-```markdown
-:::python
-Some content that continues to the end of the file
-```
-
-**Result:** The opening tag is left unmatched; depending on the context, the entire remainder of the file may be treated as conditional content. The build may log an exception for unclosed conditionals.
-
-**Fix:** Always close each conditional block:
-```markdown
-:::python
-Some content
-:::
-```
-
-### Nesting Conditional Blocks
-
-**Mistake:** Attempting to nest one conditional block inside another.
-
-```markdown
-:::python
-:::js
-Some nested content
-:::
-:::
-```
-
-**Result:** Nesting is not supported. The innermost closing `:::` closes the Python block, leaving a stray `:::` that may cause parsing errors or be treated as literal text.
-
-**Fix:** Use sequential, non-nested blocks instead:
-```markdown
-:::python
-Python-specific content
-:::
-
-:::js
-JavaScript-specific content
-:::
-```
-
-### Conditional Blocks Inside Code Fences
-
-**Mistake:** Putting a conditional fence inside a triple-backtick code block.
-
-```markdown
-```python
-:::js
-This is code, not a conditional
-:::
-```
-```
-
-**Result:** Code fence content is not processed for conditional rendering. The `:::js` block is treated as literal code text, not as a conditional marker. This is intentional—the system does not process conditionals inside code fences.
-
-**Fix:** Place conditional blocks outside code fences:
-```markdown
-:::python
-```python
-# Python code
-print("hello")
-```
-:::
-
-:::js
-```javascript
-// JavaScript code
-console.log("hello");
-```
-:::
-```
-
-### Escaped Conditionals for Documentation
-
-**Correct usage:** To document the conditional syntax itself, use escaped fences.
-
-```markdown
-To show a conditional block, use escaped fences:
-
 \:::python
-This will appear as literal text in the output
+This documents the syntax rather than selecting content.
 \:::
 ```
 
-**Result:** The output will display:
-```
-To show a conditional block, use escaped fences:
+The conditional matcher excludes a marker immediately preceded by `\`. After substitution it removes the backslash from every `\:::` sequence, producing literal `:::` text. This is the safe way to demonstrate conditional syntax, including inside examples that reach the full preprocessor.
 
+### Indentation is not a safe structural invariant
+
+The pattern captures opening whitespace and uses a backreference before the closing marker, which appears to require matching indentation. However, it is not anchored to the beginning of a line. The regex engine can retry at the opening `:::` itself with an empty captured indent, and the closing expression then permits arbitrary leading spaces or tabs. A mismatched indentation may therefore still be matched, potentially leaving opening-line whitespace in the output rather than reliably leaving the block untouched.
+
+Use identical indentation for readable source, especially in list items or other nested Markdown, but add a direct regression test before treating indentation mismatch as rejection behavior. Do not use indentation to nest conditional blocks.
+
+### No nesting and no code-fence awareness
+
+The content portion is non-greedy, so the first non-escaped eligible `:::` that follows an opening ends the match. An inner conditional opening has no special meaning to this regex; nested forms can leave a stray close or select/remove unexpected content. Keep conditional blocks sequential.
+
+Likewise, wrapping a conditional-looking block in backticks does not stop rendering. Put real code fences *inside* the selected conditional block instead:
+
+````markdown
 :::python
-This will appear as literal text in the output
-:::
-```
-
-The backslash is removed during post-processing, leaving the original fence syntax visible.
-
-## Inspection and Debugging
-
-### Build Log Output
-
-When the build runs, the preprocessor may log warnings or errors related to conditional blocks. Check the build logs:
-
-```bash
-make build 2>&1 | grep -i conditional
-```
-
-### Examining Preprocessor Regex
-
-To understand how the regex matches your specific content, you can test the pattern directly in Python:
-
 ```python
-import re
-from pipeline.preprocessors.markdown_preprocessor import _apply_conditional_rendering
-
-source = """
-:::python
-Python code
+print("Python only")
+```
 :::
 
 :::js
-JavaScript code
-:::
-"""
-
-python_result = _apply_conditional_rendering(source, "python")
-js_result = _apply_conditional_rendering(source, "js")
-
-print("Python version:")
-print(repr(python_result))
-print("\nJavaScript version:")
-print(repr(js_result))
+```typescript
+console.log("TypeScript only");
 ```
+:::
+````
 
-### Validating Build Output
+## Exercise the production boundary
 
-After building, you can use standard Unix tools to search for expected content in output files:
+`DocumentationBuilder._process_markdown_content()` invokes `preprocess_markdown()` and then rewrites snippet imports and language-aware routes. `build_all()` recreates `build/` and runs versioned OSS builds with `python` to `build/oss/python/` and `js` to `build/oss/javascript/`. Snippet Markdown is also independently preprocessed into `build/snippets/python/` and `build/snippets/javascript/`, with a Python-targeted default copy for unversioned consumers.
+
+The integration test `test_build_all_creates_managed_deep_agents_language_routes()` is the model for an artifact-level regression: it supplies a snippet containing both conditional branches, calls `build_all()`, reads both emitted snippet files, and asserts each contains its own branch and not the other. It also verifies that route and snippet-import rewriting select the matching `python` or `javascript` path, so it tests the meaningful build boundary rather than only string substitution.
+
+For a focused local run:
 
 ```bash
-# Check if Python version contains expected text
-grep -q "Python code" build/oss/python/<product>/<page>.mdx && echo "Found"
-
-# Check that JavaScript version does NOT contain Python-specific text
-grep -q "Python code" build/oss/javascript/<product>/<page>.mdx || echo "Not found (correct)"
+make test TEST_FILE=tests/unit_tests/test_builder.py
+make test TEST_FILE=tests/unit_tests/test_handle_auto_links.py
 ```
 
-## Edge Cases and Advanced Scenarios
+Use `make build` when validating actual build artifacts or a route-related change. It installs Node dependencies and invokes `pipeline build`; inspect both language outputs afterward. For source autolinks, run `make check-cross-refs` separately: it validates references under applicable language scopes, whereas a successful render can remove a nonmatching branch and conceal a bad reference from the final artifact.
 
-### Indented Conditional Blocks
+## Regression checklist
 
-Conditional blocks can appear inside other indented structures (lists, blockquotes, code fence content indicators, etc.). The indentation must be consistent:
+1. Test `python` and `js` outputs for retained matching content, absent nonmatching content, and shared text.
+2. If links occur in a conditional block, assert the target scope used during the pre-render autolink pass; include a conditional-looking marker inside a regular code fence when changing scanner behavior.
+3. Test literal syntax with escaped opening **and** closing markers, and assert that the output has no escape backslashes.
+4. Add direct cases for unsupported labels, missing closes, indentation mismatch, nesting, and conditional-looking text in a code fence whenever changing the renderer regex. Their behavior is regex behavior, not parser validation.
+5. Prefer a `DocumentationBuilder.build_all()` test when the change can affect emitted language paths, snippets, imports, or links; assert both artifact content and location.
 
-```markdown
-1. List item one
+## Related documentation
 
-   :::python
-   Indented Python content inside a list
-   :::
-
-2. List item two
-```
-
-The closing `:::` must have the same indentation as the opening `:::python`.
-
-### Multiple Conditionals in Sequence
-
-A single file may have multiple conditional blocks at the same level:
-
-```markdown
-# Setup
-
-:::python
-pip install langchain
-:::
-
-:::js
-npm install langchain
-:::
-
-# Usage
-
-:::python
-from langchain import ...
-:::
-
-:::js
-import { ... } from 'langchain';
-:::
-```
-
-Each block is processed independently. The processor applies the conditional-resolution rule to all matches in the content.
-
-### Blank Lines and Content Preservation
-
-Content between the opening and closing fences is preserved exactly, including blank lines:
-
-```markdown
-:::python
-
-First paragraph after blank line.
-
-Second paragraph.
-
-:::
-```
-
-After rendering for Python, the output is:
-
-```markdown
-
-First paragraph after blank line.
-
-Second paragraph.
-
-```
-
-Empty lines at the start and end of the block are preserved.
-
-## Related Concepts
-
-- **Language Versioning Strategy** (`/openwiki/concepts/versioning.md`) – Comprehensive overview of the three versioning patterns and how conditional rendering fits into the pipeline
-- **Preprocessing Pipeline** (`/openwiki/concepts/preprocessing.md`) – Details on how `_apply_conditional_rendering()` integrates with cross-reference resolution and link rewriting
-- **Building the Documentation** (Makefile) – Command reference for `make build` and `make dev`
-
-## References
-
-- **Implementation** – `/pipeline/preprocessors/markdown_preprocessor.py` – Contains `_apply_conditional_rendering()` and `preprocess_markdown()`
-- **Integration Tests** – `/tests/unit_tests/test_builder.py` – Full integration tests including `test_build_all_creates_managed_deep_agents_language_routes()`
-- **Versioning Strategy** – `/openwiki/concepts/versioning.md` – Theory and architecture of the multi-branch versioning system
+- [Markdown preprocessing pipeline](/openwiki/concepts/preprocessing.md)
+- [Language versioning strategy](/openwiki/concepts/versioning.md)
+- [Testing overview](/openwiki/testing/test-overview.md)
+- [Writing versioned content](/openwiki/workflows/versioned-content.md)
