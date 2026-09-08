@@ -14,7 +14,7 @@ Connections let you:
 - **Keep credentials out of your project**: `mda deploy` collects `.env` values as deployment secrets on every deploy. A connection value stays in the workspace instead.
 - **Give each caller their own identity**: A user-owned connection resolves the credential of the person who made the request, so the agent reads that person's documents and acts under their name. An environment variable holds one value for everyone.
 - **Skip the OAuth plumbing**: Managed Deep Agents runs the authorization round-trip, so a project needs no callback route, token store, or consent screen. These flows are handled automatically by your Managed Deep Agent.
-- **Reuse one credential across agents**: Connections belong to the workspace, so several deployments can resolve the same slug. Rotating the value takes effect on the next run of each, with no redeploy. One developer can configure a Connection which other developers can use in their agents.
+- **Reuse one slug across agents**: Connections belong to the workspace, so several deployments can resolve the same slug. Each deployment holds its own credential under that slug: run `mda connections create <slug>` once from each project root. Rotating a deployment's value takes effect on its next run, with no redeploy.
 
 Storing a credential in LangSmith to use across your Managed Deep Agents takes one command:
 
@@ -70,9 +70,9 @@ const notionToken = await connections.get("engineering-notion", { type: "user" }
 
 A connection is a container, and it belongs to the workspace rather than to an owner. The credentials inside it have owners. There is no `--owner` flag: the [create mode](#choose-a-create-mode) you use sets the owner.
 
-`connections.get(...)` selects an owner. It does not create one. Asking for an owner with no stored credential fails the run for `agent`, and raises a [`credential_authorization_required` interrupt](#handle-the-authorization-interrupt) for `user`.
+`connections.get(...)` selects an owner. It does not create one. Asking for an owner with no credential of its own fails the run for `agent`, and raises a [`credential_authorization_required` interrupt](#handle-the-authorization-interrupt) for `user`. A credential stored under the same slug for a different owner does not satisfy the lookup.
 
-Agent-owned credentials belong to the project's deployment, so create them after at least one successful [`mda deploy`](/langsmith/managed-deep-agents-deploy).
+Agent-owned credentials belong to the project's deployment, so create them after at least one successful [`mda deploy`](/langsmith/managed-deep-agents-deploy). A deployment reads only the credential it owns. To resolve the same slug from a second deployment, run `mda connections create <slug>` again from that project root: on an existing slug the command attaches a new agent-owned credential instead of failing.
 
 ### Identify the caller
 
@@ -946,6 +946,7 @@ Connections are part of the Managed Deep Agents public beta. The following gaps 
 - **User-owned API keys**: A user-owned connection holds an OAuth grant. Slack and Studio do not collect a per-caller API key, and the CLI does not create an empty slot for one. Use an agent-owned secret instead, or collect the key in a custom frontend as described in the following section.
 - **Custom channels**: Slack and Studio resolve caller identity and complete authorization for the caller. A custom frontend handles the [authorization interrupt](#handle-the-authorization-interrupt) itself.
 - **Workspace UI**: LangSmith does not list connections in the UI. Use `mda connections list` and `mda connections get` for connection metadata.
+- **Grant visibility**: `mda connections list` is workspace-scoped and does not report which deployments hold a credential under a slug. A run that fails with `no agent connection is set for slug '<slug>'` means this deployment owns no credential for it, even when `list` shows the slug. Run `mda connections create <slug>` from the project root to mint one.
 
 <Accordion title="Store a user-owned API key through Agent Auth">
 An interrupt entry with `"kind": "secret"` has no `connect_url`. To collect one in a custom frontend, prompt for the value with a hidden input, then create the credential against the existing connection slug:
