@@ -144,6 +144,81 @@ const weatherResponse = await agent.invoke({
 Trace MCP tool calls alongside your agent's reasoning steps with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langchain) to get set up.
 </Tip>
 
+<Accordion title="Example: Query LangChain docs">
+
+The [LangChain docs MCP server](/use-these-docs) is a public HTTP endpoint at `https://docs.langchain.com/mcp`. Connect an agent to it to search and read documentation without writing custom tools.
+
+<Note>
+The docs MCP server is public and does not require an API key. For IDE and coding-agent setup (Claude Code, Cursor, and others), see [Use docs programmatically](/use-these-docs).
+</Note>
+
+:::python
+```python
+from langchain.agents import create_agent
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient(
+    {
+        "docs": {
+            "transport": "http",
+            "url": "https://docs.langchain.com/mcp",  # [!code highlight]
+        }
+    }
+)
+tools = await client.get_tools()
+agent = create_agent("claude-sonnet-5", tools)
+response = await agent.ainvoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "How do I add short-term memory to a LangChain agent?",
+            }
+        ]
+    }
+)
+```
+:::
+
+:::js
+```typescript
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";  // [!code highlight]
+import { createAgent } from "langchain";
+
+const client = new MultiServerMCPClient({
+    docs: {
+        transport: "http",
+        url: "https://docs.langchain.com/mcp",  // [!code highlight]
+    },
+});
+
+const tools = await client.getTools();
+const agent = createAgent({
+    model: "claude-sonnet-5",
+    tools,
+});
+
+const response = await agent.invoke({
+    messages: [
+        {
+            role: "user",
+            content: "How do I add short-term memory to a LangChain agent?",
+        },
+    ],
+});
+```
+:::
+
+The server exposes these tools:
+
+| Tool | Description |
+|------|-------------|
+| `search_docs_by_lang_chain` | Search docs for relevant guides, how-tos, and examples. |
+| `query_docs_filesystem_docs_by_lang_chain` | Read or search docs through a virtual filesystem (`rg`, `head`, `cat`, and related commands). |
+| `submit_feedback` | Report a problem with a documentation page. |
+
+</Accordion>
+
 ## Custom servers
 
 :::python
@@ -493,6 +568,37 @@ response = await agent.ainvoke({"messages": "what is the weather in nyc?"})
 ```
 :::
 
+:::js
+When connecting to MCP servers over HTTP, you can include custom headers (for example, for authentication or tracing) using the `headers` field in the connection configuration. This example uses the [LangChain docs MCP server](/use-these-docs); replace the header values for a server that requires authentication:
+
+```typescript Passing headers with MultiServerMCPClient
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+import { createAgent } from "langchain";
+
+const client = new MultiServerMCPClient({
+    mcp: {
+        transport: "http",
+        url: "https://docs.langchain.com/mcp",
+        headers: {  // [!code highlight]
+            Authorization: "Bearer YOUR_TOKEN",  // [!code highlight]
+            "X-Custom-Header": "custom-value",  // [!code highlight]
+        },  // [!code highlight]
+    },
+});
+
+const tools = await client.getTools();
+const agent = createAgent({ model: "openai:gpt-5.4", tools });
+const response = await agent.invoke({
+    messages: [
+        {
+            role: "user",
+            content: "How do I connect LangChain to an MCP server over HTTP?",
+        },
+    ],
+});
+```
+:::
+
 #### Authentication
 
 :::python
@@ -515,6 +621,25 @@ client = MultiServerMCPClient(
 
 * [Example custom auth implementation](https://github.com/modelcontextprotocol/python-sdk/blob/main/examples/clients/simple-auth-client/mcp_simple_auth_client/main.py)
 * [Built-in OAuth flow](https://github.com/modelcontextprotocol/python-sdk/blob/main/src/mcp/client/auth/oauth2.py#L216)
+:::
+
+:::js
+The `@langchain/mcp-adapters` library uses the official [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) under the hood, which allows you to provide a custom authentication mechanism by implementing the `OAuthClientProvider` interface.
+
+```typescript
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+
+const client = new MultiServerMCPClient({
+    weather: {
+        transport: "http",
+        url: "http://localhost:8000/mcp",
+        authProvider: authProvider, // [!code highlight]
+    },
+});
+```
+
+* [OAuth client documentation](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/clients/oauth.md)
+* [OAuth example](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/examples/oauth/README.md)
 :::
 
 ### stdio
@@ -621,12 +746,11 @@ const agent = createAgent({ model: "claude-sonnet-5", tools });
 When an MCP tool execution fails (`CallToolResult` with `isError: true`), `@langchain/mcp-adapters` raises a `ToolException`. Wrap tool calls in a try/catch to handle these errors. Unlike the Python adapter, the TypeScript adapter does not return the error to the model as a failed tool message.
 :::
 
-:::python
-
 #### Structured content
 
 MCP tools can return [structured content](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#structured-content) alongside the human-readable text response. This is useful when a tool needs to return machine-parseable data (like JSON) in addition to text that gets shown to the model.
 
+:::python
 When an MCP tool returns `structuredContent`, the adapter wraps it in an [`MCPToolArtifact`](https://reference.langchain.com/python/langchain_mcp_adapters/#langchain_mcp_adapters.tools.MCPToolArtifact) and returns it as the tool's artifact. You can access this using the `artifact` field on the `ToolMessage`. You can also use [interceptors](#tool-interceptors) to process or transform structured content automatically.
 
 **Extracting structured content from artifact**
@@ -674,7 +798,39 @@ async def append_structured_content(request: MCPToolCallRequest, handler):
 
 client = MultiServerMCPClient({...}, tool_interceptors=[append_structured_content])
 ```
+:::
 
+:::js
+When an MCP tool returns `structuredContent`, the adapter adds an `mcp_structured_content` entry to the tool message `artifact` array. You can also use [tool interceptors](#tool-interceptors) to process or transform structured content automatically.
+
+**Extracting structured content from artifact**
+
+After invoking your agent, you can access the structured content from tool messages in the response:
+
+```typescript
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+import { createAgent } from "langchain";
+
+const client = new MultiServerMCPClient({...});
+const tools = await client.getTools();
+const agent = createAgent({ model: "claude-sonnet-5", tools });
+
+const result = await agent.invoke({
+    messages: [{ role: "user", content: "Get data from the server" }],
+});
+
+for (const message of result.messages) {
+    if (message.type !== "tool" || !message.artifact) continue;
+    for (const item of message.artifact) {
+        if (item?.type === "mcp_structured_content") {
+            console.log(item.data);
+        }
+    }
+}
+```
+:::
+
+:::python
 #### Multimodal tool content
 
 MCP tools can return [multimodal content](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#tool-result) (images, text, etc.) in their responses. When an MCP server returns content with multiple parts (e.g., text and images), the adapter converts them to LangChain's [standard content blocks](/oss/langchain/messages#standard-content-blocks). You can access the standardized representation via the `content_blocks` property on the `ToolMessage`:
@@ -723,13 +879,14 @@ This allows you to handle multimodal tool responses in a provider-agnostic way, 
 
 :::
 
-:::python
-
 ### Resources
 
-[Resources](https://modelcontextprotocol.io/docs/concepts/resources) allow MCP servers to expose data—such as files, database records, or API responses—that can be read by clients. LangChain converts MCP resources into [Blob](https://reference.langchain.com/python/langchain_core/documents/#langchain_core.documents.base.Blob) objects, which provide a unified interface for handling both text and binary content.
+[Resources](https://modelcontextprotocol.io/docs/concepts/resources) allow MCP servers to expose data—such as files, database records, or API responses—that can be read by clients.
 
 #### Loading resources
+
+:::python
+LangChain converts MCP resources into [Blob](https://reference.langchain.com/python/langchain_core/documents/#langchain_core.documents.base.Blob) objects, which provide a unified interface for handling both text and binary content.
 
 Use `client.get_resources()` to load resources from an MCP server:
 
@@ -764,7 +921,35 @@ async with client.session("server_name") as session:
     # Or load specific resources by URI
     blobs = await load_mcp_resources(session, uris=["file:///path/to/file.txt"])
 ```
+:::
 
+:::js
+Use `client.listResources()` to discover resources and `client.readResource()` to read their contents:
+
+```typescript
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+
+const client = new MultiServerMCPClient({...});
+
+// List resources from a server
+const resourcesByServer = await client.listResources("server_name");  // [!code highlight]
+for (const resource of resourcesByServer["server_name"] ?? []) {
+    console.log(`URI: ${resource.uri}, MIME type: ${resource.mimeType}`);
+}
+
+// Read a specific resource by URI
+const contents = await client.readResource(  // [!code highlight]
+    "server_name",
+    "file:///path/to/file.txt",
+);
+for (const content of contents) {
+    console.log(`URI: ${content.uri}, MIME type: ${content.mimeType}`);
+    if (content.text) console.log(content.text);
+}
+```
+:::
+
+:::python
 ### Prompts
 
 [Prompts](https://modelcontextprotocol.io/docs/concepts/prompts) allow MCP servers to expose reusable prompt templates that can be retrieved and used by clients. LangChain converts MCP prompts into [messages](/oss/langchain/messages), making them easy to integrate into chat-based workflows.
@@ -812,11 +997,13 @@ async with client.session("server_name") as session:
         arguments={"language": "python", "focus": "security"}
     )
 ```
+:::
 
 ## Advanced features
 
 ### Tool interceptors
 
+:::python
 MCP servers run as separate processes—they can't access LangGraph runtime information like the [store](/oss/langgraph/stores), [context](/oss/langchain/context-engineering), or agent state. **Interceptors bridge this gap** by giving you access to this runtime context during MCP tool execution.
 
 Interceptors also provide middleware-like control over tool calls: you can modify requests, implement retries, add headers dynamically, or short-circuit execution entirely.
@@ -1185,9 +1372,47 @@ async def fallback_interceptor(
     except ConnectionError:
         return f"Could not connect to {request.name} service. Using cached data."
 ```
+:::
+
+:::js
+MCP servers run as separate processes—they cannot access LangGraph runtime information like the [store](/oss/langgraph/stores), [context](/oss/langchain/context-engineering), or agent state. Use `beforeToolCall` and `afterToolCall` hooks on `MultiServerMCPClient` to modify tool arguments, headers, or results:
+
+```typescript
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+
+const client = new MultiServerMCPClient({
+    mcpServers: {
+        math: {
+            transport: "stdio",
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-math"],
+        },
+    },
+    beforeToolCall: ({ serverName, name, args }) => {  // [!code highlight]
+        const nextArgs = { ...(args as Record<string, unknown>), injected: true };
+        return {
+            args: nextArgs,
+            headers: { "X-Request-ID": crypto.randomUUID() },
+        };
+    },
+    afterToolCall: (res) => {  // [!code highlight]
+        if (res.name === "someTool") {
+            return { result: ["modified-output", []] };
+        }
+        return { result: res.result };
+    },
+});
+
+const tools = await client.getTools();
+```
+
+- **beforeToolCall**: Can return `{ args?, headers? }`. Headers are supported for HTTP and SSE transports. Stdio connections do not support custom headers.
+- **afterToolCall**: Can return `{ result }` where `result` is a `[content, artifact]` tuple, a `ToolMessage`, a LangGraph `Command`, or the original result.
+:::
 
 ### Progress notifications
 
+:::python
 Subscribe to progress updates for long-running tool executions:
 
 ```python Progress callback
@@ -1214,9 +1439,42 @@ client = MultiServerMCPClient(
 The `CallbackContext` provides:
 - `server_name`: Name of the MCP server
 - `tool_name`: Name of the tool being executed (available during tool calls)
+:::
+
+:::js
+Subscribe to progress updates for long-running tool executions with `onProgress`:
+
+```typescript
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+
+const client = new MultiServerMCPClient({
+    mcpServers: {
+        everything: {
+            transport: "stdio",
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-everything"],
+        },
+    },
+    onProgress: (progress, source) => {  // [!code highlight]
+        const pct =
+            progress.percentage ??
+            (progress.progress != null && progress.total
+                ? Math.round((progress.progress / progress.total) * 100)
+                : undefined);
+        if (pct == null) return;
+        const origin =
+            source.type === "tool" ? `${source.server}/${source.name}` : "unknown";
+        console.log(`[progress:${origin}] ${pct}%`);
+    },
+});
+
+const tools = await client.getTools();
+```
+:::
 
 ### Logging
 
+:::python
 The MCP protocol supports [logging](https://modelcontextprotocol.io/specification/2025-03-26/server/utilities/logging#log-levels) notifications from servers. Use the `Callbacks` class to subscribe to these events.
 
 ```python Logging callback
@@ -1236,7 +1494,34 @@ client = MultiServerMCPClient(
     callbacks=Callbacks(on_logging_message=on_logging_message),  # [!code highlight]
 )
 ```
+:::
 
+:::js
+The MCP protocol supports [logging](https://modelcontextprotocol.io/specification/2025-03-26/server/utilities/logging#log-levels) notifications from servers. Subscribe with `onMessage`:
+
+```typescript
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+
+const client = new MultiServerMCPClient({
+    mcpServers: {
+        everything: {
+            transport: "stdio",
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-everything"],
+        },
+    },
+    onMessage: (log, source) => {  // [!code highlight]
+        console.log(`[${source.server}] ${log.level}: ${log.data}`);
+    },
+});
+
+const tools = await client.getTools();
+```
+
+You can also set the server logging level with `client.setLoggingLevel("debug")` or `client.setLoggingLevel("server_name", "debug")`.
+:::
+
+:::python
 ### Elicitation
 
 [Elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation#elicitation) allows MCP servers to request additional input from users during tool execution. Instead of requiring all inputs upfront, servers can interactively ask for information as needed.
@@ -1326,8 +1611,8 @@ ElicitResult(action="decline")
 # Cancel (abort the operation)
 ElicitResult(action="cancel")
 ```
-
 :::
+
 
 ## Additional resources
 

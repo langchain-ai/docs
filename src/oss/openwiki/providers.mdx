@@ -111,7 +111,7 @@ OPENWIKI_PROVIDER=openai-chatgpt openwiki code --init
 
 The wizard opens the OpenAI auth page in your browser (and prints the URL for headless use). After sign-in, OpenWiki stores managed OAuth tokens in `~/.openwiki/.env` and refreshes the access token automatically. Treat the refresh token like a password.
 
-## Gemini Enterprise (Vertex AI)
+## Gemini Enterprise Agent Platform
 
 The `gemini-enterprise` provider uses Google Application Default Credentials. No API key is required:
 
@@ -121,7 +121,7 @@ GOOGLE_CLOUD_PROJECT=your-gcp-project
 GOOGLE_CLOUD_LOCATION=global
 ```
 
-The credentials need Vertex AI access (`roles/aiplatform.user`), and the models you use must be enabled in Model Garden. Partner/open-weight (MaaS) models are region-specific, so set `GOOGLE_CLOUD_LOCATION` explicitly when using them.
+The credentials need Gemini Enterprise Agent Platform access (`roles/aiplatform.user`), and the models you use must be enabled in Model Garden. Partner/open-weight (MaaS) models are region-specific, so set `GOOGLE_CLOUD_LOCATION` explicitly when using them.
 
 ## AWS Bedrock
 

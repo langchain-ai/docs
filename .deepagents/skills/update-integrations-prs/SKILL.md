@@ -11,6 +11,8 @@ description: >-
 
 Process contributor integration docs PRs in `langchain-ai/docs` so they match the [hosted-guide eligibility rules](https://docs.langchain.com/oss/contributing/publish-langchain#eligibility-for-hosted-guides) from [#4865](https://github.com/langchain-ai/docs/pull/4865).
 
+For **new** listings filed as GitHub issues (issue form + `integration-submission` label), use the `submit-integration` skill instead. That path creates listing changes for CI to open a PR.
+
 ## Policy
 
 | Case | Action |

@@ -12,6 +12,45 @@ The [`langgraph-supervisor`](https://github.com/langchain-ai/langgraph-superviso
 
 This guide covers how to migrate from `create_supervisor` to @[`create_agent`], including setups that use @[`interrupt`] and external API callbacks.
 
+<Prompt
+    description="Migrate from langgraph-supervisor to create_agent subagents"
+    icon="arrow-right"
+    actions={["copy", "cursor"]}
+>
+Migrate this codebase from the `langgraph-supervisor` package to the LangChain subagents pattern with `create_agent` and tool-wrapped workers.
+
+## Step 1: Read the guide
+
+Fetch and follow https://docs.langchain.com/oss/python/migrate/langgraph-supervisor.md as the source of truth for before/after patterns, interrupt propagation rules, nested supervisors, and message history options. For the target pattern, also fetch https://docs.langchain.com/oss/python/langchain/multi-agent/subagents.md and linked pages when needed. If the codebase still uses `create_react_agent`, also fetch https://docs.langchain.com/oss/python/migrate/langgraph-v1.md.
+
+## Step 2: Update dependencies
+
+Remove `langgraph-supervisor` with the package manager already used in this project (`uv` or `pip`). Ensure LangChain and LangGraph versions in the project support `create_agent`, `@tool`, and `interrupt` as shown in the guide. Prefer pinning current stable versions when the project already pins versions.
+
+## Step 3: Apply the migration
+
+Identify every call site that imports from `langgraph_supervisor` or uses `create_supervisor`, `create_handoff_tool`, or supervisor nesting, then apply the mappings from the guide, including:
+
+- Replace `create_supervisor` with a main `create_agent` whose tools wrap each worker subagent.
+- Replace handoff routing (`create_handoff_tool`) with custom `@tool` functions that call `subagent.invoke(...)`.
+- Recreate `output_mode` behavior (`full_history` vs `last_message`) inside each tool wrapper rather than as a supervisor constructor argument.
+- Migrate nested supervisors by flattening to one supervisor with one tool per leaf agent, or by nesting tool-wrapped middle-tier agents when intermediate coordination is required.
+
+## Step 4: Preserve interrupt and resume flows
+
+If workers use `interrupt` or external callback resume with `Command(resume=...)`, keep that behavior and follow the guide's propagation rules: compile only the outermost graph with a checkpointer, leave subagents without their own checkpointer, and pass `thread_id` in `configurable` on outer `invoke` or `stream_events` calls.
+
+## Step 5: Handle gaps explicitly
+
+If the codebase needs static subgraph discovery, checkpoint namespaces per tier, shared state keys between levels, or a mix of deterministic and agentic steps that the guide says belong in a custom `StateGraph`, stop and ask the user how to proceed. Do not invent a custom graph layout unless the guide covers it.
+
+## Rules
+
+- Stay scoped to this migration. Do not rewrite unrelated agent code.
+- Prefer the subagents pattern from the guide over keeping `langgraph-supervisor`.
+- Ask rather than guess when a call site or pattern is not covered by the guide.
+</Prompt>
+
 ## Summary of changes
 
 | langgraph-supervisor | Recommended replacement |
