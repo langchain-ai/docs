@@ -33,7 +33,14 @@ The MCP endpoint uses the deployment's [identity](/langsmith/managed-deep-agents
 | LangSmith API key (default) | `x-api-key: <LANGSMITH_API_KEY>` |
 | Supabase | `Authorization: Bearer <access_token>` |
 
-Authentication failures return 401.
+For the LangSmith API-key default, the key must belong to the workspace that owns the deployment. A key that is valid for another workspace is rejected.
+
+Authentication failures return one of two statuses:
+
+| Status | Body | Cause |
+| --- | --- | --- |
+| 401 | `{"detail":"missing x-api-key"}` | No credential header on the request. |
+| 403 | `{"detail":"API key is forbidden"}` | Header present, but the key is invalid or not authorized for the deployment's workspace. |
 
 <Warning>
 Anyone holding the LangSmith API key can reach the deployment, and an MCP client stores the header in its own configuration. Treat a key added to a client config as a shared secret for the whole workspace.
@@ -64,6 +71,12 @@ claude mcp add --transport http research-assistant \
 
 Claude Code lists the agent as a tool once the server connects.
 
+In a JSON configuration, Claude Code expands `${VAR}` in header values, so the key stays in the environment instead of the config file:
+
+```json
+"headers": { "x-api-key": "${LANGSMITH_API_KEY}" }
+```
+
 ## Add the agent to another MCP client
 
 Clients that read an `mcpServers` configuration accept the endpoint and header directly:
@@ -82,7 +95,7 @@ Clients that read an `mcpServers` configuration accept the endpoint and header d
 }
 ```
 
-A client that accepts only a URL and negotiates OAuth cannot authenticate to the endpoint, which requires a header credential.
+A client that accepts only a URL and negotiates OAuth cannot authenticate to the endpoint, which requires a header credential. Configure the header explicitly. Without one, a client may fall back to OAuth and report a Dynamic Client Registration failure rather than the missing header, which obscures the real cause.
 
 ## Call the endpoint from code
 
