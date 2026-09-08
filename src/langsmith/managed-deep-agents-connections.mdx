@@ -15,7 +15,31 @@ Connections let you:
 - **Skip the OAuth plumbing**: Managed Deep Agents runs the authorization round-trip, so a project needs no callback route, token store, or consent screen. These flows are handled automatically by your Managed Deep Agent.
 - **Reuse one credential across agents**: Connections belong to the workspace, so several deployments can resolve the same slug. Rotating the value takes effect on the next run of each, with no redeploy. One developer can configure a Connection which other developers can use in their agents.
 
-Create connections with `mda connections create`. Deploy fails when the project declares a connection that is missing from the workspace.
+Storing a credential to use across your Managed Deep Agents takes one command:
+
+:::python
+```bash
+uv run mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+```
+
+```python
+api_key = await connections.get("organization-tavily", {"type": "agent"})
+```
+:::
+
+:::js
+```bash
+npx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+```
+
+And reading it takes one line:
+
+```typescript
+const apiKey = await connections.get("organization-tavily", { type: "agent" });
+```
+:::
+
+The rest of this page covers the two choices around those steps: who owns the credential, and how the service authenticates. Deploy fails when the project declares a connection that is missing from the workspace.
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -44,13 +68,7 @@ const notionToken = await connections.get("engineering-notion", { type: "user" }
 
 `connections.get(...)` resolves to the credential value as a string.
 
-A connection is a container, and it belongs to the workspace rather than to an owner. The credentials inside it have owners, and `mda connections create` sets the owner by which flags you pass. There is no `--owner` flag:
-
-| Create with | Credential owner | Code asks for |
-| --- | --- | --- |
-| `--secret-from-env`, `--secret-from-file`, or stdin | The agent | `{"type": "agent"}` |
-| `--oauth` or custom endpoints, without `--authorize` | Each caller, granted at runtime | `{"type": "user"}` |
-| `--oauth` or `--mcp` with `--authorize` | The agent | `{"type": "agent"}` |
+A connection is a container, and it belongs to the workspace rather than to an owner. The credentials inside it have owners. There is no `--owner` flag: the [create mode](#choose-a-create-mode) you use sets the owner.
 
 `connections.get(...)` selects an owner. It does not create one. Asking for an owner with no stored credential fails the run for `agent`, and raises a [`credential_authorization_required` interrupt](#handle-the-authorization-interrupt) for `user`.
 
@@ -78,17 +96,77 @@ Slack and Studio complete the authorization round-trip for the caller. First-cla
 
 Ownership decides what the agent does with a credential. The create mode decides how that credential reaches the workspace, and depends on how the external service authenticates:
 
-| Mode | Use when | Create with |
-| --- | --- | --- |
-| **Opaque secret** | The agent needs a fixed API key or other static secret. | `--secret-from-env`, `--secret-from-file`, stdin, or an interactive prompt |
-| **General OAuth** | You register your own OAuth app (BYOT) with a provider such as GitHub or Google. | `--oauth <service>` from the catalog, or `--authorize-url` and `--token-url` for a custom provider |
-| **MCP OAuth** | An MCP server advertises OAuth and can register a client automatically. | `--mcp <url>`, or the connection slug alone when the project already declares that user-owned MCP server |
+| Mode | Use when | Create with | Credential owner |
+| --- | --- | --- | --- |
+| **Opaque secret** | The service uses a fixed API key or other static secret. | `--secret-from-env`, `--secret-from-file`, stdin, or an interactive prompt | The agent |
+| **General OAuth** | You register your own OAuth app (BYOT), such as with GitHub or Google. | `--oauth <service>` from the catalog, or `--authorize-url` and `--token-url` for a custom provider | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) |
+| **MCP OAuth** | An MCP server advertises OAuth and registers a client automatically. | `--mcp <url>`, or the slug alone when the project already declares that user-owned MCP server | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) |
+
+For example:
+:::python
+```bash
+# Opaque secret: store a fixed API key for the agent
+uv run mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+
+# General OAuth: register your own app, and let each caller authorize
+uv run mda connections create frontend-github --oauth github \
+  --client-id "********" --secret-from-env GITHUB_CLIENT_SECRET
+
+# MCP OAuth: let the MCP server register a client for you
+uv run mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+```
+:::
+
+:::js
+<CodeGroup>
+    ```bash npm
+    # Opaque secret: store a fixed API key for the agent
+    npx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+
+    # General OAuth: register your own app, and let each caller authorize
+    npx mda connections create frontend-github --oauth github \
+      --client-id "********" --secret-from-env GITHUB_CLIENT_SECRET
+
+    # MCP OAuth: let the MCP server register a client for you
+    npx mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+    ```
+
+    ```bash pnpm
+    # Opaque secret: store a fixed API key for the agent
+    pnpm exec mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+
+    # General OAuth: register your own app, and let each caller authorize
+    pnpm exec mda connections create frontend-github --oauth github \
+      --client-id "********" --secret-from-env GITHUB_CLIENT_SECRET
+
+    # MCP OAuth: let the MCP server register a client for you
+    pnpm exec mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+    ```
+
+    ```bash bun
+    # Opaque secret: store a fixed API key for the agent
+    bunx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+
+    # General OAuth: register your own app, and let each caller authorize
+    bunx mda connections create frontend-github --oauth github \
+      --client-id "********" --secret-from-env GITHUB_CLIENT_SECRET
+
+    # MCP OAuth: let the MCP server register a client for you
+    bunx mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+    ```
+</CodeGroup>
+:::
 
 Do not mix modes in one command. For example, `--mcp` cannot combine with `--oauth`, custom endpoints, `--client-id`, or a secret value.
 
 ### Name a connection
 
-The first argument to `mda connections create` is a slug: your name for the connection, and the name your code passes to `connections.get(...)`. It is not the provider name, which goes to `--oauth`. In `mda connections create engineering-notion --oauth notion-api`, `engineering-notion` is the slug and `notion-api` is the catalog provider.
+The first argument to `mda connections create` is a slug: your name for the connection, and the name your code passes to `connections.get(...)`. It is not the provider name, which goes to `--oauth`:
+
+```bash
+mda connections create frontend-github --oauth github
+#                      ^ your slug      ^ catalog provider
+```
 
 Slugs are unique within a workspace. Use lowercase letters, numbers, and single hyphens, and pick a name that identifies which account the connection points at, such as `organization-tavily` or `engineering-notion`.
 
