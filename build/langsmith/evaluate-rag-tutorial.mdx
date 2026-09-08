@@ -1,0 +1,247 @@
+---
+title: Evaluate a RAG application
+sidebarTitle: Evaluate a RAG application
+---
+
+import EvaluateRagIndexingPy from '/snippets/python/code-samples/evaluate-rag-indexing-py.mdx';
+import EvaluateRagIndexingJs from '/snippets/python/code-samples/evaluate-rag-indexing-js.mdx';
+import EvaluateRagGenerationPy from '/snippets/python/code-samples/evaluate-rag-generation-py.mdx';
+import EvaluateRagGenerationJs from '/snippets/python/code-samples/evaluate-rag-generation-js.mdx';
+import EvaluateRagDatasetPy from '/snippets/python/code-samples/evaluate-rag-dataset-py.mdx';
+import EvaluateRagDatasetJs from '/snippets/python/code-samples/evaluate-rag-dataset-js.mdx';
+import EvaluateRagCorrectnessPy from '/snippets/python/code-samples/evaluate-rag-correctness-py.mdx';
+import EvaluateRagCorrectnessJs from '/snippets/python/code-samples/evaluate-rag-correctness-js.mdx';
+import EvaluateRagRelevancePy from '/snippets/python/code-samples/evaluate-rag-relevance-py.mdx';
+import EvaluateRagRelevanceJs from '/snippets/python/code-samples/evaluate-rag-relevance-js.mdx';
+import EvaluateRagGroundednessPy from '/snippets/python/code-samples/evaluate-rag-groundedness-py.mdx';
+import EvaluateRagGroundednessJs from '/snippets/python/code-samples/evaluate-rag-groundedness-js.mdx';
+import EvaluateRagRetrievalRelevancePy from '/snippets/python/code-samples/evaluate-rag-retrieval-relevance-py.mdx';
+import EvaluateRagRetrievalRelevanceJs from '/snippets/python/code-samples/evaluate-rag-retrieval-relevance-js.mdx';
+import EvaluateRagRunEvaluationPy from '/snippets/python/code-samples/evaluate-rag-run-evaluation-py.mdx';
+import EvaluateRagRunEvaluationJs from '/snippets/python/code-samples/evaluate-rag-run-evaluation-js.mdx';
+import EvaluateRagReferencePy from '/snippets/python/code-samples/evaluate-rag-reference-py.mdx';
+import EvaluateRagReferenceJs from '/snippets/python/code-samples/evaluate-rag-reference-js.mdx';
+
+Retrieval Augmented Generation (RAG) is a technique that enhances Large Language Models (LLMs) by providing them with relevant external knowledge. It has become one of the most widely used approaches for building LLM applications. To build a RAG application first, see [RAG with Deep Agents](/oss/python/deepagents/rag).
+
+This tutorial shows how to evaluate RAG applications with LangSmith:
+
+1. How to create test datasets
+2. How to run your RAG application on those datasets
+3. How to measure your application's performance using different evaluation metrics
+
+## Overview
+
+A typical RAG evaluation workflow has three steps:
+
+1. Create a dataset of questions and expected answers.
+2. Run the RAG application on those questions.
+3. Score results with [evaluators](/langsmith/evaluators) for answer relevance, answer accuracy, and retrieval quality.
+
+This tutorial builds and evaluates a bot that answers questions about a few of [Lilian Weng's](https://lilianweng.github.io/) blog posts.
+
+## Setup
+
+### Configure the environment
+
+Set environment variables:
+
+<CodeGroup>
+
+```python Python
+import os
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = "YOUR LANGSMITH API KEY"
+os.environ["OPENAI_API_KEY"] = "YOUR OPENAI API KEY"
+```
+
+```typescript TypeScript
+process.env.LANGSMITH_TRACING = "true";
+process.env.LANGSMITH_API_KEY = "YOUR LANGSMITH API KEY";
+process.env.OPENAI_API_KEY = "YOUR OPENAI API KEY";
+```
+
+</CodeGroup>
+
+Install dependencies:
+
+<CodeGroup>
+
+```bash Python
+pip install -U langsmith langchain[openai] langchain-text-splitters bs4 requests
+```
+
+```bash npm
+npm i langsmith langchain @langchain/classic @langchain/openai @langchain/textsplitters cheerio
+```
+
+```bash yarn
+yarn add langsmith langchain @langchain/classic @langchain/openai @langchain/textsplitters cheerio
+```
+
+```bash pnpm
+pnpm add langsmith langchain @langchain/classic @langchain/openai @langchain/textsplitters cheerio
+```
+
+</CodeGroup>
+
+### Build the application
+
+<Info>
+This tutorial uses LangChain, but the evaluation patterns work with any framework.
+</Info>
+
+Build a minimal RAG app with three stages:
+
+- **Indexing**: Chunk and index a few of Lilian Weng's blogs in a vector store.
+- **Retrieval**: Retrieve chunks for the user question.
+- **Generation**: Pass the question and retrieved documents to an LLM.
+
+#### Index documents
+
+Load the blog posts and index them:
+
+<CodeGroup>
+
+<EvaluateRagIndexingPy />
+
+<EvaluateRagIndexingJs />
+
+</CodeGroup>
+
+#### Generate answers
+
+Define the generative pipeline:
+
+<CodeGroup>
+
+<EvaluateRagGenerationPy />
+
+<EvaluateRagGenerationJs />
+
+</CodeGroup>
+
+## Create a dataset
+
+Now that you have your application, create a small dataset of example questions and reference answers to evaluate it. This example uses an example set of inputs and outputs:
+
+<CodeGroup>
+
+<EvaluateRagDatasetPy />
+
+<EvaluateRagDatasetJs />
+
+</CodeGroup>
+
+## Define evaluators
+
+RAG evaluators compare one artifact to another (response, input, retrieved docs, or reference answer):
+
+1. **[Correctness](#correctness-response-vs-reference-answer)** (response vs reference answer)
+   - **Goal**: Score how similar the RAG answer is to a ground-truth answer.
+   - **Mode**: Requires a reference answer in the dataset.
+   - **Evaluator**: LLM-as-judge for answer correctness.
+
+2. **[Relevance](#relevance-response-vs-input)** (response vs input)
+   - **Goal**: Score how well the response addresses the user question.
+   - **Mode**: No reference answer; compares the answer to the input.
+   - **Evaluator**: LLM-as-judge for relevance and helpfulness.
+
+3. **[Groundedness](#groundedness-response-vs-retrieved-docs)** (response vs retrieved docs)
+   - **Goal**: Score how well the response agrees with the retrieved context.
+   - **Mode**: No reference answer; compares the answer to retrieved documents.
+   - **Evaluator**: LLM-as-judge for faithfulness and hallucinations.
+
+4. **[Retrieval relevance](#retrieval-relevance-retrieved-docs-vs-input)** (retrieved docs vs input)
+   - **Goal**: Score how relevant the retrieved documents are to the query.
+   - **Mode**: No reference answer; compares the question to retrieved documents.
+   - **Evaluator**: LLM-as-judge for retrieval relevance.
+
+For more on these evaluator types, see [Evaluate RAG applications](/langsmith/evaluation-approaches#evaluate-rag-applications).
+
+![Rag eval overview](/langsmith/images/rag-eval-overview.png)
+
+### Correctness: Response vs reference answer
+
+Use an LLM-as-judge to compare the generated answer to the reference answer in the dataset:
+
+<CodeGroup>
+
+<EvaluateRagCorrectnessPy />
+
+<EvaluateRagCorrectnessJs />
+
+</CodeGroup>
+
+### Relevance: Response vs input
+
+Compare `inputs` and `outputs` without `reference_outputs`. You cannot score accuracy without a reference answer, but you can still score whether the model addressed the question:
+
+<CodeGroup>
+
+<EvaluateRagRelevancePy />
+
+<EvaluateRagRelevanceJs />
+
+</CodeGroup>
+
+### Groundedness: Response vs retrieved docs
+
+Another useful way to evaluate responses is to check whether the response is justified by (grounded in) the retrieved documents, without a reference answer:
+
+<CodeGroup>
+
+<EvaluateRagGroundednessPy />
+
+<EvaluateRagGroundednessJs />
+
+</CodeGroup>
+
+### Retrieval relevance: Retrieved docs vs input
+
+Use an LLM-as-judge to score whether the retrieved documents are relevant to the user question:
+
+<CodeGroup>
+
+<EvaluateRagRetrievalRelevancePy />
+
+<EvaluateRagRetrievalRelevanceJs />
+
+</CodeGroup>
+
+## Run the evaluation
+
+Run the evaluation with all of the evaluators:
+
+<CodeGroup>
+
+<EvaluateRagRunEvaluationPy />
+
+<EvaluateRagRunEvaluationJs />
+
+</CodeGroup>
+
+View an example of the results in [this LangSmith experiment](https://smith.langchain.com/public/302573e2-20bf-4f8c-bdad-e97c20f33f1b/d).
+
+## Reference code
+
+<Accordion title="Here's a consolidated script with all the above code:">
+    <CodeGroup>
+
+<EvaluateRagReferencePy />
+
+<EvaluateRagReferenceJs />
+
+    </CodeGroup>
+</Accordion>
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/evaluate-rag-tutorial.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
