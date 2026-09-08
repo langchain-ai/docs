@@ -1,0 +1,111 @@
+---
+title: Connect to MCP servers
+sidebarTitle: MCP connectors
+description: Add tools from remote MCP servers to Managed Deep Agents.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/javascript/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+An MCP connector adds tools from remote [Model Context Protocol (MCP)](/oss/javascript/deepagents/mcp) servers to a managed deep agent. Managed Deep Agents creates the MCP client, loads the tools, and adds them to the agent.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## Project structure
+
+Declare MCP servers in a module directly under `connectors/`:
+
+
+
+```text
+my-agent/
+  agent.ts
+  connectors/
+    mcp.ts
+```
+
+The module must export a named `connector`.
+
+
+## Add an MCP connector
+
+Use `connectors.mcp` to declare one or more remote servers:
+
+
+
+```ts connectors/mcp.ts
+import { connectors } from "managed-deepagents";
+
+export const connector = connectors.mcp({
+  mcpServers: {
+    langchainDocs: {
+      transport: "http",
+      url: "https://docs.langchain.com/mcp",
+    },
+  },
+});
+```
+
+
+Managed Deep Agents supports Streamable HTTP (`"http"`) and legacy SSE (`"sse"`) transports. Stdio MCP servers are not supported. Expose a stdio server over HTTP or implement its operation as an [authored tool](/langsmith/javascript/managed-deep-agents-tools).
+
+## Select tools
+
+By default, the connector exposes every tool from each server. To expose only selected tools, set an allowlist inside that server's configuration:
+
+
+
+```ts
+{
+  transport: "http",
+  url: "https://docs.langchain.com/mcp",
+  includeTools: ["search_docs_by_lang_chain"],
+}
+```
+
+To expose every tool except selected tools, replace `includeTools` with `excludeTools`.
+
+
+You can use both options together. The denylist applies after the allowlist, and the same tool cannot appear in both lists.
+
+Selection uses raw MCP tool names before Managed Deep Agents prefixes them. Tool names are prefixed with the server name by default to avoid collisions. For example, the `search_docs_by_lang_chain` tool from the `langchainDocs` server is exposed as `langchainDocs__search_docs_by_lang_chain`.
+
+## Configure connections
+
+Each server accepts the following options:
+
+| Option | Description |
+| --- | --- |
+| `transport` | Required. Use `http` for Streamable HTTP or `sse` for legacy SSE. |
+| `url` | Required. The remote MCP endpoint URL. |
+| `headers` | Static headers to send to the server, such as an authorization header. |
+| `include_tools` / `includeTools` | Raw MCP tool names to expose. |
+| `exclude_tools` / `excludeTools` | Raw MCP tool names to hide. |
+| `default_tool_timeout` / `defaultToolTimeout` | Timeout for each tool call, in seconds for Python and milliseconds for TypeScript. |
+| `automatic_sse_fallback` / `automaticSSEFallback` | For HTTP, allow the client to fall back to SSE. |
+| `reconnect` | For SSE, configure reconnection behavior. |
+
+The connector also accepts these options:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `prefix_tool_name_with_server_name` / `prefixToolNameWithServerName` | `true` | Prefix each tool with `{server}__`. |
+| `throw_on_load_error` / `throwOnLoadError` | `true` | Fail loading instead of starting with a partial tool set. |
+
+If a server requires credentials, read them from environment variables and pass them through `headers`. Keep local values in `.env`; Managed Deep Agents forwards eligible values as deployment secrets. Do not hard-code credentials in the connector declaration.
+
+## Distinguish connectors from other capabilities
+
+- **MCP connectors** add tools hosted by remote MCP servers.
+- **[Authored tools](/langsmith/javascript/managed-deep-agents-tools)** implement application logic in the project and are passed through the agent definition.
+- **[Channels](/langsmith/javascript/managed-deep-agents-channels)** receive external messages that start agent runs and deliver responses.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-mcp-connectors.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
