@@ -1,0 +1,47 @@
+
+// :snippet-start: threads-query-filter-status-after-go
+// :codegroup-tab: After
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/langchain-ai/langsmith-go"
+)
+
+func main() {
+	ctx := context.Background()
+	client := langsmith.NewClient()
+
+	sessions, err := client.Sessions.List(ctx, langsmith.SessionListParams{
+		Name:  langsmith.F("default"),
+		Limit: langsmith.F(int64(1)),
+	})
+	if err != nil {
+		panic(err.Error())
+	}
+	projectID := sessions.Items[0].ID
+
+	maxStart := time.Now().UTC()
+	minStart := maxStart.AddDate(0, -1, 0)
+
+	iter := client.Threads.QueryAutoPaging(ctx, langsmith.ThreadQueryParams{
+		ProjectID:    langsmith.F(projectID),
+		MinStartTime: langsmith.F(minStart),
+		MaxStartTime: langsmith.F(maxStart),
+		Filter:       langsmith.F(`eq(status, "error")`),
+	})
+	for iter.Next() {
+		thread := iter.Current()
+		fmt.Println(thread.ThreadID, thread.LastError)
+		// :remove-start:
+		break
+		// :remove-end:
+	}
+	if err := iter.Err(); err != nil {
+		panic(err.Error())
+	}
+}
+// :snippet-end:

@@ -1,0 +1,628 @@
+"""Tests for the markdown parser."""
+
+import pytest
+
+from pipeline.tools.parser import (
+    CodeBlock,
+    ConditionalBlock,
+    Document,
+    Heading,
+    Paragraph,
+    ParseError,
+    Parser,
+    to_mint,
+)
+
+
+def test_parse_simple_heading() -> None:
+    """Test parsing a simple heading."""
+    text = "# Hello World"
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    heading = doc.blocks[0]
+    assert isinstance(heading, Heading)
+    assert heading.level == 1
+    assert heading.value == "Hello World"
+    assert heading.start_line == 1
+    assert heading.limit_line == 2
+
+
+def test_parse_simple_paragraph() -> None:
+    """Test parsing a simple paragraph."""
+    text = "This is a simple paragraph."
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    paragraph = doc.blocks[0]
+    assert isinstance(paragraph, Paragraph)
+    assert paragraph.value == ["This is a simple paragraph."]
+    assert paragraph.start_line == 1
+    assert paragraph.limit_line == 2
+
+
+# This is a set of tests that verifies end-to-end functionality from parsing markdown
+# to converting it to Mintlify format.
+
+MARKDOWN1 = """\
+??? example "Example Title"
+    Foldable example
+"""
+
+EXPECTED_MARKDOWN = """\
+<Accordion title="Example Title">
+  Foldable example
+</Accordion>
+"""
+
+
+def test_example_admonition() -> None:
+    """Test the Mintlify printer."""
+    output = to_mint(MARKDOWN1)
+    assert output == EXPECTED_MARKDOWN
+
+
+EXAMPLE_ADMONITION_BLANK = """\
+??? example "Example Title"
+
+    Paragraph 1
+
+    Paragraph 2
+"""
+
+EXPECTED_ADMONITION_BLANK = """\
+<Accordion title="Example Title">
+  Paragraph 1
+  
+  Paragraph 2
+</Accordion>
+"""
+
+
+def test_example_admonition_with_blank_line() -> None:
+    """Test the Mintlify printer with a blank line after admonition."""
+    assert to_mint(EXAMPLE_ADMONITION_BLANK) == EXPECTED_ADMONITION_BLANK
+
+
+INPUT_FRONT_MATTER = """\
+---
+title: Example Document
+other_field: value
+---
+# Example Heading
+This is a simple document with front matter.
+"""
+
+# We convert the first heading to a Mintlify front matter block.
+EXPECTED_FRONT_MATTER = """\
+---
+title: Example Heading
+---
+
+This is a simple document with front matter.
+"""
+
+
+def test_front_matter_ignored_in_output() -> None:
+    """Test that front matter is ignored in Mintlify output."""
+    # Let's test the AST first.
+    assert to_mint(INPUT_FRONT_MATTER) == EXPECTED_FRONT_MATTER
+
+
+INPUT_WITH_TABS = """\
+=== "Python"
+    Content with tabs
+
+=== "javascript"
+
+    Other content with tabs
+"""
+
+EXPECTED_TABS = """\
+<Tabs>
+  <Tab title="Python">
+    Content with tabs
+  </Tab>
+  <Tab title="javascript">
+    Other content with tabs
+  </Tab>
+</Tabs>
+"""
+
+
+def test_tabs() -> None:
+    """Test parsing with tabs."""
+    assert to_mint(INPUT_WITH_TABS) == EXPECTED_TABS
+
+
+INPUT_WITH_CODE_BLOCK = """\
+```python
+print("Hello, World!")
+```
+"""
+
+EXPECTED_CODE_BLOCK = """\
+```python
+print("Hello, World!")
+```
+"""
+
+
+def test_code_block() -> None:
+    """Test parsing a code block."""
+    assert to_mint(INPUT_WITH_CODE_BLOCK) == EXPECTED_CODE_BLOCK
+
+
+INPUT_CODE_BLOCK_WITH_EXTRAS = """\
+```python hl_lines="1-2"
+print("Hello, World!")
+print("This is a test.")
+```
+"""
+
+EXPECTED_CODE_BLOCK_WITH_EXTRAS = """\
+```python hl_lines="1-2"
+print("Hello, World!")
+print("This is a test.")
+```
+"""
+
+
+def test_code_block_with_extras() -> None:
+    """Test parsing a code block with extra lines."""
+    assert to_mint(INPUT_CODE_BLOCK_WITH_EXTRAS) == EXPECTED_CODE_BLOCK_WITH_EXTRAS
+
+
+INPUT_WITH_UNORDERED_LIST = """\
+- Item 1
+- Item 2
+- Item 3
+"""
+
+EXPECTED_UNORDERED_LIST = """\
+* Item 1
+* Item 2
+* Item 3
+"""
+
+
+def test_unordered_list() -> None:
+    """Test parsing an unordered list."""
+    assert to_mint(INPUT_WITH_UNORDERED_LIST) == EXPECTED_UNORDERED_LIST
+
+
+INPUT_WITH_ORDERED_LIST = """\
+1. First item
+2. Second item
+3. Third item
+"""
+
+EXPECTED_ORDERED_LIST = """\
+1. First item
+2. Second item
+3. Third item
+"""
+
+
+def test_ordered_list() -> None:
+    """Test parsing an ordered list."""
+    assert to_mint(INPUT_WITH_ORDERED_LIST) == EXPECTED_ORDERED_LIST
+
+
+INPUT_WITH_BLOCKQUOTE = """\
+> Example Blockquote
+> More text in the blockquote.
+"""
+
+EXPECTED_BLOCKQUOTE = """\
+> Example Blockquote
+> More text in the blockquote.
+"""
+
+
+def test_blockquote() -> None:
+    """Test parsing a blockquote."""
+    assert to_mint(INPUT_WITH_BLOCKQUOTE) == EXPECTED_BLOCKQUOTE
+
+
+INPUT_WITH_HTML = """\
+<div>
+    <p>This is a paragraph inside a div.</p>
+</div>
+"""
+
+EXPECTED_HTML = """\
+<div>
+    <p>This is a paragraph inside a div.</p>
+</div>
+"""
+
+
+def test_html() -> None:
+    """Test parsing HTML content."""
+    assert to_mint(INPUT_WITH_HTML) == EXPECTED_HTML
+
+
+INPUT_CODE_BLOCK_IN_TAB = """\
+=== "Python"
+
+    ```python
+    def hello_world():
+        print("Hello, World!")
+    ```
+"""
+
+EXPECTED_CODE_BLOCK_IN_TAB = """\
+<Tabs>
+  <Tab title="Python">
+    ```python
+    def hello_world():
+        print("Hello, World!")
+    ```
+  </Tab>
+</Tabs>
+"""
+
+
+def test_code_block_in_tab() -> None:
+    """Test parsing a code block inside a tab."""
+    assert to_mint(INPUT_CODE_BLOCK_IN_TAB) == EXPECTED_CODE_BLOCK_IN_TAB
+
+
+INPUT_CODE_FENCE = """\
+```
+def example_function():
+    print("This is an example function.")
+```
+"""
+
+EXPECTED_CODE_FENCE = """\
+```
+def example_function():
+    print("This is an example function.")
+```
+"""
+
+
+def test_code_fence() -> None:
+    """Test parsing a code fence."""
+    assert to_mint(INPUT_CODE_FENCE) == EXPECTED_CODE_FENCE
+
+
+INPUT_CODE_BLOCK_WITH_BLANK_LINE = """\
+```python
+def foo():
+    x = 1
+
+    y = 2
+```
+"""
+
+
+def test_long_code_block() -> None:
+    """Test parsing a long code block."""
+    ast = Parser(INPUT_CODE_BLOCK_WITH_BLANK_LINE).parse()
+    first_block = ast.blocks[0]
+    assert isinstance(first_block, CodeBlock)
+    assert first_block.language == "python"
+    assert first_block.content == "def foo():\n    x = 1\n\n    y = 2"
+
+
+NOTE_WITH_TITLE = """\
+!!! info "Requirements"
+
+    content
+
+"""
+
+EXPECTED_NOTE_WITH_TITLE = """\
+<Info>
+  **Requirements**
+  content
+</Info>
+"""
+
+
+def test_note_with_title() -> None:
+    """Test parsing a note with a title."""
+    assert to_mint(NOTE_WITH_TITLE) == EXPECTED_NOTE_WITH_TITLE
+
+
+INPUT_TABLE = """\
+| Property | Description                           |
+| -------- | ------------------------------------- |
+| Name     | Full name of user                     |
+| Age      | Reported age                          |
+| Joined   | Whether the user joined the community |
+"""
+
+
+def test_table() -> None:
+    """Test parsing a table."""
+    assert to_mint(INPUT_TABLE) == INPUT_TABLE
+
+
+INDENTED_BLOCK = """\
+This block has indentation:
+
+    {
+        "key": "value"
+    }
+"""
+
+
+def test_parse_conditional_block_python() -> None:
+    """Test parsing a Python conditional block."""
+    text = """\
+:::python
+print("Hello, World!")
+:::"""
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    block = doc.blocks[0]
+    assert isinstance(block, ConditionalBlock)
+    assert block.language == "python"
+    assert block.start_line == 1
+    assert block.limit_line == 4
+    assert len(block.blocks) == 1
+
+    inner_block = block.blocks[0]
+    assert isinstance(inner_block, Paragraph)
+    assert inner_block.value == ['print("Hello, World!")']
+
+
+def test_parse_conditional_block_js() -> None:
+    """Test parsing a JavaScript conditional block."""
+    text = """\
+:::js
+console.log("Hello, World!");
+:::"""
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    block = doc.blocks[0]
+    assert isinstance(block, ConditionalBlock)
+    assert block.language == "js"
+    assert len(block.blocks) == 1
+
+    inner_block = block.blocks[0]
+    assert isinstance(inner_block, Paragraph)
+    assert inner_block.value == ['console.log("Hello, World!");']
+
+
+def test_parse_conditional_block_with_multiple_paragraphs() -> None:
+    """Test parsing a conditional block with multiple paragraphs."""
+    text = """\
+:::python
+print("First line")
+
+print("Second line")
+:::"""
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    block = doc.blocks[0]
+    assert isinstance(block, ConditionalBlock)
+    assert block.language == "python"
+    assert len(block.blocks) == 2
+
+    first_paragraph = block.blocks[0]
+    assert isinstance(first_paragraph, Paragraph)
+    assert first_paragraph.value == ['print("First line")']
+
+    second_paragraph = block.blocks[1]
+    assert isinstance(second_paragraph, Paragraph)
+    assert second_paragraph.value == ['print("Second line")']
+
+
+def test_parse_indented_conditional_block() -> None:
+    """Test parsing an indented conditional block."""
+    text = """\
+    :::js
+    console.log("Indented");
+    :::"""
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    block = doc.blocks[0]
+    assert isinstance(block, ConditionalBlock)
+    assert block.language == "js"
+    assert block.indent == 4
+    assert len(block.blocks) == 1
+
+
+INPUT_CONDITIONAL_PYTHON = """\
+:::python
+```python
+def hello():
+    print("Hello from Python!")
+
+hello()
+```
+:::"""
+
+
+def test_conditional_block_python_to_mint() -> None:
+    """Test converting a Python conditional block to Mintlify format."""
+    assert to_mint(INPUT_CONDITIONAL_PYTHON) == INPUT_CONDITIONAL_PYTHON + "\n"
+
+
+INPUT_CONDITIONAL_JS = """\
+:::js
+```js
+function hello() {
+    console.log("Hello from JavaScript!");
+}
+
+hello();
+```
+:::"""
+
+
+def test_conditional_block_js_to_mint() -> None:
+    """Test converting a JavaScript conditional block to Mintlify format."""
+    assert to_mint(INPUT_CONDITIONAL_JS) == INPUT_CONDITIONAL_JS + "\n"
+
+
+INPUT_INDENTED_CONDITIONAL = """\
+hello
+
+=== "Tab1"
+
+    :::python
+    ```python
+    print("Indented conditional block")
+    ```
+    :::
+"""
+
+EXPECTED_INDENTED_CONDITIONAL = """\
+hello
+<Tabs>
+  <Tab title="Tab1">
+    :::python
+    ```python
+    print("Indented conditional block")
+    ```
+    :::
+  </Tab>
+</Tabs>
+"""
+
+
+def test_indented_conditional_block_to_mint() -> None:
+    """Test converting an indented conditional block to Mintlify format."""
+    assert to_mint(INPUT_INDENTED_CONDITIONAL) == EXPECTED_INDENTED_CONDITIONAL
+
+
+def test_conditional_block_with_whitespace_before_closing_tag() -> None:
+    """Test parsing conditional block with extra whitespace before closing :::."""
+    # This test reproduces the infinite loop bug where whitespace before
+    # the closing ::: tag causes the parser to get stuck
+    text = """\
+:::python
+some text here
+1. blah
+2. moove
+:::"""
+    parser = Parser(text)
+    doc = parser.parse()
+
+    assert isinstance(doc, Document)
+    assert len(doc.blocks) == 1
+
+    block = doc.blocks[0]
+    assert isinstance(block, ConditionalBlock)
+    assert block.language == "python"
+    assert len(block.blocks) == 2  # "some text here", ordered list with 2 items
+
+
+def test_admonition_with_conditional_block_close() -> None:
+    """Test admonition with orphaned conditional block closing tag raises ParseError."""
+    text = """\
+!!! note "Title"
+    Some content here
+    :::"""
+    parser = Parser(text)
+
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+
+    assert "conditional block close" in str(exc_info.value)
+    assert exc_info.value.line == 3
+    assert ":::" in str(exc_info.value)
+
+
+def test_tab_block_with_conditional_block_close() -> None:
+    """Test tab block with orphaned conditional block closing tag raises ParseError."""
+    text = """\
+=== "Tab Title"
+    Some tab content
+    :::"""
+    parser = Parser(text)
+
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+
+    assert "conditional block close" in str(exc_info.value)
+    assert exc_info.value.line == 3
+    assert ":::" in str(exc_info.value)
+
+
+def test_admonition_with_fence_token() -> None:
+    """Test admonition containing orphaned fence token raises ParseError."""
+    text = """\
+!!! warning "Important"
+    Some warning text
+    ```"""
+    parser = Parser(text)
+
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+
+    assert "fence" in str(exc_info.value)
+    assert exc_info.value.line == 3
+    assert "```" in str(exc_info.value)
+
+
+def test_tab_block_with_fence_token() -> None:
+    """Test tab block containing orphaned fence token raises ParseError."""
+    text = """\
+=== "Code Tab"
+    Here's some code:
+    ```"""
+    parser = Parser(text)
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+    assert "fence" in str(exc_info.value)
+
+
+def test_nested_list_with_conditional_close() -> None:
+    """Test nested list with orphaned conditional block close raises ParseError."""
+    text = """\
+1. First item
+   - Nested item
+   :::"""
+    parser = Parser(text)
+
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+
+    assert "conditional block close" in str(exc_info.value)
+    assert exc_info.value.line == 3
+    assert ":::" in str(exc_info.value)
+
+
+def test_admonition_with_front_matter_token() -> None:
+    """Test admonition containing orphaned front matter token raises ParseError."""
+    text = """\
+!!! info "Information"
+    Some info here
+    ---"""
+    parser = Parser(text)
+
+    with pytest.raises(ParseError) as exc_info:
+        parser.parse()
+
+    assert "front matter" in str(exc_info.value)
+    assert exc_info.value.line == 3
+    assert "---" in str(exc_info.value)

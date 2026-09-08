@@ -1,0 +1,140 @@
+///usr/bin/env jbang "$0" "$@" ; exit $?
+//JAVA 21
+//KOTLIN 2.0.21
+//DEPS com.langchain.smith:langsmith-java:0.1.0-alpha.25
+//DEPS com.openai:openai-java:4.30.0
+
+// :snippet-start: threads-chat-pipeline-kt
+// :codegroup-tab: Kotlin
+// :codegroup-fence-mods: expandable wrap
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient
+import com.langchain.smith.tracing.TraceConfig
+import com.langchain.smith.tracing.traceable
+import com.langchain.smith.wrappers.openai.wrapOpenAI
+import com.openai.client.okhttp.OpenAIOkHttpClient
+import com.openai.models.ChatModel
+import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam
+import com.openai.models.chat.completions.ChatCompletionCreateParams
+import com.openai.models.chat.completions.ChatCompletionMessageParam
+import com.openai.models.chat.completions.ChatCompletionUserMessageParam
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+
+val threadId = "01990f3e-7f97-74c5-a9b6-8d3f7e8e2f11"
+val langsmith by lazy { LangsmithOkHttpClient.fromEnv() }
+val executor by lazy { Executors.newSingleThreadExecutor() }
+val threadMetadata by lazy { mapOf("thread_id" to threadId) }
+val openai by lazy {
+    wrapOpenAI(
+        OpenAIOkHttpClient.fromEnv(),
+        TraceConfig.builder()
+            .client(langsmith)
+            .executor(executor)
+            .metadata(threadMetadata)
+            .build(),
+    )
+}
+val threadHistory = mutableListOf<ChatCompletionMessageParam>()
+
+data class ChatRequest(
+    val messages: List<ChatCompletionMessageParam>,
+    val getChatHistory: Boolean = false,
+)
+
+val chatPipeline by lazy {
+    traceable(
+        { request: ChatRequest ->
+            val allMessages =
+                if (request.getChatHistory) {
+                    threadHistory + request.messages
+                } else {
+                    request.messages
+                }
+
+            val chatCompletion =
+                openai.chat().completions().create(
+                    ChatCompletionCreateParams.builder()
+                        .model(ChatModel.GPT_5_CHAT_LATEST)
+                        .messages(allMessages)
+                        .build(),
+                )
+
+            val content = chatCompletion.choices()[0].message().content().orElse("")
+            val fullConversation =
+                allMessages +
+                    ChatCompletionMessageParam.ofAssistant(
+                        ChatCompletionAssistantMessageParam.builder().content(content).build(),
+                    )
+            threadHistory.clear()
+            threadHistory.addAll(fullConversation)
+
+            mapOf("messages" to fullConversation)
+        },
+        TraceConfig.builder()
+            .name("Chat Bot")
+            .client(langsmith)
+            .executor(executor)
+            .metadata(threadMetadata)
+            .build(),
+    )
+}
+
+fun main() {
+    // :remove-start:
+    if (System.getenv("LANGSMITH_API_KEY").isNullOrBlank()
+        || System.getenv("OPENAI_API_KEY").isNullOrBlank()
+    ) {
+        println("[threads-chat-pipeline] Skipping (LANGSMITH_API_KEY and OPENAI_API_KEY required).")
+        return
+    }
+    // :remove-end:
+    try {
+        val messages =
+            listOf(
+                ChatCompletionMessageParam.ofUser(
+                    ChatCompletionUserMessageParam.builder()
+                        .content("Hi, my name is Sally")
+                        .build(),
+                ),
+            )
+        chatPipeline(ChatRequest(messages))
+    } finally {
+        executor.shutdown()
+        check(executor.awaitTermination(10, TimeUnit.SECONDS)) {
+            "Timed out waiting for LangSmith traces to submit"
+        }
+    }
+}
+// :snippet-end:
+
+fun continueWhatIsMyName() {
+    // :snippet-start: threads-continue-name-kt
+    // :codegroup-tab: Kotlin
+    val messages =
+        listOf(
+            ChatCompletionMessageParam.ofUser(
+                ChatCompletionUserMessageParam.builder()
+                    .content("What is my name")
+                    .build(),
+            ),
+        )
+
+    chatPipeline(ChatRequest(messages, getChatHistory = true))
+    // :snippet-end:
+}
+
+fun continueFirstMessage() {
+    // :snippet-start: threads-continue-first-message-kt
+    // :codegroup-tab: Kotlin
+    val messages =
+        listOf(
+            ChatCompletionMessageParam.ofUser(
+                ChatCompletionUserMessageParam.builder()
+                    .content("What was the first message I sent you?")
+                    .build(),
+            ),
+        )
+
+    chatPipeline(ChatRequest(messages, getChatHistory = true))
+    // :snippet-end:
+}

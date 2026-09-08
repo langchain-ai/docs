@@ -1,0 +1,511 @@
+---
+title: Use time-travel
+sidebarTitle: Time travel
+description: Replay past executions and fork to explore alternative paths in LangGraph
+---
+
+## Overview
+
+LangGraph supports time travel through [checkpoints](/oss/langgraph/checkpointers#checkpoints):
+
+- **[Replay](#replay)**: Retry from a prior checkpoint.
+- **[Fork](#fork)**: Branch from a prior checkpoint with modified state to explore an alternative path.
+
+Both work by resuming from a prior checkpoint. Nodes before the checkpoint are not re-executed (results are already saved). Nodes after the checkpoint re-execute, including any LLM calls, API requests, and [interrupts](/oss/langgraph/interrupts) (which may produce different results).
+
+## Replay
+
+Invoke the graph with a prior checkpoint's config to replay from that point.
+
+<Warning>
+
+Replay re-executes nodes—it doesn't just read from cache. LLM calls, API requests, and [interrupts](/oss/langgraph/interrupts) fire again and may return different results. Replaying from the final checkpoint (no `next` nodes) is a no-op.
+
+</Warning>
+
+![Replay](/oss/images/re_play.png)
+
+:::python
+Use @[`get_state_history`] to find the checkpoint you want to replay from, then call @[`invoke`][CompiledStateGraph.invoke] with that checkpoint's config:
+
+```python
+from langgraph.graph import StateGraph, START
+from langgraph.checkpoint.memory import InMemorySaver
+from typing_extensions import TypedDict, NotRequired
+from langchain_core.utils.uuid import uuid7
+
+class State(TypedDict):
+    topic: NotRequired[str]
+    joke: NotRequired[str]
+
+
+def generate_topic(state: State):
+    return {"topic": "socks in the dryer"}
+
+
+def write_joke(state: State):
+    return {"joke": f"Why do {state['topic']} disappear? They elope!"}
+
+
+checkpointer = InMemorySaver()
+graph = (
+    StateGraph(State)
+    .add_node("generate_topic", generate_topic)
+    .add_node("write_joke", write_joke)
+    .add_edge(START, "generate_topic")
+    .add_edge("generate_topic", "write_joke")
+    .compile(checkpointer=checkpointer)
+)
+
+# Step 1: Run the graph
+config = {"configurable": {"thread_id": str(uuid7())}}
+result = graph.invoke({}, config)
+
+# Step 2: Find a checkpoint to replay from
+history = list(graph.get_state_history(config))
+# History is in reverse chronological order
+for state in history:
+    print(f"next={state.next}, checkpoint_id={state.config['configurable']['checkpoint_id']}")
+
+# Step 3: Replay from a specific checkpoint
+# Find the checkpoint before write_joke
+before_joke = next(s for s in history if s.next == ("write_joke",))
+replay_result = graph.invoke(None, before_joke.config)
+# write_joke re-executes (runs again), generate_topic does not
+```
+:::
+
+:::js
+Use @[`getStateHistory`] to find the checkpoint you want to replay from, then call @[`invoke`][CompiledStateGraph.invoke] with that checkpoint's config:
+
+```typescript
+import { v7 as uuid7 } from "uuid";
+import { StateGraph, MemorySaver, START } from "@langchain/langgraph";
+
+const StateAnnotation = Annotation.Root({
+  topic: Annotation<string>(),
+  joke: Annotation<string>(),
+});
+
+function generateTopic(state: typeof StateAnnotation.State) {
+  return { topic: "socks in the dryer" };
+}
+
+function writeJoke(state: typeof StateAnnotation.State) {
+  return { joke: `Why do ${state.topic} disappear? They elope!` };
+}
+
+const checkpointer = new MemorySaver();
+const graph = new StateGraph(StateAnnotation)
+  .addNode("generateTopic", generateTopic)
+  .addNode("writeJoke", writeJoke)
+  .addEdge(START, "generateTopic")
+  .addEdge("generateTopic", "writeJoke")
+  .compile({ checkpointer });
+
+// Step 1: Run the graph
+const config = { configurable: { thread_id: uuid7() } };
+const result = await graph.invoke({}, config);
+
+// Step 2: Find a checkpoint to replay from
+const states = [];
+for await (const state of graph.getStateHistory(config)) {
+  states.push(state);
+}
+
+// Step 3: Replay from a specific checkpoint
+const beforeJoke = states.find((s) => s.next.includes("writeJoke"));
+const replayResult = await graph.invoke(null, beforeJoke.config);
+// writeJoke re-executes (runs again), generateTopic does not
+```
+:::
+
+## Fork
+
+Fork creates a new branch from a past checkpoint with modified state. Call @[`update_state`] on a prior checkpoint to create the fork, then @[`invoke`][CompiledStateGraph.invoke] with `None` to continue execution.
+
+![Fork](/oss/images/checkpoints_full_story.jpg)
+
+<Warning>
+
+`update_state` does **not** roll back a thread. It creates a new checkpoint that branches from the specified point. The original execution history remains intact.
+
+</Warning>
+
+:::python
+```python
+# Find checkpoint before write_joke
+history = list(graph.get_state_history(config))
+before_joke = next(s for s in history if s.next == ("write_joke",))
+
+# Fork: update state to change the topic
+fork_config = graph.update_state(
+    before_joke.config,
+    values={"topic": "chickens"},
+)
+
+# Resume from the fork — write_joke re-executes with the new topic
+fork_result = graph.invoke(None, fork_config)
+print(fork_result["joke"])  # A joke about chickens, not socks
+```
+:::
+
+:::js
+```typescript
+// Find checkpoint before writeJoke
+const states = [];
+for await (const state of graph.getStateHistory(config)) {
+  states.push(state);
+}
+const beforeJoke = states.find((s) => s.next.includes("writeJoke"));
+
+// Fork: update state to change the topic
+const forkConfig = await graph.updateState(
+  beforeJoke.config,
+  { topic: "chickens" },
+);
+
+// Resume from the fork — writeJoke re-executes with the new topic
+const forkResult = await graph.invoke(null, forkConfig);
+console.log(forkResult.joke); // A joke about chickens, not socks
+```
+:::
+
+### From a specific node
+
+When you call @[`update_state`], values are applied using the specified node's writers (including [reducers](/oss/langgraph/graph-api#reducers)). The checkpoint records that node as having produced the update, and execution resumes from that node's successors.
+
+By default, LangGraph infers `as_node` from the checkpoint's version history. When forking from a specific checkpoint, this inference is almost always correct.
+
+Specify `as_node` explicitly when:
+
+- **Parallel branches**: Multiple nodes updated state in the same step, and LangGraph can't determine which was last (`InvalidUpdateError`).
+- **No execution history**: Setting up state on a fresh thread (common in [testing](/oss/langgraph/test)).
+- **Skipping nodes**: Set `as_node` to a later node to make the graph think that node already ran.
+
+:::python
+```python
+# graph: generate_topic -> write_joke
+
+# Treat this update as if generate_topic produced it.
+# Execution resumes at write_joke (the successor of generate_topic).
+fork_config = graph.update_state(
+    before_joke.config,
+    values={"topic": "chickens"},
+    as_node="generate_topic",
+)
+```
+:::
+
+:::js
+```typescript
+// graph: generateTopic -> writeJoke
+
+// Treat this update as if generateTopic produced it.
+// Execution resumes at writeJoke (the successor of generateTopic).
+const forkConfig = await graph.updateState(
+  beforeJoke.config,
+  { topic: "chickens" },
+  { asNode: "generateTopic" },
+);
+```
+:::
+
+## Interrupts
+
+If your graph uses @[`interrupt`] for [human-in-the-loop](/oss/langgraph/interrupts) workflows, interrupts are always re-triggered during time travel. The node containing the interrupt re-executes, and `interrupt()` pauses for a new `Command(resume=...)`.
+
+:::python
+```python
+from langgraph.types import interrupt, Command
+
+class State(TypedDict):
+    value: list[str]
+
+def ask_human(state: State):
+    answer = interrupt("What is your name?")
+    return {"value": [f"Hello, {answer}!"]}
+
+def final_step(state: State):
+    return {"value": ["Done"]}
+
+graph = (
+    StateGraph(State)
+    .add_node("ask_human", ask_human)
+    .add_node("final_step", final_step)
+    .add_edge(START, "ask_human")
+    .add_edge("ask_human", "final_step")
+    .compile(checkpointer=InMemorySaver())
+)
+
+config = {"configurable": {"thread_id": "1"}}
+
+# First run: hits interrupt
+graph.invoke({"value": []}, config)
+# Resume with answer
+graph.invoke(Command(resume="Alice"), config)
+
+# Replay from before ask_human
+history = list(graph.get_state_history(config))
+before_ask = [s for s in history if s.next == ("ask_human",)][-1]
+
+replay_result = graph.invoke(None, before_ask.config)
+# Pauses at interrupt — waiting for new Command(resume=...)
+
+# Fork from before ask_human
+fork_config = graph.update_state(before_ask.config, {"value": ["forked"]})
+fork_result = graph.invoke(None, fork_config)
+# Pauses at interrupt — waiting for new Command(resume=...)
+
+# Resume the forked interrupt with a different answer
+graph.invoke(Command(resume="Bob"), fork_config)
+# Result: {"value": ["forked", "Hello, Bob!", "Done"]}
+```
+:::
+
+:::js
+```typescript
+import { interrupt, Command } from "@langchain/langgraph";
+
+function askHuman(state: { value: string[] }) {
+  const answer = interrupt("What is your name?");
+  return { value: [`Hello, ${answer}!`] };
+}
+
+function finalStep(state: { value: string[] }) {
+  return { value: ["Done"] };
+}
+
+// ... build graph with checkpointer ...
+
+// First run: hits interrupt
+await graph.invoke({ value: [] }, config);
+// Resume with answer
+await graph.invoke(new Command({ resume: "Alice" }), config);
+
+// Replay from before askHuman
+const states = [];
+for await (const state of graph.getStateHistory(config)) {
+  states.push(state);
+}
+const beforeAsk = states.filter((s) => s.next.includes("askHuman")).pop();
+
+const replayResult = await graph.invoke(null, beforeAsk.config);
+// Pauses at interrupt — waiting for new Command({ resume: ... })
+
+// Fork from before askHuman
+const forkConfig = await graph.updateState(beforeAsk.config, { value: ["forked"] });
+const forkResult = await graph.invoke(null, forkConfig);
+// Pauses at interrupt — waiting for new Command({ resume: ... })
+
+// Resume the forked interrupt with a different answer
+await graph.invoke(new Command({ resume: "Bob" }), forkConfig);
+// Result: { value: ["forked", "Hello, Bob!", "Done"] }
+```
+:::
+
+### Multiple interrupts
+
+If your graph collects input at several points (for example, a multi-step form), you can fork from between the interrupts to change a later answer without re-asking earlier questions.
+
+:::python
+```python
+def ask_name(state):
+    name = interrupt("What is your name?")
+    return {"value": [f"name:{name}"]}
+
+def ask_age(state):
+    age = interrupt("How old are you?")
+    return {"value": [f"age:{age}"]}
+
+# Graph: ask_name -> ask_age -> final
+# After completing both interrupts:
+
+# Fork from BETWEEN the two interrupts (after ask_name, before ask_age)
+history = list(graph.get_state_history(config))
+between = [s for s in history if s.next == ("ask_age",)][-1]
+
+fork_config = graph.update_state(between.config, {"value": ["modified"]})
+result = graph.invoke(None, fork_config)
+# ask_name result preserved ("name:Alice")
+# ask_age pauses at interrupt — waiting for new answer
+```
+:::
+
+:::js
+```typescript
+// Fork from BETWEEN the two interrupts (after askName, before askAge)
+const states = [];
+for await (const state of graph.getStateHistory(config)) {
+  states.push(state);
+}
+const between = states.filter((s) => s.next.includes("askAge")).pop();
+
+const forkConfig = await graph.updateState(between.config, { value: ["modified"] });
+const result = await graph.invoke(null, forkConfig);
+// askName result preserved ("name:Alice")
+// askAge pauses at interrupt — waiting for new answer
+```
+:::
+
+## Subgraphs
+
+Time travel with [subgraphs](/oss/langgraph/use-subgraphs) depends on whether the subgraph has its own checkpointer. This determines the granularity of checkpoints you can time travel from.
+
+<Tabs>
+<Tab title="Inherited checkpointer (default)">
+
+By default, a subgraph inherits the parent's checkpointer. The parent treats the entire subgraph as a **single super-step** — there is only one parent-level checkpoint for the whole subgraph execution. Time traveling from before the subgraph re-executes it from scratch.
+
+You cannot time travel to a point *between* nodes in a default subgraph — you can only time travel from the parent level.
+
+:::python
+```python
+# Subgraph without its own checkpointer (default)
+subgraph = (
+    StateGraph(State)
+    .add_node("step_a", step_a)       # Has interrupt()
+    .add_node("step_b", step_b)       # Has interrupt()
+    .add_edge(START, "step_a")
+    .add_edge("step_a", "step_b")
+    .compile()  # No checkpointer — inherits from parent
+)
+
+graph = (
+    StateGraph(State)
+    .add_node("subgraph_node", subgraph)
+    .add_edge(START, "subgraph_node")
+    .compile(checkpointer=InMemorySaver())
+)
+
+config = {"configurable": {"thread_id": "1"}}
+
+# Complete both interrupts
+graph.invoke({"value": []}, config)            # Hits step_a interrupt
+graph.invoke(Command(resume="Alice"), config)  # Hits step_b interrupt
+graph.invoke(Command(resume="30"), config)     # Completes
+
+# Time travel from before the subgraph
+history = list(graph.get_state_history(config))
+before_sub = [s for s in history if s.next == ("subgraph_node",)][-1]
+
+fork_config = graph.update_state(before_sub.config, {"value": ["forked"]})
+result = graph.invoke(None, fork_config)
+# The entire subgraph re-executes from scratch
+# You cannot time travel to a point between step_a and step_b
+```
+:::
+
+:::js
+```typescript
+// Subgraph without its own checkpointer (default)
+const subgraph = new StateGraph(StateAnnotation)
+  .addNode("stepA", stepA)       // Has interrupt()
+  .addNode("stepB", stepB)       // Has interrupt()
+  .addEdge(START, "stepA")
+  .addEdge("stepA", "stepB")
+  .compile();  // No checkpointer — inherits from parent
+
+const graph = new StateGraph(StateAnnotation)
+  .addNode("subgraphNode", subgraph)
+  .addEdge(START, "subgraphNode")
+  .compile({ checkpointer });
+
+// Complete both interrupts
+await graph.invoke({ value: [] }, config);
+await graph.invoke(new Command({ resume: "Alice" }), config);
+await graph.invoke(new Command({ resume: "30" }), config);
+
+// Time travel from before the subgraph
+const states = [];
+for await (const state of graph.getStateHistory(config)) {
+  states.push(state);
+}
+const beforeSub = states.filter((s) => s.next.includes("subgraphNode")).pop();
+
+const forkConfig = await graph.updateState(beforeSub.config, { value: ["forked"] });
+const result = await graph.invoke(null, forkConfig);
+// The entire subgraph re-executes from scratch
+// You cannot time travel to a point between stepA and stepB
+```
+:::
+
+</Tab>
+<Tab title="Subgraph checkpointer">
+
+Set `checkpointer=True` on the subgraph to give it its own checkpoint history. This creates checkpoints at each step **within** the subgraph, allowing you to time travel from a specific point inside it — for example, between two interrupts.
+
+Use @[`get_state`] with `subgraphs=True` to access the subgraph's own checkpoint config, then fork from it:
+
+:::python
+```python
+# Subgraph with its own checkpointer
+subgraph = (
+    StateGraph(State)
+    .add_node("step_a", step_a)       # Has interrupt()
+    .add_node("step_b", step_b)       # Has interrupt()
+    .add_edge(START, "step_a")
+    .add_edge("step_a", "step_b")
+    .compile(checkpointer=True)  # Own checkpoint history
+)
+
+graph = (
+    StateGraph(State)
+    .add_node("subgraph_node", subgraph)
+    .add_edge(START, "subgraph_node")
+    .compile(checkpointer=InMemorySaver())
+)
+
+config = {"configurable": {"thread_id": "1"}}
+
+# Run until step_a interrupt
+graph.invoke({"value": []}, config)
+
+# Resume step_a -> hits step_b interrupt
+graph.invoke(Command(resume="Alice"), config)
+
+# Get the subgraph's own checkpoint (between step_a and step_b)
+parent_state = graph.get_state(config, subgraphs=True)
+sub_config = parent_state.tasks[0].state.config
+
+# Fork from the subgraph checkpoint
+fork_config = graph.update_state(sub_config, {"value": ["forked"]})
+result = graph.invoke(None, fork_config)
+# step_b re-executes, step_a's result is preserved
+```
+:::
+
+:::js
+```typescript
+// Subgraph with its own checkpointer
+const subgraph = new StateGraph(StateAnnotation)
+  .addNode("stepA", stepA)       // Has interrupt()
+  .addNode("stepB", stepB)       // Has interrupt()
+  .addEdge(START, "stepA")
+  .addEdge("stepA", "stepB")
+  .compile({ checkpointer: true });  // Own checkpoint history
+
+const graph = new StateGraph(StateAnnotation)
+  .addNode("subgraphNode", subgraph)
+  .addEdge(START, "subgraphNode")
+  .compile({ checkpointer });
+
+// Run until stepA interrupt, then resume -> hits stepB interrupt
+await graph.invoke({ value: [] }, config);
+await graph.invoke(new Command({ resume: "Alice" }), config);
+
+// Get the subgraph's own checkpoint (between stepA and stepB)
+const parentState = await graph.getState(config, { subgraphs: true });
+const subConfig = parentState.tasks[0].state.config;
+
+// Fork from the subgraph checkpoint
+const forkConfig = await graph.updateState(subConfig, { value: ["forked"] });
+const result = await graph.invoke(null, forkConfig);
+// stepB re-executes, stepA's result is preserved
+```
+:::
+
+</Tab>
+</Tabs>
+
+See [subgraph persistence](/oss/langgraph/use-subgraphs#subgraph-persistence) for more on configuring subgraph checkpointers.

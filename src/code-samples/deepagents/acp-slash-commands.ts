@@ -1,0 +1,18 @@
+// :snippet-start: acp-slash-commands-js
+import { DeepAgentsServer } from "deepagents-acp";
+
+const server = new DeepAgentsServer({
+  agents: {
+    name: "my-agent",
+    commands: [
+      { name: "test", description: "Run the project's test suite" },
+      { name: "lint", description: "Run linter and fix issues" },
+      {
+        name: "deploy",
+        description: "Deploy to staging",
+        input: { hint: "environment (staging or production)" },
+      },
+    ],
+  },
+});
+// :snippet-end:

@@ -1,0 +1,35 @@
+async function seedSandbox(_sandbox: LangSmithSandbox) {
+    // See File transfers in Going to production for seeding patterns.
+  }
+
+// :snippet-start: frontend-sandbox-utils-js
+// src/api/utils.ts
+import { Client } from "@langchain/langgraph-sdk";
+import { LangSmithSandbox } from "deepagents";
+import { SandboxClient } from "langsmith/sandbox";
+
+export async function getOrCreateSandboxForThread(threadId: string) {
+  const client = new Client({ apiUrl: "http://localhost:2024" });
+  const thread = await client.threads.get(threadId);
+  const sandboxId = thread.metadata?.sandbox_id;
+
+  if (sandboxId) {
+    const existing = await new SandboxClient().getSandbox(sandboxId);
+    if (existing.status === "ready") {
+      return new LangSmithSandbox({ sandbox: existing });
+    }
+  }
+
+  const sandbox = await LangSmithSandbox.create({ templateName: "my-template" });
+  await seedSandbox(sandbox);
+  await client.threads.update(threadId, { metadata: { sandbox_id: sandbox.id } });
+  return sandbox;
+}
+// :snippet-end:
+
+// :remove-start:
+if (typeof getOrCreateSandboxForThread !== "function") {
+  throw new Error("expected getOrCreateSandboxForThread export");
+}
+console.log("✓ frontend-sandbox-utils-js validated");
+// :remove-end:

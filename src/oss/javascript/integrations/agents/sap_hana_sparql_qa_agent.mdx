@@ -1,0 +1,343 @@
+---
+title: Question Answering with HanaSparqlQAAgent
+description: Integrate with the HanaSparqlQAAgent type using LangChain JavaScript.
+integration:
+  name: HanaSparqlQAAgent
+  npm: '@sap/hana-langchain'
+---
+
+## Setup and Installation
+
+To use this feature, install the `@sap/hana-langchain` package and its peer dependencies:
+
+```bash
+npm install @sap/hana-langchain @langchain/core@latest @langchain/classic@latest langchain@latest
+```
+
+`HanaSparqlQAAgent` is an agent-based approach for answering questions over RDF data stored in SAP HANA Cloud. Unlike the chain-based approach, the agent can:
+
+1. **Dynamically retrieve the ontology** using a dedicated tool
+2. **Generate and execute SPARQL queries** iteratively
+3. **Self-correct** if a query fails or returns unexpected results
+4. **Reason step-by-step** about complex questions
+
+## Initialization
+
+You need:
+
+- An **LLM** to power the agent's reasoning
+- A **`HanaRdfGraph`** (with connection, `graphUri`, and ontology)
+
+Follow the steps here [HanaRdfGraph](/oss/integrations/graphs/sap_hana_rdf_graph) to know more about creating a `HanaRdfGraph` instance.
+
+Import the `HanaSparqlQAAgent`
+
+```typescript
+import { HanaSparqlQAAgent, HanaSparqlQAAgentOptions } from "@sap/hana-langchain";
+const agentConfig : HanaSparqlQAAgentOptions = {
+  graph: graph
+};
+const agent = HanaSparqlQAAgent.createAgent(llm, agentConfig);
+```
+
+## Agent Overview
+
+The agent uses tools iteratively to:
+1. First retrieve the ontology to understand the data structure
+2. Generate appropriate SPARQL queries based on the schema
+3. Execute queries and interpret results
+4. Formulate natural language answers
+
+### Defaults
+
+- **Tools**:
+  - `retrieveOntology` - Retrieves the RDF ontology/schema from the graph in Turtle format
+  - `executeSparql` - Executes SPARQL queries against the HANA RDF graph
+- **System Prompt**: A default system prompt is provided with instructions for SPARQL generation and tool usage.
+- **Middleware**: `ModelRetryMiddleware({maxRetries:3})` and `ToolRetryMiddleWare({maxRetries:2})` is added by default to prevent infinite loops
+
+### Customizing Your Agent
+
+You can customize the agent's behavior by providing additional parameters to `createAgent`:
+
+```typescript
+const agentConfig : HanaSparqlQAAgentOptions = {
+  graph: graph,  // Required: HanaRdfGraph instance
+  systemPrompt: yourCustomPrompt,  // Custom system prompt (string or SystemMessage)
+  tools: [yourCustomTools],  // Additional tools to include
+  middleware: [yourCustomMiddlewares],  // Additional middleware to include
+  includeDefaultTools: true,  // include default tools (default: True)
+  includeDefaultMiddleware: true,  // include default middleware (default: True)
+};
+const agent = HanaSparqlQAAgent.createAgent(
+    model, // Required LLM to power the agent
+    agentConfig
+)
+```
+
+## Example: Question answering over a "Movies" knowledge graph
+
+**Prerequisite**:
+You must have an SAP HANA Cloud instance with the **triple store** feature enabled.
+For detailed instructions, refer to: [Enable Triple Store](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/enable-triple-store/)<br />
+Load the `kgdocu_movies` example data. See [Knowledge Graph Example](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/knowledge-graph-example).
+
+The example below:
+
+1. Instantiates the `HanaRdfGraph` pointing at the movies data graph
+2. Creates a `HanaSparqlQAAgent` powered by an LLM
+3. Asks natural-language questions and lets the agent reason through the answers
+
+This demonstrates how the agent dynamically retrieves the ontology, generates SPARQL queries, and returns human-readable answers.
+
+```typescript
+import * as dotenv from 'dotenv';
+// Load environment variables if needed
+dotenv.config();
+
+import hanaClient from "@sap/hana-client";
+
+const connectionParams = {
+  host: process.env.HANA_DB_ADDRESS,
+  port: process.env.HANA_DB_PORT,
+  user: process.env.HANA_DB_USER,
+  password: process.env.HANA_DB_PASSWORD,
+};
+const client = hanaClient.createConnection(connectionParams);
+
+// connect to hanaDB
+await new Promise<void>((resolve, reject) => {
+  client.connect((err: Error) => {
+    // Use arrow function here
+    if (err) {
+      reject(err);
+    } else {
+      console.log("Connected to SAP HANA successfully.");
+      resolve();
+    }
+  });
+});
+```
+
+Then, set up the knowledge graph instance
+
+```typescript
+import { HanaRdfGraph, HanaRdfGraphOptions } from "@sap/hana-langchain";
+
+const graphOptions: HanaRdfGraphOptions = {
+  connection: client,
+  graphUri: "kgdocu_movies",
+  autoExtractOntology: true,
+};
+
+// create a Graph instance from a source URI
+const graph = new HanaRdfGraph(graphOptions);
+
+// need to initialize once an instance is created.
+await graph.initialize(graphOptions);
+```
+
+```typescript
+// Serialise the graph schema (optional)
+// Internally, the schema is stored as an N3 Store instance,
+// We use the N3 Writer to serialise it to Turtle format for display.
+const schemaStore = graph.getSchema();
+const writer = new Writer({
+  prefixes: {
+    rdf: "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    rdfs: "http://www.w3.org/2000/01/rdf-schema#",
+    owl: "http://www.w3.org/2002/07/owl#",
+    xsd: "http://www.w3.org/2001/XMLSchema#",
+  },
+});
+schemaStore.forEach((quad) => {
+  writer.addQuad(quad);
+});
+writer.end((error, result) => {
+  if (error) {
+    console.error("Error serialising schema:", error);
+  } else {
+    console.log("Graph Schema in Turtle format:\n", result);
+  }
+});
+```
+
+```text
+Graph Schema in Turtle format:
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix owl: <http://www.w3.org/2002/07/owl#>.
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+
+<http://kg.demo.sap.com/Place> a owl:Class;
+    rdfs:label "Place".
+rdfs:label a owl:DatatypeProperty;
+    rdfs:label "label";
+    rdfs:domain <http://kg.demo.sap.com/Place>, <http://kg.demo.sap.com/Actor>, <http://kg.demo.sap.com/Director>, <http://kg.demo.sap.com/Genre>;
+    rdfs:range xsd:string.
+<http://kg.demo.sap.com/Actor> a owl:Class;
+    rdfs:label "Actor".
+<http://kg.demo.sap.com/Film> a owl:Class;
+    rdfs:label "Film".
+<http://kg.demo.sap.com/Director> a owl:Class;
+    rdfs:label "Director".
+<http://kg.demo.sap.com/Genre> a owl:Class;
+    rdfs:label "Genre".
+<http://kg.demo.sap.com/dateOfBirth> a owl:DatatypeProperty;
+    rdfs:label "dateOfBirth";
+    rdfs:domain <http://kg.demo.sap.com/Actor>;
+    rdfs:range xsd:dateTime.
+<http://kg.demo.sap.com/placeOfBirth> a owl:ObjectProperty;
+    rdfs:label "placeOfBirth";
+    rdfs:domain <http://kg.demo.sap.com/Actor>;
+    rdfs:range <http://kg.demo.sap.com/Place>.
+<http://kg.demo.sap.com/title> a owl:DatatypeProperty;
+    rdfs:label "title";
+    rdfs:domain <http://kg.demo.sap.com/Film>;
+    rdfs:range xsd:string.
+<http://kg.demo.sap.com/directed> a owl:ObjectProperty;
+    rdfs:label "directed";
+    rdfs:domain <http://kg.demo.sap.com/Director>;
+    rdfs:range <http://kg.demo.sap.com/Film>.
+<http://kg.demo.sap.com/acted_in> a owl:ObjectProperty;
+    rdfs:label "acted_in";
+    rdfs:domain <http://kg.demo.sap.com/Actor>;
+    rdfs:range <http://kg.demo.sap.com/Film>.
+<http://kg.demo.sap.com/genre> a owl:ObjectProperty;
+    rdfs:label "genre";
+    rdfs:domain <http://kg.demo.sap.com/Film>;
+    rdfs:range <http://kg.demo.sap.com/Genre>.
+```
+
+After that, initialise the LLM.
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai"; // or your chosen LLM
+// import { AzureOpenAiChatClient } from "@sap-ai-sdk/langchain";
+
+const llm = new ChatOpenAI({ model: "gpt-4o" });
+// const llm = new AzureOpenAiChatClient({ modelName: "gpt-4o" });
+```
+
+Then, create the SPARQL QA Agent.
+
+```typescript
+const agentConfig: HanaSparqlQAAgentOptions = {
+  graph: graph,
+};
+
+// Initialize the QA agent
+const agent = HanaSparqlQAAgent.createAgent(llm, agentConfig);
+```
+
+```typescript
+const query = "which actors acted in Blade Runner?";
+// const query = "Which movies are in the data?"
+// const query = "In which movies did Keanu Reeves and Carrie-Anne Moss play in together"
+// const query = "which movie genres are in the data?"
+// const query = "which are the two most assigned movie genres?"
+// const query = "where were the actors of 'Blade Runner' born?"
+// const query = "which actors acted together in a movie and were born in the same city?"
+
+console.log("\n--- Streamed (messages: token-by-token) ---");
+for await (const [chunk, _metadata] of await agent.stream(
+  { messages: [{ role: "user", content: query }] },
+  { streamMode: "messages" }
+)) {
+  if (chunk.content) {
+    process.stdout.write(chunk.text);
+  }
+}
+console.log();
+```
+
+```output
+--- Streamed (messages: token-by-token) ---
+Ontology Information:
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix owl: <http://www.w3.org/2002/07/owl#>.
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+
+<http://kg.demo.sap.com/Actor> a owl:Class;
+    rdfs:label "Actor".
+rdfs:label a owl:DatatypeProperty;
+    rdfs:label "label";
+    rdfs:domain <http://kg.demo.sap.com/Actor>, <http://kg.demo.sap.com/Place>, <http://kg.demo.sap.com/Genre>, <http://kg.demo.sap.com/Director>;
+    rdfs:range xsd:string.
+<http://kg.demo.sap.com/Film> a owl:Class;
+    rdfs:label "Film".
+<http://kg.demo.sap.com/Place> a owl:Class;
+    rdfs:label "Place".
+<http://kg.demo.sap.com/Genre> a owl:Class;
+    rdfs:label "Genre".
+<http://kg.demo.sap.com/Director> a owl:Class;
+    rdfs:label "Director".
+<http://kg.demo.sap.com/dateOfBirth> a owl:DatatypeProperty;
+    rdfs:label "dateOfBirth";
+    rdfs:domain <http://kg.demo.sap.com/Actor>;
+    rdfs:range xsd:dateTime.
+<http://kg.demo.sap.com/placeOfBirth> a owl:ObjectProperty;
+    rdfs:label "placeOfBirth";
+    rdfs:domain <http://kg.demo.sap.com/Actor>;
+    rdfs:range <http://kg.demo.sap.com/Place>.
+<http://kg.demo.sap.com/title> a owl:DatatypeProperty;
+    rdfs:label "title";
+    rdfs:domain <http://kg.demo.sap.com/Film>;
+    rdfs:range xsd:string.
+<http://kg.demo.sap.com/acted_in> a owl:ObjectProperty;
+    rdfs:label "acted_in";
+    rdfs:domain <http://kg.demo.sap.com/Actor>;
+    rdfs:range <http://kg.demo.sap.com/Film>.
+<http://kg.demo.sap.com/directed> a owl:ObjectProperty;
+    rdfs:label "directed";
+    rdfs:domain <http://kg.demo.sap.com/Director>;
+    rdfs:range <http://kg.demo.sap.com/Film>.
+<http://kg.demo.sap.com/genre> a owl:ObjectProperty;
+    rdfs:label "genre";
+    rdfs:domain <http://kg.demo.sap.com/Film>;
+    rdfs:range <http://kg.demo.sap.com/Genre>.
+SPARQL Query Result:
+actorLabel
+William Sanderson
+Morgan Paull
+James Hong
+Daryl Hannah
+M. Emmet Walsh
+Brion James
+Q81328
+Rutger Hauer
+Joanna Cassidy
+Hy Pyke
+Sean Young
+Edward James Olmos
+Joe Turkel
+In the movie "Blade Runner," the following actors were part of the cast:
+
+- William Sanderson
+- Morgan Paull
+- James Hong
+- Daryl Hannah
+- M. Emmet Walsh
+- Brion James
+- Rutger Hauer
+- Joanna Cassidy
+- Hy Pyke
+- Sean Young
+- Edward James Olmos
+- Joe Turkel
+```
+
+### What's happening under the hood?
+
+1. **Ontology Retrieval**
+   The agent first uses the `retrieveOntology` tool to fetch the RDF schema in Turtle format. This gives it understanding of the available classes, properties, and relationships.
+
+2. **SPARQL Generation**
+   Based on the ontology and the user's question, the agent reasons about which entities and properties to query, then generates a valid `SELECT` query.
+
+3. **Query Execution**
+   The agent calls the `executeSparql` tool to run the generated query against the HANA RDF graph. If the query fails or returns unexpected results, the agent can self-correct and try again.
+
+4. **Answer Formulation**
+   The agent interprets the query results and formulates a concise, human-readable answer based strictly on the retrieved data.

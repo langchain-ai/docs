@@ -1,0 +1,12 @@
+
+// :snippet-start: runs-query-pagination-before-js
+// :codegroup-tab: Before
+import { Client } from "langsmith";
+
+const client = new Client();
+const runs: unknown[] = [];
+for await (const run of client.listRuns({ projectName: "default" })) {
+  runs.push(run);
+  if (runs.length >= 150) break;
+}
+// :snippet-end:

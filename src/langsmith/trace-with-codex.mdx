@@ -1,0 +1,177 @@
+---
+title: Trace OpenAI Codex sessions
+sidebarTitle: OpenAI Codex
+description: Capture OpenAI Codex agent turns, tool calls, model metadata, and subagent threads in LangSmith.
+---
+
+The [`langsmith-codex-plugins`](https://github.com/langchain-ai/langsmith-codex-plugins) marketplace ships a tracing plugin that sends [OpenAI Codex](https://developers.openai.com/codex) session data to LangSmith. Use it to inspect agent turns, model metadata, token usage, tool calls, and subagent threads from your Codex workflows.
+
+## Prerequisites
+
+Before setting up tracing, ensure you have:
+
+- [Codex CLI](https://developers.openai.com/codex/quickstart?setup=cli) v0.128 or later.
+- A [LangSmith API key](/langsmith/create-account-api-key).
+
+## Install and enable the plugin
+
+Add the marketplace using the Codex CLI:
+
+```bash
+codex plugin marketplace add langchain-ai/langsmith-codex-plugins
+```
+
+Enable plugin hooks and the tracing plugin globally in `~/.codex/config.toml`, or only for a specific project in `.codex/config.toml`:
+
+```toml
+[features]
+plugin_hooks = true
+
+[plugins."tracing@langsmith-codex-plugins"]
+enabled = true
+```
+
+## Configure tracing
+
+Tracing is disabled until either `TRACE_TO_LANGSMITH` is `"true"` or `enabled` is `true` in a config file. Configure credentials with environment variables, a JSON config file, or both.
+
+### Environment variables
+
+The plugin reads Codex-specific variables first, then falls back to the generic LangSmith SDK variables.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `TRACE_TO_LANGSMITH` | Yes | - | Set to `"true"` to enable tracing. |
+| `LANGSMITH_CODEX_API_KEY` | Conditional | - | LangSmith API key. Falls back to `LANGSMITH_API_KEY`. Required unless every replica provides its own API key. |
+| `LANGSMITH_CODEX_ENDPOINT` | No | `https://api.smith.langchain.com` | LangSmith API URL. Falls back to `LANGSMITH_ENDPOINT`. |
+| `LANGSMITH_CODEX_PROJECT` | No | `codex` | LangSmith project name. Falls back to `LANGSMITH_PROJECT`. |
+| `LANGSMITH_CODEX_METADATA` | No | - | JSON object merged into root trace metadata. Falls back to `LANGSMITH_METADATA`. |
+| `LANGSMITH_CODEX_RUNS_ENDPOINTS` | No | - | JSON array of replica destinations. Falls back to `LANGSMITH_RUNS_ENDPOINTS`. |
+
+Add the variables to your shell configuration file (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`):
+
+```bash
+export TRACE_TO_LANGSMITH="true"
+export LANGSMITH_CODEX_API_KEY="<your-langsmith-api-key>"
+export LANGSMITH_CODEX_PROJECT="codex"
+```
+
+### Config file
+
+Use `<project>/.codex/langsmith.json` for project-level settings or `~/.codex/langsmith.json` for global defaults. The global file loads first, the project file overrides it, and matching environment variables take precedence over both.
+
+```json
+{
+  "enabled": true,
+  "api_key": "<your-langsmith-api-key>",
+  "api_url": "https://api.smith.langchain.com",
+  "project": "codex",
+  "metadata": {
+    "team": "agents",
+    "environment": "dev"
+  }
+}
+```
+
+| Field | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `TRACE_TO_LANGSMITH` | `false` | Set to `true` to enable tracing. |
+| `api_key` | `LANGSMITH_CODEX_API_KEY`, `LANGSMITH_API_KEY` | - | LangSmith API key. |
+| `api_url` | `LANGSMITH_CODEX_ENDPOINT`, `LANGSMITH_ENDPOINT` | LangSmith default | LangSmith API URL. |
+| `project` | `LANGSMITH_CODEX_PROJECT`, `LANGSMITH_PROJECT` | `codex` | LangSmith project name. |
+| `metadata` | `LANGSMITH_CODEX_METADATA`, `LANGSMITH_METADATA` | - | Object merged into root trace metadata. |
+| `replicas` | `LANGSMITH_CODEX_RUNS_ENDPOINTS`, `LANGSMITH_RUNS_ENDPOINTS` | - | Additional LangSmith destinations to replicate traces to. |
+
+Keep config files that include API keys out of version control.
+
+## Trace to multiple destinations
+
+Set `replicas` in `langsmith.json` or `LANGSMITH_CODEX_RUNS_ENDPOINTS` to send the same trace data to additional LangSmith workspaces or projects. When set, the replica list overrides the other client settings.
+
+Tracing to multiple [replicas](/langsmith/log-traces-to-project) is useful for:
+
+- Sending traces to both a production and staging project.
+- Tracing to multiple workspaces with different API keys.
+- Adding extra metadata to specific replica destinations.
+
+<Tabs>
+
+<Tab title="Config file (recommended)">
+
+In `<project>/.codex/langsmith.json` or `~/.codex/langsmith.json`:
+
+```json
+{
+  "enabled": true,
+  "replicas": [
+    {
+      "apiUrl": "https://api.smith.langchain.com",
+      "apiKey": "lsv2_pt_workspace_a",
+      "projectName": "project-prod"
+    },
+    {
+      "apiUrl": "https://api.smith.langchain.com",
+      "apiKey": "lsv2_pt_workspace_b",
+      "projectName": "project-staging",
+      "updates": { "metadata": { "environment": "staging" } }
+    }
+  ]
+}
+```
+
+</Tab>
+
+<Tab title="Shell environment variable">
+
+```bash
+export LANGSMITH_CODEX_RUNS_ENDPOINTS='[{"apiUrl":"https://api.smith.langchain.com","apiKey":"lsv2_pt_workspace_a","projectName":"project-prod"},{"apiUrl":"https://api.smith.langchain.com","apiKey":"lsv2_pt_workspace_b","projectName":"project-staging","updates":{"metadata":{"environment":"staging"}}}]'
+```
+
+To generate the escaped JSON string, use:
+
+```bash
+echo '[{"apiUrl":"...","apiKey":"...","projectName":"..."}]' | jq -c .
+```
+
+</Tab>
+
+</Tabs>
+
+Each replica object supports the following fields:
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `apiUrl` | Yes | LangSmith API URL (typically `https://api.smith.langchain.com`). |
+| `apiKey` | Yes | API key for the destination workspace. |
+| `projectName` | Yes | Project name in the destination workspace. |
+| `updates` | No | Optional run fields to override on replicated runs, such as extra metadata. |
+
+## What gets traced
+
+Each LLM run includes:
+
+- **Inputs**: accumulated conversation messages.
+- **Outputs**: assistant response content.
+- **Metadata**: model provider, model name, stop reason, and token usage.
+
+Tool calls (function calls, shell calls, computer calls, file reads, web searches) are included with their inputs and outputs. Subagent threads are resolved and uploaded as nested child runs under the parent turn.
+
+Interrupted turns where the user cancels mid-response are still uploaded once the session completes.
+
+## View traces in LangSmith
+
+Open the configured LangSmith project and complete a Codex turn. By default traces appear in the `codex` project. The plugin uploads completed Codex transcript data, including messages, tool call inputs and outputs, model metadata, token usage, and subagent thread structure.
+
+<Warning>
+The plugin uploads full Codex transcript data to LangSmith. Do not enable tracing for sessions that contain data you do not want stored in LangSmith.
+</Warning>
+
+## Troubleshooting
+
+If traces do not appear in LangSmith:
+
+- Confirm `plugin_hooks = true` and the tracing plugin is enabled in `config.toml`.
+- Confirm `TRACE_TO_LANGSMITH=true` is visible to the Codex process.
+- Confirm `LANGSMITH_CODEX_API_KEY` or `LANGSMITH_API_KEY` is set and valid.
+- If runs land in the wrong project, set `LANGSMITH_CODEX_PROJECT` or the `project` config key.
+- If a custom endpoint is not used, set `LANGSMITH_CODEX_ENDPOINT` or the `api_url` config key.

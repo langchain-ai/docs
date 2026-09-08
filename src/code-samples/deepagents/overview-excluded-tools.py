@@ -1,0 +1,18 @@
+"""Overview page: harness profile with excluded filesystem tools."""
+
+# :snippet-start: overview-excluded-tools-py
+from deepagents import HarnessProfile, register_harness_profile
+
+register_harness_profile(
+    "anthropic:claude-sonnet-4-6",
+    HarnessProfile(
+        excluded_tools=frozenset(
+            {"ls", "read_file", "write_file", "edit_file", "glob", "grep"}
+        ),
+    ),
+)
+# :snippet-end:
+
+# :remove-start:
+print("✓ overview-excluded-tools sample validated")
+# :remove-end:

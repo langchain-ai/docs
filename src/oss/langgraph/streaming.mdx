@@ -1,0 +1,2139 @@
+---
+title: Streaming
+---
+
+import NostreamTagPy from '/snippets/code-samples/nostream-tag-py.mdx';
+import NostreamTagJs from '/snippets/code-samples/nostream-tag-js.mdx';
+
+<Tip>
+For new applications, we recommend [event streaming](/oss/langgraph/event-streaming)—the typed-projection API introduced in LangGraph v1.2. Event streaming gives you separate iterators per projection (messages, values, subgraphs, output) so you can consume them independently instead of branching on `stream_mode` chunks.
+</Tip>
+
+This page covers LangGraph's stream-mode API. It exposes graph execution through stream modes such as `updates`, `values`, `messages`, `custom`, `checkpoints`, `tasks`, and `debug`. Use it when you need direct access to graph-runtime events or specific stream-mode output.
+
+## Get started
+
+### Basic usage
+
+:::python
+LangGraph graphs expose the @[`stream`][Pregel.stream] (sync) and @[`astream`][Pregel.astream] (async) methods to yield streamed outputs as iterators. Pass one or more [stream modes](#stream-modes) to control what data you receive.
+
+```python
+for chunk in graph.stream(
+    {"topic": "ice cream"},
+    stream_mode=["updates", "custom"],  # [!code highlight]
+    version="v2",  # [!code highlight]
+):
+    if chunk["type"] == "updates":
+        for node_name, state in chunk["data"].items():
+            print(f"Node {node_name} updated: {state}")
+    elif chunk["type"] == "custom":
+        print(f"Status: {chunk['data']['status']}")
+```
+
+```shell title="Output"
+Status: thinking of a joke...
+Node generate_joke updated: {'joke': 'Why did the ice cream go to school? To get a sundae education!'}
+```
+
+<Accordion title="Full example">
+```python
+from typing import TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.config import get_stream_writer
+
+
+class State(TypedDict):
+    topic: str
+    joke: str
+
+
+def generate_joke(state: State):
+    writer = get_stream_writer()
+    writer({"status": "thinking of a joke..."})
+    return {"joke": f"Why did the {state['topic']} go to school? To get a sundae education!"}
+
+graph = (
+    StateGraph(State)
+    .add_node(generate_joke)
+    .add_edge(START, "generate_joke")
+    .add_edge("generate_joke", END)
+    .compile()
+)
+
+for chunk in graph.stream(
+    {"topic": "ice cream"},
+    stream_mode=["updates", "custom"],
+    version="v2",
+):
+    if chunk["type"] == "updates":
+        for node_name, state in chunk["data"].items():
+            print(f"Node {node_name} updated: {state}")
+    elif chunk["type"] == "custom":
+        print(f"Status: {chunk['data']['status']}")
+```
+
+```shell title="Output"
+Status: thinking of a joke...
+Node generate_joke updated: {'joke': 'Why did the ice cream go to school? To get a sundae education!'}
+```
+</Accordion>
+:::
+
+:::js
+LangGraph graphs expose the @[`stream`][Pregel.stream] method to yield streamed outputs as iterators.
+
+```typescript
+for await (const chunk of await graph.stream(inputs, {
+  streamMode: "updates",
+})) {
+  console.log(chunk);
+}
+```
+:::
+
+<Tip>
+Debug streaming events, inspect token-by-token LLM output, and monitor latency with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to get set up.
+</Tip>
+
+:::python
+### Stream output format (v2)
+
+<Note>
+Requires LangGraph >= 1.1. All examples on this page use `version="v2"`.
+</Note>
+
+Pass `version="v2"` to `stream()` or `astream()` to get a unified output format. Every chunk is a `StreamPart` dict with a consistent shape — regardless of stream mode, number of modes, or subgraph settings:
+
+```python
+{
+    "type": "values" | "updates" | "messages" | "custom" | "checkpoints" | "tasks" | "debug",
+    "ns": (),           # namespace tuple, populated for subgraph events
+    "data": ...,        # the actual payload (type varies by stream mode)
+}
+```
+
+Each stream mode has a corresponding `TypedDict` containing @[`ValuesStreamPart`], @[`UpdatesStreamPart`], @[`MessagesStreamPart`], @[`CustomStreamPart`], @[`CheckpointStreamPart`], @[`TasksStreamPart`], @[`DebugStreamPart`]. You can import these types from `langgraph.types`. The union type @[`StreamPart`] is a disjoing union on `part["type"]`, enabling full type narrowing in editors and type checkers.
+
+With v1 (default), the output format changes based on your streaming options (single mode returns raw data, multiple modes return `(mode, data)` tuples, subgraphs return `(namespace, data)` tuples). With v2, the format is always the same:
+
+<CodeGroup>
+```python v2 (new)
+for chunk in graph.stream(inputs, stream_mode="updates", version="v2"):
+    print(chunk["type"])  # "updates"
+    print(chunk["ns"])    # ()
+    print(chunk["data"])  # {"node_name": {"key": "value"}}
+```
+```python v1 (current default)
+for chunk in graph.stream(inputs, stream_mode="updates"):
+    print(chunk)  # {"node_name": {"key": "value"}}
+```
+</CodeGroup>
+
+The v2 format also enables type narrowing, which means you can filter chunks by `chunk["type"]` and get the correct payload type. Each branch narrows `part["data"]` to the specific type for that mode:
+
+```python
+for part in graph.stream(
+    {"topic": "ice cream"},
+    stream_mode=["values", "updates", "messages", "custom"],
+    version="v2",
+):
+    if part["type"] == "values":
+        # ValuesStreamPart — full state snapshot after each step
+        print(f"State: topic={part['data']['topic']}")
+    elif part["type"] == "updates":
+        # UpdatesStreamPart — only the changed keys from each node
+        for node_name, state in part["data"].items():
+            print(f"Node `{node_name}` updated: {state}")
+    elif part["type"] == "messages":
+        # MessagesStreamPart — (message_chunk, metadata) from LLM calls
+        msg, metadata = part["data"]
+        print(msg.content, end="", flush=True)
+    elif part["type"] == "custom":
+        # CustomStreamPart — arbitrary data from get_stream_writer()
+        print(f"Progress: {part['data']['progress']}%")
+```
+:::
+
+## Stream modes
+
+:::python
+Pass one or more of the following stream modes as a list to the @[`stream`][CompiledStateGraph.stream] or @[`astream`][CompiledStateGraph.astream] methods:
+
+| Mode | Type | Description |
+| :--- | :--- | :---------- |
+| [values](#graph-state) | @[`ValuesStreamPart`] | Full state after each step. |
+| [updates](#graph-state) | @[`UpdatesStreamPart`] | State updates after each step. Multiple updates in the same step are streamed separately. |
+| [messages](#llm-tokens) | @[`MessagesStreamPart`] | 2-tuples of (LLM token, metadata) from LLM calls. |
+| [custom](#custom-data) | @[`CustomStreamPart`] | Custom data emitted from nodes via @[`get_stream_writer`]. |
+| [checkpoints](#checkpoints) | @[`CheckpointStreamPart`] | Checkpoint events (same format as `get_state()`). Requires a checkpointer. |
+| [tasks](#tasks) | @[`TasksStreamPart`] | Task start/finish events with results and errors. Requires a checkpointer. |
+| [debug](#debug) | @[`DebugStreamPart`] | All available info — combines `checkpoints` and `tasks` with extra metadata. |
+:::
+
+:::js
+Pass one or more of the following stream modes as a list to the @[`stream`][CompiledStateGraph.stream] method:
+
+| Mode | Description |
+| :--- | :---------- |
+| [values](#graph-state) | Full state after each step. |
+| [updates](#graph-state) | State updates after each step. Multiple updates in the same step are streamed separately. |
+| [messages](#llm-tokens) | 2-tuples of (LLM token, metadata) from LLM calls. |
+| [custom](#custom-data) | Custom data emitted from nodes via the `writer` config parameter. |
+| [tools](#tool-progress) | Tool-call lifecycle events (`on_tool_start`, `on_tool_event`, `on_tool_end`, `on_tool_error`). |
+| [debug](#debug) | All available info throughout graph execution. |
+:::
+
+<a id="messages"></a>
+
+### Graph state
+
+Use the stream modes `updates` and `values` to stream the state of the graph as it executes.
+
+* `updates` streams the **updates** to the state after each step of the graph.
+* `values` streams the **full value** of the state after each step of the graph.
+
+:::python
+```python
+from typing import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+
+class State(TypedDict):
+  topic: str
+  joke: str
+
+
+def refine_topic(state: State):
+    return {"topic": state["topic"] + " and cats"}
+
+
+def generate_joke(state: State):
+    return {"joke": f"This is a joke about {state['topic']}"}
+
+graph = (
+  StateGraph(State)
+  .add_node(refine_topic)
+  .add_node(generate_joke)
+  .add_edge(START, "refine_topic")
+  .add_edge("refine_topic", "generate_joke")
+  .add_edge("generate_joke", END)
+  .compile()
+)
+```
+:::
+
+:::js
+```typescript
+import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  topic: z.string(),
+  joke: z.string(),
+});
+
+const graph = new StateGraph(State)
+  .addNode("refineTopic", (state) => {
+    return { topic: state.topic + " and cats" };
+  })
+  .addNode("generateJoke", (state) => {
+    return { joke: `This is a joke about ${state.topic}` };
+  })
+  .addEdge(START, "refineTopic")
+  .addEdge("refineTopic", "generateJoke")
+  .addEdge("generateJoke", END)
+  .compile();
+```
+:::
+
+<Tabs>
+    <Tab title="updates">
+    Use this to stream only the **state updates** returned by the nodes after each step. The streamed outputs include the name of the node as well as the update.
+
+    :::python
+    ```python
+    for chunk in graph.stream(
+        {"topic": "ice cream"},
+        stream_mode="updates",  # [!code highlight]
+        version="v2",  # [!code highlight]
+    ):
+        if chunk["type"] == "updates":
+            for node_name, state in chunk["data"].items():
+                print(f"Node `{node_name}` updated: {state}")
+    ```
+
+    ```shell title="Output"
+    Node `refine_topic` updated: {'topic': 'ice cream and cats'}
+    Node `generate_joke` updated: {'joke': 'This is a joke about ice cream and cats'}
+    ```
+    :::
+
+    :::js
+    ```typescript
+    for await (const chunk of await graph.stream(
+      { topic: "ice cream" },
+      { streamMode: "updates" }
+    )) {
+      for (const [nodeName, state] of Object.entries(chunk)) {
+        console.log(`Node ${nodeName} updated:`, state);
+      }
+    }
+    ```
+    :::
+    </Tab>
+    <Tab title="values">
+    Use this to stream the **full state** of the graph after each step.
+
+    :::python
+    ```python
+    for chunk in graph.stream(
+        {"topic": "ice cream"},
+        stream_mode="values",  # [!code highlight]
+        version="v2",  # [!code highlight]
+    ):
+        if chunk["type"] == "values":
+            print(f"topic: {chunk['data']['topic']}, joke: {chunk['data']['joke']}")
+    ```
+
+    ```shell title="Output"
+    topic: ice cream, joke:
+    topic: ice cream and cats, joke:
+    topic: ice cream and cats, joke: This is a joke about ice cream and cats
+    ```
+    :::
+
+    :::js
+    ```typescript
+    for await (const chunk of await graph.stream(
+      { topic: "ice cream" },
+      { streamMode: "values" }
+    )) {
+      console.log(`topic: ${chunk.topic}, joke: ${chunk.joke}`);
+    }
+    ```
+    :::
+    </Tab>
+</Tabs>
+
+### LLM tokens
+
+Use the `messages` streaming mode to stream Large Language Model (LLM) outputs **token by token** from any part of your graph, including nodes, tools, subgraphs, or tasks.
+
+:::python
+The streamed output from [`messages` mode](#stream-modes) is a tuple `(message_chunk, metadata)` where:
+
+* `message_chunk`: the token or message segment from the LLM.
+* `metadata`: a dictionary containing details about the graph node and LLM invocation.
+
+> If your LLM is not available as a LangChain integration, you can stream its outputs using `custom` mode instead. See [use with any LLM](#use-with-any-llm) for details.
+
+<Warning>
+**Manual config required for async in Python < 3.11**
+When using Python < 3.11 with async code, you must explicitly pass @[`RunnableConfig`] to `ainvoke()` to enable proper streaming. See [Async with Python < 3.11](#async) for details or upgrade to Python 3.11+.
+</Warning>
+
+```python
+from dataclasses import dataclass
+
+from langchain.chat_models import init_chat_model
+from langgraph.graph import StateGraph, START
+
+
+@dataclass
+class MyState:
+    topic: str
+    joke: str = ""
+
+
+model = init_chat_model(model="gpt-5.4-mini")
+
+def call_model(state: MyState):
+    """Call the LLM to generate a joke about a topic"""
+    # Note that message events are emitted even when the LLM is run using .invoke rather than .stream
+    model_response = model.invoke(  # [!code highlight]
+        [
+            {"role": "user", "content": f"Generate a joke about {state.topic}"}
+        ]
+    )
+    return {"joke": model_response.content}
+
+graph = (
+    StateGraph(MyState)
+    .add_node(call_model)
+    .add_edge(START, "call_model")
+    .compile()
+)
+
+# The "messages" stream mode streams LLM tokens with metadata
+# Use version="v2" for a unified StreamPart format
+for chunk in graph.stream(
+    {"topic": "ice cream"},
+    stream_mode="messages",  # [!code highlight]
+    version="v2",  # [!code highlight]
+):
+    if chunk["type"] == "messages":
+        message_chunk, metadata = chunk["data"]
+        if message_chunk.content:
+            print(message_chunk.content, end="|", flush=True)
+```
+:::
+
+:::js
+The streamed output from [`messages` mode](#stream-modes) is a tuple `[message_chunk, metadata]` where:
+
+* `message_chunk`: the token or message segment from the LLM.
+* `metadata`: a dictionary containing details about the graph node and LLM invocation.
+
+> If your LLM is not available as a LangChain integration, you can stream its outputs using `custom` mode instead. See [use with any LLM](#use-with-any-llm) for details.
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+import { StateGraph, StateSchema, GraphNode, START } from "@langchain/langgraph";
+import * as z from "zod";
+
+const MyState = new StateSchema({
+  topic: z.string(),
+  joke: z.string().default(""),
+});
+
+const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
+
+const callModel: GraphNode<typeof MyState> = async (state) => {
+  // Call the LLM to generate a joke about a topic
+  // Note that message events are emitted even when the LLM is run using .invoke rather than .stream
+  const modelResponse = await model.invoke([
+    { role: "user", content: `Generate a joke about ${state.topic}` },
+  ]);
+  return { joke: modelResponse.content };
+};
+
+const graph = new StateGraph(MyState)
+  .addNode("callModel", callModel)
+  .addEdge(START, "callModel")
+  .compile();
+
+// The "messages" stream mode returns an iterator of tuples [messageChunk, metadata]
+// where messageChunk is the token streamed by the LLM and metadata is a dictionary
+// with information about the graph node where the LLM was called and other information
+for await (const [messageChunk, metadata] of await graph.stream(
+  { topic: "ice cream" },
+  { streamMode: "messages" }
+)) {
+  if (messageChunk.content) {
+    console.log(messageChunk.content + "|");
+  }
+}
+```
+:::
+
+#### Filter by LLM invocation
+
+You can associate `tags` with LLM invocations to filter the streamed tokens by LLM invocation.
+
+:::python
+```python
+from langchain.chat_models import init_chat_model
+
+# model_1 is tagged with "joke"
+model_1 = init_chat_model(model="gpt-5.4-mini", tags=['joke'])
+# model_2 is tagged with "poem"
+model_2 = init_chat_model(model="gpt-5.4-mini", tags=['poem'])
+
+graph = ... # define a graph that uses these LLMs
+
+# The stream_mode is set to "messages" to stream LLM tokens
+# The metadata contains information about the LLM invocation, including the tags
+async for chunk in graph.astream(
+    {"topic": "cats"},
+    stream_mode="messages",  # [!code highlight]
+    version="v2",  # [!code highlight]
+):
+    if chunk["type"] == "messages":
+        msg, metadata = chunk["data"]
+        # Filter the streamed tokens by the tags field in the metadata to only include
+        # the tokens from the LLM invocation with the "joke" tag
+        if metadata["tags"] == ["joke"]:
+            print(msg.content, end="|", flush=True)
+```
+:::
+
+:::js
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+
+// model1 is tagged with "joke"
+const model1 = new ChatOpenAI({
+  model: "gpt-5.4-mini",
+  tags: ['joke']
+});
+// model2 is tagged with "poem"
+const model2 = new ChatOpenAI({
+  model: "gpt-5.4-mini",
+  tags: ['poem']
+});
+
+const graph = // ... define a graph that uses these LLMs
+
+// The streamMode is set to "messages" to stream LLM tokens
+// The metadata contains information about the LLM invocation, including the tags
+for await (const [msg, metadata] of await graph.stream(
+  { topic: "cats" },
+  { streamMode: "messages" }
+)) {
+  // Filter the streamed tokens by the tags field in the metadata to only include
+  // the tokens from the LLM invocation with the "joke" tag
+  if (metadata.tags?.includes("joke")) {
+    console.log(msg.content + "|");
+  }
+}
+```
+:::
+
+<Accordion title="Extended example: filtering by tags">
+  :::python
+  ```python
+  from typing import TypedDict
+
+  from langchain.chat_models import init_chat_model
+  from langgraph.graph import START, StateGraph
+
+  # The joke_model is tagged with "joke"
+  joke_model = init_chat_model(model="gpt-5.4-mini", tags=["joke"])
+  # The poem_model is tagged with "poem"
+  poem_model = init_chat_model(model="gpt-5.4-mini", tags=["poem"])
+
+
+  class State(TypedDict):
+        topic: str
+        joke: str
+        poem: str
+
+
+  async def call_model(state, config):
+        topic = state["topic"]
+        print("Writing joke...")
+        # Note: Passing the config through explicitly is required for python < 3.11
+        # Since context var support wasn't added before then: https://docs.python.org/3/library/asyncio-task.html#creating-tasks
+        # The config is passed through explicitly to ensure the context vars are propagated correctly
+        # This is required for Python < 3.11 when using async code. Please see the async section for more details
+        joke_response = await joke_model.ainvoke(
+              [{"role": "user", "content": f"Write a joke about {topic}"}],
+              config,
+        )
+        print("\n\nWriting poem...")
+        poem_response = await poem_model.ainvoke(
+              [{"role": "user", "content": f"Write a short poem about {topic}"}],
+              config,
+        )
+        return {"joke": joke_response.content, "poem": poem_response.content}
+
+
+  graph = (
+        StateGraph(State)
+        .add_node(call_model)
+        .add_edge(START, "call_model")
+        .compile()
+  )
+
+  # The stream_mode is set to "messages" to stream LLM tokens
+  # The metadata contains information about the LLM invocation, including the tags
+  async for chunk in graph.astream(
+        {"topic": "cats"},
+        stream_mode="messages",
+        version="v2",
+  ):
+      if chunk["type"] == "messages":
+          msg, metadata = chunk["data"]
+          if metadata["tags"] == ["joke"]:
+              print(msg.content, end="|", flush=True)
+```
+  :::
+
+  :::js
+  ```typescript
+  import { ChatOpenAI } from "@langchain/openai";
+  import { StateGraph, StateSchema, GraphNode, START } from "@langchain/langgraph";
+  import * as z from "zod";
+
+  // The jokeModel is tagged with "joke"
+  const jokeModel = new ChatOpenAI({
+    model: "gpt-5.4-mini",
+    tags: ["joke"]
+  });
+  // The poemModel is tagged with "poem"
+  const poemModel = new ChatOpenAI({
+    model: "gpt-5.4-mini",
+    tags: ["poem"]
+  });
+
+  const State = new StateSchema({
+    topic: z.string(),
+    joke: z.string(),
+    poem: z.string(),
+  });
+
+  const callModel: GraphNode<typeof State> = async (state) => {
+    const topic = state.topic;
+    console.log("Writing joke...");
+
+    const jokeResponse = await jokeModel.invoke([
+      { role: "user", content: `Write a joke about ${topic}` }
+    ]);
+
+    console.log("\n\nWriting poem...");
+    const poemResponse = await poemModel.invoke([
+      { role: "user", content: `Write a short poem about ${topic}` }
+    ]);
+
+    return {
+      joke: jokeResponse.content,
+      poem: poemResponse.content
+    };
+  };
+
+  const graph = new StateGraph(State)
+    .addNode("callModel", callModel)
+    .addEdge(START, "callModel")
+    .compile();
+
+  // The streamMode is set to "messages" to stream LLM tokens
+  // The metadata contains information about the LLM invocation, including the tags
+  for await (const [msg, metadata] of await graph.stream(
+    { topic: "cats" },
+    { streamMode: "messages" }
+  )) {
+    // Filter the streamed tokens by the tags field in the metadata to only include
+    // the tokens from the LLM invocation with the "joke" tag
+    if (metadata.tags?.includes("joke")) {
+      console.log(msg.content + "|");
+    }
+  }
+  ```
+  :::
+</Accordion>
+
+#### Omit messages from the stream
+
+Use the `nostream` tag to exclude LLM output from the stream entirely. Invocations tagged with `nostream` still run and produce output; their tokens are simply not emitted in `messages` mode.
+
+This is useful when:
+
+- You need LLM output for internal processing (for example structured output) but do not want to stream it to the client
+- You stream the same content through a different channel (for example custom UI messages) and want to avoid duplicate output in the `messages` stream
+
+:::python
+
+<NostreamTagPy />
+
+:::
+
+:::js
+
+<NostreamTagJs />
+
+:::
+
+#### Filter by node
+
+To stream tokens only from specific nodes, use `stream_mode="messages"` and filter the outputs by the `langgraph_node` field in the streamed metadata:
+
+:::python
+```python
+# The "messages" stream mode streams LLM tokens with metadata
+# Use version="v2" for a unified StreamPart format
+for chunk in graph.stream(
+    inputs,
+    stream_mode="messages",  # [!code highlight]
+    version="v2",  # [!code highlight]
+):
+    if chunk["type"] == "messages":
+        msg, metadata = chunk["data"]
+        # Filter the streamed tokens by the langgraph_node field in the metadata
+        # to only include the tokens from the specified node
+        if msg.content and metadata["langgraph_node"] == "some_node_name":
+            ...
+```
+:::
+
+:::js
+```typescript
+// The "messages" stream mode returns a tuple of [messageChunk, metadata]
+// where messageChunk is the token streamed by the LLM and metadata is a dictionary
+// with information about the graph node where the LLM was called and other information
+for await (const [msg, metadata] of await graph.stream(
+  inputs,
+  { streamMode: "messages" }
+)) {
+  // Filter the streamed tokens by the langgraph_node field in the metadata
+  // to only include the tokens from the specified node
+  if (msg.content && metadata.langgraph_node === "some_node_name") {
+    // ...
+  }
+}
+```
+:::
+
+<Accordion title="Extended example: streaming LLM tokens from specific nodes">
+  :::python
+  ```python
+  from typing import TypedDict
+  from langgraph.graph import START, StateGraph
+  from langchain_openai import ChatOpenAI
+
+  model = ChatOpenAI(model="gpt-5.4-mini")
+
+
+  class State(TypedDict):
+        topic: str
+        joke: str
+        poem: str
+
+
+  def write_joke(state: State):
+        topic = state["topic"]
+        joke_response = model.invoke(
+              [{"role": "user", "content": f"Write a joke about {topic}"}]
+        )
+        return {"joke": joke_response.content}
+
+
+  def write_poem(state: State):
+        topic = state["topic"]
+        poem_response = model.invoke(
+              [{"role": "user", "content": f"Write a short poem about {topic}"}]
+        )
+        return {"poem": poem_response.content}
+
+
+  graph = (
+        StateGraph(State)
+        .add_node(write_joke)
+        .add_node(write_poem)
+        # write both the joke and the poem concurrently
+        .add_edge(START, "write_joke")
+        .add_edge(START, "write_poem")
+        .compile()
+  )
+
+  # The "messages" stream mode streams LLM tokens with metadata
+  # Use version="v2" for a unified StreamPart format
+  for chunk in graph.stream(
+      {"topic": "cats"},
+      stream_mode="messages",  # [!code highlight]
+      version="v2",  # [!code highlight]
+  ):
+      if chunk["type"] == "messages":
+          msg, metadata = chunk["data"]
+          # Filter the streamed tokens by the langgraph_node field in the metadata
+          # to only include the tokens from the write_poem node
+          if msg.content and metadata["langgraph_node"] == "write_poem":
+              print(msg.content, end="|", flush=True)
+  ```
+  :::
+
+  :::js
+  ```typescript
+  import { ChatOpenAI } from "@langchain/openai";
+  import { StateGraph, StateSchema, GraphNode, START } from "@langchain/langgraph";
+  import * as z from "zod";
+
+  const model = new ChatOpenAI({ model: "gpt-5.4-mini" });
+
+  const State = new StateSchema({
+    topic: z.string(),
+    joke: z.string(),
+    poem: z.string(),
+  });
+
+  const writeJoke: GraphNode<typeof State> = async (state) => {
+    const topic = state.topic;
+    const jokeResponse = await model.invoke([
+      { role: "user", content: `Write a joke about ${topic}` }
+    ]);
+    return { joke: jokeResponse.content };
+  };
+
+  const writePoem: GraphNode<typeof State> = async (state) => {
+    const topic = state.topic;
+    const poemResponse = await model.invoke([
+      { role: "user", content: `Write a short poem about ${topic}` }
+    ]);
+    return { poem: poemResponse.content };
+  };
+
+  const graph = new StateGraph(State)
+    .addNode("writeJoke", writeJoke)
+    .addNode("writePoem", writePoem)
+    // write both the joke and the poem concurrently
+    .addEdge(START, "writeJoke")
+    .addEdge(START, "writePoem")
+    .compile();
+
+  // The "messages" stream mode returns a tuple of [messageChunk, metadata]
+  // where messageChunk is the token streamed by the LLM and metadata is a dictionary
+  // with information about the graph node where the LLM was called and other information
+  for await (const [msg, metadata] of await graph.stream(
+    { topic: "cats" },
+    { streamMode: "messages" }
+  )) {
+    // Filter the streamed tokens by the langgraph_node field in the metadata
+    // to only include the tokens from the writePoem node
+    if (msg.content && metadata.langgraph_node === "writePoem") {
+      console.log(msg.content + "|");
+    }
+  }
+  ```
+  :::
+</Accordion>
+
+### Custom data
+
+:::python
+To send **custom user-defined data** from inside a LangGraph node or tool, follow these steps:
+
+1. Use @[`get_stream_writer`] to access the stream writer and emit custom data.
+2. Set `stream_mode="custom"` when calling `.stream()` or `.astream()` to get the custom data in the stream. You can combine multiple modes (e.g., `["updates", "custom"]`), but at least one must be `"custom"`.
+
+<Warning>
+**No @[`get_stream_writer`] in async for Python < 3.11**
+In async code running on Python < 3.11, @[`get_stream_writer`] will not work.
+Instead, add a `writer` parameter to your node or tool and pass it manually.
+See [Async with Python < 3.11](#async) for usage examples.
+</Warning>
+
+<Tabs>
+    <Tab title="node">
+    ```python
+    from typing import TypedDict
+    from langgraph.config import get_stream_writer
+    from langgraph.graph import StateGraph, START
+
+    class State(TypedDict):
+        query: str
+        answer: str
+
+    def node(state: State):
+        # Get the stream writer to send custom data
+        writer = get_stream_writer()
+        # Emit a custom key-value pair (e.g., progress update)
+        writer({"custom_key": "Generating custom data inside node"})
+        return {"answer": "some data"}
+
+    graph = (
+        StateGraph(State)
+        .add_node(node)
+        .add_edge(START, "node")
+        .compile()
+    )
+
+    inputs = {"query": "example"}
+
+    # Set stream_mode="custom" to receive the custom data in the stream
+    for chunk in graph.stream(inputs, stream_mode="custom", version="v2"):
+        if chunk["type"] == "custom":
+            print(f"Custom event: {chunk['data']['custom_key']}")
+    ```
+    </Tab>
+    <Tab title="tool">
+    ```python
+    from langchain.tools import tool
+    from langgraph.config import get_stream_writer
+
+    @tool
+    def query_database(query: str) -> str:
+        """Query the database."""
+        # Access the stream writer to send custom data
+        writer = get_stream_writer()  # [!code highlight]
+        # Emit a custom key-value pair (e.g., progress update)
+        writer({"data": "Retrieved 0/100 records", "type": "progress"})  # [!code highlight]
+        # perform query
+        # Emit another custom key-value pair
+        writer({"data": "Retrieved 100/100 records", "type": "progress"})
+        return "some-answer"
+
+
+    graph = ... # define a graph that uses this tool
+
+    # Set stream_mode="custom" to receive the custom data in the stream
+    for chunk in graph.stream(inputs, stream_mode="custom", version="v2"):
+        if chunk["type"] == "custom":
+            print(f"{chunk['data']['type']}: {chunk['data']['data']}")
+```
+    </Tab>
+</Tabs>
+:::
+
+:::js
+To send **custom user-defined data** from inside a LangGraph node or tool, follow these steps:
+
+1. Use the `writer` parameter from the `LangGraphRunnableConfig` to emit custom data.
+2. Set `streamMode: "custom"` when calling `.stream()` to get the custom data in the stream. You can combine multiple modes (e.g., `["updates", "custom"]`), but at least one must be `"custom"`.
+
+<Tabs>
+    <Tab title="node">
+    ```typescript
+    import { StateGraph, StateSchema, GraphNode, START, LangGraphRunnableConfig } from "@langchain/langgraph";
+    import * as z from "zod";
+
+    const State = new StateSchema({
+      query: z.string(),
+      answer: z.string(),
+    });
+
+    const node: GraphNode<typeof State> = async (state, config) => {
+      // Use the writer to emit a custom key-value pair (e.g., progress update)
+      config.writer({ custom_key: "Generating custom data inside node" });
+      return { answer: "some data" };
+    };
+
+    const graph = new StateGraph(State)
+      .addNode("node", node)
+      .addEdge(START, "node")
+      .compile();
+
+    const inputs = { query: "example" };
+
+    // Set streamMode: "custom" to receive the custom data in the stream
+    for await (const chunk of await graph.stream(inputs, { streamMode: "custom" })) {
+      console.log(chunk);
+    }
+    ```
+    </Tab>
+    <Tab title="tool">
+    ```typescript
+    import { tool } from "@langchain/core/tools";
+    import { LangGraphRunnableConfig } from "@langchain/langgraph";
+    import * as z from "zod";
+
+    const queryDatabase = tool(
+      async (input, config: LangGraphRunnableConfig) => {
+        // Use the writer to emit a custom key-value pair (e.g., progress update)
+        config.writer({ data: "Retrieved 0/100 records", type: "progress" });
+        // perform query
+        // Emit another custom key-value pair
+        config.writer({ data: "Retrieved 100/100 records", type: "progress" });
+        return "some-answer";
+      },
+      {
+        name: "query_database",
+        description: "Query the database.",
+        schema: z.object({
+          query: z.string().describe("The query to execute."),
+        }),
+      }
+    );
+
+    const graph = // ... define a graph that uses this tool
+
+    // Set streamMode: "custom" to receive the custom data in the stream
+    for await (const chunk of await graph.stream(inputs, { streamMode: "custom" })) {
+      console.log(chunk);
+    }
+    ```
+    </Tab>
+</Tabs>
+:::
+
+:::js
+
+### Tool progress
+
+Use the `tools` stream mode to receive real-time lifecycle events for tool executions. This is useful for showing progress indicators, partial results, and error states in your UI while tools are running.
+
+The `tools` stream mode emits four event types:
+
+| Event | When | Payload |
+|-------|------|---------|
+| `on_tool_start` | Tool invocation begins | `name`, `input`, `toolCallId` |
+| `on_tool_event` | Tool yields intermediate data | `name`, `data`, `toolCallId` |
+| `on_tool_end` | Tool returns its final result | `name`, `output`, `toolCallId` |
+| `on_tool_error` | Tool throws an error | `name`, `error`, `toolCallId` |
+
+#### Define tools that stream progress
+
+To emit `on_tool_event` events, define your tool function as an **async generator** (`async function*`). Each `yield` sends intermediate data to the stream, and the `return` value is used as the tool's final result.
+
+```typescript
+import { tool } from "@langchain/core/tools";
+import { z } from "zod/v4";
+
+const searchFlights = tool(
+  async function* (input) {
+    const airlines = ["United", "Delta", "American", "JetBlue"];
+    const completed: string[] = [];
+
+    for (let i = 0; i < airlines.length; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      completed.push(airlines[i]);
+
+      // Each yield emits an on_tool_event to the stream
+      yield {
+        message: `Searching ${airlines[i]}...`,
+        progress: (i + 1) / airlines.length,
+        completed,
+      };
+    }
+
+    // The return value becomes the tool result (ToolMessage.content)
+    return JSON.stringify({
+      flights: [
+        { airline: "United", price: 450, duration: "5h 30m" },
+        { airline: "Delta", price: 520, duration: "5h 15m" },
+      ],
+    });
+  },
+  {
+    name: "search_flights",
+    description: "Search for available flights to a destination.",
+    schema: z.object({
+      destination: z.string(),
+      date: z.string(),
+    }),
+  }
+);
+```
+
+<Note>
+Existing tools that return a `Promise` are fully compatible. They emit `on_tool_start` and `on_tool_end` events but no `on_tool_event` events.
+</Note>
+
+#### Consume tool events server-side
+
+Pass `streamMode: ["tools"]` (or combine with other modes) to `graph.stream()`:
+
+```typescript
+for await (const [mode, chunk] of await graph.stream(
+  { messages: [{ role: "user", content: "Find flights to Tokyo" }] },
+  { streamMode: ["updates", "tools"] }
+)) {
+  if (mode === "tools") {
+    switch (chunk.event) {
+      case "on_tool_start":
+        console.log(`Tool started: ${chunk.name}`, chunk.input);
+        break;
+      case "on_tool_event":
+        console.log(`Tool progress: ${chunk.name}`, chunk.data);
+        break;
+      case "on_tool_end":
+        console.log(`Tool finished: ${chunk.name}`, chunk.output);
+        break;
+      case "on_tool_error":
+        console.error(`Tool failed: ${chunk.name}`, chunk.error);
+        break;
+    }
+  }
+}
+```
+
+#### Use tool progress in React with `useStream`
+
+The @[`useStream`] hook from `@langchain/langgraph-sdk/react` exposes a `toolProgress` array when you include `"tools"` in your stream modes. Each entry is a `ToolProgress` object that tracks the current state of a running tool:
+
+| Field | Description |
+|-------|-------------|
+| `name` | The tool name |
+| `state` | Current lifecycle state: `"starting"`, `"running"`, `"completed"`, or `"error"` |
+| `toolCallId` | The tool call ID from the LLM |
+| `input` | The tool's input arguments |
+| `data` | The most recent yielded data from `on_tool_event` |
+| `result` | The final result, set on `on_tool_end` |
+| `error` | The error, set on `on_tool_error` |
+
+```typescript
+import { useStream } from "@langchain/langgraph-sdk/react";
+
+function Chat() {
+  const stream = useStream({
+    assistantId: "my-agent",
+    streamMode: ["values", "tools"],
+  });
+
+  // Filter for actively running tools
+  const activeTools = stream.toolProgress.filter(
+    (t) => t.state === "starting" || t.state === "running"
+  );
+
+  return (
+    <div>
+      {stream.messages.map((msg) => (
+        <MessageBubble key={msg.id} message={msg} />
+      ))}
+
+      {/* Show progress cards for running tools */}
+      {activeTools.map((tool) => (
+        <ToolProgressCard
+          key={tool.toolCallId ?? tool.name}
+          name={tool.name}
+          state={tool.state}
+          data={tool.data}
+        />
+      ))}
+    </div>
+  );
+}
+```
+
+<Accordion title="Extended example: travel planning agent with tool progress">
+
+This example shows a complete agent with async-generator tools that stream search progress to a React UI.
+
+**Agent definition:**
+
+```typescript
+import { tool } from "@langchain/core/tools";
+import { ChatOpenAI } from "@langchain/openai";
+import { createAgent } from "@langchain/langgraph";
+import { MemorySaver } from "@langchain/langgraph-checkpoint-memory";
+import { z } from "zod/v4";
+
+const searchFlights = tool(
+  async function* (input) {
+    const airlines = ["United", "Delta", "American", "JetBlue"];
+    const completed: string[] = [];
+
+    for (let i = 0; i < airlines.length; i++) {
+      await new Promise((r) => setTimeout(r, 600));
+      completed.push(`${airlines[i]}: checked`);
+      yield {
+        message: `Searching ${airlines[i]}...`,
+        progress: (i + 1) / airlines.length,
+        completed,
+      };
+    }
+
+    return JSON.stringify({
+      flights: [
+        { airline: "United", price: 450, duration: "5h 30m" },
+        { airline: "Delta", price: 520, duration: "5h 15m" },
+      ],
+    });
+  },
+  {
+    name: "search_flights",
+    description: "Search for available flights.",
+    schema: z.object({
+      destination: z.string(),
+      departure_date: z.string(),
+    }),
+  }
+);
+
+const checkHotels = tool(
+  async function* (input) {
+    const hotels = ["Grand Hyatt", "Marriott", "Hilton"];
+    const completed: string[] = [];
+
+    for (let i = 0; i < hotels.length; i++) {
+      await new Promise((r) => setTimeout(r, 400));
+      completed.push(`${hotels[i]}: available`);
+      yield {
+        message: `Checking ${hotels[i]}...`,
+        progress: (i + 1) / hotels.length,
+        completed,
+      };
+    }
+
+    return JSON.stringify({
+      hotels: [
+        { name: "Grand Hyatt", price: 250, rating: 4.5 },
+        { name: "Marriott", price: 180, rating: 4.2 },
+      ],
+    });
+  },
+  {
+    name: "check_hotels",
+    description: "Check hotel availability.",
+    schema: z.object({
+      city: z.string(),
+      check_in: z.string(),
+      nights: z.number(),
+    }),
+  }
+);
+
+export const agent = createAgent({
+  model: new ChatOpenAI({ model: "gpt-5.4-mini" }),
+  tools: [searchFlights, checkHotels],
+  checkpointer: new MemorySaver(),
+});
+```
+
+**React component with progress cards:**
+
+```typescript
+import { useStream } from "@langchain/langgraph-sdk/react";
+
+function TravelPlanner() {
+  const stream = useStream<typeof agent>({
+    assistantId: "travel-agent",
+    streamMode: ["values", "tools"],
+  });
+
+  const activeTools = stream.toolProgress.filter(
+    (t) => t.state === "starting" || t.state === "running"
+  );
+
+  return (
+    <div>
+      {stream.messages.map((msg) => (
+        <div key={msg.id}>{msg.content}</div>
+      ))}
+
+      {activeTools.map((tool) => {
+        const data = tool.data as {
+          message?: string;
+          progress?: number;
+          completed?: string[];
+        } | undefined;
+
+        return (
+          <div key={tool.toolCallId ?? tool.name}>
+            <strong>{tool.name}</strong>
+            {data?.message && <p>{data.message}</p>}
+            {data?.progress != null && (
+              <div style={{ width: "100%", background: "#eee" }}>
+                <div
+                  style={{
+                    width: `${data.progress * 100}%`,
+                    background: "#4CAF50",
+                    height: 8,
+                    transition: "width 0.3s ease",
+                  }}
+                />
+              </div>
+            )}
+            {data?.completed?.map((step, i) => (
+              <div key={i}>&#10003; {step}</div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+```
+</Accordion>
+
+#### `tools` vs `custom` stream mode
+
+Both stream modes can surface tool progress, but they serve different purposes:
+
+* **`tools`**—automatically emits structured lifecycle events (`on_tool_start`, `on_tool_event`, `on_tool_end`, `on_tool_error`) with no code changes needed in your tools beyond using `async function*`. The `useStream` hook provides the reactive `toolProgress` array out of the box.
+* **`custom`**—gives you full control over what data is emitted and when using `config.writer()`. Use this when you need freeform data that doesn't map to the tool lifecycle, or when you want to stream from nodes (not just tools).
+
+:::
+
+### Subgraph outputs
+
+:::python
+To include outputs from [subgraphs](/oss/langgraph/use-subgraphs) in the streamed outputs, you can set `subgraphs=True` in the `.stream()` method of the parent graph. This will stream outputs from both the parent graph and any subgraphs.
+
+The outputs will be streamed as tuples `(namespace, data)`, where `namespace` is a tuple with the path to the node where a subgraph is invoked, e.g. `("parent_node:<task_id>", "child_node:<task_id>")`.
+
+<Tabs>
+    <Tab title="v2 (LangGraph >= 1.1)">
+    With `version="v2"`, subgraph events use the same `StreamPart` format. The `ns` field identifies the source:
+
+    ```python
+    for chunk in graph.stream(
+        {"foo": "foo"},
+        subgraphs=True,  # [!code highlight]
+        stream_mode="updates",
+        version="v2", # [!code highlight]
+    ):
+        print(chunk["type"])  # "updates"
+        print(chunk["ns"])    # () for root, ("node_name:<task_id>",) for subgraph
+        print(chunk["data"])  # {"node_name": {"key": "value"}}
+    ```
+    </Tab>
+    <Tab title="v1 (default)">
+    ```python
+    for chunk in graph.stream(
+        {"foo": "foo"},
+        # Set subgraphs=True to stream outputs from subgraphs
+        subgraphs=True,  # [!code highlight]
+        stream_mode="updates",
+    ):
+        print(chunk)
+    ```
+    </Tab>
+</Tabs>
+:::
+
+:::js
+To include outputs from [subgraphs](/oss/langgraph/use-subgraphs) in the streamed outputs, you can set `subgraphs: true` in the `.stream()` method of the parent graph. This will stream outputs from both the parent graph and any subgraphs.
+
+The outputs will be streamed as tuples `[namespace, data]`, where `namespace` is a tuple with the path to the node where a subgraph is invoked, e.g. `["parent_node:<task_id>", "child_node:<task_id>"]`.
+
+```typescript
+for await (const chunk of await graph.stream(
+  { foo: "foo" },
+  {
+    // Set subgraphs: true to stream outputs from subgraphs
+    subgraphs: true,
+    streamMode: "updates",
+  }
+)) {
+  console.log(chunk);
+}
+```
+:::
+
+:::python
+<Note>
+    This applies to every `stream_mode`, including `"messages"`. Agent builders like @[`create_agent`] return a **compiled graph**, so adding one as a node turns it into a subgraph. Without `subgraphs=True`, `stream_mode="messages"` on the parent graph will not emit token chunks from the inner agent's LLM calls. Invoking `agent.stream(...)` directly will, which is why this often shows up only after wrapping.
+
+    ```python
+    from langchain.agents import create_agent
+    from langgraph.graph import END, START, StateGraph
+
+    graph = (
+        StateGraph(State)
+        .add_node("agent", create_agent(model, tools, state_schema=State))
+        .add_edge(START, "agent")
+        .add_edge("agent", END)
+        .compile()
+    )
+
+    for chunk in graph.stream(
+        {"messages": [{"role": "user", "content": "..."}]},
+        stream_mode="messages",
+        subgraphs=True,  # [!code highlight]
+        version="v2",
+    ):
+        print(chunk["type"])  # "messages"
+        print(chunk["ns"])    # () for root, ("agent:<task_id>",) for subgraph
+        print(chunk["data"])  # (token, metadata)
+    ```
+</Note>
+:::
+
+:::js
+<Note>
+    This applies to every `streamMode`, including `"messages"`. @[`createAgent`] returns a `ReactAgent` wrapper; pass `agent.graph` when adding it as a node so the parent treats it as a subgraph. With `subgraphs: true`, message chunks are `[namespace, [token, metadata]]`, so you can tell which subgraph emitted them.
+
+    ```typescript
+    import { createAgent } from "langchain";
+    import { END, START, StateGraph } from "@langchain/langgraph";
+
+    const agent = createAgent({ model, tools, stateSchema: State });
+
+    const graph = new StateGraph(State)
+        .addNode("agent", agent.graph)
+        .addEdge(START, "agent")
+        .addEdge("agent", END)
+        .compile();
+
+    for await (const [ns, data] of await graph.stream(
+        { messages: [{ role: "user", content: "..." }] },
+        {
+            streamMode: "messages",
+            subgraphs: true, // [!code highlight]
+        }
+    )) {
+        const [token, metadata] = data;
+        console.log(ns, token, metadata);
+    }
+    ```
+</Note>
+:::
+
+<Accordion title="Extended example: streaming from subgraphs">
+  :::python
+  ```python
+  from langgraph.graph import START, StateGraph
+  from typing import TypedDict
+
+  # Define subgraph
+  class SubgraphState(TypedDict):
+      foo: str  # note that this key is shared with the parent graph state
+      bar: str
+
+  def subgraph_node_1(state: SubgraphState):
+      return {"bar": "bar"}
+
+  def subgraph_node_2(state: SubgraphState):
+      return {"foo": state["foo"] + state["bar"]}
+
+  subgraph_builder = StateGraph(SubgraphState)
+  subgraph_builder.add_node(subgraph_node_1)
+  subgraph_builder.add_node(subgraph_node_2)
+  subgraph_builder.add_edge(START, "subgraph_node_1")
+  subgraph_builder.add_edge("subgraph_node_1", "subgraph_node_2")
+  subgraph = subgraph_builder.compile()
+
+  # Define parent graph
+  class ParentState(TypedDict):
+      foo: str
+
+  def node_1(state: ParentState):
+      return {"foo": "hi! " + state["foo"]}
+
+  builder = StateGraph(ParentState)
+  builder.add_node("node_1", node_1)
+  builder.add_node("node_2", subgraph)
+  builder.add_edge(START, "node_1")
+  builder.add_edge("node_1", "node_2")
+  graph = builder.compile()
+
+  for chunk in graph.stream(
+      {"foo": "foo"},
+      stream_mode="updates",
+      # Set subgraphs=True to stream outputs from subgraphs
+      subgraphs=True,  # [!code highlight]
+      version="v2",  # [!code highlight]
+  ):
+      if chunk["type"] == "updates":
+          if chunk["ns"]:
+              print(f"Subgraph {chunk['ns']}: {chunk['data']}")
+          else:
+              print(f"Root: {chunk['data']}")
+  ```
+  :::
+
+  :::js
+  ```typescript
+  import { StateGraph, StateSchema, START } from "@langchain/langgraph";
+  import { z } from "zod/v4";
+
+  // Define subgraph
+  const SubgraphState = new StateSchema({
+    foo: z.string(), // note that this key is shared with the parent graph state
+    bar: z.string(),
+  });
+
+  const subgraphBuilder = new StateGraph(SubgraphState)
+    .addNode("subgraphNode1", (state) => {
+      return { bar: "bar" };
+    })
+    .addNode("subgraphNode2", (state) => {
+      return { foo: state.foo + state.bar };
+    })
+    .addEdge(START, "subgraphNode1")
+    .addEdge("subgraphNode1", "subgraphNode2");
+  const subgraph = subgraphBuilder.compile();
+
+  // Define parent graph
+  const ParentState = new StateSchema({
+    foo: z.string(),
+  });
+
+  const builder = new StateGraph(ParentState)
+    .addNode("node1", (state) => {
+      return { foo: "hi! " + state.foo };
+    })
+    .addNode("node2", subgraph)
+    .addEdge(START, "node1")
+    .addEdge("node1", "node2");
+  const graph = builder.compile();
+
+  for await (const chunk of await graph.stream(
+    { foo: "foo" },
+    {
+      streamMode: "updates",
+      // Set subgraphs: true to stream outputs from subgraphs
+      subgraphs: true,
+    }
+  )) {
+    console.log(chunk);
+  }
+  ```
+  :::
+
+  :::python
+  ```
+  Root: {'node_1': {'foo': 'hi! foo'}}
+  Subgraph ('node_2:dfddc4ba-c3c5-6887-5012-a243b5b377c2',): {'subgraph_node_1': {'bar': 'bar'}}
+  Subgraph ('node_2:dfddc4ba-c3c5-6887-5012-a243b5b377c2',): {'subgraph_node_2': {'foo': 'hi! foobar'}}
+  Root: {'node_2': {'foo': 'hi! foobar'}}
+  ```
+  :::
+
+  :::js
+  ```
+  [[], {'node1': {'foo': 'hi! foo'}}]
+  [['node2:dfddc4ba-c3c5-6887-5012-a243b5b377c2'], {'subgraphNode1': {'bar': 'bar'}}]
+  [['node2:dfddc4ba-c3c5-6887-5012-a243b5b377c2'], {'subgraphNode2': {'foo': 'hi! foobar'}}]
+  [[], {'node2': {'foo': 'hi! foobar'}}]
+  ```
+  :::
+
+  **Note** that we are receiving not just the node updates, but we also the namespaces which tell us what graph (or subgraph) we are streaming from.
+</Accordion>
+
+:::python
+### Checkpoints
+
+Use the `checkpoints` streaming mode to receive checkpoint events as the graph executes. Each checkpoint event has the same format as the output of `get_state()`. Requires a [checkpointer](/oss/langgraph/persistence).
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+
+graph = (
+    StateGraph(State)
+    .add_node(refine_topic)
+    .add_node(generate_joke)
+    .add_edge(START, "refine_topic")
+    .add_edge("refine_topic", "generate_joke")
+    .add_edge("generate_joke", END)
+    .compile(checkpointer=MemorySaver())
+)
+
+config = {"configurable": {"thread_id": "1"}}
+
+for chunk in graph.stream(
+    {"topic": "ice cream"},
+    config=config,
+    stream_mode="checkpoints",  # [!code highlight]
+    version="v2",  # [!code highlight]
+):
+    if chunk["type"] == "checkpoints":
+        print(chunk["data"])
+```
+
+### Tasks
+
+Use the `tasks` streaming mode to receive task start and finish events as the graph executes. Task events include information about which node is running, its results, and any errors. Requires a [checkpointer](/oss/langgraph/persistence).
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+
+graph = (
+    StateGraph(State)
+    .add_node(refine_topic)
+    .add_node(generate_joke)
+    .add_edge(START, "refine_topic")
+    .add_edge("refine_topic", "generate_joke")
+    .add_edge("generate_joke", END)
+    .compile(checkpointer=MemorySaver())
+)
+
+config = {"configurable": {"thread_id": "1"}}
+
+for chunk in graph.stream(
+    {"topic": "ice cream"},
+    config=config,
+    stream_mode="tasks",  # [!code highlight]
+    version="v2",  # [!code highlight]
+):
+    if chunk["type"] == "tasks":
+        print(chunk["data"])
+```
+:::
+
+<a id="debug"></a>
+### Debug
+
+Use the `debug` streaming mode to stream as much information as possible throughout the execution of the graph. The streamed outputs include the name of the node as well as the full state.
+
+:::python
+```python
+for chunk in graph.stream(
+    {"topic": "ice cream"},
+    stream_mode="debug",  # [!code highlight]
+    version="v2",  # [!code highlight]
+):
+    if chunk["type"] == "debug":
+        print(chunk["data"])
+```
+:::
+
+:::js
+```typescript
+for await (const chunk of await graph.stream(
+  { topic: "ice cream" },
+  { streamMode: "debug" }
+)) {
+  console.log(chunk);
+}
+```
+:::
+
+:::python
+<Note>
+The `debug` mode combines `checkpoints` and `tasks` events with additional metadata. Use `checkpoints` or `tasks` directly if you only need a subset of the debug information.
+</Note>
+:::
+
+### Multiple modes at once
+
+:::python
+You can pass a list as the `stream_mode` parameter to stream multiple modes at once.
+
+With `version="v2"`, every chunk is a `StreamPart` dict. Use `chunk["type"]` to distinguish between modes:
+
+<CodeGroup>
+```python v2
+for chunk in graph.stream(inputs, stream_mode=["updates", "custom"], version="v2"):
+    if chunk["type"] == "updates":
+        for node_name, state in chunk["data"].items():
+            print(f"Node `{node_name}` updated: {state}")
+    elif chunk["type"] == "custom":
+        print(f"Custom event: {chunk['data']}")
+```
+```python v1
+for mode, chunk in graph.stream(inputs, stream_mode=["updates", "custom"]):
+    print(chunk)
+```
+</CodeGroup>
+:::
+
+:::js
+You can pass an array as the `streamMode` parameter to stream multiple modes at once.
+
+The streamed outputs will be tuples of `[mode, chunk]` where `mode` is the name of the stream mode and `chunk` is the data streamed by that mode.
+
+```typescript
+for await (const [mode, chunk] of await graph.stream(inputs, {
+  streamMode: ["updates", "custom"],
+})) {
+  console.log(chunk);
+}
+```
+:::
+
+## Advanced
+
+### Use with any LLM
+
+:::python
+You can use `stream_mode="custom"` to stream data from **any LLM API**—even if that API does **not** implement the LangChain chat model interface.
+
+This lets you integrate raw LLM clients or external services that provide their own streaming interfaces, making LangGraph highly flexible for custom setups.
+
+```python
+from langgraph.config import get_stream_writer
+
+def call_arbitrary_model(state):
+    """Example node that calls an arbitrary model and streams the output"""
+    # Get the stream writer to send custom data
+    writer = get_stream_writer()  # [!code highlight]
+    # Assume you have a streaming client that yields chunks
+    # Generate LLM tokens using your custom streaming client
+    for chunk in your_custom_streaming_client(state["topic"]):
+        # Use the writer to send custom data to the stream
+        writer({"custom_llm_chunk": chunk})  # [!code highlight]
+    return {"result": "completed"}
+
+graph = (
+    StateGraph(State)
+    .add_node(call_arbitrary_model)
+    # Add other nodes and edges as needed
+    .compile()
+)
+# Set stream_mode="custom" to receive the custom data in the stream
+for chunk in graph.stream(
+    {"topic": "cats"},
+    stream_mode="custom",  # [!code highlight]
+    version="v2",  # [!code highlight]
+):
+    if chunk["type"] == "custom":
+        # The chunk data will contain the custom data streamed from the llm
+        print(chunk["data"])
+```
+:::
+
+:::js
+You can use `streamMode: "custom"` to stream data from **any LLM API**—even if that API does **not** implement the LangChain chat model interface.
+
+This lets you integrate raw LLM clients or external services that provide their own streaming interfaces, making LangGraph highly flexible for custom setups.
+
+```typescript
+import { StateGraph, GraphNode, StateSchema } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({ result: z.string() });
+
+const callArbitraryModel: GraphNode<typeof State> = async (state, config) => {
+  // Example node that calls an arbitrary model and streams the output
+  // Assume you have a streaming client that yields chunks
+  // Generate LLM tokens using your custom streaming client
+  for await (const chunk of yourCustomStreamingClient(state.topic)) {
+    // Use the writer to send custom data to the stream
+    config.writer({ custom_llm_chunk: chunk });
+  }
+  return { result: "completed" };
+};
+
+const graph = new StateGraph(State)
+  .addNode("callArbitraryModel", callArbitraryModel)
+  // Add other nodes and edges as needed
+  .compile();
+
+// Set streamMode: "custom" to receive the custom data in the stream
+for await (const chunk of await graph.stream(
+  { topic: "cats" },
+  { streamMode: "custom" }
+)) {
+  // The chunk will contain the custom data streamed from the llm
+  console.log(chunk);
+}
+```
+:::
+
+<Accordion title="Extended example: streaming arbitrary chat model">
+  :::python
+  ```python
+  import operator
+  import json
+
+  from typing import TypedDict
+  from typing_extensions import Annotated
+  from langgraph.graph import StateGraph, START
+
+  from openai import AsyncOpenAI
+
+  openai_client = AsyncOpenAI()
+  model_name = "gpt-5.4-mini"
+
+
+  async def stream_tokens(model_name: str, messages: list[dict]):
+      response = await openai_client.chat.completions.create(
+          messages=messages, model=model_name, stream=True
+      )
+      role = None
+      async for chunk in response:
+          delta = chunk.choices[0].delta
+
+          if delta.role is not None:
+              role = delta.role
+
+          if delta.content:
+              yield {"role": role, "content": delta.content}
+
+
+  # this is our tool
+  async def get_items(place: str) -> str:
+      """Use this tool to list items one might find in a place you're asked about."""
+      writer = get_stream_writer()
+      response = ""
+      async for msg_chunk in stream_tokens(
+          model_name,
+          [
+              {
+                  "role": "user",
+                  "content": (
+                      "Can you tell me what kind of items "
+                      f"i might find in the following place: '{place}'. "
+                      "List at least 3 such items separating them by a comma. "
+                      "And include a brief description of each item."
+                  ),
+              }
+          ],
+      ):
+          response += msg_chunk["content"]
+          writer(msg_chunk)
+
+      return response
+
+
+  class State(TypedDict):
+      messages: Annotated[list[dict], operator.add]
+
+
+  # this is the tool-calling graph node
+  async def call_tool(state: State):
+      ai_message = state["messages"][-1]
+      tool_call = ai_message["tool_calls"][-1]
+
+      function_name = tool_call["function"]["name"]
+      if function_name != "get_items":
+          raise ValueError(f"Tool {function_name} not supported")
+
+      function_arguments = tool_call["function"]["arguments"]
+      arguments = json.loads(function_arguments)
+
+      function_response = await get_items(**arguments)
+      tool_message = {
+          "tool_call_id": tool_call["id"],
+          "role": "tool",
+          "name": function_name,
+          "content": function_response,
+      }
+      return {"messages": [tool_message]}
+
+
+  graph = (
+      StateGraph(State)
+      .add_node(call_tool)
+      .add_edge(START, "call_tool")
+      .compile()
+  )
+  ```
+
+  Let's invoke the graph with an @[`AIMessage`] that includes a tool call:
+
+  ```python
+  inputs = {
+      "messages": [
+          {
+              "content": None,
+              "role": "assistant",
+              "tool_calls": [
+                  {
+                      "id": "1",
+                      "function": {
+                          "arguments": '{"place":"bedroom"}',
+                          "name": "get_items",
+                      },
+                      "type": "function",
+                  }
+              ],
+          }
+      ]
+  }
+
+  async for chunk in graph.astream(
+      inputs,
+      stream_mode="custom",
+      version="v2",
+  ):
+      if chunk["type"] == "custom":
+          print(chunk["data"]["content"], end="|", flush=True)
+  ```
+  :::
+
+  :::js
+  ```typescript
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START, LangGraphRunnableConfig } from "@langchain/langgraph";
+  import { tool } from "@langchain/core/tools";
+  import * as z from "zod";
+  import OpenAI from "openai";
+
+  const openaiClient = new OpenAI();
+  const modelName = "gpt-5.4-mini";
+
+  async function* streamTokens(modelName: string, messages: any[]) {
+    const response = await openaiClient.chat.completions.create({
+      messages,
+      model: modelName,
+      stream: true,
+    });
+
+    let role: string | null = null;
+    for await (const chunk of response) {
+      const delta = chunk.choices[0]?.delta;
+
+      if (delta?.role) {
+        role = delta.role;
+      }
+
+      if (delta?.content) {
+        yield { role, content: delta.content };
+      }
+    }
+  }
+
+  // this is our tool
+  const getItems = tool(
+    async (input, config: LangGraphRunnableConfig) => {
+      let response = "";
+      for await (const msgChunk of streamTokens(
+        modelName,
+        [
+          {
+            role: "user",
+            content: `Can you tell me what kind of items i might find in the following place: '${input.place}'. List at least 3 such items separating them by a comma. And include a brief description of each item.`,
+          },
+        ]
+      )) {
+        response += msgChunk.content;
+        config.writer?.(msgChunk);
+      }
+      return response;
+    },
+    {
+      name: "get_items",
+      description: "Use this tool to list items one might find in a place you're asked about.",
+      schema: z.object({
+        place: z.string().describe("The place to look up items for."),
+      }),
+    }
+  );
+
+  const State = new StateSchema({
+    messages: MessagesValue,
+  });
+
+  const callTool: GraphNode<typeof State> = async (state) => {
+    const aiMessage = state.messages.at(-1);
+    const toolCall = aiMessage.tool_calls?.at(-1);
+
+    const functionName = toolCall?.function?.name;
+    if (functionName !== "get_items") {
+      throw new Error(`Tool ${functionName} not supported`);
+    }
+
+    const functionArguments = toolCall?.function?.arguments;
+    const args = JSON.parse(functionArguments);
+
+    const functionResponse = await getItems.invoke(args);
+    const toolMessage = {
+      tool_call_id: toolCall.id,
+      role: "tool",
+      name: functionName,
+      content: functionResponse,
+    };
+    return { messages: [toolMessage] };
+  };
+
+  const graph = new StateGraph(State)
+    // this is the tool-calling graph node
+    .addNode("callTool", callTool)
+    .addEdge(START, "callTool")
+    .compile();
+  ```
+
+  Let's invoke the graph with an @[`AIMessage`] that includes a tool call:
+
+  ```typescript
+  const inputs = {
+    messages: [
+      {
+        content: null,
+        role: "assistant",
+        tool_calls: [
+          {
+            id: "1",
+            function: {
+              arguments: '{"place":"bedroom"}',
+              name: "get_items",
+            },
+            type: "function",
+          }
+        ],
+      }
+    ]
+  };
+
+  for await (const chunk of await graph.stream(
+    inputs,
+    { streamMode: "custom" }
+  )) {
+    console.log(chunk.content + "|");
+  }
+  ```
+  :::
+</Accordion>
+
+### Disable streaming for specific chat models
+
+If your application mixes models that support streaming with those that do not, you may need to explicitly disable streaming for
+models that do not support it.
+
+:::python
+Set `streaming=False` when initializing the model.
+
+<Tabs>
+    <Tab title="init_chat_model">
+    ```python
+    from langchain.chat_models import init_chat_model
+
+    model = init_chat_model(
+        "claude-sonnet-4-6",
+        # Set streaming=False to disable streaming for the chat model
+        streaming=False  # [!code highlight]
+    )
+    ```
+    </Tab>
+    <Tab title="Chat model interface">
+    ```python
+    from langchain_openai import ChatOpenAI
+
+    # Set streaming=False to disable streaming for the chat model
+    model = ChatOpenAI(model="gpt-5.5", streaming=False)
+    ```
+    </Tab>
+</Tabs>
+:::
+
+:::js
+Set `streaming: false` when initializing the model.
+
+```typescript
+import { ChatOpenAI } from "@langchain/openai";
+
+const model = new ChatOpenAI({
+  model: "gpt-5.5",
+  // Set streaming: false to disable streaming for the chat model
+  streaming: false,
+});
+```
+:::
+
+:::python
+<Note>
+Not all chat model integrations support the `streaming` parameter. If your model doesn't support it, use `disable_streaming=True` instead. This parameter is available on all chat models via the base class.
+</Note>
+:::
+
+:::js
+<Note>
+Not all chat model integrations support the `streaming` parameter. If your model doesn't support it, use `disableStreaming: true` instead. This parameter is available on all chat models via the base class.
+</Note>
+:::
+
+:::python
+
+### Migrate to v2
+
+The v2 streaming format (used throughout this page) provides a unified output format. Here's a summary of the key differences and how to migrate:
+
+| Scenario | v1 (default) | v2 (`version="v2"`) |
+|---|---|---|
+| Single stream mode | Raw data (dict) | `StreamPart` dict with `type`, `ns`, `data` |
+| Multiple stream modes | `(mode, data)` tuples | Same `StreamPart` dict, filter on `chunk["type"]` |
+| Subgraph streaming | `(namespace, data)` tuples | Same `StreamPart` dict, check `chunk["ns"]` |
+| Multiple modes + subgraphs | `(namespace, mode, data)` triples | Same `StreamPart` dict |
+| `invoke()` return type | Plain dict (state) | `GraphOutput` with `.value` and `.interrupts` |
+| Interrupt location (stream) | `__interrupt__` key in state dict | `interrupts` field on `values` stream parts |
+| Interrupt location (invoke) | `__interrupt__` key in result dict | `.interrupts` attribute on `GraphOutput` |
+| Pydantic/dataclass output | Returns plain dict | Coerces to model/dataclass instance |
+
+#### v2 invoke format
+
+When you pass `version="v2"` to `invoke()` or `ainvoke()`, it returns a @[`GraphOutput`] object with `.value` and `.interrupts` attributes:
+
+```python
+from langgraph.types import GraphOutput
+
+result = graph.invoke(inputs, version="v2")
+
+assert isinstance(result, GraphOutput)
+result.value       # your output — dict, Pydantic model, or dataclass
+result.interrupts  # tuple[Interrupt, ...], empty if none occurred
+```
+
+With any stream mode other than the default `"values"`, `invoke(..., stream_mode="updates", version="v2")` returns `list[StreamPart]` instead of `list[tuple]`.
+
+<Warning>
+Dict-style access on `GraphOutput` (`result["key"]`, `"key" in result`, `result["__interrupt__"]`) still works for backwards compatibility but is **deprecated** and will be removed in a future version. Migrate to `result.value` and `result.interrupts`.
+</Warning>
+
+This separates state from interrupt metadata. With v1, interrupts are embedded in the returned dict under `__interrupt__`:
+
+<CodeGroup>
+```python v2 (new)
+config = {"configurable": {"thread_id": "thread-1"}}
+result = graph.invoke(inputs, config=config, version="v2")
+
+if result.interrupts:
+    print(result.interrupts[0].value)
+    graph.invoke(Command(resume=True), config=config, version="v2")
+```
+```python v1 (current default)
+config = {"configurable": {"thread_id": "thread-1"}}
+result = graph.invoke(inputs, config=config)
+
+if "__interrupt__" in result:
+    print(result["__interrupt__"][0].value)
+    graph.invoke(Command(resume=True), config=config)
+```
+</CodeGroup>
+
+#### Pydantic and dataclass state coercion
+
+When your graph state is a Pydantic model or dataclass, v2 `values` mode automatically coerces output to the correct type:
+
+```python
+from pydantic import BaseModel
+from typing import Annotated
+import operator
+
+class MyState(BaseModel):
+    value: str
+    items: Annotated[list[str], operator.add]
+
+# With version="v2", chunk["data"] is a MyState instance
+for chunk in graph.stream(
+    {"value": "x", "items": []}, stream_mode="values", version="v2"
+):
+    print(type(chunk["data"]))  # <class 'MyState'>
+```
+
+<a id="async"></a>
+### Async with Python < 3.11
+
+In Python versions < 3.11, [asyncio tasks](https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task) do not support the `context` parameter.
+This limits LangGraph ability to automatically propagate context, and affects LangGraph's streaming mechanisms in two key ways:
+
+1. You **must** explicitly pass [`RunnableConfig`](https://python.langchain.com/docs/concepts/runnables/#runnableconfig) into async LLM calls (e.g., `ainvoke()`), as callbacks are not automatically propagated.
+2. You **cannot** use @[`get_stream_writer`] in async nodes or tools—you must pass a `writer` argument directly.
+
+<Accordion title="Extended example: async LLM call with manual config">
+  ```python
+  from typing import TypedDict
+  from langgraph.graph import START, StateGraph
+  from langchain.chat_models import init_chat_model
+
+  model = init_chat_model(model="gpt-5.4-mini")
+
+  class State(TypedDict):
+      topic: str
+      joke: str
+
+  # Accept config as an argument in the async node function
+  async def call_model(state, config):
+      topic = state["topic"]
+      print("Generating joke...")
+      # Pass config to model.ainvoke() to ensure proper context propagation
+      joke_response = await model.ainvoke(  # [!code highlight]
+          [{"role": "user", "content": f"Write a joke about {topic}"}],
+          config,
+      )
+      return {"joke": joke_response.content}
+
+  graph = (
+      StateGraph(State)
+      .add_node(call_model)
+      .add_edge(START, "call_model")
+      .compile()
+  )
+
+  # Set stream_mode="messages" to stream LLM tokens
+  async for chunk in graph.astream(
+      {"topic": "ice cream"},
+      stream_mode="messages",  # [!code highlight]
+      version="v2",  # [!code highlight]
+  ):
+      if chunk["type"] == "messages":
+          message_chunk, metadata = chunk["data"]
+          if message_chunk.content:
+              print(message_chunk.content, end="|", flush=True)
+  ```
+</Accordion>
+
+<Accordion title="Extended example: async custom streaming with stream writer">
+  ```python
+  from typing import TypedDict
+  from langgraph.types import StreamWriter
+
+  class State(TypedDict):
+        topic: str
+        joke: str
+
+  # Add writer as an argument in the function signature of the async node or tool
+  # LangGraph will automatically pass the stream writer to the function
+  async def generate_joke(state: State, writer: StreamWriter):  # [!code highlight]
+        writer({"custom_key": "Streaming custom data while generating a joke"})
+        return {"joke": f"This is a joke about {state['topic']}"}
+
+  graph = (
+        StateGraph(State)
+        .add_node(generate_joke)
+        .add_edge(START, "generate_joke")
+        .compile()
+  )
+
+  # Set stream_mode="custom" to receive the custom data in the stream  # [!code highlight]
+  async for chunk in graph.astream(
+        {"topic": "ice cream"},
+        stream_mode="custom",
+        version="v2",
+  ):
+        if chunk["type"] == "custom":
+            print(chunk["data"])
+  ```
+</Accordion>
+:::

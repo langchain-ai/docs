@@ -1,0 +1,19 @@
+---
+title: LangSmith Studio
+sidebarTitle: LangSmith Studio
+---
+
+import StudioPy from '/snippets/oss/studio-py.mdx';
+import StudioJs from '/snippets/oss/studio-js.mdx';
+
+:::python
+<StudioPy />
+:::
+
+:::js
+<StudioJs />
+:::
+
+<Tip>
+For more information about deployed agents, see [Deployment](/oss/langchain/deploy).
+</Tip>

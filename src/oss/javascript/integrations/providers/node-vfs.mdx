@@ -1,0 +1,182 @@
+---
+title: "Node VFS"
+sidebarTitle: "Node VFS"
+description: "Use the Node.js VFS sandbox backend with deepagents for local development and testing"
+---
+
+The VFS sandbox runs entirely locally using an in-memory virtual file system. No cloud services, Docker, or external dependencies required - perfect for development and testing.
+
+It uses [node-vfs-polyfill](https://github.com/vercel-labs/node-vfs-polyfill) which implements the upcoming Node.js VFS feature ([nodejs/node#61478](https://github.com/nodejs/node/pull/61478)).
+
+## Setup
+
+<CodeGroup>
+    ```bash npm
+    npm install @langchain/node-vfs
+    ```
+
+    ```bash yarn
+    yarn add @langchain/node-vfs
+    ```
+
+    ```bash pnpm
+    pnpm add @langchain/node-vfs
+    ```
+</CodeGroup>
+
+No authentication required.
+
+## Usage with deepagents
+
+:::js
+```typescript
+import { createDeepAgent } from "deepagents";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { VfsSandbox } from "@langchain/node-vfs";
+
+const sandbox = await VfsSandbox.create({
+  initialFiles: {
+    "/src/index.js": "console.log('Hello from VFS!')",
+  },
+});
+
+try {
+  const agent = createDeepAgent({
+    model: new ChatAnthropic({ model: "claude-sonnet-4-20250514" }),
+    systemPrompt: "You are a coding assistant with VFS access.",
+    backend: sandbox,
+  });
+
+  const result = await agent.invoke({
+    messages: [{ role: "user", content: "Run the index.js file" }],
+  });
+} finally {
+  await sandbox.stop();
+}
+```
+:::
+
+## Standalone usage
+
+:::js
+```typescript
+import { VfsSandbox } from "@langchain/node-vfs";
+
+const sandbox = await VfsSandbox.create({
+  initialFiles: {
+    "/src/index.js": "console.log('Hello from VFS!')",
+  },
+});
+
+const result = await sandbox.execute("node /src/index.js");
+console.log(result.output); // "Hello from VFS!"
+
+await sandbox.stop();
+```
+:::
+
+## Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `mountPath` | `string` | `"/vfs"` | Mount path for the virtual file system |
+| `timeout` | `number` | `30000` | Command execution timeout in milliseconds |
+| `initialFiles` | `Record<string, string \| Uint8Array>` | - | Initial files to populate the VFS |
+
+## How it works
+
+VFS uses a hybrid approach for maximum compatibility:
+
+1. **File storage**: Files are stored in-memory using a virtual file system
+2. **Command execution**: When executing commands, files sync to a temp directory, the command runs, and changes sync back to VFS
+3. **Fallback mode**: If node-vfs-polyfill is unavailable, falls back to using a temp directory for both storage and execution
+
+This provides the benefits of in-memory storage (isolation, speed) while maintaining full shell command execution support.
+
+## File operations
+
+:::js
+```typescript
+// Upload files
+const encoder = new TextEncoder();
+await sandbox.uploadFiles([
+  ["src/app.js", encoder.encode("console.log('Hi')")],
+  ["package.json", encoder.encode('{"name": "test"}')],
+]);
+
+// Download files
+const results = await sandbox.downloadFiles(["src/app.js"]);
+for (const result of results) {
+  if (result.content) {
+    console.log(new TextDecoder().decode(result.content));
+  }
+}
+```
+:::
+
+## Factory functions
+
+:::js
+```typescript
+import { createVfsSandboxFactory, createVfsSandboxFactoryFromSandbox } from "@langchain/node-vfs";
+
+// Create new sandbox per invocation
+const factory = createVfsSandboxFactory({
+  initialFiles: { "/README.md": "# Hello" },
+});
+
+// Or reuse an existing sandbox across invocations
+const sandbox = await VfsSandbox.create();
+const reuseFactory = createVfsSandboxFactoryFromSandbox(sandbox);
+```
+:::
+
+## Error handling
+
+```typescript
+import { VfsSandboxError } from "@langchain/node-vfs";
+
+try {
+  await sandbox.execute("some-command");
+} catch (error) {
+  if (error instanceof VfsSandboxError) {
+    switch (error.code) {
+      case "NOT_INITIALIZED":
+        // Handle uninitialized sandbox
+        break;
+      case "COMMAND_TIMEOUT":
+        // Handle timeout
+        break;
+    }
+  }
+}
+```
+
+### Error codes
+
+| Code | Description |
+|------|-------------|
+| `NOT_INITIALIZED` | Sandbox not initialized |
+| `ALREADY_INITIALIZED` | Sandbox already initialized |
+| `INITIALIZATION_FAILED` | Failed to initialize VFS |
+| `COMMAND_TIMEOUT` | Command execution timed out |
+| `COMMAND_FAILED` | Command execution failed |
+| `FILE_OPERATION_FAILED` | File operation failed |
+| `NOT_SUPPORTED` | VFS not supported in environment |
+
+## When to use VFS
+
+**Best suited for:**
+- Local development and testing
+- CI/CD pipelines without Docker
+- Quick prototyping without cloud setup
+- Environments where external services aren't available
+
+**Not ideal for:**
+- Production workloads requiring true container isolation
+- Persistent storage across sessions
+- Heavy computational tasks (no resource limits)
+
+## Future: Native Node.js VFS
+
+This package uses [node-vfs-polyfill](https://github.com/vercel-labs/node-vfs-polyfill) which implements the upcoming Node.js VFS feature being developed in [nodejs/node#61478](https://github.com/nodejs/node/pull/61478). When the official `node:vfs` module lands in Node.js, this package will be updated to use the native implementation.
