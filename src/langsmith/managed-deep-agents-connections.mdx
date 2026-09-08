@@ -10,8 +10,10 @@ A connection links a managed deep agent to an external service such as GitHub, N
 
 Connections let you:
 
-- **Rotate a credential without redeploying**: Each run resolves the current value from the workspace, so a rotated key takes effect on the next run.
+- **Keep credentials out of your project**: `mda deploy` collects `.env` values as deployment secrets on every deploy. A connection value stays in the workspace instead.
 - **Give each caller their own identity**: A user-owned connection resolves the credential of the person who made the request, so the agent reads that person's documents and acts under their name. An environment variable holds one value for everyone.
+- **Skip the OAuth plumbing**: Managed Deep Agents runs the authorization round-trip, so a project needs no callback route, token store, or consent screen. These flows are handled automatically by your Managed Deep Agent.
+- **Reuse one credential across agents**: Connections belong to the workspace, so several deployments can resolve the same slug. Rotating the value takes effect on the next run of each, with no redeploy. One developer can configure a Connection which other developers can use in their agents.
 
 Create connections with `mda connections create`. Deploy fails when the project declares a connection that is missing from the workspace.
 
@@ -23,28 +25,34 @@ Every `connections.get(...)` call names who owns the credential it resolves:
 
 | Owner | Resolves to | Use when |
 | --- | --- | --- |
-| `agent` | One credential that belongs to the deployment. Every caller uses it. | The capability is the same for everyone, such as web search with Tavily or read-only access to a company knowledge base. |
-| `user` | The calling person's own credential. Each person authorizes their own account. | The agent acts on someone's behalf, such as searching Notion pages they have access to or sending email as them. |
+| `agent` | One credential that belongs to the deployment. Every caller uses it. | Every caller needs the same capability: web search with Tavily, a shared knowledge base, or posting to one team channel. |
+| `user` | The calling person's own credential. Each person authorizes their own account. | The agent acts as the person who asked: searching Notion pages only they can see, filing an issue under their name, or sending email as them. |
 
 :::python
 ```python
-# The same slug can resolve either owner. The call site decides.
-agent_value = await connections.get("organization-tavily", {"type": "agent"})
-user_value = await connections.get("engineering-notion", {"type": "user"})
+tavily_key = await connections.get("organization-tavily", {"type": "agent"})
+notion_token = await connections.get("engineering-notion", {"type": "user"})
 ```
 :::
 
 :::js
 ```typescript
-// The same slug can resolve either owner. The call site decides.
-const agentValue = await connections.get("organization-tavily", { type: "agent" });
-const userValue = await connections.get("engineering-notion", { type: "user" });
+const tavilyKey = await connections.get("organization-tavily", { type: "agent" });
+const notionToken = await connections.get("engineering-notion", { type: "user" });
 ```
 :::
 
-Ownership is a property of the call, not of the stored connection. `connections.get(...)` resolves to the credential value as a string.
+`connections.get(...)` resolves to the credential value as a string.
 
-An agent-owned connection holds either an opaque secret or an OAuth grant that you [authorize once for the deployment](#authorize-an-agent-owned-oauth-account). A user-owned connection holds one OAuth grant per caller. When the caller has not authorized a user-owned connection yet, the run pauses with a [`credential_authorization_required` interrupt](#handle-the-authorization-interrupt) instead of failing.
+A connection is a container, and it belongs to the workspace rather than to an owner. The credentials inside it have owners, and `mda connections create` sets the owner by which flags you pass. There is no `--owner` flag:
+
+| Create with | Credential owner | Code asks for |
+| --- | --- | --- |
+| `--secret-from-env`, `--secret-from-file`, or stdin | The agent | `{"type": "agent"}` |
+| `--oauth` or custom endpoints, without `--authorize` | Each caller, granted at runtime | `{"type": "user"}` |
+| `--oauth` or `--mcp` with `--authorize` | The agent | `{"type": "agent"}` |
+
+`connections.get(...)` selects an owner. It does not create one. Asking for an owner with no stored credential fails the run for `agent`, and raises a [`credential_authorization_required` interrupt](#handle-the-authorization-interrupt) for `user`.
 
 Agent-owned credentials belong to the project's deployment, so create them after at least one successful [`mda deploy`](/langsmith/managed-deep-agents-deploy).
 
@@ -587,6 +595,8 @@ One interrupt lists every missing grant. Handle each entry before resuming. An e
 | `credentials[].auth_id` | `oauth2` | Authorization session id used to poll status. |
 
 ### Read the interrupt in your UI
+
+The frontend that renders this interrupt is a web application, so these examples are TypeScript whether the agent is written in Python or TypeScript.
 
 Detect the credential gate payload on `stream.interrupt`, render a connect card, then resume with `stream.respond` after every grant is stored:
 
