@@ -110,7 +110,7 @@ Deep Agents Code ignores environment variables that could alter executable looku
     - Git config/exec injection: `GIT_DIR`, `GIT_WORK_TREE`, `GIT_OBJECT_DIRECTORY`, `GIT_EXEC_PATH`, `GIT_EDITOR`, `GIT_PAGER`, `GIT_SSH`, `GIT_SSH_COMMAND`, plus the prefix families `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, `GIT_CONFIG_VALUE_*`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_SYSTEM`, and `GIT_CONFIG_GLOBAL`
     - Windows process variables: `COMSPEC`, `SYSTEMROOT`, `WINDIR`
 
-    A project `.env` also cannot set `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS`, `DEEPAGENTS_CODE_DISABLED_PROJECT_MCP_SERVERS`, `DEEPAGENTS_CODE_AUTO_CLASSIFIER_MODEL`, `DEEPAGENTS_CODE_AUTO_CLASSIFIER_TIMEOUT`, or `TERM_PROGRAM`. Set these in your shell or the global `~/.deepagents/.env` instead.
+    A project `.env` also cannot set `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS`, `DEEPAGENTS_CODE_DISABLED_PROJECT_MCP_SERVERS`, `DEEPAGENTS_CODE_AUTO_CLASSIFIER_MODEL`, `DEEPAGENTS_CODE_AUTO_CLASSIFIER_TIMEOUT`, `DEEPAGENTS_CODE_FORKED_SUBAGENTS`, or `TERM_PROGRAM`. Set these in your shell or the global `~/.deepagents/.env` instead.
 </Accordion>
 
 <Warning>
@@ -672,6 +672,10 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
 
 <ResponseField name="DEEPAGENTS_CODE_EXTRA_SKILLS_DIRS" type="string" post={["optional"]}>
     Colon-separated paths added to the [skill containment allowlist](#skill-directory-allowlist).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_FORKED_SUBAGENTS" type="string" default="true" post={["optional"]}>
+    Let the built-in `general-purpose` subagent inherit the parent conversation and system prompt. Set to `0`, `false`, `no`, or `off` (or an empty value) to use isolated mode. Set this variable in your shell or global `~/.deepagents/.env`; Deep Agents Code ignores it in project `.env` files because inheritance can include private parent state. See [Continue the parent conversation](/oss/deepagents/code/subagents#continue-the-parent-conversation).
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_HISTORY_RETENTION_DAYS" type="integer" default="30" post={["optional"]}>
