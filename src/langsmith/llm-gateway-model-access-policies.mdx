@@ -11,47 +11,14 @@ A model access policy defines an allowlist of providers and models that may be u
 
 ## Policy configuration
 
-A model access policy is created via the gateway policies API with `policy_type` set to `"model_access"`. The `config` field contains a `providers` array. Each entry names a direct gateway provider and specifies one of two access modes:
+A model access policy specifies a `providers` array. Each entry names a direct gateway provider and specifies one of two access modes:
 
-- `"access": "all"` — every model the provider can serve is allowed. Omit `allowed_models` when using this mode.
-- `"access": "selected"` — only the models listed in `allowed_models` are allowed. At least one model is required.
-
-Example configuration:
-
-```json
-{
-  "providers": [
-    {"provider": "openai", "access": "selected", "allowed_models": ["gpt-4o", "gpt-4o-mini"]},
-    {"provider": "anthropic", "access": "all"}
-  ]
-}
-```
-
-### Constraints
-
-The following constraints are enforced when a policy is written:
-
-- Only supported direct providers may be listed (configured model routes and custom provider routes are not supported).
-- Each provider may appear at most once.
-- Model IDs must be non-empty, unique within their provider entry, and under 120 characters.
-- A provider may list at most 50 models.
-
-## Behavior
-
-Model access policies are **fail-closed**: anything not explicitly allowed is denied. A policy cannot be used as a blocklist.
-
-| Condition | Result |
-| --- | --- |
-| Provider listed with `"access": "all"` | Allowed |
-| Provider listed with `"access": "selected"` and requested model is in `allowed_models` | Allowed |
-| Provider listed with `"access": "selected"` and requested model is not in `allowed_models` | Blocked |
-| Provider not listed in the policy | Blocked |
-| Request targets a configured model route or custom provider route | Always blocked |
-| Requested model cannot be determined from the request | Blocked |
+- `all` — every model the provider can serve is allowed.
+- `selected` — only the listed models are allowed. At least one model is required.
 
 ## Scopes and overrides
 
-A model access policy is scoped to exactly one subject tier using `subject_matchers`:
+A model access policy is scoped to exactly one subject tier:
 
 | Tier | Scope |
 | --- | --- |
@@ -60,25 +27,17 @@ A model access policy is scoped to exactly one subject tier using `subject_match
 | `user_id` | Applies to one user. |
 | `api_key_id` | Applies to a single API key. |
 
-A compound matcher combining one subject tier with one custom `X-Gateway-*` header value is also supported. This narrows the policy to requests that match both the subject and the header value.
-
-### Precedence
+### Policy overrides
 
 When a request matches model access policies at multiple tiers, only the narrowest tier applies:
 
 ```
-api_key_id > user_id > workspace_id > organization_id > custom header
+api_key_id > user_id > workspace_id > organization_id
 ```
 
 The narrower policy is a **complete replacement**, not an intersection. If an org-wide policy allows OpenAI and Anthropic, and a workspace-level policy allows only OpenAI, then requests in that workspace may only use OpenAI — the Anthropic access granted at the org level does not carry through.
 
-This lets administrators set a broad baseline at the org level and carve out stricter access for specific workspaces, users, or API keys without modifying the broader policy.
-
-### Same-tier policies
-
-If multiple policies match at the same tier, all of them apply and the request must satisfy every policy — a model is usable only if every same-tier policy allows it.
-
-Within a single subject, there is one model access policy per policy type. Creating a new policy for the same subject replaces the previous configuration rather than accumulating.
+This lets administrators set a broad baseline at the org level and carve out stricter access for specific workspaces, users, or API keys without modifying the broader policy. If multiple policies match at the same tier, all of them apply and a model is usable only if every same-tier policy allows it.
 
 ## No policy defined
 
