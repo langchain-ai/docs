@@ -1134,7 +1134,12 @@ By default, the LangSmith control plane connects directly to the node IPs advert
 | LangSmith pods → Sandbox nodes | Sandbox node IPs | TCP `19190` | Sandbox placement, exec, and data-plane traffic |
 | Sandbox pods → LangSmith API | `platform.endpoint` | TCP `443` (or `80`) | Callbacks and the `langsmith` CLI inside sandboxes |
 
-When both clusters share a VPC, this works with a single security-group rule allowing the LangSmith worker and pod security group to reach the sandbox nodes on `19190`. The Terraform module creates that rule for you.
+When both clusters share a VPC, the first row works with a single security-group rule allowing the LangSmith worker and pod security group to reach the sandbox nodes on `19190`. The Terraform module creates that rule for you.
+
+The second row is the one that changes when you move from `sameCluster` to `separateCluster`, so check it even if sandboxes already worked. In `sameCluster` mode the sandbox host reaches the backend over in-cluster Service DNS, and nothing in between can drop the call. In `separateCluster` mode it calls `platform.endpoint` over the network instead, so the call has to clear whatever guards that address. On AWS, the Terraform module handles both guards:
+
+- **Load balancer allowlist.** With `alb_scheme = "internal"`, the call stays inside the VPC and keeps its source security group, so Terraform adds an ALB ingress rule naming the sandbox node group and you can narrow `alb_allowed_cidr_blocks` as much as you like. With `alb_scheme = "internet-facing"`, the call leaves through the NAT gateway and returns as public traffic, so only `alb_allowed_cidr_blocks` can match it. If you have narrowed that list, `terraform apply` fails with instructions instead of letting the sandbox cluster come up unable to register. Prefer switching to an internal ALB; `sandbox_alb_allow_nat_egress` exists as an opt-in but grants load balancer access to everything sharing the NAT gateway, including the sandboxes themselves.
+- **Egress filtering.** With `create_firewall = true`, the sandbox cluster shares the private route tables, so its callback is inspected and dropped unless the hostname is allowed. Terraform appends `langsmith_domain` to `firewall_allowed_fqdns` for you.
 
 For cross-VPC or cross-account deployments, Terraform cannot infer the topology. Establish the route yourself with VPC peering, a transit gateway, or equivalent, then open `19190` on the sandbox node security group and any NACLs in between. Confirm the reverse path as well: `platform.endpoint` must be reachable from inside the sandbox cluster, so a LangSmith address that only resolves on the control-plane cluster's private DNS will not work.
 
