@@ -1,40 +1,42 @@
 ---
 title: Connect to MCP servers
-sidebarTitle: MCP connectors
+sidebarTitle: MCP
 description: Add tools from remote MCP servers to Managed Deep Agents.
 ---
 
 import ManagedDeepAgentsPublicBetaNote from '/snippets/python/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-An MCP connector adds tools from remote [Model Context Protocol (MCP)](/oss/python/deepagents/mcp) servers to a managed deep agent. Managed Deep Agents creates the MCP client, loads the tools, and adds them to the agent.
+Connect a managed deep agent to remote [Model Context Protocol (MCP)](/oss/python/deepagents/mcp) servers to add their tools to the agent. Managed Deep Agents creates the MCP client and loads the tools.
+
+Most remote MCP servers require authentication. A [connection](/langsmith/python/managed-deep-agents-connections) supplies it, and declaring the connection as user-owned makes each caller authorize their own account.
 
 <ManagedDeepAgentsPublicBetaNote />
 
 ## Project structure
 
-Declare MCP servers in a module directly under `connectors/`:
+Declare MCP servers in a module directly under `tools/`:
 
 ```text
 my-agent/
   agent.py
-  connectors/
+  tools/
     mcp.py
 ```
 
-The module must export a module-level `connector`.
+The module must export a module-level `mcp`.
 
 
 
 
-## Add an MCP connector
+## Add MCP servers
 
-Use `connectors.mcp` to declare one or more remote servers:
+Use `define_mcp` to declare one or more remote servers:
 
-```python connectors/mcp.py
-from managed_deepagents import connectors
+```python tools/mcp.py
+from managed_deepagents import define_mcp
 
-connector = connectors.mcp(
-    mcp_servers={
+mcp = define_mcp(
+    servers={
         "langchainDocs": {
             "transport": "http",
             "url": "https://docs.langchain.com/mcp",
@@ -50,7 +52,7 @@ Managed Deep Agents supports Streamable HTTP (`"http"`) and legacy SSE (`"sse"`)
 
 ## Select tools
 
-By default, the connector exposes every tool from each server. To expose only selected tools, set an allowlist inside that server's configuration:
+By default, Managed Deep Agents exposes every tool from each server. To expose only selected tools, set an allowlist inside that server's configuration:
 
 ```python
 {
@@ -69,35 +71,42 @@ You can use both options together. The denylist applies after the allowlist, and
 
 Selection uses raw MCP tool names before Managed Deep Agents prefixes them. Tool names are prefixed with the server name by default to avoid collisions. For example, the `search_docs_by_lang_chain` tool from the `langchainDocs` server is exposed as `langchainDocs__search_docs_by_lang_chain`.
 
-## Configure connections
+## Configure MCP servers
 
-Each server accepts the following options:
+Each server supports the following core options:
 
 | Option | Description |
 | --- | --- |
 | `transport` | Required. Use `http` for Streamable HTTP or `sse` for legacy SSE. |
 | `url` | Required. The remote MCP endpoint URL. |
-| `headers` | Static headers to send to the server, such as an authorization header. |
+| `headers` | Static headers to send to the server. |
 | `include_tools` / `includeTools` | Raw MCP tool names to expose. |
 | `exclude_tools` / `excludeTools` | Raw MCP tool names to hide. |
 | `default_tool_timeout` / `defaultToolTimeout` | Timeout for each tool call, in seconds for Python and milliseconds for TypeScript. |
 | `automatic_sse_fallback` / `automaticSSEFallback` | For HTTP, allow the client to fall back to SSE. |
 | `reconnect` | For SSE, configure reconnection behavior. |
 
-The connector also accepts these options:
+The MCP definition also accepts these options:
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `prefix_tool_name_with_server_name` / `prefixToolNameWithServerName` | `true` | Prefix each tool with `{server}__`. |
 | `throw_on_load_error` / `throwOnLoadError` | `true` | Fail loading instead of starting with a partial tool set. |
 
-If a server requires credentials, read them from environment variables and pass them through `headers`. Keep local values in `.env`; Managed Deep Agents forwards eligible values as deployment secrets. Do not hard-code credentials in the connector declaration.
+## Compare MCP with other capabilities
 
-## Distinguish connectors from other capabilities
-
-- **MCP connectors** add tools hosted by remote MCP servers.
+- **MCP servers** provide remotely hosted tools.
 - **[Authored tools](/langsmith/python/managed-deep-agents-tools)** implement application logic in the project and are passed through the agent definition.
 - **[Channels](/langsmith/python/managed-deep-agents-channels)** receive external messages that start agent runs and deliver responses.
+
+## Use MCP servers that require authentication
+
+If an MCP server requires credentials, declare a connection on the server config and create that connection in the workspace.
+
+- **MCP OAuth**: For servers that advertise OAuth and support automatic client registration, create with `mda connections create <slug>` (inferred from the MCP declaration) or `mda connections create <slug> --mcp <url>`. You do not supply a client ID or secret.
+- **Opaque secret or general OAuth**: For a static API key, or for a BYOT OAuth app you register yourself, create an opaque secret or general OAuth connection, then set the server's `connection` option to `connections.get(...)`.
+
+For create modes, owners, and runtime authorization, see [Manage connections](/langsmith/python/managed-deep-agents-connections).
 
 ---
 

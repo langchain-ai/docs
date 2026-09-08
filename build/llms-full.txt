@@ -54905,7 +54905,7 @@ It is included with the `managed-deepagents` npm package.
 Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and available on [LangSmith Cloud](/langsmith/cloud) in the US region only.
 </Note>
 
-For the fastest end-to-end path, see the [quickstart](/langsmith/javascript/managed-deep-agents-quickstart). For workflow guidance, see [Identity](/langsmith/javascript/managed-deep-agents-identity), [Memory](/langsmith/javascript/managed-deep-agents-memory), [Evals](/langsmith/javascript/managed-deep-agents-evals), [Custom tools](/langsmith/javascript/managed-deep-agents-tools), [Custom middleware](/langsmith/javascript/managed-deep-agents-middleware), [Sandboxes](/langsmith/javascript/managed-deep-agents-sandboxes), [Channels](/langsmith/javascript/managed-deep-agents-channels), [Schedules](/langsmith/javascript/managed-deep-agents-schedules), and [Deploy an agent](/langsmith/javascript/managed-deep-agents-deploy).
+For the fastest end-to-end path, see the [quickstart](/langsmith/javascript/managed-deep-agents-quickstart). For workflow guidance, see [Identity](/langsmith/javascript/managed-deep-agents-identity), [Memory](/langsmith/javascript/managed-deep-agents-memory), [Evals](/langsmith/javascript/managed-deep-agents-evals), [Custom tools](/langsmith/javascript/managed-deep-agents-tools), [Connections](/langsmith/javascript/managed-deep-agents-connections), [Custom middleware](/langsmith/javascript/managed-deep-agents-middleware), [Sandboxes](/langsmith/javascript/managed-deep-agents-sandboxes), [Channels](/langsmith/javascript/managed-deep-agents-channels), [Schedules](/langsmith/javascript/managed-deep-agents-schedules), and [Deploy an agent](/langsmith/javascript/managed-deep-agents-deploy).
 
 ## Install
 
@@ -54972,6 +54972,7 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 | `mda build [path]` | Compile a project into a managed LangGraph app without deploying. |
 | `mda evals …` | Initialize a Harbor workspace and continue eval authoring in a coding agent. |
 | `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
+| `mda connections …` | Manage authentication for tools and MCP connectors. |
 | `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
 | `mda channels init slack` | Add a Slack channel declaration to the current project. |
 | `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
@@ -55173,6 +55174,85 @@ When a sandbox is configured, `mda dev` tries the configured provider. If provid
 
 For local development, `mda dev` stages the project `.env` file into `.mda/build/.env` so LangGraph can load model provider keys and other runtime credentials.
 
+## Manage connections
+
+A connection links a managed deep agent to an external service. The credential lives in the LangSmith workspace, so it rotates without a redeploy, and a user-owned connection resolves the credential of whoever called the agent. Tools and MCP connectors resolve connections at runtime with `connections.get(...)`.
+
+Create connections in one of three modes: opaque secret (fixed API key), general OAuth (BYOT app from the catalog or custom endpoints), or MCP OAuth (discover and register from an MCP server URL). Use `mda connections` to manage these credentials in the current workspace.
+
+| Command | Use |
+| --- | --- |
+| `mda connections catalog` | List services with preconfigured OAuth settings. |
+| `mda connections create <slug>` | Create an opaque secret, general OAuth, or MCP OAuth connection. |
+| `mda connections list` | List connection metadata for the workspace. |
+| `mda connections get <slug>` | Show metadata for one connection. |
+| `mda connections delete <slug>` | Delete a connection and its stored material. |
+
+The first argument to `mda connections create` is a slug, which is your name for the connection and the name code passes to `connections.get(...)`. Provider names go to `--oauth`.
+
+The OAuth catalog saves you from looking up a provider's OAuth settings. When you pass a listed service to `--oauth`, the CLI supplies its authorization URL, token URL, token endpoint authentication method, authorization parameters, and default scopes, so you provide only your client ID and client secret. The catalog does not limit which providers you can use: for anything else, pass `--authorize-url` and `--token-url`. Catalog names include `github`, `google`, `linear`, `slack`, `atlassian`, and `notion-api`:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections catalog
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections catalog
+    ```
+
+    ```bash bun
+    bunx mda connections catalog
+    ```
+</CodeGroup>
+
+
+Create an agent-owned API key for a custom Tavily tool:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+
+    ```bash bun
+    bunx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+</CodeGroup>
+
+
+The following flags control connection creation:
+
+| Flag | Use |
+| --- | --- |
+| `--project PATH` | Set the project directory. Defaults to the current directory. |
+| `--workspace-id WORKSPACE_ID` | Override `LANGSMITH_WORKSPACE_ID`. |
+| `--secret-from-env VAR` | Read a fixed value or OAuth client secret from the shell or project `.env`. |
+| `--secret-from-file PATH` | Read a fixed value or OAuth client secret from a file. |
+| `--oauth SERVICE` | Use the preconfigured settings for a service in `mda connections catalog`. |
+| `--client-id CLIENT_ID` | Set the OAuth client ID. |
+| `--auth-method METHOD` | Set the token endpoint method to `client_secret_basic`, `client_secret_post`, or `none`. |
+| `--scope SCOPE` | Replace the provider's default scopes. Repeat for each scope. |
+| `--allowed-scope SCOPE` | Set the maximum scope that an authorization flow can request. Repeat for each scope. |
+| `--authorization-param KEY=VALUE` | Add an OAuth authorization query parameter. Repeat for each parameter. |
+| `--authorize-url URL` | Set a custom OAuth authorization endpoint. Requires `--token-url`. |
+| `--token-url URL` | Set a custom OAuth token endpoint. Requires `--authorize-url`. |
+| `--mcp URL` | Create an MCP OAuth connection by discovering OAuth from the MCP server URL. |
+| `--authorize` | Sign in to the account the deployed agent uses, storing an agent-owned OAuth grant. Requires OAuth flags and a project directory. |
+
+With no value flags and no `--oauth` endpoints, `mda connections create <slug>` infers MCP OAuth when that slug matches exactly one user-owned MCP connection in the project.
+
+Use `--json` with `catalog`, `list`, or `get` for machine-readable output. Use `--yes` with `delete` to skip the confirmation prompt.
+
+For credential owners, create modes, caller identity, and runtime examples, see [Manage connections](/langsmith/javascript/managed-deep-agents-connections).
+
 ## Deploy projects
 
 Use `mda deploy` to compile and deploy a project to LangSmith:
@@ -55294,7 +55374,7 @@ Use `mda delete` to delete a deployed Managed Deep Agent and the LangSmith resou
 | `project root ... is not a directory` | Pass a directory path to `mda dev` or `mda deploy`. |
 | `no agent entry file found` | Add `agent.ts` or `agent.tsx` at the project root. |
 | `No LangSmith API key found` | Set `LANGSMITH_API_KEY` or add it to the project `.env`. |
-| Deploy fails with 401 or 403 | Confirm the API key belongs to a workspace with beta access. |
+| Deploy fails with 401 or 403 | Confirm the API key belongs to a workspace with deployments access. See [Pricing plans](/langsmith/pricing-plans). |
 | Deploy reports a missing model provider API key | Add the provider key, such as `OPENAI_API_KEY`, to `.env`, export it in your shell, or configure it as a LangSmith workspace secret. |
 | Deploy reports a Context Hub conflict | The Context Hub repo changed during deploy. Re-run `mda deploy`. |
 | The build exceeds 200 MB | Remove generated artifacts or large files from the project before deploying. |
@@ -55308,6 +55388,869 @@ Use `mda delete` to delete a deployed Managed Deep Agent and the LangSmith resou
 </Callout>
 <Callout icon="edit">
     [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-cli.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
+# Manage connections
+Source: https://docs.langchain.com/langsmith/javascript/managed-deep-agents-connections
+
+A connection links a managed deep agent to an external service such as GitHub, Notion, or Tavily. The credential lives in your LangSmith workspace. Use `connections.get(...)` in an authored tool or MCP server definition to resolve it at runtime.
+
+Connections let you:
+
+- **Keep credentials out of your project**: `mda deploy` collects `.env` values as deployment secrets on every deploy. A connection value stays in the workspace instead.
+- **Give each caller their own identity**: A user-owned connection resolves the credential of the person who made the request, so the agent reads that person's documents and acts under their name. An environment variable holds one value for everyone.
+- **Skip the OAuth plumbing**: Managed Deep Agents runs the authorization round-trip, so a project needs no callback route, token store, or consent screen. These flows are handled automatically by your Managed Deep Agent.
+- **Reuse one slug across agents**: Connections belong to the workspace, so several deployments can resolve the same slug. Each deployment holds its own credential under that slug: run `mda connections create <slug>` once from each project root. Rotating a deployment's value takes effect on its next run, with no redeploy.
+
+Storing a credential in LangSmith to use across your Managed Deep Agents takes one command:
+
+
+
+```bash
+npx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+```
+
+```typescript
+const apiKey = await connections.get("organization-tavily", { type: "agent" });
+```
+
+
+The rest of this page covers the two choices around those steps: who owns the credential, and how the service authenticates.
+
+<Note>
+Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and available on [LangSmith Cloud](/langsmith/cloud) in the US region only.
+</Note>
+
+## Choose a credential owner
+
+Every `connections.get(...)` call names who owns the credential it resolves:
+
+| Owner | Resolves to | Use when |
+| --- | --- | --- |
+| `agent` | One credential that belongs to the deployment. Every caller uses it. | Every caller needs the same capability: web search with Tavily, a shared knowledge base, or posting to one team channel. |
+| `user` | The calling person's own credential. Each person authorizes their own account. | The agent acts as the person who asked: searching Notion pages only they can see, filing an issue under their name, or sending email as them. |
+
+
+
+```typescript
+const tavilyKey = await connections.get("organization-tavily", { type: "agent" });
+const notionToken = await connections.get("engineering-notion", { type: "user" });
+```
+
+
+`connections.get(...)` resolves to the credential value as a string.
+
+A connection is a container, and it belongs to the workspace rather than to an owner. The credentials inside it have owners. There is no `--owner` flag: the [create mode](#choose-a-create-mode) you use sets the owner.
+
+`connections.get(...)` selects an owner. It does not create one. Asking for an owner with no credential of its own fails the run for `agent`, and raises a [`credential_authorization_required` interrupt](#handle-the-authorization-interrupt) for `user`. A credential stored under the same slug for a different owner does not satisfy the lookup.
+
+Agent-owned credentials belong to the project's deployment, so create them after at least one successful [`mda deploy`](/langsmith/javascript/managed-deep-agents-deploy). A deployment reads only the credential it owns. To resolve the same slug from a second deployment, run `mda connections create <slug>` again from that project root: on an existing slug the command attaches a new agent-owned credential instead of failing.
+
+### Identify the caller
+
+A user-owned connection resolves against the caller identity that Managed Deep Agents attaches to the run. Where that identity comes from depends on how the agent is called:
+
+| Surface | Caller identity |
+| --- | --- |
+| [Slack channel](/langsmith/javascript/managed-deep-agents-channels-slack) | The Slack user who sent the message. |
+| LangSmith Studio | The signed-in LangSmith user. |
+| SDK client or custom frontend | The identity that the project's [identity declaration](/langsmith/javascript/managed-deep-agents-identity) authenticates. |
+
+The default identity declaration verifies a LangSmith API key. That key authenticates the calling client, not an individual person, so every caller who presents it resolves to the same identity. To give each signed-in person their own credentials, declare [Supabase identity](/langsmith/javascript/managed-deep-agents-identity#authenticate-end-users-with-supabase).
+
+Code never passes a user ID to `connections.get(...)`. The runtime resolves the caller and returns that person's credential.
+
+<Note>
+Slack and Studio complete the authorization round-trip for the caller. First-class support for custom channels is in development. To build a custom frontend against caller identity today, see [Handle the authorization interrupt](#handle-the-authorization-interrupt) and contact the [LangChain team](https://forum.langchain.com/c/help/langsmith/).
+</Note>
+
+## Choose a create mode
+
+Ownership decides what the agent does with a credential. The create mode decides how that credential reaches the workspace, and depends on how the external service authenticates:
+
+| Mode | Use when | Create with | Credential owner |
+| --- | --- | --- | --- |
+| **Opaque secret** | The service uses a fixed API key or other static secret. | `--secret-from-env`, `--secret-from-file`, stdin, or an interactive prompt | The agent |
+| **General OAuth** | You register your own OAuth app (BYOT), such as with GitHub or Google. | `--oauth <service>` from the catalog, or `--authorize-url` and `--token-url` for a custom provider | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) |
+| **MCP OAuth** | An MCP server advertises OAuth and registers a client automatically. | `--mcp <url>`, or the slug alone when the project already declares that user-owned MCP server | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) |
+
+For example:
+
+
+<CodeGroup>
+    ```bash npm
+    # Opaque secret: store a fixed API key for the agent
+    npx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+
+    # General OAuth: register your own app, and let each caller authorize
+    npx mda connections create frontend-github --oauth github \
+      --client-id "********" --secret-from-env GITHUB_CLIENT_SECRET
+
+    # MCP OAuth: let the MCP server register a client for you
+    npx mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+    ```
+
+    ```bash pnpm
+    # Opaque secret: store a fixed API key for the agent
+    pnpm exec mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+
+    # General OAuth: register your own app, and let each caller authorize
+    pnpm exec mda connections create frontend-github --oauth github \
+      --client-id "********" --secret-from-env GITHUB_CLIENT_SECRET
+
+    # MCP OAuth: let the MCP server register a client for you
+    pnpm exec mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+    ```
+
+    ```bash bun
+    # Opaque secret: store a fixed API key for the agent
+    bunx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+
+    # General OAuth: register your own app, and let each caller authorize
+    bunx mda connections create frontend-github --oauth github \
+      --client-id "********" --secret-from-env GITHUB_CLIENT_SECRET
+
+    # MCP OAuth: let the MCP server register a client for you
+    bunx mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+    ```
+</CodeGroup>
+
+
+Do not mix modes in one command. For example, `--mcp` cannot combine with `--oauth`, custom endpoints, `--client-id`, or a secret value.
+
+### Name a connection
+
+The first argument to `mda connections create` is a slug: your name for the connection, and the name your code passes to `connections.get(...)`. It is not the provider name, which goes to `--oauth`:
+
+```bash
+mda connections create frontend-github --oauth github
+#                      ^ your slug      ^ catalog provider
+```
+
+Slugs are unique within a workspace. Use lowercase letters, numbers, and single hyphens, and pick a name that identifies which account the connection points at, such as `organization-tavily` or `engineering-notion`.
+
+## Create an opaque secret
+
+Store a fixed secret for the agent. Read the value from an environment variable, a file, stdin, or a prompt. This mode fits API keys for custom tools, such as a Tavily search key. Opaque secrets created with the CLI are agent-owned.
+
+Put the source value in the shell environment or project `.env` file, then create the connection from that variable. Run the command from the project root. The CLI requires a LangSmith API key and workspace ID.
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+
+    ```bash bun
+    bunx mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+    ```
+</CodeGroup>
+
+
+This stores the value from `TAVILY_API_KEY` as an agent-owned secret. Runtime code resolves it with `connections.get(...)`.
+
+Other ways to supply the value:
+
+- **`--secret-from-file PATH`**: Read one value from a file that contains only the secret.
+- **stdin**: Pipe or redirect the value, for example `printf '%s' "$ACME_API_KEY" | mda connections create acme-api`.
+- **Interactive prompt**: Omit a value flag on a TTY. The CLI hides the input so the secret does not appear on screen or in shell history.
+
+Opaque secrets created with the CLI are always agent-owned. For per-caller credentials, use an [OAuth connection](#create-a-general-oauth-connection).
+
+Issue a key that belongs to the agent rather than reusing a personal key. A dedicated key can be scoped, rotated, and revoked without affecting anything else that shares it.
+
+### Use an opaque secret in a custom tool
+
+The following tool resolves the `organization-tavily` connection for the agent, then sends it to the Tavily API:
+
+
+
+```ts tools/search-web.ts
+import { tool } from "langchain";
+import { connections } from "managed-deepagents";
+import { z } from "zod";
+
+export const searchWeb = tool(
+  async ({ query }) => {
+    const apiKey = await connections.get("organization-tavily", { type: "agent" });
+    const response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: apiKey, query, max_results: 5 }),
+    });
+    if (!response.ok) {
+      throw new Error(`Tavily request failed with status ${response.status}`);
+    }
+    return await response.text();
+  },
+  {
+    name: "search_web",
+    description: "Search the web.",
+    schema: z.object({ query: z.string().describe("Search query.") }),
+  },
+);
+```
+
+
+See [Custom tools](/langsmith/javascript/managed-deep-agents-tools) to add the tool to the agent.
+
+## Create a general OAuth connection
+
+Register a bring-your-own-app (BYOT) OAuth client so callers can grant the agent access to a provider API. Use this mode for REST or GraphQL APIs where you own the OAuth app registration. For MCP servers that discover and register clients automatically, use [MCP OAuth](#create-an-mcp-oauth-connection) instead.
+
+### Use the OAuth catalog
+
+Every OAuth provider needs the same five settings: an authorization URL, a token URL, a token endpoint authentication method, authorization parameters, and default scopes. A catalog entry supplies all five, so `--oauth <service>` plus your own client ID and secret is the whole configuration.
+
+The catalog is not a gate on which providers you can use. For a service it does not cover, [pass the endpoints yourself](#register-a-provider-with-custom-endpoints).
+
+List the catalog with:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections catalog
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections catalog
+    ```
+
+    ```bash bun
+    bunx mda connections catalog
+    ```
+</CodeGroup>
+
+
+The command prints each service's default scopes and the page where you register an app. It does not call LangSmith, so it needs no workspace ID or API key. Pass a value from the first column to `--oauth`.
+
+| `--oauth` value | Register an app | Default scopes |
+| --- | --- | --- |
+| `atlassian` | [Atlassian](https://developer.atlassian.com/console/myapps/) | `read:me` `offline_access` |
+| `bitbucket` | [Bitbucket](https://bitbucket.org/account/settings/app-auth/) | `account` |
+| `box` | [Box](https://app.box.com/developers/console) | None |
+| `click-up` | [ClickUp](https://app.clickup.com/settings/apps) | None |
+| `discord` | [Discord](https://discord.com/developers/applications) | `identify` `email` |
+| `dropbox` | [Dropbox](https://www.dropbox.com/developers/apps) | `account_info.read` |
+| `facebook` | [Facebook](https://developers.facebook.com/apps/) | `email` `public_profile` |
+| `figma` | [Figma](https://www.figma.com/developers/apps) | `current_user:read` |
+| `github` | [GitHub](https://github.com/settings/developers) | `read:user` |
+| `gitlab` | [GitLab](https://gitlab.com/-/user_settings/applications) | `read_user` |
+| `google` | [Google](https://console.cloud.google.com/apis/credentials) | `openid` `https://www.googleapis.com/auth/userinfo.email` |
+| `hubspot` | [HubSpot](https://developers.hubspot.com/) | `oauth` |
+| `huggingface` | [Hugging Face](https://huggingface.co/settings/applications/new) | `openid` `profile` `email` |
+| `linear` | [Linear](https://linear.app/settings/api/applications/new) | `read` |
+| `linkedin` | [LinkedIn](https://www.linkedin.com/developers/apps) | `openid` `profile` `email` |
+| `notion-api` | [Notion API](https://www.notion.so/my-integrations) | None |
+| `patreon` | [Patreon](https://www.patreon.com/portal/registration/register-clients) | `identity` `identity[email]` |
+| `reddit` | [Reddit](https://www.reddit.com/prefs/apps) | `identity` |
+| `salesforce` | [Salesforce](https://login.salesforce.com/) | `api` `refresh_token` |
+| `slack` | [Slack](https://api.slack.com/apps) | `chat:write` |
+| `spotify` | [Spotify](https://developer.spotify.com/dashboard) | `user-read-email` |
+| `twitch` | [Twitch](https://dev.twitch.tv/console/apps) | `user:read:email` |
+| `x` | [X](https://developer.x.com/en/portal/dashboard) | `tweet.read` `users.read` `offline.access` |
+
+A service with no default scopes requires `--scope`.
+
+<Accordion title="Some services run separate OAuth apps for their API and their MCP server">
+Notion is one of them. `--oauth notion-api` registers an app against Notion's REST API, and that app does not authorize Notion's MCP server. To use the MCP server, create an [MCP OAuth connection](#create-an-mcp-oauth-connection) instead. Check the provider's documentation when a service offers both.
+</Accordion>
+
+GitHub requires an OAuth client ID and client secret. Set `GITHUB_CLIENT_SECRET`, then create the connection. Replace `********` with the client ID:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections create frontend-github \
+      --oauth github \
+      --client-id "********" \
+      --secret-from-env GITHUB_CLIENT_SECRET
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create frontend-github \
+      --oauth github \
+      --client-id "********" \
+      --secret-from-env GITHUB_CLIENT_SECRET
+    ```
+
+    ```bash bun
+    bunx mda connections create frontend-github \
+      --oauth github \
+      --client-id "********" \
+      --secret-from-env GITHUB_CLIENT_SECRET
+    ```
+</CodeGroup>
+
+
+On create, the CLI prints the redirect URI to register with the provider. Register that URI on the provider's app settings page before callers authorize. The URI follows your LangSmith host, for example `https://api.smith.langchain.com/v1/agent-auth/oauth/callback` on production.
+
+Optional flags:
+
+- **`--scope SCOPE`**: Replace the catalog defaults. Repeat for each scope.
+- **`--allowed-scope SCOPE`**: Ceiling any later authorization may request. Defaults to the `--scope` values and must cover every `--scope`.
+- **`--authorization-param KEY=VALUE`**: Extra authorization query parameter. Repeat for each parameter.
+- **`--auth-method METHOD`**: How the client authenticates to the token endpoint: `client_secret_basic`, `client_secret_post`, or `none` for a public client. Defaults to the catalog service's method.
+
+### Register a provider with custom endpoints
+
+For a service the catalog does not cover, pass both endpoints plus a client ID and scopes:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections create acme \
+      --authorize-url https://auth.acme.com/authorize \
+      --token-url https://auth.acme.com/token \
+      --client-id "********" \
+      --secret-from-env ACME_CLIENT_SECRET \
+      --scope read
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create acme \
+      --authorize-url https://auth.acme.com/authorize \
+      --token-url https://auth.acme.com/token \
+      --client-id "********" \
+      --secret-from-env ACME_CLIENT_SECRET \
+      --scope read
+    ```
+
+    ```bash bun
+    bunx mda connections create acme \
+      --authorize-url https://auth.acme.com/authorize \
+      --token-url https://auth.acme.com/token \
+      --client-id "********" \
+      --secret-from-env ACME_CLIENT_SECRET \
+      --scope read
+    ```
+</CodeGroup>
+
+
+Most providers reject an authorization request with no `scope` parameter. Pass `--scope` for manual registrations, or use `--oauth <service>` when the catalog covers the provider.
+
+### Authorize an agent-owned OAuth account
+
+When a provider issues its own application credential, such as a Slack bot token, a GitHub App installation token, or a Notion internal integration token, prefer that credential stored as an [agent-owned secret](#create-an-opaque-secret). An application credential is scoped to the application, is revocable on its own, and does not depend on any person's account.
+
+Use `--authorize` when the provider offers no application identity and its API authenticates only as a person.
+
+By default, an OAuth connection collects a grant from each caller at runtime. Pass `--authorize` to sign in once yourself and store the grant for the deployment. Every caller then acts as that one account, and no caller sees an authorization prompt:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections create support-linear \
+      --oauth linear \
+      --client-id "********" \
+      --secret-from-env LINEAR_CLIENT_SECRET \
+      --scope read --scope write \
+      --authorize
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create support-linear \
+      --oauth linear \
+      --client-id "********" \
+      --secret-from-env LINEAR_CLIENT_SECRET \
+      --scope read --scope write \
+      --authorize
+    ```
+
+    ```bash bun
+    bunx mda connections create support-linear \
+      --oauth linear \
+      --client-id "********" \
+      --secret-from-env LINEAR_CLIENT_SECRET \
+      --scope read --scope write \
+      --authorize
+    ```
+</CodeGroup>
+
+
+The CLI starts an authorization flow for the account you sign in with and stores the resulting grant for the deployment. Runtime code resolves it as an agent-owned credential:
+
+
+
+```typescript
+const accessToken = await connections.get("support-linear", { type: "agent" });
+```
+
+
+`--authorize` applies to OAuth connections only. Combine it with `--oauth`, custom endpoints, or `--mcp`. Run it from the project directory, because the grant belongs to that project's deployment.
+
+Use an agent-owned OAuth account when every caller should act as one shared account rather than as themselves. A company Notion account that grants read access to a question-answering agent is one example.
+
+<Tip>
+Authorize a dedicated account that your team owns, not your own. The account you sign in with becomes the identity behind every action the agent takes, for every caller. Using a personal account costs you three things:
+
+- The agent gets your full access at that provider.
+- The provider's audit log shows your name for what the agent did.
+- The agent stops working when your own access changes.
+
+A grant made this way stays tied to the account that authorized it, even a dedicated one. A password reset, a revoked session, or a deactivated account ends the grant, so treat that account as production infrastructure.
+
+Give the dedicated account the narrowest `--scope` values the agent needs. Set `--allowed-scope` to cap what any later authorization can request.
+</Tip>
+
+### Access an OAuth token in a custom tool
+
+This tool resolves the authenticated caller's GitHub connection and calls the GitHub REST API:
+
+
+
+```ts tools/get-github-user.ts
+import { tool } from "langchain";
+import { connections } from "managed-deepagents";
+import { z } from "zod";
+
+export const getGitHubUser = tool(
+  async () => {
+    // Replace `frontend-github` with the name of your connection.
+    const accessToken = await connections.get("frontend-github", { type: "user" });
+    const response = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`GitHub request failed with status ${response.status}`);
+    }
+    const user = (await response.json()) as { login: string };
+    return user.login;
+  },
+  {
+    name: "get_github_user",
+    description: "Get the authenticated caller's GitHub login.",
+    schema: z.object({}),
+  },
+);
+```
+
+
+## Create an MCP OAuth connection
+
+For remote MCP servers that support OAuth client registration, Managed Deep Agents discovers the server's OAuth metadata and registers a client automatically. You do not supply a client ID or client secret.
+
+### Declare the MCP server first
+
+
+
+Add the server in `tools/mcp.ts` and reference the connection slug.
+
+```ts tools/mcp.ts
+import { connections, defineMcp } from "managed-deepagents";
+
+export const mcp = defineMcp({
+  servers: {
+    notion: {
+      transport: "http",
+      url: "https://mcp.notion.com/mcp",
+      connection: connections.get("engineering-notion", { type: "user" }),
+    },
+  },
+});
+```
+
+
+For more information, see [Connect to MCP servers](/langsmith/javascript/managed-deep-agents-mcp-connectors).
+
+### Create from the project declaration
+
+When the slug matches exactly one user-owned MCP connection in the project, create with the slug alone. The CLI reads the server URL from the MCP declaration:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections create engineering-notion
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create engineering-notion
+    ```
+
+    ```bash bun
+    bunx mda connections create engineering-notion
+    ```
+</CodeGroup>
+
+
+### Create from an explicit MCP URL
+
+Pass `--mcp` when you want to name the server URL explicitly, or when the slug is not yet declared in the project:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+    ```
+
+    ```bash bun
+    bunx mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+    ```
+</CodeGroup>
+
+
+A scheme-less value such as `mcp.notion.com/mcp` is stored as `https://mcp.notion.com/mcp`.
+
+If the server cannot register a client automatically, the CLI says so and points you at general OAuth (`--oauth` or manual endpoints) instead.
+
+`mda deploy` applies the same inference to missing user-owned MCP connections. It leaves existing connections unchanged, creates each unique missing MCP connection through OAuth discovery, and fails before deployment when discovery or registration is unavailable.
+
+## Handle the authorization interrupt
+
+Managed Deep Agents runs the OAuth round-trip for you. A project needs no callback route, no token store, no refresh logic, and no consent screen. The run pauses, the caller grants access, and the run resumes with that person's credential.
+
+Before the first model turn, Managed Deep Agents checks every user-owned connection the run needs. If the caller is missing one or more grants, the credential gate raises a single LangGraph interrupt. Slack and LangSmith Studio handle that interrupt for the caller. A custom frontend reads the same payload from the LangChain frontend SDK and resumes after the caller connects.
+
+User-owned connections require an authenticated caller. Anonymous or agent-only runs cannot complete the credential gate. See [Identify the caller](#identify-the-caller) for where that identity comes from.
+
+### Interrupt payload
+
+With [`useStream`](/oss/javascript/langchain/frontend/human-in-the-loop#setting-up-usestream) (`@langchain/react`, `@langchain/vue`, `@langchain/svelte`) or `injectStream` (`@langchain/angular`), the pending interrupt is on `stream.interrupt`. The credential gate payload is `stream.interrupt.value`.
+
+For a missing OAuth grant, each entry in `credentials` carries the URL where the caller completes consent:
+
+```json
+{
+  "type": "credential_authorization_required",
+  "message": "Connect the following integrations to continue.",
+  "credentials": [
+    {
+      "slug": "engineering-notion",
+      "kind": "oauth2",
+      "connect_url": "https://api.smith.langchain.com/v1/agent-auth/...",
+      "auth_id": "sess_abc123"
+    }
+  ]
+}
+```
+
+One interrupt lists every missing grant. Handle each entry before resuming. An entry with `"kind": "secret"` represents a user-owned API key rather than an OAuth grant. Slack and Studio do not collect those. For more information, see [Review current limitations](#review-current-limitations).
+
+| Field | Present for | Meaning |
+| --- | --- | --- |
+| `type` | Always | Discriminator. Must be `credential_authorization_required`. |
+| `message` | Always | Human-readable summary to show above the pending grants. |
+| `credentials` | Always | One entry per missing grant. |
+| `credentials[].slug` | Always | Connection slug to authorize. |
+| `credentials[].kind` | Always | `secret` for a password-style API key, or `oauth2` for OAuth. |
+| `credentials[].connect_url` | `oauth2` | HTTPS URL where the caller completes consent. |
+| `credentials[].auth_id` | `oauth2` | Authorization session id used to poll status. |
+
+### Read the interrupt in your UI
+
+The frontend that renders this interrupt is a web application, so these examples are TypeScript whether the agent is written in Python or TypeScript.
+
+Detect the credential gate payload on `stream.interrupt`, render a connect card, then resume with `stream.respond` after every grant is stored:
+
+<CodeGroup>
+```tsx React
+import { useStream } from "@langchain/react";
+
+type CredentialAuthorizationRequired = {
+  type: "credential_authorization_required";
+  message?: string;
+  credentials: Array<{
+    slug: string;
+    kind: "oauth2" | "secret";
+    connect_url?: string;
+    auth_id?: string;
+  }>;
+};
+
+function isCredentialAuthorization(
+  value: unknown
+): value is CredentialAuthorizationRequired {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "credential_authorization_required"
+  );
+}
+
+export function Chat() {
+  const stream = useStream({
+    apiUrl: "https://your-deployment.example",
+    assistantId: "agent",
+  });
+
+  const payload = stream.interrupt?.value;
+  const credentialAuth = isCredentialAuthorization(payload) ? payload : null;
+
+  return (
+    <div>
+      {/* messages … */}
+      {credentialAuth && (
+        <ConnectCard
+          payload={credentialAuth}
+          onComplete={async (connectedSlugs) => {
+            await stream.respond(
+              {
+                type: "credential_authorization_completed",
+                connected_slugs: connectedSlugs,
+              },
+              { interruptId: stream.interrupt?.id }
+            );
+          }}
+        />
+      )}
+    </div>
+  );
+}
+```
+
+```vue Vue
+<script setup lang="ts">
+import { computed } from "vue";
+import { useStream } from "@langchain/vue";
+
+const stream = useStream({
+  apiUrl: "https://your-deployment.example",
+  assistantId: "agent",
+});
+
+const credentialAuth = computed(() => {
+  const value = stream.interrupt.value?.value;
+  return value?.type === "credential_authorization_required" ? value : null;
+});
+
+async function onComplete(connectedSlugs: string[]) {
+  await stream.respond(
+    {
+      type: "credential_authorization_completed",
+      connected_slugs: connectedSlugs,
+    },
+    { interruptId: stream.interrupt.value?.id }
+  );
+}
+</script>
+
+<template>
+  <div>
+    <!-- messages … -->
+    <ConnectCard
+      v-if="credentialAuth"
+      :payload="credentialAuth"
+      @complete="onComplete"
+    />
+  </div>
+</template>
+```
+
+```svelte Svelte
+<script lang="ts">
+  import { useStream } from "@langchain/svelte";
+
+  const stream = useStream({
+    apiUrl: "https://your-deployment.example",
+    assistantId: "agent",
+  });
+
+  $: payload = stream.interrupt?.value;
+  $: credentialAuth =
+    payload?.type === "credential_authorization_required" ? payload : null;
+
+  async function onComplete(connectedSlugs: string[]) {
+    await stream.respond(
+      {
+        type: "credential_authorization_completed",
+        connected_slugs: connectedSlugs,
+      },
+      { interruptId: stream.interrupt?.id }
+    );
+  }
+</script>
+
+<div>
+  <!-- messages … -->
+  {#if credentialAuth}
+    <ConnectCard payload={credentialAuth} onComplete={onComplete} />
+  {/if}
+</div>
+```
+
+```ts Angular
+import { Component, computed } from "@angular/core";
+import { injectStream } from "@langchain/angular";
+
+@Component({
+  selector: "app-chat",
+  template: `
+    <!-- messages … -->
+    @if (credentialAuth(); as auth) {
+      <app-connect-card
+        [payload]="auth"
+        (complete)="onComplete($event)"
+      />
+    }
+  `,
+})
+export class ChatComponent {
+  stream = injectStream({
+    apiUrl: "https://your-deployment.example",
+    assistantId: "agent",
+  });
+
+  credentialAuth = computed(() => {
+    const value = this.stream.interrupt()?.value;
+    return value?.type === "credential_authorization_required" ? value : null;
+  });
+
+  async onComplete(connectedSlugs: string[]) {
+    await this.stream.respond(
+      {
+        type: "credential_authorization_completed",
+        connected_slugs: connectedSlugs,
+      },
+      { interruptId: this.stream.interrupt()?.id }
+    );
+  }
+}
+```
+</CodeGroup>
+
+For the general interrupt lifecycle (`stream.interrupt`, resume, checkpoints), see [Human-in-the-loop](/oss/javascript/langchain/frontend/human-in-the-loop).
+
+### Handle OAuth grants (`kind: "oauth2"`)
+
+For each OAuth entry:
+
+1. Show the `slug` and a Connect control that opens `connect_url` (HTTPS only; reject URLs with embedded credentials).
+2. Long-poll Agent Auth until the session completes:
+
+```http
+GET /v1/agent-auth/oauth-authorization-sessions/{auth_id}?wait_seconds=25
+```
+
+The response `status` is `pending`, `completed`, `failed`, or `expired`. Keep polling while the status is `pending`. On `completed`, mark that slug connected. On `failed` or `expired`, ask the caller to start a new run for a fresh connect link.
+
+Do not put the access token in your UI. Agent Auth stores the grant for the caller; the agent reads it on resume through `connections.get(...)`.
+
+### Resume the run
+
+After every entry in `credentials` is connected, resume with:
+
+```json
+{
+  "type": "credential_authorization_completed",
+  "connected_slugs": ["engineering-notion"]
+}
+```
+
+Pass that object to `stream.respond(resume, { interruptId: stream.interrupt?.id })` as shown above. If you resume while a grant is still missing, the gate interrupts again with a fresh payload.
+
+### Built-in Slack handling
+
+When the agent runs through the Slack channel, Slack renders OAuth entries that include an HTTPS `connect_url`. The caller opens the link, completes consent, and Slack resumes the run, so nobody has to open LangSmith to connect a service.
+
+<Frame caption="Slack OAuth authorization prompt">
+  **Screenshot placeholder:** Add the Slack OAuth authorization prompt screenshot here.
+</Frame>
+
+## Inspect and delete connections
+
+Use `list` or `get` to inspect connection metadata. `list` shows every connection in the workspace, not only the ones this project uses:
+
+
+
+<CodeGroup>
+    ```bash npm
+    npx mda connections list
+    npx mda connections get organization-tavily
+    npx mda connections delete organization-tavily
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections list
+    pnpm exec mda connections get organization-tavily
+    pnpm exec mda connections delete organization-tavily
+    ```
+
+    ```bash bun
+    bunx mda connections list
+    bunx mda connections get organization-tavily
+    bunx mda connections delete organization-tavily
+    ```
+</CodeGroup>
+
+
+Pass `--json` to `list` or `get` for machine-readable output. Pass `--yes` to `delete` to skip the confirmation prompt.
+
+## Develop locally
+
+For `mda dev`, an agent-owned opaque connection reads `MDA_DEV_<SLUG>`. The CLI converts the slug to uppercase and replaces hyphens with underscores. For example, `organization-tavily` reads `MDA_DEV_ORGANIZATION_TAVILY`.
+
+User-owned connections require an authenticated caller and Agent Auth. Deploy the agent to exercise the [authorization interrupt](#handle-the-authorization-interrupt) end to end.
+
+## Review current limitations
+
+Connections are part of the Managed Deep Agents public beta. The following gaps apply to the current release:
+
+- **User-owned API keys**: A user-owned connection holds an OAuth grant. Slack and Studio do not collect a per-caller API key, and the CLI does not create an empty slot for one. Use an agent-owned secret instead, or collect the key in a custom frontend as described in the following section.
+- **Custom channels**: Slack and Studio resolve caller identity and complete authorization for the caller. A custom frontend handles the [authorization interrupt](#handle-the-authorization-interrupt) itself.
+- **Workspace UI**: LangSmith does not list connections in the UI. Use `mda connections list` and `mda connections get` for connection metadata.
+- **Grant visibility**: `mda connections list` is workspace-scoped and does not report which deployments hold a credential under a slug. A run that fails with `no agent connection is set for slug '<slug>'` means this deployment owns no credential for it, even when `list` shows the slug. Run `mda connections create <slug>` from the project root to mint one.
+
+<Accordion title="Store a user-owned API key through Agent Auth">
+An interrupt entry with `"kind": "secret"` has no `connect_url`. To collect one in a custom frontend, prompt for the value with a hidden input, then create the credential against the existing connection slug:
+
+```http
+POST /v1/agent-auth/connections
+```
+
+```json
+{
+  "slug": "organization-tavily",
+  "display_name": "organization-tavily",
+  "credential": {
+    "kind": "secret",
+    "owner_type": "user",
+    "owner_id": "<caller-identity-id>",
+    "value": "<api-key>"
+  }
+}
+```
+
+Agent Auth reuses the existing connection for that slug and attaches the caller's secret. Secret material is write-only. After a successful create, mark that slug connected and resume the run. For more information, see [Set up Agent Auth](/langsmith/agent-auth).
+</Accordion>
+
+## See also
+
+- [Managed Deep Agents CLI reference](/langsmith/javascript/managed-deep-agents-cli)
+- [Connect to MCP servers](/langsmith/javascript/managed-deep-agents-mcp-connectors)
+- [Add custom tools](/langsmith/javascript/managed-deep-agents-tools)
+- [Add identity to Managed Deep Agents](/langsmith/javascript/managed-deep-agents-identity)
+- [Deploy an agent](/langsmith/javascript/managed-deep-agents-deploy)
+- [Human-in-the-loop](/oss/javascript/langchain/frontend/human-in-the-loop)
+- [Set up Agent Auth](/langsmith/agent-auth)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-connections.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
 </Callout>
 </div>
 
@@ -55937,7 +56880,9 @@ These defaults differ from a deployed agent. Test identity and sandbox behavior 
 # Connect to MCP servers
 Source: https://docs.langchain.com/langsmith/javascript/managed-deep-agents-mcp-connectors
 
-An MCP connector adds tools from remote [Model Context Protocol (MCP)](/oss/javascript/deepagents/mcp) servers to a managed deep agent. Managed Deep Agents creates the MCP client, loads the tools, and adds them to the agent.
+Connect a managed deep agent to remote [Model Context Protocol (MCP)](/oss/javascript/deepagents/mcp) servers to add their tools to the agent. Managed Deep Agents creates the MCP client and loads the tools.
+
+Most remote MCP servers require authentication. A [connection](/langsmith/javascript/managed-deep-agents-connections) supplies it, and declaring the connection as user-owned makes each caller authorize their own account.
 
 <Note>
 Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and available on [LangSmith Cloud](/langsmith/cloud) in the US region only.
@@ -55945,31 +56890,31 @@ Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and avail
 
 ## Project structure
 
-Declare MCP servers in a module directly under `connectors/`:
+Declare MCP servers in a module directly under `tools/`:
 
 
 
 ```text
 my-agent/
   agent.ts
-  connectors/
+  tools/
     mcp.ts
 ```
 
-The module must export a named `connector`.
+The module must export a named `mcp`.
 
 
-## Add an MCP connector
-
-Use `connectors.mcp` to declare one or more remote servers:
+## Add MCP servers
 
 
 
-```ts connectors/mcp.ts
-import { connectors } from "managed-deepagents";
+Use `defineMcp` to declare one or more remote servers:
 
-export const connector = connectors.mcp({
-  mcpServers: {
+```ts tools/mcp.ts
+import { defineMcp } from "managed-deepagents";
+
+export const mcp = defineMcp({
+  servers: {
     langchainDocs: {
       transport: "http",
       url: "https://docs.langchain.com/mcp",
@@ -55983,7 +56928,7 @@ Managed Deep Agents supports Streamable HTTP (`"http"`) and legacy SSE (`"sse"`)
 
 ## Select tools
 
-By default, the connector exposes every tool from each server. To expose only selected tools, set an allowlist inside that server's configuration:
+By default, Managed Deep Agents exposes every tool from each server. To expose only selected tools, set an allowlist inside that server's configuration:
 
 
 
@@ -56002,35 +56947,42 @@ You can use both options together. The denylist applies after the allowlist, and
 
 Selection uses raw MCP tool names before Managed Deep Agents prefixes them. Tool names are prefixed with the server name by default to avoid collisions. For example, the `search_docs_by_lang_chain` tool from the `langchainDocs` server is exposed as `langchainDocs__search_docs_by_lang_chain`.
 
-## Configure connections
+## Configure MCP servers
 
-Each server accepts the following options:
+Each server supports the following core options:
 
 | Option | Description |
 | --- | --- |
 | `transport` | Required. Use `http` for Streamable HTTP or `sse` for legacy SSE. |
 | `url` | Required. The remote MCP endpoint URL. |
-| `headers` | Static headers to send to the server, such as an authorization header. |
+| `headers` | Static headers to send to the server. |
 | `include_tools` / `includeTools` | Raw MCP tool names to expose. |
 | `exclude_tools` / `excludeTools` | Raw MCP tool names to hide. |
 | `default_tool_timeout` / `defaultToolTimeout` | Timeout for each tool call, in seconds for Python and milliseconds for TypeScript. |
 | `automatic_sse_fallback` / `automaticSSEFallback` | For HTTP, allow the client to fall back to SSE. |
 | `reconnect` | For SSE, configure reconnection behavior. |
 
-The connector also accepts these options:
+The MCP definition also accepts these options:
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `prefix_tool_name_with_server_name` / `prefixToolNameWithServerName` | `true` | Prefix each tool with `{server}__`. |
 | `throw_on_load_error` / `throwOnLoadError` | `true` | Fail loading instead of starting with a partial tool set. |
 
-If a server requires credentials, read them from environment variables and pass them through `headers`. Keep local values in `.env`; Managed Deep Agents forwards eligible values as deployment secrets. Do not hard-code credentials in the connector declaration.
+## Compare MCP with other capabilities
 
-## Distinguish connectors from other capabilities
-
-- **MCP connectors** add tools hosted by remote MCP servers.
+- **MCP servers** provide remotely hosted tools.
 - **[Authored tools](/langsmith/javascript/managed-deep-agents-tools)** implement application logic in the project and are passed through the agent definition.
 - **[Channels](/langsmith/javascript/managed-deep-agents-channels)** receive external messages that start agent runs and deliver responses.
+
+## Use MCP servers that require authentication
+
+If an MCP server requires credentials, declare a connection on the server config and create that connection in the workspace.
+
+- **MCP OAuth**: For servers that advertise OAuth and support automatic client registration, create with `mda connections create <slug>` (inferred from the MCP declaration) or `mda connections create <slug> --mcp <url>`. You do not supply a client ID or secret.
+- **Opaque secret or general OAuth**: For a static API key, or for a BYOT OAuth app you register yourself, create an opaque secret or general OAuth connection, then set the server's `connection` option to `connections.get(...)`.
+
+For create modes, owners, and runtime authorization, see [Manage connections](/langsmith/javascript/managed-deep-agents-connections).
 
 ---
 
@@ -56804,6 +57756,9 @@ Open that URL. You should see the deployment in a ready state. Send the same res
   <Card title="Custom tools" icon="tool" href="/langsmith/javascript/managed-deep-agents-tools">
     Add authored LangChain tools from your project.
   </Card>
+  <Card title="Connections" icon="key" href="/langsmith/javascript/managed-deep-agents-connections">
+    Authenticate with external services, as the agent or as the caller.
+  </Card>
 </CardGroup>
 
 ---
@@ -57225,7 +58180,7 @@ Source: https://docs.langchain.com/langsmith/javascript/managed-deep-agents-tool
 
 Tools extend what your agent can do by letting it interact with external systems, such as fetching real-time data, querying databases, executing code, and taking actions. A tool is a callable function with defined inputs and outputs. The model uses the tool's description and the conversation context to decide when to call it and which arguments to provide.
 
-To load tools from a remote MCP server, use an [MCP connector](/langsmith/javascript/managed-deep-agents-mcp-connectors).
+To load tools from a remote MCP server, see [Connect to MCP servers](/langsmith/javascript/managed-deep-agents-mcp-connectors).
 
 <Note>
 Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and available on [LangSmith Cloud](/langsmith/cloud) in the US region only.
@@ -57343,9 +58298,11 @@ During public beta, Managed Deep Agents is CLI-first and programmatic invocation
 
 Human-in-the-loop needs durable thread state to pause and resume. The managed runtime owns the checkpointer, so no extra setup is required.
 
-## Use secrets and context
+## Use tools that require authentication
 
-Tools can read deployment secrets from environment variables. Put local values in `.env` for `mda dev`; `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets.
+If a tool requires an API key or OAuth token, use a connection to resolve the credential at runtime. See [Manage connections](/langsmith/javascript/managed-deep-agents-connections).
+
+## Access runtime context
 
 For per-run values such as request metadata or feature flags, use the normal LangChain runtime context patterns for tools. See [how to access context from within your tools](/oss/javascript/langchain/tools#access-context).
 
@@ -81459,7 +82416,7 @@ It is included with the `managed-deepagents` Python package.
 Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and available on [LangSmith Cloud](/langsmith/cloud) in the US region only.
 </Note>
 
-For the fastest end-to-end path, see the [quickstart](/langsmith/python/managed-deep-agents-quickstart). For workflow guidance, see [Identity](/langsmith/python/managed-deep-agents-identity), [Memory](/langsmith/python/managed-deep-agents-memory), [Evals](/langsmith/python/managed-deep-agents-evals), [Custom tools](/langsmith/python/managed-deep-agents-tools), [Custom middleware](/langsmith/python/managed-deep-agents-middleware), [Sandboxes](/langsmith/python/managed-deep-agents-sandboxes), [Channels](/langsmith/python/managed-deep-agents-channels), [Schedules](/langsmith/python/managed-deep-agents-schedules), and [Deploy an agent](/langsmith/python/managed-deep-agents-deploy).
+For the fastest end-to-end path, see the [quickstart](/langsmith/python/managed-deep-agents-quickstart). For workflow guidance, see [Identity](/langsmith/python/managed-deep-agents-identity), [Memory](/langsmith/python/managed-deep-agents-memory), [Evals](/langsmith/python/managed-deep-agents-evals), [Custom tools](/langsmith/python/managed-deep-agents-tools), [Connections](/langsmith/python/managed-deep-agents-connections), [Custom middleware](/langsmith/python/managed-deep-agents-middleware), [Sandboxes](/langsmith/python/managed-deep-agents-sandboxes), [Channels](/langsmith/python/managed-deep-agents-channels), [Schedules](/langsmith/python/managed-deep-agents-schedules), and [Deploy an agent](/langsmith/python/managed-deep-agents-deploy).
 
 ## Install
 
@@ -81508,6 +82465,7 @@ The LangSmith API key authenticates the deploy. The agent's model provider also 
 | `mda build [path]` | Compile a project into a managed LangGraph app without deploying. |
 | `mda evals …` | Initialize a Harbor workspace and continue eval authoring in a coding agent. |
 | `mda dev [path]` | Compile a project and run it on the local LangGraph dev server. |
+| `mda connections …` | Manage authentication for tools and MCP connectors. |
 | `mda deploy [path]` | Compile, sync Context Hub context, upload, and deploy to LangSmith. |
 | `mda channels init slack` | Add a Slack channel declaration to the current project. |
 | `mda logs [path]` | Tail Agent Server logs for a deployed agent. |
@@ -81653,6 +82611,65 @@ When a sandbox is configured, `mda dev` tries the configured provider. If provid
 
 For local development, `mda dev` stages the project `.env` file into `.mda/build/.env` so LangGraph can load model provider keys and other runtime credentials.
 
+## Manage connections
+
+A connection links a managed deep agent to an external service. The credential lives in the LangSmith workspace, so it rotates without a redeploy, and a user-owned connection resolves the credential of whoever called the agent. Tools and MCP connectors resolve connections at runtime with `connections.get(...)`.
+
+Create connections in one of three modes: opaque secret (fixed API key), general OAuth (BYOT app from the catalog or custom endpoints), or MCP OAuth (discover and register from an MCP server URL). Use `mda connections` to manage these credentials in the current workspace.
+
+| Command | Use |
+| --- | --- |
+| `mda connections catalog` | List services with preconfigured OAuth settings. |
+| `mda connections create <slug>` | Create an opaque secret, general OAuth, or MCP OAuth connection. |
+| `mda connections list` | List connection metadata for the workspace. |
+| `mda connections get <slug>` | Show metadata for one connection. |
+| `mda connections delete <slug>` | Delete a connection and its stored material. |
+
+The first argument to `mda connections create` is a slug, which is your name for the connection and the name code passes to `connections.get(...)`. Provider names go to `--oauth`.
+
+The OAuth catalog saves you from looking up a provider's OAuth settings. When you pass a listed service to `--oauth`, the CLI supplies its authorization URL, token URL, token endpoint authentication method, authorization parameters, and default scopes, so you provide only your client ID and client secret. The catalog does not limit which providers you can use: for anything else, pass `--authorize-url` and `--token-url`. Catalog names include `github`, `google`, `linear`, `slack`, `atlassian`, and `notion-api`:
+
+```bash
+uv run mda connections catalog
+```
+
+
+
+
+Create an agent-owned API key for a custom Tavily tool:
+
+```bash
+uv run mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+```
+
+
+
+
+The following flags control connection creation:
+
+| Flag | Use |
+| --- | --- |
+| `--project PATH` | Set the project directory. Defaults to the current directory. |
+| `--workspace-id WORKSPACE_ID` | Override `LANGSMITH_WORKSPACE_ID`. |
+| `--secret-from-env VAR` | Read a fixed value or OAuth client secret from the shell or project `.env`. |
+| `--secret-from-file PATH` | Read a fixed value or OAuth client secret from a file. |
+| `--oauth SERVICE` | Use the preconfigured settings for a service in `mda connections catalog`. |
+| `--client-id CLIENT_ID` | Set the OAuth client ID. |
+| `--auth-method METHOD` | Set the token endpoint method to `client_secret_basic`, `client_secret_post`, or `none`. |
+| `--scope SCOPE` | Replace the provider's default scopes. Repeat for each scope. |
+| `--allowed-scope SCOPE` | Set the maximum scope that an authorization flow can request. Repeat for each scope. |
+| `--authorization-param KEY=VALUE` | Add an OAuth authorization query parameter. Repeat for each parameter. |
+| `--authorize-url URL` | Set a custom OAuth authorization endpoint. Requires `--token-url`. |
+| `--token-url URL` | Set a custom OAuth token endpoint. Requires `--authorize-url`. |
+| `--mcp URL` | Create an MCP OAuth connection by discovering OAuth from the MCP server URL. |
+| `--authorize` | Sign in to the account the deployed agent uses, storing an agent-owned OAuth grant. Requires OAuth flags and a project directory. |
+
+With no value flags and no `--oauth` endpoints, `mda connections create <slug>` infers MCP OAuth when that slug matches exactly one user-owned MCP connection in the project.
+
+Use `--json` with `catalog`, `list`, or `get` for machine-readable output. Use `--yes` with `delete` to skip the confirmation prompt.
+
+For credential owners, create modes, caller identity, and runtime examples, see [Manage connections](/langsmith/python/managed-deep-agents-connections).
+
 ## Deploy projects
 
 Use `mda deploy` to compile and deploy a project to LangSmith:
@@ -81743,7 +82760,7 @@ uv run mda delete
 | `no agent entry file found` | Add `agent.py` at the project root. |
 | `mda dev` cannot find `uv` | Install `uv` so `mda dev` can resolve the local LangGraph dev server. |
 | `No LangSmith API key found` | Set `LANGSMITH_API_KEY` or add it to the project `.env`. |
-| Deploy fails with 401 or 403 | Confirm the API key belongs to a workspace with beta access. |
+| Deploy fails with 401 or 403 | Confirm the API key belongs to a workspace with deployments access. See [Pricing plans](/langsmith/pricing-plans). |
 | Deploy reports a missing model provider API key | Add the provider key, such as `OPENAI_API_KEY`, to `.env`, export it in your shell, or configure it as a LangSmith workspace secret. |
 | Deploy reports a Context Hub conflict | The Context Hub repo changed during deploy. Re-run `mda deploy`. |
 | The build exceeds 200 MB | Remove generated artifacts or large files from the project before deploying. |
@@ -81757,6 +82774,724 @@ uv run mda delete
 </Callout>
 <Callout icon="edit">
     [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-cli.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
+# Manage connections
+Source: https://docs.langchain.com/langsmith/python/managed-deep-agents-connections
+
+A connection links a managed deep agent to an external service such as GitHub, Notion, or Tavily. The credential lives in your LangSmith workspace. Use `connections.get(...)` in an authored tool or MCP server definition to resolve it at runtime.
+
+Connections let you:
+
+- **Keep credentials out of your project**: `mda deploy` collects `.env` values as deployment secrets on every deploy. A connection value stays in the workspace instead.
+- **Give each caller their own identity**: A user-owned connection resolves the credential of the person who made the request, so the agent reads that person's documents and acts under their name. An environment variable holds one value for everyone.
+- **Skip the OAuth plumbing**: Managed Deep Agents runs the authorization round-trip, so a project needs no callback route, token store, or consent screen. These flows are handled automatically by your Managed Deep Agent.
+- **Reuse one slug across agents**: Connections belong to the workspace, so several deployments can resolve the same slug. Each deployment holds its own credential under that slug: run `mda connections create <slug>` once from each project root. Rotating a deployment's value takes effect on its next run, with no redeploy.
+
+Storing a credential in LangSmith to use across your Managed Deep Agents takes one command:
+
+```bash
+uv run mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+```
+And reading it takes one line:
+
+```python
+api_key = await connections.get("organization-tavily", {"type": "agent"})
+```
+
+
+
+
+The rest of this page covers the two choices around those steps: who owns the credential, and how the service authenticates.
+
+<Note>
+Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and available on [LangSmith Cloud](/langsmith/cloud) in the US region only.
+</Note>
+
+## Choose a credential owner
+
+Every `connections.get(...)` call names who owns the credential it resolves:
+
+| Owner | Resolves to | Use when |
+| --- | --- | --- |
+| `agent` | One credential that belongs to the deployment. Every caller uses it. | Every caller needs the same capability: web search with Tavily, a shared knowledge base, or posting to one team channel. |
+| `user` | The calling person's own credential. Each person authorizes their own account. | The agent acts as the person who asked: searching Notion pages only they can see, filing an issue under their name, or sending email as them. |
+
+```python
+tavily_key = await connections.get("organization-tavily", {"type": "agent"})
+notion_token = await connections.get("engineering-notion", {"type": "user"})
+```
+
+
+
+
+`connections.get(...)` resolves to the credential value as a string.
+
+A connection is a container, and it belongs to the workspace rather than to an owner. The credentials inside it have owners. There is no `--owner` flag: the [create mode](#choose-a-create-mode) you use sets the owner.
+
+`connections.get(...)` selects an owner. It does not create one. Asking for an owner with no credential of its own fails the run for `agent`, and raises a [`credential_authorization_required` interrupt](#handle-the-authorization-interrupt) for `user`. A credential stored under the same slug for a different owner does not satisfy the lookup.
+
+Agent-owned credentials belong to the project's deployment, so create them after at least one successful [`mda deploy`](/langsmith/python/managed-deep-agents-deploy). A deployment reads only the credential it owns. To resolve the same slug from a second deployment, run `mda connections create <slug>` again from that project root: on an existing slug the command attaches a new agent-owned credential instead of failing.
+
+### Identify the caller
+
+A user-owned connection resolves against the caller identity that Managed Deep Agents attaches to the run. Where that identity comes from depends on how the agent is called:
+
+| Surface | Caller identity |
+| --- | --- |
+| [Slack channel](/langsmith/python/managed-deep-agents-channels-slack) | The Slack user who sent the message. |
+| LangSmith Studio | The signed-in LangSmith user. |
+| SDK client or custom frontend | The identity that the project's [identity declaration](/langsmith/python/managed-deep-agents-identity) authenticates. |
+
+The default identity declaration verifies a LangSmith API key. That key authenticates the calling client, not an individual person, so every caller who presents it resolves to the same identity. To give each signed-in person their own credentials, declare [Supabase identity](/langsmith/python/managed-deep-agents-identity#authenticate-end-users-with-supabase).
+
+Code never passes a user ID to `connections.get(...)`. The runtime resolves the caller and returns that person's credential.
+
+<Note>
+Slack and Studio complete the authorization round-trip for the caller. First-class support for custom channels is in development. To build a custom frontend against caller identity today, see [Handle the authorization interrupt](#handle-the-authorization-interrupt) and contact the [LangChain team](https://forum.langchain.com/c/help/langsmith/).
+</Note>
+
+## Choose a create mode
+
+Ownership decides what the agent does with a credential. The create mode decides how that credential reaches the workspace, and depends on how the external service authenticates:
+
+| Mode | Use when | Create with | Credential owner |
+| --- | --- | --- | --- |
+| **Opaque secret** | The service uses a fixed API key or other static secret. | `--secret-from-env`, `--secret-from-file`, stdin, or an interactive prompt | The agent |
+| **General OAuth** | You register your own OAuth app (BYOT), such as with GitHub or Google. | `--oauth <service>` from the catalog, or `--authorize-url` and `--token-url` for a custom provider | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) |
+| **MCP OAuth** | An MCP server advertises OAuth and registers a client automatically. | `--mcp <url>`, or the slug alone when the project already declares that user-owned MCP server | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) |
+
+For example:
+```bash
+# Opaque secret: store a fixed API key for the agent
+uv run mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+
+# General OAuth: register your own app, and let each caller authorize
+uv run mda connections create frontend-github --oauth github \
+  --client-id "********" --secret-from-env GITHUB_CLIENT_SECRET
+
+# MCP OAuth: let the MCP server register a client for you
+uv run mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+```
+
+
+
+
+Do not mix modes in one command. For example, `--mcp` cannot combine with `--oauth`, custom endpoints, `--client-id`, or a secret value.
+
+### Name a connection
+
+The first argument to `mda connections create` is a slug: your name for the connection, and the name your code passes to `connections.get(...)`. It is not the provider name, which goes to `--oauth`:
+
+```bash
+mda connections create frontend-github --oauth github
+#                      ^ your slug      ^ catalog provider
+```
+
+Slugs are unique within a workspace. Use lowercase letters, numbers, and single hyphens, and pick a name that identifies which account the connection points at, such as `organization-tavily` or `engineering-notion`.
+
+## Create an opaque secret
+
+Store a fixed secret for the agent. Read the value from an environment variable, a file, stdin, or a prompt. This mode fits API keys for custom tools, such as a Tavily search key. Opaque secrets created with the CLI are agent-owned.
+
+Put the source value in the shell environment or project `.env` file, then create the connection from that variable. Run the command from the project root. The CLI requires a LangSmith API key and workspace ID.
+
+```bash
+uv run mda connections create organization-tavily --secret-from-env TAVILY_API_KEY
+```
+
+
+
+
+This stores the value from `TAVILY_API_KEY` as an agent-owned secret. Runtime code resolves it with `connections.get(...)`.
+
+Other ways to supply the value:
+
+- **`--secret-from-file PATH`**: Read one value from a file that contains only the secret.
+- **stdin**: Pipe or redirect the value, for example `printf '%s' "$ACME_API_KEY" | mda connections create acme-api`.
+- **Interactive prompt**: Omit a value flag on a TTY. The CLI hides the input so the secret does not appear on screen or in shell history.
+
+Opaque secrets created with the CLI are always agent-owned. For per-caller credentials, use an [OAuth connection](#create-a-general-oauth-connection).
+
+Issue a key that belongs to the agent rather than reusing a personal key. A dedicated key can be scoped, rotated, and revoked without affecting anything else that shares it.
+
+### Use an opaque secret in a custom tool
+
+The following tool resolves the `organization-tavily` connection for the agent, then sends it to the Tavily API:
+
+```python tools/search_web.py
+import httpx
+from langchain.tools import tool
+from managed_deepagents import connections
+
+
+@tool(parse_docstring=True)
+async def search_web(query: str) -> str:
+    """
+    Search the web.
+
+    Args:
+        query: Search query.
+    """
+    api_key = await connections.get("organization-tavily", {"type": "agent"})
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            "https://api.tavily.com/search",
+            json={"api_key": api_key, "query": query, "max_results": 5},
+        )
+        response.raise_for_status()
+        return response.text
+```
+
+
+
+
+See [Custom tools](/langsmith/python/managed-deep-agents-tools) to add the tool to the agent.
+
+## Create a general OAuth connection
+
+Register a bring-your-own-app (BYOT) OAuth client so callers can grant the agent access to a provider API. Use this mode for REST or GraphQL APIs where you own the OAuth app registration. For MCP servers that discover and register clients automatically, use [MCP OAuth](#create-an-mcp-oauth-connection) instead.
+
+### Use the OAuth catalog
+
+Every OAuth provider needs the same five settings: an authorization URL, a token URL, a token endpoint authentication method, authorization parameters, and default scopes. A catalog entry supplies all five, so `--oauth <service>` plus your own client ID and secret is the whole configuration.
+
+The catalog is not a gate on which providers you can use. For a service it does not cover, [pass the endpoints yourself](#register-a-provider-with-custom-endpoints).
+
+List the catalog with:
+
+```bash
+uv run mda connections catalog
+```
+
+
+
+
+The command prints each service's default scopes and the page where you register an app. It does not call LangSmith, so it needs no workspace ID or API key. Pass a value from the first column to `--oauth`.
+
+| `--oauth` value | Register an app | Default scopes |
+| --- | --- | --- |
+| `atlassian` | [Atlassian](https://developer.atlassian.com/console/myapps/) | `read:me` `offline_access` |
+| `bitbucket` | [Bitbucket](https://bitbucket.org/account/settings/app-auth/) | `account` |
+| `box` | [Box](https://app.box.com/developers/console) | None |
+| `click-up` | [ClickUp](https://app.clickup.com/settings/apps) | None |
+| `discord` | [Discord](https://discord.com/developers/applications) | `identify` `email` |
+| `dropbox` | [Dropbox](https://www.dropbox.com/developers/apps) | `account_info.read` |
+| `facebook` | [Facebook](https://developers.facebook.com/apps/) | `email` `public_profile` |
+| `figma` | [Figma](https://www.figma.com/developers/apps) | `current_user:read` |
+| `github` | [GitHub](https://github.com/settings/developers) | `read:user` |
+| `gitlab` | [GitLab](https://gitlab.com/-/user_settings/applications) | `read_user` |
+| `google` | [Google](https://console.cloud.google.com/apis/credentials) | `openid` `https://www.googleapis.com/auth/userinfo.email` |
+| `hubspot` | [HubSpot](https://developers.hubspot.com/) | `oauth` |
+| `huggingface` | [Hugging Face](https://huggingface.co/settings/applications/new) | `openid` `profile` `email` |
+| `linear` | [Linear](https://linear.app/settings/api/applications/new) | `read` |
+| `linkedin` | [LinkedIn](https://www.linkedin.com/developers/apps) | `openid` `profile` `email` |
+| `notion-api` | [Notion API](https://www.notion.so/my-integrations) | None |
+| `patreon` | [Patreon](https://www.patreon.com/portal/registration/register-clients) | `identity` `identity[email]` |
+| `reddit` | [Reddit](https://www.reddit.com/prefs/apps) | `identity` |
+| `salesforce` | [Salesforce](https://login.salesforce.com/) | `api` `refresh_token` |
+| `slack` | [Slack](https://api.slack.com/apps) | `chat:write` |
+| `spotify` | [Spotify](https://developer.spotify.com/dashboard) | `user-read-email` |
+| `twitch` | [Twitch](https://dev.twitch.tv/console/apps) | `user:read:email` |
+| `x` | [X](https://developer.x.com/en/portal/dashboard) | `tweet.read` `users.read` `offline.access` |
+
+A service with no default scopes requires `--scope`.
+
+<Accordion title="Some services run separate OAuth apps for their API and their MCP server">
+Notion is one of them. `--oauth notion-api` registers an app against Notion's REST API, and that app does not authorize Notion's MCP server. To use the MCP server, create an [MCP OAuth connection](#create-an-mcp-oauth-connection) instead. Check the provider's documentation when a service offers both.
+</Accordion>
+
+GitHub requires an OAuth client ID and client secret. Set `GITHUB_CLIENT_SECRET`, then create the connection. Replace `********` with the client ID:
+
+```bash
+uv run mda connections create frontend-github \
+  --oauth github \
+  --client-id "********" \
+  --secret-from-env GITHUB_CLIENT_SECRET
+```
+
+
+
+
+On create, the CLI prints the redirect URI to register with the provider. Register that URI on the provider's app settings page before callers authorize. The URI follows your LangSmith host, for example `https://api.smith.langchain.com/v1/agent-auth/oauth/callback` on production.
+
+Optional flags:
+
+- **`--scope SCOPE`**: Replace the catalog defaults. Repeat for each scope.
+- **`--allowed-scope SCOPE`**: Ceiling any later authorization may request. Defaults to the `--scope` values and must cover every `--scope`.
+- **`--authorization-param KEY=VALUE`**: Extra authorization query parameter. Repeat for each parameter.
+- **`--auth-method METHOD`**: How the client authenticates to the token endpoint: `client_secret_basic`, `client_secret_post`, or `none` for a public client. Defaults to the catalog service's method.
+
+### Register a provider with custom endpoints
+
+For a service the catalog does not cover, pass both endpoints plus a client ID and scopes:
+
+```bash
+uv run mda connections create acme \
+  --authorize-url https://auth.acme.com/authorize \
+  --token-url https://auth.acme.com/token \
+  --client-id "********" \
+  --secret-from-env ACME_CLIENT_SECRET \
+  --scope read
+```
+
+
+
+
+Most providers reject an authorization request with no `scope` parameter. Pass `--scope` for manual registrations, or use `--oauth <service>` when the catalog covers the provider.
+
+### Authorize an agent-owned OAuth account
+
+When a provider issues its own application credential, such as a Slack bot token, a GitHub App installation token, or a Notion internal integration token, prefer that credential stored as an [agent-owned secret](#create-an-opaque-secret). An application credential is scoped to the application, is revocable on its own, and does not depend on any person's account.
+
+Use `--authorize` when the provider offers no application identity and its API authenticates only as a person.
+
+By default, an OAuth connection collects a grant from each caller at runtime. Pass `--authorize` to sign in once yourself and store the grant for the deployment. Every caller then acts as that one account, and no caller sees an authorization prompt:
+
+```bash
+uv run mda connections create support-linear \
+  --oauth linear \
+  --client-id "********" \
+  --secret-from-env LINEAR_CLIENT_SECRET \
+  --scope read --scope write \
+  --authorize
+```
+
+
+
+
+The CLI starts an authorization flow for the account you sign in with and stores the resulting grant for the deployment. Runtime code resolves it as an agent-owned credential:
+
+```python
+access_token = await connections.get("support-linear", {"type": "agent"})
+```
+
+
+
+
+`--authorize` applies to OAuth connections only. Combine it with `--oauth`, custom endpoints, or `--mcp`. Run it from the project directory, because the grant belongs to that project's deployment.
+
+Use an agent-owned OAuth account when every caller should act as one shared account rather than as themselves. A company Notion account that grants read access to a question-answering agent is one example.
+
+<Tip>
+Authorize a dedicated account that your team owns, not your own. The account you sign in with becomes the identity behind every action the agent takes, for every caller. Using a personal account costs you three things:
+
+- The agent gets your full access at that provider.
+- The provider's audit log shows your name for what the agent did.
+- The agent stops working when your own access changes.
+
+A grant made this way stays tied to the account that authorized it, even a dedicated one. A password reset, a revoked session, or a deactivated account ends the grant, so treat that account as production infrastructure.
+
+Give the dedicated account the narrowest `--scope` values the agent needs. Set `--allowed-scope` to cap what any later authorization can request.
+</Tip>
+
+### Access an OAuth token in a custom tool
+
+This tool resolves the authenticated caller's GitHub connection and calls the GitHub REST API:
+
+```python tools/get_github_user.py
+import httpx
+from langchain.tools import tool
+from managed_deepagents import connections
+
+
+@tool
+async def get_github_user() -> str:
+    """Get the authenticated caller's GitHub login."""
+    # Replace `frontend-github` with the name of your connection.
+    access_token = await connections.get("frontend-github", {"type": "user"})
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        response.raise_for_status()
+        return response.json()["login"]
+```
+
+
+
+
+## Create an MCP OAuth connection
+
+For remote MCP servers that support OAuth client registration, Managed Deep Agents discovers the server's OAuth metadata and registers a client automatically. You do not supply a client ID or client secret.
+
+### Declare the MCP server first
+
+Add the server in `tools/mcp.py` and reference the connection slug.
+
+```python tools/mcp.py
+from managed_deepagents import connections, define_mcp
+
+mcp = define_mcp(
+    servers={
+        "notion": {
+            "transport": "http",
+            "url": "https://mcp.notion.com/mcp",
+            "connection": connections.get("engineering-notion", {"type": "user"}),
+        },
+    },
+)
+```
+
+
+
+
+For more information, see [Connect to MCP servers](/langsmith/python/managed-deep-agents-mcp-connectors).
+
+### Create from the project declaration
+
+When the slug matches exactly one user-owned MCP connection in the project, create with the slug alone. The CLI reads the server URL from the MCP declaration:
+
+```bash
+uv run mda connections create engineering-notion
+```
+
+
+
+
+### Create from an explicit MCP URL
+
+Pass `--mcp` when you want to name the server URL explicitly, or when the slug is not yet declared in the project:
+
+```bash
+uv run mda connections create engineering-notion --mcp https://mcp.notion.com/mcp
+```
+
+
+
+
+A scheme-less value such as `mcp.notion.com/mcp` is stored as `https://mcp.notion.com/mcp`.
+
+If the server cannot register a client automatically, the CLI says so and points you at general OAuth (`--oauth` or manual endpoints) instead.
+
+`mda deploy` applies the same inference to missing user-owned MCP connections. It leaves existing connections unchanged, creates each unique missing MCP connection through OAuth discovery, and fails before deployment when discovery or registration is unavailable.
+
+## Handle the authorization interrupt
+
+Managed Deep Agents runs the OAuth round-trip for you. A project needs no callback route, no token store, no refresh logic, and no consent screen. The run pauses, the caller grants access, and the run resumes with that person's credential.
+
+Before the first model turn, Managed Deep Agents checks every user-owned connection the run needs. If the caller is missing one or more grants, the credential gate raises a single LangGraph interrupt. Slack and LangSmith Studio handle that interrupt for the caller. A custom frontend reads the same payload from the LangChain frontend SDK and resumes after the caller connects.
+
+User-owned connections require an authenticated caller. Anonymous or agent-only runs cannot complete the credential gate. See [Identify the caller](#identify-the-caller) for where that identity comes from.
+
+### Interrupt payload
+
+With [`useStream`](/oss/python/langchain/frontend/human-in-the-loop#setting-up-usestream) (`@langchain/react`, `@langchain/vue`, `@langchain/svelte`) or `injectStream` (`@langchain/angular`), the pending interrupt is on `stream.interrupt`. The credential gate payload is `stream.interrupt.value`.
+
+For a missing OAuth grant, each entry in `credentials` carries the URL where the caller completes consent:
+
+```json
+{
+  "type": "credential_authorization_required",
+  "message": "Connect the following integrations to continue.",
+  "credentials": [
+    {
+      "slug": "engineering-notion",
+      "kind": "oauth2",
+      "connect_url": "https://api.smith.langchain.com/v1/agent-auth/...",
+      "auth_id": "sess_abc123"
+    }
+  ]
+}
+```
+
+One interrupt lists every missing grant. Handle each entry before resuming. An entry with `"kind": "secret"` represents a user-owned API key rather than an OAuth grant. Slack and Studio do not collect those. For more information, see [Review current limitations](#review-current-limitations).
+
+| Field | Present for | Meaning |
+| --- | --- | --- |
+| `type` | Always | Discriminator. Must be `credential_authorization_required`. |
+| `message` | Always | Human-readable summary to show above the pending grants. |
+| `credentials` | Always | One entry per missing grant. |
+| `credentials[].slug` | Always | Connection slug to authorize. |
+| `credentials[].kind` | Always | `secret` for a password-style API key, or `oauth2` for OAuth. |
+| `credentials[].connect_url` | `oauth2` | HTTPS URL where the caller completes consent. |
+| `credentials[].auth_id` | `oauth2` | Authorization session id used to poll status. |
+
+### Read the interrupt in your UI
+
+The frontend that renders this interrupt is a web application, so these examples are TypeScript whether the agent is written in Python or TypeScript.
+
+Detect the credential gate payload on `stream.interrupt`, render a connect card, then resume with `stream.respond` after every grant is stored:
+
+<CodeGroup>
+```tsx React
+import { useStream } from "@langchain/react";
+
+type CredentialAuthorizationRequired = {
+  type: "credential_authorization_required";
+  message?: string;
+  credentials: Array<{
+    slug: string;
+    kind: "oauth2" | "secret";
+    connect_url?: string;
+    auth_id?: string;
+  }>;
+};
+
+function isCredentialAuthorization(
+  value: unknown
+): value is CredentialAuthorizationRequired {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === "credential_authorization_required"
+  );
+}
+
+export function Chat() {
+  const stream = useStream({
+    apiUrl: "https://your-deployment.example",
+    assistantId: "agent",
+  });
+
+  const payload = stream.interrupt?.value;
+  const credentialAuth = isCredentialAuthorization(payload) ? payload : null;
+
+  return (
+    <div>
+      {/* messages … */}
+      {credentialAuth && (
+        <ConnectCard
+          payload={credentialAuth}
+          onComplete={async (connectedSlugs) => {
+            await stream.respond(
+              {
+                type: "credential_authorization_completed",
+                connected_slugs: connectedSlugs,
+              },
+              { interruptId: stream.interrupt?.id }
+            );
+          }}
+        />
+      )}
+    </div>
+  );
+}
+```
+
+```vue Vue
+<script setup lang="ts">
+import { computed } from "vue";
+import { useStream } from "@langchain/vue";
+
+const stream = useStream({
+  apiUrl: "https://your-deployment.example",
+  assistantId: "agent",
+});
+
+const credentialAuth = computed(() => {
+  const value = stream.interrupt.value?.value;
+  return value?.type === "credential_authorization_required" ? value : null;
+});
+
+async function onComplete(connectedSlugs: string[]) {
+  await stream.respond(
+    {
+      type: "credential_authorization_completed",
+      connected_slugs: connectedSlugs,
+    },
+    { interruptId: stream.interrupt.value?.id }
+  );
+}
+</script>
+
+<template>
+  <div>
+    <!-- messages … -->
+    <ConnectCard
+      v-if="credentialAuth"
+      :payload="credentialAuth"
+      @complete="onComplete"
+    />
+  </div>
+</template>
+```
+
+```svelte Svelte
+<script lang="ts">
+  import { useStream } from "@langchain/svelte";
+
+  const stream = useStream({
+    apiUrl: "https://your-deployment.example",
+    assistantId: "agent",
+  });
+
+  $: payload = stream.interrupt?.value;
+  $: credentialAuth =
+    payload?.type === "credential_authorization_required" ? payload : null;
+
+  async function onComplete(connectedSlugs: string[]) {
+    await stream.respond(
+      {
+        type: "credential_authorization_completed",
+        connected_slugs: connectedSlugs,
+      },
+      { interruptId: stream.interrupt?.id }
+    );
+  }
+</script>
+
+<div>
+  <!-- messages … -->
+  {#if credentialAuth}
+    <ConnectCard payload={credentialAuth} onComplete={onComplete} />
+  {/if}
+</div>
+```
+
+```ts Angular
+import { Component, computed } from "@angular/core";
+import { injectStream } from "@langchain/angular";
+
+@Component({
+  selector: "app-chat",
+  template: `
+    <!-- messages … -->
+    @if (credentialAuth(); as auth) {
+      <app-connect-card
+        [payload]="auth"
+        (complete)="onComplete($event)"
+      />
+    }
+  `,
+})
+export class ChatComponent {
+  stream = injectStream({
+    apiUrl: "https://your-deployment.example",
+    assistantId: "agent",
+  });
+
+  credentialAuth = computed(() => {
+    const value = this.stream.interrupt()?.value;
+    return value?.type === "credential_authorization_required" ? value : null;
+  });
+
+  async onComplete(connectedSlugs: string[]) {
+    await this.stream.respond(
+      {
+        type: "credential_authorization_completed",
+        connected_slugs: connectedSlugs,
+      },
+      { interruptId: this.stream.interrupt()?.id }
+    );
+  }
+}
+```
+</CodeGroup>
+
+For the general interrupt lifecycle (`stream.interrupt`, resume, checkpoints), see [Human-in-the-loop](/oss/python/langchain/frontend/human-in-the-loop).
+
+### Handle OAuth grants (`kind: "oauth2"`)
+
+For each OAuth entry:
+
+1. Show the `slug` and a Connect control that opens `connect_url` (HTTPS only; reject URLs with embedded credentials).
+2. Long-poll Agent Auth until the session completes:
+
+```http
+GET /v1/agent-auth/oauth-authorization-sessions/{auth_id}?wait_seconds=25
+```
+
+The response `status` is `pending`, `completed`, `failed`, or `expired`. Keep polling while the status is `pending`. On `completed`, mark that slug connected. On `failed` or `expired`, ask the caller to start a new run for a fresh connect link.
+
+Do not put the access token in your UI. Agent Auth stores the grant for the caller; the agent reads it on resume through `connections.get(...)`.
+
+### Resume the run
+
+After every entry in `credentials` is connected, resume with:
+
+```json
+{
+  "type": "credential_authorization_completed",
+  "connected_slugs": ["engineering-notion"]
+}
+```
+
+Pass that object to `stream.respond(resume, { interruptId: stream.interrupt?.id })` as shown above. If you resume while a grant is still missing, the gate interrupts again with a fresh payload.
+
+### Built-in Slack handling
+
+When the agent runs through the Slack channel, Slack renders OAuth entries that include an HTTPS `connect_url`. The caller opens the link, completes consent, and Slack resumes the run, so nobody has to open LangSmith to connect a service.
+
+<Frame caption="Slack OAuth authorization prompt">
+  **Screenshot placeholder:** Add the Slack OAuth authorization prompt screenshot here.
+</Frame>
+
+## Inspect and delete connections
+
+Use `list` or `get` to inspect connection metadata. `list` shows every connection in the workspace, not only the ones this project uses:
+
+```bash
+uv run mda connections list
+uv run mda connections get organization-tavily
+uv run mda connections delete organization-tavily
+```
+
+
+
+
+Pass `--json` to `list` or `get` for machine-readable output. Pass `--yes` to `delete` to skip the confirmation prompt.
+
+## Develop locally
+
+For `mda dev`, an agent-owned opaque connection reads `MDA_DEV_<SLUG>`. The CLI converts the slug to uppercase and replaces hyphens with underscores. For example, `organization-tavily` reads `MDA_DEV_ORGANIZATION_TAVILY`.
+
+User-owned connections require an authenticated caller and Agent Auth. Deploy the agent to exercise the [authorization interrupt](#handle-the-authorization-interrupt) end to end.
+
+## Review current limitations
+
+Connections are part of the Managed Deep Agents public beta. The following gaps apply to the current release:
+
+- **User-owned API keys**: A user-owned connection holds an OAuth grant. Slack and Studio do not collect a per-caller API key, and the CLI does not create an empty slot for one. Use an agent-owned secret instead, or collect the key in a custom frontend as described in the following section.
+- **Custom channels**: Slack and Studio resolve caller identity and complete authorization for the caller. A custom frontend handles the [authorization interrupt](#handle-the-authorization-interrupt) itself.
+- **Workspace UI**: LangSmith does not list connections in the UI. Use `mda connections list` and `mda connections get` for connection metadata.
+- **Grant visibility**: `mda connections list` is workspace-scoped and does not report which deployments hold a credential under a slug. A run that fails with `no agent connection is set for slug '<slug>'` means this deployment owns no credential for it, even when `list` shows the slug. Run `mda connections create <slug>` from the project root to mint one.
+
+<Accordion title="Store a user-owned API key through Agent Auth">
+An interrupt entry with `"kind": "secret"` has no `connect_url`. To collect one in a custom frontend, prompt for the value with a hidden input, then create the credential against the existing connection slug:
+
+```http
+POST /v1/agent-auth/connections
+```
+
+```json
+{
+  "slug": "organization-tavily",
+  "display_name": "organization-tavily",
+  "credential": {
+    "kind": "secret",
+    "owner_type": "user",
+    "owner_id": "<caller-identity-id>",
+    "value": "<api-key>"
+  }
+}
+```
+
+Agent Auth reuses the existing connection for that slug and attaches the caller's secret. Secret material is write-only. After a successful create, mark that slug connected and resume the run. For more information, see [Set up Agent Auth](/langsmith/agent-auth).
+</Accordion>
+
+## See also
+
+- [Managed Deep Agents CLI reference](/langsmith/python/managed-deep-agents-cli)
+- [Connect to MCP servers](/langsmith/python/managed-deep-agents-mcp-connectors)
+- [Add custom tools](/langsmith/python/managed-deep-agents-tools)
+- [Add identity to Managed Deep Agents](/langsmith/python/managed-deep-agents-identity)
+- [Deploy an agent](/langsmith/python/managed-deep-agents-deploy)
+- [Human-in-the-loop](/oss/python/langchain/frontend/human-in-the-loop)
+- [Set up Agent Auth](/langsmith/agent-auth)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-connections.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
 </Callout>
 </div>
 
@@ -82327,7 +84062,9 @@ These defaults differ from a deployed agent. Test identity and sandbox behavior 
 # Connect to MCP servers
 Source: https://docs.langchain.com/langsmith/python/managed-deep-agents-mcp-connectors
 
-An MCP connector adds tools from remote [Model Context Protocol (MCP)](/oss/python/deepagents/mcp) servers to a managed deep agent. Managed Deep Agents creates the MCP client, loads the tools, and adds them to the agent.
+Connect a managed deep agent to remote [Model Context Protocol (MCP)](/oss/python/deepagents/mcp) servers to add their tools to the agent. Managed Deep Agents creates the MCP client and loads the tools.
+
+Most remote MCP servers require authentication. A [connection](/langsmith/python/managed-deep-agents-connections) supplies it, and declaring the connection as user-owned makes each caller authorize their own account.
 
 <Note>
 Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and available on [LangSmith Cloud](/langsmith/cloud) in the US region only.
@@ -82335,29 +84072,29 @@ Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and avail
 
 ## Project structure
 
-Declare MCP servers in a module directly under `connectors/`:
+Declare MCP servers in a module directly under `tools/`:
 
 ```text
 my-agent/
   agent.py
-  connectors/
+  tools/
     mcp.py
 ```
 
-The module must export a module-level `connector`.
+The module must export a module-level `mcp`.
 
 
 
 
-## Add an MCP connector
+## Add MCP servers
 
-Use `connectors.mcp` to declare one or more remote servers:
+Use `define_mcp` to declare one or more remote servers:
 
-```python connectors/mcp.py
-from managed_deepagents import connectors
+```python tools/mcp.py
+from managed_deepagents import define_mcp
 
-connector = connectors.mcp(
-    mcp_servers={
+mcp = define_mcp(
+    servers={
         "langchainDocs": {
             "transport": "http",
             "url": "https://docs.langchain.com/mcp",
@@ -82373,7 +84110,7 @@ Managed Deep Agents supports Streamable HTTP (`"http"`) and legacy SSE (`"sse"`)
 
 ## Select tools
 
-By default, the connector exposes every tool from each server. To expose only selected tools, set an allowlist inside that server's configuration:
+By default, Managed Deep Agents exposes every tool from each server. To expose only selected tools, set an allowlist inside that server's configuration:
 
 ```python
 {
@@ -82392,35 +84129,42 @@ You can use both options together. The denylist applies after the allowlist, and
 
 Selection uses raw MCP tool names before Managed Deep Agents prefixes them. Tool names are prefixed with the server name by default to avoid collisions. For example, the `search_docs_by_lang_chain` tool from the `langchainDocs` server is exposed as `langchainDocs__search_docs_by_lang_chain`.
 
-## Configure connections
+## Configure MCP servers
 
-Each server accepts the following options:
+Each server supports the following core options:
 
 | Option | Description |
 | --- | --- |
 | `transport` | Required. Use `http` for Streamable HTTP or `sse` for legacy SSE. |
 | `url` | Required. The remote MCP endpoint URL. |
-| `headers` | Static headers to send to the server, such as an authorization header. |
+| `headers` | Static headers to send to the server. |
 | `include_tools` / `includeTools` | Raw MCP tool names to expose. |
 | `exclude_tools` / `excludeTools` | Raw MCP tool names to hide. |
 | `default_tool_timeout` / `defaultToolTimeout` | Timeout for each tool call, in seconds for Python and milliseconds for TypeScript. |
 | `automatic_sse_fallback` / `automaticSSEFallback` | For HTTP, allow the client to fall back to SSE. |
 | `reconnect` | For SSE, configure reconnection behavior. |
 
-The connector also accepts these options:
+The MCP definition also accepts these options:
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `prefix_tool_name_with_server_name` / `prefixToolNameWithServerName` | `true` | Prefix each tool with `{server}__`. |
 | `throw_on_load_error` / `throwOnLoadError` | `true` | Fail loading instead of starting with a partial tool set. |
 
-If a server requires credentials, read them from environment variables and pass them through `headers`. Keep local values in `.env`; Managed Deep Agents forwards eligible values as deployment secrets. Do not hard-code credentials in the connector declaration.
+## Compare MCP with other capabilities
 
-## Distinguish connectors from other capabilities
-
-- **MCP connectors** add tools hosted by remote MCP servers.
+- **MCP servers** provide remotely hosted tools.
 - **[Authored tools](/langsmith/python/managed-deep-agents-tools)** implement application logic in the project and are passed through the agent definition.
 - **[Channels](/langsmith/python/managed-deep-agents-channels)** receive external messages that start agent runs and deliver responses.
+
+## Use MCP servers that require authentication
+
+If an MCP server requires credentials, declare a connection on the server config and create that connection in the workspace.
+
+- **MCP OAuth**: For servers that advertise OAuth and support automatic client registration, create with `mda connections create <slug>` (inferred from the MCP declaration) or `mda connections create <slug> --mcp <url>`. You do not supply a client ID or secret.
+- **Opaque secret or general OAuth**: For a static API key, or for a BYOT OAuth app you register yourself, create an opaque secret or general OAuth connection, then set the server's `connection` option to `connections.get(...)`.
+
+For create modes, owners, and runtime authorization, see [Manage connections](/langsmith/python/managed-deep-agents-connections).
 
 ---
 
@@ -83248,6 +84992,9 @@ Open that URL. You should see the deployment in a ready state. Send the same res
   <Card title="Custom tools" icon="tool" href="/langsmith/python/managed-deep-agents-tools">
     Add authored LangChain tools from your project.
   </Card>
+  <Card title="Connections" icon="key" href="/langsmith/python/managed-deep-agents-connections">
+    Authenticate with external services, as the agent or as the caller.
+  </Card>
 </CardGroup>
 
 ---
@@ -83669,7 +85416,7 @@ Source: https://docs.langchain.com/langsmith/python/managed-deep-agents-tools
 
 Tools extend what your agent can do by letting it interact with external systems, such as fetching real-time data, querying databases, executing code, and taking actions. A tool is a callable function with defined inputs and outputs. The model uses the tool's description and the conversation context to decide when to call it and which arguments to provide.
 
-To load tools from a remote MCP server, use an [MCP connector](/langsmith/python/managed-deep-agents-mcp-connectors).
+To load tools from a remote MCP server, see [Connect to MCP servers](/langsmith/python/managed-deep-agents-mcp-connectors).
 
 <Note>
 Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and available on [LangSmith Cloud](/langsmith/cloud) in the US region only.
@@ -83783,9 +85530,11 @@ During public beta, Managed Deep Agents is CLI-first and programmatic invocation
 
 Human-in-the-loop needs durable thread state to pause and resume. The managed runtime owns the checkpointer, so no extra setup is required.
 
-## Use secrets and context
+## Use tools that require authentication
 
-Tools can read deployment secrets from environment variables. Put local values in `.env` for `mda dev`; `mda deploy` forwards non-reserved `.env` values as hosted deployment secrets.
+If a tool requires an API key or OAuth token, use a connection to resolve the credential at runtime. See [Manage connections](/langsmith/python/managed-deep-agents-connections).
+
+## Access runtime context
 
 For per-run values such as request metadata or feature flags, use the normal LangChain runtime context patterns for tools. See [how to access context from within your tools](/oss/python/langchain/tools#access-context).
 
