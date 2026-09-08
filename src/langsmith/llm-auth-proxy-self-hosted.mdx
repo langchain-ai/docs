@@ -48,6 +48,7 @@ Both the `ext_authz` service and the transformer are customer-deployed component
 - Kubernetes cluster with Helm 3
 - Envoy v1.37 or later (the Helm chart defaults to `envoyproxy/envoy:v1.37-latest`)
 - The URL of your upstream LLM provider or gateway (the destination the proxy will forward requests to)
+- To forward the end user's IdP access token, self-hosted LangSmith with OIDC authentication. See [IdP token forwarding](#idp-token-forwarding)
 
 <Note>
 The auth proxy currently supports the [Playground](/langsmith/prompt-engineering-concepts), [Evals](/langsmith/evaluation), [Fleet](/langsmith/fleet), [Chat](/langsmith/chat), and [Insights](/langsmith/insights) features.
@@ -143,6 +144,8 @@ In the LangSmith UI, navigate to **Settings** > **General**, configure the follo
     - **Block all:** blocks JWT forwarding to all URLs.
     - **Custom:** specify an explicit list of allowed URL patterns. Empty strings and bare `*` are not accepted. The control is disabled when the LLM auth proxy toggle is off.
 
+    With [IdP token forwarding](#idp-token-forwarding) enabled, this setting also bounds where a live end-user credential can travel. **Block all** sends no JWT at all, so your `ext_authz` service is never called.
+
     <img
     className="block dark:hidden"
     src="/langsmith/images/llm-auth-proxy-settings-light.png"
@@ -196,6 +199,53 @@ helm install langsmith-auth-proxy langchain/langsmith-auth-proxy \
   -f values.yaml
 ```
 
+## IdP token forwarding
+
+By default the JWT tells your service who the user is but carries no credential to act as them. With IdP token forwarding enabled, LangSmith adds an `idp_token` claim holding the signed-in user's IdP access token, so your `ext_authz` service can exchange it for a credential your gateway accepts — typically an [RFC 8693 token exchange](https://datatracker.ietf.org/doc/html/rfc8693), with `idp_token` as the subject token. LLM calls are then authorized as the end user rather than as LangSmith.
+
+LangSmith passes the token through unmodified. It does not validate, inspect, cache, or refresh it, and the token may be opaque rather than a JWT. The exchange happens entirely in your `ext_authz` service.
+
+<Note>
+Requires self-hosted LangSmith with OIDC authentication. Supported for [Fleet](/langsmith/fleet), the [Playground](/langsmith/prompt-engineering-concepts), and [evaluations](/langsmith/evaluation) started from the LangSmith UI. Not supported for [Chat](/langsmith/chat), [Insights](/langsmith/insights), or scheduled runs.
+</Note>
+
+### Enable forwarding
+
+Add the following to `commonEnv` in your [LangSmith `values.yaml`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml):
+
+```yaml
+commonEnv:
+  - name: LLM_AUTH_PROXY_FORWARD_IDP_TOKEN
+    value: "true"
+```
+
+Forwarding is installation-wide and off by default. Turning it on sends a live end-user credential to every destination your [Allowed URLs](#3-configure-organization-settings-in-langsmith) setting permits, so set that to **Custom** and list only the hosts that should receive one.
+
+The claim also requires a [custom model configuration](/langsmith/model-configurations). Built-in models do not route through the auth proxy, so no JWT is minted and the claim never appears. This is the normal setup for the auth proxy, which exists so requests reach your own gateway.
+
+<Note>
+Installations that set `OAUTH_OVERRIDE_TOKEN_EXPIRY` never forward the token, because the access token's real expiry is unknown there.
+</Note>
+
+### Handle a missing claim
+
+`idp_token` is omitted rather than fatal — the JWT still mints and your service is still called. Absence is expected, and which requests carry the claim changes as LangSmith adds surfaces. Common reasons include no signed-in user behind the request, forwarding being disabled, and the token no longer being usable.
+
+Treat a missing claim as its own outcome and label it distinctly. A generic denial makes an absent claim indistinguishable from token forwarding being broken.
+
+The same applies to identity: use `ls_user_id` to attribute a call to a person, and decide explicitly what your policy does when it is absent. See the [JWT claims reference](#jwt-claims-reference).
+
+### Token freshness
+
+Two independent credentials expire on this path, and they fail in different places:
+
+| Credential | Lifetime | Where it fails |
+|---|---|---|
+| The JWT LangSmith signs | Currently 5 minutes, about 6 including Envoy's default 60-second clock skew allowance | Envoy's `jwt_authn` filter, before `ext_authz` runs. Your service is never called, so nothing appears in its logs |
+| The IdP access token in `idp_token` | The IdP's own lifetime | Inside your `ext_authz` service, when the exchange is attempted |
+
+LangSmith reads the access token when it mints the JWT, or up to an hour earlier, and never refreshes it. Assume on every surface that the token may be close to expiry, or already past it, by the time your service receives it. Fail distinguishably on an expired subject token so it can be told apart from an absent claim.
+
 ## Write an `ext_authz` service
 
 Use `ext_authz` when you need to add, remove, or edit authorization headers, for example, to inject a provider API key based on the identity in the JWT. Your service receives the validated JWT and optionally the request body, and returns the headers to inject upstream. This uses Envoy's [HTTP `ext_authz` filter](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/ext_authz_filter) (not gRPC).
@@ -229,6 +279,10 @@ Your `ext_authz` service can run in two ways:
 ### Sample deployment
 
 The example below is a minimal Python `ext_authz` service that performs an OAuth2 client credentials token exchange. On each request, it returns a cached `Authorization` header with a fresh access token, refreshing it from the configured token endpoint before it expires. See [e2e/oauth/](https://github.com/langchain-ai/helm/tree/main/charts/langsmith-auth-proxy/e2e/oauth) in the chart repository for the full example.
+
+<Warning>
+This sample authenticates as LangSmith, not as the end user, so it is not a starting point for [IdP token forwarding](#idp-token-forwarding). For that, read the `idp_token` claim from the JWT and exchange it.
+</Warning>
 
 <Accordion title="ext-authz-oauth.py">
 ```python
@@ -779,10 +833,13 @@ LangSmith signs JWTs using **Ed25519 (EdDSA)**. Public keys are served at `/.wel
 | `organization_id` | Organization ID |
 | `organization_name` | Organization Name |
 | `request_id` | Request correlation ID |
-| `ls_user_id` | LangSmith user ID (present whenever the request has an associated user) |
+| `ls_user_id` | LangSmith user ID of the person the request is attributed to. Not present on every request — see the warning below |
+| `idp_token` | The signed-in user's IdP access token, passed through unmodified, for use as the subject token in a token exchange. Not present on every request — see [IdP token forwarding](#idp-token-forwarding) |
 
 <Warning>
-Use `ls_user_id` to identify the end user. On agent runs, `sub` is the assistant's ID and `actor_type` is `agent-builder`, so neither identifies the person.
+`ls_user_id` is the only claim that identifies the person behind a request. Do not infer identity from `sub` or `actor_type` — `sub` identifies whatever triggered the request, which on agent runs is the assistant, not the person.
+
+`ls_user_id` is not present on every request, and which requests carry it changes as LangSmith adds surfaces. Treat its absence as "no attributable user" and decide explicitly what your policy does then.
 </Warning>
 
 The JWT is passed to your `ext_authz` or transformer service in the `x-langsmith-llm-auth` request header.
@@ -808,6 +865,7 @@ Yes. Multiple organizations can point to the same auth proxy instance via their 
 <Accordion title="Can the LangSmith to auth proxy connection use HTTP instead of HTTPS?">
 Yes, but only in self-hosted, and we generally recommend placing the auth proxy behind a dedicated ingress so communication uses HTTPS. To allow HTTP, add `LLM_AUTH_PROXY_ACCEPT_HTTP` to `commonEnv` and `playground.deployment.extraEnv` in your [LangSmith `values.yaml`](https://github.com/langchain-ai/helm/blob/main/charts/langsmith/values.yaml).
 To enable HTTP traffic to the auth proxy for [Chat and Insights](/langsmith/deploy-self-hosted-full-platform#enable-fleet-insights-and-chat), set this environment variable in the respective `extraEnv` sections: `config.polly.agent.extraEnv` (for Chat, which was formerly called Polly) and `config.insights.agent.extraEnv`.
+With [IdP token forwarding](#idp-token-forwarding) enabled the JWT carries a live end-user credential, so do not accept HTTP outside local development.
 </Accordion>
 
 <Accordion title="Does the auth proxy work without a public ingress?">
@@ -816,6 +874,10 @@ Yes. When the auth proxy is only reachable through internal Kubernetes networkin
 
 <Accordion title="When should I use the LLM auth proxy versus OAuth client credentials on a model configuration?">
 Use the LLM auth proxy when authentication needs custom logic beyond OAuth2 `client_credentials`. For example, exchanging the LangSmith JWT for a provider-specific token, injecting GCP or AWS identity, or rewriting request and response bodies. Use [OAuth client credentials on a model configuration](/langsmith/model-configurations#oauth-client-credentials) when each workspace or team needs self-service control over its own OAuth2 `client_credentials` against a custom gateway. Both can coexist within the same organization; routing is per-configuration.
+</Accordion>
+
+<Accordion title="My ext_authz service is never called for a long-running request.">
+The JWT LangSmith signs is short-lived, so a request reaching the proxy after it expires is rejected by Envoy before `ext_authz` runs. See [Token freshness](#token-freshness).
 </Accordion>
 
 ## Helm chart reference
