@@ -1125,7 +1125,18 @@ helm upgrade -i langsmith-sandbox langchain/langsmith-sandbox \
   --wait
 ```
 
-By default, the LangSmith control plane connects to the node IPs advertised by `sandbox-host`. Configure private routing and allow TCP port `19190` from the LangSmith cluster to the Sandbox cluster.
+#### Network path between the clusters
+
+By default, the LangSmith control plane connects directly to the node IPs advertised by `sandbox-host`. That requires a routable network path in both directions:
+
+| Direction | Destination | Port | Purpose |
+| --- | --- | --- | --- |
+| LangSmith pods → Sandbox nodes | Sandbox node IPs | TCP `19190` | Sandbox placement, exec, and data-plane traffic |
+| Sandbox pods → LangSmith API | `platform.endpoint` | TCP `443` (or `80`) | Callbacks and the `langsmith` CLI inside sandboxes |
+
+When both clusters share a VPC, this works with a single security-group rule allowing the LangSmith worker and pod security group to reach the sandbox nodes on `19190`. The Terraform module creates that rule for you.
+
+For cross-VPC or cross-account deployments, Terraform cannot infer the topology. Establish the route yourself with VPC peering, a transit gateway, or equivalent, then open `19190` on the sandbox node security group and any NACLs in between. Confirm the reverse path as well: `platform.endpoint` must be reachable from inside the sandbox cluster, so a LangSmith address that only resolves on the control-plane cluster's private DNS will not work.
 
 If direct node routing is unavailable, enable `sandboxHost.ingress` in the standalone chart and set the resulting origin in the core values:
 
