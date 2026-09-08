@@ -773,13 +773,17 @@ LangSmith signs JWTs using **Ed25519 (EdDSA)**. Public keys are served at `/.wel
 | `iss` | Issuer. `langsmith` for SaaS; set via `LLM_AUTH_PROXY_ISSUER` for self-hosted |
 | `aud` | Audience. Matches the JWT audience in LangSmith organization settings |
 | `sub` | Actor identifier (user ID, evaluator ID, assistant ID, or API key ID) |
-| `actor_type` | One of: `user`, `evaluator`, `agent-builder`, `api_key` |
+| `actor_type` | One of: `user`, `evaluator`, `agent-builder`, `insights`, `polly`, `api_key:pat` (personal access token), or `api_key:service` (service account key) |
 | `workspace_id` | Workspace ID |
 | `workspace_name` | Workspace Name |
 | `organization_id` | Organization ID |
 | `organization_name` | Organization Name |
 | `request_id` | Request correlation ID |
-| `ls_user_id` | LangSmith user ID (present only when `actor_type` is `user`) |
+| `ls_user_id` | LangSmith user ID (present whenever the request has an associated user) |
+
+<Warning>
+Use `ls_user_id` to identify the end user. On agent runs, `sub` is the assistant's ID and `actor_type` is `agent-builder`, so neither identifies the person.
+</Warning>
 
 The JWT is passed to your `ext_authz` or transformer service in the `x-langsmith-llm-auth` request header.
 
