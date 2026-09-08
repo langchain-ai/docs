@@ -1,0 +1,91 @@
+---
+title: OpsenSandbox integration
+description: Integrate with the OpsenSandbox sandbox backend using LangChain Python.
+integration:
+  name: OpsenSandbox
+  pypi: langchain-opsen
+---
+
+[opsen](https://opsen.dev) runs agent sandboxes and proxies their model calls, so machine, model and tool spend land under one task id. See the [opsen docs](https://opsen.dev/docs) for signup, authentication, and platform details.
+
+## Installation
+
+<CodeGroup>
+```bash pip
+pip install langchain-opsen
+```
+
+```bash uv
+uv add langchain-opsen
+```
+</CodeGroup>
+
+## Create a sandbox backend
+
+Unlike most sandbox backends, there is no provider SDK object to create first: the session starts on the first command, so an agent that is built and never run costs nothing.
+
+```python
+from langchain_opsen import OpsenSandbox
+
+backend = OpsenSandbox(task_id="hello", budget_usd=1.00)
+
+result = backend.execute("echo hello")
+print(result.output)
+```
+
+Set `OPSEN_API_KEY` in the environment, or pass `api_key=`.
+
+## Use with Deep Agents
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+from deepagents import create_deep_agent
+from langchain_opsen import OpsenSandbox
+
+backend = OpsenSandbox(task_id="nightly-report", budget_usd=2.00)
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-20250514"),
+    system_prompt="You are a coding assistant with sandbox access.",
+    backend=backend,
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {"role": "user", "content": "Create a hello world Python script and run it"}
+        ]
+    }
+)
+```
+
+## Spend under one task id
+
+The agent's model calls are proxied through the same session that owns the sandbox, so both are attributed together:
+
+```python
+backend.cost()
+# {'total_usd': 0.41, 'compute_usd': 0.02, 'tokens_usd': 0.39,
+#  'calls': 34, 'input_tokens': 84120, 'output_tokens': 9310,
+#  'task_id': 'nightly-report'}
+```
+
+`budget_usd` is a ceiling enforced during the run: an agent that would cross it is refused mid-flight rather than discovered afterwards.
+
+## Configuration
+
+| Argument | Default | Description |
+| --- | --- | --- |
+| `api_key` | `$OPSEN_API_KEY` | API key |
+| `task_id` | `"deepagents"` | Groups this agent's spend |
+| `budget_usd` | `None` | Hard ceiling, enforced mid-run |
+| `labels` | `{}` | Arbitrary tags to group spend by |
+| `base_url` | `https://opsen.dev` | For self-hosted deployments |
+| `timeout` | `300` | Default seconds per command |
+
+## Cleanup
+
+Call `backend.close()` when you are done, or use the backend as a context manager. A sandbox left running continues to bill.
+
+See also: [Sandboxes](/oss/deepagents/sandboxes).
