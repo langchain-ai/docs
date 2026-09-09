@@ -660,7 +660,7 @@ X-LangSmith-Signature-JWT: <signature>
 }
 ```
 
-`identity` tells your endpoint which sandbox is asking, so one callback URL can serve many sandboxes and mint per-sandbox or per-user credentials. `X-LangSmith-Signature-JWT` is an Ed25519-signed JWT whose `aud` is your callback URL and whose `body_sha256` claim is the SHA-256 of the request body; it expires after 5 minutes. Ignore fields and headers you do not recognize; the proxy may add more.
+`identity` tells your endpoint which sandbox is asking, so one callback URL can serve many sandboxes and mint per-sandbox or per-user credentials. Ignore fields and headers you do not recognize; the proxy may add more.
 
 Your endpoint must respond `2xx` with a JSON body:
 
@@ -674,6 +674,20 @@ Your endpoint must respond `2xx` with a JSON body:
 ```
 
 The proxy injects every header in the response into the sandbox's outbound request and caches the response for `ttl_seconds`. Any non-2xx response, transport error, or malformed JSON fails closed: the sandbox's request is rejected with `502 callback resolution failed` (no headers injected, response not cached).
+
+### Verify callback requests
+
+`request_headers` let your endpoint check a shared secret you chose. To verify that a request came from LangSmith and was not altered in transit, check the `X-LangSmith-Signature-JWT` header. It is a JWT signed with an Ed25519 key (`alg: EdDSA`) whose public half is published at `<LANGSMITH_ENDPOINT>/.well-known/jwks.json`, selected by the token's `kid`.
+
+| Claim | Expected value |
+|-------|----------------|
+| `iss` | Your LangSmith endpoint origin, e.g. `https://api.smith.langchain.com` |
+| `sub` | `langsmith-sandbox-callback` |
+| `aud` | Your callback URL, exactly as configured |
+| `exp` | Five minutes after issue; reject expired tokens |
+| `body_sha256` | Hex SHA-256 of the raw request body |
+
+Verify the signature against the JWKS, check every claim above, hash the body you received, and compare it to `body_sha256`. Then trust `identity` in the body.
 
 ### Example
 
