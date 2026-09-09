@@ -11,7 +11,7 @@ This integration is in beta, so its API may change.
 Use the LangSmith LiveKit integration to trace your [LiveKit Agents](https://docs.livekit.io/agents/) voice agents, including their transcripts and audio recordings. For high-level conventions, see [Voice tracing fundamentals](/langsmith/trace-voice-fundamentals).
 
 <Note>
-This setup requires `langsmith[livekit]>=0.11.2` and `livekit-agents>=1.6`.
+This setup requires `langsmith[livekit]>=0.11.2` and `livekit-agents>=1.6`. LiveKit Agents 1.7 and later require `langsmith[livekit]>=0.12.4`.
 </Note>
 
 Each conversation appears as one LangSmith trace with its pipeline events, latency, and token metrics.
