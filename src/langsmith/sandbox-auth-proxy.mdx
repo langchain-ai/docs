@@ -16,16 +16,14 @@ The same `proxy_config` that injects credentials also controls which destination
 
 ### How egress works
 
-Every outbound connection from a sandbox passes through the host:
-
-- **HTTP (port 80) and HTTPS (port 443)** are routed through the auth proxy, where `rules` and `callbacks` inject credentials. Hosts with no matching rule or callback are passed through untouched.
-- **Every other TCP port** is passed through at the TCP layer with no interception, so PostgreSQL, SSH, Redis, and any other end-to-end protocol work unchanged.
-- **Destinations must be reached by hostname.** The sandbox resolver hands out an internal address per hostname, and the host maps that address back to the name to evaluate `access_control` and dial the real destination. A raw TCP connection to a **literal IP address** on a non-HTTP port is dropped before any access-control check, even when that IP is on an `allow_list`. HTTP(S) to a literal IP on port 80 or 443 does work.
-- UDP, ICMP, and other non-TCP traffic is dropped. DNS is answered by the sandbox resolver.
+- **Access control applies to every outbound TCP connection**, HTTP or not.
+- **HTTPS to a host matched by a rule or callback is decrypted by the proxy** so it can inject headers; sandboxes trust the proxy's CA. Every other connection, including PostgreSQL, SSH, Redis, and HTTPS to unmatched hosts, passes through unchanged.
+- **Address destinations by hostname.** A direct raw TCP connection to a literal IP address on a non-HTTP port is dropped, even when that IP is on an `allow_list`. HTTP(S) to a literal IP on port 80 or 443 works.
+- **Only TCP leaves the sandbox.** UDP (including QUIC) and ICMP are dropped.
 
 ### Default egress posture
 
-With no `access_control`, **every hostname is reachable on every TCP port**. Add an `access_control` to restrict this.
+With no `access_control`, **every hostname is reachable on every TCP port**, unless your organization is on [restricted egress](#organization-level-restricted-egress). Add an `access_control` to restrict this.
 
 To allow HTTP and HTTPS to any host while blocking every other port, use a port-qualified allow list. `*` matches every hostname:
 
@@ -73,7 +71,7 @@ Entries that do not parse—`example.com:abc`, `example.com:99999`, or a CIDR wi
 
 ### Organization-level restricted egress
 
-An organization can be placed on **restricted egress**. When it is, LangSmith replaces each sandbox's `access_control` with a fixed allow list of package registries, source-code hosts, and model-provider APIs on their HTTPS ports, and clears `no_proxy`. Caller-supplied `allow_list`, `deny_list`, and `no_proxy` values are accepted by the API but have no effect while the policy is active.
+An organization can be placed on **restricted egress**. When it is, LangSmith replaces each sandbox's `access_control` with a fixed allow list of package registries, source-code hosts, and model-provider APIs on their HTTPS ports. Caller-supplied `allow_list` and `deny_list` values are accepted by the API but have no effect while the policy is active.
 
 ### Connecting to a database (raw TCP)
 
@@ -147,7 +145,7 @@ Add a `proxy_config` when creating a sandbox, or update an existing sandbox by p
 | `rules` | Header-injection and provider-auth rules, matched first-match-wins |
 | `callbacks` | Dynamic credential lookups; see [Callback credential example](#callback-credential-example) |
 | `access_control` | `allow_list` or `deny_list`; see [Allow and deny lists](#allow-and-deny-lists) |
-| `no_proxy` | Hosts to bypass the proxy entirely (e.g. `localhost`) |
+| `no_proxy` | Accepted for compatibility; has no effect |
 | `description` | Optional, up to 1024 characters. What this configuration lets the sandbox reach, for handing to an agent |
 
 Each rule specifies:
@@ -483,8 +481,7 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
             }
           ]
         }
-      ],
-      "no_proxy": ["localhost", "127.0.0.1"]
+      ]
     }
   }'
 ```
