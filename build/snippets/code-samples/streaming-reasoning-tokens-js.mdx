@@ -1,0 +1,37 @@
+```ts
+import z from "zod";
+import { createAgent, tool } from "langchain";
+import { ChatAnthropic } from "@langchain/anthropic";
+
+const getWeather = tool(
+  async ({ city }) => {
+    return `It's always sunny in ${city}!`;
+  },
+  {
+    name: "get_weather",
+    description: "Get weather for a given city.",
+    schema: z.object({ city: z.string() }),
+  },
+);
+
+const agent = createAgent({
+  model: new ChatAnthropic({
+    model: "claude-sonnet-4-6",
+    thinking: { type: "enabled", budget_tokens: 5000 },
+  }),
+  tools: [getWeather],
+});
+
+const stream = await agent.streamEvents(
+  { messages: [{ role: "user", content: "What is the weather in SF?" }] },
+  { version: "v3" }, // [!code highlight]
+);
+for await (const message of stream.messages) {
+  for await (const token of message.reasoning) {
+    process.stdout.write(`[thinking] ${token}`);
+  }
+  for await (const token of message.text) {
+    process.stdout.write(token);
+  }
+}
+```
