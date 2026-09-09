@@ -18,10 +18,11 @@ The same `proxy_config` that injects credentials also controls which destination
 
 By default (no `access_control` configured):
 
-- **HTTP and HTTPS (ports 80 and 443) to any host are allowed.** Outbound HTTP(S) is transparently routed through the proxy, where your `rules` and `callbacks` inject credentials.
-- **All other raw TCP is blocked.** Connections to non-HTTP ports—databases (`psql`/`dbt` on 5432), SSH (22), Redis (6379), and so on—are dropped unless you explicitly allow them.
+- **HTTP and HTTPS (ports 80 and 443) to any hostname are allowed.** Outbound HTTP(S) is transparently routed through the proxy, where your `rules` and `callbacks` inject credentials.
+- **Raw TCP to hostnames is allowed.** Connections to non-HTTP ports, such as databases (`psql` or `dbt` on 5432), SSH (22), and Redis (6379), pass through without protocol interception.
+- **Raw TCP to literal IP addresses is blocked.** Add an explicit literal IP or CIDR allow-list entry when an application connects directly to a public IP address.
 
-This means raw protocols are not blocked because the proxy "can't speak" them—they are blocked by default and opened per host and port via `access_control`.
+All upstream connections remain subject to sandbox SSRF protections. Private, loopback, link-local, and cloud metadata IP addresses are blocked.
 
 ### Allow and deny lists
 
@@ -29,11 +30,11 @@ Add an `access_control` object to `proxy_config` with **either** an `allow_list`
 
 | Mode | Behavior |
 |------|----------|
-| `allow_list` | **Default-deny.** Only listed destinations are reachable—including HTTP/HTTPS. If you set an `allow_list`, you must also list every HTTP(S) host the sandbox needs. |
-| `deny_list` | **Default-allow for HTTP/HTTPS.** All HTTP(S) hosts remain reachable except those listed. A `deny_list` cannot open raw TCP ports. |
+| `allow_list` | **Default-deny.** Only listed destinations are reachable, including HTTP, HTTPS, and raw TCP. If you set an `allow_list`, you must also list every HTTP(S) host the sandbox needs. |
+| `deny_list` | **Default-allow for hostnames.** Hostname-based HTTP, HTTPS, and raw TCP remain reachable except where a matching entry blocks them. Raw TCP to literal IP addresses remains blocked. |
 
 <Note>
-Raw TCP egress (e.g. PostgreSQL on 5432) can **only** be enabled with an `allow_list` entry that specifies an explicit non-HTTP port (`host:PORT`). The default posture and `deny_list` mode only ever permit HTTP/HTTPS.
+To enable raw TCP to a literal public IP address, allow the IP on every port or on a specific port, such as `8.8.8.8` or `8.8.8.8:53`. A containing CIDR also allows every port in that range. Hostname, glob, and regex entries do not authorize applications that connect to a literal IP address.
 </Note>
 
 ### Pattern syntax
@@ -42,11 +43,11 @@ Each `allow_list`/`deny_list` entry uses the following forms:
 
 | Pattern | Meaning |
 |---------|---------|
-| `host` | Bare host → ports **80 and 443 only** (HTTP/S). |
-| `host:PORT` | Host on exactly `PORT`. `:22` grants only 22, **not** additive with 80/443—list the host twice if you need both. |
+| `host` | Bare host on every port. |
+| `host:PORT` | Host on exactly `PORT`. `:22` grants only 22, not 80 or 443. List the host separately if you need other ports. |
 | `*.example.com` | Glob (RFC 1034-style). The apex (`example.com`) is **not** included. |
 | `~regex` | Opaque regex match; no port suffix parsing. |
-| `1.2.3.4` / `10.0.0.0/8` | Literal IP or CIDR. CIDRs **cannot** carry a port (HTTP/S only in allow mode; block all ports in deny mode). |
+| `1.2.3.4` / `1.2.3.4:3307` / `10.0.0.0/8` | Literal IP, optional port-qualified literal IP, or CIDR. CIDRs cannot carry a port. Private ranges remain blocked by SSRF protections. |
 | `[::1]:22` | IPv6 literal uses the bracketed form when specifying a port. |
 
 ### Connecting to a database (raw TCP)
