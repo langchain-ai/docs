@@ -1,0 +1,117 @@
+---
+title: Add identity to Managed Deep Agents
+sidebarTitle: Identity
+description: Authenticate callers to a Managed Deep Agents deployment with a LangSmith API key or Supabase.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/javascript/langsmith/managed-deep-agents-public-beta-note.mdx';
+import ManagedDeepAgentsTestAndDeploy from '/snippets/javascript/langsmith/managed-deep-agents-test-and-deploy.mdx';
+
+Identity controls who can call your Managed Deep Agents deployment. By default, identity is secure: `mda init` configures authentication with a LangSmith API key.
+
+That default answers whether a caller is allowed. To also keep each signed-in person's conversations private, use [Supabase](#authenticate-end-users-with-supabase).
+
+<ManagedDeepAgentsPublicBetaNote />
+
+## Choose a path
+
+| Goal | Use |
+| --- | --- |
+| Lock down the deployment for SDK clients, scripts, and services | LangSmith API key (default) |
+| Signed-in end users with private chats | Supabase |
+
+## Default: LangSmith API key
+
+`mda init` scaffolds this secure default. Callers must present a valid LangSmith workspace API key. Managed Deep Agents verifies the key with LangSmith Cloud.
+
+
+
+```ts identity.ts
+import { auth, defineIdentity } from "managed-deepagents";
+
+export const identity = defineIdentity({
+  auth: auth.langsmithApiKey(),
+});
+```
+
+
+Clients send the key as `x-api-key`. You do not need to add verification endpoint or tenant settings to your project `.env`. LangSmith Cloud supplies those.
+
+Anyone with the key can reach the deployment, so treat the key as a secret. This default does not give each end user private threads. If Alice must not see Bob's threads, use [Supabase](#authenticate-end-users-with-supabase).
+
+## Project structure
+
+The identity declaration lives at the project root:
+
+
+
+```text
+my-agent/
+  agent.ts
+  identity.ts
+```
+
+
+## Authenticate end users with Supabase
+
+Use Supabase when a browser or another client calls the deployment as a signed-in person. Each user gets private threads. Managed Deep Agents configures that ownership for you. For more information on the underlying LangSmith Deployment pattern, see [Make conversations private](/langsmith/resource-auth).
+
+To configure Supabase authentication:
+
+1. In the Supabase dashboard, enable the auth provider you will use (for example email/password).
+2. Copy the project reference: the subdomain before `.supabase.co` in your project URL.
+3. Declare identity with that project reference:
+
+
+
+```ts identity.ts
+import { auth, defineIdentity } from "managed-deepagents";
+
+export const identity = defineIdentity({
+  auth: auth.supabase({ projectRef: "your-project-ref" }),
+});
+```
+
+
+Pass `url` instead of the project reference for a custom auth domain.
+
+4. In the client app, set the Supabase project URL and publishable (anon) key. Sign the user in, then send the access token on every deployment request:
+
+
+
+```ts
+await fetch(`${deploymentUrl}/threads/${threadId}/runs`, {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${supabaseAccessToken}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify(runBody),
+});
+```
+
+
+The publishable (anon) key is only for the client to sign in with Supabase. Do not send a LangSmith API key in this mode. The Bearer token is the caller identity.
+
+Managed Deep Agents verifies the JWT against the project's JWKS URL derived from your project reference (`https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`).
+
+<Note>
+Adding Supabase identity to an existing deployment does not add owner metadata to existing threads. Plan and test a migration before relying on identity-based access for those threads.
+</Note>
+
+## Test and deploy
+
+<ManagedDeepAgentsTestAndDeploy />
+
+Authentication failures return 401. For the LangSmith API-key default, confirm that clients send `x-api-key`. For Supabase, confirm that clients send `Authorization: Bearer <access_token>`, that `project_ref` / `projectRef` matches your Supabase project, and that callers cannot access another user's threads (403).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/managed-deep-agents-identity.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
