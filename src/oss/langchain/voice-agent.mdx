@@ -491,7 +491,7 @@ The TTS stage synthesizes agent response text into audio and streams it back to 
 - **Upstream processing**: Passes through all events and sends agent text chunks to the TTS provider
 - **Audio reception**: Receives synthesized audio chunks from the TTS provider
 
-**Streaming TTS**: Some providers (such as [Cartesia](https://cartesia.ai/)) begin synthesizing audio as soon as it receives text, enabling audio playback to start before the agent finishes generating its complete response.
+**Streaming TTS**: Some providers (such as [Cartesia](https://cartesia.ai/)) begin synthesizing audio as soon as it receives text, enabling audio playback to start before the agent finishes generating its complete response. Providers with HTTP-streaming APIs (such as [Speechify](https://docs.speechify.ai/)) achieve the same effect by synthesizing sentence by sentence: each completed sentence is sent as its own streaming request and its audio is returned immediately.
 
 **Event Passthrough**: All upstream events flow through unchanged, allowing the client or other observers to track the full pipeline state.
 
@@ -716,6 +716,124 @@ export class CartesiaTTS {
 ```
 :::
 </Accordion>
+
+Speechify streams over HTTP chunked transfer rather than a WebSocket: the whole turn's text is sent in one streaming request and audio streams back as it is generated. Swapping providers is a one-line change (`CartesiaTTS()` → `SpeechifyTTS()`).
+
+<Accordion title="Speechify Client">
+
+:::python
+```python
+import httpx
+
+class SpeechifyTTS:
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        voice_id: str = "geffen_32",
+        model: str = "simba-3.2",
+    ):
+        self.api_key = api_key or os.getenv("SPEECHIFY_API_KEY")
+        self.voice_id = voice_id
+        self.model = model
+        self._streams: asyncio.Queue = asyncio.Queue()  # one per turn, in order
+        self._client = httpx.AsyncClient(timeout=30.0)
+
+    async def send_text(self, text: str | None) -> None:
+        """Synthesize a turn with a single streaming request."""
+        if not text or not text.strip():
+            return
+        chunks: asyncio.Queue = asyncio.Queue()
+        asyncio.create_task(self._synthesize(text, chunks))
+        await self._streams.put(chunks)
+
+    async def receive_events(self) -> AsyncIterator[TTSChunkEvent]:
+        """Yield audio chunks, strictly in send order."""
+        while True:
+            chunks = await self._streams.get()
+            if chunks is None:
+                break
+            while (chunk := await chunks.get()) is not None:
+                yield TTSChunkEvent.create(chunk)
+
+    async def _synthesize(self, text: str, chunks: asyncio.Queue) -> None:
+        """One HTTP streaming request for the whole turn."""
+        try:
+            async with self._client.stream(
+                "POST",
+                "https://api.speechify.ai/v1/audio/stream",
+                json={
+                    "input": text,
+                    "voice_id": self.voice_id,
+                    "model": self.model,
+                },
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Accept": "audio/pcm",  # raw s16le, 24kHz mono
+                },
+            ) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    if chunk:
+                        await chunks.put(chunk)
+        finally:
+            await chunks.put(None)
+```
+:::
+
+:::js
+```typescript
+export class SpeechifyTTS {
+  protected _channels = writableIterator<WritableIterator<string>>();
+
+  async sendText(text: string): Promise<void> {
+    if (!text || !text.trim()) return;
+    const channel = writableIterator<string>();
+    this._channels.push(channel);
+    void this._synthesize(text, channel);
+  }
+
+  async *receiveEvents(): AsyncGenerator<VoiceAgentEvent.TTSChunk> {
+    for await (const channel of this._channels) {
+      for await (const audio of channel) {
+        yield { type: "tts_chunk", audio, ts: Date.now() };
+      }
+    }
+  }
+
+  protected async _synthesize(
+    text: string,
+    channel: WritableIterator<string>
+  ): Promise<void> {
+    try {
+      const response = await fetch("https://api.speechify.ai/v1/audio/stream", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "audio/pcm", // raw s16le, 24kHz mono
+        },
+        body: JSON.stringify({
+          input: text,
+          voice_id: this.voiceId,
+          model: this.model,
+        }),
+      });
+      const reader = response.body!.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value?.length) channel.push(Buffer.from(value).toString("base64"));
+      }
+    } finally {
+      channel.cancel();
+    }
+  }
+}
+```
+:::
+</Accordion>
+
+Speechify also exposes a streaming endpoint with word-level timestamps (`/v1/audio/stream/with-timestamps`, Server-Sent Events) — the same audio plus speech marks you can use to highlight words or drive captions as they're spoken.
 
 ### LangSmith
 
