@@ -1,0 +1,192 @@
+---
+title: OciGenAiEmbeddings integration
+sidebarTitle: Embeddings
+description: Integrate with OciGenAiEmbeddings using LangChain JavaScript.
+integration:
+  name: OciGenAiEmbeddings
+  npm: '@oracle/langchain-oci'
+---
+
+This guide helps you get started with Oracle Cloud Infrastructure (OCI) Generative AI [embedding models](/oss/integrations/embeddings) using LangChain JavaScript.
+
+`OciGenAiEmbeddings` uses OCI Generative AI's `embedText` API to produce text embeddings. It supports on-demand models, dedicated endpoints, batched document embedding, query embedding, input-type selection, truncation, and output-dimension configuration where supported by the selected model.
+
+For detailed configuration options, see the [`@oracle/langchain-oci` package README](https://github.com/oracle/langchain-oracle/tree/main/libs/js/oci).
+
+## Overview
+
+### Integration details
+
+| Class | Package | Node.js |
+| :--- | :--- | :---: |
+| `OciGenAiEmbeddings` | [`@oracle/langchain-oci`](https://www.npmjs.com/package/@oracle/langchain-oci) | 18+ |
+
+### Model features
+
+| Text embeddings | Image embeddings | Multimodal embeddings | Batch operations |
+| :---: | :---: | :---: | :---: |
+| ✅ | ❌ | ❌ | ✅ |
+
+<Note>
+  The JavaScript integration currently exposes OCI's text `embedText` API. OCI Embed 4 also offers multimodal `embedContents`, but that API is not exposed by `OciGenAiEmbeddings`.
+</Note>
+
+## Setup
+
+To access OCI embedding models you need an OCI tenancy, a compartment with permission to use Generative AI, a supported OCI region, and OCI credentials.
+
+### Credentials
+
+The default OCI client uses the configuration file at `~/.oci/config` and the `DEFAULT` profile. Instance Principal, Resource Principal, Session, and custom authentication providers are also supported through the underlying OCI SDK client configuration.
+
+See the [OCI SDK authentication methods](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdk_authentication_methods.htm) for setup details.
+
+### Installation
+
+<CodeGroup>
+```bash npm
+npm install @oracle/langchain-oci @langchain/core
+```
+```bash yarn
+yarn add @oracle/langchain-oci @langchain/core
+```
+```bash pnpm
+pnpm add @oracle/langchain-oci @langchain/core
+```
+</CodeGroup>
+
+## Instantiation
+
+OCI embeddings require a `compartmentId` and exactly one serving target: either `onDemandModelId` or `dedicatedEndpointId`.
+
+```typescript
+import { OciGenAiEmbeddings } from "@oracle/langchain-oci";
+
+const embeddings = new OciGenAiEmbeddings({
+  compartmentId: "ocid1.compartment.oc1..example",
+  onDemandModelId: "cohere.embed-v4.0",
+});
+```
+
+For a dedicated AI cluster endpoint:
+
+```typescript
+const embeddings = new OciGenAiEmbeddings({
+  compartmentId: "ocid1.compartment.oc1..example",
+  dedicatedEndpointId: "ocid1.generativeaidedicatedendpoint.oc1..example",
+});
+```
+
+## Embed documents and queries
+
+Use `embedDocuments` to create vectors for a collection of documents and `embedQuery` for a single query vector.
+
+```typescript
+const documentVectors = await embeddings.embedDocuments([
+  "OCI Generative AI provides embedding models.",
+  "LangChain uses vectors for retrieval.",
+]);
+
+const queryVector = await embeddings.embedQuery("What does OCI provide?");
+
+console.log(documentVectors.length);
+console.log(queryVector.length);
+```
+
+The default batch size is 96 inputs per OCI request. You can reduce the batch size with the `batchSize` option when needed.
+
+```typescript
+const embeddings = new OciGenAiEmbeddings({
+  compartmentId: "ocid1.compartment.oc1..example",
+  onDemandModelId: "cohere.embed-v4.0",
+  batchSize: 32,
+});
+```
+
+## Embedding purpose
+
+Some OCI embedding models support a purpose such as `SEARCH_DOCUMENT` or `SEARCH_QUERY`. Pass the corresponding OCI enum through `inputType`.
+
+Install the OCI SDK package before importing its `models` namespace:
+
+```bash npm
+npm install oci-generativeaiinference
+```
+
+```typescript
+import { models } from "oci-generativeaiinference";
+import { OciGenAiEmbeddings } from "@oracle/langchain-oci";
+
+const embeddings = new OciGenAiEmbeddings({
+  compartmentId: "ocid1.compartment.oc1..example",
+  onDemandModelId: "cohere.embed-v4.0",
+  inputType: models.EmbedTextDetails.InputType.SearchDocument,
+});
+```
+
+The exact supported input types depend on the OCI embedding model you select.
+
+## Truncation and output dimensions
+
+You can configure how OCI handles inputs that exceed a model's token limit and, for compatible models, request a specific output-vector dimension.
+
+```typescript
+const embeddings = new OciGenAiEmbeddings({
+  compartmentId: "ocid1.compartment.oc1..example",
+  onDemandModelId: "cohere.embed-v4.0",
+  batchSize: 64,
+  truncate: models.EmbedTextDetails.Truncate.End,
+  inputType: models.EmbedTextDetails.InputType.SearchDocument,
+  outputDimensions: 1024,
+});
+```
+
+Refer to the [OCI Generative AI API reference](https://docs.oracle.com/en-us/iaas/api/#/en/generative-ai/20231130/datatypes/EmbedTextDetails) for model-specific parameter support.
+
+## Using embeddings for RAG
+
+Embedding models are commonly used to index documents and retrieve relevant context for a question. The same `OciGenAiEmbeddings` instance can be supplied to LangChain vector stores and retrievers.
+
+Install `@langchain/classic` to use `MemoryVectorStore`:
+
+```bash npm
+npm install @langchain/classic
+```
+
+```typescript
+import { MemoryVectorStore } from "@langchain/classic/vectorstores/memory";
+
+const vectorStore = await MemoryVectorStore.fromTexts(
+  [
+    "OCI Generative AI provides managed foundation models.",
+    "LangChain provides standard interfaces for embedding models.",
+  ],
+  [{ source: "example" }, { source: "example" }],
+  embeddings
+);
+
+const retriever = vectorStore.asRetriever(1);
+const documents = await retriever.invoke("What does OCI provide?");
+
+console.log(documents[0]?.pageContent);
+```
+
+See [RAG with Deep Agents](/oss/deepagents/rag) for a complete retrieval-augmented generation workflow.
+
+## Closing the embedding client
+
+When the integration created the OCI SDK client, call `close()` when you are finished with the embeddings instance and active requests have completed.
+
+```typescript
+await embeddings.close();
+```
+
+If you pass a caller-created OCI client to the integration, the caller remains responsible for that client's lifecycle.
+
+## Related resources
+
+- [Oracle Cloud Infrastructure (OCI) provider overview](/oss/integrations/providers/oci)
+- [OCI Generative AI documentation](https://docs.oracle.com/en-us/iaas/Content/generative-ai/home.htm)
+- [OCI Generative AI model catalog](https://docs.oracle.com/en-us/iaas/Content/generative-ai/pretrained-models.htm)
+- [`@oracle/langchain-oci` on npm](https://www.npmjs.com/package/@oracle/langchain-oci)
+- [Oracle LangChain integrations on GitHub](https://github.com/oracle/langchain-oracle/tree/main/libs/js/oci)
