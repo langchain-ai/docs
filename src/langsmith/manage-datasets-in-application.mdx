@@ -25,7 +25,7 @@ The following sections explain the different ways you can create a dataset in La
 A common pattern for constructing datasets is to convert notable traces from your application into dataset examples. This approach requires that you have [configured tracing to LangSmith](/langsmith/observability-concepts).
 
 <Check>
-A technique to build datasets is to filter the most interesting traces, such as traces that were tagged with poor user feedback, and add them to a dataset. For tips on how to filter traces, refer to the [Filter traces](/langsmith/filter-traces-in-application) guide.
+A technique to build datasets is to filter the most interesting traces, such as traces that were tagged with poor user feedback, and add them to a dataset. For tips on how to filter traces, refer to the [Filter traces](/langsmith/filter-traces) guide.
 </Check>
 
 There are three ways to add data manually from a tracing project to datasets. Navigate to **Tracing Projects** and select a project.
