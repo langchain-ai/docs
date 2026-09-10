@@ -825,7 +825,7 @@ polly:
 ## Enable Sandboxes
 
 <Note>
-Self-hosted Sandboxes require LangSmith Helm chart v17 (`0.17.x`).
+Self-hosted Sandboxes on Azure require LangSmith Helm chart v17 (`0.17.x`).
 </Note>
 
 Sandboxes are disabled by default. After installation, see [LangSmith Sandboxes](/langsmith/sandboxes) for user workflows in the LangSmith UI and APIs.

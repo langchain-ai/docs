@@ -126,7 +126,27 @@ LangSmith supplies its required runtime tools separately when the sandbox starts
 
 ### Private registries
 
-To pull from a private registry, create a registry once with its credentials, then reference it by id when building a snapshot. Registries persist, so reuse one across snapshots.
+To pull from a private registry, create a registry once with its credentials, then reference it by ID when building a snapshot. Registries persist, so reuse one across snapshots.
+
+#### Find repositories and tags
+
+In the LangSmith UI, the **Container Image URI** field suggests repositories and tags from Docker Hub or the selected private registry. Search behavior depends on the registry provider and authentication method:
+
+| Source | Repository discovery | Tag discovery |
+| --- | --- | --- |
+| Docker Hub, without a saved registry | Searches Docker Official Images for a bare image name or a specified Docker Hub namespace | Searches tags after you select or enter a repository |
+| Docker Registry | Searches the registry catalog when the registry supports it | Searches tags after you select or enter a repository |
+| Harbor | Searches the accessible catalog | Searches tags after you select or enter a repository |
+| GitHub Container Registry (GHCR) | Searches within a specified GitHub owner | Searches tags after you select or enter a repository |
+| Google Artifact Registry (GAR) | Searches repositories within a project and location, then searches packages within the selected repository | Searches tags after you select or enter an image repository |
+| Amazon Elastic Container Registry (ECR), with username and password | Requires you to enter a complete repository | Searches tags after you enter a repository |
+| Amazon ECR, with an AWS IAM role | Searches repositories across the configured AWS account | Searches tags after you select or enter a repository |
+
+Repository and tag discovery is advisory and bounded. You can always enter a known repository, tag, or digest manually, including when a provider does not support search or returns no matches. Use a digest-qualified image URI when you need an immutable snapshot source.
+
+#### Authenticate with username and password
+
+Username and password authentication works with all supported private registry providers. For ECR, the password is an ECR authorization token and expires after 12 hours. Update the saved registry credentials when the token expires.
 
 <CodeGroup>
 
@@ -171,6 +191,75 @@ const snapshot = await client.createSnapshot(
 </CodeGroup>
 
 List, inspect, update, and delete registries with `client.registries.list()`, `client.registries.retrieve(name)`, `client.registries.update(name, ...)`, and `client.registries.delete(name)`.
+
+#### Authenticate to ECR with an AWS IAM role
+
+AWS IAM role authentication avoids storing an expiring ECR authorization token in LangSmith. It supports private ECR registries in the commercial AWS partition. Public ECR, AWS GovCloud, AWS China, and custom ECR-compatible domains continue to use username and password authentication.
+
+<Note>
+The **AWS IAM role** authentication method appears only when your LangSmith deployment supports it. If the option is unavailable, use username and password authentication.
+</Note>
+
+To register an ECR role:
+
+1. In LangSmith, open **Sandboxes > Registries**, select **Register Private Registry**, and enter your registry URL in the form `<aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com`.
+2. Select **AWS IAM role** under **Authentication method**. Copy the AWS principal ARN and workspace ID that LangSmith displays. LangSmith uses the workspace ID as `sts:ExternalId`.
+3. In AWS, create an IAM role or update an existing role with a trust policy that uses the exact values shown in LangSmith:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "<principal-arn-shown-in-langsmith>"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "<workspace-id-shown-in-langsmith>"
+        }
+      }
+    }
+  ]
+}
+```
+
+4. Give the role permission to discover and pull the required ECR images. The following policy grants access to every repository in one AWS account and region. Replace the placeholders, or narrow the repository resource to the repositories LangSmith can use:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GetAuthorizationToken",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DiscoverAndPullImages",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:DescribeRepositories",
+        "ecr:ListImages",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+      ],
+      "Resource": "arn:aws:ecr:<aws-region>:<aws-account-id>:repository/*"
+    }
+  ]
+}
+```
+
+5. For hosted LangSmith, add the `LangSmithSandboxECR=true` tag to the IAM role.
+6. Return to LangSmith, enter the role ARN in **AWS role ARN**, then register the private registry.
+
+LangSmith assumes the role separately for repository discovery, tag discovery, and each snapshot build attempt. It obtains a fresh ECR authorization token for delayed jobs and retries, and does not persist temporary AWS credentials or generated ECR tokens.
+
+For self-hosted deployments, administrators must set `SANDBOX_ECR_AWS_ROLE_PRINCIPAL_ARN` and provide the platform backend and snapshot workers with a compatible AWS SDK credential source. Leaving the setting unset hides AWS IAM role authentication and preserves username and password authentication.
 
 ## Build a snapshot from a Dockerfile
 
