@@ -5,7 +5,7 @@ description: Enable SmithDB on a self-hosted LangSmith Kubernetes installation t
 ---
 
 <Note>
-SmithDB is opt-in. ClickHouse remains required and cannot be removed after you enable SmithDB. The minimum LangSmith version depends on your cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
+SmithDB is opt-in. ClickHouse is required on LangSmith 0.16 and remains the default on 0.17. Do not disable ClickHouse on any version below 0.17. The minimum LangSmith version depends on your cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
 </Note>
 
 This guide enables SmithDB on a LangSmith Kubernetes installation in stages, so you can validate each change before continuing.
@@ -15,15 +15,17 @@ Apply each stage separately. Each stage is a Helm update that rolls the affected
 Migrating historical ClickHouse data is optional. History left in ClickHouse is not reachable through SmithDB-backed queries unless you migrate it.
 
 <Warning>
-After query cutover, LangSmith trace reads no longer go to ClickHouse. Keep the ClickHouse datastore in place regardless.
+After query cutover, LangSmith trace reads no longer go to ClickHouse. Keep ClickHouse in place through this process on every version.
 </Warning>
 
 ## Before you begin
 
-- Start from a running LangSmith installation on Kubernetes.
+- Consider contacting LangChain through the [Support Portal](https://support.langchain.com/) before you begin, so the team can review your infrastructure plan.
+- Set up [SmithDB observability](/langsmith/self-host-smithdb-observability) before you begin. The steps below use metrics to verify each stage.
+- Start from a running LangSmith installation on Kubernetes. For a new installation on LangSmith 0.17, see [Install without ClickHouse](#install-without-clickhouse).
 - Upgrade one major version at a time until the installation meets the [cloud support](/langsmith/self-host-smithdb#check-cloud-support) minimum: LangSmith 0.16 with Helm chart `0.16.14` or later on AWS (EKS) and GCP (GKE), or LangSmith 0.17 on Azure (AKS). Follow the [upgrade guide](/langsmith/self-host-upgrades).
 - Keep the Helm values from your current installation. This guide adds SmithDB configuration to them.
-- You need cluster-admin on the EKS, GKE, or AKS cluster.
+- Permission to apply the LangSmith Helm release to the cluster, directly or through your GitOps workflow.
 - Review the [SDK migration guide](/langsmith/smithdb-sdk-migration) and plan your SDK upgrade alongside this installation. New SmithDB-backed methods require LangSmith `0.16` or later.
 
 You can disable SmithDB later. To return query and ingestion traffic to ClickHouse and disable SmithDB services, see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting#disable-or-reset-smithdb).
@@ -125,9 +127,11 @@ smithdb:
           effect: NoSchedule
 ```
 
-For AWS, replace the identity and object-store placeholders with:
+Replace the identity and object-store placeholders with the values for your provider. For Azure, also add the `azure.workload.identity/use: "true"` label to every SmithDB workload. See [Configure Blob Storage workload identity](/langsmith/self-host-smithdb-infrastructure#configure-blob-storage-workload-identity).
 
-```yaml
+<CodeGroup>
+
+```yaml AWS
 smithdb:
   serviceAccount:
     annotations:
@@ -141,9 +145,7 @@ smithdb:
         region: AWS_REGION
 ```
 
-For GCP, use:
-
-```yaml
+```yaml GCP
 smithdb:
   serviceAccount:
     annotations:
@@ -155,9 +157,7 @@ smithdb:
       bucket: BUCKET_NAME
 ```
 
-For Azure, use the following values. Add `azure.workload.identity/use: "true"` to every SmithDB workload. See [Configure Blob Storage workload identity](/langsmith/self-host-smithdb-infrastructure#configure-blob-storage-workload-identity):
-
-```yaml
+```yaml Azure
 smithdb:
   serviceAccount:
     annotations:
@@ -172,11 +172,13 @@ smithdb:
         accessKeySecretKey: ""
 ```
 
+</CodeGroup>
+
 </Accordion>
 
 ### Step 2. Upgrade to the required LangSmith version
 
-Upgrade LangSmith before enabling SmithDB. On AWS (EKS) and GCP (GKE), upgrade to LangSmith 0.16 using Helm chart `0.16.14` or later. On Azure (AKS), upgrade to LangSmith 0.17. Preserve the existing ClickHouse configuration and keep SmithDB disabled:
+SmithDB requires the LangSmith version listed in [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support). Upgrade to it before enabling SmithDB. Preserve the existing ClickHouse configuration and keep SmithDB disabled:
 
 ```yaml
 smithdb:
@@ -220,13 +222,9 @@ Also confirm the cluster retains enough headroom to add replicas as load grows.
 
 Do not enable LangSmith integration flags until these checks pass.
 
-#### (Optional) Configure observability
-
-Before enabling dual ingestion, connect SmithDB to your existing monitoring stack. Installation works without it, but the migration and scaling steps rely on these signals. See [Configure SmithDB observability](/langsmith/self-host-smithdb-observability).
-
 ### Step 4. Enable dual ingestion
 
-Route new writes to SmithDB while ClickHouse continues receiving them:
+Begin writing to SmithDB while continuing to write to ClickHouse:
 
 ```yaml
 smithdb:
@@ -239,11 +237,11 @@ smithdb:
       enabled: false
 ```
 
-Confirm that SmithDB ingestion remains healthy and that new writes continue to reach ClickHouse.
+Confirm that SmithDB ingestion is healthy and that writes continue to reach ClickHouse.
 
-The [SmithDB metrics reference](/langsmith/self-host-smithdb-metrics) lists the ingestion metrics to watch, including `langsmith_asynq_ingestion_queue_pending` for whether the LangSmith ingestion queue is keeping up.
+Watch `langsmith_asynq_ingestion_queue_pending` through a period that includes your peak traffic. It should stay low and stable. Sustained growth means ingestion is undersized. Resolve that with [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale) before continuing to Step 5 or Step 6. The [SmithDB metrics reference](/langsmith/self-host-smithdb-metrics) covers the other ingestion metrics to watch.
 
-The clearest signal that writes are landing is the `ingest_flush_count` metric, which rises as SmithDB flushes batches to object storage. If you have not configured metrics yet, tail the ingestion pod logs for flush activity:
+The clearest signal that writes are landing is the `ingest_flush_count` metric, which rises as SmithDB flushes batches to object storage. To confirm flush activity from the pod logs instead:
 
 ```bash
 kubectl logs -n NAMESPACE -l app.kubernetes.io/component=HELM_RELEASE-smithdb-ingestion --tail=50
@@ -295,8 +293,28 @@ curl -s https://LANGSMITH_HOST/api/v1/info | jq '.instance_flags | {sdb_ingestio
 Both values are `true` after cutover. Then validate traces, projects, filters, and time ranges in the LangSmith UI and API, and continue monitoring ingestion and query errors.
 
 <Warning>
-Do not disable or remove ClickHouse after query cutover. This applies to both in-cluster and external ClickHouse deployments. Preserve the existing ClickHouse configuration throughout and after this process. Support for disabling ClickHouse is planned for a future release.
+Do not disable or remove ClickHouse on LangSmith 0.16. On 0.17, retiring ClickHouse from an existing installation is a separate procedure; contact LangChain through the [Support Portal](https://support.langchain.com/) before attempting it. Preserve the existing ClickHouse configuration, in-cluster or external, throughout this process on every version.
 </Warning>
+
+## Install without ClickHouse
+
+On LangSmith 0.17, a new installation can run SmithDB as its only trace store. Complete Step 1, then install LangSmith 0.17 with ClickHouse disabled and both SmithDB paths enabled, in place of Steps 2 through 6:
+
+```yaml
+clickhouse:
+  enabled: false
+smithdb:
+  enabled: true
+  langsmith:
+    ingestion:
+      enabled: true
+    migration:
+      enabled: false
+    query:
+      enabled: true
+```
+
+The chart requires at least one ingestion backend and one query backend, so both SmithDB flags must be on. This applies to new installations only. For an existing installation, retiring ClickHouse is a separate procedure; contact LangChain through the [Support Portal](https://support.langchain.com/) before attempting it.
 
 ## After installation
 
@@ -304,8 +322,3 @@ Upgrading LangSmith after you enable SmithDB follows the standard process. See [
 
 If something fails during or after installation, see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting) or contact LangChain through the [Support Portal](https://support.langchain.com/).
 
-## See also
-
-- [Migrate to SmithDB-backed SDK methods](/langsmith/smithdb-sdk-migration)
-- [Upgrade a self-hosted LangSmith installation](/langsmith/self-host-upgrades)
-- [Self-host LangSmith on Kubernetes](/langsmith/kubernetes)

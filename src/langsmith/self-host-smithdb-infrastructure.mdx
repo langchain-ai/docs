@@ -23,9 +23,51 @@ The metastore holds SmithDB catalog and coordination data. Start with an empty d
 
 SmithDB requires PostgreSQL 18 or later on a service reachable from the cluster. Common choices include Amazon RDS for PostgreSQL, Aurora PostgreSQL, AlloyDB, Cloud SQL for PostgreSQL, and Azure Database for PostgreSQL.
 
-<Note>
-This guide does not cover AlloyDB Auth Proxy sidecar configuration. Provide a reachable PostgreSQL 18 or later instance and an empty dedicated database. If you need Auth Proxy support, contact LangChain through the [Support Portal](https://support.langchain.com/).
-</Note>
+<Accordion title="Connect through the AlloyDB Auth Proxy">
+
+SmithDB can reach AlloyDB through the [AlloyDB Auth Proxy](https://docs.cloud.google.com/alloydb/docs/auth-proxy/overview) running as a sidecar in every SmithDB pod. SmithDB connects to the proxy on loopback; the proxy authenticates to Google Cloud and encrypts the upstream connection. The proxy does not create network connectivity, so GKE still needs a route to AlloyDB through private IP, Private Service Connect, or public IP.
+
+Grant `roles/alloydb.client` and `roles/serviceusage.serviceUsageConsumer` to the Google service account bound to the SmithDB ServiceAccount. Point the metastore Secret's host key at `127.0.0.1` and set `useSsl: false`. SmithDB cannot validate the certificate AlloyDB presents directly, and encryption begins at the proxy.
+
+`smithdb.commonInitContainers` applies to every SmithDB Deployment and Job. Set `restartPolicy: Always` so Kubernetes runs the proxy as a sidecar and lets migration Jobs complete. Pin the proxy image.
+
+```yaml
+smithdb:
+  commonInitContainers:
+    - name: alloydb-auth-proxy
+      image: gcr.io/alloydb-connectors/alloydb-auth-proxy:PINNED_VERSION
+      restartPolicy: Always
+      args:
+        - "--address=127.0.0.1"
+        - "--port=5432"
+        - "--structured-logs"
+        - "--health-check"
+        - "--http-address=0.0.0.0"
+        - "--http-port=9090"
+        - "projects/PROJECT_ID/locations/REGION/clusters/CLUSTER/instances/INSTANCE"
+      ports:
+        - name: proxy-health
+          containerPort: 9090
+      startupProbe:
+        httpGet:
+          path: /startup
+          port: proxy-health
+      readinessProbe:
+        httpGet:
+          path: /readiness
+          port: proxy-health
+      livenessProbe:
+        httpGet:
+          path: /liveness
+          port: proxy-health
+  config:
+    metastore:
+      useSsl: false
+```
+
+Add `--psc` for Private Service Connect, `--public-ip` for public IP, or `--auto-iam-authn` for IAM database authentication, which also needs `roles/alloydb.databaseUser` and a matching IAM database user. If a migration Job never finishes, confirm `restartPolicy: Always`. If the loopback connection fails with a TLS error, confirm `useSsl` is `false`.
+
+</Accordion>
 
 ### Metastore Secret
 
@@ -68,7 +110,7 @@ smithdb:
 
 ## Object storage
 
-Object storage is SmithDB's durable data layer. Use a bucket reserved for SmithDB data. A regional bucket near the Kubernetes cluster is a practical starting point for lower latency and transfer costs.
+Object storage is SmithDB's durable data layer. Use a bucket reserved for SmithDB data, in the same region as the Kubernetes cluster, to minimize latency and transfer costs.
 
 ### Use private object-storage connectivity
 
@@ -131,7 +173,7 @@ smithdb:
 
 ## Local SSD cache
 
-Local SSD is volatile cache capacity. Losing a pod or node can discard the cache without deleting the durable object-storage copy.
+Local SSD is volatile cache capacity. Object storage retains the durable copy, so losing a pod or node discards only the cache.
 
 Attaching an SSD is not sufficient. Its filesystem must back Kubernetes local ephemeral storage, and usable capacity must appear as node allocatable `ephemeral-storage`. SmithDB consumes that capacity through `emptyDir` volumes.
 
@@ -140,6 +182,8 @@ Use scheduling controls to keep SmithDB cache workloads on SSD-backed nodes. Siz
 ### Schedule SmithDB workloads
 
 Place query, ingestion, compaction worker, and migration on the local SSD pool. Place compaction and cluster manager on the general compute pool. Node-pool labels and taints must match the Helm selectors and tolerations. Keep `metastoreMigration` unpinned so the pre-install hook can run on any available node.
+
+The label and taint values in these examples match the provider samples on this page. SmithDB does not require these exact values: use any labels and taints that keep cache workloads on SSD-backed nodes, and match them in the Helm selectors and tolerations.
 
 <Accordion title="Helm scheduling values">
 
@@ -593,7 +637,7 @@ smithdb:
 
 #### Provision GKE Local SSD nodes
 
-Use [Local SSD-backed ephemeral storage](https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/local-ssd), which integrates with `emptyDir`, container layers, and scheduler capacity. Raw block Local SSD does not provide the same integration.
+Use [Local SSD-backed ephemeral storage](https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/local-ssd), created with `--ephemeral-storage-local-ssd`, which backs `emptyDir`, container layers, and scheduler capacity. The raw block option, `--local-nvme-ssd-block`, does not back `emptyDir` and leaves SmithDB with no cache capacity.
 
 <Accordion title="GKE Local SSD node-pool example">
 
@@ -612,7 +656,7 @@ gcloud container node-pools create POOL_NAME \
 <Accordion title="Terraform GKE Local SSD node-pool example">
 
 <Warning>
-This example only configures Local SSD and workload scheduling. Configure node IAM, networking, security settings, and scaling separately. Values are illustrative. For regional clusters, `node_count` applies per zone.
+This example only configures Local SSD and workload scheduling. Configure node IAM, networking, security settings, and scaling separately. Values are illustrative.
 </Warning>
 
 ```hcl
@@ -707,6 +751,8 @@ AKS does not attach a separate Local SSD volume for `emptyDir`. Set `kubelet-dis
 
 Use a VM size with enough temporary-disk capacity for SmithDB cache requests. `Standard_L16s_v3` is an L-series size with a large local NVMe temporary disk. A SKU without a suitable temporary disk leaves `emptyDir` too small even if AKS accepts the node pool. Confirm allocatable `ephemeral-storage` after the pool is ready.
 
+AKS limits node pool names to 12 lowercase alphanumeric characters, so these examples name the pool `smithcache` rather than `smithdb-instance-store`.
+
 <Accordion title="Azure CLI node-pool example">
 
 ```bash
@@ -771,12 +817,11 @@ With `create: false`, `name` is required. Otherwise pods fall back to the `defau
 
 **The metastore refuses connections.** Check that the database is reachable from the cluster, that `useSsl` matches what the server requires, and that the Secret keys named in `smithdb.config.metastore` match the keys actually present in the Secret.
 
-**Cache I/O is slow.** The `emptyDir` is backed by the boot disk rather than local SSD. Confirm the cache filesystem inside a running pod:
+**Cache I/O is slow.** The `emptyDir` is backed by the boot disk rather than local SSD. Confirm which device backs the cache filesystem inside a running pod:
 
 ```bash
 kubectl exec -n NAMESPACE POD_NAME -- df -h /data
 ```
 
-## See also
+The filesystem should sit on the local NVMe device, such as `/dev/md0` or `/dev/nvme1n1`, rather than on the root disk.
 
-- [Enable blob storage](/langsmith/self-host-blob-storage)
