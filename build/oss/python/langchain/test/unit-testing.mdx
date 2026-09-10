@@ -1,0 +1,73 @@
+---
+title: Unit testing
+description: Test agent logic without API calls using fake chat models and in-memory persistence.
+---
+
+Unit tests exercise small, deterministic pieces of your agent in isolation. By replacing the real LLM with an in-memory fake (AKA fixture), you can script exact responses (text, tool calls, and errors) so tests are fast, free, and repeatable without API keys.
+
+## Mock chat model
+
+LangChain provides [`GenericFakeChatModel`](https://reference.langchain.com/python/langchain-core/language_models/fake_chat_models/GenericFakeChatModel) for mocking text responses. It accepts an iterator of responses ([`AIMessage`](https://reference.langchain.com/python/langchain-core/messages/ai/AIMessage) objects or strings) and returns one per invocation. It supports both regular and streaming usage.
+
+```python
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+model = GenericFakeChatModel(messages=iter([
+    AIMessage(content="", tool_calls=[ToolCall(name="foo", args={"bar": "baz"}, id="call_1")]),
+    "bar"
+]))
+
+model.invoke("hello")
+# AIMessage(content='', ..., tool_calls=[{'name': 'foo', 'args': {'bar': 'baz'}, 'id': 'call_1', 'type': 'tool_call'}])
+```
+
+If we invoke the model again, it will return the next item in the iterator:
+
+```python
+model.invoke("hello, again!")
+# AIMessage(content='bar', ...)
+```
+
+## InMemorySaver checkpointer
+
+To enable persistence during testing, you can use the [`InMemorySaver`](https://reference.langchain.com/python/langgraph/checkpoints/#langgraph.checkpoint.memory.InMemorySaver) checkpointer. This allows you to simulate multiple turns to test state-dependent behavior:
+
+```python
+from langgraph.checkpoint.memory import InMemorySaver
+
+agent = create_agent(
+    model,
+    tools=[],
+    checkpointer=InMemorySaver()
+)
+
+# First invocation
+agent.invoke(
+    {"messages": [HumanMessage(content="I live in Sydney, Australia")]},
+    config={"configurable": {"thread_id": "session-1"}}
+)
+
+# Second invocation: the first message is persisted (Sydney location), so the model returns GMT+10 time
+agent.invoke(
+    {"messages": [HumanMessage(content="What's my local time?")]},
+    config={"configurable": {"thread_id": "session-1"}}
+)
+```
+
+
+
+
+## Next steps
+
+Learn how to test your agent with real model provider APIs in [Integration testing](/oss/python/langchain/test/integration-testing).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/test/unit-testing.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
