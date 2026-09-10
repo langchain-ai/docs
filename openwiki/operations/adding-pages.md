@@ -1,14 +1,16 @@
 ---
 type: operations guide
 title: Adding and Modifying Documentation Pages
-description: End-to-end procedure for selecting a documentation source domain, authoring or moving pages, maintaining navigation and redirects, and verifying published routes.
+description: Choose the correct documentation surface, register its current route and navigation, preserve retired URLs, and validate authored and generated documentation changes.
 tags: [documentation, operations, navigation, routes, build-system]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-08T08:21:44.568Z
+    at: 2026-09-10T08:21:45.175Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
+  - id: openwiki-source-a2371d6362e5db4bc834ad03
+    resource: repo://CLAUDE.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-6e6efa1569f158fcdb678ef0
@@ -27,16 +29,20 @@ sources:
     resource: repo://scripts/check_removed_pages_redirects.py
   - id: openwiki-source-63d8ba810a7c0181c548a307
     resource: repo://scripts/refresh_integration_downloads.py
+  - id: openwiki-source-5fdebe45088d0434f7fa98d0
+    resource: repo://scripts/refresh_mda_oauth_catalog.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
+  - id: openwiki-source-e86cdb94e153ccc6c527238a
+    resource: repo://src/langsmith/managed-deep-agents-connections.mdx
   - id: openwiki-source-a39cb5ba9006abfe6280b6f8
     resource: repo://src/oss/openwiki/cli-reference.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-10T08:21:45.175Z" }
 ---
 
 # Adding and Modifying Documentation Pages
 
-A documentation change has two authored sources of truth: the Markdown/MDX file under `src/` supplies content, while `src/docs.json` supplies the published route and navigation placement. `build/` is disposable output. Make content and configuration changes in `src/`, then regenerate; never patch `build/`.
+A documentation change starts by identifying its owner. An authored Markdown/MDX page under `src/` supplies prose, while `src/docs.json` is configuration-backed ownership of its published route and navigation placement. Some visible documentation is instead an imported snippet or a generated table. `build/` is disposable output in every case: change the owning source or generator input under `src/` or `scripts/`, regenerate, and never patch `build/` or generated output by hand.
 
 ```mermaid
 flowchart TD
@@ -54,7 +60,7 @@ flowchart TD
     Inspect --> Checks["Run applicable link and focused checks"]
 ```
 
-This flow separates authored page changes from generated integration-listing updates, then validates the deployable output.
+This flow separates authored page changes from generated-listing updates, then validates the deployable output.
 
 ## 1. Choose the source and route domain
 
@@ -72,7 +78,7 @@ Choose the domain from the intended route and language behavior, not from the vi
 
 For a shared OSS link that should follow the active language, author an unqualified route such as `/oss/langgraph/overview`; preprocessing inserts `python` or `javascript` in each artifact. Links to OpenWiki and Deep Agents Code are deliberate exemptions and must remain `/oss/openwiki/...` or `/oss/deepagents/code/...`. An unversioned page is processed with the Python conditional branch, so a link from it to ordinary shared OSS content resolves to the Python variant unless it is explicitly qualified.
 
-### Do not confuse an authored guide with an integration listing
+### Do not confuse an authored guide with a generated listing
 
 A hosted integration guide is an authored page beneath `src/oss/python/integrations/` or `src/oss/javascript/integrations/`; create it in the appropriate component directory and add its intended navigation route. Its `integration` frontmatter also supplies data for component tables.
 
@@ -82,7 +88,16 @@ The component-table snippets in `src/snippets/oss/` are generated and must not b
 uv run python scripts/refresh_integration_downloads.py --write
 ```
 
-Use `uv run python scripts/refresh_integration_downloads.py --check-docs-urls` when changing external listing URLs. This distinction also applies to broad provider-overview surfaces: do not mistake a generated or externally linked listing entry for a new locally authored documentation page.
+Use `uv run python scripts/refresh_integration_downloads.py --check-docs-urls` when changing external listing URLs. `docs_url` may be `https://`, `http://`, or a site-relative path beginning with one `/`; protocol-relative and unsafe schemes are rejected. This distinction also applies to broad provider-overview surfaces: do not mistake a generated or externally linked listing entry for a new locally authored documentation page.
+
+The Managed Deep Agents OAuth catalog follows the same ownership boundary. `src/langsmith/managed-deep-agents-connections.mdx` owns prose and imports `src/snippets/langsmith/mda-oauth-catalog.mdx`; the snippet is a generated table, not a page to edit. Refresh it from the catalog compiled into the installed `mda` CLI:
+
+```bash
+uv tool upgrade --pre managed-deepagents
+uv run python scripts/refresh_mda_oauth_catalog.py --write
+```
+
+The script invokes `mda connections catalog --json`, requires no LangSmith API key or workspace ID for that query, and overwrites the snippet with the table only. Review the generated table through the authored connections page; if the command fails, address the missing executable, command failure, timeout, or invalid catalog JSON rather than hand-editing output.
 
 ## 2. Add an authored page
 
@@ -148,19 +163,20 @@ Use generated output only as validation, not as a repair target.
    ```bash
    make check-cross-refs
    uv run pytest tests/unit_tests/test_check_removed_pages_redirects.py -vv
+   uv run pytest tests/unit_tests/test_refresh_integration_downloads.py -vv
    ```
 
-   The cross-reference check is appropriate when `@[...]` syntax changed. The redirect-checker test covers its base-reference loading and error handling; use the checker itself in CI or the project workflow to validate the actual navigation diff. Route, preprocessing, or link-rewrite rule changes also warrant the focused builder tests.
+   The cross-reference check is appropriate when `@[...]` syntax changed. The redirect-checker test covers its base-reference loading and error handling. The integration refresh test covers URL safety and rendering safeguards; pair it with `--check-docs-urls` for an external-record change. Use the checker itself in CI or the project workflow to validate the actual navigation diff. Route, preprocessing, or link-rewrite rule changes also warrant the focused builder tests.
 
 ## Completion checklist
 
 - [ ] The source domain matches the route and language model.
 - [ ] An authored page has plain-text `title` and `description` frontmatter, without OpenWiki-owned control fields.
 - [ ] `src/docs.json` contains the extensionless emitted route at the exact product/menu/dropdown/tab/group location.
-- [ ] Integration guides, external discovery records, and generated table snippets were changed at their respective ownership surfaces.
+- [ ] Integration guides, external discovery records, generated table snippets, and Managed Deep Agents OAuth catalog data were changed at their respective ownership surfaces.
 - [ ] A move updated relative links, navigation, direct route references, and redirects for retired URLs.
 - [ ] The local route and navigation were inspected; both variants were inspected for versioned pages.
-- [ ] `make build` and `make broken-links` pass, with anchor, cross-reference, redirect, or builder checks run when applicable.
+- [ ] `make build` and `make broken-links` pass, with anchor, cross-reference, redirect, generator, or builder checks run when applicable.
 
 ## See also
 

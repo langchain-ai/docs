@@ -1,16 +1,18 @@
 ---
 type: validation guide
 title: Testing Overview
-description: Change-oriented guidance for isolated unit tests, generated documentation checks, integration-table metadata, and credentialed executable samples. Use the validation matrix to select the narrowest meaningful check and interpret CI failures correctly.
-tags: [testing, pytest, ci, documentation, code-samples]
+description: Change-oriented validation guidance for isolated unit tests, repository-wide documentation contracts, generated documentation checks, integration metadata, and credentialed executable samples. Use the validation matrix to select the narrowest meaningful check and interpret CI failures correctly.
+tags: [testing, pytest, ci, documentation, code-samples, opentelemetry]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-08T08:21:44.568Z
+    at: 2026-09-10T08:21:45.175Z
 sources:
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
+  - id: openwiki-source-61ff424071398cdd00f5a60d
+    resource: repo://.github/workflows/htmltest.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
   - id: openwiki-source-71ee7a4afbd2d6aa7b29f3d1
@@ -27,12 +29,16 @@ sources:
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
+  - id: openwiki-source-f845dc2957bc8fe97f16df14
+    resource: repo://src/langsmith/trace-with-opentelemetry.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-c2764a7369c8fbf3e49da6f8
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-2ecfcd33b729fccd843ab705
     resource: repo://tests/unit_tests/test_handle_auto_links.py
+  - id: openwiki-source-71e085db64c5296fd9b80141
+    resource: repo://tests/unit_tests/test_otel_endpoints.py
   - id: openwiki-source-1d433bbfc6ab68d7ffc5522c
     resource: repo://tests/unit_tests/test_parse_integration_submission_issue.py
   - id: openwiki-source-1e48075742e124afeca28fef
@@ -43,16 +49,16 @@ sources:
     resource: repo://tests/unit_tests/test_watcher.py
   - id: openwiki-source-0d0e77eb273a56717af74faa
     resource: repo://tests/unit_tests/utils.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-10T08:21:45.175Z" }
 ---
 
 ## Choose validation by change boundary
 
-The repository has intentionally separate validation paths. Select the narrowest path that covers the change; a passing unit test does not validate generated docs, external metadata, or a live code sample.
+The repository has intentionally separate validation paths. Select the narrowest path that covers the change: a passing unit test does not validate generated docs, external metadata, or a live code sample.
 
 | Change | Run locally | What a pass establishes | Failure meaning |
 | --- | --- | --- | --- |
-| Pipeline, parser, preprocessor, watcher, or helper behavior | `make test` | Isolated behavior in `tests/unit_tests` | Regression, assertion failure, or prohibited network socket use |
+| Pipeline, parser, preprocessor, watcher, helper, or authored OTel contract | `make test` | Isolated behavior in `tests/unit_tests`, including repository-wide assertions where applicable | Regression, assertion failure, or prohibited network socket use |
 | Built docs, internal links, or anchors | `make broken-links-with-anchors` | A fresh `build/` passes Mintlify's filtered link and anchor check | Build, actionable link, or anchor failure |
 | Source `@[ref]` link-map use | `make check-cross-refs` | Each eligible reference resolves in every scope where it renders | Fix the reference or `pipeline/preprocessors/link_map.py` |
 | Generated provider overview | `uv run python pipeline/tools/partner_pkg_table.py` | The committed overview matches its generator and package metadata | Generated output is stale; do not hand-edit it |
@@ -64,6 +70,8 @@ The repository has intentionally separate validation paths. Select the narrowest
 flowchart TD
   Change["Documentation or code change"] --> Unit["make test"]
   Unit --> Isolated["pytest with network sockets disabled"]
+  Unit --> Contract["Repository documentation contracts"]
+  Contract --> OTel["OTLP endpoint syntax and mocked export"]
   Change --> Docs["make build"]
   Docs --> Mint["Mint links and anchors"]
   Change --> References["make check-cross-refs"]
@@ -75,7 +83,7 @@ flowchart TD
   Samples --> Live["Toolchains, services, and provider environment"]
 ```
 
-This diagram separates deterministic socket-isolated tests from generated metadata validation and intentionally live executable samples.
+This diagram separates deterministic socket-isolated tests and documentation contracts from generated metadata validation and intentionally live executable samples.
 
 ## Isolated pytest suite
 
@@ -85,7 +93,7 @@ Run the core suite with:
 make test
 ```
 
-`TEST_FILE` defaults to `tests/unit_tests`; narrow a regression with `make test TEST_FILE=tests/unit_tests/test_builder.py`. The target invokes `uv run pytest --disable-socket --allow-unix-socket $(TEST_FILE) -vv`. Pytest discovers `test_*.py` and `test_*`, uses asyncio auto mode with function-scoped fixture loops, reports additional outcomes, and displays slow tests. Install its dependencies with `uv sync --group test`.
+`TEST_FILE` defaults to `tests/unit_tests`; narrow a regression with `make test TEST_FILE=tests/unit_tests/test_builder.py`. The target invokes `uv run pytest --disable-socket --allow-unix-socket $(TEST_FILE) -vv`. Pytest discovers `test_*.py` and `test_*`, uses asyncio auto mode with function-scoped fixture loops, reports additional outcomes, and displays the five slowest tests. Install its dependencies with `uv sync --group test`.
 
 Socket isolation is a suite invariant: unit tests must not make network calls. Use mocks, temporary files, or permitted Unix sockets instead. The `file_system` context manager supplies disposable `src/` and `build/` directories for file-system tests.
 
@@ -98,13 +106,21 @@ Socket isolation is a suite invariant: unit tests must not make network calls. U
 - **Integration issue-form parser:** add cases for `###` section boundaries, HTML-comment removal, `_No response_` optional values, checked confirmations, missing required fields, and language-specific PyPI/npm requirements. The parser maps text to data and does not execute form values.
 - **External `docs_url` safety:** test accepted `https://`, `http://`, and single-slash site-relative paths plus rejected empty, `javascript:`, `data:`, `vbscript:`, and protocol-relative `//` inputs. Test both validation errors and the fallback that prevents an unsafe URL from being emitted in a table link.
 
+### OpenTelemetry documentation contract
+
+`tests/unit_tests/test_otel_endpoints.py` treats authored `.mdx` files below `src/` as a repository-wide contract, not merely an example-local test. It rejects a generic `OTEL_EXPORTER_OTLP_ENDPOINT` assignment that already includes `/v1/traces`, `/v1/metrics`, or `/v1/logs`; the generic HTTP exporter endpoint is a base URL, so combining it with a signal suffix risks a duplicated path. Collector configurations are checked separately: in a document that declares `exporters:`, a trace URL ending in `/v1/traces` must use `traces_endpoint`, rather than generic `endpoint`.
+
+The runtime portion fixes the expected endpoint semantics against the installed OpenTelemetry HTTP trace exporter without opening a socket. With `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set to the full traces URL, the exporter must post precisely to that URL. With the generic base `OTEL_EXPORTER_OTLP_ENDPOINT`, it must append `/v1/traces` exactly once. Each test builds a `TracerProvider`, attaches a `SimpleSpanProcessor`, ends a span, force-flushes it, and replaces the exporter's session `post` method with a `MagicMock`; assertions inspect the requested URL and reject `/v1/traces/v1/traces`.
+
+When editing [Trace with OpenTelemetry](../../src/langsmith/trace-with-opentelemetry.mdx) or adding OTLP snippets elsewhere, preserve that distinction: use the base URL with `OTEL_EXPORTER_OTLP_ENDPOINT`, use a complete trace URL only with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or an exporter constructor's trace-specific endpoint, and use `traces_endpoint` in Collector YAML. Extend both the textual scan and mocked-export cases if support for another signal or exporter configuration changes. Do not turn this into a live endpoint smoke test: mocked transport is what keeps `make test` within its socket-isolated boundary.
+
 ## Documentation gates: built links versus source references
 
 `make broken-links-with-anchors` builds first, then runs `mint broken-links --check-anchors` from `build/`. Its wrapper filters known non-actionable reports for deployment-generated OpenAPI pages and snippets checked as standalone files; it fails only if filtered output still contains link-report lines. `make broken-links` omits anchor checking. The reusable link workflow also runs `make check-openapi`; it uses Node 22, installs/caches the Mint CLI, and applies its KaTeX installation workaround when needed.
 
 `make check-cross-refs` is a distinct source check. It scans Markdown below `src`, excluding code-sample snippets and `node_modules`, skips invalid UTF-8 input, and ignores fenced code and escaped references. Python and JavaScript OSS paths use their respective scope; shared OSS content outside a language conditional must resolve in both maps. It reports each unresolved file, line, name, and scope and exits 1.
 
-Export checking is a third, external-facing option. `make export-htmltest` creates a Mint export, unpacks it, and runs htmltest with `htmltest-mint-export.yml`. That configuration enables external checks but disables internal paths and internal hashes because exports omit a complete page set; it limits external concurrency and timeout and ignores documented checker noise. Use Mint's built-tree check for internal navigation.
+Export checking is a third, external-facing option. `make export-htmltest` creates a Mint export, unpacks it, and runs htmltest with `htmltest-mint-export.yml`. That configuration enables external checks but disables internal paths and internal hashes because exports omit a complete page set; it limits external concurrency and timeout and ignores documented checker noise. The `htmltest.yml` workflow runs this check every Monday at 08:00 UTC and on manual dispatch, with a 90-minute limit; it installs the Mint CLI and htmltest after setting up Python 3.13 and Node 22. Use Mint's built-tree check for internal navigation.
 
 ## Generated integration metadata and tables
 
@@ -144,8 +160,7 @@ For a fast local reproduction, run the corresponding row in the matrix—not the
 ## Related documentation
 
 - [GitHub Actions](/openwiki/integrations/github-actions.md)
-- [Mintlify](/openwiki/integrations/mintlify.md)
+- [Reference Documentation](/openwiki/integrations/reference-docs.md)
 - [Quickstart](/openwiki/quickstart.md)
 - [Builder Tests](/openwiki/testing/builder-tests.md)
 - [Conditional Rendering](/openwiki/testing/conditional-rendering.md)
-- [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md)
