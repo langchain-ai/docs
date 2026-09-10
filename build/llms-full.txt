@@ -62690,7 +62690,7 @@ Every call through the LLM Gateway is traced to LangSmith, and policy violations
 
 ## Where gateway traces appear
 
-By default, tracing of content is turned off for all organizations. When tracing content is on, the gateway-proxied calls are traced to a project named `gateway` in the [workspace](/langsmith/administration-overview#workspaces) associated with the caller's API key, as well as an API-key specific project with the scheme `gateway-<short_api_key>-<api_key_id>`.
+By default, tracing of content is turned off for all organizations. When tracing content is on, the gateway-proxied calls are traced to a project named `gateway` in the [workspace](/langsmith/administration-overview#workspaces) associated with the caller's API key, as well as a per-caller project that isolates traffic in the UI. Callers authenticating with a workspace API key get `gateway/short-api-key/<short_key>/api-key-id/<api_key_id>`; callers authenticating with a bearer token and no workspace API key get `gateway/user/<obfuscated_email>/ls_user_id/<ls_user_id>`.
 
 Control access to these tracing projects with [RBAC](/langsmith/rbac) and [ABAC](/langsmith/abac)
 
@@ -62698,14 +62698,14 @@ Control access to these tracing projects with [RBAC](/langsmith/rbac) and [ABAC]
 
 Gateway-proxied calls are distinguishable from direct LLM calls by the project they land in and the metadata attached to their spans:
 
-- **Gateway project:** all gateway traffic is written to a central gateway project in each workspace, as well as a fixed LangSmith project named `gateway` with a per-API-key copy at `gateway-<short_api_key>-<api_key_id>` for UI isolation. Filter by project (or by the presence of `langsmith.metadata.gateway.*` span attributes) to find gateway-proxied calls.
+- **Gateway project:** all gateway traffic is written to a project named `gateway` in each workspace, with a per-caller copy for UI isolation. Filter by project (or by the presence of `langsmith.metadata.gateway.*` span attributes) to find gateway-proxied calls.
 - **Policy evaluation results:** every gateway span records which policies were evaluated and their outcome via `langsmith.metadata.gateway.policy.matched_ids/_names`, `passed_ids/_names`, and `violated_ids/_names`, so both passes and blocks are captured.
 - **Guard rule matches:** when redaction policies apply, the guard pipeline emits a `rule_id → count` map stamped onto the span as `policy.matched_rules`, `passed_rules`, and `violated_rules`. These are rule IDs, not PII or secret category labels.
 - **Cost data:** token counts and cost are computed inline and feed the same spend accumulator that spend-cap policies enforce against.
 
-### Trace content and billing
+### Trace content
 
-Using a data retention policy, you can disable trace content (request and response bodies) from being written to a trace. This will apply to any traces emitted through the gateway that match the scope of the policy.
+Trace content (request and response bodies) is off by default. Turn it on with a [data policy](/langsmith/llm-gateway-data-policy#data-retention), which applies to any traces emitted through the gateway that match the scope of the policy.
 
 ## LangSmith Engine integration
 
@@ -62770,7 +62770,7 @@ If you need to limit who can see gateway traces, you have two options:
 
 - [Admin setup](/langsmith/llm-gateway-admin-setup): the step-by-step guide for configuring all of this.
 - [Spend policies](/langsmith/llm-gateway-spend-policies): attach cost limits to API keys and users.
-- [Data protection](/langsmith/llm-gateway-data-protection): configure data protection policies.
+- [Data policy](/langsmith/llm-gateway-data-policy): configure data policies.
 
 ---
 
@@ -62847,7 +62847,7 @@ Gateway policy management requires `organization:manage` permission.
 Go to **LLM Gateway** to create governance policies. You can configure:
 
 - **Spend limits:** hard caps at the organization, workspace, API key, or user level. Refer to [Spend policies](/langsmith/llm-gateway-spend-policies).
-- **Data protection:** detect and redact PII and secrets before they reach the model. Refer to [Data protection](/langsmith/llm-gateway-data-protection).
+- **Data policy:** detect and redact PII and secrets before they reach the model, and control whether request and response bodies are traced. Refer to [Data policy](/langsmith/llm-gateway-data-policy).
 
 Policies are optional during initial setup. The gateway will freely allow invocations until you have configured policies.
 
@@ -63780,7 +63780,7 @@ The gateway overrides the request body's `model` field with the model name from 
 
 - [Model fallbacks](/langsmith/llm-gateway-fallbacks): chain these configurations so a backup takes over when one rate-limits or errors.
 - [Spend policies](/langsmith/llm-gateway-spend-policies): apply cost limits to custom providers.
-- [Data protection](/langsmith/llm-gateway-data-protection): redact sensitive data before it reaches your endpoint.
+- [Data policy](/langsmith/llm-gateway-data-policy): redact sensitive data before it reaches your endpoint.
 
 ---
 
@@ -63794,66 +63794,107 @@ The gateway overrides the request body's `model` field with the model name from 
 </div>
 
 
-# Data protection
-Source: https://docs.langchain.com/langsmith/llm-gateway-data-protection
+# Data policy
+Source: https://docs.langchain.com/langsmith/llm-gateway-data-policy
 
 <Note>
 **Beta:** The LLM Gateway is in [beta](/langsmith/release-stages).
 </Note>
 
-When a PII or secrets redaction policy is active, the gateway scans outbound requests before they reach the LLM provider. If sensitive data is detected, it is redacted from the request. The agent continues to receive a response.
+The **Data Policy** tab in the LLM Gateway holds data policies. A single data policy covers two areas, matching the two sections of the create form:
+
+- **Data retention**: whether the gateway writes request and response bodies to the LangSmith trace.
+- **Data protection**: which sensitive data the gateway scans for and redacts before a request reaches the LLM provider, how long that scan may run, and whether a request proceeds when the limit is exceeded.
+
+## Availability
+
+Data policies are available to every organization with access to the LLM Gateway. Two entitlements shape what the **Data Policy** tab offers:
+
+- **Data protection** is on by default. If the entitlement is turned off, cloud Enterprise organizations see the tab grayed out with a **Request access** link, and every other organization does not see the tab at all.
+- **PII detection** is off by default and enabled for selected organizations. Without it, the PII options are unavailable in the create and edit forms, and the API rejects any policy configured to detect PII.
+
+Contact your account team to change either entitlement.
+
+## Data retention
+
+Every call through the LLM Gateway is traced to LangSmith. The **Trace content** toggle controls whether request and response bodies are stored in those traces. It is off for all organizations, and a data policy turns it on for the requests that policy matches. When trace content is disabled, the gateway still records metadata such as token usage, latency, status, model information, and policy evaluation results.
+
+Gateway traces are written to a shared project named `gateway` in the [workspace](/langsmith/administration-overview#workspaces) associated with the caller's API key, plus a per-caller project that isolates traffic in the UI. For the project naming schemes, the metadata traces carry, and how to restrict trace visibility, see [Traces and access control](/langsmith/llm-gateway-access).
+
+## Data protection
+
+When a data policy enables detection, the gateway scans outbound requests before they reach the LLM provider. Detected values are replaced with placeholders before the request is forwarded upstream, so the provider only ever sees the redacted payload. For successful responses, the gateway restores the placeholders to the original values before returning the response to the caller.
 
 Redacted content is also redacted in the LangSmith trace, so sensitive data does not persist in your observability data either.
 
-## PII detection
+The **PII** and **Secrets** toggles are independent. On a new policy, PII detection starts on with every rule selected (for organizations that have the entitlement) and secrets detection starts off.
 
-The gateway detects and redacts the following categories of personally identifiable information:
+### PII detection
+
+The **Personally Identifiable Information (PII)** toggle covers names, emails, phone numbers, addresses, and SSNs. Six rules sit beneath it, each selectable on its own, grouped by how the gateway detects them.
+
+Rule-based categories are matched with regular expressions and are faster to detect:
+
+| Category | Patterns detected |
+| --- | --- |
+| **Emails** | Email address patterns |
+| **US phone numbers** | Common US formats, for example `415-555-1234` and `+1 (415) 555-1234`. A bare 10-digit number is not matched |
+| **US Social Security numbers** | US SSN patterns, for example `123-45-6789` |
+
+Model-based categories are matched by Presidio and are slower to detect:
 
 | Category | Examples |
 | --- | --- |
 | **Names** | Person names in natural language |
-| **Nationality, religion, or political affiliation** | Nationality |
 | **Locations** | Addresses, cities, countries |
+| **Nationality, religious, and political groups** | Nationality, religious affiliation, political affiliation |
 
-Detection uses Presidio for named entities (names, locations, and NRP) and pattern-based rules for structured identifiers.
+### Secrets detection
 
-Structured identifiers are detected with regular expressions and do not use a model:
-
-| Category | Patterns detected |
-| --- | --- |
-| **Social Security Numbers** | US SSN patterns (for example, 123-45-6789) |
-| **Phone numbers** | US phone number patterns |
-
-## Secrets detection
-
-The gateway detects and redacts API keys, tokens, and credentials across a wide range of providers and formats:
+The **Secrets** toggle detects common API keys, tokens, and credentials and redacts them from the request:
 
 | Category | Patterns detected |
 | --- | --- |
-| **LangSmith** | Personal tokens, service keys |
+| **LangSmith** | Personal access tokens, service keys, legacy API keys |
 | **AWS** | Access tokens |
 | **GitHub** | Personal access tokens, fine-grained PATs, OAuth tokens, app tokens |
 | **GitLab** | Personal access tokens |
 | **AI providers** | OpenAI API keys, Anthropic API keys |
-| **Cloud platforms** | GCP API keys, Azure AD client secrets |
-| **Collaboration tools** | Slack bot/user/app tokens, Datadog access tokens |
+| **Cloud platforms** | GCP API keys, Azure AD client secrets, Google OAuth access tokens |
+| **Collaboration tools** | Slack bot, user, and app tokens, Slack webhook URLs, Datadog access tokens |
 | **Package registries** | PyPI upload tokens, npm access tokens |
-| **Cryptographic** | Private keys |
-| **Stripe** | Access tokens |
+| **Cryptographic** | Private keys, JWTs |
+| **Other** | Stripe access tokens, SendGrid API tokens |
 
-## Enable redaction policies
+Detection is deliberately narrow: only rules anchored to a recognizable token shape are applied, so high-entropy prose in a prompt does not trigger a redaction.
+
+### Scan time and timeout behavior
+
+Each data policy caps how long the scanning pipeline may run and decides what happens when that cap is reached:
+
+- **Max processing time (seconds)**: 2 by default, configurable from 0.1 to 30.
+- **On timeout**: **Allow request** by default. Set it to **Block request** to reject a request whose scan does not finish in time.
+
+Both fields appear only for organizations with the PII detection entitlement. Elsewhere the policy uses the defaults.
+
+## Create a data policy
 
 <Warning>
 Creating and managing policies requires `organization:manage` permission.
 </Warning>
 
-1. Go to **LLM Gateway**.
-1. Click **Create policy**.
-1. Select **PII redaction** or **Secrets redaction** as the policy type.
-1. Configure which categories to detect (or enable all).
-1. Save.
+1. In the LangSmith sidebar, click **LLM Gateway**.
+1. Open the **Data Policy** tab.
+1. Click **Create data policy**.
+1. Select the scope: **Organization**, **Workspace**, **User**, or **API Key**.
+1. Enter a **Policy name**, or keep the generated one.
+1. For a workspace, user, or API key scope, select the specific subjects the policy applies to.
+1. (Optional) Under **Data retention**, enable **Trace content** to store request and response bodies in traces.
+1. Under **Data protection**, enable **Secrets**, **PII**, or both. For PII, select the rules to apply.
+1. (Optional) Set **Max processing time (seconds)** and **On timeout**.
+1. Click **Create data policy**.
 
-Redaction policies apply to all requests that pass through the gateway in the scope where they're configured. They take effect immediately.
+Data policies apply to all requests that pass through the gateway in the scope where they are configured. They take effect immediately.
 
 ## How redacted content appears
 
@@ -63861,30 +63902,34 @@ When PII or a secret is detected, the content is replaced with a placeholder in 
 
 **Original request:**
 
-```
+```text
 Please process the refund for John Smith, SSN 123-45-6789.
 ```
 
 **Upstream redaction:**
 
+```text
+## disclaimer: Some values have been redacted by a reverse proxy and replaced with placeholders containing unique identifiers.
+
+Please process the refund for [SAFE_TO_USE:PERSON_kbqdjxyz], SSN [SAFE_TO_USE:US_SSN_abqxlmwp].
 ```
-Please process the refund for [SAFE_TO_USE:PERSON_kbqdjxyz], SSN [SAFE_TO_USE:US_SSN_abqxlmwp]
-```
+
+The gateway prepends the disclaimer so the model treats the placeholders as values it can reuse verbatim.
 
 Placeholders follow the format `[SAFE_TO_USE:<CATEGORY>_<suffix>]`:
 
 - **SAFE_TO_USE:** fixed prefix marking the value as a redacted placeholder.
 - **\<CATEGORY\>:** the detected type. Examples: `PERSON`, `LOCATION`, `US_SSN`, `US_PHONE_NUMBER`, `OPENAI_API_KEY`, `GITHUB_PAT`, `LANGSMITH_PERSONAL_TOKEN`.
-- **\<suffix\>:** an 8-character random tag.
+- **\<suffix\>:** an 8-character tag. A value that appears twice in one request gets the same placeholder both times, and the tags cannot be correlated across requests.
 
 The trace in LangSmith shows the redacted version along with metadata indicating that redaction occurred and which categories were detected.
 
 **Downstream de-redacted response:**
 
-As the upstream provider is returning a response, the gateway will replace the redaction placeholders with caller's original values. For example, your agent may see this response:
+When the upstream provider returns a successful response, the gateway replaces the placeholders with the caller's original values. Streamed responses are rewritten event by event, so de-redaction does not delay the stream. For example, your agent may see this response:
 
-```
-Checking Confirming John Smith's SSN to be 123-45-6789.... Okay! I will process the full refund.
+```text
+Confirming John Smith's SSN as 123-45-6789. I will process the full refund.
 ```
 
 ## What redaction covers
@@ -63893,19 +63938,23 @@ Checking Confirming John Smith's SSN to be 123-45-6789.... Okay! I will process 
 
 - Outbound request content (the message sent to the LLM provider) is scanned and redacted before it leaves the gateway.
 - The redacted version is what appears in LangSmith traces.
+- Placeholders in a successful provider response, streamed or not, are restored to the original values before the response reaches the caller.
 
 **What it does not cover:**
 
-- **Responses from the LLM provider:** if the model generates sensitive data in its response, that content is not redacted. Streaming response redaction is in progress.
+- **Responses from the LLM provider:** if the model generates sensitive data in its response, that content is not scanned or redacted. Only the request is scanned.
+- **Provider errors:** when the provider returns a status of 400 or above, the gateway passes the body through untouched, so the caller sees the placeholders rather than the original values.
 - **Data already in your traces:** redaction only applies to requests flowing through the gateway. Traces written directly to the LangSmith API (bypassing the gateway) are not scanned.
 - **Platform-level ingestion:** if your requirement is to prevent PII from ever entering LangSmith regardless of how it arrives (for example, data residency compliance), gateway redaction alone is not sufficient. That requires ingestion-level redaction, which is a separate capability.
-- **Prompt scanning:** system prompts, developer prompts, and tool-call arguments are not scanned.
-**Scanner failures are fail-close**: if a PII or secrets scanner is unreachable, slow or errors, that stage blocks the request from proceeding.
+- **System and developer prompts:** these are skipped, along with assistant tool-call metadata and tool-call arguments that arrive as a single JSON string. User messages, tool results, and structured tool-call arguments are scanned.
 
-This distinction matters. If your security model requires that sensitive data never reaches any system (not just the LLM provider) make sure you understand which surface the gateway covers and which surfaces require additional controls.
+**Scanner failures fail open:** if a scanner is unreachable or errors, the request continues to the provider with the content that stage produced. Only a scan timeout can block a request, and only when the policy's timeout action is set to **Block request**.
+
+The coverage boundary matters. If your security model requires that sensitive data never reaches any system (not just the LLM provider), make sure you understand which surface the gateway covers and which surfaces require additional controls.
 
 ## Next steps
 
+- [Traces and access control](/langsmith/llm-gateway-access): see where gateway traces land and who can read them.
 - [Spend policies](/langsmith/llm-gateway-spend-policies): add cost controls alongside data protection.
 
 ---
@@ -63915,7 +63964,7 @@ This distinction matters. If your security model requires that sensitive data ne
     [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
 </Callout>
 <Callout icon="edit">
-    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/llm-gateway-data-protection.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/llm-gateway-data-policy.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
 </Callout>
 </div>
 
@@ -64877,7 +64926,7 @@ The gateway performs these steps for each standard endpoint request:
 - [Direct model access](/langsmith/llm-gateway-direct-model-access): use provider-native request and response formats.
 - [Prompt Hub with the gateway](/langsmith/manage-prompts-programmatically#use-with-the-langsmith-gateway): route Prompt Hub model calls through the gateway using two environment variables.
 - [Spend policies](/langsmith/llm-gateway-spend-policies): configure cost limits across your organization.
-- [Data protection](/langsmith/llm-gateway-data-protection): prevent sensitive data from reaching providers.
+- [Data policy](/langsmith/llm-gateway-data-policy): prevent sensitive data from reaching providers.
 
 ---
 
@@ -64968,7 +65017,7 @@ A rate limit policy can also carry a condition on a custom request header, so tr
 
 - [Spend policies](/langsmith/llm-gateway-spend-policies): set cost caps alongside rate limits.
 - [Per-customer policies](/langsmith/llm-gateway-header-policies): split a limit by a custom request header so each end customer gets its own allowance.
-- [Data protection](/langsmith/llm-gateway-data-protection): add data protection policies.
+- [Data policy](/langsmith/llm-gateway-data-policy): add data policies.
 
 ---
 
@@ -65063,7 +65112,7 @@ This is useful for diagnosing whether a blocked request represents a genuine cos
 ## Next steps
 
 - [Per-customer policies](/langsmith/llm-gateway-header-policies): split a cap by a custom request header so each end customer gets its own limit.
-- [Data protection](/langsmith/llm-gateway-data-protection): add data protection policies alongside cost controls.
+- [Data policy](/langsmith/llm-gateway-data-policy): add data policies alongside cost controls.
 
 ---
 
@@ -65129,7 +65178,7 @@ A `200` response confirms that the gateway, your LangSmith API key, permissions,
 - **One key, multiple providers:** Developers authenticate with a LangSmith API key instead of storing provider keys locally.
 - **One request format, multiple models:** Use Chat Completions, Messages, or Responses with models across configured providers.
 - **Built-in observability:** Every gateway call appears as a [LangSmith trace](/langsmith/llm-gateway-access).
-- **Central governance:** Apply [spend limits](/langsmith/llm-gateway-spend-policies), [rate limits](/langsmith/llm-gateway-rate-limit-policies), and [data-protection policies](/langsmith/llm-gateway-data-protection).
+- **Central governance:** Apply [spend limits](/langsmith/llm-gateway-spend-policies), [rate limits](/langsmith/llm-gateway-rate-limit-policies), and [data policies](/langsmith/llm-gateway-data-policy).
 
 ## Use the standard API
 
@@ -87284,7 +87333,7 @@ Source: https://docs.langchain.com/langsmith/redact-secrets
 When your application handles API keys, tokens, or other credentials, those values can appear in LangSmith traces if they are passed as part of inputs or outputs. Use the LangSmith SDK's built-in anonymizer to redact secrets before they are sent to the backend.
 
 <Note>
-This page covers redacting secrets (API keys, tokens, credentials) from trace data via the SDK. For redacting personally identifiable information (PII) such as emails, names, or SSNs, see [Prevent logging of sensitive data in traces](/langsmith/mask-inputs-outputs). To redact secrets at the LLM Gateway layer, see [Data protection](/langsmith/llm-gateway-data-protection).
+This page covers redacting secrets (API keys, tokens, credentials) from trace data via the SDK. For redacting personally identifiable information (PII) such as emails, names, or SSNs, see [Prevent logging of sensitive data in traces](/langsmith/mask-inputs-outputs). To redact secrets at the LLM Gateway layer, see [Data policy](/langsmith/llm-gateway-data-policy).
 </Note>
 
 ## Use the SDK anonymizer
