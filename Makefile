@@ -1,4 +1,4 @@
-.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
+.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs skills
 
 # Default target
 all: help
@@ -200,6 +200,21 @@ test-code-samples:
 check-cross-refs:
 	@PYTHONPATH=$(CURDIR) uv run python scripts/check_cross_refs.py
 
+skills:
+	@mkdir -p .claude/skills
+	@for d in .agents/skills/*/; do \
+		n=$$(basename "$$d"); \
+		if [ -e ".claude/skills/$$n" ] && [ ! -L ".claude/skills/$$n" ]; then \
+			echo "Skipped $$n: .claude/skills/$$n exists and is not a symlink"; \
+		else \
+			ln -sfn "../../.agents/skills/$$n" ".claude/skills/$$n"; \
+			echo "Linked .claude/skills/$$n"; \
+		fi; \
+	done
+	@for l in .claude/skills/*; do \
+		if [ -L "$$l" ] && [ ! -e "$$l" ]; then rm "$$l"; echo "Removed stale link $$l"; fi; \
+	done
+
 help:
 	@echo "Available commands:"
 	@echo "  make dev                - Start development mode with file watching and mint dev"
@@ -219,5 +234,6 @@ help:
 	@echo "  make install            - Install dependencies"
 	@echo "  make code-snippets      - Extract code snippets (line-based, Bluehawk-compatible)"
 	@echo "  make test-code-samples  - Run code samples (FILES=\"path ...\" for specific)"
+	@echo "  make skills             - Link .agents/skills into .claude/skills for Claude Code"
 	@echo "  make clean              - Clean build artifacts"
 	@echo "  make help               - Show this help message"

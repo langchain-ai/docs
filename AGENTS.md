@@ -36,6 +36,24 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Mintlify components | <https://mintlify.com/docs/components> |
 | API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report reference docs issues](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
+| Authoring skills | `.agents/skills/` (run `make skills` for Claude Code) |
+
+## Skills
+
+Task-specific procedures live in `.agents/skills/`, one directory per skill.
+Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode, and Deep Agents read that
+path directly. Claude Code reads `.claude/skills/` only, so run `make skills`
+once to link the tree.
+
+| Skill | Use it for |
+|-------|-----------|
+| `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
+| `document-tooling-in-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. |
+
+Invoke a skill when the task matches it. This file holds the rules that apply to
+every task; a skill holds the procedure that only some tasks need, so skills
+link back here rather than restating these rules. See
+[`.agents/skills/README.md`](.agents/skills/README.md) for how to add one.
 
 ## Project structure
 
