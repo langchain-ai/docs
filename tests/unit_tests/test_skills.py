@@ -7,6 +7,7 @@ is worse than no skill, because the agent follows it confidently.
 """
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,8 +16,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILLS_DIR = REPO_ROOT / ".agents" / "skills"
 
-# Existence is only checked under roots that are tracked in git. Paths under
-# gitignored roots (`.claude/`, `.bin/`, `build/`) are absent in a fresh clone.
+# Existence is only checked under these roots. Gitignored paths are skipped
+# separately, since they are absent in a fresh clone.
 CHECKED_ROOTS = (
     "src/",
     "scripts/",
@@ -31,7 +32,7 @@ CHECKED_FILES = frozenset(
 )
 
 # Illustrative paths that stand in for a real one and are not expected to exist.
-PLACEHOLDER = re.compile(r"path/to|<[^>]+>|(example|old-name|new-name)\.mdx$")
+PLACEHOLDER = re.compile(r"path/to|<[^>]+>|\{[^}]+\}|(example|old-name|new-name)\.mdx$")
 
 # A backticked token that looks like a repository path.
 PATH_TOKEN = re.compile(
@@ -79,6 +80,16 @@ def frontmatter(skill_md: Path) -> dict:
     assert text.startswith("---\n"), f"{skill_md} has no frontmatter block"
     _, block, _ = text.split("---\n", 2)
     return yaml.safe_load(block)
+
+
+def is_gitignored(path: str) -> bool:
+    """Whether git ignores the path, and so whether a fresh clone would lack it."""
+    result = subprocess.run(  # noqa: S603
+        ["git", "check-ignore", "-q", path],  # noqa: S607
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def make_targets() -> set[str]:
@@ -131,6 +142,8 @@ def test_skill_paths_exist(skill_dir: Path) -> None:
         if PLACEHOLDER.search(token):
             continue
         if not (token.startswith(CHECKED_ROOTS) or token in CHECKED_FILES):
+            continue
+        if is_gitignored(token):
             continue
         if not (REPO_ROOT / token.rstrip("/")).exists():
             missing.append(token)

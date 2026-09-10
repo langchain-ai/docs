@@ -50,6 +50,9 @@ once to link the tree.
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
 | `document-tooling-in-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. |
+| `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
+| `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
+| `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
 
 Invoke a skill when the task matches it. This file holds the rules that apply to
 every task; a skill holds the procedure that only some tasks need, so skills

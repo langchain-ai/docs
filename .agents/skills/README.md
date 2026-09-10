@@ -42,12 +42,16 @@ the tree changes. Re-run the command after pulling, or symlink instead.
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: source directory, frontmatter, `src/docs.json` navigation, redirects, verification. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. Runs on a PR, a branch, or the working tree. |
 | `document-tooling-in-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, what stays in the repo, how to edit safely. |
+| `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files: snippet markers, harness blocks, file placement, and the shared-module-scope trap in TypeScript. |
+| `submit-integration` | Turning a structured integration issue submission into a listing, applying the hosted-guide eligibility policy. Invoked by `.github/workflows/integration-submission.yml`. |
+| `update-integrations-prs` | Processing open integration PRs against the featuring policy: rebase, convert to external YAML, feature, or check package downloads. |
 
-Three more skills live in `.deepagents/skills/` (`docs-code-samples`,
-`submit-integration`, `update-integrations-prs`). They stay there for now
-because `.github/workflows/integration-submission.yml` invokes
-`submit-integration` through the `langchain-ai/deepagents` action, which resolves
-that path.
+The last three moved here from `.deepagents/skills/`. Deep Agents Code reads
+`.agents/skills/` as a project skill directory, at higher precedence than
+`.deepagents/skills/`, so `.github/workflows/integration-submission.yml` still
+resolves `skill: submit-integration` with no symlink or shim. See [Memory and
+skills](https://docs.langchain.com/oss/deepagents/code/memory-and-skills#skill-discovery)
+for the full discovery order.
 
 ## What belongs in a skill, and what belongs in AGENTS.md
 

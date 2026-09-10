@@ -13,7 +13,7 @@ description: >-
 
 Create docs listing changes for a **new** integration from structured issue-form JSON.
 
-Policy source: [hosted-guide eligibility](https://docs.langchain.com/oss/contributing/publish-langchain#eligibility-for-hosted-guides) and `.deepagents/skills/update-integrations-prs/SKILL.md`.
+Policy source: [hosted-guide eligibility](https://docs.langchain.com/oss/contributing/publish-langchain#eligibility-for-hosted-guides) and `.agents/skills/update-integrations-prs/SKILL.md`.
 
 ## Inputs
 
