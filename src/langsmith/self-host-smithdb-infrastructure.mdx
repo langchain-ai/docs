@@ -4,9 +4,13 @@ sidebarTitle: Supporting infrastructure
 description: Provide a dedicated PostgreSQL metastore, object storage, and local SSD cache capacity before enabling SmithDB.
 ---
 
+<Note>
+For failures such as pods stuck `Pending`, object-store access denied, or metastore connection errors, see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting#supporting-infrastructure).
+</Note>
+
 SmithDB adds three infrastructure dependencies to a self-hosted LangSmith deployment: a PostgreSQL metastore, object storage, and node-local SSD cache capacity.
 
-These are integration requirements and practical recommendations, not a prescribed cloud architecture. Provider examples cover AWS (EKS), GCP (GKE), and Azure (AKS). The minimum LangSmith version depends on your cloud. See [Check cloud support](/langsmith/self-host-smithdb#check-cloud-support).
+These are integration requirements and practical recommendations, not a prescribed cloud architecture. Provider examples cover AWS (EKS), GCP (GKE), and Azure (AKS). The minimum LangSmith version depends on your cloud. See [Cloud support](/langsmith/self-host-smithdb#cloud-support).
 
 ## Requirements
 
@@ -304,11 +308,12 @@ Common symptoms are pods remaining pending when requests exceed allocatable capa
 
 ## Provider notes
 
-### AWS
+<Tabs>
+<Tab title="AWS">
 
 A common AWS mapping is EKS, RDS for PostgreSQL, S3, IRSA, and EC2 instance store.
 
-#### Configure S3 workload identity
+### Configure S3 workload identity
 
 Choose IRSA or EKS Pod Identity. IRSA requires the role annotation and trust for `system:serviceaccount:<NAMESPACE>:<HELM_RELEASE>-smithdb`. Pod Identity uses an external association and no annotation.
 
@@ -333,7 +338,7 @@ smithdb:
 
 </Accordion>
 
-#### Provision EKS nodes with Karpenter
+### Provision EKS nodes with Karpenter
 
 Karpenter is the recommended way to provision SmithDB capacity on EKS, but it is not required. Other node provisioners must produce the same labels, taints, and Kubernetes-visible ephemeral-storage capacity.
 
@@ -492,7 +497,7 @@ That 800 GiB floor suits the `medium` tier. Size the requirement against the lar
 
 Other provisioners must provide equivalent labels, taints, Kubernetes-visible ephemeral storage, and disruption behavior. With custom AMIs, bootstrap must format and mount instance-store devices for kubelet and container-runtime storage.
 
-#### Provision EKS managed node groups
+### Provision EKS managed node groups
 
 If Karpenter is unavailable, use EKS Managed Node Groups instead. These examples configure instance-store NVMe as RAID0 and apply the label and taint used by the Helm scheduling values.
 
@@ -643,11 +648,12 @@ module "eks" {
 
 </Accordion>
 
-### GCP
+</Tab>
+<Tab title="GCP">
 
 A common GCP mapping is GKE Standard, AlloyDB or another compatible PostgreSQL service, Cloud Storage, Workload Identity, and Local SSD-backed ephemeral storage.
 
-#### Configure Cloud Storage workload identity
+### Configure Cloud Storage workload identity
 
 <Note>
 Use a single-region bucket to avoid data replication costs and provide predictable tail latencies.
@@ -670,7 +676,7 @@ smithdb:
 
 </Accordion>
 
-#### Provision GKE Local SSD nodes
+### Provision GKE Local SSD nodes
 
 Use [Local SSD-backed ephemeral storage](https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/local-ssd), created with `--ephemeral-storage-local-ssd`, which backs `emptyDir`, container layers, and scheduler capacity. The raw block option, `--local-nvme-ssd-block`, does not back `emptyDir` and leaves SmithDB with no cache capacity.
 
@@ -724,11 +730,12 @@ resource "google_container_node_pool" "smithdb_local_ssd" {
 
 Supported disk counts and machine types vary by zone and machine generation. Verify availability in every zone used by the node pool.
 
-### Azure
+</Tab>
+<Tab title="Azure">
 
 A common Azure mapping is AKS, Azure Database for PostgreSQL, Azure Blob Storage, Workload Identity, and the VM temporary disk as Kubernetes ephemeral storage.
 
-#### Configure Blob Storage workload identity
+### Configure Blob Storage workload identity
 
 `smithdb.config.objectStore.bucket` is the Blob container name. `azure.accountName` is required. Leave `accessKeySecretKey` empty when using Workload Identity.
 
@@ -782,7 +789,7 @@ On LangSmith 0.16, set the migration label under `smithdb.migration.deployment.l
 
 </Accordion>
 
-#### Provision AKS nodes with a temporary disk
+### Provision AKS nodes with a temporary disk
 
 AKS does not attach a separate Local SSD volume for `emptyDir`. Set `kubelet-disk-type` to `Temporary` so kubelet, container images, logs, and `emptyDir` use the VM temporary disk. That disk is local SSD or NVMe and is wiped when the VM is deallocated or moved to another host.
 
@@ -831,34 +838,5 @@ resource "azurerm_kubernetes_cluster_node_pool" "smithdb_cache" {
 
 </Accordion>
 
-## Troubleshoot supporting infrastructure
-
-Most SmithDB installation failures trace back to one of the following.
-
-**Pods stay `Pending`.** The ephemeral-storage request exceeds what the node reports as allocatable. Compare the tier's per-replica request against the node:
-
-```bash
-kubectl get node NODE_NAME -o jsonpath='{.status.allocatable.ephemeral-storage}{"\n"}'
-kubectl describe pod -n NAMESPACE POD_NAME | grep -A5 Events
-```
-
-Either provision larger local SSD nodes or select a smaller tier. A node also needs headroom above the pod request for images, logs, and Kubernetes reservations.
-
-**Object-store access is denied.** The workload identity binding does not match the ServiceAccount SmithDB actually runs as. The trust policy must name the release namespace and the ServiceAccount name, which defaults to `HELM_RELEASE-smithdb`. Confirm what the pod is using:
-
-```bash
-kubectl get pod -n NAMESPACE POD_NAME -o jsonpath='{.spec.serviceAccountName}{"\n"}'
-```
-
-With `create: false`, `name` is required. Otherwise pods fall back to the `default` ServiceAccount and the binding never applies.
-
-**The metastore refuses connections.** Check that the database is reachable from the cluster, that `useSsl` matches what the server requires, and that the Secret keys named in `smithdb.config.metastore` match the keys actually present in the Secret.
-
-**Cache I/O is slow.** The `emptyDir` is backed by the boot disk rather than local SSD. Confirm which device backs the cache filesystem inside a running pod:
-
-```bash
-kubectl exec -n NAMESPACE POD_NAME -- df -h /data
-```
-
-The filesystem should sit on the local NVMe device, such as `/dev/md0` or `/dev/nvme1n1`, rather than on the root disk.
-
+</Tab>
+</Tabs>

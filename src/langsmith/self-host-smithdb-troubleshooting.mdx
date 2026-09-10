@@ -1,33 +1,66 @@
 ---
 title: Troubleshoot SmithDB
-sidebarTitle: Troubleshoot
-description: Gather troubleshooting context or disable and reset a SmithDB deployment on self-hosted LangSmith.
+sidebarTitle: Troubleshooting
+description: Diagnose SmithDB failures, gather troubleshooting context, or disable and reset a SmithDB deployment on self-hosted LangSmith.
 ---
 
 <Note>
-Keep ClickHouse configured and available throughout everything on this page.
+Keep ClickHouse configured and available throughout everything on this page. If no documented issue matches, contact LangChain through the [Support Portal](https://support.langchain.com/).
 </Note>
 
-Use this page to gather context before you escalate, or to back SmithDB out of a deployment: return traffic to ClickHouse, disable the SmithDB services, and optionally remove SmithDB data.
+Use this page to diagnose SmithDB installation and migration failures, gather context before you escalate, or back SmithDB out of a deployment: return traffic to ClickHouse, disable the SmithDB services, and optionally remove SmithDB data.
 
-## Before making changes
+## General best practices
 
 - Stop at the current installation or migration stage until you understand the issue.
 - Record the LangSmith and Helm chart versions and the most recent configuration change.
 - Preserve failed Jobs, TaskDB, and relevant logs before deleting or recreating resources.
 - Do not delete the SmithDB metastore or object-storage data while troubleshooting.
 
-## Find the right page
+## Supporting infrastructure
 
-Known failures are documented alongside the configuration that causes them:
+Most SmithDB installation failures trace back to one of the following. For the configuration each depends on, see [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure).
 
-- Pods stuck `Pending`, object-store access denied, metastore connection failures, and slow cache I/O: [Troubleshoot supporting infrastructure](/langsmith/self-host-smithdb-infrastructure#troubleshoot-supporting-infrastructure)
-- Migration Job failures and retries: [Handle failures](/langsmith/self-host-smithdb-migrate#handle-failures)
-- Capacity and replica sizing: [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale)
+**Pods stay `Pending`.** The ephemeral-storage request exceeds what the node reports as allocatable. Compare the tier's per-replica request against the node:
 
-## Support
+```bash
+kubectl get node NODE_NAME -o jsonpath='{.status.allocatable.ephemeral-storage}{"\n"}'
+kubectl describe pod -n NAMESPACE POD_NAME | grep -A5 Events
+```
 
-If no documented issue matches, contact LangChain through the [Support Portal](https://support.langchain.com/).
+Either provision larger local SSD nodes or select a smaller tier. A node also needs headroom above the pod request for images, logs, and Kubernetes reservations.
+
+**Object-store access is denied.** The workload identity binding does not match the ServiceAccount SmithDB actually runs as. The trust policy must name the release namespace and the ServiceAccount name, which defaults to `HELM_RELEASE-smithdb`. Confirm what the pod is using:
+
+```bash
+kubectl get pod -n NAMESPACE POD_NAME -o jsonpath='{.spec.serviceAccountName}{"\n"}'
+```
+
+With `create: false`, `name` is required. Otherwise pods fall back to the `default` ServiceAccount and the binding never applies.
+
+**The metastore refuses connections.** Check that the database is reachable from the cluster, that `useSsl` matches what the server requires, and that the Secret keys named in `smithdb.config.metastore` match the keys actually present in the Secret.
+
+**Cache I/O is slow.** The `emptyDir` is backed by the boot disk rather than local SSD. Confirm which device backs the cache filesystem inside a running pod:
+
+```bash
+kubectl exec -n NAMESPACE POD_NAME -- df -h /data
+```
+
+The filesystem should sit on the local NVMe device, such as `/dev/md0` or `/dev/nvme1n1`, rather than on the root disk.
+
+## Migration Job failures
+
+The migration Job defaults to `backoffLimit: 3`, allowing retries before Kubernetes marks it failed.
+
+If the Job failed from under-provisioning, adjust both `smithdb.migration.job.parallelism` and `smithdb.migration.job.resources` (`smithdb.migration.deployment.resources` on LangSmith 0.16). Preserve TaskDB, delete only the migration Job, and run the normal Helm upgrade. Deleting an active Job may leave a small amount of untracked object-storage data from in-flight writes. The recreated Job resumes progress tracked in TaskDB.
+
+<Warning>
+When resetting the SmithDB metastore or object store, reset TaskDB too. The chart-managed TaskDB PVC is deleted by default when SmithDB is disabled. Clear an external or retained TaskDB manually, or stale migration state can cause work to be skipped.
+</Warning>
+
+<Warning>
+For validation failures, unclear causes, or issues other than under-provisioning, stop and escalate. Keep queries disabled and migration enabled. Preserve the failed Job, TaskDB, SmithDB metastore, and object storage. Contact LangChain through the [Support Portal](https://support.langchain.com/).
+</Warning>
 
 ## Disable or reset SmithDB
 
