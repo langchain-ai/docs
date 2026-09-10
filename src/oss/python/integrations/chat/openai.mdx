@@ -343,22 +343,15 @@ For more on binding tools and tool call outputs, head to the [tool calling](/oss
 
 ### Async tools
 
-When using the Responses API, `ChatOpenAI` supports async Python functions as tools. Mark a tool as async by passing `extras={"async": True}` to `@tool`:
+[Async tool calling](https://developers.openai.com/api/docs/guides/async-tool-calling) lets the model continue working after issuing a tool call, without waiting for the result. When using the Responses API, `ChatOpenAI` supports this by passing `extras={"async": True}` to `@tool`:
 
 ```python
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
-from langchain.agents import create_agent
 
 @tool(extras={"async": True})  # [!code highlight]
-async def lookup_price(sku: str) -> str:
+def lookup_price(sku: str) -> str:
     """Look up the price of a product."""
-    # async I/O here
     return "1200"
-
-llm = ChatOpenAI(model="gpt-5.5", use_responses_api=True)
-agent = create_agent(llm, [lookup_price])
-result = await agent.ainvoke({"messages": [{"role": "user", "content": "What is the price of WIDGET?"}]})
 ```
 
 <Note>
@@ -1587,7 +1580,7 @@ llm = ChatOpenAI(model="gpt-5-nano", reasoning_effort="medium")
 
 ### Changing reasoning effort mid-conversation
 
-Adjusting `reasoning_effort` mid-conversation invalidates the cached prompt prefix because it is a request-level parameter. Models that support it (e.g., `gpt-6-astra`) allow you to change reasoning effort in-place by embedding a `configuration_update` content block directly in a `HumanMessage`. The update persists in the message history, so the prefix stays cacheable across subsequent turns.
+Use a [`configuration_update`](https://developers.openai.com/api/docs/guides/reasoning?api-mode=responses#change-reasoning-mid-conversation) content block to change reasoning effort between turns without modifying the request-level `reasoning_effort` parameter — keeping the prompt prefix cacheable. Embed the block directly in a `HumanMessage`:
 
 ```python
 from langchain_openai import ChatOpenAI
@@ -1611,8 +1604,6 @@ response = llm.invoke(
     ]
 )
 ```
-
-The `configuration_update` block is hoisted to a top-level Responses API input item just before the message it accompanies. Adding more turns after it does not move the item, so the earlier cache prefix remains intact.
 
 <Tip>
     **Troubleshooting: Empty responses from reasoning models**
