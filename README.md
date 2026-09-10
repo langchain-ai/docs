@@ -112,6 +112,7 @@ API reference is generated and deployed outside this repo. Browse [Python](https
 * `make format` - Auto-format code
 * `make lint_md` - Lint markdown files
 * `make lint_md_fix` - Lint and fix markdown files
+* `make skills` - Link `.agents/skills` into `.claude/skills` for Claude Code (run once per clone)
 * `make help` - Show all available commands
 
 **`docs` CLI tool:**
