@@ -48,6 +48,7 @@ once to link the tree.
 | Skill | Use it for |
 |-------|-----------|
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
+| `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
 | `document-tooling-in-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. |
 
 Invoke a skill when the task matches it. This file holds the rules that apply to

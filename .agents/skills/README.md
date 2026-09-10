@@ -40,6 +40,7 @@ the tree changes. Re-run the command after pulling, or symlink instead.
 | Skill | Use it for |
 |-------|-----------|
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: source directory, frontmatter, `src/docs.json` navigation, redirects, verification. |
+| `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. Runs on a PR, a branch, or the working tree. |
 | `document-tooling-in-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, what stays in the repo, how to edit safely. |
 
 Three more skills live in `.deepagents/skills/` (`docs-code-samples`,

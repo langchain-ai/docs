@@ -115,6 +115,20 @@ OpenAPI-generated page that exists at deploy time but not locally.
 Fix every Vale finding. CI blocks on `lint_prose`, and its most common failure is
 a spaced em dash (`word — word` must be `word—word`).
 
+## Step 6. Review the prose
+
+Once the edit is complete and before committing, invoke the `docs-review` skill
+on the files this pass changed. It runs in working-tree mode, so it needs no
+checkout, and it covers the style-guide rules Vale cannot see: passive voice,
+filler, product versus common noun capitalization, structure conventions, and
+link text.
+
+Run it on finished edits only. A review of a half-written section produces
+findings that go stale as soon as writing resumes.
+
+Skip this step for a change too small to have prose in it, such as a pure
+`docs.json` reorder or a redirect-only fix.
+
 ## Checklist
 
 - [ ] File in the directory the source-directory table names, not `build/`.
@@ -124,3 +138,4 @@ a spaced em dash (`word — word` must be `word—word`).
 - [ ] Index page first if a new group was created.
 - [ ] Redirect added for every moved, renamed, or deleted path.
 - [ ] `make lint_prose` clean, `make broken-links` shows no new `⎿` lines.
+- [ ] `docs-review` run on the changed files, findings addressed.
