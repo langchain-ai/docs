@@ -7,6 +7,7 @@ import McpUseInAgentPy from '/snippets/code-samples/mcp-use-in-agent-py.mdx';
 import McpToolErrorsPy from '/snippets/code-samples/mcp-tool-errors-py.mdx';
 import McpToolMetadataPy from '/snippets/code-samples/mcp-tool-metadata-py.mdx';
 import McpMultimodalToolContentPy from '/snippets/code-samples/mcp-multimodal-tool-content-py.mdx';
+import McpStructuredContentPy from '/snippets/code-samples/mcp-structured-content-py.mdx';
 import McpElicitationPy from '/snippets/code-samples/mcp-elicitation-py.mdx';
 import McpDestructiveGatePy from '/snippets/code-samples/mcp-destructive-gate-py.mdx';
 
@@ -26,6 +27,32 @@ Discover the server's catalog with @[`MCPAdapter.list_tools`], then give the ret
 <McpUseInAgentPy />
 
 For general guidance on defining, binding, and using LangChain tools, see [Tools](/oss/langchain/tools). For several MCP servers and their namespaced tool catalogs, see [Connections](/oss/langchain/mcp/connections#multiple-servers).
+
+## Handle tool outputs
+
+MCP tool results become LangChain-native values: content the model can read, an artifact for structured output, and a @[`ToolMessage`] status that distinguishes a server-reported error from a transport failure.
+
+### Multimodal content
+
+An MCP tool result arrives as LangChain [content blocks](/oss/langchain/messages#standard-content-blocks). Image and file content convert into standardized `image` and `file` blocks alongside `text`, so a tool that returns a screenshot reaches the model as an image block:
+
+<McpMultimodalToolContentPy />
+
+### Structured content
+
+When a tool returns structured content, the adapter attaches it to the @[`ToolMessage`] as an artifact rather than folding it into the model-visible text. Run the agent normally and inspect the `artifact` on any @[`ToolMessage`] in the result to read it:
+
+<McpStructuredContentPy />
+
+The artifact is an `MCPToolArtifact`, whose `structured_content` field holds the tool result's `structuredContent`.
+
+### Errors
+
+An MCP tool result carries an `isError` flag. When a server reports `isError=True`, the adapter converts it into a @[`ToolMessage`] with `status="error"` carrying the server's own message, so the agent can read it and correct itself:
+
+<McpToolErrorsPy />
+
+A server-reported error reaches the model as a failed tool message, but a transport or session failure raises instead, because a model cannot act on a dropped connection.
 
 ## Tool metadata
 
@@ -55,36 +82,6 @@ Every nested field is optional: a server may provide tool annotations, `_meta`, 
 Read optional metadata defensively, so a missing field returns a default rather than raising:
 
 <McpToolMetadataPy />
-
-## Handle tool outputs
-
-MCP tool results become LangChain-native values: content the model can read, an artifact for structured output, and a @[`ToolMessage`] status that distinguishes a server-reported error from a transport failure.
-
-### Multimodal content
-
-An MCP tool result arrives as LangChain [content blocks](/oss/langchain/messages#standard-content-blocks). Image and file content convert into standardized `image` and `file` blocks alongside `text`, so a tool that returns a screenshot reaches the model as an image block:
-
-<McpMultimodalToolContentPy />
-
-### Structured content
-
-When a tool returns structured content, the adapter attaches it to the @[`ToolMessage`] as an artifact rather than folding it into the model-visible text. Read it off `message.artifact`:
-
-```python
-message = await tool.ainvoke({"name": "...", "args": {...}, "id": "1", "type": "tool_call"})
-if message.artifact is not None:
-    structured = message.artifact["structured_content"]
-```
-
-The artifact is an `MCPToolArtifact`, whose `structured_content` field holds the tool result's `structuredContent`.
-
-### Errors
-
-An MCP tool result carries an `isError` flag. When a server reports `isError=True`, the adapter converts it into a @[`ToolMessage`] with `status="error"` carrying the server's own message, so the agent can read it and correct itself:
-
-<McpToolErrorsPy />
-
-A server-reported error reaches the model as a failed tool message, but a transport or session failure raises instead, because a model cannot act on a dropped connection.
 
 ## Human-in-the-loop
 
