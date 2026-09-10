@@ -370,6 +370,7 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use `/python/` or `/javascript/` in links (resolved by build pipeline)
 - Use model aliases — use full identifiers (e.g., `claude-sonnet-4-6`)
 - Use `>=` in prose for version minimums — write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
+- Use "→" to separate UI navigation steps — write "Go to **Settings** > **API Keys**"
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
@@ -414,6 +415,12 @@ Write version minimums as "<version> or later" in prose. Reserve `>=` for packag
 Keep a `v` prefix when the page or the upstream project already uses one. Do not add one to a package specifier. When another requirement follows the version, set it off with a comma so it does not read as part of the constraint ("v0.153.4 or later, with plugin hooks enabled").
 
 This rule covers version numbers only. Leave `>=` as is in numeric parameter constraints ("Must be >= 0") and in comparison-operator reference tables.
+
+### Navigation paths
+
+Separate UI navigation steps with a greater-than sign surrounded by spaces, not an arrow: "Go to **Settings** > **API Keys**". Bold the UI labels, either individually (`**Settings** > **API Keys**`) or as a single span (`**Settings > API Keys**`), and match whichever form the page already uses. Vale enforces this as `LangChain.NavPathArrows`.
+
+The arrow character stays where it does not mark navigation: mermaid diagrams, data flow (`browser or client → data plane`), API renames in migration guides (`create_react_agent` → `create_agent`), state progressions, and UI labels that literally contain an arrow ("Manage app access →").
 
 ### Release stage names
 
