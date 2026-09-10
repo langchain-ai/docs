@@ -85,7 +85,7 @@ Ask the coding agent to follow the skill's review flow and use the Managed Deep 
 <Prompt
     description="Develop Harbor evals with the eval-engineering skill"
     icon="flask"
-    actions={["copy", "cursor"]}
+    actions={["copy"]}
 >
 Use the eval-engineering skill to develop Harbor evals for this Managed
 Deep Agent. Inspect the project and existing evals first. Draft the Task
