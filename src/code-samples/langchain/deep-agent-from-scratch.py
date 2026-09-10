@@ -19,16 +19,30 @@ import time
 
 SANDBOX_NAME = "langchain-docs"
 
+# Service API keys need an explicit workspace header; SandboxClient does not
+# read LANGSMITH_WORKSPACE_ID on its own. Kept in :remove-start so published
+# snippets omit it. Hardcoded to the workspace that owns the docs-test-ci
+# sandbox snapshot used below.
+_workspace_id = "b04e3bfa-9f9f-44fb-b9d4-ece483bcfbcf"
+client._default_headers["X-Tenant-Id"] = _workspace_id
+client._default_headers["x-tenant-id"] = _workspace_id
+client._http.headers["X-Tenant-Id"] = _workspace_id
+client._http.headers["x-tenant-id"] = _workspace_id
+
 
 def _named_sandboxes() -> list[object]:
-    return [sb for sb in client.list_sandboxes() if getattr(sb, "name", None) == SANDBOX_NAME]
+    return [
+        sb
+        for sb in client.list_sandboxes()
+        if getattr(sb, "name", None) == SANDBOX_NAME
+    ]
 
 
 def _delete_named_sandboxes() -> None:
     for existing in _named_sandboxes():
         for identifier in (
-            getattr(existing, "sandbox_id", None),
             getattr(existing, "id", None),
+            getattr(existing, "sandbox_id", None),
             getattr(existing, "name", None),
             SANDBOX_NAME,
         ):
@@ -39,17 +53,30 @@ def _delete_named_sandboxes() -> None:
                 break
             except Exception:
                 continue
+    # Name stays reserved while status is "deleting"; wait for it to clear.
+    try:
+        client.delete_sandbox(SANDBOX_NAME)
+    except Exception:
+        pass
 
 
-for _ in range(3):
-    _delete_named_sandboxes()
-    if not _named_sandboxes():
-        break
-    time.sleep(1)
-# :remove-end:
-sandbox = None
-# :remove-start:
+def _wait_for_name_free(*, timeout_s: float = 90.0, poll_s: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if not _named_sandboxes():
+            return
+        _delete_named_sandboxes()
+        time.sleep(poll_s)
+    remaining = _named_sandboxes()
+    statuses = [getattr(sb, "status", None) for sb in remaining]
+    raise RuntimeError(
+        f"Sandbox name {SANDBOX_NAME!r} still reserved after {timeout_s}s "
+        f"(statuses={statuses})"
+    )
 
+
+_delete_named_sandboxes()
+_wait_for_name_free()
 atexit.register(_delete_named_sandboxes)
 # :remove-end:
 sandbox = client.create_sandbox(name="langchain-docs", snapshot_name="docs-test-ci")

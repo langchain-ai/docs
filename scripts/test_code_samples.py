@@ -5,6 +5,9 @@ By default runs all code samples. Pass FILES to test specific files only.
   make test-code-samples
   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
   make test-code-samples FILES="src/code-samples/langchain/return-a-string.py src/code-samples/langchain/return-a-string.ts"
+
+Set ``CODE_SAMPLE_TRACING=1`` to enable LangSmith tracing, share public links for
+agent runs from single-snippet samples, and update ``src/code-samples/trace-links.json``.
 """
 
 from __future__ import annotations
@@ -13,7 +16,12 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+# Allow ``from code_sample_tracing import …`` when run as ``python scripts/….py``.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from code_sample_tracing import DEFAULT_PROJECT, collect_trace_for_sample
 
 TIMEOUT_SECONDS = 600
 
@@ -147,6 +155,15 @@ def collect_files_to_test(
     )
 
 
+def tracing_enabled() -> bool:
+    """Return True when CODE_SAMPLE_TRACING requests LangSmith collection."""
+    return os.environ.get("CODE_SAMPLE_TRACING", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
 def run_sample(
     file_path: Path, lang: str, repo_root: Path, code_samples_dir: Path
 ) -> tuple[bool, str, str]:
@@ -158,6 +175,12 @@ def run_sample(
     try:
         # Pass full env so POSTGRES_URI, ANTHROPIC_API_KEY etc. reach child processes
         env = os.environ.copy()
+        if tracing_enabled():
+            env["LANGSMITH_TRACING"] = "true"
+            env.setdefault(
+                "LANGSMITH_PROJECT",
+                os.environ.get("LANGSMITH_PROJECT", DEFAULT_PROJECT),
+            )
         if lang == "python":
             result = subprocess.run(
                 ["uv", "run", "python", str(file_path)],
@@ -284,19 +307,31 @@ def main() -> int:
             print("No code samples found in src/code-samples/")
         return 0
 
-    print(f"Running {total} code sample(s)...\n")
+    collect_traces = tracing_enabled()
+    project_name = os.environ.get("LANGSMITH_PROJECT", DEFAULT_PROJECT)
+    if collect_traces:
+        print(
+            f"Running {total} code sample(s) with LangSmith tracing "
+            f"(project={project_name})...\n"
+        )
+    else:
+        print(f"Running {total} code sample(s)...\n")
 
     passed = 0
     failed = []
     rate_limited = []
+    traces_updated = 0
+    trace_failures = []
 
     for file_path, lang in files_to_test:
         rel_path = file_path.relative_to(repo_root)
         success = False
         stdout = ""
         stderr = ""
+        started_at = datetime.now(timezone.utc)
 
         for attempt in range(1, RATE_LIMIT_MAX_ATTEMPTS + 1):
+            started_at = datetime.now(timezone.utc)
             success, stdout, stderr = run_sample(
                 file_path, lang, repo_root, code_samples_dir
             )
@@ -312,6 +347,22 @@ def main() -> int:
         if success:
             passed += 1
             print(f"  ✓ {rel_path}")
+            if collect_traces:
+                try:
+                    entry = collect_trace_for_sample(
+                        repo_root=repo_root,
+                        source_path=file_path,
+                        start_time=started_at,
+                        project_name=project_name,
+                    )
+                    if entry is not None:
+                        traces_updated += 1
+                except Exception as exc:  # noqa: BLE001 - report and fail the run
+                    trace_failures.append(rel_path)
+                    print(
+                        f"  ✗ {rel_path}: trace collection failed: {exc}",
+                        file=sys.stderr,
+                    )
         elif is_rate_limited(stdout, stderr):
             # The live LangSmith API rate-limited every attempt. This reflects CI
             # load, not a defect in the sample, so don't fail the build over it.
@@ -328,8 +379,16 @@ def main() -> int:
             f"SKIPPED: {len(rate_limited)}/{total} code sample(s) skipped "
             "(rate-limited by the LangSmith API after retries)"
         )
+    if collect_traces:
+        print(f"Trace links updated: {traces_updated}")
     if failed:
         print(f"FAILED: {len(failed)}/{total} code sample(s) failed")
+        return 1
+    if trace_failures:
+        print(
+            f"FAILED: {len(trace_failures)}/{total} code sample(s) passed "
+            "but trace collection failed"
+        )
         return 1
     print(
         f"{passed}/{total} code sample(s) passed"
