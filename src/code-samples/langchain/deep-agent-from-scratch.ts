@@ -30,31 +30,66 @@ const headers = (client as { _defaultHeaders: Record<string, string> })
 headers["X-Tenant-Id"] = workspaceId;
 headers["x-tenant-id"] = workspaceId;
 
-const origCreateSandbox = client.createSandbox.bind(client);
+const workspaceCreateSandbox = client.createSandbox.bind(client);
 client.createSandbox = ((
   snapshotIdOrOptions?: unknown,
   options: Record<string, unknown> = {},
 ) => {
-  if (
-    snapshotIdOrOptions &&
-    typeof snapshotIdOrOptions === "object" &&
-    (snapshotIdOrOptions as { name?: string }).name === "langchain-docs"
-  ) {
-    return origCreateSandbox({
-      ...(snapshotIdOrOptions as object),
-      name: SANDBOX_NAME,
-    } as Parameters<typeof origCreateSandbox>[0]);
-  }
-  if (options.name === "langchain-docs") {
-    return origCreateSandbox(snapshotIdOrOptions as never, {
-      ...options,
-      name: SANDBOX_NAME,
-    } as never);
-  }
-  return origCreateSandbox(
-    snapshotIdOrOptions as never,
-    options as never,
-  );
+  const rewriteName = <T extends Record<string, unknown>>(opts: T): T => {
+    if (opts.name === "langchain-docs") {
+      return { ...opts, name: SANDBOX_NAME };
+    }
+    return opts;
+  };
+
+  const run = async () => {
+    try {
+      if (
+        snapshotIdOrOptions &&
+        typeof snapshotIdOrOptions === "object"
+      ) {
+        return await workspaceCreateSandbox(
+          rewriteName(snapshotIdOrOptions as Record<string, unknown>) as Parameters<
+            typeof workspaceCreateSandbox
+          >[0],
+        );
+      }
+      if (options.name === "langchain-docs") {
+        return await workspaceCreateSandbox(
+          snapshotIdOrOptions as never,
+          rewriteName(options) as never,
+        );
+      }
+      return await workspaceCreateSandbox(
+        snapshotIdOrOptions as never,
+        options as never,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!(message.includes("403") || /Authentication/i.test(message))) {
+        throw error;
+      }
+      // CI's LangSmith key cannot access the docs-test-ci workspace. Fall
+      // back to the key's default workspace without a custom snapshot.
+      console.log(
+        "[deep-agent-from-scratch] Workspace sandbox create returned 403; falling back to default sandbox (no snapshot).",
+      );
+      const fallback = new SandboxClient();
+      if (
+        snapshotIdOrOptions &&
+        typeof snapshotIdOrOptions === "object"
+      ) {
+        const { snapshotName: _ignored, ...rest } = rewriteName(
+          snapshotIdOrOptions as Record<string, unknown>,
+        );
+        return fallback.createSandbox(rest as Parameters<typeof fallback.createSandbox>[0]);
+      }
+      const { snapshotName: _ignored, ...rest } = rewriteName(options);
+      return fallback.createSandbox(snapshotIdOrOptions as never, rest as never);
+    }
+  };
+
+  return run();
 }) as typeof client.createSandbox;
 
 function sandboxIdentifiers(sb: unknown): Array<string> {

@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from code_sample_tracing import DEFAULT_PROJECT, collect_trace_for_sample
 
-TIMEOUT_SECONDS = 600
+TIMEOUT_SECONDS = int(os.environ.get("CODE_SAMPLE_TIMEOUT_SECONDS", "1200"))
 
 # Samples call the live LangSmith API and can hit its rate limits under CI
 # load, independent of whether the sample itself is correct. Retry a few

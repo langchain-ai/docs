@@ -35,16 +35,7 @@ client = SandboxClient(
     }
 )
 
-_orig_create_sandbox = client.create_sandbox
-
-
-def _create_sandbox(*args, **kwargs):  # noqa: ANN002, ANN003
-    if kwargs.get("name") == "langchain-docs":
-        kwargs = {**kwargs, "name": SANDBOX_NAME}
-    return _orig_create_sandbox(*args, **kwargs)
-
-
-client.create_sandbox = _create_sandbox  # type: ignore[method-assign]
+_workspace_create_sandbox = client.create_sandbox
 
 
 def _named_sandboxes() -> list[object]:
@@ -94,6 +85,26 @@ def _wait_for_name_free(*, timeout_s: float = 90.0, poll_s: float = 2.0) -> None
         f"(statuses={statuses})"
     )
 
+
+def _create_sandbox(*args, **kwargs):  # noqa: ANN002, ANN003
+    if kwargs.get("name") == "langchain-docs":
+        kwargs = {**kwargs, "name": SANDBOX_NAME}
+    try:
+        return _workspace_create_sandbox(*args, **kwargs)
+    except SandboxAuthenticationError:
+        # CI's LangSmith key cannot access the docs-test-ci workspace. Fall
+        # back to the key's default workspace without a custom snapshot.
+        print(
+            "[deep-agent-from-scratch] Workspace sandbox create returned 403; "
+            "falling back to default sandbox (no snapshot).",
+            flush=True,
+        )
+        fallback = SandboxClient()
+        fallback_kwargs = {k: v for k, v in kwargs.items() if k != "snapshot_name"}
+        return fallback.create_sandbox(*args, **fallback_kwargs)
+
+
+client.create_sandbox = _create_sandbox  # type: ignore[method-assign]
 
 _delete_named_sandboxes()
 _wait_for_name_free()
