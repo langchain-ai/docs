@@ -5,12 +5,14 @@ description: Change-oriented validation guidance for isolated unit tests, reposi
 tags: [testing, pytest, ci, documentation, code-samples, opentelemetry]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-09T08:21:02.265Z
+    at: 2026-09-10T08:21:45.175Z
 sources:
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
+  - id: openwiki-source-61ff424071398cdd00f5a60d
+    resource: repo://.github/workflows/htmltest.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
   - id: openwiki-source-71ee7a4afbd2d6aa7b29f3d1
@@ -47,7 +49,7 @@ sources:
     resource: repo://tests/unit_tests/test_watcher.py
   - id: openwiki-source-0d0e77eb273a56717af74faa
     resource: repo://tests/unit_tests/utils.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-09T08:21:02.265Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-10T08:21:45.175Z" }
 ---
 
 ## Choose validation by change boundary
@@ -91,7 +93,7 @@ Run the core suite with:
 make test
 ```
 
-`TEST_FILE` defaults to `tests/unit_tests`; narrow a regression with `make test TEST_FILE=tests/unit_tests/test_builder.py`. The target invokes `uv run pytest --disable-socket --allow-unix-socket $(TEST_FILE) -vv`. Pytest discovers `test_*.py` and `test_*`, uses asyncio auto mode with function-scoped fixture loops, reports additional outcomes, and displays slow tests. Install its dependencies with `uv sync --group test`.
+`TEST_FILE` defaults to `tests/unit_tests`; narrow a regression with `make test TEST_FILE=tests/unit_tests/test_builder.py`. The target invokes `uv run pytest --disable-socket --allow-unix-socket $(TEST_FILE) -vv`. Pytest discovers `test_*.py` and `test_*`, uses asyncio auto mode with function-scoped fixture loops, reports additional outcomes, and displays the five slowest tests. Install its dependencies with `uv sync --group test`.
 
 Socket isolation is a suite invariant: unit tests must not make network calls. Use mocks, temporary files, or permitted Unix sockets instead. The `file_system` context manager supplies disposable `src/` and `build/` directories for file-system tests.
 
@@ -118,7 +120,7 @@ When editing [Trace with OpenTelemetry](../../src/langsmith/trace-with-opentelem
 
 `make check-cross-refs` is a distinct source check. It scans Markdown below `src`, excluding code-sample snippets and `node_modules`, skips invalid UTF-8 input, and ignores fenced code and escaped references. Python and JavaScript OSS paths use their respective scope; shared OSS content outside a language conditional must resolve in both maps. It reports each unresolved file, line, name, and scope and exits 1.
 
-Export checking is a third, external-facing option. `make export-htmltest` creates a Mint export, unpacks it, and runs htmltest with `htmltest-mint-export.yml`. That configuration enables external checks but disables internal paths and internal hashes because exports omit a complete page set; it limits external concurrency and timeout and ignores documented checker noise. Use Mint's built-tree check for internal navigation.
+Export checking is a third, external-facing option. `make export-htmltest` creates a Mint export, unpacks it, and runs htmltest with `htmltest-mint-export.yml`. That configuration enables external checks but disables internal paths and internal hashes because exports omit a complete page set; it limits external concurrency and timeout and ignores documented checker noise. The `htmltest.yml` workflow runs this check every Monday at 08:00 UTC and on manual dispatch, with a 90-minute limit; it installs the Mint CLI and htmltest after setting up Python 3.13 and Node 22. Use Mint's built-tree check for internal navigation.
 
 ## Generated integration metadata and tables
 

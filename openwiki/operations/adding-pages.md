@@ -1,11 +1,16 @@
 ---
 type: operations guide
 title: Adding and Modifying Documentation Pages
-description: End-to-end procedure for selecting a documentation source domain, authoring or moving pages, maintaining navigation and redirects, refreshing generated listings, and verifying published routes.
+description: Choose the correct documentation surface, register its current route and navigation, preserve retired URLs, and validate authored and generated documentation changes.
 tags: [documentation, operations, navigation, routes, build-system]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-10T08:21:45.175Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
+  - id: openwiki-source-a2371d6362e5db4bc834ad03
+    resource: repo://CLAUDE.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-6e6efa1569f158fcdb678ef0
@@ -32,15 +37,12 @@ sources:
     resource: repo://src/langsmith/managed-deep-agents-connections.mdx
   - id: openwiki-source-a39cb5ba9006abfe6280b6f8
     resource: repo://src/oss/openwiki/cli-reference.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-09-09T08:21:02.265Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-09T08:21:02.265Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-10T08:21:45.175Z" }
 ---
 
 # Adding and Modifying Documentation Pages
 
-A documentation change has two authored sources of truth: the Markdown/MDX file under `src/` supplies content, while `src/docs.json` supplies the published route and navigation placement. `build/` is disposable output. Make content and configuration changes in `src/`, then regenerate; never patch `build/` or a generated snippet/table by hand.
+A documentation change starts by identifying its owner. An authored Markdown/MDX page under `src/` supplies prose, while `src/docs.json` is configuration-backed ownership of its published route and navigation placement. Some visible documentation is instead an imported snippet or a generated table. `build/` is disposable output in every case: change the owning source or generator input under `src/` or `scripts/`, regenerate, and never patch `build/` or generated output by hand.
 
 ```mermaid
 flowchart TD
