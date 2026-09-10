@@ -29,7 +29,7 @@ SmithDB can reach AlloyDB through the [AlloyDB Auth Proxy](https://docs.cloud.go
 
 Grant `roles/alloydb.client` and `roles/serviceusage.serviceUsageConsumer` to the Google service account bound to the SmithDB ServiceAccount. Point the metastore Secret's host key at `127.0.0.1` and set `useSsl: false`. SmithDB cannot validate the certificate AlloyDB presents directly, and encryption begins at the proxy.
 
-`smithdb.commonInitContainers` applies to every SmithDB Deployment and Job. Set `restartPolicy: Always` so Kubernetes runs the proxy as a sidecar and lets migration Jobs complete. Pin the proxy image.
+`smithdb.commonInitContainers` applies to every SmithDB Deployment and Job. Set `restartPolicy: Always` so Kubernetes runs the proxy as a sidecar and lets migration Jobs complete.
 
 ```yaml
 smithdb:
@@ -140,11 +140,13 @@ This bucket is separate from optional [LangSmith blob storage](/langsmith/self-h
 
 When migration and LangSmith blob storage are enabled, grant `smithdb.serviceAccount` read access to the existing LangSmith blob-storage bucket in addition to its access to the SmithDB destination bucket.
 
-Prefer Workload Identity for GCS blob access. If LangSmith must use GCS HMAC keys, set `smithdb.migration.job.extraEnv` to force the S3-compatible source and reference the existing LangSmith secret (`blob_storage_access_key` / `blob_storage_access_key_secret`):
+Prefer Workload Identity for GCS blob access. If LangSmith must use GCS HMAC keys, set `smithdb.migration.job.extraEnv` (`smithdb.migration.deployment.extraEnv` on LangSmith 0.16) to force the S3-compatible source and reference the existing LangSmith secret (`blob_storage_access_key` / `blob_storage_access_key_secret`):
 
 <Accordion title="GCS HMAC migration configuration">
 
-```yaml
+<CodeGroup>
+
+```yaml LangSmith 0.17
 smithdb:
   migration:
     job:
@@ -169,6 +171,33 @@ smithdb:
               key: blob_storage_access_key_secret
 ```
 
+```yaml LangSmith 0.16
+smithdb:
+  migration:
+    deployment:
+      extraEnv:
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__TYPE
+          value: "s3"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__BUCKET
+          value: "BLOB_BUCKET_NAME"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ROOT_FOLDER
+          value: "/"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ENDPOINT
+          value: "https://storage.googleapis.com"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: LANGSMITH_SECRETS_NAME
+              key: blob_storage_access_key
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: LANGSMITH_SECRETS_NAME
+              key: blob_storage_access_key_secret
+```
+
+</CodeGroup>
+
 </Accordion>
 
 ## Local SSD cache
@@ -181,7 +210,7 @@ Use scheduling controls to keep SmithDB cache workloads on SSD-backed nodes. Siz
 
 ### Schedule SmithDB workloads
 
-Place query, ingestion, compaction worker, and migration on the local SSD pool. Place compaction and cluster manager on the general compute pool. Node-pool labels and taints must match the Helm selectors and tolerations. Keep `metastoreMigration` unpinned so the pre-install hook can run on any available node.
+Place query, ingestion, compaction worker, and migration on the local SSD pool. Place compaction and cluster manager on the general compute pool. Node-pool labels and taints must match the Helm selectors and tolerations. `metastoreMigration` can run on any node and does not need a selector.
 
 The label and taint values in these examples match the provider samples on this page. SmithDB does not require these exact values: use any labels and taints that keep cache workloads on SSD-backed nodes, and match them in the Helm selectors and tolerations.
 
@@ -250,6 +279,10 @@ smithdb:
           effect: NoSchedule
 ```
 
+<Note>
+On LangSmith 0.16, the migration Job's pod settings live under `smithdb.migration.deployment` rather than `smithdb.migration.job`. All other keys are the same.
+</Note>
+
 </Accordion>
 
 <Accordion title="Verify local SSD capacity">
@@ -273,11 +306,13 @@ Common symptoms are pods remaining pending when requests exceed allocatable capa
 
 ### AWS
 
-A common AWS mapping is EKS, RDS for PostgreSQL, S3, IRSA, and EC2 instance store. Scope S3 access to listing the bucket and reading its location, plus object read, write, delete, and multipart operations. For migration source reads, grant `s3:ListBucket` and `s3:GetObject` on the LangSmith blob-storage bucket.
+A common AWS mapping is EKS, RDS for PostgreSQL, S3, IRSA, and EC2 instance store.
 
 #### Configure S3 workload identity
 
 Choose IRSA or EKS Pod Identity. IRSA requires the role annotation and trust for `system:serviceaccount:<NAMESPACE>:<HELM_RELEASE>-smithdb`. Pod Identity uses an external association and no annotation.
+
+Scope the role's S3 access to listing the bucket and reading its location, plus object read, write, delete, and multipart operations. For migration source reads, also grant `s3:ListBucket` and `s3:GetObject` on the LangSmith blob-storage bucket.
 
 <Accordion title="IRSA Helm values">
 
@@ -610,7 +645,7 @@ module "eks" {
 
 ### GCP
 
-A common GCP mapping is GKE Standard, AlloyDB or another compatible PostgreSQL service, Cloud Storage, Workload Identity, and Local SSD-backed ephemeral storage. Grant `roles/storage.objectAdmin`, or an equivalent custom role, on the SmithDB destination bucket. For migration source reads, grant `roles/storage.objectViewer` on the LangSmith blob-storage bucket.
+A common GCP mapping is GKE Standard, AlloyDB or another compatible PostgreSQL service, Cloud Storage, Workload Identity, and Local SSD-backed ephemeral storage.
 
 #### Configure Cloud Storage workload identity
 
@@ -618,7 +653,7 @@ A common GCP mapping is GKE Standard, AlloyDB or another compatible PostgreSQL s
 Use a single-region bucket to avoid data replication costs and provide predictable tail latencies.
 </Note>
 
-Grant a Google service account access to the bucket, then allow `serviceAccount:<PROJECT_ID>.svc.id.goog[<NAMESPACE>/<HELM_RELEASE>-smithdb]` to impersonate it.
+Grant a Google service account `roles/storage.objectAdmin`, or an equivalent custom role, on the SmithDB bucket, then allow `serviceAccount:<PROJECT_ID>.svc.id.goog[<NAMESPACE>/<HELM_RELEASE>-smithdb]` to impersonate it. For migration source reads, also grant `roles/storage.objectViewer` on the LangSmith blob-storage bucket.
 
 <Accordion title="GKE Workload Identity Helm values">
 
@@ -691,13 +726,13 @@ Supported disk counts and machine types vary by zone and machine generation. Ver
 
 ### Azure
 
-A common Azure mapping is AKS, Azure Database for PostgreSQL, Azure Blob Storage, Workload Identity, and the VM temporary disk as Kubernetes ephemeral storage. Grant `Storage Blob Data Contributor` on the SmithDB storage account. For migration source reads, grant `Storage Blob Data Reader` on the LangSmith blob-storage account.
+A common Azure mapping is AKS, Azure Database for PostgreSQL, Azure Blob Storage, Workload Identity, and the VM temporary disk as Kubernetes ephemeral storage.
 
 #### Configure Blob Storage workload identity
 
 `smithdb.config.objectStore.bucket` is the Blob container name. `azure.accountName` is required. Leave `accessKeySecretKey` empty when using Workload Identity.
 
-Annotate the SmithDB ServiceAccount with the user-assigned managed identity client ID. Add the `azure.workload.identity/use: "true"` label to every SmithDB workload.
+Grant the user-assigned managed identity `Storage Blob Data Contributor` on the SmithDB storage account, and `Storage Blob Data Reader` on the LangSmith blob-storage account for migration source reads. Annotate the SmithDB ServiceAccount with the identity's client ID, and add the `azure.workload.identity/use: "true"` label to every SmithDB workload.
 
 <Accordion title="AKS Workload Identity Helm values">
 
@@ -742,6 +777,8 @@ smithdb:
       labels:
         azure.workload.identity/use: "true"
 ```
+
+On LangSmith 0.16, set the migration label under `smithdb.migration.deployment.labels` instead.
 
 </Accordion>
 
