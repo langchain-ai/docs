@@ -318,7 +318,7 @@ The prompt must cover every API rename, import path change, behavioral differenc
 
 ### Version-added admonitions
 
-When documenting new features, APIs, or behavior that requires a minimum package or CLI version, add a version-added admonition near the first mention of the feature. Use a `<Note>` callout with a concise requirement, for example: `Feature name requires \`package>=x.y.z\`.`
+When documenting new features, APIs, or behavior that requires a minimum package or CLI version, add a version-added admonition near the first mention of the feature. Use a `<Note>` callout with a concise requirement, for example: `Feature name requires \`package>=x.y.z\`.` For a CLI, runtime, or chart version, use the prose form instead ("Feature name requires Codex CLI v0.153.4 or later."). See [Version requirements](#version-requirements).
 
 For language-specific requirements, wrap the note in the relevant `:::python` or `:::js` fence. Include separate notes when Python and TypeScript packages have different minimum versions.
 
@@ -369,6 +369,8 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use markdown in description fields
 - Use `/python/` or `/javascript/` in links (resolved by build pipeline)
 - Use model aliases — use full identifiers (e.g., `claude-sonnet-4-6`)
+- Use `>=` in prose for version minimums — write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
+- Use "→" to separate UI navigation steps — write "Go to **Settings** > **API Keys**"
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
@@ -402,6 +404,23 @@ Match these patterns, drawn from established pages, when authoring new content:
 Always use the latest generally available (GA) models when referencing LLMs in docstrings and illustrative code snippets. Avoid preview or beta identifiers unless the model has no GA equivalent. Outdated model names signal stale code and confuse users.
 
 Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names — they go stale quickly.
+
+### Version requirements
+
+Write version minimums as "<version> or later" in prose. Reserve `>=` for package specifiers, where it is literal install syntax and belongs in backticks.
+
+- Tools, CLIs, runtimes, servers, and Helm charts: "Codex CLI v0.153.4 or later", "Node.js 22.x or later", "Helm chart version 0.12.33 or later".
+- Package specifiers: `langsmith>=0.3.13`, `langchain>=1.0.0`. Readers paste these into an install command, so keep the operator.
+
+Keep a `v` prefix when the page or the upstream project already uses one. Do not add one to a package specifier. When another requirement follows the version, set it off with a comma so it does not read as part of the constraint ("v0.153.4 or later, with plugin hooks enabled").
+
+This rule covers version numbers only. Leave `>=` as is in numeric parameter constraints ("Must be >= 0") and in comparison-operator reference tables.
+
+### Navigation paths
+
+Separate UI navigation steps with a greater-than sign surrounded by spaces, not an arrow: "Go to **Settings** > **API Keys**". Bold the UI labels, either individually (`**Settings** > **API Keys**`) or as a single span (`**Settings > API Keys**`), and match whichever form the page already uses. Vale enforces this as `LangChain.NavPathArrows`.
+
+The arrow character stays where it does not mark navigation: mermaid diagrams, data flow (`browser or client → data plane`), API renames in migration guides (`create_react_agent` → `create_agent`), state progressions, and UI labels that literally contain an arrow ("Manage app access →").
 
 ### Release stage names
 

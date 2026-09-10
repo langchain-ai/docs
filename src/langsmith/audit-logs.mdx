@@ -102,6 +102,7 @@ Audit log events are returned in [OCSF v1.7.0 API Activity (Class UID 6003)](htt
 | `resources` | List of UUIDs for the resources affected by the operation (e.g., the role that was updated, the workspace that was created). |
 | `metadata.uid` | Unique identifier for this audit log event. |
 | `unmapped.original_audit_log` | The full LangSmith-native audit log record, including `organization_id` and `workspace_id`. |
+| `unmapped.original_audit_log.enrichments.resource_owner_ls_user_id` | UUID of the member who owns the resource the operation acted on, for the operations that record it, such as revoking or deleting a personal access token. A value different from `actor.user.uid` means an administrator acted on another member's resource. |
 
 ## Forwarding to external systems
 
@@ -111,7 +112,7 @@ To forward audit log events to an external SIEM or logging platform, you can run
 
 | Category | Operations (`api.operation`) |
 |----------|-----------|
-| **API keys & credentials** | `create_api_key`, `delete_api_key`, `create_personal_access_token`, `delete_personal_access_token`, `create_service_key`, `delete_service_key`, `update_service_key`, `create_service_account`, `delete_service_account`, `list_org_personal_access_tokens`, `list_org_service_keys` |
+| **API keys & credentials** | `create_api_key`, `delete_api_key`, `create_personal_access_token`, `delete_personal_access_token`, `create_service_key`, `delete_service_key`, `update_service_key`, `create_service_account`, `delete_service_account`, `revoke_personal_access_token`, `list_org_personal_access_tokens`, `list_all_org_personal_access_tokens`, `list_org_service_keys` |
 | **Roles** | `create_role`, `update_role`, `delete_role` |
 | **Organizations** | `create_organization`, `create_provisioned_saas_org`, `create_tenant`, `invite_provisioned_org_member`, `claim_pending_organization_invite`, `delete_pending_organization_invite` |
 | **Organization members** | `invite_user_to_org`, `invite_users_to_org_batch`, `update_org_member`, `delete_org_member`, `delete_org_pending_member`, `add_basic_auth_users_to_org`, `update_basic_auth_user` |
