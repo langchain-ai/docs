@@ -26,7 +26,7 @@ Use this to run an internet search for a given query. You can specify the max nu
 `;
 
 const agent = createDeepAgent({
-  model: "google_genai:gemini-3.6-flash",
+  model: "google-genai:gemini-3.6-flash",
   tools: [internetSearch],
   systemPrompt: researchInstructions,
 });

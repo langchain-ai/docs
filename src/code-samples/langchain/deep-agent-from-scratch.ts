@@ -15,24 +15,47 @@ import { SandboxClient } from "langsmith/sandbox";
 
 const client = new SandboxClient();
 // :remove-start:
-const SANDBOX_NAME = "langchain-docs";
+// Per-run name so Python/TS CI jobs do not collide on "langchain-docs".
+const SANDBOX_NAME = `langchain-docs-${Date.now().toString(36)}-${Math.random()
+  .toString(36)
+  .slice(2, 8)}`;
 
-// Service API keys need an explicit workspace header; SandboxClient does not
-// read LANGSMITH_WORKSPACE_ID on its own. Kept in :remove-start so published
-// snippets omit it. Hardcoded to the workspace that owns the docs-test-ci
-// sandbox snapshot used below.
+// Multi-workspace service keys need an explicit tenant header. SandboxClient
+// does not read LANGSMITH_WORKSPACE_ID on its own. Kept in :remove-start so
+// published snippets omit it. Hardcoded to the workspace that owns the
+// docs-test-ci sandbox snapshot used below.
 const workspaceId = "b04e3bfa-9f9f-44fb-b9d4-ece483bcfbcf";
-const headers = (client as { _defaultHeaders?: Record<string, string> })
+const headers = (client as { _defaultHeaders: Record<string, string> })
   ._defaultHeaders;
-if (headers) {
-  headers["X-Tenant-Id"] = workspaceId;
-  headers["x-tenant-id"] = workspaceId;
-} else {
-  (client as { _defaultHeaders: Record<string, string> })._defaultHeaders = {
-    "X-Tenant-Id": workspaceId,
-    "x-tenant-id": workspaceId,
-  };
-}
+headers["X-Tenant-Id"] = workspaceId;
+headers["x-tenant-id"] = workspaceId;
+
+const origCreateSandbox = client.createSandbox.bind(client);
+client.createSandbox = ((
+  snapshotIdOrOptions?: unknown,
+  options: Record<string, unknown> = {},
+) => {
+  if (
+    snapshotIdOrOptions &&
+    typeof snapshotIdOrOptions === "object" &&
+    (snapshotIdOrOptions as { name?: string }).name === "langchain-docs"
+  ) {
+    return origCreateSandbox({
+      ...(snapshotIdOrOptions as object),
+      name: SANDBOX_NAME,
+    } as Parameters<typeof origCreateSandbox>[0]);
+  }
+  if (options.name === "langchain-docs") {
+    return origCreateSandbox(snapshotIdOrOptions as never, {
+      ...options,
+      name: SANDBOX_NAME,
+    } as never);
+  }
+  return origCreateSandbox(
+    snapshotIdOrOptions as never,
+    options as never,
+  );
+}) as typeof client.createSandbox;
 
 function sandboxIdentifiers(sb: unknown): Array<string> {
   const record = sb as Record<string, unknown>;
@@ -42,10 +65,18 @@ function sandboxIdentifiers(sb: unknown): Array<string> {
 }
 
 async function namedSandboxes() {
-  const sandboxes = await client.listSandboxes();
-  return Array.from(sandboxes).filter(
-    (sb) => (sb as { name?: string }).name === SANDBOX_NAME,
-  );
+  try {
+    const sandboxes = await client.listSandboxes();
+    return Array.from(sandboxes).filter(
+      (sb) => (sb as { name?: string }).name === SANDBOX_NAME,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("403") || /Authentication/i.test(message)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 async function deleteNamedSandboxes() {

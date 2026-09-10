@@ -16,26 +16,46 @@ client = SandboxClient()
 # :remove-start:
 import atexit
 import time
+import uuid
 
-SANDBOX_NAME = "langchain-docs"
+from langsmith.sandbox._exceptions import SandboxAuthenticationError
 
-# Service API keys need an explicit workspace header; SandboxClient does not
-# read LANGSMITH_WORKSPACE_ID on its own. Kept in :remove-start so published
-# snippets omit it. Hardcoded to the workspace that owns the docs-test-ci
-# sandbox snapshot used below.
+# Per-run name so Python/TS CI jobs do not collide on "langchain-docs".
+SANDBOX_NAME = f"langchain-docs-{uuid.uuid4().hex[:8]}"
+
+# Multi-workspace service keys need an explicit tenant header. SandboxClient
+# does not read LANGSMITH_WORKSPACE_ID on its own. Kept in :remove-start so
+# published snippets omit it. Hardcoded to the workspace that owns the
+# docs-test-ci sandbox snapshot used below.
 _workspace_id = "b04e3bfa-9f9f-44fb-b9d4-ece483bcfbcf"
-client._default_headers["X-Tenant-Id"] = _workspace_id
-client._default_headers["x-tenant-id"] = _workspace_id
-client._http.headers["X-Tenant-Id"] = _workspace_id
-client._http.headers["x-tenant-id"] = _workspace_id
+client = SandboxClient(
+    headers={
+        "X-Tenant-Id": _workspace_id,
+        "x-tenant-id": _workspace_id,
+    }
+)
+
+_orig_create_sandbox = client.create_sandbox
+
+
+def _create_sandbox(*args, **kwargs):  # noqa: ANN002, ANN003
+    if kwargs.get("name") == "langchain-docs":
+        kwargs = {**kwargs, "name": SANDBOX_NAME}
+    return _orig_create_sandbox(*args, **kwargs)
+
+
+client.create_sandbox = _create_sandbox  # type: ignore[method-assign]
 
 
 def _named_sandboxes() -> list[object]:
-    return [
-        sb
-        for sb in client.list_sandboxes()
-        if getattr(sb, "name", None) == SANDBOX_NAME
-    ]
+    try:
+        return [
+            sb
+            for sb in client.list_sandboxes()
+            if getattr(sb, "name", None) == SANDBOX_NAME
+        ]
+    except SandboxAuthenticationError:
+        return []
 
 
 def _delete_named_sandboxes() -> None:
