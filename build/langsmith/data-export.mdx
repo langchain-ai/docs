@@ -139,7 +139,7 @@ On [LangSmith cloud](/langsmith/cloud), each `all_experiments` export includes a
 ### Schedule recurring exports
 
 <Note>
-Requires LangSmith Helm version >= `0.10.42` (application version >= `0.10.109`)
+Requires LangSmith Helm version `0.10.42` or later (application version `0.10.109` or later)
 </Note>
 
 Scheduled exports collect runs periodically and export to the configured destination. To create a scheduled export, include `interval_hours` and omit `end_time`:
@@ -191,7 +191,7 @@ If a scheduled bulk export is created with `start_time=2025-07-16T00:00:00Z` and
 ### Limit exported fields
 
 <Note>
-Requires LangSmith Helm version >= `0.12.11` (application version >= `0.12.42`). Supported in both one-time and scheduled exports.
+Requires LangSmith Helm version `0.12.11` or later (application version `0.12.42` or later). Supported in both one-time and scheduled exports.
 </Note>
 
 You can improve export speed and reduce file size by limiting which fields are included using the `export_fields` parameter. If you omit `export_fields`, all fields except `feedbacks` are included.

@@ -478,7 +478,7 @@ Fleet is the current form of the feature formerly called Agent Builder, deployed
 You can enable Fleet with `enable_fleet`. Unlike the deprecated `enable_agent_builder` path, it does not require LangSmith Deployment. Terraform provisions a dedicated `fleet` database on Cloud SQL and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing Cloud SQL and Memorystore instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
 
 <Note>
-Fleet requires the LangSmith Helm chart `>=0.15.0` and the Agent Builder or Fleet entitlement in your license.
+Fleet requires the LangSmith Helm chart 0.15.0 or later and the Agent Builder or Fleet entitlement in your license.
 </Note>
 
 ```hcl
