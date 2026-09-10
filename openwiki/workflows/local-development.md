@@ -1,14 +1,18 @@
 ---
 type: workflow guide
 title: Local Development Workflow
-description: Step-by-step guide to clone, set up, and work on the documentation repository locally, including development server setup, file watching, and build processes.
-tags: [setup, development, environment, build-system, workflow]
+description: Set up the documentation repository, generate a clean Mintlify input tree, and run the watched local preview. This guide explains incremental rebuild limits, shutdown and failure behavior, and local validation boundaries.
+tags: [local-development, documentation, mintlify, build-system, workflow]
 verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:00:58.567Z
+  - by: openwiki/0.4.3
+    at: 2026-09-08T08:21:44.568Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-6e6efa1569f158fcdb678ef0
+    resource: repo://pipeline/cli.py
+  - id: openwiki-source-41f7c907e42a5efd3b3405cd
+    resource: repo://pipeline/commands/build.py
   - id: openwiki-source-b481a230af378c0c50ed9994
     resource: repo://pipeline/commands/dev.py
   - id: openwiki-source-d0cdf44431684bdedf34705a
@@ -19,227 +23,138 @@ sources:
     resource: repo://pyproject.toml
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:00:58.567Z" }
+  - id: openwiki-source-16b92823fdcb07d686f2e27f
+    resource: repo://tests/unit_tests/test_watcher.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
 ---
 
 # Local Development Workflow
 
-This page walks through setting up your local development environment for the LangChain documentation repository, starting the development server, and understanding how changes are detected, rebuilt, and served in the browser.
+The local workflow has a strict source/output boundary: author Markdown, MDX, navigation, and assets in `src/`; the Python pipeline generates the Mintlify-facing `build/` tree. `build/` is disposable output—never edit it directly, because a full build removes and recreates it.
 
-## Prerequisites and Dependencies
+## Prerequisites and first-time setup
 
-The repository requires Python 3.13+, Node.js, and the uv package manager.
-
-**Check your environment:**
+The repository requires Python 3.13+, Node.js, and `uv`. Clone the repository and install its Python dependency groups, project npm packages, and the global Mintlify CLI:
 
 ```bash
-python --version    # Should be 3.13 or higher
-node --version      # Required for npm packages
-uv --version        # Python package manager
-```
-
-If you need Node.js or uv, install from:
-- [Node.js](https://nodejs.org/)
-- [uv documentation](https://docs.astral.sh/uv/getting-started/installation/)
-
-## Clone and Initial Setup
-
-Clone the documentation repository and install all dependencies:
-
-```bash
-git clone https://github.com/langchain-ai/docs.git && cd docs
-```
-
-Install Python and Node.js dependencies in one step:
-
-```bash
+git clone https://github.com/langchain-ai/docs.git
+cd docs
 make install
 ```
 
-This command:
-- Runs `uv sync --all-groups` to install Python dependencies (including build tools, testing frameworks, and linters)
-- Runs `npm install` to install JavaScript/Node packages (including Mintlify CLI)
-- Installs Mintlify CLI globally with `npm install -g mint@latest`
+`make install` runs `uv sync --all-groups`, `npm install`, and `npm install -g mint@latest`. The `docs` console script is installed by the Python project; if it is not found after installation, start a new shell. Mint is a separate global executable, so use `mint --version` to confirm it is available.
 
-After installation, you may need to restart your shell for the `docs` command-line tool to be available in your PATH.
+### Editor baseline
 
-## Starting Development Mode
+Open the repository directory itself so VS Code can apply `.vscode/settings.json`; other EditorConfig-aware editors use `.editorconfig`. For Markdown and MDX, keep soft wrapping on rather than inserting hard line breaks, preserve intentional trailing spaces, and do not auto-format on save. Repository settings use UTF-8, LF endings, spaces, a final newline, and two-space indentation for JSON and YAML.
 
-Begin active development with the one-command workflow:
+## Choose an entrypoint
+
+Use Make targets for normal checkout work. They install project npm dependencies before invoking the pipeline with the repository root on `PYTHONPATH`.
+
+```bash
+make dev                         # initial build, watch, and preview
+make build                       # one clean full build, then exit
+uv run pipeline dev              # direct development command
+uv run pipeline dev --skip-build # reuse an existing build tree
+uv run pipeline build            # direct one-shot build
+```
+
+`make dev` and `uv run pipeline dev` are equivalent development modes. `make build` and `uv run pipeline build` perform a full build without watching. Although the CLI accepts `docs build --watch`, the build implementation does not use that option; use `dev` for supported watch behavior.
+
+## Start the edit–preview loop
 
 ```bash
 make dev
 ```
 
-Or use the Python CLI directly:
+Unless `--skip-build` is supplied, development mode builds the full site before starting the watcher. It then recursively watches `src/` and launches `mint dev --port 3000` with `build/` as its working directory. Open <http://localhost:3000> and inspect the rendered route, navigation, formatting, and links—not just the source file.
 
-```bash
-uv run pipeline dev
+```mermaid
+flowchart TD
+    Start["make dev"] --> Initial{"Skip initial build"}
+    Initial -->|"No"| Full["Full build to build"]
+    Initial -->|"Yes"| Existing["Use existing build tree"]
+    Full --> Services["Start watcher and Mint dev"]
+    Existing --> Services
+    Services --> Edit["Save supported src file"]
+    Edit --> Filter{"Temporary or unsupported"}
+    Filter -->|"Yes"| Ignore["Ignore event"]
+    Filter -->|"No"| Queue["Queue changed path"]
+    Queue --> Delay["Batch for 0.2 seconds"]
+    Delay --> Rebuild["Incrementally rebuild files"]
+    Rebuild --> Touch["Touch generated output"]
+    Touch --> Preview["Mint detects update"]
 ```
 
-## What Happens When Development Mode Starts
+This is the normal local lifecycle: a full build establishes the generated tree, while the watcher applies focused source-file updates for the preview.
 
-The `dev` command orchestrates an integrated workflow:
+### Initial-build and process failures
 
-1. **Initial build** (unless skipped): Processes all source files from `/src` through preprocessing, generates the version-specific output in `/build`, and prepares Mintlify configuration. This step validates the entire documentation structure before watching begins.
+A normal development start does not serve stale output if the initial build fails: it logs the failure and returns exit code 1 before creating the watcher or Mint process. `--skip-build` deliberately bypasses that guard and only warns if `build/` is absent. Use it only when a suitable generated tree already exists, such as after a brief interruption; use a normal `make dev` or `make build` after structural changes.
 
-2. **File watcher starts**: A background file monitor watches `/src` recursively for changes to markdown, images, and configuration files. Supported file types include `.mdx`, `.md`, `.json`, `.svg`, `.png`, `.jpg`, `.css`, `.js`, and others.
+If `mint` cannot be started, the development command exits 1 and recommends `make install` or `npm install -g mint@latest`. Once started, it forwards Mint stdout as info logs and stderr as error logs. It waits for either Mint or the watcher: a nonzero Mint exit, a cancelled watcher, or an unexpected watcher stop makes the command fail.
 
-3. **Mint dev server launches**: Mintlify's development server starts at `http://localhost:3000` with hot reload enabled. When build artifacts in `/build` change, the browser automatically refreshes to display the updated content.
+### Stop cleanly
 
-4. **File changes are detected and rebuilt**: When you save a file in `/src`, the watcher detects the change, batches it with other rapid changes (0.2-second debounce window), and rebuilds only the affected files into `/build`. This rebuilding process:
-   - Applies preprocessing (language splitting, link rewriting, etc.)
-   - Updates navigation and cross-references if applicable
-   - Maintains directory structure parity between `/src` and `/build`
-   - Touches the rebuilt files to signal Mintlify that content has changed
+Press Ctrl+C in the terminal running development mode. The command asks the watcher to shut down, cancels any pending debounced rebuild, and terminates Mint. It waits up to five seconds for Mint to exit, then kills it if needed; it also cancels and joins the log-forwarding and watcher tasks. This avoids leaving a watcher or preview process running after an interrupted session.
 
-5. **Browser hot-reloads**: Mintlify detects the touched files and refreshes the browser to show your changes within seconds.
+## What the watcher does—and does not do
 
-### Development Mode Options
+The watcher uses `watchdog` for recursive `src/` events. It handles create and modify events for builder-supported content and asset types, including `.mdx`, `.md`, `.json`, image and video formats, YAML, CSS, JavaScript/JSX/TSX, text, HTML, and font files. Editor backups ending in `~`, `.bak`, or `.orig`, and hidden temporary files ending in `.tmp`, `.temp`, or `.swp`, are ignored.
 
-**Skip the initial build if you already have a `/build` directory:**
+Events are accumulated in a set and each new event resets a 0.2-second debounce timer. A single changed file builds on one worker; a batch uses at most four workers and reports batch progress. After each build, the watcher touches the corresponding emitted file or files so Mint observes a changed timestamp and hot-reloads the preview. A versioned OSS page can therefore refresh Python and JavaScript outputs, while OpenWiki and Deep Agents Code content have one unversioned output.
 
-```bash
-uv run pipeline dev --skip-build
-```
+Incremental work is intentionally narrower than a full build:
 
-This is useful when resuming development after an interruption. If `/build` does not exist, you'll see a warning; in that case, run `make dev` without the flag to perform a full build first.
+- A full build clears `build/`, emits versioned and unversioned domains, copies shared files and npm snippet components, then generates `llms.txt` and `llms-full.txt`.
+- A watcher rebuild calls the per-file build path. It does not rerun whole-tree shared-file collection, npm overlays, or LLM artifact generation.
+- A source deletion removes only the source-relative output path. It does not apply the complete routing map, so generated language or special-route variants can remain until a full build.
 
-## Making and Viewing Changes
+Run `make build` to recover from stale output and after navigation, routing, shared-asset, package-component, broad preprocessing, deletion, or other cross-file changes. Then restart or continue `make dev` to review the regenerated result.
 
-### Edit markdown files
+## Full build and preview checks
 
-Edit `.mdx` or `.md` files in `/src`. The watcher detects changes immediately:
-
-```bash
-# Example: edit a file
-vim src/oss/openwiki/overview.mdx
-# Save the file → watcher rebuilds → browser auto-reloads at localhost:3000
-```
-
-Supported file extensions automatically trigger rebuilds: `.mdx`, `.md`, `.json`, `.svg`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.mp4`, `.webm`, `.yml`, `.yaml`, `.css`, `.js`, `.jsx`, `.tsx`, and fonts.
-
-### Check your changes
-
-Open `http://localhost:3000` in your browser. Navigate to the page you edited. Changes appear within 2–3 seconds of saving.
-
-### Understand what gets rebuilt
-
-The builder preprocesses files during the build:
-
-- **Language splitting**: Files with `:::python` and `:::js` code fences are split into separate Python and JavaScript versions during build
-- **Link rewriting**: Cross-references are rewritten to match the language version (e.g., links to `/oss/python/...` in the Python build)
-- **Navigation updates**: `docs.json` navigation is applied to the site structure
-- **Snippet preprocessing**: Reusable markdown snippets are imported and processed
-
-All preprocessing happens during the build phase; source files in `/src` remain unchanged.
-
-## Code Quality and Formatting
-
-Before committing, verify code quality:
-
-```bash
-# Check formatting and style
-make lint
-
-# Auto-format Python code
-make format
-
-# Format-check without changes (for CI)
-make format-check
-
-# Lint markdown/MDX files
-make lint_md
-
-# Auto-fix markdown issues
-make lint_md_fix
-
-# Lint prose with Vale style guide
-make lint_prose
-```
-
-The `make lint` command runs:
-- `ruff format` and `ruff check` for Python code style
-- Type checking with `ty`
-- Spell checking with `codespell` on documentation in `/src`
-
-### Prose linting with Vale
-
-Install Vale on your system to lint writing style:
-
-```bash
-# macOS
-brew install vale
-
-# Other platforms: see https://vale.sh/docs/vale-cli/installation/
-```
-
-Then use VS Code or Cursor with the Vale extension for inline feedback:
-
-1. Install the [Vale extension](https://marketplace.visualstudio.com/items?itemName=chrischinchilla.vale-vscode)
-2. Configure the extension to use `.vale.ini` in the repository root
-3. Set the Vale min alert level to `suggestion`
-
-The project uses a specific Vale version pinned in `.mise.toml`; `make lint_prose` automatically installs and uses that version.
-
-## Verifying Links and Building for Production
-
-### Check for broken links
-
-Before pushing changes, validate internal links:
-
-```bash
-make broken-links
-```
-
-This builds the documentation first, then checks for broken links in the generated site. It excludes OpenAPI-generated pages and code samples.
-
-For a more thorough check including link anchors:
-
-```bash
-make broken-links-with-anchors
-```
-
-### Build for production
-
-Generate the final production build in `/build` (used for deployment):
+Use a full build when you need a reproducible whole-tree result:
 
 ```bash
 make build
 ```
 
-This performs a full build without watching for changes. The resulting `/build` directory is what Mintlify deploys to `docs.langchain.com`.
+The build requires `src/`, creates `build/` when needed, and calls `DocumentationBuilder.build_all()`. That operation deletes the prior output, produces Python and JavaScript variants plus unversioned content, copies shared artifacts, and creates LLM-oriented output files. A successful build is therefore the reset operation for stale generated files.
 
-**Important:** Never edit `/build` directly. All changes must be made in `/src`; the `/build` directory is regenerated from source every build.
+Before a pull request, select checks that cover the change rather than treating a local page refresh as complete validation:
 
-## Testing and Validation
+| Change boundary | Command | What it establishes |
+| --- | --- | --- |
+| Pipeline, preprocessing, routing, or watcher behavior | `make test` | Runs pytest with network sockets disabled except Unix sockets; focus with `make test TEST_FILE=tests/unit_tests/test_watcher.py`. |
+| Python tooling or spelling | `make lint` | Runs Ruff format/check, `ty`, and Codespell on `src`. |
+| Markdown style | `make lint_md` | Runs markdownlint on Markdown and MDX below `src`; use `make lint_md_fix` to apply its fixes. |
+| Prose | `make lint_prose` | Installs the repository-pinned Vale binary in `.bin/vale` and checks `src`, or paths supplied through `FILES`. |
+| Generated links and anchors | `make broken-links-with-anchors` | Builds first, checks the generated tree with Mint, and filters known deployment-generated and standalone-snippet noise. |
+| Source `@[ref]` references | `make check-cross-refs` | Checks source references independently of Mint's built-site link check. |
 
-Run the test suite to catch regressions:
+The focused watcher tests verify backup and temporary-file filtering. Add or update focused tests when changing watcher event filtering, rebuild, routing, or shutdown behavior; a rendered local preview alone does not establish those contracts. For broader validation boundaries, see [Testing Overview](/openwiki/testing/test-overview.md).
+
+## Mintlify command boundary and troubleshooting
+
+Raw `mint` commands must run from `build/`, not the project root. At the root, Mintlify can scan `.venv` files and attempt to parse Python package Markdown as MDX, producing errors such as an inability to parse a license file. Prefer the repository wrappers, which build first and change directory correctly:
 
 ```bash
-# Run all tests
-make test
-
-# Run specific test file
-make test TEST_FILE=tests/unit_tests/test_builder.py
+make broken-links
+make broken-links-with-anchors
 ```
 
-Tests are executed with `pytest --disable-socket` to prevent accidental network calls. Networking is allowed only for Unix sockets.
+When a raw Mint command is necessary, explicitly use the generated tree:
 
-## Troubleshooting Development Issues
+```bash
+cd build
+mint broken-links
+```
 
-### `make dev` or `docs dev` not working
+The same working-directory rule applies to `mint export`, `mint openapi-check`, and similar raw Mint operations. `make export` and `make check-openapi` already run them from `build/`. For an offline export, `make export` requires a Mint CLI with `export`, Node LTS 20 or 22 rather than Node 25+, and an Enterprise Mintlify plan; `make htmltest` then checks external URLs in the exported archive. These export checks do not prove internal navigation—use `make broken-links-with-anchors` for that.
 
-Ensure your environment is set up correctly:
-
-1. Re-run installation: `make install`
-2. Activate your virtual environment if using one
-3. Verify all dependencies installed successfully
-4. Check that Mintlify CLI is installed: `mint --version`
-
-### Mintlify version errors
-
-If you encounter parsing or compatibility errors, update Mintlify to the latest version:
+For general Mint compatibility errors, update the CLI:
 
 ```bash
 mint update
@@ -247,77 +162,27 @@ mint update
 npm install -g mint@latest
 ```
 
-Most `docs dev` issues are resolved by updating Mintlify.
-
-### Mintlify `.venv` parsing error when running `mint broken-links`
-
-**Problem:** Running `mint` commands from the project root causes parsing errors like:
-
-```
-Unable to parse .venv/lib/python3.13/site-packages/soupsieve-2.7.dist-info/licenses/LICENSE.md
-```
-
-**Root cause:** Mintlify tries to parse all files in the directory, including Python virtual environment files with invalid MDX syntax.
-
-**Solutions (in order of preference):**
-
-1. **Use safe Make commands** (recommended):
-   ```bash
-   make broken-links-with-anchors
-   ```
-
-2. **Run Mintlify from the build directory:**
-   ```bash
-   cd build
-   mint broken-links
-   ```
-
-This ensures Mintlify only scans the final documentation, not the Python environment.
-
-### "page doesn't exist" warning
-
-If Mintlify warns that a page doesn't exist, ensure the page's index is correctly referenced in `src/docs.json`:
+If Mint warns that a new navigation page does not exist, check `src/docs.json`. A new group must list its root index route without an extension:
 
 ```json
 {
-  "group": "My Group",
-  "pages": ["my-group/index", "my-group/other-page"]
+  "group": "New group",
+  "pages": ["new-group/index", "new-group/other-page"]
 }
 ```
 
-Note the trailing `/index` with no file extension; omitting it causes Mintlify to raise a warning.
+## Practical recovery checklist
 
-## Repository Structure
+1. Confirm the checkout meets Python, Node.js, `uv`, and global `mint` prerequisites; rerun `make install` when dependencies are missing.
+2. For a failed initial build or suspicious preview, run `make build` and fix errors in `src/` or pipeline configuration—not in `build/`.
+3. If the preview process exits, read forwarded Mint logs, update Mint if necessary, then restart `make dev`.
+4. If a watcher update cannot explain a navigation, generated artifact, or deletion result, do a full build rather than relying on incremental state.
+5. Run raw Mint commands only after `cd build`; otherwise use the provided Make target.
 
-```
-/src/                          # Source documentation (edit here)
-├── oss/
-│   ├── langchain/             # LangChain docs (versioned by language)
-│   ├── langgraph/             # LangGraph docs (versioned by language)
-│   ├── deepagents/            # Deep Agents docs (versioned by language)
-│   │   └── code/              # Unversioned code docs
-│   ├── openwiki/              # OpenWiki unversioned docs
-│   ├── python/                # Python-only content
-│   ├── javascript/            # JavaScript-only content
-│   └── concepts/              # Shared conceptual overviews
-├── langsmith/                 # LangSmith product docs
-├── images/                    # Shared images
-└── docs.json                  # Mintlify site configuration and navigation
+## Related pages
 
-/build/                        # Generated docs (DO NOT EDIT)
-/Makefile                      # Make targets
-/pipeline/                     # Build pipeline source code
-├── commands/
-│   ├── dev.py                 # Development mode orchestration
-│   └── build.py               # Build command
-├── core/
-│   ├── builder.py             # File processing and build logic
-│   └── watcher.py             # File system monitoring
-└── preprocessors/             # Document preprocessing
-```
-
-## Next Steps
-
-- **Add a page:** See [Adding and Modifying Documentation Pages](/openwiki/operations/adding-pages.md) for guidance on creating new documentation
-- **Use CLI tools:** See [CLI Tools Reference](/openwiki/operations/cli-tools.md) for advanced build and migration commands
-- **Understand the build:** Read `pipeline/core/builder.py` and `pipeline/commands/dev.py` to understand how files are processed and served
+- [Quickstart](/openwiki/quickstart.md) for the concise contributor path and change-oriented validation selection.
+- [Build System Architecture](/openwiki/architecture/build-system.md) for output routing, preprocessing, and full-build ownership.
+- [Mintlify Integration](/openwiki/integrations/mintlify.md) for renderer, links, OpenAPI, and export boundaries.
+- [Documentation CLI Tools](/openwiki/operations/cli-tools.md) for the complete Make and Python CLI reference.
+- [Testing Overview](/openwiki/testing/test-overview.md) for test, link, cross-reference, and executable-sample scope.

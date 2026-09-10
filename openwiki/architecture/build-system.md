@@ -1,241 +1,131 @@
 ---
 type: architecture
 title: Build System Architecture
-description: The documentation pipeline transforms source files in /src into language-versioned build output through preprocessing, link rewriting, and content branching.
-tags: [build-system, pipeline, preprocessing, content-versioning]
+description: How the Python documentation builder turns authored src content into disposable Mintlify output, including language routing, incremental rebuilds, shared artifacts, preprocessing, and LLM-oriented artifacts.
+tags: [build-system, documentation-pipeline, mintlify, preprocessing, content-routing]
 verified:
-  - by: openwiki/0.5.0
-    at: 2026-09-03T15:00:58.567Z
+  - by: openwiki/0.4.3
+    at: 2026-09-08T08:21:44.568Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
+  - id: openwiki-source-41f7c907e42a5efd3b3405cd
+    resource: repo://pipeline/commands/build.py
+  - id: openwiki-source-b481a230af378c0c50ed9994
+    resource: repo://pipeline/commands/dev.py
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-636af982f42ea94123d2d7e9
+    resource: repo://pipeline/core/watcher.py
   - id: openwiki-source-17f3856bce97f37118963062
     resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
-generated: { by: "openwiki/0.5.0", at: "2026-09-03T15:00:58.567Z" }
+  - id: openwiki-source-23775c3de52f3ab95a13cb8b
+    resource: repo://README.md
+  - id: openwiki-source-24e5f74f0f40e9bfd381871f
+    resource: repo://tests/unit_tests/test_builder.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
 ---
 
 # Build System Architecture
 
-The documentation build pipeline transforms source files in `/src/` into Mintlify-compatible output in `/build/`. It implements a sophisticated content branching strategy that creates language-specific variants (Python and JavaScript) for most open-source content while maintaining unversioned pages for product documentation and language-agnostic resources.
+`DocumentationBuilder` is the boundary between the authored `src/` tree and the Mintlify deployment tree, `build/`. Mintlify deploys the generated directory, but it is disposable: contributors edit `src/`, run a build, and never patch `build/` directly. A full build deletes and recreates `build/`, so any manual output change will be lost.
 
-## Overview: Three Content Branches
+## Entrypoints and lifecycle
 
-The build system manages three distinct content branches, each with different versioning and language-handling strategies:
+`docs build` routes to `build_command`, which verifies `src/`, creates `build/` if necessary, then instantiates `DocumentationBuilder(src, build)` and calls `build_all()`. `make build` is the usual repository command. `docs dev` normally performs that full build first, starts a recursive watcher on `src/`, and launches `mint dev --port 3000` with `build/` as its working directory. `--skip-build` instead uses an existing build tree and warns if it does not exist.
 
-1. **OSS versioned (Python/JavaScript)**: LangChain, LangGraph, and most Deep Agents docs branch into `/build/oss/python/` and `/build/oss/javascript/` routes with language-specific preprocessing.
-
-2. **OSS language-agnostic**: Deep Agents Code (`/src/oss/deepagents/code/`) and OpenWiki (`/src/oss/openwiki/`) ship as single sets at `/build/oss/deepagents/code/` and `/build/oss/openwiki/` without duplication.
-
-3. **LangSmith unversioned**: Unversioned product documentation in `/src/langsmith/` builds once to `/build/langsmith/`, except Managed Deep Agents which create Python and JavaScript language routes at `/langsmith/python/` and `/langsmith/javascript/`.
-
-Shared assets—images, snippets, styles, configuration—copy once to the root `/build/` directory.
-
-## Build Process and Entry Points
-
-The build system is initialized through `pipeline/core/builder.py`, which orchestrates the full pipeline:
-
-```python
-builder = DocumentationBuilder(src_dir=Path("src"), build_dir=Path("build"))
-builder.build_all()
+```mermaid
+flowchart TD
+    Src["Authored src tree"] --> Full["Full build"]
+    Full --> Clear["Remove and recreate build"]
+    Clear --> Routes["Emit routed content"]
+    Routes --> Shared["Copy shared artifacts"]
+    Shared --> Npm["Overlay npm components"]
+    Npm --> Llm["Generate llms artifacts"]
+    Llm --> Mint["Mintlify reads build"]
+    Src --> Watch["Dev watcher"]
+    Watch --> Debounce["Batch changes for 0.2 seconds"]
+    Debounce --> Incremental["Rebuild changed files"]
+    Incremental --> Touch["Touch emitted files"]
+    Touch --> Mint
 ```
 
-`build_all()` executes these major stages in order:
+This shows the full build, which owns derived artifacts, alongside the narrower development rebuild path.
 
-1. **Clears `/build/`** to ensure a clean slate
-2. **Builds versioned OSS content** separately for Python and JavaScript
-3. **Builds unversioned OSS products** (Deep Agents Code, OpenWiki)
-4. **Builds unversioned LangSmith content**
-5. **Builds Managed Deep Agents language routes**
-6. **Copies shared files** (images, docs.json, snippets, fonts)
-7. **Copies npm snippet components** from `@langchain/docs-sandbox`
-8. **Generates llms.txt and llms-full.txt** for AI agent consumption
+`build_all()` has a deliberate order: clear output; emit Python and JavaScript OSS variants; emit the two unversioned OSS products; emit ordinary LangSmith; emit Managed Deep Agents variants; copy shared files; overlay npm-provided components; then generate `llms.txt` and `llms-full.txt`. The ordering ensures the LLM artifacts index the final tree and that package components win over source-tree copies.
 
-Individual files can be built with `builder.build_file(file_path)` or collections with `builder.build_files(file_paths)`, useful for incremental builds during development.
+## Output routing domains
 
-## Preprocessing Pipeline
+The builder does not mirror `src/` mechanically. It selects an output domain from a file's source-relative path and a target language.
 
-All markdown and MDX files pass through a preprocessing pipeline that applies four transformations in sequence:
+| Source domain | Output | Target language behavior |
+| --- | --- | --- |
+| Most `src/oss/` | `build/oss/python/...` and `build/oss/javascript/...` | One render per language; source folders named `python` or `javascript` are included only in their matching build and lose that folder in the output path. |
+| `src/oss/deepagents/code/` | `build/oss/deepagents/code/...` | One unprefixed render using the Python conditional branch. |
+| `src/oss/openwiki/` | `build/oss/openwiki/...` | One unprefixed render using the Python conditional branch. |
+| Ordinary `src/langsmith/` | `build/langsmith/...` | One unversioned render using the Python conditional branch. |
+| Direct `src/langsmith/managed-deep-agents*.mdx` pages | `build/langsmith/python/...` and `build/langsmith/javascript/...` | Two language renders; ordinary unversioned LangSmith emission excludes these pages. |
+| Shared or root files | source-relative location under `build/` | Copied once, not language-duplicated. |
 
-### 1. Cross-Reference Resolution (@[LinkName])
+Managed Deep Agents is the important exception to LangSmith's otherwise unversioned model. Its unversioned URLs redirect to the Python routes through `docs.json`; the builder therefore emits no unversioned Managed Deep Agents pages. During a variant render it also changes unversioned Managed Deep Agents links to the matching language route.
 
-Custom markdown syntax `@[LinkName]` (e.g., `@[StateGraph]`) is transformed to proper markdown links via `replace_autolinks()`. The transformation depends on scope context—python, js, or global:
+For versioned output, absolute `/oss/...` links receive `/oss/python/...` or `/oss/javascript/...`. Already-prefixed links and image paths are left alone. Links to the two intentionally unversioned product roots—Deep Agents Code and OpenWiki—also remain unprefixed. This lets a language-agnostic page link to itself without creating a route that the build does not emit.
 
-```markdown
-@[StateGraph]
-```
+## Markdown is transformed at the output boundary
 
-becomes:
+Markdown and MDX are not mutated in `src/`. When the builder writes one, it applies standard preprocessing, then language-aware snippet-import rewriting, OSS-link rewriting, and Managed Deep Agents-link rewriting; finally it appends the contributor footer where applicable. `.md` inputs are written as `.mdx` output.
 
-```markdown
-[StateGraph](https://langchain-ai.github.io/langgraph/reference/graphs/#langgraph.graph.StateGraph)
-```
+Standard preprocessing resolves scoped `@[LinkName]` references using `SCOPE_LINK_MAPS`, adds tracking parameters to conversion-oriented `smith.langchain.com` CTA links, and resolves language fences. `:::python` content is retained only for the Python target and `:::js` only for the JavaScript target; unsupported fence labels are preserved. Escaped `\:::` syntax is unescaped and remains literal. Missing autolinks are logged rather than failing the build. The UTM pass ignores fenced code and leaves functional LangSmith links unchanged.
 
-The link target is resolved through scope-specific link maps (`SCOPE_LINK_MAPS`) that map common API names to their documentation URLs. Missing links are logged but do not fail the build.
+All source markdown except the root `index.mdx` and files anywhere below `snippets/` receives a generated callout containing a link to edit the source on GitHub and a link to file an issue. This is output-only decoration, not authored page content.
 
-### 2. Conditional Rendering (:::python / :::js)
+## Shared artifacts and snippets
 
-Language-specific content blocks are processed based on the target language:
+`is_shared_file()` classifies `docs.json`; the named root pages `index.mdx`, `use-these-docs.mdx`, `playground.mdx`, and `build-overview.mdx`; anything in a `snippets`, `images`, `.well-known`, or `fonts` path component; and every `.js` or `.css` file as shared. The classifier prevents those inputs from being duplicated by the OSS passes. Supported types comprise Markdown, JSON, YAML, common image/video formats, CSS and JavaScript, JSX/TSX, text/HTML, and WOFF/TTF fonts; other extensions and `TEMPLATE.mdx` are skipped. A file named `docs.yml` or `docs.yaml` is converted to JSON rather than copied as YAML.
 
-```markdown
-:::python
-This content appears only in Python builds
-:::
+Markdown snippets need additional treatment because the same import can be consumed from pages at different nesting depths. For each source snippet, the builder emits:
 
-:::js
-This content appears only in JavaScript builds
-:::
-```
+- a default source-relative snippet containing Python-resolved links, for unversioned consumers;
+- `build/snippets/python/...`, with Python-resolved links; and
+- `build/snippets/javascript/...`, with JavaScript-resolved links.
 
-When building for Python, `::: content appears and :::js blocks are removed. Escaped blocks (`\:::`) are preserved as literal text for display in documentation about the syntax itself.
+A versioned page importing `from '/snippets/foo.mdx'` is rewritten to the corresponding language-specific path. JSX and TSX snippet components are simply shared files. After all source shared files are processed, the builder copies `PatternEmbed.jsx` and `ExampleEmbed.jsx` from `@langchain/docs-sandbox` into `build/snippets/`, and `ChatLangChainEmbed.js` to the build root. Missing package directories or expected files produce warnings; when present, these copies deliberately overwrite source-provided versions.
 
-### 3. Link Rewriting
+## Full versus incremental builds
 
-Three types of link rewrites occur during preprocessing:
+A full build is the consistency operation: it removes stale output and regenerates routing, shared artifacts, package overlays, and both LLM artifacts. Use it after configuration, navigation, package, or broad routing changes.
 
-- **OSS link versioning** (`_rewrite_oss_links`): `/oss/concepts/...` becomes `/oss/python/concepts/...` or `/oss/javascript/concepts/...` during language-specific builds. Language-agnostic products (Deep Agents Code, OpenWiki) are skipped and retain unprefixed routes.
+The dev watcher is intentionally narrower. It queues supported create/modify events, de-duplicates rapid changes with a 0.2-second debounce, invokes `build_file()` in a worker thread (up to four for a batch), then touches the expected output files so Mintlify reloads. `build_file()` follows the same routing rules as the full build for an existing source file, so a versioned OSS source refreshes both language outputs while OpenWiki and Deep Agents Code refresh once.
 
-- **Managed Deep Agents routing** (`_rewrite_managed_deep_agents_links`): Files in `/langsmith/managed-deep-agents*.mdx` rewrite their internal links to language-prefixed routes (`/langsmith/python/...` or `/langsmith/javascript/...`) during Python/JavaScript builds.
+There are boundaries to account for when operating it:
 
-- **Snippet import redirection** (`_rewrite_snippet_imports_for_language`): Versioned pages that import snippets with `from '/snippets/component.mdx'` are redirected to language-specific copies at `/snippets/python/component.mdx` or `/snippets/javascript/component.mdx`.
+- The watcher ignores editor backup files and selected hidden temporary files.
+- A deletion removes only the source-relative output path. It does not apply the full routing map, so deletion of a versioned or special-routed source can leave generated variants behind until the next full build.
+- An incremental rebuild does not rerun shared-file collection, npm overlays, or LLM artifact generation. In particular, a `docs.json` edit is copied but does not refresh indexes derived later by `build_all()`.
 
-### 4. UTM Tracking and Edit Links
+Treat `make build` as the recovery and release path whenever these derived or cross-file effects matter.
 
-LangSmith CTA links receive UTM tracking parameters for analytics. All pages (except home, snippets, and root-level templates) receive "Edit this page on GitHub" and "File an issue" footer links pointing to the source file.
+## LLM-oriented generated artifacts
 
-## File Building Strategy
+After the final output tree is ready, the builder writes two related artifact families at its root.
 
-The `build_file()` method routes files based on their path:
+`llms.txt` is an index of every eligible MDX page plus Mintlify-generated OpenAPI operation pages inferred from `build/docs.json` and the referenced specifications. It omits snippets and pages with `noindex: true`. To avoid truncation, small sections are listed in the root, while large sections are partitioned by directory into `llms.txt` files linked directly from the root. The builder validates that the root and each section remain below 50,000 characters, that section indexes do not link to another index level, and that every eligible page is listed exactly once. A violation raises `ValueError` and fails the full build.
 
-- **`/src/oss/*` files**: Duplicate for Python and JavaScript unless they are language-agnostic (Deep Agents Code, OpenWiki). Each version receives independent preprocessing.
+`llms-full.txt` is a textual corpus. It strips frontmatter, inlines recognized snippet imports recursively to a maximum depth of six, and omits snippets and `noindex` pages themselves. The root corpus contains unversioned material and pointers to separate full corpora for `oss/python` and `oss/javascript`, avoiding a single language-duplicated corpus. Generated OpenAPI pages have no MDX body, so their headings and source URLs are represented in the root corpus while `llms.txt` carries their detailed index entries.
 
-- **`/src/langsmith/*` files**: Build once, except Managed Deep Agents pages (`managed-deep-agents*.mdx`) which spawn Python and JavaScript variants.
+## Safety and focused tests
 
-- **Shared files** (images, docs.json, snippets, fonts, CSS, JS): Copy once to `/build/`. Snippet markdown files receive special treatment—they are emitted in three forms:
-  - Python-prefixed copy at the original snippet path (default for unversioned importers)
-  - Language-specific copy at `/snippets/python/...`
-  - Language-specific copy at `/snippets/javascript/...`
+Source collection rejects every symlink and verifies that each resolved regular file remains below the requested source root. The builder also uses containment checks before reading an OpenAPI spec, following a snippet import, or writing a section index, because MDX and `docs.json` are editable inputs. An escaping path is ignored or refused rather than read from or written outside `build/`.
 
-- **Root-level files** (index.mdx, build-overview.mdx, use-these-docs.mdx, playground.mdx): Share across all versions.
+The focused builder tests cover routing exceptions and their link effects: unversioned OpenWiki and Deep Agents Code output, Managed Deep Agents dual routes, language-scoped snippet imports and resolved links, symlink rejection, and containment of snippet imports. They also verify LLM index coverage, size and one-hop invariants, full-corpus language splitting, snippet inlining, and OpenAPI entry handling. Extend these tests when changing a routing or generated-artifact boundary.
 
-## File Extension Handling
+## Related pages
 
-The builder supports the following file extensions:
-
-- **Markdown and MDX**: `.md`, `.mdx` — preprocessed with conditional rendering, cross-reference resolution, and link rewriting
-- **Data and config**: `.json`, `.yml`, `.yaml` — copied directly (YAML files named `docs.yml` are converted to `.json`)
-- **Media and assets**: `.svg`, `.png`, `.jpg`, `.jpeg`, `.gif`, `.mp4`, `.webm`, `.txt`, `.html`
-- **Styling and scripting**: `.css`, `.js`
-- **Web components**: `.jsx`, `.tsx`
-- **Fonts**: `.woff2`, `.woff`, `.ttf`
-
-Files without these extensions are skipped. Template files (`TEMPLATE.mdx`) are never copied.
-
-## Shared Files Classification
-
-The `is_shared_file()` method identifies files that must not be duplicated across language versions:
-
-- **Snippets**: Any file under `/src/snippets/` (though snippet markdown receives language-specific processing within shared storage)
-- **Images and assets**: Directories `images/`, `.well-known/`, `fonts/`
-- **Styles and scripts**: All `.css` and `.js` files in `/src/`
-- **Site configuration**: `docs.json`
-- **Root pages**: `index.mdx`, `build-overview.mdx`, `use-these-docs.mdx`, `playground.mdx`
-
-## Versioning Strategy and Language-Agnostic Products
-
-Most OSS content is versioned by language—a single source page in `/src/oss/concepts/foo.mdx` produces two build artifacts:
-
-- `/build/oss/python/concepts/foo.mdx` (with :::python blocks kept, :::js removed)
-- `/build/oss/javascript/concepts/foo.mdx` (with :::js blocks kept, :::python removed)
-
-**Language-agnostic products** (Deep Agents Code and OpenWiki) bypass versioning:
-
-- `/src/oss/deepagents/code/**/*.mdx` → `/build/oss/deepagents/code/**/*.mdx` (one copy)
-- `/src/oss/openwiki/**/*.mdx` → `/build/oss/openwiki/**/*.mdx` (one copy)
-
-Links to these products remain unprefixed (`/oss/deepagents/code/...` and `/oss/openwiki/...`) in all contexts, and conditional blocks use the Python branch.
-
-**Managed Deep Agents** represents a special case: source files live in `/src/langsmith/managed-deep-agents*.mdx` but build to:
-
-- `/build/langsmith/python/managed-deep-agents*.mdx`
-- `/build/langsmith/javascript/managed-deep-agents*.mdx`
-
-The unversioned `/langsmith/managed-deep-agents*` URLs redirect to Python routes via `docs.json` configuration, so Mintlify does not serve orphaned pages outside the Managed Deep Agents navigation.
-
-## Output Structure
-
-The output directory `/build/` mirrors the following structure after a full build:
-
-```
-build/
-├── oss/
-│   ├── python/              # Versioned OSS (Python branch)
-│   │   ├── langchain/
-│   │   ├── langgraph/
-│   │   ├── python/
-│   │   ├── concepts/
-│   │   ├── integrations/
-│   │   └── ...
-│   ├── javascript/          # Versioned OSS (JavaScript branch)
-│   │   ├── langchain/
-│   │   ├── langgraph/
-│   │   ├── javascript/
-│   │   ├── concepts/
-│   │   ├── integrations/
-│   │   └── ...
-│   ├── deepagents/
-│   │   └── code/            # Language-agnostic Deep Agents Code
-│   └── openwiki/            # Language-agnostic OpenWiki
-├── langsmith/               # Unversioned LangSmith (except Managed Deep Agents)
-│   ├── python/              # Managed Deep Agents Python route
-│   │   └── managed-deep-agents*.mdx
-│   ├── javascript/          # Managed Deep Agents JavaScript route
-│   │   └── managed-deep-agents*.mdx
-│   └── fleet/
-├── snippets/                # Shared snippets with language variants
-│   ├── python/
-│   ├── javascript/
-│   └── *.mdx
-├── images/                  # Shared images
-├── fonts/                   # Shared fonts
-├── docs.json                # Mintlify navigation and site config
-├── index.mdx                # Shared home page
-├── build-overview.mdx       # Shared overview
-├── style.css                # Shared styles
-└── llms.txt                 # LLM-friendly index (split corpus)
-```
-
-## Safety and Security
-
-The builder implements several safeguards:
-
-- **Symlink rejection**: Files that are symlinks are skipped, preventing symlink-based path escapes into system directories like `/proc/`.
-- **Path containment validation**: When resolving relative paths from MDX or docs.json (which are user-editable), the builder verifies that resolved paths stay within the build tree via `_resolve_within()`.
-- **Read-only build artifacts**: The CI/CD system does not allow direct edits to `/build/` and regenerates output from source with every push.
-
-## Snippet Component Handling
-
-The build copies npm snippet components from `@langchain/docs-sandbox` after processing source snippets, overwriting any source-tree versions. This ensures builds always use the latest published React components:
-
-- `@langchain/docs-sandbox/dist/PatternEmbed.jsx` → `/build/snippets/pattern-embed.jsx`
-- `@langchain/docs-sandbox/dist/ExampleEmbed.jsx` → `/build/snippets/example-embed.jsx`
-- `@langchain/docs-sandbox/dist/ChatLangChainEmbed.js` → `/build/ChatLangChainEmbed.js`
-
-## Configuration and Extension
-
-The builder accepts a source and build directory path on initialization. Key configuration:
-
-- **Language mapping**: Internal language keys ("python", "js") map to full URL names ("python", "javascript") via `language_url_names`.
-- **Supported file extensions** are defined in `copy_extensions` and include markdown, images, code, styles, and web components.
-- **Shared directories** (`images`, `fonts`, `.well-known`) and shared root files are defined in `is_shared_file()` and can be modified to extend or restrict what is duplicated.
-
-The system is deterministic—rebuilding from the same source always produces identical output.
-
-## Related Concepts
-
-- **Preprocessing** (`/openwiki/concepts/preprocessing.md`): Details on conditional rendering, cross-reference resolution, and custom syntax transformations.
-- **Versioning** (`/openwiki/concepts/versioning.md`): Strategy for language branching and how product versions are maintained.
-- **Source mapping** (`/openwiki/architecture/source-map.md`): How source files map to build artifacts and URL routes.
+- [Source directory map](/openwiki/architecture/source-map.md) for authored domains and navigation ownership.
+- [Preprocessing](/openwiki/concepts/preprocessing.md) for author-facing markup transformations.
+- [Versioning](/openwiki/concepts/versioning.md) for language-specific documentation conventions.
+- [Mintlify integration](/openwiki/integrations/mintlify.md) for the deployment consumer.
+- [Builder tests](/openwiki/testing/builder-tests.md) for test guidance.
+- [Local development](/openwiki/workflows/local-development.md) for running the watcher and preview server.

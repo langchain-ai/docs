@@ -1,139 +1,164 @@
 ---
-type: testing guide
+type: validation guide
 title: Testing Overview
-description: Validation guidance for isolated pytest tests, built documentation and cross-reference checks, and executable multi-language code samples. Explains CI selection, service and secret requirements, timeouts, and rate-limit behavior.
-tags: [testing, pytest, ci, documentation, code-samples]
+description: Change-oriented validation guidance for isolated unit tests, repository-wide documentation contracts, generated documentation checks, integration metadata, and credentialed executable samples. Use the validation matrix to select the narrowest meaningful check and interpret CI failures correctly.
+tags: [testing, pytest, ci, documentation, code-samples, opentelemetry]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-07T08:24:09.165Z
+    at: 2026-09-09T08:21:02.265Z
 sources:
-  - id: openwiki-source-5c124605ed6e394bffee862c
-    resource: repo://.github/workflows/_check-links.yml
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-97746d8f3662d803e625550e
     resource: repo://.github/workflows/test-code-samples.yml
-  - id: openwiki-source-635a4d4537a9628cdea912c0
-    resource: repo://.vale.ini
+  - id: openwiki-source-71ee7a4afbd2d6aa7b29f3d1
+    resource: repo://htmltest-mint-export.yml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-05ccef8d4cf1698187f20464
     resource: repo://pyproject.toml
   - id: openwiki-source-0a0a6c8d7a88288e6b6b9b5b
     resource: repo://scripts/check_cross_refs.py
+  - id: openwiki-source-f36d9ac44867b9e853539abd
+    resource: repo://scripts/parse_integration_submission_issue.py
+  - id: openwiki-source-63d8ba810a7c0181c548a307
+    resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-  - id: openwiki-source-d7b2966a7ac4cda6b8274dd7
-    resource: repo://src/code-samples/deepagents/deepagents-mcp-tools.py
-  - id: openwiki-source-2983dbc5c66f72770d29bf6f
-    resource: repo://src/code-samples/langchain/mcp-quickstart.py
+  - id: openwiki-source-f845dc2957bc8fe97f16df14
+    resource: repo://src/langsmith/trace-with-opentelemetry.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-c2764a7369c8fbf3e49da6f8
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-2ecfcd33b729fccd843ab705
     resource: repo://tests/unit_tests/test_handle_auto_links.py
+  - id: openwiki-source-71e085db64c5296fd9b80141
+    resource: repo://tests/unit_tests/test_otel_endpoints.py
+  - id: openwiki-source-1d433bbfc6ab68d7ffc5522c
+    resource: repo://tests/unit_tests/test_parse_integration_submission_issue.py
   - id: openwiki-source-1e48075742e124afeca28fef
     resource: repo://tests/unit_tests/test_parser.py
+  - id: openwiki-source-7be0fdefc402d868b9f2fdca
+    resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
   - id: openwiki-source-16b92823fdcb07d686f2e27f
     resource: repo://tests/unit_tests/test_watcher.py
   - id: openwiki-source-0d0e77eb273a56717af74faa
     resource: repo://tests/unit_tests/utils.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-07T08:24:09.165Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-09T08:21:02.265Z" }
 ---
 
-## Validation matrix
+## Choose validation by change boundary
 
-This repository uses three deliberately different validation boundaries. Choose the narrowest one that exercises a change:
+The repository has intentionally separate validation paths. Select the narrowest path that covers the change: a passing unit test does not validate generated docs, external metadata, or a live code sample.
 
-| Change area | Primary command | What it proves | External dependencies |
+| Change | Run locally | What a pass establishes | Failure meaning |
 | --- | --- | --- | --- |
-| Pipeline behavior and regressions | `make test` | Isolated pytest behavior for `tests/unit_tests` | No network sockets; Unix sockets are allowed |
-| Rendered documentation and links | `make broken-links-with-anchors` | The pipeline can build the site and Mintlify accepts internal links and anchors after filtering known non-actionable output | Python dependencies, Node.js, and the Mintlify CLI |
-| Source `@[ref]` references | `make check-cross-refs` | Every eligible Markdown reference resolves in every applicable language scope | Local link map only |
-| Runnable examples | `make test-code-samples` | Selected or all Python, TypeScript, Java, Kotlin, Go, and shell samples exit successfully | Language toolchains; some samples use live providers and PostgreSQL |
+| Pipeline, parser, preprocessor, watcher, helper, or authored OTel contract | `make test` | Isolated behavior in `tests/unit_tests`, including repository-wide assertions where applicable | Regression, assertion failure, or prohibited network socket use |
+| Built docs, internal links, or anchors | `make broken-links-with-anchors` | A fresh `build/` passes Mintlify's filtered link and anchor check | Build, actionable link, or anchor failure |
+| Source `@[ref]` link-map use | `make check-cross-refs` | Each eligible reference resolves in every scope where it renders | Fix the reference or `pipeline/preprocessors/link_map.py` |
+| Generated provider overview | `uv run python pipeline/tools/partner_pkg_table.py` | The committed overview matches its generator and package metadata | Generated output is stale; do not hand-edit it |
+| External integration `docs_url` metadata | `uv run python scripts/refresh_integration_downloads.py --check-docs-urls` | External-listing URLs have an allowed href scheme, without requests or writes | Missing or unsafe metadata must be corrected |
+| Mint export external URLs | `make export-htmltest` | Exported HTML's configured external resources and anchors pass htmltest | External URL/resource failure; it does not validate internal navigation |
+| Runnable example | `make test-code-samples [FILES="..."]` | The selected program exits successfully in its real toolchain/environment | Program, dependency, credential, service, or live-provider failure |
 
-Do not treat the sample runner as a replacement for the isolated test suite. `make test` invokes pytest only for `tests/unit_tests`, with socket isolation. The sample runner intentionally inherits its environment and executes programs that may need provider credentials, a local service, or network access.
+```mermaid
+flowchart TD
+  Change["Documentation or code change"] --> Unit["make test"]
+  Unit --> Isolated["pytest with network sockets disabled"]
+  Unit --> Contract["Repository documentation contracts"]
+  Contract --> OTel["OTLP endpoint syntax and mocked export"]
+  Change --> Docs["make build"]
+  Docs --> Mint["Mint links and anchors"]
+  Change --> References["make check-cross-refs"]
+  References --> Maps["Check applicable link-map scopes"]
+  Change --> Metadata["Validate metadata or regenerate table"]
+  Metadata --> SafeURL["docs_url scheme check"]
+  Metadata --> Generated["Generated overview diff check"]
+  Change --> Samples["make test-code-samples"]
+  Samples --> Live["Toolchains, services, and provider environment"]
+```
 
-## Core pytest suite
+This diagram separates deterministic socket-isolated tests and documentation contracts from generated metadata validation and intentionally live executable samples.
 
-Run the normal unit suite with:
+## Isolated pytest suite
+
+Run the core suite with:
 
 ```bash
 make test
 ```
 
-`TEST_FILE` defaults to `tests/unit_tests`, so a focused invocation can use, for example, `make test TEST_FILE=tests/unit_tests/test_builder.py`. The target runs `uv run pytest --disable-socket --allow-unix-socket $(TEST_FILE) -vv`. Pytest configuration also discovers `test_*.py` and `test_*`, enables asyncio auto mode with function-scoped fixture loops, reports extra outcomes, and shows slow tests. Install the test group with `uv sync --group test`.
+`TEST_FILE` defaults to `tests/unit_tests`; narrow a regression with `make test TEST_FILE=tests/unit_tests/test_builder.py`. The target invokes `uv run pytest --disable-socket --allow-unix-socket $(TEST_FILE) -vv`. Pytest discovers `test_*.py` and `test_*`, uses asyncio auto mode with function-scoped fixture loops, reports additional outcomes, and displays slow tests. Install its dependencies with `uv sync --group test`.
 
-Socket isolation is an invariant for this suite: tests should use fixtures, temporary files, mocks, or Unix-domain services rather than make network calls. The `file_system` helper creates disposable `src/` and `build/` directories, populates source fixtures, and removes the complete temporary tree on exit.
+Socket isolation is a suite invariant: unit tests must not make network calls. Use mocks, temporary files, or permitted Unix sockets instead. The `file_system` context manager supplies disposable `src/` and `build/` directories for file-system tests.
 
-### Focused regression coverage
+### Focused coverage to retain when changing behavior
 
-The unit suite protects behavior at the documentation pipeline boundary rather than merely parsing happy paths:
+- **Builder:** test supported-file copying, ignored extensions, directory layout, preprocessing, and Python/JavaScript variants. Include adversarial source collection cases such as symlinks when changing source traversal.
+- **Parser and conditional rendering:** test both AST/source-location behavior and emitted Mintlify form for front matter, headings, code blocks, admonitions, tabs, and conditionals. Keep code fences opaque to transformations.
+- **Autolinks and cross-references:** verify language-scoped `@[Reference]` resolution and that escaped or fenced text is left alone; test unclosed-fence behavior when changing fence logic.
+- **Watcher:** retain filters for editor backup and temporary suffixes so non-document files do not trigger rebuild work.
+- **Integration issue-form parser:** add cases for `###` section boundaries, HTML-comment removal, `_No response_` optional values, checked confirmations, missing required fields, and language-specific PyPI/npm requirements. The parser maps text to data and does not execute form values.
+- **External `docs_url` safety:** test accepted `https://`, `http://`, and single-slash site-relative paths plus rejected empty, `javascript:`, `data:`, `vbscript:`, and protocol-relative `//` inputs. Test both validation errors and the fallback that prevents an unsafe URL from being emitted in a table link.
 
-- Builder tests exercise supported-file copying, empty and targeted builds, directory preservation, preprocessing, and Python/JavaScript output variants. They also cover URL rewriting and safe source collection, including rejecting symlinks.
-- Parser tests turn Markdown into an AST and Mintlify output, preserving code blocks and source locations while converting front matter, admonitions, and tab/conditional constructs.
-- Autolink and cross-reference tests ensure `@[ref]` handling is language-aware without rewriting or validating escaped references or fenced code. Unclosed fences continue to protect the remaining input.
-- Watcher tests keep editor backup and temporary files out of rebuild handling.
+### OpenTelemetry documentation contract
 
-## Built-site and cross-reference checks
+`tests/unit_tests/test_otel_endpoints.py` treats authored `.mdx` files below `src/` as a repository-wide contract, not merely an example-local test. It rejects a generic `OTEL_EXPORTER_OTLP_ENDPOINT` assignment that already includes `/v1/traces`, `/v1/metrics`, or `/v1/logs`; the generic HTTP exporter endpoint is a base URL, so combining it with a signal suffix risks a duplicated path. Collector configurations are checked separately: in a document that declares `exporters:`, a trace URL ending in `/v1/traces` must use `traces_endpoint`, rather than generic `endpoint`.
 
-`make broken-links-with-anchors` first builds `build/`, then runs `mint broken-links --check-anchors` from that directory. The Make target captures output and applies `scripts/filter_mint_broken_links.py`; it fails only when filtered output still contains a reported link line. This deliberately excludes deployment-generated OpenAPI areas and standalone snippets whose absolute language-prefixed links only become valid once inlined. Use `make broken-links` when anchor validation is unnecessary.
+The runtime portion fixes the expected endpoint semantics against the installed OpenTelemetry HTTP trace exporter without opening a socket. With `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set to the full traces URL, the exporter must post precisely to that URL. With the generic base `OTEL_EXPORTER_OTLP_ENDPOINT`, it must append `/v1/traces` exactly once. Each test builds a `TracerProvider`, attaches a `SimpleSpanProcessor`, ends a span, force-flushes it, and replaces the exporter's session `post` method with a `MagicMock`; assertions inspect the requested URL and reject `/v1/traces/v1/traces`.
 
-`make check-cross-refs` scans `src/**/*.md` and `src/**/*.mdx` against `pipeline/preprocessors/link_map.py`. It ignores `snippets/code-samples/`, `node_modules`, invalid UTF-8 files, fenced code, and escaped references. A page under `oss/python/` checks Python entries, one under `oss/javascript/` checks JavaScript entries, and shared `oss/` content must resolve in **both** scopes unless a `:::python` or `:::js` fence selects one. Unresolved entries cause exit code 1 and identify the source line and scopes; fix the reference or update the link map.
+When editing [Trace with OpenTelemetry](../../src/langsmith/trace-with-opentelemetry.mdx) or adding OTLP snippets elsewhere, preserve that distinction: use the base URL with `OTEL_EXPORTER_OTLP_ENDPOINT`, use a complete trace URL only with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or an exporter constructor's trace-specific endpoint, and use `traces_endpoint` in Collector YAML. Extend both the textual scan and mocked-export cases if support for another signal or exporter configuration changes. Do not turn this into a live endpoint smoke test: mocked transport is what keeps `make test` within its socket-isolated boundary.
 
-```mermaid
-flowchart TD
-  Source["Source Markdown"] --> Build["make build"]
-  Build --> Mint["Mint link and anchor check"]
-  Source --> Refs["make check-cross-refs"]
-  Refs --> Scope{"Applicable scope"}
-  Scope --> Py["Python map"]
-  Scope --> Js["JavaScript map"]
-  Py --> Result["Pass or unresolved error"]
-  Js --> Result
-```
+## Documentation gates: built links versus source references
 
-This flow shows that built-site link checking and source cross-reference resolution are separate gates.
+`make broken-links-with-anchors` builds first, then runs `mint broken-links --check-anchors` from `build/`. Its wrapper filters known non-actionable reports for deployment-generated OpenAPI pages and snippets checked as standalone files; it fails only if filtered output still contains link-report lines. `make broken-links` omits anchor checking. The reusable link workflow also runs `make check-openapi`; it uses Node 22, installs/caches the Mint CLI, and applies its KaTeX installation workaround when needed.
+
+`make check-cross-refs` is a distinct source check. It scans Markdown below `src`, excluding code-sample snippets and `node_modules`, skips invalid UTF-8 input, and ignores fenced code and escaped references. Python and JavaScript OSS paths use their respective scope; shared OSS content outside a language conditional must resolve in both maps. It reports each unresolved file, line, name, and scope and exits 1.
+
+Export checking is a third, external-facing option. `make export-htmltest` creates a Mint export, unpacks it, and runs htmltest with `htmltest-mint-export.yml`. That configuration enables external checks but disables internal paths and internal hashes because exports omit a complete page set; it limits external concurrency and timeout and ignores documented checker noise. Use Mint's built-tree check for internal navigation.
+
+## Generated integration metadata and tables
+
+Two checks protect different generated-data contracts:
+
+1. CI regenerates `src/oss/python/integrations/providers/overview.mdx` with `pipeline/tools/partner_pkg_table.py` and rejects any diff. Change the generator or `packages.yml`, regenerate, and commit the resulting output rather than manually editing the overview. The check is bypassed only for the designated automated download-update PR or a `bypass-auto-check` label.
+2. `scripts/refresh_integration_downloads.py --check-docs-urls` reads external integration metadata and performs **no network requests and no writes**. It requires every external entry to have a safe `docs_url`; CI fails on missing or unsafe values. During full table generation, package download counts are a separate, networked registry concern: npm/PyPI lookups can retry on HTTP 429 and failures yield an unavailable download value. Do not confuse these registry requests with the offline safety check or the socket-isolated pytest suite.
+
+The generator merges hosted integration front matter with third-party external rows, renders name links from a validated `docs_url` where supplied, and otherwise uses the hosted integration route. Unsafe external values are rejected before external rows are collected; the rendering path also rechecks before emitting an href.
 
 ## Executable code samples
 
-Run all samples locally with:
+Run all eligible samples with:
 
 ```bash
 make test-code-samples
 ```
 
-To run an explicit, space-separated subset, pass repository-relative paths:
+Or pass a space-separated explicit subset:
 
 ```bash
 make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 ```
 
-The runner accepts only existing files beneath `src/code-samples/` with `.py`, `.ts`, `.java`, `.kt`, `.go`, or `.sh` extensions; without `FILES`, it recursively runs all such files while excluding `__pycache__` and `node_modules`. It runs Python through `uv`, TypeScript through `npx tsx`, Go from the code-samples module, shell through `bash`, and Java/Kotlin with JBang pinned to Java 21. Each individual sample has a 600-second timeout. A nonzero exit is a failure, and stdout/stderr are printed immediately for diagnosis.
+The runner selects existing `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh` files below `src/code-samples`; without `FILES`, it recursively runs all eligible files excluding `__pycache__` and `node_modules`. It preserves the caller environment, runs each sample for at most 600 seconds, and uses `uv`, `npx tsx`, `go run`, `bash`, or JBang with Java 21 as appropriate. A nonzero exit normally fails the runner. Unlike `make test`, this is expected to contact providers or local services when the example requires them.
 
-Samples inherit the caller environment. In CI, this includes provider keys and `POSTGRES_URI`; local contributors should provide the credentials and service only when the selected samples require them. The code-sample workflow supplies PostgreSQL 17 with pgvector, waits for a TCP connection to port 5432 before execution, and installs Python/uv, Node 20, Java 21/JBang, and Go. It passes `ANTHROPIC_API_KEY`, optional Anthropic endpoint and headers, LangSmith and gateway keys, OpenAI, Tavily, Google, and Daytona settings along with the PostgreSQL URI.
+CI provisions PostgreSQL 17 with pgvector and passes `POSTGRES_URI` plus provider credentials to the runner. It skips fork pull requests because those jobs cannot receive repository secrets. Pull requests test only changed eligible samples since the merge base; scheduled Sunday and manual runs test all samples. The job allows 60 minutes for PR runs and 90 minutes for full runs, while per-sample timeouts remain in effect.
 
-MCP examples demonstrate two useful testing patterns. The published `main` snippets show an adapter connecting to an MCP endpoint and supplying discovered tools to an agent. Their executable sections avoid a provider model invocation: `deepagents-mcp-tools.py` starts a FastMCP HTTP server in process and asserts that tool discovery exposes `ping`; `mcp-quickstart.py` adapts an in-memory FastMCP weather server and invokes `get_forecast`. Keep this distinction when changing snippets so the repository test validates MCP transport and tool loading without accidentally making an example depend on a live model.
+The runner recognizes a LangSmith 429/rate-limit response, retries up to three attempts with 15-second delays, then records a persistently rate-limited sample as skipped and returns success if no other sample failed. Other unsuccessful samples produce output and a nonzero exit. Treat a green job with skips as evidence of runner health, not a successful live execution of every sample.
 
-### CI selection, security, and failure semantics
+## CI selection and triage
 
-The code-sample workflow runs on pull requests that touch `src/code-samples/**` or the workflow itself, on manual dispatch, and weekly on Sunday. Scheduled and manual runs test all samples. For pull requests, it computes the merge-base against the base branch and tests only changed eligible sample files; a PR with no eligible changes exits successfully without running samples. The workflow is skipped for fork pull requests because GitHub does not expose repository secrets to them. Do not weaken this guard to make an external contribution appear green.
+`ci.yml` runs on pull requests, pushes to `main`, and manual dispatch, cancelling older runs for the same workflow/ref. It calls reusable test, lint, and documentation-link workflows on Python 3.13; the test and link jobs have 20-minute limits. It separately checks merge-conflict markers, cross-references, external integration URLs, and generated files.
 
-The job timeout is 60 minutes for a pull-request run and 90 minutes for scheduled or manual full runs. Its concurrency group cancels an older run for the same workflow and ref. These job limits coexist with—not replace—the 600-second timeout imposed on each program.
-
-Live LangSmith calls can return a 429 during CI load even when an example is correct. The runner recognizes a 429 with a rate-limit message, retries up to three total attempts with 15-second delays, then records the sample as skipped rather than failing the build if it remains rate-limited. Any other unsuccessful sample is reported and makes the runner return 1. Thus a green sample job may include rate-limited skips; inspect its summary when confidence in a live integration matters.
-
-## CI responsibilities
-
-The main CI workflow runs on pushes to `main`, pull requests, and manual dispatch. It cancels obsolete branch/PR runs. Its reusable pytest and lint jobs use Python 3.13 and have 20-minute limits; the standard test job runs `make test`. Separate jobs run built documentation/link-and-anchor checks, cross-reference validation, generated-file validation, external documentation URL scheme checks, and merge-conflict-marker detection. Code linting is `ruff format`, `ruff check`, `ty check`, and `codespell`; prose linting is available locally through Vale with the configured LangChain, proselint, vale, and write-good styles, while excluding code samples.
+For a fast local reproduction, run the corresponding row in the matrix—not the code-sample workflow for a deterministic documentation change. Start with the command CI runs, inspect whether the failure is a transformation/metadata invariant or an integration dependency, and preserve the boundary: isolated unit tests must remain offline, while registry refreshes and executable samples have explicitly different network and credential semantics.
 
 ## Related documentation
 
+- [GitHub Actions](/openwiki/integrations/github-actions.md)
+- [Reference Documentation](/openwiki/integrations/reference-docs.md)
+- [Quickstart](/openwiki/quickstart.md)
 - [Builder Tests](/openwiki/testing/builder-tests.md)
 - [Conditional Rendering](/openwiki/testing/conditional-rendering.md)
-- [Preprocessing](/openwiki/concepts/preprocessing.md)
-- [GitHub Actions](/openwiki/integrations/github-actions.md)
-- [Local Development](/openwiki/workflows/local-development.md)

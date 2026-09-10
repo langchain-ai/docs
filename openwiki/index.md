@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Set up and safely change the LangChain documentation repository, then choose the focused build, link, cross-reference, and test checks for the change.
+- [Quickstart](quickstart.md) - Set up the LangChain documentation monorepo, use the source-to-preview loop safely, and choose proportionate validation or the correct contributor workflow.
 
 # Directories
 

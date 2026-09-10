@@ -10,7 +10,8 @@ The [`langsmith-codex-plugins`](https://github.com/langchain-ai/langsmith-codex-
 
 Before setting up tracing, ensure you have:
 
-- [Codex CLI](https://developers.openai.com/codex/quickstart?setup=cli) v0.128 or later.
+- [Node.js](https://nodejs.org/) 22.x or later.
+- [Codex CLI](https://developers.openai.com/codex/quickstart?setup=cli) v0.153.4 or later, with synchronous `UserPromptSubmit` plugin hooks enabled and trusted.
 - A [LangSmith API key](/langsmith/create-account-api-key).
 
 ## Install and enable the plugin
