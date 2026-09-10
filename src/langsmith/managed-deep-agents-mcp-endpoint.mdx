@@ -1,0 +1,169 @@
+---
+title: Connect MCP clients to a Managed Deep Agent
+sidebarTitle: MCP endpoint
+description: Expose a deployed Managed Deep Agent as a tool to MCP clients such as Claude Code.
+---
+
+import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
+
+Every Managed Deep Agents deployment serves a [Model Context Protocol](https://modelcontextprotocol.io/introduction) (MCP) endpoint at `/mcp`. Any MCP client that supports the Streamable HTTP transport can call the deployed agent as a tool, so another assistant or agent can delegate work to it without calling the deployment API directly.
+
+<ManagedDeepAgentsPublicBetaNote />
+
+The endpoint is the outbound direction. An [MCP connector](/langsmith/managed-deep-agents-mcp-connectors) points the other way: it adds tools from a remote MCP server to your agent. A deployment can use both.
+
+## Find the endpoint URL
+
+The endpoint is `/mcp` on the deployment's API URL:
+
+```text
+<DEPLOYMENT_API_URL>/mcp
+```
+
+`mda deploy` prints the LangSmith deployment dashboard URL, not the API URL. Open that dashboard, copy the **API URL** from the deployment details view, then append `/mcp`.
+
+The local server started by [`mda dev`](/langsmith/managed-deep-agents-local-development) serves the same endpoint. Append `/mcp` to the local server URL the CLI prints.
+
+## Authenticate requests
+
+The MCP endpoint uses the deployment's [identity](/langsmith/managed-deep-agents-identity) configuration, the same as every other route on the deployment. Send the credential that matches the configured mode:
+
+| Identity mode | Header |
+| --- | --- |
+| LangSmith API key (default) | `x-api-key: <LANGSMITH_API_KEY>` |
+| Supabase | `Authorization: Bearer <access_token>` |
+
+For the LangSmith API-key default, the key must belong to the workspace that owns the deployment. A key that is valid for another workspace is rejected.
+
+Authentication failures return one of two statuses:
+
+| Status | Body | Cause |
+| --- | --- | --- |
+| 401 | `{"detail":"missing x-api-key"}` | No credential header on the request. |
+| 403 | `{"detail":"API key is forbidden"}` | Header present, but the key is invalid or not authorized for the deployment's workspace. |
+
+<Warning>
+Anyone holding the LangSmith API key can reach the deployment, and an MCP client stores the header in its own configuration. Treat a key added to a client config as a shared secret for the whole workspace.
+</Warning>
+
+<Note>
+Supabase identity expects an access token that a person obtains by signing in to your app. An MCP client that stores only static headers cannot mint one, so use the LangSmith API-key default for deployments that MCP clients call.
+</Note>
+
+## Understand what the agent exposes
+
+The deployment exposes the agent as an MCP tool:
+
+- **Tool name**: The agent `name` set in the [agent definition](/langsmith/managed-deep-agents-agent-definition#name).
+- **Tool input schema**: The agent's input schema.
+
+For the underlying server behavior, see [MCP endpoint in Agent Server](/langsmith/server-mcp).
+
+## Add the agent to Claude Code
+
+Register the endpoint as an HTTP MCP server:
+
+```bash
+claude mcp add --transport http research-assistant \
+  <DEPLOYMENT_API_URL>/mcp \
+  --header "x-api-key: $LANGSMITH_API_KEY"
+```
+
+Claude Code lists the agent as a tool once the server connects.
+
+In a JSON configuration, Claude Code expands `${VAR}` in header values, so the key stays in the environment instead of the config file:
+
+```json
+"headers": { "x-api-key": "${LANGSMITH_API_KEY}" }
+```
+
+## Add the agent to another MCP client
+
+Clients that read an `mcpServers` configuration accept the endpoint and header directly:
+
+```json
+{
+  "mcpServers": {
+    "research-assistant": {
+      "type": "http",
+      "url": "<DEPLOYMENT_API_URL>/mcp",
+      "headers": {
+        "x-api-key": "<LANGSMITH_API_KEY>"
+      }
+    }
+  }
+}
+```
+
+A client that accepts only a URL and negotiates OAuth cannot authenticate to the endpoint, which requires a header credential. Configure the header explicitly. Without one, a client may fall back to OAuth and report a Dynamic Client Registration failure rather than the missing header, which obscures the real cause.
+
+## Call the endpoint from code
+
+Load the agent's tool through an MCP client library, then pass the tools to a model or another agent:
+
+:::python
+```python
+import os
+
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient(
+    {
+        "research-assistant": {
+            "transport": "streamable_http",
+            "url": "<DEPLOYMENT_API_URL>/mcp",
+            "headers": {"x-api-key": os.environ["LANGSMITH_API_KEY"]},
+        }
+    }
+)
+
+tools = await client.get_tools()
+```
+:::
+
+:::js
+```ts
+import { MultiServerMCPClient } from "@langchain/mcp-adapters";
+
+const client = new MultiServerMCPClient({
+  mcpServers: {
+    "research-assistant": {
+      transport: "http",
+      url: "<DEPLOYMENT_API_URL>/mcp",
+      headers: { "x-api-key": process.env.LANGSMITH_API_KEY },
+    },
+  },
+});
+
+const tools = await client.getTools();
+```
+:::
+
+Read credentials from the environment. Do not hard-code them in client code.
+
+## Understand session behavior
+
+Each `/mcp` request is stateless and independent. The endpoint does not support sessions, so separate calls do not share thread state. To retain knowledge across calls, enable [durable memory](/langsmith/managed-deep-agents-memory).
+
+## Distinguish the endpoint from other capabilities
+
+- **MCP endpoint** exposes the deployed agent as a tool to MCP clients.
+- **[MCP connectors](/langsmith/managed-deep-agents-mcp-connectors)** add tools hosted by remote MCP servers to the agent.
+- **[Channels](/langsmith/managed-deep-agents-channels)** receive messages from an external messaging service that start agent runs and deliver responses.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="MCP connectors" icon="plug" href="/langsmith/managed-deep-agents-mcp-connectors">
+    Add tools from remote MCP servers to the agent.
+  </Card>
+  <Card title="Identity" icon="fingerprint" href="/langsmith/managed-deep-agents-identity">
+    Authenticate callers to the deployment.
+  </Card>
+  <Card title="Agent Server MCP" icon="server" href="/langsmith/server-mcp">
+    Read the underlying Agent Server MCP reference.
+  </Card>
+  <Card title="Memory" icon="database" href="/langsmith/managed-deep-agents-memory">
+    Retain knowledge across threads and calls.
+  </Card>
+</CardGroup>
