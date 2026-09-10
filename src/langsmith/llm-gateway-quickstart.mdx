@@ -3,7 +3,7 @@ title: Quickstart
 description: Make your first LLM Gateway request with cURL, Python, or TypeScript.
 ---
 
-The LLM Gateway lets you call models across configured providers through one standard endpoint with one LangSmith API key. This quickstart uses the OpenAI Chat Completions format to call an Anthropic model.
+The LLM Gateway lets you call models across configured providers through one standard endpoint with one LangSmith API key. This quickstart walks you through making your first gateway request in under five minutes.
 
 <Note>
 **Beta:** The LLM Gateway is in [beta](/langsmith/release-stages).
@@ -16,61 +16,161 @@ Before you start, confirm that:
 - Your [Organization admin](/langsmith/rbac#organization-admin) has enabled the LLM Gateway. For bring-your-own-key models, the admin must also add the provider API key to workspace secrets. To set this up, see [Admin setup](/langsmith/llm-gateway-admin-setup).
 - You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations). Ask your organization admin if you are unsure.
 
-You can call a [Gateway Credits model](/langsmith/llm-gateway-credits) without a provider secret. The example below uses a bring-your-own-key Anthropic model.
+You can call a [Gateway Credits model](/langsmith/llm-gateway-credits) without a provider secret. The examples below use a bring-your-own-key Anthropic model.
 
 ## 1. Set environment variables
 
-Set the standard gateway base URL and your LangSmith API key:
-
 ```bash
+export LANGSMITH_API_KEY="lsv2_..."
 export LANGSMITH_GATEWAY_BASE_URL="https://gateway.smith.langchain.com/v1"
-export LANGSMITH_API_KEY="lsv2_..._....cbed3e"
 ```
 
-The unified base URL accepts provider-prefixed bring-your-own-key model IDs, such as `anthropic/claude-opus-5`, and hosted model slugs, such as `moonshotai/kimi-k3`. The model ID determines the upstream route.
-
 <Note>
-If your LangSmith account is on a regional instance, use the corresponding [regional gateway](/langsmith/llm-gateway-api-formats#use-a-regional-gateway).
-
-On [BYOC](/langsmith/byoc), use `https://<data_plane_host>/gateway/v1` instead.
+If your LangSmith account is on a regional instance, use the corresponding [regional gateway URL](/langsmith/llm-gateway-api-formats#use-a-regional-gateway). On [BYOC](/langsmith/byoc), use `https://<data_plane_host>/gateway/v1` instead.
 </Note>
 
-To preserve a provider's native API without format translation, use a [direct provider route](/langsmith/llm-gateway-direct-model-access) instead.
+## 2. Make a call
 
-### Using LangChain and Deep Agents
+Pick the SDK or method you want to use. Each example calls an Anthropic model through the gateway using your LangSmith API key.
 
-[LangChain](/oss/langchain/overview) chat models and [Deep Agents](/oss/deepagents/overview) (including [Deep Agents Code](/oss/deepagents/code/overview)) support the gateway through two convenience environment variables:
+<Tabs>
 
-<CodeGroup>
+<Tab title="cURL">
 
-```bash Bash
+```bash
+curl "$LANGSMITH_GATEWAY_BASE_URL/chat/completions" \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"anthropic/claude-opus-5","messages":[{"role":"user","content":"ping"}]}'
+```
+
+</Tab>
+
+<Tab title="OpenAI SDK (Python)">
+
+```bash
+pip install openai
+```
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=os.environ["LANGSMITH_GATEWAY_BASE_URL"],
+    api_key=os.environ["LANGSMITH_API_KEY"],
+)
+response = client.chat.completions.create(
+    model="anthropic/claude-opus-5",
+    messages=[{"role": "user", "content": "ping"}],
+)
+print(response.choices[0].message.content)
+```
+
+</Tab>
+
+<Tab title="OpenAI SDK (TypeScript)">
+
+```bash
+npm install openai
+```
+
+```typescript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: process.env.LANGSMITH_GATEWAY_BASE_URL,
+  apiKey: process.env.LANGSMITH_API_KEY,
+});
+const response = await client.chat.completions.create({
+  model: "anthropic/claude-opus-5",
+  messages: [{ role: "user", content: "ping" }],
+});
+console.log(response.choices[0].message.content);
+```
+
+</Tab>
+
+<Tab title="Anthropic SDK (Python)">
+
+```bash
+pip install anthropic
+```
+
+```python
+import os
+import anthropic
+
+client = anthropic.Anthropic(
+    base_url=os.environ["LANGSMITH_GATEWAY_BASE_URL"].replace("/v1", ""),
+    api_key=os.environ["LANGSMITH_API_KEY"],
+    default_headers={"anthropic-version": "2023-06-01"},
+)
+message = client.messages.create(
+    model="anthropic/claude-opus-5",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "ping"}],
+)
+print(message.content[0].text)
+```
+
+<Note>
+This uses the gateway's [direct Anthropic endpoint](/langsmith/llm-gateway-direct-model-access). For the full format reference, see [API formats](/langsmith/llm-gateway-api-formats).
+</Note>
+
+</Tab>
+
+<Tab title="Anthropic SDK (TypeScript)">
+
+```bash
+npm install @anthropic-ai/sdk
+```
+
+```typescript
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  baseURL: process.env.LANGSMITH_GATEWAY_BASE_URL!.replace("/v1", ""),
+  apiKey: process.env.LANGSMITH_API_KEY,
+  defaultHeaders: { "anthropic-version": "2023-06-01" },
+});
+const message = await client.messages.create({
+  model: "anthropic/claude-opus-5",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "ping" }],
+});
+console.log(message.content[0].text);
+```
+
+<Note>
+This uses the gateway's [direct Anthropic endpoint](/langsmith/llm-gateway-direct-model-access). For the full format reference, see [API formats](/langsmith/llm-gateway-api-formats).
+</Note>
+
+</Tab>
+
+<Tab title="Deep Agents (Python)">
+
+```bash
+pip install "deepagents>=0.1.0"
+```
+
+Set the gateway env var so Deep Agents routes through the gateway automatically:
+
+```bash
 export LANGSMITH_GATEWAY="true"
 ```
 
-```python Python
-import os
+```python
+from deepagents import create_deep_agent
 
-os.environ["LANGSMITH_GATEWAY"] = "true"
+agent = create_deep_agent(
+    model="anthropic/claude-opus-5",
+)
+result = agent.invoke({"messages": [{"role": "user", "content": "ping"}]})
+print(result["messages"][-1].content)
 ```
 
-```typescript TypeScript
-process.env.LANGSMITH_GATEWAY = "true";
-```
-
-</CodeGroup>
-
-This routes all supported chat models through the gateway at `https://gateway.smith.langchain.com`, using `LANGSMITH_API_KEY` for authentication. To use a different gateway (for example, the EU instance), set its URL instead of `true`:
-
-```bash
-export LANGSMITH_GATEWAY="https://eu.gateway.smith.langchain.com"
-```
-
-<Note>
-If you need to use a different API key for gateway calls than your default `LANGSMITH_API_KEY`, set `LANGSMITH_GATEWAY_API_KEY` as an override. It must be a workspace-scoped key with the `gateway:invoke` permission.
-</Note>
-
-:::python
-Configuring these environment variables will route supported chat models through their [direct access endpoints](/langsmith/llm-gateway-direct-model-access). To access the unified `/v1` endpoint or [Gateway Credits](/langsmith/llm-gateway-credits), specify the `"langsmith"` provider in @[`create_agent`][create_agent], @[`init_chat_model`][init_chat_model], or other entrypoint as shown below (requires `langchain >= 1.3.15`)
+To use [Gateway Credits](/langsmith/llm-gateway-credits) models or the unified `/v1` endpoint, prefix the model with `langsmith:` (requires `deepagents>=0.1.0`):
 
 ```python
 from deepagents import create_deep_agent
@@ -78,16 +178,121 @@ from deepagents import create_deep_agent
 agent = create_deep_agent(
     model="langsmith:anthropic/claude-opus-5",
 )
+result = agent.invoke({"messages": [{"role": "user", "content": "ping"}]})
+print(result["messages"][-1].content)
 ```
-:::
 
-You can also configure base URLs and API keys for individual providers. See the following accordion for provider support and interactions with provider-specific environment variables.
+</Tab>
 
-<Accordion title="More details">
+<Tab title="Deep Agents (TypeScript)">
 
-<Tabs>
+```bash
+npm install deepagents
+```
 
-<Tab title="Python">
+Set the gateway env var so Deep Agents routes through the gateway automatically:
+
+```bash
+export LANGSMITH_GATEWAY="true"
+```
+
+```typescript
+import { createDeepAgent } from "deepagents";
+
+const agent = createDeepAgent({
+  model: "anthropic/claude-opus-5",
+});
+const result = await agent.invoke({
+  messages: [{ role: "user", content: "ping" }],
+});
+console.log(result.messages[result.messages.length - 1].content);
+```
+
+</Tab>
+
+<Tab title="init_chat_model">
+
+```bash
+pip install "langchain>=1.3.15"
+```
+
+Set the gateway env var so LangChain routes through the gateway automatically:
+
+```bash
+export LANGSMITH_GATEWAY="true"
+```
+
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(
+    model="anthropic/claude-opus-5",
+    model_provider="anthropic",
+)
+response = model.invoke("ping")
+print(response.content)
+```
+
+To use [Gateway Credits](/langsmith/llm-gateway-credits) models or the unified `/v1` endpoint, prefix the model with `langsmith:` and set the provider to `openai` (requires `langchain>=1.3.15`):
+
+```python
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model(
+    model="langsmith:anthropic/claude-opus-5",
+    model_provider="openai",
+)
+response = model.invoke("ping")
+print(response.content)
+```
+
+</Tab>
+
+</Tabs>
+
+A `200` response with a chat completion confirms that the gateway, your API key, role permissions, and selected model route are working.
+
+## 3. View your trace
+
+Open the [LangSmith UI](https://smith.langchain.com) and navigate to the tracing project named `gateway` or `gateway-<short_api_key>-<api_key_id>` in the workspace associated with your API key. You should see a new trace for the call you just made.
+
+<Note>
+If your application also emits its own LangSmith traces, for example through [LangChain or LangGraph tracing](/langsmith/observability), the gateway-side trace and your application trace appear as separate runs. Linking gateway traces to the parent application run is not yet supported.
+</Note>
+
+## 4. Set a spend policy (optional)
+
+Go to **LLM Gateway** in LangSmith to create a spend policy. For example, you can set a daily $10 cap on your API key. When the cap is reached, the gateway returns a `402` response with the message: `"Request blocked by gateway policies: R&D Spend Cap"`.
+
+See [Spend policies](/langsmith/llm-gateway-spend-policies) for the full guide on policy dimensions, time windows, and conflict resolution.
+
+## How the gateway handles requests
+
+The gateway performs these steps for each request:
+
+1. **Authenticates** the request using the LangSmith API key.
+1. **Selects** a hosted model or configured bring-your-own-key provider from the model ID.
+1. **Resolves** the upstream credential. Hosted models use Gateway Credits, while bring-your-own-key models use workspace Provider Secrets.
+1. **Evaluates** active policies, including spend limits, PII redaction, and secrets redaction.
+1. **Translates** the request and response when the selected provider uses a different API format.
+1. **Traces** the call to LangSmith, including token counts, cost, and policy events.
+
+## LANGSMITH_GATEWAY env var (LangChain and Deep Agents)
+
+Setting `LANGSMITH_GATEWAY` routes all supported LangChain and Deep Agents chat models through the gateway automatically — no `base_url` or `api_key` wiring needed per client.
+
+```bash
+export LANGSMITH_GATEWAY="true"           # route to the default US gateway
+export LANGSMITH_GATEWAY="https://eu.gateway.smith.langchain.com"  # or a specific instance
+```
+
+<Note>
+If you need a different API key for gateway calls than your default `LANGSMITH_API_KEY`, set `LANGSMITH_GATEWAY_API_KEY` as an override. It must be a workspace-scoped key with the `gateway:invoke` permission.
+</Note>
+
+Provider-specific base URLs (e.g. `OPENAI_API_BASE`) take precedence over the gateway setting, so you can still route individual providers elsewhere while keeping everything else on the gateway.
+
+<Accordion title="LangChain Python — supported models and env var resolution details">
 
 Supported chat models:
 
@@ -96,12 +301,6 @@ Supported chat models:
 - [Fireworks](/oss/python/integrations/chat/fireworks) (`langchain-fireworks >= 1.5.1`)
 - [Google Gemini](/oss/python/integrations/chat/google_generative_ai) (`langchain-google-genai >= 4.3.2`)
 - [OpenAI](/oss/python/integrations/chat/openai) (`langchain-openai >= 1.4.1`)
-
-Provider-specific base URLs take precedence over the gateway, so you can still route an individual provider elsewhere. For example, with the gateway enabled, `OPENAI_API_BASE` sends OpenAI to that URL while every other provider continues to use the gateway:
-
-```bash
-export OPENAI_API_BASE="https://my.custom.gateway/openai/v2"
-```
 
 The following table shows how the base URL and key are resolved, using OpenAI as the example (other providers use their own `*_API_BASE` and `*_API_KEY` variables). `GW default` is `https://gateway.smith.langchain.com/openai/v1`.
 
@@ -120,25 +319,15 @@ The following table shows how the base URL and key are resolved, using OpenAI as
 | `https://eu…` | ✓ | — | — | `https://apac…` | `apac…` | gateway-key |
 | `https://eu…` | ✓ | — | provider-key | `https://apac…` | `apac…` | provider-key |
 
-</Tab>
+</Accordion>
 
-<Tab title="TypeScript">
+<Accordion title="LangChain TypeScript — supported models and env var resolution details">
 
 Supported chat models:
 
 - [Anthropic](/oss/javascript/integrations/chat/anthropic) (`@langchain/anthropic >= 1.5.4`)
 - [Fireworks](/oss/javascript/integrations/chat/fireworks) (`@langchain/fireworks >= 0.2.7`)
 - [OpenAI](/oss/javascript/integrations/chat/openai) (`@langchain/openai >= 1.5.7`)
-
-Provider-specific base URLs take precedence over the gateway, so you can still route an individual provider elsewhere. For example, with the gateway enabled, `OPENAI_BASE_URL` sends OpenAI to that URL while every other provider continues to use the gateway:
-
-```bash
-export OPENAI_BASE_URL="https://my.custom.gateway/openai/v2"
-```
-
-<Note>
-Each provider also reads its `*_API_BASE` variable, which takes precedence over `*_BASE_URL`.
-</Note>
 
 The following table shows how the base URL and key are resolved, using OpenAI as the example (other providers use their own `*_BASE_URL` and `*_API_KEY` variables). `GW default` is `https://gateway.smith.langchain.com/openai/v1`.
 
@@ -157,98 +346,7 @@ The following table shows how the base URL and key are resolved, using OpenAI as
 | `https://eu…` | ✓ | — | — | `https://apac…` | `apac…` | none |
 | `https://eu…` | ✓ | — | provider-key | `https://apac…` | `apac…` | provider-key |
 
-</Tab>
-
-</Tabs>
-
 </Accordion>
-
-## 2. Make a call
-
-<CodeGroup>
-
-```bash cURL
-curl "$LANGSMITH_GATEWAY_BASE_URL/chat/completions" \
-    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{"model":"anthropic/claude-opus-5","messages":[{"role":"user","content":"ping"}]}'
-```
-
-```python OpenAI SDK
-import os
-
-from openai import OpenAI
-
-client = OpenAI(
-    base_url=os.environ["LANGSMITH_GATEWAY_BASE_URL"],
-    api_key=os.environ["LANGSMITH_API_KEY"],
-)
-response = client.chat.completions.create(
-    model="anthropic/claude-opus-5",
-    messages=[{"role": "user", "content": "ping"}],
-)
-print(response.choices[0].message.content)
-```
-
-```typescript OpenAI SDK (TypeScript)
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  baseURL: process.env.LANGSMITH_GATEWAY_BASE_URL,
-  apiKey: process.env.LANGSMITH_API_KEY,
-});
-const response = await client.chat.completions.create({
-  model: "anthropic/claude-opus-5",
-  messages: [{ role: "user", content: "ping" }],
-});
-console.log(response.choices[0].message.content);
-```
-
-```python LangChain
-import os
-
-from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
-
-model = init_chat_model(
-    model="anthropic/claude-opus-5",
-    model_provider="openai",
-    base_url=os.environ["LANGSMITH_GATEWAY_BASE_URL"],
-    api_key=os.environ["LANGSMITH_API_KEY"],
-)
-agent = create_agent(model=model, system_prompt="You are a helpful assistant.")
-result = agent.invoke({"messages": [{"role": "user", "content": "ping"}]})
-print(result["messages"][-1].content)
-```
-
-</CodeGroup>
-
-A `200` response with a chat completion confirms that the gateway, your API key, role permissions, and selected model route are working.
-
-## 3. View your trace
-
-Open the [LangSmith UI](https://smith.langchain.com) and navigate to the tracing project named `gateway` or `gateway-<short_api_key>-<api_key_id>` in the workspace associated with your API key. You should see a new trace for the call you just made.
-
-<Note>
-If your application also emits its own LangSmith traces, for example, through [LangChain or LangGraph tracing](/langsmith/observability), the gateway-side trace and your application trace appear as separate runs. Linking gateway traces to the parent application run is not yet supported.
-</Note>
-
-## 4. Set a spend policy (optional)
-
-Go to **LLM Gateway** in LangSmith to create a spend policy. For example, you can set a daily $10 cap on your API key. When the cap is reached, the gateway returns a `402` response with the message: `"Request blocked by gateway policies: R&D Spend Cap"`.
-
-See [Spend policies](/langsmith/llm-gateway-spend-policies) for the full guide on policy dimensions, time windows, and conflict resolution.
-
-## How the gateway handles requests
-
-The gateway performs these steps for each standard endpoint request:
-
-1. **Authenticates** the request using the LangSmith API key.
-1. **Selects** a hosted model or configured bring-your-own-key provider from the model ID.
-1. **Resolves** the upstream credential. Hosted models use Gateway Credits, while bring-your-own-key models use workspace Provider Secrets.
-1. **Evaluates** active policies, including spend limits, PII redaction, and secrets redaction.
-1. **Translates** the request and response when the selected provider uses a different API format.
-1. **Traces** the call to LangSmith, including token counts, cost, and policy events.
 
 ## Next steps
 
