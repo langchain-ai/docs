@@ -75,7 +75,7 @@ instead, and touch `docs.json` only when creating a brand-new component group.
 
 ## Step 4. Add redirects for a move, rename, or deletion
 
-For a move or rename, run the repo's mover first. It rewrites cross-references
+For a move or rename of a file that was already on `main`, run the repo's mover first. It rewrites cross-references
 across the corpus, which hand-editing misses:
 
 ```bash
@@ -105,10 +105,10 @@ Run all three, in this order:
 ```bash
 make lint_prose FILES="src/path/to/page.mdx"
 make build
-make broken-links
+make broken-links-with-anchors
 ```
 
-Read `make broken-links` output by skipping to the `⎿` lines. Those are the only
+Read `make broken-links-with-anchors` output by skipping to the `⎿` lines. Those are the only
 real failures. A bare filename with no indented lines beneath it is an
 OpenAPI-generated page that exists at deploy time but not locally.
 
@@ -137,5 +137,5 @@ Skip this step for a change too small to have prose in it, such as a pure
 - [ ] Both language entries added if the page is language-versioned.
 - [ ] Index page first if a new group was created.
 - [ ] Redirect added for every moved, renamed, or deleted path.
-- [ ] `make lint_prose` clean, `make broken-links` shows no new `⎿` lines.
+- [ ] `make lint_prose` clean, `make broken-links-with-anchors` shows no new `⎿` lines.
 - [ ] `docs-review` run on the changed files, findings addressed.
