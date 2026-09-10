@@ -141,10 +141,12 @@ Attribute-based access control (ABAC) policies for fine-grained permissions.
 | Create org-scoped service key (workspace-scoped)* | ✓ | ✓ | ⚠ | ✗ | `organization:pats:create` + `workspaces:manage-keys` |
 | Create org-scoped service key (org-wide)* | ✓ | ✗ | ✗ | ✗ | `organization:pats:create` + `organization:manage` |
 | Delete org-scoped service key (workspace-scoped)* | ✓ | ✓ | ⚠ | ✗ | `organization:read` + `workspaces:manage-keys` |
-| Update service key role | ✓ | ✗ | ✗ | ✗ | `organization:manage` |
-| List personal access tokens (PATs) | ✓ | ✓ | ✓ | ✗ | `organization:read` |
+| Update service key role | ✓ | ✓ | ✗ | ✗ | `organization:manage` |
+| List own personal access tokens (PATs) | ✓ | ✓ | ✓ | ✗ | `organization:read` |
+| List every member's personal access tokens (PATs) | ✓ | ✓ | ✗ | ✗ | `organization:pats:read` |
 | Create personal access token (PAT) | ✓ | ✓ | ✓ | ✗ | `organization:pats:create` |
-| Delete personal access token (PAT) | ✓ | ✓ | ✓ | ✗ | `organization:read` |
+| Revoke or delete own personal access token (PAT) | ✓ | ✓ | ✓ | ✗ | `organization:read` |
+| Revoke or delete another member's personal access token (PAT) | ✓ | ✓ | ✗ | ✗ | `organization:pats:manage` |
 
 <Note>
 \* Organization Operators and Organization Users can create or delete workspace-scoped service keys only in workspaces where their role grants `workspaces:manage-keys`, such as the Workspace Admin role. Creating an org-wide service key requires the Organization Admin role.

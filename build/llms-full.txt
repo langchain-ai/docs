@@ -1909,6 +1909,10 @@ Personal Access Tokens (PATs) are used to authenticate requests to the LangSmith
 
 PATs are prefixed with `lsv2_pt_`
 
+Members can revoke or delete their own PATs. [Organization Admins](/langsmith/rbac#organization-admin) and [Organization Operators](/langsmith/rbac#organization-operator) can also list, revoke, and delete any member's PAT. For the steps, refer to [Create an account and API key](/langsmith/create-account-api-key).
+
+Revoking a token stops it from authenticating but keeps its record, listed with a **Revoked** badge, so the token, its owner, and its last use stay visible. Deleting removes the record entirely. Because authentication results are cached, a revoked or deleted token stops working within a minute rather than instantly. Service keys can only be deleted, not revoked.
+
 #### Service keys
 
 Service keys are similar to PATs, but are used to authenticate requests to the LangSmith API on behalf of a service account. Only admins can create service keys. We recommend using these for applications / services that need to interact with the LangSmith API, such as LangGraph agents or other integrations. Service keys may be scoped to a single workspace, multiple workspaces, or the entire organization, and can be used to authenticate requests to the LangSmith API for whichever workspace(s) it has access to.
@@ -1956,6 +1960,7 @@ The following table provides an overview of organization level permissions:
 | View data retention settings                | ✅                   | ✅                 | ✅                  |
 | View usage limits                           | ✅                   | ✅                 | ✅                  |
 | Create personal access tokens (PATs)        | ❌                   | ✅                 | ✅                  |
+| View, revoke, and delete any member's PATs  | ❌                   | ❌                 | ✅                  |
 | Admin access to all workspaces              | ❌                   | ❌                 | ✅                  |
 | Manage billing settings                     | ❌                   | ❌                 | ✅                  |
 | Create workspaces                           | ❌                   | ❌                 | ✅                  |
@@ -9989,6 +9994,7 @@ Audit log events are returned in [OCSF v1.7.0 API Activity (Class UID 6003)](htt
 | `resources` | List of UUIDs for the resources affected by the operation (e.g., the role that was updated, the workspace that was created). |
 | `metadata.uid` | Unique identifier for this audit log event. |
 | `unmapped.original_audit_log` | The full LangSmith-native audit log record, including `organization_id` and `workspace_id`. |
+| `unmapped.original_audit_log.enrichments.resource_owner_ls_user_id` | UUID of the member who owns the resource the operation acted on, for the operations that record it, such as revoking or deleting a personal access token. A value different from `actor.user.uid` means an administrator acted on another member's resource. |
 
 ## Forwarding to external systems
 
@@ -9998,7 +10004,7 @@ To forward audit log events to an external SIEM or logging platform, you can run
 
 | Category | Operations (`api.operation`) |
 |----------|-----------|
-| **API keys & credentials** | `create_api_key`, `delete_api_key`, `create_personal_access_token`, `delete_personal_access_token`, `create_service_key`, `delete_service_key`, `update_service_key`, `create_service_account`, `delete_service_account`, `list_org_personal_access_tokens`, `list_org_service_keys` |
+| **API keys & credentials** | `create_api_key`, `delete_api_key`, `create_personal_access_token`, `delete_personal_access_token`, `create_service_key`, `delete_service_key`, `update_service_key`, `create_service_account`, `delete_service_account`, `revoke_personal_access_token`, `list_org_personal_access_tokens`, `list_all_org_personal_access_tokens`, `list_org_service_keys` |
 | **Roles** | `create_role`, `update_role`, `delete_role` |
 | **Organizations** | `create_organization`, `create_provisioned_saas_org`, `create_tenant`, `invite_provisioned_org_member`, `claim_pending_organization_invite`, `delete_pending_organization_invite` |
 | **Organization members** | `invite_user_to_org`, `invite_users_to_org_batch`, `update_org_member`, `delete_org_member`, `delete_org_pending_member`, `add_basic_auth_users_to_org`, `update_basic_auth_user` |
@@ -23369,7 +23375,11 @@ To log [traces](/langsmith/observability-concepts#traces) and run [evaluations](
 </Steps>
 
 <Tip>
-  To delete an API key, navigate to the [**Settings** page](https://smith.langchain.com/settings), find the key in the **API Keys** section, and select the trash icon <Icon icon="trash" iconType="solid"/> in the **Actions** column.
+  To revoke or delete a key, navigate to the [**Settings** page](https://smith.langchain.com/settings), find the key in the **API Keys** section, and select the trash icon <Icon icon="trash" iconType="solid"/> in the **Actions** column. For a personal access token, type the key's name, then select **Revoke** to stop the token from authenticating while keeping its record, or **Delete** to remove the record entirely. Neither action can be undone. Service keys can only be deleted.
+</Tip>
+
+<Tip>
+  [Organization Admins](/langsmith/rbac#organization-admin) and [Organization Operators](/langsmith/rbac#organization-operator) can view, revoke, and delete every member's personal access tokens. In the **API Keys** section of the [**Settings** page](https://smith.langchain.com/settings), open the **Personal** tab and switch the scope from **My keys** to **All members**.
 </Tip>
 
 <Tip>
@@ -77775,10 +77785,12 @@ Attribute-based access control (ABAC) policies for fine-grained permissions.
 | Create org-scoped service key (workspace-scoped)* | ✓ | ✓ | ⚠ | ✗ | `organization:pats:create` + `workspaces:manage-keys` |
 | Create org-scoped service key (org-wide)* | ✓ | ✗ | ✗ | ✗ | `organization:pats:create` + `organization:manage` |
 | Delete org-scoped service key (workspace-scoped)* | ✓ | ✓ | ⚠ | ✗ | `organization:read` + `workspaces:manage-keys` |
-| Update service key role | ✓ | ✗ | ✗ | ✗ | `organization:manage` |
-| List personal access tokens (PATs) | ✓ | ✓ | ✓ | ✗ | `organization:read` |
+| Update service key role | ✓ | ✓ | ✗ | ✗ | `organization:manage` |
+| List own personal access tokens (PATs) | ✓ | ✓ | ✓ | ✗ | `organization:read` |
+| List every member's personal access tokens (PATs) | ✓ | ✓ | ✗ | ✗ | `organization:pats:read` |
 | Create personal access token (PAT) | ✓ | ✓ | ✓ | ✗ | `organization:pats:create` |
-| Delete personal access token (PAT) | ✓ | ✓ | ✓ | ✗ | `organization:read` |
+| Revoke or delete own personal access token (PAT) | ✓ | ✓ | ✓ | ✗ | `organization:read` |
+| Revoke or delete another member's personal access token (PAT) | ✓ | ✓ | ✗ | ✗ | `organization:pats:manage` |
 
 <Note>
 \* Organization Operators and Organization Users can create or delete workspace-scoped service keys only in workspaces where their role grants `workspaces:manage-keys`, such as the Workspace Admin role. Creating an org-wide service key requires the Organization Admin role.
@@ -86390,6 +86402,8 @@ Organization roles are **distinct from the workspace RBAC feature** and are used
 - `organization:manage` - Full control over organization settings, SSO, security, billing
 - `organization:read` - Read access to all organization information
 - `organization:pats:create` - Create organization-level [personal access tokens](/langsmith/administration-overview#personal-access-tokens-pats)
+- `organization:pats:read` - View every organization member's personal access tokens
+- `organization:pats:manage` - Revoke or delete any organization member's personal access token
 
 For a comprehensive list of required permissions along with the operations and roles that can perform them, refer to the [Organization and workspace reference](/langsmith/organization-workspace-operations).
 
@@ -86399,6 +86413,7 @@ For a comprehensive list of required permissions along with the operations and r
 - Manage [billing](/langsmith/billing) and subscription plans
 - Create and delete [workspaces](/langsmith/set-up-hierarchy)
 - Invite and remove organization members
+- View, revoke, and delete any member's [personal access tokens](/langsmith/administration-overview#personal-access-tokens-pats)
 - Assign organization and workspace roles to members
 - Create and manage [custom roles](#custom-roles)
 - Configure RBAC and ABAC (Attribute-Based Access Control) policies
@@ -86415,6 +86430,8 @@ Management access for day-to-day operations including workspace and user managem
 - `organization:manage` - Control over organization settings, workspaces, and non-admin users
 - `organization:read` - Read access to all organization information
 - `organization:pats:create` - Create personal access tokens
+- `organization:pats:read` - View every organization member's personal access tokens
+- `organization:pats:manage` - Revoke or delete any organization member's personal access token
 
 For a comprehensive list of required permissions along with the operations and roles that can perform them, refer to the [Organization and workspace reference](/langsmith/organization-workspace-operations).
 
@@ -86422,6 +86439,7 @@ For a comprehensive list of required permissions along with the operations and r
 - Create and manage [workspaces](/langsmith/set-up-hierarchy#set-up-a-workspace)
 - Invite organization members (all roles except Organization Admin)
 - Manage non-admin organization members (modify and remove Organization Users, Viewers, and Operators)
+- View, revoke, and delete any member's [personal access tokens](/langsmith/administration-overview#personal-access-tokens-pats)
 - Assign workspace roles to members
 - Create workspace-scoped service keys and service accounts
 - View organization [usage](/langsmith/usage-and-billing#usage-limits) and analytics
