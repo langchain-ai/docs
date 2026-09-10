@@ -20,7 +20,7 @@ Before setting up tracing, ensure you have:
 
 Install the plugin directly from the GitHub repository in Cursor's settings:
 
-1. Open **Cursor → Settings → Plugins**.
+1. Open **Cursor > Settings > Plugins**.
 2. Paste `https://github.com/langchain-ai/langsmith-cursor-plugins` into the plugin link field.
 3. Confirm to add **LangSmith Tracing for Cursor**.
 
