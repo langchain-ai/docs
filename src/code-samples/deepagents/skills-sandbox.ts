@@ -38,6 +38,12 @@ async function walkFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files: string[] = [];
   for (const entry of entries) {
+    // :remove-start:
+    // Skip Finder metadata and other non-skill junk (e.g. .DS_Store).
+    if (entry.name.startsWith(".")) {
+      continue;
+    }
+    // :remove-end:
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
       files.push(...(await walkFiles(fullPath)));
