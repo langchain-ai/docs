@@ -29,7 +29,7 @@ The table below summarizes the split:
 
 LangChain provisions the following in your account:
 
-- **VPC**: A dedicated VPC spread across the region's availability zones, fully private by default. It uses VPC endpoints for private communication to AWS services, and PrivateLink for communication between the data plane and the control plane.
+- **VPC**: By default, a dedicated VPC spread across the region's availability zones, with private ingress. It uses VPC endpoints for private communication to AWS services, and PrivateLink for communication between the data plane and the control plane. With [BYOVPC](/langsmith/byoc-byovpc), you create and manage the VPC and its base network resources instead.
 - **Managed databases**: RDS for relational workloads, and ElastiCache for caching.
 - **Storage**: S3 buckets for the blob store holding trace data, VPC flow logs, and ClickHouse backups.
 - **EKS**: A private EKS cluster with managed add-ons.
@@ -41,13 +41,15 @@ LangChain provisions the following in your account:
 
 LangChain needs cross-account IAM permissions to provision and manage resources within your AWS account. These permissions let LangChain:
 
-- **Provision infrastructure**: Create and configure the VPC, subnets, security groups, and other networking components.
+- **Provision infrastructure**: Create and configure the VPC, subnets, security groups, and other networking components. With BYOVPC, the role retains workload networking permissions, while you manage the base network.
 - **Manage the Kubernetes cluster**: Deploy and maintain the EKS cluster, its node groups, and cluster add-ons.
 - **Create storage resources**: Provision RDS, ElastiCache, and the S3 buckets used for application data and backups.
 - **Create IAM roles**: Create and configure the roles used by Kubernetes service accounts and supporting services.
 - **Operate supporting services**: Deploy and manage ingress and autoscaling, and scale and upgrade LangSmith workloads.
 
 Permissions are granted through a single cross-account IAM role that you create during onboarding by applying the [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role).
+
+For BYOVPC, disable base VPC creation permissions and scope security group creation to your supplied VPC IDs. See [Create the reduced-permission IAM role](/langsmith/byoc-byovpc#create-the-reduced-permission-iam-role).
 
 LangChain provides the external ID used in the role's trust policy. Copy it using the button next to the **Data Planes** header in **Settings > Data Planes**, and use it when applying the module. The role's `ExternalId` condition must match this value.
 
@@ -82,6 +84,8 @@ All communication between the control plane and your data plane travels over AWS
 - **Data plane to control plane (runtime path)**: The data plane calls the control plane to authenticate requests, validate API keys, resolve roles and permissions, and load organization and workspace configuration.
 
 Container images are pulled read-only from LangChain's control plane ECR repositories through VPC endpoints.
+
+With BYOVPC, you configure the customer-side AWS service endpoints and data-plane-to-control-plane PrivateLink endpoint. LangChain manages the endpoint service for the cluster management path. See [Configure connectivity](/langsmith/byoc-byovpc#configure-connectivity).
 
 ### DNS and ingress
 
