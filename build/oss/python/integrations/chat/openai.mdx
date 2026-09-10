@@ -341,6 +341,23 @@ ai_msg.tool_calls
 
 For more on binding tools and tool call outputs, head to the [tool calling](/oss/python/langchain/tools) docs.
 
+### Async tools
+
+[Async tool calling](https://developers.openai.com/api/docs/guides/async-tool-calling) lets the model continue working after issuing a tool call, without waiting for the result. When using the Responses API, `ChatOpenAI` supports this by passing `extras={"async": True}` to `@tool`:
+
+```python
+from langchain.tools import tool
+
+@tool(extras={"async": True})  # [!code highlight]
+def lookup_price(sku: str) -> str:
+    """Look up the price of a product."""
+    return "1200"
+```
+
+<Note>
+    Async tools are only supported via the Responses API (`use_responses_api=True`). The `async` flag is round-tripped through the message history so that prompt-cache prefixes remain intact across turns.
+</Note>
+
 ### Custom tools
 
 <Info>
@@ -1560,6 +1577,33 @@ llm = ChatOpenAI(model="gpt-5-nano", reasoning_effort="medium")
 <Note>
     `reasoning_effort` as a standard parameter requires `langchain-openai>=1.4.1`.
 </Note>
+
+### Changing reasoning effort mid-conversation
+
+Use a [`configuration_update`](https://developers.openai.com/api/docs/guides/reasoning?api-mode=responses#change-reasoning-mid-conversation) content block to change reasoning effort between turns without modifying the request-level `reasoning_effort` parameter — keeping the prompt prefix cacheable. Embed the block directly in a `HumanMessage`:
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain.messages import HumanMessage
+
+llm = ChatOpenAI(model="gpt-6-astra", use_responses_api=True, reasoning_effort="low")
+
+first = llm.invoke("Hello")
+
+# Raise reasoning effort from this message onward
+response = llm.invoke(
+    [
+        "Hello",
+        first,
+        HumanMessage(
+            [
+                {"type": "configuration_update", "reasoning": {"effort": "high"}},  # [!code highlight]
+                {"type": "text", "text": "How many distinct 5-card poker hands are a full house?"},
+            ]
+        ),
+    ]
+)
+```
 
 <Tip>
     **Troubleshooting: Empty responses from reasoning models**
