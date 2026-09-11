@@ -40,8 +40,10 @@ the tree changes. Re-run the command after pulling, or symlink instead.
 | Skill | Use it for |
 |-------|-----------|
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: source directory, frontmatter, `src/docs.json` navigation, redirects, verification. |
+| `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch instead of cutting a new one, forked PRs, reading the real diff. |
+| `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, and the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. Runs on a PR, a branch, or the working tree. |
-| `document-tooling-in-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, what stays in the repo, how to edit safely. |
+| `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, what stays in the repo, how to edit safely. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files: snippet markers, harness blocks, file placement, and the shared-module-scope trap in TypeScript. |
 | `submit-integration` | Turning a structured integration issue submission into a listing, applying the hosted-guide eligibility policy. Invoked by `.github/workflows/integration-submission.yml`. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy: rebase, convert to external YAML, feature, or check package downloads. |

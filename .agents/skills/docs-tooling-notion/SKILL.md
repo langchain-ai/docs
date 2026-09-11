@@ -1,5 +1,5 @@
 ---
-name: document-tooling-in-notion
+name: docs-tooling-notion
 description: Document new or changed docs-team tooling on the Notion tooling pages. Decides which of the five pages owns the topic, what belongs in the repo instead of Notion, and how to edit safely through the Notion MCP server. Use when a script, workflow, agent, skill, or MCP server is added or changed and the internal tooling docs need updating.
 license: MIT
 metadata:
@@ -59,7 +59,7 @@ is personal tooling and does not go on these pages.
 
 ## Step 3. Write it
 
-Follow the `writing-style` skill. Do not restate its rules here. The three that
+Follow the `docs-team-voice` skill. Do not restate its rules here. The three that
 get missed most often on Notion pages: no first person, no spaced em dashes, and
 definition lists written as `- **Term**: Explanation.` with the colon outside the
 bold and a period at the end.
