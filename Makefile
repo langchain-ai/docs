@@ -125,6 +125,7 @@ install:
 	uv sync --all-groups
 	npm install
 	npm install -g mint@latest
+	@$(MAKE) --no-print-directory skills
 	@echo "If the docs command is not available, relaunch your shell so it picks up the docs binary."
 
 clean:
@@ -245,7 +246,7 @@ help:
 	@echo "  make lint_md_fix        - Lint and fix markdown files"
 	@echo "  make lint_prose         - Lint prose with Vale (terminology, style)"
 	@echo "  make test               - Run tests"
-	@echo "  make install            - Install dependencies"
+	@echo "  make install            - Install dependencies and link skills"
 	@echo "  make code-snippets      - Extract code snippets (line-based, Bluehawk-compatible)"
 	@echo "  make test-code-samples  - Run code samples (FILES=\"path ...\" for specific)"
 	@echo "  make skills             - Link .agents/skills into .claude/skills for Claude Code"
