@@ -1,0 +1,91 @@
+---
+title: Text embeddings inference integration
+description: Integrate with the Text embeddings inference embedding model using LangChain Python.
+integration:
+  name: Text embeddings inference
+  pypi: langchain-huggingface
+---
+
+
+>[Hugging Face Text Embeddings Inference (TEI)](https://huggingface.co/docs/text-embeddings-inference/index) is a toolkit for deploying and serving open-source
+> text embeddings and sequence classification models. `TEI` enables high-performance extraction for the most popular models,
+>including `FlagEmbedding`, `Ember`, `GTE` and `E5`.
+
+TEI serves an OpenAI-compatible `/v1/embeddings` endpoint, so you can consume a TEI deployment from LangChain with `OpenAIEmbeddings` from the `langchain-openai` package.
+
+<Note>
+Earlier versions of this guide used `HuggingFaceEndpointEmbeddings(model="http://localhost:8080")`. `langchain-huggingface` no longer accepts a URL for `model` and raises `` `model` must be a HuggingFace repo ID, not a URL. ``. Point `OpenAIEmbeddings` at the TEI server instead, as shown below.
+</Note>
+
+## Setup
+
+Install `langchain-openai`:
+
+```shell
+pip install -qU langchain-openai
+```
+
+## Deploy a model with TEI
+
+Expose an embedding model using TEI. For instance, using Docker, you can serve `sentence-transformers/all-MiniLM-L6-v2` as follows:
+
+```bash
+model=sentence-transformers/all-MiniLM-L6-v2
+volume=$PWD/data  # share a volume with the Docker container to avoid downloading weights every run
+
+docker run --gpus all -p 8080:80 -v $volume:/data --pull always ghcr.io/huggingface/text-embeddings-inference:cuda-1.9 --model-id $model
+```
+
+To serve on CPU-only hardware, use the `cpu-1.9` image and drop the `--gpus all` flag. Docker usage varies with the underlying hardware. For example, to serve the model on Intel Gaudi/Gaudi2 hardware, refer to the [tei-gaudi repository](https://github.com/huggingface/tei-gaudi) for the relevant docker run command.
+
+## Embed text
+
+Instantiate `OpenAIEmbeddings` against the TEI server:
+
+```python
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    base_url="http://localhost:8080/v1",
+    api_key="unused",  # TEI does not require authentication by default
+    check_embedding_ctx_length=False,  # send raw text; TEI tokenizes server-side
+)
+```
+
+<Note>
+Set `check_embedding_ctx_length=False`. Without it, `OpenAIEmbeddings` tokenizes input with `tiktoken` and sends token IDs, which TEI does not accept. The flag sends raw text instead. If you start TEI with an API key, pass the same value as `api_key`.
+</Note>
+
+Then embed your texts:
+
+```python
+text = "What is deep learning?"
+
+query_result = embeddings.embed_query(text)
+query_result[:3]
+```
+
+```text
+[-0.077851, -0.033281, 0.019743]
+```
+
+```python
+doc_result = embeddings.embed_documents([text])
+doc_result[0][:3]
+```
+
+```text
+[-0.077851, -0.033281, 0.019743]
+```
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/embeddings/text_embeddings_inference.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
