@@ -34092,6 +34092,120 @@
         }
       }
     },
+    "/api/v1/platform/product-feedbacks": {
+      "post": {
+        "description": "**Alpha:** This endpoint is in active development and may change without notice.\n\nSubmits concise product feedback with optional non-sensitive client details.",
+        "tags": [
+          "productfeedback"
+        ],
+        "summary": "[alpha] submit product feedback",
+        "parameters": [
+          {
+            "description": "Idempotency key",
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "Location": {
+                "description": "URL of the created product feedback",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/productfeedback.ProductFeedback"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "malformed or invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "API Key": [],
+            "Tenant ID": []
+          },
+          {
+            "Bearer Auth": [],
+            "Tenant ID": []
+          }
+        ],
+        "x-public": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/productfeedback.CreateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/product-feedbacks/{id}": {
+      "get": {
+        "description": "**Alpha:** This endpoint is in active development and may change without notice.",
+        "tags": [
+          "productfeedback"
+        ],
+        "summary": "[alpha] get product feedback",
+        "parameters": [
+          {
+            "description": "Product feedback ID",
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/productfeedback.ProductFeedback"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "API Key": [],
+            "Tenant ID": []
+          },
+          {
+            "Bearer Auth": [],
+            "Tenant ID": []
+          }
+        ],
+        "x-public": true
+      }
+    },
     "/api/v1/platform/sessions/{sessionID}/agent-versions": {
       "get": {
         "description": "Returns all agent versions (commit SHAs) seen in the given tracing project, ordered by first_seen_at descending.",
@@ -47039,6 +47153,7 @@
           "update_annotation_queue_item",
           "get_annotation_queue_items",
           "submit_nps_response",
+          "submit_product_feedback",
           "create_mcp_server",
           "update_mcp_server",
           "delete_mcp_server",
@@ -61051,11 +61166,6 @@
             "title": "Tuned Evals Enabled",
             "default": false
           },
-          "gateway_data_protection_enabled": {
-            "type": "boolean",
-            "title": "Gateway Data Protection Enabled",
-            "default": true
-          },
           "gateway_pii_redaction_enabled": {
             "type": "boolean",
             "title": "Gateway Pii Redaction Enabled",
@@ -64706,7 +64816,7 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 100,
+            "maxItems": 500,
             "minItems": 1,
             "title": "Feedback Keys"
           },
@@ -77343,12 +77453,8 @@
             "description": "FleetLCUSpendLimitMonthly caps an org's monthly Fleet LCU spend, resolved from\nMetronome custom fields. nil or negative means unlimited; 0 blocks all runs.",
             "type": "number"
           },
-          "gateway_data_protection_enabled": {
-            "description": "GatewayDataProtectionEnabled indicates whether this org can use gateway\ndata protection (the \"guard\" policy type, backed by Presidio).\nSet by Metronome entitlement, not admin-patchable. Defaults on, so orgs\nwithout an explicit entitlement value can configure guard policies.",
-            "type": "boolean"
-          },
           "gateway_pii_redaction_enabled": {
-            "description": "GatewayPIIRedactionEnabled indicates whether this org can use PII\ndetection/redaction inside gateway data protection (guard) policies.\nSub-gate beneath GatewayDataProtectionEnabled: when this is off,\nPII-configured guard policies are unavailable as a whole.\nSet by Metronome entitlement, not admin-patchable.",
+            "description": "GatewayPIIRedactionEnabled indicates whether this org can use PII\ndetection/redaction inside gateway data protection (guard) policies.\nWhen this is off, PII-configured guard policies are unavailable as a\nwhole. Set by Metronome entitlement, not admin-patchable.",
             "type": "boolean"
           },
           "ip_allowlist_enabled": {
@@ -81106,6 +81212,123 @@
             "type": "string"
           }
         }
+      },
+      "productfeedback.Category": {
+        "type": "string",
+        "enum": [
+          "BUG",
+          "FEATURE_REQUEST",
+          "USABILITY",
+          "DOCUMENTATION",
+          "OTHER"
+        ],
+        "x-enum-varnames": [
+          "CategoryBug",
+          "CategoryFeatureRequest",
+          "CategoryUsability",
+          "CategoryDocumentation",
+          "CategoryOther"
+        ]
+      },
+      "productfeedback.ClientContext": {
+        "type": "object",
+        "properties": {
+          "architecture": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "os": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 100
+          }
+        }
+      },
+      "productfeedback.CreateRequest": {
+        "type": "object",
+        "required": [
+          "category",
+          "message",
+          "source"
+        ],
+        "properties": {
+          "category": {
+            "enum": [
+              "BUG",
+              "FEATURE_REQUEST",
+              "USABILITY",
+              "DOCUMENTATION",
+              "OTHER"
+            ],
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/productfeedback.Category"
+              }
+            ]
+          },
+          "client": {
+            "$ref": "#/components/schemas/productfeedback.ClientContext"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1
+          },
+          "source": {
+            "enum": [
+              "LANGSMITH_CLI"
+            ],
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/productfeedback.Source"
+              }
+            ]
+          }
+        }
+      },
+      "productfeedback.ProductFeedback": {
+        "type": "object",
+        "required": [
+          "category",
+          "created_at",
+          "id",
+          "message",
+          "source"
+        ],
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/productfeedback.Category"
+          },
+          "client": {
+            "$ref": "#/components/schemas/productfeedback.ClientContext"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/productfeedback.Source"
+          }
+        }
+      },
+      "productfeedback.Source": {
+        "type": "string",
+        "enum": [
+          "LANGSMITH_CLI"
+        ],
+        "x-enum-varnames": [
+          "SourceLangSmithCLI"
+        ]
       },
       "query.PublicSharedTraceRunsRequestBody": {
         "type": "object",
@@ -85958,6 +86181,9 @@
     },
     {
       "name": "fleet users"
+    },
+    {
+      "name": "productfeedback"
     }
   ]
 }
