@@ -27,8 +27,7 @@ Optional environment variable:
 - ``CODE_SNIPPET_SOURCES``: space-separated repo-relative paths under ``src/code-samples/``
   (``.py``, ``.ts``, ``.java``, ``.kt``, ``.go``, ``.sh``). When set, only those files are extracted; existing
   generated snippet files for those stems are replaced. Other stems in
-  ``src/code-samples-generated/`` are left unchanged. Use ``make code-snippets-langsmith``
-  for the LangSmith JVM subset.
+  ``src/code-samples-generated/`` are left unchanged.
 """
 
 from __future__ import annotations
