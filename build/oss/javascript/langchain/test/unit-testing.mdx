@@ -1,0 +1,365 @@
+---
+title: Unit testing
+description: Test agent logic without API calls using fake chat models and in-memory persistence.
+---
+
+Unit tests exercise small, deterministic pieces of your agent in isolation. By replacing the real LLM with an in-memory fake (AKA fixture), you can script exact responses (text, tool calls, and errors) so tests are fast, free, and repeatable without API keys.
+
+
+
+## Mock chat model with `fakeModel`
+
+[`fakeModel`](https://reference.langchain.com/javascript/langchain/index/fakeModel) is a builder-style fake chat model that lets you script exact responses (text, tool calls, errors) and assert what the model received. It extends [`BaseChatModel`](https://reference.langchain.com/javascript/langchain-core/language_models/chat_models/BaseChatModel), so it works anywhere a real model is expected.
+
+```typescript
+import { fakeModel } from "langchain";
+```
+
+### Quick start
+
+Create a model, queue responses with `.respond()`, and invoke. Each `invoke()` consumes the next queued response in order:
+
+```typescript
+import { fakeModel } from "langchain";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+
+const model = fakeModel()
+  .respond(new AIMessage("I can help with that."))
+  .respond(new AIMessage("Here's what I found."))
+  .respond(new AIMessage("You're welcome!"));
+
+const r1 = await model.invoke([new HumanMessage("Can you help?")]);
+// r1.content === "I can help with that."
+
+const r2 = await model.invoke([new HumanMessage("What did you find?")]);
+// r2.content === "Here's what I found."
+
+const r3 = await model.invoke([new HumanMessage("Thanks!")]);
+// r3.content === "You're welcome!"
+```
+
+If the model is invoked more times than there are queued responses, it throws a descriptive error:
+
+```typescript
+const model = fakeModel()
+  .respond(new AIMessage("only one"));
+
+await model.invoke([new HumanMessage("first")]);  // works
+await model.invoke([new HumanMessage("second")]); // throws: "no response queued for invocation 1"
+```
+
+### Tool calling responses
+
+`.respond()` supports tool calls by passing an [`AIMessage`](https://reference.langchain.com/javascript/langchain-core/messages/AIMessage) with `tool_calls`:
+
+```typescript
+import { fakeModel } from "langchain";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+
+const model = fakeModel()
+  .respond(new AIMessage({
+    content: "",
+    tool_calls: [
+      { name: "get_weather", args: { city: "San Francisco" }, id: "call_1", type: "tool_call" },
+    ],
+  }))
+  .respond(new AIMessage("It's 72°F and sunny in San Francisco."));
+
+const r1 = await model.invoke([new HumanMessage("What's the weather in SF?")]);
+console.log(r1.tool_calls[0].name); // "get_weather"
+
+const r2 = await model.invoke([new HumanMessage("Thanks")]);
+console.log(r2.content); // "It's 72°F and sunny in San Francisco."
+```
+
+`.respondWithTools()` is a shorthand for the same thing. Instead of constructing the full `AIMessage`, provide just the tool name and arguments:
+
+```typescript
+// These two queue entries produce identical responses:
+
+model.respond(new AIMessage({
+  content: "",
+  tool_calls: [
+    { name: "get_weather", args: { city: "SF" }, id: "call_1", type: "tool_call" },
+  ],
+}));
+
+// Equivalent shorthand:
+model.respondWithTools([  // [!code highlight]
+  { name: "get_weather", args: { city: "SF" }, id: "call_1" },  // [!code highlight]
+]);  // [!code highlight]
+```
+
+The `id` field is optional. If omitted, a unique ID is auto-generated.
+
+<Tip>
+    `.respond()` and `.respondWithTools()` can be mixed freely in any order. This is particularly useful for testing agentic loops where the model alternates between tool calls and text responses.
+</Tip>
+
+### Simulate errors
+
+#### Errors at specific turns
+
+Passing an `Error` to `.respond()` makes the model throw on that specific invocation. Errors can appear at any position in the sequence:
+
+```typescript
+import { fakeModel } from "langchain";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+
+const model = fakeModel()
+  .respond(new Error("rate limit exceeded"))  // Turn 1: throws  // [!code highlight]
+  .respond(new AIMessage("Recovered!"));      // Turn 2: succeeds
+
+try {
+  await model.invoke([new HumanMessage("first")]);
+} catch (e) {
+  console.log(e.message); // "rate limit exceeded"
+}
+
+const result = await model.invoke([new HumanMessage("retry")]);
+console.log(result.content); // "Recovered!"
+```
+
+#### Errors on every call
+
+`.alwaysThrow()` makes every invocation throw, regardless of the queue. This is useful for testing error handling and retry logic:
+
+```typescript
+import { fakeModel } from "langchain";
+import { HumanMessage } from "@langchain/core/messages";
+
+const model = fakeModel().alwaysThrow(new Error("service unavailable"));
+
+await model.invoke([new HumanMessage("a")]); // throws "service unavailable"
+await model.invoke([new HumanMessage("b")]); // throws "service unavailable"
+```
+
+### Dynamic responses with factory functions
+
+`.respond()` also accepts a function that computes the response based on the input messages. The function receives the full message array and returns either a [`BaseMessage`](https://reference.langchain.com/javascript/langchain-core/messages/BaseMessage) or an `Error`:
+
+```typescript
+import { fakeModel } from "langchain";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+
+const model = fakeModel()
+  .respond((messages) => {  // [!code highlight]
+    const last = messages[messages.length - 1].text;  // [!code highlight]
+    return new AIMessage(`You said: ${last}`);  // [!code highlight]
+  });  // [!code highlight]
+
+const result = await model.invoke([new HumanMessage("hello")]);
+console.log(result.content); // "You said: hello"
+```
+
+Factory functions can also return errors:
+
+```typescript
+import { fakeModel } from "langchain";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+
+const model = fakeModel()
+  .respond((messages) => {
+    const content = messages[messages.length - 1].text;
+    if (content.includes("forbidden")) {
+      return new Error("Content policy violation");
+    }
+    return new AIMessage("OK");
+  });
+
+await model.invoke([new HumanMessage("forbidden topic")]); // throws "Content policy violation"
+```
+
+<Note>
+    Each function is a single queue entry, consumed once. To reuse the same dynamic logic for multiple turns, queue multiple `respond` function calls.
+</Note>
+
+### Structured output
+
+For code that uses `.withStructuredOutput()`, configure the fake return value with `.structuredResponse()`:
+
+```typescript
+import { fakeModel } from "langchain";
+import { HumanMessage } from "@langchain/core/messages";
+import { z } from "zod";
+
+const model = fakeModel()
+  .structuredResponse({ temperature: 72, unit: "fahrenheit" });  // [!code highlight]
+
+const structured = model.withStructuredOutput(
+  z.object({
+    temperature: z.number(),
+    unit: z.string(),
+  })
+);
+
+const result = await structured.invoke([new HumanMessage("Weather?")]);
+console.log(result);
+// { temperature: 72, unit: "fahrenheit" }
+```
+
+The schema passed to `.withStructuredOutput()` is ignored. The model always returns the value configured with `.structuredResponse()`. This keeps tests focused on application logic rather than parsing.
+
+### Assert what the model received
+
+`fakeModel` records every invocation, including the messages and options passed to the model. This works like a spy or mock in traditional testing frameworks:
+
+```typescript
+import { fakeModel } from "langchain";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+
+const model = fakeModel()
+  .respond(new AIMessage("first"))
+  .respond(new AIMessage("second"));
+
+await model.invoke([new HumanMessage("question 1")]);
+await model.invoke([new HumanMessage("question 2")]);
+
+console.log(model.callCount); // 2
+
+console.log(model.calls[0].messages[0].content); // "question 1"
+console.log(model.calls[1].messages[0].content); // "question 2"
+```
+
+Calls are recorded even when the model throws:
+
+```typescript
+import { fakeModel } from "langchain";
+import { HumanMessage } from "@langchain/core/messages";
+
+const model = fakeModel().respond(new Error("boom"));
+
+try {
+  await model.invoke([new HumanMessage("will fail")]);
+} catch {
+  // error handled
+}
+
+console.log(model.callCount); // 1
+console.log(model.calls[0].messages[0].content); // "will fail"
+```
+
+### Use with `bindTools`
+
+Agent frameworks like LangChain agents and LangGraph call `model.bindTools(tools)` internally. `fakeModel` handles this automatically. The bound model shares the same response queue and call recording as the original, so no special setup is needed:
+
+```typescript
+import { fakeModel } from "langchain";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const searchTool = tool(async ({ query }) => `Results for: ${query}`, {
+  name: "search",
+  description: "Search the web",
+  schema: z.object({ query: z.string() }),
+});
+
+const model = fakeModel()
+  .respondWithTools([{ name: "search", args: { query: "weather" }, id: "1" }])
+  .respond(new AIMessage("The weather is sunny."));
+
+const bound = model.bindTools([searchTool]);
+
+const r1 = await bound.invoke([new HumanMessage("weather?")]);
+console.log(r1.tool_calls[0].name); // "search"
+
+const r2 = await bound.invoke([new HumanMessage("thanks")]);
+console.log(r2.content); // "The weather is sunny."
+
+// Call recording is shared. Inspect via the original model.
+console.log(model.callCount); // 2
+```
+
+<Accordion title="Full example: test a tool-calling agent with vitest">
+
+```typescript
+import { describe, test, expect } from "vitest";
+import { fakeModel } from "langchain";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const getWeather = tool(
+  async ({ city }) => `72°F and sunny in ${city}`,
+  {
+    name: "get_weather",
+    description: "Get weather for a city",
+    schema: z.object({ city: z.string() }),
+  }
+);
+
+async function runAgent(
+  model: ReturnType<typeof fakeModel>,
+  input: string
+) {
+  const messages: any[] = [new HumanMessage(input)];
+  const bound = model.bindTools([getWeather]);
+
+  while (true) {
+    const response = await bound.invoke(messages);
+    messages.push(response);
+
+    if (!response.tool_calls?.length) {
+      return { messages, finalResponse: response };
+    }
+
+    for (const tc of response.tool_calls) {
+      const result = await getWeather.invoke(tc.args);
+      messages.push(new ToolMessage({
+        content: result as string,
+        tool_call_id: tc.id!,
+      }));
+    }
+  }
+}
+
+describe("weather agent", () => {
+  test("calls get_weather and returns a final answer", async () => {
+    const model = fakeModel()
+      .respondWithTools([
+        { name: "get_weather", args: { city: "SF" }, id: "call_1" },
+      ])
+      .respond(new AIMessage("It's 72°F and sunny in SF!"));
+
+    const { finalResponse } = await runAgent(model, "Weather in SF?");
+
+    expect(finalResponse.content).toBe("It's 72°F and sunny in SF!");
+    expect(model.callCount).toBe(2);
+
+    const secondCall = model.calls[1].messages;
+    const toolMsg = secondCall.find((m: any) => m._getType() === "tool");
+    expect(toolMsg?.content).toContain("72°F and sunny in SF");
+  });
+
+  test("handles model errors gracefully", async () => {
+    const model = fakeModel()
+      .respond(new Error("rate limit"));
+
+    await expect(
+      runAgent(model, "Weather?")
+    ).rejects.toThrow("rate limit");
+
+    expect(model.callCount).toBe(1);
+  });
+});
+```
+
+</Accordion>
+
+
+
+## Next steps
+
+Learn how to test your agent with real model provider APIs in [Integration testing](/oss/javascript/langchain/test/integration-testing).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/test/unit-testing.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
