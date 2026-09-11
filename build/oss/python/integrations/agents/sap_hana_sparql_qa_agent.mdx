@@ -1,0 +1,410 @@
+---
+title: Question Answering with HanaSparqlQAAgent
+description: Integrate with the HanaSparqlQAAgent type using LangChain Python.
+integration:
+  name: HanaSparqlQAAgent
+  pypi: langchain-hana
+---
+
+## Setup and Installation
+
+To use this feature, install the `langchain-hana` package:
+
+```python
+pip install langchain_hana
+```
+
+`HanaSparqlQAAgent` is an agent-based approach for answering questions over RDF data stored in SAP HANA Cloud. Unlike the chain-based approach, the agent can:
+
+1. **Dynamically retrieve the ontology** using a dedicated tool
+2. **Generate and execute SPARQL queries** iteratively
+3. **Self-correct** if a query fails or returns unexpected results
+4. **Reason step-by-step** about complex questions
+
+## Initialization
+
+You need:
+
+- An **LLM** to power the agent's reasoning
+- A **`HanaRdfGraph`** (with connection, `graph_uri`, and ontology)
+
+Follow the steps here [HanaRdfGraph](/oss/python/integrations/graphs/sap_hana_rdf_graph) to know more about creating a `HanaRdfGraph` instance.
+
+Import the `HanaSparqlQAAgent`
+
+```python
+from langchain_hana import HanaSparqlQAAgent
+agent = HanaSparqlQAAgent.create_agent(graph=graph, model=llm)
+```
+
+## Agent Overview
+
+The agent uses tools iteratively to:
+1. First retrieve the ontology to understand the data structure
+2. Generate appropriate SPARQL queries based on the schema
+3. Execute queries and interpret results
+4. Formulate natural language answers
+
+### Defaults
+
+- **Tools**:
+  - `retrieve_ontology` - Retrieves the RDF ontology/schema from the graph in Turtle format
+  - `execute_sparql` - Executes SPARQL queries against the HANA RDF graph
+- **System Prompt**: A default system prompt is provided with instructions for SPARQL generation and tool usage.
+- **Middleware**: `ModelRetryMiddleware(max_retries=3)` and `ToolRetryMiddleWare(max_retries=2)` is added by default to prevent infinite loops
+
+### Customizing Your Agent
+
+You can customize the agent's behavior by providing additional parameters to `create_agent`:
+
+```python
+agent = HanaSparqlQAAgent.create_agent(
+    graph=graph,  # Required: HanaRdfGraph instance
+    model=llm,  # Required: LLM to power the agent
+    system_prompt=your_custom_prompt,  # Custom system prompt (str or SystemMessage)
+    tools=[your_custom_tools],  # Additional tools to include
+    middleware=[your_custom_middlewares],  # Additional middleware to include
+    include_default_tools=True,  # include default tools (default: True)
+    include_default_middleware=True,  # include default middleware (default: True)
+)
+```
+
+## Example: Question answering over a "Movies" knowledge graph
+
+**Prerequisite**:
+You must have an SAP HANA Cloud instance with the **triple store** feature enabled.
+For detailed instructions, refer to: [Enable Triple Store](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/enable-triple-store/)<br />
+Load the `kgdocu_movies` example data. See [Knowledge Graph Example](https://help.sap.com/docs/hana-cloud-database/sap-hana-cloud-sap-hana-database-knowledge-graph-guide/knowledge-graph-example).
+
+The example below:
+
+1. Instantiates the `HanaRdfGraph` pointing at the movies data graph
+2. Creates a `HanaSparqlQAAgent` powered by an LLM
+3. Asks natural-language questions and lets the agent reason through the answers
+
+This demonstrates how the agent dynamically retrieves the ontology, generates SPARQL queries, and returns human-readable answers.
+
+```python
+import os
+
+from dotenv import load_dotenv
+from hdbcli import dbapi
+
+# Load environment variables if needed
+load_dotenv()
+
+# Establish connection to SAP HANA Cloud
+connection = dbapi.connect(
+    address=os.environ.get("HANA_DB_ADDRESS"),
+    port=os.environ.get("HANA_DB_PORT"),
+    user=os.environ.get("HANA_DB_USER"),
+    password=os.environ.get("HANA_DB_PASSWORD")
+)
+```
+
+Then, set up the knowledge graph instance
+
+```python
+from gen_ai_hub.proxy.langchain.openai import ChatOpenAI
+from langchain_hana import HanaRdfGraph, HanaSparqlQAChain
+
+# from langchain_openai import ChatOpenAI  # or your chosen LLM
+```
+
+```python
+# Set up the Knowledge Graph
+graph_uri = "kgdocu_movies"
+
+graph = HanaRdfGraph(
+    connection=connection,
+    graph_uri=graph_uri,
+    auto_extract_ontology=True
+)
+```
+
+```python
+# a basic graph schema is extracted from the data graph. This schema will guide the LLM to generate a proper SPARQL query.
+schema_graph = graph.get_schema
+print(schema_graph.serialize(format="turtle"))
+```
+
+```output
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://kg.demo.sap.com/acted_in> a owl:ObjectProperty ;
+    rdfs:label "acted_in" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor> ;
+    rdfs:range <http://kg.demo.sap.com/Film> .
+
+<http://kg.demo.sap.com/dateOfBirth> a owl:DatatypeProperty ;
+    rdfs:label "dateOfBirth" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor> ;
+    rdfs:range xsd:dateTime .
+
+<http://kg.demo.sap.com/directed> a owl:ObjectProperty ;
+    rdfs:label "directed" ;
+    rdfs:domain <http://kg.demo.sap.com/Director> ;
+    rdfs:range <http://kg.demo.sap.com/Film> .
+
+<http://kg.demo.sap.com/genre> a owl:ObjectProperty ;
+    rdfs:label "genre" ;
+    rdfs:domain <http://kg.demo.sap.com/Film> ;
+    rdfs:range <http://kg.demo.sap.com/Genre> .
+
+<http://kg.demo.sap.com/placeOfBirth> a owl:ObjectProperty ;
+    rdfs:label "placeOfBirth" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor> ;
+    rdfs:range <http://kg.demo.sap.com/Place> .
+
+<http://kg.demo.sap.com/title> a owl:DatatypeProperty ;
+    rdfs:label "title" ;
+    rdfs:domain <http://kg.demo.sap.com/Film> ;
+    rdfs:range xsd:string .
+
+rdfs:label a owl:DatatypeProperty ;
+    rdfs:label "label" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor>,
+        <http://kg.demo.sap.com/Director>,
+        <http://kg.demo.sap.com/Genre>,
+        <http://kg.demo.sap.com/Place> ;
+    rdfs:range xsd:string .
+
+<http://kg.demo.sap.com/Director> a owl:Class ;
+    rdfs:label "Director" .
+
+<http://kg.demo.sap.com/Genre> a owl:Class ;
+    rdfs:label "Genre" .
+
+<http://kg.demo.sap.com/Place> a owl:Class ;
+    rdfs:label "Place" .
+
+<http://kg.demo.sap.com/Actor> a owl:Class ;
+    rdfs:label "Actor" .
+
+<http://kg.demo.sap.com/Film> a owl:Class ;
+    rdfs:label "Film" .
+```
+
+After that, initialise the LLM.
+
+```python
+# Initialize the LLM
+llm = ChatOpenAI(proxy_model_name="gpt-4o", temperature=0)
+```
+
+Then, create the SPARQL QA Agent.
+
+```python
+# Create a SPARQL QA Agent
+agent = HanaSparqlQAAgent.create_agent(
+    graph=graph,
+    model=llm,
+)
+```
+
+```python
+# Example queries:
+# question = "Which movies are in the data?"
+# question = "In which movies did Keanu Reeves and Carrie-Anne Moss play together"
+# question = "which movie genres are in the data?"
+# question = "which are the two most assigned movie genres?"
+# question = "where were the actors of 'Blade Runner' born?"
+# question = "which actors acted together in a movie and were born in the same city?"
+question = "which actors acted in Blade Runner?"
+
+for event in agent.stream(
+    {"messages": [{"role": "user", "content": question}]},
+    stream_mode="values",
+):
+    event["messages"][-1].pretty_print()
+```
+
+```output
+
+================================ Human Message =================================
+
+which actors acted in Blade Runner?
+================================== Ai Message ==================================
+Tool Calls:
+  retrieve_ontology (call_9T3Dxy3zKczTQKVAgTxPBfQm)
+ Call ID: call_9T3Dxy3zKczTQKVAgTxPBfQm
+  Args:
+================================== Ai Message ==================================
+Tool Calls:
+  retrieve_ontology (call_9T3Dxy3zKczTQKVAgTxPBfQm)
+ Call ID: call_9T3Dxy3zKczTQKVAgTxPBfQm
+  Args:
+================================= Tool Message =================================
+Name: retrieve_ontology
+
+Ontology Information:
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://kg.demo.sap.com/acted_in> a owl:ObjectProperty ;
+    rdfs:label "acted_in" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor> ;
+    rdfs:range <http://kg.demo.sap.com/Film> .
+
+<http://kg.demo.sap.com/dateOfBirth> a owl:DatatypeProperty ;
+    rdfs:label "dateOfBirth" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor> ;
+    rdfs:range xsd:dateTime .
+
+<http://kg.demo.sap.com/directed> a owl:ObjectProperty ;
+    rdfs:label "directed" ;
+    rdfs:domain <http://kg.demo.sap.com/Director> ;
+    rdfs:range <http://kg.demo.sap.com/Film> .
+
+<http://kg.demo.sap.com/genre> a owl:ObjectProperty ;
+    rdfs:label "genre" ;
+    rdfs:domain <http://kg.demo.sap.com/Film> ;
+    rdfs:range <http://kg.demo.sap.com/Genre> .
+
+<http://kg.demo.sap.com/placeOfBirth> a owl:ObjectProperty ;
+    rdfs:label "placeOfBirth" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor> ;
+    rdfs:range <http://kg.demo.sap.com/Place> .
+
+<http://kg.demo.sap.com/title> a owl:DatatypeProperty ;
+    rdfs:label "title" ;
+    rdfs:domain <http://kg.demo.sap.com/Film> ;
+    rdfs:range xsd:string .
+
+rdfs:label a owl:DatatypeProperty ;
+    rdfs:label "label" ;
+    rdfs:domain <http://kg.demo.sap.com/Actor>,
+        <http://kg.demo.sap.com/Director>,
+        <http://kg.demo.sap.com/Genre>,
+        <http://kg.demo.sap.com/Place> ;
+    rdfs:range xsd:string .
+
+<http://kg.demo.sap.com/Director> a owl:Class ;
+    rdfs:label "Director" .
+
+<http://kg.demo.sap.com/Genre> a owl:Class ;
+    rdfs:label "Genre" .
+
+<http://kg.demo.sap.com/Place> a owl:Class ;
+    rdfs:label "Place" .
+
+<http://kg.demo.sap.com/Actor> a owl:Class ;
+    rdfs:label "Actor" .
+
+<http://kg.demo.sap.com/Film> a owl:Class ;
+    rdfs:label "Film" .
+
+
+================================== Ai Message ==================================
+Tool Calls:
+  execute_sparql (call_LwHuDXaPsx3nDJF7Hn6If8s9)
+ Call ID: call_LwHuDXaPsx3nDJF7Hn6If8s9
+  Args:
+    query: PREFIX kg: <http://kg.demo.sap.com/>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?actorLabel
+FROM <kgdocu_movies>
+WHERE {
+    ?movie rdf:type kg:Film .
+    ?movie kg:title "Blade Runner" .
+    ?actor kg:acted_in ?movie .
+    ?actor rdfs:label ?actorLabel .
+}
+================================== Ai Message ==================================
+Tool Calls:
+  execute_sparql (call_LwHuDXaPsx3nDJF7Hn6If8s9)
+ Call ID: call_LwHuDXaPsx3nDJF7Hn6If8s9
+  Args:
+    query: PREFIX kg: <http://kg.demo.sap.com/>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?actorLabel
+FROM <kgdocu_movies>
+WHERE {
+    ?movie rdf:type kg:Film .
+    ?movie kg:title "Blade Runner" .
+    ?actor kg:acted_in ?movie .
+    ?actor rdfs:label ?actorLabel .
+}
+================================= Tool Message =================================
+Name: execute_sparql
+
+SPARQL Query Result:
+actorLabel
+Morgan Paull
+William Sanderson
+James Hong
+M. Emmet Walsh
+Joe Turkel
+Brion James
+Q81328
+Daryl Hannah
+Rutger Hauer
+Joanna Cassidy
+Hy Pyke
+Sean Young
+Edward James Olmos
+
+================================== Ai Message ==================================
+
+The actors who acted in "Blade Runner" are:
+
+- Morgan Paull
+- William Sanderson
+- James Hong
+- M. Emmet Walsh
+- Joe Turkel
+- Brion James
+- Daryl Hannah
+- Rutger Hauer
+- Joanna Cassidy
+- Hy Pyke
+- Sean Young
+- Edward James Olmos
+
+================================== Ai Message ==================================
+
+The actors who acted in "Blade Runner" are:
+
+- Morgan Paull
+- William Sanderson
+- James Hong
+- M. Emmet Walsh
+- Joe Turkel
+- Brion James
+- Daryl Hannah
+- Rutger Hauer
+- Joanna Cassidy
+- Hy Pyke
+- Sean Young
+- Edward James Olmos
+```
+
+### What's happening under the hood?
+
+1. **Ontology Retrieval**
+   The agent first uses the `retrieve_ontology` tool to fetch the RDF schema in Turtle format. This gives it understanding of the available classes, properties, and relationships.
+
+2. **SPARQL Generation**
+   Based on the ontology and the user's question, the agent reasons about which entities and properties to query, then generates a valid `SELECT` query.
+
+3. **Query Execution**
+   The agent calls the `execute_sparql` tool to run the generated query against the HANA RDF graph. If the query fails or returns unexpected results, the agent can self-correct and try again.
+
+4. **Answer Formulation**
+   The agent interprets the query results and formulates a concise, human-readable answer based strictly on the retrieved data.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/agents/sap_hana_sparql_qa_agent.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
