@@ -1,0 +1,28 @@
+```ts
+import { END, START, StateGraph } from "@langchain/langgraph";
+import { AIMessage } from "@langchain/core/messages";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+
+const toolNode = new ToolNode(tools);
+
+const shouldRetrieve = (state: typeof State.State) => {
+  const lastMessage = state.messages.at(-1);
+  if (AIMessage.isInstance(lastMessage) && lastMessage.tool_calls?.length) {
+    return "retrieve";
+  }
+  return END;
+};
+
+const graph = new StateGraph(State)
+  .addNode("generateQueryOrRespond", generateQueryOrRespond)
+  .addNode("retrieve", toolNode)
+  .addNode("gradeDocuments", gradeDocuments)
+  .addNode("rewrite", rewrite)
+  .addNode("generate", generate)
+  .addEdge(START, "generateQueryOrRespond")
+  .addConditionalEdges("generateQueryOrRespond", shouldRetrieve)
+  .addConditionalEdges("retrieve", gradeDocuments)
+  .addEdge("generate", END)
+  .addEdge("rewrite", "generateQueryOrRespond")
+  .compile();
+```
