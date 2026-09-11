@@ -1,0 +1,105 @@
+---
+title: Short-term memory with MongoDB Atlas
+sidebarTitle: MongoDB short-term memory
+description: Persist agent short-term memory with MongoDBSaver and MongoDB Atlas.
+---
+
+[Short-term memory](/oss/python/langchain/short-term-memory) lets your agent remember previous interactions within a single thread or conversation. This guide shows how to use [MongoDB Atlas](https://www.mongodb.com/docs/atlas/) as the persistent checkpointer backend.
+
+MongoDB stores conversation state as documents in a collection, so threads can resume across process restarts and deployments.
+
+<Tip>
+Need to remember information **across** conversations? Use [long-term memory with MongoDB Atlas](/oss/python/integrations/memory/mongodb-long-term-memory) to store and recall data across different threads and sessions.
+</Tip>
+
+## Setup
+
+### Installation
+
+<CodeGroup>
+```bash pip
+pip install -U langgraph-checkpoint-mongodb pymongo
+```
+
+```bash uv
+uv add langgraph-checkpoint-mongodb pymongo
+```
+</CodeGroup>
+
+### Credentials
+
+Set your Atlas connection string:
+
+```python
+import getpass
+import os
+
+if not os.environ.get("MONGODB_ATLAS_URI"):
+    os.environ["MONGODB_ATLAS_URI"] = getpass.getpass("Enter your MongoDB Atlas URI: ")
+```
+
+If you want automated tracing of your model calls, set your [LangSmith](/langsmith/home) API key:
+
+```python
+if not os.environ.get("LANGSMITH_API_KEY"):
+    os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+## Usage
+
+Create a `MongoDBSaver` with `from_conn_string` and pass it to `create_agent`. The context manager creates the required collections and indexes when it opens. You do not call a separate `setup()` method (unlike the Postgres checkpointer).
+
+```python
+import os
+
+from langchain.agents import create_agent
+from langgraph.checkpoint.mongodb import MongoDBSaver
+
+def get_user_info() -> str:
+    """Look up information about the current user."""
+    return "No user profile on file."
+
+MONGODB_ATLAS_URI = os.environ["MONGODB_ATLAS_URI"]
+
+with MongoDBSaver.from_conn_string(MONGODB_ATLAS_URI) as checkpointer:
+    agent = create_agent(
+        "anthropic:claude-sonnet-4-6",
+        tools=[get_user_info],
+        checkpointer=checkpointer,
+    )
+
+    thread_config = {"configurable": {"thread_id": "1"}}
+    response = agent.invoke(
+        {"messages": [{"role": "user", "content": "Hi! My name is Bob."}]},
+        thread_config,
+    )["messages"][-1].content
+
+    print(response)
+
+    response = agent.invoke(
+        {"messages": [{"role": "user", "content": "What's my name?"}]},
+        thread_config,
+    )["messages"][-1].content
+
+    print(response)
+```
+
+`MongoDBSaver` also exposes async methods such as `aget` and `aput` for use in async graphs. There is no separate `AsyncMongoDBSaver` class.
+
+## Next steps
+
+- Customize agent state, trim or summarize history, and access memory from tools in the [short-term memory](/oss/python/langchain/short-term-memory) guide. Pass the same `MongoDBSaver` as `checkpointer`.
+- See the [checkpointer integrations](/oss/python/integrations/checkpointers) list for other backends.
+- For cross-thread persistence, see [long-term memory with MongoDB Atlas](/oss/python/integrations/memory/mongodb-long-term-memory).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/memory/mongodb-short-term-memory.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
