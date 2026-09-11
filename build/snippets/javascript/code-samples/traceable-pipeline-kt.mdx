@@ -1,0 +1,67 @@
+```kotlin Kotlin
+import com.langchain.smith.tracing.RunType
+import com.langchain.smith.tracing.TraceConfig
+import com.langchain.smith.tracing.traceable
+import com.openai.client.okhttp.OpenAIOkHttpClient
+import com.openai.models.ChatModel
+import com.openai.models.chat.completions.ChatCompletion
+import com.openai.models.chat.completions.ChatCompletionCreateParams
+import com.openai.models.chat.completions.ChatCompletionMessageParam
+import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
+import com.openai.models.chat.completions.ChatCompletionUserMessageParam
+import kotlin.jvm.optionals.getOrNull
+
+val openai = OpenAIOkHttpClient.fromEnv()
+
+val formatPrompt =
+    traceable(
+        { subject: String ->
+            listOf(
+                ChatCompletionMessageParam.ofSystem(
+                    ChatCompletionSystemMessageParam.builder()
+                        .content("You are a helpful assistant.")
+                        .build(),
+                ),
+                ChatCompletionMessageParam.ofUser(
+                    ChatCompletionUserMessageParam.builder()
+                        .content("What's a good name for a store that sells $subject?")
+                        .build(),
+                ),
+            )
+        },
+        TraceConfig.builder().name("format_prompt").build(),
+    )
+
+val invokeLlm =
+    traceable(
+        { messages: List<ChatCompletionMessageParam> ->
+            openai.chat().completions().create(
+                ChatCompletionCreateParams.builder()
+                    .model(ChatModel.GPT_5_5)
+                    .messages(messages)
+                    .build(),
+            )
+        },
+        TraceConfig.builder().name("invoke_llm").runType(RunType.LLM).build(),
+    )
+
+val parseOutput =
+    traceable(
+        { response: ChatCompletion ->
+            response.choices()[0].message().content().getOrNull().orEmpty()
+        },
+        TraceConfig.builder().name("parse_output").build(),
+    )
+
+val runPipeline =
+    traceable(
+        { subject: String -> parseOutput(invokeLlm(formatPrompt(subject))) },
+        TraceConfig.builder().name("run_pipeline").build(),
+    )
+
+println(runPipeline("colorful socks"))
+```
+
+<Card title="View example trace" icon="chart-line" href="https://smith.langchain.com/public/397a7c30-a236-43bb-b104-89f8d9e3145c/r" arrow horizontal>
+  Open a public LangSmith run for this example.
+</Card>
