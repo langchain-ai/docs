@@ -48,6 +48,8 @@ once to link the tree.
 | Skill | Use it for |
 |-------|-----------|
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
+| `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff. |
+| `writing-style` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
 | `document-tooling-in-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
