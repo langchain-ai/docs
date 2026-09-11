@@ -13,12 +13,8 @@ The LLM Gateway lets you call models across configured providers through one sta
 
 Before you start, confirm that:
 
-- Your [Organization admin](/langsmith/rbac#organization-admin) has enabled the LLM Gateway. For bring-your-own-key models, the admin must also add the provider API key to workspace secrets. To set this up, see [Admin setup](/langsmith/llm-gateway-admin-setup).
+- Your [Organization admin](/langsmith/rbac#organization-admin) has enabled the LLM Gateway. For bring-your-own-key models, the admin must also add the provider API key to workspace secrets. See [Admin setup](/langsmith/llm-gateway-admin-setup).
 - You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations). Ask your organization admin if you are unsure.
-
-<Note>
-If your API key is missing the `gateway:invoke` permission, the gateway returns a `403` at call time (not at setup time). If your calls fail with `403`, check the key's role with your organization admin.
-</Note>
 
 ## Make a call
 
@@ -26,7 +22,7 @@ If your API key is missing the `gateway:invoke` permission, the gateway returns 
 
 <Tab title="Chat completions">
 
-OpenAI-compatible Chat Completions endpoint (`/v1/chat/completions`). Works with the OpenAI SDK and any OpenAI-compatible client.
+OpenAI-compatible Chat Completions endpoint (`/v1/chat/completions`). Use this with the OpenAI SDK or any OpenAI-compatible client.
 
 <CodeGroup>
 
@@ -74,7 +70,7 @@ console.log(response.choices[0].message.content);
 
 <Tab title="Messages">
 
-Anthropic Messages API format (`/v1/messages`). Works with the Anthropic SDK pointed at the gateway root (no `/v1` — the SDK appends its own path).
+Anthropic Messages API format (`/v1/messages`). Point the Anthropic SDK at the gateway root — no `/v1` suffix, the SDK appends its own path.
 
 <CodeGroup>
 
@@ -125,7 +121,7 @@ console.log(message.content[0].text);
 
 <Tab title="Responses">
 
-OpenAI Responses API format (`/v1/responses`). Works with the OpenAI SDK.
+OpenAI Responses API format (`/v1/responses`). Use this with the OpenAI SDK.
 
 <CodeGroup>
 
@@ -180,7 +176,6 @@ Set `LANGSMITH_GATEWAY=true` to route all Deep Agents calls through the gateway 
 ```python Python
 # pip install "deepagents>=0.1.0"
 # export LANGSMITH_API_KEY="lsv2_..."  export LANGSMITH_GATEWAY="true"
-import os
 from deepagents import create_deep_agent
 
 agent = create_deep_agent(model="anthropic:claude-opus-5")
@@ -206,7 +201,7 @@ console.log(result.messages[result.messages.length - 1].content);
 
 <Tab title="LangChain / per-request">
 
-Prefix any model with `langsmith:` to route that call through the gateway without setting `LANGSMITH_GATEWAY`. Only `LANGSMITH_API_KEY` is required. This per-request approach works in both LangChain and Deep Agents (which uses `init_chat_model` under the hood).
+Prefix any model with `langsmith:` to route that specific call through the gateway — no `LANGSMITH_GATEWAY` env var required, only `LANGSMITH_API_KEY`. This works in both LangChain and Deep Agents, since Deep Agents uses `init_chat_model` under the hood.
 
 <CodeGroup>
 
@@ -238,39 +233,31 @@ print(result["messages"][-1].content)
 
 ## View your trace
 
-Open the [LangSmith UI](https://smith.langchain.com) and navigate to the tracing project named `gateway` or `gateway-<short_api_key>-<api_key_id>` in the workspace associated with your API key. You should see a new trace for the call you just made.
-
-<Note>
-If your application also emits its own LangSmith traces, for example through [LangChain or LangGraph tracing](/langsmith/observability), the gateway-side trace and your application trace appear as separate runs. Linking gateway traces to the parent application run is not yet supported.
-</Note>
+Open the [LangSmith UI](https://smith.langchain.com) and go to the tracing project named `gateway` or `gateway-<short_api_key>-<api_key_id>` in your workspace. You should see a trace for the call you just made.
 
 ## Set a spend policy (optional)
 
-Go to **LLM Gateway** in LangSmith to create a spend policy. For example, you can set a daily $10 cap on your API key. When the cap is reached, the gateway returns a `402` response with the message: `"Request blocked by gateway policies: R&D Spend Cap"`.
+Go to **LLM Gateway** in LangSmith to create a spend policy. For example, set a daily $10 cap on your API key. When the cap is reached, the gateway returns a `402` with the message: `"Request blocked by gateway policies: R&D Spend Cap"`.
 
-See [Spend policies](/langsmith/llm-gateway-spend-policies) for the full guide on policy dimensions, time windows, and conflict resolution.
+See [Spend policies](/langsmith/llm-gateway-spend-policies) for the full guide.
 
 ## Automatic routing (LangChain and Deep Agents)
 
-Set `LANGSMITH_GATEWAY` to route all supported LangChain and Deep Agents **chat models** through the gateway automatically — no `base_url` or `api_key` wiring needed per client.
+Set `LANGSMITH_GATEWAY` to route all supported LangChain and Deep Agents **chat models** through the gateway — no `base_url` or `api_key` wiring needed per client.
 
 ```bash
 export LANGSMITH_GATEWAY="true"   # routes to the US gateway; see Regional URLs for EU / BYOC
 ```
 
 <Warning>
-Do not append a path (e.g. `/v1`) to the URL value. The SDK appends the provider-specific path automatically. A doubled path (`/openai/v1/v1`) will cause requests to fail.
+Do not append a path (e.g. `/v1`) to the `LANGSMITH_GATEWAY` value. The SDK appends the provider-specific path automatically, and a doubled path causes requests to fail.
 </Warning>
 
 <Note>
-Only **chat models** are affected. `OpenAIEmbeddings`, the legacy `OpenAI` LLM, and other non-chat integrations continue to use their normal provider endpoints.
+Only **chat models** are routed. Non-chat integrations such as `OpenAIEmbeddings` and providers with an explicit `OPENAI_API_BASE` override are unaffected. To use a separate API key for gateway calls, set `LANGSMITH_GATEWAY_API_KEY` (workspace-scoped, requires `gateway:invoke`).
 </Note>
 
-<Note>
-If you need a different API key for gateway calls than your default `LANGSMITH_API_KEY`, set `LANGSMITH_GATEWAY_API_KEY` as an override. It must be a workspace-scoped key with the `gateway:invoke` permission.
-</Note>
-
-Provider-specific base URLs (e.g. `OPENAI_API_BASE`) take precedence over the gateway setting, so you can still route individual providers elsewhere while keeping everything else on the gateway.
+Provider-specific base URLs (e.g. `OPENAI_API_BASE`) take precedence over the gateway setting, so you can route individual providers elsewhere while keeping everything else on the gateway.
 
 <Accordion title="Supported models and env var resolution details">
 
@@ -288,9 +275,9 @@ Provider-specific base URLs (e.g. `OPENAI_API_BASE`) take precedence over the ga
 - [Fireworks](/oss/javascript/integrations/chat/fireworks) (`@langchain/fireworks >= 0.2.7`)
 - [OpenAI](/oss/javascript/integrations/chat/openai) (`@langchain/openai >= 1.5.7`)
 
-The table below shows how the base URL and key are resolved for each combination of env vars. It uses OpenAI as the example — other providers use their own `*_API_BASE` / `*_BASE_URL` and `*_API_KEY` variables. `GW default` is `https://gateway.smith.langchain.com/openai/v1`.
+The table below shows how the base URL and key are resolved for each combination of env vars, using OpenAI as the example. Other providers use their own `*_API_BASE` / `*_BASE_URL` and `*_API_KEY` variables. `GW default` is `https://gateway.smith.langchain.com/openai/v1`.
 
-Python uses `OPENAI_API_BASE` and a `base_url=` constructor kwarg. TypeScript uses `OPENAI_BASE_URL` and a `configuration.baseURL` option — the column names differ but the rows are otherwise the same, except where marked with †.
+Python uses `OPENAI_API_BASE` and a `base_url=` constructor kwarg. TypeScript uses `OPENAI_BASE_URL` and `configuration.baseURL` — the column names differ but the rows are otherwise the same, except where marked with †.
 
 | `LANGSMITH_GATEWAY` | `LANGSMITH_GATEWAY_API_KEY` | Provider base URL env var | `OPENAI_API_KEY` | Per-client base URL | Resolved base URL | Resolved key |
 |---|---|---|---|---|---|---|
@@ -307,7 +294,7 @@ Python uses `OPENAI_API_BASE` and a `base_url=` constructor kwarg. TypeScript us
 | `https://eu…` | ✓ | — | — | `https://apac…` | `apac…` | gateway-key (Python) / none† (TS) |
 | `https://eu…` | ✓ | — | provider-key | `https://apac…` | `apac…` | provider-key |
 
-† These rows may diverge between Python and TypeScript implementations. If you observe unexpected routing in TypeScript, verify against `@langchain/openai` directly.
+† These rows may diverge between Python and TypeScript. Verify against `@langchain/openai` directly if you observe unexpected routing.
 
 </Accordion>
 
@@ -323,10 +310,8 @@ The base URL depends on your LangSmith instance:
 
 The gateway exposes two endpoint styles:
 
-- **Unified `/v1`** — an OpenAI-compatible Chat Completions endpoint that accepts any gateway model ID (e.g. `anthropic/claude-opus-5`). Append `/v1` to the base URL. Used by cURL and the OpenAI SDK. Full reference: [API formats](/langsmith/llm-gateway-api-formats).
+- **Unified `/v1`** — OpenAI-compatible Chat Completions, Responses, and Messages endpoints. Append `/v1` to the base URL. Full reference: [API formats](/langsmith/llm-gateway-api-formats).
 - **Direct provider routes** — provider-native endpoints (e.g. the Anthropic Messages API). Use the base URL with no suffix — the SDK appends its own path. Full reference: [Direct model access](/langsmith/llm-gateway-direct-model-access).
-
-When you set `LANGSMITH_GATEWAY`, LangChain and Deep Agents select the correct route automatically.
 
 ## Next steps
 
