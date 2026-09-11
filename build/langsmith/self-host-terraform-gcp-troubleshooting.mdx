@@ -1,0 +1,455 @@
+---
+title: GCP Terraform troubleshooting
+sidebarTitle: Troubleshooting
+description: Common issues, fixes, and diagnostic commands for LangSmith self-hosted on GKE deployed with the LangChain Terraform modules.
+---
+
+This page documents common issues, fixes, and diagnostic commands for LangSmith deployments provisioned with the [GCP Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/gcp).
+
+<Tip>
+Before upgrading, review the [LangSmith self-hosted changelog](/langsmith/self-hosted-changelog) for breaking changes and required variable updates. Run `gcloud container clusters get-credentials <cluster-name> --region <region> --project <project-id>` before running any `kubectl` commands.
+</Tip>
+
+For a copy-paste reference of the `kubectl`, `helm`, and `gcloud` calls used throughout this page, skip to [Diagnostic commands](#diagnostic-commands).
+
+## Automated diagnostics
+
+Before running individual commands, try the bundled scripts:
+
+```bash
+# Full deployment health check + next-step guidance
+make status
+
+# Secret Manager validation
+make secrets    # → manage-secrets.sh validate
+```
+
+## Known issues
+
+### terraform apply fails: GCP APIs not enabled
+
+**Symptom**
+
+```
+Error 403: ... has not been used in project <project-id> before or it is disabled.
+```
+
+**Cause:** Required GCP APIs are not enabled. Terraform enables them via `google_project_service`, but `cloudresourcemanager.googleapis.com` must already be enabled for Terraform to enable the others.
+
+**Fix**
+
+```bash
+gcloud services enable cloudresourcemanager.googleapis.com --project <project-id>
+cd modules/gcp/infra
+terraform apply -var-file=terraform.tfvars
+```
+
+### GKE cluster API server not accessible after apply
+
+**Symptom**
+
+```
+Error: Get "https://<cluster-endpoint>/api/v1/namespaces": dial tcp: connection refused
+```
+
+**Cause:** The GKE control plane takes 10 to 15 minutes to become fully operational. Terraform waits for `RUNNING` then adds a 90-second buffer. Cold-start API activation on slow projects can exceed the window.
+
+**Fix:** Wait for `RUNNING`, then re-run:
+
+```bash
+gcloud container clusters describe <cluster-name> \
+  --region <region> --project <project-id> --format="value(status)"
+
+terraform apply -var-file=terraform.tfvars
+```
+
+### GKE nodes not joining (NotReady)
+
+**Symptom:** `kubectl get nodes` shows no nodes or nodes stuck in `NotReady`.
+
+**Cause:** Node pool service account lacks `roles/container.nodeServiceAccount`, or VPC firewall rules block node-to-control-plane communication.
+
+**Fix**
+
+```bash
+gcloud container node-pools describe <pool-name> \
+  --cluster <cluster-name> --region <region> \
+  --format="value(config.serviceAccount)"
+
+gcloud projects add-iam-policy-binding <project-id> \
+  --member="serviceAccount:<node-sa-email>" \
+  --role="roles/container.nodeServiceAccount"
+
+gcloud compute firewall-rules list --filter="network:<vpc-name>"
+```
+
+### Cloud SQL connection refused from GKE pods
+
+**Symptom:** Backend logs show `connection refused` or `no route to host` for the Cloud SQL private IP.
+
+**Cause:** The private service connection (VPC peering) is not established, or the allocated IP range is too small. Often happens when `servicenetworking.googleapis.com` was not enabled before the networking module ran.
+
+**Fix**
+
+```bash
+gcloud services vpc-peerings list --network <vpc-name> --project <project-id>
+gcloud sql instances describe <instance-name> --format="value(ipAddresses)"
+gcloud compute networks peerings list --network <vpc-name>
+```
+
+If peering is missing, ensure `enable_private_service_connection = true` and re-apply:
+
+```bash
+terraform apply -var-file=terraform.tfvars -target=module.networking
+terraform apply -var-file=terraform.tfvars
+```
+
+### Memorystore Redis connection timeout
+
+**Symptom:** Pods cannot connect to Redis. Logs show `dial tcp: connection timed out` or `redis: connection refused`.
+
+**Cause:** The Memorystore `authorized_network` does not match the GKE VPC, or the Redis private IP is on a range not routable from the GKE subnet.
+
+**Fix**
+
+```bash
+gcloud redis instances describe <instance-name> --region <region> \
+  --format="value(host,authorizedNetwork)"
+
+kubectl run redis-test --rm -it --image=redis:7 -n langsmith -- \
+  redis-cli -h <redis-private-ip> ping
+# Expected: PONG
+```
+
+### cert-manager fails to issue Let's Encrypt certificate
+
+**Symptom:** `kubectl get certificate -n langsmith` shows `READY=False`. HTTP01 challenge failing.
+
+**Cause:** The DNS A record does not point to the Envoy Gateway IP, or port 80 is blocked on the load balancer.
+
+**Fix**
+
+```bash
+kubectl get svc -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-name=langsmith-gateway \
+  -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}'
+
+kubectl describe certificate <cert-name> -n langsmith
+kubectl get challenges -n langsmith
+kubectl describe challenge -n langsmith
+
+dig +short <your-langsmith-domain>
+```
+
+The DNS A record must resolve to the Gateway IP before the certificate can be issued. cert-manager's HTTP01 solver needs port 80 to be reachable from the internet.
+
+### GCS bucket access denied from LangSmith pods
+
+**Symptom:** Backend logs show `AccessDeniedException: 403 Insufficient Permission` or `403 Forbidden` when writing to GCS.
+
+**Cause:** In native GCS mode (the shipped default), the GCP service account bound through Workload Identity lacks `roles/storage.objectAdmin` on the bucket, or the pod's Kubernetes ServiceAccount is missing the `iam.gke.io/gcp-service-account` annotation. In the optional S3-compatible mode, the HMAC credentials passed to Helm are incorrect or their service account lacks `roles/storage.objectAdmin`.
+
+**Fix**
+
+```bash
+# Confirm the bucket and its IAM bindings
+helm get values langsmith -n langsmith | grep bucketName
+gcloud storage buckets get-iam-policy gs://<bucket-name>
+
+# Native GCS mode: verify the Workload Identity annotation on the pod ServiceAccount
+kubectl get serviceaccount langsmith-backend -n langsmith \
+  -o jsonpath='{.metadata.annotations.iam\.gke\.io/gcp-service-account}'
+```
+
+The GCP service account must have `roles/storage.objectAdmin` on the bucket. If the annotation itself is missing, apply the fix in the Workload Identity section below. For S3-compatible mode, create an HMAC key under Cloud Storage → Settings → Interoperability; its service account also needs `roles/storage.objectAdmin` on the bucket.
+
+### Envoy Gateway webhook blocking GKE operations
+
+**Symptom**
+
+```
+Error from server (InternalError): failed calling webhook "validate.gateway.envoyproxy.io"
+```
+
+**Cause:** The Envoy Gateway admission webhook is not ready or its `caBundle` is stale.
+
+**Fix**
+
+```bash
+kubectl get pods -n envoy-gateway-system
+
+kubectl rollout restart deployment/envoy-gateway -n envoy-gateway-system
+kubectl rollout status deployment/envoy-gateway -n envoy-gateway-system
+```
+
+### Envoy Gateway external IP changed after re-apply
+
+**Symptom:** DNS no longer resolves to the correct IP after Terraform re-apply, or existing firewall allowlists stop working.
+
+**Cause:** The Envoy Gateway external IP is tied to the `Gateway` Kubernetes resource managed by Terraform. If the resource is deleted and recreated (`terraform taint`, a module change that forces replacement, or `terraform destroy` + re-apply), GCP issues a new IP. There is no way to reserve the original IP without pre-allocating a static regional address.
+
+**Prevention**
+
+- Do not `terraform taint` or manually delete the `Gateway` resource.
+- Use `make destroy` + `make apply` only for full teardown and rebuild.
+- Before any operation that might recreate the Gateway, note the current IP.
+
+**Recovery:** Update your DNS A record to the new IP:
+
+```bash
+kubectl get gateway -n langsmith -o jsonpath='{.items[0].status.addresses[0].value}'
+
+gcloud dns record-sets update <your-domain>. \
+  --type=A --ttl=300 \
+  --rrdatas=<new-ip> \
+  --zone=<zone-name> \
+  --project=<project-id>
+```
+
+### terraform destroy fails: deletion protection enabled
+
+**Symptom**
+
+```
+Error: googleapi: Error 409: The instance is protected from deletion.
+```
+
+**Cause:** `gke_deletion_protection = true` (default) or `postgres_deletion_protection = true` prevents Terraform from destroying the resources.
+
+**Fix**
+
+```hcl
+# terraform.tfvars
+gke_deletion_protection      = false
+postgres_deletion_protection = false
+```
+
+```bash
+terraform apply -var-file=terraform.tfvars
+terraform destroy
+```
+
+### Workload Identity not working (GCS permission denied)
+
+**Symptom**
+
+```
+AccessDeniedException: 403 <pod-sa>@<project>.iam.gserviceaccount.com
+  does not have storage.objects.create access to the Google Cloud Storage bucket.
+```
+
+**Cause:** The Kubernetes ServiceAccount used by LangSmith pods is missing the Workload Identity annotation, or the GCP SA is missing the GCS IAM binding.
+
+**Diagnosis**
+
+```bash
+kubectl get serviceaccount langsmith-backend -n langsmith \
+  -o jsonpath='{.metadata.annotations}' | python3 -m json.tool
+
+BUCKET=$(terraform -chdir=infra output -raw storage_bucket_name)
+gsutil iam get gs://$BUCKET | grep -A3 "serviceAccount"
+
+GSA=$(terraform -chdir=infra output -raw workload_identity_service_account_email)
+gcloud projects get-iam-policy <project-id> \
+  --flatten="bindings[].members" --filter="bindings.members:$GSA"
+```
+
+**Fix**
+
+```bash
+terraform -chdir=infra apply -target=module.iam
+make init-values
+make deploy
+```
+
+### `langsmith-ksa` missing Workload Identity annotation
+
+**Symptom:** Operator-spawned agent pods fail to start or get stuck in `Pending`. Logs show permission errors or the agent bootstrap job hangs.
+
+**Cause:** `langsmith-ksa` is created by the LangSmith operator (not Helm) and does not survive namespace teardowns or fresh cluster rebuilds. `deploy.sh` re-annotates it post-deploy; if a previous deploy was interrupted, the annotation may be missing.
+
+**Diagnosis**
+
+```bash
+kubectl get serviceaccount langsmith-ksa -n langsmith \
+  -o jsonpath='{.metadata.annotations.iam\.gke\.io/gcp-service-account}'
+```
+
+**Fix**
+
+```bash
+# Re-run deploy; idempotently creates and annotates langsmith-ksa
+make deploy
+
+# Or annotate manually
+WI=$(terraform -chdir=infra output -raw workload_identity_annotation)
+kubectl create serviceaccount langsmith-ksa -n langsmith --dry-run=client -o yaml \
+  | kubectl apply -f -
+kubectl annotate serviceaccount langsmith-ksa -n langsmith \
+  iam.gke.io/gcp-service-account="$WI" --overwrite
+```
+
+### Helm release stuck in `pending-upgrade`
+
+**Symptom**
+
+```
+Error: UPGRADE FAILED: another operation (install/upgrade/rollback) is in progress
+```
+
+**Cause:** A previous `helm upgrade` was interrupted (Ctrl+C during `--wait`). Helm left the release locked.
+
+**Fix:** `deploy.sh` detects and auto-recovers this state. If running manually:
+
+```bash
+helm rollback langsmith -n langsmith --wait --timeout 5m
+make deploy
+```
+
+### Secret Manager access denied
+
+**Symptom**
+
+```
+ERROR: PERMISSION_DENIED: Permission 'secretmanager.versions.access'
+  denied on resource 'projects/.../secrets/...'
+```
+
+**Cause:** Either `secretmanager.googleapis.com` is not enabled, or the operator account lacks `roles/secretmanager.admin`.
+
+**Fix**
+
+```bash
+gcloud services enable secretmanager.googleapis.com --project <project-id>
+
+gcloud projects add-iam-policy-binding <project-id> \
+  --member="user:$(gcloud config get account)" \
+  --role="roles/secretmanager.admin"
+```
+
+### `langsmith-postgres-credentials` or `langsmith-redis-credentials` Secret missing
+
+**Symptom:** Pods crash with database connection errors immediately after deploy, or `kubectl get secrets -n langsmith` does not list `langsmith-postgres-credentials` / `langsmith-redis-credentials`.
+
+**Cause:** The `k8s-bootstrap` module creates these Secrets. They are absent if `terraform apply` was not run, failed partway through, or the namespace was deleted out-of-band.
+
+**Fix**
+
+```bash
+terraform -chdir=infra apply -target=module.k8s_bootstrap
+
+kubectl get secret langsmith-postgres-credentials -n langsmith
+kubectl get secret langsmith-redis-credentials -n langsmith
+```
+
+## Diagnostic commands
+
+### Cluster access
+
+```bash
+gcloud container clusters get-credentials <cluster-name> --region <region> --project <project-id>
+kubectl config current-context
+kubectl get nodes -o wide
+```
+
+### Pods
+
+```bash
+kubectl get pods -n langsmith
+kubectl get pods -n langsmith -w
+kubectl describe pod <pod-name> -n langsmith
+kubectl logs <pod-name> -n langsmith --tail=50
+kubectl logs <pod-name> -n langsmith --previous --tail=50
+kubectl logs -n langsmith deploy/langsmith-backend --tail=100 -f
+```
+
+### TLS and certificates
+
+```bash
+kubectl get certificate -n langsmith
+kubectl describe certificate <cert-name> -n langsmith
+kubectl get challenges -n langsmith
+kubectl get clusterissuer
+```
+
+### Gateway and load balancer
+
+```bash
+kubectl get gateway -n langsmith
+kubectl get httproute -n langsmith
+kubectl get svc -n envoy-gateway-system -o wide
+kubectl get pods -n envoy-gateway-system
+```
+
+### Helm
+
+```bash
+helm status langsmith -n langsmith
+helm history langsmith -n langsmith
+helm get values langsmith -n langsmith
+```
+
+### LangSmith Deployment
+
+```bash
+kubectl get pods -n langsmith | grep -E "host-backend|listener|operator"
+kubectl get lgp -n langsmith
+kubectl get crd | grep langchain
+```
+
+### Workload Identity and IAM
+
+```bash
+kubectl get serviceaccount langsmith-backend -n langsmith \
+  -o jsonpath='{.metadata.annotations}' | python3 -m json.tool
+
+kubectl get serviceaccount langsmith-ksa -n langsmith \
+  -o jsonpath='{.metadata.annotations.iam\.gke\.io/gcp-service-account}'
+
+BUCKET=$(terraform -chdir=infra output -raw storage_bucket_name 2>/dev/null)
+gsutil iam get gs://$BUCKET
+
+gcloud iam service-accounts list --project <project-id> --filter="displayName:langsmith"
+```
+
+### Secrets and bootstrap
+
+```bash
+kubectl get secrets -n langsmith
+kubectl get secret langsmith-postgres-credentials -n langsmith
+kubectl get secret langsmith-redis-credentials -n langsmith
+
+kubectl get secret langsmith-postgres-credentials -n langsmith \
+  -o jsonpath='{.data.connection_url}' | base64 --decode
+
+gcloud secrets list --project <project-id> --filter="name:langsmith"
+
+gcloud secrets versions access latest \
+  --secret=langsmith-<prefix>-<env>-postgres-password \
+  --project <project-id>
+
+make secrets
+```
+
+### Quick health check
+
+```bash
+echo "=== Context ===" && kubectl config current-context
+echo "=== Nodes ===" && kubectl get nodes
+echo "=== Pods ===" && kubectl get pods -n langsmith
+echo "=== Certificate ===" && kubectl get certificate -n langsmith
+echo "=== Gateway ===" && kubectl get gateway -n langsmith
+echo "=== Secrets ===" && kubectl get secrets -n langsmith | grep -E "langsmith-postgres-credentials|langsmith-redis-credentials"
+echo "=== Helm ===" && helm status langsmith -n langsmith 2>/dev/null | grep -E "STATUS|LAST DEPLOYED"
+```
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-terraform-gcp-troubleshooting.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
