@@ -503,6 +503,87 @@ Declarative subagents defined via `subagents=` do not inherit the main agent's m
 
         See [Restricting filesystem tools](/oss/deepagents/overview#virtual-filesystem-access) for more details.
     </Accordion>
+    <Accordion title="Place routing hints next to the skill catalog" icon="route">
+        Override @[`SkillsMiddleware`] with a custom `system_prompt=` template to put routing
+        hints (priorities, category bias) in the same block as the generated skill catalog.
+        The template must include the `{skills_locations}`, `{skills_list}`, and
+        `{skills_load_warnings}` slots, which the middleware substitutes on every turn — so
+        the catalog stays in sync automatically as skills are added, renamed, or removed.
+
+        ```python
+        from deepagents import create_deep_agent
+        from deepagents.backends.filesystem import FilesystemBackend
+        from deepagents.middleware.skills import SkillsMiddleware
+
+        backend = FilesystemBackend(root_dir="/path/to/skills")
+
+        custom_skills_prompt = """## Skills
+
+        Routing hints:
+        - For research topics → prefer arxiv-search first
+        - For general questions → use web-research
+        - For LangGraph documentation → langgraph-docs
+
+        {skills_locations}
+
+        {skills_list}
+
+        {skills_load_warnings}
+        """
+
+        agent = create_deep_agent(
+            model="anthropic:claude-sonnet-4-6",
+            middleware=[
+                SkillsMiddleware(
+                    backend=backend,
+                    sources=["/path/to/skills"],
+                    system_prompt=custom_skills_prompt,
+                ),
+            ],
+        )
+        ```
+
+        Do not also pass `skills=` to `create_deep_agent` in this case: the override instance
+        already owns `backend` and `sources`. Any missing slot (`{skills_locations}`,
+        `{skills_list}`, `{skills_load_warnings}`) raises `ValueError` at construction time.
+    </Accordion>
+    <Accordion title="Suppress the auto-generated skill catalog" icon="eye-off">
+        Override @[`SkillsMiddleware`] with `system_prompt=None` to load skills without
+        appending a skills section to the system prompt. Skills remain in
+        `state["skills_metadata"]` and skill files stay reachable through the filesystem
+        tools, so callers who prefer a hand-written, compact routing summary in
+        `create_deep_agent(system_prompt=...)` can add exactly the guidance they need without
+        the built-in description block.
+
+        ```python
+        from deepagents import create_deep_agent
+        from deepagents.backends.filesystem import FilesystemBackend
+        from deepagents.middleware.skills import SkillsMiddleware
+
+        backend = FilesystemBackend(root_dir="/path/to/skills")
+
+        agent = create_deep_agent(
+            model="anthropic:claude-sonnet-4-6",
+            system_prompt="""You are a research assistant.
+
+        Skills (read the SKILL.md file when relevant):
+        - /path/to/skills/arxiv-search/SKILL.md — papers
+        - /path/to/skills/web-research/SKILL.md — general web lookups
+        - /path/to/skills/langgraph-docs/SKILL.md — LangGraph documentation
+        """,
+            middleware=[
+                SkillsMiddleware(
+                    backend=backend,
+                    sources=["/path/to/skills"],
+                    system_prompt=None,
+                ),
+            ],
+        )
+        ```
+
+        Skill names, paths, and any hand-written hints in `create_deep_agent`'s `system_prompt`
+        are the caller's responsibility to keep in sync when skills change.
+    </Accordion>
 </AccordionGroup>
 :::
 
