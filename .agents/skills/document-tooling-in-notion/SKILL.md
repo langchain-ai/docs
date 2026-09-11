@@ -59,7 +59,7 @@ is personal tooling and does not go on these pages.
 
 ## Step 3. Write it
 
-Follow the `writing-style` skill. Do not restate its rules here. The three that
+Follow the `team-writing-style` skill. Do not restate its rules here. The three that
 get missed most often on Notion pages: no first person, no spaced em dashes, and
 definition lists written as `- **Term**: Explanation.` with the colon outside the
 bold and a period at the end.
