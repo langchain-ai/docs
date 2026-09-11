@@ -1,5 +1,5 @@
 ---
-name: document-tooling-in-notion
+name: docs-tooling-notion
 description: Document new or changed docs-team tooling on the Notion tooling pages. Decides which of the five pages owns the topic, what belongs in the repo instead of Notion, and how to edit safely through the Notion MCP server. Use when a script, workflow, agent, skill, or MCP server is added or changed and the internal tooling docs need updating.
 license: MIT
 metadata:
