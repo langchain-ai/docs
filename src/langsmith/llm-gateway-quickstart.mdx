@@ -227,57 +227,49 @@ Set `LANGSMITH_GATEWAY` to route all supported LangChain and Deep Agents **chat 
 
 ```bash
 export LANGSMITH_API_KEY="lsv2_..."
-export LANGSMITH_GATEWAY="true"   # routes to the US gateway; see Regional URLs for EU / BYOC
+export LANGSMITH_GATEWAY="true"                                   # US gateway (default)
+# export LANGSMITH_GATEWAY="https://eu.gateway.smith.langchain.com"  # EU
+# export LANGSMITH_GATEWAY="https://<data_plane_host>/gateway"       # BYOC
 ```
 
 <Warning>
-Do not append a path (e.g. `/v1`) to the `LANGSMITH_GATEWAY` value. The SDK appends the provider-specific path automatically, and a doubled path causes requests to fail.
+When setting `LANGSMITH_GATEWAY` to a URL, use only the base URL with no path suffix. The SDK appends the provider-specific path automatically — a trailing `/v1` causes a doubled path and request failures.
 </Warning>
 
 <Note>
-Only **chat models** are routed. Non-chat integrations such as `OpenAIEmbeddings` and providers with an explicit `OPENAI_API_BASE` override are unaffected. To use a separate API key for gateway calls, set `LANGSMITH_GATEWAY_API_KEY` (workspace-scoped, requires `gateway:invoke`).
+Only **chat models** are routed. Non-chat integrations such as `OpenAIEmbeddings` are unaffected. To use a separate API key for gateway calls, set `LANGSMITH_GATEWAY_API_KEY` (workspace-scoped, requires `gateway:invoke`).
 </Note>
 
-Provider-specific base URLs (e.g. `OPENAI_API_BASE`) take precedence over the gateway setting, so you can route individual providers elsewhere while keeping everything else on the gateway.
+### Supported LangChain integrations
 
-<Accordion title="Supported models and env var resolution details">
+| Provider | Python | TypeScript |
+|---|---|---|
+| [Anthropic](/oss/python/integrations/chat/anthropic) | `langchain-anthropic >= 1.5.1` | [`@langchain/anthropic >= 1.5.4`](/oss/javascript/integrations/chat/anthropic) |
+| [Baseten](/oss/python/integrations/chat/baseten) | `langchain-baseten >= 0.2.3` | — |
+| [Fireworks](/oss/python/integrations/chat/fireworks) | `langchain-fireworks >= 1.5.1` | [`@langchain/fireworks >= 0.2.7`](/oss/javascript/integrations/chat/fireworks) |
+| [Google Gemini](/oss/python/integrations/chat/google_generative_ai) | `langchain-google-genai >= 4.3.2` | — |
+| [OpenAI](/oss/python/integrations/chat/openai) | `langchain-openai >= 1.4.1` | [`@langchain/openai >= 1.5.7`](/oss/javascript/integrations/chat/openai) |
 
-**Python** (`langchain-*` packages):
+### URL and key resolution precedence
 
-- [Anthropic](/oss/python/integrations/chat/anthropic) (`langchain-anthropic >= 1.5.1`)
-- [Baseten](/oss/python/integrations/chat/baseten) (`langchain-baseten >= 0.2.3`)
-- [Fireworks](/oss/python/integrations/chat/fireworks) (`langchain-fireworks >= 1.5.1`)
-- [Google Gemini](/oss/python/integrations/chat/google_generative_ai) (`langchain-google-genai >= 4.3.2`)
-- [OpenAI](/oss/python/integrations/chat/openai) (`langchain-openai >= 1.4.1`)
+When `LANGSMITH_GATEWAY` is set, the SDK resolves the final base URL and API key using these rules in order (first match wins). Examples use the OpenAI integration; other providers use their own `*_API_BASE` / `*_BASE_URL` and `*_API_KEY` env vars.
 
-**TypeScript** (`@langchain/*` packages):
+**Base URL:**
 
-- [Anthropic](/oss/javascript/integrations/chat/anthropic) (`@langchain/anthropic >= 1.5.4`)
-- [Fireworks](/oss/javascript/integrations/chat/fireworks) (`@langchain/fireworks >= 0.2.7`)
-- [OpenAI](/oss/javascript/integrations/chat/openai) (`@langchain/openai >= 1.5.7`)
+1. Per-client `base_url=` kwarg (Python) / `configuration.baseURL` (TypeScript) — always wins.
+2. Provider env var (`OPENAI_API_BASE` in Python, `OPENAI_BASE_URL` in TypeScript) — overrides the gateway.
+3. `LANGSMITH_GATEWAY` — routes to the gateway; the SDK appends the provider path (e.g. `/openai/v1`).
+4. Provider default (e.g. `api.openai.com`).
 
-The table below shows how the base URL and key are resolved for each combination of env vars, using OpenAI as the example. Other providers use their own `*_API_BASE` / `*_BASE_URL` and `*_API_KEY` variables. `GW default` is `https://gateway.smith.langchain.com/openai/v1`.
+**API key** (evaluated after the URL is resolved):
 
-Python uses `OPENAI_API_BASE` and a `base_url=` constructor kwarg. TypeScript uses `OPENAI_BASE_URL` and `configuration.baseURL` — the column names differ but the rows are otherwise the same, except where marked with †.
+1. If routed to the gateway and `LANGSMITH_GATEWAY_API_KEY` is set — use the gateway key.
+2. If routed to the gateway and the provider key (`OPENAI_API_KEY`) is set — use the provider key.
+3. Otherwise — use whichever key matches the resolved URL.
 
-| `LANGSMITH_GATEWAY` | `LANGSMITH_GATEWAY_API_KEY` | Provider base URL env var | `OPENAI_API_KEY` | Per-client base URL | Resolved base URL | Resolved key |
-|---|---|---|---|---|---|---|
-| unset / `false` | — | — | — | — | `api.openai.com` | none |
-| unset / `false` | ✓ | — | provider-key | — | `api.openai.com` | provider-key |
-| `true` | ✓ | — | — | — | GW default | gateway-key |
-| `true` | — | — | — | — | GW default | none |
-| `true` | ✓ | — | provider-key | — | GW default | gateway-key |
-| `true` | — | — | provider-key | — | GW default | provider-key |
-| `true` | ✓ | `api.openai.com/v1` | provider-key | — | `api.openai.com/v1` | provider-key |
-| `true` | ✓ | `api.openai.com/v1` | — | — | `api.openai.com/v1` | gateway-key (Python) / none† (TS) |
-| `true` | ✓ | `my.dev.gateway` | — | — | `my.dev.gateway` | gateway-key (Python) / none† (TS) |
-| `https://eu…` | ✓ | — | — | — | `eu…/openai/v1` | gateway-key |
-| `https://eu…` | ✓ | — | — | `https://apac…` | `apac…` | gateway-key (Python) / none† (TS) |
-| `https://eu…` | ✓ | — | provider-key | `https://apac…` | `apac…` | provider-key |
-
-† These rows may diverge between Python and TypeScript. Verify against `@langchain/openai` directly if you observe unexpected routing.
-
-</Accordion>
+<Note>
+TypeScript key resolution differs from Python in some edge cases (rows 8–11 of the full table). If you observe unexpected routing in TypeScript, verify against `@langchain/openai` directly.
+</Note>
 
 ## Regional URLs and endpoint styles
 
