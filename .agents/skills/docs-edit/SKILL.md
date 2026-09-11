@@ -64,7 +64,7 @@ frontmatter, syntax, and the navigation map. Two that matter most here:
   each factual claim against the source it describes, and state plainly what you
   could not verify.
 
-For voice and sentence rhythm while drafting, use the `team-writing-style` skill. For
+For voice and sentence rhythm while drafting, use the `docs-team-voice` skill. For
 adding, moving, renaming, or deleting a page, including navigation and
 redirects, use `add-docs-page`.
 

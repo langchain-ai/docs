@@ -1,5 +1,5 @@
 ---
-name: team-writing-style
+name: docs-team-voice
 description: Write or revise documentation prose so it reads like the rest of this site, in the docs team's shared voice. Covers sentence length, cross-link density, how to state defaults and conditions, naming exact identifiers, and what to cut in a revision pass. Use when drafting or rewriting a page, a section, a concept overview, a how-to, a callout, or landing copy.
 ---
 
