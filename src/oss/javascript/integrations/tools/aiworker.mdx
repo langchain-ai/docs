@@ -1,0 +1,71 @@
+---
+title: aiworker integration
+description: Integrate with the aiworker tools using LangChain JavaScript.
+integration:
+  name: aiworker
+  npm: 'aiworker-langchain-tools'
+---
+
+The [aiworker-langchain-tools](https://www.npmjs.com/package/aiworker-langchain-tools) package turns
+[aiworker](https://aiworker.duckdns.org)'s paid data routes into LangChain tools. There is no account and no API
+key: every route is paid per call in USDC over the [x402](https://x402.org) protocol from the agent's own wallet,
+and nothing is settled unless the request succeeds.
+
+## Features
+
+- **One import, one tool per route**: the tools are built from the live OpenAPI catalogue, so new routes appear
+  without a package update.
+- **Seventeen small data routes**: DeFi yields and protocol snapshots (DefiLlama), page-to-Markdown, Base token
+  safety cards and wallet checks, Polymarket resolution, odds, history, screener and rule backtests, fact checks,
+  sourced briefs, headline search.
+- **A price cap**: `maxPriceUsd` drops every route priced above it; prices range from $0.005 to $1.00 per call and
+  every tool description states its own.
+- **Deterministic errors**: a non-2xx answer (including a 402 you chose not to pay) is returned as a JSON error
+  string, never thrown.
+
+## Installation
+
+```bash
+npm install aiworker-langchain-tools
+```
+
+## Quickstart
+
+You need a wallet on Base holding USDC. Keep its private key in an environment variable; it is used only to sign
+the x402 payment header and is never sent anywhere else.
+
+```ts
+import { aiworkerTools } from "aiworker-langchain-tools";
+
+const tools = await aiworkerTools({
+  privateKey: process.env.AIWORKER_BUYER_KEY as `0x${string}`,
+  maxPriceUsd: 0.05, // skip anything dearer than five cents per call
+});
+```
+
+## Examples
+
+Bind the tools to a model and let it call them:
+
+```ts
+import { ChatOpenAI } from "@langchain/openai";
+
+const model = new ChatOpenAI({ model: "gpt-4o-mini" }).bindTools(tools);
+const answer = await model.invoke("What is the last traded YES price of the Polymarket market xi-jinping-out-before-2027?");
+```
+
+Or call one tool directly:
+
+```ts
+const tokenInfo = tools.find((t) => t.name === "aiworker_token_info")!;
+const card = await tokenInfo.invoke({ address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" });
+```
+
+Each call pays its quoted price ($0.005 for `token_info`) and returns the route's JSON document as a string. The
+package's [README](https://github.com/ai-worker227/aiworker-examples/tree/main/langchain) lists every route and
+price; the live catalogue is `https://aiworker.duckdns.org/llms.txt`.
+
+## What it does not do
+
+- No Solana: EVM (Base) only, even where the server also quotes Solana.
+- No retries of a failed settlement: a non-2xx answer ends the call.
