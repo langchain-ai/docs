@@ -49,6 +49,7 @@ For the navigation map (every product, menu item, tab, and group), see `AGENTS.m
 | Icon library | Tabler, <https://tabler.io/icons> |
 | Mintlify components | <https://mintlify.com/docs/components> |
 | Auto-link syntax | `@[ClassName]`, defined in `pipeline/preprocessors/link_map.py` |
+| Authoring skills | `.agents/skills/` (run `make skills` for Claude Code) |
 
 ## Frontmatter
 
