@@ -12176,7 +12176,7 @@ The table below summarizes the split:
 
 LangChain provisions the following in your account:
 
-- **VPC**: A dedicated VPC spread across the region's availability zones, fully private by default. It uses VPC endpoints for private communication to AWS services, and PrivateLink for communication between the data plane and the control plane.
+- **VPC**: By default, a dedicated VPC spread across the region's availability zones, with private ingress. It uses VPC endpoints for private communication to AWS services, and PrivateLink for communication between the data plane and the control plane. With [BYOVPC](/langsmith/byoc-byovpc), you create and manage the VPC and its base network resources instead.
 - **Managed databases**: RDS for relational workloads, and ElastiCache for caching.
 - **Storage**: S3 buckets for the blob store holding trace data, VPC flow logs, and ClickHouse backups.
 - **EKS**: A private EKS cluster with managed add-ons.
@@ -12188,13 +12188,15 @@ LangChain provisions the following in your account:
 
 LangChain needs cross-account IAM permissions to provision and manage resources within your AWS account. These permissions let LangChain:
 
-- **Provision infrastructure**: Create and configure the VPC, subnets, security groups, and other networking components.
+- **Provision infrastructure**: Create and configure the VPC, subnets, security groups, and other networking components. With BYOVPC, the role retains workload networking permissions, while you manage the base network.
 - **Manage the Kubernetes cluster**: Deploy and maintain the EKS cluster, its node groups, and cluster add-ons.
 - **Create storage resources**: Provision RDS, ElastiCache, and the S3 buckets used for application data and backups.
 - **Create IAM roles**: Create and configure the roles used by Kubernetes service accounts and supporting services.
 - **Operate supporting services**: Deploy and manage ingress and autoscaling, and scale and upgrade LangSmith workloads.
 
 Permissions are granted through a single cross-account IAM role that you create during onboarding by applying the [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role).
+
+For BYOVPC, disable base VPC creation permissions and scope security group creation to your supplied VPC IDs. See [Create the reduced-permission IAM role](/langsmith/byoc-byovpc#create-the-reduced-permission-iam-role).
 
 LangChain provides the external ID used in the role's trust policy. Copy it using the button next to the **Data Planes** header in **Settings > Data Planes**, and use it when applying the module. The role's `ExternalId` condition must match this value.
 
@@ -12229,6 +12231,8 @@ All communication between the control plane and your data plane travels over AWS
 - **Data plane to control plane (runtime path)**: The data plane calls the control plane to authenticate requests, validate API keys, resolve roles and permissions, and load organization and workspace configuration.
 
 Container images are pulled read-only from LangChain's control plane ECR repositories through VPC endpoints.
+
+With BYOVPC, you configure the customer-side AWS service endpoints and data-plane-to-control-plane PrivateLink endpoint. LangChain manages the endpoint service for the cluster management path. See [Configure connectivity](/langsmith/byoc-byovpc#configure-connectivity).
 
 ### DNS and ingress
 
@@ -12266,7 +12270,7 @@ LangSmith BYOC can integrate with AWS Marketplace.
 
 ## Billable AWS services
 
-Every data plane creates the following resources in your account. AWS charges for them at its own rates, independently of your LangSmith contract.
+The following resources contribute to data plane costs in your account. AWS charges for them at its own rates, independently of your LangSmith contract. With [BYOVPC](/langsmith/byoc-byovpc), networking costs depend on the gateways, endpoints, and logging you configure and manage.
 
 | Service | What it covers | Billing basis |
 |---------|----------------|---------------|
@@ -12308,6 +12312,8 @@ AWS enforces default quotas per region and per account. Defaults are often too l
 
 For current default values, see [AWS service quotas](https://docs.aws.amazon.com/general/latest/gr/aws_service_limits.html).
 
+With BYOVPC, account for existing resource usage and your chosen endpoint and egress configuration when checking quotas. Your supplied subnets must also meet the [subnet size and available IP requirements](/langsmith/byoc-byovpc#configure-the-vpc-and-subnets).
+
 If provisioning stalls or fails, an exhausted quota is a common cause, alongside missing permissions and service control policies. See [What happens if provisioning fails?](/langsmith/byoc-faq).
 
 ## See also
@@ -12328,6 +12334,180 @@ If provisioning stalls or fails, an exhausted quota is a common cause, alongside
 </div>
 
 
+# Bring your own VPC on AWS
+Source: https://docs.langchain.com/langsmith/byoc-byovpc
+
+Bring your own VPC (BYOVPC) deploys a LangSmith BYOC data plane into an existing VPC that you create and manage. It lets you control the network configuration while LangChain provisions and operates the EKS cluster, databases, storage, and other workload resources. For a VPC provisioned by LangChain, follow the standard [BYOC onboarding guide](/langsmith/byoc-onboarding).
+
+You own the:
+
+- VPC
+- Subnets
+- Routing
+- Gateways
+- VPC endpoints
+- Flow logs
+- Egress controls.
+
+LangChain retains the permissions needed to manage workload security groups, the PrivateLink endpoint service for access to your data plane's EKS API, and other LangSmith infrastructure inside the VPC (such as databases).
+
+## Before you begin
+
+Complete the [BYOC prerequisites](/langsmith/byoc#prerequisites) and enable BYOC on your organization. Create the VPC:
+
+- In the same AWS account as the cross-account IAM role, and
+- In the region where you plan to deploy the data plane.
+
+## Meet the network requirements
+
+LangSmith checks the following requirements when you supply a VPC, including one created with the reference module.
+
+### Configure the VPC and subnets
+
+- **Ownership and region**: The VPC and every supplied subnet must belong to the AWS account containing the IAM role, exist in the requested region, and be in the `available` state.
+- **VPC configuration**: Use default instance tenancy and a primary RFC 1918 IPv4 CIDR from `/16` through `/18`. Enable both DNS support and DNS hostnames.
+- **Availability zones**: Supply exactly one application subnet and one database subnet in each of two or three standard regional availability zones. If you supply public subnets, provide one in each of the same zones.
+- **Subnet ranges**: Every subnet must have a private IPv4 CIDR within the VPC's primary CIDR. Supplied subnet CIDRs must not overlap.
+- **Subnet IDs and tags**: Each subnet ID must be unique across all tiers.
+
+| Subnet tier | Minimum subnet size | Minimum available IPv4 addresses per subnet |
+|-------------|---------------------|--------------------------------------------|
+| Private application | `/20` or larger | 256 |
+| Private database | `/26` or larger | 16 |
+| Public, when supplied | `/26` or larger | 16 |
+
+Larger subnets have smaller prefix lengths. Both subnet size and available address count must meet the requirements.
+
+### Configure routes
+
+The VPC must have a main route table. Validation uses each subnet's explicit route table association, or the main route table if there is no explicit association.
+
+- **Private application subnets**: Each must have an active IPv4 default route (`0.0.0.0/0`) to customer-managed egress, such as a NAT gateway or transit gateway. A direct route to an internet gateway does not satisfy this requirement.
+- **Public subnets**: Each supplied public subnet must have an active IPv4 default route to an internet gateway attached to the VPC.
+- **Database subnets**: The reference module keeps these isolated, without a default egress route.
+
+### Configure network ACLs
+
+Each supplied subnet must have an associated network ACL that permits the traffic below. Validation evaluates rules in priority order, including deny rules.
+
+| Subnet tier | Direction | Protocol and ports | Source or destination |
+|-------------|-----------|--------------------|-----------------------|
+| All supplied subnets | Inbound and outbound | TCP and UDP, ports 1–65535 | VPC primary CIDR |
+| Private application | Outbound | TCP 443 | `0.0.0.0/0` |
+| Private application | Inbound | TCP 1024–65535, for return traffic | `0.0.0.0/0` |
+| Public | Inbound | TCP 443 | `0.0.0.0/0` |
+| Public | Outbound | TCP 1024–65535, for return traffic | `0.0.0.0/0` |
+
+These are network ACL requirements. Workload security groups and your egress controls also govern which connections succeed.
+
+## Create the VPC with Terraform
+
+<Note>
+Using the Terraform module is optional. You can create the VPC with your own tooling and use the module as a reference to meet the [network requirements](#meet-the-network-requirements).
+</Note>
+
+{/* Publishing dependency: publish modules/byoc/aws/byovpc and the role module's allow_vpc_creation_permissions and vpc_ids inputs in the Terraform repository before publishing this guide. */}
+
+The [`byovpc` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byovpc) creates a network aligned with the LangSmith data plane requirements. Use it to create a VPC, or configure an existing VPC to meet the [network requirements](#meet-the-network-requirements).
+
+To create the VPC:
+
+1. Configure the AWS provider for your target account and [supported region](/langsmith/byoc#regions-and-cloud-providers).
+2. Add the module to your Terraform configuration. Select a private CIDR range that does not overlap with networks you plan to peer with.
+3. Initialize Terraform, review the plan, and apply it in your account.
+
+The following configuration uses the module's default subnet layout and enables AWS service endpoints, control plane PrivateLink, and flow logs:
+
+```hcl
+provider "aws" {
+  region = "us-west-2"
+}
+
+module "langsmith_byovpc" {
+  source = "github.com/langchain-ai/terraform//modules/byoc/aws/byovpc?ref=main"
+
+  name           = "langsmith-production"
+  vpc_cidr_block = "10.0.0.0/16"
+
+  enable_vpc_endpoints             = true
+  enable_control_plane_privatelink = true
+  enable_vpc_flow_logs             = true
+}
+
+output "langsmith_network_config" {
+  value = module.langsmith_byovpc.langsmith_network_config
+}
+```
+
+The `langsmith_network_config` output contains the VPC ID and subnet IDs to supply when you create the data plane.
+
+### Configure connectivity
+
+The VPC module lets you configure:
+
+- AWS service endpoints.
+- Control plane PrivateLink and private DNS.
+- VPC flow logs.
+- Public subnets for internet-facing load balancers.
+- NAT and internet gateways, or customer-managed centralized egress.
+
+For configuration options and requirements, see the [`byovpc` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byovpc).
+
+## Create the reduced-permission IAM role
+
+The [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role) creates the cross-account role LangChain assumes to manage the data plane.
+
+To create the role:
+
+1. Copy the external ID using the button next to the **Data Planes** header in **Settings > Data Planes**. Pass it as `external_id`. The role's trust policy must use this value in its `ExternalId` condition.
+2. Set `allow_vpc_creation_permissions = false` and supply the VPC ID in the `vpc_ids` input.
+3. If you require internet-facing load balancers, set `allow_public_ingress = true`. Otherwise, leave it disabled.
+4. Review and apply the role module, then retain its `crossplane_role_arn` output for data plane creation.
+
+With VPC creation permissions disabled, the role cannot create or manage the base VPC, subnets, internet and NAT gateways, Elastic IPs, route tables and routes, customer-side VPC endpoints, or VPC flow logs. It retains workload networking permissions, including tagged security groups, VPC endpoint services, and permissions needed by Karpenter. Security group creation is limited to the VPC IDs in `vpc_ids`.
+
+## Supply the VPC and subnet IDs
+
+When creating the data plane, supply the name, AWS region, and IAM role ARN from [onboarding](/langsmith/byoc-onboarding), together with the following network values:
+
+| Value | Terraform module output | Data plane creation field |
+|-------|-------------------------|---------------------------|
+| VPC ID | `vpc_id` | `byovpc_id` |
+| Private application subnet IDs | `private_app_subnet_ids` | `byovpc_private_app_subnet_ids` |
+| Private database subnet IDs | `private_db_subnet_ids` | `byovpc_private_db_subnet_ids` |
+| Public subnet IDs, required for public load balancers | `public_subnet_ids` | `byovpc_public_subnet_ids` |
+
+LangSmith validates the network before provisioning. Correct any reported network or IAM permission errors, then submit the request again. Validation checks the AWS configuration; you remain responsible for working connectivity through any custom routing, DNS, endpoint policies, and egress filters.
+
+After creation, continue with [provisioning and private connectivity (Step 4)](/langsmith/byoc-onboarding).
+
+## Maintain the network
+
+Keep the customer-managed network available throughout the data plane's lifetime. You manage changes to routes, gateways, endpoints, DNS, network ACLs, and flow logs.
+
+The VPC, availability zones, and private subnet configuration cannot be changed after creation. You cannot convert a data plane between a LangChain-managed VPC and BYOVPC.
+
+Deleting a data plane removes LangChain-managed resources. Your VPC and other customer-managed network resources remain under your control and require separate cleanup after the data plane is deprovisioned.
+
+## See also
+
+- [BYOC onboarding](/langsmith/byoc-onboarding)
+- [BYOC architecture](/langsmith/byoc-architecture)
+- [BYOC shared responsibility model](/langsmith/byoc-shared-responsibility)
+- [BYOC FAQ](/langsmith/byoc-faq)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/byoc-byovpc.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
 # BYOC FAQ
 Source: https://docs.langchain.com/langsmith/byoc-faq
 
@@ -12342,7 +12522,17 @@ No. LangChain recommends a fresh account for clearer billing, and because some p
 </Accordion>
 
 <Accordion title="Can I install BYOC into an existing VPC?">
-Not today. LangChain provisions a dedicated VPC for each data plane. Support for deploying into an existing VPC is planned.
+Yes. With [Bring your own VPC (BYOVPC)](/langsmith/byoc-byovpc), you supply a VPC and subnets. You can create the VPC with the [reference Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byovpc) or use an existing VPC that meets the network requirements.
+
+To remove VPC creation permissions from the customer role, set `allow_vpc_creation_permissions = false` in the [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role) and include your VPC ID in `vpc_ids`.
+</Accordion>
+
+<Accordion title="Can I deploy multiple data planes in the same VPC?">
+No. Deploying multiple data planes in the same VPC is not supported today. Use a separate VPC for each data plane.
+</Accordion>
+
+<Accordion title="Can I move an existing data plane into my own VPC?">
+No. Moving an existing data plane to a different VPC is not supported, nor is changing its VPC and subnet configuration after creation.
 </Accordion>
 
 <Accordion title="Can I install BYOC into an existing EKS cluster?">
@@ -12380,9 +12570,7 @@ Contact the LangChain team. Once the permissions are corrected, provisioning rec
 </Accordion>
 
 <Accordion title="What VPC CIDR range should I use?">
-A private RFC 1918 range between `/18` and `/16`. LangChain provisions a dedicated VPC for the data plane in that range.
-
-If you plan to use VPC peering, select a range that does not overlap with the VPC you intend to peer with. The CIDR range cannot be changed after provisioning.
+A private RFC 1918 range between `/18` and `/16`. If you plan to use VPC peering, select a range that does not overlap with the VPC you intend to peer with. The CIDR range cannot be changed after provisioning.
 </Accordion>
 
 <Accordion title="How do I reach a data plane with a private endpoint?">
@@ -12471,12 +12659,16 @@ See [Connectivity](/langsmith/byoc-architecture#connectivity).
 </Accordion>
 
 <Accordion title="Can I restrict outbound network traffic from the data plane?">
-Yes. BYOC supports a network firewall that controls egress from the data plane. Contact the LangChain team to enable it.
+Yes. 
+
+For a LangChain-managed VPC, BYOC supports a network firewall that controls egress from the data plane. Contact the LangChain team to enable it.
 
 Once enabled, the firewall denies all outbound traffic by default. You then configure an allow list of the destinations the data plane is permitted to reach:
 
 - **Domains**: Fully qualified domain names, such as a model provider API endpoint or a public Docker registry.
 - **CIDR ranges**: IP ranges, such as an internal service or a private subnet.
+
+With BYOVPC, you manage your own firewall and egress controls. Your network must continue to meet the [BYOVPC network requirements](/langsmith/byoc-byovpc#meet-the-network-requirements).
 </Accordion>
 
 <Accordion title="Can I use my own private registry?">
@@ -12759,6 +12951,8 @@ Source: https://docs.langchain.com/langsmith/byoc-onboarding
 
 Before you start, review the [prerequisites](/langsmith/byoc#prerequisites).
 
+By default, LangChain creates a VPC for your data plane. To create and manage the network yourself, follow [Bring your own VPC on AWS](/langsmith/byoc-byovpc) before creating the IAM role and data plane below.
+
 <Steps>
 
 <Step title="Enable BYOC on your organization">
@@ -12772,6 +12966,8 @@ LangChain provides the external ID for the IAM role. Navigate to **Settings > Da
 
 Apply the [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role) in your AWS account using the copied external ID. This creates the cross-account role LangChain assumes to provision and manage the data plane. The role's trust policy must use this value in its `ExternalId` condition.
 
+For BYOVPC, set `allow_vpc_creation_permissions = false` and supply your VPC ID in `vpc_ids`. See [Create the reduced-permission IAM role](/langsmith/byoc-byovpc#create-the-reduced-permission-iam-role).
+
 <Note>
 LangChain recommends a fresh AWS account dedicated to LangSmith BYOC.
 </Note>
@@ -12784,12 +12980,14 @@ Navigate to **Settings > Data Planes** and create a data plane with the followin
 - **Name**: Lowercase letters, digits, and hyphens, up to 24 characters.
 - **AWS region**: One of the [supported regions](/langsmith/byoc#regions-and-cloud-providers).
 - **AWS IAM role ARN**: The ARN of the role you created in the previous step, which LangSmith assumes in your account.
-- **VPC CIDR range**: A private RFC 1918 range, from `/16` to `/18`.
+- **Network configuration**: For a LangChain-managed VPC, supply a private RFC 1918 CIDR range from `/16` to `/18`. For BYOVPC, supply the [VPC and subnet IDs](/langsmith/byoc-byovpc#supply-the-vpc-and-subnet-ids) instead of a CIDR range.
 - **Load balancer access**: Private by default, which keeps the ingress load balancer reachable only from your VPC. Set it to **Public** to make the load balancer internet-facing.
 </Step>
 
 <Step title="Wait for provisioning">
 LangChain provisions the infrastructure on your behalf. The data plane moves from `Requested` to `Provisioning` to `Active`.
+
+For BYOVPC, LangSmith validates your VPC and subnets before provisioning, then creates the workload infrastructure inside your VPC.
 
 <Note>
 End-to-end provisioning of a data plane takes around 60 to 90 minutes.
@@ -12853,7 +13051,7 @@ LangChain scales your data plane as load changes, so you do not need to size or 
 
 ## High availability
 
-Data planes are provisioned for high availability by default. The VPC spans the availability zones in your region, and RDS and ElastiCache run Multi-AZ with automatic failover.
+Data planes are provisioned for high availability by default. The deployment spans multiple availability zones in your region, and RDS and ElastiCache run Multi-AZ with automatic failover.
 
 <Note>
 To run a data plane without high availability, contact the LangChain team.
@@ -12910,7 +13108,7 @@ If break-glass access is needed, the LangChain team reaches out with instruction
 
 - **LangSmith audit logs**: Operations on data plane resources are recorded in the data plane and accessible at your data plane endpoint. Control plane actions, such as creating a user, are audited in the control plane. For how to access both, see [Audit logs](/langsmith/audit-logs).
 - **EKS audit logs**: Sent to CloudWatch in your account, so you can monitor the commands that were run.
-- **VPC flow logs**: Recorded in an S3 bucket in your account.
+- **VPC flow logs**: Recorded in an S3 bucket in your account. With [BYOVPC](/langsmith/byoc-byovpc), you configure VPC flow logs yourself.
 
 Setting up alerts on those logs is your responsibility.
 
@@ -12958,6 +13156,19 @@ For the multi-tenant SaaS equivalent, see the [LangSmith shared responsibility m
 | **Upgrades and patching** | <ul><li>Roll out upgrades and patches to BYOC-managed components</li><li>Coordinate for major changes and maintenance windows</li></ul> | <ul><li>Plan change management internally, including stakeholder communication and staging validation</li><li>Follow your own change control processes</li></ul> |
 
 For details on how upgrades, autoscaling, and maintenance windows work, see [BYOC operations](/langsmith/byoc-operations).
+
+<Note>
+With [BYOVPC](/langsmith/byoc-byovpc), you also create and maintain:
+- VPC
+- Subnets 
+- Routes, 
+- Gateways
+- Customer-side VPC endpoints
+- Flow logs
+- Egress controls
+
+LangChain validates the supplied network before provisioning and manages the workload infrastructure inside it. Customer-managed network resources remain your responsibility during operation and after data plane deletion.
+</Note>
 
 ## Data and security
 
