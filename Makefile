@@ -1,4 +1,4 @@
-.PHONY: all dev build export format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples check-cross-refs
+.PHONY: all dev build export htmltest export-htmltest format lint test install install_vale clean lint_md lint_md_fix lint_prose broken-links broken-links-with-anchors format-check code-snippets test-code-samples update-code-sample-traces check-cross-refs skills
 
 # Default target
 all: help
@@ -15,10 +15,51 @@ build:
 
 # Offline zip via Mintlify (https://www.mintlify.com/docs/deploy/export).
 # Must run from build/: docs.json paths are oss/python/... and oss/javascript/... but sources live under src/oss/... until the pipeline emits build/oss/{python,javascript}/...
-# Example: make export MINT_EXPORT_ARGS='--output ../langchain-docs-export.zip'
+# Default mint output when run from build/ is build/export.zip. Override with MINT_EXPORT_ARGS='--output other.zip' (path relative to build/) and matching EXPORT_ZIP=build/other.zip for htmltest.
+# Requires: recent mint CLI (mint export), Node LTS 20/22 (Node 25+ unsupported), Enterprise Mintlify plan.
 export: build
 	@command -v mint >/dev/null 2>&1 || { echo "Error: mint not installed. Run: npm install -g mint@latest"; exit 1; }
+	@mint help 2>&1 | grep -q 'mint export' || { \
+		echo "Error: 'mint export' is missing from mint $$(mint --version 2>/dev/null || echo unknown)."; \
+		echo "Upgrade: npm install -g mint@latest"; \
+		echo "Also needs Node LTS (20 or 22; Node 25 is unsupported) and an Enterprise Mintlify plan."; \
+		exit 1; \
+	}
+	@NODE_MAJOR=$$(node -p "process.versions.node.split('.')[0]"); \
+	if [ "$$NODE_MAJOR" -ge 25 ]; then \
+		echo "Error: mint does not support Node $$NODE_MAJOR. Switch to Node 20 or 22 (e.g. nvm use 22), install mint for that Node (npm install -g mint@latest), then retry."; \
+		exit 1; \
+	fi
 	@cd build && mint export $(MINT_EXPORT_ARGS)
+
+# Zip produced by make export (default Mintlify name: export.zip in build/). Override if you used --output.
+EXPORT_ZIP ?= build/export.zip
+# Unpacked copy for htmltest (gitignored under build/).
+HTMLTEST_UNPACK_DIR ?= build/mint-export-htmltest-unpacked
+# Extra htmltest CLI flags (config already checks external URLs only). Example: HTMLTEST_ARGS='-l 1'
+HTMLTEST_ARGS ?=
+
+# Unzip EXPORT_ZIP and run htmltest (https://github.com/wjdp/htmltest). Run after make export.
+# Uses htmltest-mint-export.yml: external URLs only (mint export omits many pages, so internals are noisy).
+htmltest:
+	@command -v htmltest >/dev/null 2>&1 || { echo "Error: htmltest not found. Install: brew install htmltest  OR  curl https://htmltest.wjdp.uk | sudo bash -s -- -b /usr/local/bin"; exit 1; }
+	@command -v unzip >/dev/null 2>&1 || { echo "Error: unzip not found."; exit 1; }
+	@test -f $(EXPORT_ZIP) || { echo "Error: $(EXPORT_ZIP) not found. Run make export first, or set EXPORT_ZIP to your mint export zip path."; exit 1; }
+	mkdir -p $(HTMLTEST_UNPACK_DIR)
+	unzip -q -o $(EXPORT_ZIP) -d $(HTMLTEST_UNPACK_DIR)
+	@bash -ec 'ROOT="$(HTMLTEST_UNPACK_DIR)"; \
+		COUNT=$$(find "$$ROOT" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d " "); \
+		if [ "$$COUNT" -eq 1 ]; then \
+			ONLY=$$(find "$$ROOT" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1); \
+			if [ -d "$$ONLY" ]; then ROOT="$$ONLY"; fi; \
+		fi; \
+		echo "htmltest root: $$ROOT"; \
+		htmltest $(HTMLTEST_ARGS) -c "$(CURDIR)/htmltest-mint-export.yml" "$$ROOT"'
+
+# make export then make htmltest (sequential; use this for a one-shot check).
+export-htmltest:
+	@$(MAKE) export
+	@$(MAKE) htmltest
 
 # Define a variable for the test file path.
 TEST_FILE ?= tests/unit_tests
@@ -84,6 +125,7 @@ install:
 	uv sync --all-groups
 	npm install
 	npm install -g mint@latest
+	@$(MAKE) --no-print-directory skills
 	@echo "If the docs command is not available, relaunch your shell so it picks up the docs binary."
 
 clean:
@@ -155,15 +197,46 @@ test-code-samples:
 	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent); fi
 	@FILES="$(FILES)" PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
 
+# Run code samples with LangSmith tracing, update public share links in
+# src/code-samples/trace-links.json, then regenerate snippet MDX so docs show
+# "View example trace" under single-snippet samples that produced an agent run.
+# Multi-snippet source files are skipped until split. Requires LANGSMITH_API_KEY.
+#   make update-code-sample-traces
+#   make update-code-sample-traces FILES="src/code-samples/deepagents/overview-quickstart.py"
+update-code-sample-traces:
+	@if [ -f src/code-samples/package.json ]; then (cd src/code-samples && npm install --silent); fi
+	@CODE_SAMPLE_TRACING=1 \
+	LANGSMITH_PROJECT="$${LANGSMITH_PROJECT:-docs-code-samples}" \
+	FILES="$(FILES)" \
+	PYTHONPATH=$(CURDIR) python scripts/test_code_samples.py
+	@$(MAKE) code-snippets
+
 # Check that all @[ref] cross-references in source files resolve against link_map.py
 check-cross-refs:
 	@PYTHONPATH=$(CURDIR) uv run python scripts/check_cross_refs.py
+
+skills:
+	@mkdir -p .claude/skills
+	@for d in .agents/skills/*/; do \
+		n=$$(basename "$$d"); \
+		if [ -e ".claude/skills/$$n" ] && [ ! -L ".claude/skills/$$n" ]; then \
+			echo "Skipped $$n: .claude/skills/$$n exists and is not a symlink"; \
+		else \
+			ln -sfn "../../.agents/skills/$$n" ".claude/skills/$$n"; \
+			echo "Linked .claude/skills/$$n"; \
+		fi; \
+	done
+	@for l in .claude/skills/*; do \
+		if [ -L "$$l" ] && [ ! -e "$$l" ]; then rm "$$l"; echo "Removed stale link $$l"; fi; \
+	done
 
 help:
 	@echo "Available commands:"
 	@echo "  make dev                - Start development mode with file watching and mint dev"
 	@echo "  make build              - Build documentation to ./build directory"
 	@echo "  make export             - Run mint export from ./build (optional: MINT_EXPORT_ARGS)"
+	@echo "  make htmltest           - Unzip EXPORT_ZIP, run htmltest on external URLs only (HTMLTEST_ARGS)"
+	@echo "  make export-htmltest    - make export then make htmltest"
 	@echo "  make broken-links       - Check for broken links in built documentation"
 	@echo "  make check-cross-refs   - Check for unresolved @[ref] cross-references"
 	@echo "  make broken-links-with-anchors - Same as above, also validates anchor links"
@@ -173,8 +246,10 @@ help:
 	@echo "  make lint_md_fix        - Lint and fix markdown files"
 	@echo "  make lint_prose         - Lint prose with Vale (terminology, style)"
 	@echo "  make test               - Run tests"
-	@echo "  make install            - Install dependencies"
+	@echo "  make install            - Install dependencies and link skills"
 	@echo "  make code-snippets      - Extract code snippets (line-based, Bluehawk-compatible)"
 	@echo "  make test-code-samples  - Run code samples (FILES=\"path ...\" for specific)"
+	@echo "  make skills             - Link .agents/skills into .claude/skills for Claude Code"
+	@echo "  make update-code-sample-traces - Trace samples, update share links, regenerate snippets"
 	@echo "  make clean              - Clean build artifacts"
 	@echo "  make help               - Show this help message"

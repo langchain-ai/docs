@@ -36,6 +36,30 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Mintlify components | <https://mintlify.com/docs/components> |
 | API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report reference docs issues](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
+| Authoring skills | `.agents/skills/` (run `make skills` for Claude Code) |
+
+## Skills
+
+Task-specific procedures live in `.agents/skills/`, one directory per skill.
+Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode, and Deep Agents read that
+path directly. Claude Code reads `.claude/skills/` only, so run `make skills`
+once to link the tree.
+
+| Skill | Use it for |
+|-------|-----------|
+| `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
+| `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff. |
+| `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
+| `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
+| `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. |
+| `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
+| `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
+| `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
+
+Invoke a skill when the task matches it. This file holds the rules that apply to
+every task; a skill holds the procedure that only some tasks need, so skills
+link back here rather than restating these rules. See
+[`.agents/skills/README.md`](.agents/skills/README.md) for how to add one.
 
 ## Project structure
 
@@ -289,10 +313,36 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<CodeGroup>` | Tabbed code blocks |
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
+| `<Prompt>` | Copyable AI-assistant prompt — **required at the top of every migration guide** |
+
+### Migration guide convention
+
+Every migration guide (any page under `src/oss/python/migrate/` or `src/oss/javascript/migrate/`) **must** include a `<Prompt>` component as the very first element after the frontmatter and any import statements. The prompt should be a complete, paste-ready instruction that an AI coding assistant can use to perform the migration automatically.
+
+Minimal template:
+
+```mdx
+<Prompt
+    description="Short one-line description of the migration."
+    icon="arrow-right"
+    actions={["copy"]}
+>
+Migrate this codebase from `old-package` to `new-package` (requires `new-package>=x.y.z`).
+
+Key changes:
+
+1. ...
+2. ...
+
+Search the codebase for all usages of `OldClass`, `old_function`, and imports from `old_module`, and apply the necessary changes. Flag anything that cannot be migrated automatically.
+</Prompt>
+```
+
+The prompt must cover every API rename, import path change, behavioral difference, and removed feature that the page documents. End with an explicit instruction to search and flag.
 
 ### Version-added admonitions
 
-When documenting new features, APIs, or behavior that requires a minimum package or CLI version, add a version-added admonition near the first mention of the feature. Use a `<Note>` callout with a concise requirement, for example: `Feature name requires \`package>=x.y.z\`.`
+When documenting new features, APIs, or behavior that requires a minimum package or CLI version, add a version-added admonition near the first mention of the feature. Use a `<Note>` callout with a concise requirement, for example: `Feature name requires \`package>=x.y.z\`.` For a CLI, runtime, or chart version, use the prose form instead ("Feature name requires Codex CLI v0.153.4 or later."). See [Version requirements](#version-requirements).
 
 For language-specific requirements, wrap the note in the relevant `:::python` or `:::js` fence. Include separate notes when Python and TypeScript packages have different minimum versions.
 
@@ -343,6 +393,8 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use markdown in description fields
 - Use `/python/` or `/javascript/` in links (resolved by build pipeline)
 - Use model aliases — use full identifiers (e.g., `claude-sonnet-4-6`)
+- Use `>=` in prose for version minimums — write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
+- Use "→" to separate UI navigation steps — write "Go to **Settings** > **API Keys**"
 - Use FontAwesome icon names
 - Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
@@ -376,6 +428,23 @@ Match these patterns, drawn from established pages, when authoring new content:
 Always use the latest generally available (GA) models when referencing LLMs in docstrings and illustrative code snippets. Avoid preview or beta identifiers unless the model has no GA equivalent. Outdated model names signal stale code and confuse users.
 
 Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names — they go stale quickly.
+
+### Version requirements
+
+Write version minimums as "<version> or later" in prose. Reserve `>=` for package specifiers, where it is literal install syntax and belongs in backticks.
+
+- Tools, CLIs, runtimes, servers, and Helm charts: "Codex CLI v0.153.4 or later", "Node.js 22.x or later", "Helm chart version 0.12.33 or later".
+- Package specifiers: `langsmith>=0.3.13`, `langchain>=1.0.0`. Readers paste these into an install command, so keep the operator.
+
+Keep a `v` prefix when the page or the upstream project already uses one. Do not add one to a package specifier. When another requirement follows the version, set it off with a comma so it does not read as part of the constraint ("v0.153.4 or later, with plugin hooks enabled").
+
+This rule covers version numbers only. Leave `>=` as is in numeric parameter constraints ("Must be >= 0") and in comparison-operator reference tables.
+
+### Navigation paths
+
+Separate UI navigation steps with a greater-than sign surrounded by spaces, not an arrow: "Go to **Settings** > **API Keys**". Bold the UI labels, either individually (`**Settings** > **API Keys**`) or as a single span (`**Settings > API Keys**`), and match whichever form the page already uses. Vale enforces this as `LangChain.NavPathArrows`.
+
+The arrow character stays where it does not mark navigation: mermaid diagrams, data flow (`browser or client → data plane`), API renames in migration guides (`create_react_agent` → `create_agent`), state progressions, and UI labels that literally contain an arrow ("Manage app access →").
 
 ### Release stage names
 
@@ -490,6 +559,27 @@ Notes:
 - Without `--write`, the script prints the table to stdout for inspection.
 - After regenerating, commit only `src/snippets/deepagents-eval-category-matrix.mdx`. Do not edit that snippet by hand.
 
+### Refresh the MDA OAuth catalog
+
+The OAuth service table on `/langsmith/managed-deep-agents-connections` is generated by
+`scripts/refresh_mda_oauth_catalog.py`. The catalog is compiled into the `mda` binary, so the
+script reads it from the installed CLI and writes
+`src/snippets/langsmith/mda-oauth-catalog.mdx` (imported by
+`src/langsmith/managed-deep-agents-connections.mdx`).
+
+```bash
+uv tool upgrade --pre managed-deepagents   # output reflects the locally installed version
+uv run python scripts/refresh_mda_oauth_catalog.py --write
+```
+
+Notes:
+
+- `mda connections catalog --json` reads a compiled-in catalog, so no LangSmith API key or
+  workspace ID is needed.
+- Without `--write`, the script prints the table to stdout for inspection.
+- After regenerating, commit only `src/snippets/langsmith/mda-oauth-catalog.mdx`. Do not edit
+  that snippet by hand.
+
 ## Pre-commit linting
 
 Always run `make lint_prose` (Vale) before handing off or committing doc changes. CI blocks on it. Common offenders: em-dashes with surrounding spaces (` — ` → `—`, enforced by `LangChain.DashesSpaces`), terminology, style.
@@ -509,3 +599,16 @@ When extracting data from PRs or changelogs, use the "Release Note:" section in 
 - Explain the "why" of changes
 - Highlight areas needing careful review
 - Disclose AI agent involvement in description
+
+<!-- OPENWIKI:START -->
+
+## OpenWiki
+
+This repository has a generated `openwiki/` evidence index. It is optional just-in-time context, not required startup reading.
+
+- Treat source code and tests as authoritative. A brief's unknowns and review items are verification gaps, not automatic requirements.
+- Prefer the narrowest quiet validation that proves the changed behavior. Preserve complete failure output.
+
+The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
+
+<!-- OPENWIKI:END -->

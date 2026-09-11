@@ -4,9 +4,17 @@
 import os
 import sys
 
-if not os.environ.get("GOOGLE_API_KEY"):
-    print("[rag-deep-full] Skipping (GOOGLE_API_KEY required).")
-    sys.exit(0)
+
+def _is_gateway_embed_error(exc: BaseException) -> bool:
+    text = str(exc)
+    return (
+        "unsupported Gemini action" in text
+        or "batchEmbedContents" in text
+        or "path not allow-listed by gateway" in text
+        or "Error code: 501" in text
+    )
+
+
 # :remove-end:
 
 # :snippet-start: rag-deep-full-py
@@ -20,7 +28,7 @@ from langchain.messages import HumanMessage
 from langchain.tools import tool
 from langchain_core.documents import Document
 from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 DOCS_BASE = "https://docs.langchain.com"
@@ -69,7 +77,7 @@ all_splits = text_splitter.split_documents(docs)
 print(f"Split documentation into {len(all_splits)} chunks.")
 
 # KEEP MODEL
-embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 vector_store = InMemoryVectorStore(embedding=embeddings)
 vector_store.add_documents(documents=all_splits)
 print(f"Indexed {len(all_splits)} chunks.")
@@ -172,7 +180,7 @@ chunk_analyst_subagent = {
 }
 
 # KEEP MODEL
-model = init_chat_model(model="google_genai:gemini-3.6-flash")
+model = init_chat_model(model="anthropic:claude-sonnet-4-6")
 
 agent = create_deep_agent(
     model=model,

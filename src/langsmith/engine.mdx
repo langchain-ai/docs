@@ -96,7 +96,12 @@ Organization Admins can set spend limits at two levels:
 
 You can enter limits in LCU or USD (1 LCU = $1.50). When a limit is reached, LangSmith pauses new Engine runs until the limit is raised or the next monthly billing period begins.
 
-Leave the limit blank to allow unlimited Engine spend. To stop Engine entirely, use the **Enable Engine** toggle in **Settings > Engine enablement**.
+The two levels default differently:
+
+- **Org-wide limit**: Choose **Default**, **No limit**, or a custom cap. Until an admin chooses, the default applies (500 LCU per month, about $750), so Engine spend is capped even though no one has set a limit. The **Engine enablement** page names the enforced limit and its source.
+- **Per-project limit**: Leave the field blank for no limit. Use **Remove limit** to clear a cap you set earlier.
+
+To stop Engine entirely, use the **Enable Engine** toggle in **Settings > Engine enablement**.
 
 To monitor usage, you can view your organization's monthly LCU spend on the **Engine enablement** page in **Settings**, or view per-project spend in the [**Engine Settings**](#configure-engine) panel for each tracing project.
 

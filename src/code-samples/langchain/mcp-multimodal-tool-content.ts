@@ -9,7 +9,7 @@ async function accessMultimodalToolContent(): Promise<void> {
   const { MultiServerMCPClient } = await import("@langchain/mcp-adapters");
   const client = new MultiServerMCPClient({});
   const tools = await client.getTools();
-  const agent = createAgent({ model: "claude-sonnet-4-6", tools });
+  const agent = createAgent({ model: "claude-sonnet-5", tools });
 
   const result = await agent.invoke({
     messages: [
