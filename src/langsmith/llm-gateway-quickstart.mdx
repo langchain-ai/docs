@@ -221,9 +221,9 @@ Go to **LLM Gateway** in LangSmith to create a spend policy. For example, set a 
 
 See [Spend policies](/langsmith/llm-gateway-spend-policies) for the full guide.
 
-## Automatic routing (LangChain and Deep Agents)
+## Using LangChain SDKs
 
-Set `LANGSMITH_GATEWAY` to route all supported LangChain and Deep Agents **chat models** through the gateway — no `base_url` or `api_key` wiring needed per client.
+Set `LANGSMITH_GATEWAY` to send all supported LangChain and Deep Agents **chat model** calls through the gateway — no `base_url` or `api_key` wiring needed per client.
 
 ```bash
 export LANGSMITH_API_KEY="lsv2_..."
@@ -237,7 +237,11 @@ When setting `LANGSMITH_GATEWAY` to a URL, use only the base URL with no path su
 </Warning>
 
 <Note>
-Only **chat models** are routed. Non-chat integrations such as `OpenAIEmbeddings` are unaffected. To use a separate API key for gateway calls, set `LANGSMITH_GATEWAY_API_KEY` (workspace-scoped, requires `gateway:invoke`).
+Only **chat models** are affected. Non-chat integrations such as `OpenAIEmbeddings` continue to use their normal provider endpoints.
+</Note>
+
+<Note>
+To use a different API key for gateway calls, set `LANGSMITH_GATEWAY_API_KEY` (workspace-scoped key with `gateway:invoke` permission). By default, `LANGSMITH_API_KEY` is used.
 </Note>
 
 ### Supported LangChain integrations
@@ -250,30 +254,25 @@ Only **chat models** are routed. Non-chat integrations such as `OpenAIEmbeddings
 | [Google Gemini](/oss/python/integrations/chat/google_generative_ai) | `langchain-google-genai >= 4.3.2` | — |
 | [OpenAI](/oss/python/integrations/chat/openai) | `langchain-openai >= 1.4.1` | [`@langchain/openai >= 1.5.7`](/oss/javascript/integrations/chat/openai) |
 
-### URL and key resolution precedence
+### Override precedence
 
-When `LANGSMITH_GATEWAY` is set, the SDK resolves the final base URL and API key using these rules in order (first match wins). Examples use the OpenAI integration; other providers use their own `*_API_BASE` / `*_BASE_URL` and `*_API_KEY` env vars.
+`LANGSMITH_GATEWAY` is the lowest-priority routing signal — anything more specific overrides it:
 
-**Base URL:**
+| Setting | Overrides gateway? |
+|---|---|
+| Per-client `base_url=` / `configuration.baseURL` | Yes — always |
+| Provider env var (`OPENAI_API_BASE` / `OPENAI_BASE_URL`) | Yes |
+| `LANGSMITH_GATEWAY` | — (this is the gateway setting) |
 
-1. Per-client `base_url=` kwarg (Python) / `configuration.baseURL` (TypeScript) — always wins.
-2. Provider env var (`OPENAI_API_BASE` in Python, `OPENAI_BASE_URL` in TypeScript) — overrides the gateway.
-3. `LANGSMITH_GATEWAY` — routes to the gateway; the SDK appends the provider path (e.g. `/openai/v1`).
-4. Provider default (e.g. `api.openai.com`).
-
-**API key** (evaluated after the URL is resolved):
-
-1. If routed to the gateway and `LANGSMITH_GATEWAY_API_KEY` is set — use the gateway key.
-2. If routed to the gateway and the provider key (`OPENAI_API_KEY`) is set — use the provider key.
-3. Otherwise — use whichever key matches the resolved URL.
+For the API key: `LANGSMITH_GATEWAY_API_KEY` takes precedence over `OPENAI_API_KEY` when the gateway URL is in use. If neither is set, no key is sent.
 
 <Note>
-TypeScript key resolution differs from Python in some edge cases (rows 8–11 of the full table). If you observe unexpected routing in TypeScript, verify against `@langchain/openai` directly.
+TypeScript key resolution differs from Python in some edge cases. If you observe unexpected routing, verify against `@langchain/openai` directly.
 </Note>
 
-## Regional URLs and endpoint styles
+## Gateway URLs
 
-The base URL depends on your LangSmith instance:
+### Regional instances
 
 | Instance | Base URL |
 |---|---|
@@ -281,10 +280,12 @@ The base URL depends on your LangSmith instance:
 | EU | `https://eu.gateway.smith.langchain.com` |
 | BYOC / self-hosted | `https://<data_plane_host>/gateway` |
 
+### Unified endpoint vs direct provider routes
+
 The gateway exposes two endpoint styles:
 
-- **Unified `/v1`** (recommended) — a single endpoint that accepts Chat Completions, Responses, and Messages format requests and translates between API formats as needed. Append `/v1` to the base URL. Full reference: [API formats](/langsmith/llm-gateway-api-formats).
-- **Direct provider routes** — pass requests straight through to the selected provider without format translation. Use the base URL with no suffix — the SDK appends its own path. Full reference: [Direct model access](/langsmith/llm-gateway-direct-model-access).
+- **Unified `/v1`** (recommended) — append `/v1` to the base URL. Accepts Chat Completions, Responses, and Messages format requests and **translates between API formats** as needed. Full reference: [API formats](/langsmith/llm-gateway-api-formats).
+- **Direct provider routes** — use the base URL with no suffix (the SDK appends its own path). Passes requests straight through to the provider **without format translation**. Full reference: [Direct model access](/langsmith/llm-gateway-direct-model-access).
 
 ## Next steps
 
