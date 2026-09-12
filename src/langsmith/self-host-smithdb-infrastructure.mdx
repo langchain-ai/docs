@@ -1,16 +1,16 @@
 ---
 title: Prepare SmithDB supporting infrastructure
 sidebarTitle: Supporting infrastructure
-description: Provide a dedicated PostgreSQL metastore, object storage, and local SSD cache capacity before enabling SmithDB.
+description: Provide a dedicated PostgreSQL metastore, object storage, and cache storage before enabling SmithDB.
 ---
 
 <Note>
 For failures such as pods stuck `Pending`, object-store access denied, or metastore connection errors, see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting#supporting-infrastructure).
 </Note>
 
-SmithDB adds three infrastructure dependencies to a self-hosted LangSmith deployment: a PostgreSQL metastore, object storage, and node-local SSD cache capacity.
+SmithDB adds three infrastructure dependencies to a self-hosted LangSmith deployment: a PostgreSQL metastore, object storage, and cache storage for query, ingestion, and compaction worker.
 
-These are integration requirements and practical recommendations, not a prescribed cloud architecture. Provider examples cover AWS (EKS), GCP (GKE), and Azure (AKS). The minimum LangSmith version depends on your cloud. See [Cloud support](/langsmith/self-host-smithdb#cloud-support).
+These are integration requirements and practical recommendations, not a prescribed cloud architecture. For AWS (EKS), GCP (GKE), and Azure (AKS) setup, see [Provider setup](#provider-setup). The minimum LangSmith version depends on your cloud. See [Cloud support](/langsmith/self-host-smithdb#cloud-support).
 
 ## Requirements
 
@@ -18,60 +18,14 @@ Before enabling SmithDB, provide:
 
 - A **dedicated, empty PostgreSQL database** for the SmithDB metastore. Do not use the PostgreSQL database that stores the rest of LangSmith operational data.
 - A **dedicated object-storage bucket** for SmithDB durable data.
-- A Kubernetes cluster that can provision enough **local SSD-backed ephemeral storage** for SmithDB caches.
+- **Cache storage** for query, ingestion, and compaction worker: network-attached disks, or local SSD for the best cache performance.
 - Private network connectivity to the database and object store, plus credentials or workload identity for both.
 
 ## PostgreSQL metastore
 
-The metastore holds SmithDB catalog and coordination data. Start with an empty database. The SmithDB migration Job owns its schema.
+The metastore holds SmithDB catalog and coordination data. Create an empty database for the metastore. SmithDB initializes the schema during installation.
 
-SmithDB requires PostgreSQL 18 or later on a service reachable from the cluster. Common choices include Amazon RDS for PostgreSQL, Aurora PostgreSQL, AlloyDB, Cloud SQL for PostgreSQL, and Azure Database for PostgreSQL.
-
-<Accordion title="Connect through the AlloyDB Auth Proxy">
-
-SmithDB can reach AlloyDB through the [AlloyDB Auth Proxy](https://docs.cloud.google.com/alloydb/docs/auth-proxy/overview) running as a sidecar in every SmithDB pod. SmithDB connects to the proxy on loopback; the proxy authenticates to Google Cloud and encrypts the upstream connection. The proxy does not create network connectivity, so GKE still needs a route to AlloyDB through private IP, Private Service Connect, or public IP.
-
-Grant `roles/alloydb.client` and `roles/serviceusage.serviceUsageConsumer` to the Google service account bound to the SmithDB ServiceAccount. Point the metastore Secret's host key at `127.0.0.1` and set `useSsl: false`. SmithDB cannot validate the certificate AlloyDB presents directly, and encryption begins at the proxy.
-
-`smithdb.commonInitContainers` applies to every SmithDB Deployment and Job. Set `restartPolicy: Always` so Kubernetes runs the proxy as a sidecar and lets migration Jobs complete.
-
-```yaml
-smithdb:
-  commonInitContainers:
-    - name: alloydb-auth-proxy
-      image: gcr.io/alloydb-connectors/alloydb-auth-proxy:PINNED_VERSION
-      restartPolicy: Always
-      args:
-        - "--address=127.0.0.1"
-        - "--port=5432"
-        - "--structured-logs"
-        - "--health-check"
-        - "--http-address=0.0.0.0"
-        - "--http-port=9090"
-        - "projects/PROJECT_ID/locations/REGION/clusters/CLUSTER/instances/INSTANCE"
-      ports:
-        - name: proxy-health
-          containerPort: 9090
-      startupProbe:
-        httpGet:
-          path: /startup
-          port: proxy-health
-      readinessProbe:
-        httpGet:
-          path: /readiness
-          port: proxy-health
-      livenessProbe:
-        httpGet:
-          path: /liveness
-          port: proxy-health
-  config:
-    metastore:
-      useSsl: false
-```
-
-Add `--psc` for Private Service Connect, `--public-ip` for public IP, or `--auto-iam-authn` for IAM database authentication, which also needs `roles/alloydb.databaseUser` and a matching IAM database user. If a migration Job never finishes, confirm `restartPolicy: Always`. If the loopback connection fails with a TLS error, confirm `useSsl` is `false`.
-
-</Accordion>
+Use PostgreSQL 18 or later and allow database connections from the Kubernetes cluster. For database options and connectivity, see [Provider setup](#provider-setup).
 
 ### Metastore Secret
 
@@ -116,15 +70,15 @@ smithdb:
 
 Object storage is SmithDB's durable data layer. Use a bucket reserved for SmithDB data, in the same region as the Kubernetes cluster, to minimize latency and transfer costs.
 
+This bucket is separate from optional [LangSmith blob storage](/langsmith/self-host-blob-storage), which stores payloads and attachments for the broader LangSmith deployment.
+
+Do not add bucket lifecycle rules that expire objects on their own schedule. Deleting live objects can make data unavailable.
+
 ### Use private object-storage connectivity
 
-Keep SmithDB traffic off public egress paths to avoid unnecessary data-transfer and NAT gateway costs:
+Use private connectivity to avoid unnecessary data-transfer and NAT gateway costs. Configure the endpoint for your cloud under [Provider setup](#provider-setup).
 
-- **AWS**: Use an S3 Gateway VPC endpoint on the cluster's private route tables.
-- **GCP**: Use Private Google Access with private Google APIs DNS.
-- **Azure**: Use a private endpoint for Blob Storage.
-
-Configure access so SmithDB can list the bucket and read, write, and delete objects. Prefer IRSA on EKS, Workload Identity on GKE, or Azure Workload Identity on AKS over static credentials. Block public access and require encrypted transport.
+Configure access so SmithDB can list the bucket and read, write, and delete objects. Prefer workload identity over static credentials. Block public access and require encrypted transport.
 
 ### Select a ServiceAccount
 
@@ -136,85 +90,197 @@ SmithDB workloads share `smithdb.serviceAccount`.
 
 Workload identity must target the selected namespace and name. With `create: false`, `name` is required. Otherwise pods use the `default` ServiceAccount.
 
-Do not add bucket lifecycle rules that expire objects on their own schedule. Deleting live objects can make data unavailable.
-
-This bucket is separate from optional [LangSmith blob storage](/langsmith/self-host-blob-storage), which stores payloads and attachments for the broader LangSmith deployment.
-
 ### Migration source-bucket access
 
-When migration and LangSmith blob storage are enabled, grant `smithdb.serviceAccount` read access to the existing LangSmith blob-storage bucket in addition to its access to the SmithDB destination bucket.
+If your installation uses LangSmith blob storage, grant `smithdb.serviceAccount` read access to that bucket before migrating historical data.
 
-Prefer Workload Identity for GCS blob access. If LangSmith must use GCS HMAC keys, set `smithdb.migration.job.extraEnv` (`smithdb.migration.deployment.extraEnv` on LangSmith 0.16) to force the S3-compatible source and reference the existing LangSmith secret (`blob_storage_access_key` / `blob_storage_access_key_secret`):
+## Cache storage
 
-<Accordion title="GCS HMAC migration configuration">
+Query, ingestion, and compaction worker cache trace data on a volume mounted at `/data`. Object storage retains the durable copy; replacing a pod discards its cache.
 
-<CodeGroup>
+<Note>
+`smithdb.cache` requires Helm chart `0.17.0` or later. The LangSmith 0.16 tabs show the equivalent configuration for earlier charts.
+</Note>
 
-```yaml LangSmith 0.17
+- **Network-attached disk**: The default on LangSmith 0.17. Kubernetes provisions a volume per pod from a StorageClass, so no dedicated node pool is needed.
+- **Local SSD**: The default on LangSmith 0.16 and an explicit override on 0.17. Recommended for production, where it gives the best cache performance. Requires a node pool whose local disks back Kubernetes ephemeral storage.
+
+Upgrading to 0.17 moves the default cache from `emptyDir` to a per-pod PersistentVolumeClaim. To stay on local SSD, add the [0.17 local SSD values](#local-ssd) to the same upgrade. If you carry custom cache volumes forward, rename them from `local-ssd-storage` to `cache`, and drop any `SMITHDB_QUERY__VORTEX_CACHE__DISK__LIMIT` entry from `extraEnv`, because the chart now sets it.
+
+### Network-attached disk
+
+The chart requests a [generic ephemeral volume](https://kubernetes.io/docs/concepts/storage/ephemeral-volumes/#generic-ephemeral-volumes) for each pod. Kubernetes creates the PersistentVolumeClaim with the pod and deletes it with the pod. Give the StorageClass `reclaimPolicy: Delete` so the backing disk goes with it.
+
+Cluster default StorageClasses are usually too slow for the cache. Provision at least 7000 IOPS and 1000 MiB/s per volume, using the StorageClass for your provider under [Provider setup](#provider-setup).
+
+The examples below use the `small` tier. Substitute the sizes for your tier.
+
+<Tabs>
+<Tab title="LangSmith 0.17">
+
+Set `storageClassName`, or leave it empty to use the cluster default. The tier sets the volume size, CPU, and memory. The chart sets `fsGroup: 1001` and the query disk cache limit, so no `extraEnv` is needed.
+
+```yaml
 smithdb:
-  migration:
-    job:
-      extraEnv:
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__TYPE
-          value: "s3"
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__BUCKET
-          value: "BLOB_BUCKET_NAME"
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ROOT_FOLDER
-          value: "/"
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ENDPOINT
-          value: "https://storage.googleapis.com"
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: LANGSMITH_SECRETS_NAME
-              key: blob_storage_access_key
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: LANGSMITH_SECRETS_NAME
-              key: blob_storage_access_key_secret
+  resourceTier: small
+  cache:
+    storageClassName: smithdb-cache
 ```
 
-```yaml LangSmith 0.16
+To give one component a different StorageClass or size, set its `deployment.volumes` to a generic ephemeral volume named `cache` with the class and size you want. Repeat for each component you change, including any enabled query services. Do not point `volumes` at an existing claim through `persistentVolumeClaim.claimName`; each replica needs its own volume.
+
+</Tab>
+<Tab title="LangSmith 0.16">
+
+On 0.16, replace the volume and resources on each component and set `fsGroup: 1001`. The chart derives the query disk cache limit from the `ephemeral-storage` limit, which this configuration omits, so set the limit in `extraEnv` as shown.
+
+```yaml
 smithdb:
-  migration:
+  query:
     deployment:
       extraEnv:
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__TYPE
-          value: "s3"
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__BUCKET
-          value: "BLOB_BUCKET_NAME"
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ROOT_FOLDER
-          value: "/"
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ENDPOINT
-          value: "https://storage.googleapis.com"
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: LANGSMITH_SECRETS_NAME
-              key: blob_storage_access_key
-        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: LANGSMITH_SECRETS_NAME
-              key: blob_storage_access_key_secret
+        - name: SMITHDB_QUERY__VORTEX_CACHE__DISK__LIMIT
+          value: "200Gi"   # match the PVC size
+      podSecurityContext:
+        fsGroup: 1001
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+      volumes:
+        - name: local-ssd-storage
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                storageClassName: smithdb-cache
+                resources:
+                  requests:
+                    storage: 200Gi
+
+  ingestion:
+    deployment:
+      podSecurityContext:
+        fsGroup: 1001
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+      volumes:
+        - name: local-ssd-storage
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                storageClassName: smithdb-cache
+                resources:
+                  requests:
+                    storage: 100Gi
+
+  compactionWorker:
+    deployment:
+      podSecurityContext:
+        fsGroup: 1001
+      resources:
+        requests:
+          cpu: "8"
+          memory: "16Gi"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+      volumes:
+        - name: local-ssd-storage
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                storageClassName: smithdb-cache
+                resources:
+                  requests:
+                    storage: 100Gi
 ```
 
-</CodeGroup>
+</Tab>
+</Tabs>
 
-</Accordion>
+No node selectors or tolerations are needed; SmithDB runs on your general node pool. The migration Job is the exception. It does not use the cache volume and still requests 100 GiB of node `ephemeral-storage` by default, so schedule it on nodes with that much allocatable.
 
-## Local SSD cache
+Confirm each pod has a bound claim and that `/data` uses it:
 
-Local SSD is volatile cache capacity. Object storage retains the durable copy, so losing a pod or node discards only the cache.
+```bash
+kubectl get pvc -n NAMESPACE
+kubectl exec -n NAMESPACE POD_NAME -- df -h /data
+```
 
-Attaching an SSD is not sufficient. Its filesystem must back Kubernetes local ephemeral storage, and usable capacity must appear as node allocatable `ephemeral-storage`. SmithDB consumes that capacity through `emptyDir` volumes.
+### Local SSD
+
+Configure the node’s local SSDs to back Kubernetes ephemeral storage, with usable capacity reported as allocatable `ephemeral-storage`. SmithDB uses this storage for its `emptyDir` cache volumes.
 
 Use scheduling controls to keep SmithDB cache workloads on SSD-backed nodes. Size nodes with headroom above pod requests, images, logs, and Kubernetes reservations.
 
-### Schedule SmithDB workloads
+The examples below use the `small` tier. Substitute the sizes for your tier.
 
-Place query, ingestion, compaction worker, and migration on the local SSD pool. Place compaction and cluster manager on the general compute pool. Node-pool labels and taints must match the Helm selectors and tolerations. `metastoreMigration` can run on any node and does not need a selector.
+<Tabs>
+<Tab title="LangSmith 0.17">
+
+On each disk-using component, set an `emptyDir` named `cache` and matching `ephemeral-storage` requests and limits. The chart derives the query disk cache limit from that limit.
+
+```yaml
+smithdb:
+  resourceTier: small
+  query:
+    deployment:
+      resources:
+        requests: { cpu: "4", memory: "8Gi", ephemeral-storage: "200Gi" }
+        limits: { cpu: "4", memory: "8Gi", ephemeral-storage: "200Gi" }
+      volumes:
+        - name: cache
+          emptyDir:
+            sizeLimit: 200Gi
+  ingestion:
+    deployment:
+      resources:
+        requests: { cpu: "4", memory: "8Gi", ephemeral-storage: "100Gi" }
+        limits: { cpu: "4", memory: "8Gi", ephemeral-storage: "100Gi" }
+      volumes:
+        - name: cache
+          emptyDir:
+            sizeLimit: 100Gi
+  compactionWorker:
+    deployment:
+      resources:
+        requests: { cpu: "8", memory: "16Gi", ephemeral-storage: "100Gi" }
+        limits: { cpu: "8", memory: "16Gi", ephemeral-storage: "100Gi" }
+      volumes:
+        - name: cache
+          emptyDir:
+            sizeLimit: 100Gi
+```
+
+Apply the query overrides to any enabled `mutations`, `runRules`, and `statsQuery` services too.
+
+</Tab>
+<Tab title="LangSmith 0.16">
+
+On 0.16 the tier already sets `ephemeral-storage` requests and limits and an `emptyDir` named `local-ssd-storage`, so selecting a tier is enough.
+
+```yaml
+smithdb:
+  resourceTier: small
+```
+
+</Tab>
+</Tabs>
+
+#### Schedule SmithDB workloads
+
+Place query, ingestion, compaction worker, any enabled separate query services, and migration on the local SSD pool. Place compaction and cluster manager on the general compute pool. Node-pool labels and taints must match the Helm selectors and tolerations. `metastoreMigration` can run on any node and does not need a selector.
 
 The label and taint values in these examples match the provider samples on this page. SmithDB does not require these exact values: use any labels and taints that keep cache workloads on SSD-backed nodes, and match them in the Helm selectors and tolerations.
 
@@ -306,14 +372,20 @@ Common symptoms are pods remaining pending when requests exceed allocatable capa
 
 </Accordion>
 
-## Provider notes
+## Provider setup
 
 <Tabs>
 <Tab title="AWS">
 
-A common AWS mapping is EKS, RDS for PostgreSQL, S3, IRSA, and EC2 instance store.
+A common AWS mapping is EKS, RDS for PostgreSQL, S3, IRSA, and EC2 instance store or EBS gp3 for the cache.
 
-### Configure S3 workload identity
+### Configure the metastore
+
+Use RDS for PostgreSQL or Aurora PostgreSQL that meets the [metastore requirements](#postgresql-metastore).
+
+### Configure S3 access
+
+Add an S3 Gateway VPC endpoint to the cluster's private route tables so bucket traffic stays off the public internet.
 
 Choose IRSA or EKS Pod Identity. IRSA requires the role annotation and trust for `system:serviceaccount:<NAMESPACE>:<HELM_RELEASE>-smithdb`. Pod Identity uses an external association and no annotation.
 
@@ -338,9 +410,27 @@ smithdb:
 
 </Accordion>
 
+### Create a cache StorageClass
+
+For the [network-attached disk](#network-attached-disk) option, create a gp3 StorageClass with provisioned IOPS and throughput. The [EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) must be installed.
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: smithdb-cache
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  iops: "7000"
+  throughput: "1000"
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+```
+
 ### Provision EKS nodes with Karpenter
 
-Karpenter is the recommended way to provision SmithDB capacity on EKS, but it is not required. Other node provisioners must produce the same labels, taints, and Kubernetes-visible ephemeral-storage capacity.
+The node examples that follow apply to the [local SSD](#local-ssd) option. Karpenter is the recommended way to provision SmithDB capacity on EKS, but it is not required. Other node provisioners must produce the same labels, taints, and Kubernetes-visible ephemeral-storage capacity.
 
 Install Karpenter v1 and its CRDs by following the [Karpenter EKS guide](https://karpenter.sh/docs/getting-started/getting-started-with-karpenter/). Before applying the example below:
 
@@ -651,9 +741,61 @@ module "eks" {
 </Tab>
 <Tab title="GCP">
 
-A common GCP mapping is GKE Standard, AlloyDB or another compatible PostgreSQL service, Cloud Storage, Workload Identity, and Local SSD-backed ephemeral storage.
+A common GCP mapping is GKE Standard, AlloyDB or another compatible PostgreSQL service, Cloud Storage, Workload Identity, and Local SSD or Hyperdisk Balanced for the cache.
 
-### Configure Cloud Storage workload identity
+### Configure the metastore
+
+Use AlloyDB or Cloud SQL for PostgreSQL that meets the [metastore requirements](#postgresql-metastore).
+
+<Accordion title="Connect through the AlloyDB Auth Proxy">
+
+SmithDB can reach AlloyDB through the [AlloyDB Auth Proxy](https://docs.cloud.google.com/alloydb/docs/auth-proxy/overview) running as a sidecar in every SmithDB pod. SmithDB connects to the proxy on loopback; the proxy authenticates to Google Cloud and encrypts the upstream connection. The proxy does not create network connectivity, so GKE still needs a route to AlloyDB through private IP, Private Service Connect, or public IP.
+
+Grant `roles/alloydb.client` and `roles/serviceusage.serviceUsageConsumer` to the Google service account bound to the SmithDB ServiceAccount. Point the metastore Secret's host key at `127.0.0.1` and set `useSsl: false`. SmithDB cannot validate the certificate AlloyDB presents directly, and encryption begins at the proxy.
+
+`smithdb.commonInitContainers` applies to every SmithDB Deployment and Job. Set `restartPolicy: Always` so Kubernetes runs the proxy as a sidecar and lets migration Jobs complete.
+
+```yaml
+smithdb:
+  commonInitContainers:
+    - name: alloydb-auth-proxy
+      image: gcr.io/alloydb-connectors/alloydb-auth-proxy:PINNED_VERSION
+      restartPolicy: Always
+      args:
+        - "--address=127.0.0.1"
+        - "--port=5432"
+        - "--structured-logs"
+        - "--health-check"
+        - "--http-address=0.0.0.0"
+        - "--http-port=9090"
+        - "projects/PROJECT_ID/locations/REGION/clusters/CLUSTER/instances/INSTANCE"
+      ports:
+        - name: proxy-health
+          containerPort: 9090
+      startupProbe:
+        httpGet:
+          path: /startup
+          port: proxy-health
+      readinessProbe:
+        httpGet:
+          path: /readiness
+          port: proxy-health
+      livenessProbe:
+        httpGet:
+          path: /liveness
+          port: proxy-health
+  config:
+    metastore:
+      useSsl: false
+```
+
+Add `--psc` for Private Service Connect, `--public-ip` for public IP, or `--auto-iam-authn` for IAM database authentication, which also needs `roles/alloydb.databaseUser` and a matching IAM database user. If a migration Job never finishes, confirm `restartPolicy: Always`. If the loopback connection fails with a TLS error, confirm `useSsl` is `false`.
+
+</Accordion>
+
+### Configure Cloud Storage access
+
+Use Private Google Access with private Google APIs DNS to reach Cloud Storage.
 
 <Note>
 Use a single-region bucket to avoid data replication costs and provide predictable tail latencies.
@@ -676,9 +818,87 @@ smithdb:
 
 </Accordion>
 
+<Accordion title="GCS HMAC migration configuration">
+
+Prefer Workload Identity for GCS blob access. If LangSmith must use GCS HMAC keys, set `smithdb.migration.job.extraEnv` (`smithdb.migration.deployment.extraEnv` on LangSmith 0.16) to force the S3-compatible source and reference the existing LangSmith secret (`blob_storage_access_key` / `blob_storage_access_key_secret`):
+
+<CodeGroup>
+
+```yaml LangSmith 0.17
+smithdb:
+  migration:
+    job:
+      extraEnv:
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__TYPE
+          value: "s3"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__BUCKET
+          value: "BLOB_BUCKET_NAME"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ROOT_FOLDER
+          value: "/"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ENDPOINT
+          value: "https://storage.googleapis.com"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: LANGSMITH_SECRETS_NAME
+              key: blob_storage_access_key
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: LANGSMITH_SECRETS_NAME
+              key: blob_storage_access_key_secret
+```
+
+```yaml LangSmith 0.16
+smithdb:
+  migration:
+    deployment:
+      extraEnv:
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__TYPE
+          value: "s3"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__BUCKET
+          value: "BLOB_BUCKET_NAME"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ROOT_FOLDER
+          value: "/"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ENDPOINT
+          value: "https://storage.googleapis.com"
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: LANGSMITH_SECRETS_NAME
+              key: blob_storage_access_key
+        - name: SMITHDB_MIGRATION__BLOB_STORE_DEFAULT__S3__SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: LANGSMITH_SECRETS_NAME
+              key: blob_storage_access_key_secret
+```
+
+</CodeGroup>
+
+</Accordion>
+
+### Create a cache StorageClass
+
+For the [network-attached disk](#network-attached-disk) option, create a Hyperdisk Balanced StorageClass with provisioned IOPS and throughput. Hyperdisk availability depends on the node machine type; see [Hyperdisk on GKE](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/hyperdisk).
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: smithdb-cache
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+  provisioned-iops-on-create: "7000"
+  provisioned-throughput-on-create: "1000Mi"
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+```
+
 ### Provision GKE Local SSD nodes
 
-Use [Local SSD-backed ephemeral storage](https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/local-ssd), created with `--ephemeral-storage-local-ssd`, which backs `emptyDir`, container layers, and scheduler capacity. The raw block option, `--local-nvme-ssd-block`, does not back `emptyDir` and leaves SmithDB with no cache capacity.
+This applies to the [local SSD](#local-ssd) option. Use [Local SSD-backed ephemeral storage](https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/local-ssd), created with `--ephemeral-storage-local-ssd`, which backs `emptyDir`, container layers, and scheduler capacity. The raw block option, `--local-nvme-ssd-block`, does not back `emptyDir` and leaves SmithDB with no cache capacity.
 
 <Accordion title="GKE Local SSD node-pool example">
 
@@ -733,9 +953,15 @@ Supported disk counts and machine types vary by zone and machine generation. Ver
 </Tab>
 <Tab title="Azure">
 
-A common Azure mapping is AKS, Azure Database for PostgreSQL, Azure Blob Storage, Workload Identity, and the VM temporary disk as Kubernetes ephemeral storage.
+A common Azure mapping is AKS, Azure Database for PostgreSQL, Azure Blob Storage, Workload Identity, and the VM temporary disk or Premium SSD v2 for the cache.
 
-### Configure Blob Storage workload identity
+### Configure the metastore
+
+Use Azure Database for PostgreSQL that meets the [metastore requirements](#postgresql-metastore).
+
+### Configure Blob Storage access
+
+Use a private endpoint for Blob Storage.
 
 `smithdb.config.objectStore.bucket` is the Blob container name. `azure.accountName` is required. Leave `accessKeySecretKey` empty when using Workload Identity.
 
@@ -789,9 +1015,28 @@ On LangSmith 0.16, set the migration label under `smithdb.migration.deployment.l
 
 </Accordion>
 
+### Create a cache StorageClass
+
+For the [network-attached disk](#network-attached-disk) option, create a Premium SSD v2 StorageClass with provisioned IOPS and throughput. Premium SSD v2 disks are zonal and available in a subset of regions, so deploy the node pool across availability zones in a supported region. See [Premium SSD v2 on AKS](https://learn.microsoft.com/en-us/azure/aks/use-premium-v2-disks).
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: smithdb-cache
+provisioner: disk.csi.azure.com
+parameters:
+  skuName: PremiumV2_LRS
+  cachingMode: None
+  DiskIOPSReadWrite: "7000"
+  DiskMBpsReadWrite: "1000"
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+```
+
 ### Provision AKS nodes with a temporary disk
 
-AKS does not attach a separate Local SSD volume for `emptyDir`. Set `kubelet-disk-type` to `Temporary` so kubelet, container images, logs, and `emptyDir` use the VM temporary disk. That disk is local SSD or NVMe and is wiped when the VM is deallocated or moved to another host.
+This applies to the [local SSD](#local-ssd) option. AKS does not attach a separate Local SSD volume for `emptyDir`. Set `kubelet-disk-type` to `Temporary` so kubelet, container images, logs, and `emptyDir` use the VM temporary disk. That disk is local SSD or NVMe and is wiped when the VM is deallocated or moved to another host.
 
 Use a VM size with enough temporary-disk capacity for SmithDB cache requests. `Standard_L16s_v3` is an L-series size with a large local NVMe temporary disk. A SKU without a suitable temporary disk leaves `emptyDir` too small even if AKS accepts the node pool. Confirm allocatable `ephemeral-storage` after the pool is ready.
 

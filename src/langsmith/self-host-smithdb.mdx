@@ -8,14 +8,14 @@ description: Run SmithDB alongside ClickHouse on a self-hosted LangSmith Kuberne
 SmithDB is an opt-in datastore for self-hosted LangSmith. ClickHouse is required on LangSmith 0.16 and remains the default on 0.17. Do not disable ClickHouse on any version below 0.17. The minimum LangSmith version depends on your cloud. See [Cloud support](#cloud-support).
 </Note>
 
-SmithDB is a columnar datastore built for agent trace data: deeply nested spans, multi-modal content, and spans that stay open for hours. It keeps durable data in object storage with node-local SSD caching, and serves LangSmith trace ingestion and queries alongside the existing ClickHouse datastore.
+SmithDB is a columnar datastore built for agent trace data: deeply nested spans, multi-modal content, and spans that stay open for hours. It keeps durable data in object storage with a per-pod disk cache, and serves LangSmith trace ingestion and queries alongside the existing ClickHouse datastore.
 
 <CardGroup cols={2}>
 <Card title="Install SmithDB" icon="download" href="/langsmith/self-host-smithdb-install">
   Stage infrastructure, deploy SmithDB services, enable dual ingestion, and switch queries after validation.
 </Card>
 <Card title="Prepare supporting infrastructure" icon="server" href="/langsmith/self-host-smithdb-infrastructure">
-  Provide a dedicated PostgreSQL metastore, object storage, and local SSD cache capacity.
+  Provide a dedicated PostgreSQL metastore, object storage, and cache storage.
 </Card>
 <Card title="Configure for scale" icon="chart-bar" href="/langsmith/self-host-smithdb-scale">
   Choose a tested resource tier and size SmithDB workloads.
@@ -45,21 +45,21 @@ Examples in these guides cover managed Kubernetes on AWS, GCP, and Azure. They d
 
 ## Components
 
-Enabling SmithDB adds the following workloads to your cluster. Three of them cache trace data on disk and belong on local SSD nodes; the other two are small and run on general compute. See [Schedule SmithDB workloads](/langsmith/self-host-smithdb-infrastructure#schedule-smithdb-workloads).
+Enabling SmithDB adds the following workloads to your cluster. Three of them cache trace data on disk, on a network-attached volume or local SSD; the other two are small and run on general compute. See [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage).
 
-| Component | What it does | Node pool | Scaling |
+| Component | What it does | Disk cache | Scaling |
 | --- | --- | --- | --- |
-| Ingestion | Writes incoming traces to object storage | Local SSD | Horizontal |
-| Query | Serves trace reads for the LangSmith UI and API | Local SSD | Horizontal |
-| Compaction worker | Reorganizes stored traces in the background so queries stay fast | Local SSD | Horizontal |
-| Compaction | Schedules the background work that compaction workers carry out | Compute | Single instance |
-| Cluster manager | Coordinates the other SmithDB services | Compute | Single instance |
+| Ingestion | Writes incoming traces to object storage | Yes | Horizontal |
+| Query | Serves trace reads for the LangSmith UI and API | Yes | Horizontal |
+| Compaction worker | Reorganizes stored traces in the background so queries stay fast | Yes | Horizontal |
+| Compaction | Schedules the background work that compaction workers carry out | No | Single instance |
+| Cluster manager | Coordinates the other SmithDB services | No | Single instance |
 
 Two more workloads run as Kubernetes Jobs rather than as services. One prepares the SmithDB metastore during installation. The other backfills ClickHouse history and runs only if you choose to [migrate historical data](/langsmith/self-host-smithdb-migrate).
 
 ## Storage requirements
 
-A self-hosted LangSmith installation uses PostgreSQL for operational data, Redis or Valkey for queuing and caching, and optional blob storage. Traces and feedback live in ClickHouse, in SmithDB, or in both while an installation runs dual ingestion. SmithDB adds its own metastore, object store, and cache nodes.
+A self-hosted LangSmith installation uses PostgreSQL for operational data, Redis or Valkey for queuing and caching, and optional blob storage. Traces and feedback live in ClickHouse, in SmithDB, or in both while an installation runs dual ingestion. SmithDB adds its own metastore, object store, and cache storage.
 
 ClickHouse is required on LangSmith 0.16 and remains the default on 0.17. Keep it configured and running through query cutover on either version. On 0.17, a new installation can run SmithDB without ClickHouse; see [Install without ClickHouse](/langsmith/self-host-smithdb-install#install-without-clickhouse). Retiring ClickHouse from an existing installation is a separate procedure; contact LangChain through the [Support Portal](https://support.langchain.com/) before considering it.
 

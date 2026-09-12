@@ -12,7 +12,7 @@ Use these tested tiers as starting configurations for SmithDB. Connect SmithDB t
 
 ## Choose and scale a tier
 
-These tiers are starting points, not fixed throughput limits or prescribed configurations. CPU, memory, and ephemeral-storage values are per replica.
+These tiers are starting points, not fixed throughput limits or prescribed configurations. CPU, memory, and cache size are per replica. Cache size is the volume each replica gets: the claim size on a network-attached disk, or the `emptyDir` limit on local SSD.
 
 Choose the tier whose tested ingestion and query rates most closely match or exceed your expected steady-state load. To estimate your current trace volume, open **Settings > Usage** in LangSmith. See [Granular billable usage](/langsmith/granular-usage).
 
@@ -48,10 +48,10 @@ Use either the HPA or KEDA for a component, not both.
 
 | Component | Small<br />10 ingest / 10 query QPS | Medium<br />100 ingest / 40 query QPS | Large<br />1000 ingest / 100 query QPS |
 | --- | --- | --- | --- |
-| Ingestion | 1 replica<br />4 CPU<br />8 Gi memory<br />100 Gi ephemeral | 1 replica<br />16 CPU<br />32 Gi memory<br />100 Gi ephemeral | 2 replicas<br />56 CPU<br />150 Gi memory<br />1000 Gi ephemeral |
-| Query | 1 replica<br />4 CPU<br />8 Gi memory<br />200 Gi ephemeral | 1 replica<br />28 CPU<br />48 Gi memory<br />200 Gi ephemeral | 4 replicas<br />28 CPU<br />50 Gi memory<br />1000 Gi ephemeral |
+| Ingestion | 1 replica<br />4 CPU<br />8 Gi memory<br />100 Gi cache | 1 replica<br />16 CPU<br />32 Gi memory<br />100 Gi cache | 2 replicas<br />56 CPU<br />150 Gi memory<br />1000 Gi cache |
+| Query | 1 replica<br />4 CPU<br />8 Gi memory<br />200 Gi cache | 1 replica<br />28 CPU<br />48 Gi memory<br />200 Gi cache | 4 replicas<br />28 CPU<br />50 Gi memory<br />1000 Gi cache |
 | Compaction | 1 replica<br />2 CPU<br />4 Gi memory | 1 replica<br />4 CPU<br />8 Gi memory | 1 replica<br />8 CPU<br />16 Gi memory |
-| Compaction worker | 1 replica<br />8 CPU<br />16 Gi memory<br />100 Gi ephemeral | 1 replica<br />16 CPU<br />32 Gi memory<br />100 Gi ephemeral | 4 replicas<br />28 CPU<br />50 Gi memory<br />300 Gi ephemeral |
+| Compaction worker | 1 replica<br />8 CPU<br />16 Gi memory<br />100 Gi cache | 1 replica<br />16 CPU<br />32 Gi memory<br />100 Gi cache | 4 replicas<br />28 CPU<br />50 Gi memory<br />300 Gi cache |
 | Cluster manager | 1 replica<br />250m CPU<br />256 Mi memory | 1 replica<br />250m CPU<br />256 Mi memory | 1 replica<br />2 CPU<br />2 Gi memory |
 
 ## Configure resources with Helm
@@ -63,18 +63,43 @@ smithdb:
   resourceTier: medium
 ```
 
-A tier sets per-replica CPU, memory, and ephemeral-storage requests and limits. Replica counts and autoscaling are configured separately. The chart enables autoscaling for query, ingestion, and compaction worker by default.
+A tier sets per-replica CPU, memory, and cache size. On LangSmith 0.17 the cache size is the generated claim's capacity. On 0.16 it is the `ephemeral-storage` request and limit, which also sizes the generated `emptyDir`. Replica counts and autoscaling are configured separately.
 
-For local-disk components, the ephemeral-storage limit also sizes the generated `emptyDir`. Explicit component `resources` or `volumes` settings take precedence.
+An explicit component `resources` block replaces the tier's CPU and memory. On 0.17 it does not change the cache size; pick a different tier or override `deployment.volumes` for that. For local SSD values, see [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage).
 
 See [SmithDB resource tiers](https://github.com/langchain-ai/helm/tree/main/charts/langsmith#smithdb-resource-tiers) for current values and chart details.
 
 <Accordion title="Example explicit resource configuration">
 
-To configure resources without `smithdb.resourceTier`, use the component-level values directly. This medium-tier example is also a copyable reference for overriding individual components:
+This example overrides the query component at medium-tier sizes.
+
+<Tabs>
+<Tab title="LangSmith 0.17">
+
+The cache claim stays at the tier size. These values request no node storage.
 
 ```yaml
 smithdb:
+  resourceTier: medium
+  query:
+    deployment:
+      resources:
+        requests:
+          cpu: "28"
+          memory: "48Gi"
+        limits:
+          cpu: "28"
+          memory: "48Gi"
+```
+
+</Tab>
+<Tab title="LangSmith 0.16">
+
+The storage limit also sizes the default `emptyDir`.
+
+```yaml
+smithdb:
+  resourceTier: medium
   query:
     deployment:
       resources:
@@ -86,53 +111,10 @@ smithdb:
           cpu: "28"
           memory: "48Gi"
           ephemeral-storage: "200Gi"
-
-  ingestion:
-    deployment:
-      resources:
-        requests:
-          cpu: "16"
-          memory: "32Gi"
-          ephemeral-storage: "100Gi"
-        limits:
-          cpu: "16"
-          memory: "32Gi"
-          ephemeral-storage: "100Gi"
-
-  compaction:
-    deployment:
-      resources:
-        requests:
-          cpu: "4"
-          memory: "8Gi"
-        limits:
-          cpu: "4"
-          memory: "8Gi"
-
-  compactionWorker:
-    deployment:
-      resources:
-        requests:
-          cpu: "16"
-          memory: "32Gi"
-          ephemeral-storage: "100Gi"
-        limits:
-          cpu: "16"
-          memory: "32Gi"
-          ephemeral-storage: "100Gi"
-
-  clusterManager:
-    deployment:
-      resources:
-        requests:
-          cpu: "250m"
-          memory: "256Mi"
-        limits:
-          cpu: "250m"
-          memory: "256Mi"
 ```
 
-When configuring local-disk components manually, keep `limits.ephemeral-storage` and any explicit `emptyDir.sizeLimit` consistent with your Kubernetes policy.
+</Tab>
+</Tabs>
 
 </Accordion>
 

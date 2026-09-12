@@ -21,14 +21,20 @@ Use this page to diagnose SmithDB installation and migration failures, gather co
 
 Most SmithDB installation failures trace back to one of the following. For the configuration each depends on, see [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-infrastructure).
 
-**Pods stay `Pending`.** The ephemeral-storage request exceeds what the node reports as allocatable. Compare the tier's per-replica request against the node:
+**Pods stay `Pending`.** On a network-attached cache, the claim cannot bind. Check the claim and the pod events for StorageClass, zone, or quota errors:
 
 ```bash
-kubectl get node NODE_NAME -o jsonpath='{.status.allocatable.ephemeral-storage}{"\n"}'
+kubectl get pvc -n NAMESPACE
 kubectl describe pod -n NAMESPACE POD_NAME | grep -A5 Events
 ```
 
-Either provision larger local SSD nodes or select a smaller tier. A node also needs headroom above the pod request for images, logs, and Kubernetes reservations.
+For local SSD, compare the pod's `ephemeral-storage` request with node allocatable capacity:
+
+```bash
+kubectl get node NODE_NAME -o jsonpath='{.status.allocatable.ephemeral-storage}{"\n"}'
+```
+
+Either provision larger nodes or select a smaller tier. A node also needs headroom above the pod request for images, logs, and Kubernetes reservations. If you moved to network-attached caches on 0.17 and pods still request node storage, an `ephemeral-storage` override from an older values file is still in place; remove it. The migration Job requests node storage regardless of cache type.
 
 **Object-store access is denied.** The workload identity binding does not match the ServiceAccount SmithDB actually runs as. The trust policy must name the release namespace and the ServiceAccount name, which defaults to `HELM_RELEASE-smithdb`. Confirm what the pod is using:
 
@@ -40,13 +46,13 @@ With `create: false`, `name` is required. Otherwise pods fall back to the `defau
 
 **The metastore refuses connections.** Check that the database is reachable from the cluster, that `useSsl` matches what the server requires, and that the Secret keys named in `smithdb.config.metastore` match the keys actually present in the Secret.
 
-**Cache I/O is slow.** The `emptyDir` is backed by the boot disk rather than local SSD. Confirm which device backs the cache filesystem inside a running pod:
+**Cache I/O is slow.** On local SSD, the `emptyDir` is backed by the boot disk rather than the SSD. On a network-attached disk, the volume is under-provisioned: confirm the StorageClass sets at least 7000 IOPS and 1000 MiB/s. Check which device backs the cache filesystem inside a running pod:
 
 ```bash
 kubectl exec -n NAMESPACE POD_NAME -- df -h /data
 ```
 
-The filesystem should sit on the local NVMe device, such as `/dev/md0` or `/dev/nvme1n1`, rather than on the root disk.
+For local SSD, the filesystem should use the local NVMe device, such as `/dev/md0` or `/dev/nvme1n1`. For network disks, confirm `/data` mounts the provisioned claim.
 
 ## Migration Job failures
 

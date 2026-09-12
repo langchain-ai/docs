@@ -38,12 +38,14 @@ Follow [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-
 
 - A dedicated PostgreSQL 18 or later metastore
 - Dedicated object storage with workload identity or equivalent credentials
-- Local SSD-backed Kubernetes ephemeral storage for SmithDB caches
+- Cache storage for SmithDB: network-attached disks, or local SSD for the best cache performance
 - Network connectivity and a Kubernetes Secret containing the metastore connection details
 
-Record the object-store configuration, metastore Secret and key mappings, service-account identity, and scheduling values needed by the Helm chart.
+Record the object-store configuration, metastore Secret and key mappings, service-account identity, and cache settings needed by the Helm chart.
 
-At the end of this step, the infrastructure and scheduling portion of your SmithDB Helm values might look like the following. Replace the placeholders with the settings for your provider. Keep SmithDB disabled until Step 3.
+At the end of this step, the shared infrastructure portion of your SmithDB Helm values might look like the following. Replace the placeholders with the settings for your provider. Keep SmithDB disabled until Step 3.
+
+Add the cache values for your version from [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage). On LangSmith 0.17 that is usually one line, `smithdb.cache.storageClassName`. Local SSD on either version also needs the node selectors and tolerations shown there.
 
 <Accordion title="SmithDB infrastructure Helm values">
 
@@ -65,73 +67,9 @@ smithdb:
     objectStore:
       type: OBJECT_STORE_TYPE
       bucket: BUCKET_NAME
-
-  query:
-    deployment:
-      nodeSelector:
-        smithdb-local/instance-store: "true"
-      tolerations:
-        - key: smithdb-local/instance-store
-          operator: Equal
-          value: "true"
-          effect: NoSchedule
-
-  ingestion:
-    deployment:
-      nodeSelector:
-        smithdb-local/instance-store: "true"
-      tolerations:
-        - key: smithdb-local/instance-store
-          operator: Equal
-          value: "true"
-          effect: NoSchedule
-
-  compactionWorker:
-    deployment:
-      nodeSelector:
-        smithdb-local/instance-store: "true"
-      tolerations:
-        - key: smithdb-local/instance-store
-          operator: Equal
-          value: "true"
-          effect: NoSchedule
-
-  migration:
-    job:
-      nodeSelector:
-        smithdb-local/instance-store: "true"
-      tolerations:
-        - key: smithdb-local/instance-store
-          operator: Equal
-          value: "true"
-          effect: NoSchedule
-
-  compaction:
-    deployment:
-      nodeSelector:
-        smithdb-local/compute: "true"
-      tolerations:
-        - key: smithdb-local/compute
-          operator: Equal
-          value: "true"
-          effect: NoSchedule
-
-  clusterManager:
-    deployment:
-      nodeSelector:
-        smithdb-local/compute: "true"
-      tolerations:
-        - key: smithdb-local/compute
-          operator: Equal
-          value: "true"
-          effect: NoSchedule
 ```
 
-<Note>
-On LangSmith 0.16, the migration Job's pod settings live under `smithdb.migration.deployment` rather than `smithdb.migration.job`. All other keys are the same.
-</Note>
-
-Replace the identity and object-store placeholders with the values for your provider. For Azure, also add the `azure.workload.identity/use: "true"` label to every SmithDB workload. See [Configure Blob Storage workload identity](/langsmith/self-host-smithdb-infrastructure#configure-blob-storage-workload-identity).
+Replace the identity and object-store placeholders with the values for your provider. For Azure, also add the `azure.workload.identity/use: "true"` label to every SmithDB workload. See [Configure Blob Storage access](/langsmith/self-host-smithdb-infrastructure#configure-blob-storage-access).
 
 <CodeGroup>
 
@@ -193,10 +131,10 @@ Apply the upgrade and verify that the existing LangSmith pods are running and mi
 
 ### Step 3. Configure and deploy SmithDB services
 
-Before enabling SmithDB, choose a tested baseline from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale). Configure its replica counts and per-replica CPU, memory, and ephemeral-storage requests, and confirm the cluster can provision the aggregate capacity.
+Before enabling SmithDB, choose a tested baseline from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale). Configure its replica counts and per-replica CPU, memory, and cache capacity, and confirm the cluster can provision the aggregate capacity.
 
 <Warning>
-Scale configuration is required. Insufficient CPU, memory, or ephemeral storage can cause SmithDB components to fail once traffic is enabled.
+Scale configuration is required. Insufficient CPU, memory, or cache storage can cause SmithDB components to fail once traffic is enabled.
 </Warning>
 
 Merge the infrastructure values prepared in Step 1 and your selected sizing baseline into the existing LangSmith values. Leave the existing ClickHouse configuration unchanged, then enable the SmithDB services without changing LangSmith ingestion or queries:
