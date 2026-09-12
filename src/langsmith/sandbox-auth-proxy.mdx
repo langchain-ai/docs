@@ -257,8 +257,43 @@ await client.createSandbox({
 After the sandbox is ready, use AWS SDKs or CLIs normally inside the sandbox. The SDK or CLI can discover the placeholder AWS environment variables, and the proxy applies the real SigV4 signature to outbound AWS requests.
 
 <Note>
-AWS auth proxy rules currently support access key ID and secret access key credentials. They do not include a session token or assume-role configuration.
+Static AWS auth accepts an access key ID and secret access key, but not a caller-supplied session token. Deployments with AWS proxy role authentication enabled also support an IAM role as described below.
 </Note>
+
+### Authenticate with an IAM role
+
+An AWS proxy role lets LangSmith assume a customer IAM role and sign supported AWS HTTPS requests with renewable temporary credentials. It works with or without [S3 mounts](/langsmith/sandbox-mounts#authenticate-with-an-iam-role), without exposing real credentials to sandbox code.
+
+This option requires deployment support for AWS proxy role authentication. ECR registry role authentication is a separate feature. In **Create sandbox > Network**, enable AWS authentication and select **AWS IAM role**. The form shows the exact LangSmith principal and workspace External ID that the customer role must trust. Follow the linked setup instructions to configure the trust and permissions policies, then enter the customer role in **AWS role ARN**.
+
+For the HTTP API, supply `aws.role_arn` instead of static credential fields:
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "aws-role-sandbox",
+    "proxy_config": {
+      "rules": [
+        {
+          "name": "aws",
+          "type": "aws",
+          "enabled": true,
+          "aws": {
+            "role_arn": "arn:aws:iam::123456789012:role/LangSmithSandbox"
+          }
+        }
+      ]
+    }
+  }'
+```
+
+Replace the example ARN with your configured customer role. The single-rule limit still applies. Role authentication is configured at creation: an update can preserve the existing role, but cannot add, remove, change, or disable it. Create a new sandbox to change role authentication.
+
+The role's effective AWS permissions apply to all supported requests. LangSmith does not add a mount-derived session policy to this rule. A read-only S3 mount blocks filesystem writes, not direct S3 API writes that IAM allows. Restrict the customer role to the services, resources, and actions the sandbox needs.
+
+LangSmith renews temporary credentials on demand and reacquires them after stop/start. If renewal is temporarily unavailable, cached credentials remain usable only until expiration. Authorization denial or expiration fails closed, without falling back to static keys.
 
 ## Authenticate GCP requests
 

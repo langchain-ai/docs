@@ -125,26 +125,26 @@ try {
 
 ### Authenticate with an IAM role
 
-IAM role authentication lets LangSmith assume a role in your AWS account for S3 mounts. LangSmith obtains and renews temporary AWS credentials, so you do not need to store or rotate access keys in workspace secrets.
+IAM role authentication lets the [AWS auth proxy](/langsmith/sandbox-auth-proxy#authenticate-with-an-iam-role) assume a role in your AWS account. S3 mounts use the same authentication as other supported AWS requests from the sandbox. LangSmith obtains and renews temporary AWS credentials, so you do not need to store or rotate access keys in workspace secrets.
 
 <Note>
-This option requires your LangSmith deployment to enable IAM role authentication for S3 mounts. Enabling IAM roles for ECR registries does not enable them for mounts. If the S3 mount authentication selector is absent, use static access keys or contact your LangSmith administrator. The setup below uses the UI; the SDK examples on this page use static access keys.
+This option requires your LangSmith deployment to enable AWS proxy role authentication. Enabling IAM roles for ECR registries does not enable them for the auth proxy. If **AWS IAM role** is absent from the AWS authentication options, use static access keys or contact your LangSmith administrator. The setup below uses the UI; the SDK examples on this page use static access keys.
 </Note>
 
-You need permission to configure the customer IAM role's trust and S3 access policies. One role applies to all S3 mounts in the sandbox. You cannot combine role authentication with static AWS mount credentials or a separate AWS auth proxy rule. Create a new sandbox to change mount authentication.
+You need permission to configure the customer IAM role's trust and access policies. One AWS auth rule applies to the sandbox's AWS requests, including all S3 mounts. Choose either static access keys or an IAM role; do not configure both. Role authentication is configured at creation. Create a new sandbox to add, remove, disable, or change its role.
 
 The LangSmith principal also needs permission to assume the customer role. For self-hosted deployments, your administrator configures that permission and any required role tags. Cross-account S3 buckets may also require a bucket policy that permits the customer role.
 
 To configure the role and create the sandbox:
 
 1. Open **Sandboxes > Create sandbox**, add an **S3 bucket** in the **Mounts** section, and configure its bucket, region, prefix, mount path, and read-only setting.
-2. Select **AWS IAM role** under **S3 mount authentication**.
-3. Expand **AWS role setup**. The form displays two values to use in your IAM role's trust policy:
-   - **Principal**: The exact AWS role ARN that this LangSmith deployment uses to assume customer roles. Use the displayed mount principal, not an ARN copied from another environment or from an ECR registry.
+2. Go to the **Network** section, enable AWS authentication, and select **AWS IAM role**. To use the role without mounts, skip the mount configuration in step 1.
+3. Use the two values displayed below **AWS role ARN** in your IAM role's trust policy:
+   - **Principal**: The exact AWS role ARN that this LangSmith deployment uses to assume customer roles. Use the displayed principal, not an ARN copied from another environment or from an ECR registry.
    - **External ID**: Your current LangSmith workspace UUID. LangSmith supplies this value when assuming the role; you do not choose a separate external ID.
-4. Select **Copy trust policy** and apply that policy to the customer role in AWS IAM. It permits `sts:AssumeRole` only for the displayed principal with the matching `sts:ExternalId`.
-5. Select **Copy S3 permissions** and attach that permissions policy to the same role. The form generates it from the configured mounts. Update the policy if you change the mount settings before creating the sandbox.
-6. Enter the customer role's ARN in **S3 AWS role ARN**. This is the role you configured in your account, not the LangSmith principal shown in the setup instructions.
+4. Expand **AWS role setup**, select **Copy trust policy**, and apply that policy to the customer role in AWS IAM. It permits `sts:AssumeRole` only for the displayed principal with the matching `sts:ExternalId`.
+5. Attach a least-privilege permissions policy for the AWS services and resources the sandbox needs. For configured S3 mounts, **Copy S3 permissions** supplies a starting policy. Review it before attaching it; LangSmith does not apply it automatically.
+6. Enter the customer role's ARN in **AWS role ARN**. This is the role you configured in your account, not the LangSmith principal shown in the setup instructions.
 7. Select **Create Sandbox**, then verify that sandbox code can read the mounted path and, for writable mounts, write to it.
 
 The generated trust policy has this structure. Replace the placeholders with the principal and external ID displayed in the form, or copy the completed policy from the form:
@@ -156,7 +156,7 @@ The generated trust policy has this structure. Replace the placeholders with the
     {
       "Effect": "Allow",
       "Principal": {
-        "AWS": "<LANGSMITH_MOUNT_PRINCIPAL_ARN>"
+        "AWS": "<LANGSMITH_AWS_PROXY_PRINCIPAL_ARN>"
       },
       "Action": "sts:AssumeRole",
       "Condition": {
@@ -173,19 +173,25 @@ Do not replace the principal with `*` or remove the external ID condition. Enter
 
 #### Limit S3 access
 
-The generated S3 permissions policy grants access based on the mount settings:
+The optional S3 permissions example grants access based on the mount settings:
 
 - **All S3 mounts**: Bucket-location access, prefix-scoped listing, and object reads.
 - **Writable mounts**: Additional object-write, delete, and multipart-upload permissions.
 - **Empty prefix**: Object access throughout the bucket. Use a prefix to restrict access to a subtree.
 
-LangSmith further restricts each temporary session to the configured buckets, prefixes, and read-only settings. A broader policy on the customer role does not widen the sandbox's mount access. LangSmith rejects conflicting read-only and writable mounts with overlapping scopes.
+The role's effective AWS permissions control all supported AWS proxy requests. LangSmith does not restrict a general AWS role session to the configured mounts. Limit the role's IAM policy to the required buckets, prefixes, operations, and other AWS resources.
 
-Role authentication supports standard S3 buckets on commercial AWS HTTPS endpoints. It does not support customer-managed KMS keys, S3 Access Points, S3 Express directory buckets, or non-commercial AWS partitions such as AWS GovCloud and China. Large mount configurations can exceed AWS's session-policy size limit; reduce the scope configuration if validation rejects it.
+<Warning>
+A read-only mount rejects filesystem writes, but does not block direct S3 API writes that the role permits. Use the role's IAM policy to enforce read-only AWS access.
+</Warning>
+
+Use a commercial AWS role and supported AWS HTTPS endpoints. The S3 permissions example does not include KMS permissions; review the permissions required by your bucket's encryption settings.
+
+The legacy `mount_config.auth.aws_role` API remains mount-scoped and cannot be combined with an AWS proxy rule. It is separate from the shared role setup described here.
 
 #### Renew credentials
 
-LangSmith renews temporary credentials as the mount needs them, including after a sandbox stops and resumes. You do not supply a saved STS token or renew it manually. Keep the role's trust and S3 permissions in place for continued access.
+LangSmith renews temporary credentials as AWS requests need them, including after a sandbox stops and resumes. You do not supply a saved STS token or renew it manually. Keep the role's trust and access permissions in place for continued access.
 
 If renewal is temporarily unavailable, the mount can use cached credentials only until they expire. An authorization denial or expired credentials causes authenticated S3 requests to fail; the mount does not fall back to static keys.
 
