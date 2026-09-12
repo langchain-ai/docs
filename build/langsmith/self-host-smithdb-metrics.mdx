@@ -1,0 +1,92 @@
+---
+title: SmithDB metrics reference
+sidebarTitle: Metrics reference
+description: Metrics to watch on each SmithDB component, what they measure, and how to read them.
+---
+
+SmithDB components expose Prometheus metrics at `/metrics` on each pod's HTTP port. This page lists the metrics worth watching for each component and how to read them. For scrape and export configuration, see [Configure SmithDB observability](/langsmith/self-host-smithdb-observability).
+
+Names are as they appear on `/metrics`. If your collector adds a namespace or prefix, adjust accordingly.
+
+<Note>
+This page covers metrics SmithDB emits. Kubernetes signals such as OOM kills, container restarts, CPU and memory against limits, and cache disk usage are worth alerting on but come from your infrastructure monitoring, not from SmithDB.
+</Note>
+
+## Baseline metrics
+
+If the full reference is more than you need, the following metrics answer whether SmithDB is healthy. All other metrics provide additional detail.
+
+| Question | Metric | Component |
+| --- | --- | --- |
+| Are queries succeeding, and fast? | `server_requests_duration` | Query |
+| Are writes landing, and fast? | `ingest_batch_latency` | Ingestion |
+| Is ingestion keeping up with arrivals? | `ingest_pending_segment_entry_count` | Ingestion |
+| Is compaction keeping up? | `compaction_queue_job_count` | Compaction |
+| Is compaction succeeding? | `compaction_job_completion` | Compaction |
+
+Compaction has two entries because the failure modes are separate: jobs can fail repeatedly while the queue length stays flat, and the queue can grow while every job that runs succeeds.
+
+## Ingestion
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `ingest_batch_latency` | Histogram | End-to-end latency from batch received to flush completed. |
+| `ingest_flush_count` | Counter | Flushes to object storage. A flat rate while traffic arrives means writes are not landing. |
+| `ingest_flush_rows` | Histogram | Rows per flush, by level. Falling rows at a steady flush rate suggests premature flushing. |
+| `ingest_flush_duration` | Histogram | How long flushes take. Rising durations point at object store latency or undersized ingestion. |
+| `ingest_flush_reason` | Counter | What triggered each flush, labeled `reason` (`size`, `time`, or `shutdown`) and `level` (`L0` or `L1`). L1 flushes on accumulated run count, or a timeout. |
+| `ingest_pending_segment_entry_count` | Gauge | Entries not yet flushed. Sustained growth means flushing is backlogged. |
+| `semaphore_permits_in_use` | Gauge | Concurrency permits held, against `semaphore_max_permits`. Sustained saturation means writes are queuing. |
+| `server_requests_duration` | Histogram | Ingestion request latency. Split by `status` for success and failure counts. |
+
+## Query
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `server_requests_duration` | Histogram | Query latency. Split by `status` for success and failure counts, where `status` is the gRPC code (`0` is success) or the HTTP code, and by `path` to find the slow endpoint. |
+| `query_fanout_partitions` | Histogram | Active scan partitions per query. Rising fanout drives both latency and memory. |
+| `query_fanout_limit_exceeded_total` | Counter | Queries rejected for excessive fanout. Any sustained rate means queries are failing outright. |
+| `query_execution_max_mem_used_bytes` | Histogram | Peak memory for the largest operator in a query plan. Approaching the configured limit precedes termination. |
+
+## Compaction
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `compaction_queue_job_count` | Gauge | Jobs waiting in the compaction queue. Sustained growth means compaction is falling behind. |
+| `compaction_jobs_scheduled` | Counter | Work created by the pipeline. Compare against jobs executed. |
+| `compaction_jobs_executed` | Counter | Work consumed. Persistently below scheduled means under-provisioned workers. |
+| `compaction_job_completion` | Counter | Job outcomes, labeled `status` (`success` or `failure`) and `job_kind`. A `job_kind` dropping to zero means that job type has stopped running. |
+| `compaction_queue_jobs_skipped_capacity` | Counter | Jobs skipped for exceeding a worker's remaining capacity. A sustained rate means worker capacity is too small for the jobs being produced. |
+| `compaction_queue_oldest_pending_created_at_seconds` | Gauge | Unix timestamp when the oldest pending job was enqueued, or zero when the queue is empty. Compute age as `time() - metric`, and exclude the zero case. |
+| `compaction_job_latency_seconds` | Histogram | Job creation to completion. Includes queue wait, so it rises when workers saturate as well as when jobs are slow. |
+| `compaction_worker_capacity_used` | Gauge | In-flight capacity cost by `job_kind`, against `compaction_worker_capacity_limit`. Sustained use near the limit explains skipped jobs and a growing queue. |
+| `compaction_worker_running_tasks` | Gauge | Tasks running by `job_kind`. Zero while the queue is non-empty means workers are stalled, not busy. |
+
+## All components
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `object_store_op_duration` | Histogram | Object store operation latency. |
+| `sys_jemalloc_resident_bytes` | Gauge | Resident process memory. Track against the pod memory limit. |
+
+## LangSmith ingestion path
+
+Emitted by LangSmith rather than by SmithDB, and labeled `store="clickhouse|smithdb"`, so the two stores can be compared directly during [dual ingestion](/langsmith/self-host-smithdb-install#step-4-enable-dual-ingestion).
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `langsmith_ingestion_e2e_latency_seconds` | Histogram | API receipt to store write ack, per run. The user-facing number; compare `store="smithdb"` against `store="clickhouse"`. |
+| `langsmith_ingestion_api_to_worker_latency_seconds` | Histogram | Queue wait before the worker starts. Rising here is a queue problem, not a SmithDB problem. |
+| `langsmith_ingestion_worker_to_store_latency_seconds` | Histogram | Store write time alone. Isolates SmithDB from queue delay. |
+| `langsmith_asynq_ingestion_queue_pending` | Gauge | Tasks waiting in the LangSmith ingestion queue before a worker picks them up. Sustained growth means the queue is not keeping up with arrivals, upstream of SmithDB. |
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-smithdb-metrics.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
