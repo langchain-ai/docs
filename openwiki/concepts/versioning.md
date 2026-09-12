@@ -3,19 +3,23 @@ type: versioning strategy
 title: Language Versioning Strategy
 description: How source classification, build-time language rendering, emitted public routes, and docs.json navigation cooperate for shared OSS documentation, intentional unversioned products, and Managed Deep Agents.
 tags: [versioning, documentation-pipeline, navigation, routes, conditional-rendering]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-09T08:21:02.265Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-17f3856bce97f37118963062
+    resource: repo://pipeline/preprocessors/handle_auto_links.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-09T08:21:02.265Z" }
+  - id: openwiki-source-2ecfcd33b729fccd843ab705
+    resource: repo://tests/unit_tests/test_handle_auto_links.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-12T08:18:19.154Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-12T08:18:19.154Z
 ---
 
 # Language Versioning Strategy
@@ -27,7 +31,7 @@ Language versioning is a build and navigation model, not a filesystem naming con
 | Authored source domain | Emitted public route family | Navigation consequence |
 | --- | --- | --- |
 | Most `src/oss/` content, including LangChain, LangGraph, Deep Agents, concepts, reference, and contributing material | `/oss/python/...` and `/oss/javascript/...` | Add the corresponding emitted route under the Python or TypeScript Build dropdown. |
-| `src/oss/python/` or `src/oss/javascript/` | Only the matching `/oss/python/...` or `/oss/javascript/...` route, with the source-language directory removed | Put the route only in its matching dropdown. |
+| `src/oss/python/` or `src/oss/javascript/` | During a full build, only the matching `/oss/python/...` or `/oss/javascript/...` route, with the source-language directory removed | Put the route only in its matching dropdown. |
 | `src/oss/deepagents/code/` | `/oss/deepagents/code/...` | One language-agnostic product route; do not add a language prefix. |
 | `src/oss/openwiki/` | `/oss/openwiki/...` | One language-agnostic product route, listed as the same unprefixed routes in both Build dropdowns. |
 | Ordinary `src/langsmith/` content | `/langsmith/...` | Place it in its applicable LangSmith or lifecycle navigation group, which is not language-split. |
@@ -70,13 +74,17 @@ This flow shows the ownership boundary: classification selects artifacts and rou
 
 For Markdown and MDX, the render pipeline first runs standard preprocessing (including cross-reference and conditional handling), then scopes MDX snippet imports for a language target, rewrites OSS links, and finally rewrites Managed Deep Agents links. Internal targets are `python` and `js`; `js` maps to the public `javascript` route segment.
 
-`build_file()` follows the same classification for an individual file: ordinary OSS creates both variants, the two unversioned OSS products create one artifact, and a Managed Deep Agents file creates two language artifacts. Shared and root-level inputs copy once. It raises `AssertionError` when asked to build a file that does not exist. Prefer a full build after broad route or navigation changes because it also removes stale output and refreshes derived artifacts.
+`build_file()` applies the top-level classification for an individual file: ordinary OSS creates both variants, the two unversioned OSS products create one artifact, and a Managed Deep Agents file creates two language artifacts. Shared and root-level inputs copy once. It raises `AssertionError` when asked to build a file that does not exist. Its handling of language-specific OSS subtrees is not equivalent to the full build; see the caveat below. Prefer a full build after broad route or navigation changes because it also removes stale output and refreshes derived artifacts.
 
 ## Shared OSS and language-specific source directories
 
 Shared OSS sources are the normal dual-version case. A shared page is rendered once for the `python` target at `/oss/python/...` and once for the `js` target at `/oss/javascript/...`. An unqualified absolute OSS link can consequently follow the current artifact.
 
-The `src/oss/python/` and `src/oss/javascript/` subtrees are a different contract: the builder includes a file only in the matching pass and removes that leading source-language directory from the output path. Use them for material that genuinely exists in one language, not for a copy of shared content.
+The `src/oss/python/` and `src/oss/javascript/` subtrees are a different **full-build** contract: `_build_langgraph_version()` includes a file only in the matching pass and removes that leading source-language directory from the output path. Use them for material that genuinely exists in one language, not for a copy of shared content.
+
+### Incremental-build caveat
+
+Do not use `build_file()` or `build_files()` as proof of that source-language-directory contract. Their OSS path delegates to `_build_oss_file()`, which produces Python and JavaScript copies from the source-relative path and does not apply the full-build pass's filtering or directory removal. Thus a direct build of `src/oss/python/example.mdx` can produce `oss/python/python/example.mdx` and `oss/javascript/python/example.mdx`, unlike `build_all()`. Use a clean full build to validate classification or routes involving `src/oss/python/` and `src/oss/javascript/`; add a focused regression test before changing this boundary.
 
 ## Intentional unversioned OSS products
 
@@ -111,6 +119,8 @@ JavaScript-only content.
 For the selected target, preprocessing removes the fences and retains the matching block content; it removes a nonmatching supported block completely. Unsupported labels and unclosed blocks remain unchanged. Opening and closing markers must have matching indentation. Escape a literal marker as `\:::` when the rendered page must display conditional syntax.
 
 Conditional rendering is regex-based rather than code-fence-aware. Do not rely on a normal Markdown code fence to protect literal conditional-looking syntax, and do not nest conditionals: the first eligible closing marker ends the match. Escape both markers when documenting the syntax literally.
+
+Before that rendering step, `replace_autolinks()` resolves `@[name]` references using the current conditional-fence scope, defaulting to the render target. Unlike conditional rendering, autolink processing tracks backtick and tilde code fences and leaves their contents untouched; an unclosed code fence suppresses autolink replacement for the rest of the document. An unresolved reference is logged and retained rather than turned into a guessed link. This distinction is intentional: a code fence protects symbolic autolinks, but not literal `:::python` or `:::js` text from the later renderer.
 
 ## Link and snippet rewrite contract
 
@@ -147,7 +157,9 @@ When changing this model:
 
 ## Focused regression coverage
 
-`tests/unit_tests/test_builder.py` tests the boundary conditions most likely to regress: ordinary OSS prefix insertion, preservation of language-qualified and unversioned-product links, one-time output for the two unversioned OSS products, language-scoped MDX imports, and Managed Deep Agents dual output. The Managed Deep Agents fixture verifies matching page links, OSS links, scoped snippets, and conditional snippet content in both variants; it also verifies that unversioned Managed Deep Agents pages are not emitted.
+`tests/unit_tests/test_builder.py` is the authority for the non-obvious emission and rewrite boundaries: ordinary OSS prefix insertion, preservation of language-qualified and unversioned-product links, one-time output for the two unversioned OSS products, language-scoped MDX imports, and Managed Deep Agents dual output. The Managed Deep Agents fixture verifies matching page links, OSS links, scoped snippets, and conditional snippet content in both variants; it also verifies that unversioned Managed Deep Agents pages are not emitted. It does not cover the `build_file()` versus full-build source-language-directory divergence, so changes there need a focused test and clean-build coverage.
+
+`tests/unit_tests/test_handle_auto_links.py` separately verifies that symbolic autolinks are replaced outside code fences, preserved inside backtick and tilde fences, and retain the enclosing conditional scope despite a conditional-looking marker inside a code block. Pair that test with conditional-rendering coverage when changing preprocessing order: the two stages intentionally have different fence behavior.
 
 ## See also
 
