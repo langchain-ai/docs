@@ -1,0 +1,144 @@
+---
+title: Stagehand + Browserbase integration
+description: Integrate with Stagehand and Browserbase browser tools using LangChain Python.
+integration:
+  name: Stagehand
+---
+
+Stagehand is an open-source SDK for browser agents, backed by [Browserbase](https://browserbase.com)—the complete platform to run agents that use the web like humans. The integration ships a ready-made MCP server that exposes three tools—`run`, `snapshot`, and `screenshot`—directly to your Deep Agent, with no custom tool definitions required.
+
+<Note>
+  Stagehand ships this integration from its own repository. Clone the repo and run the examples from `packages/integrations/deepagents`.
+</Note>
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `run` | Execute JavaScript or snapshot actions against the active browser page |
+| `snapshot` | Inspect the active page and hydrate bracketed element IDs for use in `run` |
+| `screenshot` | Capture a screenshot of the rendered page |
+
+## Setup
+
+### Prerequisites
+
+- Python 3.11–3.13
+- [uv](https://docs.astral.sh/uv/)
+- A model-provider API key (e.g. `OPENAI_API_KEY`)
+- Local Chrome, or a [Browserbase](https://browserbase.com) API key for a managed remote browser
+
+### Clone and install
+
+```bash
+git clone https://github.com/browserbase/stagehand.git
+cd stagehand/packages/integrations/deepagents
+uv sync --locked
+uv sync --project examples/local --locked
+```
+
+### Environment variables
+
+```bash
+# Model provider
+export OPENAI_API_KEY="..."
+
+# Browser: local Chrome (default) or Browserbase
+export STAGEHAND_BROWSER="browserbase"    # omit to use local Chrome
+export BROWSERBASE_API_KEY="bb_live_..."  # required for Browserbase
+```
+
+## Use with a Deep Agent
+
+The integration's MCP server (`stagehand-deepagents-mcp`) is launched over stdio by `MultiServerMCPClient`. Use `load_mcp_tools` to get the tools and pass them directly to `create_deep_agent` — no manual tool definitions needed:
+
+```python
+import asyncio
+import dotenv
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
+from deepagents import create_deep_agent
+
+dotenv.load_dotenv()
+
+BROWSER_INSTRUCTIONS = """You control one persistent browser through exactly three tools:
+- snapshot: inspect the active page and hydrate bracketed element IDs.
+- run: provide either snapshot actions or JavaScript using the Playwright-shaped page API.
+- screenshot: inspect the rendered page visually.
+
+Use snapshot actions for simple interactions and run code for multi-step workflows.
+Snapshot IDs are valid only for the latest snapshot of the active page.
+Snapshot again after navigation or stale IDs. Do not launch another browser.
+"""
+
+client = MultiServerMCPClient(
+    {
+        "stagehand_browser": {
+            "transport": "stdio",
+            "command": "uv",
+            "args": ["run", "--project", ".", "--locked", "stagehand-deepagents-mcp"],
+            "env": {
+                k: v for k, v in __import__("os").environ.items()
+                if k.startswith(("STAGEHAND_", "BROWSERBASE_")) and v
+            },
+        }
+    }
+)
+
+async def main():
+    async with client.session("stagehand_browser") as session:
+        tools = await load_mcp_tools(session)
+        agent = create_deep_agent(
+            model="openai:gpt-4o",
+            tools=tools,
+            system_prompt=BROWSER_INSTRUCTIONS,
+        )
+        result = await agent.ainvoke({
+            "messages": [{"role": "user", "content": "Go find me a summary of all main sports events today"}]
+        })
+    print(result["messages"][-1].content)
+
+asyncio.run(main())
+```
+
+<Warning>
+  Keep one persistent `ClientSession` for the duration of your agent run. Stateless tool loading (e.g. `MultiServerMCPClient.get_tools()`) starts a new stdio process per call and loses the browser and snapshot IDs.
+</Warning>
+
+## Server configuration
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `STAGEHAND_BROWSER` | `local` | Select `local` or `browserbase` |
+| `STAGEHAND_HEADLESS` | `false` | Run local Chrome headlessly |
+| `STAGEHAND_START_URL` | Unset | URL to open when the server starts |
+| `STAGEHAND_MODEL` | Unset | Optional — model for Stagehand AI methods called inside `run`; inference is provided by default if unset |
+| `STAGEHAND_MODEL_API_KEY` | Unset | Optional — API key for `STAGEHAND_MODEL`; not required when using default inference |
+| `STAGEHAND_RUN_TIMEOUT_MS` | `60000` | Timeout for JavaScript and snapshot-action batches |
+| `BROWSERBASE_API_KEY` | Unset | Required for Browserbase |
+
+<Note>
+  The MCP server and the agent run in separate Python environments. Stagehand requires `websockets>=16.1.1` while the current LangGraph SDK requires `websockets<16` — the stdio transport isolates these dependency sets.
+</Note>
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Integration source + examples" icon="brand-github" href="https://github.com/browserbase/stagehand/tree/main/packages/integrations/deepagents">
+    MCP server, managed tools, and runnable agent examples.
+  </Card>
+  <Card title="Browserbase provider page" icon="browser" href="/oss/python/integrations/providers/browserbase">
+    Full Browserbase provider overview and setup.
+  </Card>
+</CardGroup>
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/tools/stagehand.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
