@@ -1,0 +1,99 @@
+---
+title: Use the gateway with LangChain
+sidebarTitle: LangChain and Deep Agents
+description: Route LangChain chat models and Deep Agents through the LLM Gateway with an environment variable or a model prefix.
+tag: "Beta"
+---
+
+LangChain chat models and [Deep Agents](/oss/deepagents/overview) reach the gateway in two ways. Set `LANGSMITH_GATEWAY` to route every supported integration in the process, or use the `langsmith:` model prefix to route one model. Both authenticate with `LANGSMITH_API_KEY`, so no per-client base URL wiring is needed.
+
+## Route every model with an environment variable
+
+Set `LANGSMITH_GATEWAY` to route every supported chat model in the process through the gateway. This is the setting to use when an existing application should reach the gateway without code changes:
+
+```bash
+export LANGSMITH_API_KEY="lsv2_..."
+export LANGSMITH_GATEWAY="true"
+```
+
+Each supported integration then sends its calls to its provider path on the gateway, such as `https://gateway.smith.langchain.com/anthropic` for `ChatAnthropic` and `https://gateway.smith.langchain.com/openai/v1` for `ChatOpenAI`. The provider path is appended for you.
+
+`LANGSMITH_GATEWAY` accepts `true`, `1`, or `yes` to enable the default host. It accepts `false`, `0`, or `no`, an empty value, or no value at all to disable routing. Any other value is treated as a gateway base URL, which is how you select a [regional instance](/langsmith/llm-gateway-api-formats#use-a-regional-gateway) or a BYOC data plane:
+
+```bash
+export LANGSMITH_GATEWAY="https://eu.gateway.smith.langchain.com"
+```
+
+<Warning>
+Set `LANGSMITH_GATEWAY` to a base URL with no path suffix. The provider path is appended automatically, so a trailing `/v1` produces a doubled path and the request fails.
+</Warning>
+
+<Note>
+Only chat models are routed. Non-chat integrations such as `OpenAIEmbeddings` continue to use their normal provider endpoints.
+</Note>
+
+## Route a single model with a prefix
+
+To route one model without changing the environment for the whole process, prefix the model ID with `langsmith:` and use a provider-prefixed model name:
+
+<CodeGroup>
+
+```python Python
+from deepagents import create_deep_agent
+from langchain.chat_models import init_chat_model
+
+model = init_chat_model("langsmith:anthropic/claude-sonnet-4-6")
+agent = create_deep_agent(model="langsmith:anthropic/claude-sonnet-4-6")
+```
+
+```typescript TypeScript
+import { initChatModel } from "langchain/chat_models/universal";
+
+const model = await initChatModel("langsmith:anthropic/claude-sonnet-4-6");
+```
+
+</CodeGroup>
+
+The two approaches reach different endpoints, which is why the model ID differs between them:
+
+| | `LANGSMITH_GATEWAY` | `langsmith:` prefix |
+| --- | --- | --- |
+| Scope | Every supported integration in the process | One model instance |
+| Endpoint | The provider path, such as `/anthropic` | The [standard endpoint](/langsmith/llm-gateway-api-formats) at `/v1` |
+| Model ID | The provider's own name, such as `anthropic:claude-sonnet-4-6` | Provider-prefixed, such as `langsmith:anthropic/claude-sonnet-4-6` |
+| Format translation | No | Yes |
+
+Deep Agents accepts both forms because it builds its model through `init_chat_model`.
+
+## Supported integrations
+
+Gateway routing is built into each integration package, so it requires these minimum versions:
+
+| Provider | Python | TypeScript |
+| --- | --- | --- |
+| [Anthropic](/oss/python/integrations/chat/anthropic) | `langchain-anthropic>=1.5.1` | [`@langchain/anthropic>=1.5.4`](/oss/javascript/integrations/chat/anthropic) |
+| [Baseten](/oss/python/integrations/chat/baseten) | `langchain-baseten>=0.2.3` | Not supported |
+| [Fireworks](/oss/python/integrations/chat/fireworks) | `langchain-fireworks>=1.5.1` | [`@langchain/fireworks>=0.2.7`](/oss/javascript/integrations/chat/fireworks) |
+| [Google Gemini](/oss/python/integrations/chat/google_generative_ai) | `langchain-google-genai>=4.3.2` | [`@langchain/google-genai>=2.3.0`](/oss/javascript/integrations/chat/google_generative_ai) |
+| [OpenAI](/oss/python/integrations/chat/openai) | `langchain-openai>=1.4.1` | [`@langchain/openai>=1.5.7`](/oss/javascript/integrations/chat/openai) |
+
+## Understand override precedence
+
+An integration resolves its base URL from the first of these that is set:
+
+1. The base URL passed to the constructor, such as `base_url=` in Python or `configuration.baseURL` in TypeScript.
+2. The provider's own base URL environment variable, such as `OPENAI_API_BASE` or `ANTHROPIC_API_URL`.
+3. `LANGSMITH_GATEWAY`.
+
+A provider base URL therefore takes priority over the gateway. Setting `OPENAI_API_BASE` sends OpenAI calls to that URL while every other supported provider continues to use the gateway.
+
+The API key follows the base URL. A key passed to the constructor always wins. When the base URL came from `LANGSMITH_GATEWAY`, the gateway key is used: `LANGSMITH_GATEWAY_API_KEY` first, then `LANGSMITH_API_KEY`. When the base URL came from anywhere else, the provider's own key is used, such as `OPENAI_API_KEY`.
+
+Set `LANGSMITH_GATEWAY_API_KEY` when gateway calls need a different key from the rest of your LangSmith usage. It must be a workspace-scoped key with the `gateway:invoke` permission.
+
+## See also
+
+- [Quickstart](/langsmith/llm-gateway): make your first request, view its trace, and set a spend limit.
+- [API formats](/langsmith/llm-gateway-api-formats): use Chat Completions, Messages, or Responses through the standard endpoint.
+- [Direct model access](/langsmith/llm-gateway-direct-model-access): use provider-native request and response formats.
+- [Set up coding agents](/langsmith/llm-gateway-coding-agents): route Claude Code, Codex, Gemini CLI, or Deep Agents Code through the gateway.
