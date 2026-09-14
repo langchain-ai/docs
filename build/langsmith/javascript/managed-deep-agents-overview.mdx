@@ -9,7 +9,7 @@ Managed Deep Agents (MDA) is the simplest way to build and deploy production age
 You write the agent's intelligence: its instructions, the tools it can call, the skills it follows, and you select the model that drives it. MDA provides everything underneath:
 
 - **The Deep Agents harness**: The agent loop that plans, calls tools, manages a filesystem, and delegates to subagents. See [Deep Agents](/oss/javascript/deepagents/overview).
-- **A managed runtime**: [LangSmith Deployment's Agent Server](/langsmith/agent-server-overview) hosts and operates the agent, and keeps sessions running across restarts.
+- **A managed runtime**: Every deployment runs on [LangSmith Agent Server](/langsmith/agent-server-overview). You get the Agent Server API, threads, runs, streaming, and the [MCP endpoint](/langsmith/javascript/managed-deep-agents-mcp-endpoint) without operating the server yourself.
 
 ```mermaid actions={false}
 %%{init: {"theme":"base","themeVariables":{"fontFamily":"Inter, system-ui, sans-serif","lineColor":"#40668D","primaryColor":"#E5F4FF","primaryTextColor":"#030710","primaryBorderColor":"#006DDD","clusterBkg":"transparent"}}}%%
@@ -79,6 +79,12 @@ For the full layout, see [Project structure](/langsmith/javascript/managed-deep-
   </Card>
   <Card title="Tutorial" icon="book" href="/langsmith/javascript/managed-deep-agents-tutorial">
     Add a custom search tool, durable memory, and a daily schedule.
+  </Card>
+  <Card title="Agent Server" icon="server" href="/langsmith/agent-server-overview">
+    Explore the runtime that hosts Managed Deep Agents deployments.
+  </Card>
+  <Card title="MCP endpoint" icon="plug" href="/langsmith/javascript/managed-deep-agents-mcp-endpoint">
+    Call a deployed agent as a tool from Claude Code or another MCP client.
   </Card>
 </CardGroup>
 

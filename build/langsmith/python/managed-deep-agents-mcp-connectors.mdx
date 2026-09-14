@@ -130,6 +130,7 @@ The MCP definition also accepts these options:
 | Concept | Kind | How it reaches the agent |
 | --- | --- | --- |
 | **MCP servers** | Managed configuration | Declared under `tools/`; no import into the agent entry |
+| **[MCP endpoint](/langsmith/python/managed-deep-agents-mcp-endpoint)** | Deployment API | Exposes the agent as a tool to MCP clients |
 | **[Authored tools](/langsmith/python/managed-deep-agents-tools)** | Application code | Import and pass in the agent definition |
 | **[Channels](/langsmith/python/managed-deep-agents-channels)** | Managed configuration | Receive external messages that start agent runs and deliver responses |
 
