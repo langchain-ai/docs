@@ -1,0 +1,60 @@
+```ts
+// Skip internal middleware steps - only show meaningful node names
+const INTERESTING_NODES = new Set(["model", "tools"]);
+
+let lastSource = "";
+let midLine = false; // true when we've written tokens without a trailing newline
+
+for await (const [namespace, mode, data] of await agent.stream(
+  {
+    messages: [
+      {
+        role: "user",
+        content: "Analyze the impact of remote work on team productivity",
+      },
+    ],
+  },
+  { streamMode: ["updates", "messages", "custom"], subgraphs: true },
+)) {
+  const isSubagent = namespace.some((s: string) => s.startsWith("tools:"));
+  const source = isSubagent ? "subagent" : "main";
+
+  if (mode === "updates") {
+    for (const nodeName of Object.keys(data)) {
+      if (!INTERESTING_NODES.has(nodeName)) continue;
+      if (midLine) {
+        process.stdout.write("\n");
+        midLine = false;
+      }
+      console.log(`[${source}] step: ${nodeName}`);
+    }
+  } else if (mode === "messages") {
+    const [message] = data;
+    if (message.text) {
+      // Print a header when the source changes
+      if (source !== lastSource) {
+        if (midLine) {
+          process.stdout.write("\n");
+          midLine = false;
+        }
+        process.stdout.write(`\n[${source}] `);
+        lastSource = source;
+      }
+      process.stdout.write(message.text);
+      midLine = true;
+    }
+  } else if (mode === "custom") {
+    if (midLine) {
+      process.stdout.write("\n");
+      midLine = false;
+    }
+    console.log(`[${source}] custom event:`, data);
+  }
+}
+
+process.stdout.write("\n");
+```
+
+<Card title="View example trace" icon="chart-line" href="https://smith.langchain.com/public/abec3125-178c-474a-b0c4-9e4cb553eb63/r" arrow horizontal>
+  Open a public LangSmith run for this example.
+</Card>
