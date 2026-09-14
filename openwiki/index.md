@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Start a local documentation preview, route a change to its authored owner and task-specific procedure, and choose proportionate local and CI validation.
+- [Quickstart](quickstart.md) - Start a local documentation preview, route a change to its authored owner and task-specific procedure, and choose proportionate validation before a pull request.
 
 # Directories
 
