@@ -80,6 +80,45 @@ Please refer to the [troubleshooting](/langsmith/online-evaluations-multi-turn#t
 
     After saving, your evaluator will appear in the **Evaluators** tab. You can test it once the idle time has passed for any new threads created after saving.
 
+## Evaluate agent trajectories
+
+A trajectory evaluator scores the [trajectory](/langsmith/observability-concepts#trajectories) of a conversation: the flat, ordered list of messages exchanged from start to finish, including tool calls and tool results. Use a trajectory evaluator when the quality you want to measure depends on the path the agent took, not only on what it said to the user.
+
+Trajectory evaluators and the thread evaluators described above differ in what the judge receives:
+
+- **Thread evaluators** receive the conversation LangSmith assembles from the top-level `messages` key of each trace in the thread, through the `all_messages`, `human_ai_pairs`, or `first_human_last_ai` variable. Some of these views leave out tool calls, tool results, and system messages.
+- **Trajectory evaluators** receive the resolved trajectory through the `trajectory` variable. LangSmith builds the trajectory from the model calls inside each trace, so it keeps the tool calls, tool results, and reasoning that produced the conversation.
+
+For the message shape each variable resolves to, see [Thread message variables](/langsmith/prompt-template-format#thread-message-variables).
+
+### Create a trajectory evaluator
+
+To create a trajectory evaluator, follow the [configuration](#configuration) steps above and reference `{{trajectory}}` in your prompt instead of a thread variable. LangSmith saves an evaluator whose prompt contains `{{trajectory}}` as a trajectory evaluator.
+
+A prompt cannot combine `{{trajectory}}` with `{{all_messages}}`, `{{human_ai_pairs}}`, or `{{first_human_last_ai}}`. LangSmith rejects an evaluator that mixes the trajectory variable with thread variables.
+
+A trajectory evaluator runs against a tracing project, and it is the only evaluator on its rule. When the evaluator completes, LangSmith writes feedback to the most recent root run in the thread, under the feedback key you configured, and associates that feedback with the thread.
+
+<Warning>
+The kind of an evaluator is fixed when you create it. To turn a trajectory evaluator into a thread evaluator, or the reverse, delete the evaluator and create a new one.
+</Warning>
+
+### Trajectory evaluator settings
+
+A trajectory evaluator supports the following settings:
+
+- **Filters**: Limit which threads the evaluator runs on.
+- **Sampling rate**: Evaluate a percentage of the threads that match your filters.
+- **Idle time**: The project-level thread idle time, which applies to every thread-level evaluator in the project.
+
+The following options are not available to a trajectory evaluator, and LangSmith rejects a configuration that includes them:
+
+- Datasets and experiments as a source.
+- Backfill over existing threads.
+- Grouping, trace filters, and tree filters.
+- Few-shot examples.
+- Additional LLM-as-a-judge or code evaluators on the same rule, and non-evaluator actions such as adding threads to an annotation queue.
+
 ## Limits
 
 These are the current limits for thread-level processing (subject to change). They apply to multi-turn online evaluators and to [automation rules](/langsmith/rules#set-the-item-type-to-runs-or-threads) whose item type is **Threads**. Reach out if you are running into any of these limits.

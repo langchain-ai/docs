@@ -480,7 +480,7 @@ Evaluators need to analyze conversations holistically—looking at patterns acro
 
 ### Thread message variables
 
-LangSmith provides three pre-structured views of conversation [threads](/langsmith/evaluation-concepts#threads):
+LangSmith provides four pre-structured views of a conversation: three over a [thread](/langsmith/evaluation-concepts#threads) and one over a [trajectory](/langsmith/observability-concepts#trajectories).
 
 ```mustache
 {{!-- Access all messages in the thread --}}
@@ -503,11 +503,19 @@ Final answer: {{last_ai}}
 {{!-- Access specific message by index --}}
 First message: {{all_messages.0}}
 Second message: {{all_messages.1}}
+
+{{!-- Access the trajectory of the session --}}
+{{trajectory}}
 ```
 
 - **`all_messages`**: Every message in chronological order with `role` (user/assistant/system) and `content` fields. Use this to show the full conversation flow.
 - **`human_ai_pairs`**: Messages grouped into question-answer pairs. Each pair has `human` (user message) and `ai` (assistant response). Use this when evaluating response quality.
 - **`first_human_last_ai`**: Just the initial question (`first_human`) and final answer (`last_ai`). Use this to check if the AI ultimately answered the original question, ignoring the middle conversation.
+- **`trajectory`**: Every message in the session as a flat, deduplicated list, including tool calls and tool results. Each message has a `role` of `human`, `ai`, `system`, or `tool`, and a `content` field holding either a string or a list of content blocks such as `text`, `reasoning`, and `tool_call`. Use this to evaluate the path an agent took, not only what it said to the user.
+
+<Note>
+`trajectory` is mutually exclusive with the thread variables. An evaluator prompt uses either `trajectory` or `all_messages`, `human_ai_pairs`, and `first_human_last_ai`, and LangSmith rejects a prompt that combines them. For how to configure a trajectory evaluator, see [Evaluate agent trajectories](/langsmith/online-evaluations-multi-turn#evaluate-agent-trajectories).
+</Note>
 
 ### Example with thread context
 
@@ -547,6 +555,54 @@ Was the AI helpful? Rate from 1-5.
 The template uses the mustache section `{{#all_messages}}` to loop over the conversation array. For each iteration, the section sets the context to that message object, so `{{role}}` and `{{content}}` access the properties of the current message. The loop automatically iterates through all four messages in order, displaying each as `"role: content"`. This gives the evaluator LLM the full conversation history to assess helpfulness.
 
 When you create an evaluator in LangSmith, select which thread variables you want to include. LangSmith will automatically populate them from the conversation being evaluated.
+
+### Example with trajectory context
+
+The following example is a practical evaluator prompt that uses trajectory context:
+
+```mustache
+{{!-- Template --}}
+Evaluate the path this agent took:
+
+<trajectory>
+{{trajectory}}
+</trajectory>
+
+Did the agent call the right tools to answer the question? Rate from 1-5.
+
+{{!-- Input (provided by LangSmith) --}}
+{
+  "trajectory": [
+    {
+      "content": [{"type": "text", "text": "Is my GitHub CLI authenticated?"}],
+      "role": "human",
+      "id": "01a04b29-ab54-763b-89ba-1f3dd2266c54"
+    },
+    {
+      "content": [
+        {
+          "type": "tool_call",
+          "id": "call_wQO8IHBPu6HyXoZ1Q3UqvxIs",
+          "name": "execute",
+          "args": {"command": "gh auth status", "timeout": 30}
+        }
+      ],
+      "role": "ai"
+    },
+    {
+      "content": "Logged in to github.com account octocat",
+      "role": "tool",
+      "tool_call_id": "call_wQO8IHBPu6HyXoZ1Q3UqvxIs"
+    },
+    {
+      "content": [{"type": "text", "text": "Yes, you are logged in as octocat."}],
+      "role": "ai"
+    }
+  ]
+}
+```
+
+Unlike the thread variables, `trajectory` carries the tool calls and tool results that sit between the user's question and the agent's answer, so the evaluator can score how the agent reached its answer. Reference the variable directly as `{{trajectory}}`, or loop over the messages with the mustache section `{{#trajectory}}{{role}}{{/trajectory}}` to control what the judge receives.
 
 ## Few-shot examples
 
