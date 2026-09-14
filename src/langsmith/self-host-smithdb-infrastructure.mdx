@@ -119,7 +119,7 @@ The examples below use the `small` tier. Substitute the sizes for your tier.
 <Tabs>
 <Tab title="LangSmith 0.17">
 
-Set `storageClassName`, or leave it empty to use the cluster default. The tier sets the volume size, CPU, and memory. The chart sets `fsGroup: 1001` and the query disk cache limit, so no `extraEnv` is needed.
+Set `storageClassName`, or leave it empty to use the cluster default. The tier sets the volume size, CPU, and memory. The chart sets `fsGroup: 1001` and the query disk cache limit.
 
 ```yaml
 smithdb:
@@ -128,7 +128,7 @@ smithdb:
     storageClassName: smithdb-cache
 ```
 
-To give one component a different StorageClass or size, set its `deployment.volumes` to a generic ephemeral volume named `cache` with the class and size you want. Repeat for each component you change, including any enabled query services. Do not point `volumes` at an existing claim through `persistentVolumeClaim.claimName`; each replica needs its own volume.
+To give one component a different StorageClass or size, set its `deployment.volumes` to a generic ephemeral volume named `cache` with the class and size you want. Repeat for each component you change. Do not point `volumes` at an existing claim through `persistentVolumeClaim.claimName`; each replica needs its own volume.
 
 </Tab>
 <Tab title="LangSmith 0.16">
@@ -221,7 +221,7 @@ kubectl exec -n NAMESPACE POD_NAME -- df -h /data
 
 ### Local SSD
 
-Configure the node’s local SSDs to back Kubernetes ephemeral storage, with usable capacity reported as allocatable `ephemeral-storage`. SmithDB uses this storage for its `emptyDir` cache volumes.
+Configure the node's local SSDs to back Kubernetes ephemeral storage, with usable capacity reported as allocatable `ephemeral-storage`. SmithDB uses this storage for its `emptyDir` cache volumes.
 
 Use scheduling controls to keep SmithDB cache workloads on SSD-backed nodes. Size nodes with headroom above pod requests, images, logs, and Kubernetes reservations.
 
@@ -264,8 +264,6 @@ smithdb:
             sizeLimit: 100Gi
 ```
 
-Apply the query overrides to any enabled `mutations`, `runRules`, and `statsQuery` services too.
-
 </Tab>
 <Tab title="LangSmith 0.16">
 
@@ -281,9 +279,9 @@ smithdb:
 
 #### Schedule SmithDB workloads
 
-Place query, ingestion, compaction worker, any enabled separate query services, and migration on the local SSD pool. Place compaction and cluster manager on the general compute pool. Node-pool labels and taints must match the Helm selectors and tolerations. `metastoreMigration` can run on any node and does not need a selector.
+Place query, ingestion, compaction worker, and migration on the local SSD pool. Place compaction and cluster manager on the general compute pool. Node-pool labels and taints must match the Helm selectors and tolerations. `metastoreMigration` can run on any node and does not need a selector.
 
-The label and taint values in these examples match the provider samples on this page. SmithDB does not require these exact values: use any labels and taints that keep cache workloads on SSD-backed nodes, and match them in the Helm selectors and tolerations.
+The label and taint values in these examples match the provider samples on this page. SmithDB does not require these exact values; any labels and taints that keep cache workloads on SSD-backed nodes work.
 
 <Accordion title="Helm scheduling values">
 
@@ -369,7 +367,7 @@ kubectl get pods -n NAMESPACE -o wide
 kubectl exec -n NAMESPACE POD_NAME -- df -h /data
 ```
 
-Common symptoms are pods remaining pending when requests exceed allocatable capacity, slow cache I/O when `emptyDir` uses the boot disk, and evictions when the node lacks headroom.
+For pods stuck `Pending`, slow cache I/O, or evictions, see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting#supporting-infrastructure).
 
 </Accordion>
 
@@ -586,14 +584,14 @@ That 800 GiB floor suits the `medium` tier. Size the requirement against the lar
 
 </Accordion>
 
-Other provisioners must provide equivalent labels, taints, Kubernetes-visible ephemeral storage, and disruption behavior. With custom AMIs, bootstrap must format and mount instance-store devices for kubelet and container-runtime storage.
+With custom AMIs, bootstrap must format and mount instance-store devices for kubelet and container-runtime storage.
 
 ### Provision EKS managed node groups
 
 If Karpenter is unavailable, use EKS Managed Node Groups instead. These examples configure instance-store NVMe as RAID0 and apply the label and taint used by the Helm scheduling values.
 
 <Warning>
-**Example only:** Replace uppercase placeholders. Choose instance type and capacity based on your sizing baseline and regional availability. Match `AMI_TYPE` to the instance architecture. For example, `i8g.4xlarge` uses `AL2023_ARM_64_STANDARD`.
+Replace the uppercase placeholders. Choose the instance type and capacity from your sizing baseline and regional availability. Match `AMI_TYPE` to the instance architecture. For example, `i8g.4xlarge` uses `AL2023_ARM_64_STANDARD`.
 </Warning>
 
 <Accordion title="AWS CLI">

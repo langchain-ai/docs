@@ -5,29 +5,19 @@ description: Enable SmithDB on a self-hosted LangSmith Kubernetes installation t
 noindex: true
 ---
 
-<Note>
-SmithDB is opt-in. ClickHouse is required on LangSmith 0.16 and remains the default on 0.17. Do not disable ClickHouse on any version below 0.17. The minimum LangSmith version depends on your cloud. See [Cloud support](/langsmith/self-host-smithdb#cloud-support).
-</Note>
-
-This guide enables SmithDB on a LangSmith Kubernetes installation in stages, so you can validate each change before continuing.
-
-Apply each stage separately. Each stage is a Helm update that rolls the affected pods.
+This guide enables SmithDB on a LangSmith Kubernetes installation in stages so you can validate each change. Each stage is one Helm update that rolls the affected pods. ClickHouse stays in place throughout.
 
 Migrating historical ClickHouse data is optional. History left in ClickHouse is not reachable through SmithDB-backed queries unless you migrate it.
 
-<Warning>
-After query cutover, LangSmith trace reads no longer go to ClickHouse. Keep ClickHouse in place through this process on every version.
-</Warning>
-
 ## Before you begin
 
-- Consider contacting LangChain through the [Support Portal](https://support.langchain.com/) before you begin, so the team can review your infrastructure plan.
+- Contact LangChain through the [Support Portal](https://support.langchain.com/) before you begin so the team can review your infrastructure plan.
 - Set up [SmithDB observability](/langsmith/self-host-smithdb-observability) before you begin. The steps below use metrics to verify each stage.
 - Start from a running LangSmith installation on Kubernetes. For a new installation on LangSmith 0.17, see [Install without ClickHouse](#install-without-clickhouse).
 - Upgrade one major version at a time until the installation meets the [cloud support](/langsmith/self-host-smithdb#cloud-support) minimum: LangSmith 0.16 with Helm chart `0.16.14` or later on AWS (EKS) and GCP (GKE), or LangSmith 0.17 on Azure (AKS). Follow the [upgrade guide](/langsmith/self-host-upgrades).
 - Keep the Helm values from your current installation. This guide adds SmithDB configuration to them.
-- Permission to apply the LangSmith Helm release to the cluster, directly or through your GitOps workflow.
-- Review the [SDK migration guide](/langsmith/smithdb-sdk-migration) and plan your SDK upgrade alongside this installation. New SmithDB-backed methods require LangSmith `0.16` or later.
+- Confirm you can apply the LangSmith Helm release to the cluster, directly or through your GitOps workflow.
+- Review the [SDK migration guide](/langsmith/smithdb-sdk-migration) and plan your SDK upgrade alongside this installation.
 
 You can disable SmithDB later. To return query and ingestion traffic to ClickHouse and disable SmithDB services, see [Troubleshoot SmithDB](/langsmith/self-host-smithdb-troubleshooting#disable-or-reset-smithdb).
 
@@ -44,7 +34,7 @@ Follow [Prepare SmithDB supporting infrastructure](/langsmith/self-host-smithdb-
 
 Record the object-store configuration, metastore Secret and key mappings, service-account identity, and cache settings needed by the Helm chart.
 
-At the end of this step, the shared infrastructure portion of your SmithDB Helm values might look like the following. Replace the placeholders with the settings for your provider. Keep SmithDB disabled until Step 3.
+At the end of this step, the shared infrastructure portion of your SmithDB Helm values might look like the following. Keep SmithDB disabled until Step 3.
 
 Add the cache values for your version from [Cache storage](/langsmith/self-host-smithdb-infrastructure#cache-storage). On LangSmith 0.17 that is usually one line, `smithdb.cache.storageClassName`. Local SSD on either version also needs the node selectors and tolerations shown there.
 
@@ -132,11 +122,7 @@ Apply the upgrade and verify that the existing LangSmith pods are running and mi
 
 ### Step 3. Configure and deploy SmithDB services
 
-Before enabling SmithDB, choose a tested baseline from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale). Configure its replica counts and per-replica CPU, memory, and cache capacity, and confirm the cluster can provision the aggregate capacity.
-
-<Warning>
-Scale configuration is required. Insufficient CPU, memory, or cache storage can cause SmithDB components to fail once traffic is enabled.
-</Warning>
+Before enabling SmithDB, choose a tested baseline from [Configure SmithDB for scale](/langsmith/self-host-smithdb-scale). Configure its replica counts and per-replica CPU, memory, and cache size, and confirm the cluster can provision the total.
 
 Merge the infrastructure values prepared in Step 1 and your selected sizing baseline into the existing LangSmith values. Leave the existing ClickHouse configuration unchanged, then enable the SmithDB services without changing LangSmith ingestion or queries:
 
@@ -201,7 +187,7 @@ Once dual ingestion is stable, decide whether ClickHouse history needs to be rea
 
 ### Step 6. Switch queries to SmithDB
 
-After dual ingestion is healthy and the ClickHouse migration has completed (if applicable), enable SmithDB-backed queries:
+After dual ingestion is healthy and any ClickHouse migration has completed, enable SmithDB-backed queries:
 
 ```yaml
 smithdb:
@@ -214,13 +200,13 @@ smithdb:
       enabled: true
 ```
 
-Confirm both paths now report as enabled:
+Confirm both flags now report `true`:
 
 ```bash
 curl -s https://LANGSMITH_HOST/api/v1/info | jq '.instance_flags | {sdb_ingestion_enabled, sdb_query_enabled}'
 ```
 
-Both values are `true` after cutover. Then validate traces, projects, filters, and time ranges in the LangSmith UI and API, and continue monitoring ingestion and query errors.
+Then validate traces, projects, filters, and time ranges in the LangSmith UI and API, and continue monitoring ingestion and query errors.
 
 <Warning>
 Do not disable or remove ClickHouse on LangSmith 0.16. On 0.17, retiring ClickHouse from an existing installation is a separate procedure; contact LangChain through the [Support Portal](https://support.langchain.com/) before considering it.
