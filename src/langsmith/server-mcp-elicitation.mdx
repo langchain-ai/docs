@@ -1,0 +1,212 @@
+---
+title: Human-in-the-loop over MCP
+description: Request form input or account authorization from MCP clients and resume an interrupted agent through the Tasks extension.
+---
+
+An [Agent Server MCP tool](/langsmith/server-mcp) can pause for user input with a LangGraph `interrupt()`. The client reads the request, collects the answer, and resumes the same graph through the Tasks extension.
+
+<Note>
+This feature requires an Agent Server build with MCP `2026-07-28` support, an authenticated user, and a client that declares `io.modelcontextprotocol/tasks`. Earlier protocol versions retain their existing tool behavior and do not support this elicitation flow.
+</Note>
+
+## Declare client capabilities
+
+Send these headers on every JSON-RPC request to `/mcp`:
+
+| Header | Value |
+| --- | --- |
+| `Accept` | `application/json, text/event-stream` |
+| `MCP-Protocol-Version` | `2026-07-28` |
+| `Mcp-Method` | The JSON-RPC method, such as `tools/call` or `tasks/get` |
+| `Mcp-Name` | The tool name, required on `tools/call` |
+
+Include the following metadata in `params` on every request. Declare only the elicitation modes your client supports.
+
+```json
+{
+  "_meta": {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+    "io.modelcontextprotocol/clientCapabilities": {
+      "extensions": {"io.modelcontextprotocol/tasks": {}},
+      "elicitation": {"form": {}, "url": {}}
+    }
+  }
+}
+```
+
+Call `server/discover` to read supported versions and server capabilities. An interrupted tool that requires an undeclared capability returns `-32021` with `requiredCapabilities`. MCP `2026-07-28` prohibits the older `URLElicitationRequiredError` code `-32042`.
+
+Browser requests must have the same origin as the server or match an explicit origin or regular expression in the [CORS configuration](/langsmith/custom-middleware). A wildcard origin does not authorize MCP requests from arbitrary websites.
+
+## Request a form
+
+Pass an elicitation request to `interrupt()` inside a graph node:
+
+```python
+from langgraph.types import interrupt
+
+answer = interrupt({
+    "mode": "form",
+    "message": "Choose a color",
+    "requestedSchema": {
+        "type": "object",
+        "properties": {
+            "color": {"type": "string", "enum": ["red", "blue"]}
+        },
+        "required": ["color"],
+    },
+})
+```
+
+The graph receives the validated reply, for example `{"action": "accept", "content": {"color": "blue"}}`. A declined or dismissed form returns `{"action": "decline"}` or `{"action": "cancel"}`. The graph decides how to handle those actions.
+
+Forms support a flat object of strings, numbers, integers, booleans, and arrays of enum strings. String formats are `email`, `uri`, `date`, and `date-time`. Nested objects, schema references, arbitrary array schemas, and unsupported keywords are rejected. Accepted content must match the schema and contain only requested properties.
+
+A text interrupt becomes a form with one `response` string field. Native LangChain HITL requests and legacy `HumanInterrupt` lists become decision forms. Edited arguments are entered as a JSON object and converted back to the graph's native decision format. A decline maps to `reject` or `ignore` only when the graph allows it; otherwise, cancel the task. Other structured interrupts must use the explicit elicitation format.
+
+## Request URL authorization
+
+Use URL mode for credentials and other sensitive information. The client opens the URL for the user. The reply contains an action and no form content.
+
+```python
+answer = interrupt({
+    "mode": "url",
+    "message": "Connect your account",
+    "url": "https://example.com/connect?state=opaque",
+})
+```
+
+Use an HTTPS endpoint that authenticates the user, binds the flow to that user, and protects its callback against CSRF. Do not include credentials or email addresses in the URL. The Agent Server validates the URL but does not fetch it.
+
+An `accept` reply means the user acknowledged the request. Check the authorization provider before continuing. If authorization is still pending, issue another URL interrupt. Each interruption receives a new input key, including repeated interruptions in the same node.
+
+### Connect through Agent Auth
+
+Configure a GitHub provider through [Agent Auth](/langsmith/agent-auth). This graph uses its authentication endpoint to check completion after every acknowledgement. It takes the user identity from server authentication and returns only the connection status. Provider tokens stay outside graph state and MCP replies.
+
+```python
+"""Agent Auth example with explicit MCP URL elicitation and completion checks."""
+
+import os
+
+import httpx
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
+from typing_extensions import TypedDict
+
+
+class State(TypedDict, total=False):
+    connected: bool
+
+
+async def connect_account(state: State, config: RunnableConfig):
+    configurable = config["configurable"]
+    user_id = configurable.get("langgraph_auth_user_id")
+    if not user_id:
+        raise ValueError("An authenticated user is required")
+    async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
+        while True:
+            response = await client.post(
+                "https://api.host.langchain.com/v2/auth/authenticate",
+                headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]},
+                json={
+                    "provider": "github",
+                    "scopes": ["read:user"],
+                    "user_id": user_id,
+                    "agent_id": configurable["assistant_id"],
+                },
+            )
+            if response.status_code != 200:
+                raise ValueError("Agent Auth request failed")
+            auth = response.json()
+            if auth.get("status") == "completed":
+                return {"connected": True}
+            if auth.get("status") != "pending":
+                raise ValueError("Unexpected Agent Auth status")
+            answer = interrupt(
+                {
+                    "mode": "url",
+                    "message": "Connect your GitHub account to continue",
+                    "url": auth["url"],
+                }
+            )
+            if answer["action"] != "accept":
+                return {"connected": False}
+
+
+builder = StateGraph(State)
+builder.add_node("connect_account", connect_account)
+builder.add_edge(START, "connect_account")
+builder.add_edge("connect_account", END)
+graph = builder.compile()
+```
+
+## Resume a task
+
+To answer an elicitation request and resume the graph:
+
+1. Call `tools/call`. A completed graph returns `resultType: "complete"`. An interrupted graph returns `resultType: "task"`, a `taskId`, and `status: "input_required"`.
+2. Call `tasks/get` with `taskId`. Its result has `resultType: "complete"` and the task fields directly, including `inputRequests` keyed by opaque identifiers.
+3. Display each `elicitation/create` request and send replies to `tasks/update` with `taskId` and `inputResponses`. Include the per-request metadata described above.
+4. Poll `tasks/get`, respecting `pollIntervalMs`, until another request appears or the task reaches `completed` or `cancelled`. A completed task contains the tool result in `result`.
+
+The task update fields have this shape:
+
+```json
+{
+  "taskId": "<taskId from tools/call>",
+  "inputResponses": {
+    "<key from inputRequests>": {
+      "action": "accept",
+      "content": {"color": "blue"}
+    }
+  }
+}
+```
+
+Partial replies are persisted. The graph resumes after every outstanding input has a valid reply. Unknown and already answered keys are ignored. Retries for an input round create at most one resume run. Send `tasks/cancel` with `taskId` to cancel the task itself; this differs from returning a `cancel` elicitation action to the graph.
+
+Graph execution failures produce a completed task with `result.isError: true`. Expired, unknown, or unauthorized task IDs return `-32602`. Resume elicitation with `tasks/update`; this implementation does not accept ephemeral `requestState` replies on `tools/call`.
+
+## Configure retention
+
+Add these optional settings to `langgraph.json`:
+
+```json
+{
+  "http": {
+    "mcp": {
+      "tasks": {
+        "poll_interval_ms": 1000,
+        "ttl_minutes": 1440,
+        "completed_grace_seconds": 300,
+        "allow_insecure_urls": false
+      }
+    }
+  }
+}
+```
+
+| Setting | Default | Range |
+| --- | --- | --- |
+| `poll_interval_ms` | 1000 | 100–60000 milliseconds |
+| `ttl_minutes` | 1440 | 1–10080 minutes |
+| `completed_grace_seconds` | 300 | 1–86400 seconds |
+| `allow_insecure_urls` | `false` | Enable HTTP URLs only for local development |
+
+Task IDs are thread IDs. The server checks expiry on every task operation. Terminal polling shortens the thread's retention to the configured grace period measured from run completion. Physical deletion follows the storage backend's TTL sweeper; a completed task that is never polled retains its original thread TTL. The in-memory runtime has no TTL sweeper, so expired tasks are deleted when accessed. Automatic physical expiry requires a backend with thread TTL support.
+
+Set assistant metadata to `{"mcp": {"tasks": false}}` to disable elicitation tasks for that assistant. Interrupted calls then return a tool error. Non-interrupting calls keep their usual behavior.
+
+## Protect task state
+
+Every task request requires the same authenticated user and passes through existing thread and run authorization. Configure [resource access controls](/langsmith/custom-auth) for the underlying thread APIs. A task ID alone does not authorize access.
+
+Interrupts, replies, run context, and checkpoints use the existing [encryption settings](/langsmith/encryption). Forward the same authentication and `X-Encryption-Context` headers on every request. Custom encryptors must preserve JSON keys; keep fields used by your authorization filters unencrypted. Configure encryption when task data requires protection at rest.
+
+Polling always performs fresh authorization and decryption. Responses use `Cache-Control: no-store`; the server does not cache decrypted task results or enforce the suggested poll interval. Apply request rate limits at your deployment boundary if needed.
+
+The server rejects forms with recognizable credential fields or prompts and URLs with recognizable credentials or email addresses. These checks cannot classify arbitrary free text. As the graph author, collect sensitive data only on your secure URL flow, keep secrets out of form defaults and tool arguments, and define a narrow output schema for MCP results.
+
+See the [MCP elicitation specification](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation), [Tasks extension](https://github.com/modelcontextprotocol/ext-tasks), and [MCP security best practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices).
