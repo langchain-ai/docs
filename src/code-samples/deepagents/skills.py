@@ -29,15 +29,6 @@ agent = create_deep_agent(
 # :snippet-start: skills-dynamic-lists-py
 from deepagents import create_deep_agent
 
-# Each role path is a container with one subdirectory per skill:
-# /skills/
-# ├── engineering/
-# │   ├── code-review/SKILL.md
-# │   └── testing/SKILL.md
-# ├── data/
-# │   └── sql-analysis/SKILL.md
-# └── support/
-#     └── ticket-triage/SKILL.md
 SKILLS_BY_ROLE = {
     "engineering": ["/skills/engineering/"],
     "data": ["/skills/data/"],
@@ -84,12 +75,6 @@ def web_search(query: str) -> str:
 # :snippet-start: skills-subagents-py
 from deepagents import create_deep_agent
 
-# Each path is a container with one subdirectory per skill:
-# /skills/main/
-# └── overview/SKILL.md
-# /skills/researcher/
-# ├── research/SKILL.md
-# └── web-search/SKILL.md
 research_subagent = {
     "name": "researcher",
     "description": "Research assistant with specialized skills",
@@ -106,6 +91,16 @@ agent = create_deep_agent(
 )
 # :snippet-end:
 
+# :snippet-start: skills-compose-sources-py
+from deepagents import create_deep_agent
+
+# KEEP MODEL
+agent = create_deep_agent(
+    model="anthropic:claude-sonnet-4-6",
+    skills=["/skills/org/", "/skills/team/", "/skills/request/"],
+)
+# :snippet-end:
+
 # :snippet-start: skills-approval-py
 from deepagents import FilesystemPermission, create_deep_agent
 from langgraph.checkpoint.memory import MemorySaver
@@ -113,7 +108,7 @@ from langgraph.checkpoint.memory import MemorySaver
 # KEEP MODEL
 agent = create_deep_agent(
     model="anthropic:claude-sonnet-4-6",
-    skills=["/skills/personal/"],
+    skills=["/skills/editable/"],
     permissions=[
         FilesystemPermission(
             operations=["write"],
@@ -125,9 +120,12 @@ agent = create_deep_agent(
 )
 # :snippet-end:
 
-# :snippet-start: skills-personal-writable-py
+# :snippet-start: skills-writable-py
 from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from langgraph.store.memory import InMemoryStore
+
+store = InMemoryStore()  # Use for local dev; omit for LangSmith Deployment
 
 # KEEP MODEL
 agent = create_deep_agent(
@@ -135,25 +133,26 @@ agent = create_deep_agent(
     backend=CompositeBackend(
         default=StateBackend(),
         routes={
-            "/skills/shared/": StoreBackend(
-                namespace=lambda rt: ("curated-skills", rt.context.org_id),
+            "/skills/approved/": StoreBackend(
+                namespace=lambda rt: ("approved-skills", rt.context.org_id),
             ),
-            "/skills/personal/": StoreBackend(
+            "/skills/editable/": StoreBackend(
                 namespace=lambda rt: (
-                    "user-skills",
+                    "editable-skills",
                     rt.server_info.user.identity,
                 ),
             ),
         },
     ),
-    skills=["/skills/shared/", "/skills/personal/"],
+    skills=["/skills/approved/", "/skills/editable/"],
     permissions=[
         FilesystemPermission(
             operations=["write"],
-            paths=["/skills/shared/**"],
+            paths=["/skills/approved/**"],
             mode="deny",
         ),
     ],
+    store=store,
 )
 # :snippet-end:
 
