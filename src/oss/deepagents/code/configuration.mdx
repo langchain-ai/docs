@@ -718,6 +718,10 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
     Load the project `.env` (found walking up from the working directory) into the process environment. Set to a falsy value to skip an untrusted repository's file; the global `~/.deepagents/.env` still loads. Overrides `[startup].read_project_dotenv`. See [Loading order and precedence](#loading-order-and-precedence).
 </ResponseField>
 
+<ResponseField name="DEEPAGENTS_CODE_RECENT_THREADS" type="integer" default="20" post={["optional"]}>
+    Maximum number of recent threads to load and display in thread lists and selectors. Values below `1` are clamped to `1`, and non-integer values use the default. `-n` or `--limit` overrides this value for `dcode threads list`.
+</ResponseField>
+
 <ResponseField name="DEEPAGENTS_CODE_RECURSION_LIMIT" type="integer" post={["optional"]}>
     LangGraph graph step budget, which is the maximum number of node invocations the `dcode` agent graph may execute per turn. Invalid values log a warning and resolution continues to the next source. When unset, Deep Agents Code inherits `LANGGRAPH_DEFAULT_RECURSION_LIMIT` or leaves the limit to the LangGraph server. See [Agent runtime limits](/oss/deepagents/code/config-file#agent-runtime-limits).
 </ResponseField>

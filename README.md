@@ -105,13 +105,14 @@ API reference is generated and deployed outside this repo. Browse [Python](https
 * `make build` - Build documentation to `./build` directory
 * `make broken-links` - Check for broken links in documentation
 * `make broken-links-with-anchors` - Check for broken links + check links with anchors
-* `make install` - Install all dependencies
+* `make install` - Install all dependencies and link authoring skills
 * `make clean` - Remove build artifacts
 * `make test` - Run the test suite
 * `make lint` - Check code style and formatting
 * `make format` - Auto-format code
 * `make lint_md` - Lint markdown files
 * `make lint_md_fix` - Lint and fix markdown files
+* `make skills` - Link `.agents/skills` into `.claude/skills` for Claude Code. Runs as part of `make install`; re-run it after new skills are added
 * `make help` - Show all available commands
 
 **`docs` CLI tool:**

@@ -147,7 +147,7 @@ The agent uses its built-in tools, skills, and memory to help you with tasks.
             Terminal emulators intercept `Cmd`-modified keys before they reach the running application, so Deep Agents Code never receives them directly. Instead, the terminal translates them into the readline shortcuts above.
 
             - **Ghostty:** Works out of the box. `Cmd+Left`, `Cmd+Right`, and `Cmd+Delete` are translated to `Ctrl+A`, `Ctrl+E`, and `Ctrl+U` by default.
-            - **iTerm2:** Not bound by default. Add the following under **Settings → Profiles → Keys → Key Mappings** as `Send Text with vim special chars`:
+            - **iTerm2:** Not bound by default. Add the following under **Settings > Profiles > Keys > Key Mappings** as `Send Text with vim special chars`:
                 - `Cmd+Left` → `\x01` (Ctrl+A)
                 - `Cmd+Right` → `\x05` (Ctrl+E)
                 - `Cmd+Delete` → `\x15` (Ctrl+U)

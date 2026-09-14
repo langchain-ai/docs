@@ -49,6 +49,7 @@ tool_calling: true
 
 
 def test_parse_issue_body_success() -> None:
+    """Parse a complete integration submission issue body."""
     result = parse_issue_body(SAMPLE_BODY)
     assert result["ok"] is True
     assert result["errors"] == []
@@ -68,6 +69,7 @@ def test_parse_issue_body_success() -> None:
 
 
 def test_parse_issue_body_requires_pypi_for_python() -> None:
+    """Reject a Python integration submission without a PyPI package."""
     body = SAMPLE_BODY.replace("langchain-acme", "_No response_")
     result = parse_issue_body(body)
     assert result["ok"] is False

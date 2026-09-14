@@ -1,12 +1,13 @@
 # Apply the `integration` label to PRs from external contributors that add
 # integration docs (hosted MDX pages or external listing YAML rows).
 #
-# PR patience/nudge comments are temporarily disabled while listings move to
-# the issue-form automation (see the commented block in the script below).
+# Also posts a one-time nudge redirecting non-featured listing PRs to the
+# Integration listing issue form. Featured hosted pages (frontmatter
+# `featured: true`) skip the comment; labeling still applies.
 #
-# NOTE: Uses `pull_request_target` so it can label PRs from forks.
-# The script only reads changed files from the GitHub API and checks org
-# membership — no untrusted code is executed.
+# NOTE: Uses `pull_request_target` so it can label and comment on PRs from
+# forks. The script only reads changed files and PR head content from the
+# GitHub API and checks org membership — no untrusted code is executed.
 
 name: External Integration PR Comment
 
@@ -130,9 +131,45 @@ jobs:
               console.log(`Added integration label to PR #${pr.number}`);
             }
 
-            // PR nudges disabled for now while integration listings move to the
-            // issue-form automation. Keep labeling above; restore commenting later.
-            /*
+            // Skip the listing-form nudge when any newly added MDX page is
+            // featured (maintainer path for hosted guides).
+            async function fileHasFeaturedFrontmatter(filename) {
+              if (!filename.endsWith('.mdx')) return false;
+              try {
+                const head = pr.head;
+                const { data } = await github.rest.repos.getContent({
+                  owner: head.repo.owner.login,
+                  repo: head.repo.name,
+                  path: filename,
+                  ref: head.sha,
+                });
+                if (Array.isArray(data) || !data.content) {
+                  console.log(`Could not read file content for ${filename}`);
+                  return false;
+                }
+                const content = Buffer.from(data.content, 'base64').toString('utf8');
+                const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+                if (!frontmatter) return false;
+                return /^[ \t]*featured:[ \t]*true[ \t]*$/m.test(frontmatter[1]);
+              } catch (error) {
+                console.log(`Failed to read ${filename} from PR head: ${error.message}`);
+                return false;
+              }
+            }
+
+            let hasFeaturedIntegration = false;
+            for (const file of newIntegrationFiles) {
+              if (await fileHasFeaturedFrontmatter(file.filename)) {
+                console.log(`${file.filename} has featured: true; skipping nudge comment`);
+                hasFeaturedIntegration = true;
+                break;
+              }
+            }
+
+            if (hasFeaturedIntegration) {
+              return;
+            }
+
             const marker = '<!-- external-integration-contribution -->';
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner,
@@ -165,4 +202,3 @@ jobs:
             });
 
             console.log(`Posted external integration comment on PR #${pr.number}`);
-            */

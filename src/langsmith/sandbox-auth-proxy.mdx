@@ -4,7 +4,7 @@ sidebarTitle: Auth proxy
 description: Inject credentials into outbound requests and control which destinations a sandbox can reach.
 ---
 
-The auth proxy lets sandbox code call external APIs (OpenAI, Anthropic, GitHub, etc.) without hardcoding credentials. When configured on a sandbox, a proxy sidecar automatically injects authentication headers into matching outbound requests using your workspace secrets or write-only credentials you provide in the proxy config.
+The auth proxy lets sandbox code call external APIs (OpenAI, Anthropic, GitHub, etc.) without hardcoding credentials. When configured on a sandbox, an egress proxy running outside the sandbox automatically injects authentication headers into matching outbound requests using your workspace secrets or write-only credentials you provide in the proxy config.
 
 <Warning>
 You must configure your secrets (e.g., `OPENAI_API_KEY`) in your LangSmith [workspace](/langsmith/administration-overview#workspaces) settings before creating a sandbox that references them.
@@ -12,16 +12,30 @@ You must configure your secrets (e.g., `OPENAI_API_KEY`) in your LangSmith [work
 
 ## Egress and network access control
 
-The same `proxy_config` that injects credentials also controls which destinations a sandbox can reach.
+The same `proxy_config` that injects credentials also controls which destinations a sandbox can reach. Access control is enforced per connection on the sandbox host, so changes to `access_control` take effect immediately.
+
+### How egress works
+
+- **Access control applies to every outbound TCP connection**, HTTP or not.
+- **HTTPS to a host matched by a rule or callback is decrypted by the proxy** so it can inject headers; sandboxes trust the proxy's CA. HTTPS to unmatched hosts and every non-HTTP connection, including PostgreSQL, SSH, and Redis, passes through unchanged. Ports 80 and 443 are reserved for HTTP and TLS; a non-HTTP protocol on either port does not work.
+- **Address destinations by hostname.** A direct raw TCP connection to a literal IP address on a non-HTTP port is dropped, even when that IP is on an `allow_list`. HTTPS to a literal IP is dropped too, because the proxy needs a hostname in the TLS handshake. Only cleartext HTTP on port 80 works against a literal IP.
+- **Only TCP leaves the sandbox.** UDP (including QUIC) and ICMP are dropped.
 
 ### Default egress posture
 
-By default (no `access_control` configured):
+With no `access_control`, **every hostname is reachable on every TCP port**, unless your organization is on [restricted egress](#organization-level-restricted-egress). The only exception is hosts that resolve to private, loopback, or cloud-metadata addresses, which the proxy always refuses to dial. Add an `access_control` to restrict this.
 
-- **HTTP and HTTPS (ports 80 and 443) to any host are allowed.** Outbound HTTP(S) is transparently routed through the proxy, where your `rules` and `callbacks` inject credentials.
-- **All other raw TCP is blocked.** Connections to non-HTTP ports—databases (`psql`/`dbt` on 5432), SSH (22), Redis (6379), and so on—are dropped unless you explicitly allow them.
+To allow HTTP and HTTPS to any host while blocking every other port, use a port-qualified allow list. `*` matches every hostname:
 
-This means raw protocols are not blocked because the proxy "can't speak" them—they are blocked by default and opened per host and port via `access_control`.
+```json
+{
+  "access_control": {
+    "allow_list": ["*:80", "*:443"]
+  }
+}
+```
+
+Add `host:PORT` entries to open specific raw TCP destinations on top of that, such as `db.example.com:5432`.
 
 ### Allow and deny lists
 
@@ -29,12 +43,14 @@ Add an `access_control` object to `proxy_config` with **either** an `allow_list`
 
 | Mode | Behavior |
 |------|----------|
-| `allow_list` | **Default-deny.** Only listed destinations are reachable—including HTTP/HTTPS. If you set an `allow_list`, you must also list every HTTP(S) host the sandbox needs. |
-| `deny_list` | **Default-allow for HTTP/HTTPS.** All HTTP(S) hosts remain reachable except those listed. A `deny_list` cannot open raw TCP ports. |
+| `allow_list` | **Default-deny.** Only listed destinations are reachable, on any protocol. List every host the sandbox needs, including the HTTP(S) hosts your `rules` and `callbacks` target. |
+| `deny_list` | **Default-allow.** Every destination is reachable, on any protocol, except those listed. |
 
-<Note>
-Raw TCP egress (e.g. PostgreSQL on 5432) can **only** be enabled with an `allow_list` entry that specifies an explicit non-HTTP port (`host:PORT`). The default posture and `deny_list` mode only ever permit HTTP/HTTPS.
-</Note>
+Both lists apply to HTTP, HTTPS, and raw TCP alike. Neither mode distinguishes protocols; use a port suffix to restrict an entry to one port.
+
+<Warning>
+A `deny_list` only blocks the hosts you list. `{"deny_list": ["example.com"]}` blocks `example.com` on every port and leaves every other host reachable on every port, including DNS, SSH, and database ports. To turn off raw TCP everywhere, use an `allow_list` such as `["*:80", "*:443"]`.
+</Warning>
 
 ### Pattern syntax
 
@@ -42,16 +58,24 @@ Each `allow_list`/`deny_list` entry uses the following forms:
 
 | Pattern | Meaning |
 |---------|---------|
-| `host` | Bare host → ports **80 and 443 only** (HTTP/S). |
-| `host:PORT` | Host on exactly `PORT`. `:22` grants only 22, **not** additive with 80/443—list the host twice if you need both. |
-| `*.example.com` | Glob (RFC 1034-style). The apex (`example.com`) is **not** included. |
-| `~regex` | Opaque regex match; no port suffix parsing. |
-| `1.2.3.4` / `10.0.0.0/8` | Literal IP or CIDR. CIDRs **cannot** carry a port (HTTP/S only in allow mode; block all ports in deny mode). |
-| `[::1]:22` | IPv6 literal uses the bracketed form when specifying a port. |
+| `host` | Bare host → **every port**. |
+| `host:PORT` | Host on exactly `PORT`. `db.example.com:5432` covers only 5432; add another entry for any other port. |
+| `*.example.com` | Glob (RFC 1034-style). The apex (`example.com`) is **not** included. May carry a port. |
+| `~regex` | Regex matched against the hostname, every port. No port suffix is parsed. |
+| `1.2.3.4` / `[::1]` | Literal IP. May carry a port: `1.2.3.4:443`, `[::1]:22`. |
+| `10.0.0.0/8` | CIDR. Cannot carry a port. |
+
+Matching is on the destination exactly as the sandbox addressed it. A hostname entry matches requests made to that hostname; an IP or CIDR entry matches requests made to a literal IP address. Neither is resolved: `deny_list: ["203.0.113.0/24"]` does not block `foo.example.com` even when it resolves into that range, and `allow_list: ["203.0.113.7"]` does not allow it either. Because raw TCP and HTTPS to a literal IP are dropped before access control runs (see [How egress works](#how-egress-works)), IP and CIDR entries only ever affect cleartext HTTP requests on port 80 that name the IP directly.
+
+Entries that do not parse—`example.com:abc`, `example.com:99999`, or a CIDR with a port—are rejected when the sandbox is created or updated.
+
+### Organization-level restricted egress
+
+An organization can be placed on **restricted egress**. When it is, LangSmith replaces each sandbox's `access_control` with a fixed allow list of package registries, OS package mirrors, source-code and container-image hosts, CDNs, and model-provider APIs, each pinned to specific ports (HTTPS, plus HTTP for the Ubuntu and Debian mirrors). Caller-supplied `allow_list` and `deny_list` values are accepted by the API but have no effect while the policy is active.
 
 ### Connecting to a database (raw TCP)
 
-To let sandbox code reach an external PostgreSQL database with `psql`, `dbt`, or any driver, allow-list the host on its port. Because `allow_list` is default-deny, also list any HTTP(S) hosts the sandbox needs:
+To let sandbox code reach an external PostgreSQL database with `psql`, `dbt`, or any driver, allow-list the host on its port. Because `allow_list` is default-deny, also list any HTTP(S) hosts the sandbox needs. Pin them to `:443` unless you need other ports too:
 
 ```bash
 curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
@@ -63,7 +87,7 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
       "access_control": {
         "allow_list": [
           "db.example.com:5432",
-          "api.openai.com"
+          "api.openai.com:443"
         ]
       }
     }
@@ -89,7 +113,7 @@ client.create_sandbox(
     name="db-sandbox",
     proxy_config={
         "access_control": {
-            "allow_list": ["db.example.com:5432", "api.openai.com"]
+            "allow_list": ["db.example.com:5432", "api.openai.com:443"]
         }
     },
 )
@@ -104,7 +128,7 @@ await client.createSandbox({
   name: "db-sandbox",
   proxyConfig: {
     access_control: {
-      allow_list: ["db.example.com:5432", "api.openai.com"],
+      allow_list: ["db.example.com:5432", "api.openai.com:443"],
     },
   },
 });
@@ -114,19 +138,32 @@ await client.createSandbox({
 
 ## Configure auth proxy rules
 
-Add a `proxy_config` when creating a sandbox, or update an existing sandbox by patching its `proxy_config`. Each rule specifies:
+Add a `proxy_config` when creating a sandbox, or update an existing sandbox by patching its `proxy_config`. A `proxy_config` has:
 
 | Field | Description |
 |-------|-------------|
-| `match_hosts` | Hosts to intercept (supports globs like `*.github.com`) |
-| `match_paths` | Paths to match (empty = all paths) |
-| `headers` | Headers to inject, each with a `name`, `type`, and `value` |
+| `rules` | Header-injection and provider-auth rules. Enabled header rules are matched first-match-wins in list order; `aws` and `gcp` rules match their providers' hosts regardless of position |
+| `callbacks` | Dynamic credential lookups; see [Callback credential example](#callback-credential-example) |
+| `access_control` | `allow_list` or `deny_list`; see [Allow and deny lists](#allow-and-deny-lists) |
+| `description` | Optional, up to 1024 characters. What this configuration lets the sandbox reach, for handing to an agent |
+
+Each rule specifies:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Required. Identifier for the rule |
+| `type` | Omit for header injection; `aws` or `gcp` for provider auth |
+| `match_hosts` | Required for header rules; rejected on `aws` and `gcp` rules. Bare hostnames, or a leading `*.` wildcard in front of a registrable domain (`*.github.com`, not `*.com` or `*`). No scheme, path, or port. The wildcard does not match the apex domain |
+| `match_paths` | Paths to match (empty = all paths). Header rules only |
+| `headers` | Headers to inject, each with a `name`, `type`, and `value`. Header rules only |
+| `aws` / `gcp` | Provider credentials; see [Authenticate AWS requests](#authenticate-aws-requests) and [Authenticate GCP requests](#authenticate-gcp-requests) |
 | `env_vars` | Environment variables to set in the sandbox while the rule is enabled |
-| `no_proxy` | Hosts to bypass the proxy entirely (e.g. `localhost`) |
+| `enabled` | Defaults to `true` |
+| `description` | Optional, up to 1024 characters. What this rule lets the sandbox reach |
 
 ### Header types
 
-Each header has a `type` that controls how its value is stored and displayed:
+Each header has a required `type` that controls how its value is stored and displayed:
 
 | Type | Description |
 |------|-------------|
@@ -142,9 +179,13 @@ Values are plaintext and are returned by the API, so never put a secret in `env_
 
 Environment variables resolve in this order, from lowest precedence to highest:
 
-1. **Enabled proxy rules**: When two enabled rules declare the same name, the later rule in `rules` wins.
-2. **The sandbox's own `env_vars`**: Explicit per-sandbox values override values from rules.
-3. **Variables managed by an enabled AWS or GCP auth rule**: A rule that declares one of these names is rejected when the matching auth rule is enabled.
+1. **The snapshot image's `ENV`**, when the sandbox opted into `apply_image_config`.
+2. **Enabled proxy rules**: When two enabled rules declare the same name, the later rule in `rules` wins.
+3. **The sandbox's own `env_vars`**: Explicit per-sandbox values override values from rules.
+
+Variables managed by an enabled AWS or GCP auth rule (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_EC2_METADATA_DISABLED`, `AWS_CA_BUNDLE`; `CLOUDSDK_AUTH_ACCESS_TOKEN`, `CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE`) sit outside this order: a rule or a sandbox `env_vars` entry that declares one of them is rejected while the matching auth rule is enabled.
+
+Every sandbox also has the common CA-bundle environment variables pointed at the system trust store, which includes the proxy's CA, so tools that pin their own bundle still verify proxy-injected hosts. Set any of them yourself to override.
 
 ```json
 {
@@ -159,9 +200,9 @@ Environment variables resolve in this order, from lowest precedence to highest:
 
 ## Authenticate AWS requests
 
-Use an AWS auth rule when sandbox code needs to call AWS services with an AWS SDK or CLI. The proxy keeps the real AWS credentials outside the sandbox, then signs supported outbound HTTPS requests with AWS SigV4.
+Use an AWS auth rule when sandbox code needs to call AWS services with an AWS SDK or CLI. The proxy keeps the real AWS credentials outside the sandbox, then signs outbound HTTPS requests to `*.amazonaws.com` endpoints with AWS SigV4.
 
-This is useful when agent code needs to inspect S3 objects, call Bedrock, or use another supported AWS HTTPS endpoint without exposing long-lived AWS access keys in sandbox files, environment variables, shell history, or logs. The sandbox receives compatibility AWS credential placeholders so SDK credential detection works, while the proxy signs the outbound request with the configured credentials.
+This is useful when agent code needs to inspect S3 objects, call Bedrock, or use another AWS endpoint without exposing long-lived AWS access keys in sandbox files, environment variables, shell history, or logs. The sandbox receives placeholder `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values (plus `AWS_EC2_METADATA_DISABLED=true` and `AWS_CA_BUNDLE`) so SDK credential detection works, while the proxy replaces whatever the request carries with a real SigV4 signature. Only `service.region.amazonaws.com` hosts, S3 virtual-hosted and path-style hosts, and a few global endpoints such as `iam`, `sts`, and `s3` are signed; plaintext HTTP to a matched AWS host is rejected with `403`.
 
 <Warning>
 Do not set real AWS access keys as sandbox environment variables. Configure them as `workspace_secret` or `opaque` proxy values. Plaintext AWS credential values are rejected.
@@ -254,7 +295,7 @@ await client.createSandbox({
 
 </CodeGroup>
 
-After the sandbox is ready, use AWS SDKs or CLIs normally inside the sandbox. The SDK or CLI can discover the placeholder AWS environment variables, and the proxy applies the real SigV4 signature to outbound AWS requests.
+After the sandbox is ready, use AWS SDKs or CLIs normally inside the sandbox. The SDK or CLI discovers the placeholder AWS environment variables, and the proxy applies the real SigV4 signature to outbound AWS requests. The proxy does not set a region: set `AWS_REGION` through the sandbox's `env_vars` or the rule's `env_vars`, or most SDK and CLI calls fail before they reach the proxy.
 
 <Note>
 AWS auth proxy rules currently support access key ID and secret access key credentials. They do not include a session token or assume-role configuration.
@@ -262,9 +303,9 @@ AWS auth proxy rules currently support access key ID and secret access key crede
 
 ## Authenticate GCP requests
 
-Use a GCP auth rule when sandbox code needs to call Google APIs with Google SDKs or CLIs. The proxy keeps the service account JSON outside the sandbox, then authenticates supported outbound HTTPS requests to Google API hosts matched by the sandbox proxy.
+Use a GCP auth rule when sandbox code needs to call Google APIs with Google SDKs or CLIs. The proxy keeps the service account JSON outside the sandbox, then authenticates outbound HTTPS requests to `googleapis.com` and its subdomains.
 
-This is useful when agent code needs to inspect GCS objects or call another Google API without exposing service account JSON in sandbox files, environment variables, shell history, or logs. The sandbox receives compatibility credentials so SDK credential detection works, while the proxy authenticates the outbound request with the configured service account.
+This is useful when agent code needs to inspect GCS objects or call another Google API without exposing service account JSON in sandbox files, environment variables, shell history, or logs. The sandbox receives a placeholder `CLOUDSDK_AUTH_ACCESS_TOKEN` (plus `CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE`) so `gcloud` runs, while the proxy replaces whatever authorization the request carries with a token minted from the configured service account. Google client libraries that discover credentials through Application Default Credentials do not read these variables and fail to find credentials; only `gcloud` and direct HTTPS calls are supported.
 
 <Warning>
 Do not set real service account JSON as a sandbox environment variable. Configure it as a `workspace_secret` or `opaque` proxy value. Plaintext GCP credential values are rejected.
@@ -275,7 +316,7 @@ GCP auth rules are different from header injection rules:
 - Set `type` to `gcp`.
 - Put credentials under `gcp.service_account_json`.
 - Set `gcp.scopes` to a non-empty list of OAuth scopes.
-- The proxy matches Google API hosts automatically and authenticates those requests with the configured service account.
+- The proxy matches `googleapis.com` and its subdomains automatically and authenticates those requests with the configured service account. Hosts under `google.com` are not matched. Plaintext HTTP to a matched host is rejected with `403`.
 - Configure at most one GCP auth rule per sandbox. The limit counts every GCP rule, including disabled ones.
 
 The SDK `gcp_auth` and `gcpAuth` helpers build this same rule shape.
@@ -359,7 +400,7 @@ await client.createSandbox({
 
 </CodeGroup>
 
-After the sandbox is ready, use Google SDKs or CLIs normally inside the sandbox for supported Google API requests. The SDK or CLI can discover the compatibility credentials, and the proxy applies the real GCP authentication without exposing service account JSON inside the sandbox.
+After the sandbox is ready, use `gcloud` or direct HTTPS calls to `googleapis.com` hosts normally inside the sandbox. The proxy applies the real GCP authentication without exposing service account JSON inside the sandbox.
 
 ## Single API example
 
@@ -389,7 +430,7 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
   }'
 ```
 
-The sandbox can now call OpenAI with no API key setup—the proxy injects it automatically.
+Requests to `api.openai.com` are now authenticated by the proxy; no real key is stored in the sandbox. SDKs that refuse to start without an API key still need a placeholder—set one with the rule's `env_vars`, as in the [GitHub example](#github-example).
 
 ## Multiple API example
 
@@ -442,8 +483,7 @@ curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
             }
           ]
         }
-      ],
-      "no_proxy": ["localhost", "127.0.0.1"]
+      ]
     }
   }'
 ```
@@ -507,12 +547,16 @@ def configure_github_proxy(sandbox_name: str, github_token: str) -> None:
         f"{endpoint}/v2/sandboxes/boxes/{sandbox_name}",
         headers={"x-api-key": os.environ["LANGSMITH_API_KEY"]},
         json={"proxy_config": {"rules": github_proxy_rules(github_token)}},
-        timeout=30.0,
+        timeout=180.0,
     )
     response.raise_for_status()
 ```
 
 Call `configure_github_proxy` after creating or reattaching to a sandbox. GitHub App installation tokens expire, so refresh the proxy config whenever you reuse a sandbox for a new run.
+
+<Warning>
+`PATCH` replaces the stored `proxy_config` wholesale. If the sandbox also uses `access_control` or `callbacks`, include them in every update or they are dropped. Opaque header values you leave empty are carried over from the current config.
+</Warning>
 
 The `github-api` rule sets `GH_TOKEN` to a non-secret placeholder, which satisfies the `gh` CLI's local credential check. Commands then run without a per-command prefix:
 
@@ -589,11 +633,12 @@ Callbacks are configured alongside rules under `proxy_config`:
 | Field | Description |
 |-------|-------------|
 | `match_hosts` | Hosts to intercept (same syntax as rules; supports globs like `*.github.com`). |
-| `url` | Your callback endpoint. Must be an `http://` or `https://` URL reachable from the proxy. |
+| `url` | Your callback endpoint. Must be an `http://` or `https://` URL that resolves to a public address; private, loopback, Kubernetes-internal, and cloud-metadata targets are rejected. |
 | `request_headers` | Headers attached to the proxy → callback request, e.g., an HMAC or shared secret your endpoint uses to verify the request. Only `plaintext` and `opaque` types are permitted (no `workspace_secret`). |
-| `ttl_seconds` | How long resolved headers are cached before re-invoking the callback. Must be between 60 and 3600. |
+| `ttl_seconds` | Required. How long resolved headers are cached before re-invoking the callback. Must be between 60 and 3600. |
+| `full_request` | When `true`, every request to a matched host invokes the callback (nothing is cached) and the body includes a `request` snapshot: `method`, `url`, `scheme`, `host`, `path`, `query`, `headers`, and up to 1 MiB of the body as `body_base64` (`body_truncated` marks a cut). |
 
-**Static rules win.** If any rule in `rules` matches the host, the callback is skipped for that host. Within rules, first-match-wins; the same applies between callbacks if multiple match.
+**Static rules win.** If an enabled header-injection rule matches both the host and the path, the callback is skipped for that request. Within rules, first-match-wins; the same applies between callbacks if multiple match.
 
 ### Callback contract
 
@@ -602,10 +647,22 @@ The proxy makes the following request whenever it needs to resolve credentials f
 ```
 POST <callback.url>
 Content-Type: application/json
-<request_headers from your config, attached verbatim>
+X-LangSmith-Signature-JWT: <signature>
+<request_headers from your config, attached verbatim except Content-Type and X-LangSmith-Signature-JWT, which the proxy always sets>
 
-{"host": "api.example.com", "port": 443}
+{
+  "host": "api.example.com",
+  "port": 443,
+  "identity": {
+    "tenant_id": "<workspace-uuid>",
+    "sandbox_id": "<sandbox-uuid>",
+    "organization_id": "<organization-uuid>",
+    "ls_user_id": "<creator-uuid>"
+  }
+}
 ```
+
+`identity` tells your endpoint which sandbox is asking, so one callback URL can serve many sandboxes and mint per-sandbox or per-user credentials. `ls_user_id` is the creating user and is omitted when the sandbox was created with a workspace or service key. Ignore fields and headers you do not recognize; the proxy may add more.
 
 Your endpoint must respond `2xx` with a JSON body:
 
@@ -618,7 +675,21 @@ Your endpoint must respond `2xx` with a JSON body:
 }
 ```
 
-The proxy injects every header in the response into the sandbox's outbound request and caches the response for `ttl_seconds`. Any non-2xx response, transport error, or malformed JSON fails closed: the sandbox's request is rejected with `502 callback resolution failed` (no headers injected, response not cached).
+The proxy injects every header in the response into the sandbox's outbound request and caches the response for `ttl_seconds`. Any non-2xx response, transport error, or malformed JSON fails closed: the sandbox's request is rejected with `502 callback resolution failed` (no headers injected, response not cached). Redirects are not followed and count as failures.
+
+### Verify callback requests
+
+`request_headers` let your endpoint check a shared secret you chose. To verify that a request came from LangSmith and was not altered in transit, check the `X-LangSmith-Signature-JWT` header. It is a JWT signed with an Ed25519 key (`alg: EdDSA`) whose public half is published at `<LANGSMITH_ENDPOINT>/.well-known/jwks.json`, selected by the token's `kid`.
+
+| Claim | Expected value |
+|-------|----------------|
+| `iss` | Your LangSmith endpoint origin, e.g. `https://api.smith.langchain.com` |
+| `sub` | `langsmith-sandbox-callback` |
+| `aud` | Your callback URL, exactly as configured |
+| `exp` | Five minutes after issue; reject expired tokens |
+| `body_sha256` | Hex SHA-256 of the raw request body |
+
+Verify the signature against the JWKS, check every claim above, hash the body you received, and compare it to `body_sha256`. Then trust `identity` in the body.
 
 ### Example
 

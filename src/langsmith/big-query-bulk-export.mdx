@@ -74,7 +74,7 @@ gcloud storage hmac create \
   langsmith-bulk-export@YOUR_PROJECT.iam.gserviceaccount.com
 ```
 
-Save the `accessId` and `secret` from the output. You can also generate HMAC keys in the GCP Console under **Cloud Storage → Settings → Interoperability → Create a key for a service account**.
+Save the `accessId` and `secret` from the output. You can also generate HMAC keys in the GCP Console under **Cloud Storage > Settings > Interoperability > Create a key for a service account**.
 
 ## 4. Create a bulk export destination
 
