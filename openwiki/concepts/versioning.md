@@ -3,9 +3,6 @@ type: versioning strategy
 title: Language Versioning Strategy
 description: How source classification, build-time language rendering, emitted public routes, and docs.json navigation cooperate for shared OSS documentation, intentional unversioned products, and Managed Deep Agents.
 tags: [versioning, documentation-pipeline, navigation, routes, conditional-rendering]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-09T08:21:02.265Z
 sources:
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
@@ -15,7 +12,10 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-09T08:21:02.265Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-14T08:24:18.469Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-14T08:24:18.469Z" }
 ---
 
 # Language Versioning Strategy
@@ -90,7 +90,7 @@ Managed Deep Agents is a LangSmith routing exception. A direct `.md` or `.mdx` f
 
 The dedicated full-build pass discovers `managed-deep-agents*.mdx` files and emits Python and JavaScript artifacts. `build_file()` recognizes either `.md` or `.mdx`, so a Managed Deep Agents `.md` can be emitted when built individually but is not discovered by the bulk variant glob. Use `.mdx` for pages that must participate in a normal full build.
 
-Each language artifact receives its matching conditional content, scoped snippet imports, OSS links, and unqualified Managed Deep Agents cross-links. For example, the shared quickstart includes `:::python` and `:::js` setup commands plus unprefixed `/langsmith/managed-deep-agents-...` links; the two renders select the matching commands and point those links to the current language route.
+Each language artifact receives its matching conditional content, scoped snippet imports, OSS links, and unqualified Managed Deep Agents cross-links. The authored agent-definition and project-structure pages, for example, use `:::python` and `:::js` blocks and unprefixed Managed Deep Agents links; each target render selects the matching material and rewrites those links to its language route.
 
 `docs.json` supplies the public default for unversioned and historical Managed Deep Agents URLs: configured redirects send them to Python routes. Separately, its Python and TypeScript Build dropdowns contain language-specific Managed Deep Agents entries. When adding, renaming, or removing a page, keep the source naming rule, both emitted route entries, and any legacy redirects synchronized.
 
@@ -114,14 +114,7 @@ Conditional rendering is regex-based rather than code-fence-aware. Do not rely o
 
 ## Link and snippet rewrite contract
 
-Author an unqualified absolute OSS link when its destination should follow the active language:
-
-```mdx
-<!-- openwiki: broken internal link [/oss/langgraph/overview] file "/oss/langgraph/overview" does not exist. Fix the href or restore the target, then delete this comment. -->
-[LangGraph overview](/oss/langgraph/overview)
-```
-
-The Python artifact receives `/oss/python/langgraph/overview`; the JavaScript artifact receives `/oss/javascript/langgraph/overview`. The rewriter leaves already-prefixed routes, paths containing `images`, and the OpenWiki and Deep Agents Code roots unchanged. These guards prevent double-prefixes and preserve routes that have no language variants.
+Author an unqualified absolute OSS link when its destination should follow the active language. For example, a Markdown link whose destination is `/oss/langgraph/overview` becomes `/oss/python/langgraph/overview` in the Python artifact and `/oss/javascript/langgraph/overview` in the JavaScript artifact. The rewriter leaves already-prefixed routes, paths containing `images`, and the OpenWiki and Deep Agents Code roots unchanged. These guards prevent double-prefixes and preserve routes that have no language variants.
 
 In a versioned page, import a Markdown snippet from its unprefixed source path:
 
@@ -151,6 +144,7 @@ When changing this model:
 
 ## See also
 
+- [Build system](/openwiki/architecture/build-system.md)
 - [Source directory map](/openwiki/architecture/source-map.md)
 - [Markdown preprocessing pipeline](/openwiki/concepts/preprocessing.md)
 - [Adding and modifying documentation pages](/openwiki/operations/adding-pages.md)
