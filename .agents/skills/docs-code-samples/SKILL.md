@@ -271,15 +271,15 @@ From the repo root:
 make code-snippets
 ```
 
-For LangSmith JVM samples only (faster; updates stems listed in `CODE_SNIPPET_LANGSMITH_SOURCES` in the Makefile):
+To limit extraction to specific samples (faster while iterating), set `CODE_SNIPPET_SOURCES` to space-separated repo-relative paths under `src/code-samples/`:
 
 ```bash
-make code-snippets-langsmith
+CODE_SNIPPET_SOURCES="src/code-samples/langsmith/trace.java" make code-snippets
 ```
 
 This command:
 
-1. Runs `python scripts/extract_code_snippets.py` (line-based, Bluehawk-compatible; handles `/**` in TS strings). Optional env `CODE_SNIPPET_SOURCES` limits extraction to specific paths under `src/code-samples/` (`make code-snippets-langsmith` sets this).
+1. Runs `python scripts/extract_code_snippets.py` (line-based, Bluehawk-compatible; handles `/**` in TS strings). Optional env `CODE_SNIPPET_SOURCES` limits extraction to specific paths under `src/code-samples/`; other stems already in `src/code-samples-generated/` are left alone.
 2. Runs `scripts/generate_code_snippet_mdx.py` to produce MDX snippets in `src/snippets/code-samples/` (always regenerates MDX from everything under `src/code-samples-generated/`)
 
 Output files:
@@ -346,7 +346,7 @@ To support additional languages, add config entries in that script.
 - Always run `make test-code-samples FILES="path/to/your/file.py"` before `make code-snippets` to ensure new samples pass.
 - Run `make lint` once the code sample is written; fix any issues (or run `make format` to auto-fix).
 - Do not add code samples to linting ignore rules when making lint-related changes—fix the code instead.
-- `src/code-samples-generated/` is gitignored; regenerate with `make code-snippets` or `make code-snippets-langsmith` when iterating on LangSmith JVM files only.
+- `src/code-samples-generated/` is gitignored; regenerate with `make code-snippets`, narrowing to specific files with `CODE_SNIPPET_SOURCES` while iterating.
 - Reference `CLAUDE.md` and `AGENTS.md` for docs style and rules.
 - Use `:::python` and `:::js` fences for language-specific content; the build produces separate Python and JavaScript doc versions.
 - For python tests, try to correct the type rather than adding `# type: ignore[arg-type]`
