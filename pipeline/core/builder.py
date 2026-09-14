@@ -1137,6 +1137,30 @@ class DocumentationBuilder:
         ("langsmith", "LangSmith"),
     ]
 
+    # Display names for directories that get their own llms.txt index. A
+    # directory missing here falls back to a titleized name, which reads fine
+    # for OpenAPI tag directories but mangles product names.
+    _LLMS_SUBSECTION_NAMES: ClassVar[dict[str, str]] = {
+        "ace": "ACE",
+        "api-key": "API keys",
+        "aws_marketplace": "AWS Marketplace",
+        "concepts": "Concepts",
+        "contributing": "Contributing",
+        "deepagents": "Deep Agents",
+        "integrations": "Integrations",
+        "langchain": "LangChain",
+        "langgraph": "LangGraph",
+        "mcp": "MCP",
+        "mcp_vendors": "MCP vendors",
+        "migrate": "Migration guides",
+        "openwiki": "OpenWiki",
+        "productfeedback": "Product feedback",
+        "reference": "Reference",
+        "scim-tokens": "SCIM tokens",
+        "smith-api": "REST API",
+        "ttl-settings": "TTL settings",
+    }
+
     _SITE_URL = "https://docs.langchain.com"
 
     # A section smaller than this stays in the root file rather than becoming a
@@ -1377,6 +1401,32 @@ class DocumentationBuilder:
             else:
                 out += self._chunk_section(key, children[key])
         return [(prefix, remainder), *out] if remainder else out
+
+    @classmethod
+    def _section_label(
+        cls, section_prefix: str, parent_prefix: str, parent_label: str
+    ) -> str:
+        """Return the heading label for one section index.
+
+        A section that splits into per-directory files would otherwise stamp
+        the parent label on every child, so ``oss/python/langgraph/llms.txt``
+        announced itself as "Open source (Python)" with nothing in the file
+        naming LangGraph. Qualify the parent label with the child directory
+        instead, keeping the parent so the language stays visible.
+        """
+        if section_prefix == parent_prefix:
+            return parent_label
+        leaf = section_prefix.rsplit("/", 1)[-1]
+        name = (
+            cls._LLMS_SUBSECTION_NAMES.get(leaf) or re.sub(r"[_-]+", " ", leaf).title()
+        )
+        # A parenthesised parent carries the language, which belongs after the
+        # child name: "LangGraph (Python)", not "Open source (Python):
+        # LangGraph". Anything else reads as a plain prefix.
+        qualified = re.fullmatch(r".+ \(([^()]+)\)", parent_label)
+        if qualified:
+            return f"{name} ({qualified[1]})"
+        return f"{parent_label} {name}"
 
     def _write_section_index(
         self, path: str, title: str, label: str, lines: list[str]
@@ -1705,7 +1755,10 @@ class DocumentationBuilder:
                         continue
                     path = f"{section_prefix}/llms.txt"
                     self._write_section_index(
-                        path, title, label, [line for _, line in chunk]
+                        path,
+                        title,
+                        self._section_label(section_prefix, prefix, label),
+                        [line for _, line in chunk],
                     )
                     linked.append((section_prefix, path, len(chunk)))
 
