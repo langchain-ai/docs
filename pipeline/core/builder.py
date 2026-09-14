@@ -14,6 +14,9 @@ from tqdm import tqdm
 from pipeline.preprocessors import preprocess_markdown
 
 _IS_CI = os.environ.get("CI", "").lower() in ("true", "1")
+_DEEP_AGENTS_CODE_PART_COUNT = 3
+_OPENWIKI_PART_COUNT = 2
+_MAX_SNIPPET_IMPORT_DEPTH = 6
 
 logger = logging.getLogger(__name__)
 
@@ -292,7 +295,9 @@ class DocumentationBuilder:
     def _rewrite_snippet_imports_for_language(
         self, content: str, target_language: str
     ) -> str:
-        """Point MDX snippet imports at language-specific copies under /snippets/{lang}/.
+        """Point MDX snippet imports at language-specific copies.
+
+        Language-specific copies live under ``/snippets/{lang}/``.
 
         Snippet markdown is emitted as absolute, language-prefixed /oss/ links in
         ``build/snippets/{python|javascript}/...``. Versioned pages must import
@@ -439,13 +444,17 @@ class DocumentationBuilder:
             return False
         parts = relative_path.parts
         if (
-            len(parts) >= 3
+            len(parts) >= _DEEP_AGENTS_CODE_PART_COUNT
             and parts[0] == "oss"
             and parts[1] == "deepagents"
             and parts[2] == "code"
         ):
             return True
-        return len(parts) >= 2 and parts[0] == "oss" and parts[1] == "openwiki"
+        return (
+            len(parts) >= _OPENWIKI_PART_COUNT
+            and parts[0] == "oss"
+            and parts[1] == "openwiki"
+        )
 
     def _build_oss_file(self, file_path: Path, relative_path: Path) -> None:
         """Build an OSS file for both Python and JavaScript versions.
@@ -1161,7 +1170,7 @@ class DocumentationBuilder:
         Mintlify: "Get the authenticated user's provider user ID" slugs to
         ``...-users-provider-user-id``, not ``...-user-s-...``.
         """
-        cleaned = re.sub(r"['’]", "", value.lower())
+        cleaned = re.sub(r"['\u2019]", "", value.lower())
         return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", cleaned)).strip("-")
 
     @staticmethod
@@ -1308,7 +1317,7 @@ class DocumentationBuilder:
         shared = parts[0]
         for candidate in parts[1:]:
             keep = 0
-            for a, b in zip(shared, candidate):
+            for a, b in zip(shared, candidate, strict=False):
                 if a != b:
                     break
                 keep += 1
@@ -1495,7 +1504,7 @@ class DocumentationBuilder:
             end = text.find("\n---", 3)
             if end != -1:
                 text = text[end + 4 :]
-        if depth > 6:
+        if depth > _MAX_SNIPPET_IMPORT_DEPTH:
             return text.strip()
 
         snippets_root = self.build_dir / "snippets"
