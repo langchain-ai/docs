@@ -19,6 +19,12 @@ import SkillsNamespacedPy from '/snippets/code-samples/skills-namespaced-py.mdx'
 import SkillsNamespacedJs from '/snippets/code-samples/skills-namespaced-js.mdx';
 import SkillsSubagentsPy from '/snippets/code-samples/skills-subagents-py.mdx';
 import SkillsSubagentsJs from '/snippets/code-samples/skills-subagents-js.mdx';
+import SkillsComposeSourcesPy from '/snippets/code-samples/skills-compose-sources-py.mdx';
+import SkillsComposeSourcesJs from '/snippets/code-samples/skills-compose-sources-js.mdx';
+import SkillsApprovalPy from '/snippets/code-samples/skills-approval-py.mdx';
+import SkillsApprovalJs from '/snippets/code-samples/skills-approval-js.mdx';
+import SkillsWritablePy from '/snippets/code-samples/skills-writable-py.mdx';
+import SkillsWritableJs from '/snippets/code-samples/skills-writable-js.mdx';
 
 Skills package domain expertise, such as workflows, best practices, scripts, reference docs, and templates, into reusable directories. The agent gets a summary of the contents on startup and discovers and reads the contained files only when relevant.
 
@@ -398,30 +404,25 @@ The following example uses @[StoreBackend], but the same pattern applies to any 
 
 This keeps the agent configuration stable while the backend enforces which library the agent can access. The scope does not need to be user-specific. It can be any boundary your application uses, including role, tenant, workspace, organization, environment, or request type.
 
+To populate a shared library, seed the store from your application code or an admin workflow:
+
+- Namespace by org ID for workspace-wide skills. Pair this with [read-only skills](#read-only-skills) when agents should use the library but not modify it.
+- Namespace by user ID when each user needs an independent library, as in the example above.
+
+Seed the store with keys like `/company-policies/SKILL.md` and values that include `content` and `encoding` fields. The `/skills/` route prefix is stripped before records are read from the store.
+
+You can also combine shared and personal libraries: route `/skills/approved/` to an organization-scoped `StoreBackend`, route `/skills/editable/` to a user-scoped backend, and pass both paths in `skills`. See [Writable skills](#writable-skills).
+
 ### Compose multiple sources
 
 Pass multiple skill paths when the agent should see more than one library. For example, you can combine approved organization skills, team-specific workflows, and request-specific instructions:
 
 :::python
-```python
-from deepagents import create_deep_agent
-
-agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
-    skills=["/skills/org/", "/skills/team/", "/skills/request/"],
-)
-```
+<SkillsComposeSourcesPy />
 :::
 
 :::js
-```typescript
-import { createDeepAgent } from "deepagents";
-
-const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
-  skills: ["/skills/org/", "/skills/team/", "/skills/request/"],
-});
-```
+<SkillsComposeSourcesJs />
 :::
 
 Each path can point to the same backend, a different backend route, or a backend scoped by runtime context. For a managed solution that handles skill access, sharing, and workspace-level visibility, see [Fleet skills](/langsmith/fleet/skills).
@@ -476,73 +477,11 @@ By default, agents can write to skill files if the backend permits it and no per
 3. Add `deny` rules for any paths that should stay read-only. Place more specific rules before broader deny rules if paths overlap ([rule ordering](/oss/deepagents/permissions#rule-ordering)).
 
 :::python
-```python
-from deepagents import FilesystemPermission, create_deep_agent
-from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
-
-agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
-    backend=CompositeBackend(
-        default=StateBackend(),
-        routes={
-            "/skills/approved/": StoreBackend(
-                namespace=lambda rt: ("approved-skills", rt.context.org_id),
-            ),
-            "/skills/editable/": StoreBackend(
-                namespace=lambda rt: (
-                    "editable-skills",
-                    rt.server_info.user.identity,
-                ),
-            ),
-        },
-    ),
-    skills=["/skills/approved/", "/skills/editable/"],
-    permissions=[
-        FilesystemPermission(
-            operations=["write"],
-            paths=["/skills/approved/**"],
-            mode="deny",
-        ),
-    ],
-)
-```
+<SkillsWritablePy />
 :::
 
 :::js
-```typescript
-import {
-  createDeepAgent,
-  CompositeBackend,
-  StateBackend,
-  StoreBackend,
-} from "deepagents";
-
-const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
-  backend: new CompositeBackend({
-    default: new StateBackend(),
-    routes: {
-      "/skills/approved/": new StoreBackend({
-        namespace: (rt) => ["approved-skills", rt.context.orgId],
-      }),
-      "/skills/editable/": new StoreBackend({
-        namespace: (ctx) => [
-          "editable-skills",
-          ctx.config?.configurable?.user_id ?? "anonymous",
-        ],
-      }),
-    },
-  }),
-  skills: ["/skills/approved/", "/skills/editable/"],
-  permissions: [
-    {
-      operations: ["write"],
-      paths: ["/skills/approved/**"],
-      mode: "deny",
-    },
-  ],
-});
-```
+<SkillsWritableJs />
 :::
 
 The agent uses `write_file` and `edit_file` to create or update `SKILL.md` and supporting files under writable paths. To capture general learnings outside the skills format, route a separate path such as `/memories/` to another writable backend. See [Backends](/oss/deepagents/backends) for routing and store setup.
@@ -552,43 +491,11 @@ The agent uses `write_file` and `edit_file` to create or update `SKILL.md` and s
 If agents may write to skill files but you want a human in the loop first, use either [`interrupt_on`](/oss/deepagents/human-in-the-loop) or a permission rule with `mode="interrupt"`. Both pause before `write_file` or `edit_file` runs and use the same resume flow.
 
 :::python
-```python
-from deepagents import FilesystemPermission, create_deep_agent
-from langgraph.checkpoint.memory import MemorySaver
-
-agent = create_deep_agent(
-    model="anthropic:claude-sonnet-4-6",
-    skills=["/skills/editable/"],
-    permissions=[
-        FilesystemPermission(
-            operations=["write"],
-            paths=["/skills/**"],
-            mode="interrupt",
-        ),
-    ],
-    checkpointer=MemorySaver(),  # Required to pause and resume
-)
-```
+<SkillsApprovalPy />
 :::
 
 :::js
-```typescript
-import { MemorySaver } from "@langchain/langgraph";
-import { createDeepAgent } from "deepagents";
-
-const agent = await createDeepAgent({
-  model: "anthropic:claude-sonnet-4-6",
-  skills: ["/skills/editable/"],
-  permissions: [
-    {
-      operations: ["write"],
-      paths: ["/skills/**"],
-      mode: "interrupt",
-    },
-  ],
-  checkpointer: new MemorySaver(), // Required to pause and resume
-});
-```
+<SkillsApprovalJs />
 :::
 
 Alternatively, configure `interrupt_on={"write_file": True, "edit_file": True}` to require approval for all filesystem writes, not only skills paths. See [Human-in-the-loop](/oss/deepagents/human-in-the-loop) for handling and resuming interrupts.
