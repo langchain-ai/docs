@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Start a local documentation preview, route a change to its authored owner and task-specific procedure, and choose proportionate validation before a pull request.
+- [Quickstart](quickstart.md) - Set up a local documentation preview, identify the authored owner or generator for a change, and run focused validation without editing generated output.
 
 # Directories
 

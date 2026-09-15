@@ -5,7 +5,7 @@ description: How repository automation separates untrusted pull-request validati
 tags: [github-actions, ci-cd, automation, security, testing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-11T08:21:01.441Z
+    at: 2026-09-15T08:21:56.110Z
 sources:
   - id: openwiki-source-dea5cd08ee99ad0f836ba18b
     resource: repo://.github/labeler.yml
@@ -41,9 +41,11 @@ sources:
     resource: repo://scripts/code_sample_tracing.py
   - id: openwiki-source-f36d9ac44867b9e853539abd
     resource: repo://scripts/parse_integration_submission_issue.py
+  - id: openwiki-source-63d8ba810a7c0181c548a307
+    resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-11T08:21:01.441Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-15T08:21:56.110Z" }
 ---
 
 ## Topology and trust boundary
@@ -75,6 +77,8 @@ This diagram shows the execution and credential boundary: fork PR code may be va
 ### Core CI
 
 `ci.yml` runs on pull requests, pushes to `main`, and manual dispatch. It calls reusable test, lint, and documentation-link workflows, then independently checks unresolved merge markers, source cross-references, safe schemes in external integration `docs_url` values, and whether the generated provider overview is current. Its workflow-and-ref concurrency group cancels an older in-progress run after a newer push, avoiding tests of an obsolete revision.
+
+The URL gate is deliberately a non-network validation: `--check-docs-urls` checks every external-listing `docs_url` and writes nothing. It allows `https://`, `http://`, or a single-slash site-relative path, and rejects missing values, `javascript:`/`data:`-style schemes, and protocol-relative `//host` values. The generator repeats this guard before rendering an external link, so a bad listing cannot become an unsafe generated Markdown href.
 
 The reusable test and lint workflows install the test dependency group and run `make test` or `make lint`; the link workflow builds docs and runs `make broken-links-with-anchors` plus `make check-openapi`. The generated-file gate reruns `pipeline/tools/partner_pkg_table.py` and fails if `src/oss/python/integrations/providers/overview.mdx` differs. Update generator inputs, regenerate, and commit the result rather than editing the overview. The gate skips the expected `github-actions[bot]` package-download PR title and PRs labeled `bypass-auto-check`.
 
@@ -134,6 +138,23 @@ After authorization, it parses issue-form fields into JSON without evaluating th
 See [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md) for the intake schema, generated surfaces, and retry procedure.
 
 ## Scheduled maintenance and Linear boundary
+
+```mermaid
+flowchart TD
+  DownloadSchedule["Weekly or manual package refresh"] --> Generate["Read-only generation job"]
+  Generate --> Artifact["One-day generated-files artifact"]
+  Artifact --> CommitJob["Write-capable PR job"]
+  CommitJob --> DownloadPR["Timestamped auto-merge PR"]
+  OpenAPISchedule["Daily or manual OpenAPI refresh"] --> OpenAPIDiff{"Processed spec changed"}
+  OpenAPIDiff -->|"yes"| OpenAPIPR["Append or open standing PR"]
+  ListingIssue["Issue with integration-run label"] --> PermissionGate{"Actor has write permission"}
+  PermissionGate -->|"yes"| Agent["Agent makes local edits"]
+  Agent --> EditDiff{"Working tree changed"}
+  EditDiff -->|"yes"| ListingPR["Workflow opens listing PR"]
+  PermissionGate -->|"no"| Reject["Remove label and comment"]
+```
+
+This flow shows that generation and agent edits do not themselves publish repository state: a separately authorized workflow step publishes only a non-empty result.
 
 ### Package download updates
 
