@@ -1,11 +1,10 @@
 # :snippet-start: mcp-structured-content-py
 from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
+from langchain.messages import ToolMessage
 
 
 async def run_agent_structured(server) -> dict:
-    # Run the agent; structured content from any tool call is attached to the
-    # ToolMessage as an artifact rather than folded into the model-visible text.
     async with MCPAdapter(server) as adapter:
         tools = await adapter.list_tools()
         agent = create_agent("claude-sonnet-5", tools)
@@ -13,12 +12,12 @@ async def run_agent_structured(server) -> dict:
             {"messages": [{"role": "user", "content": "Look up user 42."}]}
         )
 
-    # Inspect ToolMessages in the result for structured_content artifacts.
+    # The adapter sets `artifact` only when the tool returned structured
+    # content, so a non-None artifact always carries `structured_content`.
     for message in result["messages"]:
-        if hasattr(message, "artifact") and message.artifact is not None:
-            structured = message.artifact.get("structured_content")  # [!code highlight]
-            if structured is not None:
-                print(f"Structured content: {structured}")  # [!code highlight]
+        if isinstance(message, ToolMessage) and message.artifact is not None:
+            structured = message.artifact["structured_content"]  # [!code highlight]
+            print(f"Structured content: {structured}")  # [!code highlight]
 
     return result
 
@@ -50,6 +49,13 @@ def user_server() -> FastMCP:
 async def _run() -> None:
     result = await run_agent_structured(user_server())
     assert result["messages"][-1].text
+    artifacts = [
+        message.artifact
+        for message in result["messages"]
+        if isinstance(message, ToolMessage) and message.artifact is not None
+    ]
+    assert artifacts, "expected get_user to return structured content"
+    assert artifacts[0]["structured_content"]["name"] == "Alice"
     print("✓ mcp-structured-content validated")
 
 
