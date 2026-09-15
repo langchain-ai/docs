@@ -1,0 +1,35 @@
+```python
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import interrupt
+
+
+@tool
+def preview_tool(document_id: str) -> str:
+    """Run an async enrichment preview and wait for results."""
+    job_id = fire_external_api(document_id)
+    result = interrupt({"job_id": job_id, "status": "pending"})
+    return render_results(result)
+
+
+research_agent = create_agent(
+    model=model,
+    tools=[preview_tool],
+    system_prompt="You are a research agent.",
+)
+
+@tool("research_agent", description="Research and enrichment tasks.")
+def call_research_agent(query: str) -> str:
+    result = research_agent.invoke({"messages": [{"role": "user", "content": query}]})
+    return result["messages"][-1].content
+
+supervisor = create_agent(
+    model=model,
+    tools=[call_research_agent],
+    system_prompt="Delegate research tasks to research_agent.",
+    checkpointer=InMemorySaver(),
+)
+
+config = {"configurable": {"thread_id": "1"}}
+```
