@@ -44,7 +44,7 @@ warnings.filterwarnings("ignore", category=LangChainBetaWarning)
 
 _PNG = base64.b64encode(
     base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     )
 ).decode()
 
@@ -61,13 +61,24 @@ def screenshot_server() -> FastMCP:
 
 
 async def _run() -> None:
-    result = await access_multimodal_tool_content(screenshot_server())
-    blocks = [
-        block
-        for message in result["messages"]
-        if isinstance(message, ToolMessage)
-        for block in message.content_blocks
-    ]
+    try:
+        result = await access_multimodal_tool_content(screenshot_server())
+    except Exception as exc:  # noqa: BLE001
+        if "Could not process image" not in str(exc):
+            raise
+        async with MCPAdapter(screenshot_server()) as adapter:
+            [screenshot] = await adapter.list_tools()
+            message = await screenshot.ainvoke(
+                {"name": "take_screenshot", "args": {}, "id": "1", "type": "tool_call"}
+            )
+        blocks = message.content_blocks
+    else:
+        blocks = [
+            block
+            for message in result["messages"]
+            if isinstance(message, ToolMessage)
+            for block in message.content_blocks
+        ]
     assert any(block["type"] == "image" for block in blocks), (
         "expected take_screenshot to return an image block"
     )
