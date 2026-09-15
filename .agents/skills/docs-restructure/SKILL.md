@@ -1,6 +1,6 @@
 ---
 name: docs-restructure
-description: Restructure documentation that spans several pages: split a page that has grown too long, move sections between pages, retire a page, or fix a topic that is documented in two places at once. Use when asked to streamline, simplify, consolidate, or reorganize docs, or when a page review keeps producing edits without the page getting shorter.
+description: Restructure documentation that spans several pages. Covers splitting a page that has grown too long, moving sections between pages, retiring a page, and fixing a topic documented in two places at once. Use when asked to streamline, simplify, consolidate, or reorganize docs, or when a page review keeps producing edits without the page getting shorter.
 ---
 
 # Restructure docs across pages
@@ -128,8 +128,8 @@ pass changed.
 
 State, per page, what was **deleted**, what **moved**, and what was **added**,
 with before and after line counts. A restructure that cannot show a page getting
-shorter has not restructured anything, and the line counts are what make that
-visible to the reviewer.
+shorter has not restructured anything, and the line counts are what show the
+reviewer whether it did.
 
 Name what you deleted rather than only what you wrote. A reviewer who asked for
 a shorter page needs to see the cuts to agree with them.
