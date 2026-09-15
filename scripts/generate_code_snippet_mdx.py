@@ -67,7 +67,7 @@ DEEPAGENTS_TS_MODEL_KWARG_RE = re.compile(r'\bmodel\s*(?::|=)\s*"([^"]+)"')
 DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
     ("Google", "google_genai:gemini-3.6-flash"),
     ("OpenAI", "openai:gpt-5.5"),
-    ("Anthropic", "anthropic:claude-sonnet-4-6"),
+    ("Anthropic", "anthropic:claude-sonnet-5"),
     ("OpenRouter", "openrouter:z-ai/glm-5.2"),
     ("Fireworks", "fireworks:accounts/fireworks/models/glm-5p2"),
     ("Baseten", "baseten:zai-org/GLM-5.2"),
@@ -77,8 +77,8 @@ DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
 DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
     ("Google", "google-genai:gemini-3.6-flash"),
     ("OpenAI", "openai:gpt-5.5"),
-    ("Anthropic", "anthropic:claude-sonnet-4-6"),
-    ("OpenRouter", "openrouter:openrouter:z-ai/glm-5.2"),
+    ("Anthropic", "anthropic:claude-sonnet-5"),
+    ("OpenRouter", "openrouter:z-ai/glm-5.2"),
     ("Fireworks", "fireworks:accounts/fireworks/models/glm-5p2"),
     ("Baseten", "baseten:zai-org/GLM-5.2"),
     ("Ollama", "ollama:north-mini-code-1.0"),
@@ -87,6 +87,26 @@ DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
 
 KEEP_MODEL_MARKER_PY = "# KEEP MODEL"
 KEEP_MODEL_MARKER_TS = "// KEEP MODEL"
+
+# The tabs vary one thing: the routable `provider:model` string an agent is
+# built from. A `model` argument does not always hold one. An embeddings
+# constructor takes its own model, and a provider-specific chat class such as
+# `ChatOpenAI` takes a bare ID that provider understands. Substituting a
+# `provider:model` string into either produces code that cannot run.
+#
+# This matters beyond the bad line. A RAG sample builds its retriever before
+# its agent, so the embeddings model is the first match in the file and becomes
+# the ID every tab rewrites, which leaves the agent model, the one the tabs
+# exist to vary, identical in all seven.
+PROVIDER_SPECIFIC_CALL_RE = re.compile(r"\b(?:\w*Embeddings|Chat\w+)\s*\(")
+EMBEDDING_MODEL_ID_RE = re.compile(r"embedding", re.IGNORECASE)
+
+
+def _takes_a_provider_specific_model(line: str, model_id: str) -> bool:
+    """Report whether this `model` occurrence holds a provider-specific ID."""
+    return bool(PROVIDER_SPECIFIC_CALL_RE.search(line)) or bool(
+        EMBEDDING_MODEL_ID_RE.search(model_id)
+    )
 
 
 def _strip_codegroup_markers(content: str) -> tuple[str | None, str | None, str]:
@@ -195,6 +215,9 @@ def maybe_expand_deepagents_quickstart_codegroup(
                 keep_next_model = False
                 continue
             model_id = m.group(1)
+            # Checked after the keep marker so its semantics do not change.
+            if _takes_a_provider_specific_model(line, model_id):
+                continue
             if canonical_model_id is None:
                 canonical_model_id = model_id
             if model_id == canonical_model_id:
