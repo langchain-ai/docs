@@ -1,0 +1,241 @@
+---
+title: Visualize your graph
+sidebarTitle: Visualize your graph
+description: Render LangGraph graphs as Mermaid diagrams or PNG images for debugging and documentation.
+---
+
+Here we demonstrate how to visualize the graphs you create.
+
+You can visualize any arbitrary [Graph](https://reference.langchain.com/python/langgraph/graphs/), including @[`StateGraph`].
+
+:::python
+Let's have some fun by drawing fractals :).
+
+```python
+import random
+from typing import Annotated, Literal
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
+
+class MyNode:
+    def __init__(self, name: str):
+        self.name = name
+    def __call__(self, state: State):
+        return {"messages": [("assistant", f"Called node {self.name}")]}
+
+def route(state) -> Literal["entry_node", END]:
+    if len(state["messages"]) > 10:
+        return END
+    return "entry_node"
+
+def add_fractal_nodes(builder, current_node, level, max_level):
+    if level > max_level:
+        return
+    # Number of nodes to create at this level
+    num_nodes = random.randint(1, 3)  # Adjust randomness as needed
+    for i in range(num_nodes):
+        nm = ["A", "B", "C"][i]
+        node_name = f"node_{current_node}_{nm}"
+        builder.add_node(node_name, MyNode(node_name))
+        builder.add_edge(current_node, node_name)
+        # Recursively add more nodes
+        r = random.random()
+        if r > 0.2 and level + 1 < max_level:
+            add_fractal_nodes(builder, node_name, level + 1, max_level)
+        elif r > 0.05:
+            builder.add_conditional_edges(node_name, route, node_name)
+        else:
+            # End
+            builder.add_edge(node_name, END)
+
+def build_fractal_graph(max_level: int):
+    builder = StateGraph(State)
+    entry_point = "entry_node"
+    builder.add_node(entry_point, MyNode(entry_point))
+    builder.add_edge(START, entry_point)
+    add_fractal_nodes(builder, entry_point, 1, max_level)
+    # Optional: set a finish point if required
+    builder.add_edge(entry_point, END)  # or any specific node
+    return builder.compile()
+
+app = build_fractal_graph(3)
+```
+:::
+
+:::js
+Let's create a simple example graph to demonstrate visualization.
+
+```typescript
+import { StateGraph, StateSchema, MessagesValue, ReducedValue, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  messages: MessagesValue,
+  value: new ReducedValue(
+    z.number().default(0),
+    { reducer: (x, y) => x + y }
+  ),
+});
+
+const node1: GraphNode<typeof State> = (state) => {
+  return { value: state.value + 1 };
+};
+
+const node2: GraphNode<typeof State> = (state) => {
+  return { value: state.value * 2 };
+};
+
+const router: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "node2" }> = (state) => {
+  if (state.value < 10) {
+    return "node2";
+  }
+  return END;
+};
+
+const app = new StateGraph(State)
+  .addNode("node1", node1)
+  .addNode("node2", node2)
+  .addEdge(START, "node1")
+  .addConditionalEdges("node1", router)
+  .addEdge("node2", "node1")
+  .compile();
+```
+:::
+
+## Mermaid
+
+We can also convert a graph class into Mermaid syntax.
+
+:::python
+```python
+print(app.get_graph().draw_mermaid())
+```
+
+```
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+graph TD;
+    tart__([<p>__start__</p>]):::first
+    ry_node(entry_node)
+    e_entry_node_A(node_entry_node_A)
+    e_entry_node_B(node_entry_node_B)
+    e_node_entry_node_B_A(node_node_entry_node_B_A)
+    e_node_entry_node_B_B(node_node_entry_node_B_B)
+    e_node_entry_node_B_C(node_node_entry_node_B_C)
+    nd__([<p>__end__</p>]):::last
+    tart__ --> entry_node;
+    ry_node --> __end__;
+    ry_node --> node_entry_node_A;
+    ry_node --> node_entry_node_B;
+    e_entry_node_B --> node_node_entry_node_B_A;
+    e_entry_node_B --> node_node_entry_node_B_B;
+    e_entry_node_B --> node_node_entry_node_B_C;
+    e_entry_node_A -.-> entry_node;
+    e_entry_node_A -.-> __end__;
+    e_node_entry_node_B_A -.-> entry_node;
+    e_node_entry_node_B_A -.-> __end__;
+    e_node_entry_node_B_B -.-> entry_node;
+    e_node_entry_node_B_B -.-> __end__;
+    e_node_entry_node_B_C -.-> entry_node;
+    e_node_entry_node_B_C -.-> __end__;
+    ssDef default fill:#f2f0ff,line-height:1.2
+    ssDef first fill-opacity:0
+    ssDef last fill:#bfb6fc
+```
+:::
+
+:::js
+```typescript
+const drawableGraph = await app.getGraphAsync();
+console.log(drawableGraph.drawMermaid());
+```
+
+```
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+graph TD;
+    tart__([<p>__start__</p>]):::first
+    e1(node1)
+    e2(node2)
+    nd__([<p>__end__</p>]):::last
+    tart__ --> node1;
+    e1 -.-> node2;
+    e1 -.-> __end__;
+    e2 --> node1;
+    ssDef default fill:#f2f0ff,line-height:1.2
+    ssDef first fill-opacity:0
+    ssDef last fill:#bfb6fc
+```
+:::
+
+## PNG
+
+:::python
+If preferred, we could render the Graph into a `.png`. Here we could use three options:
+
+* Using Mermaid.ink API (does not require additional packages)
+* Using Mermaid + Pyppeteer (requires `pip install pyppeteer`)
+* Using graphviz (which requires `pip install graphviz`)
+
+**Using Mermaid.Ink**
+
+By default, `draw_mermaid_png()` uses Mermaid.Ink's API to generate the diagram.
+
+```python
+from IPython.display import Image, display
+from langchain_core.runnables.graph import CurveStyle, MermaidDrawMethod, NodeStyles
+
+display(Image(app.get_graph().draw_mermaid_png()))
+```
+
+![Fractal graph visualization](/oss/images/graph_api_image_10.png)
+
+**Using Mermaid + Pyppeteer**
+
+```python
+import nest_asyncio
+
+nest_asyncio.apply()  # Required for Jupyter Notebook to run async functions
+
+display(
+    Image(
+        app.get_graph().draw_mermaid_png(
+            curve_style=CurveStyle.LINEAR,
+            node_colors=NodeStyles(first="#ffdfba", last="#baffc9", default="#fad7de"),
+            wrap_label_n_words=9,
+            output_file_path=None,
+            draw_method=MermaidDrawMethod.PYPPETEER,
+            background_color="white",
+            padding=10,
+        )
+    )
+)
+```
+
+**Using Graphviz**
+
+```python
+try:
+    display(Image(app.get_graph().draw_png()))
+except ImportError:
+    print(
+        "You likely need to install dependencies for pygraphviz, see more here https://github.com/pygraphviz/pygraphviz/blob/main/INSTALL.txt"
+    )
+```
+:::
+
+:::js
+If preferred, we could render the Graph into a `.png`. This uses the Mermaid.ink API to generate the diagram.
+
+```typescript
+import * as fs from "node:fs/promises";
+
+const drawableGraph = await app.getGraphAsync();
+const image = await drawableGraph.drawMermaidPng();
+const imageBuffer = new Uint8Array(await image.arrayBuffer());
+
+await fs.writeFile("graph.png", imageBuffer);
+```
+:::

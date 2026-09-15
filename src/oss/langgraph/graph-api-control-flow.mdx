@@ -1,0 +1,1316 @@
+---
+title: Build sequences, branches, and loops
+sidebarTitle: Control flow
+description: Compose sequences, parallel branches, conditional edges, and loops with the LangGraph Graph API.
+---
+
+import ChatModelTabs from '/snippets/chat-model-tabs.mdx';
+
+## Create a sequence of steps
+
+<Info>
+**Prerequisites**
+This guide assumes familiarity with [Define and update state](/oss/langgraph/graph-api-state).
+</Info>
+
+Here we demonstrate how to construct a simple sequence of steps. We will show:
+
+1. How to build a sequential graph
+2. Built-in short-hand for constructing similar graphs.
+
+:::python
+To add a sequence of nodes, we use the @[`add_node`] and @[`add_edge`] methods of our [graph](/oss/langgraph/graph-api#stategraph):
+
+```python
+from langgraph.graph import START, StateGraph
+
+builder = StateGraph(State)
+
+# Add nodes
+builder.add_node(step_1)
+builder.add_node(step_2)
+builder.add_node(step_3)
+
+# Add edges
+builder.add_edge(START, "step_1")
+builder.add_edge("step_1", "step_2")
+builder.add_edge("step_2", "step_3")
+```
+
+We can also use the built-in shorthand `.add_sequence`:
+
+```python
+builder = StateGraph(State).add_sequence([step_1, step_2, step_3])
+builder.add_edge(START, "step_1")
+```
+:::
+
+:::js
+To add a sequence of nodes, we use the `.addNode` and `.addEdge` methods of our [graph](/oss/langgraph/graph-api#stategraph):
+
+```typescript
+import { START, StateGraph } from "@langchain/langgraph";
+
+const builder = new StateGraph(State)
+  .addNode("step1", step1)
+  .addNode("step2", step2)
+  .addNode("step3", step3)
+  .addEdge(START, "step1")
+  .addEdge("step1", "step2")
+  .addEdge("step2", "step3");
+```
+:::
+
+<Accordion title="Why split application steps into a sequence with LangGraph?">
+
+LangGraph makes it easy to add an underlying persistence layer to your application.
+This allows state to be checkpointed in between the execution of nodes, so your LangGraph nodes govern:
+
+* How state updates are [checkpointed](/oss/langgraph/persistence)
+* How interruptions are resumed in [human-in-the-loop](/oss/langgraph/interrupts) workflows
+* How we can "rewind" and branch-off executions using LangGraph's [time travel](/oss/langgraph/use-time-travel) features
+
+They also determine how execution steps are [streamed](/oss/langgraph/streaming), and how your application is visualized and debugged using [Studio](/langsmith/studio).
+
+Let's demonstrate an end-to-end example. We will create a sequence of three steps:
+
+1. Populate a value in a key of the state
+2. Update the same value
+3. Populate a different value
+
+Let's first define our [state](/oss/langgraph/graph-api#state). This governs the [schema of the graph](/oss/langgraph/graph-api#schema), and can also specify how to apply updates. See [Process state updates with reducers](/oss/langgraph/graph-api-state#process-state-updates-with-reducers) for more detail.
+
+In our case, we will just keep track of two values:
+
+:::python
+```python
+from typing_extensions import TypedDict
+
+class State(TypedDict):
+    value_1: str
+    value_2: int
+```
+:::
+
+:::js
+```typescript
+import { StateSchema, GraphNode } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  value1: z.string(),
+  value2: z.number(),
+});
+```
+:::
+
+:::python
+Our [nodes](/oss/langgraph/graph-api#nodes) are just Python functions that read our graph's state and make updates to it. The first argument to this function will always be the state:
+
+```python
+def step_1(state: State):
+    return {"value_1": "a"}
+
+def step_2(state: State):
+    current_value_1 = state["value_1"]
+    return {"value_1": f"{current_value_1} b"}
+
+def step_3(state: State):
+    return {"value_2": 10}
+```
+:::
+
+:::js
+Our [nodes](/oss/langgraph/graph-api#nodes) are just TypeScript functions that read our graph's state and make updates to it. The first argument to this function will always be the state:
+
+```typescript
+const step1: GraphNode<typeof State> = (state) => {
+  return { value1: "a" };
+};
+
+const step2: GraphNode<typeof State> = (state) => {
+  const currentValue1 = state.value1;
+  return { value1: `${currentValue1} b` };
+};
+
+const step3: GraphNode<typeof State> = (state) => {
+  return { value2: 10 };
+};
+```
+:::
+
+<Note>
+Note that when issuing updates to the state, each node can just specify the value of the key it wishes to update.
+
+By default, this will **overwrite** the value of the corresponding key. You can also use [reducers](/oss/langgraph/graph-api#reducers) to control how updates are processed—for example, you can append successive updates to a key instead. See [Process state updates with reducers](/oss/langgraph/graph-api-state#process-state-updates-with-reducers) for more detail.
+</Note>
+
+Finally, we define the graph. We use [StateGraph](/oss/langgraph/graph-api#stategraph) to define a graph that operates on this state.
+
+:::python
+We will then use [`add_node`](/oss/langgraph/graph-api#messagesstate) and [`add_edge`](/oss/langgraph/graph-api#edges) to populate our graph and define its control flow.
+
+```python
+from langgraph.graph import START, StateGraph
+
+builder = StateGraph(State)
+
+# Add nodes
+builder.add_node(step_1)
+builder.add_node(step_2)
+builder.add_node(step_3)
+
+# Add edges
+builder.add_edge(START, "step_1")
+builder.add_edge("step_1", "step_2")
+builder.add_edge("step_2", "step_3")
+```
+:::
+
+:::js
+We will then use [addNode](/oss/langgraph/graph-api#nodes) and [addEdge](/oss/langgraph/graph-api#edges) to populate our graph and define its control flow.
+
+```typescript
+import { START, StateGraph } from "@langchain/langgraph";
+
+const graph = new StateGraph(State)
+  .addNode("step1", step1)
+  .addNode("step2", step2)
+  .addNode("step3", step3)
+  .addEdge(START, "step1")
+  .addEdge("step1", "step2")
+  .addEdge("step2", "step3")
+  .compile();
+```
+:::
+
+:::python
+<Tip>
+**Specifying custom names**
+You can specify custom names for nodes using @[`add_node`]:
+
+```python
+builder.add_node("my_node", step_1)
+```
+</Tip>
+:::
+
+:::js
+<Tip>
+**Specifying custom names**
+You can specify custom names for nodes using `.addNode`:
+
+```typescript
+const graph = new StateGraph(State)
+.addNode("myNode", step1)
+.compile();
+```
+</Tip>
+:::
+
+Note that:
+
+:::python
+* @[`add_edge`] takes the names of nodes, which for functions defaults to `node.__name__`.
+* We must specify the entry point of the graph. For this we add an edge with the [START node](/oss/langgraph/graph-api#start-node).
+* The graph halts when there are no more nodes to execute.
+
+We next [compile](/oss/langgraph/graph-api#compiling-your-graph) our graph. This provides a few basic checks on the structure of the graph (e.g., identifying orphaned nodes). If we were adding persistence to our application via a [checkpointer](/oss/langgraph/persistence), it would also be passed in here.
+
+```python
+graph = builder.compile()
+```
+:::
+
+:::js
+* `.addEdge` takes the names of nodes, which for functions defaults to `node.name`.
+* We must specify the entry point of the graph. For this we add an edge with the [START node](/oss/langgraph/graph-api#start-node).
+* The graph halts when there are no more nodes to execute.
+
+We next [compile](/oss/langgraph/graph-api#compiling-your-graph) our graph. This provides a few basic checks on the structure of the graph (e.g., identifying orphaned nodes). If we were adding persistence to our application via a [checkpointer](/oss/langgraph/persistence), it would also be passed in here.
+:::
+
+LangGraph provides built-in utilities for visualizing your graph. Let's inspect our sequence. See [Visualize your graph](/oss/langgraph/graph-api-visualize#visualize-your-graph) for detail on visualization.
+
+:::python
+```python
+from IPython.display import Image, display
+
+display(Image(graph.get_graph().draw_mermaid_png()))
+```
+
+![Sequence of steps graph](/oss/images/graph_api_image_2.png)
+:::
+
+:::js
+```typescript
+import * as fs from "node:fs/promises";
+
+const drawableGraph = await graph.getGraphAsync();
+const image = await drawableGraph.drawMermaidPng();
+const imageBuffer = new Uint8Array(await image.arrayBuffer());
+
+await fs.writeFile("graph.png", imageBuffer);
+```
+:::
+
+Let's proceed with a simple invocation:
+
+:::python
+```python
+graph.invoke({"value_1": "c"})
+```
+
+```
+{'value_1': 'a b', 'value_2': 10}
+```
+:::
+
+:::js
+```typescript
+const result = await graph.invoke({ value1: "c" });
+console.log(result);
+```
+
+```
+{ value1: 'a b', value2: 10 }
+```
+:::
+
+Note that:
+
+* We kicked off invocation by providing a value for a single state key. We must always provide a value for at least one key.
+* The value we passed in was overwritten by the first node.
+* The second node updated the value.
+* The third node populated a different value.
+
+:::python
+<Tip>
+**Built-in shorthand**
+`langgraph>=0.2.46` includes a built-in short-hand `add_sequence` for adding node sequences. You can compile the same graph as follows:
+
+```python
+builder = StateGraph(State).add_sequence([step_1, step_2, step_3])  # [!code highlight]
+builder.add_edge(START, "step_1")
+
+graph = builder.compile()
+
+graph.invoke({"value_1": "c"})
+```
+</Tip>
+:::
+
+</Accordion>
+
+## Create branches
+
+Parallel execution of nodes is essential to speed up overall graph operation. LangGraph offers native support for parallel execution of nodes, which can significantly enhance the performance of graph-based workflows. This parallelization is achieved through fan-out and fan-in mechanisms, utilizing both standard edges and @[conditional_edges][add_conditional_edges]. Below are some examples showing how to add create branching dataflows that work for you.
+
+### Run graph nodes in parallel
+
+In this example, we fan out from `Node A` to `B and C` and then fan in to `D`. With our state, [we specify the reducer add operation](/oss/langgraph/graph-api#reducers). This will combine or accumulate values for the specific key in the State, rather than simply overwriting the existing value. For lists, this means concatenating the new list with the existing list. See [Process state updates with reducers](/oss/langgraph/graph-api-state#process-state-updates-with-reducers) for more detail on updating state with reducers.
+
+:::python
+```python
+import operator
+from typing import Annotated, Any
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+class State(TypedDict):
+    # The operator.add reducer fn makes this append-only
+    aggregate: Annotated[list, operator.add]
+
+def a(state: State):
+    print(f'Adding "A" to {state["aggregate"]}')
+    return {"aggregate": ["A"]}
+
+def b(state: State):
+    print(f'Adding "B" to {state["aggregate"]}')
+    return {"aggregate": ["B"]}
+
+def c(state: State):
+    print(f'Adding "C" to {state["aggregate"]}')
+    return {"aggregate": ["C"]}
+
+def d(state: State):
+    print(f'Adding "D" to {state["aggregate"]}')
+    return {"aggregate": ["D"]}
+
+builder = StateGraph(State)
+builder.add_node(a)
+builder.add_node(b)
+builder.add_node(c)
+builder.add_node(d)
+builder.add_edge(START, "a")
+builder.add_edge("a", "b")
+builder.add_edge("a", "c")
+builder.add_edge("b", "d")
+builder.add_edge("c", "d")
+builder.add_edge("d", END)
+graph = builder.compile()
+```
+:::
+
+:::js
+```typescript
+import { StateGraph, StateSchema, ReducedValue, GraphNode, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  // The reducer makes this append-only
+  aggregate: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (x, y) => x.concat(y) }
+  ),
+});
+
+const nodeA: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "A" to ${state.aggregate}`);
+  return { aggregate: ["A"] };
+};
+
+const nodeB: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "B" to ${state.aggregate}`);
+  return { aggregate: ["B"] };
+};
+
+const nodeC: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "C" to ${state.aggregate}`);
+  return { aggregate: ["C"] };
+};
+
+const nodeD: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "D" to ${state.aggregate}`);
+  return { aggregate: ["D"] };
+};
+
+const graph = new StateGraph(State)
+  .addNode("a", nodeA)
+  .addNode("b", nodeB)
+  .addNode("c", nodeC)
+  .addNode("d", nodeD)
+  .addEdge(START, "a")
+  .addEdge("a", "b")
+  .addEdge("a", "c")
+  .addEdge("b", "d")
+  .addEdge("c", "d")
+  .addEdge("d", END)
+  .compile();
+```
+:::
+
+:::python
+```python
+from IPython.display import Image, display
+
+display(Image(graph.get_graph().draw_mermaid_png()))
+```
+
+![Parallel execution graph](/oss/images/graph_api_image_3.png)
+:::
+
+:::js
+```typescript
+import * as fs from "node:fs/promises";
+
+const drawableGraph = await graph.getGraphAsync();
+const image = await drawableGraph.drawMermaidPng();
+const imageBuffer = new Uint8Array(await image.arrayBuffer());
+
+await fs.writeFile("graph.png", imageBuffer);
+```
+:::
+
+With the reducer, you can see that the values added in each node are accumulated.
+
+:::python
+```python
+graph.invoke({"aggregate": []}, {"configurable": {"thread_id": "foo"}})
+```
+
+```
+Adding "A" to []
+Adding "B" to ['A']
+Adding "C" to ['A']
+Adding "D" to ['A', 'B', 'C']
+```
+:::
+
+:::js
+```typescript
+const result = await graph.invoke({
+  aggregate: [],
+});
+console.log(result);
+```
+
+```
+Adding "A" to []
+Adding "B" to ['A']
+Adding "C" to ['A']
+Adding "D" to ['A', 'B', 'C']
+{ aggregate: ['A', 'B', 'C', 'D'] }
+```
+:::
+
+<Note>
+In the above example, nodes `"b"` and `"c"` are executed concurrently in the same [superstep](/oss/langgraph/graph-api#graphs). Because they are in the same step, node `"d"` executes after both `"b"` and `"c"` are finished.
+
+Importantly, updates from a parallel superstep may not be ordered consistently. If you need a consistent, predetermined ordering of updates from a parallel superstep, you should write the outputs to a separate field in the state together with a value with which to order them.
+</Note>
+
+<Accordion title="Exception handling?">
+  LangGraph executes nodes within [supersteps](/oss/langgraph/graph-api#graphs), meaning that while parallel branches are executed in parallel, the entire superstep is **transactional**. If any of these branches raises an exception, **none** of the updates are applied to the state (the entire superstep errors).
+
+  Importantly, when using a [checkpointer](/oss/langgraph/persistence), results from successful nodes within a superstep are saved, and don't repeat when resumed.
+
+  If you have error-prone (perhaps want to handle flakey API calls), LangGraph provides two ways to address this:
+
+  1. You can write regular python code within your node to catch and handle exceptions.
+  2. You can set a **[`RetryPolicy`](https://reference.langchain.com/python/langgraph/types/#langgraph.types.RetryPolicy)** to direct the graph to retry nodes that raise certain types of exceptions. Only failing branches are retried, so you needn't worry about performing redundant work.
+
+  Together, these let you perform parallel execution and fully control exception handling.
+</Accordion>
+
+:::python
+<Tip>
+**Set max concurrency**
+You can control the maximum number of concurrent tasks by setting `max_concurrency` in the [configuration](https://reference.langchain.com/python/langchain-core/runnables/config/RunnableConfig) when invoking the graph.
+
+```python
+graph.invoke({"value_1": "c"}, {"configurable": {"max_concurrency": 10}})
+```
+</Tip>
+:::
+
+:::js
+<Tip>
+**Set max concurrency**
+You can control the maximum number of concurrent tasks by setting `max_concurrency` in the [configuration](https://reference.langchain.com/javascript/interfaces/_langchain_langgraph.index.LangGraphRunnableConfig.html) when invoking the graph.
+
+```typescript
+const result = await graph.invoke({ value1: "c" }, {configurable: {max_concurrency: 10}});
+```
+</Tip>
+:::
+
+:::python
+### Defer node execution
+
+Deferring node execution is useful when you want to delay the execution of a node until all other pending tasks are completed. This is particularly relevant when branches have different lengths, which is common in workflows like map-reduce flows.
+
+The above example showed how to fan-out and fan-in when each path was only one step. But what if one branch had more than one step? Let's add a node `"b_2"` in the `"b"` branch:
+
+```python
+import operator
+from typing import Annotated, Any
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+class State(TypedDict):
+    # The operator.add reducer fn makes this append-only
+    aggregate: Annotated[list, operator.add]
+
+def a(state: State):
+    print(f'Adding "A" to {state["aggregate"]}')
+    return {"aggregate": ["A"]}
+
+def b(state: State):
+    print(f'Adding "B" to {state["aggregate"]}')
+    return {"aggregate": ["B"]}
+
+def b_2(state: State):
+    print(f'Adding "B_2" to {state["aggregate"]}')
+    return {"aggregate": ["B_2"]}
+
+def c(state: State):
+    print(f'Adding "C" to {state["aggregate"]}')
+    return {"aggregate": ["C"]}
+
+def d(state: State):
+    print(f'Adding "D" to {state["aggregate"]}')
+    return {"aggregate": ["D"]}
+
+builder = StateGraph(State)
+builder.add_node(a)
+builder.add_node(b)
+builder.add_node(b_2)
+builder.add_node(c)
+builder.add_node(d, defer=True)  # [!code highlight]
+builder.add_edge(START, "a")
+builder.add_edge("a", "b")
+builder.add_edge("a", "c")
+builder.add_edge("b", "b_2")
+builder.add_edge("b_2", "d")
+builder.add_edge("c", "d")
+builder.add_edge("d", END)
+graph = builder.compile()
+```
+
+```python
+from IPython.display import Image, display
+
+display(Image(graph.get_graph().draw_mermaid_png()))
+```
+
+![Deferred execution graph](/oss/images/graph_api_image_4.png)
+
+```python
+graph.invoke({"aggregate": []})
+```
+
+```
+Adding "A" to []
+Adding "B" to ['A']
+Adding "C" to ['A']
+Adding "B_2" to ['A', 'B', 'C']
+Adding "D" to ['A', 'B', 'C', 'B_2']
+```
+
+In the above example, nodes `"b"` and `"c"` are executed concurrently in the same superstep. We set `defer=True` on node `d` so it will not execute until all pending tasks are finished. In this case, this means that `"d"` waits to execute until the entire `"b"` branch is finished.
+
+When every branch always runs, you can wait with a list-form edge instead of `defer=True`. `add_edge` also accepts a list of start nodes. This is not shorthand for separate `add_edge` calls; the two forms behave differently:
+
+```python
+builder.add_edge(["b_2", "c"], "d")  # d runs once, after both b_2 and c complete
+```
+
+- **A list of start nodes** runs `d` once, after all of the listed nodes have completed. If one of them never runs (for example, a conditional edge does not select its branch), `d` never runs and no error is raised. State updates from branches that did complete remain in the graph state, but `d` does not consume them.
+- **Separate edges** run `d` once per superstep in which any incoming branch completes. With branches of equal length, that is a single run; with branches of different lengths, `d` runs more than once.
+- **Separate edges with `defer=True`** (the pattern in the example above) run `d` once, after every selected branch has completed, whether the fan-out selected all of the branches or only some of them.
+
+`defer=True` postpones the node until no tasks are pending anywhere in the graph, not only in the branches that feed it. A `Send` addressed to the node still invokes it separately.
+:::
+
+### Conditional branching
+
+:::python
+If your fan-out should vary at runtime based on the state, you can use @[`add_conditional_edges`] to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
+
+```python
+import operator
+from typing import Annotated, Literal, Sequence
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+class State(TypedDict):
+    aggregate: Annotated[list, operator.add]
+    # Add a key to the state. We will set this key to determine
+    # how we branch.
+    which: str
+
+def a(state: State):
+    print(f'Adding "A" to {state["aggregate"]}')
+    return {"aggregate": ["A"], "which": "c"}  # [!code highlight]
+
+def b(state: State):
+    print(f'Adding "B" to {state["aggregate"]}')
+    return {"aggregate": ["B"]}
+
+def c(state: State):
+    print(f'Adding "C" to {state["aggregate"]}')
+    return {"aggregate": ["C"]}
+
+builder = StateGraph(State)
+builder.add_node(a)
+builder.add_node(b)
+builder.add_node(c)
+builder.add_edge(START, "a")
+builder.add_edge("b", END)
+builder.add_edge("c", END)
+
+def conditional_edge(state: State) -> Literal["b", "c"]:
+    # Fill in arbitrary logic here that uses the state
+    # to determine the next node
+    return state["which"]
+
+builder.add_conditional_edges("a", conditional_edge)  # [!code highlight]
+
+graph = builder.compile()
+```
+
+```python
+from IPython.display import Image, display
+
+display(Image(graph.get_graph().draw_mermaid_png()))
+```
+
+![Conditional branching graph](/oss/images/graph_api_image_5.png)
+
+```python
+result = graph.invoke({"aggregate": []})
+print(result)
+```
+
+```
+Adding "A" to []
+Adding "C" to ['A']
+{'aggregate': ['A', 'C'], 'which': 'c'}
+```
+:::
+
+:::js
+If your fan-out should vary at runtime based on the state, you can use [`addConditionalEdges`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.StateGraph.html#addconditionaledges) to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
+
+```typescript
+import { StateGraph, StateSchema, ReducedValue, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  aggregate: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (x, y) => x.concat(y) }
+  ),
+  // Add a key to the state. We will set this key to determine
+  // how we branch.
+  which: z.string(),  // [!code highlight]
+});
+
+const nodeA: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "A" to ${state.aggregate}`);
+  return { aggregate: ["A"], which: "c" };
+};
+
+const nodeB: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "B" to ${state.aggregate}`);
+  return { aggregate: ["B"] };
+};
+
+const nodeC: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "C" to ${state.aggregate}`);
+  return { aggregate: ["C"] };  // [!code highlight]
+};
+
+const conditionalEdge: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" | "c" }> = (state) => {
+  // Fill in arbitrary logic here that uses the state
+  // to determine the next node
+  return state.which as "b" | "c";
+};
+
+const graph = new StateGraph(State)
+  .addNode("a", nodeA)
+  .addNode("b", nodeB)
+  .addNode("c", nodeC)
+  .addEdge(START, "a")
+  .addEdge("b", END)
+  .addEdge("c", END)
+  .addConditionalEdges("a", conditionalEdge)
+  .compile();
+```
+
+```typescript
+import * as fs from "node:fs/promises";
+
+const drawableGraph = await graph.getGraphAsync();
+const image = await drawableGraph.drawMermaidPng();
+const imageBuffer = new Uint8Array(await image.arrayBuffer());
+
+await fs.writeFile("graph.png", imageBuffer);
+```
+
+```typescript
+const result = await graph.invoke({ aggregate: [] });
+console.log(result);
+```
+
+```
+Adding "A" to []
+Adding "C" to ['A']
+{ aggregate: ['A', 'C'], which: 'c' }
+```
+:::
+
+<Tip>
+Your conditional edges can route to multiple destination nodes. For example:
+
+:::python
+```python
+def route_bc_or_cd(state: State) -> Sequence[str]:
+    if state["which"] == "cd":
+        return ["c", "d"]
+    return ["b", "c"]
+```
+:::
+
+:::js
+```typescript
+const routeBcOrCd: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" | "c" | "d" }> = (state) => {
+  if (state.which === "cd") {
+    return ["c", "d"];
+  }
+  return ["b", "c"];
+};
+```
+:::
+</Tip>
+
+## Create and control loops
+
+When creating a graph with a loop, we require a mechanism for terminating execution. This is most commonly done by adding a [conditional edge](/oss/langgraph/graph-api#conditional-edges) that routes to the [END](/oss/langgraph/graph-api#end-node) node once we reach some termination condition.
+
+You can also set the graph recursion limit when invoking or streaming the graph. The recursion limit sets the number of [super-steps](/oss/langgraph/graph-api#graphs) that the graph is allowed to execute before it raises an error. Read more about the [recursion limit concept](/oss/langgraph/graph-api#recursion-limit).
+
+Let's consider a simple graph with a loop to better understand how these mechanisms work.
+
+<Tip>
+To return the last value of your state instead of receiving a recursion limit error, see the [next section](#impose-a-recursion-limit).
+</Tip>
+
+When creating a loop, you can include a conditional edge that specifies a termination condition:
+
+:::python
+```python
+builder = StateGraph(State)
+builder.add_node(a)
+builder.add_node(b)
+
+def route(state: State) -> Literal["b", END]:
+    if termination_condition(state):
+        return END
+    else:
+        return "b"
+
+builder.add_edge(START, "a")
+builder.add_conditional_edges("a", route)
+builder.add_edge("b", "a")
+graph = builder.compile()
+```
+:::
+
+:::js
+```typescript
+const route: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" }> = (state) => {
+  if (terminationCondition(state)) {
+    return END;
+  } else {
+    return "b";
+  }
+};
+
+const graph = new StateGraph(State)
+  .addNode("a", nodeA)
+  .addNode("b", nodeB)
+  .addEdge(START, "a")
+  .addConditionalEdges("a", route)
+  .addEdge("b", "a")
+  .compile();
+```
+:::
+
+:::python
+To control the recursion limit, specify `"recursion_limit"` in the config. This will raise a `GraphRecursionError`, which you can catch and handle:
+```python
+from langgraph.errors import GraphRecursionError
+
+try:
+    graph.invoke(inputs, {"recursion_limit": 3})
+except GraphRecursionError:
+    print("Recursion Error")
+```
+:::
+
+:::js
+To control the recursion limit, specify `"recursionLimit"` in the config. This will raise a `GraphRecursionError`, which you can catch and handle:
+```typescript
+import { GraphRecursionError } from "@langchain/langgraph";
+
+try {
+  await graph.invoke(inputs, { recursionLimit: 3 });
+} catch (error) {
+  if (error instanceof GraphRecursionError) {
+    console.log("Recursion Error");
+  }
+}
+```
+:::
+
+Let's define a graph with a simple loop. Note that we use a conditional edge to implement a termination condition.
+
+:::python
+```python
+import operator
+from typing import Annotated, Literal
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+class State(TypedDict):
+    # The operator.add reducer fn makes this append-only
+    aggregate: Annotated[list, operator.add]
+
+def a(state: State):
+    print(f'Node A sees {state["aggregate"]}')
+    return {"aggregate": ["A"]}
+
+def b(state: State):
+    print(f'Node B sees {state["aggregate"]}')
+    return {"aggregate": ["B"]}
+
+# Define nodes
+builder = StateGraph(State)
+builder.add_node(a)
+builder.add_node(b)
+
+# Define edges
+def route(state: State) -> Literal["b", END]:
+    if len(state["aggregate"]) < 7:
+        return "b"
+    else:
+        return END
+
+builder.add_edge(START, "a")
+builder.add_conditional_edges("a", route)
+builder.add_edge("b", "a")
+graph = builder.compile()
+```
+
+```python
+from IPython.display import Image, display
+
+display(Image(graph.get_graph().draw_mermaid_png()))
+```
+
+![Simple loop graph](/oss/images/graph_api_image_7.png)
+:::
+
+:::js
+```typescript
+import { StateGraph, StateSchema, ReducedValue, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  // The reducer makes this append-only
+  aggregate: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (x, y) => x.concat(y) }
+  ),
+});
+
+const nodeA: GraphNode<typeof State> = (state) => {
+  console.log(`Node A sees ${state.aggregate}`);
+  return { aggregate: ["A"] };
+};
+
+const nodeB: GraphNode<typeof State> = (state) => {
+  console.log(`Node B sees ${state.aggregate}`);
+  return { aggregate: ["B"] };
+};
+
+// Define edges
+const route: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" }> = (state) => {
+  if (state.aggregate.length < 7) {
+    return "b";
+  } else {
+    return END;
+  }
+};
+
+const graph = new StateGraph(State)
+  .addNode("a", nodeA)
+  .addNode("b", nodeB)
+  .addEdge(START, "a")
+  .addConditionalEdges("a", route)
+  .addEdge("b", "a")
+  .compile();
+```
+
+```typescript
+import * as fs from "node:fs/promises";
+
+const drawableGraph = await graph.getGraphAsync();
+const image = await drawableGraph.drawMermaidPng();
+const imageBuffer = new Uint8Array(await image.arrayBuffer());
+
+await fs.writeFile("graph.png", imageBuffer);
+```
+:::
+
+This architecture is similar to a [ReAct agent](/oss/langgraph/workflows-agents) in which node `"a"` is a tool-calling model, and node `"b"` represents the tools.
+
+In our `route` conditional edge, we specify that we should end after the `"aggregate"` list in the state passes a threshold length.
+
+Invoking the graph, we see that we alternate between nodes `"a"` and `"b"` before terminating once we reach the termination condition.
+
+:::python
+```python
+graph.invoke({"aggregate": []})
+```
+
+```
+Node A sees []
+Node B sees ['A']
+Node A sees ['A', 'B']
+Node B sees ['A', 'B', 'A']
+Node A sees ['A', 'B', 'A', 'B']
+Node B sees ['A', 'B', 'A', 'B', 'A']
+Node A sees ['A', 'B', 'A', 'B', 'A', 'B']
+```
+:::
+
+:::js
+```typescript
+const result = await graph.invoke({ aggregate: [] });
+console.log(result);
+```
+
+```
+Node A sees []
+Node B sees ['A']
+Node A sees ['A', 'B']
+Node B sees ['A', 'B', 'A']
+Node A sees ['A', 'B', 'A', 'B']
+Node B sees ['A', 'B', 'A', 'B', 'A']
+Node A sees ['A', 'B', 'A', 'B', 'A', 'B']
+{ aggregate: ['A', 'B', 'A', 'B', 'A', 'B', 'A'] }
+```
+:::
+
+### Impose a recursion limit
+
+In some applications, we may not have a guarantee that we will reach a given termination condition. In these cases, we can set the graph's [recursion limit](/oss/langgraph/graph-api#recursion-limit). This will raise a `GraphRecursionError` after a given number of [supersteps](/oss/langgraph/graph-api#graphs). We can then catch and handle this exception:
+
+:::python
+```python
+from langgraph.errors import GraphRecursionError
+
+try:
+    graph.invoke({"aggregate": []}, {"recursion_limit": 4})
+except GraphRecursionError:
+    print("Recursion Error")
+```
+
+```
+Node A sees []
+Node B sees ['A']
+Node C sees ['A', 'B']
+Node D sees ['A', 'B']
+Node A sees ['A', 'B', 'C', 'D']
+Recursion Error
+```
+:::
+
+:::js
+```typescript
+import { GraphRecursionError } from "@langchain/langgraph";
+
+try {
+  await graph.invoke({ aggregate: [] }, { recursionLimit: 4 });
+} catch (error) {
+  if (error instanceof GraphRecursionError) {
+    console.log("Recursion Error");
+  }
+}
+```
+
+```
+Node A sees []
+Node B sees ['A']
+Node A sees ['A', 'B']
+Node B sees ['A', 'B', 'A']
+Node A sees ['A', 'B', 'A', 'B']
+Recursion Error
+```
+:::
+
+:::python
+<Accordion title="Extended example: loops with branches">
+  To better understand how the recursion limit works, let's consider a more complex example. Below we implement a loop, but one step fans out into two nodes:
+
+  ```python
+  import operator
+  from typing import Annotated, Literal
+  from typing_extensions import TypedDict
+  from langgraph.graph import StateGraph, START, END
+
+  class State(TypedDict):
+      aggregate: Annotated[list, operator.add]
+
+  def a(state: State):
+      print(f'Node A sees {state["aggregate"]}')
+      return {"aggregate": ["A"]}
+
+  def b(state: State):
+      print(f'Node B sees {state["aggregate"]}')
+      return {"aggregate": ["B"]}
+
+  def c(state: State):
+      print(f'Node C sees {state["aggregate"]}')
+      return {"aggregate": ["C"]}
+
+  def d(state: State):
+      print(f'Node D sees {state["aggregate"]}')
+      return {"aggregate": ["D"]}
+
+  # Define nodes
+  builder = StateGraph(State)
+  builder.add_node(a)
+  builder.add_node(b)
+  builder.add_node(c)
+  builder.add_node(d)
+
+  # Define edges
+  def route(state: State) -> Literal["b", END]:
+      if len(state["aggregate"]) < 7:
+          return "b"
+      else:
+          return END
+
+  builder.add_edge(START, "a")
+  builder.add_conditional_edges("a", route)
+  builder.add_edge("b", "c")
+  builder.add_edge("b", "d")
+  builder.add_edge(["c", "d"], "a")
+  graph = builder.compile()
+  ```
+
+  ```python
+  from IPython.display import Image, display
+
+  display(Image(graph.get_graph().draw_mermaid_png()))
+  ```
+
+  ![Complex loop graph with branches](/oss/images/graph_api_image_8.png)
+
+  This graph looks complex, but can be conceptualized as loop of [supersteps](/oss/langgraph/graph-api#graphs):
+
+  1. Node A
+  2. Node B
+  3. Nodes C and D
+  4. Node A
+  5. ...
+
+  We have a loop of four supersteps, where nodes C and D are executed concurrently. The list-form edge waits for both `"c"` and `"d"` before returning to `"a"`. For how list-form edges differ from separate edges into the same node, see [Defer node execution](#defer-node-execution).
+
+  Invoking the graph as before, we see that we complete two full "laps" before hitting the termination condition:
+
+  ```python
+  result = graph.invoke({"aggregate": []})
+  ```
+
+  ```
+  Node A sees []
+  Node B sees ['A']
+  Node D sees ['A', 'B']
+  Node C sees ['A', 'B']
+  Node A sees ['A', 'B', 'C', 'D']
+  Node B sees ['A', 'B', 'C', 'D', 'A']
+  Node D sees ['A', 'B', 'C', 'D', 'A', 'B']
+  Node C sees ['A', 'B', 'C', 'D', 'A', 'B']
+  Node A sees ['A', 'B', 'C', 'D', 'A', 'B', 'C', 'D']
+  ```
+
+  However, if we set the recursion limit to four, we only complete one lap because each lap is four supersteps:
+
+  ```python
+  from langgraph.errors import GraphRecursionError
+
+  try:
+      result = graph.invoke({"aggregate": []}, {"recursion_limit": 4})
+  except GraphRecursionError:
+      print("Recursion Error")
+  ```
+
+  ```
+  Node A sees []
+  Node B sees ['A']
+  Node C sees ['A', 'B']
+  Node D sees ['A', 'B']
+  Node A sees ['A', 'B', 'C', 'D']
+  Recursion Error
+  ```
+</Accordion>
+:::
+
+### Access and handle the recursion counter
+
+:::python
+The current step counter is available in `config["metadata"]["langgraph_step"]` inside any node. Use it to react before the limit is hit, or prefer the managed `RemainingSteps` value when you want to route based on how many steps remain.
+
+#### Access the current step counter
+
+```python
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph
+
+
+def my_node(state: dict, config: RunnableConfig) -> dict:
+    current_step = config["metadata"]["langgraph_step"]
+    print(f"Currently on step: {current_step}")
+    return state
+```
+
+#### Handle recursion with RemainingSteps
+
+`RemainingSteps` is a managed value that tracks how many steps remain before the recursion limit. Under the hood it creates a managed channel that exists for the duration of the run. Use it to route to a completion or fallback path before LangGraph raises `GraphRecursionError`.
+
+```python
+import operator
+from typing import Annotated, Literal
+
+from typing_extensions import TypedDict
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.managed.is_last_step import RemainingSteps
+
+
+class State(TypedDict):
+    messages: Annotated[list, operator.add]
+    remaining_steps: RemainingSteps
+
+
+def reasoning_node(state: State) -> dict:
+    remaining = state["remaining_steps"]
+    if remaining <= 2:
+        return {"messages": ["Approaching limit, wrapping up..."]}
+    return {"messages": ["thinking..."]}
+
+
+def route_decision(state: State) -> Literal["reasoning_node", "fallback_node"]:
+    if state["remaining_steps"] <= 2:
+        return "fallback_node"
+    return "reasoning_node"
+
+
+def fallback_node(state: State) -> dict:
+    return {"messages": ["Reached complexity limit, providing best effort answer"]}
+
+
+builder = StateGraph(State)
+builder.add_node("reasoning_node", reasoning_node)
+builder.add_node("fallback_node", fallback_node)
+builder.add_edge(START, "reasoning_node")
+builder.add_conditional_edges("reasoning_node", route_decision)
+builder.add_edge("fallback_node", END)
+graph = builder.compile()
+
+result = graph.invoke({"messages": []}, {"recursion_limit": 10})
+```
+
+#### Compare proactive and reactive approaches
+
+Handle the limit inside the graph with `RemainingSteps`, or catch `GraphRecursionError` outside the graph as a fallback:
+
+```python
+import operator
+from typing import Annotated, Literal
+
+from typing_extensions import TypedDict
+
+from langgraph.errors import GraphRecursionError
+from langgraph.graph import END, START, StateGraph
+from langgraph.managed.is_last_step import RemainingSteps
+
+
+class State(TypedDict):
+    messages: Annotated[list, operator.add]
+    remaining_steps: RemainingSteps
+
+
+def agent_with_monitoring(state: State) -> dict:
+    remaining = state["remaining_steps"]
+    if remaining <= 2:
+        return {"messages": ["Approaching limit, returning partial result"]}
+    return {"messages": [f"Processing... ({remaining} steps remaining)"]}
+
+
+def route_decision(state: State) -> Literal["agent", END]:
+    if state["remaining_steps"] <= 2:
+        return END
+    return "agent"
+
+
+builder = StateGraph(State)
+builder.add_node("agent", agent_with_monitoring)
+builder.add_edge(START, "agent")
+builder.add_conditional_edges("agent", route_decision)
+graph = builder.compile()
+
+# Proactive: graph completes without raising
+result = graph.invoke({"messages": []}, {"recursion_limit": 10})
+
+# Reactive: catch the error after the graph fails
+try:
+    result = graph.invoke({"messages": []}, {"recursion_limit": 10})
+except GraphRecursionError:
+    result = {"messages": ["Fallback: recursion limit exceeded"]}
+```
+
+| Approach | Detection | Handling | Control flow |
+| --- | --- | --- | --- |
+| Proactive (`RemainingSteps`) | Before the limit | Inside the graph via conditional routing | Graph continues to a completion path |
+| Reactive (`GraphRecursionError`) | After the limit | Outside the graph in `try` / `except` | Graph execution stops |
+
+**Proactive advantages:**
+
+- Graceful degradation inside the graph
+- Intermediate state can remain in checkpoints
+- Partial results without an exception
+- Graph completes normally
+
+**Reactive advantages:**
+
+- Simpler graph logic
+- No need to change routing for the limit
+- Centralized error handling outside the graph
+
+#### Inspect other metadata
+
+Along with `langgraph_step`, these keys are also available in `config["metadata"]`:
+
+```python
+from langchain_core.runnables import RunnableConfig
+
+
+def inspect_metadata(state: dict, config: RunnableConfig) -> dict:
+    metadata = config["metadata"]
+    print(f"Step: {metadata['langgraph_step']}")
+    print(f"Node: {metadata['langgraph_node']}")
+    print(f"Triggers: {metadata['langgraph_triggers']}")
+    print(f"Path: {metadata['langgraph_path']}")
+    print(f"Checkpoint NS: {metadata['langgraph_checkpoint_ns']}")
+    return state
+```
+:::
+
+:::js
+Nodes can read the current step from `config.metadata.langgraph_step`. Related keys include `langgraph_node`, `langgraph_triggers`, `langgraph_path`, and `langgraph_checkpoint_ns`. Prefer explicit termination conditions in the graph. Catching `GraphRecursionError` outside the graph is a safety net.
+:::
+
+:::python
+## Async
+
+Using the async programming paradigm can produce significant performance improvements when running [IO-bound](https://en.wikipedia.org/wiki/I/O_bound) code concurrently (e.g., making concurrent API requests to a chat model provider).
+
+To convert a `sync` implementation of the graph to an `async` implementation, you will need to:
+
+1. Update `nodes` use `async def` instead of `def`.
+2. Update the code inside to use `await` appropriately.
+3. Invoke the graph with `.ainvoke` or `.astream` as desired.
+
+Because many LangChain objects implement the [Runnable Protocol](https://python.langchain.com/docs/expression_language/interface/) which has `async` variants of all the `sync` methods it's typically fairly quick to upgrade a `sync` graph to an `async` graph.
+
+See example below. To demonstrate async invocations of underlying LLMs, we will include a chat model:
+
+<ChatModelTabs />
+
+```python
+from langchain.chat_models import init_chat_model
+from langgraph.graph import MessagesState, StateGraph
+
+async def node(state: MessagesState):  # [!code highlight]
+    new_message = await llm.ainvoke(state["messages"])  # [!code highlight]
+    return {"messages": [new_message]}
+
+builder = StateGraph(MessagesState).add_node(node).set_entry_point("node")
+graph = builder.compile()
+
+input_message = {"role": "user", "content": "Hello"}
+result = await graph.ainvoke({"messages": [input_message]})  # [!code highlight]
+```
+
+<Tip>
+**Async streaming**
+See the [streaming guide](/oss/langgraph/streaming) for examples of streaming with async.
+</Tip>
+:::
+
