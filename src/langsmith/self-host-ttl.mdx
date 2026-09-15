@@ -6,25 +6,25 @@ sidebarTitle: Enable TTL & data retention
 LangSmith Self-Hosted supports automatic TTL and data retention for traces. Use this to comply with data privacy regulations or to reduce storage by automatically cleaning up old traces. Run rules and other qualifying actions can also extend a trace's retention period automatically.
 
 <Note>
-**Self-hosted [Enterprise](/langsmith/pricing-plans) customers:** You can configure extended data retention at the workspace level through the UI — no environment variable changes required. See [Customize extended retention policy](/langsmith/data-purging-compliance#customize-extended-retention-policy). The system-wide TTL configuration on this page is still supported.
+**Self-hosted [Enterprise](/langsmith/pricing-plans) customers:** You can configure extended data retention at the workspace level through the UI. No environment variable changes are required. See [Customize extended retention policy](/langsmith/data-purging-compliance#customize-extended-retention-policy). The system-wide TTL configuration on this page is still supported.
 </Note>
 
 ## TTL configuration precedence
 
-LangSmith determines how long to keep a trace through two independent decisions: which [retention tier](/langsmith/usage-and-billing#data-retention) the trace belongs to, and what period applies to that tier.
+LangSmith determines how long to keep a trace in two steps: which retention tier the trace belongs to, and what period applies to that tier.
 
-**Tier assignment** — LangSmith uses the first match, highest precedence first:
+LangSmith assigns the tier in the following order, highest precedence first:
 
-1. **Trace upgrade**: a run rule or other qualifying action promotes an individual trace to `longlived`, overriding the project tier.
-2. **Project tier**: the tier configured for the tracing project.
-3. **Workspace default**: new projects inherit this tier. Changing it affects new projects only unless you apply it to all existing projects.
-4. **Organization default**: applies to workspaces with no default of their own.
-5. **`shortlived`**: the fallback when no default is set.
+1. **Trace upgrade**: A run rule or other qualifying action promotes an individual trace to `longlived`, overriding whatever tier would otherwise apply.
+2. **Project tier**: The tier configured for the tracing project.
+3. **Workspace default**: New projects inherit this tier. Changing it affects new projects only unless you apply it to all existing projects.
+4. **Organization default**: Applies to workspaces with no default of their own.
+5. **`shortlived`**: The fallback when no default is set.
 
-**Period resolution** — once the tier is assigned, LangSmith resolves the retention period:
+LangSmith then resolves the retention period for the assigned tier:
 
-- **`longlived`**: the workspace extended retention period (if set through the UI), otherwise the `longlived` value from the [Helm configuration](#requirements).
-- **`shortlived`**: the `shortlived` value from the [Helm configuration](#requirements).
+- **`longlived`**: The workspace extended retention period (if set through the UI), otherwise the `longlived` value from the [Helm configuration](#requirements).
+- **`shortlived`**: The `shortlived` value from the [Helm configuration](#requirements).
 
 The Helm chart defaults to 14 days for `shortlived` and 400 days for `longlived`.
 
@@ -32,8 +32,8 @@ The Helm chart defaults to 14 days for `shortlived` and 400 days for `longlived`
 
 Configure retention through Helm or environment variable settings:
 
-- **Enabled**: enable or disable automatic data retention. When enabled, set your default organization and project TTL tiers through the UI (see [data retention guide](/langsmith/usage-and-billing#data-retention)).
-- **Retention periods**: set system-wide retention periods for `shortlived` and `longlived` traces. Once set, manage retention at the project level or set an organization-wide default for new projects.
+- **Enabled**: Enable or disable automatic data retention. When enabled, set your default organization and project TTL tiers through the UI (see [data retention guide](/langsmith/usage-and-billing#data-retention)).
+- **Retention periods**: Set system-wide retention periods for `shortlived` and `longlived` traces. Once set, manage retention at the project level or set an organization-wide default for new projects.
 
 ```yaml Helm
 config:
@@ -47,7 +47,7 @@ config:
 
 ## ClickHouse TTL cleanup job
 
-As of version **0.11**, a cron job runs on weekends to delete expired data that ClickHouse's built-in TTL mechanism may not have cleaned up.
+As of version 0.11, a cron job runs on weekends to delete expired data that ClickHouse's built-in TTL mechanism may not have cleaned up.
 
 <Warning>
 This job uses **mutations** (`ALTER TABLE DELETE`), which are expensive operations that can affect ClickHouse performance. Run them only during off-peak hours (nights and weekends). Testing with **1 concurrent active** mutation (the default) did not produce significant CPU, memory, or latency increases.
@@ -55,10 +55,10 @@ This job uses **mutations** (`ALTER TABLE DELETE`), which are expensive operatio
 
 ### Default schedule
 
-The cleanup job runs on the following schedule by default:
+By default, the cleanup job runs:
 
-- **Saturday**: 8pm and 10pm UTC
-- **Sunday**: 12am, 2am, and 4am UTC
+- **Saturday**: 8pm and 10pm UTC.
+- **Sunday**: 12am, 2am, and 4am UTC.
 
 ### Disabling the job
 
@@ -94,10 +94,10 @@ To use a single cron schedule, set both `CLICKHOUSE_TTL_CLEANUP_CRON_WEEKEND_EVE
 
 ### Configuring minimum expired rows per part
 
-The job scans each table part and deletes data from parts that contain at least a minimum number of expired rows. This threshold balances efficiency and thoroughness:
+The job works through the tables one at a time. Within each table it scans the parts and deletes data from any part holding at least a minimum number of expired rows. This threshold balances efficiency and thoroughness:
 
-- **Too low**: the job scans entire parts to clear minimal data (inefficient).
-- **Too high**: the job skips parts with significant expired data.
+- **Too low**: The job scans entire parts to clear minimal data (inefficient).
+- **Too high**: The job skips parts with significant expired data.
 
 ```yaml
 queue:
@@ -137,7 +137,7 @@ queue:
 ```
 
 <Warning>
-More concurrent `DELETE` operations can significantly slow inserts and reads. Monitor your system before increasing this value.
+More concurrent `DELETE` operations can significantly slow inserts and reads. Increase this value only if you can tolerate slower insert and read latencies, and monitor the system after you do.
 </Warning>
 
 ### Emergency: Stopping running mutations
@@ -162,7 +162,7 @@ If you see latency spikes and need to stop a running mutation:
 
 If disk space does not decrease after the job runs, or keeps growing, backups may be the cause. Backup processes create filesystem hard links that prevent ClickHouse from releasing data.
 
-To check, inspect these directories inside your ClickHouse pod:
+Check these directories inside your ClickHouse pod:
 
 - `/var/lib/clickhouse/backup`
 - `/var/lib/clickhouse/shadow`
