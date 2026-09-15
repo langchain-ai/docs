@@ -86,6 +86,23 @@ Vale is deterministic and CI blocks on it, so its output is not a judgment call.
 Report every violation with its file and line. If invoked with `--fix`, correct
 them; otherwise list them.
 
+Lint the merge-base version of each changed file as well, and report the
+difference rather than the raw count:
+
+```bash
+git show origin/main:<file> > <scratch>/base-<name>
+<main-checkout>/.bin/vale <scratch>/base-<name>
+```
+
+A file that already failed on `main` carries pre-existing debt the author did
+not introduce. A file that was clean on `main` and fails now is this diff's CI
+blocker. Say which one it is, because attribution is the difference between a
+finding the author has to fix and one they can reasonably decline.
+
+Reading the diff text is not a substitute for either run. A patch shows added
+lines without their column offsets or their surrounding component, which is
+exactly what these rules turn on.
+
 Vale covers terminology, contractions, first person, future tense, Oxford
 commas, spaced em dashes, navigation-path arrows, and heading case. **Do not
 spend model judgment re-checking what Vale already checks**, with one exception:
@@ -161,6 +178,13 @@ Measure before reporting a convention violation. If you are about to say a
 heading form or phrasing is wrong, grep the repository for how often it already
 appears. A form used widely is established practice, not a defect, however much
 the guide seems to prohibit it. Report the count either way.
+
+A diff can also **leave** a convention rather than break a new one. Lowercasing
+the explanation in `- **Term**: Explanation.`, dropping a trailing period, or
+swapping a colon lead-in for a dash each reads as a harmless copy edit on its
+own. Compare the before and after of that exact form, then count both spellings
+across `src/`. When the base was following the majority, the change is the
+finding.
 
 Measure the same way when the diff **adopts** a convention rather than breaks
 one, because a repeated block has three parts and matching two of them still
