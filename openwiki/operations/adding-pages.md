@@ -1,11 +1,8 @@
 ---
 type: operations guide
-title: Adding and Modifying Documentation Pages
-description: Safely add, revise, move, or remove documentation by selecting the owning source, synchronizing navigation and redirects, and validating generated site surfaces.
+title: Adding and Maintaining Documentation Pages
+description: Safely add, revise, move, or retire documentation by selecting the owning source, synchronizing navigation and redirects, regenerating derived content, and validating the built site.
 tags: [documentation, operations, navigation, redirects, build-system]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-14T08:24:18.469Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -47,10 +44,13 @@ sources:
     resource: repo://src/langsmith/managed-deep-agents-connections.mdx
   - id: openwiki-source-a39cb5ba9006abfe6280b6f8
     resource: repo://src/oss/openwiki/cli-reference.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-09-14T08:24:18.469Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-15T08:21:56.110Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-15T08:21:56.110Z
 ---
 
-# Adding and Modifying Documentation Pages
+# Adding and Maintaining Documentation Pages
 
 A documentation change is complete only when every owning surface agrees. Authored prose and assets live under `src/`; `src/docs.json` owns visible navigation and redirects; the pipeline derives `build/`. Never edit `build/` to repair a preview or validation result. Fix its source input, then regenerate it.
 
