@@ -49,16 +49,20 @@ once to link the tree.
 |-------|-----------|
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
 | `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff. |
+| `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
 | `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
-| `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. |
+| `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
 | `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
 
-Invoke a skill when the task matches it. This file holds the rules that apply to
-every task; a skill holds the procedure that only some tasks need, so skills
-link back here rather than restating these rules. See
+Invoke a skill when the task matches it. Adding or changing tooling (a script,
+a workflow, a Makefile target, a PR check, a scheduled job, or a skill) also
+carries a documentation step: invoke `docs-tooling-notion` before handing off
+the pull request, whether or not anyone asked for it. This file holds the rules
+that apply to every task; a skill holds the procedure that only some tasks need,
+so skills link back here rather than restating these rules. See
 [`.agents/skills/README.md`](.agents/skills/README.md) for how to add one.
 
 ## Project structure
