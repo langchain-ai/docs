@@ -82,11 +82,13 @@ The agent cannot modify skills at runtime.
 
 ## Deployment
 
-When you run `mda deploy`, MDA syncs every UTF-8 file under `skills/` to the agent's [Context Hub](/langsmith/use-the-context-hub).
+When you run `mda deploy`, MDA syncs every UTF-8 file under `skills/` to the agent's [Context Hub](/langsmith/javascript/managed-deep-agents-context-hub).
 
 You can then edit skills in the LangSmith UI and apply those changes to the agent.
 
 It is best to keep the skill files in the repo as the source of truth for lasting changes, as later deployments sync the project copies again and remove deployed skill files that do not exist locally.
+
+For what syncs, what does not, and how to open the repo from a deployment, see [Context Hub](/langsmith/javascript/managed-deep-agents-context-hub).
 
 ## When to use skills
 

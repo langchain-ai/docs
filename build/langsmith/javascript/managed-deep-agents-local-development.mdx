@@ -45,7 +45,7 @@ After changing project files, stop and rerun `mda dev` to recompile the project.
 
 1. Validates the project and compiles it into `.mda/build`.
 2. Copies the project `.env` into the local build and adds local-only identity configuration when needed.
-3. Creates a local Context Hub mock for instructions, skills, and memory.
+3. Creates a local [Context Hub](/langsmith/javascript/managed-deep-agents-context-hub) mock for instructions, skills, and memory.
 4. Starts the language-specific LangGraph development server.
 5. Opens the agent in Studio.
 

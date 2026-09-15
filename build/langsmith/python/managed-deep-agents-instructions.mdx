@@ -37,11 +37,13 @@ The agent cannot modify these instructions at runtime.
 
 ## Deployment
 
-When you run `mda deploy`, MDA syncs `instructions.md` to the agent's [Context Hub](/langsmith/use-the-context-hub).
+When you run `mda deploy`, MDA syncs `instructions.md` to the agent's [Context Hub](/langsmith/python/managed-deep-agents-context-hub).
 
 You can then edit the instructions in the LangSmith UI and have those changes apply to the agent.
 
 It is best to keep the `instructions.md` file in the repo as the source of truth for lasting changes, as later deployments sync the project copy again.
+
+For what syncs, what does not, and how to open the repo from a deployment, see [Context Hub](/langsmith/python/managed-deep-agents-context-hub).
 
 ## When to use instructions
 
