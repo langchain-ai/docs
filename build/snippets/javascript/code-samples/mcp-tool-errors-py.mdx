@@ -1,0 +1,23 @@
+```python
+from langchain.agents import create_agent
+from langchain.mcp import MCPAdapter
+from langchain.messages import ToolMessage
+
+
+async def divide_by_zero(server) -> dict:
+    async with MCPAdapter(server) as adapter:
+        tools = await adapter.list_tools()
+        agent = create_agent("claude-sonnet-5", tools)
+        result = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "What is 10 divided by 0?"}]}
+        )
+
+    # A server error (isError=True) reaches the model as a failed ToolMessage,
+    # so the agent can read the server's own message and recover. Transport
+    # failures still raise, because a model cannot act on those.
+    for message in result["messages"]:
+        if isinstance(message, ToolMessage) and message.status == "error":
+            print(f"Tool reported: {message.text}")  # [!code highlight]
+
+    return result
+```
