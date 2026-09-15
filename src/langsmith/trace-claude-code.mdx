@@ -112,20 +112,22 @@ export CC_LANGSMITH_METADATA='{"author":"jane","environment":"development"}'
 
 The metadata keys and values will appear on all runs in LangSmith, which you can use to filter and search traces.
 
-## Muting a thread
+## Mute a thread
 
-Muting lets you suppress input/output content and unsafe metadata from traces on a per-thread basis, without disabling tracing entirely. Muting is off by default unless you [configure a default](#setting-a-default-mute-configuration).
+Muting suppresses a thread's input and output content in traces without disabling tracing. Muting is off by default unless you [set a default](#set-a-default-mute-configuration).
 
-With tracing enabled, run these argument-free plugin commands inside Claude Code:
+With tracing enabled, run these plugin commands inside Claude Code. Neither command takes arguments:
 
-- `/langsmith-tracing:mute` — omit this thread's input/output content and unsafe metadata from all subsequent traces.
-- `/langsmith-tracing:unmute` — restore full tracing for subsequent turns in this thread.
+- `/langsmith-tracing:mute`: Omit this thread's input and output content from later traces.
+- `/langsmith-tracing:unmute`: Restore full tracing for later turns in this thread.
 
-Muted runs retain their normal nesting, names, timing, status, model/tool identity, and token usage. Inputs and outputs are replaced with a system notice. Both commands apply **from the next turn**; the current turn is unchanged.
+Both commands apply from the next turn, so the current turn is unchanged. A turn's mode is fixed when the turn starts, and its subagents inherit that mode.
 
-### Setting a default mute configuration
+Muted runs keep their normal nesting, names, timing, status, model and tool identity, and token usage. Inputs and outputs are replaced with a system notice. Muted mode also omits raw errors, identity and repository attribution, custom metadata, SDK runtime metadata, and replica metadata overrides. Muting is independent of secret redaction.
 
-To start all threads in metadata-only mode without running a command in each thread, set the `CC_LANGSMITH_DEFAULT_MUTED` environment variable:
+### Set a default mute configuration
+
+To start threads in metadata-only mode without running a command in each one, set `CC_LANGSMITH_DEFAULT_MUTED` to `"true"`:
 
 <Tabs>
 
@@ -133,12 +135,14 @@ To start all threads in metadata-only mode without running a command in each thr
 
 ```json
 {
-  "enabled": true,
-  "defaultMuted": true
+  "env": {
+    "TRACE_TO_LANGSMITH": "true",
+    "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
+    "CC_LANGSMITH_PROJECT": "my-project",
+    "CC_LANGSMITH_DEFAULT_MUTED": "true"
+  }
 }
 ```
-
-Save this to your project `.claude/langsmith.json` or user `~/.claude/langsmith.json`.
 
 </Tab>
 
@@ -146,14 +150,17 @@ Save this to your project `.claude/langsmith.json` or user `~/.claude/langsmith.
 
 ```bash
 export CC_LANGSMITH_DEFAULT_MUTED="true"
-# Use "false" to return to the unmuted default.
 ```
 
 </Tab>
 
 </Tabs>
 
-Thread mute preferences are sticky and stored in a `langsmith_state.privacy.json` file. A saved per-thread override always wins over the configured default. Deleting the privacy file removes all thread overrides and resets to the configured default (unmuted when unset).
+Set the variable to `"false"` to return to the unmuted default. The comparison is case-insensitive, and any other value mutes, including an empty string.
+
+The plugin also reads a `defaultMuted` boolean from its own configuration files, in this order: `.claude/langsmith.json` and `langsmith-plugins.json` in the project directory, then `~/.claude/langsmith.json` and `~/.langsmith-plugins.json`. The environment variable takes precedence over all four.
+
+Thread preferences are sticky. The plugin saves each explicit mute or unmute to a privacy file, `~/.claude/state/langsmith_state.privacy.json` by default, and a saved thread preference wins over the configured default in both directions. Deleting the privacy file removes every thread override and returns each thread to the configured default.
 
 ## Usage with GitHub Actions
 
