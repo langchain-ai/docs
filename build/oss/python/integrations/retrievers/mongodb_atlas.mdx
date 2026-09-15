@@ -1,0 +1,186 @@
+---
+title: MongoDB Atlas
+sidebarTitle: MongoDB Atlas
+description: Integrate with the MongoDBAtlasHybridSearchRetriever using LangChain Python.
+integration:
+  name: MongoDBAtlas
+  pypi: langchain-mongodb
+---
+
+>[MongoDB Atlas](https://www.mongodb.com/docs/atlas/) is a fully managed cloud database available in AWS, Azure, and GCP. It supports native vector search, full-text search (BM25), and hybrid search on your MongoDB document data.
+
+`MongoDBAtlasHybridSearchRetriever` combines vector search and full-text search using Reciprocal Rank Fusion (RRF) to return the most relevant documents from an Atlas collection. For keyword retrieval without a vector index, `MongoDBAtlasFullTextSearchRetriever` uses Atlas Search's Lucene (BM25) analyzer.
+
+Both retrievers subclass `BaseRetriever` and ship in the `langchain-mongodb` package. You can also cast a [MongoDB Atlas vector store](/oss/python/integrations/vectorstores/mongodb_atlas) to a retriever with `.as_retriever()`. Use the dedicated retriever classes when you need hybrid or full-text-only search.
+
+This guide helps you get started with the MongoDB Atlas [retriever](/oss/python/deepagents/retrieval). For detailed documentation of all `MongoDBAtlasHybridSearchRetriever` features and configurations, see the [API reference](https://reference.langchain.com/python/langchain-mongodb/retrievers/MongoDBAtlasHybridSearchRetriever).
+
+### Integration details
+
+<ItemTable category="document_retrievers" item="MongoDBAtlasHybridSearchRetriever" />
+
+## Setup
+
+You need a running MongoDB Atlas cluster with Atlas Search enabled. Create a cluster in the [Atlas UI](https://www.mongodb.com/cloud/atlas/register) if you do not already have one.
+
+`MongoDBAtlasHybridSearchRetriever` requires two search indexes on the target collection:
+
+- A **vector search index** for semantic recall
+- A **full-text search index** for keyword recall
+
+See [Create indexes](#create-indexes) below, or create the indexes manually in the Atlas UI.
+
+If you want automated tracing from individual queries, set your [LangSmith](/langsmith/home) API key:
+
+```python
+import getpass
+import os
+
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+Install `langchain-mongodb`. The following examples also use Voyage AI embeddings:
+
+<CodeGroup>
+```bash pip
+pip install -qU langchain-mongodb langchain-voyageai
+```
+
+```bash uv
+uv add langchain-mongodb langchain-voyageai
+```
+</CodeGroup>
+
+### Configure
+
+Set your Atlas connection string and open a collection handle:
+
+```python
+import getpass
+import os
+
+from pymongo import MongoClient
+
+if not os.environ.get("MONGODB_ATLAS_URI"):
+    os.environ["MONGODB_ATLAS_URI"] = getpass.getpass("Enter your MongoDB Atlas URI: ")
+
+client = MongoClient(os.environ["MONGODB_ATLAS_URI"])
+collection = client["<db_name>"]["<collection_name>"]
+```
+
+### Create indexes
+
+Create a vector search index and a full-text search index on the collection before you use hybrid search. Match `dimensions` to your embeddings model (`voyage-4-lite` uses 1024):
+
+```python
+from langchain_mongodb import MongoDBAtlasVectorSearch
+from langchain_mongodb.index import create_fulltext_search_index
+from langchain_voyageai import VoyageAIEmbeddings  # swap in any embeddings class
+
+embeddings = VoyageAIEmbeddings(model="voyage-4-lite")
+
+vector_store = MongoDBAtlasVectorSearch(
+    collection=collection,
+    embedding=embeddings,
+    index_name="vector_index",
+)
+
+# Create the vector search index (runs asynchronously on Atlas)
+vector_store.create_vector_search_index(
+    dimensions=1024,
+    wait_until_complete=60,
+)
+
+# Create the full-text search index on the text field
+create_fulltext_search_index(
+    collection=collection,
+    field="text",
+    index_name="search_index",
+    wait_until_complete=60,
+)
+```
+
+For more index options, see the [MongoDB Atlas vector store](/oss/python/integrations/vectorstores/mongodb_atlas) guide.
+
+## Instantiation
+
+### Hybrid search
+
+`MongoDBAtlasHybridSearchRetriever` fuses vector and keyword results with RRF. Increasing `vector_penalty` or `fulltext_penalty` reduces the weight of that channel:
+
+```python
+from langchain_mongodb.retrievers import MongoDBAtlasHybridSearchRetriever
+
+retriever = MongoDBAtlasHybridSearchRetriever(
+    vectorstore=vector_store,
+    search_index_name="search_index",
+    k=5,
+    vector_penalty=60.0,
+    fulltext_penalty=60.0,
+)
+```
+
+### Full-text search
+
+`MongoDBAtlasFullTextSearchRetriever` runs BM25 keyword search and does not require a vector index:
+
+```python
+from langchain_mongodb.retrievers import MongoDBAtlasFullTextSearchRetriever
+
+ft_retriever = MongoDBAtlasFullTextSearchRetriever(
+    collection=collection,
+    search_index_name="search_index",
+    search_field="text",
+    k=5,
+)
+```
+
+## Usage
+
+```python
+docs = retriever.invoke("What is MongoDB Atlas?")
+```
+
+## Use within a chain
+
+```python
+from langchain_anthropic import ChatAnthropic
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+
+prompt = ChatPromptTemplate.from_template(
+    "Answer the question based only on the following context:\n\n{context}\n\nQuestion: {question}"
+)
+
+llm = ChatAnthropic(model="claude-sonnet-4-6")
+
+chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+chain.invoke("What is MongoDB Atlas?")
+```
+
+## API reference
+
+For detailed documentation of all `MongoDBAtlasHybridSearchRetriever` features and configurations, see the [API reference](https://reference.langchain.com/python/langchain-mongodb/retrievers/MongoDBAtlasHybridSearchRetriever).
+
+For full-text search, see [`MongoDBAtlasFullTextSearchRetriever`](https://reference.langchain.com/python/langchain-mongodb/retrievers/MongoDBAtlasFullTextSearchRetriever).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/retrievers/mongodb_atlas.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
