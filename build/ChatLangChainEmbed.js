@@ -27,6 +27,35 @@
     if (el.style.colorScheme === "dark") return "dark";
     return "light";
   }
+  function lcGetSegmentAnonymousId() {
+    if (typeof window === "undefined") return "";
+    try {
+      var analytics = window.analytics;
+      if (analytics && typeof analytics.user === "function") {
+        var user = analytics.user();
+        if (user && typeof user.anonymousId === "function") {
+          var live = user.anonymousId();
+          if (live) return live;
+        }
+      }
+    } catch (e) {
+    }
+    try {
+      var match = document.cookie.match(/(?:^|;\s*)ajs_anonymous_id=([^;]*)/);
+      if (match && match[1]) {
+        return decodeURIComponent(match[1]).replace(/^"|"$/g, "");
+      }
+    } catch (e) {
+    }
+    return "";
+  }
+  function lcEmbedOrigin() {
+    try {
+      return new URL(lcIsLocalhost() ? LOCAL_EMBED_BASE_URL : PROD_EMBED_BASE_URL).origin;
+    } catch (e) {
+      return "*";
+    }
+  }
   function lcGetEmbedSrc(apiUrl, assistantId, sessionBust) {
     var baseUrl = lcIsLocalhost() ? LOCAL_EMBED_BASE_URL : PROD_EMBED_BASE_URL;
     var params = [];
@@ -380,8 +409,12 @@ html.${ROOT_OPEN_CLASS} #lc-chat-widget-panel { transform: translateX(0); }
     function sendPageContext() {
       if (iframe && panelReady && iframe.contentWindow) {
         iframe.contentWindow.postMessage(
-          { type: "CHAT_LC_SET_CONTEXT", pageUrl: window.location.href },
-          "*"
+          {
+            type: "CHAT_LC_SET_CONTEXT",
+            pageUrl: window.location.href,
+            segmentAnonymousId: lcGetSegmentAnonymousId()
+          },
+          lcEmbedOrigin()
         );
       }
     }
