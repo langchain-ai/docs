@@ -57686,9 +57686,9 @@ Most remote MCP servers require authentication. A [connection](/langsmith/javasc
 Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and available on [LangSmith Cloud](/langsmith/cloud) in the US region only.
 </Note>
 
-Declare MCP servers in a module directly under `tools/`:
 
 
+Declare MCP servers in `tools/mcp.ts`:
 
 ```text
 my-agent/
@@ -57702,14 +57702,12 @@ For the full project layout, see [Project structure](/langsmith/javascript/manag
 
 To implement application logic in the project instead, use an [authored tool](/langsmith/javascript/managed-deep-agents-tools).
 
-## Add an MCP servers
+## Add MCP servers
 
 Use an MCP server when tools already live on a remote MCP server and you want MDA to load them without importing them into the agent definition.
 
 <Steps>
-  <Step title="Declare the connector" id="declare-the-connector">
-
-Use `connectors.mcp` to declare one or more remote servers:
+  <Step title="Declare the servers" id="declare-the-servers">
 
 
 
@@ -57731,7 +57729,7 @@ export const mcp = defineMcp({
 
 
 
-The module must export a named `connector`.
+The module must export a named `mcp`. A project has one MCP declaration, so declare every server in it. The file name also accepts the `.tsx`, `.mts`, or `.cts` variants.
 
 
 Managed Deep Agents supports Streamable HTTP (`"http"`) and legacy SSE (`"sse"`) transports. Stdio MCP servers are not supported. Expose a stdio server over HTTP or implement its operation as an [authored tool](/langsmith/javascript/managed-deep-agents-tools) instead.
@@ -57797,13 +57795,13 @@ The MCP definition also accepts these options:
 
 ## Deployment
 
-`mda dev` and `mda deploy` discover connector modules under `connectors/` and include them in the managed configuration. Connectors are not synced to Context Hub.
+`mda dev` and `mda deploy` discover the MCP declaration under `tools/` and include it in the managed configuration. The declaration is not synced to Context Hub.
 
 ## When to use MCP connectors
 
 | Concept | Kind | How it reaches the agent |
 | --- | --- | --- |
-| **MCP servers** | Managed configuration | Declared under `tools/`; no import into the agent entry |
+| **MCP servers** | Managed configuration | Declared in the MCP module under `tools/`; no import into the agent entry |
 | **[MCP endpoint](/langsmith/javascript/managed-deep-agents-mcp-endpoint)** | Deployment API | Exposes the agent as a tool to MCP clients |
 | **[Authored tools](/langsmith/javascript/managed-deep-agents-tools)** | Application code | Import and pass in the agent definition |
 | **[Channels](/langsmith/javascript/managed-deep-agents-channels)** | Managed configuration | Receive external messages that start agent runs and deliver responses |
@@ -58306,7 +58304,7 @@ Each part of the agent maps to a file or directory. Add the ones your agent need
 | [Instructions](/langsmith/javascript/managed-deep-agents-instructions) | `instructions.md` | The system prompt that defines how the agent behaves. |
 | [Skills](/langsmith/javascript/managed-deep-agents-skills) | `skills/` | Task-specific playbooks the agent loads when they are relevant. |
 | [Tools](/langsmith/javascript/managed-deep-agents-tools) | `tools/` | Functions the agent calls to run your application logic or reach external services. |
-| [MCP connectors](/langsmith/javascript/managed-deep-agents-mcp-connectors) | `connectors/` | Remote MCP servers that provide tools to the agent. |
+| [MCP connectors](/langsmith/javascript/managed-deep-agents-mcp-connectors) | `tools/mcp.ts` | Remote MCP servers that provide tools to the agent. |
 | [Middleware](/langsmith/javascript/managed-deep-agents-middleware) | `middleware/` | Custom logic that runs around model and tool calls. |
 | [Sandbox](/langsmith/javascript/managed-deep-agents-sandboxes) | `sandbox/` | An isolated filesystem and shell for running agent-written code. |
 | [Memory](/langsmith/javascript/managed-deep-agents-memory) | `memory.ts` | Preferences and knowledge that persist across threads. |
@@ -58369,12 +58367,11 @@ my-agent/
 │       └── SKILL.md
 
 ├── tools/                          # Application code
+│   └── mcp.ts                      # MCP server declaration
 ├── middleware/
 
 ├── channels/                       # Managed configuration
 │   └── <name>.ts
-├── connectors/
-│   └── mcp.ts
 ├── schedules/
 │   └── <name>.ts
 ├── sandbox/
@@ -58407,18 +58404,18 @@ The layout above shows the common `.ts` names. TypeScript managed declarations a
 
 - **Managed context**: [`instructions.md`](/langsmith/javascript/managed-deep-agents-instructions) defines the system prompt. Each directory under [`skills/`](/langsmith/javascript/managed-deep-agents-skills) contains task-specific instructions, such as a `SKILL.md` and any supporting files. MDA syncs both `instructions.md` and `skills/` to Context Hub.
 - **Application code**: Files under [`tools/`](/langsmith/javascript/managed-deep-agents-tools) and [`middleware/`](/langsmith/javascript/managed-deep-agents-middleware) are ordinary project modules. Import them from the agent entry.
-- **Managed configuration**: Certain paths enable capabilities when present. For `channels/`, `connectors/`, and `schedules/`, only direct children are managed declarations; nested modules are not.
+- **Managed configuration**: Certain paths enable capabilities when present. For `channels/` and `schedules/`, only direct children are managed declarations; nested modules are not.
 
     | Path | Enables |
     | --- | --- |
     | `identity.ts` | [Caller authentication](/langsmith/javascript/managed-deep-agents-identity) |
     | `memory.ts` | [Durable memory](/langsmith/javascript/managed-deep-agents-memory) |
     | `channels/<name>.ts` | [Messaging channels](/langsmith/javascript/managed-deep-agents-channels) |
-    | `connectors/<name>.ts` | [MCP connectors](/langsmith/javascript/managed-deep-agents-mcp-connectors) |
+    | `tools/mcp.ts` | [MCP connectors](/langsmith/javascript/managed-deep-agents-mcp-connectors) |
     | `schedules/<name>.ts` | [Cron schedules](/langsmith/javascript/managed-deep-agents-schedules) |
     | `sandbox/index.ts` | [Sandbox filesystem and shell](/langsmith/javascript/managed-deep-agents-sandboxes) |
 
-    MCP connector modules export a named `connector`.
+    `tools/` holds ordinary modules with one exception. `tools/mcp.ts` is a managed declaration and exports a named `mcp`. Every other module under `tools/` is application code you import.
 
 - **Dependencies and secrets**: Declare dependencies in `package.json`. MDA loads `.env` locally and forwards non-reserved values as deployment secrets. Reserved platform variables and `.env` files are not included in the build archive. For more information, see [Deploy a Managed Deep Agent](/langsmith/javascript/managed-deep-agents-deploy).
 - **Evals**: Managed Deep Agents [evals](/langsmith/javascript/managed-deep-agents-evals) are Harbor evals. Run `mda evals init -i` and develop tasks with a coding agent and the `eval-engineering` skill. Generated runtime files stay under `.mda/evals/` and are not included in the deployed agent build.
@@ -59288,6 +59285,11 @@ For the full project layout, see [Project structure](/langsmith/javascript/manag
 
 To load tools from a remote MCP server without importing them into the agent entry, use an [MCP connector](/langsmith/javascript/managed-deep-agents-mcp-connectors) instead.
 
+
+
+MCP connectors are declared under `tools/` as well, so the `tools/mcp.ts` file name is reserved for that declaration.
+
+
 ## Add a tool
 
 Use authored tools for business logic, private APIs, database access, and other code that belongs in your agent project.
@@ -59396,7 +59398,7 @@ For per-run values such as request metadata or feature flags, use the normal Lan
 | Concept | Kind | How it reaches the agent |
 | --- | --- | --- |
 | **Tools** | Application code | Import and pass in the agent definition |
-| **[MCP connectors](/langsmith/javascript/managed-deep-agents-mcp-connectors)** | Managed configuration | Declared under `connectors/`; no import into the agent entry |
+| **[MCP connectors](/langsmith/javascript/managed-deep-agents-mcp-connectors)** | Managed configuration | Declared in the MCP module under `tools/`; no import into the agent entry |
 | **[Skills](/langsmith/javascript/managed-deep-agents-skills)** | Managed context | Procedures the agent loads when relevant |
 | **[Instructions](/langsmith/javascript/managed-deep-agents-instructions)** | Managed context | Always-on system prompt |
 
@@ -85266,7 +85268,7 @@ Most remote MCP servers require authentication. A [connection](/langsmith/python
 Managed Deep Agents is in **public [beta](/langsmith/release-stages)** and available on [LangSmith Cloud](/langsmith/cloud) in the US region only.
 </Note>
 
-Declare MCP servers in a module directly under `tools/`:
+Declare MCP servers in `tools/mcp.py`:
 
 ```text
 my-agent/
@@ -85282,14 +85284,12 @@ For the full project layout, see [Project structure](/langsmith/python/managed-d
 
 To implement application logic in the project instead, use an [authored tool](/langsmith/python/managed-deep-agents-tools).
 
-## Add an MCP servers
+## Add MCP servers
 
 Use an MCP server when tools already live on a remote MCP server and you want MDA to load them without importing them into the agent definition.
 
 <Steps>
-  <Step title="Declare the connector" id="declare-the-connector">
-
-Use `connectors.mcp` to declare one or more remote servers:
+  <Step title="Declare the servers" id="declare-the-servers">
 
 Use `define_mcp` to declare one or more remote servers:
 
@@ -85309,7 +85309,7 @@ mcp = define_mcp(
 
 
 
-The module must export a module-level `connector`.
+The module must export a module-level `mcp`. A project has one MCP declaration, so declare every server in it.
 
 
 
@@ -85377,13 +85377,13 @@ The MCP definition also accepts these options:
 
 ## Deployment
 
-`mda dev` and `mda deploy` discover connector modules under `connectors/` and include them in the managed configuration. Connectors are not synced to Context Hub.
+`mda dev` and `mda deploy` discover the MCP declaration under `tools/` and include it in the managed configuration. The declaration is not synced to Context Hub.
 
 ## When to use MCP connectors
 
 | Concept | Kind | How it reaches the agent |
 | --- | --- | --- |
-| **MCP servers** | Managed configuration | Declared under `tools/`; no import into the agent entry |
+| **MCP servers** | Managed configuration | Declared in the MCP module under `tools/`; no import into the agent entry |
 | **[MCP endpoint](/langsmith/python/managed-deep-agents-mcp-endpoint)** | Deployment API | Exposes the agent as a tool to MCP clients |
 | **[Authored tools](/langsmith/python/managed-deep-agents-tools)** | Application code | Import and pass in the agent definition |
 | **[Channels](/langsmith/python/managed-deep-agents-channels)** | Managed configuration | Receive external messages that start agent runs and deliver responses |
@@ -85955,11 +85955,11 @@ async def log_tool_calls(
 ```
   </Tab>
   <Tab title="MCP Connectors">
-```python connectors/mcp.py
-from managed_deepagents import connectors
+```python tools/mcp.py
+from managed_deepagents import define_mcp
 
-connector = connectors.mcp(
-    mcp_servers={
+mcp = define_mcp(
+    servers={
         "langchainDocs": {
             "transport": "http",
             "url": "https://docs.langchain.com/mcp",
@@ -85987,7 +85987,7 @@ Each part of the agent maps to a file or directory. Add the ones your agent need
 | [Instructions](/langsmith/python/managed-deep-agents-instructions) | `instructions.md` | The system prompt that defines how the agent behaves. |
 | [Skills](/langsmith/python/managed-deep-agents-skills) | `skills/` | Task-specific playbooks the agent loads when they are relevant. |
 | [Tools](/langsmith/python/managed-deep-agents-tools) | `tools/` | Functions the agent calls to run your application logic or reach external services. |
-| [MCP connectors](/langsmith/python/managed-deep-agents-mcp-connectors) | `connectors/` | Remote MCP servers that provide tools to the agent. |
+| [MCP connectors](/langsmith/python/managed-deep-agents-mcp-connectors) | `tools/mcp.py` | Remote MCP servers that provide tools to the agent. |
 | [Middleware](/langsmith/python/managed-deep-agents-middleware) | `middleware/` | Custom logic that runs around model and tool calls. |
 | [Sandbox](/langsmith/python/managed-deep-agents-sandboxes) | `sandbox/` | An isolated filesystem and shell for running agent-written code. |
 | [Memory](/langsmith/python/managed-deep-agents-memory) | `memory.py` | Preferences and knowledge that persist across threads. |
@@ -86054,12 +86054,11 @@ my-agent/
 │       └── SKILL.md
 
 ├── tools/                          # Application code
+│   └── mcp.py                      # MCP server declaration
 ├── middleware/
 
 ├── channels/                       # Managed configuration
 │   └── <name>.py
-├── connectors/
-│   └── mcp.py
 ├── schedules/
 │   └── <name>.py
 ├── sandbox/
@@ -86088,18 +86087,18 @@ The only required file is `agent.py` at the project root containing the [agent d
 
 - **Managed context**: [`instructions.md`](/langsmith/python/managed-deep-agents-instructions) defines the system prompt. Each directory under [`skills/`](/langsmith/python/managed-deep-agents-skills) contains task-specific instructions, such as a `SKILL.md` and any supporting files. MDA syncs both `instructions.md` and `skills/` to Context Hub.
 - **Application code**: Files under [`tools/`](/langsmith/python/managed-deep-agents-tools) and [`middleware/`](/langsmith/python/managed-deep-agents-middleware) are ordinary project modules. Import them from the agent entry. Other local modules work the same way.
-- **Managed configuration**: Certain paths enable capabilities when present. For `channels/`, `connectors/`, and `schedules/`, only direct children are managed declarations; nested modules are not.
+- **Managed configuration**: Certain paths enable capabilities when present. For `channels/` and `schedules/`, only direct children are managed declarations; nested modules are not.
 
     | Path | Enables |
     | --- | --- |
     | `identity.py` | [Caller authentication](/langsmith/python/managed-deep-agents-identity) |
     | `memory.py` | [Durable memory](/langsmith/python/managed-deep-agents-memory) |
     | `channels/<name>.py` | [Messaging channels](/langsmith/python/managed-deep-agents-channels) |
-    | `connectors/<name>.py` | [MCP connectors](/langsmith/python/managed-deep-agents-mcp-connectors) |
+    | `tools/mcp.py` | [MCP connectors](/langsmith/python/managed-deep-agents-mcp-connectors) |
     | `schedules/<name>.py` | [Cron schedules](/langsmith/python/managed-deep-agents-schedules) |
     | `sandbox/__init__.py` | [Sandbox filesystem and shell](/langsmith/python/managed-deep-agents-sandboxes) |
 
-    MCP connector modules export a module-level `connector`.
+    `tools/` holds ordinary modules with one exception. `tools/mcp.py` is a managed declaration and exports a module-level `mcp`. Every other module under `tools/` is application code you import.
 
 - **Dependencies and secrets**: Declare dependencies in `pyproject.toml`. MDA loads `.env` locally and forwards non-reserved values as deployment secrets. Reserved platform variables and `.env` files are not included in the build archive. For more information, see [Deploy a Managed Deep Agent](/langsmith/python/managed-deep-agents-deploy).
 - **Evals**: Managed Deep Agents [evals](/langsmith/python/managed-deep-agents-evals) are Harbor evals. Run `mda evals init -i` and develop tasks with a coding agent and the `eval-engineering` skill. Generated runtime files stay under `.mda/evals/` and are not included in the deployed agent build.
@@ -86926,6 +86925,11 @@ For the full project layout, see [Project structure](/langsmith/python/managed-d
 
 To load tools from a remote MCP server without importing them into the agent entry, use an [MCP connector](/langsmith/python/managed-deep-agents-mcp-connectors) instead.
 
+MCP connectors are declared under `tools/` as well, so the `tools/mcp.py` file name is reserved for that declaration.
+
+
+
+
 ## Add a tool
 
 Use authored tools for business logic, private APIs, database access, and other code that belongs in your agent project.
@@ -87030,7 +87034,7 @@ For per-run values such as request metadata or feature flags, use the normal Lan
 | Concept | Kind | How it reaches the agent |
 | --- | --- | --- |
 | **Tools** | Application code | Import and pass in the agent definition |
-| **[MCP connectors](/langsmith/python/managed-deep-agents-mcp-connectors)** | Managed configuration | Declared under `connectors/`; no import into the agent entry |
+| **[MCP connectors](/langsmith/python/managed-deep-agents-mcp-connectors)** | Managed configuration | Declared in the MCP module under `tools/`; no import into the agent entry |
 | **[Skills](/langsmith/python/managed-deep-agents-skills)** | Managed context | Procedures the agent loads when relevant |
 | **[Instructions](/langsmith/python/managed-deep-agents-instructions)** | Managed context | Always-on system prompt |
 

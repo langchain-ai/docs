@@ -28,6 +28,11 @@ For the full project layout, see [Project structure](/langsmith/python/managed-d
 
 To load tools from a remote MCP server without importing them into the agent entry, use an [MCP connector](/langsmith/python/managed-deep-agents-mcp-connectors) instead.
 
+MCP connectors are declared under `tools/` as well, so the `tools/mcp.py` file name is reserved for that declaration.
+
+
+
+
 ## Add a tool
 
 Use authored tools for business logic, private APIs, database access, and other code that belongs in your agent project.
@@ -132,7 +137,7 @@ For per-run values such as request metadata or feature flags, use the normal Lan
 | Concept | Kind | How it reaches the agent |
 | --- | --- | --- |
 | **Tools** | Application code | Import and pass in the agent definition |
-| **[MCP connectors](/langsmith/python/managed-deep-agents-mcp-connectors)** | Managed configuration | Declared under `connectors/`; no import into the agent entry |
+| **[MCP connectors](/langsmith/python/managed-deep-agents-mcp-connectors)** | Managed configuration | Declared in the MCP module under `tools/`; no import into the agent entry |
 | **[Skills](/langsmith/python/managed-deep-agents-skills)** | Managed context | Procedures the agent loads when relevant |
 | **[Instructions](/langsmith/python/managed-deep-agents-instructions)** | Managed context | Always-on system prompt |
 
