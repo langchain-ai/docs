@@ -22,15 +22,47 @@ Tools, middleware, MCP connectors, channels, schedules, sandboxes, and the agent
 
 For ownership of managed runtime fields, see [Agent definition](/langsmith/managed-deep-agents-agent-definition).
 
+## Source of truth
+
+The project and Context Hub both hold copies of `instructions.md` and `skills/`. Which copy wins depends on where you make lasting changes and how you resolve conflicts on deploy.
+
+- **Project files**: Treat `instructions.md` and `skills/` in the project as the source of truth for lasting changes. Each `mda deploy` syncs those files into the agent's Context Hub repo.
+- **Context Hub edits**: Edit files in Context Hub when you need a quick change that should apply without a code redeploy. Those Hub edits stay live until a later deploy overwrites them, or until you choose to keep the Hub copy when a conflict prompt appears.
+- **Durable memory**: Memory under `/memories/agent/` is agent-owned. Deploys enable the tree but do not overwrite content already stored there.
+
 ## How deploy syncs context
 
 `mda deploy` syncs deploy-owned context as part of the deploy pipeline:
 
 - **Instructions and skills**: Each deploy updates the agent's Context Hub repo from the project files. Later deploys sync the project copies again. For skills, deploys also remove deployed skill files that no longer exist locally.
 - **Durable memory**: When memory is enabled, the deployment mounts one Context Hub tree at `/memories/agent/`. Deploys do not overwrite content already stored there.
-- **Conflicts**: If the Context Hub repo changes while a deploy is syncing, the CLI reports a conflict. Re-run `mda deploy`.
+- **Conflicts**: If `instructions.md` or `skills/` changed in Context Hub since the last `mda deploy`, the CLI stops before syncing and asks whether to overwrite the Context Hub copy with the project copy. The default answer keeps the Context Hub version and skips syncing that section. In a non-interactive shell there is no prompt. The deploy exits with an error, and you must re-run with `--context-strategy overwrite` or `--context-strategy keep-hub`. Re-running `mda deploy` on its own reports the same conflict again.
+- **Concurrent edits**: If the repo changes during the sync itself, the deploy fails with a commit conflict. Re-run `mda deploy`.
 
-For the full deploy step list, see the [CLI reference](/langsmith/managed-deep-agents-cli#deploy-projects). For secrets routing and deploy options, see [Deploy an agent](/langsmith/managed-deep-agents-deploy).
+Interactive conflict prompt:
+
+```text
+◇  Checked Context Hub context
+│
+▲  Context Hub instructions.md changed since the last MDA sync.
+│
+◆  Overwrite Hub-edited instructions.md with the local version?
+│  ○ Yes / ● No
+└
+```
+
+Non-interactive conflict (CI or redirected output):
+
+```text
+└  Context Hub instructions.md and skills/ changed since the last MDA sync. Re-run with --context-strategy overwrite or --context-strategy keep-hub.
+```
+
+| Strategy | Effect |
+| --- | --- |
+| `overwrite` | Replace the Hub-edited `instructions.md` or `skills/` with the project copy, then continue the deploy. |
+| `keep-hub` | Keep the Context Hub version, skip syncing that section, and continue the deploy. |
+
+For the full deploy step list and flags, see the [CLI reference](/langsmith/managed-deep-agents-cli#deploy-projects). For secrets routing and deploy options, see [Deploy an agent](/langsmith/managed-deep-agents-deploy).
 
 ## Edit context in LangSmith
 
@@ -40,7 +72,7 @@ After a successful deploy:
 1. Use the Details sidebar link to the Context Hub repo that holds the deployment's instructions, skills, and memories. Archived repos are labeled when the context is no longer live.
 1. Edit files in Context Hub when you need a quick change that should apply without a code redeploy.
 
-Keep `instructions.md` and `skills/` in the project as the source of truth for lasting changes. The next `mda deploy` syncs those project files again.
+For lasting changes, edit the project copies and redeploy. For how deploy resolves Hub edits, see [Source of truth](#source-of-truth).
 
 For browsing commits, promoting environments, and Context Hub concepts outside Managed Deep Agents, see [Use the Context Hub](/langsmith/use-the-context-hub) and [Context engineering concepts](/langsmith/context-engineering-concepts).
 
