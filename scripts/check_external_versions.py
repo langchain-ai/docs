@@ -159,7 +159,7 @@ def upstream_version(source: dict[str, str]) -> str | None:
                 )
             )
             tag = payload.get("tag_name", "")
-            return tag.lstrip("v") or None
+            return tag.removeprefix("v") or None
 
         repo_path = urllib.parse.quote(source["path"])
         body = _get(
@@ -254,15 +254,19 @@ def main() -> int:
 
     print(f"\n{in_sync} in sync, {len(drifted)} drifted, {len(unreadable)} unreadable")
 
-    if drifted and args.write:
-        print(
-            "\nReview the surrounding prose before merging. Only the version "
-            "number was rewritten; a changed peer requirement or flag upstream "
-            "will not show up here."
-        )
-    if unreadable:
-        return 1
-    return 1 if drifted and not args.write else 0
+    if args.write:
+        if drifted:
+            print(
+                "\nReview the surrounding prose before merging. Only the version "
+                "number was rewritten; a changed peer requirement or flag "
+                "upstream will not show up here."
+            )
+        # Syncing reports problems but does not fail on them. A GitHub outage
+        # must not stop the entries that did resolve from reaching a pull
+        # request, and a pattern that stopped matching its page already fails
+        # test_committed_registry_is_valid on every pull request.
+        return 0
+    return 1 if drifted or unreadable else 0
 
 
 if __name__ == "__main__":

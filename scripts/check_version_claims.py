@@ -2,10 +2,11 @@
 
 Pages state minimum versions constantly ("requires `langchain>=1.3.2`"). A floor
 is a claim about which release a feature landed in, so nothing here tries to
-bump one: only a human knows whether a feature needs 1.3.2 or 1.4.0. What a
-machine can settle is narrower and absolute — whether the version in the page
-exists on the registry at all. A reader who pastes a version that was never
-published gets a resolver error, and that is always a bug.
+bump one: only a human knows whether a feature needs 1.3.2 or 1.4.0, and many
+floors are deliberately capped below the next major. What a machine can settle
+is narrower and absolute — whether the version in the page exists on the
+registry at all. A reader who pastes a version that was never published gets a
+resolver error, and that is always a bug.
 
 The hard part is deciding which registry a specifier belongs to. `deepagents`
 is published to both PyPI (0.x) and npm (1.x) on completely divergent version
@@ -53,9 +54,8 @@ SAFE_NPM = re.compile(r"^(@[a-z0-9][a-z0-9._-]{0,40}/)?[a-z0-9][a-z0-9._-]{1,60}
 
 # Pages routinely name both SDKs on one line, outside any language fence:
 #   "requires `deepagents>=0.5.2` (Python) or `deepagents>=1.9.1` (TypeScript)"
-# so a label next to a specifier wins over the enclosing fence. A label can sit
-# on either side ("Requires JS SDK version `langsmith>=0.5.25`"), and a trailing
-# one is the commoner form, so it is checked first.
+# so the label nearest a specifier, on either side, wins over the fence around
+# it ("Requires JS SDK version `langsmith>=0.5.25`" labels from the left).
 PY_LABEL = re.compile(
     r"\((?:python|py)\b|\bfor python\b|\bpypi\b|\bpython sdk\b",
     re.IGNORECASE,
@@ -67,32 +67,12 @@ JS_LABEL = re.compile(
     r"|\b(?:js|ts|javascript|typescript|node) sdk\b",
     re.IGNORECASE,
 )
-LABEL_WINDOW = 40  # characters on each side of a specifier to search for a label
+LABEL_WINDOW = 40  # how far from a specifier a label can sit and still count
 
-# Placeholders in "put your own package here" examples. They are not lookups.
-PLACEHOLDERS = frozenset(
-    {
-        "my-package",
-        "my_package",
-        "my-agent",
-        "my_agent",
-        "your-package",
-        "your_package",
-        "example-package",
-        "package-name",
-        "some-package",
-    }
-)
-
-# Flat LangSmith pages that document a JavaScript-only SDK, so a bare
-# `langsmith>=x` on them means the npm package. Pages under an /oss/javascript/
-# or /oss/python/ path are routed by their path instead and need no entry.
-JS_ONLY_PAGES = frozenset(
-    {
-        "src/langsmith/trace-with-vercel-ai-sdk.mdx",
-        "src/langsmith/legacy-trace-with-vercel-ai-sdk.mdx",
-    }
-)
+# A flat LangSmith page documenting a JavaScript-only SDK, so a bare
+# `langsmith>=x` on it means the npm package. Pages under an /oss/javascript/ or
+# /oss/python/ path are routed by their path instead and need no entry here.
+JS_ONLY_PAGES = frozenset({"src/langsmith/trace-with-vercel-ai-sdk.mdx"})
 
 PYPI = "pypi"
 NPM = "npm"
@@ -114,23 +94,26 @@ class Claim:
         return f"{self.package}{self.operator}{self.version}"
 
 
-def _label_ecosystem(window: str, *, prefer_earliest: bool) -> str | None:
-    """Return the ecosystem named by a language label in `window`, if any."""
-    js_at = JS_LABEL.search(window)
-    py_at = PY_LABEL.search(window)
-    if js_at and py_at:
-        # Two labels in one window: the nearer one to the specifier wins.
-        js_closer = (
-            js_at.start() < py_at.start()
-            if prefer_earliest
-            else js_at.start() > py_at.start()
-        )
-        return NPM if js_closer else PYPI
-    if js_at:
-        return NPM
-    if py_at:
-        return PYPI
-    return None
+def nearest_label(line: str, start: int, end: int) -> str | None:
+    """Return the ecosystem named by the language label closest to a specifier.
+
+    `start` and `end` bound the specifier within `line`. Labels overlapping the
+    specifier itself are skipped, and one further than LABEL_WINDOW away is
+    treated as belonging to a different clause.
+    """
+    best: str | None = None
+    best_distance = LABEL_WINDOW
+    for pattern, ecosystem in ((JS_LABEL, NPM), (PY_LABEL, PYPI)):
+        for match in pattern.finditer(line):
+            if match.start() >= end:
+                distance = match.start() - end
+            elif match.end() <= start:
+                distance = start - match.end()
+            else:
+                continue
+            if distance < best_distance:
+                best, best_distance = ecosystem, distance
+    return best
 
 
 def page_default(path: Path | None) -> str | None:
@@ -138,9 +121,7 @@ def page_default(path: Path | None) -> str | None:
     if path is None:
         return None
     posix = path.as_posix()
-    if posix in JS_ONLY_PAGES:
-        return NPM
-    if "/javascript/" in posix:
+    if posix in JS_ONLY_PAGES or "/javascript/" in posix:
         return NPM
     if "/python/" in posix:
         return PYPI
@@ -148,37 +129,29 @@ def page_default(path: Path | None) -> str | None:
 
 
 def resolve_ecosystem(
-    scope: str,
-    extras: str,
+    match: re.Match[str],
+    line: str,
     fence: str | None,
-    leading: str,
-    trailing: str,
-    path: Path | None = None,
+    path: Path | None,
 ) -> str:
     """Decide whether a specifier names a PyPI or an npm package.
 
     Signals, strongest first: an `@scope/` prefix is npm-only syntax; an extras
-    bracket is PyPI-only syntax; a language label just after the specifier, then
-    just before it, since pages name both SDKs on one unfenced line; then the
-    enclosing fence; then the page's own language; then PyPI, because most bare
-    specifiers in these docs are Python.
+    bracket is PyPI-only syntax; the nearest language label on the line, since
+    pages name both SDKs in one unfenced sentence; then the enclosing fence;
+    then the page's own language; then PyPI, because most bare specifiers in
+    these docs are Python.
     """
-    if scope:
+    if match.group("scope"):
         return NPM
-    if extras:
+    if match.group("extras"):
         return PYPI
 
-    after = _label_ecosystem(trailing[:LABEL_WINDOW], prefer_earliest=True)
-    if after:
-        return after
-    before = _label_ecosystem(leading[-LABEL_WINDOW:], prefer_earliest=False)
-    if before:
-        return before
-
-    if fence == "js":
-        return NPM
-    if fence == "python":
-        return PYPI
+    label = nearest_label(line, match.start(), match.end())
+    if label:
+        return label
+    if fence:
+        return NPM if fence == "js" else PYPI
     return page_default(path) or PYPI
 
 
@@ -188,31 +161,16 @@ def claims_in_text(text: str, path: Path | None = None) -> dict[Claim, list[int]
     fence: str | None = None
     for lineno, line in enumerate(text.splitlines(), 1):
         stripped = line.strip()
-        if stripped == ":::python":
-            fence = "python"
-            continue
-        if stripped == ":::js":
-            fence = "js"
+        if stripped in (":::python", ":::js"):
+            fence = stripped.removeprefix(":::")
             continue
         if stripped == ":::":
             fence = None
             continue
         for match in SPECIFIER.finditer(line):
-            name = match.group("name")
-            if name in PLACEHOLDERS:
-                continue
-            scope = match.group("scope") or ""
-            ecosystem = resolve_ecosystem(
-                scope,
-                match.group("extras") or "",
-                fence,
-                line[: match.start()],
-                line[match.end() :],
-                path,
-            )
             claim = Claim(
-                ecosystem=ecosystem,
-                package=scope + name,
+                ecosystem=resolve_ecosystem(match, line, fence, path),
+                package=(match.group("scope") or "") + match.group("name"),
                 version=match.group("version"),
                 operator=match.group("op"),
             )
@@ -284,11 +242,6 @@ def version_exists(version: str, published: set[str]) -> bool:
     return any(release.startswith(prefix) for release in published)
 
 
-def major_of(version: str) -> int:
-    head = re.match(r"^(\d+)", version)
-    return int(head.group(1)) if head else 0
-
-
 def load_ignores(path: Path) -> set[str]:
     """Read specifiers that are known-good despite not resolving."""
     if not path.exists():
@@ -299,10 +252,6 @@ def load_ignores(path: Path) -> set[str]:
         if entry:
             entries.add(entry)
     return entries
-
-
-def mdx_files(root: Path) -> list[Path]:
-    return sorted(root.rglob("*.mdx"))
 
 
 def main() -> int:
@@ -325,18 +274,22 @@ def main() -> int:
         if not paths:
             print("no .mdx files to check")
             return 0
+    elif SRC.is_dir():
+        paths = sorted(SRC.rglob("*.mdx"))
     else:
-        if not SRC.is_dir():
-            print(f"❌ {SRC} not found; run from the repository root")
-            return 1
-        paths = mdx_files(SRC)
-
-    claims = collect_claims(paths)
-    if not claims:
-        print(f"no version specifiers found in {len(paths)} page(s)")
-        return 0
+        print(f"❌ {SRC} not found; run from the repository root")
+        return 1
 
     ignored = load_ignores(IGNORE_FILE)
+    claims = {
+        claim: locations
+        for claim, locations in collect_claims(paths).items()
+        if claim.spec not in ignored
+    }
+    if not claims:
+        print(f"no version specifiers to check in {len(paths)} page(s)")
+        return 0
+
     packages = sorted({(c.ecosystem, c.package) for c in claims})
     print(
         f"checking {len(claims)} specifier(s) "
@@ -348,30 +301,14 @@ def main() -> int:
     registry = dict(zip(packages, results, strict=True))
 
     ghosts: list[tuple[Claim, str, list[str]]] = []
-    stale: list[tuple[Claim, str, int]] = []
     unresolved: set[str] = set()
 
     for claim, locations in claims.items():
-        if claim.spec in ignored:
-            continue
         entry = registry.get((claim.ecosystem, claim.package))
         if entry is None:
             unresolved.add(f"[{claim.ecosystem}] {claim.package}")
-            continue
-        published, latest = entry
-        if not version_exists(claim.version, published):
-            ghosts.append((claim, latest, sorted(locations)))
-        elif major_of(latest) > major_of(claim.version):
-            stale.append((claim, latest, len(locations)))
-
-    if stale:
-        print(f"note: {len(stale)} specifier(s) are valid but a major version behind")
-        for claim, latest, count in sorted(stale, key=lambda row: -row[2])[:15]:
-            print(
-                f"  [{claim.ecosystem}] {claim.spec:<34} latest={latest:<10} "
-                f"{count} ref(s)"
-            )
-        print()
+        elif not version_exists(claim.version, entry[0]):
+            ghosts.append((claim, entry[1], sorted(locations)))
 
     if unresolved:
         print(f"note: {len(unresolved)} package(s) could not be looked up")

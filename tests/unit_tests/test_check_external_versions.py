@@ -1,5 +1,6 @@
 """Tests for the mirrored external version checker."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -142,17 +143,6 @@ def test_upstream_version_from_a_file(
     assert checker.upstream_version(entry.source) == "0.153.4"
 
 
-def test_upstream_version_from_a_release_tag(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A release tag drops its `v` prefix."""
-    monkeypatch.setattr(
-        checker,
-        "_get",
-        lambda url, *, accept: '{"tag_name": "v1.2.3"}',
-    )
-    source = {"type": "github_release", "repo": "langchain-ai/helm"}
-    assert checker.upstream_version(source) == "1.2.3"
-
-
 def test_unreachable_upstream_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
     """A GitHub outage must not be reported as drift."""
 
@@ -218,3 +208,64 @@ def test_committed_registry_is_valid() -> None:
         assert checker.documented_version(entry, text) is not None, (
             f"{entry.id}: pattern does not match exactly once in {entry.page}"
         )
+
+
+def test_write_mode_does_not_fail_on_an_unreachable_upstream(
+    docs_tree: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A GitHub outage must not stop the weekly job before it opens its PR."""
+
+    def fail(url: str, *, accept: str) -> str:
+        raise TimeoutError
+
+    registry = write_registry(docs_tree, [codex_entry()])
+    monkeypatch.setattr(checker, "_get", fail)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["check_external_versions.py", "--registry", str(registry), "--write"],
+    )
+    assert checker.main() == 0
+
+
+def test_check_mode_fails_on_an_unreadable_entry(
+    docs_tree: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without --write, an entry that cannot be checked is a failure."""
+
+    def fail(url: str, *, accept: str) -> str:
+        raise TimeoutError
+
+    registry = write_registry(docs_tree, [codex_entry()])
+    monkeypatch.setattr(checker, "_get", fail)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["check_external_versions.py", "--registry", str(registry)],
+    )
+    assert checker.main() == 1
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [
+        ("v1.2.3", "1.2.3"),
+        ("1.2.3", "1.2.3"),
+        # One `v` is a prefix; a second is part of the tag. `lstrip("v")` would
+        # eat both.
+        ("vv1.2.3", "v1.2.3"),
+    ],
+)
+def test_release_tag_drops_only_a_v_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+    tag: str,
+    expected: str,
+) -> None:
+    """Exactly one leading `v` is a prefix, not every leading `v` character."""
+    monkeypatch.setattr(
+        checker,
+        "_get",
+        lambda url, *, accept: json.dumps({"tag_name": tag}),
+    )
+    source = {"type": "github_release", "repo": "langchain-ai/helm"}
+    assert checker.upstream_version(source) == expected

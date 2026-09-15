@@ -77,11 +77,16 @@ def test_label_before_the_specifier_is_honored() -> None:
     assert claim.ecosystem == checker.NPM
 
 
-def test_trailing_label_outranks_a_leading_one() -> None:
-    """The label after a specifier wins, since that is the commoner form."""
+def test_the_nearest_label_wins_over_a_further_one() -> None:
+    """A trailing label beats a leading one that sits further away."""
     text = "The JS SDK is separate; this needs `langsmith>=0.7.35` (Python)"
-    claim = only_claim(text)
-    assert claim.ecosystem == checker.PYPI
+    assert only_claim(text).ecosystem == checker.PYPI
+
+
+def test_a_label_beyond_the_window_is_a_different_clause() -> None:
+    """A label far from the specifier belongs to another clause, so it is ignored."""
+    text = "Use the JS SDK for browsers. " + "Filler text. " * 4 + "`langchain>=1.1`"
+    assert only_claim(text).ecosystem == checker.PYPI
 
 
 def test_path_routes_when_nothing_else_does() -> None:
@@ -107,9 +112,10 @@ def test_fence_outranks_the_page_path() -> None:
     assert claim.ecosystem == checker.PYPI
 
 
-def test_placeholders_are_skipped() -> None:
-    """From src/langsmith/local-dev-testing.mdx, a "use your own package" example."""
-    assert checker.claims_in_text('"dependencies": ["my-package==1.0.0"]') == {}
+def test_placeholder_examples_are_covered_by_the_ignore_file() -> None:
+    """The "use your own package" example in local-dev-testing.mdx is exempted."""
+    claim = only_claim('"dependencies": ["my-package==1.0.0"]')
+    assert claim.spec in checker.load_ignores(checker.IGNORE_FILE)
 
 
 def test_exact_pins_are_collected() -> None:
