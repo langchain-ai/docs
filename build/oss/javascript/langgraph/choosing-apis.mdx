@@ -1,0 +1,124 @@
+---
+title: Choosing between Graph and Functional APIs
+sidebarTitle: Choosing APIs
+description: Decide when to use the LangGraph Graph API or Functional API based on workflow shape, state needs, and development style.
+---
+
+LangGraph provides two APIs for agent workflows: the [Graph API](/oss/javascript/langgraph/graph-api) and the [Functional API](/oss/javascript/langgraph/functional-api). Both share the same runtime (persistence, streaming, human-in-the-loop, and memory), and you can use them together in one application.
+
+## Quick decision guide
+
+Use the **Graph API** when you need:
+
+- Complex workflow visualization for debugging and documentation
+- Explicit shared state across multiple nodes
+- Conditional branching with multiple decision points
+- Parallel paths that merge later
+- A visual structure that helps teams review the workflow
+
+Use the **Functional API** when you want:
+
+- Minimal changes to existing procedural code
+- Standard control flow (`if`/`else`, loops, function calls)
+- Function-scoped state without an explicit state schema
+- Rapid prototyping with less boilerplate
+- Mostly linear workflows with simple branching
+
+## Comparison
+
+The same workflow looks different in each API. This example classifies a number, then returns a message:
+
+
+
+<CodeGroup>
+```typescript Graph API
+import {
+  END,
+  START,
+  StateGraph,
+  StateSchema,
+  type GraphNode,
+} from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  number: z.number(),
+  isEven: z.boolean().optional(),
+  message: z.string().optional(),
+});
+
+const checkEven: GraphNode<typeof State> = (state) => ({
+  isEven: state.number % 2 === 0,
+});
+
+const formatMessage: GraphNode<typeof State> = (state) => ({
+  message: state.isEven ? "The number is even." : "The number is odd.",
+});
+
+const graph = new StateGraph(State)
+  .addNode("checkEven", checkEven)
+  .addNode("formatMessage", formatMessage)
+  .addEdge(START, "checkEven")
+  .addEdge("checkEven", "formatMessage")
+  .addEdge("formatMessage", END)
+  .compile();
+
+await graph.invoke({ number: 7 });
+```
+
+```typescript Functional API
+import { entrypoint, task } from "@langchain/langgraph";
+
+const isEven = task("isEven", async (number: number) => {
+  return number % 2 === 0;
+});
+
+const formatMessage = task("formatMessage", async (isEven: boolean) => {
+  return isEven ? "The number is even." : "The number is odd.";
+});
+
+const workflow = entrypoint(
+  { name: "workflow" },
+  async (inputs: { number: number }) => {
+    const even = await isEven(inputs.number);
+    return await formatMessage(even);
+  }
+);
+
+await workflow.invoke({ number: 7 });
+```
+</CodeGroup>
+
+
+The Graph API makes state and transitions explicit. The Functional API keeps ordinary control flow and passes values between tasks.
+
+| Concern | Graph API | Functional API |
+| --- | --- | --- |
+| Style | Declarative nodes, edges, and shared state | Imperative functions with `@entrypoint` / `@task` (Python) or `entrypoint` / `task` (TypeScript) |
+| Control flow | Edges and conditional edges | Language `if`/`else`, loops, and calls |
+| State | Explicit [state](/oss/javascript/langgraph/graph-api#state) and [reducers](/oss/javascript/langgraph/graph-api#reducers) | Scoped to the entrypoint and tasks |
+| Checkpointing | New checkpoint after each [super-step](/oss/javascript/langgraph/graph-api) | Task results saved to the entrypoint checkpoint |
+| Visualization | First-class graph diagrams | No static graph visualization (graph is built at runtime) |
+| Best fit | Branching, parallel fan-in/fan-out, multi-node coordination | Existing codebases, linear flows, fast iteration |
+
+## Combine both APIs
+
+Use the Graph API for coordination that benefits from an explicit graph, and the Functional API for linear sub-workflows. Invoke a compiled functional entrypoint from a graph node, or call a compiled graph from an entrypoint, when that split matches the problem.
+
+For how-tos, see [Use the graph API](/oss/javascript/langgraph/use-graph-api) and [Use the functional API](/oss/javascript/langgraph/use-functional-api).
+
+## See also
+
+- [Graph API overview](/oss/javascript/langgraph/graph-api)
+- [Functional API overview](/oss/javascript/langgraph/functional-api)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langgraph/choosing-apis.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

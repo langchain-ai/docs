@@ -1,0 +1,432 @@
+---
+title: Configure nodes
+sidebarTitle: Configure nodes
+description: Add runtime configuration, retry policies, timeouts, error handling, defaults, and caching to LangGraph nodes.
+---
+
+## Add runtime configuration
+
+Sometimes you want to be able to configure your graph when calling it. For example, you might want to be able to specify what LLM or system prompt to use at runtime, _without polluting the graph state with these parameters_.
+
+To add runtime configuration:
+
+1. Specify a schema for your configuration
+2. Add the configuration to the function signature for nodes or conditional edges
+3. Pass the configuration into the graph.
+
+See below for a simple example:
+
+
+
+```typescript
+import { StateGraph, StateSchema, GraphNode, END, START } from "@langchain/langgraph";
+import * as z from "zod";
+
+// 1. Specify config schema
+const ContextSchema = z.object({
+  myRuntimeValue: z.string(),
+});
+
+// 2. Define a graph that accesses the config in a node
+const State = new StateSchema({
+  myStateValue: z.number(),
+});
+
+const node: GraphNode<typeof State> = (state, runtime) => {
+  if (runtime?.context?.myRuntimeValue === "a") {  // [!code highlight]
+    return { myStateValue: 1 };
+  } else if (runtime?.context?.myRuntimeValue === "b") {  // [!code highlight]
+    return { myStateValue: 2 };
+  } else {
+    throw new Error("Unknown values.");
+  }
+};
+
+const graph = new StateGraph(State, ContextSchema)
+  .addNode("node", node)
+  .addEdge(START, "node")
+  .addEdge("node", END)
+  .compile();
+
+// 3. Pass in configuration at runtime:
+console.log(await graph.invoke({}, { context: { myRuntimeValue: "a" } }));  // [!code highlight]
+console.log(await graph.invoke({}, { context: { myRuntimeValue: "b" } }));  // [!code highlight]
+```
+
+```
+{ myStateValue: 1 }
+{ myStateValue: 2 }
+```
+
+
+<Accordion title="Extended example: specifying LLM at runtime">
+
+
+  Below we demonstrate a practical example in which we configure what LLM to use at runtime. We will use both OpenAI and Anthropic models.
+
+  ```typescript
+  import { ChatOpenAI } from "@langchain/openai";
+  import { ChatAnthropic } from "@langchain/anthropic";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START, END } from "@langchain/langgraph";
+  import * as z from "zod";
+
+  const ConfigSchema = z.object({
+    modelProvider: z.string().default("anthropic"),
+  });
+
+  const State = new StateSchema({
+    messages: MessagesValue,
+  });
+
+  const MODELS = {
+    anthropic: new ChatAnthropic({ model: "claude-haiku-4-5-20251001" }),
+    openai: new ChatOpenAI({ model: "gpt-5.4-mini" }),
+  };
+
+  const callModel: GraphNode<typeof State> = async (state, config) => {
+    const modelProvider = config?.configurable?.modelProvider || "anthropic";
+    const model = MODELS[modelProvider as keyof typeof MODELS];
+    const response = await model.invoke(state.messages);
+    return { messages: [response] };
+  };
+
+  const graph = new StateGraph(State, ConfigSchema)
+    .addNode("model", callModel)
+    .addEdge(START, "model")
+    .addEdge("model", END)
+    .compile();
+
+  // Usage
+  const inputMessage = { role: "user", content: "hi" };
+  // With no configuration, uses default (Anthropic)
+  const response1 = await graph.invoke({ messages: [inputMessage] });
+  // Or, can set OpenAI
+  const response2 = await graph.invoke(
+    { messages: [inputMessage] },
+    { configurable: { modelProvider: "openai" } },
+  );
+
+  console.log(response1.messages.at(-1)?.response_metadata?.model);
+  console.log(response2.messages.at(-1)?.response_metadata?.model);
+  ```
+
+  ```
+  claude-haiku-4-5-20251001
+  gpt-5.4-mini
+  ```
+
+</Accordion>
+
+<Accordion title="Extended example: specifying model and system message at runtime">
+
+
+  Below we demonstrate a practical example in which we configure two parameters: the LLM and system message to use at runtime.
+
+  ```typescript
+  import { ChatOpenAI } from "@langchain/openai";
+  import { ChatAnthropic } from "@langchain/anthropic";
+  import { SystemMessage } from "@langchain/core/messages";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START, END } from "@langchain/langgraph";
+  import * as z from "zod";
+
+  const ConfigSchema = z.object({
+    modelProvider: z.string().default("anthropic"),
+    systemMessage: z.string().optional(),
+  });
+
+  const State = new StateSchema({
+    messages: MessagesValue,
+  });
+
+  const MODELS = {
+    anthropic: new ChatAnthropic({ model: "claude-haiku-4-5-20251001" }),
+    openai: new ChatOpenAI({ model: "gpt-5.4-mini" }),
+  };
+
+  const callModel: GraphNode<typeof State> = async (state, config) => {
+    const modelProvider = config?.configurable?.modelProvider || "anthropic";
+    const systemMessage = config?.configurable?.systemMessage;
+
+    const model = MODELS[modelProvider as keyof typeof MODELS];
+    let messages = state.messages;
+
+    if (systemMessage) {
+      messages = [new SystemMessage(systemMessage), ...messages];
+    }
+
+    const response = await model.invoke(messages);
+    return { messages: [response] };
+  };
+
+  const graph = new StateGraph(State, ConfigSchema)
+    .addNode("model", callModel)
+    .addEdge(START, "model")
+    .addEdge("model", END)
+    .compile();
+
+  // Usage
+  const inputMessage = { role: "user", content: "hi" };
+  const response = await graph.invoke(
+    { messages: [inputMessage] },
+    {
+      configurable: {
+        modelProvider: "openai",
+        systemMessage: "Respond in Italian."
+      }
+    }
+  );
+
+  for (const message of response.messages) {
+    console.log(`${message.getType()}: ${message.content}`);
+  }
+  ```
+
+  ```
+  human: hi
+  ai: Ciao! Come posso aiutarti oggi?
+  ```
+
+</Accordion>
+
+## Add retry policies
+
+There are many use cases where you may wish for your node to have a custom retry policy, for example if you are calling an API, querying a database, or calling an LLM, etc. LangGraph lets you add retry policies to nodes.
+
+
+
+To configure a retry policy, pass the `retryPolicy` parameter to the [`addNode`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.Graph.html#addnode). The `retryPolicy` parameter takes in a `RetryPolicy` object. Below we instantiate a `RetryPolicy` object with the default parameters and associate it with a node:
+
+```typescript
+import { RetryPolicy } from "@langchain/langgraph";
+
+const graph = new StateGraph(State)
+  .addNode("nodeName", nodeFunction, { retryPolicy: {} })
+  .compile();
+```
+
+By default, the retry policy retries on any exception except for the following:
+
+* `TypeError`
+* `SyntaxError`
+* `ReferenceError`
+
+
+<Accordion title="Extended example: customizing retry policies">
+
+
+  Consider an example in which we are reading from a SQL database. Below we pass two different retry policies to nodes:
+
+  ```typescript
+  import Database from "better-sqlite3";
+  import { ChatAnthropic } from "@langchain/anthropic";
+  import { StateGraph, StateSchema, MessagesValue, GraphNode, START, END } from "@langchain/langgraph";
+  import { AIMessage } from "@langchain/core/messages";
+
+  const State = new StateSchema({
+    messages: MessagesValue,
+  });
+
+  // Create an in-memory database
+  const db: typeof Database.prototype = new Database(":memory:");
+
+  const model = new ChatAnthropic({ model: "claude-sonnet-4-6" });
+
+  const callModel: GraphNode<typeof State> = async (state) => {
+    const response = await model.invoke(state.messages);
+    return { messages: [response] };
+  };
+
+  const queryDatabase: GraphNode<typeof State> = async (state) => {
+    const queryResult: string = JSON.stringify(
+      db.prepare("SELECT * FROM Artist LIMIT 10;").all(),
+    );
+
+    return { messages: [new AIMessage({ content: "queryResult" })] };
+  };
+
+  const workflow = new StateGraph(State)
+    // Define the two nodes we will cycle between
+    .addNode("call_model", callModel, { retryPolicy: { maxAttempts: 5 } })
+    .addNode("query_database", queryDatabase, {
+      retryPolicy: {
+        retryOn: (e: any): boolean => {
+          if (e instanceof Database.SqliteError) {
+            // Retry on "SQLITE_BUSY" error
+            return e.code === "SQLITE_BUSY";
+          }
+          return false; // Don't retry on other errors
+        },
+      },
+    })
+    .addEdge(START, "call_model")
+    .addEdge("call_model", "query_database")
+    .addEdge("query_database", END);
+
+  const graph = workflow.compile();
+  ```
+
+</Accordion>
+
+
+
+
+
+### Access execution info inside a node
+
+You can access execution identity and retry information via `runtime.executionInfo`. This surfaces thread, run, and checkpoint identifiers as well as retry state, without needing to read from `config` directly.
+
+| Attribute | Type | Description |
+| --------- | ---- | ----------- |
+| `threadId` | `string \| undefined` | Thread ID for the current execution. |
+| `runId` | `string \| undefined` | Run ID for the current execution. |
+| `checkpointId` | `string` | Checkpoint ID for the current execution. |
+| `checkpointNs` | `string` | Checkpoint namespace for the current execution. |
+| `taskId` | `string` | Task ID for the current execution. |
+| `nodeAttempt` | `number` | Current execution attempt number (1-indexed). |
+| `nodeFirstAttemptTime` | `number \| undefined` | Unix timestamp (seconds) of when the first attempt started. Stays the same across retries. |
+
+#### Access thread and run IDs
+
+Use `executionInfo` to access the thread ID, run ID, and other identity fields inside a node:
+
+```ts
+import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  result: z.string(),
+});
+
+const myNode: GraphNode<typeof State> = async (state, runtime) => {
+  const info = runtime.executionInfo;
+  console.log(`Thread: ${info.threadId}, Run: ${info.runId}`);  // [!code highlight]
+  return { result: "done" };
+};
+
+const graph = new StateGraph(State)
+  .addNode("my_node", myNode)
+  .addEdge(START, "my_node")
+  .addEdge("my_node", END)
+  .compile();
+```
+
+#### Adjust behavior based on retry state
+
+When a node has a retry policy, use `executionInfo` to inspect the current attempt number and switch to a fallback after the first attempt fails:
+
+```ts
+import { StateGraph, StateSchema, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  result: z.string(),
+});
+
+const myNode: GraphNode<typeof State> = async (state, runtime) => {
+  const info = runtime.executionInfo;
+  if (info.nodeAttempt > 1) {  // [!code highlight]
+    // use a fallback on retries
+    return { result: await callFallbackApi() };
+  }
+  return { result: await callPrimaryApi() };
+};
+
+const graph = new StateGraph(State)
+  .addNode("my_node", myNode, { retryPolicy: { maxAttempts: 3 } })
+  .addEdge(START, "my_node")
+  .addEdge("my_node", END)
+  .compile();
+```
+
+`executionInfo` is available on the `Runtime` object even without a retry policy — `nodeAttempt` defaults to `1` and `nodeFirstAttemptTime` is set to the time the node starts executing.
+
+### Access server info inside a node
+
+When your graph runs on LangGraph Server, you can access server-specific metadata via `runtime.serverInfo`.
+
+| Attribute | Type | Description |
+| --------- | ---- | ----------- |
+| `assistantId` | `string` | The assistant ID for the current deployment. |
+| `graphId` | `string` | The graph ID for the current deployment. |
+| `user` | `BaseUser \| null` | The authenticated user, if [custom auth](/langsmith/custom-auth) is configured. |
+
+```ts
+const myNode: GraphNode<typeof State> = async (state, runtime) => {
+  const server = runtime.serverInfo;
+  if (server != null) {
+    console.log(`Assistant: ${server.assistantId}, Graph: ${server.graphId}`);  // [!code highlight]
+    if (server.user != null) {
+      console.log(`User: ${server.user.identity}`);
+    }
+  }
+  return { result: "done" };
+};
+```
+
+`serverInfo` is `null` when the graph is not running on LangGraph Server.
+
+<Note>
+Requires `deepagents>=1.9.0` (or `@langchain/langgraph>=1.2.8`) for `runtime.executionInfo` and `runtime.serverInfo`.
+</Note>
+
+
+
+## Add node caching
+
+Use node caching when a step is expensive in time or cost and you want to reuse results for the same input.
+
+To enable caching:
+
+1. Pass a cache when you compile the graph (for example, `InMemoryCache`). `SqliteCache` is also available in Python.
+2. Attach a @[`CachePolicy`] on the node.
+
+@[`CachePolicy`] options:
+
+
+
+- **`keyFunc`**: Function that builds a cache key from the node input.
+- **`ttl`**: Time to live in seconds. When omitted, the cache entry does not expire.
+
+
+
+
+```typescript
+import { StateGraph, StateSchema, GraphNode, START, END } from "@langchain/langgraph";
+import { InMemoryCache } from "@langchain/langgraph-checkpoint";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  x: z.number(),
+  result: z.number(),
+});
+
+const expensiveNode: GraphNode<typeof State> = async (state) => {
+  // Simulate an expensive operation
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  return { result: state.x * 2 };
+};
+
+const graph = new StateGraph(State)
+  .addNode("expensive_node", expensiveNode, { cachePolicy: { ttl: 3 } })
+  .addEdge(START, "expensive_node")
+  .addEdge("expensive_node", END)
+  .compile({ cache: new InMemoryCache() });
+
+await graph.invoke({ x: 5 }, { streamMode: "updates" });  // [!code highlight]
+// [{"expensive_node": {"result": 10}}]
+await graph.invoke({ x: 5 }, { streamMode: "updates" });  // [!code highlight]
+// [{"expensive_node": {"result": 10}, "__metadata__": {"cached": true}}]
+```
+
+You can also set `cachePolicy` (and other node options) once for the graph with `setNodeDefaults`. See [Set graph-wide node defaults](#set-graph-wide-node-defaults).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langgraph/graph-api-nodes.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

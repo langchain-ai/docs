@@ -1,0 +1,715 @@
+---
+title: Graph API overview
+sidebarTitle: Graph API
+description: Learn how LangGraph models agent workflows as graphs of shared state, nodes, and edges.
+---
+
+import GraphApiUsingTasksOriginalJs from '/snippets/javascript/code-samples/graph-api-using-tasks-original-js.mdx';
+import GraphApiUsingTasksOriginalPy from '/snippets/javascript/code-samples/graph-api-using-tasks-original-py.mdx';
+import GraphApiUsingTasksTaskJs from '/snippets/javascript/code-samples/graph-api-using-tasks-task-js.mdx';
+import GraphApiUsingTasksTaskPy from '/snippets/javascript/code-samples/graph-api-using-tasks-task-py.mdx';
+
+The Graph API defines agent workflows as a graph of [state](#state), [nodes](#nodes), and [edges](#edges). [`Send`](#send) and [`Command`](#command) control how the graph runs work: `Send` dynamically invokes nodes for fan-out, and `Command` updates state while routing to the next node (including resume after an interrupt). Use the Graph API when you want explicit shared state and a visual control flow.
+
+For step-by-step recipes, see [Use the graph API](/oss/javascript/langgraph/use-graph-api). To choose between this and the Functional API, see [Choosing between Graph and Functional APIs](/oss/javascript/langgraph/choosing-apis).
+
+## Graphs
+
+LangGraph models agent workflows as graphs built from three parts:
+
+1. [`State`](#state): A shared snapshot of the application. Usually a typed schema.
+2. [`Nodes`](#nodes): Functions that read state, do work, and return updates.
+3. [`Edges`](#edges): Fixed or conditional transitions that determine the next node.
+
+Compose nodes and edges to build sequences, branches, and loops. Nodes and edges are ordinary functions. They can call an LLM or run other code.
+
+In short: nodes do the work; edges decide what runs next.
+
+### Super-steps
+
+LangGraph runs graphs with [message passing](https://en.wikipedia.org/wiki/Message_passing), in the style of Google's [Pregel](https://research.google/pubs/pregel-a-system-for-large-scale-graph-processing/) system. Execution advances in discrete **super-steps**:
+
+- Nodes that run in parallel share one super-step.
+- Nodes that run in sequence use separate super-steps.
+- A node becomes active when it receives input on an incoming edge.
+- After a super-step, nodes with no pending messages become inactive.
+- The run ends when every node is inactive and no messages remain in transit.
+
+### StateGraph
+
+[`StateGraph`](https://reference.langchain.com/javascript/langchain-langgraph/index/StateGraph) is the main graph builder. Parameterize it with your state schema.
+
+### Compiling your graph
+
+Build a graph by defining [state](#state), adding [nodes](#nodes) and [edges](#edges), then compiling. Compilation checks the graph structure (for example for orphaned nodes). It is also where you attach runtime options such as [checkpointers](/oss/javascript/langgraph/persistence) and breakpoints.
+
+You must compile the graph before you invoke or stream it:
+
+
+
+```typescript
+const graph = new StateGraph(State)
+  .addNode("nodeA", nodeA)
+  .addEdge(START, "nodeA")
+  .addEdge("nodeA", END)
+  .compile();
+```
+
+
+## State
+
+State is the shared data that nodes read and update. LangGraph stores that data in **channels**: named slots in the state schema (the keys of your state object). Each channel holds a value and defines how updates merge into it. Most channels use last-write-wins. Channels with a [reducer](#reducers) combine values instead, for example by appending to a list.
+
+State has two parts:
+
+- A [schema](#schema) that declares the channels in the graph
+- Optional [reducers](#reducers) that control how updates merge into each channel
+
+Nodes return partial updates. LangGraph applies those updates through each channel's reducer.
+
+
+
+Define state with `StateSchema`. Each field can be:
+
+- A **standard schema** (last-value channel; overwrites on update)
+- A **`ReducedValue`** (custom reducer, often for parallel updates)
+- A **`MessagesValue`** (message list with a message-aware reducer)
+- An **`UntrackedValue`** (transient; not checkpointed)
+
+```typescript
+import {
+  StateSchema,
+  ReducedValue,
+  MessagesValue,
+  UntrackedValue,
+} from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const AgentState = new StateSchema({
+  messages: MessagesValue,
+  currentStep: z.string(),
+  retryCount: z.number().default(0),
+  allSteps: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    {
+      inputSchema: z.string(),
+      reducer: (current, newStep) => [...current, newStep],
+    }
+  ),
+  tempCache: new UntrackedValue(z.record(z.string(), z.unknown())),
+});
+```
+
+
+### Schema
+
+By default, the graph input and output schemas match the full state. You can narrow them when some keys are internal only. See [Define input and output schemas](/oss/javascript/langgraph/graph-api-state#define-input-and-output-schemas).
+
+#### Multiple schemas
+
+Most graphs share one state schema. Use multiple schemas when you need either of the following:
+
+- Private channels that internal nodes share, but that are not part of graph input or output
+- Explicit input and output schemas that are subsets of the full internal state
+
+A node can write to any channel in the graph state, including channels outside its declared input schema. Nodes can also introduce private channels when those schemas are defined. Input and output schemas constrain what `invoke` accepts and returns. They do not hide channels from [streaming](/oss/javascript/langgraph/streaming) by default. See [Private channels and streaming](/oss/javascript/langgraph/graph-api-state#private-channels-and-streaming).
+
+For examples, see [Define input and output schemas](/oss/javascript/langgraph/graph-api-state#define-input-and-output-schemas) and [Pass private state between nodes](/oss/javascript/langgraph/graph-api-state#pass-private-state-between-nodes).
+
+### Reducers
+
+Reducers control how node updates merge into state. Each key has its own reducer. With no reducer, updates overwrite the previous value.
+
+#### Reducer arguments
+
+A reducer is a binary function:
+
+- **Left**: The current value in state for that key
+- **Right**: The update returned by a node for that key
+
+
+
+```typescript
+const newValue = reducer(currentState[key], nodeUpdate[key]); // left, right
+```
+
+
+#### Default reducer
+
+The default reducer replaces the left value with the right. Nodes return partial updates, not the full state.
+
+For example, start with `{"foo": 1, "bar": ["hi"]}`. An update of `{"foo": 2}` yields `{"foo": 2, "bar": ["hi"]}`. A later `{"bar": ["bye"]}` yields `{"foo": 2, "bar": ["bye"]}`.
+
+#### Custom reducers
+
+Use a custom reducer to combine values, such as appending to a list.
+
+
+
+```typescript
+import { StateSchema, ReducedValue } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  foo: z.number(),
+  bar: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (left, right) => left.concat(right) }
+  ),
+});
+```
+
+Here `foo` overwrites. `bar` concatenates. From `{ foo: 1, bar: ["hi"] }`, an update of `{ bar: ["bye"] }` becomes `{ foo: 1, bar: ["hi", "bye"] }`.
+
+
+#### Overwrite
+
+
+
+With a merging reducer, an empty update does not clear the field. The empty value merges into the existing one. To reset the field, use a replacing reducer, or see [Process state updates with reducers](/oss/javascript/langgraph/graph-api-state#process-state-updates-with-reducers).
+
+
+#### Resetting a reducer field
+
+With a merging reducer, returning an empty value keeps prior data. That matters for error buffers or retry counters that must clear between attempts. See [Process state updates with reducers](/oss/javascript/langgraph/graph-api-state#process-state-updates-with-reducers) and [Bypass reducers with Overwrite](/oss/javascript/langgraph/graph-api-state#bypass-reducers-with-overwrite).
+
+### Untracked values
+
+`UntrackedValue` holds data during a run but never writes it to checkpoints. On resume, untracked values reset.
+
+Use it for database connections, temporary caches, large objects you do not want to persist, or runtime-only config that must be fresh each run.
+
+```typescript
+import { StateSchema, UntrackedValue, MessagesValue } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  messages: MessagesValue,
+  dbConnection: new UntrackedValue<DatabaseConnection>(),
+  tempCache: new UntrackedValue(
+    z.record(z.string(), z.unknown()),
+    { guard: false }
+  ),
+});
+```
+
+- During execution: Values behave like normal state.
+- On checkpoint: Untracked values are omitted.
+- On resume: Untracked values start fresh.
+- With `guard: true` (default): Multiple writes in one step raise an error.
+- With `guard: false`: Multiple writes are allowed; the last value wins.
+
+<Warning>
+Do not use `UntrackedValue` for data you need across interrupts or time travel. Use ordinary state fields or `ReducedValue` instead.
+</Warning>
+
+### Type utilities
+
+LangGraph provides TypeScript helpers for nodes and routers.
+
+#### `GraphNode`
+
+Type node functions defined outside the graph builder:
+
+```typescript
+import { GraphNode, StateSchema, Command } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  count: z.number().default(0),
+  result: z.string(),
+});
+
+const incrementNode: GraphNode<typeof State> = (state) => {
+  return { count: state.count + 1 };
+};
+
+const routerNode: GraphNode<{
+  InputSchema: typeof State;
+  Nodes: "process" | "done";
+}> = (state) => {
+  if (state.count >= 10) {
+    return new Command({ goto: "done" });
+  }
+  return new Command({
+    update: { count: state.count + 1 },
+    goto: "process",
+  });
+};
+```
+
+#### `State.Node` shorthand
+
+Each `StateSchema` instance exposes `Node` as a shorthand for `GraphNode<typeof State>`:
+
+```typescript
+const myNode1: GraphNode<typeof State> = (state) => ({ step: "done" });
+const myNode2: typeof State.Node = (state) => ({ step: "done" });
+```
+
+#### `ConditionalEdgeRouter`
+
+Type routing functions that return a node name (or `END`) without updating state:
+
+```typescript
+import { ConditionalEdgeRouter, END, StateSchema } from "@langchain/langgraph";
+import { z } from "zod/v4";
+
+const State = new StateSchema({
+  shouldContinue: z.boolean(),
+  step: z.string(),
+});
+
+const router: ConditionalEdgeRouter<{
+  InputSchema: typeof State;
+  Nodes: "process" | "summarize";
+}> = (state) => {
+  if (!state.shouldContinue) {
+    return END;
+  }
+  return state.step === "initial" ? "process" : "summarize";
+};
+```
+
+#### `StateSchema.State` and `StateSchema.Update`
+
+Extract the full state type and the partial update type from a schema:
+
+```typescript
+type State = typeof AgentState.State;
+type Update = typeof AgentState.Update;
+```
+
+
+### Working with messages in graph state
+
+#### Why use messages?
+
+Chat models take a list of messages as input. LangChain's [chat model interface](/oss/javascript/langchain/models) accepts message objects such as [`HumanMessage`](https://reference.langchain.com/javascript/langchain-core/messages/HumanMessage) and [`AIMessage`](https://reference.langchain.com/javascript/langchain-core/messages/AIMessage). See the [Messages conceptual guide](/oss/javascript/langchain/messages).
+
+#### Using messages in your graph
+
+Store conversation history as a list of messages in state, with a reducer that appends new messages and updates existing ones by ID.
+
+
+
+Use `MessagesValue`, which applies a message-aware reducer for IDs, updates, and deletions.
+
+```typescript
+import { StateSchema, MessagesValue } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  messages: MessagesValue,
+  documents: z.array(z.string()),
+});
+```
+
+
+#### Serialization
+
+Message reducers also deserialize common wire formats into LangChain message objects.
+
+
+
+```typescript
+// Supported
+{ messages: [new HumanMessage("message")] }
+
+// Also supported
+{ messages: [{ role: "human", content: "message" }] }
+```
+
+Access attributes with dot notation, for example `state.messages.at(-1).content`.
+
+
+
+
+## Nodes
+
+Nodes are sync or async functions that implement a step of the graph.
+
+
+
+A node can accept:
+
+1. `state`: The graph [state](#state)
+2. `config`: A [`RunnableConfig`](https://reference.langchain.com/javascript/langchain-core/runnables/RunnableConfig) with values such as `thread_id` and `tags`
+
+Add nodes with `addNode`. Prefer `GraphNode` or `State.Node` for typing:
+
+```typescript
+import { StateGraph, StateSchema, GraphNode } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  input: z.string(),
+  results: z.string(),
+});
+
+const myNode: GraphNode<typeof State> = (state, config) => {
+  return { results: `Hello, ${state.input}!` };
+};
+
+const builder = new StateGraph(State).addNode("myNode", myNode);
+```
+
+
+Behind the scenes, LangGraph wraps functions as [`RunnableLambda`](https://reference.langchain.com/javascript/langchain-core/runnables/RunnableLambda) so they gain batching, async support, and [tracing](/langsmith/observability).
+
+If you omit a node name, LangGraph uses the function name.
+
+
+
+```typescript
+builder.addNode(myNode);
+// Reference the node as "myNode" in edges
+```
+
+
+### Re-execution and idempotency
+
+With a [checkpointer](/oss/javascript/langgraph/persistence), LangGraph saves checkpoints at [super-step](#graphs) boundaries, not mid-function inside a node. After an [interrupt](/oss/javascript/langgraph/interrupts) or [retry](/oss/javascript/langgraph/fault-tolerance#retries), the affected node runs again from the start of its function. Side effects before the pause run again.
+
+Design node logic so re-execution is safe. Prefer idempotency keys, upserts, or read-before-write checks. For effects around `interrupt()`, see [Side effects called before `interrupt` must be idempotent](/oss/javascript/langgraph/interrupts#side-effects-called-before-interrupt-must-be-idempotent).
+
+You can add or remove nodes and edges without breaking resume for existing threads. Resumed runs use saved state and the graph you compile now.
+
+If a node calls [tasks](/oss/javascript/langgraph/functional-api#task) or [`interrupt`](https://reference.langchain.com/javascript/langchain-langgraph/index/interrupt), stricter [determinism](/oss/javascript/langgraph/functional-api#determinism) rules apply on resume. Completed task results are restored from the checkpointer. Changing task or interrupt order before the resume point can mismatch cached values. See [Idempotency](/oss/javascript/langgraph/functional-api#idempotency) and [Using tasks in nodes](#using-tasks-in-nodes).
+
+### Using tasks in nodes
+
+If one node contains several operations, implement each operation as a [task](/oss/javascript/langgraph/functional-api#task) instead of splitting across nodes. With a checkpointer, completed task results are saved, so a resumed thread can skip finished work inside the node.
+
+
+
+<Tabs>
+    <Tab title="Original">
+    <GraphApiUsingTasksOriginalJs />
+    </Tab>
+    <Tab title="With task">
+    <GraphApiUsingTasksTaskJs />
+    </Tab>
+</Tabs>
+
+
+### `START` node
+
+[`START`](https://reference.langchain.com/javascript/langchain-langgraph/index/START) is the virtual entry that delivers user input into the graph. Use it to mark which nodes run first.
+
+
+
+```typescript
+import { START } from "@langchain/langgraph";
+
+graph.addEdge(START, "nodeA");
+```
+
+
+### `END` node
+
+`END` marks a terminal edge. Use it when a path should stop.
+
+
+
+```typescript
+import { END } from "@langchain/langgraph";
+
+graph.addEdge("nodeA", END);
+```
+
+
+### Node caching
+
+LangGraph can cache node (and task) results by input. Pass a cache when you compile the graph, and attach a @[`CachePolicy`] on the node.
+
+For options, end-to-end examples, and graph-wide defaults, see [Add node caching](/oss/javascript/langgraph/graph-api-nodes#add-node-caching).
+
+## Edges
+
+Edges decide where control goes next:
+
+- **Normal edges**: Always go from one node to the next
+- **Conditional edges**: Call a function to determine the next node(s)
+- **Entry point**: First node after user input (`START` → node)
+- **Conditional entry point**: Route from `START` with a function
+
+A node can have multiple outgoing edges. Destinations on those edges run in parallel in the next super-step.
+
+<Warning>
+For each node, use either static edges or dynamic routing ([conditional edges](#conditional-edges) / [`Command`](https://reference.langchain.com/javascript/langchain-langgraph/index/Command)), not both. Mixing them can run both paths.
+</Warning>
+
+### Normal edges
+
+
+
+```typescript
+graph.addEdge("nodeA", "nodeB");
+```
+
+
+### Conditional edges
+
+
+
+```typescript
+graph.addConditionalEdges("nodeA", routingFunction);
+// Or with an explicit map:
+graph.addConditionalEdges("nodeA", routingFunction, {
+  pathA: "nodeB",
+  pathB: "nodeC",
+});
+```
+
+
+The routing function can return a node name, `END`, a list of names (fan-out), or [`Send`](https://reference.langchain.com/javascript/langchain-langgraph/index/Send) objects for map-reduce. See [Build sequences, branches, and loops](/oss/javascript/langgraph/graph-api-control-flow).
+
+### Entry point
+
+
+
+```typescript
+graph.addEdge(START, "nodeA");
+```
+
+
+### Conditional entry point
+
+
+
+```typescript
+graph.addConditionalEdges(START, routingFunction, {
+  true: "nodeB",
+  false: "nodeC",
+});
+```
+
+
+## `Send`
+
+Use [`Send`](https://reference.langchain.com/javascript/langchain-langgraph/index/Send) when you need to run the same node once per item, each with its own input, and the number of items is only known at runtime. That shape is often called map-reduce or orchestrator-worker: one node produces a list, workers process each item in parallel, then a later node reads the combined results.
+
+Normal edges cannot do this. They choose which nodes run next, but every chosen node still receives the shared graph state, and the topology is fixed when you build the graph.
+
+Return one or more `Send` objects from a conditional edge. Each `Send` names a target node and passes a custom argument as that invocation's input. LangGraph runs those invocations in parallel. When workers write to shared state keys, [reducers](#reducers) merge their updates, for example by concatenating lists.
+
+The first argument to `Send` is the target node name. The second is the state (or partial state) for that invocation.
+
+
+
+```typescript
+import { Send } from "@langchain/langgraph";
+
+graph.addConditionalEdges("nodeA", (state) => {
+  return state.subjects.map(
+    (subject) => new Send("generateJoke", { subject })
+  );
+});
+```
+
+
+For a full map-reduce example, see [Map-Reduce and the Send API](/oss/javascript/langgraph/graph-api-send-command#map-reduce-and-the-send-api).
+
+## `Command`
+
+Use [`Command`](https://reference.langchain.com/javascript/langchain-langgraph/index/Command) when a single step must both update state and choose what runs next. Normally those jobs are separate: a node returns state updates, and [edges](#edges) (or [conditional edges](#conditional-edges)) decide the next node. Return `Command` from a node when the next hop depends on work you just did in that same function.
+
+`Command` also covers two other cases that plain returns and edges do not: resume a run after an [interrupt](/oss/javascript/langgraph/interrupts), and update or route from inside a [tool](#return-from-tools).
+
+For routing alone, prefer conditional edges. Reach for `Command` when you need the update and the route together (or one of the interrupt / tool cases above).
+
+`Command` accepts:
+
+- **`update`**: State updates (like a normal node return)
+- **`goto`**: Next node(s) (like a conditional edge)
+- **`graph`**: Parent graph target when navigating from a [subgraph](/oss/javascript/langgraph/use-subgraphs)
+- **`resume`**: Value used to resume after an [interrupt](/oss/javascript/langgraph/interrupts)
+
+Use `Command` in three places:
+
+- **[Return from nodes](#return-from-nodes)**: `update`, `goto`, and `graph`
+- **[Input to `invoke` or `stream`](#input-to-invoke-or-stream)**: `resume` after an interrupt
+- **[Return from tools](#return-from-tools)**: Updates and routing from inside a tool
+
+### Return from nodes
+
+#### `update` and `goto`
+
+Return [`Command`](https://reference.langchain.com/javascript/langchain-langgraph/index/Command) to update state and route in one step:
+
+
+
+```typescript
+import { Command } from "@langchain/langgraph";
+
+graph.addNode("myNode", (state) => {
+  return new Command({
+    update: { foo: "bar" },
+    goto: "myOtherNode",
+  });
+}, {
+  ends: ["myOtherNode", END],
+});
+```
+
+When you use `Command`, pass `ends` to `addNode` so LangGraph knows the valid destinations.
+
+Use `Command` when you need both an update and a route. For routing alone, prefer [conditional edges](#conditional-edges).
+
+
+
+
+<Warning>
+`Command` adds dynamic edges. Static edges from the same node still run. Do not mix `Command` routing with `addEdge` from one node.
+</Warning>
+
+
+See [Combine control flow and state updates with Command](/oss/javascript/langgraph/graph-api-send-command#combine-control-flow-and-state-updates-with-command).
+
+#### `graph`
+
+From a [subgraph](/oss/javascript/langgraph/use-subgraphs) node, navigate to a node in the parent graph with `Command.PARENT`:
+
+
+
+```typescript
+const myNode = (state: State): Command => {
+  return new Command({
+    update: { foo: "bar" },
+    goto: "otherSubgraph",  // where `otherSubgraph` is a node in the parent graph
+    graph: Command.PARENT,
+  });
+};
+```
+
+
+When you update a parent key that the subgraph also uses, define a [reducer](#reducers) for that key in the parent. See [Navigate to a node in a parent graph](/oss/javascript/langgraph/graph-api-send-command#navigate-to-a-node-in-a-parent-graph).
+
+### Input to `invoke` or `stream`
+
+
+
+<Warning>
+`new Command({ resume: ... })` is the only `Command` pattern meant as input to `invoke()` / `stream()` (optionally with `update` while resuming). Do not pass `new Command({ update: ... })` alone to continue a conversation. Any `Command` as input resumes from the latest checkpoint, not from `START`, so a finished thread can look stuck. Pass a plain object to start a new turn:
+
+```typescript
+// Wrong: resumes from the latest checkpoint
+await graph.invoke(new Command({ update: { messages: [{ role: "user", content: "follow up" }] } }), config);  // [!code --]
+
+// Correct: plain object restarts from START
+await graph.invoke({ messages: [{ role: "user", content: "follow up" }] }, config);  // [!code ++]
+```
+</Warning>
+
+
+#### `resume`
+
+
+
+Use `new Command({ resume: ... })` after an [interrupt](/oss/javascript/langgraph/interrupts). The value becomes the return value of the paused `interrupt()` call:
+
+```typescript
+await graph.invoke(new Command({ resume: "yes" }), config);
+```
+
+
+See [Interrupts](/oss/javascript/langgraph/interrupts) for full patterns.
+
+### Return from tools
+
+Return [`Command`](https://reference.langchain.com/javascript/langchain-langgraph/index/Command) from tools to update state and route after the tool finishes. `goto` from a tool adds a dynamic edge. Static edges on the calling node still run, so do not mix both.
+
+See [Use inside tools](/oss/javascript/langgraph/graph-api-send-command#use-inside-tools).
+
+## Graph migrations
+
+LangGraph can migrate graph definitions while a checkpointer stores thread state:
+
+- Threads that have finished can accept full topology changes (add, remove, or rename nodes and edges).
+- Interrupted threads support topology changes except renaming or removing a node the thread is about to enter.
+- Adding or removing state keys is backwards and forwards compatible.
+- Renamed state keys lose saved values in existing threads.
+- Incompatible type changes on existing keys can break older thread state.
+
+For logic changes that stay schema-compatible (for example, a new tool set), see [Business compatibility](/oss/javascript/langgraph/backward-compatibility#business-compatibility).
+
+## Runtime context
+
+Runtime context passes dependencies into nodes without putting them in graph state (for example, model name or a database handle).
+
+
+
+```typescript
+import { StateGraph, StateSchema, GraphNode } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  input: z.string(),
+  output: z.string(),
+});
+
+const ContextSchema = z.object({
+  llm: z.union([z.literal("openai"), z.literal("anthropic")]),
+});
+
+const graph = new StateGraph(State, ContextSchema);
+
+const nodeA: GraphNode<typeof State> = (state, config) => {
+  const llm = getLLM(config.context?.llm);
+  return {};
+};
+
+await graph.invoke(inputs, { context: { llm: "anthropic" } });
+```
+
+
+See [Add runtime configuration](/oss/javascript/langgraph/graph-api-nodes#add-runtime-configuration).
+
+### Recursion limit
+
+The recursion limit caps how many [super-steps](#graphs) one run may execute. When the limit is exceeded, LangGraph raises `GraphRecursionError`.
+
+
+
+The default is 25 steps. Pass `recursionLimit` as a top-level config key (not under `configurable`):
+
+```typescript
+await graph.invoke(inputs, {
+  recursionLimit: 5,
+  context: { llm: "anthropic" },
+});
+```
+
+
+### Accessing and handling the recursion counter
+
+
+
+Nodes can read the current step from `config.metadata.langgraph_step`. Related keys include `langgraph_node`, `langgraph_triggers`, `langgraph_path`, and `langgraph_checkpoint_ns`.
+
+Prefer explicit termination conditions in the graph. Catching `GraphRecursionError` outside the graph is a safety net.
+
+
+For examples, see [Access and handle the recursion counter](/oss/javascript/langgraph/graph-api-control-flow#access-and-handle-the-recursion-counter).
+
+## Learn more
+
+- [Use the graph API](/oss/javascript/langgraph/use-graph-api)
+- [Define and update state](/oss/javascript/langgraph/graph-api-state)
+- [Build sequences, branches, and loops](/oss/javascript/langgraph/graph-api-control-flow)
+- [Use Send and Command](/oss/javascript/langgraph/graph-api-send-command)
+- [Configure nodes](/oss/javascript/langgraph/graph-api-nodes)
+- [Visualize your graph](/oss/javascript/langgraph/graph-api-visualize)
+- [Functional API overview](/oss/javascript/langgraph/functional-api)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langgraph/graph-api.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

@@ -1,0 +1,572 @@
+---
+title: Build sequences, branches, and loops
+sidebarTitle: Control flow
+description: Compose sequences, parallel branches, conditional edges, and loops with the LangGraph Graph API.
+---
+
+import ChatModelTabs from '/snippets/javascript/chat-model-tabs.mdx';
+
+## Create a sequence of steps
+
+<Info>
+**Prerequisites**
+This guide assumes familiarity with [Define and update state](/oss/javascript/langgraph/graph-api-state).
+</Info>
+
+Here we demonstrate how to construct a simple sequence of steps. We will show:
+
+1. How to build a sequential graph
+2. Built-in short-hand for constructing similar graphs.
+
+
+
+To add a sequence of nodes, we use the `.addNode` and `.addEdge` methods of our [graph](/oss/javascript/langgraph/graph-api#stategraph):
+
+```typescript
+import { START, StateGraph } from "@langchain/langgraph";
+
+const builder = new StateGraph(State)
+  .addNode("step1", step1)
+  .addNode("step2", step2)
+  .addNode("step3", step3)
+  .addEdge(START, "step1")
+  .addEdge("step1", "step2")
+  .addEdge("step2", "step3");
+```
+
+
+<Accordion title="Why split application steps into a sequence with LangGraph?">
+
+LangGraph makes it easy to add an underlying persistence layer to your application.
+This allows state to be checkpointed in between the execution of nodes, so your LangGraph nodes govern:
+
+* How state updates are [checkpointed](/oss/javascript/langgraph/persistence)
+* How interruptions are resumed in [human-in-the-loop](/oss/javascript/langgraph/interrupts) workflows
+* How we can "rewind" and branch-off executions using LangGraph's [time travel](/oss/javascript/langgraph/use-time-travel) features
+
+They also determine how execution steps are [streamed](/oss/javascript/langgraph/streaming), and how your application is visualized and debugged using [Studio](/langsmith/studio).
+
+Let's demonstrate an end-to-end example. We will create a sequence of three steps:
+
+1. Populate a value in a key of the state
+2. Update the same value
+3. Populate a different value
+
+Let's first define our [state](/oss/javascript/langgraph/graph-api#state). This governs the [schema of the graph](/oss/javascript/langgraph/graph-api#schema), and can also specify how to apply updates. See [Process state updates with reducers](/oss/javascript/langgraph/graph-api-state#process-state-updates-with-reducers) for more detail.
+
+In our case, we will just keep track of two values:
+
+
+
+```typescript
+import { StateSchema, GraphNode } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  value1: z.string(),
+  value2: z.number(),
+});
+```
+
+
+
+
+Our [nodes](/oss/javascript/langgraph/graph-api#nodes) are just TypeScript functions that read our graph's state and make updates to it. The first argument to this function will always be the state:
+
+```typescript
+const step1: GraphNode<typeof State> = (state) => {
+  return { value1: "a" };
+};
+
+const step2: GraphNode<typeof State> = (state) => {
+  const currentValue1 = state.value1;
+  return { value1: `${currentValue1} b` };
+};
+
+const step3: GraphNode<typeof State> = (state) => {
+  return { value2: 10 };
+};
+```
+
+
+<Note>
+Note that when issuing updates to the state, each node can just specify the value of the key it wishes to update.
+
+By default, this will **overwrite** the value of the corresponding key. You can also use [reducers](/oss/javascript/langgraph/graph-api#reducers) to control how updates are processed—for example, you can append successive updates to a key instead. See [Process state updates with reducers](/oss/javascript/langgraph/graph-api-state#process-state-updates-with-reducers) for more detail.
+</Note>
+
+Finally, we define the graph. We use [StateGraph](/oss/javascript/langgraph/graph-api#stategraph) to define a graph that operates on this state.
+
+
+
+We will then use [addNode](/oss/javascript/langgraph/graph-api#nodes) and [addEdge](/oss/javascript/langgraph/graph-api#edges) to populate our graph and define its control flow.
+
+```typescript
+import { START, StateGraph } from "@langchain/langgraph";
+
+const graph = new StateGraph(State)
+  .addNode("step1", step1)
+  .addNode("step2", step2)
+  .addNode("step3", step3)
+  .addEdge(START, "step1")
+  .addEdge("step1", "step2")
+  .addEdge("step2", "step3")
+  .compile();
+```
+
+
+
+
+<Tip>
+**Specifying custom names**
+You can specify custom names for nodes using `.addNode`:
+
+```typescript
+const graph = new StateGraph(State)
+.addNode("myNode", step1)
+.compile();
+```
+</Tip>
+
+
+Note that:
+
+
+
+* `.addEdge` takes the names of nodes, which for functions defaults to `node.name`.
+* We must specify the entry point of the graph. For this we add an edge with the [START node](/oss/javascript/langgraph/graph-api#start-node).
+* The graph halts when there are no more nodes to execute.
+
+We next [compile](/oss/javascript/langgraph/graph-api#compiling-your-graph) our graph. This provides a few basic checks on the structure of the graph (e.g., identifying orphaned nodes). If we were adding persistence to our application via a [checkpointer](/oss/javascript/langgraph/persistence), it would also be passed in here.
+
+
+LangGraph provides built-in utilities for visualizing your graph. Let's inspect our sequence. See [Visualize your graph](/oss/javascript/langgraph/graph-api-visualize#visualize-your-graph) for detail on visualization.
+
+
+
+```typescript
+import * as fs from "node:fs/promises";
+
+const drawableGraph = await graph.getGraphAsync();
+const image = await drawableGraph.drawMermaidPng();
+const imageBuffer = new Uint8Array(await image.arrayBuffer());
+
+await fs.writeFile("graph.png", imageBuffer);
+```
+
+
+Let's proceed with a simple invocation:
+
+
+
+```typescript
+const result = await graph.invoke({ value1: "c" });
+console.log(result);
+```
+
+```
+{ value1: 'a b', value2: 10 }
+```
+
+
+Note that:
+
+* We kicked off invocation by providing a value for a single state key. We must always provide a value for at least one key.
+* The value we passed in was overwritten by the first node.
+* The second node updated the value.
+* The third node populated a different value.
+
+
+
+</Accordion>
+
+## Create branches
+
+Parallel execution of nodes is essential to speed up overall graph operation. LangGraph offers native support for parallel execution of nodes, which can significantly enhance the performance of graph-based workflows. This parallelization is achieved through fan-out and fan-in mechanisms, utilizing both standard edges and [conditional_edges](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.StateGraph.html#addConditionalEdges). Below are some examples showing how to add create branching dataflows that work for you.
+
+### Run graph nodes in parallel
+
+In this example, we fan out from `Node A` to `B and C` and then fan in to `D`. With our state, [we specify the reducer add operation](/oss/javascript/langgraph/graph-api#reducers). This will combine or accumulate values for the specific key in the State, rather than simply overwriting the existing value. For lists, this means concatenating the new list with the existing list. See [Process state updates with reducers](/oss/javascript/langgraph/graph-api-state#process-state-updates-with-reducers) for more detail on updating state with reducers.
+
+
+
+```typescript
+import { StateGraph, StateSchema, ReducedValue, GraphNode, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  // The reducer makes this append-only
+  aggregate: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (x, y) => x.concat(y) }
+  ),
+});
+
+const nodeA: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "A" to ${state.aggregate}`);
+  return { aggregate: ["A"] };
+};
+
+const nodeB: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "B" to ${state.aggregate}`);
+  return { aggregate: ["B"] };
+};
+
+const nodeC: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "C" to ${state.aggregate}`);
+  return { aggregate: ["C"] };
+};
+
+const nodeD: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "D" to ${state.aggregate}`);
+  return { aggregate: ["D"] };
+};
+
+const graph = new StateGraph(State)
+  .addNode("a", nodeA)
+  .addNode("b", nodeB)
+  .addNode("c", nodeC)
+  .addNode("d", nodeD)
+  .addEdge(START, "a")
+  .addEdge("a", "b")
+  .addEdge("a", "c")
+  .addEdge("b", "d")
+  .addEdge("c", "d")
+  .addEdge("d", END)
+  .compile();
+```
+
+
+
+
+```typescript
+import * as fs from "node:fs/promises";
+
+const drawableGraph = await graph.getGraphAsync();
+const image = await drawableGraph.drawMermaidPng();
+const imageBuffer = new Uint8Array(await image.arrayBuffer());
+
+await fs.writeFile("graph.png", imageBuffer);
+```
+
+
+With the reducer, you can see that the values added in each node are accumulated.
+
+
+
+```typescript
+const result = await graph.invoke({
+  aggregate: [],
+});
+console.log(result);
+```
+
+```
+Adding "A" to []
+Adding "B" to ['A']
+Adding "C" to ['A']
+Adding "D" to ['A', 'B', 'C']
+{ aggregate: ['A', 'B', 'C', 'D'] }
+```
+
+
+<Note>
+In the above example, nodes `"b"` and `"c"` are executed concurrently in the same [superstep](/oss/javascript/langgraph/graph-api#graphs). Because they are in the same step, node `"d"` executes after both `"b"` and `"c"` are finished.
+
+Importantly, updates from a parallel superstep may not be ordered consistently. If you need a consistent, predetermined ordering of updates from a parallel superstep, you should write the outputs to a separate field in the state together with a value with which to order them.
+</Note>
+
+<Accordion title="Exception handling?">
+  LangGraph executes nodes within [supersteps](/oss/javascript/langgraph/graph-api#graphs), meaning that while parallel branches are executed in parallel, the entire superstep is **transactional**. If any of these branches raises an exception, **none** of the updates are applied to the state (the entire superstep errors).
+
+  Importantly, when using a [checkpointer](/oss/javascript/langgraph/persistence), results from successful nodes within a superstep are saved, and don't repeat when resumed.
+
+  If you have error-prone (perhaps want to handle flakey API calls), LangGraph provides two ways to address this:
+
+  1. You can write regular python code within your node to catch and handle exceptions.
+  2. You can set a **[`RetryPolicy`](https://reference.langchain.com/python/langgraph/types/#langgraph.types.RetryPolicy)** to direct the graph to retry nodes that raise certain types of exceptions. Only failing branches are retried, so you needn't worry about performing redundant work.
+
+  Together, these let you perform parallel execution and fully control exception handling.
+</Accordion>
+
+
+
+<Tip>
+**Set max concurrency**
+You can control the maximum number of concurrent tasks by setting `max_concurrency` in the [configuration](https://reference.langchain.com/javascript/interfaces/_langchain_langgraph.index.LangGraphRunnableConfig.html) when invoking the graph.
+
+```typescript
+const result = await graph.invoke({ value1: "c" }, {configurable: {max_concurrency: 10}});
+```
+</Tip>
+
+
+
+
+### Conditional branching
+
+
+
+If your fan-out should vary at runtime based on the state, you can use [`addConditionalEdges`](https://reference.langchain.com/javascript/classes/_langchain_langgraph.index.StateGraph.html#addconditionaledges) to select one or more paths using the graph state. See example below, where node `a` generates a state update that determines the following node.
+
+```typescript
+import { StateGraph, StateSchema, ReducedValue, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  aggregate: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (x, y) => x.concat(y) }
+  ),
+  // Add a key to the state. We will set this key to determine
+  // how we branch.
+  which: z.string(),  // [!code highlight]
+});
+
+const nodeA: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "A" to ${state.aggregate}`);
+  return { aggregate: ["A"], which: "c" };
+};
+
+const nodeB: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "B" to ${state.aggregate}`);
+  return { aggregate: ["B"] };
+};
+
+const nodeC: GraphNode<typeof State> = (state) => {
+  console.log(`Adding "C" to ${state.aggregate}`);
+  return { aggregate: ["C"] };  // [!code highlight]
+};
+
+const conditionalEdge: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" | "c" }> = (state) => {
+  // Fill in arbitrary logic here that uses the state
+  // to determine the next node
+  return state.which as "b" | "c";
+};
+
+const graph = new StateGraph(State)
+  .addNode("a", nodeA)
+  .addNode("b", nodeB)
+  .addNode("c", nodeC)
+  .addEdge(START, "a")
+  .addEdge("b", END)
+  .addEdge("c", END)
+  .addConditionalEdges("a", conditionalEdge)
+  .compile();
+```
+
+```typescript
+import * as fs from "node:fs/promises";
+
+const drawableGraph = await graph.getGraphAsync();
+const image = await drawableGraph.drawMermaidPng();
+const imageBuffer = new Uint8Array(await image.arrayBuffer());
+
+await fs.writeFile("graph.png", imageBuffer);
+```
+
+```typescript
+const result = await graph.invoke({ aggregate: [] });
+console.log(result);
+```
+
+```
+Adding "A" to []
+Adding "C" to ['A']
+{ aggregate: ['A', 'C'], which: 'c' }
+```
+
+
+<Tip>
+Your conditional edges can route to multiple destination nodes. For example:
+
+
+
+```typescript
+const routeBcOrCd: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" | "c" | "d" }> = (state) => {
+  if (state.which === "cd") {
+    return ["c", "d"];
+  }
+  return ["b", "c"];
+};
+```
+
+</Tip>
+
+## Create and control loops
+
+When creating a graph with a loop, we require a mechanism for terminating execution. This is most commonly done by adding a [conditional edge](/oss/javascript/langgraph/graph-api#conditional-edges) that routes to the [END](/oss/javascript/langgraph/graph-api#end-node) node once we reach some termination condition.
+
+You can also set the graph recursion limit when invoking or streaming the graph. The recursion limit sets the number of [super-steps](/oss/javascript/langgraph/graph-api#graphs) that the graph is allowed to execute before it raises an error. Read more about the [recursion limit concept](/oss/javascript/langgraph/graph-api#recursion-limit).
+
+Let's consider a simple graph with a loop to better understand how these mechanisms work.
+
+<Tip>
+To return the last value of your state instead of receiving a recursion limit error, see the [next section](#impose-a-recursion-limit).
+</Tip>
+
+When creating a loop, you can include a conditional edge that specifies a termination condition:
+
+
+
+```typescript
+const route: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" }> = (state) => {
+  if (terminationCondition(state)) {
+    return END;
+  } else {
+    return "b";
+  }
+};
+
+const graph = new StateGraph(State)
+  .addNode("a", nodeA)
+  .addNode("b", nodeB)
+  .addEdge(START, "a")
+  .addConditionalEdges("a", route)
+  .addEdge("b", "a")
+  .compile();
+```
+
+
+
+
+To control the recursion limit, specify `"recursionLimit"` in the config. This will raise a `GraphRecursionError`, which you can catch and handle:
+```typescript
+import { GraphRecursionError } from "@langchain/langgraph";
+
+try {
+  await graph.invoke(inputs, { recursionLimit: 3 });
+} catch (error) {
+  if (error instanceof GraphRecursionError) {
+    console.log("Recursion Error");
+  }
+}
+```
+
+
+Let's define a graph with a simple loop. Note that we use a conditional edge to implement a termination condition.
+
+
+
+```typescript
+import { StateGraph, StateSchema, ReducedValue, GraphNode, ConditionalEdgeRouter, START, END } from "@langchain/langgraph";
+import * as z from "zod";
+
+const State = new StateSchema({
+  // The reducer makes this append-only
+  aggregate: new ReducedValue(
+    z.array(z.string()).default(() => []),
+    { reducer: (x, y) => x.concat(y) }
+  ),
+});
+
+const nodeA: GraphNode<typeof State> = (state) => {
+  console.log(`Node A sees ${state.aggregate}`);
+  return { aggregate: ["A"] };
+};
+
+const nodeB: GraphNode<typeof State> = (state) => {
+  console.log(`Node B sees ${state.aggregate}`);
+  return { aggregate: ["B"] };
+};
+
+// Define edges
+const route: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" }> = (state) => {
+  if (state.aggregate.length < 7) {
+    return "b";
+  } else {
+    return END;
+  }
+};
+
+const graph = new StateGraph(State)
+  .addNode("a", nodeA)
+  .addNode("b", nodeB)
+  .addEdge(START, "a")
+  .addConditionalEdges("a", route)
+  .addEdge("b", "a")
+  .compile();
+```
+
+```typescript
+import * as fs from "node:fs/promises";
+
+const drawableGraph = await graph.getGraphAsync();
+const image = await drawableGraph.drawMermaidPng();
+const imageBuffer = new Uint8Array(await image.arrayBuffer());
+
+await fs.writeFile("graph.png", imageBuffer);
+```
+
+
+This architecture is similar to a [ReAct agent](/oss/javascript/langgraph/workflows-agents) in which node `"a"` is a tool-calling model, and node `"b"` represents the tools.
+
+In our `route` conditional edge, we specify that we should end after the `"aggregate"` list in the state passes a threshold length.
+
+Invoking the graph, we see that we alternate between nodes `"a"` and `"b"` before terminating once we reach the termination condition.
+
+
+
+```typescript
+const result = await graph.invoke({ aggregate: [] });
+console.log(result);
+```
+
+```
+Node A sees []
+Node B sees ['A']
+Node A sees ['A', 'B']
+Node B sees ['A', 'B', 'A']
+Node A sees ['A', 'B', 'A', 'B']
+Node B sees ['A', 'B', 'A', 'B', 'A']
+Node A sees ['A', 'B', 'A', 'B', 'A', 'B']
+{ aggregate: ['A', 'B', 'A', 'B', 'A', 'B', 'A'] }
+```
+
+
+### Impose a recursion limit
+
+In some applications, we may not have a guarantee that we will reach a given termination condition. In these cases, we can set the graph's [recursion limit](/oss/javascript/langgraph/graph-api#recursion-limit). This will raise a `GraphRecursionError` after a given number of [supersteps](/oss/javascript/langgraph/graph-api#graphs). We can then catch and handle this exception:
+
+
+
+```typescript
+import { GraphRecursionError } from "@langchain/langgraph";
+
+try {
+  await graph.invoke({ aggregate: [] }, { recursionLimit: 4 });
+} catch (error) {
+  if (error instanceof GraphRecursionError) {
+    console.log("Recursion Error");
+  }
+}
+```
+
+```
+Node A sees []
+Node B sees ['A']
+Node A sees ['A', 'B']
+Node B sees ['A', 'B', 'A']
+Node A sees ['A', 'B', 'A', 'B']
+Recursion Error
+```
+
+
+
+
+### Access and handle the recursion counter
+
+
+
+Nodes can read the current step from `config.metadata.langgraph_step`. Related keys include `langgraph_node`, `langgraph_triggers`, `langgraph_path`, and `langgraph_checkpoint_ns`. Prefer explicit termination conditions in the graph. Catching `GraphRecursionError` outside the graph is a safety net.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langgraph/graph-api-control-flow.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
