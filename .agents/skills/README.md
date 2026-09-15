@@ -46,6 +46,7 @@ the tree changes. Re-run the command after pulling, or symlink instead.
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. Runs on a PR, a branch, or the working tree. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, what stays in the repo, how to edit safely. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files: snippet markers, harness blocks, file placement, and the shared-module-scope trap in TypeScript. |
+| `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, running the half of a sample that needs no API key, and naming what stayed unverified. |
 | `submit-integration` | Turning a structured integration issue submission into a listing, applying the hosted-guide eligibility policy. Invoked by `.github/workflows/integration-submission.yml`. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy: rebase, convert to external YAML, feature, or check package downloads. |
 

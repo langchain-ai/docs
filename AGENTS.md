@@ -54,6 +54,7 @@ once to link the tree.
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
 | `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
+| `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, and naming what stayed unverified. |
 | `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
 
