@@ -7,7 +7,7 @@ import {
   StoreBackend,
 } from "deepagents";
 
-const store = new InMemoryStore(); // Good for local dev; omit for LangSmith Deployment
+const store = new InMemoryStore(); // Use for local dev; omit for LangSmith Deployment
 
 // KEEP MODEL
 const agent = await createDeepAgent({
