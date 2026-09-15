@@ -3,9 +3,6 @@ type: integration
 title: NPM Snippet Components
 description: How the builder overlays sandbox components from @langchain/docs-sandbox into generated documentation, how MDX pages consume them, and how to validate the resulting output.
 tags: [npm-package, snippet-components, build-system, mdx-integration, mintlify]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-08T08:21:44.568Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -25,12 +22,15 @@ sources:
     resource: repo://src/oss/langchain/frontend/integrations/copilotkit.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-15T08:21:56.110Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-15T08:21:56.110Z
 ---
 
 # NPM Snippet Components
 
-`@langchain/docs-sandbox` is the package boundary for selected interactive documentation components. The documentation repository declares the package as `^0.0.23`; the lockfile resolves the current installation to `0.0.23`. The builder, not MDX authors or Mintlify configuration, determines which package artifacts become site assets. Generated files under `build/` are deployable output and must not be edited as component source.
+`@langchain/docs-sandbox` is the package boundary for selected interactive documentation components. The documentation repository declares the package as `^0.0.23`; the lockfile resolves the current installation to `0.0.23`. The builder's allowlist determines which package artifacts become generated site assets. Generated files under `build/` are deployable output and must not be edited as component source.
 
 ## Published component contract
 

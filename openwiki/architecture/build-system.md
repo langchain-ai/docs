@@ -5,7 +5,7 @@ description: How the Python documentation builder turns authored src content int
 tags: [build-system, documentation-pipeline, mintlify, preprocessing, content-routing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-08T08:21:44.568Z
+    at: 2026-09-15T08:21:56.110Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -25,7 +25,7 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-08T08:21:44.568Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-15T08:21:56.110Z" }
 ---
 
 # Build System Architecture
@@ -83,7 +83,7 @@ All source markdown except the root `index.mdx` and files anywhere below `snippe
 
 ## Shared artifacts and snippets
 
-`is_shared_file()` classifies `docs.json`; the named root pages `index.mdx`, `use-these-docs.mdx`, `playground.mdx`, and `build-overview.mdx`; anything in a `snippets`, `images`, `.well-known`, or `fonts` path component; and every `.js` or `.css` file as shared. The classifier prevents those inputs from being duplicated by the OSS passes. Supported types comprise Markdown, JSON, YAML, common image/video formats, CSS and JavaScript, JSX/TSX, text/HTML, and WOFF/TTF fonts; other extensions and `TEMPLATE.mdx` are skipped. A file named `docs.yml` or `docs.yaml` is converted to JSON rather than copied as YAML.
+`is_shared_file()` classifies `docs.json`; the named root pages `index.mdx`, `use-these-docs.mdx`, `playground.mdx`, and `build-overview.mdx`; anything in a `snippets`, `images`, `.well-known`, or `fonts` path component; and every `.js` or `.css` file as shared. The classifier prevents those inputs from being duplicated by the OSS passes. Supported types comprise Markdown, JSON, YAML, common image/video formats, CSS and JavaScript, JSX/TSX, text/HTML, and WOFF/TTF fonts; other extensions and `TEMPLATE.mdx` are skipped. A file named `docs.yml` is converted to JSON rather than copied as YAML; other supported YAML files are copied unchanged.
 
 Markdown snippets need additional treatment because the same import can be consumed from pages at different nesting depths. For each source snippet, the builder emits:
 
@@ -126,6 +126,7 @@ The focused builder tests cover routing exceptions and their link effects: unver
 - [Source directory map](/openwiki/architecture/source-map.md) for authored domains and navigation ownership.
 - [Preprocessing](/openwiki/concepts/preprocessing.md) for author-facing markup transformations.
 - [Versioning](/openwiki/concepts/versioning.md) for language-specific documentation conventions.
+- [npm snippets](/openwiki/integrations/npm-snippets.md) for the package-provided component overlay.
 - [Mintlify integration](/openwiki/integrations/mintlify.md) for the deployment consumer.
 - [Builder tests](/openwiki/testing/builder-tests.md) for test guidance.
 - [Local development](/openwiki/workflows/local-development.md) for running the watcher and preview server.

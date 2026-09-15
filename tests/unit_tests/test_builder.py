@@ -1046,3 +1046,57 @@ def test_section_indexes_are_always_named_llms_txt() -> None:
     for path in indexes:
         if path != "llms.txt":
             assert f"({builder._SITE_URL}/{path})" in root
+
+
+@pytest.mark.parametrize(
+    ("section_prefix", "parent_prefix", "parent_label", "expected"),
+    [
+        # A section that was not split keeps the label it came in with.
+        ("oss/python", "oss/python", "Open source (Python)", "Open source (Python)"),
+        # A parenthesised parent carries the language, which moves to the end.
+        (
+            "oss/python/langgraph",
+            "oss/python",
+            "Open source (Python)",
+            "LangGraph (Python)",
+        ),
+        (
+            "oss/javascript/langchain",
+            "oss/javascript",
+            "Open source (TypeScript)",
+            "LangChain (TypeScript)",
+        ),
+        # Product names come from the lookup, not from titlecasing.
+        (
+            "oss/python/deepagents",
+            "oss/python",
+            "Open source (Python)",
+            "Deep Agents (Python)",
+        ),
+        # An unparenthesised parent reads as a plain prefix.
+        ("langsmith/smith-api", "langsmith", "LangSmith", "LangSmith REST API"),
+        # An unmapped directory falls back to a titlecased name.
+        (
+            "langsmith/smith-api/annotation_queues",
+            "langsmith",
+            "LangSmith",
+            "LangSmith Annotation Queues",
+        ),
+    ],
+)
+def test_section_label_names_the_split_directory(
+    section_prefix: str,
+    parent_prefix: str,
+    parent_label: str,
+    expected: str,
+) -> None:
+    """Test that a split section index is labelled for its own directory.
+
+    Every child of a split section used to inherit the parent's label, so
+    `oss/python/langgraph/llms.txt` announced itself as "Open source (Python)"
+    with nothing in the file naming LangGraph.
+    """
+    label = DocumentationBuilder._section_label(
+        section_prefix, parent_prefix, parent_label
+    )
+    assert label == expected
