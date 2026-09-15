@@ -1,6 +1,6 @@
 ---
 name: docs-tooling-notion
-description: Document new or changed docs-team tooling on the Notion tooling pages. Decides which of the five pages owns the topic, what belongs in the repo instead of Notion, and how to edit safely through the Notion MCP server. Use when a script, workflow, agent, skill, or MCP server is added or changed and the internal tooling docs need updating.
+description: Document new or changed docs-team tooling on the Notion tooling pages. Decides which of the five pages owns the topic, what belongs in the repo instead of Notion, and how to edit safely through the Notion MCP server. Invoke it whenever work adds or changes a script under scripts/, a GitHub Actions workflow, a Makefile target, a PR check, a scheduled job, an agent, a skill, or an MCP server, and invoke it before handing off that pull request. Shipping tooling is itself the trigger, so do not wait to be asked to document it and do not wait for the PR to merge.
 license: MIT
 metadata:
   author: langchain
