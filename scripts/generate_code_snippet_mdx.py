@@ -67,7 +67,7 @@ DEEPAGENTS_TS_MODEL_KWARG_RE = re.compile(r'\bmodel\s*(?::|=)\s*"([^"]+)"')
 DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
     ("Google", "google_genai:gemini-3.6-flash"),
     ("OpenAI", "openai:gpt-5.5"),
-    ("Anthropic", "anthropic:claude-sonnet-4-6"),
+    ("Anthropic", "anthropic:claude-sonnet-5"),
     ("OpenRouter", "openrouter:z-ai/glm-5.2"),
     ("Fireworks", "fireworks:accounts/fireworks/models/glm-5p2"),
     ("Baseten", "baseten:zai-org/GLM-5.2"),
@@ -77,7 +77,7 @@ DEEPAGENTS_QUICKSTART_PY_MODEL_TABS: list[tuple[str, str]] = [
 DEEPAGENTS_QUICKSTART_TS_MODEL_TABS: list[tuple[str, str]] = [
     ("Google", "google-genai:gemini-3.6-flash"),
     ("OpenAI", "openai:gpt-5.5"),
-    ("Anthropic", "anthropic:claude-sonnet-4-6"),
+    ("Anthropic", "anthropic:claude-sonnet-5"),
     ("OpenRouter", "openrouter:openrouter:z-ai/glm-5.2"),
     ("Fireworks", "fireworks:accounts/fireworks/models/glm-5p2"),
     ("Baseten", "baseten:zai-org/GLM-5.2"),
