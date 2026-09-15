@@ -169,3 +169,43 @@ result = agent.invoke(
     config={"configurable": {"thread_id": "1"}},
 )
 # :snippet-end:
+
+# :snippet-start: skills-reload-invoke-py
+config = {"configurable": {"thread_id": "1"}}
+
+result = agent.invoke(
+    {
+        "messages": [{"role": "user", "content": "What is LangGraph?"}],
+        "skills_metadata": None,
+    },
+    config=config,
+)
+# :snippet-end:
+
+# :snippet-start: skills-reload-update-state-py
+agent.update_state(config, {"skills_metadata": None})
+# :snippet-end:
+
+
+# :remove-start:
+def agent_edited_skills(state: Any) -> bool:
+    """Stand-in for your own check, such as scanning the run for writes under a skill source."""
+    return False
+
+
+# :remove-end:
+# :snippet-start: skills-reload-middleware-py
+from typing import Any
+
+from langchain.agents.middleware import AgentMiddleware, AgentState
+from langgraph.runtime import Runtime
+
+
+class ReloadEditedSkills(AgentMiddleware[AgentState, Any, Any]):
+    """Reload skills on the next run when this run edited one."""
+
+    def after_agent(self, state: AgentState, runtime: Runtime[Any]) -> dict[str, Any] | None:
+        if not agent_edited_skills(state):
+            return None
+        return {"skills_metadata": None}
+# :snippet-end:
