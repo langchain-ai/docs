@@ -89,7 +89,27 @@ Five failure modes, each of which has already cost a debugging cycle:
 - **In-page anchor links do not resolve.** Notion addresses blocks by ID, not by
   heading slug. Reference sections by name in prose.
 
-## Step 5. Close the loop
+## Step 5. Add a row to the Detailed list
+
+The parent page embeds a **Detailed list** database
+(`collection://3ce80852-7b17-8004-8735-000bc758a8cd`) holding one row per piece
+of tooling. Prose on a page is where someone reads about a thing; this database
+is where they find that it exists at all. It is easy to miss, because the parent
+page renders it as a single inline block.
+
+Every new workflow, script, skill, agent, MCP server, or git hook gets a row.
+The schema is Title, Description, Docs page (the URL of the page that explains
+it), Source (the repo paths it lives at), and Type, a select over `GH Actions
+(scheduled)`, `GH Actions (PR/CI)`, `Fleet agent`, `Deep agent`, `External bot`,
+`Skill`, `MCP server`, `Manual script`, and `Git hook`.
+
+Query it with `notion-query-data-sources` before adding, so a rename becomes an
+update rather than a duplicate row. Renaming or moving a file means updating
+`Source` here too, not only in the prose: four rows still pointed at a skills
+directory that had been renamed months earlier, and every one of them read as
+plausible.
+
+## Step 6. Close the loop
 
 Update the parent page's page table when a page's scope changes, and repoint any
 `## See also` entry that is now wrong. Report which page was edited and what was
