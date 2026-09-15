@@ -1,0 +1,609 @@
+---
+title: Azure Terraform troubleshooting
+sidebarTitle: Troubleshooting
+description: Common issues, fixes, and diagnostic commands for LangSmith self-hosted on Azure AKS deployed with the LangChain Terraform modules.
+---
+
+This page documents common issues, fixes, and diagnostic commands for LangSmith deployments provisioned with the [Azure Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/azure).
+
+<Tip>
+Before upgrading, review the [LangSmith self-hosted changelog](/langsmith/self-hosted-changelog) for breaking changes and required variable updates. Run `az aks get-credentials --name <cluster> --resource-group <rg>` before running any `kubectl` commands.
+</Tip>
+
+For a copy-paste reference of the `kubectl`, `helm`, and `az` calls used throughout this page, skip to [Diagnostic commands](#diagnostic-commands).
+
+## Infrastructure stage
+
+### `K8sVersionNotSupported`: version is LTS-only
+
+**Symptom**
+
+```
+Error: creating Kubernetes Cluster ... unexpected status 400
+"code": "K8sVersionNotSupported"
+"message": "Managed cluster ... is on version 1.32.x, which is only available for Long-Term Support (LTS).
+If you intend to onboard to LTS, please ensure the cluster is in Premium tier ..."
+```
+
+**Cause:** Azure periodically retires minor versions from Standard tier support and moves them to LTS-only. As of April 2026, 1.32 and below are LTS-only in `eastus`. Standard tier clusters must use 1.33+.
+
+**Fix:** Update `kubernetes_version` to a version with `KubernetesOfficial` support:
+
+```bash
+az aks get-versions --location eastus -o table
+# Versions with KubernetesOfficial in SupportPlan column work on Standard tier
+```
+
+Remove or update any `kubernetes_version` pin in `terraform.tfvars`, then `make apply`. Existing clusters on 1.32 continue to run; this only blocks new cluster creation.
+
+### vCPU quota exceeded
+
+**Symptom (autoscaler backoff, pods Pending):**
+
+```
+Warning  FailedScheduling     pod/langsmith-backend-xxx  0/1 nodes are available: 1 Too many pods.
+Normal   NotTriggerScaleUp    pod/langsmith-backend-xxx  pod didn't trigger scale-up: 2 in backoff after failed scale-up
+```
+
+**Symptom (node pool rotation):**
+
+```
+Error: creating temporary Agent Pool ... "code": "ErrCode_InsufficientVCPUQuota",
+"message": "Insufficient vcpu quota requested 8, remaining 2 for family standardDSv3Family for region eastus."
+```
+
+**Cause:** Per-region vCPU quotas per VM family. Default for `standardDSv3Family` in `eastus` is often 10 cores. One `Standard_D8s_v3` node uses 8; only 2 remain.
+
+**Why `max_pods = 30` triggers it:** AKS default is 30 pods per node. The base LangSmith install alone deploys ~37 pods. The autoscaler tries to add a second node, hits quota, enters backoff. Fix: `default_node_pool_max_pods = 60` in `terraform.tfvars` so all pods fit on one node.
+
+**Recommended quota** for multi-dataplane (3 dataplanes): 32 cores.
+
+**Request a quota increase:**
+
+```bash
+# Azure portal usually auto-approves within minutes:
+# Portal → Subscriptions → <sub> → Usage + Quotas → search "DSv3" → eastus → Request increase → 32
+
+# Or via CLI
+az quota update \
+  --resource-name "standardDSv3Family" \
+  --scope /subscriptions/<sub-id>/providers/Microsoft.Compute/locations/eastus \
+  --limit-object value=32 limit-type=Independent \
+  --resource-type dedicated
+
+az vm list-usage --location eastus --query "[?contains(name.value,'DSv3')]" -o table
+```
+
+**Alternative, switch VM family if DSv3 quota is exhausted:** Use `Standard_DS4_v2` (baseline) + `Standard_DS5_v2` (large). Same vCPU, slightly less RAM. Validated for the full LangSmith install plus all add-ons.
+
+<Note>
+`max_pods` is immutable on an existing node pool. Set it before the first `terraform apply`.
+</Note>
+
+### Istio addon revision not supported
+
+**Symptom:** `terraform apply` rejects the Istio revision (`Revision asm-1-XX is not supported`). Azure retires old ASM revisions regularly.
+
+**Fix:** Check currently available revisions and update `istio_addon_revision`:
+
+```bash
+az aks mesh get-revisions --location eastus -o table
+```
+
+Set the value in `terraform.tfvars` and re-apply.
+
+### Key Vault purge protection cannot be disabled after enabling
+
+**Symptom**
+
+```
+Error: updating Key Vault "langsmith-kv-dz":
+once Purge Protection has been Enabled it's not possible to disable it
+```
+
+**Cause:** When a Key Vault is deleted via `terraform destroy`, Azure soft-deletes it for 90 days. The next `terraform apply` with the same name silently recovers the old Key Vault, including its original `purge_protection_enabled = true`. Purge protection is one-way (enabled → cannot be disabled).
+
+**Fix (accept purge protection, test environments):**
+
+```hcl
+keyvault_purge_protection = true
+```
+
+**Fix (`purge_protection = false` required):**
+
+```bash
+# 1. Remove KV from Terraform state (does not delete from Azure)
+terraform -chdir=infra state rm module.keyvault.azurerm_key_vault.langsmith
+
+# 2. Permanently purge the soft-deleted KV (irreversible)
+az keyvault purge --name langsmith-kv<identifier> --location eastus
+
+# 3. Re-apply
+make apply
+```
+
+### Key Vault secrets already exist but are not in Terraform state
+
+**Symptom**
+
+```
+Error: a resource with the ID "https://langsmith-kv-<id>.vault.azure.net/secrets/.../..."
+already exists - to be managed via Terraform this resource needs to be imported into the State.
+```
+
+**Cause:** Older `setup-env.sh` versions wrote Fernet keys directly to Key Vault. Current `setup-env.sh` is read-only against Key Vault; Terraform is the sole writer.
+
+**Fix:** Import the conflicting secrets:
+
+```bash
+terraform import \
+  'module.keyvault.azurerm_key_vault_secret.deployments_encryption_key[0]' \
+  "$(az keyvault secret show --vault-name langsmith-kv<id> --name langsmith-deployments-encryption-key --query id -o tsv)"
+
+terraform import \
+  'module.keyvault.azurerm_key_vault_secret.agent_builder_encryption_key[0]' \
+  "$(az keyvault secret show --vault-name langsmith-kv<id> --name langsmith-agent-builder-encryption-key --query id -o tsv)"
+
+terraform import \
+  'module.keyvault.azurerm_key_vault_secret.insights_encryption_key[0]' \
+  "$(az keyvault secret show --vault-name langsmith-kv<id> --name langsmith-insights-encryption-key --query id -o tsv)"
+
+terraform apply
+```
+
+## Application stage
+
+### `dns_label` subdomain not resolving: TLS cert stuck pending
+
+**Symptom:** `nslookup langsmith-demo.eastus.cloudapp.azure.com` returns NXDOMAIN. The cert-manager ACME challenge cannot complete; TLS certificate stays `READY: False`.
+
+**Cause:** The `service.beta.kubernetes.io/azure-dns-label-name` annotation must be set on the NGINX LoadBalancer service so Azure assigns the DNS label to the public IP. `make deploy` sets it automatically via `deploy.sh`. If you ran `helm upgrade` directly, the annotation was never set.
+
+**Fix**
+
+```bash
+kubectl annotate svc ingress-nginx-controller -n ingress-nginx \
+  service.beta.kubernetes.io/azure-dns-label-name=<dns_label> \
+  --overwrite
+
+# Wait 1-2 minutes, verify DNS resolves
+nslookup <dns_label>.eastus.cloudapp.azure.com
+
+# Delete the stuck cert to trigger re-issue
+kubectl delete certificate langsmith-tls -n langsmith
+```
+
+### `istio-addon`: port 80/443 timeout, TLS handshake reset
+
+**Symptom:** Site unreachable after `make deploy` with `ingress_controller = "istio-addon"`. Port 80 times out, port 443 resets. ACME challenge stays `pending`.
+
+**Causes (three compounding issues):**
+
+1. **Wrong gateway label.** Kubernetes Ingress with `ingressClassName: istio` targets pods with label `istio: ingressgateway`. The AKS managed external gateway uses `istio: aks-istio-ingressgateway-external`.
+2. **`ClusterIssuer` created with `class: nginx`.** The ACME HTTP-01 solver ingress gets class `nginx`, not `istio`.
+3. **TLS secret in wrong namespace.** Istio SDS reads from the gateway pod namespace (`aks-istio-ingress`), not the app namespace (`langsmith`).
+
+**Fix:** `make deploy` handles all three automatically in the current scripts. If deploying manually, create an Istio `Gateway` targeting `istio: aks-istio-ingressgateway-external`, patch the `ClusterIssuer` solver to `ingressClassName: istio`, sync `langsmith-tls` to the `aks-istio-ingress` namespace, and create a `VirtualService` routing to the LangSmith frontend. See the [TROUBLESHOOTING.md source](https://github.com/langchain-ai/terraform/blob/main/modules/azure/TROUBLESHOOTING.md) for the full YAML.
+
+### `letsencrypt-prod` ClusterIssuer missing
+
+**Symptom:** `kubectl describe certificate langsmith-tls -n langsmith` shows `clusterissuers.cert-manager.io "letsencrypt-prod" not found`.
+
+**Cause:** For `tls_certificate_source = "letsencrypt"` (HTTP-01), the `letsencrypt-prod` ClusterIssuer is created by `apply-cluster-issuers.sh`, which `make deploy` runs via `kubectl apply`. The Terraform `k8s-bootstrap` module does not create the HTTP-01 issuer; it creates the issuer only for `dns01`. Running `helm upgrade` directly instead of `make deploy` skips the issuer.
+
+**Manual fix:**
+
+```bash
+kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: you@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+    - http01:
+        ingress:
+          ingressClassName: nginx   # use "istio" with istio-addon or istio
+EOF
+
+kubectl delete certificate langsmith-tls -n langsmith
+```
+
+### `database "langsmith" does not exist`: backend pods crashlooping
+
+**Symptom:** Backend pods crash immediately: `FATAL: database "langsmith" does not exist`.
+
+**Cause:** Azure DB for PostgreSQL Flexible Server does not auto-create application databases. The Terraform `postgres` module now creates the database via `azurerm_postgresql_flexible_server_database`. This error means you are on an older module version missing that resource.
+
+**Fix**
+
+```bash
+terraform apply
+kubectl rollout restart deployment -n langsmith
+```
+
+### `langsmith-backend-auth-bootstrap` stuck in `CreateContainerConfigError`
+
+**Cause:** The Job reads the admin password using key `initial_org_admin_password`. If the Secret was created with a different key name (for example `admin_password`), the container cannot start.
+
+**Fix**
+
+```bash
+kubectl delete secret langsmith-config-secret -n langsmith
+make k8s-secrets   # recreates with correct key names
+make deploy
+```
+
+### Cannot roll back to an older chart version
+
+**Cause:** LangSmith DB migrations are forward-only. Downgrading the chart leaves the DB at a revision the older app image cannot locate.
+
+**Fix:** Roll forward to the version you were on (or newer). Set `langsmith_helm_chart_version` in `terraform.tfvars` and re-deploy. Always test new chart versions in a separate environment before upgrading production.
+
+### Helm install times out
+
+**Cause:** `langsmith-backend-auth-bootstrap` runs DB migrations on every `helm upgrade`; first install takes up to 5 minutes. Without `--timeout 20m`, Helm reports failure even though the install eventually succeeds.
+
+**Fix:** `make deploy` already uses `--timeout 20m`. Running Helm manually, always include `--timeout 20m`.
+
+## Add-ons
+
+### Pods stay in `DEPLOYING`, never reach `HEALTHY`
+
+**Cause:** `config.deployment.url` was empty or `config.deployment.tlsEnabled` was `false` when TLS is enabled. The operator builds agent endpoint URLs from these values.
+
+**Fix:** `init-values.sh` automatically injects `url` and `tlsEnabled` after copying from examples. If deploying manually:
+
+```yaml
+config:
+  deployment:
+    enabled: true
+    url: "https://langsmith-demo.eastus.cloudapp.azure.com"   # must include https://
+    tlsEnabled: true   # must be true when tls_certificate_source = letsencrypt or dns01
+```
+
+### Insights add-on: `backend-ch-migrations` in `CreateContainerConfigError`
+
+**Symptom:** Multiple pods fail with `CreateContainerConfigError` after enabling `enable_insights = true`. Logs: `secret "langsmith-clickhouse" not found`.
+
+**Cause:** The example `langsmith-values-insights.yaml` sets `clickhouse.external.enabled: true` with `existingSecretName: langsmith-clickhouse`. This overrides the in-cluster ClickHouse configuration and expects an external secret that does not exist.
+
+**Fix:** `init-values.sh` now generates a minimal Insights file when `clickhouse_source = "in-cluster"`. For an existing deployment with this issue:
+
+```bash
+cat > helm/values/langsmith-values-insights.yaml << 'EOF'
+insights:
+  enabled: true
+EOF
+make deploy
+```
+
+### Polly shows "Unable to connect to LangGraph server"
+
+**Symptom:** Polly chat widget shows connection error. Browser console: `POST http://localhost:8123/threads net::ERR_FAILED` and CORS error.
+
+**Cause A, frontend started before `langsmith-polly-config` was created.** The bootstrap job creates the ConfigMap with `VITE_POLLY_DEPLOYMENT_URL` after Polly is registered. Env vars from ConfigMap load at pod start, not dynamically.
+
+**Fix**
+
+```bash
+kubectl rollout restart deployment langsmith-frontend -n langsmith
+kubectl exec -n langsmith deploy/langsmith-frontend -- env | grep POLLY
+# expect: VITE_POLLY_DEPLOYMENT_URL=https://<hostname>/lgp/smith-polly-<hash>
+```
+
+**Cause B, `LANGCHAIN_ENDPOINT` set in `polly.agent.extraEnv`.** `LANGCHAIN_ENDPOINT` is reserved. Setting it causes the bootstrap job to fail with `400 Bad Request: 'LANGCHAIN_ENDPOINT' is reserved`. Polly is never created.
+
+**Fix:** Remove the `polly.agent.extraEnv` block entirely. The operator injects `LANGCHAIN_ENDPOINT` automatically.
+
+### `listener` and `operator` pods never appear after enabling LangSmith Deployment
+
+**Cause:** `config.deployment.url` was set but `config.deployment.enabled: true` was omitted. The chart silently skips creating `listener` and `operator` when `enabled` is false (the default).
+
+**Fix:** Add `enabled: true` inside the `deployment` block:
+
+```yaml
+config:
+  deployment:
+    enabled: true          # required; url alone is not enough
+    url: "https://<your-hostname>"
+```
+
+### Duplicate top-level `config:` key silently drops values
+
+**Cause:** YAML disallows duplicate top-level keys. A second `config:` block silently drops one of them.
+
+**Fix:** Always add new config blocks inside the existing `config:` key. Verify with `helm get values langsmith -n langsmith`.
+
+### Encryption keys must not change after first deploy
+
+Changing `deployments_encryption_key`, `agent_builder_encryption_key`, or `insights_encryption_key` after their first use permanently corrupts the data they protect. There is no recovery.
+
+- Do not rotate these keys.
+- Do not set `config.agentBuilder.encryptionKey` or `config.insights.encryptionKey` inline in `values-overrides.yaml`. The chart reads them from `langsmith-config-secret` via `existingSecretName`. Setting inline overrides the secret reference.
+
+### `agent-builder-tool-server` or `polly` in CrashLoopBackOff
+
+**Symptom:** Pod restarts indefinitely. No traceback. Logs show "Child process died" repeatedly.
+
+**Cause:** `lc_config.settings.SharedSettings` is instantiated at module import time inside the uvicorn worker. A pydantic `ValidationError` raised there exits the worker with code 0; uvicorn's parent prints "Child process died" but swallows the traceback. Common triggers: `BASIC_AUTH_ENABLED = true` but `BASIC_AUTH_JWT_SECRET` is empty, or a required feature-flag key absent from `langsmith-config`.
+
+**Diagnose** by running the server in a debug pod with `envFrom` pointing at `langsmith-config` and `PYTHONUNBUFFERED=1`. **Fix:** add the missing key to Key Vault, rerun `make k8s-secrets`, restart the deployment.
+
+## Workload Identity
+
+### Pod panics: `AADSTS700213: No matching federated identity record found`
+
+**Symptom**
+
+```
+panic: blob-storage health-check failed: get container properties failed:
+DefaultAzureCredential: failed to acquire a token.
+WorkloadIdentityCredential authentication failed.
+  AADSTS700213: No matching federated identity record found for presented assertion subject
+  'system:serviceaccount:langsmith:langsmith-<service>'
+```
+
+**Cause:** The pod's Kubernetes ServiceAccount has no federated credential on the Azure Managed Identity. Every pod that accesses Blob Storage needs one.
+
+**Fix:** Add the missing ServiceAccount to `service_accounts_for_workload_identity` in `modules/k8s-cluster/main.tf`:
+
+```hcl
+service_accounts_for_workload_identity = [
+  "${var.langsmith_release_name}-backend",
+  "${var.langsmith_release_name}-platform-backend",
+  "${var.langsmith_release_name}-queue",
+  "${var.langsmith_release_name}-ingest-queue",
+  "${var.langsmith_release_name}-host-backend",                 # LangSmith Deployment add-on
+  "${var.langsmith_release_name}-listener",                     # LangSmith Deployment add-on
+  "${var.langsmith_release_name}-agent-builder-tool-server",    # Agent Builder add-on
+  "${var.langsmith_release_name}-agent-builder-trigger-server", # Agent Builder add-on
+]
+```
+
+```bash
+terraform apply -target=module.aks
+kubectl rollout restart deployment/langsmith-<service> -n langsmith
+```
+
+See the [architecture page](/langsmith/self-host-terraform-azure-architecture#workload-identity) for the full pod-to-WI mapping.
+
+## Teardown and cleanup
+
+### `make clean` before `make destroy` orphans infrastructure
+
+**Symptom:** `make destroy` after `make clean` fails with `No state file was found!`. Azure resources still run but Terraform has lost tracking.
+
+**Cause:** `make clean` removes `terraform.tfvars` and `secrets.auto.tfvars`. Without them, Terraform cannot initialize the backend.
+
+**Correct teardown order**
+
+```txt
+1. make uninstall   ← Helm + namespace
+2. make destroy     ← Azure infra (needs tfstate + tfvars)
+3. make clean       ← local secrets and generated files (LAST)
+```
+
+**Recovery when tfstate is gone**
+
+```bash
+az group delete --name langsmith-rg<identifier> --yes --no-wait
+az group show --name langsmith-rg<identifier> 2>&1 | grep -E "provisioningState|ResourceGroupNotFound"
+```
+
+If you reuse the same `identifier` afterwards, Azure may recover the soft-deleted Key Vault on the next `terraform apply`. With `keyvault_purge_protection = false`, purge first: `az keyvault purge --name langsmith-kv<identifier> --location <region>`.
+
+### `terraform destroy` stalls on VNet/subnet deletion
+
+**Cause:** The Azure Load Balancer provisioned by `ingress-nginx-controller` is not tracked by Terraform. Azure blocks VNet deletion while the LB holds a subnet reference.
+
+**Fix:** Run `make uninstall` first.
+
+```bash
+make uninstall
+kubectl delete namespace langsmith --timeout=60s
+make destroy
+```
+
+### `langsmith-agent-bootstrap` hook times out
+
+**Symptom:** Helm post-upgrade hook times out (`context deadline exceeded`). Agents progress through `QUEUED → AWAITING_DEPLOY → DEPLOYING` but do not reach `HEALTHY` in 20 minutes.
+
+**Cause:** On a cold cluster, three LGP agents (`agent-builder`, `clio`, `smith-polly`) can take longer than 20 minutes for first image pulls. The Helm hook waits synchronously.
+
+**Fix:** Not actually a failure. Resources are applied; agents continue deploying. Wait until pods stabilize, then re-run `make deploy`.
+
+### `listener` pods OOMKilled
+
+**Cause:** The listener memory limit is set by the sizing overlay under `listener.deployment.resources`. On the `dev` profile that limit is `2Gi`, which sustained Deployments load can exceed.
+
+**Fix:** Raise the limit under `listener.deployment.resources` (the key the chart reads), either by moving to a larger sizing profile or by adding the override to a values file that loads after the sizing overlay, then re-run `make init-values` and `make deploy`.
+
+<Note>
+The chart reads `listener.deployment.resources` for container limits, not the flat `listener.resources`. The `langsmith-values-agent-deploys.yaml` example sets `listener.resources`, which the chart silently ignores, so that value does not change the limit.
+</Note>
+
+### Stale HPA scales `listener` or `host-backend` to max replicas
+
+**Cause:** A prior Helm revision created an HPA. Helm does not clean it up on failed hooks. On re-deploy with `enabled: false`, the stale HPA remains and overrides `replicas`.
+
+**Fix**
+
+```bash
+kubectl delete hpa langsmith-listener langsmith-host-backend -n langsmith 2>/dev/null || true
+kubectl scale deployment langsmith-listener -n langsmith --replicas=1
+kubectl scale deployment langsmith-host-backend -n langsmith --replicas=1
+make deploy
+```
+
+## AGIC (Application Gateway Ingress Controller)
+
+### AGIC pod CrashLoopBackOff: 403 on AGW GET
+
+**Symptom:** `ingress-appgw-deployment` is CrashLoopBackOff. Logs: `ErrorApplicationGatewayForbidden: does not have authorization to perform action Microsoft.Network/applicationGateways/read`.
+
+**Cause:** AKS creates a managed identity for the AGIC add-on (`ingressapplicationgateway-<cluster>` in the `MC_` resource group). The identity is created during cluster provisioning but takes ~5 minutes to register in Azure AD before role assignments take effect.
+
+**Fix:** The `k8s-cluster` module waits 300s after cluster creation (`time_sleep.agic_identity_propagation`) and creates the three required role assignments automatically. If AGIC is still 403 after `make apply`:
+
+```bash
+az aks update --name <CLUSTER> --resource-group <RG> --yes
+kubectl delete pod -n kube-system -l app=ingress-azure
+```
+
+For manual role assignments (Reader on RG, Contributor on AGW, Network Contributor on VNet), see the [TROUBLESHOOTING.md source](https://github.com/langchain-ai/terraform/blob/main/modules/azure/TROUBLESHOOTING.md#agic-pod-crashloopbackoff--403-on-agw-get).
+
+### AGIC: `ApplicationGatewayInsufficientPermissionOnSubnet`
+
+**Cause:** AGIC add-on identity missing Network Contributor on the VNet.
+
+**Fix**
+
+```bash
+AGIC_OID=$(az aks show -g <RG> -n <CLUSTER> \
+  --query "addonProfiles.ingressApplicationGateway.identity.objectId" -o tsv)
+VNET_ID=$(az network vnet show -g <RG> -n <VNET> --query id -o tsv)
+
+az role assignment create --role "Network Contributor" --scope "$VNET_ID" \
+  --assignee-object-id "$AGIC_OID" --assignee-principal-type ServicePrincipal
+
+kubectl rollout restart deployment/ingress-appgw-deployment -n kube-system
+```
+
+### AGIC: `SecretNotFound` for TLS secret
+
+**Cause:** AGIC saw the Ingress before cert-manager issued the TLS certificate.
+
+**Fix:** Touch the Ingress to trigger re-sync:
+
+```bash
+kubectl get certificate langsmith-tls -n langsmith   # verify cert is ready
+kubectl annotate ingress langsmith-ingress -n langsmith touch="$(date +%s)" --overwrite
+```
+
+### AGIC rejects `ingressClassName: azure/application-gateway`
+
+**Cause:** The legacy annotation `kubernetes.io/ingress.class: azure/application-gateway` (with slash) is not a valid `ingressClassName`. AKS creates the `IngressClass` as `azure-application-gateway` (hyphen).
+
+**Fix:** Use `ingressClassName: azure-application-gateway`. `make init-values` sets this automatically.
+
+## Istio (self-managed Helm)
+
+### Istio site returns connection refused / no routes
+
+**Symptom:** Connection refused. `pilot-agent request GET config_dump` shows `LDS: PUSH resources:0`.
+
+**Root causes (all three must be fixed):**
+
+1. `meshConfig.ingressControllerMode` not set. Default is `DEFAULT`, which ignores `ingressClassName`. Must be `STRICT`.
+2. `istio` IngressClass resource missing.
+3. `meshConfig.ingressClass` not set to `istio`.
+
+**Fix:** All three are automated. `meshConfig` is set in the istiod Helm release (Terraform), and `deploy.sh` creates the IngressClass. Manual fix: create the IngressClass and restart istiod.
+
+### Istio HTTPS returns "no peer certificate available"
+
+**Cause:** istiod reads the TLS secret via SDS (`kubernetes://langsmith-tls`). The secret must exist in `istio-system` (the gateway pod namespace). cert-manager issues it to the `langsmith` namespace; it is not copied automatically.
+
+**Fix:** `deploy.sh` syncs the secret post-deploy. Manual fix: copy the secret to `istio-system`.
+
+### Leftover CRDs from `istio-addon` block self-managed Helm install
+
+**Symptom:** `terraform apply` fails: `CustomResourceDefinition "wasmplugins.extensions.istio.io" exists and cannot be imported into the current release: invalid ownership metadata`.
+
+**Fix**
+
+```bash
+kubectl get crd | grep "istio.io" | awk '{print $1}' | xargs kubectl delete crd
+terraform apply
+```
+
+## Diagnostic commands
+
+### Cluster access
+
+```bash
+az aks get-credentials --name <cluster> --resource-group <rg>
+kubectl config current-context
+kubectl get nodes -o wide
+```
+
+### Pods
+
+```bash
+kubectl get pods -n langsmith
+kubectl get pods -n langsmith -w
+kubectl describe pod <pod-name> -n langsmith
+kubectl logs <pod-name> -n langsmith --tail=100 -f
+kubectl logs <pod-name> -n langsmith --previous --tail=50
+```
+
+### Ingress and TLS
+
+```bash
+kubectl get ingress -n langsmith
+kubectl get svc ingress-nginx-controller -n ingress-nginx
+kubectl get certificate -n langsmith
+kubectl get challenges -n langsmith
+kubectl get clusterissuer
+```
+
+### Workload Identity
+
+```bash
+kubectl get serviceaccount langsmith-ksa -n langsmith \
+  -o jsonpath='{.metadata.annotations.azure\.workload\.identity/client-id}'
+
+kubectl get pod <pod> -n langsmith \
+  -o jsonpath='{.metadata.labels.azure\.workload\.identity/use}'
+```
+
+### Helm
+
+```bash
+helm status langsmith -n langsmith
+helm history langsmith -n langsmith
+helm get values langsmith -n langsmith
+```
+
+### LangSmith Deployment
+
+```bash
+kubectl get pods -n langsmith | grep -E "host-backend|listener|operator"
+kubectl get lgp -n langsmith
+kubectl get crd | grep langchain
+```
+
+### Key Vault and Kubernetes Secrets
+
+```bash
+./infra/scripts/manage-keyvault.sh list
+./infra/scripts/manage-keyvault.sh validate
+./infra/scripts/manage-keyvault.sh diff
+
+kubectl get secrets -n langsmith
+kubectl get secret langsmith-config-secret -n langsmith -o jsonpath='{.data}' | jq 'keys'
+```
+
+### Quick health check
+
+```bash
+make status         # 10-section automated check
+make status-quick   # skip Key Vault + K8s secret queries
+```
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-terraform-azure-troubleshooting.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
