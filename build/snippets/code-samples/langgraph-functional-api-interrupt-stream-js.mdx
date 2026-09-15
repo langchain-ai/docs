@@ -1,0 +1,49 @@
+```ts
+import { MemorySaver, entrypoint, interrupt, task } from "@langchain/langgraph";
+
+const writeEssay = task("writeEssay", async (topic: string) => {
+  // This is a placeholder for a long-running task.
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  return `An essay about topic: ${topic}`;
+});
+
+const workflow = entrypoint(
+  { checkpointer: new MemorySaver(), name: "workflow" },
+  async (_topic: string) => {
+    const essay = await writeEssay("cat");
+    const isApproved = interrupt({
+      // Any json-serializable payload provided to interrupt as argument.
+      // It will be surfaced on the client side as an Interrupt when streaming data
+      // from the workflow.
+      essay, // The essay we want reviewed.
+      // We can add any additional information that we need.
+      // For example, introduce a key called "action" with some instructions.
+      action: "Please approve/reject the essay",
+    });
+
+    return {
+      essay, // The essay that was generated
+      isApproved, // Response from HIL
+    };
+  },
+);
+
+const threadId = "functional-api-thread";
+const config = {
+  configurable: {
+    thread_id: threadId,
+  },
+};
+
+const stream = await workflow.streamEvents("cat", { ...config, version: "v2" });
+const initialChunks: Record<string, unknown>[] = [];
+for await (const event of stream) {
+  const chunk = event.data?.chunk;
+  if (chunk && typeof chunk === "object") {
+    console.log(chunk);
+    initialChunks.push(chunk as Record<string, unknown>);
+  }
+}
+// { writeEssay: "An essay about topic: cat" }
+// { __interrupt__: [Interrupt(...)] }
+```
