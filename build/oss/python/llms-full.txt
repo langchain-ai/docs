@@ -21115,16 +21115,18 @@ except NotImplementedError:
 # Profiles
 Source: https://docs.langchain.com/oss/python/deepagents/profiles
 
-**Harness profiles** let you package configuration that Deep Agents applies whenever a given provider or specific model is selected: system-prompt tweaks, tool description overrides, excluded tools or middleware, extra middleware, and general-purpose subagent edits. They are the main way to tune how the harness behaves for a particular model without changing your `create_deep_agent` call site. Use `HarnessProfile` when building profiles in Python; use `HarnessProfileConfig` when [loading or saving YAML/JSON files](#load-profiles-from-config-files). Deep Agents ships built-in harness profiles for OpenAI and Anthropic (Claude) models.
+**Harness profiles** let you customize the Deep Agents harness for a specific model or provider. You can adjust system prompts and tool descriptions, exclude tools or middleware, add middleware, and configure the general-purpose subagent. Deep Agents applies these settings whenever you select a matching model, without requiring changes to your agent creation code.
 
-**Provider profiles** are a narrower companion API for *model-construction* kwargs, which don't affect the harness. Most callers don't need them; reach for one when you want `init_chat_model` defaults, credential checks, or runtime-derived kwargs as defaults with your provider choice (for example, when packaging a provider integration).
+**Provider profiles** define default settings for creating a model, such as temperature and timeout. These settings do not affect the harness. Most callers do not need provider profiles. They are useful when packaging an integration that needs shared defaults, credential checks, or settings computed at runtime.
 
 
 
 
 ## Harness profiles
 
-A `HarnessProfile` describes prompt-assembly, tool-visibility, middleware, and default-subagent adjustments that `create_deep_agent` applies after the chat model has been constructed:
+Deep Agents includes **built-in harness profiles** with default settings for specific providers and models.
+
+Use `HarnessProfile` to define settings that `create_deep_agent` applies after constructing the chat model:
 
 ```python
 from deepagents import (
@@ -21134,7 +21136,7 @@ from deepagents import (
 )
 
 register_harness_profile(
-    "openai:gpt-5.5",
+    "openai:gpt-6-astra",
     HarnessProfile(
         system_prompt_suffix="Respond in under 100 words.",
         excluded_tools={"execute"},
@@ -21148,11 +21150,11 @@ register_harness_profile(
 
 
 <ResponseField name="base_system_prompt" type="string">
-    Replace the base Deep Agents system prompt (the `base` key in [System prompt](/oss/python/deepagents/customization#system-prompt)).
+    Set the profile's base instructions. For the main agent, these follow the caller's system instructions; no base instructions are added by default. For declarative subagents, this replaces their authored system prompt.
 </ResponseField>
 
 <ResponseField name="system_prompt_suffix" type="string">
-    Append text after the caller's `suffix`, placed last in the assembled system prompt. Applied to the main agent, declarative subagents, and the auto-added general-purpose subagent.
+    Append text after the caller's instructions and the profile's base instructions. Applied to the main agent, declarative subagents, and the auto-added general-purpose subagent.
 </ResponseField>
 
 <ResponseField name="tool_description_overrides" type="Mapping[str, str]">
@@ -21179,7 +21181,7 @@ register_harness_profile(
 
 
 <Note>
-    Caller-supplied `system_prompt=` always sits at the front of the assembled prompt, and `system_prompt_suffix` always sits at the end—regardless of which model is selected. The same overlay rules apply to subagents: each subagent re-runs profile resolution against its own model. See [System prompt](/oss/python/deepagents/customization#system-prompt) for the full per-case breakdown (main agent, subagents, and the general-purpose subagent).
+    Caller-supplied `system_prompt=` always sits at the front of the assembled prompt, and `system_prompt_suffix` always sits at the end—regardless of which model is selected. The same overlay rules apply to subagents: each subagent re-runs profile resolution against its own model. See [System prompt](/oss/python/deepagents/customization#system-prompt) for custom instructions and subagent prompt behavior.
 </Note>
 
 
@@ -21199,27 +21201,82 @@ Entries in `excluded_middleware` accept two forms:
 
 
 
+Register profiles before creating an agent. Pass a model string or a model object you construct yourself; see [Configure model parameters](/oss/python/deepagents/models#configure-model-parameters) for examples. Harness profiles apply in both cases.
+
+Provider profiles supply construction settings only when you pass a string.
+
+
 <Accordion
     title="Lookup order for preconfigured model instances"
 >
-    When you pass a preconfigured chat model instance instead of a `provider:model` string, the harness synthesizes the canonical `provider:identifier` key from the instance and looks it up in this order:
+    When you pass a model object, the harness looks up its profile using the provider and identifier reported by that object.
 
     1. Exact `provider:identifier` match
     2. Identifier-only (only when the identifier already contains `:`)
-    3. Provider-only fallback
+    3. Reported provider's defaults, or the identifier prefix's defaults if the provider is unknown
+
+    Both exact candidates take precedence over provider defaults.
+
+
+
 </Accordion>
 
 
 ## Registration keys
 
-Both profile types use the same key format:
+Profile registrations use these keys:
 
 - **Provider-level**—a bare provider name like `"openai"` applies to every model from that provider.
-- **Model-level**—a fully qualified `provider:model` key like `"openai:gpt-5.5"` applies only to that specific model.
+- **Model-level**—a fully qualified `provider:model` key like `"openai:gpt-6-astra"` applies only to that specific model.
 
 When both a provider-level and a model-level profile exist, they are merged at resolution time. Unset model-level fields inherit from the provider-level profile; explicit model-level values override them.
 
-Re-registering under an existing key merges the new profile on top of the prior one—it does not replace it. See [Merge semantics](#merge-semantics) for the per-field rules.
+Only the first colon separates the provider from the model identifier. For the hypothetical key `my_provider:my-model:tag`, the provider is `my_provider` and the complete model identifier is `my-model:tag`. Any additional colons are part of the model identifier.
+
+
+
+
+For example, exclude a tool for a hypothetical provider's models, then customize the prompt suffix for one model:
+
+```python
+from deepagents import HarnessProfile, register_harness_profile
+
+# Set defaults for a hypothetical provider.
+register_harness_profile(
+    "my_provider",
+    HarnessProfile(
+        excluded_tools=frozenset({"execute"}),
+        system_prompt_suffix="Respond in under 500 words.",
+    ),
+)
+
+# Override the prompt suffix for one model; inherit the excluded tool.
+register_harness_profile(
+    "my_provider:my-model:tag",
+    HarnessProfile(system_prompt_suffix="Respond in under 100 words."),
+)
+```
+
+
+
+
+An agent using the model-specific registration excludes `execute` and receives the 100-word suffix. Other models from `my_provider` exclude `execute` and receive the 500-word suffix.
+
+Re-registering under an existing key merges the new profile on top of the prior one; it does not replace it. This also lets you customize a built-in profile by registering under its key. See [Merge semantics](#merge-semantics) for the per-field rules.
+
+Continuing the example, exclude one more tool for the same model:
+
+```python
+register_harness_profile(
+    "my_provider:my-model:tag",
+    HarnessProfile(excluded_tools=frozenset({"grep"})),
+)
+```
+
+
+
+
+Agents created afterward with this model exclude both `execute` and `grep` and retain the 100-word suffix. Other models keep the provider defaults.
 
 <Note>
     There is no wildcard key that matches every provider. To apply the same overrides everywhere—say, dropping `SummarizationMiddleware` regardless of which model is selected—register the profile under each provider key you use. Profiles are intended for adjustments that depend on the model being selected. Global adjustments that should apply regardless of model should be made on the `create_deep_agent` call site.
@@ -21235,29 +21292,44 @@ Re-registering under an existing key merges the new profile on top of the prior 
 | `base_system_prompt`, `system_prompt_suffix` | New value wins when set; otherwise inherits |
 | `tool_description_overrides` | Mappings merge per key; new value wins on a shared key |
 | `excluded_tools`, `excluded_middleware` | Set union |
-| `extra_middleware` | Merged by name: new instance replaces existing at its position, novel entries append |
+| `extra_middleware` | Merged by concrete type: new instance replaces existing at its position, novel types append |
 | `general_purpose_subagent` | Merged field-wise (unset fields inherit) |
-
-
-
-
 | `init_kwargs` (provider) | Dicts merge key-wise; new value wins on a shared key |
 | `pre_init` (provider) | Callables chain: existing runs first, then the new one |
-| `init_kwargs_factory` (provider) | Factories chain with their outputs merged every `resolve_model` call |
+| `init_kwargs_factory` (provider) | Factories chain with their outputs merged on every model construction |
+
+
 
 
 ## Provider profiles
 
-A `ProviderProfile` declares how Deep Agents should construct a chat model for a given provider or specific model spec. It applies only when you provide a `provider:model` string when creating the deep agent, not when you pass a preconfigured model with [`init_chat_model`](https://reference.langchain.com/python/langchain/chat_models/base/init_chat_model):
+A `ProviderProfile` supplies model-construction settings when you pass a `provider:model` string to `create_deep_agent`. For the hypothetical provider below, set defaults for all its models, then override the temperature for one model:
 
 ```python
 from deepagents import ProviderProfile, register_provider_profile
 
 register_provider_profile(
-    "openai",
+    "my_provider",
+    ProviderProfile(init_kwargs={"temperature": 0.7, "timeout": 30}),
+)
+register_provider_profile(
+    "my_provider:my-model:tag",
     ProviderProfile(init_kwargs={"temperature": 0}),
 )
 ```
+
+Constructing `my_provider:my-model:tag` uses `temperature=0` and inherits `timeout=30`. Other models from `my_provider` use `temperature=0.7` and `timeout=30`.
+
+To increase this model's timeout, register again under its key:
+
+```python
+register_provider_profile(
+    "my_provider:my-model:tag",
+    ProviderProfile(init_kwargs={"timeout": 60}),
+)
+```
+
+Future construction of this model uses `temperature=0` and `timeout=60`. These registrations leave existing model objects unchanged.
 
 <ResponseField name="init_kwargs" type="Mapping[str, Any]">
     Static initialization arguments forwarded to `init_chat_model`.
