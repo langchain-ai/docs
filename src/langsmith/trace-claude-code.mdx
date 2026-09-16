@@ -112,6 +112,56 @@ export CC_LANGSMITH_METADATA='{"author":"jane","environment":"development"}'
 
 The metadata keys and values will appear on all runs in LangSmith, which you can use to filter and search traces.
 
+## Mute a thread
+
+Muting suppresses a thread's input and output content in traces without disabling tracing. Muting is off by default unless you [set a default](#set-a-default-mute-configuration).
+
+With tracing enabled, run these plugin commands inside Claude Code. Neither command takes arguments:
+
+- `/langsmith-tracing:mute`: Omit this thread's input and output content from later traces.
+- `/langsmith-tracing:unmute`: Restore full tracing for later turns in this thread.
+
+Both commands apply from the next turn, so the current turn is unchanged. A turn's mode is fixed when the turn starts, and its subagents inherit that mode.
+
+Muted runs keep their normal nesting, names, timing, status, model and tool identity, and token usage. Inputs and outputs are replaced with a system notice. Muted mode also omits raw errors, identity and repository attribution, custom metadata, SDK runtime metadata, and replica metadata overrides. Muting is independent of secret redaction.
+
+### Set a default mute configuration
+
+To start threads in metadata-only mode without running a command in each one, set `CC_LANGSMITH_DEFAULT_MUTED` to `"true"`:
+
+<Tabs>
+
+<Tab title="Settings file (recommended)">
+
+```json
+{
+  "env": {
+    "TRACE_TO_LANGSMITH": "true",
+    "CC_LANGSMITH_API_KEY": "<LangSmith API key>",
+    "CC_LANGSMITH_PROJECT": "my-project",
+    "CC_LANGSMITH_DEFAULT_MUTED": "true"
+  }
+}
+```
+
+</Tab>
+
+<Tab title="Shell environment variable">
+
+```bash
+export CC_LANGSMITH_DEFAULT_MUTED="true"
+```
+
+</Tab>
+
+</Tabs>
+
+Set the variable to `"false"` to return to the unmuted default. The comparison is case-insensitive, and any other value mutes, including an empty string.
+
+The plugin also reads a `defaultMuted` boolean from its own configuration files, in this order: `.claude/langsmith.json` and `langsmith-plugins.json` in the project directory, then `~/.claude/langsmith.json` and `~/.langsmith-plugins.json`. The environment variable takes precedence over all four.
+
+Thread preferences are sticky. The plugin saves each explicit mute or unmute to a privacy file, `~/.claude/state/langsmith_state.privacy.json` by default, and a saved thread preference wins over the configured default in both directions. Deleting the privacy file removes every thread override and returns each thread to the configured default.
+
 ## Usage with GitHub Actions
 
 You can use this plugin with [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) to trace Claude Code runs in CI. Add the following to your workflow:
