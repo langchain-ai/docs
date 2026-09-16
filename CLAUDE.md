@@ -197,7 +197,7 @@ Six tabs, all files flat in `src/langsmith/`:
 
 | Tab | Groups |
 |-----|--------|
-| Overview | Agent-based workspaces, Hosting |
+| Overview | Hosting, Agent-based workspaces |
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
@@ -206,13 +206,13 @@ Six tabs, all files flat in `src/langsmith/`:
 
 Do not rename this product to a LangSmith name. It was tried on 2026-09-15 and reverted the same day, for two reasons that still hold. `Deep Agents Code` lives in this product and is sourced from `src/oss/deepagents/code/`, so a LangSmith name would claim pages LangSmith does not own. And Test, Deploy, and Monitor are 100% `src/langsmith/`, so most LangSmith documentation sits in the *other* product: naming this one LangSmith tells a reader it is a section when it is most of the site.
 
-The Overview tab's landing page is `langsmith/langsmith-setup-overview`, which covers this product's four areas and its other menu items. It follows `langsmith/govern-overview`: `sidebarTitle: Overview`, `mode: "wide"`, an `## Explore` card group.
+The Overview tab's landing page is `langsmith/langsmith-setup-overview`, which covers this product's four areas: agent-based workspaces, hosting, account, and govern. It follows `langsmith/govern-overview`: `sidebarTitle: Overview`, `mode: "wide"`, an `## Explore` card group. It does not link the product's other menu items, and cards for them were removed on 2026-09-16.
 
 Its **Agent-based workspaces** group holds `langsmith/agents`, `langsmith/agent-environments`, `langsmith/navigate-agents`, and `langsmith/build-an-agent`, and carries a group-level `"tag": "Beta"` because agent-based workspaces are in private beta. The group tag is why none of those four pages carries a page-level `tag`. The group was in Lifecycle > Home until 2026-09-16. See [Home](#home).
 
 It was called **Core concepts** until 2026-09-16. Renamed because the group name has to carry the `Beta` tag sensibly: "Core concepts `Beta`" says LangSmith's concepts are in beta, when what is in beta is the workspace arrangement. The old name also over-claimed, since traces, runs, tracing projects, datasets, and evaluation are core concepts too and live under Monitor and Test. The new name matches the term the marker snippets and `administration-overview` already use.
 
-`langsmith/platform-setup` is no longer the tab's landing page. It sits in the **Hosting** group as `Hosting options`, and it is the page that compares Cloud, BYOC, and Self-hosted. It is `mode: "custom"`, so it renders no sidebar and its body carries hand-written wrapper `div`s and an `<h1>` instead of frontmatter-driven typography. Moving it to `mode: "wide"` was tried on 2026-09-15 and reverted, so change the mode and the body together or not at all.
+`langsmith/platform-setup` is no longer the tab's landing page. It sits in the **Hosting** group with `sidebarTitle: Compare options`, while its `title` stays `Set up LangSmith`, and it compares Cloud, BYOC, and Self-hosted. It is `mode: "wide"`, so it renders a sidebar and a table of contents, and its body is plain markdown. The wrapper `div`s, the hand-written `<h1>`, and the `<h2 class=...>` headings that `mode: "custom"` required are gone as of 2026-09-16, so do not reintroduce them without changing the mode back. The mode and the body are a pair: custom mode supplies no default typography.
 
 #### Other menu items
 
