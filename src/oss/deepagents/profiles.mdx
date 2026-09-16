@@ -8,7 +8,9 @@ import ProfilesHarnessRegisterPy from '/snippets/code-samples/profiles-harness-r
 import ProfilesHarnessRegisterJs from '/snippets/code-samples/profiles-harness-register-js.mdx';
 import ProfilesProviderRegisterPy from '/snippets/code-samples/profiles-provider-register-py.mdx';
 import ProfilesRegistrationPy from '/snippets/code-samples/profiles-registration-py.mdx';
+import ProfilesRegistrationJs from '/snippets/code-samples/profiles-registration-js.mdx';
 import ProfilesReregisterHarnessPy from '/snippets/code-samples/profiles-reregister-harness-py.mdx';
+import ProfilesReregisterHarnessJs from '/snippets/code-samples/profiles-reregister-harness-js.mdx';
 import ProfilesReregisterProviderPy from '/snippets/code-samples/profiles-reregister-provider-py.mdx';
 import ProfilesLoadConfigPy from '/snippets/code-samples/profiles-load-config-py.mdx';
 import ProfilesLoadConfigJs from '/snippets/code-samples/profiles-load-config-js.mdx';
@@ -18,18 +20,18 @@ import ProfilesPluginRegisterPy from '/snippets/code-samples/profiles-plugin-reg
 :::python
 **Harness profiles** let you package configuration that Deep Agents applies whenever a given provider or specific model is selected: system-prompt tweaks, tool description overrides, excluded tools or middleware, extra middleware, and general-purpose subagent edits. They are the main way to tune how the harness behaves for a particular model without changing your `create_deep_agent` call site. Use `HarnessProfile` when building profiles in Python; use `HarnessProfileConfig` when [loading or saving YAML/JSON files](#load-profiles-from-config-files).
 
-Deep Agents ships **built-in profiles**: default settings registered automatically for selected providers and models. Registering under the same key customizes those settings using the [merge rules](#merge-semantics) below.
-
 **Provider profiles** are a narrower companion API for *model-construction* kwargs, which don't affect the harness. Most callers don't need them; reach for one when you want `init_chat_model` defaults, credential checks, or runtime-derived kwargs as defaults with your provider choice (for example, when packaging a provider integration).
 :::
 
 :::js
-**Harness profiles** let you package configuration that Deep Agents applies whenever a given provider or specific model is selected: system-prompt tweaks, tool description overrides, excluded tools or middleware, extra middleware, and general-purpose subagent edits. They are the main way to tune how the harness behaves for a particular model without changing your `createDeepAgent` call site. Use `HarnessProfileOptions` to build profiles; use `parseHarnessProfileConfig` when [loading or saving YAML/JSON files](#load-profiles-from-config-files). Deep Agents ships built-in harness profiles for OpenAI and Anthropic (Claude) models.
+**Harness profiles** let you package configuration that Deep Agents applies whenever a given provider or specific model is selected: system-prompt tweaks, tool description overrides, excluded tools or middleware, extra middleware, and general-purpose subagent edits. They are the main way to tune how the harness behaves for a particular model without changing your `createDeepAgent` call site. Use `HarnessProfileOptions` to build profiles; use `parseHarnessProfileConfig` when [loading or saving YAML/JSON files](#load-profiles-from-config-files).
 
 <Note>
   Provider profiles (for controlling model-construction kwargs) and the plugin registration system are Python-only features. The TypeScript SDK supports harness profiles only.
 </Note>
 :::
+
+Deep Agents ships **built-in profiles**: default settings included with the SDK and registered automatically. Registering under the same key customizes those settings using the [merge rules](#merge-semantics) below.
 
 ## Harness profiles
 
@@ -136,24 +138,36 @@ Entries in `excluded_middleware` accept two forms:
 </Warning>
 :::
 
+Register profiles before creating an agent. Pass a model string or a model object you construct yourself; see [Configure model parameters](/oss/deepagents/models#configure-model-parameters) for examples. Harness profiles apply in both cases.
+
 :::python
-Register profiles before calling `create_deep_agent`. You can pass either a model string or a model object you construct yourself; see [Configure model parameters](/oss/deepagents/models#configure-model-parameters) for examples. Harness profiles apply in both cases. Provider profiles supply construction settings only when you pass a string.
+Provider profiles supply construction settings only when you pass a string.
 :::
 
 <Accordion
     title="Lookup order for preconfigured model instances"
 >
-    When you pass a preconfigured chat model instance instead of a `provider:model` string, the harness synthesizes the canonical `provider:identifier` key from the instance and looks it up in this order:
+    When you pass a model object, the harness looks up its profile using the provider and identifier reported by that object.
 
+:::python
     1. Exact `provider:identifier` match
     2. Identifier-only (only when the identifier already contains `:`)
-    3. Provider-only fallback
+    3. Reported provider's defaults, or the identifier prefix's defaults if the provider is unknown
+
+    Both exact candidates take precedence over provider defaults.
+:::
+
+:::js
+    1. If the identifier has no colon, look up `provider:identifier`, falling back to that provider's defaults.
+    2. If the identifier contains a colon, look it up directly, falling back to its prefix's defaults.
+    3. If neither lookup matches, use the reported provider's defaults.
+:::
 </Accordion>
 
 
 ## Registration keys
 
-Both profile types use the same key format:
+Profile registrations use these keys:
 
 - **Provider-level**—a bare provider name like `"openai"` applies to every model from that provider.
 - **Model-level**—a fully qualified `provider:model` key like `"openai:gpt-5.5"` applies only to that specific model.
@@ -162,23 +176,37 @@ When both a provider-level and a model-level profile exist, they are merged at r
 
 :::python
 Only the first colon separates the provider from the model identifier. For the hypothetical key `my_provider:my-model:tag`, the provider is `my_provider` and the complete model identifier is `my-model:tag`. Additional colons belong to the identifier, including consecutive colons in a Bedrock ARN.
+:::
+
+:::js
+Profile registration in TypeScript does not support model identifiers containing colons. Use a key such as `my_provider:my-model` with a single colon separating the provider and model identifier.
+:::
 
 For example, exclude a tool for a hypothetical provider's models, then customize the prompt suffix for one model:
 
+:::python
 <ProfilesRegistrationPy />
-
-An agent using `my_provider:my-model:tag` excludes `execute` and receives the 100-word suffix. Other models from `my_provider` exclude `execute` and receive the 500-word suffix.
 :::
+
+:::js
+<ProfilesRegistrationJs />
+:::
+
+An agent using the model-specific registration excludes `execute` and receives the 100-word suffix. Other models from `my_provider` exclude `execute` and receive the 500-word suffix.
 
 Re-registering under an existing key merges the new profile on top of the prior one—it does not replace it. See [Merge semantics](#merge-semantics) for the per-field rules.
 
-:::python
 Continuing the example, exclude one more tool for the same model:
 
+:::python
 <ProfilesReregisterHarnessPy />
+:::
+
+:::js
+<ProfilesReregisterHarnessJs />
+:::
 
 Agents created afterward with this model exclude both `execute` and `grep` and retain the 100-word suffix. Other models keep the provider defaults.
-:::
 
 :::python
 <Note>
