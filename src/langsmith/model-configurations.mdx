@@ -3,7 +3,7 @@ title: Manage model configurations
 description: Manage model configurations and control their availability across LangSmith features.
 ---
 
-Model configurations define the model and parameters that LangSmith features use when calling an AI provider. A single shared library of configurations spans your entire [workspace](/langsmith/administration-overview#workspaces), so any configuration you create is available across the following features without duplication:
+Model configurations define the model and parameters that LangSmith features use when calling an AI provider. A shared library of configurations spans your entire [workspace](/langsmith/administration-overview#workspaces), so any configuration you create is available across the following features without duplication:
 
 - [**Playground**](/langsmith/prompt-engineering-concepts)
 - [**Evaluators**](/langsmith/evaluation)
@@ -13,11 +13,13 @@ Model configurations define the model and parameters that LangSmith features use
 
 [Workspace admins](/langsmith/rbac#workspace-admin) can create, edit, and delete configurations and control which providers and models are available per feature. Non-admin members can view configurations but cannot modify them.
 
+Configurations exist at two scopes. A workspace configuration belongs to one workspace. An organization configuration is defined once and is available in every workspace in the organization, where it is read-only. For more information, see [Organization-scoped configurations](#organization-scoped-configurations).
+
 Configurations can also carry [OAuth client credentials](#oauth-client-credentials), so LangSmith mints short-lived bearer tokens against your IdP at request time instead of using a static API key.
 
 ## Feature Access
 
-The **Feature Access** table controls provider and model availability independently for each LangSmith feature.
+The **Feature Access** table controls provider and model availability independently for each LangSmith feature. It lists workspace configurations together with any [organization configurations](#organization-scoped-configurations) inherited from the organization.
 
 | **Feature** | **Model selection experience** |
 |---------|---------------------------|
@@ -59,6 +61,8 @@ The organization level takes precedence. A provider disabled for the organizatio
 
 Managing organization-wide providers requires the [Organization Admin](/langsmith/rbac#organization-admin) role (the `organization:manage` permission), and is available on LangSmith [Cloud](/langsmith/cloud) and [Self-hosted](/langsmith/self-hosted) for organizations (not personal accounts).
 
+Provider control restricts which providers a workspace may use. It is separate from [organization-scoped configurations](#organization-scoped-configurations), which define the models themselves.
+
 ### Disable a provider for the organization
 
 1. Navigate to the [Model providers](https://smith.langchain.com/settings/model-providers) page under **Settings**.
@@ -94,6 +98,73 @@ The **Configurations** table is a shared library of named model configurations f
 1. In the **Configurations** table, click the overflow menu <Icon icon="dots-vertical" iconType="regular" /> next to the configuration.
 1. Select <Icon icon="trash" iconType="regular" /> **Delete** and confirm.
 
+## Organization-scoped configurations
+
+An organization configuration is defined once at the organization level and is available in every [workspace](/langsmith/administration-overview#workspaces) in the organization. Use one when several workspaces need the same model, endpoint, or credential, so the same configuration does not have to be recreated in each workspace.
+
+Managing organization configurations requires the [Organization Admin](/langsmith/rbac#organization-admin) or [Organization Operator](/langsmith/rbac#organization-operator) role, or a [custom role](/langsmith/rbac#custom-roles) with the `organization:manage-model-configs` permission. The organization settings page appears only for members with `organization:manage`, and without the model-configs permission its create and edit controls are hidden. Personal accounts do not have organization configurations.
+
+Three rules separate organization configurations from workspace configurations:
+
+- **Scope is set at creation**: a configuration is either workspace-scoped or organization-scoped, and the scope cannot be changed afterward.
+- **Workspaces cannot modify an inherited configuration**: it appears in every workspace, but editing or deleting it requires the organization permission. A workspace admin without that permission receives a `403`.
+- **Secrets resolve within the same scope**: an organization configuration reads its provider API key from [organization secrets](#organization-secrets), and a workspace configuration reads its key from workspace secrets. The two stores are never combined, and neither falls back to the other.
+
+### Create an organization configuration
+
+1. Navigate to **Settings** > **Model configurations** in organization settings, under **Access and Security**.
+1. Under **Configurations**, click **+ Create**.
+1. Select a **Provider** and **Model**.
+1. Enter the **API Key Name**, which is the name of the secret in [organization secrets](#organization-secrets) that stores the provider API key.
+1. Adjust parameters as needed and click **Save**.
+
+The configuration then appears in the **Configurations** table of every workspace in the organization, alongside that workspace's own configurations.
+
+### Control feature availability and defaults
+
+Organization settings have no [Feature Access](#feature-access) table, so feature availability and the default model for an organization configuration are set from a workspace:
+
+1. Navigate to **Settings** > **Model configurations** in any workspace.
+1. In the **Feature Access** table, open **Available Models** for the feature and select the organization configuration.
+1. Use **Default Model** to preselect it for that feature.
+
+Where each setting is stored determines how far it reaches:
+
+- **Availability applies organization-wide**: per-feature availability is stored on the configuration itself, so changing it for an organization configuration changes it in every workspace. Changing it requires the `organization:manage-model-configs` permission.
+- **Default model applies per workspace**: each workspace sets its own default model for each feature, and that default can point at an organization configuration.
+
+### Features that resolve organization configurations
+
+Organization configurations, and the organization secrets they reference, resolve in the [Playground](/langsmith/prompt-engineering-concepts), [Evaluators](/langsmith/evaluation), [Insights](/langsmith/insights), [Chat](/langsmith/chat), [Fleet](/langsmith/fleet/index), and the [LLM Gateway](/langsmith/llm-gateway).
+
+Insights resolves its Thinking and Summarization models independently, so one can be an organization configuration while the other is a workspace configuration. Each reads secrets from its own scope.
+
+### Use an organization configuration through the LLM Gateway
+
+The [LLM Gateway](/langsmith/llm-gateway) addresses a saved configuration by name on its `/providers/{configName}` and `/models/{configName}` routes. When a workspace configuration and an organization configuration share the same name, the gateway resolves the workspace configuration. Rename one of the two to reach both through the gateway.
+
+The gateway reads organization secrets only when a request resolves an organization configuration, including one reached through a [fallback chain](/langsmith/llm-gateway-fallbacks). [Direct provider paths](/langsmith/llm-gateway-direct-model-access) such as `/anthropic` and `/openai` always read workspace secrets.
+
+## Organization secrets
+
+Organization secrets store the provider API keys that organization configurations reference. They are a separate store from workspace secrets: an organization configuration reads only organization secrets, and a workspace configuration reads only workspace secrets.
+
+Managing organization secrets requires the [Organization Admin](/langsmith/rbac#organization-admin) or [Organization Operator](/langsmith/rbac#organization-operator) role, or a [custom role](/langsmith/rbac#custom-roles) with the `organization:manage-model-secrets` permission. The page appears only for members with `organization:manage`, and without the model-secrets permission it lists the secret names without the add and delete controls.
+
+Secret values are write-only. The **Organization Secrets** table lists names only, and no endpoint returns a stored value. To change a value, save a new one over the existing name.
+
+### Add an organization secret
+
+1. Navigate to **Settings** > **Provider secrets** in organization settings, under **Access and Security**.
+1. Click **Secret** to add one key, or **Import** to add several at once.
+1. Enter the secret name and value, then save.
+
+Use the same secret names the providers expect, such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, and reference the name from an organization configuration's **API Key Name** field.
+
+<Note>
+On [BYOC](/langsmith/byoc) deployments, organization configurations and organization secrets are stored on one data plane at a time. Use the data plane selector on either page to choose where they are written, and repeat the entry on each data plane that needs them. Without a selection, entries are stored in LangSmith Cloud rather than in your own infrastructure. Selecting a data plane where you belong to no workspace blocks both reads and writes.
+</Note>
+
 ## OAuth client credentials
 
 <Note>
@@ -106,7 +177,7 @@ OAuth client credentials are available on every [plan](/langsmith/pricing-plans)
 
 ### Configure OAuth on a model configuration
 
-Configuring OAuth requires the [Workspace Admin](/langsmith/rbac#workspace-admin) role, or a [custom role](/langsmith/rbac#custom-roles) with the `workspaces:manage-model-configs` permission. Members without it see the OAuth fields disabled, with a masked secret hint. In the [LangSmith UI](https://smith.langchain.com):
+Configuring OAuth requires the [Workspace Admin](/langsmith/rbac#workspace-admin) role, or a [custom role](/langsmith/rbac#custom-roles) with the `workspaces:manage-model-configs` permission. On an [organization configuration](#organization-scoped-configurations), it requires `organization:manage-model-configs` instead. Members without the permission for that scope see the OAuth fields disabled, with a masked secret hint. In the [LangSmith UI](https://smith.langchain.com):
 
 1. Navigate to **Settings** > **Model configurations** and either click **+ Create** or open an existing row through the overflow menu <Icon icon="dots-vertical" iconType="regular" /> > **Edit**.
 1. Select a compatible provider and configure model parameters as usual.
@@ -171,7 +242,7 @@ Routing between OAuth and the [LLM auth proxy](/langsmith/llm-auth-proxy-self-ho
 
 ### Fallback behavior
 
-If the broker cannot mint a token (IdP unreachable, credentials invalid, configuration deleted between request preparation and execution), the request falls back to the static workspace API key for the provider. If no workspace key is set, expect a provider 401 on the outbound call.
+If the broker cannot mint a token (IdP unreachable, credentials invalid, configuration deleted between request preparation and execution), the request falls back to the static provider API key stored in the configuration's own scope: workspace secrets for a workspace configuration, and [organization secrets](#organization-secrets) for an organization configuration. If no static key is set in that scope, expect a provider 401 on the outbound call.
 
 Token rotation propagates only after the cached bearer expires. Plan rotations around the access token TTL configured at the IdP.
 
@@ -195,11 +266,11 @@ When OAuth is enabled on a configuration, LangSmith does not prompt for a worksp
 ### FAQ
 
 <Accordion title="Can a single set of OAuth credentials be shared across workspaces?">
-No. OAuth credentials are stored on the model configuration, which is workspace-scoped. Each workspace enters its own credentials, even when the credentials point at the same IdP client.
+Yes, on an [organization configuration](#organization-scoped-configurations). OAuth credentials are stored on the configuration, so an organization configuration carries one set of credentials for every workspace in the organization. A workspace configuration is entered per workspace, even when the credentials point at the same IdP client.
 </Accordion>
 
 <Accordion title="Why is my OAuth-enabled configuration suddenly using a static workspace key?">
-If the broker cannot mint a bearer (IdP unreachable, credentials invalid, configuration deleted between request preparation and execution), the request falls back to the static workspace API key for the provider. Re-open the model configuration and verify the Token URL is reachable, the Client ID and secret are current, and the Token Endpoint Auth Method matches what your IdP expects.
+If the broker cannot mint a bearer (IdP unreachable, credentials invalid, configuration deleted between request preparation and execution), the request falls back to the static provider API key in the configuration's own scope. Re-open the model configuration and verify the Token URL is reachable, the Client ID and secret are current, and the Token Endpoint Auth Method matches what your IdP expects.
 </Accordion>
 
 <Accordion title="How do I rotate the client secret?">
