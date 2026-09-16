@@ -117,7 +117,11 @@ Five menu items: Home, Build, Test, Deploy, Monitor.
 
 #### Home
 
-Single page (`src/index.mdx`).
+`src/index.mdx`, plus a **Core concepts** group holding `langsmith/agents`, `langsmith/agent-environments`, and `langsmith/navigate-agents`.
+
+The concept pages sit here rather than under a lifecycle stage, and rather than in the LangSmith setup menu, for two reasons. An agent is the thing you create before any stage happens, so "before the stages" is its position, and Home is that position. And this product is where the readers are: Test, Deploy, and Monitor are 100% `src/langsmith/`, so most LangSmith pages are here rather than in Products and setup.
+
+`src/index.mdx` is `mode: "custom"` and therefore renders no sidebar, so the three Agents cards on the home page are the entry point into the group, not decoration. Removing them orphans the group from its own menu.
 
 #### Build
 
@@ -200,6 +204,12 @@ Six tabs, all files flat in `src/langsmith/`:
 | Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Setup guides (Manage an installation), Configuration, Connect external services, Platform auth & access control, SmithDB, Self-hosted observability, Hybrid, Scripts, Reference |
 | Govern | Organization (Workspace setup), Users & access control, Tools, Auditing, Data & compliance, Additional resources (FAQ) |
 
+Do not rename this product to a LangSmith name. It was tried on 2026-09-15 and reverted the same day, for two reasons that still hold. `Deep Agents Code` lives in this product and is sourced from `src/oss/deepagents/code/`, so a LangSmith name would claim pages LangSmith does not own. And Test, Deploy, and Monitor are 100% `src/langsmith/`, so most LangSmith documentation sits in the *other* product: naming this one LangSmith tells a reader it is a section when it is most of the site.
+
+The agent concept pages passed through this tab on 2026-09-15 and now live in Lifecycle > Home. See [Home](#home) for why.
+
+`langsmith/platform-setup` is `mode: "wide"`, so it renders a sidebar. It was `mode: "custom"` until 2026-09-15, which hid the sidebar on the tab's own landing page. Its body no longer carries the hand-written wrappers and `<h1>` that custom mode required, so do not reintroduce them without changing the mode back.
+
 #### Other menu items
 
 | Menu item | Source | Groups |
@@ -230,6 +240,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx` | Lifecycle → Home → Core concepts |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
