@@ -178,6 +178,208 @@ Put `GHCR_TOKEN` in the project `.env` or the process environment. After bake, M
 
 The agent uses built-in filesystem tools such as [`ls`](/oss/deepagents/tools#built-in-harness-tools), [`read_file`](/oss/deepagents/tools#built-in-harness-tools), [`write_file`](/oss/deepagents/tools#built-in-harness-tools), [`edit_file`](/oss/deepagents/tools#built-in-harness-tools), [`delete`](/oss/deepagents/tools#built-in-harness-tools), [`glob`](/oss/deepagents/tools#built-in-harness-tools), and [`grep`](/oss/deepagents/tools#built-in-harness-tools), and runs shell commands with [`execute`](/oss/deepagents/tools#built-in-harness-tools). Use [instructions](/langsmith/managed-deep-agents-instructions) to specify where the agent should work and what it must not modify.
 
+## Read and write sandbox files from code
+
+[Authored tools](/langsmith/managed-deep-agents-tools) and [middleware](/langsmith/managed-deep-agents-middleware) reach the sandbox filesystem through `runtime.backend`. Use it when your own code needs a file, rather than prompting the agent to fetch one for you.
+
+<Note>
+`runtime.backend` requires `managed-deepagents>=0.8.0`.
+</Note>
+
+Annotate the `runtime` parameter to receive the typed surface:
+
+:::python
+```python tools/report.py
+from langchain.tools import tool
+from managed_deepagents import ManagedDeepAgentRuntime
+
+
+@tool(parse_docstring=True)
+def write_report(summary: str, runtime: ManagedDeepAgentRuntime) -> str:
+    """Write a summary to the sandbox and return its path.
+
+    Args:
+        summary: Report body to store.
+    """
+    if runtime.backend is None:
+        raise RuntimeError("write_report requires a sandbox")
+    result = runtime.backend.write("/workspace/report.txt", summary)
+    if result.error:
+        raise RuntimeError(result.error)
+    return "/workspace/report.txt"
+```
+:::
+
+:::js
+```ts tools/report.ts
+import { tool } from "langchain";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
+import { z } from "zod";
+
+export const writeReport = tool(
+  async ({ summary }, runtime: ManagedDeepAgentRuntime) => {
+    if (!runtime.backend) {
+      throw new Error("write_report requires a sandbox");
+    }
+    const result = await runtime.backend.write("/workspace/report.txt", summary);
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    return "/workspace/report.txt";
+  },
+  {
+    name: "write_report",
+    description: "Write a summary to the sandbox and return its path.",
+    schema: z.object({
+      summary: z.string().describe("Report body to store."),
+    }),
+  },
+);
+```
+:::
+
+Each operation binds to the sandbox of the thread handling the current run, so two threads reading `/workspace/report.txt` see their own copy. The backend resolves lazily, and a tool that never touches it never provisions a sandbox.
+
+### Available operations
+
+:::python
+| Method | Purpose |
+| --- | --- |
+| `ls(path)` | List a directory. |
+| `read(file_path, offset, limit)` | Read text, 2000 lines by default. |
+| `write(file_path, content)` | Write text, replacing any existing file. |
+| `edit(file_path, old_string, new_string, replace_all)` | Replace a substring in place. |
+| `delete(file_path)` | Remove a file. |
+| `grep(pattern, path, glob, max_count)` | Search file contents. |
+| `glob(pattern, path)` | Match paths. |
+| `execute(command, timeout)` | Run a shell command. |
+| `upload_files(files)` | Write raw bytes from `(path, bytes)` pairs. |
+| `download_files(paths)` | Read raw bytes for the given paths. |
+
+Every method has an async counterpart prefixed with `a`, such as `aread`, `awrite`, and `adownload_files`.
+:::
+
+:::js
+| Method | Purpose |
+| --- | --- |
+| `ls(path)` | List a directory. |
+| `read(filePath, offset, limit)` | Read text, 2000 lines by default. |
+| `readRaw(filePath)` | Read a file without line formatting. |
+| `write(filePath, content)` | Write text, replacing any existing file. |
+| `edit(filePath, oldString, newString, replaceAll)` | Replace a substring in place. |
+| `delete(filePath)` | Remove a file. |
+| `grep(pattern, path, glob, maxCount)` | Search file contents. |
+| `glob(pattern, path)` | Match paths. |
+| `execute(command)` | Run a shell command. |
+| `uploadFiles(files)` | Write `Uint8Array` content from `[path, content]` pairs. |
+| `downloadFiles(paths)` | Read each path as a `Uint8Array`. |
+
+Every method returns a promise.
+:::
+
+Arguments and return types come from the Deep Agents backend contract. See [Backends](/oss/deepagents/backends).
+
+### Transfer binary files
+
+`upload_files` and `download_files` move raw bytes, so they suit images, archives, and any other file that text operations would corrupt. Download returns the bytes for each requested path:
+
+:::python
+```python tools/checksum.py
+import hashlib
+
+from langchain.tools import tool
+from managed_deepagents import ManagedDeepAgentRuntime
+
+
+@tool(parse_docstring=True)
+def checksum_file(file_path: str, runtime: ManagedDeepAgentRuntime) -> str:
+    """Return the SHA-256 checksum of a sandbox file.
+
+    Args:
+        file_path: Absolute path inside the sandbox.
+    """
+    if runtime.backend is None:
+        raise RuntimeError("checksum_file requires a sandbox")
+    result = runtime.backend.download_files([file_path])[0]
+    if result.error or result.content is None:
+        raise RuntimeError(result.error or "file_not_found")
+    return hashlib.sha256(result.content).hexdigest()
+```
+:::
+
+:::js
+```ts tools/checksum.ts
+import { createHash } from "node:crypto";
+
+import { tool } from "langchain";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
+import { z } from "zod";
+
+export const checksumFile = tool(
+  async ({ filePath }, runtime: ManagedDeepAgentRuntime) => {
+    if (!runtime.backend) {
+      throw new Error("checksum_file requires a sandbox");
+    }
+    const [result] = await runtime.backend.downloadFiles([filePath]);
+    if (result.error || !result.content) {
+      throw new Error(result.error ?? "file_not_found");
+    }
+    return createHash("sha256").update(result.content).digest("hex");
+  },
+  {
+    name: "checksum_file",
+    description: "Return the SHA-256 checksum of a sandbox file.",
+    schema: z.object({
+      filePath: z.string().describe("Absolute path inside the sandbox."),
+    }),
+  },
+);
+```
+:::
+
+Upload takes path and content pairs, one per file:
+
+:::python
+```python
+uploaded = runtime.backend.upload_files([("/workspace/logo.png", payload)])
+if uploaded[0].error:
+    raise RuntimeError(uploaded[0].error)
+```
+:::
+
+:::js
+```ts
+const [uploaded] = await runtime.backend.uploadFiles([
+  ["/workspace/logo.png", payload],
+]);
+if (uploaded.error) {
+  throw new Error(uploaded.error);
+}
+```
+:::
+
+Each result carries `path` and `error`, and a download also carries `content`. On failure, `error` is one of `file_not_found`, `permission_denied`, `is_directory`, or `invalid_path`, and the downloaded `content` is empty. Check `error` rather than assuming the transfer succeeded.
+
+### Limits
+
+`runtime.backend` covers the sandbox only. It has no route to [Context Hub](/langsmith/managed-deep-agents-context-hub), so [skills](/langsmith/managed-deep-agents-skills), [instructions](/langsmith/managed-deep-agents-instructions), and [memory](/langsmith/managed-deep-agents-memory) are not reachable through it.
+
+:::python
+Without a sandbox, `runtime.backend` is `None`. Guard on it before every call, because a project can remove `sandbox/` after the tool ships.
+:::
+
+:::js
+Without a sandbox, `runtime.backend` is `undefined`. Guard on it before every call, because a project can remove `sandbox/` after the tool ships.
+:::
+
+:::python
+`delete`, `upload_files`, and `download_files` depend on the installed backend and raise when it does not implement them. A root `glob` returns an error instead of provisioning a sandbox.
+:::
+
+:::js
+`delete`, `uploadFiles`, and `downloadFiles` depend on the installed backend and throw when it does not implement them. A root `glob` returns an error instead of provisioning a sandbox.
+:::
+
 ## Disable the sandbox
 
 Delete the `sandbox/` directory to opt out, such as for an agent that only needs its prompt, memory, and tools.
