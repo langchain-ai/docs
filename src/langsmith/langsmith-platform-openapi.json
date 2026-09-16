@@ -27472,7 +27472,7 @@
     },
     "/api/v1/platform/annotation-queues/{queue_id}/items": {
       "get": {
-        "description": "List RUN and THREAD items in a single annotation queue for one review status section, with opaque cursor pagination. Optional item_type=RUN|THREAD filters the page. direction=backward returns items before the supplied cursor. The response contains item metadata only, not expanded run or thread payloads. status=archived returns items whose queue review requirements have been satisfied, not merely items the caller personally marked completed.",
+        "description": "List RUN and THREAD items in a single annotation queue for one review status section, with opaque cursor pagination. Optional item_type=RUN|THREAD filters the page. Optional min_start_time/max_start_time bound the item's trace start time; items with no start time are excluded when either bound is set. direction=backward returns items before the supplied cursor. The response contains item metadata only, not expanded run or thread payloads. status=archived returns items whose queue review requirements have been satisfied, not merely items the caller personally marked completed.",
         "tags": [
           "annotation_queues"
         ],
@@ -27535,16 +27535,36 @@
             }
           },
           {
+            "description": "Only items whose trace start time is at or after this timestamp. Omit or send the zero time for no bound",
+            "name": "min_start_time",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Min Start Time"
+            }
+          },
+          {
+            "description": "Only items whose trace start time is at or before this timestamp. Omit or send the zero time for no bound",
+            "name": "max_start_time",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Max Start Time"
+            }
+          },
+          {
             "description": "Pagination direction. backward requires cursor",
             "name": "direction",
             "in": "query",
             "schema": {
               "type": "string",
-              "default": "forward",
               "enum": [
                 "forward",
                 "backward"
               ],
+              "default": "forward",
               "title": "Direction"
             }
           }
@@ -27708,7 +27728,7 @@
     },
     "/api/v1/platform/annotation-queues/{queue_id}/items/count": {
       "get": {
-        "description": "Returns the number of annotation queue items for the requested reviewer-specific or archived bucket.",
+        "description": "Returns the number of annotation queue items in one status bucket. The two time windows are independent: start_time/end_time bound when an item was archived, min_start_time/max_start_time bound when its trace ran. Items with no trace start time are excluded when either of the latter is set.",
         "tags": [
           "annotation_queues"
         ],
@@ -27734,7 +27754,7 @@
             }
           },
           {
-            "description": "Exclusive lower bound for archived item timestamp",
+            "description": "Archived strictly after this time. Only used when status=archived",
             "name": "start_time",
             "in": "query",
             "schema": {
@@ -27743,12 +27763,32 @@
             }
           },
           {
-            "description": "Exclusive upper bound for archived item timestamp",
+            "description": "Archived strictly before this time. Only used when status=archived",
             "name": "end_time",
             "in": "query",
             "schema": {
               "type": "string",
               "title": "End Time"
+            }
+          },
+          {
+            "description": "Trace started at or after this time",
+            "name": "min_start_time",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Min Start Time"
+            }
+          },
+          {
+            "description": "Trace started at or before this time",
+            "name": "max_start_time",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Max Start Time"
             }
           }
         ],
@@ -28045,7 +28085,7 @@
     },
     "/api/v1/platform/annotation-queues/{queue_id}/items/{item_id}/placement": {
       "get": {
-        "description": "Resolve a RUN or THREAD item to its current review section and zero-based position for deep linking.",
+        "description": "Resolve a RUN or THREAD item to its current review section and zero-based position for deep linking. The returned cursor counts RUN and THREAD items together, so it is only valid for a list request with no item_type or start-time filter.",
         "tags": [
           "annotation_queues"
         ],
@@ -38197,7 +38237,7 @@
     },
     "/api/v2/sandboxes/boxes/{name}/service-url": {
       "post": {
-        "description": "Create a short-lived JWT for accessing an HTTP service running on a specific port inside a sandbox. Returns a browser_url (sets auth cookie via redirect), a service_url (for use with the X-Langsmith-Sandbox-Service-Token header), the raw token, and its expiry.",
+        "description": "Create a short-lived JWT for accessing an HTTP service running on a specific port inside a sandbox. Returns a browser_url (sets auth cookie via redirect), a service_url (for use with the X-Langsmith-Sandbox-Service-Token header), the raw token, and its expiry. Set access=restricted|workspace to instead enable durable LangSmith login (no token; users authenticate with their normal LangSmith session), or access=off to disable it. LangSmith login and token access are mutually exclusive per service URL.",
         "tags": [
           "sandboxes"
         ],
@@ -38236,6 +38276,16 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/sandboxes.ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -39629,6 +39679,150 @@
         ],
         "x-public": true,
         "parameters": []
+      }
+    },
+    "/api/v2/sandboxes/usage/costs": {
+      "get": {
+        "description": "Returns priced usage per sandbox or snapshot and UTC hour in the half-open requested interval. LCU uses the recorded compute amount for sandboxes; snapshots have zero LCU. LSU allocates the recorded workspace storage amount proportionally to attributed bytes, including checkpoints on their sandbox and snapshots as separate resources. Resource filters preserve each resource's share. Rate changes do not reprice recorded amounts. An access-filtered page can have no items and a non-null next_cursor; continue until next_cursor is null.",
+        "tags": [
+          "sandboxes"
+        ],
+        "summary": "List hourly sandbox usage costs",
+        "parameters": [
+          {
+            "description": "Inclusive RFC3339 start time",
+            "name": "start_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Start Time"
+            }
+          },
+          {
+            "description": "Exclusive RFC3339 end time; the range must not exceed 31 days",
+            "name": "end_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "End Time"
+            }
+          },
+          {
+            "description": "Resource type filter",
+            "name": "resource_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SANDBOX",
+                "SNAPSHOT"
+              ],
+              "title": "Resource Type"
+            }
+          },
+          {
+            "description": "Resource UUID filter; repeat this parameter up to 100 times",
+            "name": "resource_ids",
+            "in": "query",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Resource Ids"
+            }
+          },
+          {
+            "description": "Maximum rows to return",
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "type": "integer",
+              "default": 20,
+              "maximum": 100,
+              "title": "Page Size"
+            }
+          },
+          {
+            "description": "Opaque pagination cursor",
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/sandboxes.SandboxUsageCostsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "missing or invalid query parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "missing or invalid authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden (insufficient permission)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "API Key": [],
+            "Tenant ID": []
+          },
+          {
+            "Bearer Auth": [],
+            "Tenant ID": []
+          }
+        ],
+        "x-public": true
       }
     },
     "/api/v2/sandboxes/{sandbox_id}/download": {
@@ -47184,6 +47378,7 @@
           "update_evaluator",
           "delete_evaluator",
           "bulk_delete_evaluators",
+          "test_evaluator",
           "upsert_feature_default_model",
           "delete_feature_default_model",
           "upsert_feature_disabled_model",
@@ -77297,8 +77492,8 @@
             "type": "boolean"
           },
           "byoc_external_id": {
-            "readOnly": true,
             "description": "ByocExternalID is the organization's assigned AWS external ID, stored only in org config.",
+            "readOnly": true,
             "anyOf": [
               {
                 "type": "string"
@@ -77835,6 +78030,7 @@
           "rules:configure-retention",
           "runs:create",
           "runs:read",
+          "runs:read-stats",
           "runs:share",
           "runs:delete",
           "model-price-map:create",
@@ -77935,6 +78131,7 @@
           "RulesConfigureRetention",
           "RunsCreate",
           "RunsRead",
+          "RunsReadStats",
           "RunsShare",
           "RunsDelete",
           "ModelPriceMapCreate",
@@ -78002,6 +78199,23 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "aws.ResourceTag": {
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 256
           }
         }
       },
@@ -78190,6 +78404,13 @@
       "data_planes.CreateDataPlaneRequestAws": {
         "type": "object",
         "properties": {
+          "additional_tags": {
+            "type": "array",
+            "maxItems": 40,
+            "items": {
+              "$ref": "#/components/schemas/aws.ResourceTag"
+            }
+          },
           "byovpc_id": {
             "description": "The ID of the customer-managed VPC to deploy into when deploying in BYOVPC mode.",
             "type": "string"
@@ -83261,18 +83482,14 @@
       },
       "sandboxes.ProxyAWSConfig": {
         "type": "object",
-        "required": [
-          "access_key_id",
-          "secret_access_key"
-        ],
-        "properties": {
-          "access_key_id": {
-            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/sandboxes.ProxyAWSRoleConfig"
           },
-          "secret_access_key": {
-            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          {
+            "$ref": "#/components/schemas/sandboxes.ProxyAWSStaticConfig"
           }
-        }
+        ]
       },
       "sandboxes.ProxyConfig": {
         "type": "object",
@@ -83505,18 +83722,14 @@
       },
       "sandboxes.SandboxAWSMountAuthConfig": {
         "type": "object",
-        "required": [
-          "access_key_id",
-          "secret_access_key"
-        ],
-        "properties": {
-          "access_key_id": {
-            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/sandboxes.SandboxAWSMountRoleAuthConfig"
           },
-          "secret_access_key": {
-            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          {
+            "$ref": "#/components/schemas/sandboxes.SandboxAWSMountStaticAuthConfig"
           }
-        }
+        ]
       },
       "sandboxes.SandboxGCPMountAuthConfig": {
         "type": "object",
@@ -83671,9 +83884,78 @@
           }
         }
       },
+      "sandboxes.SandboxUsageCost": {
+        "type": "object",
+        "required": [
+          "lcu",
+          "lsu",
+          "period_start",
+          "resource_id",
+          "resource_type"
+        ],
+        "properties": {
+          "lcu": {
+            "description": "Recorded compute usage in LangSmith Compute Units (LCU), as a decimal string\nwith up to six fractional digits and trailing zeros omitted. Snapshots return \"0\".",
+            "type": "string",
+            "format": "decimal",
+            "example": "1.234567"
+          },
+          "lsu": {
+            "description": "Allocated storage usage in LangSmith Storage Units (LSU), as a decimal string\nwith up to six fractional digits and trailing zeros omitted.",
+            "type": "string",
+            "format": "decimal",
+            "example": "0.000123"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resource_type": {
+            "$ref": "#/components/schemas/sandboxes.UsageCostResourceType"
+          }
+        }
+      },
+      "sandboxes.SandboxUsageCostsResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/sandboxes.SandboxUsageCost"
+            }
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "sandboxes.ServiceURLPayload": {
         "type": "object",
         "properties": {
+          "access": {
+            "description": "Access selects the login mode, mutually exclusive with the minted token.\nOmit the field for token mode: mint a short-lived service token (default).\n  \"restricted\" — LangSmith login: any user with SandboxesRead on the sandbox.\n  \"workspace\"  — LangSmith login: any member of the owning workspace.\n  \"off\"        — remove an existing LangSmith login grant and mint a token.\nA LangSmith login grant is durable; token mode is refused (409) while one exists.",
+            "type": "string",
+            "enum": [
+              "restricted",
+              "workspace",
+              "off"
+            ]
+          },
           "expires_in_seconds": {
             "type": "integer"
           },
@@ -83685,6 +83967,14 @@
       "sandboxes.ServiceURLResponse": {
         "type": "object",
         "properties": {
+          "access": {
+            "description": "Access echoes the enabled LangSmith login level (\"restricted\"/\"workspace\"); omitted in token mode.",
+            "type": "string",
+            "enum": [
+              "restricted",
+              "workspace"
+            ]
+          },
           "browser_url": {
             "type": "string"
           },
@@ -83695,6 +83985,7 @@
             "type": "string"
           },
           "token": {
+            "description": "Token and ExpiresAt are empty in LangSmith login mode (no token is minted).",
             "type": "string"
           }
         }
@@ -83904,6 +84195,17 @@
             "type": "integer"
           }
         }
+      },
+      "sandboxes.UsageCostResourceType": {
+        "type": "string",
+        "enum": [
+          "SANDBOX",
+          "SNAPSHOT"
+        ],
+        "x-enum-varnames": [
+          "UsageCostResourceSandbox",
+          "UsageCostResourceSnapshot"
+        ]
       },
       "sandboxes.UsageResponse": {
         "type": "object",
@@ -85986,6 +86288,91 @@
             }
           ]
         }
+      },
+      "sandboxes.ProxyAWSRoleConfig": {
+        "type": "object",
+        "properties": {
+          "role_arn": {
+            "description": "RoleARN selects automatically renewed IAM-role credentials instead of static keys.\nAccess follows the role's effective AWS permissions, not the sandbox's mount scope.\nConfigure at creation; the role cannot be changed afterward.",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "role_arn"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "access_key_id"
+              ]
+            },
+            {
+              "required": [
+                "secret_access_key"
+              ]
+            }
+          ]
+        }
+      },
+      "sandboxes.ProxyAWSStaticConfig": {
+        "type": "object",
+        "properties": {
+          "access_key_id": {
+            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          },
+          "role_arn": {
+            "description": "RoleARN selects automatically renewed IAM-role credentials instead of static keys.\nAccess follows the role's effective AWS permissions, not the sandbox's mount scope.\nConfigure at creation; the role cannot be changed afterward.",
+            "type": "string",
+            "enum": [
+              ""
+            ]
+          },
+          "secret_access_key": {
+            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          }
+        },
+        "required": [
+          "access_key_id",
+          "secret_access_key"
+        ]
+      },
+      "sandboxes.SandboxAWSMountRoleAuthConfig": {
+        "type": "object",
+        "properties": {
+          "role_arn": {
+            "description": "IAM role to assume with permissions scoped to the configured S3 mounts.\nMutually exclusive with static credentials. Configure only at creation.",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "role_arn"
+        ],
+        "additionalProperties": false
+      },
+      "sandboxes.SandboxAWSMountStaticAuthConfig": {
+        "type": "object",
+        "properties": {
+          "access_key_id": {
+            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          },
+          "role_arn": {
+            "description": "IAM role to assume with permissions scoped to the configured S3 mounts.\nMutually exclusive with static credentials. Configure only at creation.",
+            "type": "string",
+            "enum": [
+              ""
+            ]
+          },
+          "secret_access_key": {
+            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          }
+        },
+        "required": [
+          "access_key_id",
+          "secret_access_key"
+        ]
       }
     },
     "securitySchemes": {
