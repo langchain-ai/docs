@@ -117,11 +117,11 @@ Five menu items: Home, Build, Test, Deploy, Monitor.
 
 #### Home
 
-`src/index.mdx`, plus a **Core concepts** group holding `langsmith/agents`, `langsmith/agent-environments`, and `langsmith/navigate-agents`.
+`src/index.mdx` alone. This menu item has no groups.
 
-The concept pages sit here rather than under a lifecycle stage, and rather than in the LangSmith setup menu, for two reasons. An agent is the thing you create before any stage happens, so "before the stages" is its position, and Home is that position. And this product is where the readers are: Test, Deploy, and Monitor are 100% `src/langsmith/`, so most LangSmith pages are here rather than in Products and setup.
+The agent concept pages sat here in a **Core concepts** group from 2026-09-15 to 2026-09-16, with three matching cards on the home page. Both were removed on 2026-09-16, and the group now lives in Products and setup > LangSmith setup > Overview. See [LangSmith setup](#langsmith-setup). The reason is the release stage: agent-based workspaces are in private beta for a hand-picked group of customers, and the home page is the one surface every reader lands on, so a `Beta` group there reads as a general announcement. Do not move the group back without a stage change.
 
-`src/index.mdx` is `mode: "custom"` and therefore renders no sidebar, so the three Agents cards on the home page are the entry point into the group, not decoration. Removing them orphans the group from its own menu.
+`src/index.mdx` is `mode: "custom"`, so it renders no sidebar and its body is hand-written HTML wrappers with `<h2 class=...>` section headings rather than markdown. Any card added here is the only route to what it links, because the page has no sidebar to fall back on.
 
 #### Build
 
@@ -197,7 +197,7 @@ Six tabs, all files flat in `src/langsmith/`:
 
 | Tab | Groups |
 |-----|--------|
-| Overview | Single page |
+| Overview | Core concepts, Hosting |
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
@@ -206,9 +206,11 @@ Six tabs, all files flat in `src/langsmith/`:
 
 Do not rename this product to a LangSmith name. It was tried on 2026-09-15 and reverted the same day, for two reasons that still hold. `Deep Agents Code` lives in this product and is sourced from `src/oss/deepagents/code/`, so a LangSmith name would claim pages LangSmith does not own. And Test, Deploy, and Monitor are 100% `src/langsmith/`, so most LangSmith documentation sits in the *other* product: naming this one LangSmith tells a reader it is a section when it is most of the site.
 
-The agent concept pages passed through this tab on 2026-09-15 and now live in Lifecycle > Home. See [Home](#home) for why.
+The Overview tab's landing page is `langsmith/langsmith-setup-overview`, which covers this product's four areas and its other menu items. It follows `langsmith/govern-overview`: `sidebarTitle: Overview`, `mode: "wide"`, an `## Explore` card group.
 
-`langsmith/platform-setup` is `mode: "custom"`, so the LangSmith setup tab's own landing page renders no sidebar, and its body carries hand-written wrapper `div`s and an `<h1>` instead of frontmatter-driven typography. Moving it to `mode: "wide"` was tried on 2026-09-15 and reverted, so change the mode and the body together or not at all.
+Its **Core concepts** group holds `langsmith/agents`, `langsmith/agent-environments`, and `langsmith/navigate-agents`, and carries a group-level `"tag": "Beta"` because agent-based workspaces are in private beta. The group was in Lifecycle > Home until 2026-09-16. See [Home](#home).
+
+`langsmith/platform-setup` is no longer the tab's landing page. It sits in the **Hosting** group as `Hosting options`, and it is the page that compares Cloud, BYOC, and Self-hosted. It is `mode: "custom"`, so it renders no sidebar and its body carries hand-written wrapper `div`s and an `<h1>` instead of frontmatter-driven typography. Moving it to `mode: "wide"` was tried on 2026-09-15 and reverted, so change the mode and the body together or not at all.
 
 #### Other menu items
 
@@ -240,7 +242,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents |
-| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx` | Lifecycle → Home → Core concepts |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx` | Products and setup → LangSmith setup → Overview → Core concepts |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
