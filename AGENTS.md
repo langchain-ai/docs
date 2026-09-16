@@ -208,7 +208,7 @@ Do not rename this product to a LangSmith name. It was tried on 2026-09-15 and r
 
 The agent concept pages passed through this tab on 2026-09-15 and now live in Lifecycle > Home. See [Home](#home) for why.
 
-`langsmith/platform-setup` is `mode: "wide"`, so it renders a sidebar. It was `mode: "custom"` until 2026-09-15, which hid the sidebar on the tab's own landing page. Its body no longer carries the hand-written wrappers and `<h1>` that custom mode required, so do not reintroduce them without changing the mode back.
+`langsmith/platform-setup` is `mode: "custom"`, so the LangSmith setup tab's own landing page renders no sidebar, and its body carries hand-written wrapper `div`s and an `<h1>` instead of frontmatter-driven typography. Moving it to `mode: "wide"` was tried on 2026-09-15 and reverted, so change the mode and the body together or not at all.
 
 #### Other menu items
 
