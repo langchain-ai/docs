@@ -119,7 +119,7 @@ Five menu items: Home, Build, Test, Deploy, Monitor.
 
 `src/index.mdx` alone. This menu item has no groups.
 
-The agent concept pages sat here in a **Core concepts** group from 2026-09-15 to 2026-09-16, with three matching cards on the home page. Both were removed on 2026-09-16, and the group now lives in Products and setup > LangSmith setup > Overview. See [LangSmith setup](#langsmith-setup). The reason is the release stage: agent-based workspaces are in private beta for a hand-picked group of customers, and the home page is the one surface every reader lands on, so a `Beta` group there reads as a general announcement. Do not move the group back without a stage change.
+The agent concept pages sat here in a **Core concepts** group, since renamed, from 2026-09-15 to 2026-09-16, with three matching cards on the home page. Both were removed on 2026-09-16, and the group now lives in Products and setup > LangSmith setup > Overview. See [LangSmith setup](#langsmith-setup). The reason is the release stage: agent-based workspaces are in private beta for a hand-picked group of customers, and the home page is the one surface every reader lands on, so a `Beta` group there reads as a general announcement. Do not move the group back without a stage change.
 
 `src/index.mdx` is `mode: "custom"`, so it renders no sidebar and its body is hand-written HTML wrappers with `<h2 class=...>` section headings rather than markdown. Any card added here is the only route to what it links, because the page has no sidebar to fall back on.
 
@@ -197,7 +197,7 @@ Six tabs, all files flat in `src/langsmith/`:
 
 | Tab | Groups |
 |-----|--------|
-| Overview | Core concepts, Hosting |
+| Overview | Agent-based workspaces, Hosting |
 | Account | Billing & usage |
 | Cloud | Reference |
 | BYOC | No groups |
@@ -208,7 +208,9 @@ Do not rename this product to a LangSmith name. It was tried on 2026-09-15 and r
 
 The Overview tab's landing page is `langsmith/langsmith-setup-overview`, which covers this product's four areas and its other menu items. It follows `langsmith/govern-overview`: `sidebarTitle: Overview`, `mode: "wide"`, an `## Explore` card group.
 
-Its **Core concepts** group holds `langsmith/agents`, `langsmith/agent-environments`, `langsmith/navigate-agents`, and `langsmith/build-an-agent`, and carries a group-level `"tag": "Beta"` because agent-based workspaces are in private beta. The group tag is why none of those four pages carries a page-level `tag`. The group was in Lifecycle > Home until 2026-09-16. See [Home](#home).
+Its **Agent-based workspaces** group holds `langsmith/agents`, `langsmith/agent-environments`, `langsmith/navigate-agents`, and `langsmith/build-an-agent`, and carries a group-level `"tag": "Beta"` because agent-based workspaces are in private beta. The group tag is why none of those four pages carries a page-level `tag`. The group was in Lifecycle > Home until 2026-09-16. See [Home](#home).
+
+It was called **Core concepts** until 2026-09-16. Renamed because the group name has to carry the `Beta` tag sensibly: "Core concepts `Beta`" says LangSmith's concepts are in beta, when what is in beta is the workspace arrangement. The old name also over-claimed, since traces, runs, tracing projects, datasets, and evaluation are core concepts too and live under Monitor and Test. The new name matches the term the marker snippets and `administration-overview` already use.
 
 `langsmith/platform-setup` is no longer the tab's landing page. It sits in the **Hosting** group as `Hosting options`, and it is the page that compares Cloud, BYOC, and Self-hosted. It is `mode: "custom"`, so it renders no sidebar and its body carries hand-written wrapper `div`s and an `<h1>` instead of frontmatter-driven typography. Moving it to `mode: "wide"` was tried on 2026-09-15 and reverted, so change the mode and the body together or not at all.
 
@@ -242,7 +244,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents |
-| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `build-an-agent.mdx` | Products and setup → LangSmith setup → Overview → Core concepts |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `build-an-agent.mdx` | Products and setup → LangSmith setup → Overview → Agent-based workspaces |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
