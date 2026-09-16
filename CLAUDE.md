@@ -12,11 +12,11 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 ## Critical rules
 
 1. **Always ask for clarification** rather than making assumptions
-2. **Never fabricate** examples, JSON snippets, policy details, or use case descriptions — use only content from the user or existing source files
-3. **Never use markdown in frontmatter `description`** — breaks SEO
-4. **Never edit `build/`** — Mintlify build output (regenerate with `make build` or `make dev`)
+2. **Never fabricate** examples, JSON snippets, policy details, or use case descriptions: use only content from the user or existing source files
+3. **Never use markdown in frontmatter `description`**: breaks SEO
+4. **Never edit `build/`**: Mintlify build output (regenerate with `make build` or `make dev`)
 5. **Always update `src/docs.json`** when adding new pages
-6. **Use Tabler icons only** — not FontAwesome
+6. **Use Tabler icons only**, not FontAwesome
 7. **Test code examples** before including them
 
 ## Quick reference
@@ -32,9 +32,9 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Provider icons | `src/images/providers/` |
 | Navigation config | `src/docs.json` |
 | Build system | `pipeline/` |
-| Icon library | Tabler — <https://tabler.io/icons> |
+| Icon library | Tabler: <https://tabler.io/icons> |
 | Mintlify components | <https://mintlify.com/docs/components> |
-| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report reference docs issues](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
+| API reference site | [reference.langchain.com](https://reference.langchain.com/python/). Built outside this repo. [Report reference docs issues](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
 | Authoring skills | `.agents/skills/` (run `make skills` for Claude Code) |
 
@@ -49,16 +49,21 @@ once to link the tree.
 |-------|-----------|
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
 | `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff. |
+| `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
 | `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
-| `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. |
+| `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
 | `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
+| `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, and naming what stayed unverified. |
 | `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
 | `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
 
-Invoke a skill when the task matches it. This file holds the rules that apply to
-every task; a skill holds the procedure that only some tasks need, so skills
-link back here rather than restating these rules. See
+Invoke a skill when the task matches it. Adding or changing tooling (a script,
+a workflow, a Makefile target, a PR check, a scheduled job, or a skill) also
+carries a documentation step: invoke `docs-tooling-notion` before handing off
+the pull request, whether or not anyone asked for it. This file holds the rules
+that apply to every task; a skill holds the procedure that only some tasks need,
+so skills link back here rather than restating these rules. See
 [`.agents/skills/README.md`](.agents/skills/README.md) for how to add one.
 
 ## Project structure
@@ -95,7 +100,7 @@ docs/
 │   ├── code-samples/           # Testable standalone code samples (see make test-code-samples)
 │   └── fonts/                  # TWK Lausanne font files
 ├── pipeline/                   # Python build system & preprocessors
-├── build/                      # Build output — do not edit
+├── build/                      # Build output, do not edit
 ├── scripts/                    # Helper utilities and automation scripts
 └── tests/                      # Pipeline tests
 ```
@@ -128,7 +133,7 @@ Two language dropdowns (Python, TypeScript) with the same 10 tabs each. Most con
 | OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
 | Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Python: Popular Providers, Integrations by component. TypeScript: Popular Providers (OpenAI, Anthropic, Google, AWS, Microsoft), General integrations, RAG integrations |
 | Learn | `src/oss/` (various) | Tutorials (Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
-| Reference | `src/oss/reference/` | Reference, Releases (Releases, Migration guides), Policies — short entry pages linking to reference.langchain.com |
+| Reference | `src/oss/reference/` | Reference, Releases (Releases, Migration guides), Policies; short entry pages linking to reference.langchain.com |
 | Contribute | `src/oss/contributing/` | Contribute (Integrations) |
 
 Two Build tabs are not language-versioned in the usual way:
@@ -229,7 +234,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 
 ### Reference docs
 
-Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output — `make broken-links` filters them as false positives.
+Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links` filters them as false positives.
 
 | Section | Nav location | Spec source | Generated under |
 |---------|--------------|-------------|-----------------|
@@ -259,7 +264,7 @@ Every MDX file requires:
 ```yaml
 ---
 title: Clear, concise page title
-description: SEO summary — no markdown allowed (no links, backticks, formatting)
+description: SEO summary, no markdown allowed (no links, backticks, formatting)
 ---
 ```
 
@@ -313,7 +318,7 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<CodeGroup>` | Tabbed code blocks |
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
-| `<Prompt>` | Copyable AI-assistant prompt — **required at the top of every migration guide** |
+| `<Prompt>` | Copyable AI-assistant prompt. **Required at the top of every migration guide** |
 
 ### Migration guide convention
 
@@ -369,9 +374,9 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 
 **Do:**
 
-- Match existing conventions in the file you are editing — do not restructure, combine, or split pages unless explicitly asked
+- Match existing conventions in the file you are editing: do not restructure, combine, or split pages unless explicitly asked
 - Reference existing pages for style patterns when creating new content
-- Be concise — cut filler words and wordy phrases ("to" not "in order to", "because" not "due to the fact that", "can" not "has the ability to")
+- Be concise: cut filler words and wordy phrases ("to" not "in order to", "because" not "due to the fact that", "can" not "has the ability to")
 - Second-person imperative present tense ("Run the following code…")
 - Active voice ("The function returns a list" not "A list is returned by the function")
 - Sentence-case headings starting with active verb, not gerund ("Add a tool" not "Adding a tool")
@@ -392,42 +397,42 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use absolute URLs for internal links
 - Use markdown in description fields
 - Use `/python/` or `/javascript/` in links (resolved by build pipeline)
-- Use model aliases — use full identifiers (e.g., `claude-sonnet-4-6`)
-- Use `>=` in prose for version minimums — write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
-- Use "→" to separate UI navigation steps — write "Go to **Settings** > **API Keys**"
+- Use model aliases: use full identifiers (e.g., `claude-sonnet-4-6`)
+- Use `>=` in prose for version minimums: write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
+- Use "→" to separate UI navigation steps: write "Go to **Settings** > **API Keys**"
 - Use FontAwesome icon names
-- Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
+- Use nested double quotes in component attributes: use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
-- Use first person ("we", "I", "our", "let's") — write in second person or use the product name as subject
+- Use first person ("we", "I", "our", "let's"): write in second person or use the product name as subject
 - Use future tense ("The function returns X" not "The function will return X")
 - Use weasel words or filler (avoid "simply", "easily", "just", "very", "basically", "obviously")
 - Use H5 or H6 headings
 - Start headings with articles ("Add a tool" not "The tool setup guide")
-- Use em dashes — prefer commas, colons, or separate sentences instead. Only use an em dash when no alternative reads naturally
-- Add spaces around em dashes — write `word—word` not `word — word` (`make lint_prose` enforces this)
+- Use em dashes: prefer commas, colons, or separate sentences instead. Only use an em dash when no alternative reads naturally
+- Add spaces around em dashes: write `word—word` not `word — word` (`make lint_prose` enforces this)
 - Use excessive bold/italics in body text
-- Start bulleted list items with a lowercase letter — always capitalize the first word
+- Start bulleted list items with a lowercase letter: always capitalize the first word
 - Include "key features" lists
-- Use horizontal lines (`---`) to separate sections — use headings instead
+- Use horizontal lines (`---`) to separate sections: use headings instead
 - Apply bold to UI element names unless existing docs already do so
-- Misspell product names — use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
-- Skip `make lint_prose` — always run it on changed files before committing and fix all violations
+- Misspell product names: use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
+- Skip `make lint_prose`: always run it on changed files before committing and fix all violations
 
 ### Structure conventions
 
 Match these patterns, drawn from established pages, when authoring new content:
 
-- **Open with definition, then benefit, then task** — start a section (and the page) with a one-sentence statement of what the feature is or does, follow with a sentence on what it enables for the reader, then give the procedure or detail. When a page has a sibling variant (for example, a paid or self-hosted version), link it in the opening lines.
-- **Introduce procedures with a colon lead-in** — precede steps with a phrase such as "To add a channel:", then a numbered list (or the `<Steps>` component) of imperative steps. State a step's result as a follow-on line when it matters ("The Add User modal displays."). Flag optional steps inline with "(Optional)". For long, multi-stage tasks, use `### Step N. <verb>` headings.
-- **Use bold-led definition lists for options** — for parameters, permissions, secrets, or enumerated types, write `- **Term**: Explanation.` and end each explanation with a period.
-- **Link on first mention, and point forward at section ends** — link a feature, class, or term on first mention only, not on repeats. Two pointer forms are established, and neither is canonical, so do not mass-convert one into the other. Use the long form ("For more information, see [Page](/path)") at section ends and for standalone pointers. Use the short form ("See [Page](/path)") where the pointer trails an already-complete thought, such as an FAQ answer or a table cell, and especially in a run where nearly every item ends in a pointer. Close substantial pages with a `## See also` list of related links.
-- **State requirements and constraints up front** — put permission, plan tier, or preview requirements before the steps they govern ("Adding MCP servers requires admin permissions."). Write hard constraints as plain facts ("Once an agent identity is set, it cannot be changed.").
+- **Open with definition, then benefit, then task**: start a section (and the page) with a one-sentence statement of what the feature is or does, follow with a sentence on what it enables for the reader, then give the procedure or detail. When a page has a sibling variant (for example, a paid or self-hosted version), link it in the opening lines.
+- **Introduce procedures with a colon lead-in**: precede steps with a phrase such as "To add a channel:", then a numbered list (or the `<Steps>` component) of imperative steps. State a step's result as a follow-on line when it matters ("The Add User modal displays."). Flag optional steps inline with "(Optional)". For long, multi-stage tasks, use `### Step N. <verb>` headings.
+- **Use bold-led definition lists for options**: for parameters, permissions, secrets, or enumerated types, write `- **Term**: Explanation.` and end each explanation with a period.
+- **Link on first mention, and point forward at section ends**: link a feature, class, or term on first mention only, not on repeats. Two pointer forms are established, and neither is canonical, so do not mass-convert one into the other. Use the long form ("For more information, see [Page](/path)") at section ends and for standalone pointers. Use the short form ("See [Page](/path)") where the pointer trails an already-complete thought, such as an FAQ answer or a table cell, and especially in a run where nearly every item ends in a pointer. Close substantial pages with a `## See also` list of related links.
+- **State requirements and constraints up front**: put permission, plan tier, or preview requirements before the steps they govern ("Adding MCP servers requires admin permissions."). Write hard constraints as plain facts ("Once an agent identity is set, it cannot be changed.").
 
 ### Model references
 
 Always use the latest generally available (GA) models when referencing LLMs in docstrings and illustrative code snippets. Avoid preview or beta identifiers unless the model has no GA equivalent. Outdated model names signal stale code and confuse users.
 
-Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names — they go stale quickly.
+Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names. They go stale quickly.
 
 ### Version requirements
 
@@ -460,7 +465,7 @@ These are common nouns, not proper nouns. Write them lowercase in prose, includi
 
 ### Product and feature name capitalization
 
-Capitalize a word when it refers to a **product or brand name**. Use lowercase when it refers to a **common noun** — a thing you build, an instance, or a type.
+Capitalize a word when it refers to a **product or brand name**. Use lowercase when it refers to a **common noun**: a thing you build, an instance, or a type.
 
 **Capitalize** product and brand names:
 
@@ -517,7 +522,7 @@ Use the import form, not Mintlify's `<Snippet file="..." />`. The build pipeline
 
 ## Debugging
 
-When investigating a bug or unexpected behavior, always start by reading the relevant code and logs before forming a hypothesis. Do not assume something is working or ask the user to confirm — verify it yourself first.
+When investigating a bug or unexpected behavior, always start by reading the relevant code and logs before forming a hypothesis. Do not assume something is working or ask the user to confirm. Verify it yourself first.
 
 ### CI broken-links failures
 
@@ -532,7 +537,7 @@ some-file.mdx                    ← file header (always printed)
 another-file.mdx                 ← no indented lines = all its links were filtered out (false positive)
 ```
 
-**Shortcut:** Skip straight to `⎿` lines — those are the only real failures. File headers without `⎿` lines beneath them are OpenAPI pages that exist at deploy time but not locally.
+**Shortcut:** Skip straight to `⎿` lines: those are the only real failures. File headers without `⎿` lines beneath them are OpenAPI pages that exist at deploy time but not locally.
 
 **Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
 
