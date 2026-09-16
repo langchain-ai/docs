@@ -1,0 +1,79 @@
+---
+title: "SearchPipe integrations"
+description: "Integrate with SearchPipe using LangChain Python."
+---
+
+[SearchPipe](https://searchpipe.tech) is an AI-powered web search API (Tavily-style) that aggregates SearXNG multi-engine retrieval, trafilatura content extraction, and LLM reranking/summarization into a single `/search` endpoint. SearchPipe is open-source and self-hostable; the full server source is available on [GitHub](https://github.com/engineer566/searchpipe).
+
+## Installation and setup
+
+The `SearchPipe` integration lives in its own [partner package](https://pypi.org/project/langchain-searchpipe/). Install it with:
+
+```bash
+pip install -qU langchain-searchpipe
+```
+
+Set your SearchPipe API key as an environment variable (get one at [searchpipe.tech/dashboard/api-keys](https://searchpipe.tech/dashboard/api-keys)):
+
+```bash
+export SEARCHPIPE_API_KEY=sp-your-api-key-here
+```
+
+Or pass it explicitly via `api_key=` when constructing components.
+
+## Retriever
+
+`SearchPipeRetriever` is a drop-in `BaseRetriever` that returns LangChain `Document` objects with `title`, `url`, `score`, and `query` metadata. Use it in any chain that accepts a retriever.
+
+```python
+from langchain_searchpipe import SearchPipeRetriever
+
+retriever = SearchPipeRetriever(
+    max_results=5,
+    search_depth="basic",       # "basic" = 1 credit, "advanced" = 2 credits
+    include_raw_content=False,  # True fetches full page content (slower)
+)
+
+docs = retriever.invoke("What is the latest on fusion energy?")
+for d in docs:
+    print(d.metadata["url"], d.page_content[:120])
+```
+
+## Tools
+
+### SearchPipeSearchResults
+
+Returns structured Tavily-style results (`query`, `answer`, `results[]` with `title`/`url`/`content`/`score`). Suitable for citation-aware agents.
+
+```python
+from langchain_searchpipe import SearchPipeSearchResults
+
+tool = SearchPipeSearchResults(max_results=5, include_answer=True)
+result = tool.invoke({"query": "current LLM agent frameworks"})
+
+print(result["answer"])
+for r in result["results"]:
+    print("-", r["title"], r["url"])
+```
+
+### SearchPipeAnswer
+
+Returns a concise LLM-synthesized answer grounded in retrieved sources. Suitable for agents that just need a direct answer.
+
+```python
+from langchain_searchpipe import SearchPipeAnswer
+
+tool = SearchPipeAnswer()
+answer = tool.invoke({"query": "What is LangChain?"})
+print(answer)
+```
+
+## Self-hosting
+
+To point the integration at your own SearchPipe instance, pass `base_url`:
+
+```python
+retriever = SearchPipeRetriever(base_url="https://your-searchpipe.example.com")
+```
+
+Full server source: [github.com/engineer566/searchpipe](https://github.com/engineer566/searchpipe).
