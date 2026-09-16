@@ -208,7 +208,7 @@ Do not rename this product to a LangSmith name. It was tried on 2026-09-15 and r
 
 The Overview tab's landing page is `langsmith/langsmith-setup-overview`, which covers this product's four areas and its other menu items. It follows `langsmith/govern-overview`: `sidebarTitle: Overview`, `mode: "wide"`, an `## Explore` card group.
 
-Its **Core concepts** group holds `langsmith/agents`, `langsmith/agent-environments`, and `langsmith/navigate-agents`, and carries a group-level `"tag": "Beta"` because agent-based workspaces are in private beta. The group was in Lifecycle > Home until 2026-09-16. See [Home](#home).
+Its **Core concepts** group holds `langsmith/agents`, `langsmith/agent-environments`, `langsmith/navigate-agents`, and `langsmith/build-an-agent`, and carries a group-level `"tag": "Beta"` because agent-based workspaces are in private beta. The group tag is why none of those four pages carries a page-level `tag`. The group was in Lifecycle > Home until 2026-09-16. See [Home](#home).
 
 `langsmith/platform-setup` is no longer the tab's landing page. It sits in the **Hosting** group as `Hosting options`, and it is the page that compares Cloud, BYOC, and Self-hosted. It is `mode: "custom"`, so it renders no sidebar and its body carries hand-written wrapper `div`s and an `<h1>` instead of frontmatter-driven typography. Moving it to `mode: "wide"` was tried on 2026-09-15 and reverted, so change the mode and the body together or not at all.
 
@@ -242,7 +242,7 @@ Because nav names and directories diverge, use this to go from a file to its pla
 | `src/oss/contributing/` | Build → Contribute |
 | `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
 | `src/langsmith/fleet/` | Products and setup → No-code agents |
-| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx` | Products and setup → LangSmith setup → Overview → Core concepts |
+| `src/langsmith/agents.mdx`, `agent-environments.mdx`, `navigate-agents.mdx`, `build-an-agent.mdx` | Products and setup → LangSmith setup → Overview → Core concepts |
 | `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
 
 ### Reference docs
