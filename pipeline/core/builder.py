@@ -14,6 +14,9 @@ from tqdm import tqdm
 from pipeline.preprocessors import preprocess_markdown
 
 _IS_CI = os.environ.get("CI", "").lower() in ("true", "1")
+_DEEP_AGENTS_CODE_PART_COUNT = 3
+_OPENWIKI_PART_COUNT = 2
+_MAX_SNIPPET_IMPORT_DEPTH = 6
 
 logger = logging.getLogger(__name__)
 
@@ -292,7 +295,9 @@ class DocumentationBuilder:
     def _rewrite_snippet_imports_for_language(
         self, content: str, target_language: str
     ) -> str:
-        """Point MDX snippet imports at language-specific copies under /snippets/{lang}/.
+        """Point MDX snippet imports at language-specific copies.
+
+        Language-specific copies live under ``/snippets/{lang}/``.
 
         Snippet markdown is emitted as absolute, language-prefixed /oss/ links in
         ``build/snippets/{python|javascript}/...``. Versioned pages must import
@@ -439,13 +444,17 @@ class DocumentationBuilder:
             return False
         parts = relative_path.parts
         if (
-            len(parts) >= 3
+            len(parts) >= _DEEP_AGENTS_CODE_PART_COUNT
             and parts[0] == "oss"
             and parts[1] == "deepagents"
             and parts[2] == "code"
         ):
             return True
-        return len(parts) >= 2 and parts[0] == "oss" and parts[1] == "openwiki"
+        return (
+            len(parts) >= _OPENWIKI_PART_COUNT
+            and parts[0] == "oss"
+            and parts[1] == "openwiki"
+        )
 
     def _build_oss_file(self, file_path: Path, relative_path: Path) -> None:
         """Build an OSS file for both Python and JavaScript versions.
@@ -1128,6 +1137,30 @@ class DocumentationBuilder:
         ("langsmith", "LangSmith"),
     ]
 
+    # Display names for directories that get their own llms.txt index. A
+    # directory missing here falls back to a titleized name, which reads fine
+    # for OpenAPI tag directories but mangles product names.
+    _LLMS_SUBSECTION_NAMES: ClassVar[dict[str, str]] = {
+        "ace": "ACE",
+        "api-key": "API keys",
+        "aws_marketplace": "AWS Marketplace",
+        "concepts": "Concepts",
+        "contributing": "Contributing",
+        "deepagents": "Deep Agents",
+        "integrations": "Integrations",
+        "langchain": "LangChain",
+        "langgraph": "LangGraph",
+        "mcp": "MCP",
+        "mcp_vendors": "MCP vendors",
+        "migrate": "Migration guides",
+        "openwiki": "OpenWiki",
+        "productfeedback": "Product feedback",
+        "reference": "Reference",
+        "scim-tokens": "SCIM tokens",
+        "smith-api": "REST API",
+        "ttl-settings": "TTL settings",
+    }
+
     _SITE_URL = "https://docs.langchain.com"
 
     # A section smaller than this stays in the root file rather than becoming a
@@ -1161,7 +1194,7 @@ class DocumentationBuilder:
         Mintlify: "Get the authenticated user's provider user ID" slugs to
         ``...-users-provider-user-id``, not ``...-user-s-...``.
         """
-        cleaned = re.sub(r"['’]", "", value.lower())
+        cleaned = re.sub(r"['\u2019]", "", value.lower())
         return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", cleaned)).strip("-")
 
     @staticmethod
@@ -1308,7 +1341,7 @@ class DocumentationBuilder:
         shared = parts[0]
         for candidate in parts[1:]:
             keep = 0
-            for a, b in zip(shared, candidate):
+            for a, b in zip(shared, candidate, strict=False):
                 if a != b:
                     break
                 keep += 1
@@ -1368,6 +1401,32 @@ class DocumentationBuilder:
             else:
                 out += self._chunk_section(key, children[key])
         return [(prefix, remainder), *out] if remainder else out
+
+    @classmethod
+    def _section_label(
+        cls, section_prefix: str, parent_prefix: str, parent_label: str
+    ) -> str:
+        """Return the heading label for one section index.
+
+        A section that splits into per-directory files would otherwise stamp
+        the parent label on every child, so ``oss/python/langgraph/llms.txt``
+        announced itself as "Open source (Python)" with nothing in the file
+        naming LangGraph. Qualify the parent label with the child directory
+        instead, keeping the parent so the language stays visible.
+        """
+        if section_prefix == parent_prefix:
+            return parent_label
+        leaf = section_prefix.rsplit("/", 1)[-1]
+        name = (
+            cls._LLMS_SUBSECTION_NAMES.get(leaf) or re.sub(r"[_-]+", " ", leaf).title()
+        )
+        # A parenthesised parent carries the language, which belongs after the
+        # child name: "LangGraph (Python)", not "Open source (Python):
+        # LangGraph". Anything else reads as a plain prefix.
+        qualified = re.fullmatch(r".+ \(([^()]+)\)", parent_label)
+        if qualified:
+            return f"{name} ({qualified[1]})"
+        return f"{parent_label} {name}"
 
     def _write_section_index(
         self, path: str, title: str, label: str, lines: list[str]
@@ -1495,7 +1554,7 @@ class DocumentationBuilder:
             end = text.find("\n---", 3)
             if end != -1:
                 text = text[end + 4 :]
-        if depth > 6:
+        if depth > _MAX_SNIPPET_IMPORT_DEPTH:
             return text.strip()
 
         snippets_root = self.build_dir / "snippets"
@@ -1696,7 +1755,10 @@ class DocumentationBuilder:
                         continue
                     path = f"{section_prefix}/llms.txt"
                     self._write_section_index(
-                        path, title, label, [line for _, line in chunk]
+                        path,
+                        title,
+                        self._section_label(section_prefix, prefix, label),
+                        [line for _, line in chunk],
                     )
                     linked.append((section_prefix, path, len(chunk)))
 

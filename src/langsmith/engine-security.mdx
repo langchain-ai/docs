@@ -16,7 +16,7 @@ Engine operates on data you have already chosen to share with LangChain: the tra
 
 | **Data source** | **What Engine reads** | **Storage and persistence** | **Enables** |
 |---|---|---|---|
-| LangSmith workspace content | Trace data and other workspace content you have stored in LangSmith, such as prompts and evaluators. | Within your LangSmith tenant. [Trace retention](/langsmith/usage-and-billing#data-retention) is 14 days (base) or 400 days (extended), chosen per project. The durations are not configurable. | Issue detection, prioritization, and evaluation proposals. |
+| LangSmith workspace content | Trace data and other workspace content you have stored in LangSmith, such as prompts and evaluators. | Within your LangSmith tenant. [Trace retention](/langsmith/usage-and-billing#data-retention) is 14 days (base) or up to 180 days (extended) for SaaS customers as of September 14, 2026, chosen per project. | Issue detection, prioritization, and evaluation proposals. |
 | GitHub repository | Source code and repository context from the repositories you connect (see [GitHub integration](#github-integration)). | Processed inside an isolated, LangChain-managed sandbox for the duration of each analysis run, then discarded. | Pull request authoring with proposed code fixes. |
 | Model provider (inference) | Only the content required for each analysis task. | Zero data retention with every Engine model provider (see [Model subprocessors](#model-subprocessors)). | Engine reasoning and generation. |
 

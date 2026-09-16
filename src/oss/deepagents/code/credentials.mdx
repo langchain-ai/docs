@@ -85,7 +85,7 @@ dcode auth path
 
 ## Environment variables (CI and headless)
 
-For non-interactive runs, CI/CD pipelines, or anywhere a TUI isn't available, export the provider's env var in your shell:
+For non-interactive runs, CI/CD pipelines, or anywhere a TUI is not available, export the provider's env var in your shell:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."

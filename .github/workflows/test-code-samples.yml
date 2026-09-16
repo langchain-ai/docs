@@ -2,7 +2,8 @@
 name: Test Code Samples
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 on:
   pull_request:
@@ -11,8 +12,8 @@ on:
       - ".github/workflows/test-code-samples.yml"
   workflow_dispatch:
   schedule:
-    # Run every Sunday at 00:00 UTC
-    - cron: "0 0 * * 0"
+    # Full run + trace refresh on the 1st of each month at 00:00 UTC
+    - cron: "0 0 1 * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -134,6 +135,9 @@ jobs:
           ANTHROPIC_CUSTOM_HEADERS: ${{ secrets.ANTHROPIC_CUSTOM_HEADERS }}
           LS_GATEWAY_KEY: ${{ secrets.LS_GATEWAY_KEY }}
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          LANGSMITH_PROJECT: docs-code-samples
+          # Enable tracing + public share collection on monthly/manual full runs only.
+          CODE_SAMPLE_TRACING: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           POSTGRES_URI: postgresql://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
@@ -155,3 +159,106 @@ jobs:
             fi
             make test-code-samples FILES="$FILES"
           fi
+
+      - name: Regenerate snippet MDX with trace links
+        id: regen_snippets
+        if: >-
+          (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+          steps.test.conclusion == 'success'
+        run: make code-snippets
+
+      - name: Open or update code sample traces PR
+        if: >-
+          (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+          steps.regen_snippets.conclusion == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          BRANCH_NAME="chore/refresh-code-sample-traces"
+          PATHS=(
+            "src/code-samples/trace-links.json"
+            "src/snippets/code-samples"
+          )
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Preserve refreshed artifacts, then restore a clean tree for branch checkout.
+          mkdir -p "$RUNNER_TEMP/code-sample-traces"
+          for path in "${PATHS[@]}"; do
+            if [[ -e "$path" ]]; then
+              mkdir -p "$RUNNER_TEMP/code-sample-traces/$(dirname "$path")"
+              cp -a "$path" "$RUNNER_TEMP/code-sample-traces/$path"
+            fi
+          done
+          git checkout -- . || true
+          git clean -fd -- src/snippets/code-samples src/code-samples/trace-links.json || true
+
+          PR_NUMBER="$(gh pr list --head "$BRANCH_NAME" --state open \
+            --json number --jq '.[0].number // empty')"
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Found open PR #$PR_NUMBER on $BRANCH_NAME; appending to it"
+            git fetch --depth=1 origin \
+              "$BRANCH_NAME:refs/remotes/origin/$BRANCH_NAME"
+            git checkout -B "$BRANCH_NAME" "origin/$BRANCH_NAME"
+          else
+            echo "No open PR on $BRANCH_NAME; starting a new one from main"
+            git checkout -B "$BRANCH_NAME"
+          fi
+
+          for path in "${PATHS[@]}"; do
+            if [[ -e "$RUNNER_TEMP/code-sample-traces/$path" ]]; then
+              mkdir -p "$(dirname "$path")"
+              rm -rf "$path"
+              cp -a "$RUNNER_TEMP/code-sample-traces/$path" "$path"
+            fi
+          done
+
+          if git diff --quiet -- "${PATHS[@]}"; then
+            echo "No trace-link changes to commit"
+            exit 0
+          fi
+
+          git add -- "${PATHS[@]}"
+          git commit -m "$(cat <<EOF
+          chore: refresh code sample example traces
+
+          Monthly code-sample run shared public LangSmith traces for
+          single-snippet agent samples and regenerated snippet MDX links.
+
+          Refreshed $(date -u +"%Y-%m-%d %H:%M UTC").
+          EOF
+          )"
+
+          if [ -n "$PR_NUMBER" ]; then
+            git push origin "$BRANCH_NAME"
+            echo "Appended a commit to PR #$PR_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git push --force origin "$BRANCH_NAME"
+
+          gh pr create \
+            --title "chore: refresh code sample example traces" \
+            --body "$(cat <<'EOF'
+          ## Summary
+          Automated refresh of public LangSmith example traces linked under docs code samples.
+
+          ## Details
+          - Monthly/full `make test-code-samples` with `CODE_SAMPLE_TRACING=1`
+          - Updates `src/code-samples/trace-links.json`
+          - Regenerates `src/snippets/code-samples/*.mdx` with a `View example trace` Card CTA
+          - Multi-snippet source files are skipped until split into one file per snippet
+
+          Later refreshes append a commit to this PR while it stays open.
+
+          🤖 This PR was created automatically by GitHub Actions
+          EOF
+          )" \
+            --base main \
+            --head "$BRANCH_NAME"
+
+          echo "Opened a new code sample traces PR" >> "$GITHUB_STEP_SUMMARY"

@@ -423,7 +423,7 @@ You can enable Fleet with `enable_fleet`. On AWS, it requires `enable_deployment
 Terraform creates a dedicated `langsmith_fleet` database on RDS and wires the `langsmith-fleet-postgres` and `langsmith-fleet-redis` secrets to the existing RDS and ElastiCache instances. Fleet reuses `langsmith_agent_builder_encryption_key`, so migrating from `enable_agent_builder` keeps the same key and data.
 
 <Note>
-Fleet requires the LangSmith Helm chart `>=0.15.0` and the Agent Builder or Fleet entitlement in your license.
+Fleet requires the LangSmith Helm chart 0.15.0 or later and the Agent Builder or Fleet entitlement in your license.
 </Note>
 
 Fleet installs the `standalone-fleet-api-server`, `standalone-fleet-tool-server`, `standalone-fleet-trigger-server`, and `standalone-fleet-queue` services.

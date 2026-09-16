@@ -23,6 +23,9 @@ The main config files are:
     <Card title="MCP servers" icon="plug" href="/oss/deepagents/code/mcp-tools">
         Define global MCP servers in `~/.deepagents/.mcp.json`.
     </Card>
+    <Card title="Python extensions" icon="puzzle" href="/oss/deepagents/code/extensions">
+        Add custom tools, middleware, and storage routes.
+    </Card>
 </CardGroup>
 
 ## How settings resolve
@@ -107,7 +110,7 @@ Deep Agents Code ignores environment variables that could alter executable looku
     - Git config/exec injection: `GIT_DIR`, `GIT_WORK_TREE`, `GIT_OBJECT_DIRECTORY`, `GIT_EXEC_PATH`, `GIT_EDITOR`, `GIT_PAGER`, `GIT_SSH`, `GIT_SSH_COMMAND`, plus the prefix families `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_*`, `GIT_CONFIG_VALUE_*`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_SYSTEM`, and `GIT_CONFIG_GLOBAL`
     - Windows process variables: `COMSPEC`, `SYSTEMROOT`, `WINDIR`
 
-    A project `.env` also cannot set `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS`, `DEEPAGENTS_CODE_DISABLED_PROJECT_MCP_SERVERS`, `DEEPAGENTS_CODE_AUTO_CLASSIFIER_MODEL`, `DEEPAGENTS_CODE_AUTO_CLASSIFIER_TIMEOUT`, or `TERM_PROGRAM`. Set these in your shell or the global `~/.deepagents/.env` instead.
+    A project `.env` also cannot set `DEEPAGENTS_CODE_DANGEROUSLY_ENABLE_PROJECT_MCP_SERVERS`, `DEEPAGENTS_CODE_DISABLED_PROJECT_MCP_SERVERS`, `DEEPAGENTS_CODE_AUTO_CLASSIFIER_MODEL`, `DEEPAGENTS_CODE_AUTO_CLASSIFIER_TIMEOUT`, `DEEPAGENTS_CODE_FORKED_SUBAGENTS`, or `TERM_PROGRAM`. Set these in your shell or the global `~/.deepagents/.env` instead.
 </Accordion>
 
 <Warning>
@@ -156,7 +159,7 @@ When the environment variable is set, it takes precedence over the config file v
 
 ## Profile location (`DEEPAGENTS_HOME`)
 
-`DEEPAGENTS_HOME` selects the directory Deep Agents Code uses as its user profile — everything normally stored under `~/.deepagents/` moves under the configured path. This includes `config.toml`, the global `.env`, `~/.deepagents/.mcp.json` and `hooks.json`, per-agent directories (`AGENTS.md`, `skills/`, `memories/`, `agents/`), plugins, and `.state/` (sessions, input history, credentials, and locks). When unset, the profile defaults to `~/.deepagents`.
+`DEEPAGENTS_HOME` selects the directory Deep Agents Code uses as its user profile — everything normally stored under `~/.deepagents/` moves under the configured path. This includes `config.toml`, the global `.env`, `~/.deepagents/.mcp.json` and `hooks.json`, `extensions/`, per-agent directories (`AGENTS.md`, `skills/`, `memories/`, `agents/`), plugins, and `.state/` (sessions, input history, credentials, and locks). When unset, the profile defaults to `~/.deepagents`.
 
 Valid forms are an absolute path or a path beginning with `~/`:
 
@@ -333,7 +336,7 @@ Disabling update checks also prevents automatic update installs at startup.
 
 You can still check for and install updates manually at any time with the `/update` slash command, which runs an on-demand check and reports success or failure inline.
 
-After an upgrade, Deep Agents Code shows a "what's new" banner on the next launch with a link to the changelog.
+After an upgrade, Deep Agents Code shows a "what is new" banner on the next launch with a link to the changelog.
 
 At session exit, if a newer version was detected during the session, an update banner is displayed as a reminder.
 
@@ -639,6 +642,14 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
     Opt into experimental, unstable Deep Agents Code behavior. Set to `1` (or any truthy value) to enable experimental features.
 </ResponseField>
 
+<ResponseField name="DEEPAGENTS_CODE_EXTENSIONS" type="string" default="true" post={["optional"]}>
+    Enable or disable [Python extension](/oss/deepagents/code/extensions) discovery for every source, including `-e` / `--extension`. Overrides `[extensions].enabled` in `config.toml`. `DEEPAGENTS_CODE_EXPERIMENTAL=1` is still required.
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_EXTENSIONS_TRUST" type="string" default='"ask"' post={["optional"]}>
+    Set the default project extension trust policy to `ask`, `always`, or `never`. Overrides `[extensions].trust` in `config.toml`. Only use `always` when every project you open is trusted.
+</ResponseField>
+
 <ResponseField name="DEEPAGENTS_CODE_DEBUG_FILE" type="string" default="/tmp/deepagents_debug.log" post={["optional"]}>
     Path for the debug log file.
 </ResponseField>
@@ -661,6 +672,10 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
 
 <ResponseField name="DEEPAGENTS_CODE_EXTRA_SKILLS_DIRS" type="string" post={["optional"]}>
     Colon-separated paths added to the [skill containment allowlist](#skill-directory-allowlist).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_FORKED_SUBAGENTS" type="string" default="true" post={["optional"]}>
+    Let the built-in `general-purpose` subagent inherit the parent conversation and system prompt. Set to `0`, `false`, `no`, or `off` (or an empty value) to use isolated mode. Set this variable in your shell or global `~/.deepagents/.env`; Deep Agents Code ignores it in project `.env` files because inheritance can include private parent state. See [Continue the parent conversation](/oss/deepagents/code/subagents#continue-the-parent-conversation).
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_HISTORY_RETENTION_DAYS" type="integer" default="30" post={["optional"]}>
@@ -703,6 +718,10 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
     Load the project `.env` (found walking up from the working directory) into the process environment. Set to a falsy value to skip an untrusted repository's file; the global `~/.deepagents/.env` still loads. Overrides `[startup].read_project_dotenv`. See [Loading order and precedence](#loading-order-and-precedence).
 </ResponseField>
 
+<ResponseField name="DEEPAGENTS_CODE_RECENT_THREADS" type="integer" default="20" post={["optional"]}>
+    Maximum number of recent threads to load and display in thread lists and selectors. Values below `1` are clamped to `1`, and non-integer values use the default. `-n` or `--limit` overrides this value for `dcode threads list`.
+</ResponseField>
+
 <ResponseField name="DEEPAGENTS_CODE_RECURSION_LIMIT" type="integer" post={["optional"]}>
     LangGraph graph step budget, which is the maximum number of node invocations the `dcode` agent graph may execute per turn. Invalid values log a warning and resolution continues to the next source. When unset, Deep Agents Code inherits `LANGGRAPH_DEFAULT_RECURSION_LIMIT` or leaves the limit to the LangGraph server. See [Agent runtime limits](/oss/deepagents/code/config-file#agent-runtime-limits).
 </ResponseField>
@@ -713,6 +732,10 @@ All Deep Agents Code-specific environment variables use the `DEEPAGENTS_CODE_` p
 
 <ResponseField name="DEEPAGENTS_CODE_SHELL_ALLOW_LIST" type="string" post={["optional"]}>
     Comma-separated shell commands to allow (or `recommended` / `all`).
+</ResponseField>
+
+<ResponseField name="DEEPAGENTS_CODE_SHOW_REASONING" type="string" default="false" post={["optional"]}>
+    Show provider-visible reasoning in the interactive transcript and on stderr in non-interactive mode. Overrides `[ui].show_reasoning`; `--show-reasoning` takes precedence for a single launch. See [Show provider-visible reasoning](/oss/deepagents/code/config-file#show-provider-visible-reasoning).
 </ResponseField>
 
 <ResponseField name="DEEPAGENTS_CODE_SHOW_USAGE_STATS" type="string" default="true" post={["optional"]}>
@@ -784,6 +807,7 @@ Deep Agents Code stores data in two directory hierarchies:
 │   ├── history.jsonl        #   Command input history
 │   ├── chatgpt-auth.json    #   ChatGPT OAuth token for the openai_codex provider
 │   ├── ...                  #   Other markers & credentials
+├── extensions/              # User-wide Python extensions (experimental)
 └── {agent}/                 # Per-agent directory (default: "agent")
     ├── AGENTS.md            # User customizations to agent instructions
     ├── skills/              # User-level skills
@@ -802,6 +826,7 @@ Deep Agents Code stores data in two directory hierarchies:
 ├── AGENTS.md                # Project instructions (root-level)
 └── .deepagents/
 │   ├── AGENTS.md            # Project instructions (preferred location)
+│   ├── extensions/          # Project Python extensions (requires trust; experimental)
 │   ├── skills/              # Project-specific skills
 │   │   └── {skill-name}/
 │   │       └── SKILL.md
@@ -827,6 +852,8 @@ Deep Agents Code stores data in two directory hierarchies:
 | **User skills** | `~/.deepagents/{agent}/skills/` | R/W | Agent-specific skills |
 | **Shared skills** | `~/.agents/skills/` | R | Tool-agnostic, cross-CLI |
 | **Project skills** | `.deepagents/skills/` or `.agents/skills/` | R | Project-scoped |
+| **User Python extensions** | `~/.deepagents/extensions/` | R/W | Experimental; see [Python extensions](/oss/deepagents/code/extensions) |
+| **Project Python extensions** | `.deepagents/extensions/` | R | Experimental; requires project trust |
 | **Custom subagents** | `~/.deepagents/{agent}/agents/` | R/W | User-defined subagents |
 | **Project subagents** | `.deepagents/agents/` | R | Project-defined subagents |
 
@@ -903,3 +930,4 @@ Use `.deepagents/skills/` for skills that rely on Deep Agents-specific tools or 
 - [Hooks](/oss/deepagents/code/hooks)
 - [Data locations](#data-locations)
 - [MCP tools](/oss/deepagents/code/mcp-tools)
+- [Python extensions](/oss/deepagents/code/extensions)

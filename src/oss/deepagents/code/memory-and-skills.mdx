@@ -85,7 +85,7 @@ Use a global `AGENTS.md` (`~/.deepagents/agent/AGENTS.md`) for:
 - General tone and communication style
 - Universal coding preferences (formatting, type hints, etc.)
 - Tool usage patterns that apply everywhere
-- Workflows and methodologies that don't change per-project
+- Workflows and methodologies that do not change per-project
 
 Use a project `AGENTS.md` (`.deepagents/AGENTS.md` in project root) for:
 

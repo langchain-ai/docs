@@ -2,7 +2,7 @@
 //JAVA 21
 //KOTLIN 2.0.21
 //DEPS com.langchain.smith:langsmith-java:0.1.0-alpha.25
-//DEPS com.openai:openai-java:4.30.0
+//DEPS com.openai:openai-java:4.61.0
 
 // :snippet-start: observability-quickstart-app-kt
 // :codegroup-tab: Kotlin
@@ -42,7 +42,7 @@ val assistant =
             val response =
                 client.chat().completions().create(
                     ChatCompletionCreateParams.builder()
-                        .model(ChatModel.GPT_5_CHAT_LATEST)
+                        .model(ChatModel.GPT_5_5)
                         .addMessage(
                             ChatCompletionMessageParam.ofSystem(
                                 ChatCompletionSystemMessageParam.builder()
