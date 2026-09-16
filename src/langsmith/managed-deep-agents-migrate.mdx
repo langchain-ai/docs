@@ -1,0 +1,304 @@
+---
+title: Migrate from Deep Agents
+sidebarTitle: Migrate from Deep Agents
+description: Move an existing Deep Agents project to Managed Deep Agents.
+---
+
+import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
+
+Managed Deep Agents uses the Deep Agents harness but manages deployment, persistence, filesystem backends, instructions, skills, and optional durable memory. Most agent code moves without changes. You must move the configuration that Managed Deep Agents owns into its project files.
+
+<ManagedDeepAgentsPrivateBetaNote />
+
+## Understand the main change
+
+A Deep Agents project calls its agent construction function to build a compiled graph. A Managed Deep Agents project exports a definition from a root-level agent entry. The managed runtime combines that definition with your project files and compiles the graph during development or deployment.
+
+:::python
+Use `define_deep_agent` instead of `create_deep_agent`. `define_deep_agent` requires keyword arguments and a static `name`.
+:::
+
+:::js
+Use `defineDeepAgent` instead of `createDeepAgent`. `defineDeepAgent` requires a static `name`.
+:::
+
+The following configuration remains in the agent definition:
+
+- Model
+- Tools
+- Middleware
+- Subagents
+- Filesystem permissions
+- Human-in-the-loop settings
+- Structured output
+- Context schema
+
+Move the following configuration to managed project files:
+
+| Deep Agents configuration | Managed Deep Agents location |
+| --- | --- |
+| System prompt | Root `instructions.md` |
+| Top-level skill paths | Root `skills/` directory |
+| Backend | Optional `sandbox/` declaration, or managed state storage when no sandbox is declared |
+| Store and checkpointer | Managed automatically |
+| Memory file paths | `instructions.md`, `skills/`, or an optional root memory declaration, depending on the content |
+
+## Create the Managed Deep Agents project
+
+Create a project beside the existing project so that you can compare and test both versions:
+
+:::python
+```bash
+uv tool install managed-deepagents
+mda init my-managed-agent
+cd my-managed-agent
+uv sync
+```
+:::
+
+:::js
+```bash
+npm install --global managed-deepagents
+mda init my-managed-agent
+cd my-managed-agent
+npm install
+```
+:::
+
+`mda init` creates the required agent entry, `instructions.md`, dependency manifest, identity declaration, and sandbox declaration. Copy your application modules, such as tools and middleware, into this project. Add their packages to `pyproject.toml` or `package.json`. Add required credentials to the new `.env` file, and keep it uncommitted. Do not copy a virtual environment, `node_modules`, or generated build output.
+
+For the complete layout, see [Project structure](/langsmith/managed-deep-agents-project-structure).
+
+## Convert the agent definition
+
+Consider a Deep Agents entry that defines tools, instructions, skills, and a local filesystem backend:
+
+:::python
+```python
+from deepagents import create_deep_agent
+from deepagents.backends import FilesystemBackend
+
+from tools.search import internet_search
+
+INSTRUCTIONS = "You are a research assistant. Return answers with citations."
+
+agent = create_deep_agent(
+    model="openai:gpt-5.5",
+    tools=[internet_search],
+    system_prompt=INSTRUCTIONS,
+    skills=["./skills/"],
+    backend=FilesystemBackend(root_dir="."),
+)
+```
+:::
+
+:::js
+```ts
+import { FilesystemBackend, createDeepAgent } from "deepagents";
+
+import { internetSearch } from "./tools/search.js";
+
+const instructions =
+  "You are a research assistant. Return answers with citations.";
+
+const agent = createDeepAgent({
+  model: "openai:gpt-5.5",
+  tools: [internetSearch],
+  systemPrompt: instructions,
+  skills: ["./skills/"],
+  backend: new FilesystemBackend({ rootDir: "." }),
+});
+```
+:::
+
+Keep the model and tools in the definition. Remove the system prompt, skills, and backend because Managed Deep Agents supplies them from project files:
+
+:::python
+```python agent.py
+from managed_deepagents import define_deep_agent
+
+from tools.search import internet_search
+
+agent = define_deep_agent(
+    name="my-managed-agent",
+    model="openai:gpt-5.5",
+    tools=[internet_search],
+)
+```
+:::
+
+:::js
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
+
+import { internetSearch } from "./tools/search.js";
+
+export const agent = defineDeepAgent({
+  name: "my-managed-agent",
+  model: "openai:gpt-5.5",
+  tools: [internetSearch],
+});
+```
+:::
+
+The entry must live at the project root and export a named `agent`. Move command-line invocation code, web server startup code, and other application entry logic out of this file. Managed Deep Agents invokes the agent through the managed runtime.
+
+### Map agent parameters
+
+:::python
+| `create_deep_agent` parameter | Migration |
+| --- | --- |
+| `model`, `tools`, `middleware`, `subagents`, `permissions`, `interrupt_on`, `response_format`, `context_schema`, `debug`, `cache` | Keep in `define_deep_agent`. |
+| `name` | Keep or add it. It is required and must be a static string. |
+| `system_prompt` | Move to `instructions.md`. |
+| `skills` | Move skill directories under root `skills/`. Remove the parameter. |
+| `backend` | Remove it. Keep the scaffolded sandbox, configure it, or delete `sandbox/` to use managed state storage. |
+| `store`, `checkpointer` | Remove them. The managed runtime supplies persistence. |
+| `memory` | Classify the files as instructions, skills, or durable memory before moving them. |
+| `state_schema` | Python `define_deep_agent` does not currently accept this parameter. Refactor custom state into middleware or keep the project on Deep Agents until the managed interface supports the required state. |
+:::
+
+:::js
+| `createDeepAgent` property | Migration |
+| --- | --- |
+| `model`, `tools`, `middleware`, `subagents`, `permissions`, `interruptOn`, `responseFormat`, `contextSchema`, `stateSchema`, `streamTransformers` | Keep in `defineDeepAgent`. |
+| `name` | Keep or add it. It is required and must be a static string. |
+| `systemPrompt` | Move to `instructions.md`. |
+| `skills` | Move skill directories under root `skills/`. Remove the property. |
+| `backend` | Remove it. Keep the scaffolded sandbox, configure it, or delete `sandbox/` to use managed state storage. |
+| `store`, `checkpointer` | Remove them. The managed runtime supplies persistence. |
+| `memory` | Classify the files as instructions, skills, or durable memory before moving them. |
+:::
+
+## Move instructions and skills
+
+Copy the top-level system prompt into `instructions.md`:
+
+```markdown instructions.md
+# Research assistant
+
+You are a research assistant. Return answers with citations.
+```
+
+If the prompt is assembled dynamically, rewrite the stable behavioral instructions in this file. Keep request-specific or user-specific context in runtime context, tools, or middleware rather than generating `instructions.md` at startup.
+
+Copy each existing skill directory under the project root:
+
+```text
+my-managed-agent/
+  skills/
+    research/
+      SKILL.md
+```
+
+Remove the top-level `skills` argument from the agent definition. Managed Deep Agents syncs `instructions.md` and `skills/` to Context Hub and mounts them automatically. See [Instructions](/langsmith/managed-deep-agents-instructions) and [Skills](/langsmith/managed-deep-agents-skills).
+
+## Replace the backend
+
+Managed Deep Agents owns the filesystem backend. Choose one of these configurations:
+
+- **Managed sandbox**: Keep the scaffolded `sandbox/` directory when the agent needs a persistent working directory within a thread or needs to run shell commands.
+- **Managed state storage**: Delete `sandbox/` when the agent only needs state-backed filesystem tools and does not need shell execution.
+
+Configure the managed sandbox instead of passing a Deep Agents backend:
+
+:::python
+```python sandbox/__init__.py
+from managed_deepagents import define_sandbox
+
+sandbox = define_sandbox(
+    scope="thread",
+    idle_ttl_seconds=600,
+    default_timeout=600,
+)
+```
+:::
+
+:::js
+```ts sandbox/index.ts
+import { defineSandbox } from "managed-deepagents";
+
+export const sandbox = defineSandbox({
+  scope: "thread",
+  idleTtlSeconds: 600,
+  defaultTimeout: 600,
+});
+```
+:::
+
+A custom `FilesystemBackend`, `CompositeBackend`, callable backend, or external sandbox does not have a direct conversion. Identify which paths and execution capabilities the agent needs, then reproduce them with a managed sandbox, tools, and managed context. See [Sandboxes](/langsmith/managed-deep-agents-sandboxes).
+
+## Classify memory files
+
+Deep Agents `memory` paths load files into the prompt. Managed Deep Agents durable memory has different behavior: it is optional, writable by the agent, stored in Context Hub, and shared across every caller and thread in the deployment.
+
+Move each existing memory file according to its purpose:
+
+- Put always-on behavior and stable reference context in `instructions.md`.
+- Put task-specific procedures in `skills/<name>/SKILL.md`.
+- Enable durable memory only for knowledge the agent should learn and update across threads.
+
+To enable deployment-shared durable memory:
+
+:::python
+```python memory.py
+from managed_deepagents import define_memory
+
+memory = define_memory(scope="agent")
+```
+:::
+
+:::js
+```ts memory.ts
+import { defineMemory } from "managed-deepagents";
+
+export const memory = defineMemory({ scope: "agent" });
+```
+:::
+
+Do not enable durable memory as a direct replacement for an `AGENTS.md` prompt file. Review the sharing and trust boundaries before enabling it. See [Memory](/langsmith/managed-deep-agents-memory).
+
+## Review custom behavior
+
+Review these patterns manually because they do not have a direct file-level conversion:
+
+- Dynamically generated system prompts
+- Custom backend factories, path routing, or external sandboxes
+- Custom stores and checkpointers with application-specific behavior
+- Agent factories that create different graphs at runtime
+- Multiple exported agents in one project
+- Code that invokes the compiled graph from the agent entry
+- Dependencies on local absolute paths or files excluded from the project
+
+Keep custom tools, middleware, subagents, model instances, response schemas, and runtime context when they use supported definition parameters. Keep their source modules in the project and declare every external dependency in the project manifest.
+
+## Validate and deploy
+
+Build the migrated project before starting a local server:
+
+```bash
+mda build .
+mda dev .
+```
+
+Use LangSmith Studio to verify:
+
+1. The model and tools load.
+2. Instructions and skills are available.
+3. Filesystem operations use the expected state or sandbox scope.
+4. Threads resume with the expected state.
+5. Human-in-the-loop and structured output behavior still works, when configured.
+
+Then deploy the agent:
+
+```bash
+mda deploy .
+```
+
+Keep the original Deep Agents deployment available until the managed deployment passes your application tests.
+
+## See also
+
+- [Managed Deep Agents project structure](/langsmith/managed-deep-agents-project-structure)
+- [Develop a Managed Deep Agent locally](/langsmith/managed-deep-agents-local-development)
+- [Deploy a Managed Deep Agent](/langsmith/managed-deep-agents-deploy)
