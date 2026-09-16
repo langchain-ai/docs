@@ -8,7 +8,7 @@ register_provider_profile(
     ProviderProfile(init_kwargs={"temperature": 0.7, "timeout": 30}),
 )
 register_provider_profile(
-    "my_provider:my-model:tag",
+    "my_provider:my-model",
     ProviderProfile(init_kwargs={"temperature": 0}),
 )
 # :snippet-end:
@@ -16,7 +16,7 @@ register_provider_profile(
 # :remove-start:
 from deepagents.profiles.provider.provider_profiles import apply_provider_profile
 
-assert apply_provider_profile("my_provider:my-model:tag") == {
+assert apply_provider_profile("my_provider:my-model") == {
     "temperature": 0,
     "timeout": 30,
 }
@@ -28,13 +28,13 @@ assert apply_provider_profile("my_provider:another-model") == {
 
 # :snippet-start: profiles-reregister-provider-py
 register_provider_profile(
-    "my_provider:my-model:tag",
+    "my_provider:my-model",
     ProviderProfile(init_kwargs={"timeout": 60}),
 )
 # :snippet-end:
 
 # :remove-start:
-assert apply_provider_profile("my_provider:my-model:tag") == {
+assert apply_provider_profile("my_provider:my-model") == {
     "temperature": 0,
     "timeout": 60,
 }

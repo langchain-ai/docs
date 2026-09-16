@@ -14,7 +14,7 @@ register_harness_profile(
 
 # Override the prompt suffix for one model; inherit the excluded tool.
 register_harness_profile(
-    "my_provider:my-model:tag",
+    "my_provider:my-model",
     HarnessProfile(system_prompt_suffix="Respond in under 100 words."),
 )
 # :snippet-end:
@@ -22,7 +22,7 @@ register_harness_profile(
 # :remove-start:
 from deepagents.profiles.harness.harness_profiles import _get_harness_profile
 
-profile = _get_harness_profile("my_provider:my-model:tag")
+profile = _get_harness_profile("my_provider:my-model")
 assert profile is not None
 assert profile.excluded_tools == frozenset({"execute"})
 assert profile.system_prompt_suffix == "Respond in under 100 words."
@@ -34,13 +34,13 @@ assert other.system_prompt_suffix == "Respond in under 500 words."
 
 # :snippet-start: profiles-reregister-harness-py
 register_harness_profile(
-    "my_provider:my-model:tag",
+    "my_provider:my-model",
     HarnessProfile(excluded_tools=frozenset({"grep"})),
 )
 # :snippet-end:
 
 # :remove-start:
-profile = _get_harness_profile("my_provider:my-model:tag")
+profile = _get_harness_profile("my_provider:my-model")
 assert profile is not None
 assert profile.excluded_tools == frozenset({"execute", "grep"})
 assert profile.system_prompt_suffix == "Respond in under 100 words."
