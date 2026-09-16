@@ -5,7 +5,7 @@ import { createDeepAgent } from "deepagents";
 // KEEP MODEL
 const agent = await createDeepAgent({
   model: "anthropic:claude-sonnet-4-6",
-  skills: ["/skills/personal/"],
+  skills: ["/skills/editable/"],
   permissions: [
     {
       operations: ["write"],

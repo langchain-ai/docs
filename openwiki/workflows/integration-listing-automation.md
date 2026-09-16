@@ -1,11 +1,11 @@
 ---
 type: maintainer-gated automation workflow
 title: Integration Listing Automation
-description: How a maintainer-approved Integration listing issue becomes an agent-produced, reviewable documentation PR. Covers untrusted intake, hosted-guide eligibility, generated listing tables, and scheduled refresh.
+description: Maintainer-approved issue intake and scheduled refresh for integration listings. Covers untrusted metadata, generated discovery tables, URL safety, retry behavior, and focused validation.
 tags: [integrations, github-actions, automation, documentation, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-11T08:21:01.441Z
+    at: 2026-09-15T08:21:56.110Z
 sources:
   - id: openwiki-source-9361c44d74c0e18006d0d76f
     resource: repo://.agents/skills/README.md
@@ -25,6 +25,8 @@ sources:
     resource: repo://scripts/data/integration_external_docs.yaml
   - id: openwiki-source-250d64a0be85992104c0f95b
     resource: repo://scripts/flag_hosted_docs_candidates.py
+  - id: openwiki-source-d4fdd9dfc4cf980ce0889985
+    resource: repo://scripts/packages_yml_get_downloads.py
   - id: openwiki-source-f36d9ac44867b9e853539abd
     resource: repo://scripts/parse_integration_submission_issue.py
   - id: openwiki-source-63d8ba810a7c0181c548a307
@@ -35,122 +37,99 @@ sources:
     resource: repo://tests/unit_tests/test_parse_integration_submission_issue.py
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-11T08:21:01.441Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-15T08:21:56.110Z" }
 ---
 
-## Purpose and trust boundary
+## Purpose and ownership
 
-The **Integration listing** issue form is the intake for a published third-party LangChain package. It collects a display or class name, language, component, registry package name, documentation URL, repository, provider description, optional capability notes, and a published-package confirmation. It applies `integration-submission` and `integration`; filing the issue does not itself start automation.
+An **Integration listing** issue is the intake path for a published third-party LangChain package. The form collects a display or class name, language, component, language-specific registry package name, documentation URL, repository, provider description, optional capability notes, and a published-package confirmation. It automatically applies `integration-submission` and `integration`; opening an issue does not run privileged automation.
 
-The workflow in `.github/workflows/integration-submission.yml` makes a maintainer-approved submission into a **review PR**, not an accepted listing. New integration implementations stay standalone packages owned and published by their providers. This repository records discoverability metadata or, when eligible, hosts documentation.
+The result is a reviewable documentation PR, not automatic acceptance. Providers publish and own their packages; this repository owns their discovery surfaces. Treat issue-form values and external listing metadata—including URLs, descriptions, and capability notes—as untrusted data. The trusted workflow, rather than the agent or submitter, owns all GitHub writes such as labels, issue comments, branches, and pull requests.
+
+Integration download snippets in `src/snippets/oss/*-downloads.mdx` and `*-featured.mdx` are generator-owned. Their inputs are hosted-guide `integration:` frontmatter and `scripts/data/integration_external_docs.yaml`; change those maintained sources and regenerate with `scripts/refresh_integration_downloads.py`. Do not manually edit generated snippets or tables.
+
+## Intake authorization and PR lifecycle
 
 ```mermaid
-sequenceDiagram
-    participant Submitter
-    participant Issue as GitHub issue form
-    participant Maintainer
-    participant Workflow as Integration workflow
-    participant Parser
-    participant Agent as Deep Agents
-    participant Tree as Working tree
-    participant PR as Review PR
-    participant Refresh as Scheduled refresh
-
-    Submitter->>Issue: Submit listing metadata
-    Note over Issue: Fields are untrusted data
-    Maintainer->>Issue: Apply integration-run
-    Issue->>Workflow: Labeled event
-    Workflow->>Workflow: Verify actor permission
-    alt Unauthorized label event
-        Workflow->>Issue: Remove label and explain
-    else Already marked integration-automation
-        Workflow->>Workflow: Skip duplicate processing
-    else Authorized new request
-        Workflow->>Parser: Parse rendered headings to JSON
-        alt Invalid form
-            Parser-->>Workflow: Errors
-            Workflow->>Issue: Report parse failure
-        else Valid form
-            Workflow->>Issue: Add automation label
-            Workflow->>Agent: Pass untrusted metadata and task
-            Agent->>Tree: Leave edits uncommitted
-            alt Blocker failure or no changes
-                Workflow->>Issue: Report outcome and retry path
-            else Changes exist
-                Workflow->>PR: Create branch and review PR
-                PR->>Maintainer: Review and decide merge
-                Refresh->>Tree: Regenerate listing artifacts
-            end
-        end
-    end
+flowchart TD
+    Submitter["Submit integration listing form"] --> Issue["Issue has integration labels"]
+    Issue --> Gate["Maintainer applies integration-run"]
+    Gate --> Permission["Resolve actor collaborator permission"]
+    Permission --> Allowed{"Admin maintain or write"}
+    Allowed -- No --> Reject["Remove label comment and skip"]
+    Allowed -- Yes --> Duplicate{"Has integration-automation"}
+    Duplicate -- Yes --> Skip["Skip duplicate processing"]
+    Duplicate -- No --> Parser["Parse headings into JSON"]
+    Parser --> Valid{"Required fields valid"}
+    Valid -- No --> ParseError["Comment errors and stop"]
+    Valid -- Yes --> Mark["Add integration-automation"]
+    Mark --> Agent["Deep Agents edits working tree"]
+    Agent --> Outcome{"Blocker failure or no diff"}
+    Outcome -- Yes --> Report["Comment outcome and retry path"]
+    Outcome -- No --> PullRequest["Workflow creates review PR"]
 ```
 
-This sequence shows the maintainer authorization gate, the untrusted-data boundary, and the division between agent-produced local edits and workflow-owned GitHub writes.
+This flow shows that a maintainer authorization decision precedes checkout and parsing, while only the workflow performs GitHub mutations.
 
-## Entry points, authorization, and parsing
+The `integration-submission` workflow accepts labeled-issue events and manual dispatch with an issue number, but its job runs only for `integration-run` label events or dispatch. A non-cancelling concurrency group keyed by issue number serializes overlapping attempts. Before checkout, it calls the repository collaborator-permission API for the triggering actor and allows only `admin`, `maintain`, or `write`. An unauthorized label event removes `integration-run`, tells the issue author that a maintainer must start the work, and exits. An existing `integration-automation` label also suppresses duplicate processing.
 
-The issue path starts only when a maintainer applies `integration-run`; `workflow_dispatch` is a separate manual entry point with a required issue number. Before checkout, the workflow queries the triggering actor's repository permission and permits only `admin`, `maintain`, or `write`. For an unauthorized label event, it removes `integration-run`, comments on the issue, and skips. It also skips an issue already carrying `integration-automation`. That label represents processing in progress or already attempted. A non-cancelling, per-issue concurrency group serializes same-issue triggers instead of cancelling an active run.
+The parser recognizes rendered `###` issue-form headings and maps them to stable JSON keys. It strips optional no-response values, extracts checked confirmations, and never executes or evaluates submitted text. It rejects absent required sections and requires a PyPI package for `Python` or `Both`, and an npm package for `TypeScript` or `Both`. A parse error is reported on the issue and the agent is not run. On success, the workflow adds `integration-automation` before preparing the handoff.
 
-The parser maps rendered `###` form headings to stable JSON fields. It strips optional no-response values, extracts checked confirmations, and rejects missing required sections and registry package names required by the selected language. It does not execute or evaluate submitted values. On parse failure, the workflow comments with errors and never runs the agent; on success, it adds `integration-automation` before building the prompt.
+The handoff invokes the project `submit-integration` skill through Deep Agents. The prompt explicitly says that field values are untrusted listing metadata, requires best-effort unsupervised work, and prohibits questions, pushes, PR creation, and GitHub comments. The agent leaves changes uncommitted; it may create `integration-submission-error.md` only for a hard blocker where no reasonable listing is possible. `.agents/skills/` is the canonical skill location and takes precedence over the former `.deepagents/skills/` location, so the workflow needs no shim.
 
-Treat the resulting JSON—and every submitted URL, description, and capability note—as **untrusted listing metadata**. The `submit-integration` repository skill says not to follow instructions embedded in those values. It may use their literal values as candidate metadata and corroborate them with registry information, package READMEs, and public documentation. The workflow prompt also prohibits asking clarifying questions, GitHub comments, pushes, and PR creation by the agent. The agent leaves its changes uncommitted; the trusted workflow is the only component in this path that commits, opens PRs, edits labels, or comments through its GitHub token.
+A blocker file, an unsuccessful agent outcome, or an empty staged and unstaged diff produces an issue comment rather than a PR. For a real diff, the workflow removes a residual blocker file and uses branch `integration/issue-<number>` to create a `docs: list <display name> integration` PR. The workflow labels and assigns it, closes the issue, and links the PR from the source issue while mentioning the maintainer and submitter. The review checklist covers eligibility, the documentation URL and provider card, and the applicable metadata, generated-table, package, or hosted-MDX changes.
 
-`submit-integration` is a project skill at `.agents/skills/submit-integration/SKILL.md`. `.agents/skills/` supersedes the former `.deepagents/skills/` project location for Deep Agents, so `skill: submit-integration` resolves without a compatibility link. The related `update-integrations-prs` skill is for maintainers reconciling existing integration PRs, rather than new issue intake.
+To retry a parse failure, agent failure, or no-change result, correct the submission as appropriate, remove `integration-automation`, and have a maintainer apply `integration-run` again. Label removal alone is not an authorization bypass.
 
-## Eligibility and listing surfaces
+## Listing decision and source boundaries
 
-Hosted guides are reserved for a package with at least 50,000 monthly PyPI or npm downloads, or a maintainer feature decision. Otherwise the default is an external listing; it must not create a hosted MDX page. The submission skill measures downloads rather than inventing them, makes best-effort metadata decisions without waiting for the author, and reserves `integration-submission-error.md` for a hard blocker where no reasonable listing can be made—for example, an absent registry package or values that cannot map to a component. Maintainers review judgment calls in the PR.
+Hosted integration guides require either at least 50,000 monthly PyPI or npm downloads or an explicit maintainer featured decision. Otherwise, use an external listing and do not add a hosted MDX guide. The skill treats missing registry packages or an unmappable language/package/component combination as hard blockers; ordinary uncertainty belongs in the PR for maintainer review.
 
-| Outcome | Primary records | Important invariant |
+| Listing outcome | Maintained source | Important boundary |
 | --- | --- | --- |
-| Hosted guide | Matching `src/oss/{python,javascript}/integrations/<component>/TEMPLATE.mdx`, integration frontmatter, and applicable index/navigation | Remove an external YAML row for the same package. Do not set `featured: true` merely because the download threshold is met. |
-| External listing | `scripts/data/integration_external_docs.yaml`, relevant provider/package metadata, and generated component snippet | Do not add a new hosted MDX page. Prefer partner docs, then a public repository README, then a registry page. |
+| Hosted guide | Matching `src/oss/{python,javascript}/integrations/<component>/TEMPLATE.mdx`, its `integration:` frontmatter, and relevant navigation/index | Remove duplicate external metadata for the package. Meeting the threshold does not itself mean `featured: true`. |
+| External listing | `scripts/data/integration_external_docs.yaml`, plus applicable authored provider/package records | No new hosted MDX guide. Prefer partner docs, then a public repository README, then a registry page. |
 
-`integration_external_docs.yaml` is the canonical language-and-component source for external entries. Its rows have a name, appropriate registry package where available, `docs_url`, and possibly component-specific capability flags. The refresh script merges these rows with the `integration:` frontmatter in hosted MDX files. External names link to `docs_url`; hosted names link to their local documentation route. It orders rows by known downloads descending, then name, and adjusts tables by component: chat has capability columns; middleware and retrievers have specialized columns; vectorstore capability columns appear only when values are known.
+`integration_external_docs.yaml` is the canonical language-and-component source for external rows. The refresh script combines it with `integration:` frontmatter from hosted MDX pages. Hosted names receive local documentation links; external names link to `docs_url`. Rows with known counts sort by descending downloads and then name, with unavailable counts last. The renderer adds component-specific columns for chat capabilities, middleware availability/source, retriever hosting/offering/package, and vectorstore capabilities when present.
 
-A `docs_url` is a link-safety boundary. The generator accepts `https://`, `http://`, or a site-relative path beginning with exactly one `/`; it rejects protocol-relative URLs and unsafe schemes such as `javascript:` and `data:`. Missing or unsafe external YAML URLs prevent that row from being collected, and the dedicated validation mode reports YAML errors before generation.
-
-`packages.yml` is a separate source of truth for LangChain packages and repositories. It feeds the package index and partner package table; its `highlight` override is maintainer-only. When the submission represents a public LangChain-related package with a public `owner/repo`, the skill can add a package record. An external listing can also have an alphabetical `all_providers` card where that surface applies.
-
-## Agent result and review lifecycle
-
-The workflow has three outcomes that do not create a PR:
-
-- If `integration-submission-error.md` exists, it posts its blocker text and stops.
-- If the agent action fails, it posts the run link and retry instructions.
-- If the agent succeeds but both staged and unstaged diffs are empty, it posts a no-change diagnosis and retry instructions.
-
-For real edits, the workflow drops any leftover blocker file and invokes the PR action on branch `integration/issue-<number>`. The PR title and commit use `docs: list <display name> integration`; it is labeled `integration`, assigned to the designated maintainer, closes the source issue, and mentions the maintainer and issue author. Its checklist asks reviewers to confirm the download/eligibility decision, docs URL and provider card, and relevant YAML, package, generated-table, or hosted-MDX changes. The PR—not the agent run—is the review boundary, and a maintainer decides whether to merge.
-
-To retry a parse failure, agent failure, or no-change result, correct the relevant submission if needed, remove `integration-automation`, then have a maintainer reapply `integration-run`. The duplicate-suppression label and non-cancelling concurrency group prevent routine overlapping processing; they do not replace the authorization check.
-
-## Generated refresh and operations
-
-`refresh_integration_downloads.py` writes the component downloads and featured snippets under `src/snippets/oss/` with a generated-file marker. Treat those generated snippets as generator-owned: update hosted frontmatter or `integration_external_docs.yaml`, then run the generator rather than maintaining generated output by hand. The scheduled package-download workflow also regenerates `packages.yml` download data and the provider overview, so an external row becomes visible in its regenerated component table after merge.
-
-The refresh workflow runs every Sunday at 23:59 UTC and is also manually dispatchable. Its read-only generation job runs package-download update, partner-table generation, and:
-
-```bash
-uv run python scripts/refresh_integration_downloads.py --write
-```
-
-It uploads the changed package, provider-overview, and snippet artifacts to a separate write-capable job. That job creates and pushes a timestamped PR only when those tracked paths differ, then enables squash auto-merge. The generation job also checks external entries that reach the approximately 50,000-download hosted-docs threshold: with `LINEAR_API_KEY` and `LINEAR_TEAM_KEY` it creates deduplicated Linear issues; otherwise it performs a dry run.
-
-For download retrieval, npm and PyPI calls retry HTTP 429 up to six times with capped exponential backoff. Other request, response-parsing, or missing-data failures degrade that row to unavailable download data instead of aborting the whole collection.
-
-Use the offline, no-write URL check when changing external metadata:
+`docs_url` is a rendering safety boundary. The generator permits `https://`, `http://`, and a site-relative path beginning with exactly one `/`; it rejects protocol-relative `//` URLs and schemes such as `javascript:` and `data:`. Collection skips an external entry missing `docs_url`, but raises for an unsafe URL. The dedicated check reports both missing and unsafe YAML values without network requests or writes:
 
 ```bash
 uv run python scripts/refresh_integration_downloads.py --check-docs-urls
 ```
 
-CI runs this command in a read-only job. Focused tests cover parser extraction and language-package requirements, plus safe and unsafe URL schemes, safe rendered links, repository-YAML validation, and table-text normalization. Preserve the maintainer authorization gate and workflow-owned GitHub write boundary when changing this automation.
+`packages.yml` is a separate source of truth for LangChain package and repository records. It feeds the package index and partner package table. Its maintainer-only `highlight` override bypasses normal download filtering and orders highlighted packages first. `scripts/packages_yml_get_downloads.py` rejects duplicate names, leaves records updated in the preceding 24 hours untouched, records a missing Pepy badge as zero, and refreshes download timestamps for fetched records.
+
+## Scheduled refresh and operational behavior
+
+```mermaid
+flowchart TD
+    Trigger["Sunday schedule or manual dispatch"] --> ReadJob["Read-only generation job"]
+    ReadJob --> PackageCounts["Refresh packages.yml counts"]
+    PackageCounts --> PartnerTable["Generate partner package table"]
+    PartnerTable --> Snippets["Generate integration snippets"]
+    Snippets --> Candidates["Flag hosted docs candidates"]
+    Candidates --> Artifact["Upload tracked generated paths"]
+    Artifact --> WriteJob["Write-capable PR job"]
+    WriteJob --> Changed{"Tracked paths changed"}
+    Changed -- No --> NoPR["Exit without PR"]
+    Changed -- Yes --> RefreshPR["Commit push create and auto-merge PR"]
+```
+
+This flow separates read-only generation from the job that can write the refresh branch and pull request.
+
+**Update Package Downloads** runs every Sunday at 23:59 UTC and also supports manual dispatch. Its read-only job updates `packages.yml`, regenerates the partner package table and integration snippets, and evaluates external entries as potential hosted-guide candidates. It passes only `packages.yml`, `src/oss/python/integrations/providers/overview.mdx`, and generated integration snippets to its write-capable PR job. That job creates a timestamped branch and a squash-auto-merge PR only when those tracked paths differ.
+
+`refresh_integration_downloads.py --write` scans the supported Python and JavaScript component directories. It writes all-row snippets for nonempty components and featured snippets for chat or components with featured rows. Each output has a generator marker. Initial numeric `data-sort-value` values provide first-paint and offline ordering; the client-side table can later update badge values and sorting.
+
+For npm and PyPI download retrieval, the refresh script retries HTTP 429 up to six times with capped exponential backoff. Other request, parse, or missing-data failures reduce that row to unavailable download data rather than stopping table collection. The candidate flagger shares these download helpers, considers external rows with valid language-specific packages, and flags the 50,000-download threshold. It creates deduplicated Linear issues only when both `LINEAR_API_KEY` and `LINEAR_TEAM_KEY` are configured; otherwise it runs as a dry run.
+
+CI executes `refresh_integration_downloads.py --check-docs-urls` in a read-only job. Focused unit tests cover parser extraction and the Python package requirement, URL-scheme and rendered-link safety, repository-YAML validation, and table-text normalization. Preserve the authorization gate, untrusted-data boundary, workflow-owned GitHub writes, and generator ownership when changing this path.
 
 ## Related pages
 
-- [Source Directory Map](/openwiki/architecture/source-map.md) — authored sources, generated snippets, and navigation ownership.
-- [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md) — repository workflow trust boundaries.
-- [Adding pages](/openwiki/operations/adding-pages.md) — normal authored documentation changes.
-- [Agent Authoring Skills](/openwiki/operations/agent-skills.md) — canonical skill discovery and validation.
-- [Quickstart](/openwiki/quickstart.md) — setup and common checks.
-- [Testing overview](/openwiki/testing/test-overview.md) — focused test conventions.
+- [Source map](/openwiki/architecture/source-map.md) — authored documentation, routes, and generated snippet boundaries.
+- [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md) — workflow execution and repository automation.
+- [Agent Authoring Skills](/openwiki/operations/agent-skills.md) — skill discovery and project skill ownership.
+- [Quickstart](/openwiki/quickstart.md) — repository setup and contribution workflow.
+- [Testing overview](/openwiki/testing/test-overview.md) — test organization and validation practices.
