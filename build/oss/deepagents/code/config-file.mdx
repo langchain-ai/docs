@@ -94,7 +94,7 @@ If requests reach the provider through a gateway or proxy instead of the officia
 trusted_cache_endpoints = ["smith.langchain.com"]
 ```
 
-Entries are hostnames matched exactly — trusting `example.com` does not trust `gw.example.com`. One entry covers every provider routed through that endpoint. Cross-format routes through the LangSmith gateway (for example, an OpenAI-format request routed to an Anthropic model) stay silent even when trusted, because translation rewrites the cache settings the estimate assumes.
+Entries are hostnames matched exactly — trusting `example.com` does not trust `gw.example.com`. One entry covers every provider routed through that endpoint. Cross-format routes through the LangSmith Gateway (for example, an OpenAI-format request routed to an Anthropic model) stay silent even when trusted, because translation rewrites the cache settings the estimate assumes.
 
 ## Show provider-visible reasoning
 
@@ -594,7 +594,7 @@ DEEPAGENTS_CODE_OPENAI_BASE_URL=https://api.openai.com/v1
 
 ### Managed gateways
 
-On a machine provisioned with a model gateway (for example, the LangSmith gateway), the gateway typically exports a gateway key and the matching endpoint variable (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, or `GOOGLE_GEMINI_BASE_URL`) together. Deep Agents Code uses that pair by default, so no configuration is needed.
+On a machine provisioned with a model gateway (for example, the LangSmith Gateway), the gateway typically exports a gateway key and the matching endpoint variable (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, or `GOOGLE_GEMINI_BASE_URL`) together. Deep Agents Code uses that pair by default, so no configuration is needed.
 
 To use your own key instead, store it with `/auth` (leave the base URL blank for the provider default, or set it explicitly), or set the `DEEPAGENTS_CODE_` prefixed key and endpoint. Both override the gateway pair without leaving a mismatched endpoint behind.
 
