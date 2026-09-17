@@ -202,11 +202,11 @@ from langchain.agents.middleware import AgentMiddleware
 
 
 class ReloadEditedSkills(AgentMiddleware[SkillsState]):
-    """Reload skills on the next model call when the agent edited one."""
+    """Reload skills on the next run when the agent edited one."""
 
     state_schema = SkillsState
 
-    def after_model(self, state: SkillsState, runtime) -> dict[str, Any] | None:
+    def after_agent(self, state: SkillsState, runtime) -> dict[str, Any] | None:
         if not agent_edited_skills(state):
             return None
         return {"skills_metadata": None}
