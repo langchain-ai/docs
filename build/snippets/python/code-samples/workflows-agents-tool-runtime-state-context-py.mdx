@@ -1,0 +1,58 @@
+```python
+from dataclasses import dataclass
+
+from langchain.messages import AIMessage
+from langchain.tools import ToolRuntime, tool
+from langgraph.graph import MessagesState, START, StateGraph
+from langgraph.prebuilt import ToolNode
+
+
+class State(MessagesState):
+    user_id: str
+
+
+@dataclass
+class Context:
+    organization_id: str
+
+
+@tool
+def get_user_info(runtime: ToolRuntime[Context, State]) -> str:
+    """Look up user information."""
+    # Read the current graph state passed to the ToolNode.
+    user_id = runtime.state["user_id"]
+
+    # Read explicit per-run values that are not part of graph state.
+    organization_id = runtime.context.organization_id
+
+    return f"User {user_id} in organization {organization_id}"
+
+
+builder = StateGraph(State, context_schema=Context)
+builder.add_node("tools", ToolNode([get_user_info]))
+builder.add_edge(START, "tools")
+graph = builder.compile()
+
+result = graph.invoke(
+    {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "get_user_info",
+                        "args": {},
+                        "id": "call_user_info",
+                    }
+                ],
+            )
+        ],
+        "user_id": "user_123",
+    },
+    context=Context(organization_id="org_456"),
+)
+```
+
+<Card title="View example trace" icon="chart-line" href="https://smith.langchain.com/public/afaeb6f7-9e5a-4417-9ea0-22352736f755/r" arrow horizontal>
+  Open a public LangSmith run for this example.
+</Card>
