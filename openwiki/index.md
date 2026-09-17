@@ -4,7 +4,7 @@ okf_version: "0.2"
 
 # Files
 
-- [Quickstart](quickstart.md) - Start a local documentation preview, identify the source that owns a change, and select proportionate validation for documentation, navigation, integrations, tracing, and CI work.
+- [Quickstart](quickstart.md) - Set up a local documentation preview, identify the authored owner or generator for a change, and run focused validation without editing generated output.
 
 # Directories
 

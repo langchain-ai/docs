@@ -40,7 +40,12 @@ Optional **CodeGroup tab label** (Mintlify `` ```lang TabTitle``` `` inside ``<C
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
+
+# Allow importing sibling helpers when run as ``python scripts/….py``.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from code_sample_tracing import append_trace_link, load_manifest
 
 # Optional prefix lines in extracted snippet body; stripped from output. See module docstring.
 _CODEGROUP_TAB_MARKER_RE = re.compile(
@@ -239,6 +244,8 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     generated_dir = repo_root / "src" / "code-samples-generated"
     snippets_dir = repo_root / "src" / "snippets" / "code-samples"
+    trace_manifest = load_manifest(repo_root)
+    trace_links = trace_manifest.get("snippets", {})
 
     if not generated_dir.exists():
         return
@@ -274,6 +281,9 @@ def main() -> None:
             mdx_content = format_snippet_mdx(
                 content, language=language, fence_lang=fence_lang
             )
+            entry = trace_links.get(snippet_name)
+            url = entry.get("url") if isinstance(entry, dict) else None
+            mdx_content = append_trace_link(mdx_content, url)
             rel_parent = snippet_file.parent.relative_to(generated_dir)
             out_subdir = snippets_dir / rel_parent
             out_subdir.mkdir(parents=True, exist_ok=True)

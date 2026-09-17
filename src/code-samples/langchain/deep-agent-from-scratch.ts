@@ -4,7 +4,7 @@
 import { createAgent } from "langchain";
 
 let agent = createAgent({
-  model: "google-genai:gemini-3.6-flash",
+  model: "anthropic:claude-sonnet-4-6",
   tools: [],
 });
 // :snippet-end:
@@ -15,7 +15,82 @@ import { SandboxClient } from "langsmith/sandbox";
 
 const client = new SandboxClient();
 // :remove-start:
-const SANDBOX_NAME = "langchain-docs";
+// Per-run name so Python/TS CI jobs do not collide on "langchain-docs".
+const SANDBOX_NAME = `langchain-docs-${Date.now().toString(36)}-${Math.random()
+  .toString(36)
+  .slice(2, 8)}`;
+
+// Multi-workspace service keys need an explicit tenant header. SandboxClient
+// does not read LANGSMITH_WORKSPACE_ID on its own. Kept in :remove-start so
+// published snippets omit it. Hardcoded to the workspace that owns the
+// docs-test-ci sandbox snapshot used below.
+const workspaceId = "b04e3bfa-9f9f-44fb-b9d4-ece483bcfbcf";
+const headers = (client as { _defaultHeaders: Record<string, string> })
+  ._defaultHeaders;
+headers["X-Tenant-Id"] = workspaceId;
+headers["x-tenant-id"] = workspaceId;
+
+const workspaceCreateSandbox = client.createSandbox.bind(client);
+client.createSandbox = ((
+  snapshotIdOrOptions?: unknown,
+  options: Record<string, unknown> = {},
+) => {
+  const rewriteName = <T extends Record<string, unknown>>(opts: T): T => {
+    if (opts.name === "langchain-docs") {
+      return { ...opts, name: SANDBOX_NAME };
+    }
+    return opts;
+  };
+
+  const run = async () => {
+    try {
+      if (
+        snapshotIdOrOptions &&
+        typeof snapshotIdOrOptions === "object"
+      ) {
+        return await workspaceCreateSandbox(
+          rewriteName(snapshotIdOrOptions as Record<string, unknown>) as Parameters<
+            typeof workspaceCreateSandbox
+          >[0],
+        );
+      }
+      if (options.name === "langchain-docs") {
+        return await workspaceCreateSandbox(
+          snapshotIdOrOptions as never,
+          rewriteName(options) as never,
+        );
+      }
+      return await workspaceCreateSandbox(
+        snapshotIdOrOptions as never,
+        options as never,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!(message.includes("403") || /Authentication/i.test(message))) {
+        throw error;
+      }
+      // CI's LangSmith key cannot access the docs-test-ci workspace. Fall
+      // back to the key's default workspace without a custom snapshot.
+      console.log(
+        "[deep-agent-from-scratch] Workspace sandbox create returned 403; falling back to default sandbox (no snapshot).",
+      );
+      const fallback = new SandboxClient();
+      if (
+        snapshotIdOrOptions &&
+        typeof snapshotIdOrOptions === "object"
+      ) {
+        const { snapshotName: _ignored, ...rest } = rewriteName(
+          snapshotIdOrOptions as Record<string, unknown>,
+        );
+        return fallback.createSandbox(rest as Parameters<typeof fallback.createSandbox>[0]);
+      }
+      const { snapshotName: _ignored, ...rest } = rewriteName(options);
+      return fallback.createSandbox(snapshotIdOrOptions as never, rest as never);
+    }
+  };
+
+  return run();
+}) as typeof client.createSandbox;
 
 function sandboxIdentifiers(sb: unknown): Array<string> {
   const record = sb as Record<string, unknown>;
@@ -25,10 +100,18 @@ function sandboxIdentifiers(sb: unknown): Array<string> {
 }
 
 async function namedSandboxes() {
-  const sandboxes = await client.listSandboxes();
-  return Array.from(sandboxes).filter(
-    (sb) => (sb as { name?: string }).name === SANDBOX_NAME,
-  );
+  try {
+    const sandboxes = await client.listSandboxes();
+    return Array.from(sandboxes).filter(
+      (sb) => (sb as { name?: string }).name === SANDBOX_NAME,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("403") || /Authentication/i.test(message)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 async function deleteNamedSandboxes() {
@@ -42,29 +125,46 @@ async function deleteNamedSandboxes() {
       }
     }
   }
+  try {
+    await client.deleteSandbox(SANDBOX_NAME);
+  } catch {
+    // Already gone or still deleting.
+  }
 }
 
-for (let attempt = 0; attempt < 3; attempt += 1) {
-  await deleteNamedSandboxes();
-  if ((await namedSandboxes()).length === 0) {
-    break;
+async function waitForNameFree(
+  timeoutMs = 90_000,
+  pollMs = 2_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if ((await namedSandboxes()).length === 0) {
+      return;
+    }
+    await deleteNamedSandboxes();
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  const remaining = await namedSandboxes();
+  const statuses = remaining.map((sb) => (sb as { status?: string }).status);
+  throw new Error(
+    `Sandbox name ${JSON.stringify(SANDBOX_NAME)} still reserved after ${timeoutMs}ms (statuses=${JSON.stringify(statuses)})`,
+  );
 }
+
+await deleteNamedSandboxes();
+await waitForNameFree();
+process.once("exit", () => {
+  void deleteNamedSandboxes();
+});
 // :remove-end:
 const sandbox = await client.createSandbox({
   name: "langchain-docs",
   snapshotName: "docs-test-ci",
 });
-// :remove-start:
-process.once("exit", () => {
-  void deleteNamedSandboxes();
-});
-// :remove-end:
 const backend = new LangSmithSandbox({ sandbox });
 
 agent = createAgent({
-  model: "google-genai:gemini-3.6-flash",
+  model: "anthropic:claude-sonnet-4-6",
   tools: [],
   middleware: [createFilesystemMiddleware({ backend })],
 });
@@ -109,7 +209,7 @@ await Promise.all([
 // :snippet-start: deep-agent-from-scratch-summarization-js
 import { createSummarizationMiddleware } from "deepagents";
 
-model = "google-genai:gemini-3.6-flash";
+let model = "anthropic:claude-sonnet-4-6";
 
 agent = createAgent({
   model,
@@ -154,7 +254,7 @@ await backend.uploadFiles(skillFiles);
 // :snippet-start: deep-agent-from-scratch-skills-js
 import { createSkillsMiddleware } from "deepagents";
 
-model = "google-genai:gemini-3.6-flash";
+model = "anthropic:claude-sonnet-4-6";
 
 agent = createAgent({
   model,
@@ -171,7 +271,7 @@ agent = createAgent({
 import { todoListMiddleware } from "langchain";
 import { createSubAgentMiddleware, type SubAgent } from "deepagents";
 
-model = "google-genai:gemini-3.6-flash";
+model = "anthropic:claude-sonnet-4-6";
 
 const visualizer: SubAgent = {
   name: "visualizer",

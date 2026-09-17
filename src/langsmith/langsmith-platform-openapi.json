@@ -20891,7 +20891,7 @@
           "orgs"
         ],
         "summary": "Update org service key",
-        "description": "Update an API key's role(s) in place without rotating the key.\n\nRestricted to org admins (ORGANIZATION_MANAGE). Applies to both\norg-scoped and workspace-scoped keys listed in /orgs/current/service-keys.",
+        "description": "Update an API key's role(s) in place without rotating the key.\n\nOrganization Operators cannot assign the Organization Admin role or change\na key that already holds it, and no key can change its own roles. Applies\nto both org-scoped and workspace-scoped keys.",
         "operationId": "update_org_service_key_api_v1_orgs_current_service_keys__api_key_id__patch",
         "security": [
           {
@@ -26176,10 +26176,10 @@
             "name": "limit",
             "in": "query",
             "schema": {
-              "maximum": 100,
+              "minimum": 1,
               "type": "integer",
               "default": 20,
-              "minimum": 1,
+              "maximum": 100,
               "title": "Limit"
             }
           },
@@ -26188,9 +26188,9 @@
             "name": "offset",
             "in": "query",
             "schema": {
+              "minimum": 0,
               "type": "integer",
               "default": 0,
-              "minimum": 0,
               "title": "Offset"
             }
           },
@@ -27472,7 +27472,7 @@
     },
     "/api/v1/platform/annotation-queues/{queue_id}/items": {
       "get": {
-        "description": "List RUN and THREAD items in a single annotation queue for one review status section, with opaque cursor pagination. Optional item_type=RUN|THREAD filters the page. direction=backward returns items before the supplied cursor. The response contains item metadata only, not expanded run or thread payloads. status=archived returns items whose queue review requirements have been satisfied, not merely items the caller personally marked completed.",
+        "description": "List RUN and THREAD items in a single annotation queue for one review status section, with opaque cursor pagination. Optional item_type=RUN|THREAD filters the page. Optional min_start_time/max_start_time bound the item's trace start time; items with no start time are excluded when either bound is set. direction=backward returns items before the supplied cursor. The response contains item metadata only, not expanded run or thread payloads. status=archived returns items whose queue review requirements have been satisfied, not merely items the caller personally marked completed.",
         "tags": [
           "annotation_queues"
         ],
@@ -27535,16 +27535,36 @@
             }
           },
           {
+            "description": "Only items whose trace start time is at or after this timestamp. Omit or send the zero time for no bound",
+            "name": "min_start_time",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Min Start Time"
+            }
+          },
+          {
+            "description": "Only items whose trace start time is at or before this timestamp. Omit or send the zero time for no bound",
+            "name": "max_start_time",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Max Start Time"
+            }
+          },
+          {
             "description": "Pagination direction. backward requires cursor",
             "name": "direction",
             "in": "query",
             "schema": {
               "type": "string",
-              "default": "forward",
               "enum": [
                 "forward",
                 "backward"
               ],
+              "default": "forward",
               "title": "Direction"
             }
           }
@@ -27708,7 +27728,7 @@
     },
     "/api/v1/platform/annotation-queues/{queue_id}/items/count": {
       "get": {
-        "description": "Returns the number of annotation queue items for the requested reviewer-specific or archived bucket.",
+        "description": "Returns the number of annotation queue items in one status bucket. The two time windows are independent: start_time/end_time bound when an item was archived, min_start_time/max_start_time bound when its trace ran. Items with no trace start time are excluded when either of the latter is set.",
         "tags": [
           "annotation_queues"
         ],
@@ -27734,7 +27754,7 @@
             }
           },
           {
-            "description": "Exclusive lower bound for archived item timestamp",
+            "description": "Archived strictly after this time. Only used when status=archived",
             "name": "start_time",
             "in": "query",
             "schema": {
@@ -27743,12 +27763,32 @@
             }
           },
           {
-            "description": "Exclusive upper bound for archived item timestamp",
+            "description": "Archived strictly before this time. Only used when status=archived",
             "name": "end_time",
             "in": "query",
             "schema": {
               "type": "string",
               "title": "End Time"
+            }
+          },
+          {
+            "description": "Trace started at or after this time",
+            "name": "min_start_time",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Min Start Time"
+            }
+          },
+          {
+            "description": "Trace started at or before this time",
+            "name": "max_start_time",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Max Start Time"
             }
           }
         ],
@@ -28045,7 +28085,7 @@
     },
     "/api/v1/platform/annotation-queues/{queue_id}/items/{item_id}/placement": {
       "get": {
-        "description": "Resolve a RUN or THREAD item to its current review section and zero-based position for deep linking.",
+        "description": "Resolve a RUN or THREAD item to its current review section and zero-based position for deep linking. The returned cursor counts RUN and THREAD items together, so it is only valid for a list request with no item_type or start-time filter.",
         "tags": [
           "annotation_queues"
         ],
@@ -34092,6 +34132,120 @@
         }
       }
     },
+    "/api/v1/platform/product-feedbacks": {
+      "post": {
+        "description": "**Alpha:** This endpoint is in active development and may change without notice.\n\nSubmits concise product feedback with optional non-sensitive client details.",
+        "tags": [
+          "productfeedback"
+        ],
+        "summary": "[alpha] submit product feedback",
+        "parameters": [
+          {
+            "description": "Idempotency key",
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "Location": {
+                "description": "URL of the created product feedback",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/productfeedback.ProductFeedback"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "malformed or invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "API Key": [],
+            "Tenant ID": []
+          },
+          {
+            "Bearer Auth": [],
+            "Tenant ID": []
+          }
+        ],
+        "x-public": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/productfeedback.CreateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/product-feedbacks/{id}": {
+      "get": {
+        "description": "**Alpha:** This endpoint is in active development and may change without notice.",
+        "tags": [
+          "productfeedback"
+        ],
+        "summary": "[alpha] get product feedback",
+        "parameters": [
+          {
+            "description": "Product feedback ID",
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/productfeedback.ProductFeedback"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "API Key": [],
+            "Tenant ID": []
+          },
+          {
+            "Bearer Auth": [],
+            "Tenant ID": []
+          }
+        ],
+        "x-public": true
+      }
+    },
     "/api/v1/platform/sessions/{sessionID}/agent-versions": {
       "get": {
         "description": "Returns all agent versions (commit SHAs) seen in the given tracing project, ordered by first_seen_at descending.",
@@ -37979,7 +38133,7 @@
     },
     "/api/v2/sandboxes/boxes/{name}/download-url": {
       "post": {
-        "description": "Generate a tokenized link that downloads a single file from a sandbox with no further authentication. This mints a token rather than creating an addressable resource, so it returns 200 with no Location header. The token pins the sandbox, the file path, and the response content type and disposition, so a link cannot be repointed at another file. Links never expire unless expires_in_seconds is set. The link is served from the sandbox service domain, not the API host.",
+        "description": "Generate a tokenized link that downloads a single file from a sandbox with no further authentication. This mints a token rather than creating an addressable resource, so it returns 200 with no Location header. The token pins the sandbox, the file path, the response content type and disposition, and the sandbox flags, so a link cannot be repointed at another file or served under a weaker policy. The file is always served with a Content-Security-Policy: a sandbox directive, plus a default-src holding every fetch to the sandbox's own download host and a set of pre-approved third-party origins. csp_sandbox_flags may loosen the sandbox with allow-downloads, allow-forms, allow-modals, allow-orientation-lock, allow-pointer-lock, allow-popups, allow-presentation, allow-scripts, or allow-top-navigation-by-user-activation. allow-same-origin is not accepted, so a served file never shares an origin with anything. csp_source_bundles selects the third-party origins: cdnjs, google-fonts, jsdelivr, and unpkg are all allowed when the field is omitted, and 'none' holds the file to the sandbox alone. Because every file of one sandbox is served from the same host, a page can load sibling files it has links for, but only by their own link URLs. Links never expire unless expires_in_seconds is set. The link is served from the sandbox service domain, not the API host.",
         "tags": [
           "sandboxes"
         ],
@@ -38083,7 +38237,7 @@
     },
     "/api/v2/sandboxes/boxes/{name}/service-url": {
       "post": {
-        "description": "Create a short-lived JWT for accessing an HTTP service running on a specific port inside a sandbox. Returns a browser_url (sets auth cookie via redirect), a service_url (for use with the X-Langsmith-Sandbox-Service-Token header), the raw token, and its expiry.",
+        "description": "Create a short-lived JWT for accessing an HTTP service running on a specific port inside a sandbox. Returns a browser_url (sets auth cookie via redirect), a service_url (for use with the X-Langsmith-Sandbox-Service-Token header), the raw token, and its expiry. Set access=restricted|workspace to instead enable durable LangSmith login (no token; users authenticate with their normal LangSmith session), or access=off to disable it. LangSmith login and token access are mutually exclusive per service URL.",
         "tags": [
           "sandboxes"
         ],
@@ -38122,6 +38276,16 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/sandboxes.ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -39515,6 +39679,150 @@
         ],
         "x-public": true,
         "parameters": []
+      }
+    },
+    "/api/v2/sandboxes/usage/costs": {
+      "get": {
+        "description": "Returns priced usage per sandbox or snapshot and UTC hour in the half-open requested interval. LCU uses the recorded compute amount for sandboxes; snapshots have zero LCU. LSU allocates the recorded workspace storage amount proportionally to attributed bytes, including checkpoints on their sandbox and snapshots as separate resources. Resource filters preserve each resource's share. Rate changes do not reprice recorded amounts. An access-filtered page can have no items and a non-null next_cursor; continue until next_cursor is null.",
+        "tags": [
+          "sandboxes"
+        ],
+        "summary": "List hourly sandbox usage costs",
+        "parameters": [
+          {
+            "description": "Inclusive RFC3339 start time",
+            "name": "start_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Start Time"
+            }
+          },
+          {
+            "description": "Exclusive RFC3339 end time; the range must not exceed 31 days",
+            "name": "end_time",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "End Time"
+            }
+          },
+          {
+            "description": "Resource type filter",
+            "name": "resource_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SANDBOX",
+                "SNAPSHOT"
+              ],
+              "title": "Resource Type"
+            }
+          },
+          {
+            "description": "Resource UUID filter; repeat this parameter up to 100 times",
+            "name": "resource_ids",
+            "in": "query",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Resource Ids"
+            }
+          },
+          {
+            "description": "Maximum rows to return",
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "type": "integer",
+              "default": 20,
+              "maximum": 100,
+              "title": "Page Size"
+            }
+          },
+          {
+            "description": "Opaque pagination cursor",
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/sandboxes.SandboxUsageCostsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "missing or invalid query parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "missing or invalid authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden (insufficient permission)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shared.ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "API Key": [],
+            "Tenant ID": []
+          },
+          {
+            "Bearer Auth": [],
+            "Tenant ID": []
+          }
+        ],
+        "x-public": true
       }
     },
     "/api/v2/sandboxes/{sandbox_id}/download": {
@@ -41295,10 +41603,10 @@
             "name": "page_size",
             "in": "query",
             "schema": {
-              "maximum": 100,
+              "minimum": 1,
               "type": "integer",
               "default": 20,
-              "minimum": 1,
+              "maximum": 100,
               "title": "Page Size"
             }
           },
@@ -43682,10 +43990,10 @@
             "name": "limit",
             "in": "query",
             "schema": {
-              "maximum": 100,
+              "minimum": 1,
               "type": "integer",
               "default": 50,
-              "minimum": 1,
+              "maximum": 100,
               "title": "Limit"
             }
           },
@@ -43693,9 +44001,9 @@
             "name": "offset",
             "in": "query",
             "schema": {
+              "minimum": 0,
               "type": "integer",
               "default": 0,
-              "minimum": 0,
               "title": "Offset"
             }
           }
@@ -44658,10 +44966,10 @@
             "name": "page_size",
             "in": "query",
             "schema": {
-              "maximum": 100,
+              "minimum": 1,
               "type": "integer",
               "default": 20,
-              "minimum": 1,
+              "maximum": 100,
               "title": "Page Size"
             }
           },
@@ -47039,6 +47347,7 @@
           "update_annotation_queue_item",
           "get_annotation_queue_items",
           "submit_nps_response",
+          "submit_product_feedback",
           "create_mcp_server",
           "update_mcp_server",
           "delete_mcp_server",
@@ -47053,6 +47362,9 @@
           "create_agent_auth_connection",
           "update_agent_auth_connection",
           "delete_agent_auth_connection",
+          "create_agent_auth_oidc_integration",
+          "update_agent_auth_oidc_integration",
+          "delete_agent_auth_oidc_integration",
           "create_tool",
           "update_tool",
           "delete_tool",
@@ -47066,6 +47378,7 @@
           "update_evaluator",
           "delete_evaluator",
           "bulk_delete_evaluators",
+          "test_evaluator",
           "upsert_feature_default_model",
           "delete_feature_default_model",
           "upsert_feature_disabled_model",
@@ -61051,11 +61364,6 @@
             "title": "Tuned Evals Enabled",
             "default": false
           },
-          "gateway_data_protection_enabled": {
-            "type": "boolean",
-            "title": "Gateway Data Protection Enabled",
-            "default": true
-          },
           "gateway_pii_redaction_enabled": {
             "type": "boolean",
             "title": "Gateway Pii Redaction Enabled",
@@ -64706,7 +65014,7 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 100,
+            "maxItems": 500,
             "minItems": 1,
             "title": "Feedback Keys"
           },
@@ -67626,13 +67934,6 @@
             ],
             "title": "Code Evaluators"
           },
-          "trajectory_evaluators": {
-            "items": {
-              "$ref": "#/components/schemas/EvaluatorTopLevel"
-            },
-            "type": "array",
-            "title": "Trajectory Evaluators"
-          },
           "evaluator_id": {
             "anyOf": [
               {
@@ -67995,13 +68296,6 @@
               }
             ],
             "title": "Code Evaluators"
-          },
-          "trajectory_evaluators": {
-            "items": {
-              "$ref": "#/components/schemas/EvaluatorTopLevel"
-            },
-            "type": "array",
-            "title": "Trajectory Evaluators"
           },
           "alerts": {
             "anyOf": [
@@ -68502,13 +68796,6 @@
             ],
             "title": "Code Evaluators"
           },
-          "trajectory_evaluators": {
-            "items": {
-              "$ref": "#/components/schemas/EvaluatorTopLevel"
-            },
-            "type": "array",
-            "title": "Trajectory Evaluators"
-          },
           "evaluator_id": {
             "anyOf": [
               {
@@ -68812,13 +69099,6 @@
               }
             ],
             "title": "Code Evaluators"
-          },
-          "trajectory_evaluators": {
-            "items": {
-              "$ref": "#/components/schemas/EvaluatorTopLevel"
-            },
-            "type": "array",
-            "title": "Trajectory Evaluators"
           },
           "evaluator_id": {
             "anyOf": [
@@ -76441,6 +76721,10 @@
           "user_instructions": {
             "description": "User-owned freeform preferences. Engine reads this as authoritative\ncontext and reconciles it into the Agent Overview on the next scan, but\nnever edits it. NULL when the user hasn't set any.",
             "type": "string"
+          },
+          "validation_deployment_id": {
+            "description": "ValidationDeploymentID selects the deployment used for baseline replay\nand as the parent of fix-verification previews.",
+            "type": "string"
           }
         }
       },
@@ -76599,6 +76883,10 @@
           },
           "user_instructions": {
             "description": "Freeform user preferences. Send \"\" to clear (the frontend must not send null).",
+            "type": "string"
+          },
+          "validation_deployment_id": {
+            "description": "ValidationDeploymentID is a deployment UUID or LangSmith deployment URL,\nor an empty string to disable validation.",
             "type": "string"
           }
         }
@@ -77204,8 +77492,8 @@
             "type": "boolean"
           },
           "byoc_external_id": {
-            "readOnly": true,
             "description": "ByocExternalID is the organization's assigned AWS external ID, stored only in org config.",
+            "readOnly": true,
             "anyOf": [
               {
                 "type": "string"
@@ -77343,12 +77631,8 @@
             "description": "FleetLCUSpendLimitMonthly caps an org's monthly Fleet LCU spend, resolved from\nMetronome custom fields. nil or negative means unlimited; 0 blocks all runs.",
             "type": "number"
           },
-          "gateway_data_protection_enabled": {
-            "description": "GatewayDataProtectionEnabled indicates whether this org can use gateway\ndata protection (the \"guard\" policy type, backed by Presidio).\nSet by Metronome entitlement, not admin-patchable. Defaults on, so orgs\nwithout an explicit entitlement value can configure guard policies.",
-            "type": "boolean"
-          },
           "gateway_pii_redaction_enabled": {
-            "description": "GatewayPIIRedactionEnabled indicates whether this org can use PII\ndetection/redaction inside gateway data protection (guard) policies.\nSub-gate beneath GatewayDataProtectionEnabled: when this is off,\nPII-configured guard policies are unavailable as a whole.\nSet by Metronome entitlement, not admin-patchable.",
+            "description": "GatewayPIIRedactionEnabled indicates whether this org can use PII\ndetection/redaction inside gateway data protection (guard) policies.\nWhen this is off, PII-configured guard policies are unavailable as a\nwhole. Set by Metronome entitlement, not admin-patchable.",
             "type": "boolean"
           },
           "ip_allowlist_enabled": {
@@ -77746,6 +78030,7 @@
           "rules:configure-retention",
           "runs:create",
           "runs:read",
+          "runs:read-stats",
           "runs:share",
           "runs:delete",
           "model-price-map:create",
@@ -77846,6 +78131,7 @@
           "RulesConfigureRetention",
           "RunsCreate",
           "RunsRead",
+          "RunsReadStats",
           "RunsShare",
           "RunsDelete",
           "ModelPriceMapCreate",
@@ -77913,6 +78199,23 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "aws.ResourceTag": {
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 256
           }
         }
       },
@@ -78101,6 +78404,13 @@
       "data_planes.CreateDataPlaneRequestAws": {
         "type": "object",
         "properties": {
+          "additional_tags": {
+            "type": "array",
+            "maxItems": 40,
+            "items": {
+              "$ref": "#/components/schemas/aws.ResourceTag"
+            }
+          },
           "byovpc_id": {
             "description": "The ID of the customer-managed VPC to deploy into when deploying in BYOVPC mode.",
             "type": "string"
@@ -78695,6 +79005,9 @@
       "evaluators.CodeEvaluator": {
         "type": "object",
         "properties": {
+          "advanced_features_enabled": {
+            "type": "boolean"
+          },
           "code": {
             "type": "string"
           },
@@ -78713,33 +79026,31 @@
           "language": {
             "description": "Default: \"python\"",
             "type": "string"
-          },
-          "workspace_secrets_keys": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         }
       },
       "evaluators.CreateCodeEvaluatorRequest": {
         "type": "object",
         "properties": {
+          "advanced_features_enabled": {
+            "type": "boolean"
+          },
           "code": {
             "type": "string"
           },
           "dependencies": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "language": {
             "description": "Default: \"python\"",
             "type": "string"
-          },
-          "workspace_secrets_keys": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         }
       },
@@ -79067,20 +79378,24 @@
       "evaluators.UpdateCodeEvaluatorRequest": {
         "type": "object",
         "properties": {
+          "advanced_features_enabled": {
+            "type": "boolean"
+          },
           "code": {
             "type": "string"
           },
           "dependencies": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "language": {
             "type": "string"
-          },
-          "workspace_secrets_keys": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         }
       },
@@ -79863,7 +80178,7 @@
             "type": "string"
           },
           "fix_verification": {
-            "type": "object"
+            "$ref": "#/components/schemas/issues.IssueFixVerification"
           },
           "id": {
             "type": "string"
@@ -79929,8 +80244,87 @@
           "updated_at": {
             "type": "string"
           },
+          "validation_result": {
+            "$ref": "#/components/schemas/issues.IssueValidationResult"
+          },
           "watching_since": {
             "type": "string"
+          }
+        }
+      },
+      "issues.IssueFixVerification": {
+        "type": "object",
+        "properties": {
+          "attempt": {
+            "type": "integer"
+          },
+          "parent_deployment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "preview_deployment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "root_trace_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting_preview",
+              "verifying",
+              "passed",
+              "failed",
+              "inconclusive",
+              "timeout",
+              "error"
+            ]
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "issues.IssueValidationResult": {
+        "type": "object",
+        "properties": {
+          "active_revision_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "reproduced",
+              "not_reproduced",
+              "inconclusive",
+              "error"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "root_trace_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -81106,6 +81500,123 @@
             "type": "string"
           }
         }
+      },
+      "productfeedback.Category": {
+        "type": "string",
+        "enum": [
+          "BUG",
+          "FEATURE_REQUEST",
+          "USABILITY",
+          "DOCUMENTATION",
+          "OTHER"
+        ],
+        "x-enum-varnames": [
+          "CategoryBug",
+          "CategoryFeatureRequest",
+          "CategoryUsability",
+          "CategoryDocumentation",
+          "CategoryOther"
+        ]
+      },
+      "productfeedback.ClientContext": {
+        "type": "object",
+        "properties": {
+          "architecture": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "os": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 100
+          }
+        }
+      },
+      "productfeedback.CreateRequest": {
+        "type": "object",
+        "required": [
+          "category",
+          "message",
+          "source"
+        ],
+        "properties": {
+          "category": {
+            "enum": [
+              "BUG",
+              "FEATURE_REQUEST",
+              "USABILITY",
+              "DOCUMENTATION",
+              "OTHER"
+            ],
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/productfeedback.Category"
+              }
+            ]
+          },
+          "client": {
+            "$ref": "#/components/schemas/productfeedback.ClientContext"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1
+          },
+          "source": {
+            "enum": [
+              "LANGSMITH_CLI"
+            ],
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/productfeedback.Source"
+              }
+            ]
+          }
+        }
+      },
+      "productfeedback.ProductFeedback": {
+        "type": "object",
+        "required": [
+          "category",
+          "created_at",
+          "id",
+          "message",
+          "source"
+        ],
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/productfeedback.Category"
+          },
+          "client": {
+            "$ref": "#/components/schemas/productfeedback.ClientContext"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/productfeedback.Source"
+          }
+        }
+      },
+      "productfeedback.Source": {
+        "type": "string",
+        "enum": [
+          "LANGSMITH_CLI"
+        ],
+        "x-enum-varnames": [
+          "SourceLangSmithCLI"
+        ]
       },
       "query.PublicSharedTraceRunsRequestBody": {
         "type": "object",
@@ -82679,6 +83190,38 @@
           "content_type": {
             "type": "string"
           },
+          "csp_sandbox_flags": {
+            "description": "CSPSandboxFlags loosen the CSP sandbox the file is served under; omit for the most restrictive policy.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "allow-downloads",
+                "allow-forms",
+                "allow-modals",
+                "allow-orientation-lock",
+                "allow-pointer-lock",
+                "allow-popups",
+                "allow-presentation",
+                "allow-scripts",
+                "allow-top-navigation-by-user-activation"
+              ]
+            }
+          },
+          "csp_source_bundles": {
+            "description": "CSPSourceBundles allow the served file to fetch from named third-party origins; omit to send no fetch directive.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "cdnjs",
+                "google-fonts",
+                "jsdelivr",
+                "unpkg",
+                "none"
+              ]
+            }
+          },
           "expires_in_seconds": {
             "description": "ExpiresInSeconds is optional; a link with no expiry never expires.",
             "type": "integer"
@@ -82939,18 +83482,14 @@
       },
       "sandboxes.ProxyAWSConfig": {
         "type": "object",
-        "required": [
-          "access_key_id",
-          "secret_access_key"
-        ],
-        "properties": {
-          "access_key_id": {
-            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/sandboxes.ProxyAWSRoleConfig"
           },
-          "secret_access_key": {
-            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          {
+            "$ref": "#/components/schemas/sandboxes.ProxyAWSStaticConfig"
           }
-        }
+        ]
       },
       "sandboxes.ProxyConfig": {
         "type": "object",
@@ -83183,18 +83722,14 @@
       },
       "sandboxes.SandboxAWSMountAuthConfig": {
         "type": "object",
-        "required": [
-          "access_key_id",
-          "secret_access_key"
-        ],
-        "properties": {
-          "access_key_id": {
-            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/sandboxes.SandboxAWSMountRoleAuthConfig"
           },
-          "secret_access_key": {
-            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          {
+            "$ref": "#/components/schemas/sandboxes.SandboxAWSMountStaticAuthConfig"
           }
-        }
+        ]
       },
       "sandboxes.SandboxGCPMountAuthConfig": {
         "type": "object",
@@ -83349,9 +83884,78 @@
           }
         }
       },
+      "sandboxes.SandboxUsageCost": {
+        "type": "object",
+        "required": [
+          "lcu",
+          "lsu",
+          "period_start",
+          "resource_id",
+          "resource_type"
+        ],
+        "properties": {
+          "lcu": {
+            "description": "Recorded compute usage in LangSmith Compute Units (LCU), as a decimal string\nwith up to six fractional digits and trailing zeros omitted. Snapshots return \"0\".",
+            "type": "string",
+            "format": "decimal",
+            "example": "1.234567"
+          },
+          "lsu": {
+            "description": "Allocated storage usage in LangSmith Storage Units (LSU), as a decimal string\nwith up to six fractional digits and trailing zeros omitted.",
+            "type": "string",
+            "format": "decimal",
+            "example": "0.000123"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resource_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resource_type": {
+            "$ref": "#/components/schemas/sandboxes.UsageCostResourceType"
+          }
+        }
+      },
+      "sandboxes.SandboxUsageCostsResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/sandboxes.SandboxUsageCost"
+            }
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "sandboxes.ServiceURLPayload": {
         "type": "object",
         "properties": {
+          "access": {
+            "description": "Access selects the login mode, mutually exclusive with the minted token.\nOmit the field for token mode: mint a short-lived service token (default).\n  \"restricted\" — LangSmith login: any user with SandboxesRead on the sandbox.\n  \"workspace\"  — LangSmith login: any member of the owning workspace.\n  \"off\"        — remove an existing LangSmith login grant and mint a token.\nA LangSmith login grant is durable; token mode is refused (409) while one exists.",
+            "type": "string",
+            "enum": [
+              "restricted",
+              "workspace",
+              "off"
+            ]
+          },
           "expires_in_seconds": {
             "type": "integer"
           },
@@ -83363,6 +83967,14 @@
       "sandboxes.ServiceURLResponse": {
         "type": "object",
         "properties": {
+          "access": {
+            "description": "Access echoes the enabled LangSmith login level (\"restricted\"/\"workspace\"); omitted in token mode.",
+            "type": "string",
+            "enum": [
+              "restricted",
+              "workspace"
+            ]
+          },
           "browser_url": {
             "type": "string"
           },
@@ -83373,6 +83985,7 @@
             "type": "string"
           },
           "token": {
+            "description": "Token and ExpiresAt are empty in LangSmith login mode (no token is minted).",
             "type": "string"
           }
         }
@@ -83582,6 +84195,17 @@
             "type": "integer"
           }
         }
+      },
+      "sandboxes.UsageCostResourceType": {
+        "type": "string",
+        "enum": [
+          "SANDBOX",
+          "SNAPSHOT"
+        ],
+        "x-enum-varnames": [
+          "UsageCostResourceSandbox",
+          "UsageCostResourceSnapshot"
+        ]
       },
       "sandboxes.UsageResponse": {
         "type": "object",
@@ -85664,6 +86288,91 @@
             }
           ]
         }
+      },
+      "sandboxes.ProxyAWSRoleConfig": {
+        "type": "object",
+        "properties": {
+          "role_arn": {
+            "description": "RoleARN selects automatically renewed IAM-role credentials instead of static keys.\nAccess follows the role's effective AWS permissions, not the sandbox's mount scope.\nConfigure at creation; the role cannot be changed afterward.",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "role_arn"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "access_key_id"
+              ]
+            },
+            {
+              "required": [
+                "secret_access_key"
+              ]
+            }
+          ]
+        }
+      },
+      "sandboxes.ProxyAWSStaticConfig": {
+        "type": "object",
+        "properties": {
+          "access_key_id": {
+            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          },
+          "role_arn": {
+            "description": "RoleARN selects automatically renewed IAM-role credentials instead of static keys.\nAccess follows the role's effective AWS permissions, not the sandbox's mount scope.\nConfigure at creation; the role cannot be changed afterward.",
+            "type": "string",
+            "enum": [
+              ""
+            ]
+          },
+          "secret_access_key": {
+            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          }
+        },
+        "required": [
+          "access_key_id",
+          "secret_access_key"
+        ]
+      },
+      "sandboxes.SandboxAWSMountRoleAuthConfig": {
+        "type": "object",
+        "properties": {
+          "role_arn": {
+            "description": "IAM role to assume with permissions scoped to the configured S3 mounts.\nMutually exclusive with static credentials. Configure only at creation.",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "role_arn"
+        ],
+        "additionalProperties": false
+      },
+      "sandboxes.SandboxAWSMountStaticAuthConfig": {
+        "type": "object",
+        "properties": {
+          "access_key_id": {
+            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          },
+          "role_arn": {
+            "description": "IAM role to assume with permissions scoped to the configured S3 mounts.\nMutually exclusive with static credentials. Configure only at creation.",
+            "type": "string",
+            "enum": [
+              ""
+            ]
+          },
+          "secret_access_key": {
+            "$ref": "#/components/schemas/sandboxes.ProxySecretValue"
+          }
+        },
+        "required": [
+          "access_key_id",
+          "secret_access_key"
+        ]
       }
     },
     "securitySchemes": {
@@ -85958,6 +86667,9 @@
     },
     {
       "name": "fleet users"
+    },
+    {
+      "name": "productfeedback"
     }
   ]
 }
