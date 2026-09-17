@@ -229,7 +229,45 @@ When enabled, responses include:
 
 ## Azure OpenAI
 
-Before you use this model, ensure you have [Azure OpenAI credentials](https://learn.microsoft.com/en-us/azure/ai-services/openai/quickstart) (endpoint + API key).
+Before you use this model, create an [Azure OpenAI resource and model deployment](https://learn.microsoft.com/en-us/azure/ai-services/openai/quickstart).
+
+### Authentication
+
+#### API key
+
+In the Azure OpenAI provider configuration, enter your endpoint, deployment name, API version, and API key.
+
+#### Workload identity for self-hosted LangSmith
+
+<Note>
+Azure OpenAI workload identity requires self-hosted LangSmith `0.16.58` or later on Azure Kubernetes Service (AKS).
+</Note>
+
+Use [AKS workload identity](https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview) to authenticate without storing an API key:
+
+1. Enable the OIDC issuer and workload identity on your AKS cluster.
+2. Create or select a user-assigned managed identity.
+3. Add a [federated identity credential](https://learn.microsoft.com/en-us/azure/aks/workload-identity-deploy-cluster#create-the-federated-identity-credential) to the managed identity. Use the AKS OIDC issuer and audience `api://AzureADTokenExchange`. Set its subject to `system:serviceaccount:<namespace>:<playground-service-account-name>`.
+4. Assign the managed identity the least-privilege `Cognitive Services OpenAI User` role. Scope the role to the Azure OpenAI resource. See [Azure OpenAI role-based access control](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/role-based-access-control).
+5. Add the following values to your LangSmith Helm configuration:
+
+```yaml Helm
+playground:
+  serviceAccount:
+    annotations:
+      azure.workload.identity/client-id: "<managed-identity-client-id>"
+  deployment:
+    labels:
+      azure.workload.identity/use: "true"
+```
+
+In the Azure OpenAI provider configuration, enter the endpoint, deployment name, and API version. Leave the API key empty.
+
+When no explicit API key or token provider is supplied, LangSmith automatically uses the Playground workload identity. It obtains short-lived tokens for Playground invocations and evaluator batch calls. Explicit credentials take precedence over workload identity.
+
+Workload identity tokens are restricted to HTTPS Azure AI and Azure OpenAI endpoints on port `443`. Each configuration must use one supported Azure cloud: public, US Government, or China. LangSmith rejects invalid endpoints and configurations that mix Azure clouds.
+
+For broader AKS deployment guidance, see [Self-host LangSmith on Azure](/langsmith/azure-self-hosted).
 
 ### Available models
 
