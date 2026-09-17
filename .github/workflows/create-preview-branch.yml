@@ -42,17 +42,32 @@ jobs:
           # Get the source branch name
           echo "[INFO] Source branch: $SOURCE_BRANCH"
 
-          # Generate the safe prefix that would have been used for this branch
-          # This transforms the branch name to match the preview branch naming convention:
-          # 1. Remove all non-alphanumeric characters (tr -cd '[:alnum:]')
-          # 2. Take only the first 6 characters (cut -c1-6)
-          # Example: "feature/my-branch-123" -> "featur"
-          safe_prefix=$(echo "$SOURCE_BRANCH" | tr -cd '[:alnum:]' | cut -c1-6)
-          echo "[INFO] Looking for preview branches matching pattern: preview-${safe_prefix}-*"
+          # Recompute the deterministic preview branch name for this source
+          # branch. This must stay identical to the derivation in the
+          # create-preview job, or preview branches are orphaned on the remote.
+          slug=$(printf '%s' "$SOURCE_BRANCH" | tr '[:upper:]' '[:lower:]' \
+            | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//' | cut -c1-24 | sed 's/-*$//')
+          if [ -z "$slug" ]; then
+            slug="pr"
+          fi
+          hash=$(printf '%s' "$SOURCE_BRANCH" | sha256sum | cut -c1-8)
+          PREVIEW_BRANCH="preview-${slug}-${hash}"
+          echo "[INFO] Deterministic preview branch for this PR: $PREVIEW_BRANCH"
 
-          # Find and delete all preview branches with this prefix
+          # Also sweep any legacy branches named
+          # preview-<first 6 alphanumerics>-<timestamp>-<short sha> that were
+          # created for this source branch before the naming became deterministic.
+          legacy_prefix=$(echo "$SOURCE_BRANCH" | tr -cd '[:alnum:]' | cut -c1-6)
+          echo "[INFO] Also looking for legacy preview branches matching: preview-${legacy_prefix}-*"
+
+          # Find and delete the deterministic branch plus any legacy ones
           git fetch origin
-          BRANCHES=$(git branch -r | grep "origin/preview-${safe_prefix}-" | sed 's|origin/||' || true)
+          BRANCHES=$(
+            {
+              git branch -r --list "origin/$PREVIEW_BRANCH" || true
+              git branch -r | grep "origin/preview-${legacy_prefix}-" || true
+            } | sed 's|^[[:space:]]*origin/||' | sed '/^$/d' | sort -u
+          )
 
           if [ -z "$BRANCHES" ]; then
             echo "[INFO] No preview branches found for this PR"
@@ -135,15 +150,27 @@ jobs:
       - name: Build documentation
         run: make build
 
-      - name: Generate secure preview branch name
+      - name: Generate deterministic preview branch name
         id: branch-name
         run: |
           set -euo pipefail
-          echo "[INFO] Generating collision-resistant preview branch name"
-          safe_prefix=$(echo "$SOURCE_BRANCH" | tr -cd '[:alnum:]' | cut -c1-6)
-          timestamp=$(date +%s)
-          short_sha="${GITHUB_SHA:0:7}"
-          PREVIEW_BRANCH="preview-${safe_prefix}-${timestamp}-${short_sha}"
+          echo "[INFO] Generating deterministic preview branch name"
+          # Derive the preview branch name from the source branch alone so the
+          # Mintlify preview URL (<subdomain>-<branch-name>.mintlify.site) stays
+          # the same across every push to this pull request.
+          # Length budget: a DNS label caps at 63 octets and the site subdomain
+          # plus its separator consume 19, leaving 44 for the branch name. This
+          # scheme is "preview-" (8) + slug (max 24) + "-" (1) + hash (8) = 41,
+          # keeping a few octets of headroom.
+          # The hash is a SHA-256 prefix of the full source branch name, so two
+          # branches that truncate to the same slug still get distinct previews.
+          slug=$(printf '%s' "$SOURCE_BRANCH" | tr '[:upper:]' '[:lower:]' \
+            | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//' | cut -c1-24 | sed 's/-*$//')
+          if [ -z "$slug" ]; then
+            slug="pr"
+          fi
+          hash=$(printf '%s' "$SOURCE_BRANCH" | sha256sum | cut -c1-8)
+          PREVIEW_BRANCH="preview-${slug}-${hash}"
           echo "branch_name=$PREVIEW_BRANCH" >> $GITHUB_OUTPUT
           echo "[INFO] Preview branch will be: $PREVIEW_BRANCH"
 
@@ -158,13 +185,14 @@ jobs:
           PREVIEW_BRANCH="${{ steps.branch-name.outputs.branch_name }}"
           echo "[INFO] Checking if preview branch already exists: $PREVIEW_BRANCH"
 
-          # Check if the branch exists remotely
+          # The branch name is deterministic, so after the first push to a pull
+          # request this branch is expected to exist. It is updated in place,
+          # which is what keeps the preview URL stable.
           if git ls-remote --exit-code --heads origin "$PREVIEW_BRANCH" >/dev/null 2>&1; then
-            echo "[ERROR] Preview branch $PREVIEW_BRANCH already exists. This should be extremely rare."
-            echo "[INFO] Please retry the workflow to generate a new branch name."
-            exit 1
+            echo "[INFO] Preview branch already exists and will be updated in place"
+          else
+            echo "[INFO] Preview branch does not exist yet and will be created"
           fi
-          echo "[SUCCESS] Preview branch name is unique"
 
       - name: Create and push preview branch
         run: |
@@ -197,9 +225,24 @@ jobs:
             Do not merge this branch to main."
           fi
 
-          # Push the preview branch
+          # Push the preview branch.
+          # Each run rebuilds from the source branch tip and commits build
+          # artifacts on top, so the new history is not a descendant of the
+          # previous preview commit and a plain push is refused as a
+          # non-fast-forward. Fetch the remote ref first so the lease is
+          # meaningful, then push under that lease: a concurrent run that moved
+          # the ref causes a rejection rather than a silent overwrite.
           echo "[INFO] Pushing preview branch to origin"
-          git push origin "$PREVIEW_BRANCH"
+          git fetch origin "+refs/heads/$PREVIEW_BRANCH:refs/remotes/origin/$PREVIEW_BRANCH" 2>/dev/null || true
+
+          if git rev-parse --verify --quiet "refs/remotes/origin/$PREVIEW_BRANCH" >/dev/null; then
+            remote_sha=$(git rev-parse "refs/remotes/origin/$PREVIEW_BRANCH")
+            echo "[INFO] Updating existing preview branch (remote at ${remote_sha:0:7})"
+            git push --force-with-lease="$PREVIEW_BRANCH:$remote_sha" origin "$PREVIEW_BRANCH"
+          else
+            echo "[INFO] Creating preview branch on origin"
+            git push origin "$PREVIEW_BRANCH"
+          fi
           echo "[SUCCESS] Successfully pushed preview branch"
 
       - name: Save preview branch info (log)
