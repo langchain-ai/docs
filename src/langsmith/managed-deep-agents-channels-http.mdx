@@ -8,7 +8,7 @@ import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-ag
 
 An HTTP channel turns a managed deep agent into a JSON endpoint that any external service can call. Use it for a provider that Managed Deep Agents does not support directly, such as an order system, a support tool, or your own application.
 
-You supply two callbacks: one that authenticates the request and one that converts it into a message. Managed Deep Agents owns caller handoff, thread selection, the agent run, and the reply. For the provider-managed alternative, see [Slack](/langsmith/managed-deep-agents-channels-slack).
+You supply two callbacks: one that authenticates the request, and one that converts it into a message, naming the caller and the conversation it belongs to. Managed Deep Agents owns the trusted handoff, the agent run, and the reply. For the provider-managed alternative, see [Slack](/langsmith/managed-deep-agents-channels-slack).
 
 <ManagedDeepAgentsPublicBetaNote />
 
@@ -82,7 +82,13 @@ Declaring the channel registers the provider, so any non-empty name works.
   </Step>
   <Step title="Verify the request" id="verify-the-request">
 
-Managed Deep Agents calls `verify` first. Return `true` to continue to `parse`, or `false` to reject the request with `401`.
+:::python
+Managed Deep Agents calls `verify` first. Return `True` to continue to `parse`, or `False` to reject the request with `401`. `verify` may be `async def`.
+:::
+
+:::js
+Managed Deep Agents calls `verify` first. Return `true` to continue to `parse`, or `false` to reject the request with `401`. `verify` may return a promise.
+:::
 
 :::python
 `verify` receives an `HttpChannelRequest` with a Starlette `request` and the original `raw_body` bytes. Check a signature against the bytes, not against a re-serialized body:
@@ -128,7 +134,7 @@ export function verify({ request, rawBody }: HttpChannelRequest): boolean {
 :::
 
 <Warning>
-The endpoint has no platform authentication. Channel event routes authenticate inside the adapter, not through Managed Deep Agents ingress. That makes `verify` the only thing standing between the public internet and an agent run. Always check a signature or a shared secret, and never return `true` unconditionally.
+The endpoint has no platform authentication. Channel event routes authenticate inside the adapter, not through Managed Deep Agents ingress. That makes `verify` the only thing standing between the public internet and an agent run. Always check a signature or a shared secret, and never accept a request unconditionally.
 </Warning>
 
 Use a [deployment secret](/langsmith/managed-deep-agents-deploy) for the signing key. A `verify` callback that raises rejects the request with `500`.
@@ -138,7 +144,7 @@ Resolve channel credentials from the environment, not with `connections.get`, wh
   </Step>
   <Step title="Parse the request into a message" id="parse-the-request">
 
-`parse` converts a verified request into a message that starts a run, or ignores the event. Return one of two shapes:
+`parse` converts a verified request into a message that starts a run, or ignores the event. It receives the same `HttpChannelRequest` as `verify`, so request headers are available here too, and it may be asynchronous. Return one of two shapes:
 
 :::python
 - `{"type": "message", "message": {...}}` starts a run.
@@ -157,13 +163,13 @@ Both accept an optional `response`, a standard `Response`.
 The message carries three fields:
 
 :::python
-- **`user_id`**: The caller's ID in the external service, resolved from the verified event. Agent Auth maps it to the principal whose credentials the run may use, so derive it from verified data rather than from an unauthenticated field.
+- **`user_id`**: The caller's ID in the external service, as a string, resolved from the verified event. Agent Auth maps it to the principal whose credentials the run may use, so derive it from verified data rather than from an unauthenticated field. Convert a numeric provider ID with `str()`.
 - **`thread_id`**: The conversation to run in, as a UUID. Managed Deep Agents lowercases it and maps it to a durable agent thread, so the same value continues the same conversation.
 - **`content`**: The message text, or a list of LangChain content blocks.
 :::
 
 :::js
-- **`userId`**: The caller's ID in the external service, resolved from the verified event. Agent Auth maps it to the principal whose credentials the run may use, so derive it from verified data rather than from an unauthenticated field.
+- **`userId`**: The caller's ID in the external service, as a string, resolved from the verified event. Agent Auth maps it to the principal whose credentials the run may use, so derive it from verified data rather than from an unauthenticated field. Convert a numeric provider ID with `String()`.
 - **`threadId`**: The conversation to run in, as a UUID. Managed Deep Agents lowercases it and maps it to a durable agent thread, so the same value continues the same conversation.
 - **`content`**: The message text, or an array of LangChain content blocks.
 :::
@@ -333,7 +339,15 @@ A deployed HTTP channel accepts requests at the channel name, not the provider n
 POST https://<deployment-url>/channels/<name>/events
 ```
 
-A declaration in `channels/orders.py` or `channels/orders.ts` is reachable at `/channels/orders/events`. The request body must be standard JSON encoded as UTF-8.
+:::python
+A declaration in `channels/orders.py` is reachable at `/channels/orders/events`.
+:::
+
+:::js
+A declaration in `channels/orders.ts` is reachable at `/channels/orders/events`.
+:::
+
+The request body must be standard JSON encoded as UTF-8.
 
 Managed Deep Agents answers with one of these, unless `parse` returned its own `response`:
 
@@ -344,7 +358,7 @@ Managed Deep Agents answers with one of these, unless `parse` returned its own `
 | `400` | `{"error": "invalid channel payload"}` | The body is not standard JSON, or `parse` raised. |
 | `400` | `{"error": "invalid channel parse result"}` | `parse` returned an unrecognized shape. |
 | `400` | `{"error": "invalid channel message"}` | The message is missing a caller, has a thread that is not a UUID, or has empty content. |
-| `401` | `{"error": "invalid channel signature"}` | `verify` returned `false`. |
+| `401` | `{"error": "invalid channel signature"}` | `verify` rejected the request. |
 | `500` | `{"error": "channel verification failed"}` | `verify` raised. |
 
 A `202` means the run was accepted, not that it finished. The agent's answer arrives later through `messaging`.
