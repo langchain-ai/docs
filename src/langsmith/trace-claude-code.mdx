@@ -3,6 +3,8 @@ title: Trace Claude Code applications
 sidebarTitle: Claude Code
 ---
 
+import CodingAgentSecretRedaction from '/snippets/langsmith/coding-agent-secret-redaction.mdx';
+
 This guide shows you how to send conversations automatically from the [Claude Code CLI](https://code.claude.com/docs/en/overview) to LangSmith.
 
 Once configured, each Claude Code project can opt in to sending traces to LangSmith. Each trace includes user messages, tool calls, compaction, subagent runs, and assistant responses. System prompts are not included, because Claude Code does not return them in conversation transcripts.
@@ -161,6 +163,49 @@ Set the variable to `"false"` to return to the unmuted default. The comparison i
 The plugin also reads a `defaultMuted` boolean from its own configuration files, in this order: `.claude/langsmith.json` and `langsmith-plugins.json` in the project directory, then `~/.claude/langsmith.json` and `~/.langsmith-plugins.json`. The environment variable takes precedence over all four.
 
 Thread preferences are sticky. The plugin saves each explicit mute or unmute to a privacy file, `~/.claude/state/langsmith_state.privacy.json` by default, and a saved thread preference wins over the configured default in both directions. Deleting the privacy file removes every thread override and returns each thread to the configured default.
+
+## Secret redaction
+
+The plugin redacts detected secrets from run inputs, outputs, errors, and metadata before uploading them to LangSmith. Redaction is on by default.
+
+<CodingAgentSecretRedaction />
+
+Redaction targets credential values, not identity. The `anthropic_user_id` and `local_username` metadata that the plugin attaches is unaffected. To omit content and attribution instead of scrubbing credentials out of it, [mute the thread](#mute-a-thread).
+
+### Turn redaction off
+
+Set `CC_LANGSMITH_REDACT` to `false`, `0`, `no`, or `off`. The comparison is case-insensitive, and any other value leaves redaction on.
+
+```bash
+export CC_LANGSMITH_REDACT="false"
+```
+
+### Redact additional patterns
+
+Set `CC_LANGSMITH_REDACT_EXTRA` to a JSON array of `{ "pattern": ..., "replace": ... }` rules. Each `pattern` is a regular expression string, applied globally and case-sensitively. `replace` is optional and falls back to `[redacted]`.
+
+```json
+{
+  "env": {
+    "CC_LANGSMITH_REDACT_EXTRA": "[{\"pattern\":\"ACME-[A-Z0-9]{16}\",\"replace\":\"[REDACTED_ACME_KEY]\"}]"
+  }
+}
+```
+
+Extra rules run after the built-in ones. The plugin skips a rule with an invalid regular expression, logs an error, and uploads the turn with the remaining rules applied.
+
+Both settings also read from the plugin configuration files described in [Set a default mute configuration](#set-a-default-mute-configuration), as the `redact` and `redact_extra_rules` keys:
+
+```json
+{
+  "redact": true,
+  "redact_extra_rules": [{ "pattern": "ACME-[A-Z0-9]{16}", "replace": "[REDACTED_ACME_KEY]" }]
+}
+```
+
+The environment variables take precedence over all four files. A file behaves more strictly than the environment variable. One rule with an invalid regular expression discards every setting in that file, not only that rule.
+
+Because a project-level `.claude/langsmith.json` can set `redact` to `false`, review that file before enabling tracing in a repository you do not control.
 
 ## Usage with GitHub Actions
 
