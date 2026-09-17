@@ -12,19 +12,21 @@ Managed Deep Agents runs the same [Deep Agents](/oss/deepagents/overview) harnes
 
 ## Decide whether to move
 
-Move an agent to Managed Deep Agents when you want the platform features that most production agents need and would otherwise build yourself:
+Managed Deep Agents runs the same harness, so moving does not unlock agent features you cannot build today. Sandboxes, memory that persists across conversations, and every filesystem backend are already in [Deep Agents](/oss/deepagents/overview). Moving changes who operates the infrastructure around the agent.
 
-- **[Sandboxes](/langsmith/managed-deep-agents-sandboxes)**: An isolated filesystem and shell for code the agent writes.
-- **[Memory](/langsmith/managed-deep-agents-memory)**: Preferences and knowledge that persist across threads, with no store to run.
-- **[Connections](/langsmith/managed-deep-agents-connections)**: Shared workspace secrets and OAuth, so end users authorize third-party services without per-user credential provisioning.
-- **[Channels](/langsmith/managed-deep-agents-channels)**: Messaging services such as Slack that start runs and receive responses.
-- **[Schedules](/langsmith/managed-deep-agents-schedules)**: Managed cron runs.
+Move an agent when you want LangSmith to operate that infrastructure. Stay on Deep Agents when you need to own it.
 
-Every deployment also runs on [Agent Server](/langsmith/agent-server-overview), which provides threads, runs, streaming, and the API without a server to operate.
+| | Deep Agents | Managed Deep Agents |
+| --- | --- | --- |
+| **Hosting** | You run the agent in your own process or container, or deploy it as a [LangSmith deployment](/langsmith/deployment). | LangSmith hosts the agent on [Agent Server](/langsmith/agent-server-overview). `mda deploy` is the whole deployment step. |
+| **Filesystem and shell** | Any [backend](/oss/deepagents/backends): agent state, local disk, a store, or a [sandbox](/oss/deepagents/sandboxes) you provision with a provider. | One managed [sandbox](/langsmith/managed-deep-agents-sandboxes), declared in a file. LangSmith creates it, snapshots it, and stops it when idle. |
+| **Memory across conversations** | You run the storage and wire it up yourself. | One shared [memory](/langsmith/managed-deep-agents-memory) tree, enabled by adding a file. |
+| **Third-party access for end users** | You provision and store credentials for each user. | [Connections](/langsmith/managed-deep-agents-connections) hold workspace secrets and run OAuth, so end users authorize services themselves. |
+| **Chat surfaces** | You write the integration. | [Channels](/langsmith/managed-deep-agents-channels) connect Slack and other messaging services. |
+| **Scheduled runs** | You run the scheduler. | [Schedules](/langsmith/managed-deep-agents-schedules) run managed cron jobs. |
+| **Code around the agent** | Yours to write, including custom routes and application code. | The agent only. For custom routes or application code, use a [LangSmith deployment](/langsmith/deployment). |
 
-Stay on Deep Agents when you run the agent in your own process or image, when it needs a custom [backend](/oss/deepagents/backends), store, or checkpointer, or when you wrap it in your own routes and application code. See [Going to production](/oss/deepagents/going-to-production).
-
-Starting on Deep Agents and moving once the agent is ready for production is a normal path, because the harness is the same either way.
+The harness is the same either way, so building on Deep Agents first and moving when the agent is ready for production is a normal path. See [Going to production](/oss/deepagents/going-to-production).
 
 ## Understand what changes
 
@@ -66,8 +68,8 @@ Find the `create_deep_agent` (or `createDeepAgent`) call site, then:
 - Move the `system_prompt` text into `instructions.md` next to the agent entry, and remove the parameter.
 - Move the files referenced by `skills` into `skills/<name>/SKILL.md`, and remove the parameter.
 - Replace `memory` with a root `memory.py` (or `memory.ts`) exporting a variable named `memory` set to `define_memory(scope="agent")`, and remove the parameter. Leave the file out if the agent needs no durable memory. Warn the user that this mounts an empty tree and any existing memory content must be moved into `instructions.md` or a skill.
-- Delete `backend`, `store`, and `checkpointer`. The runtime owns all three. If the agent used a sandbox backend, add a `sandbox/` declaration exporting `define_sandbox(...)` instead.
-- Keep `model`, `tools`, `middleware`, `subagents`, `permissions`, `cache`, and `debug` as they are, along with the interrupt, response-format, and context-schema parameters under their existing names.
+- Delete `backend`, `store`, and `checkpointer`. The runtime owns all three. If the agent used a sandbox backend, add a `sandbox/` declaration exporting `define_sandbox(...)` instead. The managed sandbox is the only backend Managed Deep Agents offers.
+- Keep `model`, `tools`, `middleware`, `subagents`, `permissions`, `cache`, and `debug` as they are, along with the interrupt, response-format, and context-schema parameters under their existing names. Warn the user that a project declaring `sandbox/` runs with `permissions` cleared, because a filesystem permission rule disables the sandbox `execute` tool.
 - Leave tool and middleware modules where they already live and keep importing them from the agent entry. Do not restructure the project.
 
 ## Step 4: Handle gaps explicitly
@@ -82,49 +84,43 @@ Run `mda build`, then `mda dev`, and confirm the agent starts and answers a test
 ## Map the parameters
 
 :::python
-Every `create_deep_agent` parameter either transfers unchanged, moves to a project file, or becomes the runtime's job:
+Most of the surface transfers to `define_deep_agent` unchanged, under the same names: `model`, `tools`, `middleware`, `subagents`, `interrupt_on`, `response_format`, `context_schema`, `cache`, and `debug`. Leave the tool and middleware modules where they already live and keep importing them from the agent entry.
 
-| `create_deep_agent` | Managed Deep Agents | Notes |
+`define_deep_agent` adds one required parameter. Pass `name` a static string that starts with a letter and contains only letters, numbers, underscores, or hyphens. Managed Deep Agents uses it as the [assistant](/langsmith/assistants) ID and the default deployment name.
+
+The rest move to a project file or become the runtime's job:
+
+| `create_deep_agent` | Where it goes | Notes |
 | --- | --- | --- |
-| `model` | `define_deep_agent(model=...)` | Unchanged. See [Models](/oss/deepagents/models). |
-| `tools` | `define_deep_agent(tools=...)` | Unchanged. Keep the modules under `tools/`. See [Tools](/langsmith/managed-deep-agents-tools). |
-| `middleware` | `define_deep_agent(middleware=...)` | Unchanged. Keep the modules under `middleware/`. See [Middleware](/langsmith/managed-deep-agents-middleware). |
-| `subagents` | `define_deep_agent(subagents=...)` | Unchanged. See [Subagents](/oss/deepagents/subagents). |
-| `permissions` | `define_deep_agent(permissions=...)` | Unchanged. See [Permissions](/oss/deepagents/permissions). |
-| `interrupt_on` | `define_deep_agent(interrupt_on=...)` | Unchanged. |
-| `response_format` | `define_deep_agent(response_format=...)` | Unchanged. |
-| `context_schema` | `define_deep_agent(context_schema=...)` | Unchanged. |
-| `cache`, `debug` | `define_deep_agent(cache=..., debug=...)` | Unchanged. |
-| `name` | `define_deep_agent(name=...)` | Required, and must be a static string. It becomes the assistant ID and the default deployment name. |
-| `system_prompt` | `instructions.md` | See [Instructions](/langsmith/managed-deep-agents-instructions). |
+| `system_prompt` | `instructions.md` | Move the text into the file, then remove the parameter. See [Instructions](/langsmith/managed-deep-agents-instructions). |
 | `skills` | `skills/` | One directory per skill, each with a `SKILL.md`. See [Skills](/langsmith/managed-deep-agents-skills). |
 | `memory` | `memory.py` | Export `define_memory(scope="agent")`. Omit the file for no durable memory. See [Memory](/langsmith/managed-deep-agents-memory). |
 | `backend` | `sandbox/` | Declare a managed sandbox instead of constructing a backend. See [Sandboxes](/langsmith/managed-deep-agents-sandboxes). |
-| `store`, `checkpointer` | Runtime | Supplied by the managed runtime. Remove both. |
+| `permissions` | Stays a parameter | Accepted, and cleared when the project declares a sandbox. See [Permissions](/oss/deepagents/permissions). |
+| `store`, `checkpointer` | Managed runtime | Remove both. |
 | `state_schema` | No equivalent | `define_deep_agent` does not accept it. |
 :::
 
 :::js
-Every `createDeepAgent` option either transfers unchanged, moves to a project file, or becomes the runtime's job:
+Most of the surface transfers to `defineDeepAgent` unchanged, under the same names: `model`, `tools`, `middleware`, `subagents`, `interruptOn`, `responseFormat`, `contextSchema`, `stateSchema`, `cache`, and `debug`. Leave the tool and middleware modules where they already live and keep importing them from the agent entry.
 
-| `createDeepAgent` | Managed Deep Agents | Notes |
+`defineDeepAgent` adds one required option. Pass `name` a static string that starts with a letter and contains only letters, numbers, underscores, or hyphens. Managed Deep Agents uses it as the [assistant](/langsmith/assistants) ID and the default deployment name.
+
+The rest move to a project file or become the runtime's job:
+
+| `createDeepAgent` | Where it goes | Notes |
 | --- | --- | --- |
-| `model` | `defineDeepAgent({ model })` | Unchanged. See [Models](/oss/deepagents/models). |
-| `tools` | `defineDeepAgent({ tools })` | Unchanged. Keep the modules under `tools/`. See [Tools](/langsmith/managed-deep-agents-tools). |
-| `middleware` | `defineDeepAgent({ middleware })` | Unchanged. Keep the modules under `middleware/`. See [Middleware](/langsmith/managed-deep-agents-middleware). |
-| `subagents` | `defineDeepAgent({ subagents })` | Unchanged. See [Subagents](/oss/deepagents/subagents). |
-| `permissions` | `defineDeepAgent({ permissions })` | Unchanged. See [Permissions](/oss/deepagents/permissions). |
-| `interruptOn` | `defineDeepAgent({ interruptOn })` | Unchanged. |
-| `responseFormat` | `defineDeepAgent({ responseFormat })` | Unchanged. |
-| `contextSchema`, `stateSchema` | `defineDeepAgent({ contextSchema, stateSchema })` | Unchanged. |
-| `cache`, `debug` | `defineDeepAgent({ cache, debug })` | Unchanged. |
-| `name` | `defineDeepAgent({ name })` | Required, and must be a static string. It becomes the assistant ID and the default deployment name. |
-| `systemPrompt` | `instructions.md` | See [Instructions](/langsmith/managed-deep-agents-instructions). |
+| `systemPrompt` | `instructions.md` | Move the text into the file, then remove the option. See [Instructions](/langsmith/managed-deep-agents-instructions). |
 | `skills` | `skills/` | One directory per skill, each with a `SKILL.md`. See [Skills](/langsmith/managed-deep-agents-skills). |
 | `memory` | `memory.ts` | Export `defineMemory({ scope: "agent" })`. Omit the file for no durable memory. See [Memory](/langsmith/managed-deep-agents-memory). |
 | `backend` | `sandbox/` | Declare a managed sandbox instead of constructing a backend. See [Sandboxes](/langsmith/managed-deep-agents-sandboxes). |
-| `store`, `checkpointer` | Runtime | Supplied by the managed runtime. Remove both. |
+| `permissions` | Stays an option | Accepted, and cleared when the project declares a sandbox. See [Permissions](/oss/deepagents/permissions). |
+| `store`, `checkpointer` | Managed runtime | Remove both. |
 :::
+
+Deep Agents backends are pluggable, and the managed runtime supplies its own. A project that declares `sandbox/` gets a managed sandbox for the agent filesystem and shell. A project without one gets thread-scoped agent state, alongside read-only [Context Hub](/langsmith/managed-deep-agents-context-hub) mounts for instructions, skills, and memory. There is no other choice of backend, so an agent that depends on a specific one stays on Deep Agents.
+
+Declaring a sandbox also clears `permissions`. A filesystem permission rule disables the sandbox `execute` tool, so the runtime drops the rules rather than the shell. Restrict a sandboxed agent through the tools you give it instead.
 
 ## Move an agent
 
@@ -244,7 +240,7 @@ export const memory = defineMemory({ scope: "agent" });
 ```
 :::
 
-Durable memory is opt-in, and a project without the file mounts none.
+Durable memory is opt-in, and a project without the file mounts none. The scope is the only knob: `"agent"` mounts one tree that every caller of the deployment shares. To control what the agent keeps there, write a memory policy into `instructions.md`. See [Guide what to remember](/langsmith/managed-deep-agents-memory#guide-what-to-remember).
 
 <Warning>
     `define_memory` mounts an empty memory tree. Content from the files the old `memory` parameter pointed at does not transfer, so move anything the agent still needs into `instructions.md` or a skill before deleting those files.
@@ -370,7 +366,7 @@ See [Deploy](/langsmith/managed-deep-agents-deploy).
 
 Most agents move without changes beyond the entry file. Four cases need a decision first:
 
-- **Custom backends**: A hand-written `BackendProtocol` implementation has no equivalent. The runtime owns the backend, and a [managed sandbox](/langsmith/managed-deep-agents-sandboxes) is the supported way to give the agent a filesystem and shell.
+- **Custom backends**: A hand-written `BackendProtocol` implementation has no equivalent. The runtime owns the backend, and the [managed sandbox](/langsmith/managed-deep-agents-sandboxes) is the only choice for giving the agent a filesystem and shell.
 - **Your own store or checkpointer**: Threads, runs, and persistence come from [Agent Server](/langsmith/agent-server-overview). An agent that depends on a specific store implementation needs that logic moved into a tool or middleware.
 - **Custom application code and routes**: Managed Deep Agents hosts the agent, not an arbitrary web application. For custom routes, advanced authentication, or application code around the agent, use a [LangSmith deployment](/langsmith/deployment) instead.
 - **Custom state schemas in Python**: `define_deep_agent` does not accept `state_schema`, so an agent that extends `DeepAgentState` cannot move as is. The TypeScript `defineDeepAgent` does accept `stateSchema`.
