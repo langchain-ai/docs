@@ -1,0 +1,79 @@
+---
+title: Log traces to an agent
+sidebarTitle: Log traces to an agent
+description: How agent addressing sends traces to an agent and an environment, which variables carry it, and why it cannot be combined with project addressing.
+icon: "target"
+tag: "Beta"
+---
+
+_Agent addressing_ names the [agent](/langsmith/agents) and the [environment](/langsmith/agent-environments) a trace belongs to, rather than the tracing project it lands in. The agent and the environment travel with every run, so the application that produced a trace and the deployment it ran on are recorded at ingestion instead of being recovered later from a project name.
+
+Agent addressing and [project addressing](/langsmith/log-traces-to-project) are alternatives. A trace uses one or the other, never both.
+
+<Note>
+Agent addressing applies to agent-based workspaces, which are in [beta](/langsmith/release-stages) for a private group of customers. It is not yet available in the LangSmith SDKs. This page describes the addressing model. For working tracing setup today, see [Log traces to a specific project](/langsmith/log-traces-to-project).
+</Note>
+
+## Addressing variables
+
+Two environment variables carry agent addressing:
+
+- **`LANGSMITH_AGENT_ID`**: The agent to address. The value is the agent's identifier, a human-readable slug such as `my-agent`, not the UUID from the browser address bar. It is sent with every run.
+- **`LANGSMITH_AGENT_ENVIRONMENT`**: The environment the run belongs to. Optional. When it is unset, nothing is sent and the backend applies the default.
+
+Note the asymmetry with the variable it replaces. `LANGSMITH_PROJECT` holds a project's name, while `LANGSMITH_AGENT_ID` holds an agent's identifier. An agent's [display name is a separate, editable value](/langsmith/agents#identifiers-and-display-names) and is not what tracing configuration takes.
+
+## Addressing modes are mutually exclusive
+
+Combining the two modes is an error rather than a precedence rule, so there is no case where one silently wins:
+
+- **An agent and a project together** are rejected. Setting `LANGSMITH_AGENT_ID` alongside `LANGSMITH_PROJECT`, `LANGCHAIN_PROJECT`, or `LANGCHAIN_SESSION` raises an error when the client starts, so the conflict surfaces locally rather than once per batch of traces.
+- **An environment without an agent** is rejected. `LANGSMITH_AGENT_ENVIRONMENT` has no meaning on its own, because an environment belongs to an agent.
+
+## Addressing an agent that does not exist
+
+An identifier that matches no agent in the workspace creates one rather than failing. Traces from a new service therefore arrive under their own agent from the first run, without a setup step.
+
+Agent identifiers are limited to 255 characters. A longer value is rejected.
+
+## See also
+
+- [Agents](/langsmith/agents)
+- [Agent environments](/langsmith/agent-environments)
+- [Log traces to a specific project](/langsmith/log-traces-to-project)
+- [Observability concepts](/langsmith/observability-concepts)
+
+{/*
+  UNFINISHED, DOC-1597. The procedural half of this page is blocked on langsmith-sdk,
+  which has no work started. Checklist for whoever picks it up:
+
+  1. Code examples. Critical rule 7 forbids untested examples and there is no client
+     surface to call yet. Add Python and TypeScript blocks once the SDK ships.
+  2. The default environment on the addressing path. The ingestion design says the
+     backend applies `production` when `agent_environment` is absent, but that is
+     design intent rather than shipped behavior: #38355 is still draft. This page
+     deliberately says only that the backend applies the default. State the value
+     once #38355 lands.
+  3. Variable names. `LANGSMITH_AGENT_ID` was settled in the 2026-09-11 naming thread.
+     `LANGSMITH_AGENT_ENVIRONMENT` was not, and the wire field is `agent_environment`
+     against an unreconciled `environment` in the parent audit. Kiewan's team reviewed
+     the row page on 2026-09-14 and owns any rename. Confirm both names before this
+     page reaches a reader who will copy them.
+  4. Troubleshooting. On the adoption path an over-long project name is rejected
+     permanently and the Python SDK swallows the error. That entry belongs in tracing
+     setup once the limit is either raised or documented as final.
+  5. Source of truth is the row page for POST /api/v1/runs/multipart, confirmed
+     authoritative by Kiewan on 2026-09-12. Do not write against the parent endpoint
+     impact audit, which still reinterprets session_id as the agent id.
+*/}
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/log-traces-to-agent.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
