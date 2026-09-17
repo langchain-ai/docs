@@ -1,30 +1,52 @@
 ---
 title: TypeSafe middleware integration
-description: Build agent middleware that make decisions with TypeSafe classifiers using LangChain Python.
+description: Build agent middleware that make decisions with TypeSafe's Jev classifier using LangChain Python.
 integration:
   name: TypeSafe middleware
   available: Model routing, tool selection, and tool-risk gating
   source: "[`docs.typesafe.ai`](https://docs.typesafe.ai/sdk/python)"
 ---
 
-Three [middleware](/oss/langchain/middleware/overview) that make agent decisions with [TypeSafe](https://docs.typesafe.ai/) classifiers. There is no LangChain package for these — copy an example and adapt the tiers, thresholds, and rubric wording to your agent.
+Agents make small decisions constantly — which model to use, which tools to offer, whether a tool call is safe to run. This page shows three [middleware](/oss/langchain/middleware/overview) that hand those decisions to a classifier instead of a chat model.
+
+There is no LangChain package for these. Copy an example and adapt it.
 
 ```bash
 pip install typesafe-sdk langchain
 export TYPESAFE_API_KEY=...
 ```
 
-| Example | Decision | If the classifier fails |
-|---|---|---|
-| [Model routing](#model-routing) | Which capability tier handles the run | Uses `balanced` |
-| [Tool selection](#tool-selection) | Which tools the model sees | Offers every tool |
-| [Tool-risk gating](#tool-risk-gating) | Whether a tool call is too risky to run | Raises; the tool does not run |
+## Jev
+
+[Jev](https://docs.typesafe.ai/models) is a [System One model](https://docs.typesafe.ai/concepts/system-one): it reads natural language like an LLM, but returns typed answers and calibrated probabilities rather than generated text. It does not write replies, produce code, or explain its reasoning — it answers questions you define up front, and your code branches on the result.
+
+That makes it a fit for decisions on the agent's hot path. You send one state and a set of named questions in a single request; the questions are evaluated in parallel and answered independently, so adding more barely changes response time. Answers are always constrained to the options you defined.
+
+## Decision types
+
+Each question is one of three [primitives](https://docs.typesafe.ai/primitives):
+
+| Primitive | Asks | Returns | Reach for it when |
+|---|---|---|---|
+| [`Noul`](https://docs.typesafe.ai/primitives/noul) | Is this true? | `noul`, the probability of yes | Your code branches on an `if` |
+| [`Choice`](https://docs.typesafe.ai/primitives/choice) | Which of these options? | `choice`, plus `probabilities` and `confidence` | Options map to distinct code paths |
+| [`Score`](https://docs.typesafe.ai/primitives/score) | Which level? | `score`, plus `legend`, `probabilities`, and `confidence` | The answer is a spectrum you compare to a threshold |
+
+`Noul` is the only one without a `confidence`, since the probability is the answer. Use `Score` rather than a `Noul` for a spectrum: a `Noul` of `0.5` means an even split between yes and no, not "medium".
+
+## The examples
+
+| Example | Primitive | Decision | If the classifier fails |
+|---|---|---|---|
+| [Model routing](#model-routing) | One `Choice` | Which capability tier handles the run | Uses `balanced` |
+| [Tool selection](#tool-selection) | One `Noul` per tool | Which tools the model sees | Offers every tool |
+| [Tool-risk gating](#tool-risk-gating) | One `Noul` | Whether a tool call is too risky to run | Raises; the tool does not run |
 
 The hooks below are async. Add their sync counterparts if you call `agent.invoke()` rather than `agent.ainvoke()`.
 
 ## Model routing
 
-Classify the request into a capability tier once per run, then use that tier's model for the rest of it. This is the shape [Open SWE](https://github.com/langchain-ai/open-swe) uses.
+Classify the request into a capability tier once per run, then use that tier's model for the rest of it. The tiers are `Choice` options, so the rubric travels in the request rather than a prompt template. This is the shape [Open SWE](https://github.com/langchain-ai/open-swe) uses.
 
 ```python title="model_router.py"
 import logging
@@ -135,7 +157,7 @@ Context-injecting middleware append their context as extra `HumanMessage`s, so i
 
 ## Tool selection
 
-Score each tool against the request and hide the ones that do not apply, so a large toolbox does not cost context on every call.
+Score each tool against the request and hide the ones that do not apply, so a large toolbox does not cost context on every call. One `Noul` per tool, which is cheap to batch and keeps the tools independent — adding a tool cannot shift another tool's score.
 
 ```python title="tool_selection.py"
 import logging
@@ -214,8 +236,6 @@ agent = create_agent(
     middleware=[ToolSelectionMiddleware(threshold=0.3)],
 )
 ```
-
-Each tool is a separate `Noul` question, so this scales without turning into one long multiple-choice prompt.
 
 ## Tool-risk gating
 
@@ -325,4 +345,6 @@ This middleware refuses; it does not ask. Pair it with [human-in-the-loop middle
 
 ## Reference
 
-`AsyncTypeSafeClient()` reads `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, and `TYPESAFE_DEFAULT_MODEL` from the environment; pass a client to set the model, timeout, retry policy, or transport. See the [Python SDK reference](https://docs.typesafe.ai/sdk/python/api), [System One](https://docs.typesafe.ai/concepts/system-one) for question and answer semantics, and [Confidence](https://docs.typesafe.ai/confidence) for choosing thresholds.
+`AsyncTypeSafeClient()` reads `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, and `TYPESAFE_DEFAULT_MODEL` from the environment; pass a client to set the model, timeout, retry policy, or transport. `jev-latest` moves with each release, so pin a version once you have calibrated thresholds against one.
+
+See the [Python SDK reference](https://docs.typesafe.ai/sdk/python/api) for the full surface and [Confidence](https://docs.typesafe.ai/confidence) for choosing thresholds.
