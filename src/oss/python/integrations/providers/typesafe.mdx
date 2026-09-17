@@ -5,7 +5,7 @@ description: "Integrate with TypeSafe using LangChain Python."
 
 [Jev](https://docs.typesafe.ai/models) is a [System One model](https://docs.typesafe.ai/concepts/system-one): it reads natural language like an LLM, but returns typed answers and calibrated probabilities rather than generated text. It does not write replies, produce code, or explain its reasoning — it answers questions you define up front, and your code branches on the result.
 
-That makes it a fit for the small decisions an agent makes constantly: which model to use, which skills apply, whether a tool call is safe to run.
+That makes it a fit for the small decisions an agent makes constantly: which model to use, whether a tool call is safe to run.
 
 ## Setup
 
@@ -70,16 +70,15 @@ Each question is one of three [primitives](https://docs.typesafe.ai/primitives):
 
 ## Agent middleware
 
-Three [middleware](/oss/langchain/middleware/overview) put the classifier on an agent's decision points. Import them from `langchain_typesafe.experimental.middleware`.
+Two [middleware](/oss/langchain/middleware/overview) put the classifier on an agent's decision points. Import them from `langchain_typesafe.experimental.middleware`.
 
 <Note>
-The middleware are still in review and are not part of `langchain-typesafe` `0.0.1a1`. Follow [#40543](https://github.com/langchain-ai/langchain/pull/40543) (model routing), [#40544](https://github.com/langchain-ai/langchain/pull/40544) (skills), and [#40545](https://github.com/langchain-ai/langchain/pull/40545) (tool-risk gating). Their APIs may change before release.
+The middleware are still in review and are not part of `langchain-typesafe` `0.0.1a1`. Follow [#40543](https://github.com/langchain-ai/langchain/pull/40543) (model routing) and [#40545](https://github.com/langchain-ai/langchain/pull/40545) (tool-risk gating). Their APIs may change before release.
 </Note>
 
 | Middleware | Hook | Decision |
 |---|---|---|
 | [`ModelRouterMiddleware`](#model-routing) | `before_agent`, `wrap_model_call` | Which model handles the run |
-| [`SkillsMiddleware`](#skill-selection) | `before_agent`, `wrap_model_call` | Which skills apply to the request |
 | [`AutoModeMiddleware`](#tool-risk-gating) | `wrap_tool_call` | Whether a tool call is too risky to run |
 
 ### Model routing
@@ -108,29 +107,6 @@ agent = create_agent("openai:gpt-5-nano", middleware=[router])
 ```
 
 The full `ChoiceAnswer` is stored in agent state under `model_route`, so downstream middleware can read `confidence` and the per-model `probabilities`, not just the selected route.
-
-### Skill selection
-
-Scores each skill independently against the request and prepends only the selected skills' instructions to the model request, so the roster never enters the prompt. Skills come from Agent Skills-compatible `SKILL.md` files, `Skill` objects, or `SKILL.md` strings:
-
-```python
-from pathlib import Path
-
-from langchain_typesafe.experimental.middleware import SkillsMiddleware
-
-skills = SkillsMiddleware(
-    skills=[Path("skills/code-review/SKILL.md")],
-    relevance_threshold=0.3,
-)
-
-agent = create_agent("openai:gpt-5", middleware=[skills])
-```
-
-Because each skill is its own `Noul`, two skills that both apply are both selected, and adding a skill cannot shift another skill's score.
-
-<Warning>
-Skill instructions become a system message and can direct agent behavior, so skill sources are trusted configuration. Do not load a `SKILL.md` that a user can write.
-</Warning>
 
 ### Tool-risk gating
 
