@@ -38,6 +38,17 @@ The harness is the same either way, so building on Deep Agents first and moving 
 @[createDeepAgent] compiles an agent in your process, so it takes the backend, store, and checkpointer as options. `defineDeepAgent` returns a definition instead, and the managed runtime compiles it. The definition is configuration rather than a runnable agent: the `mda` CLI consumes it on `mda dev` and `mda deploy`, and the runtime supplies the managed pieces at that point. For the full picture, see [Relationship to Deep Agents](/langsmith/managed-deep-agents-overview#relationship-to-deep-agents).
 :::
 
+## Check what does not carry over
+
+Most agents move without changes beyond the entry file. Four cases need a decision first:
+
+- **Custom backends**: A hand-written `BackendProtocol` implementation has no equivalent. The runtime owns the backend, and the [managed sandbox](/langsmith/managed-deep-agents-sandboxes) is the only choice for giving the agent a filesystem and shell.
+- **Your own store or checkpointer**: Threads, runs, and persistence come from [Agent Server](/langsmith/agent-server-overview). An agent that depends on a specific store implementation needs that logic moved into a tool or middleware.
+- **Custom application code and routes**: Managed Deep Agents hosts the agent, not an arbitrary web application. For custom routes, advanced authentication, or application code around the agent, use a [LangSmith deployment](/langsmith/deployment) instead.
+- **Custom state schemas in Python**: `define_deep_agent` does not accept `state_schema`, so an agent that extends `DeepAgentState` cannot move as is. The TypeScript `defineDeepAgent` does accept `stateSchema`.
+
+If none of these apply, the agent logic transfers as written.
+
 <Prompt
     description="Convert a Deep Agents project into a Managed Deep Agents project."
     icon="arrow-right"
@@ -119,8 +130,6 @@ The rest move to a project file or become the runtime's job:
 :::
 
 Deep Agents backends are pluggable, and the managed runtime supplies its own. A project that declares `sandbox/` gets a managed sandbox for the agent filesystem and shell. A project without one gets thread-scoped agent state, alongside read-only [Context Hub](/langsmith/managed-deep-agents-context-hub) mounts for instructions, skills, and memory. There is no other choice of backend, so an agent that depends on a specific one stays on Deep Agents.
-
-Declaring a sandbox also clears `permissions`. A filesystem permission rule disables the sandbox `execute` tool, so the runtime drops the rules rather than the shell. Restrict a sandboxed agent through the tools you give it instead.
 
 ## Move an agent
 
@@ -272,6 +281,10 @@ export const sandbox = defineSandbox({
 ```
 :::
 
+<Warning>
+    Declaring a sandbox clears `permissions`. A filesystem permission rule disables the sandbox `execute` tool, so the runtime drops the rules rather than the shell. Restrict a sandboxed agent through the tools you give it instead.
+</Warning>
+
 To provision a snapshot, add `sandbox/setup.sh`. Skip this step for an agent that had no sandbox backend. See [Sandboxes](/langsmith/managed-deep-agents-sandboxes).
 </Step>
 
@@ -361,17 +374,6 @@ See [Deploy](/langsmith/managed-deep-agents-deploy).
 
     The install channel selects the authoring language: the npm package scaffolds TypeScript, and the PyPI package scaffolds Python. The command creates a new directory and does not run in place, so it suits a greenfield project rather than a migration. See the [quickstart](/langsmith/managed-deep-agents-quickstart).
 </Tip>
-
-## Check what does not carry over
-
-Most agents move without changes beyond the entry file. Four cases need a decision first:
-
-- **Custom backends**: A hand-written `BackendProtocol` implementation has no equivalent. The runtime owns the backend, and the [managed sandbox](/langsmith/managed-deep-agents-sandboxes) is the only choice for giving the agent a filesystem and shell.
-- **Your own store or checkpointer**: Threads, runs, and persistence come from [Agent Server](/langsmith/agent-server-overview). An agent that depends on a specific store implementation needs that logic moved into a tool or middleware.
-- **Custom application code and routes**: Managed Deep Agents hosts the agent, not an arbitrary web application. For custom routes, advanced authentication, or application code around the agent, use a [LangSmith deployment](/langsmith/deployment) instead.
-- **Custom state schemas in Python**: `define_deep_agent` does not accept `state_schema`, so an agent that extends `DeepAgentState` cannot move as is. The TypeScript `defineDeepAgent` does accept `stateSchema`.
-
-If none of these apply, the agent logic transfers as written.
 
 ## See also
 
