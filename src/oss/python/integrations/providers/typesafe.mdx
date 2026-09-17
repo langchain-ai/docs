@@ -3,9 +3,9 @@ title: "TypeSafe integrations"
 description: "Integrate with TypeSafe using LangChain Python."
 ---
 
-Agents make small decisions constantly — which model to use, which tools to offer, whether a tool call is safe to run. This page shows three [middleware](/oss/langchain/middleware/overview) that hand those decisions to a classifier instead of a chat model.
+[Jev](https://docs.typesafe.ai/models) is a [System One model](https://docs.typesafe.ai/concepts/system-one): it reads natural language like an LLM, but returns typed answers and calibrated probabilities rather than generated text. It does not write replies, produce code, or explain its reasoning — it answers questions you define up front, and your code branches on the result.
 
-Each example is self-contained — copy it into your project and adapt the tiers, thresholds, and rubric wording to your agent.
+That makes it a fit for the small decisions an agent makes constantly: which model to use, which tools to offer, whether a tool call is safe to run. This page covers using it for those, with three [middleware](/oss/langchain/middleware/overview) you can copy and adapt.
 
 ## Setup
 
@@ -21,13 +21,41 @@ Create an API key in the [TypeSafe console](https://console.typesafe.ai/settings
 export TYPESAFE_API_KEY=...
 ```
 
-A client constructed with no arguments picks that up and calls `jev-latest`, so the examples below need no further configuration to run.
+## Quickstart
 
-## Jev
+One request carries the state you are asking about and a set of named questions — here a yes/no `Noul` and a one-of-N `Choice`:
 
-[Jev](https://docs.typesafe.ai/models) is a [System One model](https://docs.typesafe.ai/concepts/system-one): it reads natural language like an LLM, but returns typed answers and calibrated probabilities rather than generated text. It does not write replies, produce code, or explain its reasoning — it answers questions you define up front, and your code branches on the result.
+```python
+import asyncio
 
-That makes it a fit for decisions on the agent's hot path. You send one state and a set of named questions in a single request; the questions are evaluated in parallel and answered independently, so adding more barely changes response time. Answers are always constrained to the options you defined.
+from typesafe_sdk import AsyncTypeSafeClient, Choice, Noul
+
+
+async def main() -> None:
+    async with AsyncTypeSafeClient() as client:
+        answers = await client.system_one(
+            "The deploy failed twice and customers are seeing 500s. Can someone look now?",
+            {
+                "urgent": Noul(instructions="Does this need attention right now?"),
+                "team": Choice(
+                    instructions="Which team should pick this up?",
+                    criteria={
+                        "infra": "Deploys, availability, and on-call incidents.",
+                        "billing": "Payments, invoices, and subscriptions.",
+                    },
+                ),
+            },
+        )
+
+    print(answers.nouls["urgent"].noul)
+    print(answers.choices["team"].choice)
+    print(answers.choices["team"].confidence)
+
+
+asyncio.run(main())
+```
+
+`noul` is the probability of yes. `choice` is one of the labels you supplied, and `confidence` reports how concentrated the distribution over those labels was. Questions are answered independently and in parallel, so adding more barely changes response time, and answers are always constrained to the options you defined.
 
 ## Decision types
 
