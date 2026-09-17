@@ -9,9 +9,11 @@ This page covers all LangChain integrations with [Microsoft Azure](https://porta
 <Tip>
     **Recommended: Microsoft Foundry**
 
-    We recommend using [Microsoft Foundry](https://learn.microsoft.com/en-us/azure/foundry/) across [chat models](#chat-models), [LLMs](#llms), and [embedding models](#embedding-models). The Foundry resource type is a superset of the Azure OpenAI resource type, with access to a broader model catalog, agent service, and evaluation capabilities while retaining Azure OpenAI APIs. If you use an Azure OpenAI resource, [upgrade it to a Foundry resource](https://learn.microsoft.com/en-us/azure/foundry/how-to/upgrade-azure-openai) to keep your existing API endpoint, state, and security configurations while gaining access to Foundry capabilities.
+    For new LangChain or LangGraph applications centered on [Microsoft Foundry](https://learn.microsoft.com/en-us/azure/foundry/), start with [`langchain-azure-ai`](/oss/integrations/providers/azure_ai). It adds Foundry project endpoints, Azure credential integration, Agent Service, hosting, tools, Content Safety, retrieval, and Azure observability.
 
-    With the [Azure OpenAI v1 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python) (generally available as of August 2025), you can use your Azure endpoint and API keys directly with the @[`langchain-openai`] package to call any model deployed in Microsoft Foundry (including OpenAI, Llama, DeepSeek, Mistral, and Phi) through a single interface. You also get native support for Microsoft Entra ID authentication and access to the latest features including the [Responses API](#responses-api) and [reasoning models](/oss/integrations/chat/azure_chat_openai). [Get started here](#azure-openai).
+    For direct [Azure OpenAI v1 API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python) model access, code that switches between OpenAI and Azure, traditional Azure OpenAI API versions, completion LLMs, or a smaller dependency surface, use the `langchain-openai` package.
+
+    A Foundry resource includes Azure OpenAI capabilities and adds a broader model catalog, agent service, and evaluation capabilities. If you use an Azure OpenAI resource, [upgrade it to a Foundry resource](https://learn.microsoft.com/en-us/azure/foundry/how-to/upgrade-azure-openai) to keep your existing API endpoint, state, and security configurations while gaining access to Foundry capabilities.
 
     For agent hosting, use [Microsoft Foundry hosted agents](#microsoft-foundry-hosted-agents) to deploy custom LangGraph code on a managed agent platform with built-in runtime, sessions, scaling, identity, and protocol endpoints.
 
@@ -28,19 +30,77 @@ This page covers all LangChain integrations with [Microsoft Azure](https://porta
     Microsoft Foundry also offers access to all [Anthropic Claude models](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-claude), including Opus, Sonnet, and Haiku. Claude models are served through a dedicated Anthropic-native endpoint rather than the Azure OpenAI v1 API. Use [`langchain-anthropic`](/oss/integrations/chat/anthropic) pointed at your Foundry Anthropic endpoint.
 </Note>
 
+## Choose a package
+
+`langchain-azure-ai` and @[`langchain-openai`] are complementary rather than alternatives. `langchain-azure-ai` depends on `langchain-openai`, and its chat and embeddings classes subclass @[`ChatOpenAI`] and @[`OpenAIEmbeddings`], so installing the Azure package does not remove the OpenAI package from your dependency chain.
+
+Use the following table to pick a starting point:
+
+| Scenario | Package |
+| --- | --- |
+| New application centered on a Foundry project | `langchain-azure-ai` |
+| Foundry Agent Service, hosted LangGraph, Toolbox, Content Safety, Azure tools, or Application Insights | `langchain-azure-ai` |
+| Embeddings configured from a Foundry project endpoint | `langchain-azure-ai` |
+| Direct Azure OpenAI v1 chat call | `langchain-openai` |
+| Same code must switch between OpenAI and Azure | `langchain-openai` |
+| Existing @[`AzureChatOpenAI`] application | `langchain-openai` |
+| Traditional dated Azure OpenAI API versions | `langchain-openai` |
+| Completion LLM interface | `langchain-openai` |
+| Minimal dependency and operational surface | `langchain-openai` |
+
+Moving an existing `langchain-openai` application to `langchain-azure-ai` is not a drop-in import change:
+
+- Configuration differs. `azure_endpoint`, `azure_deployment`, `api_version`, and token-provider arguments become `project_endpoint` or `endpoint`, `model`, and `credential`.
+- Default behavior differs. `AzureAIOpenAIApiChatModel` defaults to the Responses API when it resolves a project endpoint. Set `use_responses_api=False` to keep Chat Completions behavior.
+- No completion-LLM equivalent to @[`AzureOpenAI`] exists in `langchain-azure-ai`.
+- @[`AzureChatOpenAI`] carries Azure-specific response metadata and content-filter handling that the Foundry chat model does not reproduce.
+- Both packages follow the official OpenAI schemas, so non-standard fields returned by compatible providers such as DeepSeek or Mistral may not be preserved.
+
 ## Chat models
 
 Microsoft offers three main options for accessing chat models through Azure:
 
-1. **[Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/)** (recommended) — Access any model deployed in Microsoft Foundry (including OpenAI, Llama, DeepSeek, Mistral, and Phi) through a single interface, with enterprise features such as keyless authentication through [Microsoft Entra ID](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/managed-identity), regional data residency, and private networking. Use @[`ChatOpenAI`] on the v1 API, or @[`AzureChatOpenAI`] for traditional deployments.
+1. **Microsoft Foundry** (recommended for project-centric applications): Use `AzureAIOpenAIApiChatModel` from `langchain-azure-ai` with a Foundry project endpoint and Azure credentials. This package also integrates with Foundry agents, hosting, tools, Content Safety, retrieval, and observability.
+2. **[Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/)**: Use `ChatOpenAI` from `langchain-openai` for direct v1 API calls or code that switches between OpenAI and Azure. Use `AzureChatOpenAI` for traditional Azure OpenAI API versions and existing applications.
+3. **[Azure ML](https://learn.microsoft.com/en-us/azure/machine-learning/)**: Allows deployment and management of custom or fine-tuned open-source models with Azure Machine Learning.
 
-    Azure OpenAI also supports the [Responses API](#responses-api), which gives you access to server-side tools like code interpreter, image generation, and file search directly from your chat model.
-2. **[Azure AI](https://learn.microsoft.com/en-us/azure/ai-studio/how-to/deploy-models)** — Recommended for accessing tools, storage, and custom middleware from the broader Azure ecosystem alongside your chat model.
-3. **[Azure ML](https://learn.microsoft.com/en-us/azure/machine-learning/)** — Allows deployment and management of custom or fine-tuned open-source models with Azure Machine Learning.
+### Microsoft Foundry
+
+Microsoft Foundry provides project-level access to models and Azure services. Use `AzureAIOpenAIApiChatModel` from `langchain-azure-ai` when your application uses a Foundry project, Azure credentials, or other Foundry capabilities.
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-azure-ai
+    ```
+
+    ```bash uv
+    uv add langchain-azure-ai
+    ```
+</CodeGroup>
+
+Set your project endpoint:
+
+```bash
+export AZURE_AI_PROJECT_ENDPOINT="https://<resource>.services.ai.azure.com/api/projects/<project>"
+```
+
+Then create the chat model:
+
+```python
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.chat_models import AzureAIOpenAIApiChatModel
+
+llm = AzureAIOpenAIApiChatModel(
+    model="gpt-5.2",  # your Foundry model deployment name
+    credential=DefaultAzureCredential(),
+)
+```
+
+For a complete setup guide, see the [Microsoft Foundry chat model integration](/oss/integrations/chat/azure_ai).
 
 ### Azure OpenAI
 
-To get started with Azure OpenAI, [create an Azure deployment](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/create-resource) and install the `langchain-openai` package:
+For direct Azure OpenAI access, [create an Azure deployment](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/create-resource) and install the `langchain-openai` package:
 
 <CodeGroup>
     ```bash pip
@@ -52,7 +112,7 @@ To get started with Azure OpenAI, [create an Azure deployment](https://learn.mic
     ```
 </CodeGroup>
 
-On the v1 API, use @[`ChatOpenAI`] directly against your Azure endpoint—no `api_version` required:
+On the v1 API, use `ChatOpenAI` directly against your Azure endpoint—no `api_version` required:
 
 <Tabs>
     <Tab title="Entra ID (recommended)">
@@ -89,7 +149,7 @@ On the v1 API, use @[`ChatOpenAI`] directly against your Azure endpoint—no `ap
     </Tab>
 </Tabs>
 
-For traditional Azure OpenAI API versions, use @[`AzureChatOpenAI`]:
+For traditional Azure OpenAI API versions, use `AzureChatOpenAI`:
 
 ```python
 from langchain_openai import AzureChatOpenAI
@@ -99,7 +159,7 @@ See the [Azure ChatOpenAI integration page](/oss/integrations/chat/azure_chat_op
 
 #### Responses API
 
-Azure OpenAI supports the [Responses API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses), which provides stateful conversations, built-in tools (web search, file search, code interpreter), and structured reasoning summaries. @[`ChatOpenAI`] automatically routes to the Responses API when you set the `reasoning` parameter, or you can opt in explicitly with `use_responses_api=True`:
+Azure OpenAI supports the [Responses API](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/responses), which provides stateful conversations, built-in tools (web search, file search, code interpreter), and structured reasoning summaries. `ChatOpenAI` automatically routes to the Responses API when you set the `reasoning` parameter, or you can opt in explicitly with `use_responses_api=True`:
 
 <Tabs>
     <Tab title="Entra ID (recommended)">
@@ -142,28 +202,12 @@ Azure OpenAI supports the [Responses API](https://learn.microsoft.com/en-us/azur
 
 For a walkthrough of reasoning effort, reasoning summaries, and streaming with the Responses API, see the [Azure ChatOpenAI integration page](/oss/integrations/chat/azure_chat_openai).
 
-### Azure AI
-
->[Azure AI Foundry](https://learn.microsoft.com/en-us/azure/developer/python/get-started) is the broader Azure AI platform. The `langchain-azure-ai` package lets you bring Azure-native tools, storage, and custom middleware into your LangChain app, and exposes chat models deployed in Foundry through the `AzureAIOpenAIApiChatModel` class.
-
-<CodeGroup>
-    ```bash pip
-    pip install -U langchain-azure-ai
-    ```
-
-    ```bash uv
-    uv add langchain-azure-ai
-    ```
-</CodeGroup>
-
-See a [usage example](/oss/integrations/chat/azure_ai).
-
 ## LLMs
 
 Microsoft offers two main options for accessing LLMs through Azure:
 
-1. **[Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/)** (recommended) — Access any model deployed in Microsoft Foundry (including OpenAI, Llama, DeepSeek, Mistral, and Phi) as a completion LLM with @[`AzureOpenAI`].
-2. **[Azure ML](https://learn.microsoft.com/en-us/azure/machine-learning/)** — Use custom or open-source models hosted on Azure Machine Learning online endpoints.
+1. **[Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/)** (recommended): Use Azure OpenAI text-completion deployments with `AzureOpenAI` from `langchain-openai`.
+2. **[Azure ML](https://learn.microsoft.com/en-us/azure/machine-learning/)**: Use custom or open-source models hosted on Azure Machine Learning online endpoints.
 
 ### Azure OpenAI
 
@@ -217,10 +261,48 @@ See a [usage example](/oss/integrations/llms/azure_openai).
 
 ## Embedding models
 
-Microsoft offers two main options for accessing embedding models through Azure:
+Choose an embeddings integration based on how your application connects to Azure:
 
-1. **[Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/)** (recommended) — Use embedding models deployed in Microsoft Foundry (including OpenAI `text-embedding-3-small`, `text-embedding-3-large`, and Cohere) with @[`AzureOpenAIEmbeddings`].
-2. **[Azure AI](https://learn.microsoft.com/en-us/azure/ai-studio/how-to/deploy-models)** — Recommended for accessing tools, storage, and custom middleware from the broader Azure ecosystem alongside your embedding model.
+1. **Microsoft Foundry** (recommended for project-centric applications): Use `AzureAIOpenAIApiEmbeddingsModel` from `langchain-azure-ai` with Foundry project configuration and Azure credentials.
+2. **[Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/)**: Use @[`AzureOpenAIEmbeddings`] from `langchain-openai` for direct or traditional Azure OpenAI endpoints, existing applications, or a smaller dependency surface.
+
+### Microsoft Foundry
+
+Install `langchain-azure-ai`:
+
+<CodeGroup>
+    ```bash pip
+    pip install -U langchain-azure-ai
+    ```
+
+    ```bash uv
+    uv add langchain-azure-ai
+    ```
+</CodeGroup>
+
+Set your project endpoint:
+
+```bash
+export AZURE_AI_PROJECT_ENDPOINT="https://<resource>.services.ai.azure.com/api/projects/<project>"
+```
+
+Then create the embeddings model:
+
+```python
+from azure.identity import DefaultAzureCredential
+from langchain_azure_ai.embeddings import AzureAIOpenAIApiEmbeddingsModel
+
+embeddings = AzureAIOpenAIApiEmbeddingsModel(
+    model="text-embedding-3-small",  # your Foundry model deployment name
+    credential=DefaultAzureCredential(),
+)
+```
+
+<Note>
+    Foundry project configuration currently derives a direct `/openai/v1` endpoint because embeddings are not yet served through the project endpoint itself.
+</Note>
+
+For more information, see the [Microsoft Foundry embeddings integration](/oss/integrations/providers/azure_ai#azure-ai-model-inference-for-embeddings).
 
 ### Azure OpenAI
 
@@ -271,20 +353,6 @@ See a [usage example](/oss/integrations/embeddings/azure_openai).
         ```
     </Tab>
 </Tabs>
-
-### Azure AI
-
-<CodeGroup>
-    ```bash pip
-    pip install -U langchain-azure-ai
-    ```
-
-    ```bash uv
-    uv add langchain-azure-ai
-    ```
-</CodeGroup>
-
-See a [usage example](/oss/integrations/providers/azure_ai#azure-ai-model-inference-for-embeddings).
 
 ## Middleware
 
@@ -339,6 +407,55 @@ See [usage examples for the Azure Blob Storage Loader](/oss/integrations/documen
 ```python
 from langchain_azure_storage.document_loaders import AzureBlobStorageLoader
 ```
+
+## Backends
+
+### Azure Blob Storage Backend
+
+>[Azure Blob Storage](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-blobs-introduction) is Microsoft's object storage solution for the cloud. `AzureBlobBackend` implements the Deep Agents `BackendProtocol`, so a deep agent can persist its entire workspace (files, memories, and artifacts) in a blob container.
+
+<Note>
+The `AzureBlobBackend` is part of the `langchain-azure-storage` package, which is currently in **Public Preview**.
+</Note>
+
+Install with the `deepagents` extra (requires Python 3.11+):
+
+<CodeGroup>
+    ```bash pip
+    pip install -U "langchain-azure-storage[deepagents]"
+    ```
+
+    ```bash uv
+    uv add "langchain-azure-storage[deepagents]"
+    ```
+</CodeGroup>
+
+```python
+from langchain_azure_storage.deepagents import AzureBlobBackend
+```
+
+**Quick start:**
+
+```python
+from deepagents import create_deep_agent
+from langchain_azure_storage.deepagents import AzureBlobBackend
+
+backend = AzureBlobBackend(
+    account_url="https://<my-storage-account-name>.blob.core.windows.net",
+    container_name="agent-workspace",
+    prefix="session-001/",  # Optional: isolate each agent/session under a prefix.
+)
+
+agent = create_deep_agent(backend=backend)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Write a hello world script to hello.py"}]}
+)
+```
+
+The backend defaults to [`DefaultAzureCredential`](https://learn.microsoft.com/en-us/azure/developer/python/sdk/authentication/credential-chains?tabs=dac#defaultazurecredential-overview) and accepts a `credential` override.
+
+For more information, see [Backend integrations](/oss/integrations/backends). See the [package repository](https://github.com/langchain-ai/langchain-azure/tree/main/libs/azure-storage) for full usage details and security guidance.
 
 ## Memory
 
@@ -425,11 +542,11 @@ Below are two available Azure Cosmos DB APIs that can provide vector store funct
 
 #### Azure cosmos DB for MongoDB (vCore)
 
->[Azure Cosmos DB for MongoDB vCore](https://learn.microsoft.com/en-us/azure/cosmos-db/mongodb/vcore/) makes it easy to create a database with full native MongoDB support.
+>[Azure Cosmos DB for MongoDB vCore](https://learn.microsoft.com/en-us/azure/documentdb/) makes it easy to create a database with full native MongoDB support.
 > You can apply your MongoDB experience and continue to use your favorite MongoDB drivers, SDKs, and tools by pointing your application to the API for MongoDB vCore account's connection string.
 > Use vector search in Azure Cosmos DB for MongoDB vCore to seamlessly integrate your AI-based applications with your data that's stored in Azure Cosmos DB.
 
-##### Installation and setup
+#### Installation and setup
 
 See [detailed configuration instructions](/oss/integrations/vectorstores/azure_cosmos_db_mongo_vcore).
 
@@ -445,7 +562,7 @@ We need to install `langchain-azure-ai` and `pymongo` python packages.
     ```
 </CodeGroup>
 
-##### Deploy Azure cosmos DB on Microsoft Azure
+#### Deploy Azure cosmos DB on Microsoft Azure
 
 Azure Cosmos DB for MongoDB vCore provides developers with a fully managed MongoDB-compatible database service for building modern applications with a familiar architecture.
 
@@ -468,7 +585,7 @@ but also high-dimensional vectors as other properties of the documents. This col
 as the vectors are stored in the same logical unit as the data they represent. This simplifies data management, AI application architectures, and the
 efficiency of vector-based operations.
 
-##### Installation and setup
+#### Installation and setup
 
 See [detail configuration instructions](/oss/integrations/vectorstores/azure_cosmos_db_no_sql).
 
@@ -484,7 +601,7 @@ We need to install `langchain-azure-cosmosdb` and `azure-cosmos` python packages
     ```
 </CodeGroup>
 
-##### Deploy Azure cosmos DB on Microsoft Azure
+#### Deploy Azure cosmos DB on Microsoft Azure
 
 Azure Cosmos DB offers a solution for modern apps and intelligent workloads by being very responsive with dynamic and elastic autoscale. It is available
 in every Azure region and can automatically replicate data closer to users. It has SLA guaranteed low-latency and high availability.
@@ -513,7 +630,7 @@ Since Azure Database for PostgreSQL is open-source Postgres, you can use the [La
 
 By leveraging your current SQL Server databases for vector search, you can enhance data capabilities while minimizing expenses and avoiding the challenges of transitioning to new systems.
 
-##### Installation and setup
+#### Installation and setup
 
 See [detail configuration instructions](https://learn.microsoft.com/azure/azure-sql/database/ai-artificial-intelligence-intelligent-applications?view=azuresql).
 
@@ -523,7 +640,7 @@ We need to install the `langchain-sqlserver` python package.
 !pip install langchain-sqlserver==0.1.1
 ```
 
-##### Deploy Azure SQL DB on Microsoft Azure
+#### Deploy Azure SQL DB on Microsoft Azure
 
 [Sign Up](https://learn.microsoft.com/azure/azure-sql/database/free-offer?view=azuresql) for free to get started today.
 
@@ -749,15 +866,79 @@ Before you begin, you need an Azure subscription, a Foundry project, a deployed 
 
 Choose a hosting protocol based on how clients interact with the agent:
 
-| Protocol | Host class | Endpoint | Use when |
-| --- | --- | --- | --- |
-| Responses | `ResponsesHostServer` | `/responses` | You need OpenAI-compatible chat, streaming, response history, or conversation threading. Start here for most conversational agents. |
-| Invocations | `InvocationsHostServer` | `/invocations` | You need a custom JSON shape, a webhook-style endpoint, or non-conversational processing. |
+| Protocol | Run argument | SDK host class | Endpoint | Use when |
+| --- | --- | --- | --- | --- |
+| Responses | `--protocol responses` | `ResponsesHostServer` | `/responses` | You need OpenAI-compatible chat, streaming, response history, or conversation threading. Start here for most conversational agents. |
+| Invocations | `--protocol invocations` | `InvocationsHostServer` | `/invocations` | You need a custom JSON shape, a webhook-style endpoint, or non-conversational processing. |
 
-To host and deploy a graph:
+See the complete run samples for the [Responses protocol](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents/langgraph/responses/10-run) and [Invocations protocol](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents/langgraph/invocations/03-run).
 
-1. Pass the compiled graph to the host server for your chosen protocol.
-2. Set `FOUNDRY_PROJECT_ENDPOINT` and `FOUNDRY_MODEL_NAME`, then run and test the host locally.
-3. Use `azd ai agent init` to initialize a hosted-agent project, `azd ai agent run` to test its container, and `azd provision` and `azd deploy` to deploy it. You can also deploy with the Foundry Toolkit Visual Studio Code extension.
+#### Use the configuration-driven runner
+
+If your agent already runs with the LangGraph CLI, use `langchain_azure_ai.agents.hosting.run` tool from the same project directory. The runner uses the existing `langgraph.json` configuration to load the compiled graph, so no code change is needed.
+
+Set the Foundry project endpoint and model deployment name, then select the protocol when you start the host:
+
+<Tabs>
+    <Tab title="Responses">
+        ```bash
+        export FOUNDRY_PROJECT_ENDPOINT="https://<account>.services.ai.azure.com/api/projects/<project>"
+        export AZURE_AI_MODEL_DEPLOYMENT_NAME="<model-deployment-name>"
+        python -m langchain_azure_ai.agents.hosting.run --protocol responses
+        ```
+    </Tab>
+    <Tab title="Invocations">
+        ```bash
+        export FOUNDRY_PROJECT_ENDPOINT="https://<account>.services.ai.azure.com/api/projects/<project>"
+        export AZURE_AI_MODEL_DEPLOYMENT_NAME="<model-deployment-name>"
+        python -m langchain_azure_ai.agents.hosting.run --protocol invocations
+        ```
+    </Tab>
+</Tabs>
+
+For deployment, set `codeConfiguration.entryPoint` on the agent service in `azure.yaml` to the same runner and protocol. Keep the existing project path, runtime, and dependency resolution settings:
+
+<Tabs>
+        <Tab title="Responses">
+                ```yaml
+                services:
+                    my-agent:
+                        codeConfiguration:
+                            entryPoint: '-m langchain_azure_ai.agents.hosting.run --protocol responses'
+                ```
+        </Tab>
+        <Tab title="Invocations">
+                ```yaml
+                services:
+                    my-agent:
+                        codeConfiguration:
+                            entryPoint: '-m langchain_azure_ai.agents.hosting.run --protocol invocations'
+                ...
+                ```
+        </Tab>
+</Tabs>
+
+#### Use the SDK host classes
+
+Use the SDK host classes when you need to customize server construction, control the server lifecycle directly, or implement advanced hosting behavior such as custom routes or handlers:
+
+<Tabs>
+    <Tab title="Responses">
+        ```python
+        from langchain_azure_ai.agents.hosting import ResponsesHostServer
+
+        ResponsesHostServer(graph).run()
+        ```
+    </Tab>
+    <Tab title="Invocations">
+        ```python
+        from langchain_azure_ai.agents.hosting import InvocationsHostServer
+
+        InvocationsHostServer(graph).run()
+        ```
+    </Tab>
+</Tabs>
+
+To deploy either approach, use `azd ai agent init` to initialize a hosted-agent project, `azd ai agent run` to test it locally, and `azd deploy` to deploy it. Run `azd provision` first only when you need to create the Foundry project or other Azure resources. You can also deploy with the Foundry Toolkit Visual Studio Code extension.
 
 The Microsoft Learn guide includes complete examples for both protocols, conversation state, human-in-the-loop flows, testing, deployment, and troubleshooting.

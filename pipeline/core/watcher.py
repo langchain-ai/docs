@@ -136,6 +136,12 @@ class DocsFileHandler(FileSystemEventHandler):
         if self._should_ignore_file(file_path):
             return
 
+        if file_path.exists():
+            if file_path.suffix.lower() in self.builder.copy_extensions:
+                logger.info("File changed: %s", file_path)
+                self.loop.call_soon_threadsafe(self.event_queue.put_nowait, file_path)
+            return
+
         relative_path = file_path.relative_to(self.builder.src_dir.absolute())
         output_path = self.builder.build_dir / relative_path
 

@@ -28,7 +28,7 @@ A common pattern for constructing datasets is to convert notable traces from you
 A technique to build datasets is to filter the most interesting traces, such as traces that were tagged with poor user feedback, and add them to a dataset. For tips on how to filter traces, refer to the [Filter traces](/langsmith/filter-traces-in-application) guide.
 </Check>
 
-There are two ways to add data manually from a tracing project to datasets. Navigate to **Tracing Projects** and select a project.
+There are three ways to add data manually from a tracing project to datasets. Navigate to **Tracing Projects** and select a project.
 
 1. Multi-select runs from the runs table. On the **Runs** tab, multi-select runs. At the bottom of the page, click <Icon icon="database" /> **Add to Dataset**.
 1. On the **Runs** tab, select a run from the table. On the individual run details page, select  **Add to** -> **Dataset** in the top right corner.
@@ -37,9 +37,20 @@ There are two ways to add data manually from a tracing project to datasets. Navi
 
     You can then optionally edit the run before adding it to the dataset.
 
+1. Multi-select threads from the threads table. On the **Threads** tab, multi-select threads. At the bottom of the page, click <Icon icon="database" /> **Add to Dataset**. You can add at most **100** threads in a single action.
+
+    To send the threads to a new dataset instead, click **New Dataset** in the dataset picker. This pane creates the dataset from scratch only and does not offer the schema editor.
+
+Adding threads to a dataset differs from adding runs:
+
+- **One example per thread**: Each thread's full conversation is saved as one example. When you add runs from a thread, each run becomes a separate example.
+- **No reference output**: Thread examples include the conversation as input only. They do not include a reference output.
+
 ### Automatically from a tracing project
 
-You can use [run rules](/langsmith/rules) to add traces automatically to a dataset based on certain conditions. For example, you could add all traces that are [tagged](/langsmith/observability-concepts#tags) with a specific use case or have a [low feedback score](/langsmith/observability-concepts#feedback).
+Use [automation rules](/langsmith/rules) to add traces to a dataset automatically when they meet specified conditions. For example, add traces that are [tagged](/langsmith/observability-concepts#tags) for a specific use case or have a [low feedback score](/langsmith/observability-concepts#feedback).
+
+A rule's [item type](/langsmith/rules#set-the-item-type-to-runs-or-threads) controls what it adds. A rule with the **Runs** item type adds one example for each matching trace. A rule with the **Threads** item type waits for conversations to go idle, then adds one example for each matching thread.
 
 ### From examples in an annotation queue
 
@@ -47,16 +58,16 @@ You can use [run rules](/langsmith/rules) to add traces automatically to a datas
 If you rely on subject matter experts to build meaningful datasets, use [annotation queues](/langsmith/annotation-queues) to provide a streamlined view for reviewers. Human reviewers can optionally modify the inputs/outputs/reference outputs from a trace before it is added to the dataset.
 </Check>
 
-You can optionally configure annotation queues with a default dataset, though you can add runs to any dataset by using the dataset switcher on the bottom of the screen. Once you select the right dataset, click **Add to Dataset** or hit the hot key `D` to add the run to it.
+You can set a default dataset for run items in an annotation queue. Thread items do not support default datasets. To add a run or thread to a different dataset, use the dataset switcher. After selecting a dataset, click **Add to Dataset** or press `D`. A run item adds the run, and a thread item adds the full conversation as one example.
 
-Any modifications you make to the run in your annotation queue will carry over to the dataset, and all metadata associated with the run will also be copied.
+Changes you make to a run in an annotation queue, including its metadata, are copied to the dataset. You cannot edit thread items. They are added as they were traced.
 
 <Note>
-**Add to Dataset** is available for **run** queue items only. [Thread](/langsmith/observability-concepts#threads) items in an annotation queue support rubric feedback, but not dataset export.
+Default datasets are not available for thread items.
 </Note>
 
 <Tip>
-You can also set up rules to add runs that meet specific criteria to an annotation queue using [automation rules](/langsmith/rules).
+Use [automation rules](/langsmith/rules) to add runs or threads that meet specific criteria to an annotation queue.
 </Tip>
 
 ### From the Playground

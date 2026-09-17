@@ -133,10 +133,10 @@ Common profile commands:
 | `langsmith profile set-workspace <workspace-id>` | Set the default workspace for the selected profile. |
 | `langsmith profile delete <name>` | Delete a saved profile. |
 
-Use `--format pretty` for human-readable tables:
+Output is a human-readable table by default. Use `--format json` for scriptable output:
 
 ```shell
-langsmith --format pretty profile list
+langsmith --format json profile list
 ```
 
 ## Authenticate with `langsmith auth login`
