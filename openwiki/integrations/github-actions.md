@@ -1,11 +1,11 @@
 ---
 type: CI and privileged automation topology
 title: GitHub Actions and CI/CD
-description: How repository automation separates untrusted pull-request validation from credentialed or write-capable jobs. Covers CI, code-sample testing and trace refreshes, GitHub mutations, scheduled maintenance, and Linear escalation boundaries.
-tags: [github-actions, ci-cd, automation, security, testing]
+description: How repository automation separates untrusted pull-request validation from credentialed or write-capable jobs. Covers CI, version-claim gates, scheduled version refresh PRs, code-sample testing, and GitHub mutations.
+tags: [github-actions, ci-cd, automation, security, testing, versioning]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-15T08:21:56.110Z
+    at: 2026-09-17T08:22:51.028Z
 sources:
   - id: openwiki-source-dea5cd08ee99ad0f836ba18b
     resource: repo://.github/labeler.yml
@@ -13,6 +13,8 @@ sources:
     resource: repo://.github/OWNERS
   - id: openwiki-source-8629b1789854a065b89fc2df
     resource: repo://.github/workflows/check-agents-sync.yml
+  - id: openwiki-source-21617d8a6b2b570989a7c900
+    resource: repo://.github/workflows/check-version-claims.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
     resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-1ca506cf29eca9b87a087220
@@ -29,6 +31,8 @@ sources:
     resource: repo://.github/workflows/openwiki-update.yml
   - id: openwiki-source-4c203a05e0a78b2d5fd991b4
     resource: repo://.github/workflows/pr-welcome-comment.yml
+  - id: openwiki-source-0976291f8216a4c7151f20a7
+    resource: repo://.github/workflows/refresh-external-versions.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-751a704f6f25787856371177
@@ -37,6 +41,10 @@ sources:
     resource: repo://.github/workflows/test-code-samples.yml
   - id: openwiki-source-4de47c60d7e3210385c34d35
     resource: repo://.github/workflows/update-package-downloads.yml
+  - id: openwiki-source-6b3ad04031a04803eb901844
+    resource: repo://scripts/check_external_versions.py
+  - id: openwiki-source-99b53585619b83f258314f8b
+    resource: repo://scripts/check_version_claims.py
   - id: openwiki-source-2654e40275744504b4ca7e2b
     resource: repo://scripts/code_sample_tracing.py
   - id: openwiki-source-f36d9ac44867b9e853539abd
@@ -45,7 +53,9 @@ sources:
     resource: repo://scripts/refresh_integration_downloads.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-15T08:21:56.110Z" }
+  - id: openwiki-source-a10b62517b8302a8d4cf3b31
+    resource: repo://tests/unit_tests/test_check_external_versions.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-17T08:22:51.028Z" }
 ---
 
 ## Topology and trust boundary
@@ -81,6 +91,18 @@ This diagram shows the execution and credential boundary: fork PR code may be va
 The URL gate is deliberately a non-network validation: `--check-docs-urls` checks every external-listing `docs_url` and writes nothing. It allows `https://`, `http://`, or a single-slash site-relative path, and rejects missing values, `javascript:`/`data:`-style schemes, and protocol-relative `//host` values. The generator repeats this guard before rendering an external link, so a bad listing cannot become an unsafe generated Markdown href.
 
 The reusable test and lint workflows install the test dependency group and run `make test` or `make lint`; the link workflow builds docs and runs `make broken-links-with-anchors` plus `make check-openapi`. The generated-file gate reruns `pipeline/tools/partner_pkg_table.py` and fails if `src/oss/python/integrations/providers/overview.mdx` differs. Update generator inputs, regenerate, and commit the result rather than editing the overview. The gate skips the expected `github-actions[bot]` package-download PR title and PRs labeled `bypass-auto-check`.
+
+### Changed-document package-version gate
+
+`check-version-claims.yml` is a separate, read-only `pull_request` gate. It triggers only when `src/**/*.mdx`, its checker, its ignore list, or the workflow changes. With a full checkout it computes the merge-base against the PR base branch, selects added, copied, modified, renamed, type-changed, unmerged, or unknown changed `.mdx` files below `src/`, and does nothing further when that set is empty. For a nonempty set it installs Python 3.13 and runs `scripts/check_version_claims.py --files` only on those paths.
+
+This boundary validates **availability**, not dependency policy. The checker extracts `>=` and `==` package specifiers and resolves PyPI versus npm from, in order, npm scope, Python extras, a nearby language label, a `:::python` or `:::js` fence, the page path or explicit page override, then a PyPI default. It queries each relevant registry concurrently. An exact release, or a truncated series with a published release in that series, passes; a named version that was never published blocks the PR. Lookup failures, malformed registry responses, and unsafe package names are reported as unresolved notes rather than false unpublished-version failures. Exact reviewed exceptions in `scripts/version_claims_ignore.txt` are excluded.
+
+The gate deliberately cannot establish that a floor is sufficient for a feature or should be raised. Keep that compatibility decision with the feature owner. For a focused local reproduction, run:
+
+```bash
+uv run python scripts/check_version_claims.py --files src/langsmith/evaluators.mdx
+```
 
 Useful local equivalents are:
 
@@ -174,6 +196,42 @@ This validates external URLs in the offline Mint export, not the internal link-a
 
 The separate `test-code-samples-linear.yml` applies the same escalation boundary to **Test Code Samples**: only a scheduled full-run failure or cancellation creates a Linear ticket with the workflow URL. Manual and PR runs cannot create that ticket; a cancellation is described as a timeout and a failure as one or more failed samples. Keep these `workflow_run` guards when changing either producer: the consumer is an alerting path, not a general issue creator.
 
+### External-version refresh: privileged writer and review lifecycle
+
+`refresh-external-versions.yml` is a distinct, trusted writer job: it runs Monday at 08:00 UTC or by manual dispatch with `contents: write` and `pull-requests: write`. It checks out the base repository, supplies its GitHub token to `scripts/check_external_versions.py --write`, and may modify only the registered pages below `src/`. It must never be folded into the pull-request gate: it fetches upstream GitHub sources and can push a branch and create a PR.
+
+The registry `scripts/data/external_versions.yaml` is the allowlisted state owner for these mirrored requirements. Each entry identifies one `src/` page, an exactly-once page regex with a named `version` capture, and either a GitHub file at `HEAD` with a source regex or a repository's latest release. Before acting, the script rejects a page outside `src/`, unsafe repository slug or upstream path, unknown source type, and patterns without the capture. It replaces only the captured digits, so URLs and surrounding requirement prose survive unchanged.
+
+```mermaid
+flowchart TD
+  Registry["Mirrored requirement registry"] --> Validate["Validate page and source inputs"]
+  Validate --> Fetch["Fetch upstream file or latest release"]
+  Fetch --> Compare{"Version differs"}
+  Compare -->|"no"| Summary["No change and no PR write"]
+  Compare -->|"yes"| Rewrite["Replace captured digits only"]
+  Rewrite --> Diff{"src diff exists"}
+  Diff -->|"no"| Summary
+  Diff -->|"yes"| Existing{"Open standing PR exists"}
+  Existing -->|"yes"| Append["Append commit to standing PR"]
+  Existing -->|"no"| Create["Force push branch and open PR"]
+  Fetch --> Unreadable["Report unreadable entry and continue"]
+```
+
+This lifecycle shows that a scheduled run publishes only an actual version-only diff, while a standing branch prevents duplicate review requests.
+
+**No change:** if every mirrored value is already equal, `--write` leaves `src/` unchanged and the workflow records that outcome in the step summary. It likewise stops after applying its saved patch when there is no remaining `src/` diff. **Drift:** a resolvable mismatch is rewritten in the checkout. The workflow stashes the `src/` patch, restores a clean tree, then either checks out the existing open `chore/refresh-external-versions` PR branch and appends a commit or force-pushes that branch from the current base and creates the PR. Thus there is at most one open refresh PR rather than a weekly series.
+
+**Upstream-read or registry-match failure:** normal check mode exits nonzero on drift or an unreadable entry. Write mode instead reports unreadable entries but exits successfully, so a GitHub outage or one malformed/missing page match does not prevent other resolvable entries from reaching the refresh PR; the committed-registry unit test catches invalid registry/page-pattern structure in ordinary tests. **Human review:** the generated PR explicitly warns that only a version number was changed. Reviewers must verify the upstream requirement as a whole, including flags, peer dependencies, renamed configuration, and other prerequisites that a digit-only rewrite cannot detect.
+
+Use the same checker locally without repository writes, or scope it to one entry:
+
+```bash
+uv run python scripts/check_external_versions.py
+uv run python scripts/check_external_versions.py --only codex-cli
+```
+
+Focused unit tests cover exact matching, digit-only rewrite behavior, malformed registry inputs, file and release retrieval, ambiguous or missing patterns, and the intentionally different check- and write-mode failure semantics. See [Language Versioning Strategy](/openwiki/concepts/versioning.md) for the distinction between package availability claims and upstream-mirrored requirements.
+
 ### Other trusted writers
 
 `refresh-langsmith-openapi.yml` runs daily at 10:00 UTC or manually, processes the LangSmith public OpenAPI specification, and maintains at most one open `chore/refresh-langsmith-openapi` PR. `openwiki-update.yml` runs daily at 08:00 UTC or manually with contents and pull-request write permission. It needs full history for `openwiki code --update --print`, synchronizes `CLAUDE.md` from `AGENTS.md`, and maintains `openwiki/update`. These jobs run against the trusted base repository and must not be repurposed to execute fork-head code.
@@ -183,9 +241,11 @@ The separate `test-code-samples-linear.yml` applies the same escalation boundary
 1. Keep changed-code execution in ordinary `pull_request` validation. For a secret-dependent PR job, explicitly skip forks or redesign the trigger.
 2. With `pull_request_target`, use base-ref policy and GitHub API metadata only; never check out or execute a fork head.
 3. Preserve full-run-only tracing and its test-then-regenerate ordering. Keep trace artifacts restricted to `trace-links.json` and generated snippet MDX.
-4. For a scheduled writer, make no-change behavior explicit and keep branch/PR ownership deterministic so runs do not stack duplicate review requests.
-5. Preserve the scheduled-only `workflow_run` condition before adding or changing Linear effects.
-6. Keep agent- or secret-backed workflows behind authorization and let the workflow, not untrusted input or the agent, perform GitHub writes.
+4. Keep changed-document package validation read-only and scoped to the merge-base diff. Treat an unpublished release as a hard error, but do not make registry unavailability a false failure or let automation choose a feature floor.
+5. For an upstream-mirrored requirement, register an exact page capture and safe upstream source; preserve digit-only rewrites and require review of the surrounding semantic requirement.
+6. For a scheduled writer, make no-change and upstream-read failure behavior explicit and keep branch/PR ownership deterministic so runs do not stack duplicate review requests.
+7. Preserve the scheduled-only `workflow_run` condition before adding or changing Linear effects.
+8. Keep agent- or secret-backed workflows behind authorization and let the workflow, not untrusted input or the agent, perform GitHub writes.
 
 ## Related pages
 

@@ -3,6 +3,9 @@ type: integration
 title: Mintlify Integration
 description: Mintlify renders the generated LangChain documentation tree and uses docs.json as its renderer-facing site contract. This page explains the build, navigation, OpenAPI, validation, preview, and production publication boundaries.
 tags: [mintlify, documentation, rendering, deployment, site-configuration]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-17T08:22:51.028Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -28,9 +31,6 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-554339f52225d7d8edff3ed0
     resource: repo://src/style.css
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-14T08:24:18.469Z
 generated: { by: "openwiki/0.4.3", at: "2026-09-11T08:21:01.441Z" }
 ---
 
