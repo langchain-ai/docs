@@ -129129,26 +129129,33 @@ MCP tool results become LangChain-native values: content the model can read, an 
 An MCP tool result arrives as LangChain [content blocks](/oss/python/langchain/messages#standard-content-blocks). Image and file content convert into standardized `image` and `file` blocks alongside `text`, so a tool that returns a screenshot reaches the model as an image block:
 
 ```python
+from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
+from langchain.messages import ToolMessage
 
 
-async def access_multimodal_tool_content(server) -> None:
+async def access_multimodal_tool_content(server) -> dict:
     async with MCPAdapter(server) as adapter:
-        [screenshot] = await adapter.list_tools()
+        tools = await adapter.list_tools()
+        agent = create_agent("claude-sonnet-5", tools)
+        result = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "Take a screenshot."}]}
+        )
 
     # An MCP result arrives as LangChain content blocks. Image and file content
     # convert into standardized `image`/`file` blocks alongside `text`.
-    message = await screenshot.ainvoke(
-        {"name": "take_screenshot", "args": {}, "id": "1", "type": "tool_call"}
-    )
-    for block in message.content_blocks:  # [!code highlight]
-        if block["type"] == "text":  # [!code highlight]
-            print(f"Text: {block['text']}")  # [!code highlight]
-        elif block["type"] == "image":  # [!code highlight]
-            print(f"Image mime type: {block.get('mime_type')}")  # [!code highlight]
-            print(  # [!code highlight]
-                f"Image base64: {block.get('base64', '')[:20]}..."  # [!code highlight]
-            )  # [!code highlight]
+    for message in result["messages"]:
+        if not isinstance(message, ToolMessage):
+            continue
+        for block in message.content_blocks:  # [!code highlight]
+            if block["type"] == "text":  # [!code highlight]
+                print(f"Text: {block['text']}")  # [!code highlight]
+            elif block["type"] == "image":  # [!code highlight]
+                preview = block.get("base64", "")[:20]  # [!code highlight]
+                print(f"Image mime type: {block.get('mime_type')}")  # [!code highlight]
+                print(f"Image base64: {preview}...")  # [!code highlight]
+
+    return result
 ```
 
 ### Structured content
@@ -129186,19 +129193,27 @@ The artifact is an `MCPToolArtifact`, whose `structured_content` field holds the
 An MCP tool result carries an `isError` flag. When a server reports `isError=True`, the adapter converts it into a [`ToolMessage`](https://reference.langchain.com/python/langchain-core/messages/tool/ToolMessage) with `status="error"` carrying the server's own message, so the agent can read it and correct itself:
 
 ```python
+from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
+from langchain.messages import ToolMessage
 
 
-async def divide_by_zero(server):
+async def divide_by_zero(server) -> dict:
     async with MCPAdapter(server) as adapter:
-        [divide] = await adapter.list_tools()
+        tools = await adapter.list_tools()
+        agent = create_agent("claude-sonnet-5", tools)
+        result = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "What is 10 divided by 0?"}]}
+        )
 
     # A server error (isError=True) reaches the model as a failed ToolMessage,
-    # so the agent can read the server's own message and retry. Transport
+    # so the agent can read the server's own message and recover. Transport
     # failures still raise, because a model cannot act on those.
-    return await divide.ainvoke(
-        {"name": "divide", "args": {"a": 10, "b": 0}, "id": "1", "type": "tool_call"}
-    )
+    for message in result["messages"]:
+        if isinstance(message, ToolMessage) and message.status == "error":
+            print(f"Tool reported: {message.text}")  # [!code highlight]
+
+    return result
 ```
 
 A server-reported error reaches the model as a failed tool message, but a transport or session failure raises instead, because a model cannot act on a dropped connection.
