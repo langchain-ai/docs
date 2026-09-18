@@ -25,6 +25,12 @@ import SkillsApprovalPy from '/snippets/code-samples/skills-approval-py.mdx';
 import SkillsApprovalJs from '/snippets/code-samples/skills-approval-js.mdx';
 import SkillsWritablePy from '/snippets/code-samples/skills-writable-py.mdx';
 import SkillsWritableJs from '/snippets/code-samples/skills-writable-js.mdx';
+import SkillsReloadInvokePy from '/snippets/code-samples/skills-reload-invoke-py.mdx';
+import SkillsReloadInvokeJs from '/snippets/code-samples/skills-reload-invoke-js.mdx';
+import SkillsReloadUpdateStatePy from '/snippets/code-samples/skills-reload-update-state-py.mdx';
+import SkillsReloadUpdateStateJs from '/snippets/code-samples/skills-reload-update-state-js.mdx';
+import SkillsReloadMiddlewarePy from '/snippets/code-samples/skills-reload-middleware-py.mdx';
+import SkillsReloadMiddlewareJs from '/snippets/code-samples/skills-reload-middleware-js.mdx';
 
 Skills package domain expertise, such as workflows, best practices, scripts, reference docs, and templates, into reusable directories. The agent gets a summary of the contents on startup and discovers and reads the contained files only when relevant.
 
@@ -427,6 +433,80 @@ Pass multiple skill paths when the agent should see more than one library. For e
 
 Each path can point to the same backend, a different backend route, or a backend scoped by runtime context. For a managed solution that handles skill access, sharing, and workspace-level visibility, see [Fleet skills](/langsmith/fleet/skills).
 
+## Reload skills
+
+Skills load once per thread and stay in agent state, so every later model call on that thread reuses the same list. Skills added, edited, or deleted since then never reach the model. This applies when a checkpointer is configured. Without one, state does not survive between runs, so every run loads skills again.
+
+:::python
+Reset the stored metadata to load every source again at the start of the next run.
+:::
+
+:::js
+Reset the stored metadata to load every source again on the next model call.
+:::
+
+<Note>
+Local runs often have no checkpointer, so skill edits take effect immediately and skills appear to reload on their own. [LangSmith Deployments](/langsmith/deployment) configure a persistent checkpointer automatically, so the same agent holds its skills for the life of a thread once deployed. See [Going to production](/oss/deepagents/going-to-production).
+</Note>
+
+:::python
+<Note>Reloading skills requires `deepagents>=TODO`.</Note>
+:::
+
+:::js
+<Note>Reloading skills requires `deepagents>=TODO`.</Note>
+:::
+
+Pass the reset as run input to reload and run in a single call:
+
+:::python
+<SkillsReloadInvokePy />
+:::
+
+:::js
+<SkillsReloadInvokeJs />
+:::
+
+Update state to reset a thread between runs:
+
+:::python
+<SkillsReloadUpdateStatePy />
+:::
+
+:::js
+<SkillsReloadUpdateStateJs />
+:::
+
+:::python
+Use `None`, not an empty list. An empty list means the sources loaded and held no skills, so the agent sees no skills for the rest of the thread.
+:::
+
+:::js
+Use `null`, not an empty list. An empty list means the sources loaded and held no skills, so the agent sees no skills for the rest of the thread.
+:::
+
+<Note>
+A reload that finds a different set of skills changes the system prompt and invalidates the prompt cache for that thread. A reload that finds the same skills produces the same prompt and costs nothing.
+</Note>
+
+Middleware can reset the value as well, which lets your application decide when a thread is stale.
+
+:::python
+Loading happens at the start of each run, so a reset from a hook is served by the next run rather than partway through the current one. Reset from `after_agent` rather than `after_model`: a value stored mid-run leaves the prompt with no skills listed for the remaining model calls in that run.
+:::
+
+:::js
+Loading happens before each model call, so a reset from a hook takes effect on the next model call, including partway through a run.
+:::
+
+:::python
+<SkillsReloadMiddlewarePy />
+:::
+
+:::js
+<SkillsReloadMiddlewareJs />
+:::
+
 ## Skills for subagents
 
 When you use [subagents](/oss/deepagents/subagents), you can configure which skills each type has access to:
@@ -651,6 +731,12 @@ Use [LangSmith](https://smith.langchain.com) traces to debug skill discovery, `r
 4. **Check layered sources.** When the same skill name appears in multiple sources, the [last source wins](#usage). An older or empty skill from a later path can override the one you expect.
 :::
 
+
+### Skill changes not picked up
+
+**Problem**: The agent keeps using an earlier version of a skill after you add, edit, or delete one.
+
+**Solution**: Skills load once per thread, so a thread that has already run does not see the change. Reset the stored metadata. See [Reload skills](#reload-skills).
 
 ### Supporting files not found
 
