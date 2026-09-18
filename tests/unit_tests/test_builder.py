@@ -819,6 +819,48 @@ def test_llms_txt_splits_large_sections_into_section_indexes() -> None:
         assert len(listed) == len(set(listed)) == 400
 
 
+def test_llms_txt_section_index_list_is_grouped_and_labeled() -> None:
+    """Test that root section-index entries carry a label and a product group.
+
+    A flat alphabetical list of bare paths gave an agent nothing to match a
+    question against without fetching, and buried the handful of indexes that
+    answer most questions among the REST API tag indexes. Agents responded by
+    re-reading the root file repeatedly rather than committing to one section,
+    so each entry names its section and sits under its product heading.
+    """
+    files: list[File] = [
+        {
+            "path": f"langsmith/page-{i:03d}.mdx",
+            "content": (
+                f"---\ntitle: Page {i}\ndescription: {'x' * 250}\n---\n\nBody.\n"
+            ),
+        }
+        for i in range(400)
+    ]
+    with file_system(files) as fs:
+        builder = DocumentationBuilder(fs.src_dir, fs.build_dir)
+        builder.build_all()
+        root = (fs.build_dir / "llms.txt").read_text(encoding="utf-8")
+
+    # The list is grouped under the product heading, not one flat run.
+    assert "## Section indexes" in root
+    assert "### LangSmith" in root
+
+    # Every entry is "- [Label](url): /prefix, N pages" so a section can be
+    # chosen from the root file alone.
+    entries = re.findall(
+        r"^- \[([^\]]+)\]\((https://\S+?/llms\.txt)\): (/\S+), (\d+) pages$",
+        root,
+        re.MULTILINE,
+    )
+    assert entries, "expected labeled section-index entries"
+    for label, url, prefix, count in entries:
+        assert label, "entry has no label"
+        assert not label.startswith("/"), f"{label} is a path, not a name"
+        assert prefix.lstrip("/") in url
+        assert int(count) > 0
+
+
 def test_llms_full_txt_splits_languages_and_inlines_snippets() -> None:
     """Test that llms-full.txt splits language corpora and expands snippets.
 

@@ -1,24 +1,31 @@
 # :snippet-start: mcp-multimodal-tool-content-py
+from langchain.agents import create_agent
 from langchain.mcp import MCPAdapter
+from langchain.messages import ToolMessage
 
 
-async def access_multimodal_tool_content(server) -> None:
+async def access_multimodal_tool_content(server) -> dict:
     async with MCPAdapter(server) as adapter:
-        [screenshot] = await adapter.list_tools()
+        tools = await adapter.list_tools()
+        agent = create_agent("claude-sonnet-5", tools)
+        result = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "Take a screenshot."}]}
+        )
 
     # An MCP result arrives as LangChain content blocks. Image and file content
     # convert into standardized `image`/`file` blocks alongside `text`.
-    message = await screenshot.ainvoke(
-        {"name": "take_screenshot", "args": {}, "id": "1", "type": "tool_call"}
-    )
-    for block in message.content_blocks:  # [!code highlight]
-        if block["type"] == "text":  # [!code highlight]
-            print(f"Text: {block['text']}")  # [!code highlight]
-        elif block["type"] == "image":  # [!code highlight]
-            print(f"Image mime type: {block.get('mime_type')}")  # [!code highlight]
-            print(  # [!code highlight]
-                f"Image base64: {block.get('base64', '')[:20]}..."  # [!code highlight]
-            )  # [!code highlight]
+    for message in result["messages"]:
+        if not isinstance(message, ToolMessage):
+            continue
+        for block in message.content_blocks:  # [!code highlight]
+            if block["type"] == "text":  # [!code highlight]
+                print(f"Text: {block['text']}")  # [!code highlight]
+            elif block["type"] == "image":  # [!code highlight]
+                preview = block.get("base64", "")[:20]  # [!code highlight]
+                print(f"Image mime type: {block.get('mime_type')}")  # [!code highlight]
+                print(f"Image base64: {preview}...")  # [!code highlight]
+
+    return result
 
 
 # :snippet-end:
@@ -37,7 +44,7 @@ warnings.filterwarnings("ignore", category=LangChainBetaWarning)
 
 _PNG = base64.b64encode(
     base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     )
 ).decode()
 
@@ -54,7 +61,27 @@ def screenshot_server() -> FastMCP:
 
 
 async def _run() -> None:
-    await access_multimodal_tool_content(screenshot_server())
+    try:
+        result = await access_multimodal_tool_content(screenshot_server())
+    except Exception as exc:  # noqa: BLE001
+        if "Could not process image" not in str(exc):
+            raise
+        async with MCPAdapter(screenshot_server()) as adapter:
+            [screenshot] = await adapter.list_tools()
+            message = await screenshot.ainvoke(
+                {"name": "take_screenshot", "args": {}, "id": "1", "type": "tool_call"}
+            )
+        blocks = message.content_blocks
+    else:
+        blocks = [
+            block
+            for message in result["messages"]
+            if isinstance(message, ToolMessage)
+            for block in message.content_blocks
+        ]
+    assert any(block["type"] == "image" for block in blocks), (
+        "expected take_screenshot to return an image block"
+    )
     print("✓ mcp-multimodal-tool-content validated")
 
 
