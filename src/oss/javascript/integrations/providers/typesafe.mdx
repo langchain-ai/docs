@@ -1,0 +1,104 @@
+---
+title: "TypeSafe integrations"
+description: "Integrate with TypeSafe using LangChain JavaScript."
+---
+
+[Jev](https://docs.typesafe.ai/models) is a [System One model](https://docs.typesafe.ai/concepts/system-one) that reads natural language but returns typed answers and calibrated probabilities instead of generated text.
+
+[`TypeSafeClassifier`](https://github.com/langchain-ai/langchainjs/tree/main/libs/providers/langchain-typesafe) exposes these decisions as a LangChain `Runnable`, so you can invoke, batch, or compose them with other runnables. It accepts strings, structured JSON, and [LangChain message objects](/oss/langchain/messages). Use it for focused decisions such as routing a request, choosing a model, or checking whether a tool call is safe to run.
+
+## Setup
+
+Install `@langchain/typesafe` and its `@langchain/core` peer dependency:
+
+<CodeGroup>
+```bash npm
+npm install @langchain/typesafe @langchain/core
+```
+
+```bash yarn
+yarn add @langchain/typesafe @langchain/core
+```
+
+```bash pnpm
+pnpm add @langchain/typesafe @langchain/core
+```
+</CodeGroup>
+
+Create an API key in the [TypeSafe console](https://console.typesafe.ai/settings/keys) and export it:
+
+```bash
+export TYPESAFE_API_KEY=...
+```
+
+<Note>
+Optional: Set `TYPESAFE_BASE_URL` to use a compatible gateway, test server, or private deployment. The default is `https://api.typesafe.ai`.
+
+```bash
+export TYPESAFE_BASE_URL=https://gateway.example.com
+```
+</Note>
+
+## Quickstart
+
+Configure `TypeSafeClassifier` with a fixed set of named questions. Questions that share state are evaluated independently and in parallel in one request:
+
+```typescript
+import { TypeSafeClassifier } from "@langchain/typesafe";
+
+const classifier = new TypeSafeClassifier({
+  questions: {
+    urgent: {
+      type: "noul",
+      instructions: "Does this need attention right now?",
+    },
+    team: {
+      type: "choice",
+      instructions: "Which team should pick this up?",
+      criteria: {
+        infra: "Deploys, availability, and on-call incidents.",
+        billing: "Payments, invoices, and subscriptions.",
+      },
+    },
+    severity: {
+      type: "score",
+      instructions: "How severe is the impact?",
+      criteria: ["Cosmetic.", "Degraded for some users.", "Full outage."],
+    },
+  },
+});
+
+const response = await classifier.invoke(
+  "The deploy failed twice and customers are seeing 500s. Can someone look now?"
+);
+
+console.log(response.nouls.urgent.noul);
+console.log(response.choices.team.choice, response.choices.team.confidence);
+console.log(response.scores.severity.score);
+```
+
+Answers are keyed by the question IDs you supplied in `response.answers`. The `nouls`, `choices`, and `scores` accessors group answers by type. The response also carries the versioned `model`, token `usage`, and optional `requestId`.
+
+State can be a string, a JSON object or array, or LangChain messages. A message or sequence of messages is converted to role and content JSON, including when nested inside a larger object.
+
+## Decision types
+
+Each question uses one of three [primitives](https://docs.typesafe.ai/primitives):
+
+| Primitive | Asks | Returns | Reach for it when |
+|---|---|---|---|
+| [`noul`](https://docs.typesafe.ai/primitives/noul) | Is this true? | `noul`, the probability of yes | Your code branches on an `if` |
+| [`choice`](https://docs.typesafe.ai/primitives/choice) | Which of these options? | `choice`, plus `probabilities` and `confidence` | Options map to distinct code paths |
+| [`score`](https://docs.typesafe.ai/primitives/score) | Which level? | `score`, plus `legend`, `probabilities`, and `confidence` | The answer is a spectrum you compare to a threshold |
+
+A `noul` answer has no `confidence` or `probabilities`. Use `score` rather than `noul` for a spectrum: a `noul` of `0.5` means an even split between yes and no, not "medium."
+
+## Tracing
+
+TypeSafe classifications appear in [LangSmith](/langsmith/home) because `TypeSafeClassifier` is a `Runnable`. You can inspect the input, output, and token usage alongside the rest of your agent or chain. LangSmith records `usage` in the traced output rather than as a costed LLM metric.
+
+## See also
+
+- [TypeSafe documentation](https://docs.typesafe.ai/)
+- [TypeSafe confidence guidance](https://docs.typesafe.ai/confidence)
+- [`@langchain/typesafe` source](https://github.com/langchain-ai/langchainjs/tree/main/libs/providers/langchain-typesafe)
