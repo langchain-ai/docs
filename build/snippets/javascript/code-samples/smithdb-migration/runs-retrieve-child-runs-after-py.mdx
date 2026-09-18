@@ -1,0 +1,49 @@
+```python After
+import asyncio
+from collections import defaultdict
+
+from langsmith import Client
+
+
+async def main():
+    client = Client()
+    project = await client.aread_project(project_name="default")
+    # A root run is its own trace, so `trace_id` is also the run ID.
+    trace_id = "<trace-id>"
+
+    trace_runs = await client.traces.list_runs(
+        trace_id,
+        project_id=str(project.id),
+        selects=["ID", "NAME", "RUN_TYPE", "PARENT_RUN_IDS", "START_TIME", "END_TIME"],
+    )
+
+    # `parent_run_ids` is the full ancestor chain, root first, closest parent
+    # last. A run is a descendant of any ID in that chain, at any depth, not
+    # only of the immediate parent. This flat list replaces `child_run_ids`.
+    descendants = [
+        run for run in (trace_runs.items or []) if trace_id in (run.parent_run_ids or [])
+    ]
+    print(len(descendants), "descendants")
+
+    # Optional: rebuild the nested `child_runs` shape instead of a flat list.
+    by_parent = defaultdict(list)
+    for run in trace_runs.items or []:
+        if run.parent_run_ids:
+            # The last ancestor is the immediate parent.
+            by_parent[run.parent_run_ids[-1]].append(run)
+
+    def attach(run):
+        run.child_runs = by_parent.get(run.id, [])
+        for child in run.child_runs:
+            attach(child)
+
+    for run in trace_runs.items or []:
+        attach(run)
+
+    children = by_parent.get(trace_id, [])
+    for child in children:
+        print(child.name, child.run_type, len(child.child_runs))
+
+
+asyncio.run(main())
+```
