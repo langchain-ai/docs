@@ -88220,18 +88220,125 @@ When your application handles API keys, tokens, or other credentials, those valu
 
 <Note>
 This page covers redacting secrets (API keys, tokens, credentials) from trace data via the SDK. For redacting personally identifiable information (PII) such as emails, names, or SSNs, see [Prevent logging of sensitive data in traces](/langsmith/mask-inputs-outputs). To redact secrets at the LLM Gateway layer, see [Data policy](/langsmith/llm-gateway-data-policy).
+
+The coding agent tracing plugins for [Claude Code](/langsmith/trace-claude-code#secret-redaction), [OpenAI Codex](/langsmith/trace-with-codex#secret-redaction), and [Cursor](/langsmith/trace-with-cursor#secret-redaction) apply the preset below by default. No SDK code is required for those.
 </Note>
 
-## Use the SDK anonymizer
+## Use the built-in secret preset
+
+The SDK ships a curated rule set for common credential formats. Pass `create_secret_anonymizer` to the [Client](https://reference.langchain.com/python/langsmith/client/Client) constructor and it redacts detected secrets from run inputs, outputs, errors, and metadata before they are uploaded. Use it when you want coverage of well-known key formats without writing patterns yourself.
+
+<Info>
+The `create_secret_anonymizer` / `createSecretAnonymizer` function requires:
+
+- Python SDK: 0.9.0 or later
+- TypeScript SDK: 0.7.11 or later
+</Info>
+
+<CodeGroup>
+
+```python Python
+from langsmith import Client
+from langsmith.anonymizer import create_secret_anonymizer
+
+client = Client(anonymizer=create_secret_anonymizer())
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+import { createSecretAnonymizer } from "langsmith/anonymizer";
+
+const client = new Client({ anonymizer: createSecretAnonymizer() });
+```
+
+</CodeGroup>
+
+Each match is replaced with `[SECRET_DETECTED]`. The preset traverses up to 24 nesting levels, rather than the 10 that `create_anonymizer` uses, because traced payloads nest deeply. Override it with `max_depth`.
+
+The Python and TypeScript presets hold the same rules, so a trace redacted by one matches a trace redacted by the other.
+
+### Rules in the preset
+
+Provider rules are anchored to a known key prefix. Contextual rules fire only when a sensitive name is paired with an assignment, which leaves ordinary code, UUIDs, and content hashes intact.
+
+| Category | Detected formats |
+| --- | --- |
+| Anthropic | `sk-ant-` |
+| OpenAI | `sk-proj-`, `sk-svcacct-`, `sk-admin-`, and legacy `sk-` keys |
+| LangSmith | `lsv2_pt_`, `lsv2_sk_`, `ls__` |
+| GitHub | `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, and `github_pat_` |
+| GitLab | `glpat-` |
+| AWS | Access key IDs prefixed `AKIA`, `ASIA`, `ABIA`, `ACCA`, or `A3T` |
+| Google | `AIza` API keys and `ya29.` OAuth access tokens |
+| Slack | `xoxb-`, `xoxa-`, `xoxp-`, `xoxr-`, `xoxs-`, `xapp-`, and `hooks.slack.com` webhook URLs |
+| Stripe | `sk_live_`, `sk_test_`, `rk_live_`, `rk_test_` |
+| npm | `npm_` |
+| PyPI | `pypi-AgEIcHlwaS` upload tokens |
+| SendGrid | `SG.` |
+| JSON Web Tokens | A `header.payload.signature` triple beginning `eyJ` |
+| Private keys | PEM blocks for RSA, EC, OpenSSH, DSA, and PGP keys |
+| Named assignments | `API_KEY`, `SECRET`, `TOKEN`, `PASSWORD`, `PASSWD`, `PRIVATE_KEY`, `ACCESS_KEY`, `AUTH_TOKEN`, or `CLIENT_SECRET` followed by `=` or `:` and a value of six characters or more |
+| Credential headers | `Authorization`, `X-Api-Key`, and `X-Auth-Token`, and a bare `Bearer <token>` |
+| URL credentials | The password in `scheme://user:password@host` |
+
+A name rule requires a component boundary, so `TOKEN` matches `api_token` and `mytoken` but not `tokenizer` or `tokens`. Header and `Bearer` rules keep the header name and the scheme word, and redact only the credential that follows.
+
+### Add your own rules to the preset
+
+Pass `extra_rules` to append patterns for credentials the preset does not know about, such as an internal key format. Extra rules run after the built-in ones.
+
+<CodeGroup>
+
+```python Python
+import re
+
+from langsmith import Client
+from langsmith.anonymizer import create_secret_anonymizer
+
+anonymizer = create_secret_anonymizer(
+    extra_rules=[
+        {"pattern": re.compile(r"ACME-[A-Z0-9]{16}"), "replace": "[REDACTED_ACME_KEY]"},
+    ]
+)
+
+client = Client(anonymizer=anonymizer)
+```
+
+```typescript TypeScript
+import { Client } from "langsmith";
+import { createSecretAnonymizer } from "langsmith/anonymizer";
+
+const anonymizer = createSecretAnonymizer({
+  extraRules: [
+    { pattern: /ACME-[A-Z0-9]{16}/g, replace: "[REDACTED_ACME_KEY]" },
+  ],
+});
+
+const client = new Client({ anonymizer });
+```
+
+</CodeGroup>
+
+A rule without a `replace` value falls back to `[redacted]`, not `[SECRET_DETECTED]`. Set `replace` when you want the two to be distinguishable in a trace.
+
+### Limits of the preset
+
+The preset favors precision over exhaustive coverage, which has consequences worth planning around:
+
+- **Unrecognized formats reach LangSmith**: a credential that matches no rule, including a random high-entropy string with no surrounding context, is uploaded as is.
+- **Only four fields are redacted**: the anonymizer covers `inputs`, `outputs`, `error`, and `extra.metadata`. Run names, tags, and attachments are uploaded unmodified.
+- **Redaction is not access control**: a redacted trace still holds the prompts, file contents, and tool results it was built from. Restrict who can read the tracing project. To omit content rather than scrub it, see [Prevent logging of sensitive data in traces](/langsmith/mask-inputs-outputs).
+
+## Write custom patterns
 
 <Info>
 The `create_anonymizer` / `createAnonymizer` function requires:
 
-- Python SDK: 0.1.81 and above
-- TypeScript SDK: 0.1.33 and above
+- Python SDK: 0.1.81 or later
+- TypeScript SDK: 0.1.33 or later
 </Info>
 
-The `create_anonymizer` function accepts a list of regex patterns and replacement strings. Pass the resulting anonymizer to the [Client](https://reference.langchain.com/python/langsmith/client/Client) constructor, and it will automatically apply to all run inputs and outputs before they reach LangSmith.
+When the preset does not fit, `create_anonymizer` takes a list of regex patterns and replacement strings and applies only those. Pass the resulting anonymizer to the [Client](https://reference.langchain.com/python/langsmith/client/Client) constructor, and it will automatically apply to all run inputs and outputs before they reach LangSmith.
 
 The following example redacts common secret formats, including OpenAI API keys, generic bearer tokens, and `sk-` prefixed keys:
 
@@ -127909,6 +128016,53 @@ The plugin also reads a `defaultMuted` boolean from its own configuration files,
 
 Thread preferences are sticky. The plugin saves each explicit mute or unmute to a privacy file, `~/.claude/state/langsmith_state.privacy.json` by default, and a saved thread preference wins over the configured default in both directions. Deleting the privacy file removes every thread override and returns each thread to the configured default.
 
+## Secret redaction
+
+The plugin redacts detected secrets from run inputs, outputs, errors, and metadata before uploading them to LangSmith. Redaction is on by default.
+
+Redaction runs on your machine before upload, so unredacted content never reaches LangSmith. Replica destinations receive the same redacted payload.
+
+Detection covers provider API key prefixes, JSON Web Tokens, and PEM private key blocks. It also covers contextual shapes such as `API_KEY=<value>`, an `Authorization` header, and a password embedded in a URL. Each match is replaced with `[SECRET_DETECTED]`. For the rule list, see [Redact secrets from traces](/langsmith/redact-secrets#rules-in-the-preset).
+
+Redaction matches known credential shapes, so treat it as a safety net rather than a guarantee. A credential in an unrecognized format still reaches LangSmith, and attachments, run names, and tags do not pass through the anonymizer. A redacted trace also still holds the prompts, file contents, and tool results it was built from, so restrict who can read the tracing project.
+
+Redaction targets credential values, not identity. The `anthropic_user_id` and `local_username` metadata that the plugin attaches is unaffected. To omit content and attribution instead of scrubbing credentials out of it, [mute the thread](#mute-a-thread).
+
+### Turn redaction off
+
+Set `CC_LANGSMITH_REDACT` to `false`, `0`, `no`, or `off`. The comparison is case-insensitive, and any other value leaves redaction on.
+
+```bash
+export CC_LANGSMITH_REDACT="false"
+```
+
+### Redact additional patterns
+
+Set `CC_LANGSMITH_REDACT_EXTRA` to a JSON array of `{ "pattern": ..., "replace": ... }` rules. Each `pattern` is a regular expression string, applied globally and case-sensitively. `replace` is optional and falls back to `[redacted]`.
+
+```json
+{
+  "env": {
+    "CC_LANGSMITH_REDACT_EXTRA": "[{\"pattern\":\"ACME-[A-Z0-9]{16}\",\"replace\":\"[REDACTED_ACME_KEY]\"}]"
+  }
+}
+```
+
+Extra rules run after the built-in ones. The plugin skips a rule with an invalid regular expression, logs an error, and uploads the turn with the remaining rules applied.
+
+Both settings also read from the plugin configuration files described in [Set a default mute configuration](#set-a-default-mute-configuration), as the `redact` and `redact_extra_rules` keys:
+
+```json
+{
+  "redact": true,
+  "redact_extra_rules": [{ "pattern": "ACME-[A-Z0-9]{16}", "replace": "[REDACTED_ACME_KEY]" }]
+}
+```
+
+The environment variables take precedence over all four files. A file behaves more strictly than the environment variable. One rule with an invalid regular expression discards every setting in that file, not only that rule.
+
+Because a project-level `.claude/langsmith.json` can set `redact` to `false`, review that file before enabling tracing in a repository you do not control.
+
 ## Usage with GitHub Actions
 
 You can use this plugin with [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) to trace Claude Code runs in CI. Add the following to your workflow:
@@ -130622,6 +130776,8 @@ The plugin reads Codex-specific variables first, then falls back to the generic 
 | `LANGSMITH_CODEX_PROJECT` | No | `codex` | LangSmith project name. Falls back to `LANGSMITH_PROJECT`. |
 | `LANGSMITH_CODEX_METADATA` | No | - | JSON object merged into root trace metadata. Falls back to `LANGSMITH_METADATA`. |
 | `LANGSMITH_CODEX_RUNS_ENDPOINTS` | No | - | JSON array of replica destinations. Falls back to `LANGSMITH_RUNS_ENDPOINTS`. |
+| `LANGSMITH_CODEX_REDACT` | No | `true` | Set to a falsy value to disable secret redaction. Falls back to `LANGSMITH_REDACT`. |
+| `LANGSMITH_CODEX_REDACT_EXTRA` | No | - | JSON array of extra `{ pattern, replace }` redaction rules. Falls back to `LANGSMITH_REDACT_EXTRA`. |
 
 Add the variables to your shell configuration file (`~/.zshrc`, `~/.bashrc`, or `~/.bash_profile`):
 
@@ -130656,6 +130812,8 @@ Use `<project>/.codex/langsmith.json` for project-level settings or `~/.codex/la
 | `project` | `LANGSMITH_CODEX_PROJECT`, `LANGSMITH_PROJECT` | `codex` | LangSmith project name. |
 | `metadata` | `LANGSMITH_CODEX_METADATA`, `LANGSMITH_METADATA` | - | Object merged into root trace metadata. |
 | `replicas` | `LANGSMITH_CODEX_RUNS_ENDPOINTS`, `LANGSMITH_RUNS_ENDPOINTS` | - | Additional LangSmith destinations to replicate traces to. |
+| `redact` | `LANGSMITH_CODEX_REDACT`, `LANGSMITH_REDACT` | `true` | Set to `false` to disable [secret redaction](#secret-redaction). |
+| `redact_extra_rules` | `LANGSMITH_CODEX_REDACT_EXTRA`, `LANGSMITH_REDACT_EXTRA` | - | Extra `{ pattern, replace }` rules applied after the built-in ones. |
 
 Keep config files that include API keys out of version control.
 
@@ -130720,6 +130878,33 @@ Each replica object supports the following fields:
 | `apiKey` | Yes | API key for the destination workspace. |
 | `projectName` | Yes | Project name in the destination workspace. |
 | `updates` | No | Optional run fields to override on replicated runs, such as extra metadata. |
+
+## Secret redaction
+
+The plugin redacts detected secrets from run inputs, outputs, errors, and metadata before uploading them to LangSmith. Redaction is on by default.
+
+Redaction runs on your machine before upload, so unredacted content never reaches LangSmith. Replica destinations receive the same redacted payload.
+
+Detection covers provider API key prefixes, JSON Web Tokens, and PEM private key blocks. It also covers contextual shapes such as `API_KEY=<value>`, an `Authorization` header, and a password embedded in a URL. Each match is replaced with `[SECRET_DETECTED]`. For the rule list, see [Redact secrets from traces](/langsmith/redact-secrets#rules-in-the-preset).
+
+Redaction matches known credential shapes, so treat it as a safety net rather than a guarantee. A credential in an unrecognized format still reaches LangSmith, and attachments, run names, and tags do not pass through the anonymizer. A redacted trace also still holds the prompts, file contents, and tool results it was built from, so restrict who can read the tracing project.
+
+To turn redaction off, set `LANGSMITH_CODEX_REDACT` to `false`, `0`, `no`, or `off`, or set `"redact": false` in a config file. Values are trimmed and compared case-insensitively.
+
+To redact additional patterns, set `LANGSMITH_CODEX_REDACT_EXTRA` to a JSON array of `{ "pattern": ..., "replace": ... }` rules, or set `redact_extra_rules` in a config file. Each `pattern` is a regular expression string, applied globally and case-sensitively. `replace` is optional and falls back to `[redacted]`. Extra rules run after the built-in ones.
+
+```json
+{
+  "enabled": true,
+  "project": "codex",
+  "redact": true,
+  "redact_extra_rules": [{ "pattern": "ACME-[A-Z0-9]{16}", "replace": "[REDACTED_ACME_KEY]" }]
+}
+```
+
+Setting `redact_extra_rules` to `[]` clears rules inherited from a lower-priority source. In a config file, one rule with an invalid regular expression discards every setting in that file, so verify the patterns before committing them.
+
+Because a project-level `.codex/langsmith.json` or `langsmith-plugins.json` can set `redact` to `false`, review those files before enabling tracing in a repository you do not control.
 
 ## What gets traced
 
@@ -131004,6 +131189,8 @@ Every `LANGSMITH_CURSOR_*` variable also accepts the shorter `LANGSMITH_*` form.
 | `LANGSMITH_CURSOR_PROJECT` | `cursor` | LangSmith project name. Falls back to `LANGSMITH_PROJECT`. |
 | `LANGSMITH_CURSOR_METADATA` | - | JSON object merged into root trace metadata. |
 | `LANGSMITH_CURSOR_RUNS_ENDPOINTS` | - | JSON array of replica destinations. |
+| `LANGSMITH_CURSOR_REDACT` | `true` | Set to `"false"` to disable secret redaction. |
+| `LANGSMITH_CURSOR_REDACT_EXTRA` | - | JSON array of extra `{ pattern, replace }` redaction rules. |
 | `LANGSMITH_CURSOR_ATTACHMENTS` | `true` | Set to `"false"` to disable attachment enrichment. |
 | `LANGSMITH_CURSOR_DB_PATH` | platform default | Override the Cursor `state.vscdb` path used for attachments. |
 | `LANGSMITH_CURSOR_STATE_FILE` | `~/.cursor/langsmith-state.json` | Override the on-disk event-buffer state file. |
@@ -131045,10 +131232,41 @@ Use `~/.cursor/langsmith.json` for global defaults or `./.cursor/langsmith.json`
 | `project` | `LANGSMITH_CURSOR_PROJECT`, `LANGSMITH_PROJECT` | `cursor` | LangSmith project name. |
 | `metadata` | `LANGSMITH_CURSOR_METADATA`, `LANGSMITH_METADATA` | - | Object merged into root trace metadata. |
 | `replicas` | `LANGSMITH_CURSOR_RUNS_ENDPOINTS`, `LANGSMITH_RUNS_ENDPOINTS` | - | Additional LangSmith destinations to replicate traces to. |
+| `redact` | `LANGSMITH_CURSOR_REDACT`, `LANGSMITH_REDACT` | `true` | Set to `false` to disable [secret redaction](#secret-redaction). |
+| `redact_extra_rules` | `LANGSMITH_CURSOR_REDACT_EXTRA`, `LANGSMITH_REDACT_EXTRA` | - | Extra `{ pattern, replace }` rules applied after the built-in ones. |
 | `attachments` | `LANGSMITH_CURSOR_ATTACHMENTS` | `true` | Set to `false` to skip enriching turns with image and file attachment bytes from Cursor's local database. |
 | `cursor_db_path` | `LANGSMITH_CURSOR_DB_PATH` | platform default | Override the Cursor `state.vscdb` path used for attachments. |
 
 Keep config files that include API keys out of version control.
+
+## Secret redaction
+
+The plugin redacts detected secrets from run inputs, outputs, errors, and metadata before uploading them to LangSmith. Redaction is on by default.
+
+Redaction runs on your machine before upload, so unredacted content never reaches LangSmith. Replica destinations receive the same redacted payload.
+
+Detection covers provider API key prefixes, JSON Web Tokens, and PEM private key blocks. It also covers contextual shapes such as `API_KEY=<value>`, an `Authorization` header, and a password embedded in a URL. Each match is replaced with `[SECRET_DETECTED]`. For the rule list, see [Redact secrets from traces](/langsmith/redact-secrets#rules-in-the-preset).
+
+Redaction matches known credential shapes, so treat it as a safety net rather than a guarantee. A credential in an unrecognized format still reaches LangSmith, and attachments, run names, and tags do not pass through the anonymizer. A redacted trace also still holds the prompts, file contents, and tool results it was built from, so restrict who can read the tracing project.
+
+Attachments bypass redaction entirely. The plugin recovers image and file attachments from Cursor's local database and sends their bytes, which the anonymizer never inspects. Set `LANGSMITH_CURSOR_ATTACHMENTS` to `"false"` to stop sending them.
+
+To turn redaction off, set `LANGSMITH_CURSOR_REDACT` to `false`, `0`, `no`, or `off`, or set `"redact": false` in a config file.
+
+To redact additional patterns, set `LANGSMITH_CURSOR_REDACT_EXTRA` to a JSON array of `{ "pattern": ..., "replace": ... }` rules, or set `redact_extra_rules` in a config file. Each `pattern` is a regular expression string, applied globally and case-sensitively. `replace` is optional and falls back to `[redacted]`. Extra rules run after the built-in ones.
+
+```json
+{
+  "enabled": true,
+  "project": "cursor",
+  "redact": true,
+  "redact_extra_rules": [{ "pattern": "ACME-[A-Z0-9]{16}", "replace": "[REDACTED_ACME_KEY]" }]
+}
+```
+
+Setting `redact_extra_rules` to `[]` clears rules inherited from a lower-priority source. One rule with an invalid regular expression discards every setting in that file, so keep the patterns simple and verify them before committing.
+
+Because a project-level `.cursor/langsmith.json` can set `redact` to `false`, review that file before enabling tracing in a repository you do not control.
 
 ## What gets traced
 
