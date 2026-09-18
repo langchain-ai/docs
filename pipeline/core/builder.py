@@ -1148,6 +1148,7 @@ class DocumentationBuilder:
         "contributing": "Contributing",
         "deepagents": "Deep Agents",
         "integrations": "Integrations",
+        "javascript": "TypeScript",
         "langchain": "LangChain",
         "langgraph": "LangGraph",
         "mcp": "MCP",
@@ -1734,7 +1735,8 @@ class DocumentationBuilder:
         ordered = [label for label in ordered if sections.get(label)]
 
         inline: list[tuple[str, list[str]]] = []
-        linked: list[tuple[str, str, int]] = []  # (label, section path, page count)
+        # (parent label, directory prefix, section path, own label, page count)
+        linked: list[tuple[str, str, str, str, int]] = []
 
         for label in ordered:
             entries = sections[label]
@@ -1754,30 +1756,49 @@ class DocumentationBuilder:
                     if not chunk:
                         continue
                     path = f"{section_prefix}/llms.txt"
+                    own_label = self._section_label(section_prefix, prefix, label)
                     self._write_section_index(
                         path,
                         title,
-                        self._section_label(section_prefix, prefix, label),
+                        own_label,
                         [line for _, line in chunk],
                     )
-                    linked.append((section_prefix, path, len(chunk)))
+                    linked.append((label, section_prefix, path, own_label, len(chunk)))
 
         out = [f"# {title}", ""]
         if description:
             out += [f"> {description}", ""]
         if linked:
+            # Grouped under the product each index belongs to, and labeled, so
+            # one read is enough to choose a section. A flat alphabetical list
+            # of paths buried the dozen indexes that answer most questions
+            # among 46 REST API tag indexes, and agents responded by re-reading
+            # this file several times per task instead of committing to one
+            # section.
             out += [
-                "Each section index below lists the markdown version of every "
-                "page in that section.",
+                "Every page is listed in exactly one index below. Pick the "
+                "section that matches your question and fetch that index: it "
+                "names every page in the section, so this file does not need "
+                "to be read again.",
                 "",
                 "## Section indexes",
                 "",
             ]
-            for section_prefix, path, count in sorted(linked):
-                out.append(
-                    f"- [/{section_prefix}]({self._SITE_URL}/{path}): {count} pages"
+            grouped: dict[str, list[tuple[str, str, str, int]]] = {}
+            for parent, section_prefix, path, own_label, count in linked:
+                grouped.setdefault(parent, []).append(
+                    (section_prefix, path, own_label, count)
                 )
-            out.append("")
+            parents = [label for label in ordered if label in grouped]
+            parents += [label for label in grouped if label not in parents]
+            for parent in parents:
+                out += [f"### {parent}", ""]
+                for section_prefix, path, own_label, count in sorted(grouped[parent]):
+                    out.append(
+                        f"- [{own_label}]({self._SITE_URL}/{path}): "
+                        f"/{section_prefix}, {count} pages"
+                    )
+                out.append("")
         for label, lines in inline:
             out += [f"## {label}", "", *lines, ""]
 
