@@ -1735,8 +1735,10 @@ class DocumentationBuilder:
         ordered = [label for label in ordered if sections.get(label)]
 
         inline: list[tuple[str, list[str]]] = []
-        # (parent label, directory prefix, section path, own label, page count)
-        linked: list[tuple[str, str, str, str, int]] = []
+        # Section label -> its indexes, as (directory prefix, path, own label,
+        # page count). Grouped per label so the root file can list them under
+        # the product they belong to.
+        linked: list[tuple[str, list[tuple[str, str, str, int]]]] = []
 
         for label in ordered:
             entries = sections[label]
@@ -1752,6 +1754,7 @@ class DocumentationBuilder:
                     (label, [described_lines.get(line, line) for line in lines])
                 )
             else:
+                indexes: list[tuple[str, str, str, int]] = []
                 for section_prefix, chunk in self._chunk_section(prefix, entries):
                     if not chunk:
                         continue
@@ -1763,7 +1766,9 @@ class DocumentationBuilder:
                         own_label,
                         [line for _, line in chunk],
                     )
-                    linked.append((label, section_prefix, path, own_label, len(chunk)))
+                    indexes.append((section_prefix, path, own_label, len(chunk)))
+                if indexes:
+                    linked.append((label, sorted(indexes)))
 
         out = [f"# {title}", ""]
         if description:
@@ -1784,16 +1789,9 @@ class DocumentationBuilder:
                 "## Section indexes",
                 "",
             ]
-            grouped: dict[str, list[tuple[str, str, str, int]]] = {}
-            for parent, section_prefix, path, own_label, count in linked:
-                grouped.setdefault(parent, []).append(
-                    (section_prefix, path, own_label, count)
-                )
-            parents = [label for label in ordered if label in grouped]
-            parents += [label for label in grouped if label not in parents]
-            for parent in parents:
-                out += [f"### {parent}", ""]
-                for section_prefix, path, own_label, count in sorted(grouped[parent]):
+            for label, indexes in linked:
+                out += [f"### {label}", ""]
+                for section_prefix, path, own_label, count in indexes:
                     out.append(
                         f"- [{own_label}]({self._SITE_URL}/{path}): "
                         f"/{section_prefix}, {count} pages"
@@ -1808,7 +1806,7 @@ class DocumentationBuilder:
             "✅ llms.txt written: %d pages, %d characters in root, %d section indexes",
             page_count,
             len(content),
-            len(linked),
+            sum(len(indexes) for _, indexes in linked),
         )
         self._validate_llms_indexes(page_count)
 

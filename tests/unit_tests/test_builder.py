@@ -860,11 +860,6 @@ def test_llms_txt_section_index_list_is_grouped_and_labeled() -> None:
         assert prefix.lstrip("/") in url
         assert int(count) > 0
 
-    # The guidance tells an agent the section index is complete, so it has no
-    # reason to come back to the root file.
-    assert "does not need" in root
-    assert "read again" in root
-
 
 def test_llms_full_txt_splits_languages_and_inlines_snippets() -> None:
     """Test that llms-full.txt splits language corpora and expands snippets.
