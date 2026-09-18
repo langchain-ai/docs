@@ -7,10 +7,13 @@ description: "Integrate with TypeSafe using LangChain"
 
 `TypeSafeClassifier` exposes these decisions as a LangChain `Runnable`, so you can invoke, batch, or compose them with other runnables. It accepts strings, structured JSON, and [LangChain message objects](/oss/langchain/messages), and records traces and token usage in LangSmith. Use it for focused decisions such as routing a request, choosing a model, or checking whether a tool call is safe to run.
 
+:::python
 Use TypeSafe decisions in LangChain middleware to control `create_agent` behavior at specific lifecycle points, including with custom middleware that classifies agent state. See [Agent middleware](#agent-middleware) for examples.
+:::
 
 ## Setup
 
+:::python
 <CodeGroup>
 ```bash uv
 uv add langchain-typesafe
@@ -20,6 +23,25 @@ uv add langchain-typesafe
 pip install langchain-typesafe
 ```
 </CodeGroup>
+:::
+
+:::js
+<CodeGroup>
+```bash npm
+npm install @langchain/typesafe @langchain/core
+```
+
+```bash yarn
+yarn add @langchain/typesafe @langchain/core
+```
+
+```bash pnpm
+pnpm add @langchain/typesafe @langchain/core
+```
+</CodeGroup>
+
+Keep your API key on the server. Do not expose it in browser code.
+:::
 
 Create an API key in the [TypeSafe console](https://console.typesafe.ai/settings/keys) and export it:
 
@@ -39,6 +61,7 @@ export TYPESAFE_BASE_URL=https://gateway.example.com
 
 Configure `TypeSafeClassifier` with a fixed set of named questions. Questions that share state are evaluated independently and in parallel in one request:
 
+:::python
 ```python
 from langchain_typesafe import Choice, Noul, Score, TypeSafeClassifier
 
@@ -72,6 +95,51 @@ Answers are keyed by the question IDs you supplied, and grouped by type on `noul
 
 State can be a string, a JSON object or array, or LangChain messages. A `BaseMessage` or a sequence of messages is converted to role/content JSON, including when nested inside a larger object.
 
+:::
+
+:::js
+```typescript
+import { TypeSafeClassifier } from "@langchain/typesafe";
+
+const classifier = new TypeSafeClassifier({
+  dangerouslyAllowBrowser: false,
+  questions: {
+    urgent: {
+      type: "noul",
+      instructions: "Does this need attention right now?",
+    },
+    team: {
+      type: "choice",
+      instructions: "Which team should pick this up?",
+      criteria: {
+        infra: "Deploys, availability, and on-call incidents.",
+        billing: "Payments, invoices, and subscriptions.",
+      },
+    },
+    severity: {
+      type: "score",
+      instructions: "How severe is the impact?",
+      criteria: ["Cosmetic.", "Degraded for some users.", "Full outage."],
+    },
+  },
+});
+
+const response = await classifier.invoke(
+  "The deploy failed twice and customers are seeing 500s. Can someone look now?"
+);
+
+console.log(response.nouls.urgent.noul);
+console.log(response.choices.team.choice, response.choices.team.confidence);
+console.log(response.scores.severity.score);
+```
+
+Define questions as objects with a `type` of `"noul"`, `"choice"`, or `"score"`. The package does not export `Noul`, `Choice`, or `Score` constructors.
+
+Answers use your question IDs as keys in `response.answers`. The `nouls`, `choices`, and `scores` accessors group answer objects by type. The response also includes `model`, `usage.inputTokens`, `usage.outputTokens`, and an optional `requestId`.
+
+State can be a string, a JSON object or array, or LangChain messages. The classifier converts message objects to transcript text, including when nested inside a larger object.
+:::
+
 ## Decision types
 
 Each question is one of three [primitives](https://docs.typesafe.ai/primitives):
@@ -84,6 +152,7 @@ Each question is one of three [primitives](https://docs.typesafe.ai/primitives):
 
 `Noul` is the only one without a `confidence`, since the probability is the answer. Use `Score` rather than a `Noul` for a spectrum: a `Noul` of `0.5` means an even split between yes and no, not "medium".
 
+:::python
 ## Agent middleware
 
 The package includes two experimental [middleware](/oss/langchain/middleware/overview) that put the classifier on an agent's decision points. Import them from `langchain_typesafe.experimental.middleware`.
@@ -236,6 +305,8 @@ print(result["triage"].choice, result["triage"].confidence)
 
 Use any lifecycle hook that matches your decision point. For example, use `before_model` to reclassify after each tool result, or `wrap_tool_call` to classify a proposed action. See [Custom middleware](/oss/langchain/middleware/custom) for all hooks and state patterns.
 
+:::
+
 ## Tracing
 
 TypeSafe classifications are traced in [LangSmith](/langsmith/home), so you can inspect decisions, token usage, and spend alongside the rest of your agent.
@@ -244,4 +315,11 @@ TypeSafe classifications are traced in [LangSmith](/langsmith/home), so you can 
 
 - [TypeSafe documentation](https://docs.typesafe.ai/)
 - [TypeSafe confidence guidance](https://docs.typesafe.ai/confidence)
+
+:::python
 - [LangChain TypeSafe API reference](https://reference.langchain.com/python/langchain-typesafe)
+:::
+
+:::js
+- [LangChain TypeSafe package](https://www.npmjs.com/package/@langchain/typesafe)
+:::
