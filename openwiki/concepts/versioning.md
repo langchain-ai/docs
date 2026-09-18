@@ -5,7 +5,7 @@ description: Explains independent language-route rendering and version-claim val
 tags: [versioning, documentation-pipeline, routes, package-validation, dependency-management]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-17T08:22:51.028Z
+    at: 2026-09-18T08:20:50.944Z
 sources:
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
