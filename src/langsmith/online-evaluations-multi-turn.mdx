@@ -82,41 +82,41 @@ Please refer to the [troubleshooting](/langsmith/online-evaluations-multi-turn#t
 
 ## Evaluate agent trajectories
 
-A trajectory evaluator scores how an agent reached its answer, not just what it said. It reads the [trajectory](/langsmith/observability-concepts#trajectories) of a conversation: the flat, ordered list of messages from start to finish, including tool calls and their results. Use one to score whether the agent picked the right tools, followed its plan, and got there without wasted steps.
+`trajectory` is one of the variables a thread evaluator can use, alongside `all_messages`, `human_ai_pairs`, and `first_human_last_ai`. It resolves to the [trajectory](/langsmith/observability-concepts#trajectories) of the conversation: the flat, ordered list of messages from start to finish, including tool calls and their results. Use it to score how the agent reached its answer rather than only what it said, such as whether it picked the right tools, followed its plan, and got there without wasted steps.
 
-Trajectory evaluators require a tracing project. They differ from thread evaluators in what the judge receives:
+The variables differ in what the judge receives:
 
-- **Thread evaluators** receive the conversation assembled from the top-level `messages` key of each trace, through the `all_messages`, `human_ai_pairs`, or `first_human_last_ai` variable. These views can omit the agent's actual work: tool calls, tool results, and system messages.
-- **Trajectory evaluators** receive the resolved trajectory through the `trajectory` variable, built from the model and tool calls inside each trace. The tool calls and tool results that the thread views omit are preserved.
+- **`all_messages`, `human_ai_pairs`, and `first_human_last_ai`** resolve to the conversation assembled from the top-level `messages` key of each trace. These views can omit the agent's actual work: tool calls, tool results, and system messages.
+- **`trajectory`** resolves to the trajectory built from the model and tool calls inside each trace. The tool calls and tool results the other views omit are preserved.
 
 For the message shape each variable resolves to, see [Thread message variables](/langsmith/prompt-template-format#thread-message-variables).
 
 <Warning>
-A trajectory is larger than any thread view, because it includes the tool calls and reasoning that `all_messages` omits. Choose a model with a high context window, as described in step 6 of [Configuration](#configuration), and expect higher token usage per evaluation.
+A trajectory is larger than any of the other views, because it includes the tool calls and reasoning they omit. Choose a model with a high context window, as described in step 6 of [Configuration](#configuration), and expect higher token usage per evaluation.
 </Warning>
 
-### Create a trajectory evaluator
+### Use the trajectory variable
 
 Follow the [configuration](#configuration) steps above. Two things change:
 
-1. Under **Source**, select **Threads**.
-2. Reference `{{trajectory}}` in your prompt and map that variable to the `trajectory` source. The mapping is what makes the evaluator a trajectory evaluator, and the variable must be named `trajectory`: a differently named variable pointed at that source is rejected. The seeded default prompt and mapping already do this, so a new evaluator needs no changes here.
+1. Under **Source**, select **Threads**. The variable is available only on an evaluator that runs against a tracing project, not against a dataset.
+2. Reference `{{trajectory}}` in your prompt and map that variable to the `trajectory` source. The variable must be named `trajectory`: a differently named variable pointed at that source is rejected. The seeded default prompt and mapping already do this, so a new evaluator needs no changes here.
 
 Switching **Source** between **Runs** and **Threads** reseeds the default prompt only while you have not edited it. Once you edit the prompt, your version is kept, and you map the variables yourself.
 
-`{{trajectory}}` cannot appear alongside `{{all_messages}}`, `{{human_ai_pairs}}`, or `{{first_human_last_ai}}`. Once you map the trajectory source, the thread sources are disabled in the variable source dropdown, and once you map a thread source, the trajectory source is disabled. Either way the dropdown explains that trajectory variables and non-trajectory variables cannot be used together. Saving an evaluator that mixes them fails the same way.
+`{{trajectory}}` cannot appear alongside `{{all_messages}}`, `{{human_ai_pairs}}`, or `{{first_human_last_ai}}`. Once you map the trajectory source, the other sources are disabled in the variable source dropdown, and once you map one of the others, the trajectory source is disabled. Either way the dropdown explains that trajectory variables and non-trajectory variables cannot be used together. Saving an evaluator that mixes them fails the same way.
 
-A trajectory evaluator runs on an [automation rule](/langsmith/rules) scoped to a tracing project. When it completes, LangSmith writes feedback to the most recent root run in the thread, under the feedback key you configured, and associates that feedback with the thread. To find it later, see [View feedback](/langsmith/threads#view-feedback).
+When the evaluator completes, LangSmith writes feedback to the most recent root run in the thread, under the feedback key you configured, and associates that feedback with the thread. To find it later, see [View feedback](/langsmith/threads#view-feedback).
 
 For a complete prompt you can adapt, see [Example with trajectory context](/langsmith/prompt-template-format#example-with-trajectory-context).
 
 <Warning>
-The kind of an evaluator is fixed when you create it. To turn a trajectory evaluator into a thread evaluator, or the reverse, delete the evaluator and create a new one.
+The choice is fixed when you create the evaluator. To move an existing evaluator between `trajectory` and the other thread variables, delete it and create a new one.
 </Warning>
 
-### Trajectory evaluator settings
+### Settings and constraints
 
-A trajectory evaluator supports the following settings:
+An evaluator that uses `trajectory` supports the following settings:
 
 - **Filters**: Limit which threads the evaluator runs on.
 - **Sampling rate**: Evaluate a percentage of the threads that match your filters.
