@@ -25,6 +25,8 @@ pnpm add @langchain/typesafe @langchain/core
 ```
 </CodeGroup>
 
+Keep your API key on the server. Do not expose it in browser code. Set `dangerouslyAllowBrowser: false` to reject browser use, as in the quickstart below.
+
 Create an API key in the [TypeSafe console](https://console.typesafe.ai/settings/keys) and export it:
 
 ```bash
@@ -47,6 +49,7 @@ Configure `TypeSafeClassifier` with a fixed set of named questions. Questions th
 import { TypeSafeClassifier } from "@langchain/typesafe";
 
 const classifier = new TypeSafeClassifier({
+  dangerouslyAllowBrowser: false,
   questions: {
     urgent: {
       type: "noul",
@@ -77,13 +80,35 @@ console.log(response.choices.team.choice, response.choices.team.confidence);
 console.log(response.scores.severity.score);
 ```
 
-Answers are keyed by the question IDs you supplied in `response.answers`. The `nouls`, `choices`, and `scores` accessors group answers by type. The response also carries the versioned `model`, token `usage`, and optional `requestId`.
+Answers use your question IDs as keys in `response.answers`. The `nouls`, `choices`, and `scores` accessors group answer objects by type. The response also includes `model`, `usage.inputTokens`, `usage.outputTokens`, and an optional `requestId`.
 
-State can be a string, a JSON object or array, or LangChain messages. A message or sequence of messages is converted to role and content JSON, including when nested inside a larger object.
+The grouped accessors are non-enumerable getters. Object spread and JSON serialization omit them; use `answers` when storing or transmitting the response.
+
+State can be a string, a JSON object or array, or LangChain messages. The classifier converts message objects to transcript text, including when nested inside a larger object.
+
+## Configure requests
+
+Constructor options control authentication and request behavior:
+
+- **`apiKey`**: Overrides `TYPESAFE_API_KEY`.
+- **`baseUrl`**: Overrides `TYPESAFE_BASE_URL`.
+- **`timeout`**: Sets the per-request timeout in milliseconds. Defaults to `30000`.
+- **`maxRetries`**: Sets the maximum number of retries. Defaults to `2`; set it to `0` to disable retries.
+- **`fetch`**: Supplies a custom transport for proxies or tests.
+
+Pass standard runnable configuration, such as `signal`, `tags`, and `metadata`, as the second argument to `invoke`. Questions and the model are constructor settings, not per-call overrides.
+
+The classifier also supports `batch` and `pipe`. Its `stream` method yields the complete classification result, not incremental answers.
+
+## Handle errors
+
+The package exports `TypeSafeError`, `TypeSafeAPIError`, `TypeSafeAuthenticationError`, and `TypeSafeRateLimitError`. Use their `isInstance(error)` methods to identify failures. Avoid logging API error bodies indiscriminately: they can contain submitted state.
+
+TypeSafe receives the state you submit, including message content and tool-call arguments. Remove secrets or sensitive data before invoking the classifier.
 
 ## Decision types
 
-Each question uses one of three [primitives](https://docs.typesafe.ai/primitives):
+Each question uses one of three [primitives](https://docs.typesafe.ai/primitives). Define questions as objects with a `type` of `"noul"`, `"choice"`, or `"score"`. The package does not export `Noul`, `Choice`, or `Score` constructors:
 
 | Primitive | Asks | Returns | Reach for it when |
 |---|---|---|---|
