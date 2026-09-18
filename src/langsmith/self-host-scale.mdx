@@ -66,6 +66,44 @@ sits far above its request, 8Gi against 1Gi, so size the nodes it schedules onto
 limit. To confirm the defaults for your chart version, run
 `helm show values langchain/langsmith`.
 
+## Default autoscaling ranges
+
+Autoscaling is disabled by default on every service. Each one ships both an HPA block
+(`autoscaling.hpa`) and a KEDA block (`autoscaling.keda`), with the same replica range in
+both. A service can use HPA or KEDA, not both.
+
+| `values.yaml` key | Min replicas | Max replicas |
+| :--- | :--- | :--- |
+| `frontend` | 1 | 5 |
+| `backend` | 2 | 6 |
+| `platformBackend` | 3 | 10 |
+| `ingestQueue` | 3 | 10 |
+| `queue` | 1 | 10 |
+| `playground` | 1 | 5 |
+| `aceBackend` | 1 | 5 |
+| `hostBackend` | 1 | 5 |
+| `listener` | 1 | 10 |
+
+The HPA keys are `minReplicas` and `maxReplicas`; the KEDA equivalents are `minReplicaCount`
+and `maxReplicaCount`. `operator` has no autoscaling block and always runs at its configured
+replica count. For the queue services, prefer KEDA, which scales on queue backlog rather than
+CPU and memory alone. See
+[KEDA autoscaling for LangSmith queues](#keda-autoscaling-for-langsmith-queues).
+
+<Warning>
+**Enabling autoscaling overrides your replica count.** When either autoscaling block is
+enabled for a service, the chart stops setting `replicas` on that deployment and the
+autoscaler owns it. The `deployment.replicas` value you configured is no longer applied.
+
+These maximums are generic starting points, not values matched to the load patterns in the
+[summary table](#summary). High reads / high writes calls for 50 `backend` replicas, 24
+`ingestQueue` and 20 `platformBackend`, against shipped maximums of 6, 10 and 10. Enabling
+autoscaling without raising them scales a correctly sized deployment down.
+
+Set `maxReplicas` at or above the replica count for your load pattern, and `minReplicas` to
+the steady-state count you want to hold.
+</Warning>
+
 ## Trace ingestion (write path)
 
 Common usage that put load on the write path:
