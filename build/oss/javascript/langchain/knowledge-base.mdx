@@ -1,0 +1,371 @@
+---
+title: Build a semantic search engine with LangChain
+sidebarTitle: Semantic search
+---
+
+import EmbeddingsTabsPy from '/snippets/javascript/embeddings-tabs-py.mdx';
+import EmbeddingsTabsJS from '/snippets/javascript/embeddings-tabs-js.mdx';
+import VectorstoreTabsPy from '/snippets/javascript/vectorstore-tabs-py.mdx';
+import VectorstoreTabsJS from '/snippets/javascript/vectorstore-tabs-js.mdx';
+
+## Overview
+
+Build a semantic search engine over a PDF with LangChain [embeddings](/oss/javascript/integrations/embeddings) and [vector stores](/oss/javascript/integrations/vectorstores). Use it to retrieve passages similar to a query, then plug the retriever into [retrieval-augmented generation (RAG)](/oss/javascript/deepagents/retrieval) or other LLM workflows.
+
+This tutorial covers:
+
+1. Create `Document` objects from a PDF.
+2. Generate embeddings.
+3. Load and split a PDF.
+4. Index chunks in a vector store and query by similarity.
+5. Wrap the store as a retriever.
+
+The guide also includes a minimal RAG implementation on top of the search engine.
+
+### Concepts
+
+This tutorial focuses on text retrieval and covers the following concepts:
+
+- [`Document`](https://reference.langchain.com/javascript/langchain-core/documents/Document)
+- [Text splitters](/oss/javascript/integrations/splitters)
+- [Embeddings](/oss/javascript/integrations/embeddings)
+- [Vector stores](/oss/javascript/integrations/vectorstores) and [retrievers](/oss/javascript/integrations/retrievers)
+
+## Setup
+
+### Install dependencies
+
+
+
+This tutorial reads a PDF using the `pdf-parse` package:
+
+<CodeGroup>
+```bash npm
+npm i pdf-parse
+```
+```bash yarn
+yarn add pdf-parse
+```
+```bash pnpm
+pnpm add pdf-parse
+```
+</CodeGroup>
+
+
+
+For more details, see the [Installation guide](/oss/javascript/langchain/install).
+
+### Configure LangSmith
+
+Many of the applications you build with LangChain will contain multiple steps with multiple invocations of LLM calls.
+As these applications get more and more complex, it becomes crucial to be able to inspect what exactly is going on inside your chain or agent.
+The best way to do this is with [LangSmith](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=oss-langchain-knowledge-base).
+
+After you sign up at the link above, make sure to set your environment variables to start logging traces:
+
+```shell
+export LANGSMITH_TRACING="true"
+export LANGSMITH_API_KEY="..."
+```
+
+
+
+## Create documents
+
+LangChain implements a [`Document`](https://reference.langchain.com/javascript/langchain-core/documents/Document) abstraction for a unit of text and associated metadata. It has three attributes:
+
+
+- `pageContent`: a string representing the content.
+- `metadata`: a dict containing arbitrary metadata.
+- `id`: (optional) a string identifier for the document.
+
+
+`metadata` can capture the source of the document, its relationship to other documents, and other information. An individual [`Document`](https://reference.langchain.com/javascript/langchain-core/documents/Document) often represents a chunk of a larger document.
+
+The following code creates sample documents:
+
+
+```typescript
+import { Document } from "@langchain/core/documents";
+
+const documents = [
+  new Document({
+    pageContent:
+      "Dogs are great companions, known for their loyalty and friendliness.",
+    metadata: { source: "mammal-pets-doc" },
+  }),
+  new Document({
+    pageContent: "Cats are independent pets that often enjoy their own space.",
+    metadata: { source: "mammal-pets-doc" },
+  }),
+];
+```
+
+
+## Generate embeddings
+
+Vector search stores numeric vectors associated with text. Embed a query as a vector of the same dimension, then use similarity metrics (such as cosine similarity) to find related text.
+
+LangChain supports embeddings from [many providers](/oss/javascript/integrations/embeddings/). Select a model to specify how text should be converted into a numeric vector:
+
+
+<EmbeddingsTabsJS />
+
+```typescript
+const vector1 = await embeddings.embedQuery(documents[0].pageContent);
+const vector2 = await embeddings.embedQuery(documents[1].pageContent);
+
+assert vector1.length === vector2.length;
+console.log(`Generated vectors of length ${vector1.length}\n`);
+console.log(vector1.slice(0, 10));
+```
+
+
+```text wrap
+Generated vectors of length 1536
+
+[-0.008586574345827103, -0.03341241180896759, -0.008936782367527485, -0.0036674530711025, 0.010564599186182022, 0.009598285891115665, -0.028587326407432556, -0.015824200585484505, 0.0030416189692914486, -0.012899317778646946]
+```
+
+Next, store embeddings in a vector store that supports efficient similarity search.
+
+## Select a vector store
+
+LangChain [`VectorStore`](https://reference.langchain.com/javascript/langchain-core/vectorstores/VectorStore) objects add text and [`Document`](https://reference.langchain.com/javascript/langchain-core/documents/Document) objects to a store and query them with similarity metrics. They are often initialized with [embedding](/oss/javascript/integrations/embeddings) models that translate text into numeric vectors.
+
+LangChain includes [integrations](/oss/javascript/integrations/vectorstores) with many vector store technologies. Some are hosted and need credentials, some run in separate infrastructure (local or third-party), and others run in-memory for lightweight workloads. Select a vector store:
+
+
+<VectorstoreTabsJS />
+
+
+## Load and split a PDF
+
+Load content from a PDF, then split it into smaller chunks before indexing. This example uses [a sample Nike 10-K filing from 2023](https://github.com/langchain-ai/langchain/blob/v0.3/docs/docs/example_data/nke-10k-2023.pdf).
+
+
+```typescript
+import { readFileSync } from "node:fs";
+import { Document } from "@langchain/core/documents";
+import { PDFParse } from "pdf-parse";
+
+// Below is a minimal helper for demonstration purposes.
+async function loadPdfPages(filePath: string): Promise<Document[]> {
+  const parser = new PDFParse({
+    data: new Uint8Array(readFileSync(filePath)),
+  });
+  try {
+    const { pages } = await parser.getText();
+    return pages.map(
+      (page) =>
+        new Document({
+          pageContent: page.text,
+          metadata: { source: filePath, page: page.num - 1 },
+        })
+    );
+  } finally {
+    await parser.destroy();
+  }
+}
+
+const filePath = "../../data/nke-10k-2023.pdf";
+const docs = await loadPdfPages(filePath);
+console.log(docs.length);
+```
+
+
+```text
+107
+```
+
+A page is often too coarse for retrieval. Split pages further so relevant passages are not diluted by surrounding text. [`RecursiveCharacterTextSplitter`](https://reference.langchain.com/javascript/langchain-textsplitters/RecursiveCharacterTextSplitter) recursively splits on common separators (such as newlines) until each chunk is the target size. This is the recommended text splitter for generic text use cases.
+
+
+```typescript
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+
+const textSplitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 1000,
+  chunkOverlap: 200,
+});
+
+const allSplits = await textSplitter.splitDocuments(docs);
+
+console.log(allSplits.length);
+```
+
+
+```text
+516
+```
+
+## Index documents
+
+Index the chunks into the vector store:
+
+
+```typescript
+await vectorStore.addDocuments(allSplits);
+```
+
+
+Most vector store integrations also support connecting to an existing store (for example with a client or index name). See the docs for a specific [integration](/oss/javascript/integrations/vectorstores) for details.
+
+## Query the vector store
+
+
+
+After you have added the documents to the [`VectorStore`](https://reference.langchain.com/javascript/langchain-core/vectorstores/VectorStore), you can query it:
+
+- Synchronously and asynchronously
+- By string query and by vector
+- With and without similarity scores
+- By similarity and [maximum marginal relevance](https://reference.langchain.com/javascript/classes/_langchain_core.vectorstores.VectorStore.html#maxMarginalRelevanceSearch) (to balance similarity with diversity)
+
+
+
+These methods generally return a list of [`Document`](https://reference.langchain.com/javascript/langchain-core/documents/Document) objects.
+
+### Search by string
+
+Embeddings map text to dense vectors so similar meanings are geometrically close. This means you can Retrieve relevant passages by passing a natural-language question:
+
+
+```typescript
+const results1 = await vectorStore.similaritySearch(
+  "When was Nike incorporated?"
+);
+
+console.log(results1[0]);
+```
+```javascript
+Document {
+    pageContent: 'direct to consumer operations sell products...',
+    metadata: {'page': 4, 'source': '../example_data/nke-10k-2023.pdf', 'start_index': 3125}
+}
+```
+
+
+
+
+### Return scores
+
+You can return similarity scores with the documents. Score meaning varies by provider. In this case, the score is a distance metric that varies inversely with similarity:
+
+
+```typescript
+const results2 = await vectorStore.similaritySearchWithScore(
+  "What was Nike's revenue in 2023?"
+);
+
+console.log(results2[0]);
+```
+```javascript
+Score: 0.23699893057346344
+
+Document {
+    pageContent: 'Table of Contents...',
+    metadata: {'page': 35, 'source': '../example_data/nke-10k-2023.pdf', 'start_index': 0}
+}
+```
+
+
+### Search by vector
+
+Embed the query yourself, then search with the resulting vector:
+
+
+```typescript
+const embedding = await embeddings.embedQuery(
+  "How were Nike's margins impacted in 2023?"
+);
+
+const results3 = await vectorStore.similaritySearchVectorWithScore(
+  embedding,
+  1
+);
+
+console.log(results3[0]);
+```
+```javascript
+Document {
+    pageContent: 'FISCAL 2023 COMPARED TO FISCAL 2022...',
+    metadata: {
+        'page': 36,
+        'source': '../example_data/nke-10k-2023.pdf',
+        'start_index': 0
+    }
+}
+```
+
+
+Learn more:
+
+- [API Reference](https://reference.langchain.com/javascript/langchain-core/vectorstores/VectorStore)
+- [Integration-specific docs](/oss/javascript/integrations/vectorstores)
+
+## Use retrievers
+
+LangChain [`VectorStore`](https://reference.langchain.com/javascript/langchain-core/vectorstores/VectorStore) objects do not subclass [`Runnable`](https://reference.langchain.com/javascript/langchain-core/runnables/Runnable). [Retrievers](https://reference.langchain.com/javascript/interfaces/_langchain_core.retrievers.BaseRetriever.html) are Runnables, so they support standard methods such as sync and async `invoke` and `batch`.
+
+You can also build retrievers from vector stores, and retrievers can also wrap non-vector sources (such as external APIs).
+
+
+
+Vector stores implement an `as_retriever` method that returns a [`VectorStoreRetriever`](https://reference.langchain.com/python/langchain-core/vectorstores/base/VectorStoreRetriever). These retrievers expose `search_type` and `search_kwargs` to select and parameterize the underlying store methods. Replicate the example above with:
+
+
+```typescript
+const retriever = vectorStore.asRetriever({
+  searchType: "mmr",
+  searchKwargs: {
+    fetchK: 1,
+  },
+});
+
+await retriever.batch([
+  "When was Nike incorporated?",
+  "What was Nike's revenue in 2023?",
+]);
+```
+```javascript
+[
+    [Document {
+        metadata: {'page': 4, 'source': '../example_data/nke-10k-2023.pdf', 'start_index': 3125},
+        pageContent: 'direct to consumer operations sell products...',
+    }],
+    [Document {
+        metadata: {'page': 3, 'source': '../example_data/nke-10k-2023.pdf', 'start_index': 0},
+        pageContent: 'Table of Contents...',
+    }],
+]
+```
+
+
+You can use retrievers in more complex apps such as [retrieval-augmented generation (RAG)](/oss/javascript/deepagents/retrieval), which combine a question with retrieved context in a prompt for an LLM. To learn more about building such an application, check out the [RAG tutorial](/oss/javascript/deepagents/rag) tutorial.
+
+## Next steps
+
+You've now seen how to build a semantic search engine over a PDF document.
+
+For more information see:
+
+- [Available embedding integrations](/oss/javascript/integrations/embeddings)
+- [Available vector store integrations](/oss/javascript/integrations/vectorstores)
+
+For more on RAG:
+
+- [Retrieval overview](/oss/javascript/deepagents/retrieval)
+- [RAG with Deep Agents](/oss/javascript/deepagents/rag)
+- [Evaluate a RAG application](/langsmith/evaluate-rag-tutorial)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/knowledge-base.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
