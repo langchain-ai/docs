@@ -19,10 +19,10 @@ The table below provides an overview comparing different LangSmith configuration
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | <Tooltip tip="Number of users actively viewing traces on the frontend">Concurrent frontend users</Tooltip> | 5 | 5 | 50 | 20 | 50 |
 | <Tooltip tip="Number of traces being ingested via SDKs or API endpoints">Traces submitted per second</Tooltip> | 10 | 1000 | 10 | 100 | 1000 |
-| **Frontend replicas**<br />(500m CPU, 1Gi per replica) | 1 (default) | 4 | 2 | 2 | 4 |
-| **Platform backend replicas**<br />(1 CPU, 2Gi per replica) | 3 (default) | 20 | 3 (default) | 3 (default) | 20 |
-| **Ingest queue replicas**<br />(1 CPU, 2Gi per replica) | 3 (default) | 24 | 3 (default) | 6 | 24 |
-| **Backend replicas**<br />(1 CPU, 2Gi per replica) | 2 (default) | 5 | 40 | 16 | 50 |
+| **Frontend replicas**<br />(500m CPU, 1Gi requested per replica) | 1 (default) | 4 | 2 | 2 | 4 |
+| **Platform backend replicas**<br />(1 CPU, 2Gi requested per replica) | 3 (default) | 20 | 3 (default) | 3 (default) | 20 |
+| **Ingest queue replicas**<br />(1 CPU, 2Gi requested per replica) | 3 (default) | 24 | 3 (default) | 6 | 24 |
+| **Backend replicas**<br />(1 CPU, 2Gi requested per replica) | 2 (default) | 5 | 40 | 16 | 50 |
 | **Redis resources** | 8 Gi (default) | 26 Gi external | 8 Gi (default) | 13Gi external | 26 Gi external |
 | **ClickHouse resources** | 4 CPU<br />16 Gi (default) | 10 CPU<br />32Gi memory | 8 CPU<br />16 Gi per replica | 16 CPU<br />24Gi memory | 14 CPU<br />24 Gi per replica |
 | **ClickHouse setup** | Single instance | Single instance | 3-node <Tooltip tip="Recommended for high read loads to prevent degraded performance. Another option would be [managed clickhouse](/langsmith/self-host-external-clickhouse#langsmith-managed-clickhouse).">replicated cluster</Tooltip> | Single instance | 3-node <Tooltip tip="Recommended for high read loads to prevent degraded performance. Another option would be [managed clickhouse](/langsmith/self-host-external-clickhouse#langsmith-managed-clickhouse).">replicated cluster</Tooltip> |
@@ -30,7 +30,41 @@ The table below provides an overview comparing different LangSmith configuration
 | **Blob storage** | Disabled | Enabled | Enabled | Enabled | Enabled |
 
 
+<Note>
+The per-replica figures above are resource requests, what the Kubernetes scheduler reserves.
+The limits are higher in every case. For the defaults the chart ships, see
+[Default resource requests and limits](#default-resource-requests-and-limits).
+
+A container that exceeds its memory limit is OOM-killed, and one that exceeds its CPU limit is
+throttled. Do not lower either below the shipped default without load-testing the result.
+</Note>
+
 Below we go into more details about the read and write paths as well as provide a `values.yaml` snippet for you to start with for your self-hosted LangSmith instance.
+
+## Default resource requests and limits
+
+The Helm chart ships these requests and limits for the LangSmith application services. The
+[summary table](#summary) above covers Postgres, Redis, and ClickHouse, along with the replica
+counts to run for each load pattern.
+
+| `values.yaml` key | Requests (CPU / memory) | Limits (CPU / memory) | Default replicas |
+| :--- | :--- | :--- | :--- |
+| `frontend` | 500m / 1Gi | 1000m / 2Gi | 1 |
+| `backend` | 1000m / 2Gi | 2000m / 4Gi | 2 |
+| `platformBackend` | 1000m / 2Gi | 2000m / 4Gi | 3 |
+| `ingestQueue` | 1000m / 2Gi | 2000m / 4Gi | 3 |
+| `queue` | 1000m / 2Gi | 2000m / 4Gi | 1 |
+| `playground` | 500m / 1Gi | 1000m / 8Gi | 1 |
+| `aceBackend` | 1000m / 2000Mi | 2000m / 4000Mi | 1 |
+| `hostBackend` | 200m / 1000Mi | 1000m / 2Gi | 1 |
+| `listener` | 1000m / 2Gi | 2000m / 4Gi | 1 |
+| `operator` | 1000m / 2Gi | 2000m / 4Gi | 1 |
+
+Each key nests its resources under `deployment`, so the backend's requests are at
+`backend.deployment.resources.requests`. `playground` is the one service whose memory limit
+sits far above its request, 8Gi against 1Gi, so size the nodes it schedules onto for the
+limit. To confirm the defaults for your chart version, run
+`helm show values langchain/langsmith`.
 
 ## Trace ingestion (write path)
 

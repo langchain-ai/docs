@@ -71,9 +71,27 @@ Entries that do not parse—`example.com:abc`, `example.com:99999`, or a CIDR wi
 
 ### Organization-level restricted egress
 
-An organization can be placed on **restricted egress**. When it is, LangSmith replaces each sandbox's `access_control` with a fixed allow list of package registries, OS package mirrors, source-code and container-image hosts, CDNs, and model-provider APIs, each pinned to specific ports (HTTPS, plus HTTP for the Ubuntu and Debian mirrors). Caller-supplied `allow_list` and `deny_list` values are accepted by the API but have no effect while the policy is active.
+Restricted egress limits sandbox connections to a LangSmith-managed allowlist of hosts and ports. It applies to non-Enterprise organizations by default and to organizations that request it. Organizations with an approved exemption can use unrestricted egress.
+
+The allowlist supports common development tasks, including installing packages, accessing source repositories, and calling model APIs. It includes PyPI, npm, GitHub, OpenAI, Anthropic, and LangSmith, primarily over HTTPS on port 443. Selected package repositories also allow HTTP on port 80.
+
+When restricted egress is enabled for your organization, LangSmith blocks destinations outside this allowlist. The organization policy replaces caller-supplied `access_control` settings and disables `no_proxy` bypasses. Adding a destination to your sandbox's `allow_list` or configuring credentials for it does not grant access beyond the organization policy.
+
+An organization policy change does not automatically update existing sandboxes. Starting or waking an existing sandbox reuses its stored network configuration.
+
+### Request unrestricted access
+
+If your sandbox needs destinations outside the managed allowlist, [file a support ticket](https://support.langchain.com) to request unrestricted egress for your organization. Include the following details:
+
+- **Organization**: Your organization or workspace ID and deployment region.
+- **Network requirements**: The destination hostnames, ports, and a description of your use case.
+- **Affected sandbox**: For an existing sandbox, its ID and the connection error.
+
+An approved exemption removes the organization-managed allowlist requirement. Your sandbox's own access controls and platform protections against access to private or reserved IP addresses still apply. Existing sandbox configurations are not automatically changed by an exemption.
 
 ### Connecting to a database (raw TCP)
+
+If your organization has restricted egress, [request unrestricted access](#request-unrestricted-access) before connecting to a database outside the managed allowlist.
 
 To let sandbox code reach an external PostgreSQL database with `psql`, `dbt`, or any driver, allow-list the host on its port. Because `allow_list` is default-deny, also list any HTTP(S) hosts the sandbox needs. Pin them to `:443` unless you need other ports too:
 
@@ -298,8 +316,83 @@ await client.createSandbox({
 After the sandbox is ready, use AWS SDKs or CLIs normally inside the sandbox. The SDK or CLI discovers the placeholder AWS environment variables, and the proxy applies the real SigV4 signature to outbound AWS requests. The proxy does not set a region: set `AWS_REGION` through the sandbox's `env_vars` or the rule's `env_vars`, or most SDK and CLI calls fail before they reach the proxy.
 
 <Note>
-AWS auth proxy rules currently support access key ID and secret access key credentials. They do not include a session token or assume-role configuration.
+Static AWS auth accepts an access key ID and secret access key, but not a caller-supplied session token. Deployments with AWS proxy role authentication enabled also support an IAM role as described below.
 </Note>
+
+### Authenticate with an IAM role
+
+An AWS proxy role lets LangSmith assume a customer IAM role and sign supported AWS HTTPS requests with renewable temporary credentials. It works with or without [S3 mounts](/langsmith/sandbox-mounts#authenticate-with-an-iam-role), without exposing real credentials to sandbox code.
+
+This option requires deployment support for AWS proxy role authentication. ECR registry role authentication is a separate feature. In **Create sandbox > Network**, enable AWS authentication and select **AWS IAM role**. The form shows the exact LangSmith principal and workspace External ID that the customer role must trust. Follow the linked setup instructions to configure the trust and permissions policies, then enter the customer role in **AWS role ARN**.
+
+<Note>
+The SDK examples below require a release that supports `aws_auth(role_arn=...)` in Python or `awsAuth({ roleArn })` in TypeScript. Backend support alone does not add these helpers to an older SDK release.
+</Note>
+
+To configure a role without mounts, pass it in the proxy configuration:
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient, aws_auth, proxy_config
+
+client = SandboxClient()
+
+sandbox = client.create_sandbox(
+    name="aws-role-sandbox",
+    proxy_config=proxy_config(
+        rules=[
+            aws_auth(role_arn="arn:aws:iam::123456789012:role/LangSmithSandbox")
+        ]
+    ),
+)
+```
+
+```ts TypeScript
+import { SandboxClient, awsAuth, proxyConfig } from "langsmith/sandbox";
+
+const client = new SandboxClient();
+
+const sandbox = await client.createSandbox({
+  name: "aws-role-sandbox",
+  proxyConfig: proxyConfig({
+    rules: [
+      awsAuth({ roleArn: "arn:aws:iam::123456789012:role/LangSmithSandbox" }),
+    ],
+  }),
+});
+```
+
+</CodeGroup>
+
+For the HTTP API, supply `aws.role_arn` instead of static credential fields:
+
+```bash
+curl -X POST "$LANGSMITH_ENDPOINT/v2/sandboxes/boxes" \
+  -H "x-api-key: $LANGSMITH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "aws-role-sandbox",
+    "proxy_config": {
+      "rules": [
+        {
+          "name": "aws",
+          "type": "aws",
+          "enabled": true,
+          "aws": {
+            "role_arn": "arn:aws:iam::123456789012:role/LangSmithSandbox"
+          }
+        }
+      ]
+    }
+  }'
+```
+
+Replace the example ARN with your configured customer role. The single-rule limit still applies. Role authentication is configured at creation: an update can preserve the existing role, but cannot add, remove, change, or disable it. Create a new sandbox to change role authentication.
+
+The role's effective AWS permissions apply to all supported requests. LangSmith does not add a mount-derived session policy to this rule. A read-only S3 mount blocks filesystem writes, not direct S3 API writes that IAM allows. Restrict the customer role to the services, resources, and actions the sandbox needs.
+
+LangSmith renews temporary credentials on demand and reacquires them after stop/start. If renewal is temporarily unavailable, cached credentials remain usable only until expiration. Authorization denial or expiration fails closed, without falling back to static keys.
 
 ## Authenticate GCP requests
 

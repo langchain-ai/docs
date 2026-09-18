@@ -1,6 +1,6 @@
 # Files
 
-- [GitHub Actions and CI/CD](github-actions.md) - How repository automation separates untrusted pull-request validation from credentialed or write-capable jobs. Covers CI, code-sample testing and trace refreshes, GitHub mutations, scheduled maintenance, and Linear escalation boundaries.
+- [GitHub Actions and CI/CD](github-actions.md) - How repository automation separates untrusted pull-request validation from credentialed and write-capable maintenance. Covers CI gates, live code samples, generated documentation, integration intake, and standing refresh pull requests.
 - [Mintlify Integration](mintlify.md) - Mintlify renders the generated LangChain documentation tree and uses docs.json as its renderer-facing site contract. This page explains the build, navigation, OpenAPI, validation, preview, and production publication boundaries.
-- [NPM Snippet Components](npm-snippets.md) - How the builder overlays sandbox components from @langchain/docs-sandbox into generated documentation, how MDX pages consume them, and how to validate the resulting output.
-- [Reference Documentation Integration](reference-docs.md) - Explains the boundary between authored documentation, external SDK reference sites, semantic SDK links, and deployment-generated LangSmith OpenAPI pages. Covers ownership, refresh automation, and the focused checks that protect those boundaries.
+- [NPM Snippet Components](npm-snippets.md) - How @langchain/docs-sandbox components are overlaid into generated documentation, consumed by MDX, and verified at the builder and Mintlify boundary.
+- [Reference Documentation Integration](reference-docs.md) - Defines the boundary between externally operated SDK reference sites, scoped semantic links, and OpenAPI inputs that Mintlify turns into LangSmith endpoint documentation. Covers refresh ownership and validation limits for generated routes.

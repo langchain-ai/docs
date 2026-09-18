@@ -13,7 +13,7 @@ Sandbox mounts require `langsmith[sandbox]>=0.8.16` for Python or `langsmith>=0.
 </Note>
 
 <Warning>
-Store cloud credentials as LangSmith workspace secrets before creating a sandbox that mounts S3 or GCS. Do not pass real cloud credentials as sandbox environment variables, command arguments, or files.
+When using static AWS keys or a GCP service account, store cloud credentials as LangSmith workspace secrets before creating the sandbox. S3 mounts authenticated with an IAM role do not require stored AWS access keys. Do not pass real cloud credentials as sandbox environment variables, command arguments, or files.
 </Warning>
 
 ## Configure mount paths
@@ -33,7 +33,11 @@ Mount IDs can contain ASCII letters, digits, underscores, and hyphens. Do not re
 
 ## Mount an S3 bucket
 
-S3 mounts require AWS auth. The SDK creates an AWS auth proxy rule from `aws_auth` / `awsAuth`, so the sandbox can access the bucket without seeing the real access keys.
+S3 mounts require AWS authentication. Use static access keys or an IAM role when your deployment and SDK support role authentication. The LangSmith UI also supports role setup. Both methods keep real AWS credentials outside the sandbox.
+
+### Authenticate with static access keys
+
+The SDK creates an AWS auth proxy rule from `aws_auth` / `awsAuth`, so the sandbox can access the bucket without seeing the real access keys.
 
 <CodeGroup>
 
@@ -118,6 +122,220 @@ try {
 ```
 
 </CodeGroup>
+
+### Authenticate with an IAM role
+
+IAM role authentication lets the [AWS auth proxy](/langsmith/sandbox-auth-proxy#authenticate-with-an-iam-role) assume a role in your AWS account. S3 mounts use the same authentication as other supported AWS requests from the sandbox. LangSmith obtains and renews temporary AWS credentials, so you do not need to store or rotate access keys in workspace secrets.
+
+<Note>
+This option requires your LangSmith deployment to enable AWS proxy role authentication. Enabling IAM roles for ECR registries does not enable them for the auth proxy. If **AWS IAM role** is absent from the AWS authentication options, use static access keys or contact your LangSmith administrator. The role-based SDK examples require a release with `aws_auth(role_arn=...)` and `mount_config(proxy_config=...)` in Python, or `awsAuth({ roleArn })` and `mountConfig({ proxyConfig })` in TypeScript. The mount versions listed at the top of this page do not establish support for these newer options.
+</Note>
+
+You need permission to configure the customer IAM role's trust and access policies. One AWS auth rule applies to the sandbox's AWS requests, including all S3 mounts. Choose either static access keys or an IAM role; do not configure both. Role authentication is configured at creation. Create a new sandbox to add, remove, disable, or change its role.
+
+The LangSmith principal also needs permission to assume the customer role. For self-hosted deployments, your administrator configures that permission and any required role tags. Cross-account S3 buckets may also require a bucket policy that permits the customer role.
+
+To configure the role and create the sandbox:
+
+1. Open **Sandboxes > Create sandbox**, add an **S3 bucket** in the **Mounts** section, and configure its bucket, region, prefix, mount path, and read-only setting.
+2. Go to the **Network** section, enable AWS authentication, and select **AWS IAM role**. To use the role without mounts, skip the mount configuration in step 1.
+3. Use the two values displayed below **AWS role ARN** in your IAM role's trust policy:
+   - **Principal**: The exact AWS role ARN that this LangSmith deployment uses to assume customer roles. Use the displayed principal, not an ARN copied from another environment or from an ECR registry.
+   - **External ID**: Your current LangSmith workspace UUID. LangSmith supplies this value when assuming the role; you do not choose a separate external ID.
+4. Expand **AWS role setup**, select **Copy trust policy**, and apply that policy to the customer role in AWS IAM. It permits `sts:AssumeRole` only for the displayed principal with the matching `sts:ExternalId`.
+5. Attach a least-privilege permissions policy for the AWS services and resources the sandbox needs. For configured S3 mounts, **Copy S3 permissions** supplies a starting policy. Review it before attaching it; LangSmith does not apply it automatically.
+6. Enter the customer role's ARN in **AWS role ARN**. This is the role you configured in your account, not the LangSmith principal shown in the setup instructions.
+7. Select **Create Sandbox**, then verify that sandbox code can read the mounted path and, for writable mounts, write to it.
+
+The generated trust policy has this structure. Replace the placeholders with the principal and external ID displayed in the form, or copy the completed policy from the form:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "<LANGSMITH_AWS_PROXY_PRINCIPAL_ARN>"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "<LANGSMITH_WORKSPACE_ID>"
+        }
+      }
+    }
+  ]
+}
+```
+
+Do not replace the principal with `*` or remove the external ID condition. Entering the customer role ARN in LangSmith does not create the role or update its AWS policies.
+
+#### Limit S3 access
+
+The optional S3 permissions example grants access based on the mount settings:
+
+- **All S3 mounts**: Bucket-location access, prefix-scoped listing, and object reads.
+- **Writable mounts**: Additional object-write, delete, and multipart-upload permissions.
+- **Empty prefix**: Object access throughout the bucket. Use a prefix to restrict access to a subtree.
+
+The role's effective AWS permissions control all supported AWS proxy requests. LangSmith does not restrict a general AWS role session to the configured mounts. Limit the role's IAM policy to the required buckets, prefixes, operations, and other AWS resources.
+
+<Warning>
+A read-only mount rejects filesystem writes, but does not block direct S3 API writes that the role permits. Use the role's IAM policy to enforce read-only AWS access.
+</Warning>
+
+Use a commercial AWS role and supported AWS HTTPS endpoints. The S3 permissions example does not include KMS permissions; review the permissions required by your bucket's encryption settings.
+
+#### Use a shared role in the SDK
+
+A shared AWS proxy role authenticates both S3 mounts and supported application requests, just like the UI setup above. Configure the trust and permissions policies first, then replace the example role ARN and bucket with your own values.
+
+Pass the same proxy configuration to the mount helper and sandbox creation. The mount helper does not copy it into mount-specific authentication:
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import (
+    SandboxClient,
+    aws_auth,
+    mount_config,
+    proxy_config,
+    s3_mount,
+)
+
+proxy_cfg = proxy_config(
+    rules=[aws_auth(role_arn="arn:aws:iam::123456789012:role/LangSmithSandbox")]
+)
+mount_cfg = mount_config(
+    proxy_config=proxy_cfg,
+    mounts=[
+        s3_mount(
+            id="customer_data",
+            mount_path="/mnt/mounts/customer-data",
+            bucket="example-bucket",
+            prefix="datasets/customer-data",
+            region="us-east-1",
+            read_only=True,
+        )
+    ],
+)
+
+client = SandboxClient()
+sandbox = client.create_sandbox(
+    name="shared-role-mount-sandbox",
+    mount_config=mount_cfg,
+    proxy_config=proxy_cfg,
+)
+```
+
+```ts TypeScript
+import {
+  SandboxClient,
+  awsAuth,
+  mountConfig,
+  proxyConfig,
+  s3Mount,
+} from "langsmith/sandbox";
+
+const proxyCfg = proxyConfig({
+  rules: [
+    awsAuth({ roleArn: "arn:aws:iam::123456789012:role/LangSmithSandbox" }),
+  ],
+});
+const mountCfg = mountConfig({
+  proxyConfig: proxyCfg,
+  mounts: [
+    s3Mount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+      region: "us-east-1",
+      readOnly: true,
+    }),
+  ],
+});
+
+const client = new SandboxClient();
+const sandbox = await client.createSandbox({
+  name: "shared-role-mount-sandbox",
+  mountConfig: mountCfg,
+  proxyConfig: proxyCfg,
+});
+```
+
+</CodeGroup>
+
+The shared rule retains its effective IAM permissions. The read-only mount in this example does not prevent direct S3 API writes that the role allows. Shared proxy authentication is supported for S3 mounts, not GCS mounts; GCS still requires explicit mount authentication.
+
+#### Restrict a role to S3 mount scopes
+
+Mount-specific role authentication adds a session policy that restricts AWS access to the configured S3 buckets, prefixes, and read-only settings. Use this API alternative when sandbox AWS access must stay within those mount scopes. The customer role still needs the trust and permissions policies described above.
+
+Pass the role in `auth` to serialize it as `mount_config.auth.aws.role_arn`. Do not also pass an AWS proxy rule:
+
+<CodeGroup>
+
+```python Python
+from langsmith.sandbox import SandboxClient, aws_auth, mount_config, s3_mount
+
+mount_cfg = mount_config(
+    auth=[aws_auth(role_arn="arn:aws:iam::123456789012:role/LangSmithSandbox")],
+    mounts=[
+        s3_mount(
+            id="customer_data",
+            mount_path="/mnt/mounts/customer-data",
+            bucket="example-bucket",
+            prefix="datasets/customer-data",
+            region="us-east-1",
+            read_only=True,
+        )
+    ],
+)
+
+client = SandboxClient()
+sandbox = client.create_sandbox(
+    name="mount-scoped-role-sandbox",
+    mount_config=mount_cfg,
+)
+```
+
+```ts TypeScript
+import { SandboxClient, awsAuth, mountConfig, s3Mount } from "langsmith/sandbox";
+
+const mountCfg = mountConfig({
+  auth: [
+    awsAuth({ roleArn: "arn:aws:iam::123456789012:role/LangSmithSandbox" }),
+  ],
+  mounts: [
+    s3Mount({
+      id: "customer_data",
+      mountPath: "/mnt/mounts/customer-data",
+      bucket: "example-bucket",
+      prefix: "datasets/customer-data",
+      region: "us-east-1",
+      readOnly: true,
+    }),
+  ],
+});
+
+const client = new SandboxClient();
+const sandbox = await client.createSandbox({
+  name: "mount-scoped-role-sandbox",
+  mountConfig: mountCfg,
+});
+```
+
+</CodeGroup>
+
+The mount-specific `mount_config.auth.aws` API accepts either `role_arn` or the static `access_key_id` and `secret_access_key` pair, not both. It cannot be combined with an AWS proxy rule. Static-key examples earlier on this page continue to work unchanged.
+
+#### Renew credentials
+
+LangSmith renews temporary credentials as AWS requests need them, including after a sandbox stops and resumes. You do not supply a saved STS token or renew it manually. Keep the role's trust and access permissions in place for continued access.
+
+If renewal is temporarily unavailable, the mount can use cached credentials only until they expire. An authorization denial or expired credentials causes authenticated S3 requests to fail; the mount does not fall back to static keys.
 
 ## Mount a GCS bucket
 

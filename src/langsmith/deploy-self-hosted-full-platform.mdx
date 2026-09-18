@@ -647,7 +647,7 @@ Setup involves creating a GitHub App, gathering its credentials, storing them as
     Under **Identifying and authorizing users**, add the following **Callback URL**, replacing `<hostname>` with your LangSmith hostname:
 
     ```
-    https://<hostname>/v1/platform/fleet/providers/github-app/auth/callback
+    https://<hostname>/api/v1/platform/fleet/providers/github-app/auth/callback
     ```
 
     Select **Redirect on update**.
@@ -655,7 +655,7 @@ Setup involves creating a GitHub App, gathering its credentials, storing them as
     Under **Post installation**, add the following **Setup URL**:
 
     ```
-    https://<hostname>/v1/platform/fleet/providers/github-app/callback
+    https://<hostname>/api/v1/platform/fleet/providers/github-app/callback
     ```
 
     Select **Redirect on update**.
@@ -673,7 +673,7 @@ Setup involves creating a GitHub App, gathering its credentials, storing them as
     - Set the **Webhook URL** to:
 
       ```
-      https://<hostname>/v1/platform/fleet/providers/github-app/webhooks
+      https://<hostname>/api/v1/platform/fleet/providers/github-app/webhooks
       ```
 
     - Paste the generated value into **Webhook secret**. Save it, as you'll need the same value when creating the Kubernetes secret in a later step.
