@@ -1,0 +1,156 @@
+---
+title: Unstructured Transform integration
+description: Integrate with the Unstructured Transform tools using LangChain Python.
+integration:
+  name: UnstructuredTransformToolkit
+  featured: true
+  pypi: langchain-unstructured-transform
+---
+
+This guide provides a quick overview for getting started with the Unstructured Transform
+[tools](/oss/python/langchain/tools). The [Unstructured Transform](https://docs.unstructured.io/transform/overview)
+MCP server ingests and transforms files (PDF, DOCX, images, and 70+ file types) into partitioned,
+enriched, chunked, and embedded data for RAG and AI pipelines. The `langchain-unstructured-transform`
+package loads those tools as native LangChain tools.
+
+## Overview
+
+### Details
+
+| Class | Package | Serializable | JS support | Downloads | Version |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `UnstructuredTransformToolkit` | [langchain-unstructured-transform](https://pypi.org/project/langchain-unstructured-transform/) | ❌ | ❌ | ![PyPI - Downloads](https://img.shields.io/pypi/dm/langchain-unstructured-transform?style=flat-square&label=%20) | ![PyPI - Version](https://img.shields.io/pypi/v/langchain-unstructured-transform?style=flat-square&label=%20) |
+
+### Features
+
+- Loads the hosted Transform MCP server's tools as native LangChain tools.
+- Drives the full parsing lifecycle: request an upload URL, transform files, poll status, and fetch results.
+- Works with any LangChain or LangGraph agent.
+- Remote and hosted: no local server or bridge to run.
+
+---
+
+## Setup
+
+To access the Unstructured Transform tools, you'll need an Unstructured account and an API key, and
+you'll need to install the `langchain-unstructured-transform` package.
+
+### Credentials
+
+Get an API key from the [Unstructured docs](https://docs.unstructured.io/transform/overview), then
+set it as an environment variable:
+
+```python Set API key icon="key"
+import getpass
+import os
+
+if "UNSTRUCTURED_API_KEY" not in os.environ:
+    os.environ["UNSTRUCTURED_API_KEY"] = getpass.getpass("Enter your Unstructured API key: ")
+```
+
+It's also helpful (but not needed) to set up LangSmith for best-in-class observability/<Tooltip tip="Log each step of a model's execution to debug and improve it">tracing</Tooltip> of your tool calls. To enable automated tracing, set your [LangSmith](/langsmith/observability) API key:
+
+```python Enable tracing icon="flask"
+os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
+os.environ["LANGSMITH_TRACING"] = "true"
+```
+
+### Installation
+
+The Unstructured Transform tools live in the `langchain-unstructured-transform` package:
+
+<CodeGroup>
+    ```python pip
+    pip install -U langchain-unstructured-transform
+    ```
+    ```python uv
+    uv add langchain-unstructured-transform
+    ```
+</CodeGroup>
+
+---
+
+## Instantiation
+
+The Transform tools are loaded over MCP, which is an asynchronous operation. Use the toolkit's
+`aget_tools()` method (or the `aget_transform_tools()` helper) to load them:
+
+```python Load the tools icon="robot"
+from langchain_unstructured_transform import UnstructuredTransformToolkit
+
+toolkit = UnstructuredTransformToolkit()  # reads UNSTRUCTURED_API_KEY
+tools = await toolkit.aget_tools()
+```
+
+The loaded `tools` include `request_file_upload_url`, `transform_files`, `check_transform_status`,
+and `get_transform_results`.
+
+---
+
+## Invocation
+
+### Within an agent
+
+The tools are designed to be orchestrated by an agent, which chains them to run a full parsing job.
+
+```python Agent with tools icon="robot"
+# pip install -qU "langchain[anthropic]" to call the model
+from langchain.agents import create_agent
+from langchain_unstructured_transform import aget_transform_tools
+
+tools = await aget_transform_tools()
+agent = create_agent(
+    model="claude-sonnet-4-6",
+    tools=tools,
+)
+
+response = await agent.ainvoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Use the Unstructured Transform tools to parse ./report.pdf. "
+                    "Provide the results as JSON."
+                ),
+            }
+        ]
+    }
+)
+print(response["messages"][-1].content)
+```
+
+The agent requests an upload URL, uploads each file, starts the transform, polls for status, and
+returns the results — one output per input file.
+
+---
+
+## Limits
+
+Parsing requests have the following limits:
+
+- Each file must be a [supported file type](https://docs.unstructured.io/transform/supported-file-types).
+- Each file must be 50 MB or less in size.
+- Each request must have 10 files or fewer.
+- Only 5 requests can run at a time.
+
+The Transform MCP server reports these limits back to the agent through its tool responses, so you can
+instruct your agent to batch files and back off accordingly in its system prompt.
+
+---
+
+## API reference
+
+For detailed documentation of the Unstructured Transform MCP server, its tools, and how to control
+its output, head to the [Unstructured Transform documentation](https://docs.unstructured.io/transform/overview).
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/python/integrations/tools/unstructured_transform.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

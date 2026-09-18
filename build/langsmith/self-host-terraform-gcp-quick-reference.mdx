@@ -1,0 +1,263 @@
+---
+title: GCP Terraform quick reference
+sidebarTitle: Quick reference
+description: Make targets, Terraform, kubectl, gcloud, and Helm commands for LangSmith self-hosted on GKE.
+---
+
+Command cheat sheet for day-to-day operations against a GCP LangSmith deployment provisioned with the [GCP Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/gcp). All `make` targets run from `modules/gcp/`. Run `make help` for an inline summary.
+
+## Deployment overview
+
+| Stage | What gets deployed | Command |
+|---|---|---|
+| Infrastructure | VPC + GKE + Cloud SQL + Memorystore + GCS + IAM + cert-manager + KEDA + Envoy Gateway | `make apply` |
+| Cluster credentials | Kubeconfig wired to the new GKE cluster | `make kubeconfig` |
+| LangSmith base | Frontend, backend, ingest, queue, ClickHouse | `make init-values && make deploy` |
+| Fleet add-on (standalone) | standalone-fleet-* API server, tool server, trigger server, queue | `make apply && make init-values && make deploy` |
+| LangSmith Deployment add-on | host-backend, listener, operator | `make apply && make init-values && make deploy` |
+| Agent Builder add-on (deprecated) | tool-server, trigger-server + agent-builder LGP | `make init-values && make deploy` |
+| Insights + Polly add-on | Clio analytics, Polly eval agent | `make init-values && make deploy` |
+
+Each stage builds on the previous. Verify pods are healthy before enabling the next.
+
+## First-time setup
+
+```bash
+cd terraform/modules/gcp
+
+# Interactive wizard — generates terraform.tfvars
+make quickstart
+
+# Set up secrets in Secret Manager (auto-generates passwords + Fernet keys)
+# Must be sourced so it can export TF_VAR_* into your shell
+source infra/scripts/setup-env.sh
+
+# Verify secrets are stored correctly
+make secrets
+
+# Deploy infrastructure
+make init
+make plan
+make apply
+
+# Generate Helm values from Terraform outputs
+make init-values
+
+# Deploy LangSmith
+make deploy
+```
+
+`make deploy-all` chains `apply`, `init-values`, and `deploy` in one command.
+
+To keep the Helm release under Terraform instead of the deploy script, use the `app` layer:
+
+```bash
+make init-values  # generate the layered values files
+make init-app     # pull infra outputs into app/infra.auto.tfvars.json
+make apply-app    # terraform apply the Helm release (make destroy-app to remove)
+```
+
+The `app` layer uses its own variable names: `sizing` (not `sizing_profile`) and `enable_agent_deploys` (not `enable_deployments`).
+
+## Day-2 operations
+
+```bash
+# Check deployment state and next-step guidance
+make status              # full check
+make status-quick        # skip Secret Manager and K8s queries
+
+# Re-deploy after changing Helm values or upgrading chart version
+make deploy
+
+# Re-generate Helm values after Terraform changes
+make init-values
+
+# Manage Secret Manager secrets interactively
+make secrets
+
+# Update kubeconfig for the GKE cluster
+make kubeconfig
+```
+
+## Add-ons
+
+Set flags in `terraform.tfvars`, then `make init-values && make deploy`. `init-values.sh` copies the matching example file into `helm/values/` automatically.
+
+```hcl
+# terraform.tfvars
+enable_deployments   = true
+enable_fleet         = true   # Fleet (formerly Agent Builder), standalone (chart v0.15+); no enable_deployments required
+enable_agent_builder = false  # deprecated, superseded by enable_fleet; mutually exclusive with it
+enable_insights      = true
+enable_polly         = true   # requires enable_deployments = true + Polly license
+enable_usage_telemetry = true # extended usage telemetry
+```
+
+To add an add-on after initial install without re-running `init-values.sh`, copy manually:
+
+```bash
+cp helm/values/examples/langsmith-values-agent-deploys.yaml helm/values/
+cp helm/values/examples/langsmith-values-fleet.yaml         helm/values/
+cp helm/values/examples/langsmith-values-insights.yaml      helm/values/
+cp helm/values/examples/langsmith-values-polly.yaml         helm/values/
+
+make deploy
+```
+
+## Sizing profiles
+
+Set `sizing_profile` in `terraform.tfvars`, then re-run `make init-values && make deploy`.
+
+```hcl
+sizing_profile = "production"   # default | minimum | dev | production | production-large
+```
+
+| Profile | When to use |
+|---|---|
+| `default` | Chart defaults — quick tests, no overlay applied |
+| `minimum` | Absolute floor; fits `e2-standard-4`; use for cost parking or CI smoke tests |
+| `dev` | Single replica, minimal resources |
+| `production` | Multi-replica with HPA; recommended for real workloads |
+| `production-large` | High memory and CPU; 50+ users or 1000+ traces/sec |
+
+## kubectl
+
+```bash
+# Pod health
+kubectl get pods -n langsmith
+kubectl get pods -n langsmith -w
+kubectl describe pod <pod-name> -n langsmith
+kubectl logs <pod-name> -n langsmith --tail=100 -f
+kubectl logs <pod-name> -n langsmith --previous --tail=50
+
+# Backend logs (live)
+kubectl logs -n langsmith deploy/langsmith-backend --tail=100 -f
+
+# Gateway and HTTPRoute
+kubectl get gateway -n langsmith
+kubectl get httproute -n langsmith
+kubectl get svc -n envoy-gateway-system
+
+# TLS
+kubectl get certificate -n langsmith
+kubectl get challenges -n langsmith
+kubectl describe certificate <cert-name> -n langsmith
+kubectl get clusterissuer
+
+# Workload Identity
+kubectl get serviceaccount langsmith-ksa -n langsmith -o yaml | grep annotation -A5
+
+# Helm
+helm status langsmith -n langsmith
+helm history langsmith -n langsmith
+helm get values langsmith -n langsmith
+
+# LangSmith Deployment
+kubectl get lgp -n langsmith
+kubectl get crd | grep langchain
+```
+
+## gcloud
+
+```bash
+# Re-auth if you hit oauth2 invalid_grant / invalid_rapt errors
+gcloud auth login
+gcloud auth application-default login
+
+# Cluster credentials
+gcloud container clusters get-credentials <cluster-name> --region <region> --project <project-id>
+
+# List clusters
+gcloud container clusters list --project <project-id>
+
+# Cluster status
+gcloud container clusters describe <cluster-name> --region <region> --format="value(status)"
+
+# Cloud SQL
+gcloud sql instances list --project <project-id>
+gcloud sql instances describe <instance-name> --format="value(ipAddresses)"
+
+# Memorystore Redis
+gcloud redis instances list --region <region>
+gcloud redis instances describe <instance-name> --region <region> --format="value(host)"
+
+# GCS bucket
+gsutil ls gs://<bucket-name>
+gsutil iam get gs://<bucket-name>
+
+# Workload Identity binding
+gcloud iam service-accounts get-iam-policy <gsa-email> --project <project-id>
+
+# Enabled APIs
+gcloud services list --enabled --project <project-id>
+
+# VPC peering
+gcloud services vpc-peerings list --network <vpc-name> --project <project-id>
+
+# Secret Manager
+gcloud secrets list --project <project-id> --filter="name:langsmith"
+gcloud secrets versions access latest --secret=<secret-id> --project <project-id>
+```
+
+## Terraform
+
+```bash
+cd modules/gcp/infra
+
+terraform init
+terraform plan -var-file=terraform.tfvars
+terraform apply -var-file=terraform.tfvars
+
+# Target a specific module
+terraform apply -var-file=terraform.tfvars -target=module.networking
+
+# Outputs
+terraform output
+terraform output -raw cluster_name
+terraform output -raw storage_bucket_name
+
+# State
+terraform state list
+terraform state show module.gke_cluster
+terraform refresh -var-file=terraform.tfvars
+```
+
+## Key constraints
+
+- Uninstall Helm before `terraform destroy`. The Envoy Gateway load balancer references the VPC; leaving it blocks network deletion. Always run `make uninstall` first.
+- `config.deployment.url` must include `https://`. Without the protocol, operator-spawned agents stay stuck in `DEPLOYING`.
+- `config.deployment.enabled: true` is required for the LangSmith Deployment add-on. Setting only the URL without `enabled: true` silently skips `listener` and `operator`.
+- Encryption keys must never change after first enable. Rotating `insights_encryption_key` or `polly_encryption_key` permanently breaks existing encrypted data.
+- Roll the frontend after first Polly enable. `agentBootstrap` creates the `langsmith-polly-config` ConfigMap after registering; frontend pods started earlier do not pick it up.
+- Envoy Gateway IP changes on teardown. GCP releases the external IP when the Gateway is deleted. After `terraform destroy` and re-apply, update your DNS A record.
+- `langsmith-ksa` annotation is not permanent. The operator creates the ServiceAccount at runtime and it does not survive namespace deletion. `deploy.sh` re-annotates it idempotently.
+
+## Teardown
+
+```bash
+# 1. Remove LangSmith Deployment resources (if the add-on was enabled)
+kubectl delete lgp --all -n langsmith 2>/dev/null || true
+
+# 2. Uninstall LangSmith
+make uninstall
+
+# 3. Set deletion protection = false in terraform.tfvars, then:
+make destroy
+```
+
+```hcl
+# terraform.tfvars
+gke_deletion_protection      = false
+postgres_deletion_protection = false
+```
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-terraform-gcp-quick-reference.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
