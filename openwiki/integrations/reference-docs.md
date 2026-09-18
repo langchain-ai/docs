@@ -1,11 +1,11 @@
 ---
 type: integration
 title: Reference Documentation Integration
-description: Defines the boundary between semantic SDK links, externally operated API reference sites, and OpenAPI inputs that Mintlify turns into LangSmith endpoint documentation at deployment. Covers refresh automation and checks designed for generated routes.
+description: Defines the boundary between externally operated SDK reference sites, scoped semantic links, and OpenAPI inputs that Mintlify turns into LangSmith endpoint documentation. Covers refresh ownership and validation limits for generated routes.
 tags: [api-reference, openapi, cross-references, mintlify, langsmith]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-15T08:21:56.110Z
+    at: 2026-09-18T08:20:50.944Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
@@ -37,14 +37,16 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-15T08:21:56.110Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-17T08:22:51.028Z" }
 ---
+
+# Reference Documentation Integration
 
 ## Boundary and ownership
 
-This repository builds the authored `docs.langchain.com` documentation. Generated API reference for LangChain, LangGraph, LangSmith, and integration packages is operated separately at [reference.langchain.com](https://reference.langchain.com/python/), with distinct [Python](https://reference.langchain.com/python/) and [JavaScript/TypeScript](https://reference.langchain.com/javascript/) sites. Its generation tooling and output do not live here. Do not treat `reference.langchain.com` as repository-generated content or attempt to repair its generated pages in this repository.
+This repository builds the authored `docs.langchain.com` documentation. Generated API reference for LangChain, LangGraph, LangSmith, and integration packages is operated separately at [reference.langchain.com](https://reference.langchain.com/python/), with distinct [Python](https://reference.langchain.com/python/) and [JavaScript/TypeScript](https://reference.langchain.com/javascript/) sites. Its generation tooling and output do not live here. Do not treat `reference.langchain.com` as repository-built content or repair its generated pages in this repository.
 
-The repository owns two adjacent, but different, integrations:
+The repository owns two adjacent but distinct integrations:
 
 1. Markdown and MDX authors use semantic SDK references, which the documentation preprocessor resolves to external reference URLs.
 2. `src/docs.json` supplies Mintlify with OpenAPI inputs and route directories; Mintlify creates the corresponding endpoint pages at deployment.
@@ -71,9 +73,9 @@ Use `@[ClassName]` for a useful first mention of an SDK class, method, or functi
 @[`StateGraph`]
 ```
 
-The autolink preprocessor resolves the symbol through `SCOPE_LINK_MAPS`, which is built from language-specific link maps. Relative mappings are prefixed by the scope host, and absolute mapped URLs are retained; Python and JavaScript can therefore resolve the same marker to their respective reference sites.
+The autolink preprocessor resolves the symbol through `SCOPE_LINK_MAPS`, built from language-specific link maps. Relative mappings are prefixed with their scope host and absolute mapped URLs are retained, so Python and JavaScript can resolve the same marker to their respective reference sites. Add a new eligible symbol at this registry boundary rather than duplicating a destination URL in every authored page.
 
-Autolinking happens before conditional rendering. Processing starts in the page default scope, switches at `:::python` or `:::js`, and returns to the default scope at a bare `:::`. Normal fenced code is not transformed, and an escaped reference such as `\@[StateGraph]` remains literal after the escape is removed. An absent mapping produces an info-level message with file and line and leaves `@[...]` unchanged rather than guessing a URL. The unsupported `global` scope falls back to Python and logs an error, so language-specific symbols should be placed in explicit fences.
+Autolinking happens before conditional rendering. Processing starts in the page's default scope, switches at `:::python` or `:::js`, and returns to the default scope at a bare `:::`. Normal fenced code is not transformed, and an escaped reference such as `\@[StateGraph]` remains literal after the escape is removed. An absent mapping produces an info-level message with file and line and leaves `@[...]` unchanged rather than guessing a URL. The unsupported `global` scope falls back to Python and logs an error, so language-specific symbols should be placed in explicit fences.
 
 ### Validate semantic references
 
@@ -83,7 +85,9 @@ Run:
 make check-cross-refs
 ```
 
-The checker scans Markdown and MDX below `src/` using the preprocessor's reference and fence patterns. It ignores ordinary code fences, escaped markers, `snippets/code-samples/`, and `node_modules`. It checks `oss/python/` in Python scope, `oss/javascript/` in JavaScript scope, shared `oss/` content in both scopes, and other content in Python scope. An unfenced marker in a shared OSS file must resolve in **all** scopes in which that file builds; a fence narrows the requirement to its language. On failure, add the appropriate mapping, correct the marker, or make the language-specific content explicit.
+The checker scans Markdown and MDX below `src/` using the preprocessor's reference and fence patterns. It ignores ordinary code fences, escaped markers, `snippets/code-samples/`, and `node_modules`. It checks `oss/python/` in Python scope, `oss/javascript/` in JavaScript scope, shared `oss/` content in both scopes, and other content in Python scope. An unfenced marker in a shared OSS file must resolve in **all** scopes in which that file builds; a fence narrows the requirement to its language. The command exits nonzero for unresolved markers. Add the appropriate mapping, correct the marker, or make language-specific content explicit.
+
+This source-level check is separate from Mintlify's rendered-site link check: successful rendering does not establish that every authored semantic name is mapped, especially when a language branch is omitted from one output.
 
 ## LangSmith OpenAPI publication
 
@@ -108,9 +112,7 @@ flowchart TD
   Mintlify --> Routes["Published endpoint routes"]
 ```
 
-This diagram distinguishes committed inputs, a deployment-fetched input, and the transformed daily LangSmith input before Mintlify publishes all endpoint routes.
-
-Mintlify-generated endpoint pages are not present in local `build/`, which is why their paths need special treatment in local link checks. This is separate from the external SDK reference service. Do not copy the Control Plane specification into the repository, and do not hand-author generated endpoint output.
+This distinguishes committed inputs, a deployment-fetched input, and the transformed daily LangSmith input before Mintlify publishes endpoint routes. The generated endpoint pages are not present in local `build/`. Do not copy the Control Plane specification into the repository, and do not hand-author generated endpoint output.
 
 ### Agent Server validation
 
@@ -132,9 +134,9 @@ uv run python scripts/process_langsmith_openapi.py --write
 
 Without `--input`, the processor fetches `https://api.smith.langchain.com/openapi.json`. Its network fetch accepts only the allow-listed host `api.smith.langchain.com` and uses a 30-second timeout. `--input` accepts a controlled local source, `--output` selects the destination, and without `--write` the transformed JSON is printed to standard output for preview.
 
-The processor makes the source appropriate for public Mintlify documentation: it hides operations selected by fleet, internal/infrastructure, low-value, health, and path rules; annotates tags with human-readable `x-group` headings; adds absent tag definitions; and orders groups for the generated sidebar. It normalizes operation summaries, including consistent Beta and visible `(v2)` markers. Reprocessing strips its existing trailing markers before applying them, making title normalization idempotent.
+The processor shapes the upstream source for public Mintlify documentation: it hides operations selected by fleet, internal or infrastructure, low-value, health, and path rules; annotates tags with human-readable `x-group` headings; adds absent tag definitions; and orders groups for the generated sidebar. It normalizes operation summaries, including consistent Beta and visible `(v2)` markers. Reprocessing strips existing trailing markers before applying them, making title normalization idempotent.
 
-After generating a candidate, the workflow saves it temporarily, restores the checkout, and checks out `chore/refresh-langsmith-openapi`. If that branch has an open PR, it fetches the branch and appends a commit; otherwise it creates the branch and PR. It exits without a commit when the committed spec has no diff. Review the automated diff rather than editing the generated file.
+After generating a candidate, the workflow saves it temporarily, restores the checkout, and checks out `chore/refresh-langsmith-openapi`. If that branch has an open PR, it fetches the branch and appends a commit; otherwise it creates the branch and PR. It exits without a commit when the committed spec has no diff. Review the automated refresh result; if it needs changing, modify the declared upstream source or processor rules and regenerate rather than editing the output by hand.
 
 ## Filtered link checks
 
@@ -146,18 +148,18 @@ The filter deliberately removes known non-actionable reports:
 - entire `snippets/` report sections, because Mint checks snippets as standalone files even though their rewritten `/oss/` links resolve when imported;
 - selected legacy relative-path reports for `../langchain/`, `../integrations/`, and `../langgraph/local-server`.
 
-With `--check-anchors`, it additionally removes only the SmithDB migration anchors `traces-query`, `runs-query`, and `exceptions`. It does not suppress other anchors or other broken links. Focused tests verify preservation of genuine failures and non-exempt anchors as well as the OpenAPI, legacy-path, and snippet exclusions.
+With `--check-anchors`, it additionally removes only the SmithDB migration anchors `traces-query`, `runs-query`, and `exceptions`. It does not suppress other anchors or other broken links. Focused tests preserve this boundary by asserting that genuine failures and non-exempt anchors remain after filtering, while cross-reference tests cover scope selection, supported marker forms, and exclusions.
 
 ## Reporting and safe changes
 
 For missing pages, broken links, or incorrect signatures on the external SDK reference site, use the [Reference Documentation issue](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml). The form requires issue type, language, and a detailed description; it also collects product and an optional reference-page URL to route the report.
 
-Change this repository when the issue is an authored semantic marker, a scoped map entry, preprocessing or validation behavior, `docs.json` OpenAPI configuration, an Agent Server spec update, or a reviewed automated LangSmith refresh diff. Keep the ownership boundary intact: fix external SDK reference content in its own generation system, retain committed and remote OpenAPI inputs as configured, and let Mintlify generate endpoint routes at deployment.
+Change this repository when the issue is an authored semantic marker, a scoped map entry, preprocessing or validation behavior, `docs.json` OpenAPI configuration, an Agent Server spec update, or a reviewed automated LangSmith refresh result. Keep the ownership boundary intact: fix external SDK reference content in its own generation system, retain committed and remote OpenAPI inputs as configured, and let Mintlify generate endpoint routes at deployment.
 
 ## Related documentation
 
 - [Source map](/openwiki/architecture/source-map.md) — documentation-source and navigation ownership.
-- [Preprocessing](/openwiki/concepts/preprocessing.md) — the build-time transformation model.
-- [GitHub Actions](/openwiki/integrations/github-actions.md) — scheduled automation conventions.
+- [GitHub Actions](/openwiki/integrations/github-actions.md) — scheduled automation and CI checks.
+- [Mintlify](/openwiki/integrations/mintlify.md) — renderer and deployment boundary.
 - [Cross-reference operations](/openwiki/operations/cross-references.md) — diagnosing and maintaining semantic links.
-- [Test overview](/openwiki/testing/test-overview.md) — test-suite organization.
+- [Test overview](/openwiki/testing/test-overview.md) — choosing focused validation.

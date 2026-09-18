@@ -86,12 +86,44 @@ Vale is deterministic and CI blocks on it, so its output is not a judgment call.
 Report every violation with its file and line. If invoked with `--fix`, correct
 them; otherwise list them.
 
+Lint the merge-base version of each changed file as well, and report the
+difference rather than the raw count:
+
+```bash
+git show origin/main:<file> > <scratch>/base-<name>
+<main-checkout>/.bin/vale <scratch>/base-<name>
+```
+
+A file that already failed on `main` carries pre-existing debt the author did
+not introduce. A file that was clean on `main` and fails now is this diff's CI
+blocker. Say which one it is, because attribution is the difference between a
+finding the author has to fix and one they can reasonably decline.
+
+Reading the diff text is not a substitute for either run. A patch shows added
+lines without their column offsets or their surrounding component, which is
+exactly what these rules turn on.
+
 Vale covers terminology, contractions, first person, future tense, Oxford
 commas, spaced em dashes, navigation-path arrows, and heading case. **Do not
 spend model judgment re-checking what Vale already checks**, with one exception:
-Vale does not scan inside JSX components such as `<Note>` and `<Tip>`, so a clean
-run is not proof that content inside them complies. Grep the added lines in those
-blocks for the mechanical rules yourself.
+Vale does not scan every part of an MDX file, so a clean run is not proof of
+compliance. It misses content inside JSX components (`<Note>`, `<Tip>`, `<Tab>`,
+`<Step>`, `<Accordion>`) and inside table cells. A page can pass Vale with four
+spaced em dashes in it.
+
+Grep the mechanical rules yourself over any file whose diff touches those
+places:
+
+```bash
+grep -nE ' — | – ' <files>                      # spaced em dashes
+grep -nEi "\b(don't|can't|won't|isn't|it's|you'll)\b" <files>   # contractions
+grep -nE '\b(we|our|us|I)\b|\bwill [a-z]+\b' <files>          # first person, future tense
+grep -n '→' <files>                              # navigation arrows
+```
+
+Report a hit inside a component the same way you would report a Vale error: it
+would be one if Vale could see it. A `—` used as an empty table-cell marker is
+fine and is not a finding.
 
 ## Step 3. Check structure against the style guide
 
@@ -146,6 +178,29 @@ Measure before reporting a convention violation. If you are about to say a
 heading form or phrasing is wrong, grep the repository for how often it already
 appears. A form used widely is established practice, not a defect, however much
 the guide seems to prohibit it. Report the count either way.
+
+A diff can also **leave** a convention rather than break a new one. Lowercasing
+the explanation in `- **Term**: Explanation.`, dropping a trailing period, or
+swapping a colon lead-in for a dash each reads as a harmless copy edit on its
+own. Compare the before and after of that exact form, then count both spellings
+across `src/`. When the base was following the majority, the change is the
+finding.
+
+Measure the same way when the diff **adopts** a convention rather than breaks
+one, because a repeated block has three parts and matching two of them still
+lands wrong:
+
+- **Component.** `<Note>` or `<Warning>` or plain prose.
+- **Wording.** Byte-identical to the siblings, or subtly reworded.
+- **Placement.** Before or after the intro paragraph, relative to imports and
+  the first heading.
+
+A status callout copied word for word from the one page in thirteen that puts it
+below the intro is a finding, and only a placement count surfaces it. Report the
+count for each of the three.
+
+When the same block appears on three or more pages, say so: it belongs in
+`src/snippets/` rather than duplicated. See `add-docs-page`.
 
 ## Step 5. Check the mechanics the diff implies
 
