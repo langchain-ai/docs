@@ -1,0 +1,152 @@
+---
+title: Migrate to BYOC
+sidebarTitle: Migration
+description: Copy users, datasets, prompts, experiments, Fleet resources, and other data from an existing LangSmith instance into a BYOC data plane.
+icon: "database-export"
+---
+
+The [LangSmith data migration tool](https://github.com/langchain-ai/langsmith-data-migration-tool) copies data from an existing LangSmith Cloud organization or [self-hosted](/langsmith/self-hosted) instance into a BYOC data plane. The tool copies data (as opposed to moving data over), so the source instance is unchanged and stays available during the move.
+
+Run the migration after your data plane is [active and reachable](/langsmith/byoc-onboarding). Trace data is not migrated, so plan the [manual steps](#move-data-the-tool-does-not-migrate) alongside the tool.
+
+## Supported resources
+
+The tool migrates the following resources between a source instance and a destination data plane:
+
+| Resource | Details |
+|----------|---------|
+| Users and roles | Custom roles, organization members, and workspace memberships. |
+| Datasets | Datasets with their examples and file attachments. |
+| Experiments | Experiments, experiment runs, and feedback, migrated with their datasets. |
+| Annotation queues | Queue configuration and settings. Migrated queues start empty. |
+| Automation rules | Project automation rules, mapped onto destination projects. |
+| Prompts | Prompts with the full commit history. |
+| Charts | Monitoring charts and dashboards. |
+| Custom model pricing | Workspace-custom model price entries. |
+| Fleet | Agents, shared skills, MCP servers, integrations, auth providers, schedules, triggers, webhooks, usage limits, sandbox policies, and workspace secrets. |
+| Context Hub | Context Hub agents and skills, including files, repository metadata, commit history, and commit tags. |
+
+Each resource type has its own command, flags, and caveats. For the command reference, see the [tool README](https://github.com/langchain-ai/langsmith-data-migration-tool/blob/main/README.md).
+
+<Note>
+Resources belonging to a feature that BYOC does not support yet, such as [Engine](/langsmith/engine-overview), cannot be migrated. See [Available features](/langsmith/byoc#available-features).
+</Note>
+
+## Migrate with the tool
+
+<Steps>
+
+<Step title="Install the tool">
+Install the latest release with `uv`, `uvx`, or `pip`. For the current install commands, see [Installation](https://github.com/langchain-ai/langsmith-data-migration-tool#installation).
+
+Verify the install:
+
+```bash
+langsmith-migrator --help
+```
+</Step>
+
+<Step title="Create the destination workspaces">
+Workspace IDs differ between instances, so create the target workspaces in the data plane first. See the `Create workspaces` section of the [BYOC onboarding docs](/langsmith/byoc-onboarding).
+
+Migration commands run per workspace pair. Repeat them for each pair.
+</Step>
+
+<Step title="Create the destination tracing projects">
+The tool does not create tracing projects. Create the projects you need in the destination workspace before you migrate automation rules or charts, or those mappings have no target.
+</Step>
+
+<Step title="Configure the connection details">
+Set the source and destination credentials and endpoints:
+
+```bash
+export LANGSMITH_OLD_API_KEY="<source_instance_key>"
+export LANGSMITH_NEW_API_KEY="<data_plane_key>"
+export LANGSMITH_OLD_BASE_URL="<source_instance_api_url>"
+export LANGSMITH_NEW_BASE_URL="https://<data_plane_host>"
+export LANGSMITH_VERIFY_SSL=true
+```
+
+Find the data plane API URL under **Settings > Data Planes**.
+
+<Warning>
+The destination key must be scoped to a workspace in the target data plane. An organization-scoped key does not work.
+
+To migrate Fleet agents with an owner, use a personal access token (`lsv2_pt_*`) as the destination key. Workspace API keys carry no user identity, so agents created with them have no owner.
+</Warning>
+</Step>
+
+<Step title="Test both connections">
+```bash
+langsmith-migrator test
+```
+</Step>
+
+<Step title="Run the migration">
+Use the interactive wizard to walk through every resource type:
+
+```bash
+langsmith-migrator migrate-all
+```
+
+To migrate one resource type at a time, run its command instead, such as `datasets`, `prompts`, or `fleet`. Add `--dry-run` to preview a step without writing, and `-v` for verbose output. Use `langsmith-migrator resume` to retry pending or failed items from a previous session.
+
+For per-command flags, workspace mapping, and project mapping, see the [tool README](https://github.com/langchain-ai/langsmith-data-migration-tool/blob/main/README.md).
+</Step>
+
+</Steps>
+
+## Complete the Fleet manual steps
+
+[Fleet](/langsmith/fleet/index) resources migrate with the `fleet` command, but some values cannot cross instances. Complete the following in the destination workspace after migration:
+
+- **Re-enter secret values**: The Fleet API does not return secret values. The tool creates workspace secrets and auth provider client secrets as empty placeholders.
+- **Re-authenticate OAuth connections**: Per-user agent connections, such as Gmail, Slack, and GitHub, are tied to individual user tokens. Each user must reconnect.
+- **Re-share agents**: Per-user access lists keep only user IDs that exist on the destination. The tool reports which users it removed.
+- **Check agent models**: The tool substitutes a model when the destination catalog does not offer the source model. It logs every substitution.
+- **Configure infrastructure-level settings**: OAuth providers, the GitHub App, and the Slack app are set in the deployment configuration, not through the API. Contact the LangChain team to configure them in your data plane.
+
+Fleet migrators never overwrite resources that already exist on the destination, so re-running `fleet` is safe.
+
+## Move data the tool does not migrate
+
+### Traces
+
+The tool does not migrate traces. To keep historical traces beyond the lifecycle of your old instance, [bulk export](/langsmith/data-export) them to an S3-compatible bucket.
+
+To move tracing applications, create API keys scoped to a workspace in the data plane, then repoint the application:
+
+- **Cut over**: Set `LANGSMITH_ENDPOINT` to the data plane endpoint and `LANGSMITH_API_KEY` to the new key. See [Trace to a data plane](/langsmith/byoc-usage#trace-to-a-data-plane).
+- **Dual trace**: Write to the old instance and the data plane during the transition. See [Trace to multiple endpoints](/langsmith/byoc-usage#trace-to-multiple-endpoints).
+
+### Deployed agents
+
+Redeploy agents that run on your existing instance into a workspace in the data plane. Use the LangSmith UI or the API. You may also need to recreate service accounts, image pull secrets, and other resources in the data plane cluster.
+
+For agent databases and caches, choose one of the following:
+
+- Create new instances in the data plane and point the redeployed agents at them. Start empty, or restore from a backup of the old instance.
+- Point the redeployed agents at your existing database instances, and reach them from the data plane cluster over PrivateLink or VPC peering.
+
+For more information, see [LangSmith Deployment](/langsmith/deployment).
+
+### Insights reports
+
+[Insights](/langsmith/insights) reports are not migrated across instances. To keep a report, open its details in the LangSmith UI and select **Download**.
+
+## See also
+
+- [BYOC onboarding](/langsmith/byoc-onboarding)
+- [BYOC usage](/langsmith/byoc-usage)
+- [Bulk export trace data](/langsmith/data-export)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/byoc-migration.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
