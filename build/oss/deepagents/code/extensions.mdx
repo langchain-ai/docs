@@ -1,0 +1,204 @@
+---
+title: Python extensions
+sidebarTitle: Python extensions
+description: Customize dcode with Python tools, middleware, and storage routes
+---
+
+Python extensions customize the dcode agent server without modifying dcode itself. Use them to register model tools, LangChain middleware, virtual storage routes.
+
+<Note>
+    Python extensions require `DEEPAGENTS_CODE_EXPERIMENTAL=1`. This experimental API can change or be removed without notice.
+</Note>
+
+<Warning>
+    Extensions run arbitrary Python with your user account's permissions. Load extensions only from sources you trust. Extension tools are not automatically added to the human-approval map, so extensions that perform sensitive work must enforce their own approval or policy through middleware.
+</Warning>
+
+## Create an extension
+
+An extension entry file must expose an asynchronous `extension` setup function. dcode passes an `ExtensionAPI` registrar with read-only session context and methods for adding capabilities.
+
+The following extension makes a LangGraph store available to the agent's file tools under `/memories/`:
+
+```python extension.py
+from deepagents.backends import StoreBackend
+
+from deepagents_code.extensions import ExtensionAPI
+
+
+async def extension(d: ExtensionAPI) -> None:
+    d.register_backend_route(
+        "/memories/",
+        StoreBackend(namespace=lambda _runtime: ("filesystem",)),
+    )
+```
+
+Start dcode with the experimental gate and load the file for one run:
+
+```bash
+DEEPAGENTS_CODE_EXPERIMENTAL=1 dcode --extension ./extension.py
+```
+
+Repeat `-e` or `--extension` to load multiple files or directories. A directory scan includes direct `*.py` files and direct subdirectories that contain `__init__.py` or `extension.py`. Loading also requires extension discovery to stay enabled (`[extensions].enabled` or `DEEPAGENTS_CODE_EXTENSIONS`); when discovery is disabled, Deep Agents Code skips every source, including CLI paths.
+
+## Register capabilities
+
+The extension API supports these methods:
+
+| Method | Signature | Purpose |
+|---|---|---|
+| `register_middleware` | `(class_or_instance)` | Add LangChain `AgentMiddleware`. A middleware class must have a zero-argument constructor; otherwise, pass an instance. |
+| `register_tool` | `(function_or_tool)` | Expose a callable or `BaseTool` to the model. dcode converts plain callables with LangChain tool-schema inference. |
+| `register_backend_route` | `(prefix, backend)` | Make a `BackendProtocol` storage provider available under a virtual path. |
+| `on_shutdown` | `(callback)` | Release session resources when the agent server stops. Synchronous and asynchronous callbacks are supported. |
+
+The registrar also exposes this read-only context:
+
+- `d.cwd`: Working directory for the session.
+- `d.mode`: `interactive` or `headless`.
+- `d.has_ui`: Whether the session has an interactive terminal UI.
+- `d.path`: Entry file for the extension.
+
+Do not open long-lived connections or start background tasks during module import. If setup opens a session resource, register an idempotent `on_shutdown` callback to release it.
+
+### Register middleware
+
+Register LangChain middleware to add model or tool behavior to the agent. dcode loads middleware when it builds the agent graph.
+
+```python
+from langchain.agents.middleware import AgentMiddleware
+
+from deepagents_code.extensions import ExtensionAPI
+
+
+class ExampleMiddleware(AgentMiddleware):
+    name = "example-middleware"
+
+
+async def extension(d: ExtensionAPI) -> None:
+    d.register_middleware(ExampleMiddleware())
+```
+
+Use an `AgentMiddleware` instance when construction needs configuration. You can also pass a middleware class that has a zero-argument constructor.
+
+### Register tools
+
+Register a callable or `BaseTool` to make it available to the model.
+
+```python
+from deepagents_code.extensions import ExtensionAPI
+
+
+async def extension(d: ExtensionAPI) -> None:
+    def current_directory() -> str:
+        """Return the working directory for the current dcode session."""
+        return str(d.cwd)
+
+    d.register_tool(current_directory)
+```
+
+dcode converts plain callables into LangChain tools by inferring their schema from the function signature and docstring. Extension tools can replace same-named built-in tools. Between extensions, the first registration for a tool name wins.
+
+### Route virtual storage
+
+Backend route prefixes must be lowercase absolute paths with leading and trailing slashes, such as `/memories/` or `/company/knowledge/`. dcode rejects invalid paths and routes that overlap its internal artifact or conversation-history storage.
+
+Routed content is available through the model's file tools. Shell `execute` remains attached to the default local or sandbox storage, so shell commands cannot access virtual routed content. A sandboxed agent also rejects a route backed directly by `FilesystemBackend`, because that would expose host storage while shell execution remains in the sandbox.
+
+Extension tools and middleware replace same-named built-ins. Between extensions, the first registration of a route prefix or unit name wins.
+
+### Apply runtime changes
+
+Tools registered after startup appear on the next model request. Middleware and backend routes change agent graph construction and require `/reload`. Run `/extensions` to list registrations, their source paths and scopes, load failures, and whether a restart is required.
+
+A separately managed remote agent server must be restarted or redeployed by its operator.
+
+## Choose an extension source
+
+dcode loads authorized extension sources in this order and ignores later duplicate entry paths:
+
+1. Python files in `~/.deepagents/extensions/`.
+2. Files and directories in `[extensions].extra_paths`.
+3. Files and directories passed with `-e` or `--extension`.
+4. Python extensions from enabled, versioned plugins.
+5. Modules exposed through the `dcode.extensions` Python entry-point group.
+6. Trusted project extensions in `<project>/.deepagents/extensions/`.
+
+Use `~/.deepagents/extensions/` for quick user-wide extensions. Use a [plugin](#package-an-extension-in-a-plugin) for versioned distribution and updates. Use a project extension for code maintained with one repository.
+
+## Trust project extensions
+
+Project extensions in `<project>/.deepagents/extensions/` execute only after project trust is granted. In interactive mode, dcode prompts you to allow the current files once, remember the canonical project path for future sessions and edits, or skip them. Canceling the prompt (for example, with Esc) aborts the launch.
+
+For a headless or CI run, grant trust for that invocation:
+
+```bash
+DEEPAGENTS_CODE_EXPERIMENTAL=1 \
+  dcode --trust-project-extensions -n "Run the project checks"
+```
+
+Set the default project policy to `ask`, `always`, or `never` with `[extensions].trust` or `DEEPAGENTS_CODE_EXTENSIONS_TRUST`. Only use `always` when every project you open is trusted.
+
+## Configure extensions
+
+Configure discovery in `~/.deepagents/config.toml`:
+
+```toml title="~/.deepagents/config.toml"
+[extensions]
+enabled = true
+trust = "ask"
+extra_paths = [
+    "extensions/policy.py",
+    "~/src/company-extensions",
+]
+```
+
+| Setting | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Enable extension discovery for every source, including `-e` / `--extension`. The experimental environment variable is still required. |
+| `trust` | `"ask"` | Set project extension trust to `ask`, `always`, or `never`. |
+| `extra_paths` | `[]` | Add user-authorized Python files or directories. Relative paths resolve from the dcode profile directory; `~` expands to your home directory. |
+
+`DEEPAGENTS_CODE_EXTENSIONS` overrides `enabled`, and `DEEPAGENTS_CODE_EXTENSIONS_TRUST` overrides `trust`. Both still require `DEEPAGENTS_CODE_EXPERIMENTAL=1`. When `enabled` is `false`, Deep Agents Code skips every extension source.
+
+## Package an extension in a plugin
+
+A versioned [plugin](/oss/deepagents/code/plugins) is the preferred way to distribute an extension. Declare one entry file or a list under the Deep Agents Code namespace in the plugin manifest:
+
+```json title=".claude-plugin/plugin.json"
+{
+  "name": "shared-memory",
+  "version": "1.0.0",
+  "extensions": {
+    "com.langchain.deepagents.code": {
+      "pythonExtensions": "./extension.py"
+    }
+  }
+}
+```
+
+Every entry must start with `./` and remain inside the installed plugin snapshot. dcode rejects absolute paths, parent traversal, symlink escapes, missing files, and non-Python entries. A plugin that declares `pythonExtensions` must also declare a non-empty `version`. Installing and enabling the plugin authorizes its extension code.
+
+After installing, enabling, disabling, updating, or removing a plugin extension during a session, run `/restart` to rebuild the agent graph.
+
+## Handle failures
+
+Each extension setup is transactional. If import or initialization fails, Deep Agents Code removes that extension's partial registrations, records the failure in the debug log and `/extensions`, and continues loading later extensions. Shutdown callback failures also do not prevent other callbacks from running.
+
+## See also
+
+- [Plugins and marketplaces](/oss/deepagents/code/plugins)
+- [Command reference](/oss/deepagents/code/cli-reference)
+- [Config file](/oss/deepagents/code/config-file)
+- [Approval modes](/oss/deepagents/code/approval-modes)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/deepagents/code/extensions.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
