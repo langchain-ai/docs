@@ -1,0 +1,78 @@
+---
+title: Authentication
+description: Authenticate MCP connections with bearer tokens, OAuth 2.1, or per-user credentials in LangChain.
+---
+
+import McpAuthBearerPy from '/snippets/python/code-samples/mcp-auth-bearer-py.mdx';
+import McpAuthOauthPy from '/snippets/python/code-samples/mcp-auth-oauth-py.mdx';
+import McpAuthPerServerPy from '/snippets/python/code-samples/mcp-auth-per-server-py.mdx';
+import McpAuthPerUserPy from '/snippets/python/code-samples/mcp-auth-per-user-py.mdx';
+
+Most remote MCP servers require authentication. [`MCPAdapter`](https://reference.langchain.com/python/langchain/mcp/adapter/MCPAdapter) delegates auth to FastMCP, so any credential a `fastmcp.Client` accepts works: a static [bearer token](#bearer-token), a full [OAuth 2.1](#oauth-authentication) flow, or any [`httpx.Auth`](https://www.python-httpx.org/advanced/authentication/). Pass the credential on a prebuilt client and hand that client to the adapter. When one agent talks to several servers, use [per-server authentication](#per-server-authentication); in a deployment, use [per-user authentication](#per-user-authentication) so each run reaches the server as the caller.
+<Note>
+The `langchain.mcp` namespace requires `langchain[mcp]>=1.4.0` and is in beta. The API may change.
+</Note>
+
+## Bearer token
+
+The simplest case: the server verifies a token you provisioned and adds it in the `Authorization: Bearer <token>` header. There is no discovery, browser, or refresh. Pass the token as the client's `auth`:
+
+<McpAuthBearerPy />
+
+The `auth` argument accepts a bearer-token string, the literal `"oauth"`, or any `httpx.Auth`. In an `MCPConfig` fleet, each server takes the same key.
+
+## OAuth authentication
+
+For a server that issues its own credentials, pass the literal string `"oauth"`. FastMCP runs the full OAuth 2.1 flow: discovery, [dynamic client registration](https://modelcontextprotocol.io/specification/draft/basic/authorization), the browser redirect, and the token exchange. Dynamic client registration means the client registers itself at runtime instead of you pre-provisioning a client ID:
+
+<McpAuthOauthPy />
+
+By default tokens are held in memory, so each run repeats the browser step. Pass a prebuilt `OAuth` provider with a token store to persist them across runs:
+
+```python
+from fastmcp.client import Client
+from fastmcp.client.auth import OAuth
+
+oauth = OAuth(mcp_url="https://example.com/mcp", token_storage=...)
+client = Client("https://example.com/mcp", auth=oauth)
+```
+
+FastMCP ships providers for common identity providers (Auth0, WorkOS, Okta, and more); the flow the client runs is identical across them. See [OAuth authentication](https://gofastmcp.com/clients/auth/oauth) in the FastMCP documentation.
+
+## Per-server authentication
+
+When one agent talks to several servers, each server may need its own credential. Give each its own connection with a [`ClientGroup`](/oss/python/langchain/mcp/connections#independent-connections-with-clientgroup), and set `auth` per client, so every server authenticates independently:
+
+<McpAuthPerServerPy />
+
+## Per-user authentication
+
+In a deployment, each run should reach the MCP server as the user who initiated it, not with one shared credential. The pattern has two halves:
+
+1. **Authenticate the caller at the LangGraph server.** A [custom auth handler](/langsmith/auth) resolves the incoming request to a user identity, which each run reads off its runtime.
+2. **Mint or exchange a credential for that user.** Inside the [graph factory](/oss/python/langchain/mcp/connections#scale-a-deployment), read the user's identity and build the MCP client with a per-user token, so the connection carries that user's authorization.
+
+<McpAuthPerUserPy />
+
+In production, `token_for` stands in for whatever the deployment already has: an OAuth gateway that exchanges the session for a per-user token, or a `fastmcp.client.auth` provider that runs the authorization-code flow per identity. Isolate any [cached responses](/oss/python/langchain/mcp/connections#caching) per user, keyed off the verified identity, so one user never sees another's cached tool list.
+
+## See also
+
+- [FastMCP OAuth authentication](https://gofastmcp.com/clients/auth/oauth)
+- [FastMCP bearer token authentication](https://gofastmcp.com/clients/auth/bearer)
+- [FastMCP machine-to-machine authentication](https://gofastmcp.com/clients/auth/client-credentials)
+- [FastMCP client groups](https://gofastmcp.com/clients/client-groups) — independent connections for per-server auth
+- [FastMCP server authentication providers](https://gofastmcp.com/servers/auth/authentication)
+- [MCP authorization specification](https://modelcontextprotocol.io/specification/draft/basic/authorization)
+- [Custom authentication for a LangGraph server](/langsmith/auth)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/langchain/mcp/auth.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
