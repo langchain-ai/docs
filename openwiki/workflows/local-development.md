@@ -1,11 +1,8 @@
 ---
 type: workflow guide
 title: Local Development Workflow
-description: Set up and operate the local documentation build and Mintlify preview loop. Covers full and incremental builds, skill linking, recovery from generated-output drift, and focused validation.
+description: Set up and operate the local documentation build and Mintlify preview loop. Covers full and incremental builds, recovery from generated-output drift, Mint working-directory rules, and focused validation.
 tags: [local-development, documentation, mintlify, build-system, workflow]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-14T08:24:18.469Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -25,7 +22,10 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-16b92823fdcb07d686f2e27f
     resource: repo://tests/unit_tests/test_watcher.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-14T08:24:18.469Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-19T08:18:43.281Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-19T08:18:43.281Z" }
 ---
 
 # Local Development Workflow
@@ -34,7 +34,7 @@ The local loop has a strict input/output boundary: author documentation, navigat
 
 ## First-time setup
 
-The checkout requires Python 3.13 or later, Node.js, and `uv`. Install Python dependency groups, project npm dependencies, the global Mintlify CLI, and the local Claude Code skill links:
+The checkout requires Python 3.13 or later, Node.js, and `uv`. Install Python dependency groups, project npm dependencies, the global Mintlify CLI, and local Claude Code skill links:
 
 ```bash
 git clone https://github.com/langchain-ai/docs.git
@@ -42,13 +42,13 @@ cd docs
 make install
 ```
 
-`make install` runs `uv sync --all-groups`, `npm install`, and `npm install -g mint@latest`; it also invokes `make skills`. The latter links each canonical `.agents/skills/<name>/` directory into the gitignored `.claude/skills/` directory for Claude Code. It retains non-symlink personal entries and removes stale symlinks. Re-run `make skills` after pulling a newly added or renamed skill. Other supported agents use `.agents/skills/` directly; see [Agent Authoring Skills](/openwiki/operations/agent-skills.md).
+`make install` runs `uv sync --all-groups`, `npm install`, and `npm install -g mint@latest`; it also invokes `make skills`. That target links each canonical `.agents/skills/<name>/` directory into gitignored `.claude/skills/`, preserves non-symlink personal entries, and removes stale symlinks. Re-run `make skills` after pulling a newly added or renamed skill.
 
 If the `docs` console script is unavailable after installation, open a new shell. Confirm the separate global executable with `mint --version`.
 
 ## Choose an entrypoint
 
-Use the Make targets for normal checkout work. `make dev` and `make build` run `npm install` first and invoke the pipeline with the repository root on `PYTHONPATH`.
+Use Make targets for normal checkout work. `make dev` and `make build` run `npm install` first and invoke the pipeline with the repository root on `PYTHONPATH`.
 
 ```bash
 make dev                         # full build, watch, and local preview
@@ -58,7 +58,7 @@ uv run pipeline dev --skip-build # reuse a suitable existing build tree
 uv run pipeline build            # direct one-shot build
 ```
 
-The CLI exposes `docs build --watch`, but the build command ignores command arguments and returns after one build. Use `dev` for supported watch behavior.
+The CLI exposes `docs build --watch`, but the build command does not inspect command arguments and returns after one build. Use `dev` for supported watch behavior.
 
 ## Start the edit–preview loop
 
@@ -85,29 +85,29 @@ flowchart TD
   Touch --> Preview["Mint detects update"]
 ```
 
-This flow distinguishes the full-build reset from focused updates during a preview session.
+This flow shows the clean full-build reset followed by focused updates during a preview session.
 
 ### Startup, failure, and shutdown
 
-A normal start returns failure before creating the watcher or Mint process when its initial build fails. `--skip-build` deliberately bypasses that guard and only warns when `build/` does not exist, so use it only with a suitable existing generated tree. If `mint` cannot start, the command exits with an installation recommendation. After startup, a nonzero Mint exit, a cancelled watcher, or an unexpected watcher stop makes development mode fail.
+An initial-build failure returns failure before the watcher or Mint process starts. `--skip-build` deliberately bypasses that guard and only warns when `build/` does not exist, so use it only after a brief interruption with a suitable generated tree. If `mint` cannot start, the command exits with installation guidance. After startup, a nonzero Mint exit, a cancelled watcher, or an unexpected watcher stop makes development mode fail.
 
-Press Ctrl+C to stop. The command signals watcher shutdown, cancels a pending debounced rebuild, terminates Mint, waits up to five seconds, then kills Mint if necessary. It cancels and joins the watcher, Mint wait, and log-forwarding tasks so an interrupted session does not leave them running. On Windows Mint is launched through a shell for `.CMD` compatibility; Unix uses direct execution.
+Press Ctrl+C to stop. The command signals watcher shutdown, cancels a pending debounced rebuild, terminates Mint, waits up to five seconds, then kills Mint if necessary. It cancels and joins the watcher, Mint wait, and log-forwarding tasks. On Windows Mint is launched through a shell for `.CMD` compatibility; Unix uses direct execution.
 
 ## What an incremental update does
 
 The watcher uses `watchdog` events from `src/`. Create and modify events for builder-supported extensions are queued; this includes Markdown and MDX, JSON, images and video, YAML, styles, JavaScript/JSX/TSX, text, HTML, and fonts. It ignores editor backups ending in `~`, `.bak`, or `.orig`, plus hidden temporary files ending in `.tmp`, `.temp`, or `.swp`.
 
-Queued paths are deduplicated in a set. Every event resets a 0.2-second debounce task, which batches rapid writes. One path rebuilds on one worker; a larger batch uses a `ThreadPoolExecutor` with at most four workers and reports progress. The watcher then touches the emitted files so Mint notices their timestamps and hot-reloads. Versioned OSS content can touch both Python and JavaScript outputs, while OpenWiki and Deep Agents Code use one unversioned output.
+Queued paths are deduplicated in a set. Every event resets a 0.2-second debounce task, which batches rapid writes. One path rebuilds on one worker; a larger batch uses a `ThreadPoolExecutor` with at most four workers and reports progress. The watcher then touches emitted files so Mint notices their timestamps and hot-reloads. Versioned OSS content can touch both Python and JavaScript outputs, while OpenWiki and Deep Agents Code use one unversioned output.
 
-The watcher handles a deletion differently: it removes only the source-relative path under `build/` when present. It does not apply the full builder routing map.
+A deletion is intentionally less complete: the watcher removes only the source-relative path under `build/` when it exists. It does not apply the builder's routing map, so routed output can remain until a full build.
 
 ## Know when to reset with a full build
 
-`make build` runs the full `DocumentationBuilder.build_all()` lifecycle without watching. The builder clears `build/`, emits Python and JavaScript OSS variants, builds unversioned Deep Agents Code, OpenWiki, and LangSmith content, builds managed Deep Agents variants, copies shared files and npm snippet components, and generates `llms.txt` and `llms-full.txt`.
+`make build` runs the full `DocumentationBuilder.build_all()` lifecycle without watching. The builder clears `build/`, emits Python and JavaScript OSS variants, builds unversioned Deep Agents Code, OpenWiki, and LangSmith content plus managed Deep Agents variants, copies shared files and npm snippet components, and generates LLM artifacts.
 
-Incremental watcher builds call the per-file path. They do not rerun whole-tree shared-file collection, npm snippet overlays, or LLM artifact generation; source deletions can also leave routed variants behind. Run `make build` after navigation, routing, shared-asset, snippet-component, broad preprocessing, deletion, or other cross-file changes, and whenever the preview looks stale. Fix the authored input or generator and rebuild—never patch `build/`.
+Incremental watcher builds call the per-file path. They do not rerun whole-tree shared-file collection, npm snippet overlays, or LLM artifact generation. Run `make build` after navigation, routing, shared-asset, snippet-component, broad preprocessing, deletion, or other cross-file changes, and whenever the preview looks stale. Fix authored input or generator configuration and rebuild—never patch `build/`.
 
-For builder routing and preprocessing detail, see [Build System Architecture](/openwiki/architecture/build-system.md). For the renderer-facing contract, see [Mintlify Integration](/openwiki/integrations/mintlify.md).
+For routing and preprocessing details, see [Build System Architecture](/openwiki/architecture/build-system.md). For the renderer-facing contract, see [Mintlify Integration](/openwiki/integrations/mintlify.md).
 
 ## Validate the change
 
@@ -119,7 +119,7 @@ Choose the narrowest check that establishes the changed boundary:
 | Python tooling and spelling | `make lint` | Ruff format/check, `ty`, and Codespell on `src`. |
 | Markdown style | `make lint_md` | Markdownlint below `src`; use `make lint_md_fix` to apply its fixes. |
 | Prose | `make lint_prose` | Installs the Vale version pinned in `.mise.toml` to `.bin/vale`, then checks `src` or `FILES`. |
-| Generated links and anchors | `make broken-links-with-anchors` | Builds first, runs Mint from `build/` with `--check-anchors`, and filters known non-actionable reports. |
+| Generated links, redirects, and anchors | `make broken-links-with-anchors` | Builds first, runs Mint from `build/` with `--check-anchors` and `--check-redirects`, and filters known non-actionable reports. |
 | Source `@[ref]` references | `make check-cross-refs` | Checks source references separately from Mint's built-site check. |
 
 The focused watcher tests currently cover backup and temporary-file filtering. Add focused tests when changing event filtering, rebuilding, routing, or shutdown behavior. See [Testing Overview](/openwiki/testing/test-overview.md) for the wider validation model.
@@ -140,7 +140,7 @@ cd build
 mint broken-links
 ```
 
-Both link-check targets filter known deployment-generated and standalone-snippet reports before failing on remaining link lines; the anchor target adds `--check-anchors`. The same working-directory rule applies to raw export and OpenAPI commands. If Mint reports compatibility errors, update it with `mint update` or `npm install -g mint@latest`.
+Both link-check targets pass `--check-redirects`, filter known deployment-generated and standalone-snippet reports, and fail on remaining indented link lines; the anchor target additionally passes `--check-anchors`. The same working-directory rule applies to raw export and OpenAPI commands. If Mint reports compatibility errors, update it with `mint update` or `npm install -g mint@latest`.
 
 When Mint warns that a new navigation page does not exist, ensure `src/docs.json` lists the root `index` route without an extension:
 
@@ -164,5 +164,5 @@ When Mint warns that a new navigation page does not exist, ensure `src/docs.json
 - [Quickstart](/openwiki/quickstart.md)
 - [Build System Architecture](/openwiki/architecture/build-system.md)
 - [Mintlify Integration](/openwiki/integrations/mintlify.md)
-- [Agent Authoring Skills](/openwiki/operations/agent-skills.md)
+- [Documentation CLI Tools](/openwiki/operations/cli-tools.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)

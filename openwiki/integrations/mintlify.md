@@ -3,9 +3,6 @@ type: integration
 title: Mintlify Integration
 description: Mintlify renders the generated LangChain documentation tree and uses docs.json as its renderer-facing site contract. This page explains the build, navigation, OpenAPI, validation, preview, and production publication boundaries.
 tags: [mintlify, documentation, rendering, deployment, site-configuration]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-17T08:22:51.028Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -25,13 +22,20 @@ sources:
     resource: repo://pipeline/commands/dev.py
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-636af982f42ea94123d2d7e9
+    resource: repo://pipeline/core/watcher.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
+  - id: openwiki-source-49f717adb7cc59501f5c17ac
+    resource: repo://scripts/filter_mint_broken_links.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
   - id: openwiki-source-554339f52225d7d8edff3ed0
     resource: repo://src/style.css
-generated: { by: "openwiki/0.4.3", at: "2026-09-11T08:21:01.441Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-19T08:18:43.281Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-19T08:18:43.281Z" }
 ---
 
 # Mintlify Integration
@@ -94,6 +98,8 @@ The development workflow uses mint dev CLI (a separate global npm binary install
 
 `make dev` installs project npm dependencies and invokes the pipeline command. Unless `--skip-build` is supplied, `dev_command` performs an initial build; it watches `src/`, runs `mint dev --port 3000` in `build/`, forwards Mint output, and shuts down the watcher and child process on interruption. An initial build failure prevents startup; an unexpected watcher stop or nonzero Mint exit fails the command.
 
+The watcher only queues supported source-file changes, coalesces changes for 0.2 seconds, and rebuilds the affected files. It then touches the resulting output files so `mint dev` notices the update. This is incremental development behavior, not a replacement for a clean `make build`: the latter recreates the complete tree and is the appropriate check after structural or routing changes.
+
 For structural validation, run:
 
 ```bash
@@ -101,7 +107,7 @@ make broken-links
 make broken-links-with-anchors
 ```
 
-The targets build first, invoke `mint broken-links` in `build/`, and fail only when filtered output retains actionable indented link entries. The filter intentionally removes deployment-generated OpenAPI-route false positives and standalone-snippet reports. The reusable workflow uses Node 22, caches or installs the global Mint CLI, applies a KaTeX workaround, then runs the anchor check and Agent Server OpenAPI validation.
+The targets build first, invoke `mint broken-links` in `build/`, and fail only when filtered output retains actionable indented link entries. Both enable `--check-redirects`, so redirect destinations in `docs.json` are checked as well; the anchor variant also enables `--check-anchors`. The filter intentionally removes deployment-generated OpenAPI-route false positives, standalone-snippet reports, and known SmithDB migration anchor false positives. The reusable workflow uses Node 22, caches or installs the global Mint CLI, applies a KaTeX workaround, then runs the anchor check and Agent Server OpenAPI validation.
 
 Snippet imports in MDX files are expanded by Mintlify at render time; they are not served as standalone pages. The build system processes snippets and stores language-specific versions at /build/snippets/{python|javascript}/, and Mintlify inlines them into importing pages. The builder rewrites imports in versioned pages to those language-specific copies, while retaining a Python-default copy for unversioned consumers.
 
