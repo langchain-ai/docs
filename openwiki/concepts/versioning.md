@@ -1,11 +1,11 @@
 ---
 type: versioning strategy
 title: Language Versioning Strategy
-description: Explains independent language-route rendering and version-claim validation for Python and npm documentation, published package versions, and upstream-owned mirrored requirements.
+description: Explains language-specific documentation route rendering, navigation and redirects, and the separate validation of package and upstream-owned version claims.
 tags: [versioning, documentation-pipeline, routes, package-validation, dependency-management]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-18T08:20:50.944Z
+    at: 2026-09-19T08:18:43.281Z
 sources:
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
@@ -31,21 +31,21 @@ sources:
     resource: repo://tests/unit_tests/test_check_external_versions.py
   - id: openwiki-source-607673c5c40214b511f9e0a7
     resource: repo://tests/unit_tests/test_check_version_claims.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-17T08:22:51.028Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-19T08:18:43.281Z" }
 ---
 
 # Language Versioning Strategy
 
-This repository has two separate meanings of “versioning”:
+This repository has two separate meanings of **versioning**:
 
 1. **Language-route rendering** turns one authored documentation tree into Python and JavaScript route families where appropriate.
-2. **Version-claim validation** checks version specifiers written in documentation. It decides whether a named package release was published, or whether a requirement deliberately mirrored from another project still agrees with that project's source.
+2. **Version-claim validation** checks version specifiers written in documentation. It establishes either that a named package release was published or that a requirement deliberately mirrored from another project still agrees with that project's source.
 
-They use some of the same language signals (`:::python`, `:::js`, and source paths), but they solve different problems. A route prefix does not establish a package's minimum supported version, and a package floor such as `langchain>=1.3.2` does not select an output route.
+They use some of the same language signals (`:::python`, `:::js`, and source paths), but solve different problems. A route prefix does not establish a package's minimum supported version, and a package floor such as `langchain>=1.3.2` does not select an output route.
 
 ## Language-route rendering
 
-`DocumentationBuilder` owns emitted documentation artifacts beneath `build/`; `src/docs.json` independently exposes those routes in navigation and redirects retired URLs. Source placement selects the builder behavior, while navigation entries must name routes that the builder actually emits.
+`DocumentationBuilder` owns emitted documentation artifacts beneath `build/`; `src/docs.json` independently exposes those routes in navigation and redirects retired URLs. Source placement selects builder behavior, while navigation entries must name routes that the builder emits.
 
 | Authored source domain | Emitted route family | Navigation consequence |
 | --- | --- | --- |
@@ -140,7 +140,7 @@ Each emitted variant gets matching conditional content, language-scoped snippet 
 
 `scripts/check_version_claims.py` scans documentation for `>=` floors and `==` pins such as `langchain>=1.3.2`, `langsmith[livekit]>=0.11.2`, and `@langchain/langgraph>=1.4.0`. It checks `.mdx` pages under `src/` by default, or only existing `.mdx` paths supplied with `--files`.
 
-The checker answers one narrow question: **was the written version published in the relevant registry?** It does not decide that a feature first appeared in that release, does not bump an old floor to the current release, and does not interpret a published release as proof that the requirement is sufficient. The feature owner must make that human compatibility decision. This distinction prevents automated “upgrades” that would require readers to install a newer package without evidence that the feature needs it.
+The checker answers one narrow question: **was the written version published in the relevant registry?** It does not decide that a feature first appeared in that release, does not bump an old floor to the current release, and does not interpret a published release as proof that the requirement is sufficient. The feature owner must make that human compatibility decision.
 
 ### Ecosystem selection
 
@@ -160,7 +160,7 @@ flowchart TD
     Spec["Version specifier in an MDX page"] --> Syntax{"npm scope or Python extras"}
     Syntax -->|"scope"| Npm["npm registry"]
     Syntax -->|"extras"| Pypi["PyPI registry"]
-    Syntax -->|"neither"| Context{"label, fence, or page context"}
+    Syntax -->|"neither"| Context{"label fence or page context"}
     Context -->|"JavaScript"| Npm
     Context -->|"Python"| Pypi
     Context -->|"no signal"| Default["PyPI default"]
@@ -187,7 +187,7 @@ uv run python scripts/check_version_claims.py --files src/langsmith/evaluators.m
 uv run python scripts/check_version_claims.py --advisory-only
 ```
 
-The pull-request workflow runs it only for changed `src/**/*.mdx` files and fails when a named release was never published. The scheduled full sweep uses `--advisory-only`, so results such as a yanked release do not turn the scheduled workflow red.
+The pull-request workflow runs it only for changed `src/**/*.mdx` files and fails when a named release was never published. The scheduled full sweep uses `--advisory-only`, so its findings do not turn the scheduled workflow red.
 
 ## Mirrored upstream requirements
 
@@ -226,14 +226,14 @@ Without `--write`, drift or an unreadable entry returns a nonzero status. With `
 
 When changing routes, first choose the source domain based on intended language behavior; edit `src/`, not generated `build/`; then add extensionless emitted routes to the appropriate `docs.json` group and redirects for public moves. Run `make build`, inspect both language artifacts where relevant, and run `make broken-links`.
 
-When adding a package claim, make the ecosystem unambiguous with a scope, extras, nearby label, fence, or language-specific path where needed. Verify the written release exists, but separately confirm the human claim that it is the minimum feature version. Add an external-registry entry only when the documentation must equal an upstream-owned requirement—not for a feature floor.
+When adding a package claim, make the ecosystem unambiguous with a scope, extras, nearby label, fence, or language-specific path where needed. Verify the written release exists, but separately confirm the human claim that it is the minimum feature version. Add an external-registry entry only when the documentation must equal an upstream-owned requirement, not for a feature floor.
 
-Builder tests cover unversioned OSS output and link behavior, scoped snippet imports, and dual Managed Deep Agents output with target-specific links and conditional content. Version-claim tests cover the resolver precedence, truncated series behavior, ignores, safe registry lookup, and outage handling. External-version tests cover exact matching and digit-only rewrites, invalid registry inputs, upstream retrieval, and differing check versus write-mode failure behavior.
+Builder tests cover unversioned OSS output and link behavior, scoped snippet imports, and dual Managed Deep Agents output with target-specific links and conditional content. Version-claim tests cover resolver precedence, truncated series behavior, ignores, safe registry lookup, and outage handling. External-version tests cover exact matching and digit-only rewrites, invalid registry inputs, upstream retrieval, and differing check versus write-mode failure behavior.
 
 ## See also
 
 - [Build system](/openwiki/architecture/build-system.md)
+- [Source map](/openwiki/architecture/source-map.md)
 - [GitHub Actions](/openwiki/integrations/github-actions.md)
-- [Adding pages](/openwiki/operations/adding-pages.md)
-- [Test overview](/openwiki/testing/test-overview.md)
+- [Conditional rendering tests](/openwiki/testing/conditional-rendering.md)
 - [Writing versioned content](/openwiki/workflows/versioned-content.md)

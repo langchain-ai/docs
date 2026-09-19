@@ -3,14 +3,13 @@ type: integration
 title: Reference Documentation Integration
 description: Defines the boundary between externally operated SDK reference sites, scoped semantic links, and OpenAPI inputs that Mintlify turns into LangSmith endpoint documentation. Covers refresh ownership and validation limits for generated routes.
 tags: [api-reference, openapi, cross-references, mintlify, langsmith]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-18T08:20:50.944Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
+  - id: openwiki-source-164e2da859b5277df81c7d94
+    resource: repo://.github/workflows/ci.yml
   - id: openwiki-source-5153f86e64d6ee0b305f72b3
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
@@ -37,7 +36,10 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-17T08:22:51.028Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-19T08:18:43.281Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-19T08:18:43.281Z
 ---
 
 # Reference Documentation Integration
@@ -87,7 +89,7 @@ make check-cross-refs
 
 The checker scans Markdown and MDX below `src/` using the preprocessor's reference and fence patterns. It ignores ordinary code fences, escaped markers, `snippets/code-samples/`, and `node_modules`. It checks `oss/python/` in Python scope, `oss/javascript/` in JavaScript scope, shared `oss/` content in both scopes, and other content in Python scope. An unfenced marker in a shared OSS file must resolve in **all** scopes in which that file builds; a fence narrows the requirement to its language. The command exits nonzero for unresolved markers. Add the appropriate mapping, correct the marker, or make language-specific content explicit.
 
-This source-level check is separate from Mintlify's rendered-site link check: successful rendering does not establish that every authored semantic name is mapped, especially when a language branch is omitted from one output.
+This source-level check is separate from Mintlify's rendered-site link check: successful rendering does not establish that every authored semantic name is mapped, especially when a language branch is omitted from one output. Repository CI runs `make check-cross-refs` in its own Python job; the reusable Mintlify link-check workflow instead runs the anchor-aware rendered-link check and the Agent Server OpenAPI validation.
 
 ## LangSmith OpenAPI publication
 
@@ -158,7 +160,9 @@ Change this repository when the issue is an authored semantic marker, a scoped m
 
 ## Related documentation
 
+- [Quickstart](/openwiki/quickstart.md) — local setup and generated-output boundaries.
 - [Source map](/openwiki/architecture/source-map.md) — documentation-source and navigation ownership.
+- [Adding and Maintaining Documentation Pages](/openwiki/operations/adding-pages.md) — selecting an input owner and regenerating derived content.
 - [GitHub Actions](/openwiki/integrations/github-actions.md) — scheduled automation and CI checks.
 - [Mintlify](/openwiki/integrations/mintlify.md) — renderer and deployment boundary.
 - [Cross-reference operations](/openwiki/operations/cross-references.md) — diagnosing and maintaining semantic links.

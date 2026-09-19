@@ -5,7 +5,7 @@ description: How @langchain/docs-sandbox components are overlaid into generated 
 tags: [npm-package, snippet-components, build-system, mdx-integration, mintlify]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-17T08:22:51.028Z
+    at: 2026-09-19T08:18:43.281Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -25,7 +25,7 @@ sources:
     resource: repo://src/oss/langchain/frontend/integrations/copilotkit.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-17T08:22:51.028Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-19T08:18:43.281Z" }
 ---
 
 # NPM Snippet Components
@@ -60,7 +60,7 @@ flowchart TD
     Output --> Render["Mintlify renders build"]
 ```
 
-This full-build flow shows why the package overlay, rather than an earlier source-tree copy, owns the mapped generated components.
+This flow shows the full-build handoff from package installation and authored source to the generated tree Mintlify consumes.
 
 `_copy_npm_snippets()` locates `node_modules/@langchain/docs-sandbox/dist/` beside the configured source directory and creates `build/snippets/`. It copies mapped JSX files there and mapped script files to the build root with `shutil.copy2`. Because it runs after `_copy_shared_files()`, an installed package artifact overwrites a same-named source-tree fallback already copied from `src/snippets/`. The later package artifact is authoritative for a mapped destination; do not patch either fallback or generated output to change package behavior.
 
@@ -95,7 +95,7 @@ Markdown snippets follow a separate three-output contract: the original path con
 1. **Change the correct owner.** Change component implementation in `@langchain/docs-sandbox`, publish it, and update the dependency lock state. Change this repository's mapping only for artifact names or destinations, and change MDX only for integrations that import stable `/snippets/` URLs.
 2. **Use a clean full build.** Run `make build`, which installs dependencies and recreates `build/`. Confirm each relevant mapped output exists: `build/snippets/pattern-embed.jsx`, `build/snippets/example-embed.jsx`, or `build/ChatLangChainEmbed.js`. This detects a missing installation, changed `dist/` filename, or absent mapping.
 3. **Check rendered consumers.** Inspect affected routes in Mintlify after the clean build. For a versioned page, inspect both Python and JavaScript outputs: component imports remain shared `/snippets/...jsx`, while Markdown snippet imports are language-scoped. Also inspect an unversioned consumer when one is affected. This is the boundary that verifies file presence, MDX resolution, browser loading, and the chosen identifiers and dimensions together.
-4. **Run structural checks where applicable.** `make broken-links-with-anchors` depends on `build`, runs `mint broken-links --check-anchors` from `build/`, filters known non-actionable reports, and fails only if filtered output retains indented link entries. It is useful for page and anchor changes but does not replace rendered component inspection.
+4. **Run structural checks where applicable.** `make broken-links-with-anchors` depends on `build`, runs `mint broken-links --check-anchors --check-redirects` from `build/`, filters the report, and fails only if filtered output still contains indented link entries. It is useful for page, anchor, and redirect changes but does not replace rendered component inspection.
 5. **Keep focused tests aligned with the boundary.** `tests/unit_tests/test_builder.py` verifies Markdown-import language rewriting, preservation of an already scoped Markdown import, and that a `PatternEmbed` JSX import is unchanged. It also verifies copying a local TSX snippet. It has no direct test for `_copy_npm_snippets()`; a mapping, overwrite-precedence, or warning-semantics change should add a fixture that creates the package `dist/` directory beside the fixture source and asserts the mapped generated files.
 
-The focused tests protect routing and local shared-file behavior. A clean dependency installation plus rendered Mintlify consumers is required to validate the dependency-owned package artifacts end to end. For generated-tree ownership and Mintlify operation, see [Build System Architecture](/openwiki/architecture/build-system.md) and [Mintlify Integration](/openwiki/integrations/mintlify.md).
+The focused tests protect routing and local shared-file behavior. A clean dependency installation plus rendered Mintlify consumers is required to validate the dependency-owned package artifacts end to end. For generated-tree ownership and Mintlify operation, see [Build System Architecture](/openwiki/architecture/build-system.md), [Mintlify Integration](/openwiki/integrations/mintlify.md), [Documentation CLI Tools](/openwiki/operations/cli-tools.md), and [Builder Test Guidance](/openwiki/testing/builder-tests.md).

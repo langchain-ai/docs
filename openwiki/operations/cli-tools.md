@@ -3,6 +3,9 @@ type: operations reference
 title: Documentation CLI Tools
 description: Reference for the documentation pipeline CLI and Make targets, including generated-output ownership, local validation, executable samples, tracing, and agent-skill linking.
 tags: [cli, make, documentation, validation, migration]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-19T08:18:43.281Z
 sources:
   - id: openwiki-source-9361c44d74c0e18006d0d76f
     resource: repo://.agents/skills/README.md
@@ -36,10 +39,7 @@ sources:
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-11T08:21:01.441Z
-generated: { by: "openwiki/0.4.3", at: "2026-09-11T08:21:01.441Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-19T08:18:43.281Z" }
 ---
 
 # Documentation CLI Tools
@@ -142,8 +142,8 @@ It finds the Git root, scans Markdown, MDX, and notebook Markdown cells beneath 
 | Target | Action and output ownership | Use it when |
 | --- | --- | --- |
 | `make clean` | Removes `build/` and Python cache artifacts. | Discard local generated artifacts. |
-| `make broken-links` | Builds, then runs `mint broken-links` from `build/`; filters known deployment/OpenAPI and standalone-snippet noise. | Check generated routes and links. |
-| `make broken-links-with-anchors` | The same generated-tree check with `--check-anchors`. | A change affects fragments or headings. |
+| `make broken-links` | Builds, then runs `mint broken-links --check-redirects` from `build/`; filters known deployment/OpenAPI and standalone-snippet noise. | Check generated routes, links, and redirect destinations. |
+| `make broken-links-with-anchors` | The same generated-tree check with `--check-anchors --check-redirects`. | A change affects fragments, headings, or redirects. |
 | `make check-openapi` | Builds, then calls `mint openapi-check` from `build/`. | Agent Server OpenAPI changes. |
 | `make export` / `make htmltest` | Export writes a Mint archive; htmltest unpacks `EXPORT_ZIP` and checks it with configurable paths and flags. | External-link checking of an eligible offline export. |
 | `make test` | Runs pytest with socket isolation; `TEST_FILE` defaults to `tests/unit_tests`. | Pipeline and script behavior; narrow with `TEST_FILE`. |
@@ -152,7 +152,7 @@ It finds the Git root, scans Markdown, MDX, and notebook Markdown cells beneath 
 | `make check-cross-refs` | Checks source `@[ref]` references independently of Mint. | Cross-reference changes. |
 | `make skills` | Links canonical skills to `.claude/skills/`; it preserves personal non-link entries and removes stale links. | Claude Code setup or after skills change. |
 
-`make broken-links*`, `check-openapi`, and export commands require global Mint. Raw Mint operations must run in `build/`, which is why the wrappers build first and change directory. `make export` requires a Mint CLI that supports `mint export`, Node below 25, and an Enterprise Mintlify plan. `make htmltest` additionally requires `htmltest`, `unzip`, and an existing archive; its configuration checks external URLs only, so it does not replace built-site navigation validation.
+`make broken-links*`, `check-openapi`, and export commands require global Mint. Raw Mint operations must run in `build/`, which is why the wrappers build first and change directory. Before each broken-link check, the wrapper applies a best-effort local KaTeX version placeholder workaround in the globally installed Mint package. Both variants pass `--check-redirects`, filter deployment-generated OpenAPI and standalone-snippet noise, and fail only if filtered output still contains reported link entries; the anchor variant also passes `--check-anchors`. `make export` requires a Mint CLI that supports `mint export`, Node below 25, and an Enterprise Mintlify plan. `make htmltest` additionally requires `htmltest`, `unzip`, and an existing archive; its configuration checks external URLs only, so it does not replace built-site navigation validation.
 
 ## Code samples, snippets, and traces
 
