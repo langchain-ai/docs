@@ -37,30 +37,34 @@ export TYPESAFE_BASE_URL=https://gateway.example.com
 
 ## Quickstart
 
-Configure `TypeSafeClassifier` with a fixed set of named questions. Questions that share state are evaluated independently and in parallel in one request:
+Create a `TypeSafeClassifier`, then pass the state and named questions together in each invocation. Questions that share state are evaluated independently and in parallel in one request:
 
 ```python
 from langchain_typesafe import Choice, Noul, Score, TypeSafeClassifier
 
-classifier = TypeSafeClassifier(
-    questions={
-        "urgent": Noul(instructions="Does this need attention right now?"),
-        "team": Choice(
-            instructions="Which team should pick this up?",
-            criteria={
-                "infra": "Deploys, availability, and on-call incidents.",
-                "billing": "Payments, invoices, and subscriptions.",
-            },
-        ),
-        "severity": Score(
-            instructions="How severe is the impact?",
-            criteria=["Cosmetic.", "Degraded for some users.", "Full outage."],
-        ),
-    }
-)
+classifier = TypeSafeClassifier()
 
 response = classifier.invoke(
-    "The deploy failed twice and customers are seeing 500s. Can someone look now?"
+    {
+        "state": (
+            "The deploy failed twice and customers are seeing 500s. "
+            "Can someone look now?"
+        ),
+        "questions": {
+            "urgent": Noul(instructions="Does this need attention right now?"),
+            "team": Choice(
+                instructions="Which team should pick this up?",
+                criteria={
+                    "infra": "Deploys, availability, and on-call incidents.",
+                    "billing": "Payments, invoices, and subscriptions.",
+                },
+            ),
+            "severity": Score(
+                instructions="How severe is the impact?",
+                criteria=["Cosmetic.", "Degraded for some users.", "Full outage."],
+            ),
+        },
+    }
 )
 
 print(response.nouls["urgent"].noul)
@@ -70,7 +74,7 @@ print(response.scores["severity"].score)
 
 Answers are keyed by the question IDs you supplied, and grouped by type on `nouls`, `choices`, and `scores`. The response also carries the `model` that answered, token `usage`, and the TypeSafe `request_id`.
 
-State can be a string, a JSON object or array, or LangChain messages. A `BaseMessage` or a sequence of messages is converted to role/content JSON, including when nested inside a larger object.
+The request `state` can be a string, a JSON object or array, or LangChain messages. A `BaseMessage` or a sequence of messages is converted to role/content JSON, including when nested inside a larger object.
 
 ## Decision types
 
@@ -204,23 +208,26 @@ class TriageMiddleware(AgentMiddleware[TriageState]):
     state_schema = TriageState
 
     def __init__(self) -> None:
-        self.classifier = TypeSafeClassifier(
-            questions={
-                "triage": Choice(
-                    instructions="Which team should handle this conversation?",
-                    criteria={
-                        "billing": "Payments, invoices, and subscriptions.",
-                        "infra": "Deploys, availability, and incidents.",
-                        "other": "Requests that belong to another team.",
-                    },
-                )
-            }
-        )
+        self.classifier = TypeSafeClassifier()
 
     def before_agent(
         self, state: TriageState, runtime: Runtime
     ) -> dict[str, ChoiceAnswer]:
-        response = self.classifier.invoke(state["messages"])
+        response = self.classifier.invoke(
+            {
+                "state": state["messages"],
+                "questions": {
+                    "triage": Choice(
+                        instructions="Which team should handle this conversation?",
+                        criteria={
+                            "billing": "Payments, invoices, and subscriptions.",
+                            "infra": "Deploys, availability, and incidents.",
+                            "other": "Requests that belong to another team.",
+                        },
+                    )
+                },
+            }
+        )
         return {"triage": response.choices["triage"]}
 
 
