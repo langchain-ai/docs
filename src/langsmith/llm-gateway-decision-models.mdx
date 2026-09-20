@@ -1,0 +1,203 @@
+---
+title: Decision models
+description: Use SemIf or Jev through the LLM Gateway to turn unstructured state into typed decisions.
+---
+
+import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
+
+<LLMGatewayBetaNote />
+
+Decision models evaluate unstructured state and return typed judgments instead of generated text. Use them for application control flow such as classification, routing, scoring, and yes-or-no gates.
+
+The LLM Gateway exposes decision models through the System One API. This page uses SemIf, a hosted open-source decision model that requires only a LangSmith API key.
+
+<Note>
+SemIf is free through September 28, 2026. It is available on the GCP US, EU, and APAC gateways, but not on the AWS US gateway. SemIf is an independent open-source project and is not affiliated with TypeSafe or Jev.
+</Note>
+
+## Get started
+
+Your workspace role needs the `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations).
+
+<Steps>
+
+<Step title="Get a LangSmith API key">
+Create a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key), then set it in your environment:
+
+```bash
+export LANGSMITH_API_KEY="lsv2_..."
+```
+</Step>
+
+<Step title="Call SemIf with the TypeSafe SDK">
+Install the TypeSafe SDK, then replace its default API key, base URL, and model with the LangSmith values shown below. The SDK sends the same System One request shape to SemIf as it sends to Jev.
+
+<Tabs>
+<Tab title="Python">
+
+The TypeSafe Python SDK requires Python 3.10 or later.
+
+```bash
+pip install typesafe-sdk
+```
+
+```python
+import os
+
+from typesafe_sdk import Choice, Noul, Score, TypeSafeClient
+
+client = TypeSafeClient(
+    api_key=os.environ["LANGSMITH_API_KEY"],
+    base_url="https://gateway.smith.langchain.com",
+    model="semif-qwen3.5-4b",
+)
+response = client.system_one(
+    state={"document": "The export button crashes the settings page in Safari."},
+    questions={
+        "needs_attention": Noul(
+            instructions="Does this issue need engineering attention?"
+        ),
+        "team": Choice(
+            instructions="Which team should handle this issue?",
+            criteria={
+                "frontend": "Browser UI and interaction issues",
+                "backend": "API and data-processing issues",
+            },
+        ),
+        "severity": Score(
+            instructions="How severe is this issue?",
+            criteria=[
+                "Cosmetic; no impact to functionality",
+                "A feature is broken, but a workaround exists",
+                "Blocking issue with no workaround",
+            ],
+        ),
+    },
+)
+
+print(response.nouls["needs_attention"].noul)
+print(response.choices["team"].choice)
+print(response.scores["severity"].score)
+```
+
+</Tab>
+<Tab title="TypeScript">
+
+The TypeSafe JavaScript SDK requires Node.js 20 or later.
+
+```bash
+npm install @typesafe-ai/sdk
+```
+
+```typescript
+import { choice, noul, score, TypeSafeClient } from "@typesafe-ai/sdk";
+
+const client = new TypeSafeClient({
+  apiKey: process.env.LANGSMITH_API_KEY,
+  baseURL: "https://gateway.smith.langchain.com",
+  defaultModel: "semif-qwen3.5-4b",
+});
+const response = await client.systemOne({
+  state: {
+    document: "The export button crashes the settings page in Safari.",
+  },
+  questions: {
+    needs_attention: noul("Does this issue need engineering attention?"),
+    team: choice("Which team should handle this issue?", {
+      frontend: "Browser UI and interaction issues",
+      backend: "API and data-processing issues",
+    }),
+    severity: score("How severe is this issue?", [
+      "Cosmetic; no impact to functionality",
+      "A feature is broken, but a workaround exists",
+      "Blocking issue with no workaround",
+    ]),
+  },
+});
+
+console.log(response.answers.needs_attention.noul);
+console.log(response.answers.team.choice);
+console.log(response.answers.severity.score);
+```
+
+</Tab>
+</Tabs>
+</Step>
+
+</Steps>
+
+## Choose a question type
+
+Each question uses one System One primitive:
+
+| Primitive | Use it when | Request criteria | Response |
+| --- | --- | --- | --- |
+| `noul` | Your code needs a yes-or-no probability. | Optional descriptions for `true` and `false`. | `noul`, the probability of `true` from 0 to 1. |
+| `choice` | Your code selects one named path from an unordered set. | A map of option names to descriptions. | `choice`, `probabilities`, and `confidence`. |
+| `score` | Your code compares or sorts by an ordered scale. | An array of level descriptions, ordered lowest to highest. | `score`, `legend`, `probabilities`, and `confidence`. |
+
+A Score is a probability-weighted zero-based index. For three levels, a result can fall anywhere from `0` through `2`, including fractional values. A Noul value of `0.5` means the model splits its probability evenly between false and true. It does not mean a medium score.
+
+Choice and Score return a `confidence` value derived from the concentration of the probability distribution. SemIf confidence is not calibrated correctness. Validate probabilities and thresholds on your workload before automating consequential actions.
+
+## Call the API directly
+
+Send a `state` and one or more questions to `POST /v1/systemone`:
+
+```bash
+curl https://gateway.smith.langchain.com/v1/systemone \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "semif-qwen3.5-4b",
+      "state": "The export button crashes the settings page in Safari.",
+      "questions": {
+        "needs_attention": {
+          "type": "noul",
+          "instructions": "Does this issue need engineering attention?"
+        }
+      }
+    }'
+```
+
+The top-level request contains:
+
+- **`model`**: Use `semif-qwen3.5-4b` for SemIf.
+- **`state`**: The content to evaluate. SemIf accepts a nonempty string, JSON object, or JSON array.
+- **`questions`**: A map from question IDs to question definitions. The same IDs key the returned `answers`.
+
+SemIf accepts 1 to 32 questions per call. Each Choice or Score accepts 2 to 16 options. Keep each question narrow and explicit. Questions in one request evaluate the same state independently.
+
+SemIf returns `null` for `usage.input_tokens` and `usage.output_tokens` because token usage is unknown, not zero.
+
+## Use another region
+
+The examples use the GCP US gateway. Replace the hostname for another supported region:
+
+| Region | TypeSafe SDK base URL | System One endpoint |
+| --- | --- | --- |
+| GCP US | `https://gateway.smith.langchain.com` | `https://gateway.smith.langchain.com/v1/systemone` |
+| GCP EU | `https://eu.gateway.smith.langchain.com` | `https://eu.gateway.smith.langchain.com/v1/systemone` |
+| GCP APAC | `https://apac.gateway.smith.langchain.com` | `https://apac.gateway.smith.langchain.com/v1/systemone` |
+
+The TypeSafe SDK appends `/v1/systemone`, so its `base_url` or `baseURL` value does not include `/v1`. For BYOC URL structure and private connectivity requirements, see [Gateway availability](/langsmith/llm-gateway-how-it-works#check-availability). SemIf availability depends on the deployment.
+
+## Use Jev
+
+[Jev](https://docs.typesafe.ai/models) is TypeSafe's hosted System One model. It accepts the same Noul, Choice, and Score request shape through the LLM Gateway.
+
+Replace `semif-qwen3.5-4b` with `jev-latest` in the SDK configuration. Hosted Jev calls consume [Gateway Credits](/langsmith/llm-gateway-credits), require an eligible paid plan, and are available only when enabled for your organization. You do not need a TypeSafe API key for hosted Jev.
+
+To use your own TypeSafe account instead, configure a TypeSafe [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets) and use the provider-prefixed model ID `typesafe/jev-latest` with the same gateway base URL.
+
+## Apply policies and inspect traces
+
+Gateway [model access](/langsmith/llm-gateway-model-access-policies), [rate limit](/langsmith/llm-gateway-rate-limit-policies), [spend](/langsmith/llm-gateway-spend-policies), and [data protection](/langsmith/llm-gateway-data-policy) policies apply to decision-model requests. Free SemIf calls skip Gateway Credit charges, but they do not bypass policies.
+
+Decision-model calls are traced like other gateway traffic. See [Traces, Engine, and access control](/langsmith/llm-gateway-access) for where traces appear and who can view them.
+
+## See also
+
+- [Gateway Credits](/langsmith/llm-gateway-credits): Call hosted generative models and credit-funded Jev without provider keys.
+- [How the gateway works](/langsmith/llm-gateway-how-it-works): Understand routing, credentials, policies, and regional endpoints.
+- [Model access policies](/langsmith/llm-gateway-model-access-policies): Restrict which hosted decision models a workspace can use.
