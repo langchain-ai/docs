@@ -1,15 +1,16 @@
 ---
-title: Gateway Credits
-description: Use Gateway Credits to access models without a provider key, just authenticate with LangSmith.
+title: Hosted models and Gateway Credits
+sidebarTitle: Gateway Credits
+description: Access LangChain-hosted generative and decision models without a provider key.
 ---
 
 import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 
 <LLMGatewayBetaNote />
 
-**Gateway Credits** let you call LangChain-hosted models through the standard LLM Gateway API without setting up a provider account or key. Authenticate with only your [LangSmith API key](/langsmith/create-account-api-key). No [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets) is required.
+LangChain-hosted models run through the LLM Gateway without a provider account or key. Authenticate with only your [LangSmith API key](/langsmith/create-account-api-key). No [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets) is required.
 
-The gateway routes each request based on its model ID. A hosted model slug such as `moonshotai/kimi-k3` uses Gateway Credits. A model ID that starts with a configured bring-your-own-key provider, such as `anthropic/claude-opus-5`, uses that provider's secret instead.
+Hosted generative models use Gateway Credits. Hosted decision models use the native System One API and can be free or consume Gateway Credits, depending on the model. The gateway routes each request based on its endpoint and model ID. A model ID that starts with a configured bring-your-own-key provider, such as `anthropic/claude-opus-5`, uses that provider's secret instead.
 
 <Card title="Base URL" icon="link">
 Point any supported client at the standard gateway API:
@@ -25,12 +26,18 @@ For regional base URLs, see [Regional gateways](/langsmith/llm-gateway-how-it-wo
 
 ## Available models
 
-Select a hosted model by ID in the request body. Model IDs are case-insensitive.
+Select a hosted model by ID in the request body. Model IDs are case-insensitive. Feature flags, plan tier, region, and [model access policies](/langsmith/llm-gateway-model-access-policies) determine which models are available to your workspace.
 
-| Model ID | Description |
-| --- | --- |
-| `moonshotai/kimi-k2.6` | Kimi K2.6 by Moonshot AI. A strong general-purpose model. Powered by Fireworks Inference. |
-| `moonshotai/kimi-k3` | Kimi K3 by Moonshot AI. Powered by Fireworks Inference. |
+| Model ID | Type | Billing | Supported endpoint |
+| --- | --- | --- | --- |
+| `moonshotai/kimi-k2.6` | Generative model by Moonshot AI, powered by Fireworks Inference. | Gateway Credits | Chat Completions, Messages, and Responses |
+| `moonshotai/kimi-k3` | Generative model by Moonshot AI, powered by Fireworks Inference. | Gateway Credits | Chat Completions, Messages, and Responses |
+| `jev-latest` | TypeSafe decision model for typed Noul, Choice, and Score questions. | Gateway Credits | System One |
+| `semif-qwen3.5-4b` | Open SemIf decision model based on Qwen3.5-4B. | Free through September 28, 2026 | System One |
+
+<Note>
+SemIf is not available on the AWS US gateway. It is an independent open-source project and is not affiliated with TypeSafe or Jev.
+</Note>
 
 List every model available to your workspace, including configured bring-your-own-key providers and hosted models, with the standard model-list endpoint:
 
@@ -43,14 +50,13 @@ Use a returned model ID exactly as shown in the `model` field of a prompt reques
 
 ## Prerequisites
 
-Before using Gateway Credits:
+All hosted models require a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations). See [Admin setup](/langsmith/llm-gateway-admin-setup) if you are unsure.
 
-- Your organization is on a paid plan ([Developer, Plus, Startup, or Premier](/langsmith/pricing-plans)).
-- You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations). See [Admin setup](/langsmith/llm-gateway-admin-setup) if you are unsure.
+Credit-funded models also require a paid plan other than Enterprise ([Developer, Plus, Startup, or Premier](/langsmith/pricing-plans)). Free SemIf access does not require Gateway Credits.
 
-## Make a call
+## Call a generative model
 
-Point an OpenAI-compatible client at `https://gateway.smith.langchain.com/v1`, authenticate with your LangSmith API key, and set `model` to a hosted model ID.
+Point an OpenAI-compatible client at `https://gateway.smith.langchain.com/v1`, authenticate with your LangSmith API key, and set `model` to a hosted generative model ID.
 
 <CodeGroup>
 
@@ -93,24 +99,70 @@ print(model.invoke("ping").content)
 
 </CodeGroup>
 
-## Supported endpoints
+## Call a decision model
 
-Hosted models use the same standard API formats as bring-your-own-key models:
+Decision models return typed judgments instead of generated text. Send a `state` to evaluate and one or more questions to `POST /v1/systemone`. Each question uses one of three primitives:
+
+- **Noul**: Answers a yes-or-no question. The `noul` value is the probability of `true` from 0 to 1.
+- **Choice**: Selects one option and returns the selected `choice`, a probability for each option, and `confidence`.
+- **Score**: Evaluates an ordered scale and returns the probability-weighted `score`, its `legend`, a probability for each level, and `confidence`.
+
+Use SemIf without Gateway Credits:
+
+```bash
+curl https://gateway.smith.langchain.com/v1/systemone \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "semif-qwen3.5-4b",
+      "state": "The export button crashes the settings page in Safari.",
+      "questions": {
+        "needs_attention": {
+          "type": "noul",
+          "instructions": "Does this issue need engineering attention?"
+        },
+        "team": {
+          "type": "choice",
+          "instructions": "Which team should handle this issue?",
+          "criteria": {
+            "frontend": "Browser UI and interaction issues",
+            "backend": "API and data-processing issues"
+          }
+        },
+        "severity": {
+          "type": "score",
+          "instructions": "How severe is this issue?",
+          "criteria": [
+            "Cosmetic; no impact to functionality",
+            "A feature is broken, but a workaround exists",
+            "Blocking issue with no workaround"
+          ]
+        }
+      }
+    }'
+```
+
+The response contains one entry in `answers` for each question. SemIf reports `null` for `usage.input_tokens` and `usage.output_tokens` because token usage is unknown. Its Choice and Score `confidence` values measure concentration in the returned probability distribution, not calibrated correctness. Validate thresholds against your workload before automating consequential actions.
+
+Jev accepts the same request shape. Set `model` to `jev-latest`; Jev calls consume Gateway Credits.
+
+## Supported endpoints
 
 | Method and path | Behavior |
 | --- | --- |
-| `POST /v1/chat/completions` | OpenAI Chat Completions, including streaming. |
-| `POST /v1/messages` | Anthropic Messages, including streaming. |
-| `POST /v1/responses` | OpenAI Responses. |
-| `GET /v1/models` | Lists models available to the workspace. |
+| `POST /v1/chat/completions` | Calls supported hosted generative models with OpenAI Chat Completions, including streaming. |
+| `POST /v1/messages` | Calls supported hosted generative models with Anthropic Messages, including streaming. |
+| `POST /v1/responses` | Calls supported hosted generative models with OpenAI Responses. |
+| `POST /v1/systemone` | Calls supported hosted decision models with native System One requests and responses. |
+| `GET /v1/models` | Lists models available to the workspace and their supported endpoints. |
 
-For request examples and translation behavior, see [API formats](/langsmith/llm-gateway-api-formats).
+For generative request examples and translation behavior, see [API formats](/langsmith/llm-gateway-api-formats).
 
 ## Pricing
 
-Gateway Credits are available on all paid plans besides Enterprise. See [the pricing page](https://www.langchain.com/pricing) for plan details and current rates. Gateway Credits are denominated in **LangChain Credit Units (LCUs)**; each call consumes LCUs based on token usage.
+Gateway Credits are available on all paid plans besides Enterprise. See [the pricing page](https://www.langchain.com/pricing) for plan details and current rates. Gateway Credits are denominated in **LangChain Credit Units (LCUs)**; each credit-funded call consumes LCUs based on usage. SemIf calls do not consume Gateway Credits during the free promotional period.
 
-Standard gateway [spend policies](/langsmith/llm-gateway-spend-policies) apply to hosted-model traffic, so any organization, workspace, API key, or user cap you have configured also governs Gateway Credit usage. You can control Gateway Credit consumption with the same tools you use for bring-your-own-key providers. For example, cap a specific API key at $200/month across every provider, or set a workspace-wide daily limit that includes hosted-model calls.
+Standard gateway [spend policies](/langsmith/llm-gateway-spend-policies), rate limits, data policies, and model access policies still apply to free hosted-model traffic. Spend policies also govern Gateway Credit usage. You can control Gateway Credit consumption with the same tools you use for bring-your-own-key providers. For example, cap a specific API key at $200/month across every provider, or set a workspace-wide daily limit that includes credit-funded hosted-model calls.
 
 ## Tracing
 
@@ -119,6 +171,6 @@ Like all gateway traffic, hosted-model calls are traced to LangSmith. For where 
 ## Next steps
 
 - [Quickstart](/langsmith/llm-gateway-quickstart): make your first gateway-proxied call.
-- [API formats](/langsmith/llm-gateway-api-formats): call models through Chat Completions, Messages, or Responses.
+- [API formats](/langsmith/llm-gateway-api-formats): call generative models through Chat Completions, Messages, or Responses.
 - [Spend policies](/langsmith/llm-gateway-spend-policies): add cost limits to Gateway Credit usage.
 - [Direct model access](/langsmith/llm-gateway-direct-model-access): use provider-native APIs and model IDs.
