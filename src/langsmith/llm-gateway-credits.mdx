@@ -9,6 +9,8 @@ import LLMGatewayBetaNote from '/snippets/langsmith/llm-gateway-beta-note.mdx';
 
 **Gateway Credits** let you call LangChain-hosted models through the standard LLM Gateway API without setting up a provider account or key. Authenticate with only your [LangSmith API key](/langsmith/create-account-api-key). No [provider secret](/langsmith/llm-gateway-admin-setup#1-add-provider-secrets) is required.
 
+LangChain also hosts [SemIf](#use-semif-for-free), which does not require a Gateway Credits purchase or a paid plan when enabled for your organization.
+
 The gateway routes each request based on its model ID. A hosted model slug such as `moonshotai/kimi-k3` uses Gateway Credits. A model ID that starts with a configured bring-your-own-key provider, such as `anthropic/claude-opus-5`, uses that provider's secret instead.
 
 <Card title="Base URL" icon="link">
@@ -31,6 +33,7 @@ Select a hosted model by ID in the request body. Model IDs are case-insensitive.
 | --- | --- |
 | `moonshotai/kimi-k2.6` | Kimi K2.6 by Moonshot AI. A strong general-purpose model. Powered by Fireworks Inference. |
 | `moonshotai/kimi-k3` | Kimi K3 by Moonshot AI. Powered by Fireworks Inference. |
+| `semif-qwen3.5-4b` | SemIf for structured classification and scoring through the System One API. Free through September 28, 2026, when enabled for your organization. |
 
 List every model available to your workspace, including configured bring-your-own-key providers and hosted models, with the standard model-list endpoint:
 
@@ -47,6 +50,36 @@ Before using Gateway Credits:
 
 - Your organization is on a paid plan ([Developer, Plus, Startup, or Premier](/langsmith/pricing-plans)).
 - You have a workspace-scoped [LangSmith API key](/langsmith/create-account-api-key) attached to a role with `gateway:invoke` and `workspaces:read` [permissions](/langsmith/organization-workspace-operations). See [Admin setup](/langsmith/llm-gateway-admin-setup) if you are unsure.
+
+## Use SemIf for free
+
+SemIf is a LangChain-hosted model for structured classification and scoring. It is free through September 28, 2026, with no provider key, Gateway Credits purchase, or paid-plan upgrade required.
+
+Access requires SemIf to be enabled for your organization and a workspace-scoped LangSmith API key with `gateway:invoke` and `workspaces:read`. In the gateway home page, select SemIf from the hosted models to get a request example. Availability depends on your organization and region.
+
+Call `semif-qwen3.5-4b` through `POST /v1/systemone`, not Chat Completions, Messages, or Responses:
+
+```bash
+curl https://gateway.smith.langchain.com/v1/systemone \
+    -H "Authorization: Bearer $LANGSMITH_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "state": "Hello!",
+      "model": "semif-qwen3.5-4b",
+      "questions": {
+        "is_helpful": {
+          "type": "noul",
+          "instructions": "Does this explain what an LLM gateway does?"
+        }
+      }
+    }'
+```
+
+Pass the text to evaluate in `state` and between 1 and 32 named questions in `questions`. Supported question types are `noul` (true-probability), `choice` (classification), and `score` (rubric-based scoring). The response contains answers for each question rather than a chat message. Streaming is not supported.
+
+You can also use the TypeSafe Python or TypeScript SDK with your LangSmith API key. Set its base URL to `https://gateway.smith.langchain.com`, without `/v1`; the SDK appends `/v1/systemone`.
+
+SemIf calls do not consume Gateway Credits. Gateway access, rate-limit, and budget policies still apply.
 
 ## Make a call
 
@@ -95,13 +128,14 @@ print(model.invoke("ping").content)
 
 ## Supported endpoints
 
-Hosted models use the same standard API formats as bring-your-own-key models:
+Credit-funded hosted models use the same standard API formats as bring-your-own-key models. SemIf uses the separate System One endpoint:
 
 | Method and path | Behavior |
 | --- | --- |
 | `POST /v1/chat/completions` | OpenAI Chat Completions, including streaming. |
 | `POST /v1/messages` | Anthropic Messages, including streaming. |
 | `POST /v1/responses` | OpenAI Responses. |
+| `POST /v1/systemone` | Structured classification and scoring with SemIf. No streaming. |
 | `GET /v1/models` | Lists models available to the workspace. |
 
 For request examples and translation behavior, see [API formats](/langsmith/llm-gateway-api-formats).
