@@ -144,6 +144,9 @@ clean:
 #   Snippet /oss/ links are absolute language-prefixed paths under
 #   build/snippets/{python|javascript}/...; mint checks snippets as standalone files
 #   so those look broken until inlined into a page.
+# --check-redirects also validates that every docs.json redirect destination resolves.
+#   Without it, 261 redirects pointing at unversioned /oss/ paths sat broken undetected.
+#   Reported as indented "source -> destination" lines, so the same failure test catches them.
 # Failure: only when filtered output still has indented link lines (real broken links we care about)
 # Run mint, capture output, filter exclusions. Only show output when failing.
 broken-links: build
@@ -154,7 +157,7 @@ broken-links: build
 			VERSION=$$(node -e "console.log(require('$$KATEX_DIR/package.json').version)" 2>/dev/null); \
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
-	@cd build && mint broken-links 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
+	@cd build && mint broken-links --check-redirects 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
 		filtered=$$(python3 ../scripts/filter_mint_broken_links.py --input /tmp/broken-links.txt); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \
@@ -170,7 +173,7 @@ broken-links-with-anchors: build
 			VERSION=$$(node -e "console.log(require('$$KATEX_DIR/package.json').version)" 2>/dev/null); \
 			if [ -n "$$VERSION" ]; then sed -i.bak "s/__VERSION__/\"$$VERSION\"/g" "$$KATEX_MJS" 2>/dev/null || true; fi; \
 		fi
-	@cd build && mint broken-links --check-anchors 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
+	@cd build && mint broken-links --check-anchors --check-redirects 2>&1 | tee /tmp/broken-links.txt > /dev/null; \
 		filtered=$$(python3 ../scripts/filter_mint_broken_links.py --check-anchors --input /tmp/broken-links.txt); \
 		if echo "$$filtered" | grep -qE '^[[:space:]]+[^[:space:]]'; then \
 			echo "$$filtered"; echo ""; echo "❌ Broken links found"; exit 1; \

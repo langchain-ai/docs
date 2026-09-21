@@ -5,7 +5,7 @@ description: Defines the boundary between externally operated SDK reference site
 tags: [api-reference, openapi, cross-references, mintlify, langsmith]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-17T08:22:51.028Z
+    at: 2026-09-18T08:20:50.944Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
