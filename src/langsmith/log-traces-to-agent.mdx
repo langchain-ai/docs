@@ -10,17 +10,27 @@ _Agent addressing_ names the [agent](/langsmith/agents) and the [environment](/l
 Agent addressing and [project addressing](/langsmith/log-traces-to-project) are alternatives. A trace uses one or the other, never both.
 
 <Note>
-Agent addressing applies to agent-based workspaces, which are in [beta](/langsmith/release-stages) for a private group of customers. It is not yet available in the LangSmith SDKs. This page describes the addressing model. For working tracing setup today, see [Log traces to a specific project](/langsmith/log-traces-to-project).
+Agent addressing applies to agent-based workspaces, which are in [beta](/langsmith/release-stages) for a private group of customers. No released LangSmith SDK supports it yet, though a pre-release Python surface exists. This page describes the addressing model. For working tracing setup today, see [Log traces to a specific project](/langsmith/log-traces-to-project).
 </Note>
 
 ## Addressing variables
 
-Two environment variables carry agent addressing. No LangSmith SDK reads them yet, so setting them today has no effect, and a workspace that is not in the beta rejects agent-addressed runs even when the fields reach it directly:
+Two environment variables carry agent addressing. No released LangSmith SDK reads them yet, so setting them today has no effect, and a workspace that is not in the beta rejects agent-addressed runs even when the fields reach it directly:
 
 - **`LANGSMITH_AGENT_ID`**: The agent to address. The value is the agent's identifier, which the browser address bar carries and the **ID** field on the agent's Overview copies. Copy it from the agent rather than reconstructing it from the display name, because the two can differ. It is sent with every run.
 - **`LANGSMITH_AGENT_ENVIRONMENT`**: The environment the run belongs to. Required alongside the agent, and one of `local`, `development`, `staging`, or `production`. Use the lowercase form, which maps to the Local, Development, Staging, and Production labels in the UI. There is no default: an agent without an environment does not name a destination, so the backend rejects it instead of choosing one.
 
 Note the asymmetry with the variable it replaces. `LANGSMITH_PROJECT` holds a project's name, while `LANGSMITH_AGENT_ID` holds an agent's identifier. An agent's [display name is a separate, editable value](/langsmith/agents#identifiers-and-display-names) and is not what tracing configuration takes.
+
+## Python SDK support
+
+<Warning>
+This surface is pre-release. It exists only on the `langsmith` Python package's `main` branch, not in any published version. The SDK marks it experimental and may change it without notice. There is no TypeScript equivalent. Do not build on it yet.
+</Warning>
+
+The Python SDK takes the agent and the environment as arguments, not only as environment variables. `@traceable` and `tracing_context()` each accept `agent_id` and `agent_environment`, and each argument falls back to its matching environment variable when omitted.
+
+The rules in the sections below apply to those arguments as well as to the variables. One behavior is specific to this path: a workspace that does not have agent-based organization rejects agent-addressed runs outright, so those traces are lost rather than landing in a tracing project instead.
 
 ## Addressing modes are mutually exclusive
 
@@ -47,8 +57,23 @@ Agent identifiers are limited to 255 characters. A longer value is rejected.
   SDKs, which do not yet read either addressing variable. Checklist for whoever picks
   it up:
 
-  1. Code examples. Critical rule 7 forbids untested examples and there is no client
-     surface to call yet. Add Python and TypeScript blocks once the SDKs ship.
+  1. Code examples. The Python surface now exists on langsmith-sdk main but is not
+     released, so there is still nothing a reader can install. Critical rule 7 forbids
+     untested examples, and documenting unreleased code is worse than documenting none.
+     Add Python blocks once a release carries it, and TypeScript once js/src does.
+
+     What landed, both on 2026-09-21: 096ea51e "feat(py): address runs by agent instead
+     of by project" (#3520) and f3b82f1a "feat(py): address feedback parts by agent"
+     (#3533). The surface is agent_id and agent_environment on tracing_context and
+     @traceable, each defaulting to its environment variable, with the rules in
+     langsmith/_internal/_agent_addressing.py. The docstrings match this page: no
+     combining with a project in the same call, the four lowercase values, and anything
+     else rejected rather than defaulted. Nothing in js/src.
+
+     One thing to add when it releases, from the SDK's own experimental warning: a
+     workspace without agent addressing rejects the runs, so tracing is lost rather
+     than falling back to a project.
+
   2. Settled: there is no default environment. Both fields are required, because
      neither addresses a destination on its own and defaulting either one would pick
      a target the caller never named.
@@ -65,6 +90,13 @@ Agent identifiers are limited to 255 characters. A longer value is rejected.
      enabled for this workspace" for a part addressed by agent while the workspace is
      still waiting, because serving it would create an Agent and its four tracing
      projects there. Read 2026-09-21.
+  6. Unverified, and it qualifies item 2. The feedback path may not match the run path.
+     langsmith-sdk's async_client docstring says a feedback part's agent_environment
+     "Defaults server-side to production when omitted", that agent_id is never read
+     from the environment variable because feedback follows its run, and that the agent
+     must already exist because a feedback part never creates one. Item 2 is right for
+     runs, per errAgentFieldsRequired in smith-go. No server-side default for feedback
+     was found in the backend. Settle it before writing either behavior down.
 
   Each of these was checked against a named source. The sources, and the endpoint that
   is authoritative for the wire contract, are recorded in DOC-1597.
