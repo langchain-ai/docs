@@ -32,6 +32,10 @@ stand alone.
 The second example is two sentences where one long one would have hidden the
 default inside a subordinate clause.
 
+The target is a floor as well as a ceiling. Keep the condition, the actor, and
+the exact value even when they push a sentence long, and split it rather than
+dropping one of them to get under 15 words.
+
 ## Link about half the time
 
 Close to half of all prose sentences here carry a link. Cross-linking is not
@@ -111,6 +115,9 @@ Read the draft once looking only for these:
   when nothing else reads. A bold label opening a paragraph takes a colon:
   `**Tier assignment**:`, measured at 177 uses in `src/` against 1 for the dash.
 - **A vague identifier** where the exact one belongs.
+- **A cut that took a fact with it.** A tightened sentence that lost its
+  condition, its actor, or its exact value reads cleanly and says something
+  else. Restore the fact and split the sentence.
 - **A first mention with no link**, and repeat mentions that are linked again.
 - **A claim you did not verify.** Check it against the source, or cut it.
 - **An added "key features" list, or a horizontal rule** used to separate
