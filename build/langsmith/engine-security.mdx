@@ -45,7 +45,9 @@ You can revoke Engine's access to GitHub at any time by uninstalling the App fro
 
 ## Model subprocessors
 
-Engine's model subprocessors (currently OpenAI, Anthropic, Fireworks, and Baseten) are configured for zero data retention and are prohibited under their agreements with LangChain from using customer data to train or fine-tune their models. The [LangChain Trust Center](https://trust.langchain.com/) publishes the authoritative subprocessor list.
+In LangSmith Cloud, Engine's model subprocessors (currently OpenAI, Anthropic, Fireworks, and Baseten) are configured for zero data retention and are prohibited under their agreements with LangChain from using customer data to train or fine-tune their models. The [LangChain Trust Center](https://trust.langchain.com/) publishes the authoritative subprocessor list.
+
+In self-hosted deployments, Engine uses the model provider for your cloud through LangSmith Intelligence (LSI). It uses Amazon Bedrock on AWS and Vertex AI on GCP.
 
 Engine does not support bring-your-own-key (BYOK).
 
