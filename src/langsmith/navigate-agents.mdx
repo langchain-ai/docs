@@ -31,14 +31,19 @@ The address behind it is `/o/<workspaceId>/a/<agentIdentifier>/...`. The workspa
 
   The breadcrumb can carry more than one segment. Engine's setup screen reads
   "Engine / Set up" after the agent. The sentence above says only that it names the
-  section, which stays true. Background in DOC-1597.
+  section, which stays true.
+
+  Two states drop the switcher and the breadcrumb entirely. Settings replaces the
+  shell, which the page covers further down. Studio with an unreachable Agent Server
+  replaces that row with an error banner, captured 2026-09-21. The page does not
+  enumerate error states and should not start. Background in DOC-1597.
 */}
 
 ## The two views
 
 The switcher moves between two views:
 
-- **All agents**: The agents in the workspace, one card each.
+- **All agents**: The agents in the workspace, one card each. In an empty workspace it shows a get-started screen instead, offering the same four routes as the **New Agent** panel.
 - **A single agent**: That agent's Overview.
 
 The left navigation lists the same items in both views, but two things differ. Its badge counts appear on the agent list, where they count the whole workspace, and are not shown once you select an agent, so a count beside a navigation item never describes the agent you are in. And several sections cannot be opened without an agent.
@@ -87,8 +92,11 @@ Once you pick an agent, LangSmith remembers it, so moving between these sections
   The header split is left out of the prose because it does not change what the
   reader does.
 
-  The empty-workspace half was checked in a production workspace and the populated half
-  in dev. If a production workspace with agents behaves differently, this splits again.
+  The empty-workspace half was captured on 2026-09-21 in an empty agent-based
+  production workspace: Tracing shows its own "Get started with tracing" screen rather
+  than a picker, and the switcher's dropdown reads "No agents available." The populated
+  half was captured in dev. If a production workspace with agents behaves differently,
+  this splits again.
 
   The badge-count sentence above was checked against screenshots dated 2026-09-20 and
   stands as written. In the current build the counts are workspace-wide on the agent
@@ -112,7 +120,7 @@ Selecting a single agent lands on its Overview, which shows the following, in or
 - **Engine**: How many active issues [Engine](/langsmith/engine-overview) has found across this agent's environments, and a link into Engine. With no issues found, the section describes Engine rather than listing them.
 - **Evaluate your agent**: A pointer into [evaluators](/langsmith/evaluators).
 - **Monitor your agent**: A pointer into [dashboards](/langsmith/dashboards).
-- **Deployments**: The [deployments](/langsmith/deployment) bound to this agent, and a link to all of them. With none, the section describes deployment rather than listing them, as the Engine section does. It does not appear at all for an agent [built in the UI](/langsmith/build-an-agent), which runs on a Studio runtime and cannot have one.
+- **Deployments**: The [deployments](/langsmith/deployment) bound to this agent, and a link to all of them. With none, the section describes deployment rather than listing them, as the Engine section does. It appears only for an agent that can have a deployment, so an agent [built in the UI](/langsmith/build-an-agent) does not show it, and neither does one created by [tracing to an identifier that does not exist yet](/langsmith/log-traces-to-agent#addressing-an-agent-that-does-not-exist).
 
 Everything on this screen is scoped to the agent you have selected. A line above the metrics states the window and the scope they cover, reading **Showing data from the last 7 days across all environments**, so the metrics include local and staging runs rather than production alone. The tracing section below them breaks the same period out by environment.
 
@@ -140,12 +148,13 @@ Everything on this screen is scoped to the agent you have selected. A line above
   shows the section describing deployment behind a "Deploy an agent" link, the same
   shape Engine uses when it finds no issues.
 
-  The absence is real but the rule behind it is inferred from two agents. The section
-  was missing on victor's slack agent, a "fleet-" agent, and present on agent-demo15,
-  which is not one. Both have zero deployments, so presence does not track deployments.
-  Source type is the likely driver and matches what build-an-agent.mdx says about the
-  Studio runtime. If a non-Fleet agent ever turns up without the section, the rule is
-  something else. Background is in DOC-1597.
+  The rule is source type, now read from source rather than inferred.
+  smith-frontend/src/Pages/AgentOverview/useAgentOverview.ts, 2026-09-21, gates the band
+  on DEPLOYMENT_SOURCE_TYPES, which is the set {LSD, MDA}, leaving FLEET and EXTERNAL
+  agents without a Deployments section. EXTERNAL is what resolve.go assigns to an agent created
+  by an addressed trace, which is why the bullet names that path as well as the UI one.
+  An earlier draft named only the UI path, from two screenshots that happened not to
+  include an EXTERNAL agent. Background is in DOC-1597.
 */}
 
 Two names for the same agent appear on this screen, and they are not interchangeable. The heading and the switcher both show the display name. A copyable field labeled **ID** holds the identifier, which is also the value the address bar carries.
@@ -157,11 +166,11 @@ Use the copy button beside **ID** when you need the value for tracing. [Agent ad
 Three controls open the **New Agent** panel: **+ Agent** above the agent list, and **+ Create new agent** and **Trace existing agent** on a creation card at the end of the list, also titled **New Agent**. The first two open the panel on its grid of options, while **Trace existing agent** opens it on the Observability option. Choosing an option replaces the grid with a guided setup flow, and an **All options** link returns to the grid. The four options map to four different parts of this documentation:
 
 - **Builder**, "Build with AI inside LangSmith". This opens the **Build** tab, which creates a Managed Deep Agent from a name and a description instead of from code. See [Build an agent in the UI](/langsmith/build-an-agent).
-- **Managed Deep Agent**, "Build locally and deploy". See [Managed Deep Agents](/langsmith/managed-deep-agents-overview). This route requires a paid plan. Whether the panel marks it with a **Plus** badge depends on your plan.
+- **Managed Deep Agent**, "Build locally and deploy". See [Managed Deep Agents](/langsmith/managed-deep-agents-overview). This route requires a paid plan.
 - **Open Source**, "Build an agent with our open source frameworks". See [LangChain](/oss/langchain/overview).
 - **Observability**, "Trace an existing agent". See the [tracing quickstart](/langsmith/observability-quickstart), or [LangSmith skills](/langsmith/skills) for the prompt-driven setup the panel offers first.
 
-Creating an agent for an application that is traced from outside LangSmith uses a separate control. The agent switcher's **New agent** action opens a **Create a new agent** dialog, which takes an agent name and creates the agent from it. That action requires permission to create projects, and it appears on the tracing project pages, not on the agent views.
+Creating an agent for an application that is traced from outside LangSmith uses a separate control. The agent switcher's **+ New agent** action opens a **Create a new agent** dialog, which takes an **Agent name** and, in its own field, an **Agent ID**. The dialog notes that the ID is used in URLs and API calls and cannot be changed later. That action requires permission to create projects, and it appears on the tracing project pages, not on the agent views.
 
 {/*
   DOC-1597. Four controls create an agent and no two of them share a label:
@@ -174,16 +183,29 @@ Creating an agent for an application that is traced from outside LangSmith uses 
   - "+ New agent", below the "Pick an agent to view" screen on Tracing and Build.
     Confirmed 2026-09-20. It also appears in the 2026-09-17 deck, which is an older
     build and is not what this rests on.
-  - "New agent", the agent switcher's action, opening a "Create a new agent" dialog.
-    From the original UI walk, and not in any screenshot.
+  - "+ New agent", in the agent switcher's dropdown, opening a "Create a new agent"
+    dialog. Confirmed 2026-09-21 in an empty production workspace. The dialog takes
+    an "Agent name" and a separate "Agent ID", whose helper text reads "Used in URLs
+    and API calls. Cannot be changed later." An earlier draft said it takes a name and
+    creates the agent from it, which is the one create path where the identifier is
+    not derived from the name.
+
+    That it appears on the tracing project pages and not on the agent views is
+    confirmed. Two 2026-09-21 captures of the same empty production workspace, with the
+    same switcher opened: on Tracing the dropdown holds "No agents available." and
+    "+ New agent", and on the Overview it holds only "No agents available." The claim
+    came from the original UI walk and the walk was right.
 
   Do not normalize these into one spelling. An earlier draft gave the card's control as
   "Build new Agent", which does not exist.
 
-  The Plus badge on the Managed Deep Agent option did not render in the workspace
-  captured on 2026-09-20, which is an internal one on a paid plan, so the badge is
-  plan-dependent. The rule behind it is unverified, which is why the page says only
-  that it depends on your plan.
+  The Plus badge on the Managed Deep Agent option is no longer mentioned at all. It is
+  gated on two things, per smith-frontend/src/hooks/useShowPlusBadge.ts read on
+  2026-09-21: the paywall A/B experiment's treatment arm, and then either a personal
+  organization or a Developer-plan tier. Only the Managed Deep Agent choice carries
+  "plus: true", in Pages/Overview/constants.ts. An experiment-gated upsell is wrong for
+  some readers by design and goes away when the experiment ends, so the page states the
+  paid-plan requirement and stops there. Do not document the badge.
 
   The Observability option's flow, captured 2026-09-20: generate an API key, then
   either paste a prompt into a coding agent or set up manually, then a completion step
