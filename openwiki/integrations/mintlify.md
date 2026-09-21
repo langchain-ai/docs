@@ -1,11 +1,11 @@
 ---
 type: integration
 title: Mintlify Integration
-description: Mintlify renders the generated LangChain documentation tree and uses docs.json as its renderer-facing site contract. This page explains the build, navigation, OpenAPI, validation, preview, and production publication boundaries.
+description: Mintlify consumes the generated documentation tree and its docs.json contract to render, validate, preview, export, and publish the documentation site. This page defines the local and deployment-time boundaries, especially for generated OpenAPI routes.
 tags: [mintlify, documentation, rendering, deployment, site-configuration]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-17T08:22:51.028Z
+    at: 2026-09-21T08:24:04.334Z
 sources:
   - id: openwiki-source-5c124605ed6e394bffee862c
     resource: repo://.github/workflows/_check-links.yml
@@ -17,8 +17,6 @@ sources:
     resource: repo://.github/workflows/refresh-langsmith-openapi.yml
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
-  - id: openwiki-source-71ee7a4afbd2d6aa7b29f3d1
-    resource: repo://htmltest-mint-export.yml
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-b481a230af378c0c50ed9994
@@ -27,16 +25,16 @@ sources:
     resource: repo://pipeline/core/builder.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
+  - id: openwiki-source-49f717adb7cc59501f5c17ac
+    resource: repo://scripts/filter_mint_broken_links.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
-  - id: openwiki-source-554339f52225d7d8edff3ed0
-    resource: repo://src/style.css
-generated: { by: "openwiki/0.4.3", at: "2026-09-11T08:21:01.441Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
 ---
 
 # Mintlify Integration
 
-Mintlify is the renderer and hosting integration for [docs.langchain.com](https://docs.langchain.com). It consumes the regenerated `build/` tree, not the editable `src/` tree. The build pipeline transforms and copies source MDX, configuration, assets, styles, and language-specific content into that tree; contributors must change `src/` and rebuild rather than patch `build/`.
+Mintlify is the renderer and hosting integration for [docs.langchain.com](https://docs.langchain.com). It consumes the regenerated `build/` tree rather than the editable `src/` tree. Change source inputs and rebuild; do not patch generated files.
 
 ```mermaid
 flowchart TD
@@ -49,61 +47,53 @@ flowchart TD
     Spec["deployment OpenAPI generation"] --> Hosted
 ```
 
-The handoff is from source to a generated tree to Mintlify. Deployment-generated OpenAPI routes are added at the final Mintlify boundary and are deliberately absent from local `build/` output.
+This shows the source-to-generated-tree handoff. Deployment-generated OpenAPI routes are added at the final Mintlify boundary and deliberately do not exist in local `build/` output.
 
-## Renderer-facing configuration and navigation
+## Generated-tree contract
 
 Mintlify is the static site generator responsible for rendering the built documentation from /build/ into docs.langchain.com. The LangChain documentation pipeline produces markdown and MDX output in /build/, and Mintlify reads this output along with site configuration from docs.json to render the final site.
 
-The builder clears and recreates `build/`, produces Python and JavaScript variants for versioned OSS content, produces unversioned Deep Agents Code and OpenWiki content, then copies shared files. Thus `src/docs.json`, `src/style.css`, fonts, images, snippets, and client JavaScript become renderer-facing build inputs. A page listed in navigation or a local OpenAPI source must exist in this generated tree.
+A full `DocumentationBuilder` build deletes and recreates `build/`. It emits Python and JavaScript OSS variants, unversioned Deep Agents Code and OpenWiki pages, unversioned LangSmith content, and language-specific Managed Deep Agents routes; it then copies shared artifacts, npm snippet components, and generated `llms.txt` files. This is the renderer-facing contract: a configured page, stylesheet, asset, or local specification must be present in the generated tree.
+
+Managed Deep Agents source pages are emitted only at language-prefixed LangSmith routes, while `docs.json` redirects their unversioned routes to Python. Conversely, Deep Agents Code is emitted once at an unprefixed OSS route and excluded from OSS language-link rewriting. Navigation and redirects must respect those output rules.
+
+Snippet imports in MDX files are expanded by Mintlify at render time; they are not served as standalone pages. The build system processes snippets and stores language-specific versions at `/build/snippets/{python|javascript}/`; versioned pages have their imports rewritten to the matching copy, while unversioned consumers use the Python-default output.
+
+## Renderer configuration and navigation
 
 Site configuration is defined in /src/docs.json (copied to /build/docs.json) using Mintlify's docs.json schema, specifying navigation menus, theme (aspen), fonts (TWK Lausanne for headings, Inter for body), icons (Tabler library), colors, analytics (Google Tag Manager), contextual actions, and URL redirects.
 
-The same contract sets logos and favicon, color/background and appearance behavior, code-block themes, footer and navbar links, canonical SEO metadata, a banner, and `head` resources. The aspen theme is customized with TWK Lausanne (weight 700) for headings loaded via docs.json, additional font weights declared in /src/style.css via @font-face rules, and Inter for body text. Custom CSS in /src/style.css overrides Mintlify defaults and is injected into page headers via docs.json. It also imports IBM Plex Mono for code and applies light/dark typography and component overrides, so visual changes should be checked in Mintlify.
+The `head` configuration loads `/style.css` and `ChatLangChainEmbed.js`; it also configures logos, favicon, appearance, code-block themes, footer/navigation links, canonical SEO metadata, and the banner. The aspen theme is customized with TWK Lausanne (weight 700) for headings loaded via docs.json, additional font weights declared in /src/style.css via @font-face rules, and Inter for body text. Custom CSS in /src/style.css overrides Mintlify defaults and is injected into page headers via docs.json.
 
 Mintlify renders contextual actions defined in docs.json including built-in options (copy, view) and custom integrations (llms.txt, ChatGPT, Claude, MCP, Cursor, VSCode). These appear in the page header for users to access documentation in external tools or copy URLs.
 
-### Product menu ownership
+`navigation.products` owns the product menu. The current **PRODUCTS AND SETUP** entries include LLM Gateway, No-code agents, Engine, and Deep Agents Code. Deep Agents Code is an unversioned OSS section, and its expanded Configuration group declares both its root page and child pages. When adding or moving a page, reconcile its generated path, this navigation entry, and any redirect together.
 
-`navigation.products` in `docs.json` is the source of truth for the site product menu. It separates the agent-development-lifecycle material from **PRODUCTS AND SETUP**, whose menu includes LangSmith setup and the current product-facing entries:
+The redirects array maps retired or reorganized routes to canonical ones, including former LLM Gateway paths and unversioned Managed Deep Agents paths to Python routes. `make broken-links` and `make broken-links-with-anchors` pass `--check-redirects`, so a redirect destination is part of local route validation.
 
-- **LLM Gateway** is a Beta route/control/observability section. Its direct pages cover the overview, quickstart, and API formats, with grouped Core capabilities, Administration and governance, and Advanced material.
-- **No-code agents** contains LangSmith Fleet pages, grouped into Get started, Configure, Tools and automation, Advanced, and Additional resources.
-- **Engine** is a compact top-level section for the overview, issue workflow, GitHub integration, categories, webhooks, security, and self-hosted use.
-- **Deep Agents Code** is an unversioned OSS section rooted at `oss/deepagents/code/`. Its configuration group explicitly sets `root` and `expanded`, and contains credentials, config-file, hooks, and MCP tools beneath the product pages.
-
-These product entries are not merely labels: their page paths determine Mintlify navigation and must agree with the builder's language behavior. For example, Deep Agents Code is intentionally excluded from `/oss/` language-link rewriting because it has an unversioned output path, whereas Managed Deep Agents content is emitted in Python and JavaScript variants.
-
-### Routes, redirects, and OpenAPI boundaries
-
-The redirects array in docs.json maps deprecated or reorganized URLs to canonical routes. It includes former LLM Gateway paths to the new quickstart, credits, and data-policy pages, and explicit unversioned Managed Deep Agents routes to Python pages. Redirects are therefore part of a safe route move: update navigation, output path, and applicable legacy mappings together.
-
-Three OpenAPI sections are declared in navigation, but their endpoint routes are generated by Mintlify during deployment and are not files that the local builder emits:
-
-- **Agent Server API** uses the committed `langsmith/agent-server-openapi.json` and declares `langsmith/agent-server-api` as its generation directory.
-- **Control Plane API** uses `https://api.host.langchain.com/openapi.json`; its specification is remote rather than part of the repository build.
-- **LangSmith REST API** uses the committed `langsmith/langsmith-platform-openapi.json` and declares `langsmith/smith-api` as its generation directory. A daily workflow runs `scripts/process_langsmith_openapi.py --write`; it creates or updates one standing refresh PR only when the processed spec changes.
+## OpenAPI: configuration versus local output
 
 Mintlify is configured with three OpenAPI sections: committed Agent Server and LangSmith REST specifications generate under langsmith/agent-server-api and langsmith/smith-api, while the Control Plane specification is fetched from https://api.host.langchain.com/openapi.json at deployment. The LangSmith REST specification is refreshed daily through a standing update PR workflow.
 
-Use `make check-openapi` to run `mint openapi-check` for the local Agent Server specification from `build/`. It validates that input only; neither it nor a local link check reproduces remote-spec availability or deployment-time OpenAPI route generation.
+The Agent Server and LangSmith REST entries set `directory` values, but endpoint routes are generated by Mintlify during deployment rather than written by the documentation builder. The Control Plane specification is additionally remote. Therefore local `build/`, local link checking, and `make check-openapi` cannot prove remote-spec availability or deployment-time route generation. `make check-openapi` validates only the generated-tree Agent Server input with `mint openapi-check langsmith/agent-server-openapi.json`.
 
-## Local development and validation
+Mintlify deployment generates endpoint routes for the configured OpenAPI sections, so those routes are absent from local build output and are intentionally filtered from local Mint link checking.
+
+## Local development and focused checks
 
 The development workflow uses mint dev CLI (a separate global npm binary installed via npm install -g mint@latest) running in the /build/ directory on port 3000. The docs dev command in pipeline/commands/dev.py orchestrates file watching via FileWatcher and launches mint dev as an async subprocess.
 
-`make dev` installs project npm dependencies and invokes the pipeline command. Unless `--skip-build` is supplied, `dev_command` performs an initial build; it watches `src/`, runs `mint dev --port 3000` in `build/`, forwards Mint output, and shuts down the watcher and child process on interruption. An initial build failure prevents startup; an unexpected watcher stop or nonzero Mint exit fails the command.
+`make dev` installs project npm dependencies and runs `pipeline dev`. Unless `--skip-build` is set, it builds before starting the watcher and server. An initial build failure stops startup; a nonzero Mint exit or an unexpectedly stopped watcher returns failure. On interruption it shuts down the watcher and terminates, then kills if necessary, the Mint subprocess.
 
-For structural validation, run:
+Run the generated-tree checks after route, navigation, snippet, or reference changes:
 
 ```bash
 make broken-links
 make broken-links-with-anchors
+make check-openapi
 ```
 
-The targets build first, invoke `mint broken-links` in `build/`, and fail only when filtered output retains actionable indented link entries. The filter intentionally removes deployment-generated OpenAPI-route false positives and standalone-snippet reports. The reusable workflow uses Node 22, caches or installs the global Mint CLI, applies a KaTeX workaround, then runs the anchor check and Agent Server OpenAPI validation.
-
-Snippet imports in MDX files are expanded by Mintlify at render time; they are not served as standalone pages. The build system processes snippets and stores language-specific versions at /build/snippets/{python|javascript}/, and Mintlify inlines them into importing pages. The builder rewrites imports in versioned pages to those language-specific copies, while retaining a Python-default copy for unversioned consumers.
+Both link targets build first and run `mint broken-links` from `build/`; the anchor variant adds `--check-anchors`. Their filter discards complete standalone-snippet sections, deployment-only OpenAPI paths, and a small set of documented Mint checker false positives, then fails when actionable indented report entries remain. The reusable GitHub workflow uses Node 22, caches or installs the global Mint CLI, applies its KaTeX workaround, and runs the anchor check followed by Agent Server OpenAPI validation.
 
 ## Offline export
 
@@ -116,32 +106,30 @@ make export-htmltest
 
 The make export target builds the generated documentation and runs mint export from build/, producing build/export.zip by default. It requires a recent Mint CLI with export support, Node LTS 20 or 22, and an Enterprise Mintlify plan.
 
-Offline export validation unpacks the Mint archive and intentionally uses htmltest only for external URLs because Mintlify export does not emit a complete page set; internal and internal-hash checks are disabled. Passing `make htmltest` therefore does not prove internal navigation. Use Mint's generated-tree link targets for that concern.
+Offline export validation unpacks the Mint archive and intentionally uses htmltest only for external URLs because Mintlify export does not emit a complete page set; internal and internal-hash checks are disabled. It still checks selected page assets and metadata, but a passing export check is not evidence that internal navigation works.
 
-## Publication and preview operations
-
-The publish workflow runs for pushes to `main` and manual dispatch. It builds, verifies `build/`, copies it to `public/build`, and force-publishes `public` to `prod` with `peaceiris/actions-gh-pages@v4` and `GITHUB_TOKEN`. Mintlify consumes that generated `build/` subtree from the production branch.
+## Publishing and previews
 
 The publish.yml GitHub Actions workflow deploys documentation by building /build/ from source, copying it into /public/build/, and pushing to the prod branch using peaceiris/actions-gh-pages@v4. Mintlify monitors the prod branch and automatically redeploys when changes are pushed.
 
-The preview workflow is intentionally separate. For same-repository pull requests or manual runs, it validates branch input, builds docs, generates a collision-resistant `preview-*` branch, force-adds its `build/` artifacts, and pushes the branch. The next job requires `MINTLIFY_API_KEY`, `MINTLIFY_PROJECT_ID`, and the generated branch name before POSTing to Mintlify's preview endpoint; malformed API responses or an API error without a status or preview URL fail the job. Closing a PR deletes only branches matching its sanitized `preview-` prefix.
-
 The preview workflow builds artifacts for same-repository pull requests, pushes them to a preview branch, and invokes Mintlify's preview API only after validating the required API key, project ID, and branch name; closed pull requests trigger preview-branch cleanup.
+
+The preview branch name combines a sanitized six-character source-branch prefix, timestamp, and short commit SHA. The workflow refuses invalid or overly long source branch names and avoids forks because it needs write permission. It force-adds the ignored `build/` artifacts, pushes the branch, then POSTs that branch to `https://api.mintlify.com/v1/project/preview/${MINTLIFY_PROJECT_ID}` with the API key. The API response must parse as JSON; an error without either a status ID or preview URL fails the job. Cleanup only deletes branches beginning with the corresponding `preview-` prefix.
 
 ## Change checklist
 
-1. Edit `src/` inputs—especially MDX, `src/docs.json`, assets, or `src/style.css`—not `build/`.
-2. When moving or adding a page, reconcile its generated path, product-menu placement, and legacy redirect mappings.
-3. Run `make build` and `make dev` to inspect the renderer-facing tree.
-4. Run `make broken-links-with-anchors` for route, navigation, snippet, or reference changes, and `make check-openapi` for the Agent Server specification.
-5. Treat `make export-htmltest` as external-link coverage only. Deployment-generated OpenAPI pages and remote Control Plane behavior require Mintlify deployment validation.
-6. Use the production or preview workflow to cross the publication boundary.
+1. Edit `src/` inputs—not `build/`—and run `make build`.
+2. For a route move, update output-path assumptions, `src/docs.json` navigation, and redirects together.
+3. Use `make dev` to inspect the generated tree in Mint locally.
+4. Run `make broken-links-with-anchors`; run `make check-openapi` when changing the local Agent Server specification.
+5. Treat `make export-htmltest` as external-link coverage only. Verify remote Control Plane and deployment-generated OpenAPI behavior in Mintlify.
+6. Use the production or preview workflow to cross the hosting boundary.
 
 ## Related concepts
 
-- [Build system](/openwiki/architecture/build-system.md) — source transformation and generated-tree lifecycle.
+- [Build system](/openwiki/architecture/build-system.md) — generated-tree lifecycle and transformations.
 - [Source map](/openwiki/architecture/source-map.md) — source paths, URLs, and build output mapping.
 - [GitHub Actions](/openwiki/integrations/github-actions.md) — CI, publication, and preview workflows.
-- [Adding pages](/openwiki/operations/adding-pages.md) — source, navigation, and route changes.
-- [CLI tools](/openwiki/operations/cli-tools.md) — local command behavior.
-- [Test overview](/openwiki/testing/test-overview.md) — repository validation layers.
+- [Reference docs](/openwiki/integrations/reference-docs.md) — reference and API-documentation inputs.
+- [Adding pages](/openwiki/operations/adding-pages.md) — safe source, navigation, and route changes.
+- [Local development](/openwiki/workflows/local-development.md) — local build and preview workflow.
