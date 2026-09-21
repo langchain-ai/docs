@@ -51721,6 +51721,18 @@ Connect LangGraph agents to front ends and observability platforms.
   </Card>
 </Columns>
 
+## Classification models
+
+<Columns cols={3}>
+  <Card
+    title="TypeSafe"
+    href="/oss/javascript/integrations/providers/typesafe"
+    icon="route"
+  >
+    Classify state into typed decisions and calibrated probabilities with Jev.
+  </Card>
+</Columns>
+
 ## Chat models
 
 <Columns cols={3}>
@@ -54909,6 +54921,146 @@ import { TavilyGetResearch } from "@langchain/tavily";
 </Callout>
 <Callout icon="edit">
     [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/providers/tavily.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
+# TypeSafe integrations
+Source: https://docs.langchain.com/oss/javascript/integrations/providers/typesafe
+
+[Jev](https://docs.typesafe.ai/models) is a [System One model](https://docs.typesafe.ai/concepts/system-one) that reads natural language but returns typed answers and calibrated probabilities instead of generated text.
+
+[`TypeSafeClassifier`](https://github.com/langchain-ai/langchainjs/tree/main/libs/providers/langchain-typesafe) classifies state into typed decisions and probabilities. It accepts strings, structured JSON, and [LangChain message objects](/oss/javascript/langchain/messages). Use it for focused decisions such as routing a request, choosing a model, or checking whether a tool call is safe to run.
+
+## Setup
+
+Install `@langchain/typesafe` and its `@langchain/core` peer dependency:
+
+<CodeGroup>
+```bash npm
+npm install @langchain/typesafe @langchain/core
+```
+
+```bash yarn
+yarn add @langchain/typesafe @langchain/core
+```
+
+```bash pnpm
+pnpm add @langchain/typesafe @langchain/core
+```
+</CodeGroup>
+
+Keep your API key on the server. Do not expose it in browser code. Set `dangerouslyAllowBrowser: false` to reject browser use, as in the quickstart below.
+
+Create an API key in the [TypeSafe console](https://console.typesafe.ai/settings/keys) and export it:
+
+```bash
+export TYPESAFE_API_KEY=...
+```
+
+<Note>
+Optional: Set `TYPESAFE_BASE_URL` to use a compatible gateway, test server, or private deployment. The default is `https://api.typesafe.ai`.
+
+```bash
+export TYPESAFE_BASE_URL=https://gateway.example.com
+```
+</Note>
+
+## Quickstart
+
+Configure `TypeSafeClassifier` with a fixed set of named questions. Questions that share state are evaluated independently and in parallel in one request:
+
+```typescript
+import { TypeSafeClassifier } from "@langchain/typesafe";
+
+const classifier = new TypeSafeClassifier({
+  dangerouslyAllowBrowser: false,
+  questions: {
+    urgent: {
+      type: "noul",
+      instructions: "Does this need attention right now?",
+    },
+    team: {
+      type: "choice",
+      instructions: "Which team should pick this up?",
+      criteria: {
+        infra: "Deploys, availability, and on-call incidents.",
+        billing: "Payments, invoices, and subscriptions.",
+      },
+    },
+    severity: {
+      type: "score",
+      instructions: "How severe is the impact?",
+      criteria: ["Cosmetic.", "Degraded for some users.", "Full outage."],
+    },
+  },
+});
+
+const response = await classifier.invoke(
+  "The deploy failed twice and customers are seeing 500s. Can someone look now?"
+);
+
+console.log(response.nouls.urgent.noul);
+console.log(response.choices.team.choice, response.choices.team.confidence);
+console.log(response.scores.severity.score);
+```
+
+Answers use your question IDs as keys in `response.answers`. The `nouls`, `choices`, and `scores` accessors group answer objects by type. The response also includes `model`, `usage`, and an optional `requestId`. The `usage.inputTokens` and `usage.outputTokens` fields are optional.
+
+The grouped accessors are non-enumerable getters. Object spread and JSON serialization omit them; use `answers` when storing or transmitting the response.
+
+State can be a string, a JSON object or array, or LangChain messages. The classifier converts message objects to transcript text, including when nested inside a larger object.
+
+## Configure requests
+
+Constructor options control authentication and request behavior:
+
+- **`apiKey`**: Overrides `TYPESAFE_API_KEY`.
+- **`baseUrl`**: Overrides `TYPESAFE_BASE_URL`.
+- **`timeout`**: Sets the per-request timeout in milliseconds. Defaults to `30000`.
+- **`maxRetries`**: Sets the maximum number of retries. Defaults to `2`; set it to `0` to disable retries.
+- **`fetch`**: Supplies a custom transport for proxies or tests.
+
+Pass request configuration, such as `signal`, `tags`, and `metadata`, as the second argument to `invoke`. Questions and the model are constructor settings, not per-call overrides.
+
+The classifier also supports `batch` and `pipe`. Its `stream` method yields the complete classification result, not incremental answers.
+
+## Handle errors
+
+The package exports `TypeSafeError`, `TypeSafeAPIError`, `TypeSafeAuthenticationError`, and `TypeSafeRateLimitError`. Use their `isInstance(error)` methods to identify failures. Avoid logging API error bodies indiscriminately: they can contain submitted state.
+
+TypeSafe receives the state you submit, including message content and tool-call arguments. Remove secrets or sensitive data before invoking the classifier.
+
+## Decision types
+
+Each question uses one of three [primitives](https://docs.typesafe.ai/primitives). Define questions as objects with a `type` of `"noul"`, `"choice"`, or `"score"`. The package does not export `Noul`, `Choice`, or `Score` constructors:
+
+| Primitive | Asks | Returns | Reach for it when |
+|---|---|---|---|
+| [`noul`](https://docs.typesafe.ai/primitives/noul) | Is this true? | `noul`, the probability of yes | Your code branches on an `if` |
+| [`choice`](https://docs.typesafe.ai/primitives/choice) | Which of these options? | `choice`, plus `probabilities` and `confidence` | Options map to distinct code paths |
+| [`score`](https://docs.typesafe.ai/primitives/score) | Which level? | `score`, plus `legend`, `probabilities`, and `confidence` | The answer is a spectrum you compare to a threshold |
+
+A `noul` answer has no `confidence` or `probabilities`. Use `score` rather than `noul` for a spectrum: a `noul` of `0.5` means an even split between yes and no, not "medium."
+
+## Tracing
+
+With LangSmith tracing enabled, TypeSafe classifications appear in [LangSmith](/langsmith/home). You can inspect the input, output, and available token usage alongside the rest of your agent. LangSmith records `usage` in the traced output rather than as a costed LLM metric.
+
+## See also
+
+- [TypeSafe documentation](https://docs.typesafe.ai/)
+- [TypeSafe confidence guidance](https://docs.typesafe.ai/confidence)
+- [`@langchain/typesafe` source](https://github.com/langchain-ai/langchainjs/tree/main/libs/providers/langchain-typesafe)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/oss/javascript/integrations/providers/typesafe.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
 </Callout>
 </div>
 
