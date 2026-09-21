@@ -180,7 +180,7 @@ LINK_MAPS: list[LinkMap] = [
             "langchain-google-community": "langchain-google-community/",
             # langchain-ollama
             "langchain-ollama": "langchain-ollama/",
-            "ChatOllama": "langchain-community/chat_models/ollama/ChatOllama",
+            "ChatOllama": "langchain-ollama/chat_models/ChatOllama",
             # langchain-xai
             "langchain-xai": "langchain-xai/",
             "ChatXAI": "langchain-xai/chat_models/ChatXAI",
