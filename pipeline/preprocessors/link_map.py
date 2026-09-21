@@ -176,7 +176,7 @@ LINK_MAPS: list[LinkMap] = [
             "langchain-google-genai": "langchain-google-genai/",
             "ChatGoogleGenerativeAI": "langchain-google-genai/chat_models/ChatGoogleGenerativeAI",
             "langchain-google-vertexai": "langchain-google-vertexai/",
-            "ChatVertexAI": "langchain-community/chat_models/vertexai/ChatVertexAI",
+            "ChatVertexAI": "langchain-google-vertexai/chat_models/ChatVertexAI",
             "langchain-google-community": "langchain-google-community/",
             # langchain-ollama
             "langchain-ollama": "langchain-ollama/",
@@ -252,8 +252,8 @@ LINK_MAPS: list[LinkMap] = [
             "Document": "langchain-core/documents/base/Document",
             # Document loaders
             "BaseLoader": "langchain-core/document_loaders/base/BaseLoader",
-            "AzureBlobStorageContainerLoader": "langchain-community/document_loaders/azure_blob_storage_container/AzureBlobStorageContainerLoader",
-            "AzureBlobStorageFileLoader": "langchain-community/document_loaders/azure_blob_storage_file/AzureBlobStorageFileLoader",
+            "AzureBlobStorageContainerLoader": "langchain-azure-storage/document_loaders/AzureBlobStorageLoader",
+            "AzureBlobStorageFileLoader": "langchain-azure-storage/document_loaders/AzureBlobStorageLoader",
             # Text splitters
             "CharacterTextSplitter": "langchain-text-splitters/character/CharacterTextSplitter",
             "RecursiveCharacterTextSplitter": "langchain-text-splitters/character/RecursiveCharacterTextSplitter",
@@ -273,7 +273,7 @@ LINK_MAPS: list[LinkMap] = [
             "AstraDBVectorStore": "langchain-astradb/vectorstores/AstraDBVectorStore",
             "ChromaVectorStore": "langchain-chroma/vectorstores/Chroma",
             "ElasticSearchStore": "langchain-elasticsearch/vectorstores/ElasticsearchStore",
-            "FAISS": "langchain-community/vectorstores/faiss/FAISS",
+            "FAISS": "langchain-classic/vectorstores/faiss",
             "MilvusVectorStore": "langchain-milvus/vectorstores/milvus/Milvus",
             "MongoDBAtlasVectorSearch": "langchain-mongodb/vectorstores/MongoDBAtlasVectorSearch",
             "PineconeSparseVectorStore": "langchain-pinecone/vectorstores_sparse/PineconeSparseVectorStore",
