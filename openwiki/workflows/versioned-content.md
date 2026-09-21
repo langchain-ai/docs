@@ -1,8 +1,11 @@
 ---
 type: authoring workflow
-title: Versioned Content
-description: Author shared documentation that the build emits as Python and JavaScript variants. This workflow covers source ownership, conditional content, language-aware links and snippets, navigation, release-claim checks, and output verification.
+title: Versioned Content Workflow
+description: A practical procedure for authoring documentation that emits Python and JavaScript variants. Covers source ownership, conditional blocks, language-aware links and snippets, navigation, redirects, and output checks.
 tags: [versioning, conditional-rendering, markdown, snippets, package-validation, navigation]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-21T08:24:04.334Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -24,63 +27,57 @@ sources:
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-607673c5c40214b511f9e0a7
     resource: repo://tests/unit_tests/test_check_version_claims.py
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-18T08:20:50.944Z
-generated: { by: "openwiki/0.4.3", at: "2026-09-18T08:20:50.944Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
 ---
 
-# Versioned Content
+# Versioned Content Workflow
 
-Versioned documentation keeps shared prose in one source while the build emits language-specific artifacts. Make three independent decisions: **source ownership** determines where the authored file belongs, **emitted routes** determine what the builder writes, and **visible navigation and redirects** determine how readers discover or reach those routes. Never edit `build/`; `make build` regenerates it.
+Versioned documentation keeps shared prose in one source while the builder emits language-specific artifacts. Make three independent decisions: **source ownership** determines where an authored file belongs, **emitted routes** determine what the builder writes, and **navigation and redirects** determine how readers discover or reach routes. Work in `src/`, not `build/`: a full build clears and recreates generated output.
 
 ```mermaid
 flowchart TD
-    Start["Choose the authored source"] --> Ownership{"Which source class"}
-    Ownership -->|Shared OSS| Shared["Place below src slash oss"]
-    Ownership -->|Language-only OSS| Specific["Place below src slash oss slash language"]
-    Ownership -->|Language-agnostic product| Unversioned["Place in the unversioned product directory"]
-    Ownership -->|Managed Deep Agents| MDA["Place managed-deep-agents MDX in src slash langsmith"]
-    Shared --> Dual["Emit Python and JavaScript OSS routes"]
-    Specific --> One["Emit the matching language route"]
-    Unversioned --> Default["Emit one unprefixed route using Python target"]
-    MDA --> MDADual["Emit Python and JavaScript LangSmith routes"]
-    Dual --> Nav["Configure navigation in src slash docs.json"]
-    One --> Nav
-    Default --> Nav
-    MDADual --> Nav
-    Nav --> Redirects["Add intentional legacy redirects"]
-    Redirects --> Inspect["Build and inspect every expected output"]
-
-    classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
-    classDef decision fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
-    classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
-    class Start,Shared,Specific,Unversioned,MDA,Nav,Redirects process
-    class Ownership decision
-    class Dual,One,Default,MDADual,Inspect output
+    Start["Classify the authored page"] --> Ownership{"Source ownership"}
+    Ownership --> Shared["Shared OSS below src oss"]
+    Ownership --> Specific["Language-only OSS below python or javascript"]
+    Ownership --> Product["Unversioned OpenWiki or Deep Agents Code"]
+    Ownership --> Managed["Managed Deep Agents direct LangSmith MDX"]
+    Shared --> Dual["Python and JavaScript routes"]
+    Specific --> One["One matching language route"]
+    Product --> Plain["One unprefixed route"]
+    Managed --> ManagedDual["Python and JavaScript LangSmith routes"]
+    Dual --> SiteConfig["Place routes in docs.json"]
+    One --> SiteConfig
+    Plain --> SiteConfig
+    ManagedDual --> SiteConfig
+    SiteConfig --> Redirects["Add needed legacy redirects"]
+    Redirects --> Verify["Build and inspect outputs"]
 ```
 
-This flow separates where a page is authored from its generated routes and reader-facing navigation.
+This flow separates authored ownership, generated routes, and Mintlify presentation.
 
-## Select source ownership and routes
+## 1. Choose source ownership before writing
 
-Choose the authored path based on ownership, not a desired URL. The builder maps its `js` target to `javascript` in public paths.
+Choose an authored path for its build behavior, not for a desired sidebar label. The build uses `js` internally but exposes its route segment as `javascript`.
 
-| Source ownership | Authored location | Emitted route or routes |
+| Content class | Author in | Builder emits |
 | --- | --- | --- |
-| Shared OSS page | Most content below `src/oss/`, such as `langchain/`, `langgraph/`, and `deepagents/` | `/oss/python/...` and `/oss/javascript/...` |
-| Language-only OSS page | `src/oss/python/...` or `src/oss/javascript/...` | The matching `/oss/python/...` or `/oss/javascript/...` route only |
-| Language-agnostic product | `src/oss/openwiki/...` or `src/oss/deepagents/code/...` | One unprefixed `/oss/openwiki/...` or `/oss/deepagents/code/...` route |
-| Managed Deep Agents page | An `.mdx` file named `managed-deep-agents*.mdx` directly in `src/langsmith/` | `/langsmith/python/...` and `/langsmith/javascript/...` |
-| Other LangSmith page | `src/langsmith/...` | Its ordinary unprefixed LangSmith route, processed with the Python target |
+| Shared OSS page | Most content below `src/oss/` | `/oss/python/...` and `/oss/javascript/...` |
+| Language-specific OSS page | `src/oss/python/...` or `src/oss/javascript/...` | Only the matching language route; the source language directory is removed from the output path |
+| Language-agnostic OSS product | `src/oss/openwiki/...` or `src/oss/deepagents/code/...` | One unprefixed `/oss/openwiki/...` or `/oss/deepagents/code/...` route |
+| Managed Deep Agents page | A direct `src/langsmith/managed-deep-agents*.mdx` file | `/langsmith/python/...` and `/langsmith/javascript/...` |
+| Other LangSmith page | `src/langsmith/...` | One unprefixed `/langsmith/...` route, rendered with the Python target |
 
-Most OSS sources are emitted into Python and JavaScript route trees, while `oss/deepagents/code` and `oss/openwiki` are deliberate single-output exceptions rendered with the Python conditional target. For those exceptions, an ordinary unqualified OSS link still resolves to Python, while links within the unversioned product stay unprefixed.
+Use a shared OSS file when the information is substantially the same and only examples, API names, install commands, or small implementation details differ. Use `src/oss/python/` or `src/oss/javascript/` when the page itself is genuinely language-specific; the current changed Python integration pages demonstrate this ownership boundary rather than an invitation to copy a shared guide into both trees. Do not create parallel authored copies merely to obtain both URLs.
 
-Do not make copies under generated `python` or `javascript` paths. For ownership guidance, see [Source directory map](/openwiki/architecture/source-map.md).
+`oss/deepagents/code` and `oss/openwiki` are intentional one-output exceptions. They select the Python conditional branch as a deterministic fallback, but that does not make those products Python documentation. Within those pages their own product routes remain unprefixed; an ordinary bare OSS destination still resolves as Python.
 
-## Write conditional content
+Managed Deep Agents is the LangSmith exception. A direct, correctly named `.mdx` file emits only language-prefixed variants during a full build; ordinary LangSmith generation excludes it, preventing an unversioned duplicate. Use `.mdx`: individual-file classification recognizes `.md` too, but full-build discovery glob-matches `managed-deep-agents*.mdx`.
 
-Use one shared source for common text and sequential `:::python` and `:::js` blocks only where content differs. Versioned documentation uses conditional blocks to create separate Python and JavaScript outputs from a single source. The selected supported-language block is emitted without its markers, the other supported block is removed, and content outside both blocks remains in each artifact.
+For directory ownership details, see [Source directory map](/openwiki/architecture/source-map.md).
+
+## 2. Put only differences in conditional blocks
+
+Keep neutral headings, explanations, and concepts outside language branches. Use sequential `:::python` and `:::js` blocks only for material that actually differs. Versioned documentation uses conditional blocks to create separate Python and JavaScript outputs from a single source.
 
 ````markdown
 Shared explanation.
@@ -98,11 +95,11 @@ import { createAgent } from "langchain";
 :::
 ````
 
-Keep neutral headings and shared explanations outside branches so both rendered pages remain coherent. Conditional rendering accepts only the `python` and `js` target keys; it emits the matching supported-language block without its fences, removes the nonmatching supported block, preserves unsupported labels, and raises `ValueError` for an invalid target.
+For a selected target, the matching supported block is emitted without its markers, the other supported block is removed, and text outside blocks remains. Only `python` and `js` are supported targets; an invalid target raises `ValueError`. Unsupported labels and unclosed supported blocks remain in the source-shaped output, so they are not validation constructs.
 
-### Scope API references to the branch
+### Scope cross-references to their language branch
 
-`@[Name]`, `@[title][Name]`, and backticked forms are resolved before conditional rendering. Autolink replacement tracks the active `:::language` scope outside ordinary code fences, resolves known references from that scope, and logs rather than fails when a reference is absent. Put language-dependent references inside their matching branches:
+Autolinks are resolved **before** conditional rendering. `@[Name]`, `@[title][Name]`, and backticked forms use the active language scope established by `:::python` or `:::js`, outside ordinary code fences. A missing mapping is logged and left literal during preprocessing, so run the source-level validator after changing references.
 
 ````markdown
 :::python
@@ -114,11 +111,15 @@ See @[StateGraph].
 :::
 ````
 
-Run `make check-cross-refs` after adding or changing an API reference. It is the source-level gate for unresolved names; a rendered page can hide an error in the branch excluded from one artifact. See [Markdown preprocessing pipeline](/openwiki/concepts/preprocessing.md).
+```bash
+make check-cross-refs
+```
 
-### Avoid parser traps
+A shared, unfenced OSS reference must resolve for both language maps; a language-specific source or fenced reference is checked in its applicable scope. See [Markdown preprocessing pipeline](/openwiki/concepts/preprocessing.md).
 
-Conditional rendering is regex-based rather than code-fence-aware or nested-block-aware, so literal conditional syntax must be escaped and nested conditionals are unsafe. Do not put live conditional markers inside a normal code fence, and do not nest branches. Escape both literal markers when documenting the syntax:
+### Avoid conditional-parser traps
+
+Conditional rendering is a whole-input regular-expression transform, not a code-fence-aware or nested-block parser. Do not nest conditionals and do not assume a normal Markdown code fence protects live conditional syntax. Escape literal markers in examples:
 
 ````markdown
 \:::python
@@ -126,109 +127,121 @@ This is displayed literally.
 \:::
 ````
 
-Use matching indentation for readable source, especially in nested Markdown, but do not treat indentation mismatch as validation: the regex is not line-anchored and can still match it. Unsupported labels and unmatched eligible openings remain unchanged, so do not use them as validation or nesting constructs.
+Opening and closing markers need matching indentation. The first eligible closing marker ends a regex match, so use ordinary prose or a separate escaped example rather than trying to express nesting.
 
-## Author links and snippets for the active variant
+## 3. Author links and reusable snippets for the active variant
 
-For a destination that should follow the current OSS language, author an absolute, unqualified `/oss/...` link:
+### Links
+
+For an ordinary OSS destination that should follow the active language, write an absolute unqualified route:
 
 ```mdx
 <!-- openwiki: broken internal link [/oss/langgraph/overview] file "/oss/langgraph/overview" does not exist. Fix the href or restore the target, then delete this comment. -->
 [LangGraph overview](/oss/langgraph/overview)
 ```
 
-For a target-language build, unqualified absolute `/oss/` links receive the target route segment, but already-qualified routes, image paths, and the OpenWiki and Deep Agents Code roots are preserved. This applies to Markdown links and HTML `href` attributes. Use a qualified route only when the destination must remain fixed to that language.
+For a target-language render, the builder inserts `python` or `javascript` after `/oss/`. It preserves already-qualified paths, image paths, and the unversioned OpenWiki and Deep Agents Code roots. The same rule covers Markdown links and HTML `href` values. Use an explicitly qualified route only when a page must deliberately link to one language.
 
-Bare Managed Deep Agents links behave similarly: a `/langsmith/managed-deep-agents...` reference is rewritten to the selected `/langsmith/python/...` or `/langsmith/javascript/...` route. Keep an already-qualified Managed Deep Agents route when it is intentional.
+A bare Managed Deep Agents link similarly follows the selected target:
 
-Store reusable Markdown or MDX fragments under `src/snippets/` and import them without a language prefix from a versioned page:
+```mdx
+<!-- openwiki: broken internal link [/langsmith/managed-deep-agents-quickstart] file "/langsmith/managed-deep-agents-quickstart" does not exist. Fix the href or restore the target, then delete this comment. -->
+[Quickstart](/langsmith/managed-deep-agents-quickstart)
+```
+
+It becomes the Python or JavaScript LangSmith route; an already-qualified Managed Deep Agents URL stays fixed. This is why authored Managed Deep Agents links should normally be bare even though the built routes are language-prefixed.
+
+### Markdown and MDX snippets
+
+Store reusable Markdown or MDX fragments in `src/snippets/` and use an unqualified Markdown import from a versioned page:
 
 ```mdx
 import RequiresLanggraphServer from '/snippets/oss/requires-langgraph-server.mdx';
 ```
 
-Versioned-page imports of unqualified Markdown snippets are rewritten to `/snippets/python/` or `/snippets/javascript/`, while already scoped imports and JSX or TSX component imports are unchanged. Write absolute `/oss/...` links inside a shared snippet, rather than fixed relative paths.
+The builder rewrites eligible `.md` and `.mdx` imports to `/snippets/python/` or `/snippets/javascript/`. Imports already scoped to either language and JSX or TSX component imports are unchanged. Shared Markdown snippets are independently preprocessed into Python and JavaScript copies plus a Python-targeted default copy. Write absolute `/oss/...` links inside a shared snippet: each copy then has a correct absolute language-prefixed destination even when a consumer is deeply nested.
 
-Markdown snippets are independently preprocessed and emitted in Python and JavaScript copies plus a Python-targeted default copy, allowing their absolute links to work from consumers at arbitrary nesting depths. Use separate language-specific snippet components only when the reusable unit itself differs. The shared Deep Agents quickstart demonstrates language-specific reusable units by importing Python and JavaScript snippet components separately and rendering each invocation inside its matching conditional branch.
+When the reusable unit itself differs, import language-specific components and render each in its matching conditional branch. The shared Deep Agents quickstart follows this pattern for its Python and JavaScript code-sample components.
 
-### Generate runnable examples instead of hand-maintaining sample snippets
+### Runnable samples
 
-For an executable example, make `src/code-samples/` the source of truth. Put the reader-visible region between language-suffixed `:snippet-start:` and `:snippet-end:` markers, and place test-only setup or assertions in a trailing `:remove-start:` block. The test must execute the visible snippet before it exits; do not hide an early `SystemExit`, `process.exit`, or equivalent before it.
-
-Test the changed sample, then regenerate its derived MDX:
+For executable examples, `src/code-samples/` is the source of truth. Delineate visible code with language-suffixed `:snippet-start:` and `:snippet-end:` markers. Put test-only setup and assertions in a trailing `:remove-start:` block; tests must execute the visible snippet before they exit.
 
 ```bash
 make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
 make code-snippets
 ```
 
-`make code-snippets` extracts tagged source into the gitignored `src/code-samples-generated/` intermediate directory and generates `src/snippets/code-samples/` MDX components. Import generated Python and JavaScript components after a page's frontmatter and render each inside its matching branch. Do not hand-edit generated snippet MDX; change the sample and regenerate it. Keep related Python snippets in one source file when practical; split TypeScript snippets when their top-level imports or bindings would collide during one-file execution.
+`make code-snippets` extracts marked regions into the generated intermediate directory and generates MDX components in `src/snippets/code-samples/`. Do not hand-edit those components: update the sample, test it, regenerate, then import the generated Python and JavaScript components after page frontmatter and render them inside their corresponding branches.
 
-## Check package-version claims before publishing
+## 4. Treat package-version claims as availability claims
 
-A package floor or pin is a promise that readers can resolve the named release. Put a concise version-added `<Note>` near the feature it governs. Use literal package syntax such as `langchain>=1.3.2` only where readers need an installable specifier; write CLI, runtime, and chart requirements as prose such as “v1.3.2 or later.” When Python and TypeScript need different package versions, put a separate note in each language branch.
-
-First establish from the owning product source or changelog that the release is the actual minimum. Then check that the written release was published:
+A floor or pin is a reader-facing promise. First establish from the owning product or changelog that a release is the actual minimum for the feature. Then check that the exact written release was published:
 
 ```bash
 uv run python scripts/check_version_claims.py --files src/path/to/page.mdx
 ```
 
-The version-claim checker scans `.mdx` pages for `>=` floors and `==` pins, determines PyPI or npm from package syntax, nearby language labels, conditional fences, source paths, and a PyPI fallback, and checks only whether the written release was published. This matters for unscoped names such as `deepagents`, whose package versions differ between registries. A passing check proves availability only; it does not prove that the selected release introduced the feature. Registry lookup failures and invalid lookup inputs are unresolved rather than unpublished-version failures, while exact version matches and shortened version-series floors are accepted when a corresponding published release exists. Correct a bad requirement instead of adding it to `scripts/version_claims_ignore.txt` unless it is a reviewed, intentional exception.
+The checker scans `.mdx` pages for `>=` floors and `==` pins. It chooses PyPI or npm from package syntax, nearby language labels, conditional fences, source paths, then a PyPI fallback; it checks publication availability only, not whether the release introduced the feature. This matters for unscoped package names whose Python and npm release lines differ.
 
-## Configure navigation and redirects separately
+Registry lookup failures and unsafe lookup inputs are reported as unresolved, not as unpublished-version failures. Exact releases and shortened series floors are accepted when a matching published release exists. Correct an inaccurate requirement rather than adding it to `scripts/version_claims_ignore.txt` unless it is a reviewed, intentional exception.
 
-A source file and a built route do not create a visible navigation entry. For a new or moved page, update the appropriate `src/docs.json` product, menu, language dropdown, tab, and group after choosing source ownership and confirming the output route. Managed Deep Agents navigation has parallel Python and JavaScript route entries in separate language dropdowns, while `docs.json` maps unprefixed and legacy Managed Deep Agents URLs to Python destinations.
+## 5. Configure navigation and redirects as separate contracts
 
-A redirect is independent from source placement and navigation. Add or retain a `redirects` entry in `src/docs.json` only for a supported legacy or alias URL, and point it to the intended canonical route. The builder does not emit unprefixed Managed Deep Agents pages; those old URLs redirect to Python routes. Do not create an unversioned source copy merely to serve an old URL.
+A source file and emitted route do not create a visible navigation entry. After confirming the expected route, update the appropriate `src/docs.json` product, menu item, language dropdown, tab, and group. Use extensionless paths relative to `src` in navigation arrays, and locate a neighboring entry rather than inferring placement from a directory name.
 
-When a page moves, decide all three outcomes explicitly:
+For a shared OSS page, add its Python and JavaScript routes in their respective dropdowns. For a language-only page, add just the matching route. For OpenWiki or Deep Agents Code, add its one unprefixed route. Managed Deep Agents has parallel Python and JavaScript route entries in separate language dropdowns.
 
-1. Keep, move, or split the authored source according to ownership.
-2. Confirm every emitted Python, JavaScript, or unprefixed route that must exist.
-3. Update navigation entries and add redirects for old public routes when readers need continuity.
+Redirects are independent of authored source and navigation. `docs.json` maps unprefixed and legacy Managed Deep Agents URLs to Python destinations because the builder does not emit unprefixed Managed Deep Agents pages. For any public route move, retain or add a redirect to the maintained canonical route; do not create an unversioned duplicate only to preserve an old URL.
 
-For the navigation procedure, see [Adding and modifying documentation pages](/openwiki/operations/adding-pages.md).
+When moving a page, explicitly decide all three outcomes:
 
-## Build and inspect outputs
+1. Keep, move, or split the source according to ownership.
+2. Confirm every Python, JavaScript, or unprefixed emitted route that must exist.
+3. Update navigation and preserve required old public routes with redirects.
 
-Run a clean build after changing a shared source, link, snippet, route rule, navigation entry, or redirect:
+See [Adding and modifying documentation pages](/openwiki/operations/adding-pages.md) for the broader route-move procedure.
+
+## 6. Build, inspect, and test the generated contract
+
+Run a clean build after changing shared content, route rules, snippets, links, `docs.json`, or redirects:
 
 ```bash
 make build
+make broken-links
 ```
 
-The full build clears the build directory, generates OSS Python and JavaScript variants, builds unversioned OSS products and LangSmith content, emits Managed Deep Agents variants, and then copies shared files. Inspect generated output as verification only; do not edit it. For a shared OSS or Managed Deep Agents page, inspect both language variants. For a language-only or unversioned product page, inspect the one expected route and confirm that unexpected language duplicates do not exist.
+The full build clears `build/`, renders OSS Python and JavaScript variants, renders the unversioned OSS products and LangSmith content, produces Managed Deep Agents variants, copies shared inputs and npm snippet components, then generates LLM index artifacts. Generated output is verification material, not an editing surface. `make broken-links` builds first, asks Mint to validate redirects, and filters known deploy-time OpenAPI and standalone-snippet reports.
 
-Check the following:
+Inspect the relevant output contract:
 
-1. The expected route exists, with matching conditional content and without the opposite supported branch or selected-block markers.
-2. Shared prose appears in every expected variant.
-3. Conditional API references resolve in the correct scope.
-4. Unqualified OSS links, Managed Deep Agents links, and Markdown snippet imports have the expected language prefix.
-5. Intentional fixed-language links, image paths, and unversioned OpenWiki or Deep Agents Code paths remain unchanged.
-6. Each new route appears in the intended navigation location, and each old route has either a deliberate redirect or a documented removal decision.
+1. Every expected route exists, and forbidden language siblings do not.
+2. Each language artifact keeps shared prose and only its matching conditional content, with no selected-block markers.
+3. Conditional API references resolve in the intended scope.
+4. Bare OSS links, bare Managed Deep Agents links, and Markdown snippet imports acquire the expected language route.
+5. Fixed-language links, image paths, and unversioned product paths remain unchanged.
+6. Every new route appears in the intended `docs.json` location, and every retired public route has either a deliberate redirect or a documented removal decision.
 
-When changing builder behavior, add a focused regression in `tests/unit_tests/test_builder.py`. Existing coverage exercises OSS prefix insertion and exemptions, unversioned product output, language-scoped snippets, and Managed Deep Agents dual routes. Test changes to package-version parsing in `tests/unit_tests/test_check_version_claims.py`, including registry-selection precedence and lookup failures. For fence-focused tests, see [Conditional rendering tests](/openwiki/testing/conditional-rendering.md).
+When changing builder behavior, add a focused regression in `tests/unit_tests/test_builder.py`: assert final content as well as all expected and absent paths. Existing tests cover OSS prefix insertion and exemptions, unversioned product routes, language-scoped snippets, and Managed Deep Agents dual routes. Changes to version-claim parsing belong in `tests/unit_tests/test_check_version_claims.py`, including registry-selection precedence and lookup failures. See [Builder tests](/openwiki/testing/builder-tests.md).
 
-## Checklist
+## Completion checklist
 
-- [ ] Choose the authored source class before choosing navigation or redirects.
+- [ ] Select shared, language-specific, unversioned-product, or Managed Deep Agents ownership before choosing a URL or sidebar location.
 - [ ] Keep shared prose outside sequential `:::python` and `:::js` branches.
-- [ ] Do not nest conditionals or rely on code fences to protect live markers.
-- [ ] Use unqualified `/oss/...` links only when the destination should follow the active language.
-- [ ] Import Markdown snippets unprefixed and use absolute OSS links in shared snippets.
-- [ ] Test and regenerate executable code samples from `src/code-samples/`; do not hand-edit generated snippets.
-- [ ] Verify each package floor against its owning source and run `check_version_claims.py` for changed MDX with specifiers.
-- [ ] Configure navigation and redirects in `src/docs.json` separately from source and output routes.
-- [ ] Run `make build`, then inspect every expected output without modifying generated artifacts.
+- [ ] Scope language-dependent autolinks to their branch; run `make check-cross-refs` when references change.
+- [ ] Do not nest conditionals or rely on a Markdown code fence to protect live conditional markers.
+- [ ] Use an unqualified `/oss/...` or Managed Deep Agents link only when it should follow the active language.
+- [ ] Import shared Markdown snippets without a language prefix and use absolute OSS links inside them.
+- [ ] Test and regenerate runnable samples from `src/code-samples/`; do not hand-edit generated snippet MDX.
+- [ ] Confirm every package floor semantically, then run `check_version_claims.py` for changed MDX specifiers.
+- [ ] Update `src/docs.json` navigation and redirects separately from authored source placement.
+- [ ] Run `make build` and `make broken-links`, then inspect all relevant generated routes without editing `build/`.
 
 ## See also
 
 - [Language versioning strategy](/openwiki/concepts/versioning.md)
 - [Markdown preprocessing pipeline](/openwiki/concepts/preprocessing.md)
 - [Source directory map](/openwiki/architecture/source-map.md)
-- [Conditional rendering tests](/openwiki/testing/conditional-rendering.md)
-- [Testing overview](/openwiki/testing/test-overview.md)
+- [Builder tests](/openwiki/testing/builder-tests.md)
 - [Code sample lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
 - [Adding and modifying documentation pages](/openwiki/operations/adding-pages.md)

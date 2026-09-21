@@ -5,7 +5,7 @@ description: Explains independent language-route rendering and version-claim val
 tags: [versioning, documentation-pipeline, routes, package-validation, dependency-management]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-18T08:20:50.944Z
+    at: 2026-09-21T08:24:04.334Z
 sources:
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
@@ -25,13 +25,15 @@ sources:
     resource: repo://scripts/version_claims_ignore.txt
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
+  - id: openwiki-source-243c6e17a513bece229a34b9
+    resource: repo://src/language-toggle.js
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-a10b62517b8302a8d4cf3b31
     resource: repo://tests/unit_tests/test_check_external_versions.py
   - id: openwiki-source-607673c5c40214b511f9e0a7
     resource: repo://tests/unit_tests/test_check_version_claims.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-17T08:22:51.028Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
 ---
 
 # Language Versioning Strategy
@@ -45,14 +47,14 @@ They use some of the same language signals (`:::python`, `:::js`, and source pat
 
 ## Language-route rendering
 
-`DocumentationBuilder` owns emitted documentation artifacts beneath `build/`; `src/docs.json` independently exposes those routes in navigation and redirects retired URLs. Source placement selects the builder behavior, while navigation entries must name routes that the builder actually emits.
+`DocumentationBuilder` owns emitted documentation artifacts beneath `build/`; `src/docs.json` separately declares navigation and redirects retired URLs. Source placement selects the builder behavior, while every configured navigation entry must name a route that the builder emits.
 
 | Authored source domain | Emitted route family | Navigation consequence |
 | --- | --- | --- |
 | Most `src/oss/` content, including LangChain, LangGraph, and Deep Agents outside `code/` | `/oss/python/...` and `/oss/javascript/...` | Add the emitted route to the corresponding Python or TypeScript Build dropdown. |
 | `src/oss/python/` or `src/oss/javascript/` | Only the matching route, with the source-language directory removed | Put the route only in its matching dropdown. |
 | `src/oss/deepagents/code/` | `/oss/deepagents/code/...` | Keep the product route unprefixed. |
-| `src/oss/openwiki/` | `/oss/openwiki/...` | Keep one unprefixed artifact family; the same routes appear in both Build dropdowns. |
+| `src/oss/openwiki/` | `/oss/openwiki/...` | Keep one unprefixed artifact family. It is not currently listed in either Build dropdown; the language switcher is suppressed on this route family. |
 | Ordinary `src/langsmith/` content | `/langsmith/...` | Place it in its applicable LangSmith navigation group. |
 | A direct `src/langsmith/managed-deep-agents*.mdx` page | `/langsmith/python/...` and `/langsmith/javascript/...` | List both emitted routes in the corresponding Managed Deep Agents tabs. |
 
@@ -69,9 +71,8 @@ flowchart TD
     Domain --> Managed["Managed Deep Agents source"]
     Managed --> ManagedPy["LangSmith python route"]
     Managed --> ManagedJs["LangSmith javascript route"]
-    OssPy --> Nav["docs.json navigation"]
+    OssPy --> Nav["configured docs.json navigation"]
     OssJs --> Nav
-    OneOss --> Nav
     OneSmith --> Nav
     ManagedPy --> Nav
     ManagedJs --> Nav
@@ -134,7 +135,7 @@ Versioned MDX pages should import Markdown snippets from `/snippets/...`. The bu
 
 Managed Deep Agents is a LangSmith exception: a direct file under `src/langsmith/` whose name begins `managed-deep-agents` and extension is `.md` or `.mdx` is classified as a language-variant page. Ordinary LangSmith emission excludes it, avoiding an unversioned artifact. The full-build discovery pass, however, glob-matches only `managed-deep-agents*.mdx`; an individually built `.md` is recognized and emitted, but it is absent from a normal full build. Use `.mdx` for these pages.
 
-Each emitted variant gets matching conditional content, language-scoped snippet imports, rewritten OSS links, and Managed Deep Agents links pointing at its own route. `docs.json` redirects unversioned and historical Managed Deep Agents URLs to Python routes, while its Python and TypeScript Build dropdowns list their distinct variant routes. Keep the naming rule, both navigation routes, and applicable legacy redirects synchronized when changing these pages.
+Each emitted variant gets matching conditional content, language-scoped snippet imports, rewritten OSS links, and Managed Deep Agents links pointing at its own route. `docs.json` has a Managed Deep Agents tab in each Build dropdown and lists distinct Python and TypeScript routes; it also redirects unversioned and historical Managed Deep Agents URLs to the Python routes. Keep the naming rule, both navigation route families, and applicable legacy redirects synchronized when changing these pages.
 
 ## Package-version claims: availability, not feature policy
 
@@ -233,7 +234,7 @@ Builder tests cover unversioned OSS output and link behavior, scoped snippet imp
 ## See also
 
 - [Build system](/openwiki/architecture/build-system.md)
-- [GitHub Actions](/openwiki/integrations/github-actions.md)
+- [Source map](/openwiki/architecture/source-map.md)
 - [Adding pages](/openwiki/operations/adding-pages.md)
-- [Test overview](/openwiki/testing/test-overview.md)
+- [Builder tests](/openwiki/testing/builder-tests.md)
 - [Writing versioned content](/openwiki/workflows/versioned-content.md)
