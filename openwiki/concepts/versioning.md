@@ -1,39 +1,60 @@
 ---
 type: versioning strategy
 title: Language Versioning Strategy
-description: How source classification, build-time language rendering, emitted public routes, and docs.json navigation cooperate for shared OSS documentation, intentional unversioned products, and Managed Deep Agents.
-tags: [versioning, documentation-pipeline, navigation, routes, conditional-rendering]
+description: Explains independent language-route rendering and version-claim validation for Python and npm documentation, published package versions, and upstream-owned mirrored requirements.
+tags: [versioning, documentation-pipeline, routes, package-validation, dependency-management]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-15T08:21:56.110Z
+    at: 2026-09-18T08:20:50.944Z
 sources:
+  - id: openwiki-source-21617d8a6b2b570989a7c900
+    resource: repo://.github/workflows/check-version-claims.yml
+  - id: openwiki-source-0976291f8216a4c7151f20a7
+    resource: repo://.github/workflows/refresh-external-versions.yml
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
+  - id: openwiki-source-6b3ad04031a04803eb901844
+    resource: repo://scripts/check_external_versions.py
+  - id: openwiki-source-99b53585619b83f258314f8b
+    resource: repo://scripts/check_version_claims.py
+  - id: openwiki-source-bd35b3b527f9ad0799d45497
+    resource: repo://scripts/data/external_versions.yaml
+  - id: openwiki-source-583acf631f9a33a5389a3fde
+    resource: repo://scripts/version_claims_ignore.txt
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-15T08:21:56.110Z" }
+  - id: openwiki-source-a10b62517b8302a8d4cf3b31
+    resource: repo://tests/unit_tests/test_check_external_versions.py
+  - id: openwiki-source-607673c5c40214b511f9e0a7
+    resource: repo://tests/unit_tests/test_check_version_claims.py
+generated: { by: "openwiki/0.4.3", at: "2026-09-17T08:22:51.028Z" }
 ---
 
 # Language Versioning Strategy
 
-Language versioning is a build and navigation model, not a filesystem naming convention. A source location determines how `DocumentationBuilder` renders a file; that render produces an emitted public route; and `src/docs.json` independently decides which emitted routes appear in Mintlify navigation or redirect from retired routes. Keep these three surfaces distinct and synchronized.
+This repository has two separate meanings of “versioning”:
 
-## Source classification is not route or navigation classification
+1. **Language-route rendering** turns one authored documentation tree into Python and JavaScript route families where appropriate.
+2. **Version-claim validation** checks version specifiers written in documentation. It decides whether a named package release was published, or whether a requirement deliberately mirrored from another project still agrees with that project's source.
 
-| Authored source domain | Emitted public route family | `docs.json` consequence |
+They use some of the same language signals (`:::python`, `:::js`, and source paths), but they solve different problems. A route prefix does not establish a package's minimum supported version, and a package floor such as `langchain>=1.3.2` does not select an output route.
+
+## Language-route rendering
+
+`DocumentationBuilder` owns emitted documentation artifacts beneath `build/`; `src/docs.json` independently exposes those routes in navigation and redirects retired URLs. Source placement selects the builder behavior, while navigation entries must name routes that the builder actually emits.
+
+| Authored source domain | Emitted route family | Navigation consequence |
 | --- | --- | --- |
-| Most `src/oss/` content, including LangChain, LangGraph, and Deep Agents except `code/` | `/oss/python/...` and `/oss/javascript/...` | Add each emitted route to the corresponding Python or TypeScript Build dropdown. |
-| `src/oss/python/` or `src/oss/javascript/` | Only the matching `/oss/python/...` or `/oss/javascript/...` route, with the source-language directory removed | Put the route only in its matching dropdown. |
-| `src/oss/deepagents/code/` | `/oss/deepagents/code/...` | One language-agnostic product route; do not add a language prefix. |
-| `src/oss/openwiki/` | `/oss/openwiki/...` | One language-agnostic product route; the same unprefixed routes are listed in both Build dropdowns. |
-| Ordinary `src/langsmith/` content | `/langsmith/...` | Place the emitted route in its applicable LangSmith navigation group, which is not inherently language-split. |
-| A direct `src/langsmith/managed-deep-agents*.mdx` page | `/langsmith/python/...` and `/langsmith/javascript/...` | List each emitted route in the Managed Deep Agents tab of its corresponding Build dropdown. |
-
-For example, `src/oss/langgraph/overview.mdx` emits two artifacts, while `src/oss/python/integrations/chat/example.mdx` participates only in the Python pass and emits as `/oss/python/integrations/chat/example`. Do not make generated source copies merely to resemble an emitted route.
+| Most `src/oss/` content, including LangChain, LangGraph, and Deep Agents outside `code/` | `/oss/python/...` and `/oss/javascript/...` | Add the emitted route to the corresponding Python or TypeScript Build dropdown. |
+| `src/oss/python/` or `src/oss/javascript/` | Only the matching route, with the source-language directory removed | Put the route only in its matching dropdown. |
+| `src/oss/deepagents/code/` | `/oss/deepagents/code/...` | Keep the product route unprefixed. |
+| `src/oss/openwiki/` | `/oss/openwiki/...` | Keep one unprefixed artifact family; the same routes appear in both Build dropdowns. |
+| Ordinary `src/langsmith/` content | `/langsmith/...` | Place it in its applicable LangSmith navigation group. |
+| A direct `src/langsmith/managed-deep-agents*.mdx` page | `/langsmith/python/...` and `/langsmith/javascript/...` | List both emitted routes in the corresponding Managed Deep Agents tabs. |
 
 ```mermaid
 flowchart TD
@@ -48,7 +69,7 @@ flowchart TD
     Domain --> Managed["Managed Deep Agents source"]
     Managed --> ManagedPy["LangSmith python route"]
     Managed --> ManagedJs["LangSmith javascript route"]
-    OssPy --> Nav["docs.json route entry"]
+    OssPy --> Nav["docs.json navigation"]
     OssJs --> Nav
     OneOss --> Nav
     OneSmith --> Nav
@@ -56,13 +77,13 @@ flowchart TD
     ManagedJs --> Nav
 ```
 
-This routing classification shows that emitted routes are builder output; `docs.json` exposes or redirects them and does not generate them.
+This diagram shows source classification and emitted routes; package requirements in page prose are a separate validation input.
 
-## Build lifecycle and language-output flow
+### Lifecycle and content transforms
 
-`build_all()` first removes and recreates `build/`. It then renders Python OSS, JavaScript OSS, unversioned Deep Agents Code, unversioned OpenWiki, ordinary LangSmith, and Managed Deep Agents variants; copies shared files; copies npm snippet components; and generates `llms.txt` and `llms-full.txt`. A full build therefore removes stale output before its derived indexes inspect the final route tree.
+`build_all()` removes and recreates `build/`, renders Python OSS, JavaScript OSS, the two unversioned OSS products, ordinary LangSmith, and Managed Deep Agents variants, then copies shared files and npm snippets and generates `llms.txt` artifacts. Clearing output first prevents stale generated routes from surviving a full build.
 
-For each Markdown or MDX artifact, the builder runs standard preprocessing first, then scopes MDX snippet imports when a target is present, rewrites OSS links, and finally rewrites Managed Deep Agents links. Internal targets are `python` and `js`; `js` maps to the public `javascript` route segment. A `.md` input is written as `.mdx` output.
+For each Markdown or MDX artifact, the builder first performs standard preprocessing, then—when a target language exists—rewrites MDX snippet imports, rewrites OSS links, and rewrites Managed Deep Agents links. Internal target `js` maps to the public `javascript` path segment. A `.md` input is emitted as `.mdx`; authored `src/` content is not modified.
 
 ```mermaid
 flowchart LR
@@ -79,35 +100,19 @@ flowchart LR
     ManagedLinks --> Output["write emitted artifact"]
 ```
 
-This language-output flow applies once per emitted Markdown artifact; source content under `src/` is not modified.
+This diagram shows the ordered transforms applied to one emitted Markdown artifact.
 
-`build_file()` applies the same routing choice for an individual existing file: ordinary OSS creates both variants, the two unversioned OSS products create one artifact, and a Managed Deep Agents file creates two language artifacts. Shared and root-level inputs copy once. It raises `AssertionError` for a nonexistent input. Prefer a full build after broad route or navigation changes because it also removes stale output and refreshes derived artifacts.
+`build_file()` follows the same classification for an existing individual file: ordinary OSS produces two artifacts; either unversioned OSS product produces one; a Managed Deep Agents page produces two; and shared or root-level inputs copy once. It raises `AssertionError` for a nonexistent file. Use a full build after broad route changes because it also clears stale output and regenerates derived indexes.
 
-## Shared OSS and language-specific directories
+### Shared, language-only, and unversioned OSS
 
-Shared OSS sources are the normal dual-version case. A shared page is rendered for the `python` target at `/oss/python/...` and for the `js` target at `/oss/javascript/...`. An unqualified absolute OSS link can consequently follow the current artifact.
+Ordinary OSS pages are the dual-route case: a shared source produces `/oss/python/...` and `/oss/javascript/...`. Within that domain, a file below `src/oss/python/` or `src/oss/javascript/` participates only in its matching pass; the leading source-language directory is removed from the emitted route. Use those directories for genuinely language-specific material, not duplicate copies of shared pages.
 
-The `src/oss/python/` and `src/oss/javascript/` subtrees have a different contract: the builder includes a file only in the matching pass and removes that leading source-language directory from the output path. Use them for material that genuinely exists in one language, not for a copy of shared content.
+OpenWiki and Deep Agents Code are deliberate exceptions. They build once at `/oss/openwiki/...` and `/oss/deepagents/code/...`; conditional rendering uses the Python branch as a deterministic fallback. That fallback does **not** make either product Python documentation. Links within these product roots remain unprefixed, while an unqualified link from an unversioned product to ordinary OSS is rendered with the Python target.
 
-## Intentional unversioned OSS products
+### Conditional blocks, links, and snippets
 
-OpenWiki and Deep Agents Code are explicit exceptions within `src/oss/`. They build once at `/oss/openwiki/...` and `/oss/deepagents/code/...`, respectively, with `python` selected as the deterministic fallback target for conditional content. This fallback does not make either product Python documentation, and links within those product roots remain unprefixed.
-
-An unqualified link from either unversioned product to ordinarily versioned OSS content is nevertheless rendered with the Python target: `/oss/deepagents/quickstart` becomes `/oss/python/deepagents/quickstart`. This is a default-target link decision, not a second copy of the unversioned product.
-
-## Managed Deep Agents: unversioned source, dual output
-
-Managed Deep Agents is a LangSmith routing exception. A direct `.md` or `.mdx` file in `src/langsmith/` whose name begins `managed-deep-agents` is recognized as a Managed Deep Agents page. Ordinary LangSmith emission excludes recognized pages, avoiding an unversioned artifact that would be orphaned outside the Managed Deep Agents navigation.
-
-The dedicated full-build pass discovers `managed-deep-agents*.mdx` files and emits Python and JavaScript artifacts. `build_file()` recognizes either `.md` or `.mdx`, so a Managed Deep Agents `.md` can be emitted when built individually but is not discovered by the bulk variant glob. Use `.mdx` for pages that must participate in a normal full build.
-
-Each language artifact receives its matching conditional content, scoped snippet imports, OSS links, and unqualified Managed Deep Agents cross-links. The overview source demonstrates both contracts: it contains `:::python` and `:::js` branches plus unprefixed `/langsmith/managed-deep-agents...` links, so each output keeps the matching material and links to its own language route.
-
-`docs.json` supplies the public default for unversioned and historical Managed Deep Agents URLs: configured redirects send them to Python routes. Separately, its Python and TypeScript Build dropdowns contain language-specific Managed Deep Agents entries. When adding, renaming, or removing a page, keep the source naming rule, both emitted route entries, and any legacy redirects synchronized.
-
-## Conditional content contract
-
-Use `:::python` and `:::js` only where a shared source needs different material:
+Use `:::python` and `:::js` only where one shared source needs distinct content:
 
 ```markdown
 :::python
@@ -119,44 +124,116 @@ JavaScript-only content.
 :::
 ```
 
-For the selected target, preprocessing removes the fences and retains the matching block content; it removes a nonmatching supported block completely. Unsupported labels and unclosed blocks remain unchanged. Opening and closing markers must have matching indentation. Escape a literal marker as `\:::` when the rendered page must display conditional syntax.
+For a selected target, preprocessing removes the fences and retains matching content, while it removes a nonmatching supported block. Escaped `\:::` markers become literal `:::`. Unsupported labels and unclosed blocks remain unchanged. Opening and closing markers must use matching indentation. The renderer is regex-based and not code-fence-aware, so escape literal markers when documenting this syntax and do not rely on a Markdown code fence or nesting to protect them.
 
-Conditional rendering is regex-based rather than code-fence-aware. Do not rely on a normal Markdown code fence to protect literal conditional-looking syntax, and do not nest conditionals: the first eligible closing marker ends the match. Escape both markers when documenting the syntax literally.
+In a target-language render, an unqualified absolute OSS link such as `/oss/langgraph/overview` becomes `/oss/python/langgraph/overview` or `/oss/javascript/langgraph/overview`. The rewriter leaves already prefixed links, image paths, and OpenWiki and Deep Agents Code roots unchanged. A bare `/langsmith/managed-deep-agents...` link similarly follows the selected target; an explicitly qualified link stays explicit.
 
-## Link and snippet rewrite contract
+Versioned MDX pages should import Markdown snippets from `/snippets/...`. The builder redirects `.md` or `.mdx` imports to `/snippets/python/...` or `/snippets/javascript/...` and leaves already scoped imports untouched. JSX and TSX component imports are not rewritten.
 
-Author an unqualified absolute OSS link when its destination should follow the active language. For example, a Markdown link whose destination is `/oss/langgraph/overview` becomes `/oss/python/langgraph/overview` in the Python artifact and `/oss/javascript/langgraph/overview` in the JavaScript artifact. The rewriter leaves already-prefixed routes, paths containing `images`, and the OpenWiki and Deep Agents Code roots unchanged. These guards prevent double-prefixes and preserve routes that have no language variants.
+### Managed Deep Agents
 
-In a versioned page, import a Markdown snippet from its unprefixed source path:
+Managed Deep Agents is a LangSmith exception: a direct file under `src/langsmith/` whose name begins `managed-deep-agents` and extension is `.md` or `.mdx` is classified as a language-variant page. Ordinary LangSmith emission excludes it, avoiding an unversioned artifact. The full-build discovery pass, however, glob-matches only `managed-deep-agents*.mdx`; an individually built `.md` is recognized and emitted, but it is absent from a normal full build. Use `.mdx` for these pages.
 
-```mdx
-import Example from '/snippets/example.mdx'
+Each emitted variant gets matching conditional content, language-scoped snippet imports, rewritten OSS links, and Managed Deep Agents links pointing at its own route. `docs.json` redirects unversioned and historical Managed Deep Agents URLs to Python routes, while its Python and TypeScript Build dropdowns list their distinct variant routes. Keep the naming rule, both navigation routes, and applicable legacy redirects synchronized when changing these pages.
+
+## Package-version claims: availability, not feature policy
+
+`scripts/check_version_claims.py` scans documentation for `>=` floors and `==` pins such as `langchain>=1.3.2`, `langsmith[livekit]>=0.11.2`, and `@langchain/langgraph>=1.4.0`. It checks `.mdx` pages under `src/` by default, or only existing `.mdx` paths supplied with `--files`.
+
+The checker answers one narrow question: **was the written version published in the relevant registry?** It does not decide that a feature first appeared in that release, does not bump an old floor to the current release, and does not interpret a published release as proof that the requirement is sufficient. The feature owner must make that human compatibility decision. This distinction prevents automated “upgrades” that would require readers to install a newer package without evidence that the feature needs it.
+
+### Ecosystem selection
+
+Python and npm can publish packages with the same unscoped name on unrelated version lines. The checker therefore resolves an ecosystem for each discovered specifier rather than assuming that a route or name is enough. Its precedence is:
+
+1. An `@scope/` prefix is npm-only.
+2. Python extras (`package[extra]`) are PyPI-only.
+3. The nearest Python or JavaScript/TypeScript label on the same line wins.
+4. Otherwise, the enclosing `:::python` or `:::js` fence decides.
+5. Otherwise, a `/python/` or `/javascript/` source path decides, including the explicit JavaScript-only LangSmith-page override.
+6. Remaining bare specifiers default to PyPI.
+
+Thus `deepagents>=0.5.0` in a Python fence is checked on PyPI and `deepagents>=1.9.0` in a JavaScript fence is checked on npm. This is validation-time language context, not a request to emit a different documentation route.
+
+```mermaid
+flowchart TD
+    Spec["Version specifier in an MDX page"] --> Syntax{"npm scope or Python extras"}
+    Syntax -->|"scope"| Npm["npm registry"]
+    Syntax -->|"extras"| Pypi["PyPI registry"]
+    Syntax -->|"neither"| Context{"label, fence, or page context"}
+    Context -->|"JavaScript"| Npm
+    Context -->|"Python"| Pypi
+    Context -->|"no signal"| Default["PyPI default"]
+    Npm --> Exists{"Release or series exists"}
+    Pypi --> Exists
+    Exists -->|"yes"| Pass["valid availability claim"]
+    Exists -->|"no"| Fail["unpublished version failure"]
+    Exists -->|"lookup failed"| Unknown["report unresolved"]
 ```
 
-The builder changes that import to `/snippets/python/example.mdx` or `/snippets/javascript/example.mdx`. Already scoped MDX imports are not rewritten, nor are JSX or TSX component imports. The language-scoped snippet copies allow consumers at different route depths to resolve snippets consistently.
+This diagram shows registry selection and availability checking; it intentionally does not infer a feature's minimum version.
 
-Bare `/langsmith/managed-deep-agents...` links are likewise rewritten during a target-language render. Explicitly language-qualified links remain untouched, so use one only when the destination must intentionally be a particular variant rather than follow the current render.
+### Lookup, results, and exceptions
 
-## Navigation and safe changes
+The checker fetches the complete published release set plus the latest release from PyPI or npm, concurrently across packages. An exact version must be present. A shortened floor such as `>=0.7` is also accepted when any release begins `0.7.`; it must not match a longer series such as `1.14` for `1.1`. Registry failures, malformed payloads, and unsafe package names are unresolved rather than classified as nonexistent releases, so an outage or private package is not reported as a ghost version.
 
-`src/docs.json` is navigation configuration, not the source tree. It independently assigns Python and TypeScript emitted routes to their Build dropdowns, including distinct Managed Deep Agents paths. The unprefixed OpenWiki family appears in both dropdowns even though it has one emitted artifact family. A route must exist in generated output before a navigation entry can safely expose it.
+`version_claims_ignore.txt` is a reviewed, exact-specifier exception list. Its entries cover intentional “any release” sentinel floors whose version was never published and placeholders in examples. Prefer correcting documentation over adding an exception; each entry is a standing statement that the lookup cannot establish the specifier's availability.
 
-When changing this model:
+Run the checker locally with:
 
-1. Choose the source domain from the intended public route and language behavior, not only from a navigation label.
-2. Change authored content under `src/`; never patch generated `build/` output.
-3. Add the extensionless **emitted route** to the correct `docs.json` product, menu, dropdown, tab, and group. Do not use a source path or an `.mdx` filename as a navigation route.
-4. Preserve a public move with a `docs.json` redirect, including a language prefix when it is part of the retired URL.
-5. Run `make build`, inspect both artifacts for versioned content, and run `make broken-links`. Update focused builder coverage when changing classification, route exemptions, snippet scoping, or Managed Deep Agents behavior.
+```bash
+uv run python scripts/check_version_claims.py
+uv run python scripts/check_version_claims.py --files src/langsmith/evaluators.mdx
+uv run python scripts/check_version_claims.py --advisory-only
+```
 
-## Focused regression coverage
+The pull-request workflow runs it only for changed `src/**/*.mdx` files and fails when a named release was never published. The scheduled full sweep uses `--advisory-only`, so results such as a yanked release do not turn the scheduled workflow red.
 
-`tests/unit_tests/test_builder.py` tests the boundary conditions most likely to regress: ordinary OSS prefix insertion, preservation of language-qualified and unversioned-product links, one-time output for the two unversioned OSS products, language-scoped MDX imports, and Managed Deep Agents dual output. The Managed Deep Agents fixture verifies matching page links, OSS links, scoped snippets, and conditional snippet content in both variants; it also verifies that unversioned Managed Deep Agents pages are not emitted.
+## Mirrored upstream requirements
+
+Some documentation repeats a requirement owned by an external project rather than stating a locally determined feature floor. `scripts/check_external_versions.py` manages this different case through `scripts/data/external_versions.yaml`. Each registry entry supplies a stable ID and label, the page under `src/`, a page regex with exactly one named `version` capture, and an upstream GitHub file or latest-release source.
+
+The checker validates the registry before acting: target pages must resolve inside `src/`; repository slugs and upstream file paths are allowlisted before they are interpolated into GitHub URLs; and both applicable patterns require a `version` capture. It fetches a GitHub file from `HEAD` or the latest release tag, compares the upstream version with the one exact page match, and reports drift or unreadable entries.
+
+```mermaid
+flowchart LR
+    Registry["external_versions.yaml entry"] --> Validate["validate page and URL inputs"]
+    Validate --> Page["read one documented claim"]
+    Validate --> Upstream["fetch GitHub file or release"]
+    Page --> Compare{"versions equal"}
+    Upstream --> Compare
+    Compare -->|"yes"| Sync["in sync"]
+    Compare -->|"no"| Drift["report drift"]
+    Drift --> Write{"write mode"}
+    Write -->|"yes"| Digits["replace captured digits only"]
+    Write -->|"no"| Failure["nonzero check result"]
+    Upstream --> Unreadable["unreadable on fetch failure"]
+```
+
+This diagram shows synchronization of an externally owned requirement, rather than package-registry availability or route rendering.
+
+Use:
+
+```bash
+uv run python scripts/check_external_versions.py
+uv run python scripts/check_external_versions.py --only codex-cli
+uv run python scripts/check_external_versions.py --write
+```
+
+Without `--write`, drift or an unreadable entry returns a nonzero status. With `--write`, the tool updates only the captured version digits and returns success even when an upstream request is unavailable, allowing scheduled synchronization to update entries it can resolve. A write is never a complete semantic review: inspect surrounding prose for changed flags, peer dependencies, or other prerequisites that a version-only replacement cannot detect.
+
+## Safe changes and focused tests
+
+When changing routes, first choose the source domain based on intended language behavior; edit `src/`, not generated `build/`; then add extensionless emitted routes to the appropriate `docs.json` group and redirects for public moves. Run `make build`, inspect both language artifacts where relevant, and run `make broken-links`.
+
+When adding a package claim, make the ecosystem unambiguous with a scope, extras, nearby label, fence, or language-specific path where needed. Verify the written release exists, but separately confirm the human claim that it is the minimum feature version. Add an external-registry entry only when the documentation must equal an upstream-owned requirement—not for a feature floor.
+
+Builder tests cover unversioned OSS output and link behavior, scoped snippet imports, and dual Managed Deep Agents output with target-specific links and conditional content. Version-claim tests cover the resolver precedence, truncated series behavior, ignores, safe registry lookup, and outage handling. External-version tests cover exact matching and digit-only rewrites, invalid registry inputs, upstream retrieval, and differing check versus write-mode failure behavior.
 
 ## See also
 
 - [Build system](/openwiki/architecture/build-system.md)
-- [Source directory map](/openwiki/architecture/source-map.md)
-- [Markdown preprocessing pipeline](/openwiki/concepts/preprocessing.md)
-- [Builder test guidance](/openwiki/testing/builder-tests.md)
+- [GitHub Actions](/openwiki/integrations/github-actions.md)
+- [Adding pages](/openwiki/operations/adding-pages.md)
+- [Test overview](/openwiki/testing/test-overview.md)
 - [Writing versioned content](/openwiki/workflows/versioned-content.md)
