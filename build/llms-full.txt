@@ -8742,7 +8742,7 @@ There are several ways to populate a single-run queue with items:
 - **From the Details view**: In a [tracing project](/langsmith/observability-concepts#projects), click into any row to open the side panel in the [Details view](/langsmith/view-traces#details-view). The panel offers two actions, each with a fixed scope:
 
     - **Add to** <Icon icon="plus"/>: In the run header, open this menu and select **Add to Annotation Queue**. This adds the run you have selected as a run item.
-    - **Add thread to annotation queue** <Icon icon="pencil"/>: Next to the **Messages**, **Turns**, and **Details** tabs, click the icon. This adds the whole thread as a thread item.
+    - **Add thread to annotation queue** <Icon icon="pencil"/>: Next to the **Trajectory**, **Turns**, and **Details** tabs, click the icon. This adds the whole thread as a thread item.
 
     Both actions open a popover where you select an existing queue or create a new one.
 
@@ -67187,7 +67187,7 @@ list(
 Setting `ls_model_name` in your `metadata` is required for LangSmith to identify the model and calculate costs for custom LLM traces. Without it, token counts may still be recorded but costs won't be estimated.
 </Check>
 
-To learn more about how to use the `metadata` fields, refer to the [Add metadata and tags](/langsmith/add-metadata-tags) guide. To customize how custom agent runs appear in the Messages view, see [Customize the Messages view](/langsmith/view-traces#customize-the-messages-view).
+To learn more about how to use the `metadata` fields, refer to the [Add metadata and tags](/langsmith/add-metadata-tags) guide. To customize how custom agent runs appear in the Trajectory view, see [Customize the Trajectory view](/langsmith/view-traces#customize-the-trajectory-view).
 
 ## Provide token and cost information
 
@@ -68445,7 +68445,7 @@ Use `ls_` metadata parameters to:
 - **Enable automatic cost tracking** for custom or self-hosted models by identifying the provider and model name.
 - **Track model configuration** like temperature, max tokens, and other parameters for experiment comparison.
 - **Filter and analyze traces** by provider or configuration settings
-- **Customize Messages view rendering** for custom agent instrumentation.
+- **Customize Trajectory view rendering** for custom agent instrumentation.
 - **Mark interrupted errors** so LangSmith can render interrupted runs separately from other errors.
 - **Improve debugging** by recording exactly which model settings were used for each run.
 
@@ -68643,8 +68643,8 @@ With this setup, you can later filter traces by temperature, compare runs with d
 | [`ls_max_tokens`](#ls_max_tokens) | `number` | No | Maximum tokens parameter used |
 | [`ls_stop`](#ls_stop) | `string[]` | No | Stop sequences used |
 | [`ls_invocation_params`](#ls_invocation_params) | `object` | No | Additional invocation parameters |
-| [`ls_agent_type`](#ls_agent_type) | `string` | No | Controls how agent runs appear in the Messages view: `"root"`, `"subagent"`, or `"middleware"` |
-| [`ls_message_view_exclude`](#ls_message_view_exclude) | `boolean` | No | Hides the run from the Messages view |
+| [`ls_agent_type`](#ls_agent_type) | `string` | No | Controls how agent runs appear in the Trajectory view: `"root"`, `"subagent"`, or `"middleware"` |
+| [`ls_message_view_exclude`](#ls_message_view_exclude) | `boolean` | No | Hides the run from the Trajectory view |
 | [`ls_is_error_interrupt`](#ls_is_error_interrupt) | `boolean` | No | Marks an errored run as interrupted when set to `true` |
 
 \* `ls_provider` and `ls_model_name` must be provided together for cost tracking
@@ -68846,19 +68846,19 @@ metadata={
 - **Required:** No
 
 **What it does:**
-Controls how messages from custom agent-like runs appear in the [Messages view](/langsmith/view-traces#messages-view).
+Controls how messages from custom agent-like runs appear in the [Trajectory view](/langsmith/view-traces#trajectory-view).
 
 Tracing wrapper integrations from the latest versions of the LangSmith SDK set this metadata automatically when needed. For custom instrumentation, set this key on the run that represents the agent or middleware step.
 
 **Values:**
-- `"root"`: Messages from this run appear in the main Messages view.
+- `"root"`: Messages from this run appear in the main Trajectory view.
 - `"subagent"`: Messages from this run appear in a side thread, separate from the main conversation.
-- `"middleware"`: Messages from this run are hidden from the Messages view.
+- `"middleware"`: Messages from this run are hidden from the Trajectory view.
 
 **When to use:**
-When you are building custom agent instrumentation and want the Messages view to distinguish root agents, subagents, and middleware.
+When you are building custom agent instrumentation and want the Trajectory view to distinguish root agents, subagents, and middleware.
 
-For more details, see [Customize the Messages view](/langsmith/view-traces#customize-the-messages-view).
+For more details, see [Customize the Trajectory view](/langsmith/view-traces#customize-the-trajectory-view).
 
 **Relationships:**
 - Independent of model identification and cost tracking metadata.
@@ -68870,7 +68870,7 @@ For more details, see [Customize the Messages view](/langsmith/view-traces#custo
 - **Required:** No
 
 **What it does:**
-Hides the run from the [Messages view](/langsmith/view-traces#messages-view). Excluded runs still appear in the regular trace view, runs explorer, and metrics.
+Hides the run from the [Trajectory view](/langsmith/view-traces#trajectory-view). Excluded runs still appear in the regular trace view, runs explorer, and metrics.
 
 The filter checks for the **presence of the key**, not truthiness. `{LS_MESSAGE_VIEW_EXCLUDE: False}` still excludes the run. Omit the key entirely to include the run.
 
@@ -68889,7 +68889,7 @@ def classify_intent(query: str) -> str:
     return llm.predict(f"Classify: {query}")
 ```
 
-For additional code examples across Python and JS contexts (`@traceable`, `trace`, `wrap_openai`, `RunnableConfig`, `wrapAISDK`, `RunTree.createChild`), see [Exclude runs from the Messages view](/langsmith/messages-view-integrations#exclude-runs-from-the-messages-view).
+For additional code examples across Python and JS contexts (`@traceable`, `trace`, `wrap_openai`, `RunnableConfig`, `wrapAISDK`, `RunTree.createChild`), see [Exclude runs from the Trajectory view](/langsmith/trajectory-view-integrations#exclude-runs-from-the-trajectory-view).
 
 **Relationships:**
 - Independent of model identification and cost tracking metadata.
@@ -74378,399 +74378,6 @@ finally:
 </div>
 
 
-# Messages view integrations
-Source: https://docs.langchain.com/langsmith/messages-view-integrations
-
-<Note>
-The [Messages view](/langsmith/view-traces#messages-view) is in **[beta](/langsmith/release-stages)**.
-</Note>
-
-The [Messages view](/langsmith/view-traces#messages-view) renders the [traces](/langsmith/observability-concepts#traces) of a [thread](/langsmith/observability-concepts#threads) as a [trajectory](/langsmith/observability-concepts#trajectories): user prompts, model responses, tool calls, and tool results, in order. The Messages view needs two pieces of run metadata to render a trajectory:
-
-- **Thread grouping**: `thread_id` on each run tells LangSmith that a set of runs belongs to the same conversation.
-- **Run classification**: `ls_agent_type: "root"` on the top-level run of a turn marks that run as part of the main conversation. Runs marked as subagent appear as a subagent action in the thread while runs marked as middleware or compaction are currently filtered out.
-
-For most LangSmith integrations, both are set for you. When you need to set metadata manually, the following examples cover the [OpenAI Responses API in chaining mode](#openai-responses-api-with-chaining) and tagging custom middleware or guardrails.
-
-## Supported integrations
-
-The following integrations set both `thread_id` and `ls_agent_type` automatically:
-
-- [Claude Code](/langsmith/trace-claude-code)
-- [Claude Agent SDK](/langsmith/trace-claude-agent-sdk)
-- [OpenAI Codex](/langsmith/trace-with-codex)
-- [Cursor](/langsmith/trace-with-cursor)
-- [Pi](/langsmith/trace-with-pi)
-- [OpenCode](/langsmith/trace-with-opencode)
-- [GitHub Copilot](/langsmith/trace-with-vscode-copilot)
-- [Deep Agents](/langsmith/trace-deep-agents)
-- [LangChain](/langsmith/trace-with-langchain)
-- [LangGraph](/langsmith/trace-with-langgraph)
-- OpenAI Chat Completions (`wrap_openai`)
-- OpenAI Responses API, single call (`wrap_openai`)
-
-The **OpenAI Responses API in chaining mode** (`previous_response_id`) sets `ls_agent_type` automatically, but you set `thread_id` yourself. For more details, refer to the [OpenAI Responses API with chaining](#openai-responses-api-with-chaining) example.
-
-For the full `ls_agent_type` schema and the other values (`subagent`, `middleware`, `compaction`) that official integrations set on non-root runs, see the [Coding agent metadata contract](/langsmith/coding-agent-metadata-contract). For the underlying thread-grouping mechanism, see [Configure threads](/langsmith/threads).
-
-## OpenAI Responses API with chaining
-
-When you chain calls to the OpenAI Responses API by passing `previous_response_id`, OpenAI stores conversation state server-side and the LangSmith wrapper has no natural key to group calls into a thread. Set `thread_id` yourself, either per call or at wrapper init time.
-
-<Note>
-Use a [UUID v7](https://uuid7.com) for `thread_id`. LangSmith's SDK exports a `uuid7` helper, and UUID v7 sorts by creation time so threads stay ordered in list views.
-</Note>
-
-### Per-call metadata
-
-Set `thread_id` on each call. Use this when one wrapped client serves multiple threads (for example, one client per process, many concurrent conversations).
-
-<CodeGroup>
-
-```python Python
-import openai
-from langsmith import uuid7
-from langsmith.wrappers import wrap_openai
-
-client = wrap_openai(openai.Client())
-thread_id = str(uuid7())
-
-res1 = client.responses.create(
-    model="gpt-5.6",
-    input="What is the capital of France?",
-    store=True,
-    langsmith_extra={"metadata": {"thread_id": thread_id}},
-)
-
-res2 = client.responses.create(
-    model="gpt-5.6",
-    input="And its population?",
-    previous_response_id=resp1.id,
-    store=True,
-    langsmith_extra={"metadata": {"thread_id": thread_id}},
-)
-```
-
-```typescript TypeScript
-import OpenAI from "openai";
-import { uuid7 } from "langsmith";
-import { wrapOpenAI } from "langsmith/wrappers";
-
-const client = wrapOpenAI(new OpenAI());
-const threadId = uuid7();
-
-const res1 = await client.responses.create({
-  model: "gpt-5.6",
-  input: "What is the capital of France?",
-  metadata: { thread_id: threadId },
-  store: true,
-});
-
-const res2 = await client.responses.create({
-  model: "gpt-5.6",
-  input: "And its population?",
-  previous_response_id: res1.id,
-  metadata: { thread_id: threadId },
-  store: true,
-});
-```
-
-</CodeGroup>
-
-### Init-time metadata
-
-Set `thread_id` once when wrapping the client. Every call made through this wrapper is tagged with the same thread. Use this when a wrapped client serves exactly one thread for its lifetime (for example, a per-conversation worker).
-
-<CodeGroup>
-
-```python Python
-import openai
-from langsmith import uuid7
-from langsmith.wrappers import wrap_openai
-
-thread_id = str(uuid7())
-
-client = wrap_openai(
-    openai.Client(),
-    tracing_extra={"metadata": {"thread_id": thread_id}},
-)
-
-res1 = client.responses.create(
-    model="gpt-5.6",
-    input="What is the capital of France?",
-    store=True,
-)
-
-res2 = client.responses.create(
-    model="gpt-5.6",
-    input="And its population?",
-    previous_response_id=resp1.id,
-    store=True,
-)
-```
-
-```typescript TypeScript
-import OpenAI from "openai";
-import { uuid7 } from "langsmith";
-import { wrapOpenAI } from "langsmith/wrappers";
-
-const threadId = uuid7();
-
-const client = wrapOpenAI(new OpenAI(), { metadata: { thread_id: threadId } });
-
-const res1 = await client.responses.create({
-  model: "gpt-5.6",
-  input: "What is the capital of France?",
-  store: true,
-});
-
-const res2 = await client.responses.create({
-  model: "gpt-5.6",
-  input: "And its population?",
-  previous_response_id: res1.id,
-  store: true,
-});
-```
-
-</CodeGroup>
-
-## Hide custom middleware or guardrails
-
-When you write your own guardrail, policy check, or middleware function around an LLM or tool call, wrap it in `@traceable` and set `ls_agent_type: "middleware"` on the metadata. The Messages view filters these runs out of the main conversation.
-
-<CodeGroup>
-
-```python Python
-from langsmith import traceable
-
-@traceable(
-    run_type="llm",
-    metadata={"ls_agent_type": "middleware"},
-)
-def entry_guardrail(prompt: str) -> dict:
-    # Your guardrail logic
-    return {"decision": "allow"}
-```
-
-```typescript TypeScript
-import { traceable } from "langsmith/traceable";
-
-const entryGuardrail = traceable(
-  async (prompt: string) => {
-    // Your guardrail logic
-    return { decision: "allow" };
-  },
-  { run_type: "llm", metadata: { ls_agent_type: "middleware" } },
-);
-```
-
-</CodeGroup>
-
-## Exclude runs from the Messages view
-
-Setting `LS_MESSAGE_VIEW_EXCLUDE` on a run's metadata tells the Messages view to skip that run. The key's presence is what matters; `True` is the conventional value. The filter runs before any extraction strategy sees the trace, so an excluded LLM or tool run never affects detection, message extraction, or tool-call pairing.
-
-`LS_MESSAGE_VIEW_EXCLUDE` is a top-level constant exported from `langsmith` (Python and JS) whose value is the string `"ls_message_view_exclude"`. Prefer the constant to avoid typos; the literal string still works.
-
-Use it for LLM subspans that are not conversational turns, such as classification calls, embedding lookups, safety filters, or routing/guardrail decisions, that you still want visible elsewhere in LangSmith but do not want cluttering the conversation transcript.
-
-<Tabs>
-  <Tab title="Python">
-
-**1. On a `@traceable` decorator**: exclude a whole function's run.
-
-```python
-from langsmith import LS_MESSAGE_VIEW_EXCLUDE, traceable
-
-@traceable(run_type="llm", metadata={LS_MESSAGE_VIEW_EXCLUDE: True})
-def classify_intent(query: str) -> str:
-    # This LLM call is internal routing, not part of the chat
-    return llm.predict(f"Classify the intent of: {query}")
-```
-
-**2. Via the `trace` context manager**: exclude an ad-hoc span.
-
-```python
-from langsmith import LS_MESSAGE_VIEW_EXCLUDE, trace
-
-with trace(
-    "safety_check",
-    run_type="llm",
-    metadata={LS_MESSAGE_VIEW_EXCLUDE: True},
-) as run:
-    result = safety_model.score(text)
-    run.end(outputs={"score": result})
-```
-
-**3. From inside a running function**: set the key on the current run tree at any point before the run is patched.
-
-```python
-from langsmith import LS_MESSAGE_VIEW_EXCLUDE, get_current_run_tree, traceable
-
-@traceable(run_type="llm")
-def maybe_internal(query: str) -> str:
-    result = llm.predict(query)
-    if _looks_like_routing(query):
-        rt = get_current_run_tree()
-        if rt is not None:
-            rt.add_metadata({LS_MESSAGE_VIEW_EXCLUDE: True})
-    return result
-```
-
-**4. Per-call when using `wrap_openai` / `wrap_anthropic`**: pass `langsmith_extra` through to the wrapped client call.
-
-```python
-import openai
-from langsmith import LS_MESSAGE_VIEW_EXCLUDE
-from langsmith.wrappers import wrap_openai
-
-client = wrap_openai(openai.Client())
-
-resp = client.chat.completions.create(
-    model="gpt-5.6",
-    messages=[{"role": "user", "content": "Classify: ..."}],
-    langsmith_extra={"metadata": {LS_MESSAGE_VIEW_EXCLUDE: True}},
-)
-```
-
-**5. LangChain `RunnableConfig`**: exclude a single invocation of a chain or chat model.
-
-```python
-from langchain_openai import ChatOpenAI
-from langsmith import LS_MESSAGE_VIEW_EXCLUDE
-
-llm = ChatOpenAI(model="gpt-5.6")
-result = llm.invoke(
-    "Classify this query",
-    config={"metadata": {LS_MESSAGE_VIEW_EXCLUDE: True}},
-)
-```
-
-  </Tab>
-  <Tab title="TypeScript">
-
-**1. On a `traceable` wrapper**: exclude a whole function's run.
-
-```typescript
-import { LS_MESSAGE_VIEW_EXCLUDE } from "langsmith";
-import { traceable } from "langsmith/traceable";
-
-const classifyIntent = traceable(
-  async (query: string) => {
-    return await llm.predict(`Classify the intent of: ${query}`);
-  },
-  {
-    name: "classify_intent",
-    run_type: "llm",
-    metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true },
-  },
-);
-```
-
-**2. From inside a running function**: mutate the current run tree.
-
-```typescript
-import { LS_MESSAGE_VIEW_EXCLUDE } from "langsmith";
-import { traceable, getCurrentRunTree } from "langsmith/traceable";
-
-const maybeInternal = traceable(
-  async (query: string) => {
-    const result = await llm.predict(query);
-    if (looksLikeRouting(query)) {
-      const rt = getCurrentRunTree();
-      rt.extra = rt.extra ?? {};
-      rt.extra.metadata = { ...rt.extra.metadata, [LS_MESSAGE_VIEW_EXCLUDE]: true };
-    }
-    return result;
-  },
-  { run_type: "llm" },
-);
-```
-
-**3. Per-call with `wrapOpenAI`**: pass `langsmithExtra` on the call.
-
-```typescript
-import { LS_MESSAGE_VIEW_EXCLUDE } from "langsmith";
-import { wrapOpenAI } from "langsmith/wrappers";
-import OpenAI from "openai";
-
-const client = wrapOpenAI(new OpenAI());
-
-const resp = await client.chat.completions.create(
-  {
-    model: "gpt-5.6",
-    messages: [{ role: "user", content: "Classify: ..." }],
-  },
-  { langsmithExtra: { metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true } } },
-);
-```
-
-**4. Vercel AI SDK middleware**: pass the key via `lsConfig.metadata` on `wrapAISDK`. The middleware merges this onto every emitted LLM run.
-
-```typescript
-import * as ai from "ai";
-import { LS_MESSAGE_VIEW_EXCLUDE } from "langsmith";
-import { wrapAISDK } from "langsmith/experimental/vercel";
-
-const { generateText } = wrapAISDK(ai, {
-  metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true },
-});
-```
-
-To exclude only some calls and not others, wrap with `wrapAISDK` normally and instead mutate `getCurrentRunTree()` from inside a parent `traceable` that calls into the AI SDK, or use a child `RunTree` with `createChild({ extra: { metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true } } })`.
-
-**5. Manual `RunTree.createChild`**: when you are building runs by hand.
-
-```typescript
-import { LS_MESSAGE_VIEW_EXCLUDE } from "langsmith";
-import { RunTree } from "langsmith/run_trees";
-
-const parent = new RunTree({ name: "agent", run_type: "chain" });
-const child = parent.createChild({
-  name: "safety_check",
-  run_type: "llm",
-  extra: { metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true } },
-});
-```
-
-  </Tab>
-</Tabs>
-
-### Notes
-
-- The filter checks for the **presence of the key**, not truthiness. `{LS_MESSAGE_VIEW_EXCLUDE: false}` still excludes the run. Omit the key entirely to include the run.
-- Child runs that execute inside a `@traceable` (Python) or `traceable` (JS) parent inherit the exclusion through the shared tracing context: Python's `_METADATA` `ContextVar` and JS's `AsyncLocalStorage`. The child's own decorator-time metadata layers on top of the inherited values.
-- Excluded runs still appear in the regular trace view, runs explorer, and metrics. Only the Messages view filters them out.
-
-## Manual instrumentation
-
-If you trace without one of the wrappers in [Supported integrations](#supported-integrations) (for example, emitting runs through `RunTree`, the REST API, or a custom wrapper around a provider SDK), set `ls_message_format` on each LLM run's metadata to route the trace to the correct extractor:
-
-| Trace shape | Set on metadata |
-| --- | --- |
-| LangChain messages (constructor envelope) | `ls_message_format: "langchain"` |
-| OpenAI Chat Completions | `ls_message_format: "completions"` |
-| OpenAI Responses API | `ls_message_format: "responses"` |
-| Anthropic Messages API | `ls_message_format: "anthropic"` |
-
-## Related
-
-- [Configure threads](/langsmith/threads): how `thread_id` groups runs across LangSmith.
-- [Coding agent metadata contract](/langsmith/coding-agent-metadata-contract): the full `ls_agent_type` schema.
-- [View traces](/langsmith/view-traces#messages-view): what the Messages view shows and how to customize it.
-
----
-
-<div className="source-links">
-<Callout icon="terminal-2">
-    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
-</Callout>
-<Callout icon="edit">
-    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/messages-view-integrations.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
-</Callout>
-</div>
-
-
 # How to return categorical vs numerical metrics
 Source: https://docs.langchain.com/langsmith/metric-type
 
@@ -76491,11 +76098,7 @@ A _trajectory_ is a flat, ordered list of messages that shows the path an agent 
 
 In LangSmith, a trajectory is a projection over the traces in a thread. It contains the human, AI, and tool messages exchanged during the session, each appearing once, in the order it first appeared, with the nesting of runs removed.
 
-<Note>
-The [Messages view](/langsmith/view-traces#messages-view), which renders trajectories in the LangSmith UI, is in **[beta](/langsmith/release-stages)**.
-</Note>
-
-[Learn how trajectories render in the Messages view](/langsmith/messages-view-integrations).
+[Learn how trajectories render in the Trajectory view](/langsmith/trajectory-view-integrations).
 
 ### Compare traces, threads, and trajectories
 
@@ -77433,7 +77036,7 @@ npx tsx index.ts
 
 ## 4. View your trace
 
-In the [LangSmith UI](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-observability-quickstart), go to **Tracing** and select your **default** project. Click the `assistant` row to open the trace. The **Messages** tab shows the conversation as it was sent to the model. Select the **Details** tab to see the full run tree, including the `assistant` function with the `get_context` tool call and the OpenAI call nested inside it.
+In the [LangSmith UI](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-observability-quickstart), go to **Tracing** and select your **default** project. Click the `assistant` row to open the trace. The **Trajectory** tab shows the conversation as it was sent to the model. Select the **Details** tab to see the full run tree, including the `assistant` function with the `get_context` tool call and the OpenAI call nested inside it.
 
 <img
     className="block dark:hidden"
@@ -127912,17 +127515,17 @@ Use the **[Chat](/langsmith/chat)** in thread views to analyze conversation thre
 
 You can then click into a particular thread. You can view the thread in three different ways:
 
-- **Messages** view (beta): the conversation layer. Scan each turn as a chat-style thread showing user and assistant messages, tool calls, and subagent activity.
+- **Trajectory** view: the conversation layer. Scan each turn as a chat-style thread showing user and assistant messages, tool calls, and subagent activity.
 - **Turns** view: the per-turn summary. View each turn as a card showing its inputs and outputs, with expand/collapse and customizable input/output fields.
 - **Details** view: the debugging layer. Drill into a specific run to inspect inputs, outputs, metadata, timing, errors, and child runs. The surrounding thread context stays visible so you can see where the run fits in the broader conversation.
 
-Switch between views using the buttons at the top of the page or keyboard shortcuts `M` (Messages), `T` (Turns), and `D` (Details). While the Messages view is in beta, the thread side panel defaults to the Details view. The right panel shows stats for the thread, including turn count, first and last start times, P50/P99 latency, and a cost breakdown by input and output tokens. For a full description of each view, see [View traces](/langsmith/view-traces).
+Switch between views using the buttons at the top of the page or keyboard shortcuts `T` (Trajectory) and `D` (Details). The thread side panel defaults to the Details view. The right panel shows stats for the thread, including turn count, first and last start times, P50/P99 latency, and a cost breakdown by input and output tokens. For a full description of each view, see [View traces](/langsmith/view-traces).
 
 ### View feedback
 
 Feedback scores are visible in the **Feedback** column of the threads table on the project's **Threads** tab.
 
-Within a thread, open the Messages view and click the **LLM call** link in a turn's metadata row to go to the Details view for that run, where you can review feedback for the run. You can also see [thread-level feedback](/langsmith/online-evaluations-multi-turn) there.
+Within a thread, open the Trajectory view and click the **LLM call** link in a turn's metadata row to go to the Details view for that run, where you can review feedback for the run. You can also see [thread-level feedback](/langsmith/online-evaluations-multi-turn) there.
 
 ### Save thread-level filter
 
@@ -129069,9 +128672,9 @@ Click on the trace, and toggle to the **Details** view on the top right. Your tr
 
 The resulting trace contains multiple nested spans, which allows you to follow the agent’s planning, calculation steps, and interpretation flow in the LangSmith UI.
 
-### Messages View
+### Trajectory view
 
-The **Messages** view in the LangSmith UI shows a simplified conversation history between the user and the agent. This view pulls messages from the top-level trace, (including the user’s initial request, tool calls and the agent’s final response) and represents them in a chat-like format.
+The **Trajectory** view in the LangSmith UI shows a simplified conversation history between the user and the agent. This view pulls messages from the top-level trace, (including the user’s initial request, tool calls and the agent’s final response) and represents them in a chat-like format.
 
 ### Filter by subagent
 
@@ -133478,9 +133081,9 @@ finalState.messages[finalState.messages.length - 1].content;
 
 Click on the trace, and toggle to the **Details** view on the top right. Your trace in LangSmith should [look like this](https://smith.langchain.com/public/79061a0f-c602-4012-b022-03fd46bce89e/r).
 
-**Messages view**
+**Trajectory view**
 
-The **Messages** view in the LangSmith UI shows a simplified conversation history between the user and the agent. This view pulls messages from the top-level trace (including the user’s initial request, tool calls, and the agent’s final response) and represents them in a chat-like format.
+The **Trajectory** view in the LangSmith UI shows a simplified conversation history between the user and the agent. This view pulls messages from the top-level trace (including the user’s initial request, tool calls, and the agent’s final response) and represents them in a chat-like format.
 
 ## Without LangChain
 
@@ -133792,9 +133395,9 @@ await graph.invoke({
 
 Click on the trace, and toggle to the **Details** view on the top right. Your trace in LangSmith should [look like this](https://smith.langchain.com/public/c3d128fa-c618-4b0e-b9d0-ccbb619440d8/r).
 
-**Messages view**
+**Trajectory view**
 
-The **Messages** view in the LangSmith UI shows a simplified conversation history between the user and the agent. This view pulls messages from the top-level trace (including the user’s initial request, tool calls, and the agent’s final response) and represents them in a chat-like format.
+The **Trajectory** view in the LangSmith UI shows a simplified conversation history between the user and the agent. This view pulls messages from the top-level trace (including the user’s initial request, tool calls, and the agent’s final response) and represents them in a chat-like format.
 
 ---
 
@@ -139052,6 +138655,395 @@ async def test_async_evaluation():
 </div>
 
 
+# Trajectory view integrations
+Source: https://docs.langchain.com/langsmith/trajectory-view-integrations
+
+The [Trajectory view](/langsmith/view-traces#trajectory-view) renders the [traces](/langsmith/observability-concepts#traces) of a [thread](/langsmith/observability-concepts#threads) as a [trajectory](/langsmith/observability-concepts#trajectories): user prompts, model responses, tool calls, and tool results, in order. The Trajectory view needs two pieces of run metadata to render a trajectory:
+
+- **Thread grouping**: `thread_id` on each run tells LangSmith that a set of runs belongs to the same conversation.
+- **Run classification**: `ls_agent_type: "root"` on the top-level run of a turn marks that run as part of the main conversation. Runs marked as subagent appear as a subagent action in the thread while runs marked as middleware or compaction are currently filtered out.
+
+For most LangSmith integrations, both are set for you. When you need to set metadata manually, the following examples cover the [OpenAI Responses API in chaining mode](#openai-responses-api-with-chaining) and tagging custom middleware or guardrails.
+
+## Supported integrations
+
+The following integrations set both `thread_id` and `ls_agent_type` automatically:
+
+- [Claude Code](/langsmith/trace-claude-code)
+- [Claude Agent SDK](/langsmith/trace-claude-agent-sdk)
+- [OpenAI Codex](/langsmith/trace-with-codex)
+- [Cursor](/langsmith/trace-with-cursor)
+- [Pi](/langsmith/trace-with-pi)
+- [OpenCode](/langsmith/trace-with-opencode)
+- [GitHub Copilot](/langsmith/trace-with-vscode-copilot)
+- [Deep Agents](/langsmith/trace-deep-agents)
+- [LangChain](/langsmith/trace-with-langchain)
+- [LangGraph](/langsmith/trace-with-langgraph)
+- OpenAI Chat Completions (`wrap_openai`)
+- OpenAI Responses API, single call (`wrap_openai`)
+
+The **OpenAI Responses API in chaining mode** (`previous_response_id`) sets `ls_agent_type` automatically, but you set `thread_id` yourself. For more details, refer to the [OpenAI Responses API with chaining](#openai-responses-api-with-chaining) example.
+
+For the full `ls_agent_type` schema and the other values (`subagent`, `middleware`, `compaction`) that official integrations set on non-root runs, see the [Coding agent metadata contract](/langsmith/coding-agent-metadata-contract). For the underlying thread-grouping mechanism, see [Configure threads](/langsmith/threads).
+
+## OpenAI Responses API with chaining
+
+When you chain calls to the OpenAI Responses API by passing `previous_response_id`, OpenAI stores conversation state server-side and the LangSmith wrapper has no natural key to group calls into a thread. Set `thread_id` yourself, either per call or at wrapper init time.
+
+<Note>
+Use a [UUID v7](https://uuid7.com) for `thread_id`. LangSmith's SDK exports a `uuid7` helper, and UUID v7 sorts by creation time so threads stay ordered in list views.
+</Note>
+
+### Per-call metadata
+
+Set `thread_id` on each call. Use this when one wrapped client serves multiple threads (for example, one client per process, many concurrent conversations).
+
+<CodeGroup>
+
+```python Python
+import openai
+from langsmith import uuid7
+from langsmith.wrappers import wrap_openai
+
+client = wrap_openai(openai.Client())
+thread_id = str(uuid7())
+
+res1 = client.responses.create(
+    model="gpt-5.6",
+    input="What is the capital of France?",
+    store=True,
+    langsmith_extra={"metadata": {"thread_id": thread_id}},
+)
+
+res2 = client.responses.create(
+    model="gpt-5.6",
+    input="And its population?",
+    previous_response_id=resp1.id,
+    store=True,
+    langsmith_extra={"metadata": {"thread_id": thread_id}},
+)
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+import { uuid7 } from "langsmith";
+import { wrapOpenAI } from "langsmith/wrappers";
+
+const client = wrapOpenAI(new OpenAI());
+const threadId = uuid7();
+
+const res1 = await client.responses.create({
+  model: "gpt-5.6",
+  input: "What is the capital of France?",
+  metadata: { thread_id: threadId },
+  store: true,
+});
+
+const res2 = await client.responses.create({
+  model: "gpt-5.6",
+  input: "And its population?",
+  previous_response_id: res1.id,
+  metadata: { thread_id: threadId },
+  store: true,
+});
+```
+
+</CodeGroup>
+
+### Init-time metadata
+
+Set `thread_id` once when wrapping the client. Every call made through this wrapper is tagged with the same thread. Use this when a wrapped client serves exactly one thread for its lifetime (for example, a per-conversation worker).
+
+<CodeGroup>
+
+```python Python
+import openai
+from langsmith import uuid7
+from langsmith.wrappers import wrap_openai
+
+thread_id = str(uuid7())
+
+client = wrap_openai(
+    openai.Client(),
+    tracing_extra={"metadata": {"thread_id": thread_id}},
+)
+
+res1 = client.responses.create(
+    model="gpt-5.6",
+    input="What is the capital of France?",
+    store=True,
+)
+
+res2 = client.responses.create(
+    model="gpt-5.6",
+    input="And its population?",
+    previous_response_id=resp1.id,
+    store=True,
+)
+```
+
+```typescript TypeScript
+import OpenAI from "openai";
+import { uuid7 } from "langsmith";
+import { wrapOpenAI } from "langsmith/wrappers";
+
+const threadId = uuid7();
+
+const client = wrapOpenAI(new OpenAI(), { metadata: { thread_id: threadId } });
+
+const res1 = await client.responses.create({
+  model: "gpt-5.6",
+  input: "What is the capital of France?",
+  store: true,
+});
+
+const res2 = await client.responses.create({
+  model: "gpt-5.6",
+  input: "And its population?",
+  previous_response_id: res1.id,
+  store: true,
+});
+```
+
+</CodeGroup>
+
+## Hide custom middleware or guardrails
+
+When you write your own guardrail, policy check, or middleware function around an LLM or tool call, wrap it in `@traceable` and set `ls_agent_type: "middleware"` on the metadata. The Trajectory view filters these runs out of the main conversation.
+
+<CodeGroup>
+
+```python Python
+from langsmith import traceable
+
+@traceable(
+    run_type="llm",
+    metadata={"ls_agent_type": "middleware"},
+)
+def entry_guardrail(prompt: str) -> dict:
+    # Your guardrail logic
+    return {"decision": "allow"}
+```
+
+```typescript TypeScript
+import { traceable } from "langsmith/traceable";
+
+const entryGuardrail = traceable(
+  async (prompt: string) => {
+    // Your guardrail logic
+    return { decision: "allow" };
+  },
+  { run_type: "llm", metadata: { ls_agent_type: "middleware" } },
+);
+```
+
+</CodeGroup>
+
+## Exclude runs from the Trajectory view
+
+Setting `LS_MESSAGE_VIEW_EXCLUDE` on a run's metadata tells the Trajectory view to skip that run. The key's presence is what matters; `True` is the conventional value. The filter runs before any extraction strategy sees the trace, so an excluded LLM or tool run never affects detection, message extraction, or tool-call pairing.
+
+`LS_MESSAGE_VIEW_EXCLUDE` is a top-level constant exported from `langsmith` (Python and JS) whose value is the string `"ls_message_view_exclude"`. Prefer the constant to avoid typos; the literal string still works.
+
+Use it for LLM subspans that are not conversational turns, such as classification calls, embedding lookups, safety filters, or routing/guardrail decisions, that you still want visible elsewhere in LangSmith but do not want cluttering the conversation transcript.
+
+<Tabs>
+  <Tab title="Python">
+
+**1. On a `@traceable` decorator**: exclude a whole function's run.
+
+```python
+from langsmith import LS_MESSAGE_VIEW_EXCLUDE, traceable
+
+@traceable(run_type="llm", metadata={LS_MESSAGE_VIEW_EXCLUDE: True})
+def classify_intent(query: str) -> str:
+    # This LLM call is internal routing, not part of the chat
+    return llm.predict(f"Classify the intent of: {query}")
+```
+
+**2. Via the `trace` context manager**: exclude an ad-hoc span.
+
+```python
+from langsmith import LS_MESSAGE_VIEW_EXCLUDE, trace
+
+with trace(
+    "safety_check",
+    run_type="llm",
+    metadata={LS_MESSAGE_VIEW_EXCLUDE: True},
+) as run:
+    result = safety_model.score(text)
+    run.end(outputs={"score": result})
+```
+
+**3. From inside a running function**: set the key on the current run tree at any point before the run is patched.
+
+```python
+from langsmith import LS_MESSAGE_VIEW_EXCLUDE, get_current_run_tree, traceable
+
+@traceable(run_type="llm")
+def maybe_internal(query: str) -> str:
+    result = llm.predict(query)
+    if _looks_like_routing(query):
+        rt = get_current_run_tree()
+        if rt is not None:
+            rt.add_metadata({LS_MESSAGE_VIEW_EXCLUDE: True})
+    return result
+```
+
+**4. Per-call when using `wrap_openai` / `wrap_anthropic`**: pass `langsmith_extra` through to the wrapped client call.
+
+```python
+import openai
+from langsmith import LS_MESSAGE_VIEW_EXCLUDE
+from langsmith.wrappers import wrap_openai
+
+client = wrap_openai(openai.Client())
+
+resp = client.chat.completions.create(
+    model="gpt-5.6",
+    messages=[{"role": "user", "content": "Classify: ..."}],
+    langsmith_extra={"metadata": {LS_MESSAGE_VIEW_EXCLUDE: True}},
+)
+```
+
+**5. LangChain `RunnableConfig`**: exclude a single invocation of a chain or chat model.
+
+```python
+from langchain_openai import ChatOpenAI
+from langsmith import LS_MESSAGE_VIEW_EXCLUDE
+
+llm = ChatOpenAI(model="gpt-5.6")
+result = llm.invoke(
+    "Classify this query",
+    config={"metadata": {LS_MESSAGE_VIEW_EXCLUDE: True}},
+)
+```
+
+  </Tab>
+  <Tab title="TypeScript">
+
+**1. On a `traceable` wrapper**: exclude a whole function's run.
+
+```typescript
+import { LS_MESSAGE_VIEW_EXCLUDE } from "langsmith";
+import { traceable } from "langsmith/traceable";
+
+const classifyIntent = traceable(
+  async (query: string) => {
+    return await llm.predict(`Classify the intent of: ${query}`);
+  },
+  {
+    name: "classify_intent",
+    run_type: "llm",
+    metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true },
+  },
+);
+```
+
+**2. From inside a running function**: mutate the current run tree.
+
+```typescript
+import { LS_MESSAGE_VIEW_EXCLUDE } from "langsmith";
+import { traceable, getCurrentRunTree } from "langsmith/traceable";
+
+const maybeInternal = traceable(
+  async (query: string) => {
+    const result = await llm.predict(query);
+    if (looksLikeRouting(query)) {
+      const rt = getCurrentRunTree();
+      rt.extra = rt.extra ?? {};
+      rt.extra.metadata = { ...rt.extra.metadata, [LS_MESSAGE_VIEW_EXCLUDE]: true };
+    }
+    return result;
+  },
+  { run_type: "llm" },
+);
+```
+
+**3. Per-call with `wrapOpenAI`**: pass `langsmithExtra` on the call.
+
+```typescript
+import { LS_MESSAGE_VIEW_EXCLUDE } from "langsmith";
+import { wrapOpenAI } from "langsmith/wrappers";
+import OpenAI from "openai";
+
+const client = wrapOpenAI(new OpenAI());
+
+const resp = await client.chat.completions.create(
+  {
+    model: "gpt-5.6",
+    messages: [{ role: "user", content: "Classify: ..." }],
+  },
+  { langsmithExtra: { metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true } } },
+);
+```
+
+**4. Vercel AI SDK middleware**: pass the key via `lsConfig.metadata` on `wrapAISDK`. The middleware merges this onto every emitted LLM run.
+
+```typescript
+import * as ai from "ai";
+import { LS_MESSAGE_VIEW_EXCLUDE } from "langsmith";
+import { wrapAISDK } from "langsmith/experimental/vercel";
+
+const { generateText } = wrapAISDK(ai, {
+  metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true },
+});
+```
+
+To exclude only some calls and not others, wrap with `wrapAISDK` normally and instead mutate `getCurrentRunTree()` from inside a parent `traceable` that calls into the AI SDK, or use a child `RunTree` with `createChild({ extra: { metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true } } })`.
+
+**5. Manual `RunTree.createChild`**: when you are building runs by hand.
+
+```typescript
+import { LS_MESSAGE_VIEW_EXCLUDE } from "langsmith";
+import { RunTree } from "langsmith/run_trees";
+
+const parent = new RunTree({ name: "agent", run_type: "chain" });
+const child = parent.createChild({
+  name: "safety_check",
+  run_type: "llm",
+  extra: { metadata: { [LS_MESSAGE_VIEW_EXCLUDE]: true } },
+});
+```
+
+  </Tab>
+</Tabs>
+
+### Notes
+
+- The filter checks for the **presence of the key**, not truthiness. `{LS_MESSAGE_VIEW_EXCLUDE: false}` still excludes the run. Omit the key entirely to include the run.
+- Child runs that execute inside a `@traceable` (Python) or `traceable` (JS) parent inherit the exclusion through the shared tracing context: Python's `_METADATA` `ContextVar` and JS's `AsyncLocalStorage`. The child's own decorator-time metadata layers on top of the inherited values.
+- Excluded runs still appear in the regular trace view, runs explorer, and metrics. Only the Trajectory view filters them out.
+
+## Manual instrumentation
+
+If you trace without one of the wrappers in [Supported integrations](#supported-integrations) (for example, emitting runs through `RunTree`, the REST API, or a custom wrapper around a provider SDK), set `ls_message_format` on each LLM run's metadata to route the trace to the correct extractor:
+
+| Trace shape | Set on metadata |
+| --- | --- |
+| LangChain messages (constructor envelope) | `ls_message_format: "langchain"` |
+| OpenAI Chat Completions | `ls_message_format: "completions"` |
+| OpenAI Responses API | `ls_message_format: "responses"` |
+| Anthropic Messages API | `ls_message_format: "anthropic"` |
+
+## Related
+
+- [Configure threads](/langsmith/threads): how `thread_id` groups runs across LangSmith.
+- [Coding agent metadata contract](/langsmith/coding-agent-metadata-contract): the full `ls_agent_type` schema.
+- [View traces](/langsmith/view-traces#trajectory-view): what the Trajectory view shows and how to customize it.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/trajectory-view-integrations.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
 # Studio troubleshooting
 Source: https://docs.langchain.com/langsmith/troubleshooting-studio
 
@@ -143109,19 +143101,19 @@ The Threads tab and the Turns view are only available for runs instrumented with
 
 Three views are available at the top of the side panel:
 
-- [**Messages**](#messages-view) (**beta**): The conversation layer. Scan the [trajectory](/langsmith/observability-concepts#trajectories) as inputs, outputs, reasoning, tool calls, and subagent activity. Use this to find where to look. Press `M` to switch to this view.
-- [**Turns**](#turns-view): The per-turn summary. View each turn in the thread as a card showing its inputs and outputs, with expand/collapse. Use this when you want a structural overview without the full conversation rendering. Press `T` to switch to this view.
+- [**Trajectory**](#trajectory-view): The conversation layer. Scan the [trajectory](/langsmith/observability-concepts#trajectories) as inputs, outputs, reasoning, tool calls, and subagent activity. Use this to find where to look. Press `T` to switch to this view.
+- [**Turns**](#turns-view): The per-turn summary. View each turn in the thread as a card showing its inputs and outputs, with expand/collapse. Use this when you want a structural overview without the full conversation rendering.
 - [**Details**](#details-view): The debugging layer. Drill into a specific run to inspect inputs, outputs, timing, token counts, errors, and metadata. Use this to understand what happened at a specific point in execution. Press `D` to switch to this view.
 
 <Note>
-The Messages tab is disabled for threads that don't have any renderable messages. The Messages view is in **[beta](/langsmith/release-stages)**—the side panel defaults to the Details view.
+The Trajectory tab is disabled for threads that do not have any renderable messages. The side panel defaults to the Details view.
 </Note>
 
-Use the Messages view to orient yourself in the conversation and identify where to focus, then switch to the Details view to inspect a specific run:
+Use the Trajectory view to orient yourself in the conversation and identify where to focus, then switch to the Details view to inspect a specific run:
 
 <Steps>
-  <Step title="Start in the Messages view">
-    Open a thread and switch to the Messages view to see the trajectory.
+  <Step title="Start in the Trajectory view">
+    Open a thread and switch to the Trajectory view to see the full conversation.
   </Step>
   <Step title="Investigate">
     Scan the trajectory to identify unexpected behavior, for example, a bad tool result, an unexpected subagent handoff, a latency spike.
@@ -143130,17 +143122,20 @@ Use the Messages view to orient yourself in the conversation and identify where 
     Click the relevant message or tool call to open the Details view at the exact run that produced it. Review its inputs, outputs, timing, errors, and metadata.
   </Step>
   <Step title="Return to the trajectory">
-    Toggle back to the Messages view to continue scanning the conversation.
+    Toggle back to the Trajectory view to continue scanning the conversation.
   </Step>
 </Steps>
 
-## Messages view
+{/* Temporary: keeps the legacy #messages-view anchor working for in-product links
+    that still point at it, such as TrajectoryViewDocsButton in langchainplus.
+    Remove once those links use #trajectory-view. */}
+<div id="messages-view" className="scroll-mt-24" />
 
-<Note>The Messages view is in **[beta](/langsmith/release-stages)**. The side panel defaults to the [Details view](#details-view).</Note>
+## Trajectory view
 
-Use the Messages view to scan the full [trajectory](/langsmith/observability-concepts#trajectories) and identify unexpected behavior, such as a bad tool result, an unexpected subagent handoff, or a latency spike, before drilling into a specific run.
+Use the Trajectory view to scan the full [trajectory](/langsmith/observability-concepts#trajectories) and identify unexpected behavior, such as a bad tool result, an unexpected subagent handoff, or a latency spike, before drilling into a specific run.
 
-### What the Messages view shows
+### What the Trajectory view shows
 
 Each turn in the trajectory renders as a single block containing the model's response, the tool calls it triggered, and the results those tools returned. You can scan the full trajectory and read the agent's behavior without opening a child run.
 
@@ -143157,17 +143152,17 @@ The metadata row for each block shows:
 
 **Tool calls** appear with the assistant message that triggered them. Each tool call card includes a link to its run in the [Details view](#details-view). When an agent makes multiple tool calls together, either the same tool repeated or multiple different tools in parallel, those calls collapse into a single grouped row. Expand the group to see each individual call.
 
-To download the thread as a Markdown file, use the download button in the Messages view. The exported file includes the full conversation transcript with human and AI turns, tool calls, and tool results, formatted for reading in any Markdown viewer.
+To download the thread as a Markdown file, use the download button in the Trajectory view. The exported file includes the full conversation transcript with human and AI turns, tool calls, and tool results, formatted for reading in any Markdown viewer.
 
-### Customize the Messages view
+### Customize the Trajectory view
 
-You can control how runs appear in the Messages view using metadata keys on individual runs.
+You can control how runs appear in the Trajectory view using metadata keys on individual runs.
 
 - `ls_agent_type`: Controls where messages from an agent-like run appear. Accepted values:
 
-  | Value | Messages view behavior |
+  | Value | Trajectory view behavior |
   |---|---|
-  | `"root"` | Messages from this run appear in the main Messages view. |
+  | `"root"` | Messages from this run appear in the main Trajectory view. |
   | `"subagent"` | Messages from this run appear as a subagent action in the conversation thread. |
 
     ```python
@@ -143181,19 +143176,19 @@ You can control how runs appear in the Messages view using metadata keys on indi
   - `"completions"`: parse as OpenAI Chat Completions format
   - `"responses"`: parse as OpenAI Responses API format
   - `"anthropic"`: parse as Anthropic message format
-- `LS_MESSAGE_VIEW_EXCLUDE`: Exclude an individual run from the Messages view. Import the constant from `langsmith` (Python and JS), or use the literal string `"ls_message_view_exclude"`. For code examples, refer to [Exclude runs from the Messages view](/langsmith/messages-view-integrations#exclude-runs-from-the-messages-view).
+- `LS_MESSAGE_VIEW_EXCLUDE`: Exclude an individual run from the Trajectory view. Import the constant from `langsmith` (Python and JS), or use the literal string `"ls_message_view_exclude"`. For code examples, refer to [Exclude runs from the Trajectory view](/langsmith/trajectory-view-integrations#exclude-runs-from-the-trajectory-view).
   - For `@traceable` / `traceable()`: child runs that execute inside the tagged run's tracing context inherit the exclusion.
   - For `wrap_openai` / `wrapOpenAI`, `wrapAISDK`, `RunTree.createChild`, and LangChain `RunnableConfig`: set the key on each run you want to hide. Inheritance to child runs is not guaranteed on these surfaces.
 
-For the integrations that set this metadata automatically, refer to [Messages view integrations](/langsmith/messages-view-integrations).
+For the integrations that set this metadata automatically, refer to [Trajectory view integrations](/langsmith/trajectory-view-integrations).
 
 ## Turns view
 
-Use the Turns view to scan the structure of a thread one turn at a time, without the full conversation rendering of the Messages view. Each turn in the thread appears as a card showing the root run's inputs and outputs. Click a card's chevron to expand or collapse its contents.
+Use the Turns view to scan the structure of a thread one turn at a time, without the full conversation rendering of the Trajectory view. Each turn in the thread appears as a card showing the root run's inputs and outputs. Click a card's chevron to expand or collapse its contents.
 
 The Turns view is useful when:
 
-- The thread doesn't have renderable messages (for example, a trace from an integration that isn't supported by the Messages view).
+- The thread doesn't have renderable messages (for example, a trace from an integration that isn't supported by the Trajectory view).
 - You want a quick structural overview of the thread before deciding which turn to drill into.
 - You want to see raw inputs and outputs per turn without normalization into a chat-style conversation.
 
