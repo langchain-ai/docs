@@ -5,7 +5,7 @@ description: How the repository organizes, distributes, selects, and validates t
 tags: [agents, skills, documentation, automation, validation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-17T08:22:51.028Z
+    at: 2026-09-21T08:24:04.334Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -39,7 +39,7 @@ sources:
     resource: repo://Makefile
   - id: openwiki-source-1695beda93a0ca504f038424
     resource: repo://tests/unit_tests/test_skills.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-17T08:22:51.028Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
 ---
 
 # Agent Authoring Skills
@@ -120,6 +120,8 @@ The catalog covers page lifecycle, in-place editing, page-family restructuring, 
 
 Use the narrowest skill that owns the decision. For example, `docs-edit` owns a single page or PR branch, whereas `docs-restructure` first asks whether content belongs on that page at all. When a change produces factual product prose, hand the fact-checking portion to `verify-against-source`; a style review cannot establish runtime behavior.
 
+The final three catalog procedures were moved from `.deepagents/skills/`. Deep Agents Code gives `.agents/skills/` higher project-skill precedence, so the integration-submission workflow continues to resolve `submit-integration` without a symlink or compatibility shim.
+
 ## Preserve pull-request ownership and review only the change
 
 `docs-edit` prevents a common failure: an edit requested on an existing PR is made on a new branch, creating a competing PR. Start with a clean tree. For a named PR, inspect its metadata, fetch and check out its head branch, confirm `HEAD` matches the PR head commit, and confirm an upstream exists. For a cross-repository PR, use `gh pr checkout <n>` so the fork remote is configured and verify push access.
@@ -182,7 +184,9 @@ A failure identifies a stale agent-facing contract: malformed metadata, a missin
 ## See also
 
 - [Adding and Modifying Documentation Pages](/openwiki/operations/adding-pages.md)
+- [Command-line tools](/openwiki/operations/cli-tools.md)
 - [Quickstart](/openwiki/quickstart.md)
+- [Local development](/openwiki/workflows/local-development.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
 - [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
