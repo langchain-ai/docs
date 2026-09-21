@@ -95,7 +95,32 @@ archive="$workdir/vale.tar.gz"
 url="https://github.com/errata-ai/vale/releases/download/v${vale_version}/vale_${vale_version}_${asset_suffix}.tar.gz"
 
 echo "Installing Vale $vale_version ($asset_suffix) to $dest_path"
-curl -fsSL --max-time 120 --retry 3 "$url" -o "$archive"
+if ! curl -fsSL \
+  --connect-timeout 20 \
+  --max-time 180 \
+  --retry 6 \
+  --retry-all-errors \
+  --retry-delay 2 \
+  --retry-max-time 300 \
+  "$url" -o "$archive"; then
+  echo "Release asset download failed, falling back to 'go install' for Vale v$vale_version." >&2
+  if ! command -v go >/dev/null 2>&1; then
+    echo "Go is not available, and Vale download from GitHub releases failed." >&2
+    exit 1
+  fi
+  gopath_bin="$(go env GOPATH)/bin"
+  mkdir -p "$gopath_bin"
+  GOBIN="$gopath_bin" go install "github.com/errata-ai/vale/v3/cmd/vale@v${vale_version}"
+  install_bin="$gopath_bin/vale"
+  if [ ! -x "$install_bin" ]; then
+    echo "Go install completed, but no vale binary was found at $install_bin." >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$dest_path")"
+  cp "$install_bin" "$dest_path"
+  chmod +x "$dest_path"
+  exit 0
+fi
 tar -xzf "$archive" -C "$workdir"
 install_bin="$(find "$workdir" -type f -name vale | head -n 1)"
 if [ -z "$install_bin" ]; then
