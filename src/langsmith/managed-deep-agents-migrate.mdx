@@ -12,9 +12,9 @@ Managed Deep Agents runs the same [Deep Agents](/oss/deepagents/overview) harnes
 
 ## Decide whether to move
 
-Managed Deep Agents runs the same harness, so moving does not unlock agent features you cannot build today. Sandboxes, memory that persists across conversations, and every filesystem backend are already in [Deep Agents](/oss/deepagents/overview). Moving changes who operates the infrastructure around the agent.
+Managed Deep Agents runs the same harness, so the agent itself behaves the same. Tools, middleware, and subagents work as they do today. Moving adds the layer around the agent: Slack and other chat surfaces, OAuth for end users, scheduled runs, a managed sandbox, and durable memory become declarations in a project file rather than services you build and operate.
 
-Move an agent when you want LangSmith to operate that infrastructure. Stay on Deep Agents when you need to own it.
+Move an agent when you want that layer without running it. Stay on Deep Agents when you need to own it.
 
 | | Deep Agents | Managed Deep Agents |
 | --- | --- | --- |
@@ -70,6 +70,8 @@ Fetch and follow https://docs.langchain.com/langsmith/javascript/managed-deep-ag
 
 Convert the project in place; do not run `mda init`, which only creates a new directory. Add `managed-deepagents` to the existing project manifest, pinned to the version `mda --version` reports, and leave every existing dependency alone.
 
+In Python, if the manifest sets `build-backend = "hatchling.build"`, also add `[tool.hatch.metadata] allow-direct-references = true`. `mda build` rewrites the requirement into a path reference that Hatchling otherwise rejects at install time.
+
 ## Step 3: Move the configuration
 
 Find the `create_deep_agent` (or `createDeepAgent`) call site, then:
@@ -97,7 +99,7 @@ Run `mda build`, then `mda dev`, and confirm the agent starts and answers a test
 :::python
 Most of the surface transfers to `define_deep_agent` unchanged, under the same names: `model`, `tools`, `middleware`, `subagents`, `interrupt_on`, `response_format`, `context_schema`, `cache`, and `debug`. Leave the tool and middleware modules where they already live and keep importing them from the agent entry.
 
-`define_deep_agent` adds one required parameter. Pass `name` a static string that starts with a letter and contains only letters, numbers, underscores, or hyphens. Managed Deep Agents uses it as the [assistant](/langsmith/assistants) ID and the default deployment name.
+`define_deep_agent` adds one required parameter. Pass `name` a static string that starts with a letter and contains only letters, numbers, underscores, or hyphens. Managed Deep Agents uses it as the agent's graph ID and the default deployment name.
 
 The rest move to a project file or become the runtime's job:
 
@@ -115,7 +117,7 @@ The rest move to a project file or become the runtime's job:
 :::js
 Most of the surface transfers to `defineDeepAgent` unchanged, under the same names: `model`, `tools`, `middleware`, `subagents`, `interruptOn`, `responseFormat`, `contextSchema`, `stateSchema`, `cache`, and `debug`. Leave the tool and middleware modules where they already live and keep importing them from the agent entry.
 
-`defineDeepAgent` adds one required option. Pass `name` a static string that starts with a letter and contains only letters, numbers, underscores, or hyphens. Managed Deep Agents uses it as the [assistant](/langsmith/assistants) ID and the default deployment name.
+`defineDeepAgent` adds one required option. Pass `name` a static string that starts with a letter and contains only letters, numbers, underscores, or hyphens. Managed Deep Agents uses it as the agent's graph ID and the default deployment name.
 
 The rest move to a project file or become the runtime's job:
 
@@ -145,6 +147,15 @@ uv add managed-deepagents
 ```
 
 Pin the version to match the CLI, which `mda --version` reports.
+
+If the project builds with Hatchling, allow direct references in `pyproject.toml`:
+
+```toml pyproject.toml
+[tool.hatch.metadata]
+allow-direct-references = true
+```
+
+`mda build` rewrites the `managed-deepagents` requirement into a path reference to the runtime it stages, and Hatchling rejects that by default. Without the setting, `mda build` still succeeds and `mda dev` fails while installing the project, with `Dependency #N of field project.dependencies cannot be a direct reference`. Projects scaffolded by `mda init` declare no build backend, so the setting only comes up when converting an existing project.
 :::
 
 :::js
