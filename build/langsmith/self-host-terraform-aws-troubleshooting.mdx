@@ -1,0 +1,448 @@
+---
+title: AWS Terraform troubleshooting
+sidebarTitle: Troubleshooting
+description: Common issues, fixes, and diagnostic commands for LangSmith self-hosted on AWS EKS deployed with the LangChain Terraform modules.
+---
+
+This page documents common issues, fixes, and diagnostic commands for LangSmith deployments provisioned with the [AWS Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/aws).
+
+<Tip>
+Before upgrading, review the [LangSmith self-hosted changelog](/langsmith/self-hosted-changelog) for breaking changes and required variable updates. Run `aws eks update-kubeconfig --region <region> --name <cluster-name>` before running any `kubectl` commands.
+</Tip>
+
+For a copy-paste reference of the `kubectl`, `helm`, and `aws` calls used throughout this page, skip to [Diagnostic commands](#diagnostic-commands).
+
+## Automated diagnostics
+
+Before running individual commands, try the bundled scripts:
+
+```bash
+# Deployment status across all layers + next-step guidance
+make status
+
+# SSM parameter validation
+./infra/scripts/manage-ssm.sh validate
+```
+
+## Known issues
+
+### EKS node group creation fails: CREATE_FAILED
+
+**Symptom**
+
+```
+Error: waiting for EKS Node Group creation: unexpected state 'CREATE_FAILED'
+```
+
+**Cause:** The EKS control plane is not yet fully active when node group creation begins. Common after an interrupted apply.
+
+**Fix**
+
+```bash
+aws eks wait cluster-active --name <cluster-name> --region <region>
+
+aws eks describe-nodegroup \
+  --cluster-name <cluster-name> \
+  --nodegroup-name <nodegroup-name> \
+  --region <region> \
+  --query "nodegroup.health"
+
+terraform apply -var-file=terraform.tfvars
+```
+
+### kubectl fails: "You must be logged in to the server"
+
+**Symptom:** All `kubectl` commands fail with `error: You must be logged in to the server (Unauthorized)`.
+
+**Cause:** The kubeconfig is stale, the AWS credentials differ from those that created the cluster, or the token has expired.
+
+**Fix**
+
+```bash
+aws eks update-kubeconfig --region <region> --name <cluster-name>
+kubectl cluster-info
+
+aws sts get-caller-identity
+```
+
+If the cluster was created with a different IAM role, grant access via the `aws-auth` ConfigMap:
+
+```bash
+kubectl edit configmap aws-auth -n kube-system
+# Add your IAM user or role under mapUsers / mapRoles
+```
+
+### ALB not created after Helm install
+
+**Symptom:** `kubectl get ingress -n langsmith` shows no ADDRESS after several minutes.
+
+**Cause:** AWS Load Balancer Controller is not running or lacks IRSA permissions, the Terraform-provisioned ALB is not referenced correctly, or `alb_scheme = "internal"` is set (internal ALBs have no public address; see [ALB has no public address](#alb-has-no-public-address-internal-scheme)).
+
+**Fix**
+
+```bash
+kubectl get pods -n kube-system | grep aws-load-balancer
+kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50
+kubectl get sa -n kube-system aws-load-balancer-controller -o yaml | grep eks.amazonaws.com
+
+terraform output alb_dns_name
+aws elbv2 describe-load-balancers --query "LoadBalancers[?DNSName=='<alb-dns-name>'].State"
+```
+
+### RDS connection refused from EKS pods
+
+**Symptom:** Backend logs show `connection refused` or `timeout` for the RDS endpoint.
+
+**Cause:** The RDS security group does not allow inbound TCP 5432 from the EKS node or cluster security group.
+
+**Fix**
+
+```bash
+aws eks describe-cluster --name <cluster-name> \
+  --query "cluster.resourcesVpcConfig.clusterSecurityGroupId"
+
+aws rds describe-db-instances \
+  --db-instance-identifier <db-id> \
+  --query "DBInstances[0].VpcSecurityGroups"
+
+aws ec2 describe-security-group-rules \
+  --filter "Name=group-id,Values=<rds-sg-id>"
+```
+
+The `postgres` module sets up the security group automatically. If the rule is missing, re-apply:
+
+```bash
+terraform apply -var-file=terraform.tfvars -target=module.postgres
+```
+
+### S3 access denied from pods (IRSA not configured)
+
+**Symptom:** Backend logs show `AccessDenied` when reading or writing S3.
+
+**Cause:** IRSA annotation missing from the LangSmith service account, or the S3 VPC Gateway Endpoint is not routing correctly.
+
+**Fix**
+
+```bash
+kubectl get sa langsmith -n langsmith -o yaml | grep eks.amazonaws.com
+
+aws ec2 describe-vpc-endpoints \
+  --filters "Name=service-name,Values=com.amazonaws.<region>.s3" \
+  --query "VpcEndpoints[].State"
+
+kubectl run s3-test --rm -it --image=amazon/aws-cli -n langsmith -- \
+  s3 ls s3://<bucket-name>
+```
+
+If the IRSA annotation is missing, verify `create_langsmith_irsa_role = true` in `terraform.tfvars` and that the service account name in the Helm values matches `langsmith`.
+
+### ElastiCache Redis connection timeout
+
+**Symptom:** Pods cannot connect to Redis. Logs show `dial tcp: i/o timeout`.
+
+**Cause:** ElastiCache security group does not allow inbound TCP 6379 from the EKS node security group.
+
+**Fix**
+
+```bash
+aws elasticache describe-cache-clusters \
+  --cache-cluster-id <cluster-id> \
+  --query "CacheClusters[0].SecurityGroups"
+
+kubectl run redis-test --rm -it --image=redis:7 -n langsmith -- \
+  redis-cli -h <elasticache-endpoint> -a <auth-token> ping
+```
+
+### EKS nodes not autoscaling
+
+**Symptom:** Pods remain `Pending`. Node count does not increase.
+
+**Cause:** Cluster Autoscaler lacks IAM permissions, targets the wrong ASG, or `min_size = max_size` on the node group.
+
+**Fix**
+
+```bash
+kubectl logs -n kube-system -l app=cluster-autoscaler --tail=50
+
+aws autoscaling describe-auto-scaling-groups \
+  --query "AutoScalingGroups[?contains(Tags[].Key, 'k8s.io/cluster-autoscaler/<cluster-name>')].[AutoScalingGroupName]" \
+  --output table
+```
+
+### cert-manager fails to issue Let's Encrypt certificate
+
+**Symptom:** `kubectl get certificate -n langsmith` shows `READY=False`. HTTP01 challenge is failing.
+
+**Cause:** The ALB is not forwarding port 80 to the cert-manager solver pod, or the DNS record for the domain does not point to the ALB.
+
+**Fix**
+
+```bash
+kubectl describe certificate <cert-name> -n langsmith
+kubectl get challenges -n langsmith
+
+aws elbv2 describe-listeners --load-balancer-arn <alb-arn>
+
+dig +short <your-langsmith-domain>
+# Expected: CNAME to the ALB DNS name
+```
+
+### postgres_deletion_protection blocks terraform destroy
+
+**Symptom**
+
+```
+Error: deleting RDS DB Instance: InvalidParameterCombination:
+Cannot delete, DeletionProtection is enabled.
+```
+
+**Fix:** Disable deletion protection in `terraform.tfvars`, apply, then destroy:
+
+```hcl
+postgres_deletion_protection = false
+```
+
+```bash
+terraform apply -var-file=terraform.tfvars
+terraform destroy
+```
+
+### ESO fails to sync: langsmith-config secret missing
+
+**Symptom:** Pods stuck in `CreateContainerConfigError`. `kubectl get secret langsmith-config -n langsmith` returns `NotFound`.
+
+**Cause:** ESO sync is all-or-nothing. If any single SSM parameter referenced by the `ExternalSecret` is missing, ESO refuses to create the Kubernetes Secret. All pods fail, including those unrelated to the missing parameter.
+
+**Fix**
+
+```bash
+kubectl get externalsecret langsmith-config -n langsmith
+kubectl describe externalsecret langsmith-config -n langsmith
+
+./infra/scripts/manage-ssm.sh validate
+
+source ./infra/scripts/setup-env.sh
+./helm/scripts/apply-eso.sh
+```
+
+The `describe` output shows which `remoteRef.key` failed. Match it against the SSM prefix `/langsmith/{name_prefix}-{environment}/`.
+
+### SSM parameter prefix mismatch
+
+**Symptom:** `manage-ssm.sh validate` passes but ESO still cannot sync. Or `setup-env.sh` wrote parameters under a different prefix than ESO expects.
+
+**Cause:** The SSM prefix is derived from `name_prefix` and `environment` in `terraform.tfvars`. If these changed after initial setup, the old parameters live under the old prefix and ESO looks under the new one.
+
+**Fix**
+
+```bash
+kubectl get externalsecret langsmith-config -n langsmith -o yaml | grep 'key:'
+
+./infra/scripts/manage-ssm.sh list
+
+./infra/scripts/migrate-ssm.sh
+```
+
+<Warning>
+Never change `name_prefix` or `environment` on an existing deployment.
+</Warning>
+
+### Postgres password rejected by Terraform validation
+
+**Symptom**
+
+```
+Error: Invalid value for variable "postgres_password"
+RDS master password must not contain '/', '@', '"', single quotes, or spaces.
+```
+
+**Cause:** The password contains characters RDS does not allow in the master password.
+
+**Fix:** Re-generate without restricted characters. `setup-env.sh` produces a compliant password automatically; to update manually:
+
+```bash
+./infra/scripts/manage-ssm.sh set postgres-password "$(openssl rand -base64 24 | tr -d '/+= ')"
+source ./infra/scripts/setup-env.sh
+terraform apply -var-file=terraform.tfvars
+```
+
+### Private EKS cluster unreachable (bastion required)
+
+**Symptom:** `kubectl` and `terraform apply` time out when `enable_public_eks_cluster = false`.
+
+**Cause:** The EKS API endpoint is private. Commands must run from within the VPC, either via the bastion host or a VPN connection.
+
+**Fix**
+
+```bash
+# If the bastion was provisioned (create_bastion = true)
+aws ssm start-session --target <bastion-instance-id>
+
+# From the bastion
+aws eks update-kubeconfig --region <region> --name <cluster-name>
+kubectl get nodes
+```
+
+If no bastion was provisioned, set `create_bastion = true` and re-apply, or temporarily set `enable_public_eks_cluster = true`.
+
+### ALB has no public address (internal scheme)
+
+**Symptom:** `kubectl get ingress -n langsmith` shows an ADDRESS, but it resolves only within the VPC.
+
+**Cause:** `alb_scheme = "internal"` was set in `terraform.tfvars`. Internal ALBs are only reachable from within the VPC (VPN, peering, or PrivateLink).
+
+**Fix:** Intentional for private deployments. To make the ALB publicly reachable:
+
+```hcl
+alb_scheme = "internet-facing"
+```
+
+```bash
+terraform apply -var-file=terraform.tfvars
+# Then redeploy Helm to pick up the new ALB
+```
+
+### ALB hostname changed after ingress recreation
+
+**Symptom:** The LangSmith URL stops working. Agent deployments stuck in `DEPLOYING`. DNS records or bookmarks point to an old ALB hostname that no longer resolves.
+
+**Cause:** Deleting the Kubernetes ingress (via `helm uninstall`, `kubectl delete ingress`, or namespace deletion) deprovisions the ALB. When the ingress is recreated, a new ALB with a different hostname is issued. The `config.deployment.url` in Helm values still points to the old hostname, so the operator's health checks fail and deployments stay stuck.
+
+This also happens if the ALB controller creates a new ALB instead of reusing the Terraform pre-provisioned one. The `group.name` annotation is required alongside `load-balancer-arn` to prevent this.
+
+**Prevention**
+
+- Ensure `group.name` and `load-balancer-arn` annotations are both set. `init-values.sh` does this automatically when a pre-provisioned ALB exists.
+- Do not delete the ingress unless you plan to update all hostname-dependent config.
+- Avoid `helm rollback` without `--server-side=false`. The ingress SSA conflict can trigger a delete/recreate cycle.
+
+**Fix**
+
+```bash
+# 1. Check what hostname the ingress currently has
+kubectl get ingress langsmith-ingress -n langsmith \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+# 2. Check what Terraform expects
+terraform output alb_dns_name
+
+# 3. If they differ, re-run init-values.sh and redeploy
+make init-values
+make deploy
+```
+
+### Node group scaling changes not applied by Terraform
+
+**Symptom:** Changing `min_size` or `max_size` in `terraform.tfvars` shows "No changes" on `terraform plan`.
+
+**Cause:** The ASG was changed out-of-band (AWS CLI, console, or cluster autoscaler) and the Terraform state already reflects the new values. The community EKS module ignores `desired_size` changes so the autoscaler can manage it; `min_size` and `max_size` should propagate normally.
+
+**Fix**
+
+```bash
+terraform refresh
+terraform plan
+
+# For an immediate change, use the AWS CLI directly
+aws eks update-nodegroup-config \
+  --cluster-name <cluster> \
+  --nodegroup-name <nodegroup> \
+  --scaling-config minSize=3,maxSize=8,desiredSize=5 \
+  --region <region>
+```
+
+## Diagnostic commands
+
+### Cluster access
+
+```bash
+aws eks update-kubeconfig --region <region> --name <cluster-name>
+kubectl config current-context
+kubectl get nodes -o wide
+aws sts get-caller-identity
+```
+
+### Pods
+
+```bash
+kubectl get pods -n langsmith
+kubectl get pods -n langsmith -w
+kubectl describe pod <pod-name> -n langsmith
+kubectl logs <pod-name> -n langsmith --tail=50
+kubectl logs <pod-name> -n langsmith --previous --tail=50
+kubectl logs -n langsmith deploy/langsmith-backend --tail=100 -f
+```
+
+### ALB and ingress
+
+```bash
+kubectl get ingress -n langsmith
+kubectl describe ingress -n langsmith
+aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName, 'langsmith')]"
+```
+
+### TLS and certificates
+
+```bash
+kubectl get certificate -n langsmith
+kubectl describe certificate <cert-name> -n langsmith
+kubectl get challenges -n langsmith
+kubectl get clusterissuer
+```
+
+### ESO and secrets
+
+```bash
+kubectl get externalsecret -n langsmith
+kubectl describe externalsecret langsmith-config -n langsmith
+kubectl get clustersecretstore langsmith-ssm
+kubectl get secret langsmith-config -n langsmith -o jsonpath='{.data}' | jq 'keys'
+./infra/scripts/manage-ssm.sh validate
+./infra/scripts/manage-ssm.sh diff
+```
+
+### Helm
+
+```bash
+helm status langsmith -n langsmith
+helm history langsmith -n langsmith
+helm get values langsmith -n langsmith
+```
+
+### IRSA and IAM
+
+```bash
+kubectl get sa langsmith -n langsmith -o yaml | grep eks.amazonaws.com
+terraform output langsmith_irsa_role_arn
+aws iam get-role --role-name <irsa-role-name>
+```
+
+### LangSmith Deployment
+
+```bash
+kubectl get pods -n langsmith | grep -E "host-backend|listener|operator"
+kubectl get lgp -n langsmith
+kubectl get crd | grep langchain
+kubectl get pods -n keda
+```
+
+### Quick health check
+
+```bash
+echo "=== Context ===" && kubectl config current-context
+echo "=== Nodes ===" && kubectl get nodes
+echo "=== Pods ===" && kubectl get pods -n langsmith
+echo "=== Ingress ===" && kubectl get ingress -n langsmith
+echo "=== Helm ===" && helm status langsmith -n langsmith 2>/dev/null | grep -E "STATUS|LAST DEPLOYED"
+```
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-terraform-aws-troubleshooting.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
