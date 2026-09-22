@@ -181,7 +181,7 @@ Five tabs, all files flat in `src/langsmith/`:
 |-----|--------|
 | Overview | Single page |
 | Trace | Tracing setup (Integrations → LLM providers, Agent frameworks, Voice AI frameworks, Developer tools; Manual instrumentation), Configuration & troubleshooting (Project & environment settings, Advanced tracing techniques, Data & privacy, Troubleshooting guides) |
-| Debug | Viewing & managing traces, Bulk export trace data, Messages view, Data type reference |
+| Debug | Viewing & managing traces, Bulk export trace data, Trajectory view, Data type reference |
 | Observe | Monitoring & alerting, Online evaluators, Automations |
 | Reference | SmithDB SDK migration, LangSmith REST API |
 
