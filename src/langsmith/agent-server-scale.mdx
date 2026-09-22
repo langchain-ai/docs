@@ -13,6 +13,15 @@ If you're not yet familiar with how API servers and queue workers operate at the
 
 For [Cloud](/langsmith/cloud-platform-features#scaling), the platform autoscales automatically and the Helm configurations below do not apply.
 
+## Request vs. run concurrency
+
+Two independent kinds of concurrency determine how the Agent Server scales, and they are controlled separately:
+
+- **Request concurrency** is how many API requests (creating runs, reading thread state, streaming results) the deployment serves at once. API servers handle requests asynchronously, and request concurrency scales horizontally with the number of API server replicas.
+- **Run concurrency** is how many runs execute at once. A single queue worker executes up to [`N_JOBS_PER_WORKER`](/langsmith/env-var-self-hosted) runs concurrently (default 10). Run concurrency is capped at the number of queue workers multiplied by `N_JOBS_PER_WORKER`.
+
+Creating a run is a fast write request: the API server persists a pending run and returns immediately, without waiting for the run to execute. If every run slot is busy, additional runs wait in the [queue](/langsmith/agent-server#run-execution-lifecycle) until a slot frees. Raising `N_JOBS_PER_WORKER` or adding queue workers increases run throughput; it does not change how many requests the deployment can serve concurrently.
+
 ## Write load
 
 Write load is primarily driven by the following factors:
@@ -98,6 +107,8 @@ This offloads queue management from the API server to dedicated queue workers, r
 
 ### Size jobs for expected throughput
 
+This section sizes run-execution capacity (queue workers), which is separate from request-serving capacity (API server replicas). For more information, see [Request vs. run concurrency](#request-vs-run-concurrency).
+
 The more runs you execute in parallel, the more jobs you will need to handle the load. There are two main parameters to scale the available jobs:
 
 - `number_of_queue_workers`: The number of queue workers provisioned.
@@ -164,7 +175,7 @@ Autoscaling is disabled by default, but should be configured for bursty workload
 The exact optimal configuration depends on your application complexity, request patterns, and data requirements. Use the following examples in combination with the information in the previous sections and your specific usage to update your deployment configuration as needed. If you have any questions, contact support via [support.langchain.com](https://support.langchain.com).
 </Note>
 
-The following table provides an overview comparing different Agent Server configurations for various load patterns (read requests per second / write requests per second) and standard assistant characteristics (average run execution time of 1 second, moderate CPU and memory usage):
+The following table provides an overview comparing different Agent Server configurations for various load patterns (read requests per second / write requests per second) and standard assistant characteristics (average run execution time of 1 second, moderate CPU and memory usage). The request rates drive the required steady-state run throughput, which is sized through queue workers and `N_JOBS_PER_WORKER`, while API server replicas are sized to serve the request volume itself:
 
 |  | **[Low / low](#low-reads-low-writes)** | **[Low / high](#low-reads-high-writes)** | **[High / low](#high-reads-low-writes)** | [Medium / medium](#medium-reads-medium-writes) | [High / high](#high-reads-high-writes) |
 | :--- | :--- | :--- | :--- | :--- | :--- |

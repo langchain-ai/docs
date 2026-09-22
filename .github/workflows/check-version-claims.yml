@@ -1,0 +1,58 @@
+---
+name: Check version claims
+
+on:
+  pull_request:
+    paths:
+      - "src/**/*.mdx"
+      - "scripts/check_version_claims.py"
+      - "scripts/version_claims_ignore.txt"
+      - ".github/workflows/check-version-claims.yml"
+
+jobs:
+  check-version-claims:
+    name: Package versions on changed docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Get changed doc files
+        id: changed-files
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+          BASE=$(git merge-base HEAD "origin/$BASE_REF")
+          FILES=$(git diff --name-only --diff-filter=ACMRTUXB "$BASE" HEAD -- src/ |
+            grep -E '\.mdx$' || true)
+          if [ -z "$FILES" ]; then
+            echo "No doc files changed, skipping"
+            echo "count=0" >> $GITHUB_OUTPUT
+          else
+            echo "count=$(echo "$FILES" | wc -l)" >> $GITHUB_OUTPUT
+            echo "files<<EOF" >> $GITHUB_OUTPUT
+            printf '%s\n' "$FILES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Python 3.13 + uv
+        if: steps.changed-files.outputs.count != '0'
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      # Fails only when a page names a version that was never published. Floors
+      # that are merely old are reported as a note and do not block.
+      - name: Check that every version named exists on its registry
+        if: steps.changed-files.outputs.count != '0'
+        env:
+          CHANGED_FILES: ${{ steps.changed-files.outputs.files }}
+        run: |
+          printf '%s\n' "$CHANGED_FILES" |
+            xargs uv run python scripts/check_version_claims.py --files

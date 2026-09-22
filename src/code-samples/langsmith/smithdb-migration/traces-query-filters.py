@@ -21,6 +21,7 @@ for run in error_traces:
 # :snippet-start: traces-query-filters-after-py
 # :codegroup-tab: After
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 from langsmith import Client
 
@@ -33,8 +34,8 @@ async def main():
     count = 0
     async for trace in client.traces.query(
         project_id=str(project.id),
-        min_start_time="2026-07-01T00:00:00Z",
-        max_start_time="2026-07-31T23:59:59Z",
+        min_start_time=datetime.now(timezone.utc) - timedelta(days=30),
+        max_start_time=datetime.now(timezone.utc),
         trace_filter='eq(status, "error")',
     ):
         print(trace.root_run.trace_id)
@@ -47,8 +48,8 @@ async def main():
     # :remove-start:
     async for t in client.traces.query(
         project_id=str(project.id),
-        min_start_time="2026-07-01T00:00:00Z",
-        max_start_time="2026-07-31T23:59:59Z",
+        min_start_time=datetime.now(timezone.utc) - timedelta(days=30),
+        max_start_time=datetime.now(timezone.utc),
         page_size=1,
     ):
         trace_id = t.root_run.trace_id
@@ -56,8 +57,8 @@ async def main():
     # :remove-end:
     async for trace in client.traces.query(
         project_id=str(project.id),
-        min_start_time="2026-07-01T00:00:00Z",
-        max_start_time="2026-07-31T23:59:59Z",
+        min_start_time=datetime.now(timezone.utc) - timedelta(days=30),
+        max_start_time=datetime.now(timezone.utc),
         trace_ids=[trace_id],
     ):
         print(trace.root_run.trace_id)

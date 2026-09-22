@@ -19,7 +19,7 @@ const badDescription = {
 import { createDeepAgent } from "deepagents";
 
 const goodAgent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google_genai:gemini-3.6-flash",
   subagents: [
     {
       systemPrompt: "You are a research specialist.",
@@ -28,7 +28,7 @@ const goodAgent = createDeepAgent({
   ],
 });
 const badAgent = createDeepAgent({
-  model: "google_genai:gemini-3.5-flash",
+  model: "google_genai:gemini-3.6-flash",
   subagents: [
     {
       systemPrompt: "You are a helper.",

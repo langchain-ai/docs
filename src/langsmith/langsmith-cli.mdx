@@ -5,11 +5,7 @@ icon: terminal-2
 description: Query and manage LangSmith projects, traces, runs, datasets, evaluators, experiments, and threads from the terminal
 ---
 
-The LangSmith CLI is a command-line tool for querying and managing your LangSmith data. It's designed for both developers and AI coding agents and outputs JSON by default for scripting, with a `--format pretty` option for human-readable tables. Use it when you need scriptable access to your LangSmith data, such as bulk exports, automation, or giving a coding agent direct access to your [traces, runs, and datasets](/langsmith/observability-concepts).
-
-<Warning>
-The LangSmith CLI is in **alpha**. Commands, flags, and output schemas may change between releases. Report issues on [GitHub](https://github.com/langchain-ai/langsmith-cli/issues).
-</Warning>
+The LangSmith CLI is a command-line tool for querying and managing your LangSmith data. It's designed for both developers and AI coding agents and outputs human-readable tables by default, with a `--format json` option for scripting. Use it when you need scriptable access to your LangSmith data, such as bulk exports, automation, or giving a coding agent direct access to your [traces, runs, and datasets](/langsmith/observability-concepts).
 
 ## Install
 
@@ -48,6 +44,10 @@ langsmith self-update
 
 Use the `--dry-run` flag to preview the update without installing.
 
+<Note>
+Querying a [SmithDB](/langsmith/smithdb-sdk-migration)-backed deployment requires LangSmith CLI `v0.2.44` or later.
+</Note>
+
 ## Authenticate
 
 `langsmith auth login` requires LangSmith CLI `v0.2.30` or later. `langsmith profile` commands require LangSmith CLI `v0.2.26` or later.
@@ -55,7 +55,7 @@ Use the `--dry-run` flag to preview the update without installing.
 The recommended local setup is to authenticate with OAuth:
 
 <Note>
-`langsmith auth login` currently supports LangSmith Cloud (SaaS) only. For self-hosted or other non-SaaS LangSmith endpoints, authenticate with an API key or create an API-key profile.
+`langsmith auth login` also works against self-hosted instances from LangSmith CLI `v0.2.46` and newer, provided the deployment is on LangSmith `0.16` or later with the OAuth authorization server enabled (requires a signing JWKS to be configured). See [Self-hosted instances](#self-hosted-instances). On earlier deployments, or without a signing JWKS, authenticate with an API key or create an API-key profile.
 </Note>
 
 ```bash
@@ -112,6 +112,52 @@ Or, pass them as flags per command:
 langsmith --api-key lsv2_... trace list --project my-app
 ```
 
+### Self-hosted instances
+
+Point the CLI at your instance with `--api-url`, or with `LANGSMITH_ENDPOINT`. Both the browser-based login and API keys are supported.
+
+<Tabs>
+<Tab title="OAuth">
+Requires LangSmith CLI `v0.2.46` or later and a deployment on LangSmith `0.16` or later, with the OAuth authorization server enabled. The chart exposes the OAuth authorization server under `/api`, but those endpoints stay inert until you configure a signing JWKS. For setup steps, see [Enabling Remote MCP](/langsmith/langsmith-remote-mcp#enabling-remote-mcp).
+
+The OAuth authorization server is enabled automatically when `config.hostname` is set in your Helm chart **and** a signing JWKS is configured (via `config.signingJwks`, or the key `langsmith_signing_jwks` in `config.existingSecretName`). Without the signing JWKS, the OAuth endpoints are inactive and the CLI will receive a `404` — use the API key tab instead.
+
+```bash
+langsmith auth login --api-url https://langsmith.example.com --profile self-hosted
+```
+
+Pass your instance's base URL. The CLI reads the deployment's authorization server metadata to find the OAuth endpoints, so `https://langsmith.example.com` and `https://langsmith.example.com/api` both work.
+
+Tokens are stored under the named profile, so later commands only need `--profile`:
+
+```bash
+langsmith --profile self-hosted project list
+```
+</Tab>
+
+<Tab title="API key">
+Works on every LangSmith version.
+
+```bash
+export LANGSMITH_ENDPOINT="https://langsmith.example.com"
+export LANGSMITH_API_KEY="lsv2_..."
+
+langsmith project list
+```
+
+To save the endpoint and key as a reusable profile instead:
+
+```bash
+LANGSMITH_API_KEY="lsv2_..." langsmith profile create self-hosted \
+  --api-url https://langsmith.example.com --set-current
+```
+</Tab>
+</Tabs>
+
+<Warning>
+`LANGSMITH_ENDPOINT` takes precedence over a profile's `api_url`. If it is set in your shell, every profile you select resolves to that endpoint — a common cause of commands unexpectedly reaching LangSmith Cloud while a self-hosted profile is active. Unset it when working with profiles, or pass `--api-url` explicitly.
+</Warning>
+
 ## Quickstart
 
 The following commands cover the core resource types:
@@ -145,18 +191,18 @@ langsmith sandbox tunnel my-vm --remote-port 5432
 
 **Default**
 
-JSON to stdout — easy to pipe, script, or feed to an agent:
+Human-readable tables:
 
   ```bash
   langsmith trace list --project my-app
   ```
 
-**Pretty tables**
+**JSON**
 
-`--format pretty` for human-readable output:
+`--format json` to pipe, script, or feed output to an agent:
 
   ```bash
-  langsmith --format pretty trace list --project my-app
+  langsmith --format json trace list --project my-app
   ```
 
 **Write to file**
@@ -178,7 +224,7 @@ Returns up to 20 projects by default, sorted by most recent activity. Lists trac
 ```bash
 langsmith project list
 langsmith project list --limit 50 --name-contains chatbot
-langsmith --format pretty project list
+langsmith --format json project list
 ```
 
 ### Query traces

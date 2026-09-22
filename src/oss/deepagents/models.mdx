@@ -16,7 +16,7 @@ Deep Agents work with any [LangChain chat model](/oss/langchain/models) that sup
 
 ## Supported models
 
-Specify models in `provider:model` format (for example, `google_genai:gemini-3.5-flash`, `openai:gpt-5.4`, or `anthropic:claude-sonnet-4-6`). The provider prefix selects the LangChain integration, and everything after the colon is passed through to that provider as the model identifier. For valid provider strings, see the `model_provider` parameter of @[`init_chat_model`]. For provider-specific configuration, see [chat model integrations](/oss/integrations/chat).
+Specify models in `provider:model` format (for example, `google_genai:gemini-3.6-flash`, `openai:gpt-5.4`, or `anthropic:claude-sonnet-4-6`). The provider prefix selects the LangChain integration, and everything after the colon is passed through to that provider as the model identifier. For valid provider strings, see the `model_provider` parameter of @[`init_chat_model`]. For provider-specific configuration, see [chat model integrations](/oss/integrations/chat).
 
 The model identifier must match the format expected by the provider. Some providers use simple names like `gpt-5.5`; others use namespaced IDs or deployment paths like `zai-org/GLM-5.2`, so the full Deep Agents string would be `baseten:zai-org/GLM-5.2`. Check the provider's model catalog or integration docs for the current identifiers.
 
@@ -26,7 +26,7 @@ These models perform well on the [Deep Agents eval suite](https://github.com/lan
 
 | Provider | Models |
 |----------|--------|
-| [Google](/oss/integrations/providers/google) | `gemini-3.1-pro-preview`, `gemini-3.5-flash` |
+| [Google](/oss/integrations/providers/google) | `gemini-3.1-pro-preview`, `gemini-3.6-flash` |
 | [OpenAI](/oss/integrations/providers/openai) | `gpt-5.5`, `gpt-5.4` |
 | [Anthropic](/oss/integrations/providers/anthropic) | `claude-opus-4-8`, `claude-opus-4-7`, `claude-opus-4-6` |
 | Open-weight | `GLM-5.2`, `Kimi-K2.7 Code`, `MiniMax-M3` |
@@ -87,8 +87,8 @@ A [`ProviderProfile`](/oss/deepagents/profiles#provider-profiles) packages initi
 
 You can register at two levels, and both can coexist:
 
-- **Provider level** — a bare provider key like `"openai"` applies to every model from the `openai` provider.
-- **Model level** — a `provider:model` key like `"openai:gpt-5.4"` applies only to that specific model, and merges on top of any matching provider-level profile.
+- **Provider level**: a bare provider key like `"openai"` applies to every model from the `openai` provider.
+- **Model level**: a `provider:model` key like `"openai:gpt-5.4"` applies only to that specific model, and merges on top of any matching provider-level profile.
 
 :::python
 <ModelsProviderProfilesPy />
@@ -99,6 +99,45 @@ See [Profiles](/oss/deepagents/profiles) for the full field list, merge semantic
 <Tip>
     For shaping how the *agent* behaves once the model is built, use a [harness profile](/oss/deepagents/profiles#harness-profiles).
 </Tip>
+
+### OpenAI and the Responses API
+
+When you pass an `openai:...` string as the model, Deep Agents uses the built-in OpenAI [provider profile](/oss/deepagents/profiles#provider-profiles) to enable the [Responses API](/oss/integrations/chat/openai#responses-api) by default. That path supports OpenAI conversation state and related features; see the [OpenAI provider](/oss/integrations/providers/openai) and [chat model](/oss/integrations/chat/openai) docs for current API options.
+
+<Note>
+    The built-in OpenAI provider profile applies only to model strings. To set kwargs such as `use_responses_api`, `store`, or `include`, pass a configured model instance, or, in Python, layer them through a [provider profile](/oss/deepagents/profiles#provider-profiles) `init_kwargs`. Build the instance with @[`init_chat_model`] (Python) or `initChatModel` / `ChatOpenAI` (TypeScript).
+</Note>
+
+:::python
+To use [Chat Completions](https://platform.openai.com/docs/guides/responses-vs-chat-completions) instead of the Responses API, pass a pre-initialized model with `use_responses_api=False`:
+
+```python
+from langchain.chat_models import init_chat_model
+from deepagents import create_deep_agent
+
+model = init_chat_model("openai:gpt-5.5", use_responses_api=False)
+agent = create_deep_agent(model=model)
+```
+
+To keep the Responses API but disable data retention (`store=False`) while still receiving encrypted reasoning output, set `include` so reasoning is returned as encrypted content:
+
+```python
+from langchain.chat_models import init_chat_model
+from deepagents import create_deep_agent
+
+model = init_chat_model(
+    "openai:gpt-5.5",
+    use_responses_api=True,
+    store=False,
+    include=["reasoning.encrypted_content"],
+)
+agent = create_deep_agent(model=model)
+```
+:::
+
+:::js
+Use the [OpenAI chat integration](/oss/integrations/chat/openai#responses-api) to choose the Responses API versus Chat Completions (`useResponsesApi`, model kwargs, and any storage or output options your version exposes). Pass the resulting model instance to `createDeepAgent({ model })` so those settings are preserved.
+:::
 
 ## Select a model at runtime
 

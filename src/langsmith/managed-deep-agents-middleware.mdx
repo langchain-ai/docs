@@ -1,30 +1,92 @@
 ---
 title: Add custom middleware to Managed Deep Agents
-sidebarTitle: Custom middleware
-description: Add built-in or custom middleware to Managed Deep Agents projects.
+sidebarTitle: Middleware
+description: Add built-in or custom middleware to a managed deep agent.
 ---
 
-import ManagedDeepAgentsPrivateBetaNote from '/snippets/langsmith/managed-deep-agents-private-beta-note.mdx';
-import ManagedDeepAgentsTestAndDeploy from '/snippets/langsmith/managed-deep-agents-test-and-deploy.mdx';
+import ManagedDeepAgentsPublicBetaNote from '/snippets/langsmith/managed-deep-agents-public-beta-note.mdx';
 
-Managed Deep Agents support the normal Deep Agents `middleware` configuration surface. Add LangChain middleware to `define_deep_agent` or `defineDeepAgent` to monitor tool calls, add guardrails, redact data, retry transient failures, or customize model calls.
+Middleware adds behavior around model calls, tool calls, and the agent lifecycle. Like [custom tools](/langsmith/managed-deep-agents-tools), MDA does not discover middleware automatically. Import it and pass it to the agent definition.
 
-<Note>
-<ManagedDeepAgentsPrivateBetaNote />
-</Note>
+<ManagedDeepAgentsPublicBetaNote />
+
+Put custom middleware under `middleware/`, import it into the agent entry, and pass it to the agent definition:
+
+:::python
+```text
+my-agent/
+  agent.py
+  middleware/
+    audit.py
+```
+:::
+
+:::js
+```text
+my-agent/
+  agent.ts
+  middleware/
+    audit.ts
+```
+:::
+
+For the full project layout, see [Project structure](/langsmith/managed-deep-agents-project-structure).
 
 The managed runtime still owns `backend`, `store`, `checkpointer`, `memory`, `skills`, and the system prompt. Middleware should focus on agent behavior around model calls, tool calls, and lifecycle hooks.
 
-For deeper hook, state, and context details, see [Custom middleware](/oss/langchain/middleware/custom).
+## Add middleware
 
-## Add a middleware module
+Use middleware to redact PII, enforce call limits, retry failures, fall back between models, select models dynamically, or log and inspect tool calls.
 
-Put middleware code under `middleware/` in your project and import it from the agent entry. For the full project layout, see the [CLI project file reference](/langsmith/managed-deep-agents-cli#project-file-reference).
+<Steps>
+  <Step title="Use prebuilt middleware" id="use-prebuilt-middleware">
 
-<CodeGroup>
+You can use LangChain [prebuilt middleware](/oss/langchain/middleware/built-in) directly in the agent definition:
+
+:::python
+```python agent.py
+from langchain.agents.middleware import ModelCallLimitMiddleware, PIIMiddleware
+from managed_deepagents import define_deep_agent
+
+agent = define_deep_agent(
+    name="support-agent",
+    model="openai:gpt-5.5",
+    middleware=[
+        PIIMiddleware("email", strategy="redact", apply_to_input=True),
+        ModelCallLimitMiddleware(run_limit=50),
+    ],
+)
+```
+:::
+
+:::js
+```ts agent.ts
+import { defineDeepAgent } from "managed-deepagents";
+import { modelCallLimitMiddleware, piiMiddleware } from "langchain";
+
+export const agent = defineDeepAgent({
+  name: "support-agent",
+  model: "openai:gpt-5.5",
+  middleware: [
+    piiMiddleware("email", { strategy: "redact", applyToInput: true }),
+    modelCallLimitMiddleware({ runLimit: 50 }),
+  ],
+});
+```
+:::
+
+  </Step>
+  <Step title="Define custom middleware (Optional)" id="define-custom-middleware">
+
+For a more advanced option, define [custom middleware](/oss/langchain/middleware/custom) in a local module.
+
+:::python
+<Note>
+Middleware is a shared LangChain primitive. Managed Deep Agents always invoke the agent with `ainvoke` and `astream`, so custom middleware must use async hooks. Synchronous hooks remain available when you call [Deep Agents](/oss/deepagents/overview) with `invoke` or `stream`.
+</Note>
 
 ```python middleware/audit.py
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from langchain.agents.middleware import wrap_tool_call
 from langchain.messages import ToolMessage
@@ -33,16 +95,18 @@ from langgraph.types import Command
 
 
 @wrap_tool_call
-def log_tool_calls(
+async def log_tool_calls(
     request: ToolCallRequest,
-    handler: Callable[[ToolCallRequest], ToolMessage | Command],
+    handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
 ) -> ToolMessage | Command:
     print(f"Calling tool: {request.tool_call['name']}")
-    result = handler(request)
+    result = await handler(request)
     print(f"Finished tool: {request.tool_call['name']}")
     return result
 ```
+:::
 
+:::js
 ```ts middleware/audit.ts
 import { createMiddleware } from "langchain";
 
@@ -56,132 +120,65 @@ export const logToolCalls = createMiddleware({
   },
 });
 ```
+:::
 
-</CodeGroup>
+Import the middleware into the project-root agent entry and pass it in the `middleware` list:
 
-## Attach middleware to the agent
-
-Import the middleware into the project-root agent entry and pass it in the `middleware` list.
-
-<CodeGroup>
-
+:::python
 ```python agent.py
 from managed_deepagents import define_deep_agent
 
 from middleware.audit import log_tool_calls
 
 agent = define_deep_agent(
+    name="support-agent",
     model="openai:gpt-5.5",
     middleware=[log_tool_calls],
 )
 ```
+:::
 
+:::js
 ```ts agent.ts
 import { defineDeepAgent } from "managed-deepagents";
 
 import { logToolCalls } from "./middleware/audit";
 
 export const agent = defineDeepAgent({
+  name: "support-agent",
   model: "openai:gpt-5.5",
   middleware: [logToolCalls],
 });
 ```
+:::
 
-</CodeGroup>
+:::python
+Your middleware imports should work the same way they do in a normal local Python project.
+:::
 
-`mda dev` and `mda deploy` copy the project files into the compiled build. Your middleware imports should work the same way they do in a normal local Python or TypeScript project.
+:::js
+Your middleware imports should work the same way they do in a normal local TypeScript project.
+:::
 
-## Use prebuilt middleware
-
-You can also pass LangChain prebuilt middleware directly in the agent definition.
-
-<CodeGroup>
-
-```python agent.py
-from langchain.agents.middleware import ModelCallLimitMiddleware, PIIMiddleware
-from managed_deepagents import define_deep_agent
-
-agent = define_deep_agent(
-    model="openai:gpt-5.5",
-    middleware=[
-        PIIMiddleware("email", strategy="redact", apply_to_input=True),
-        ModelCallLimitMiddleware(run_limit=50),
-    ],
-)
-```
-
-```ts agent.ts
-import { defineDeepAgent } from "managed-deepagents";
-import { modelCallLimitMiddleware, piiMiddleware } from "langchain";
-
-export const agent = defineDeepAgent({
-  model: "openai:gpt-5.5",
-  middleware: [
-    piiMiddleware("email", { strategy: "redact", applyToInput: true }),
-    modelCallLimitMiddleware({ runLimit: 50 }),
-  ],
-});
-```
-
-</CodeGroup>
-
-Middleware is the right place for cross-cutting behavior such as PII handling, rate limits, retry policies, model fallbacks, dynamic model selection, and tool-call monitoring.
-
-## Human-in-the-loop
-
-Pause the agent before sensitive tool calls so a person can approve, edit, or reject them. Set `interrupt_on` (Python) or `interruptOn` (TypeScript) in the agent definition, and optionally set `permissions` to gate tool and filesystem access.
-
-<CodeGroup>
-
-```python agent.py
-from managed_deepagents import define_deep_agent
-
-from tools.customer import lookup_customer
-
-agent = define_deep_agent(
-    model="openai:gpt-5.5",
-    tools=[lookup_customer],
-    interrupt_on={"lookup_customer": True},
-)
-```
-
-```ts agent.ts
-import { defineDeepAgent } from "managed-deepagents";
-
-import { lookupCustomer } from "./tools/customer";
-
-export const agent = defineDeepAgent({
-  model: "openai:gpt-5.5",
-  tools: [lookupCustomer],
-  interruptOn: {
-    lookup_customer: true,
-  },
-});
-```
-
-</CodeGroup>
-
-The `interrupt_on` field applies the same interrupt behavior as LangChain's [human-in-the-loop middleware](/oss/langchain/guardrails#human-in-the-loop). For decision types (approve, edit, reject), conditional interrupts, and permission rules, see the Deep Agents [Human-in-the-loop](/oss/deepagents/human-in-the-loop) and [Permissions](/oss/deepagents/permissions) guides.
-
-### Respond to an interrupt
-
-When a run hits an interrupt, it pauses and waits for a human response before continuing.
-
-- **During local development**, `mda dev` runs the agent in LangSmith Studio, which surfaces the interrupt so you can inspect the pending tool call and resume the run.
-- **On a deployed agent**, resume the paused run through the LangGraph server API with a `Command(resume=...)` payload. See [Human-in-the-loop using server API](/langsmith/add-human-in-the-loop).
-
-<Note>
-During private beta, Managed Deep Agents is CLI-first and programmatic invocation is not yet documented. To resume runs programmatically from your own application, contact your LangChain team.
-</Note>
-
-Human-in-the-loop needs durable thread state to pause and resume. The managed runtime owns the checkpointer, so no extra setup is required. For how threads persist, see [How Managed Deep Agents work](/langsmith/managed-deep-agents-how-it-works#threads-and-memory).
+  </Step>
+</Steps>
 
 ## Use runtime context
 
-Middleware can read per-run context through the normal LangChain runtime APIs. Use context for user IDs, tenant IDs, feature flags, request metadata, or credentials that should not be part of the model prompt by default.
+Middleware can read per-run context through the normal LangChain runtime APIs. Use context for user IDs, organization IDs, feature flags, request metadata, or credentials that should not be part of the model prompt by default.
 
 For examples, see [Custom middleware](/oss/langchain/middleware/custom).
 
-## Test and deploy
+## Deployment
 
-<ManagedDeepAgentsTestAndDeploy />
+`mda dev` and `mda deploy` copy project files into the compiled build, including modules under `middleware/`. Middleware is not synced to Context Hub; it ships with the agent code.
+
+## When to use middleware
+
+| Concept | Kind | How it reaches the agent |
+| --- | --- | --- |
+| **Middleware** | Application code | Import and pass in the agent definition |
+| **[Custom tools](/langsmith/managed-deep-agents-tools)** | Application code | Import and pass in the agent definition |
+| **[Instructions](/langsmith/managed-deep-agents-instructions)** | Managed context | Always-on system prompt |
+
+For more information, see [Project structure](/langsmith/managed-deep-agents-project-structure).

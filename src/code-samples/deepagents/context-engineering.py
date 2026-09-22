@@ -4,7 +4,7 @@
 from deepagents import create_deep_agent
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     system_prompt=(
         "You are a research assistant specializing in scientific literature. "
         "Always cite sources. Use subagents for parallel research on different topics."
@@ -18,7 +18,7 @@ assert agent is not None
 
 # :snippet-start: context-engineering-memory-py
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     memory=["/project/AGENTS.md", "~/.deepagents/preferences.md"],
 )
 # :snippet-end:
@@ -29,8 +29,8 @@ assert agent is not None
 
 # :snippet-start: context-engineering-skills-py
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
-    skills=["/skills/research/", "/skills/web-search/"],
+    model="google_genai:gemini-3.6-flash",
+    skills=["/skills/"],
 )
 # :snippet-end:
 
@@ -90,7 +90,7 @@ def fetch_user_data(query: str, runtime: ToolRuntime[Context]) -> str:
 
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     tools=[fetch_user_data],
     context_schema=Context,
 )
@@ -162,7 +162,7 @@ from deepagents.middleware.summarization import create_summarization_tool_middle
 
 backend = StateBackend  # if using default backend
 
-model = "google_genai:gemini-3.5-flash"
+model = "google_genai:gemini-3.6-flash"
 agent = create_deep_agent(
     model=model,
     middleware=[  # [!code highlight]
@@ -231,7 +231,7 @@ from langgraph.store.memory import InMemoryStore
 store = InMemoryStore()
 
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     store=store,
     backend=CompositeBackend(
         default=StateBackend(),

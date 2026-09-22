@@ -12,7 +12,7 @@ LangSmith persists both [checkpoints](/oss/langgraph/checkpointers#checkpoints) 
 
 ## Configuring thread and checkpoint TTL
 
-Checkpoints capture the state of conversation threads. Setting a TTL ensures old checkpoints and thread metadata are automatically deleted.
+Checkpoints capture the state of conversation threads. Setting a TTL automatically deletes or prunes expired data.
 
 Add a `checkpointer.ttl` configuration to your `langgraph.json` file:
 
@@ -36,11 +36,11 @@ Add a `checkpointer.ttl` configuration to your `langgraph.json` file:
     - `"delete"`: Removes the entire thread including all associated run and checkpoint data when the TTL expires.
     - `"keep_latest"`: Retains the thread and latest checkpoint, but deletes older checkpoint data that subsequent runs won't need.
 - `sweep_interval_minutes`: Defines how often, in minutes, the system checks for expired checkpoints. Defaults to 5 minutes.
-- `default_ttl`: Sets the default lifespan of threads (and corresponding checkpoints) in minutes (e.g., 43200 minutes = 30 days). If no default TTL is set, checkpoints will not expire by default.
+- `default_ttl`: Sets the default TTL window in minutes (e.g., 43200 minutes = 30 days). The `delete` window starts when the TTL is applied and does not refresh with activity. The `keep_latest` window refreshes when a run finishes or thread state is updated. If omitted, threads do not expire by default.
 - `sweep_limit`: (_Agent server v0.8+_) Sets how many threads the sweeper processes in a single iteration. Defaults to `10000` (Agent server v0.12+) or `1000` (Agent server v0.8-0.11).
 
 <Note>
-TTLs are applied to threads and checkpoints when they are created. They do not apply to existing threads and checkpoints. To clear older data, delete it explicitly.
+Global TTL configuration applies to new threads. The `delete` strategy does not apply retroactively to existing threads. The `keep_latest` strategy applies to an existing thread after a run finishes or its state is updated; inactive existing threads remain unchanged.
 </Note>
 
 ## Configuring store item TTL
@@ -66,7 +66,7 @@ Add a `store.ttl` configuration to your `langgraph.json` file:
 ```
 
 - `refresh_on_read`: (Optional, default `true`) If `true`, accessing an item via `get` or `search` resets its expiration timer. If `false`, TTL only refreshes on `put`.
-- `sweep_interval_minutes`: (Optional) Defines how often, in minutes, the system checks for expired items. If omitted, no sweeping occurs.
+- `sweep_interval_minutes`: (Optional, default `5`) Defines how often, in minutes, the system checks for expired items.
 - `default_ttl`: (Optional) Sets the default lifespan of store items in minutes (e.g., 10080 minutes = 7 days). Applies only to items created after this configuration is deployed; existing items are not changed. If you need to clear older items, delete them manually. If omitted, items do not expire by default.
 
 ## Combining TTL configurations
@@ -110,12 +110,12 @@ thread = await client.threads.create(
 ```
 
 <Note>
-Thread-level TTLs will also delete all associated checkpoints. As a result, you can set a thread-level TTL and avoid setting a separate TTL for checkpoints.
+A thread-level TTL overrides the default TTL for that thread and uses the strategy behavior described above.
 </Note>
 
 ## Runtime overrides
 
-The default `store.ttl` settings from `langgraph.json` can be overridden at runtime by providing specific TTL values in SDK method calls like `get`, `put`, and `search`.
+For store items, pass `ttl` to `put` to override the default lifespan. Pass `refresh_ttl` to `get` or `search` to control whether reads refresh expiration.
 
 ## Deployment process
 

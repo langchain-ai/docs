@@ -29,7 +29,15 @@ Use `/goal` when you know the outcome you want, but want Deep Agents Code to pro
 
 Deep Agents Code drafts acceptance criteria for review before starting the task.
 
-In the inline review you can accept the proposal, edit the criteria, request another revision, or cancel it. After you accept the criteria, the goal stays active across turns until it is paused, completed, blocked, or cleared.
+How draft criteria are handled depends on your [approval mode](/oss/deepagents/code/approval-modes):
+
+<Accordion title="Review behavior by approval mode">
+    - **Manual**: Always opens the inline review.
+    - **Auto**: Opens the review by default. Set `goals.auto_accept_criteria = true` in `~/.deepagents/config.toml` to apply generated criteria automatically.
+    - **YOLO**: Applies generated criteria without review.
+</Accordion>
+
+After the criteria are accepted, the goal stays active across turns until it is paused, completed, blocked, or cleared.
 
 This approach lets you work toward a larger objective over multiple turns:
 

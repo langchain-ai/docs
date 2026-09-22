@@ -20,7 +20,7 @@ async_subagents = [
 
 agent = create_deep_agent(
     # KEEP MODEL
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=async_subagents,
 )
 # :snippet-end:

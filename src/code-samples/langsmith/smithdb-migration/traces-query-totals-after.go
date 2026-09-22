@@ -24,17 +24,17 @@ func main() {
 	}
 	projectID := sessions.Items[0].ID
 
-	minStart, _ := time.Parse(time.RFC3339, "2026-07-01T00:00:00Z")
-	maxStart, _ := time.Parse(time.RFC3339, "2026-07-31T23:59:59Z")
+	maxStart := time.Now().UTC()
+	minStart := maxStart.AddDate(0, -1, 0)
 
 	iter := client.Traces.QueryAutoPaging(ctx, langsmith.TraceQueryParams{
 		ProjectID:    langsmith.F(projectID),
 		MinStartTime: langsmith.F(minStart),
 		MaxStartTime: langsmith.F(maxStart),
-		Selects: langsmith.F([]langsmith.TraceQueryParamsSelect{
-			langsmith.TraceQueryParamsSelectName,
-			langsmith.TraceQueryParamsSelectTotalTokens,
-			langsmith.TraceQueryParamsSelectTotalCost,
+		Selects: langsmith.F([]langsmith.RunSelectField{
+			langsmith.RunSelectFieldName,
+			langsmith.RunSelectFieldTotalTokens,
+			langsmith.RunSelectFieldTotalCost,
 		}),
 	})
 	count := 0

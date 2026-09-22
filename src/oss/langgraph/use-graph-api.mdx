@@ -753,7 +753,7 @@ Output of graph invocation: {"a":"set by node3"}
 :::python
 ### Use pydantic models for graph state
 
-A [StateGraph](https://langchain-ai.github.io/langgraph/reference/graphs.md#langgraph.graph.StateGraph) accepts a @[`state_schema`] argument on initialization that specifies the "shape" of the state that the nodes in the graph can access and update.
+A @[StateGraph] accepts a @[`state_schema`] argument on initialization that specifies the "shape" of the state that the nodes in the graph can access and update.
 
 In our examples, we typically use a python-native `TypedDict` or [`dataclass`](https://docs.python.org/3/library/dataclasses.html) for `state_schema`, but @[`state_schema`] can be any [type](https://docs.python.org/3/library/stdtypes.html#type-objects).
 
@@ -1654,6 +1654,35 @@ builder.add_node(
 
 See [Fault tolerance](/oss/langgraph/fault-tolerance#error-handling) for compensation patterns and `Command` routing.
 
+## Set graph-wide node defaults
+
+<Note>
+Requires `langgraph>=1.2`.
+</Note>
+
+Use @[`set_node_defaults`] to set `retry_policy`, `timeout`, `cache_policy`, or `error_handler` once for every node in a graph, instead of repeating them on each @[`add_node`] call. Per-node values always win, and defaults are applied at @[`StateGraph.compile`] time:
+
+```python
+from langgraph.types import RetryPolicy, TimeoutPolicy
+
+graph = (
+    StateGraph(State)
+    .set_node_defaults(
+        retry_policy=RetryPolicy(max_attempts=3),
+        timeout=TimeoutPolicy(run_timeout=30),
+        error_handler=fallback_handler,
+    )
+    .add_node("a", node_a)
+    .add_node("b", node_b, retry_policy=RetryPolicy(max_attempts=5))  # overrides default
+    .add_edge(START, "a")
+    .compile()
+)
+```
+
+`retry_policy` and `timeout` defaults apply to every node, including error-handler nodes. `cache_policy` and `error_handler` defaults apply only to regular nodes—handlers never catch themselves, and caching a handler result is unsafe. Defaults are not inherited by subgraphs.
+
+See [Fault tolerance](/oss/langgraph/fault-tolerance#graph-defaults) for the full precedence rules and applicability table.
+
 :::
 
 :::python
@@ -2214,7 +2243,7 @@ graph.invoke({"value_1": "c"})
 
 ## Create branches
 
-Parallel execution of nodes is essential to speed up overall graph operation. LangGraph offers native support for parallel execution of nodes, which can significantly enhance the performance of graph-based workflows. This parallelization is achieved through fan-out and fan-in mechanisms, utilizing both standard edges and [conditional_edges](https://langchain-ai.github.io/langgraph/reference/graphs.md#langgraph.graph.MessageGraph.add_conditional_edges). Below are some examples showing how to add create branching dataflows that work for you.
+Parallel execution of nodes is essential to speed up overall graph operation. LangGraph offers native support for parallel execution of nodes, which can significantly enhance the performance of graph-based workflows. This parallelization is achieved through fan-out and fan-in mechanisms, utilizing both standard edges and @[conditional_edges][add_conditional_edges]. Below are some examples showing how to add create branching dataflows that work for you.
 
 ### Run graph nodes in parallel
 
@@ -2378,7 +2407,7 @@ Importantly, updates from a parallel superstep may not be ordered consistently. 
   If you have error-prone (perhaps want to handle flakey API calls), LangGraph provides two ways to address this:
 
   1. You can write regular python code within your node to catch and handle exceptions.
-  2. You can set a **[retry_policy](https://langchain-ai.github.io/langgraph/reference/types/#langgraph.types.RetryPolicy)** to direct the graph to retry nodes that raise certain types of exceptions. Only failing branches are retried, so you needn't worry about performing redundant work.
+  2. You can set a **[`RetryPolicy`](https://reference.langchain.com/python/langgraph/types/#langgraph.types.RetryPolicy)** to direct the graph to retry nodes that raise certain types of exceptions. Only failing branches are retried, so you needn't worry about performing redundant work.
 
   Together, these let you perform parallel execution and fully control exception handling.
 </Accordion>
@@ -2479,6 +2508,18 @@ Adding "D" to ['A', 'B', 'C', 'B_2']
 ```
 
 In the above example, nodes `"b"` and `"c"` are executed concurrently in the same superstep. We set `defer=True` on node `d` so it will not execute until all pending tasks are finished. In this case, this means that `"d"` waits to execute until the entire `"b"` branch is finished.
+
+When every branch always runs, you can wait with a list-form edge instead of `defer=True`. `add_edge` also accepts a list of start nodes. This is not shorthand for separate `add_edge` calls; the two forms behave differently:
+
+```python
+builder.add_edge(["b_2", "c"], "d")  # d runs once, after both b_2 and c complete
+```
+
+- **A list of start nodes** runs `d` once, after all of the listed nodes have completed. If one of them never runs (for example, a conditional edge does not select its branch), `d` never runs and no error is raised. State updates from branches that did complete remain in the graph state, but `d` does not consume them.
+- **Separate edges** run `d` once per superstep in which any incoming branch completes. With branches of equal length, that is a single run; with branches of different lengths, `d` runs more than once.
+- **Separate edges with `defer=True`** (the pattern in the example above) run `d` once, after every selected branch has completed, whether the fan-out selected all of the branches or only some of them.
+
+`defer=True` postpones the node until no tasks are pending anywhere in the graph, not only in the branches that feed it. A `Send` addressed to the node still invokes it separately.
 :::
 
 ### Conditional branching
@@ -2580,7 +2621,7 @@ const nodeC: GraphNode<typeof State> = (state) => {
   return { aggregate: ["C"] };  // [!code highlight]
 };
 
-const conditionalEdge: ConditionalEdgeRouter<typeof State, "b" | "c"> = (state) => {
+const conditionalEdge: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" | "c" }> = (state) => {
   // Fill in arbitrary logic here that uses the state
   // to determine the next node
   return state.which as "b" | "c";
@@ -2633,7 +2674,7 @@ def route_bc_or_cd(state: State) -> Sequence[str]:
 
 :::js
 ```typescript
-const routeBcOrCd: ConditionalEdgeRouter<typeof State, "b" | "c" | "d"> = (state) => {
+const routeBcOrCd: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" | "c" | "d" }> = (state) => {
   if (state.which === "cd") {
     return ["c", "d"];
   }
@@ -2741,7 +2782,7 @@ const generateJoke: GraphNode<typeof OverallState> = (state) => {
   return { jokes: [jokeMap[state.subject]] };
 };
 
-const continueToJokes: ConditionalEdgeRouter<typeof OverallState, "generateJoke"> = (state) => {
+const continueToJokes: ConditionalEdgeRouter<{ InputSchema: typeof OverallState; Nodes: "generateJoke" }> = (state) => {
   return state.subjects.map((subject) => new Send("generateJoke", { subject }));
 };
 
@@ -2824,7 +2865,7 @@ graph = builder.compile()
 
 :::js
 ```typescript
-const route: ConditionalEdgeRouter<typeof State, "b"> = (state) => {
+const route: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" }> = (state) => {
   if (terminationCondition(state)) {
     return END;
   } else {
@@ -2941,7 +2982,7 @@ const nodeB: GraphNode<typeof State> = (state) => {
 };
 
 // Define edges
-const route: ConditionalEdgeRouter<typeof State, "b"> = (state) => {
+const route: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "b" }> = (state) => {
   if (state.aggregate.length < 7) {
     return "b";
   } else {
@@ -3179,7 +3220,7 @@ Recursion Error
   4. Node A
   5. ...
 
-  We have a loop of four supersteps, where nodes C and D are executed concurrently.
+  We have a loop of four supersteps, where nodes C and D are executed concurrently. The list-form edge waits for both `"c"` and `"d"` before returning to `"a"`. For how list-form edges differ from separate edges into the same node, see [Defer node execution](#defer-node-execution).
 
   Invoking the graph as before, we see that we complete two full "laps" before hitting the termination condition:
 
@@ -3261,7 +3302,7 @@ See the [streaming guide](/oss/langgraph/streaming) for examples of streaming wi
 
 ## Combine control flow and state updates with `Command`
 
-It can be useful to combine control flow (edges) and state updates (nodes). For example, you might want to BOTH perform state updates AND decide which node to go to next in the SAME node. LangGraph provides a way to do so by returning a [Command](https://langchain-ai.github.io/langgraph/reference/types/#langgraph.types.Command) object from node functions:
+It can be useful to combine control flow (edges) and state updates (nodes). For example, you might want to BOTH perform state updates AND decide which node to go to next in the SAME node. LangGraph provides a way to do so by returning a @[Command] object from node functions:
 
 :::python
 ```python
@@ -3380,7 +3421,7 @@ const State = new StateSchema({
 
 // Define the nodes
 
-const nodeA: GraphNode<typeof State, "nodeB" | "nodeC"> = (state) => {
+const nodeA: GraphNode<{ InputSchema: typeof State; Nodes: "nodeB" | "nodeC" }> = (state) => {
   console.log("Called A");
   const value = Math.random() > 0.5 ? "b" : "c";
   // this is a replacement for a conditional edge function
@@ -3453,7 +3494,7 @@ If you are using [subgraphs](/oss/langgraph/use-subgraphs), you might want to na
 
 :::python
 ```python
-def my_node(state: State) -> Command[Literal["my_other_node"]]:
+def my_node(state: State) -> Command[Literal["other_subgraph"]]:
     return Command(
         update={"foo": "bar"},
         goto="other_subgraph",  # where `other_subgraph` is a node in the parent graph
@@ -3553,7 +3594,7 @@ const State = new StateSchema({
   ),
 });
 
-const nodeA: GraphNode<typeof State, "nodeB" | "nodeC"> = (state) => {
+const nodeA: GraphNode<{ InputSchema: typeof State; Nodes: "nodeB" | "nodeC" }> = (state) => {
   console.log("Called A");
   const value = Math.random() > 0.5 ? "nodeB" : "nodeC";
 
@@ -3670,7 +3711,7 @@ If you are using tools that update state via @[`Command`], we recommend using pr
 
 Here we demonstrate how to visualize the graphs you create.
 
-You can visualize any arbitrary [Graph](https://langchain-ai.github.io/langgraph/reference/graphs/), including [StateGraph](https://langchain-ai.github.io/langgraph/reference/graphs/#langgraph.graph.state.StateGraph).
+You can visualize any arbitrary [Graph](https://reference.langchain.com/python/langgraph/graphs/), including @[`StateGraph`].
 
 :::python
 Let's have some fun by drawing fractals :).
@@ -3753,7 +3794,7 @@ const node2: GraphNode<typeof State> = (state) => {
   return { value: state.value * 2 };
 };
 
-const router: ConditionalEdgeRouter<typeof State, "node2"> = (state) => {
+const router: ConditionalEdgeRouter<{ InputSchema: typeof State; Nodes: "node2" }> = (state) => {
   if (state.value < 10) {
     return "node2";
   }

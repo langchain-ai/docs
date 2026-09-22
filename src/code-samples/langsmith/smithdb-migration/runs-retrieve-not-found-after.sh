@@ -15,7 +15,7 @@ RUN_ID=$(uuidgen)
 # :remove-end:
 
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-  "https://api.smith.langchain.com/v2/runs/$RUN_ID?project_id=$PROJECT_ID&start_time=$START_TIME" \
+  "https://api.smith.langchain.com/api/v2/runs/$RUN_ID?project_id=$PROJECT_ID&start_time=$START_TIME" \
   -H "x-api-key: $LANGSMITH_API_KEY")
 
 if [ "$HTTP_STATUS" = "404" ]; then

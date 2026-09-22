@@ -4,9 +4,17 @@
 import os
 import sys
 
-if not os.environ.get("OPENAI_API_KEY"):
-    print("[rag-deep-full] Skipping (OPENAI_API_KEY required).")
-    sys.exit(0)
+
+def _is_gateway_embed_error(exc: BaseException) -> bool:
+    text = str(exc)
+    return (
+        "unsupported Gemini action" in text
+        or "batchEmbedContents" in text
+        or "path not allow-listed by gateway" in text
+        or "Error code: 501" in text
+    )
+
+
 # :remove-end:
 
 # :snippet-start: rag-deep-full-py
@@ -30,7 +38,7 @@ DOC_PATHS = [
     "oss/python/deepagents/rag",
     "oss/python/langchain/tools",
     "oss/python/langchain/models",
-    "oss/python/langchain/retrieval",
+    "oss/python/deepagents/retrieval",
     "oss/python/langchain/knowledge-base",
     "oss/python/langchain/middleware",
     "oss/python/deepagents/overview",
@@ -68,6 +76,7 @@ text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=20
 all_splits = text_splitter.split_documents(docs)
 print(f"Split documentation into {len(all_splits)} chunks.")
 
+# KEEP MODEL
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 vector_store = InMemoryVectorStore(embedding=embeddings)
 vector_store.add_documents(documents=all_splits)
@@ -170,7 +179,8 @@ chunk_analyst_subagent = {
     "system_prompt": CHUNK_ANALYST_INSTRUCTIONS,
 }
 
-model = init_chat_model(model="google_genai:gemini-3.5-flash")
+# KEEP MODEL
+model = init_chat_model(model="anthropic:claude-sonnet-4-6")
 
 agent = create_deep_agent(
     model=model,

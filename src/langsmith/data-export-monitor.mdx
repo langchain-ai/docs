@@ -140,6 +140,27 @@ To ensure system stability, exports are subject to the following limits:
 
 If you have multiple exports running, new run jobs will queue until capacity becomes available.
 
+#### Self-hosted: tuning bulk export concurrency and payload size
+
+On [LangSmith Self-hosted](/langsmith/self-hosted), the concurrency limits are the defaults. To tune pod memory usage during bulk exports, configure the following environment variables on the `langsmith-backend` service:
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `BULK_EXPORT_MAX_CONCURRENT_RUNS` | `5` | Maximum number of partition runs enqueued in parallel within a single export, per scheduling pass. Reduce to limit peak memory when processing large date partitions. |
+| `DATA_EXPORT_RUN_LIMIT` | `500` | Page size (max rows) fetched from the runs store per query when paging through an export window. |
+| `DATA_EXPORT_MAX_BATCH_PAYLOAD_SIZE_KB` | `100000` (100 MB) | Maximum accumulated payload size (KB) before a batch is flushed during an export run. Reduce to lower the memory footprint of each batch. |
+
+**Example: conservative settings for memory-constrained deployments**
+
+```yaml
+# In your Helm values
+BULK_EXPORT_MAX_CONCURRENT_RUNS: "10"
+DATA_EXPORT_RUN_LIMIT: "5"
+DATA_EXPORT_MAX_BATCH_PAYLOAD_SIZE_KB: "512"
+```
+
+Lowering these values reduces parallelism and may increase total export time, but lowers peak memory usage per pod. If you encounter out-of-memory (OOM) errors on memory-constrained nodes, these settings can help.
+
 ### Progress tracking and resumability
 
 The export system maintains detailed progress metadata for each run:

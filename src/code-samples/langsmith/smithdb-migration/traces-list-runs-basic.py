@@ -18,6 +18,7 @@ for run in runs:
 # :snippet-start: traces-list-runs-basic-after-py
 # :codegroup-tab: After
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 from langsmith import Client
 
@@ -29,8 +30,8 @@ async def main():
     # :remove-start:
     async for t in client.traces.query(
         project_id=str(project.id),
-        min_start_time="2026-07-01T00:00:00Z",
-        max_start_time="2026-07-31T23:59:59Z",
+        min_start_time=datetime.now(timezone.utc) - timedelta(days=30),
+        max_start_time=datetime.now(timezone.utc),
     ):
         trace_id = t.root_run.trace_id
         break

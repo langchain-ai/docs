@@ -297,10 +297,7 @@ const checkQuery: GraphNode<typeof MessagesState> = async (state) => {
 // :snippet-start: langgraph-sql-agent-assemble-agent-js
 import { ConditionalEdgeRouter } from "@langchain/langgraph";
 
-const shouldContinue: ConditionalEdgeRouter<
-  typeof MessagesState,
-  "check_query"
-> = (state) => {
+const shouldContinue: ConditionalEdgeRouter<{ InputSchema: typeof MessagesState; Nodes: "check_query" }> = (state) => {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1];
   if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {
@@ -382,10 +379,7 @@ const runQueryNodeWithInterrupt = new ToolNode([queryToolWithInterrupt]);
 // :snippet-start: langgraph-sql-agent-hitl-assemble-js
 import { Command, MemorySaver } from "@langchain/langgraph";
 
-const shouldContinueWithHuman: ConditionalEdgeRouter<
-  typeof MessagesState,
-  "run_query"
-> = (state) => {
+const shouldContinueWithHuman: ConditionalEdgeRouter<{ InputSchema: typeof MessagesState; Nodes: "run_query" }> = (state) => {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1];
   if (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0) {

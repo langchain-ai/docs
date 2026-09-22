@@ -36,7 +36,7 @@ subagents = [research_subagent]
 
 # KEEP MODEL
 agent = create_deep_agent(
-    model="google_genai:gemini-3.5-flash",
+    model="google_genai:gemini-3.6-flash",
     subagents=subagents,
 )
 # :snippet-end:

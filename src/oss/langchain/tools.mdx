@@ -10,6 +10,7 @@ import ToolReturnCommandPy from '/snippets/code-samples/tool-return-command-py.m
 import ToolReturnCommandJs from '/snippets/code-samples/tool-return-command-js.mdx';
 import ToolReturnDirectPy from '/snippets/code-samples/tool-return-direct-py.mdx';
 import ToolReturnDirectJs from '/snippets/code-samples/tool-return-direct-js.mdx';
+import ToolReturnDirectCommandPy from '/snippets/code-samples/tool-return-direct-command-py.mdx';
 import ToolUpdateStatePy from '/snippets/code-samples/tool-update-state-py.mdx';
 import ToolErrorHandlingPy from '/snippets/code-samples/tool-error-handling-py.mdx';
 import ToolErrorHandlingJs from '/snippets/code-samples/tool-error-handling-js.mdx';
@@ -246,13 +247,9 @@ graph LR
 
 State represents short-term memory that exists for the duration of a conversation. It includes the message history and any custom fields you define in your [graph state](/oss/langgraph/graph-api#state).
 
-<Info>
-    Add `runtime: ToolRuntime` to your tool signature to access state. This parameter is automatically injected and hidden from the LLM - it won't appear in the tool's schema.
-</Info>
-
 #### Access state
 
-Tools can access the current conversation state using `runtime.state`:
+Add `runtime: ToolRuntime` to your tool signature to access state. At call time, @[`ToolNode`] injects the value automatically; the parameter is not included in the tool schema sent to the model. Use `runtime.state` to read the current conversation state:
 
 ```python
 from langchain.tools import tool, ToolRuntime
@@ -327,11 +324,10 @@ The @[`BaseStore`] provides persistent storage that survives across conversation
 Access the store through `runtime.store`. The store uses a namespace/key pattern to organize data:
 
 <Tip>
-    For production deployments, use a persistent store implementation like @[`PostgresStore`] instead of `InMemoryStore`. See the [memory documentation](/oss/langgraph/add-memory) for setup details.
+    For production deployments, use a persistent store implementation like @[`PostgresStore`], `MongoDBStore`, or `RedisStore` instead of `InMemoryStore`. See the [memory documentation](/oss/langgraph/add-memory) for setup details.
 </Tip>
 
 ```python expandable
-from typing import Any
 from langgraph.store.memory import InMemoryStore
 from langchain.agents import create_agent
 from langchain.tools import tool, ToolRuntime
@@ -347,10 +343,10 @@ def get_user_info(user_id: str, runtime: ToolRuntime) -> str:
 
 # Update memory
 @tool
-def save_user_info(user_id: str, user_info: dict[str, Any], runtime: ToolRuntime) -> str:
+def save_user_info(user_id: str, name: str, age: int, email: str, runtime: ToolRuntime) -> str:
     """Save user info."""
     store = runtime.store
-    store.put(("users",), user_id, user_info)
+    store.put(("users",), user_id, {"name": name, "age": age, "email": email})
     return "Successfully saved user info."
 
 model = ChatOpenAI(model="gpt-5.5")
@@ -381,6 +377,10 @@ agent.invoke({
 
 :::js
 Access the store through `config.store`. The store uses a namespace/key pattern to organize data:
+
+<Tip>
+    For production deployments, use a persistent store implementation like @[`PostgresStore`], `MongoDBStore`, or `RedisStore` instead of `InMemoryStore`. See the [memory documentation](/oss/langgraph/add-memory) for setup details.
+</Tip>
 
 ```ts expandable
 import * as z from "zod";
@@ -767,13 +767,25 @@ Behavior:
 - Use `message.content_blocks` to read the normalized block list after the tool runs.
 - The model must support the modalities you return. Check your [model's capabilities](/oss/integrations/chat) before returning images, audio, or video.
 
-For block types and provider-specific requirements, see [Multimodal messages](/oss/langchain/messages#multimodal). MCP tools that return images or mixed content are converted the same way; see [Multimodal tool content](/oss/langchain/mcp#multimodal-tool-content).
+For block types and provider-specific requirements, see [Multimodal messages](/oss/langchain/messages#multimodal).
+
+:::python
+MCP tools that return images or mixed content are converted the same way. See [Multimodal content](/oss/langchain/mcp/tools#multimodal-content).
+:::
 
 #### Return a Command
 
 Return a @[`Command`] when the tool needs to update graph state (for example, setting user preferences or app state).
-You can return a `Command` with or without including a `ToolMessage`.
-If the model needs to see that the tool succeeded (for example, to confirm a preference change), include a `ToolMessage` in the update, using `runtime.tool_call_id` for the `tool_call_id` parameter.
+When the `Command` targets the current graph, include a `ToolMessage` in the update whose tool call ID matches the current tool call.
+Every tool call in the message history must have a corresponding `ToolMessage`.
+
+:::python
+Use `runtime.tool_call_id` for the `tool_call_id` parameter. `ToolNode` enforces this requirement: if the update has no `ToolMessage` matching the tool call, it raises a `ValueError`.
+:::
+
+:::js
+Use `runtime.toolCallId` for the `tool_call_id` parameter.
+:::
 
 :::python
 
@@ -815,17 +827,33 @@ Behavior:
 
 - The tool executes normally and its output is wrapped in a `ToolMessage`.
 - The agent stops looping and returns the tool's output as the final response, bypassing any additional model call.
-- If the model calls multiple tools in a single turn, `return_direct` takes effect only when **all** called tools have `return_direct=True`.
+- **Multiple parallel tool calls:** When the model calls several tools in one step, all of them execute first. After all tools finish, the agent routes to `END` only if **every** tool in that batch has `return_direct=True`. The final response includes the `ToolMessage` outputs of every tool that was called in that step.
 
 Use this when:
 
 - The tool's output is the complete, user-ready answer (for example, a lookup that returns a ready-to-display result).
 - You want to avoid an extra model call when no additional reasoning is needed.
-- You need deterministic, unmodified output — the model cannot rephrase, summarize, or act on the tool result.
+- You need deterministic, unmodified output: the model cannot rephrase, summarize, or act on the tool result.
 
 <Warning>
     Because the model does not process the tool's output, `return_direct=True` is not suitable for tools whose results require further reasoning, summarization, or chaining with other tool calls.
 </Warning>
+
+<Warning>
+    **Mixed parallel calls:** If the model calls a `return_direct=True` tool alongside tools that do not have `return_direct=True`, the agent does **not** exit after that step. It routes back to the model with every `ToolMessage` from the batch, so the model can reason over all results. `return_direct` only short-circuits the loop when every tool call in the step has `return_direct=True`.
+</Warning>
+
+:::python
+
+#### Return a Command with return_direct
+
+A tool with `return_direct=True` can also return a @[`Command`] to update graph state before the agent exits. Unlike a plain return value, a `Command` is not automatically converted into a `ToolMessage`. When the `Command` targets the current graph (`graph` is not set or is `None`), include a `ToolMessage` in `Command.update` matching the tool call's `tool_call_id`. Omitting it causes `ToolNode` to raise a `ValueError`, because every `AIMessage` tool call must have a corresponding `ToolMessage` in the message history.
+
+<ToolReturnDirectCommandPy />
+
+To write to a parent graph instead, set `graph=Command.PARENT`. In that case the `ToolMessage` requirement is lifted because execution leaves the current graph entirely.
+
+:::
 
 ### Error handling
 
@@ -1344,6 +1372,35 @@ Use the optional **`onTool`** callback to observe lifecycle events (`start`, `su
 LangChain provides a large collection of prebuilt tools and toolkits for common tasks like web search, code interpretation, database access, and more. These ready-to-use tools can be directly integrated into your agents without writing custom code.
 
 See the [tools and toolkits](/oss/integrations/tools) integration page for a complete list of available tools organized by category.
+
+## Tools from MCP servers
+
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open protocol that standardizes how applications expose tools to language models. Rather than hand-authoring a tool, you connect to an MCP server and adapt the tools it advertises into LangChain tools, ready to pass to an agent like any other tool.
+
+:::python
+@[`MCPAdapter`] discovers a server's tools and converts them into LangChain tools. Open the adapter, call `list_tools()`, and hand the result to @[`create_agent`]:
+
+```python
+from langchain.agents import create_agent
+from langchain.mcp import MCPAdapter
+
+async with MCPAdapter("https://example.com/mcp") as adapter:
+    tools = await adapter.list_tools()
+    agent = create_agent("claude-sonnet-4-6", tools)
+```
+
+<Note>
+The `langchain.mcp` namespace requires `langchain[mcp]>=1.4.0` and is in beta. The API may change.
+</Note>
+
+For transports, authentication, multiple servers, and handling tool results, see [Model Context Protocol (MCP)](/oss/langchain/mcp).
+:::
+
+:::js
+LangChain agents call tools defined on MCP servers through the [`@langchain/mcp-adapters`](https://github.com/langchain-ai/langchainjs/tree/main/libs/langchain-mcp-adapters) library, which discovers a server's tools and adapts them into LangChain tools.
+
+For setup, transports, and authentication, see [Model Context Protocol (MCP)](/oss/langchain/mcp).
+:::
 
 ## Server-side tool use
 

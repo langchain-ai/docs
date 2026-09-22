@@ -179,7 +179,7 @@ ls_client.create_examples(
 
 #### TypeScript
 
-Requires version >= 0.2.13
+Requires version 0.2.13 or later
 
 You can use the `uploadExamplesMultipart` method to upload examples with attachments.
 

@@ -118,8 +118,10 @@ def sql_db_query(query: str) -> str:
 
 tools = [sql_db_list_tables, sql_db_schema, sql_db_query]
 
-for tool in tools:
-    print(f"{tool.name}: {tool.description}\n")
+# Use a distinct loop variable so it does not shadow the `tool` decorator,
+# which is reused later to wrap the query tool for human review.
+for t in tools:
+    print(f"{t.name}: {t.description}\n")
 # :snippet-end:
 
 # :snippet-start: langgraph-sql-agent-define-steps-py

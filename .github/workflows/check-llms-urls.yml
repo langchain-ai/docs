@@ -1,0 +1,47 @@
+---
+name: Check llms.txt URLs resolve
+
+# The build derives API reference URLs by reproducing Mintlify's slug rules for
+# OpenAPI operations. That is not a published contract, so a change on their
+# side would turn hundreds of index entries into 404s with nothing in this repo
+# failing. Nothing in PR CI can catch it either, because it only shows up
+# against the deployed site. This job watches for it.
+
+on:
+  schedule:
+    # Weekly, Monday 07:13 UTC. Off the hour to avoid the scheduler rush.
+    - cron: "13 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      check_all:
+        description: "Check every URL instead of a sample"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check-urls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --group test
+
+      - name: Build documentation
+        run: make build
+
+      - name: Check that indexed URLs resolve
+        run: |
+          uv run python scripts/check_llms_urls.py \
+            ${{ inputs.check_all && '--all' || '' }}

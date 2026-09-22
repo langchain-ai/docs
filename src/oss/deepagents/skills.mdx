@@ -19,10 +19,18 @@ import SkillsNamespacedPy from '/snippets/code-samples/skills-namespaced-py.mdx'
 import SkillsNamespacedJs from '/snippets/code-samples/skills-namespaced-js.mdx';
 import SkillsSubagentsPy from '/snippets/code-samples/skills-subagents-py.mdx';
 import SkillsSubagentsJs from '/snippets/code-samples/skills-subagents-js.mdx';
+import SkillsComposeSourcesPy from '/snippets/code-samples/skills-compose-sources-py.mdx';
+import SkillsComposeSourcesJs from '/snippets/code-samples/skills-compose-sources-js.mdx';
 import SkillsApprovalPy from '/snippets/code-samples/skills-approval-py.mdx';
 import SkillsApprovalJs from '/snippets/code-samples/skills-approval-js.mdx';
-import SkillsPersonalWritablePy from '/snippets/code-samples/skills-personal-writable-py.mdx';
-import SkillsPersonalWritableJs from '/snippets/code-samples/skills-personal-writable-js.mdx';
+import SkillsWritablePy from '/snippets/code-samples/skills-writable-py.mdx';
+import SkillsWritableJs from '/snippets/code-samples/skills-writable-js.mdx';
+import SkillsReloadInvokePy from '/snippets/code-samples/skills-reload-invoke-py.mdx';
+import SkillsReloadInvokeJs from '/snippets/code-samples/skills-reload-invoke-js.mdx';
+import SkillsReloadUpdateStatePy from '/snippets/code-samples/skills-reload-update-state-py.mdx';
+import SkillsReloadUpdateStateJs from '/snippets/code-samples/skills-reload-update-state-js.mdx';
+import SkillsReloadMiddlewarePy from '/snippets/code-samples/skills-reload-middleware-py.mdx';
+import SkillsReloadMiddlewareJs from '/snippets/code-samples/skills-reload-middleware-js.mdx';
 
 Skills package domain expertise, such as workflows, best practices, scripts, reference docs, and templates, into reusable directories. The agent gets a summary of the contents on startup and discovers and reads the contained files only when relevant.
 
@@ -130,6 +138,14 @@ Pass the path to your top-level skills directory in the `skills` argument when c
 
 This example uses `FilesystemBackend` to load skills from disk. For other storage options, including loading skills from remote sources, see [Backends and remote skill loading](#backends-and-remote-skill-loading).
 
+:::python
+Point each source path at a directory that contains skill directories. A path that points directly at a skill directory with `SKILL.md` is not loaded.
+:::
+
+:::js
+Each source path can point at a directory that contains skill directories, or directly at a skill directory with `SKILL.md`.
+:::
+
 <ParamField body="skills" type="list[str]" optional>
     List of skill source paths.
 
@@ -137,7 +153,12 @@ This example uses `FilesystemBackend` to load skills from disk. For other storag
 
     - If omitted, no skills are loaded.
     - When using `StateBackend` (default), provide skill files with `invoke(files={...})`. Use `create_file_data()` from `deepagents.backends.utils` to format file contents; raw strings are not supported.
-    - With `FilesystemBackend`, skills are loaded from disk relative to the backend's `root_dir`.
+    :::python
+    - With `FilesystemBackend` and `StoreBackend`, create the backend, call `backend.upload_files()` to add skill files, then pass the backend to `create_deep_agent`. For `FilesystemBackend`, use `virtual_mode=True` to sandbox paths under `root_dir`. Skills already on disk under `root_dir` load without uploading.
+    :::
+    :::js
+    - With `FilesystemBackend` and `StoreBackend`, create the backend, call `backend.uploadFiles()` to add skill files, then pass the backend to `createDeepAgent`. For `FilesystemBackend`, use `virtualMode: true` to sandbox paths under `rootDir`. Skills already on disk under `rootDir` load without uploading.
+    :::
 
     Later sources override earlier ones for skills with the same name (last one wins).
 
@@ -195,7 +216,7 @@ As the agent works through a task, it loads skill information in layers:
 
 </div>
 
-In Deep Agents, @[`SkillsMiddleware`] (part of the [default middleware stack](/oss/deepagents/customization#default-stack-main-agent) when you pass `skills`) handles the first two levels, with the third level being handled by the LLM:
+In Deep Agents, @[`SkillsMiddleware`] (part of the [Deep Agents stack](/oss/deepagents/customization#deep-agents-stack) when you pass `skills`) handles the first two levels, with the third level being handled by the LLM:
 
 1. **Discovery** (level 1): At agent start, the middleware scans the configured skill paths, parses each `SKILL.md` [frontmatter](#frontmatter-fields), and injects the [`name`](#frontmatter-fields) and [`description`](#frontmatter-fields) fields into the system prompt.
 2. **Read** (level 2): When the agent invokes a skill, it reads the full `SKILL.md` content via `read_file`.
@@ -332,13 +353,13 @@ Deep Agents supports different backends depending on how you want to store and m
 <SkillsUsageTabsJs />
 :::
 
-## Load skills at runtime
+## Skill availability
 
-When you have a large collection of skills but only a subset is relevant for a given run, select which skills to load based on runtime context such as user role, tenant, or request type. There are two main approaches:
+Not every run needs every skill. Control which skills the agent can see by choosing the paths passed to `skills`, by resolving those paths against context-specific storage, or by combining multiple skill sources. The context can come from a request handler, auth claims, a graph factory, deployment configuration, or any other application logic.
 
-### Dynamic skill lists
+### Select skills by context
 
-The simplest approach is to construct the `skills` array before creating the agent. Choose which skill paths to include based on whatever runtime context you have:
+Choose the `skills` array before creating the agent. Use this when skills live in a common location and your application decides which paths apply to the current role, tenant, user, or request type:
 
 :::python
 <SkillsDynamicListsPy />
@@ -348,7 +369,7 @@ The simplest approach is to construct the `skills` array before creating the age
 <SkillsDynamicListsJs />
 :::
 
-This works well when skills live on disk or in a shared backend and you just need to control which ones the agent sees. The skills themselves are not duplicated — you maintain one copy and vary the paths passed to each run.
+This pattern keeps one maintained copy of each skill and varies only the paths passed to each agent. In deployments, a graph factory is a natural place to parse user information and construct the agent with the right skill paths.
 
 <Note>
     The SDK only loads the sources you pass in `skills`. It does not automatically scan CLI directories such as `~/.deepagents/...` or `~/.agents/...`.
@@ -373,9 +394,11 @@ This works well when skills live on disk or in a shared backend and you just nee
     </Accordion>
 </Note>
 
-### Namespaced skills
+### Isolate skill libraries
 
-For multi-tenant applications where each user's skill set is managed independently, route `/skills/` to a @[StoreBackend] with a namespace factory. Populate each namespace with only the skills that user should have access to, and the middleware resolves to the correct set at runtime:
+Use isolated libraries when the same skill path should resolve to different files for different users, roles, tenants, workspaces, or environments. For example, every agent can receive `skills=["/skills/"]`, while the backend resolves `/skills/` against storage scoped to the current identity or deployment context.
+
+The following example uses @[StoreBackend], but the same pattern applies to any backend that can resolve files based on runtime context:
 
 :::python
 <SkillsNamespacedPy />
@@ -385,7 +408,104 @@ For multi-tenant applications where each user's skill set is managed independent
 <SkillsNamespacedJs />
 :::
 
-This pattern is useful when different users or tenants need fully independent skill libraries that can be updated separately. For a managed solution that handles skill access, sharing, and workspace-level visibility out of the box, see [Fleet skills](/langsmith/fleet/skills).
+This keeps the agent configuration stable while the backend enforces which library the agent can access. The scope does not need to be user-specific. It can be any boundary your application uses, including role, tenant, workspace, organization, environment, or request type.
+
+To populate a shared library, seed the store from your application code or an admin workflow:
+
+- Namespace by org ID for workspace-wide skills. Pair this with [read-only skills](#read-only-skills) when agents should use the library but not modify it.
+- Namespace by user ID when each user needs an independent library, as in the example above.
+
+Seed the store with keys like `/company-policies/SKILL.md` and values that include `content` and `encoding` fields. The `/skills/` route prefix is stripped before records are read from the store.
+
+You can also combine shared and personal libraries: route `/skills/approved/` to an organization-scoped `StoreBackend`, route `/skills/editable/` to a user-scoped backend, and pass both paths in `skills`. See [Writable skills](#writable-skills).
+
+### Compose multiple sources
+
+Pass multiple skill paths when the agent should see more than one library. For example, you can combine approved organization skills, team-specific workflows, and request-specific instructions:
+
+:::python
+<SkillsComposeSourcesPy />
+:::
+
+:::js
+<SkillsComposeSourcesJs />
+:::
+
+Each path can point to the same backend, a different backend route, or a backend scoped by runtime context. For a managed solution that handles skill access, sharing, and workspace-level visibility, see [Fleet skills](/langsmith/fleet/skills).
+
+## Reload skills
+
+Skills load once per thread and stay in agent state, so every later model call on that thread reuses the same list. Skills added, edited, or deleted since then never reach the model. This applies when a checkpointer is configured. Without one, state does not survive between runs, so every run loads skills again.
+
+:::python
+Reset the stored metadata to load every source again at the start of the next run.
+:::
+
+:::js
+Reset the stored metadata to load every source again on the next model call.
+:::
+
+<Note>
+Local runs often have no checkpointer, so skill edits take effect immediately and skills appear to reload on their own. [LangSmith Deployments](/langsmith/deployment) configure a persistent checkpointer automatically, so the same agent holds its skills for the life of a thread once deployed. See [Going to production](/oss/deepagents/going-to-production).
+</Note>
+
+:::python
+<Note>Reloading skills requires `deepagents>=0.7.16`.</Note>
+:::
+
+:::js
+<Note>Reloading skills requires `deepagents>=1.14.0`.</Note>
+:::
+
+Pass the reset as run input to reload and run in a single call:
+
+:::python
+<SkillsReloadInvokePy />
+:::
+
+:::js
+<SkillsReloadInvokeJs />
+:::
+
+Update state to reset a thread between runs:
+
+:::python
+<SkillsReloadUpdateStatePy />
+:::
+
+:::js
+<SkillsReloadUpdateStateJs />
+:::
+
+:::python
+Use `None`, not an empty list. An empty list means the sources loaded and held no skills, so the agent sees no skills for the rest of the thread.
+:::
+
+:::js
+Use `null`, not an empty list. An empty list means the sources loaded and held no skills, so the agent sees no skills for the rest of the thread.
+:::
+
+<Note>
+A reload that finds a different set of skills changes the system prompt and invalidates the prompt cache for that thread. A reload that finds the same skills produces the same prompt and costs nothing.
+</Note>
+
+Middleware can reset the value as well, which lets your application decide when a thread is stale.
+
+:::python
+Loading happens at the start of each run, so a reset from a hook is served by the next run rather than partway through the current one. Reset from `after_agent` rather than `after_model`: a value stored mid-run leaves the prompt with no skills listed for the remaining model calls in that run.
+:::
+
+:::js
+Loading happens before each model call, so a reset from a hook takes effect on the next model call, including partway through a run.
+:::
+
+:::python
+<SkillsReloadMiddlewarePy />
+:::
+
+:::js
+<SkillsReloadMiddlewareJs />
+:::
 
 ## Skills for subagents
 
@@ -408,33 +528,11 @@ For more information on subagent configuration and skills inheritance, see [Suba
 
 ## Skill permissions
 
-Production deployments usually need to control three things: which skills each user can see, whether the agent can modify skill files, and whether writes require human approval. You control visibility with the `skills` argument and [backend routing](#backends-and-remote-skill-loading), access with [filesystem permissions](/oss/deepagents/permissions), and approval with [`interrupt_on`](/oss/deepagents/human-in-the-loop) or permission rules with `mode="interrupt"`.
+Skill availability controls which skill files the agent can see. Skill permissions control whether the agent can read those files, write to them, or pause for human approval before writing. Use [filesystem permissions](/oss/deepagents/permissions) for path-based read and write rules, and use [`interrupt_on`](/oss/deepagents/human-in-the-loop) or permission rules with `mode="interrupt"` when writes need approval.
 
-### Share skills across users
+### Read-only skills
 
-To give every user access to the same curated library, route `/skills/` to a shared @[StoreBackend] and seed it from your application code or an admin workflow. Use an organization-scoped namespace so all agents in that org resolve to the same store:
-
-- Namespace by org ID for workspace-wide skills (see [Enforce read-only skills](#enforce-read-only-skills)).
-- Namespace by user ID when each user needs an independent library ([namespaced skills](#namespaced-skills)).
-
-Seed the store with keys like `/company-policies/SKILL.md` and values that include `content` and `encoding` fields. The `/skills/` route prefix is stripped before records are read from the store.
-
-For a managed solution that handles skill access, sharing, and workspace-level visibility, see [Fleet skills](/langsmith/fleet/skills).
-
-You can also combine shared and personal libraries: route `/skills/shared/` to an organization-scoped `StoreBackend`, route `/skills/personal/` to a user-scoped backend, and pass both paths in `skills`. See [Allow agents to edit personal skills](#allow-agents-to-edit-personal-skills).
-
-### Limit skills by user context
-
-Not every user should see every skill. Control which skills load at runtime based on role, tenant, or other request context. There are two main approaches:
-
-- **[Dynamic skill lists](#dynamic-skill-lists)** — Build the `skills` array before creating the agent. Pass different path lists for different roles or request types. Works when skills live in a shared backend and you filter by path.
-- **[Namespaced skills](#namespaced-skills)** — Route `/skills/` to a `StoreBackend` with a namespace factory keyed on user or tenant ID. Populate each namespace with only the skills that identity should access.
-
-These patterns work alongside the read and write controls below. For example, you can give admins a larger skill set than engineers while keeping both libraries read-only.
-
-### Enforce read-only skills
-
-To share skills without letting agents modify them, route `/skills/` to a shared store and deny write operations under `/skills/**` with [filesystem permissions](/oss/deepagents/permissions). The agent can discover and read skills; only your application code or an admin workflow updates the store.
+To let agents use a curated skill library without modifying it, route the skill path to the backend that contains the approved library and deny write operations under that path. The agent can discover and read skills; only your application code or an admin workflow updates the backend.
 
 :::python
 
@@ -448,9 +546,27 @@ To share skills without letting agents modify them, route `/skills/` to a shared
 
 :::
 
-Use this for enterprise knowledge bases, approved tool instructions, or shared skill packs where the agent should benefit from centrally managed context but should not rewrite the source of truth.
+Use this for enterprise knowledge bases, approved tool instructions, or centrally managed skill packs where the agent should use the content but should not rewrite the source of truth.
 
-### Require approval for skill writes
+### Writable skills
+
+By default, agents can write to skill files if the backend permits it and no permission rule blocks the path. To let agents create or refine some skills while protecting others:
+
+1. Route writable paths to a backend that can persist agent edits.
+2. Pass those paths in `skills`.
+3. Add `deny` rules for any paths that should stay read-only. Place more specific rules before broader deny rules if paths overlap ([rule ordering](/oss/deepagents/permissions#rule-ordering)).
+
+:::python
+<SkillsWritablePy />
+:::
+
+:::js
+<SkillsWritableJs />
+:::
+
+The agent uses `write_file` and `edit_file` to create or update `SKILL.md` and supporting files under writable paths. To capture general learnings outside the skills format, route a separate path such as `/memories/` to another writable backend. See [Backends](/oss/deepagents/backends) for routing and store setup.
+
+### Write approval
 
 If agents may write to skill files but you want a human in the loop first, use either [`interrupt_on`](/oss/deepagents/human-in-the-loop) or a permission rule with `mode="interrupt"`. Both pause before `write_file` or `edit_file` runs and use the same resume flow.
 
@@ -469,24 +585,6 @@ Alternatively, configure `interrupt_on={"write_file": True, "edit_file": True}` 
     Filesystem permission interrupts require `deepagents>=0.6.8`.
 </Note>
 :::
-
-### Allow agents to edit personal skills
-
-By default, agents can write to skill files if the backend permits it and no permission rule blocks the path. To let agents create or refine skills without touching shared libraries:
-
-1. Route a writable path such as `/skills/personal/` to a user-scoped `StoreBackend`.
-2. Pass that path (along with any shared paths) in `skills`.
-3. Do not add a `deny` rule for the writable path. Place more specific rules before broader deny rules if you mix shared and personal paths ([rule ordering](/oss/deepagents/permissions#rule-ordering)).
-
-:::python
-<SkillsPersonalWritablePy />
-:::
-
-:::js
-<SkillsPersonalWritableJs />
-:::
-
-The agent uses `write_file` and `edit_file` to create or update `SKILL.md` and supporting files under the writable path. To capture general learnings outside the skills format, route a separate path such as `/memories/` to another writable backend. See [Backends](/oss/deepagents/backends) for routing and store setup.
 
 ## Execute code with skills
 
@@ -615,11 +713,30 @@ Use [LangSmith](https://smith.langchain.com) traces to debug skill discovery, `r
 
 1. **Check the skill path.** Paths must use forward slashes and be relative to the backend root. With `FilesystemBackend`, the path is relative to `root_dir`. With `StateBackend`, pass skill files in `invoke(files={...})` using `create_file_data()`.
 
+:::python
+2. **Check the path level.** Each entry in `skills` is a source directory that contains skill directories. Passing the skill directories themselves discovers nothing and raises no error, because the source directory exists and only its subdirectories are searched for `SKILL.md`.
+
+3. **Validate `SKILL.md` [frontmatter](#frontmatter-fields).** The [`name`](#frontmatter-fields) must match the parent directory name and follow the [Agent Skills specification](https://agentskills.io/specification). Use the [`skills-ref` validation tool](https://github.com/agentskills/agentskills/tree/main/skills-ref) to check formatting.
+
+4. **Check file size.** Deep Agents skips `SKILL.md` files over 10 MB during discovery.
+
+5. **Check layered sources.** When the same skill name appears in multiple sources, the [last source wins](#usage). An older or empty skill from a later path can override the one you expect.
+:::
+
+:::js
 2. **Validate `SKILL.md` [frontmatter](#frontmatter-fields).** The [`name`](#frontmatter-fields) must match the parent directory name and follow the [Agent Skills specification](https://agentskills.io/specification). Use the [`skills-ref` validation tool](https://github.com/agentskills/agentskills/tree/main/skills-ref) to check formatting.
 
 3. **Check file size.** Deep Agents skips `SKILL.md` files over 10 MB during discovery.
 
 4. **Check layered sources.** When the same skill name appears in multiple sources, the [last source wins](#usage). An older or empty skill from a later path can override the one you expect.
+:::
+
+
+### Skill changes not picked up
+
+**Problem**: The agent keeps using an earlier version of a skill after you add, edit, or delete one.
+
+**Solution**: Skills load once per thread, so a thread that has already run does not see the change. Reset the stored metadata. See [Reload skills](#reload-skills).
 
 ### Supporting files not found
 
@@ -696,7 +813,7 @@ Instructions for the agent go here. See [Usage](#usage) for a complete example o
 </Warning>
 
 :::python
-For more example skills, see [Deep Agents example skills](https://github.com/langchain-ai/deepagents/tree/main/libs/cli/examples/skills).
+For more example skills, see [Deep Agents example skills](https://github.com/langchain-ai/deepagents/tree/main/libs/code/examples/skills).
 :::
 
 :::js

@@ -90,7 +90,7 @@ deepagents
 - [Context engineering](https://docs.langchain.com/oss/python/deepagents/context-engineering)—Manage context for complex tasks
 - [Subagents](https://docs.langchain.com/oss/python/deepagents/subagents)—Delegate work to child agents
 - [Sandboxes](https://docs.langchain.com/oss/python/deepagents/sandboxes)—Run code in isolated environments
-- [Code](https://docs.langchain.com/oss/python/deepagents/code/overview)—Deep Agents Code, the terminal agent interface
+- [Code](https://docs.langchain.com/oss/deepagents/code/overview)—Deep Agents Code, the terminal agent interface
 - [Deploy](https://docs.langchain.com/langsmith/managed-deep-agents-overview)—Deploy to production
 
 ## API reference

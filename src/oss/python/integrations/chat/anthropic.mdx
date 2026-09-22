@@ -1,6 +1,14 @@
 ---
-title: "ChatAnthropic integration"
-description: "Integrate with the ChatAnthropic chat model using LangChain Python."
+title: ChatAnthropic integration
+description: Integrate with the ChatAnthropic chat model using LangChain Python.
+integration:
+  name: ChatAnthropic
+  pypi: langchain-anthropic
+  featured: true
+  stream: true
+  tool_calling: true
+  structured_output: true
+  multimodal: true
 ---
 
 You can find information about Anthropic's latest models, their costs, context windows, and supported input types in the [Claude](https://platform.claude.com/docs/en/about-claude/models/overview) docs.
@@ -12,9 +20,9 @@ You can find information about Anthropic's latest models, their costs, context w
 </Tip>
 
 <Info>
-    **AWS Bedrock and Google VertexAI**
+    **AWS Bedrock and Gemini Enterprise Agent Platform**
 
-    Note that certain Anthropic models can also be accessed via AWS Bedrock and Google VertexAI. See the [`ChatBedrock`](/oss/integrations/chat/bedrock/) and [`ChatVertexAI`](/oss/integrations/chat/google_vertex_ai) integrations to use Anthropic models via these services.
+    Note that certain Anthropic models can also be accessed via AWS Bedrock and Gemini Enterprise Agent Platform. See the [`ChatBedrock`](/oss/integrations/chat/bedrock/) and [`ChatVertexAI`](/oss/integrations/chat/google_vertex_ai) integrations to use Anthropic models via these services.
 
     For Anthropic models on AWS Bedrock with the same API as `ChatAnthropic`, use [`ChatAnthropicBedrock`](/oss/integrations/chat/bedrock#chatanthropicbedrock) from `langchain-aws`.
 </Info>
@@ -60,7 +68,7 @@ if "ANTHROPIC_API_KEY" not in os.environ:
     os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter your Anthropic API key: ")
 ```
 
-To enable automated tracing of your model calls, set your [LangSmith](/langsmith/observability) API key:
+Optionally, enable tracing of your model calls with [LangSmith](/langsmith/observability) by setting the following environment variables:
 
 ```python
 os.environ["LANGSMITH_API_KEY"] = getpass.getpass("Enter your LangSmith API key: ")
@@ -93,6 +101,33 @@ See the @[`ChatAnthropic`] API reference for details on all available instantiat
 </Note>
 
 {/* TODO: show use with a proxy or different base_url */}
+
+## Sampling parameters
+
+Newer Claude models reject non-default sampling parameters. Setting `temperature`, `top_p`, or `top_k` to a non-default value on `claude-opus-5`, `claude-fable-5`, `claude-opus-4-8`, `claude-opus-4-7`, or `claude-sonnet-5` returns a 400 error:
+
+```python
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(model="claude-opus-5", temperature=0)
+model.invoke("Hello!")
+# anthropic.BadRequestError: Error code: 400 -
+# {'type': 'error', 'error': {'type': 'invalid_request_error',
+#  'message': '`temperature` is deprecated for this model.'}}
+```
+
+Support by model:
+
+| Models | `temperature` / `top_p` / `top_k` |
+| --- | --- |
+| `claude-opus-5`, `claude-fable-5`, `claude-opus-4-8`, `claude-opus-4-7`, `claude-sonnet-5` | Non-default values rejected (400). Omit the parameters, or pass defaults only (for example, `temperature=1`). |
+| `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`, and earlier | Accepted |
+
+<Warning>
+    **Upgrading the model string?**
+
+    Code written as `ChatAnthropic(model=..., temperature=0)` breaks when you upgrade the model to one of the newer models above. Remove the sampling parameters rather than adjusting their values. On these models, steer output style through prompting instead. See the [Anthropic migration guide](https://platform.claude.com/docs/en/about-claude/models/migration-guide) for details.
+</Warning>
 
 ## Invocation
 
@@ -821,6 +856,20 @@ response = model.invoke("Analyze the trade-offs between microservices and monoli
 <Note>
     Setting `effort` to `"high"` produces exactly the same behavior as omitting the parameter altogether.
 </Note>
+
+`effort` is an alias for the standard [`reasoning_effort`](/oss/langchain/models#reasoning) parameter, at both construction and call time. If both are set, `effort` wins.
+
+<Note>
+    `reasoning_effort` requires `langchain-anthropic>=1.5.3`.
+</Note>
+
+```python
+model = ChatAnthropic(model="claude-opus-4-6")
+response = model.invoke(
+    "Analyze the trade-offs between microservices and monolithic architectures",
+    reasoning_effort="high",
+)
+```
 
 See the [Claude documentation](https://platform.claude.com/docs/en/build-with-claude/effort) for detail on when to use different effort levels and to see supported models.
 

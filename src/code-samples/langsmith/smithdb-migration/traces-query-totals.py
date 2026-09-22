@@ -15,6 +15,7 @@ for root_run in root_runs:
 # :snippet-start: traces-query-totals-after-py
 # :codegroup-tab: After
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 from langsmith import Client
 
@@ -25,8 +26,8 @@ async def main():
     count = 0
     async for trace in client.traces.query(
         project_id=str(project.id),
-        min_start_time="2026-07-01T00:00:00Z",
-        max_start_time="2026-07-31T23:59:59Z",
+        min_start_time=datetime.now(timezone.utc) - timedelta(days=30),
+        max_start_time=datetime.now(timezone.utc),
         selects=["NAME", "TOTAL_TOKENS", "TOTAL_COST"],
     ):
         count += 1

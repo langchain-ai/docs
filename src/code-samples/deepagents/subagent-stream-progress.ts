@@ -1,8 +1,17 @@
+// :remove-start:
+// streamEvents + nested subagents leave LangChainTracer unsettled
+// ("No chain run to end"), which hangs async iterators under
+// CODE_SAMPLE_TRACING=1. Disable tracing for this runnable harness only.
+process.env.LANGSMITH_TRACING = "false";
+process.env.LANGCHAIN_TRACING_V2 = "false";
+// :remove-end:
+
 // :snippet-start: subagent-stream-progress-js
 import { createDeepAgent } from "deepagents";
 
 const agent = createDeepAgent({
   model: "openai:gpt-5.5",
+  name: "main-agent",
   systemPrompt:
     "You are a project coordinator with no research knowledge. " +
     "For every user request, you must call the task() tool with " +
@@ -37,8 +46,9 @@ async function streamSubagentProgress() {
   await Promise.all([
     (async () => {
       for await (const message of stream.messages) {
-        console.log("[coordinator]", await message.text);
-        coordinatorMessages.push(await message.text);
+        const text = await message.text;
+        console.log("[coordinator]", text);
+        coordinatorMessages.push(text);
       }
     })(),
     (async () => {
@@ -50,6 +60,7 @@ async function streamSubagentProgress() {
         }
       }
     })(),
+    stream.output,
   ]);
 
   return { coordinatorMessages, subagentHandles };
@@ -57,18 +68,23 @@ async function streamSubagentProgress() {
 // :snippet-end:
 
 // :remove-start:
-const { coordinatorMessages, subagentHandles } = await streamSubagentProgress();
+async function main() {
+  const { coordinatorMessages, subagentHandles } =
+    await streamSubagentProgress();
 
-if (coordinatorMessages.length === 0) {
-  throw new Error("expected coordinator messages");
+  if (coordinatorMessages.length === 0) {
+    throw new Error("expected coordinator messages");
+  }
+  if (subagentHandles.length === 0) {
+    throw new Error(
+      "expected at least one subagent handle; ensure the coordinator delegates via task()",
+    );
+  }
+  if (subagentHandles[0].name !== "research-agent") {
+    throw new Error(`expected research-agent, got ${subagentHandles[0].name}`);
+  }
+  console.log("✓ subagent stream progress sample completed");
 }
-if (subagentHandles.length === 0) {
-  throw new Error(
-    "expected at least one subagent handle; ensure the coordinator delegates via task()",
-  );
-}
-if (subagentHandles[0].name !== "research-agent") {
-  throw new Error(`expected research-agent, got ${subagentHandles[0].name}`);
-}
-console.log("✓ subagent stream progress sample completed");
+
+await main();
 // :remove-end:

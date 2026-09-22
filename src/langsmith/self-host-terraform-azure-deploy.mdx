@@ -88,7 +88,7 @@ az account set --subscription <your-subscription-id>
 az account show
 ```
 
-You also need a LangSmith license key ([contact sales](https://www.langchain.com/contact-sales)) and either a `dns_label` (Azure subdomain, no DNS setup needed) or a custom `langsmith_domain`.
+You also need a LangSmith license key ([contact our sales team](https://www.langchain.com/contact-sales)) and either a `dns_label` (Azure subdomain, no DNS setup needed) or a custom `langsmith_domain`.
 
 ## Quickstart
 

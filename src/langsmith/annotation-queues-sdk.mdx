@@ -5,7 +5,7 @@ icon: "code"
 tag: "SDK"
 ---
 
-Use the LangSmith SDK to manage feedback configurations and [annotation queue](/langsmith/evaluation-concepts#human) rubrics programmatically. Define reusable feedback schemas at the organization level (like accuracy scores or pass/fail judgments), then assign them to specific queues with custom instructions. This enables version control, automation across projects, and consistency—particularly useful for CI/CD pipelines or replicating evaluation setups across environments.
+Use the LangSmith SDK to manage feedback configurations and [annotation queue](/langsmith/evaluation-concepts#human) rubrics programmatically, and to add runs and threads to a queue for review. Define reusable feedback schemas at the organization level (like accuracy scores or pass/fail judgments), then assign them to specific queues with custom instructions. This enables version control, automation across projects, and consistency—particularly useful for CI/CD pipelines or replicating evaluation setups across environments.
 
 <Callout icon="code">
 This guide uses the Python and TypeScript SDKs. For installation and setup, refer to the [Python SDK documentation](https://reference.langchain.com/python/langsmith) and [TypeScript SDK documentation](https://reference.langchain.com/javascript/modules/langsmith.html).
@@ -277,6 +277,134 @@ await client.updateAnnotationQueue(queue.id, {
 });
 ```
 </CodeGroup>
+
+## Add runs and threads to a queue
+
+Add [runs](/langsmith/observability-concepts#runs) and [threads](/langsmith/observability-concepts#threads) to a single-run annotation queue with the annotation queue `items` resource. A single request accepts a mixed batch of run items and thread items, so this method covers everything the UI [add flow](/langsmith/annotation-queues#assign-runs-and-threads-to-a-single-run-queue) supports.
+
+<Note>
+The `items` resource requires `langsmith>=0.10.13` (Python) or `langsmith>=0.8.8` (TypeScript), served by a LangSmith backend on version `0.16.14` or later.
+</Note>
+
+Each item sets an `item_type` of `RUN` or `THREAD`:
+
+- **RUN items** require `run_id`. Also provide `project_id` (the project UUID) and `start_time`, which together locate the run directly.
+- **THREAD items** require `thread_id` and `project_id`.
+
+Resolve these IDs with the SDK:
+
+- **`project_id`**: Look up a project by name with @[`read_project`] and read its `id`, for example `client.read_project(project_name="my-project").id`.
+- **`run_id`**: Query runs with `client.runs.query()`. Each run exposes `id`, `project_id`, and `start_time`, the fields a RUN item needs.
+- **`thread_id`**: Query threads with `client.threads.query()`. Each result exposes its `thread_id`.
+
+You can also find these IDs in the [LangSmith UI](https://smith.langchain.com):
+
+- **`project_id`**: In a [tracing project](/langsmith/observability-concepts#projects), click the **ID** badge next to the project name to copy the project UUID.
+- **`run_id`**: Open a run in the [Details view](/langsmith/view-traces#details-view) and click the **ID** badge next to the run name to copy the run ID.
+- **`thread_id`**: In the **Threads** view of a tracing project, copy the value from the **Thread ID** column.
+
+To extend trace retention for the added run items, pass `extend_trace_retention=True`. The response is an envelope with an `items` array, one entry per added item.
+
+<Note>
+In Python, `annotation_queues.items.create` is async, so `await` it inside an event loop.
+</Note>
+
+<CodeGroup>
+```python Python
+import asyncio
+
+async def main():
+    queue_name = "<queue_name>"
+    project_id = "<project_id>"
+    run_id = "<run_id>"
+    thread_id = "<thread_id>"
+
+    # Look up the annotation queue by name to get its ID.
+    queue = next(client.list_annotation_queues(name=queue_name), None)
+    if queue is None:
+        raise SystemExit(f"No annotation queue named {queue_name!r}")
+
+    # Fetch the run to add by id + project_id. runs.retrieve() requires
+    # `selects` (uppercase RunSelectField names) to return fields like
+    # start_time.
+    run = await client.runs.retrieve(
+        run_id=run_id,
+        project_id=project_id,
+        selects=["ID", "PROJECT_ID", "START_TIME"],
+    )
+
+    response = await client.annotation_queues.items.create(
+        str(queue.id),
+        items=[
+            {
+                "item_type": "RUN",
+                "run_id": run_id,
+                "project_id": project_id,
+                "start_time": run.start_time,
+            },
+            {
+                "item_type": "THREAD",
+                "thread_id": thread_id,
+                "project_id": project_id,
+            },
+        ],
+    )
+
+    # response.items contains one entry per added item.
+    for item in response.items or []:
+        print(item.id, item.item_type)
+
+asyncio.run(main())
+```
+```typescript TypeScript
+const queueName = "<queue_name>";
+const projectId = "<project_id>";
+const runId = "<run_id>";
+const threadId = "<thread_id>";
+
+// Look up the annotation queue by name to get its ID.
+let queue;
+for await (const q of client.listAnnotationQueues({ name: queueName })) {
+  queue = q;
+  break;
+}
+if (!queue) {
+  throw new Error(`No annotation queue named ${queueName}`);
+}
+
+// Fetch the run to add by id + project_id. retrieve() requires `selects`
+// (uppercase RunSelectField names) to return fields like start_time.
+const run = await client.runs.retrieve(runId, {
+  project_id: projectId,
+  selects: ["ID", "PROJECT_ID", "START_TIME"],
+});
+
+const response = await client.annotationQueues.items.create(queue.id, {
+  items: [
+    {
+      item_type: "RUN",
+      run_id: runId,
+      project_id: projectId,
+      start_time: run.start_time,
+    },
+    {
+      item_type: "THREAD",
+      thread_id: threadId,
+      project_id: projectId,
+    },
+  ],
+});
+
+// response.items contains one entry per added item.
+for (const item of response.items ?? []) {
+  console.log(item.id, item.item_type);
+}
+```
+</CodeGroup>
+
+<Note>
+For runs-only additions, @[`add_runs_to_annotation_queue`] still works and remains the simplest option when you are not adding threads. New code that adds threads, or mixed run and thread batches, should use the `items` resource.
+</Note>
 
 ## Feedback config types (detailed)
 
