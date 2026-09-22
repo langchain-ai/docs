@@ -1,0 +1,178 @@
+---
+title: GCP Terraform variables reference
+sidebarTitle: Variables
+description: Complete reference of Terraform variables for LangSmith self-hosted on GCP GKE.
+---
+
+Complete reference for every input variable exposed by the [GCP Terraform modules](https://github.com/langchain-ai/terraform/tree/main/modules/gcp). Use it while filling in `terraform.tfvars` for the first time or tuning an existing deployment.
+
+Variables come in two categories:
+
+- **Non-sensitive** (region, sizing, feature flags): set in `infra/terraform.tfvars`.
+- **Sensitive** (license key, passwords, encryption keys): sourced through `infra/scripts/setup-env.sh`, which writes them to Google Secret Manager and exports them for the Terraform and Helm steps.
+
+For the end-to-end install, refer to the [deploy guide](/langsmith/self-host-terraform-gcp-deploy). For how the modules fit together, refer to the [architecture reference](/langsmith/self-host-terraform-gcp-architecture).
+
+## Core
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `project_id` | — | yes | GCP project ID where resources are created. |
+| `region` | `us-west2` | no | GCP region for regional resources. |
+| `zone` | `us-west2-a` | no | GCP zone for zonal resources. |
+| `environment` | `prod` | no | Environment name applied to labels: `dev`, `staging`, or `prod`. |
+| `name_prefix` | `ls` | no | Prefix for all resource names. 1 to 11 characters, starting with a lowercase letter; lowercase letters, numbers, and hyphens only. |
+| `unique_suffix` | `true` | no | Append a random suffix to resource names. Recommended for multi-tenant projects. |
+| `owner` | `platform-team` | no | Owner label applied to all resources. |
+| `cost_center` | `""` | no | Cost center label for billing attribution. |
+| `labels` | `{}` | no | Additional labels applied to all resources. |
+
+## Networking
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `subnet_cidr` | `10.0.0.0/20` | no | CIDR for the GKE subnet. Must not overlap existing ranges. |
+| `pods_cidr` | `10.4.0.0/14` | no | CIDR for GKE pods. Must not overlap the subnet or services range. |
+| `services_cidr` | `10.8.0.0/20` | no | CIDR for GKE services. Must not overlap the subnet or pods range. |
+| `gke_master_authorized_cidrs` | `[]` | no | External CIDRs permitted to reach the GKE control plane endpoint. Empty leaves the control plane publicly reachable so Terraform-managed Helm and `kubectl` steps work from any apply host. Populate with operator and CI egress CIDRs for production. |
+
+## GKE
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `gke_use_autopilot` | `false` | no | Use GKE Autopilot mode. Autopilot always uses Dataplane V2. |
+| `gke_node_count` | `2` | no | Initial node count per zone (Standard mode only). |
+| `gke_min_nodes` | `2` | no | Minimum nodes per zone for autoscaling. |
+| `gke_max_nodes` | `10` | no | Maximum nodes per zone for autoscaling. |
+| `gke_machine_type` | `e2-standard-4` | no | GKE node machine type (for example `e2-standard-4`, `n2-standard-8`). |
+| `gke_disk_size` | `100` | no | Node disk size in GB. |
+| `gke_release_channel` | `REGULAR` | no | GKE release channel: `RAPID`, `REGULAR`, or `STABLE`. |
+| `gke_deletion_protection` | `true` | no | Enable deletion protection on the GKE cluster. |
+| `gke_network_policy_provider` | `DATA_PLANE_V2` | no | Network policy provider: `CALICO` (legacy) or `DATA_PLANE_V2` (Cilium-based, recommended). |
+
+## PostgreSQL (Cloud SQL)
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `postgres_source` | `external` | no | `external` (Cloud SQL with private IP) or `in-cluster` (deployed via Helm). |
+| `postgres_version` | `POSTGRES_15` | no | Cloud SQL PostgreSQL version. |
+| `postgres_tier` | `db-custom-2-8192` | no | Cloud SQL machine tier (for example `db-f1-micro`, `db-custom-2-8192`). |
+| `postgres_disk_size` | `50` | no | Cloud SQL disk size in GB. |
+| `postgres_high_availability` | `true` | no | Enable Cloud SQL HA (regional standby). |
+| `postgres_deletion_protection` | `true` | no | Enable deletion protection on Cloud SQL. |
+| `postgres_database_flags` | see description | no | Database flags set on the Cloud SQL instance. Defaults to `max_connections = 500` plus checkpoint and connection logging flags. |
+| `postgres_ssl_mode` | `ENCRYPTED_ONLY` | no | Cloud SQL SSL enforcement. `ENCRYPTED_ONLY` requires TLS for every connection. `ALLOW_UNENCRYPTED_AND_ENCRYPTED` accepts plaintext. `TRUSTED_CLIENT_CERTIFICATE_REQUIRED` also requires a client certificate. |
+| `postgres_password` | `""` | when external | Cloud SQL password. Set via `TF_VAR_postgres_password`, or stored in Secret Manager by `setup-env.sh`. |
+
+## Redis (Memorystore)
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `redis_source` | `external` | no | `external` (Memorystore with private IP) or `in-cluster` (deployed via Helm). |
+| `redis_version` | `REDIS_7_0` | no | Memorystore Redis version. |
+| `redis_memory_size` | `5` | no | Memorystore Redis memory size in GB. |
+| `redis_high_availability` | `true` | no | Enable Memorystore HA (Standard HA tier). |
+| `redis_prevent_destroy` | `false` | no | Prevent accidental Terraform destroy of the Redis instance. |
+
+## ClickHouse
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `clickhouse_source` | `in-cluster` | no | `in-cluster` (dev/POC only), `langsmith-managed` (recommended for production), or `external` (self-hosted). |
+| `clickhouse_host` | `""` | when managed or external | ClickHouse host. |
+| `clickhouse_port` | `9440` | no | ClickHouse native protocol port (`9440` for TLS, `9000` for non-TLS). |
+| `clickhouse_http_port` | `8443` | no | ClickHouse HTTP port (`8443` for TLS, `8123` for non-TLS). |
+| `clickhouse_user` | `default` | no | ClickHouse username. |
+| `clickhouse_password` | `""` | when managed or external | ClickHouse password. |
+| `clickhouse_database` | `default` | no | ClickHouse database name. |
+| `clickhouse_tls` | `true` | no | Enable TLS for ClickHouse connections. |
+| `clickhouse_ca_cert` | `""` | no | ClickHouse CA certificate (PEM) for TLS verification. Empty uses system CAs. |
+
+## GCS storage
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `storage_ttl_short_days` | `14` | no | GCS TTL in days for the `ttl_s/` prefix. |
+| `storage_ttl_long_days` | `400` | no | GCS TTL in days for the `ttl_l/` prefix. |
+| `storage_force_destroy` | `false` | no | Allow bucket deletion even with objects inside. Use with caution. |
+
+## LangSmith application
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `langsmith_namespace` | `langsmith` | no | Kubernetes namespace for LangSmith. |
+| `langsmith_domain` | `langsmith.example.com` | no | Fully qualified domain name for LangSmith. |
+| `langsmith_license_key` | `""` | no | License key. Use `TF_VAR_langsmith_license_key`. |
+| `langsmith_helm_chart_version` | `""` | no | Advisory chart version, exposed as a Terraform output. The deploy script pins the chart line through the `CHART_VERSION` environment variable (default `~0.15.1`, the latest `0.15.x` patch). Export `CHART_VERSION` to override. |
+
+## Ingress and TLS
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `install_ingress` | `true` | no | Install the ingress controller via Terraform. The Gateway is HTTPS-only, so `tls_certificate_source` must be `letsencrypt` or `existing`. |
+| `ingress_type` | `envoy` | no | Ingress type: `envoy` (implemented), or `istio` / `other` (reserved). |
+| `tls_certificate_source` | `none` | no | `none`, `letsencrypt` (auto via cert-manager), or `existing` (provide your own certs). |
+| `install_cert_manager` | `false` | no | Install cert-manager for Let's Encrypt certificates. |
+| `letsencrypt_email` | `""` | when `letsencrypt` | Email for Let's Encrypt notifications. |
+| `tls_certificate_crt` | `""` | when `existing` | TLS certificate (PEM). Load with `file()`. |
+| `tls_certificate_key` | `""` | when `existing` | TLS private key (PEM). Load with `file()`. |
+| `tls_secret_name` | `langsmith-tls` | no | Name for the TLS secret in Kubernetes. |
+
+## KEDA
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `enable_langsmith_deployment` | `true` | no | Install KEDA for queue-driven autoscaling of LangSmith workers. This is the KEDA install toggle, not the LangSmith Deployment feature (see `enable_deployments`). |
+
+## Optional GCP modules
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `enable_gcp_iam_module` | `true` | no | Wire `modules/iam` for Workload Identity and bucket IAM bindings. |
+| `enable_secret_manager_module` | `false` | no | Wire `modules/secrets` to store generated bootstrap credentials in Secret Manager. |
+| `enable_dns_module` | `false` | no | Wire `modules/dns` for Cloud DNS and a managed certificate. |
+| `dns_create_zone` | `true` | no | Create a new Cloud DNS managed zone when the DNS module is enabled. |
+| `dns_existing_zone_name` | `""` | when `!dns_create_zone` | Existing Cloud DNS zone to use. |
+| `dns_create_certificate` | `true` | no | Create a Google-managed SSL certificate when the DNS module is enabled. |
+
+## Sizing and feature flags
+
+The `app` Terraform layer and the Helm deploy scripts read these flags to enable the matching chart components and provision per-feature databases. `sizing_profile` is read by the deploy scripts to select the Helm sizing overlay.
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `sizing_profile` | `default` | no | Helm sizing: `production` (~20 users, ~100 traces/sec), `production-large` (~50 users, ~1000 traces/sec), `dev` (single-replica), `minimum` (cost-parking floor, not for production), or `default` (chart defaults). |
+| `enable_deployments` | `false` | no | Enable LangSmith Deployment (listener, operator, host-backend). Requires the Deployments license entitlement. |
+| `enable_agent_builder` | `false` | no | Enable Agent Builder. Requires `enable_deployments = true` and the Agent Builder entitlement. |
+| `enable_insights` | `false` | no | Enable Insights (ClickHouse-backed analytics). Requires the Insights entitlement. |
+| `enable_polly` | `false` | no | Enable Polly (AI evaluation and monitoring). Requires `enable_deployments = true` and the Polly entitlement. |
+| `enable_fleet` | `false` | no | Enable Fleet standalone deployment (chart v0.15+). Does not require `enable_deployments`. Reuses `langsmith_agent_builder_encryption_key` when migrating from `enable_agent_builder`. |
+| `enable_standalone_polly` | `false` | no | Enable Polly standalone deployment (chart v0.15+). Does not require `enable_deployments`. Reuses `langsmith_polly_encryption_key`. |
+| `enable_standalone_insights` | `false` | no | Enable Insights standalone deployment (chart v0.15+). Does not require `enable_deployments`. Reuses `langsmith_insights_encryption_key`. |
+| `enable_usage_telemetry` | `false` | no | Enable extended usage telemetry reporting (`PHONE_HOME_USAGE_REPORTING_ENABLED`). |
+
+## Sensitive values (set with `setup-env.sh`)
+
+Sourcing `infra/scripts/setup-env.sh` writes these to Google Secret Manager and exports them into the current shell for the Terraform and Helm steps. Never set these inline in `terraform.tfvars`.
+
+| Variable | Description |
+|---|---|
+| `langsmith_license_key` | LangSmith enterprise license key. |
+| `langsmith_admin_password` | Initial org admin password. |
+| `langsmith_api_key_salt` | Salt for hashing API keys. Must stay stable after first deploy. |
+| `langsmith_jwt_secret` | JWT secret for Basic Auth sessions. Must stay stable. |
+| `langsmith_deployments_encryption_key` | Fernet key for LangSmith Deployment. Must never change. |
+| `langsmith_agent_builder_encryption_key` | Fernet key for Agent Builder. Must never change. |
+| `langsmith_insights_encryption_key` | Fernet key for Insights. Must never change. |
+| `langsmith_polly_encryption_key` | Fernet key for Polly. Must never change. |
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/self-host-terraform-gcp-variables.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>

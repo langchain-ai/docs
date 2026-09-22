@@ -1,0 +1,89 @@
+---
+title: Bring your own IAM roles (AWS)
+sidebarTitle: Bring your own IAM (AWS)
+description: Create customer-managed IAM roles for LangSmith BYOC, remove IAM management permissions from the provisioning role, and deploy with existing roles.
+icon: "shield-lock"
+---
+
+Bring your own IAM (BYOIAM) lets you create and manage the AWS IAM resources used by LangSmith BYOC data planes. You control the roles, policies, and permissions boundaries while LangChain provisions and operates the data plane using those resources.
+
+If you want LangChain to manage IAM resources, follow the standard [BYOC onboarding guide](/langsmith/byoc-onboarding).
+
+## Before you begin
+
+Complete the [BYOC prerequisites](/langsmith/byoc#prerequisites) to have a LangSmith org, with BYOC enabled.
+
+## Create the IAM resources
+
+The [`byoiam` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byoiam) creates the shared data plane roles, policies, and Karpenter instance profile. Apply it once per AWS account for all regions and data planes that use these roles.
+
+To create the IAM resources:
+
+1. Configure the AWS provider for the account where you plan to deploy your data planes.
+2. Add the module to your Terraform configuration. Set `regions` to the [supported AWS regions](/langsmith/byoc#regions-and-cloud-providers) where the roles need to operate.
+3. (Optional) Set `permissions_boundary_arn` to the ARN of your IAM permissions boundary policy. The module applies it to all roles it creates, except service-linked roles.
+4. Use `service_linked_roles_to_create` to create missing service-linked roles. None are created by default. Omit existing roles, or import them into Terraform first.
+5. Initialize Terraform, review the plan, and apply it in your account.
+
+The following configuration creates shared IAM resources for two regions:
+
+```hcl
+module "byoiam" {
+  source = "github.com/langchain-ai/terraform//modules/byoc/aws/byoiam?ref=main"
+
+  regions = ["us-east-1", "us-west-1"]
+}
+```
+
+## Remove IAM management permissions from the provisioning role
+
+The [`langsmith-byoc-role` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/langsmith-byoc-role) creates the cross-account role LangChain assumes to manage your data plane.
+
+After creating the IAM resources, configure the provisioning role:
+
+1. Copy the external ID using the button next to the **Data Planes** header in **Settings > Data Planes**. Pass it to the role module as `external_id`. The role's trust policy must use this value in its `ExternalId` condition.
+2. Set `allow_iam_management_permissions = false` in your `langsmith-byoc-role` module configuration.
+3. Review and apply the Terraform changes. Retain the `crossplane_role_arn` output for data plane creation.
+
+Setting `allow_iam_management_permissions = false` changes the role's permissions:
+
+- **Removed**: IAM creation, modification, and deletion permissions, including service-linked role creation.
+- **Retained**: IAM read permissions, scoped `iam:PassRole`, and `iam:SimulatePrincipalPolicy` to use and validate your existing resources.
+
+Enabling `allow_delete_permissions` does not restore IAM management permissions.
+
+If you also want to [bring your own VPC](/langsmith/byoc-byovpc), set `allow_vpc_creation_permissions = false` and supply the VPC ID in `vpc_ids`.
+
+## Deploy the data plane with existing roles
+
+<Warning>
+You must use the [`byoiam` Terraform module](https://github.com/langchain-ai/terraform/tree/main/modules/byoc/aws/byoiam) to create the exact IAM roles required by LangSmith. LangSmith performs extensive validation of these IAM resources before deploying the data plane.
+</Warning>
+
+The **Use existing IAM roles** checkbox configures the data plane to use the IAM resources you created.
+
+To deploy the data plane:
+
+1. Go to **Settings > Data Planes** and create a data plane.
+2. Supply the name, AWS region, network configuration, and load balancer access described in [BYOC onboarding](/langsmith/byoc-onboarding). Choose a region included in the module's `regions` input.
+3. Use the provisioning role's `crossplane_role_arn` output for the **AWS IAM role ARN**.
+4. Select **Use existing IAM roles** before submitting the request.
+
+Continue with provisioning and private connectivity in the onboarding guide.
+
+## See also
+
+- [BYOC onboarding](/langsmith/byoc-onboarding)
+- [Bring your own VPC on AWS](/langsmith/byoc-byovpc)
+- [BYOC shared responsibility model](/langsmith/byoc-shared-responsibility)
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/byoc-byoiam.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
