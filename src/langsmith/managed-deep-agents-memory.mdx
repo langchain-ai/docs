@@ -119,49 +119,46 @@ authorization. When you decide to persist something, use `edit_file` or
 
 ## Control access to a layer
 
-Each layer accepts an `allow(context)` policy that decides whether the agent reaches that layer during the current run. Without `allow`, Managed Deep Agents applies these defaults:
+Declaring a layer makes it available. Whether the agent actually reaches it on a given run is a second decision, made once at the start of that run:
+
+1. The runtime resolves the caller. User memory stops here unless the caller is an authenticated person.
+2. The layer's `allow(context)` policy runs, or its default applies when you declare no policy.
+3. Layers that pass mount at their paths, and their hot memory loads.
+
+Without `allow`, Managed Deep Agents applies these defaults:
 
 | Run source | Agent memory | User memory |
 | --- | --- | --- |
 | Slack one-to-one DM | Allowed | Allowed |
 | Slack channel or group DM | Allowed | Denied |
-| HTTP | Allowed | Denied |
+| Direct API run | Allowed | Denied |
+| Studio, verified user | Allowed | Allowed, policy not called |
+
+Agent memory is deployment-shared, so it is available by default. User memory is personal, so it mounts by default only where the conversation is already private to one person. A Slack channel, a group DM, and a direct API run all fall outside that, and the runtime cannot tell from the outside whether such a run is private. Denying by default means personal memory never reaches a shared conversation unless you opt in with a policy of your own.
 
 The runtime evaluates a policy once per run, before it mounts storage. Returning `false` removes only that layer's mount and its automatic memory content for that run. Stored memory is not deleted.
 
 ### Read the run context
 
-`allow` receives the run context, which differs by run source.
+`allow` receives the run context. You only need to read it when you want user memory somewhere the defaults deny, such as your own application calling the API.
 
-Managed channels pass the provider and the raw provider event. For Slack:
+Managed channel runs carry the current delivery under `context.channel`, with the original provider event alongside it. The default user-memory policy reads the Slack channel type, where `"im"` means a one-to-one DM:
 
 :::python
 ```python
-context = {"provider": "slack", "event": {...}}  # raw Slack event
+allow=lambda context: context.channel.raw_event.get("channel_type") == "im"
 ```
 :::
 
 :::js
 ```ts
-const context = { provider: "slack", event: { /* raw Slack event */ } };
+allow: (context) => context.channel?.rawEvent?.channel_type === "im";
 ```
 :::
 
-The default user-memory policy reads `event.channel_type`, where `"im"` means a one-to-one DM:
+Deliveries that carry no provider event do not receive user memory under the default policy.
 
-:::python
-```python
-allow=lambda context: context.get("event", {}).get("channel_type") == "im"
-```
-:::
-
-:::js
-```ts
-allow: (context) => context.event?.channel_type === "im";
-```
-:::
-
-HTTP callers supply their own context when they create a run:
+Direct API callers supply their own context when they create a run:
 
 :::python
 ```python
@@ -227,10 +224,21 @@ export const memory = defineMemory<Context>({
 :::
 
 <Warning>
-A policy widens access within the caller the runtime already authenticated. It cannot enable user memory for a service principal, and it cannot select another person's memory. The runtime checks the authenticated principal before it calls `allow`, so the example above grants user memory only to HTTP callers who are already authenticated as people.
+A policy widens access within the caller the runtime already authenticated. It cannot enable user memory for a service principal, and it cannot select another person's memory. The runtime checks the authenticated principal before it calls `allow`, so the example above grants user memory only to direct API callers who are already authenticated as people.
 </Warning>
 
-Interrupt resumes currently omit the provider event, so a resumed run does not receive user memory under the default policy.
+## Identify the person behind user memory
+
+User memory is keyed on the authenticated principal for the run, not on anything the caller passes in. Where that principal comes from depends on how the run started:
+
+| Run source | Principal |
+| --- | --- |
+| Slack | The person in the connected workspace that the event resolves to |
+| Studio on a deployment | The logged-in LangSmith user |
+| `mda dev` | Your own `langsmith-dev` Agent Auth principal, resolved from your personal LangSmith API key |
+| Direct API run | Whoever your [identity](/langsmith/managed-deep-agents-identity) provider authenticates as a person |
+
+Each person's memory lives in a separate Context Hub repository derived from the deployment and the principal. Two deployments therefore never share a person's memory, even for the same person in the same Slack workspace. Agent memory is the layer to use for knowledge that should reach everyone on one deployment.
 
 ## How the agent uses memory
 
@@ -253,17 +261,18 @@ Agent memory is shared by every caller of the deployment, and every caller can i
 Treat memory as untrusted input: content saved by one caller is loaded for later callers and must not grant authority, change tool permissions, or bypass approvals. Keep those controls in the agent definition. Do not enable agent memory when callers should not influence one another.
 </Warning>
 
-## Test memory locally
+## Test memory
 
-`mda dev` evaluates memory policies differently by language:
+Studio is the way to exercise user memory without a Slack workspace. A verified Studio user receives every declared memory layer, and the runtime does not call the user layer's `allow` policy for them. A declared layer that appears to do nothing in Studio is usually not declared at all, so check `memory.py` or `memory.ts` first.
 
-:::python
-Python `mda dev` supplies run context, so it evaluates both agent and user policies.
-:::
+Where Studio writes depends on what you are running:
 
-:::js
-Native JavaScript `mda dev` does not supply run context. It disables user memory and any agent layer that declares an `allow` callback. Agent layers without `allow` still mount.
-:::
+- **A deployment**: memory goes to Context Hub, keyed on your logged-in LangSmith user.
+- **`mda dev`**: memory stays on disk under `.mda/__contexthub__`, keyed on the `langsmith-dev` Agent Auth principal that the CLI resolves from your personal LangSmith API key.
+
+Local memory and deployed memory are separate stores, so a fact you teach the agent under `mda dev` does not appear after you deploy.
+
+The runtime evaluates a policy only while a run executes. Inspecting a graph does not call it. Native Node additionally requires Agent Server to pass run context to the graph factory.
 
 For more information, see [Local development](/langsmith/managed-deep-agents-local-development).
 
