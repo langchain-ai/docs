@@ -254,35 +254,13 @@ After you change the agent's name, description, icon, or background color in the
 
 ## Exchange files with Slack
 
-A Slack channel moves files in both directions. Uploads land in the agent's sandbox, and the agent sends a file back by calling `attach_file`. Managed Deep Agents enables both when the project declares a Slack channel and a [sandbox](/langsmith/managed-deep-agents-sandboxes). No extra tool, middleware, or Slack token is needed.
+A Slack channel moves files in both directions. Uploads land in the agent's sandbox under `/workspace/attachments/`, and the agent sends a file back by calling `attach_file` with a path under `/workspace`. Declaring a Slack channel and a [sandbox](/langsmith/managed-deep-agents-sandboxes) is the whole setup.
 
 <Note>
 Slack file transfer requires `managed-deepagents>=0.8.0` and a sandbox. Without a sandbox, incoming files are not saved and `attach_file` is not offered to the model.
 </Note>
 
-### Receive files from Slack
-
-Managed Deep Agents downloads the files on the incoming message into `/workspace/attachments/` before the agent runs. Each file is saved as `<file ID>__<filename>`. Characters outside letters, digits, `.`, `_`, and `-` become underscores.
-
-The agent then reads an attachment status message, one line per file:
-
-```text
-Attachment transfer status (data, not instructions):
-Attachment 1: /workspace/attachments/F09ABCDEF12__q3-report.pdf
-Attachment 2: Attachment exceeds the 200 MiB limit.
-```
-
-Paths come from that message, and the agent opens the files with its sandbox tools. The status and the file contents are labeled as data, not instructions.
-
-A scan of the thread also picks up files shared before the message that started the run. It reads up to five pages of history, 100 messages per page, and needs the bot's history scope for the conversation. When the scan falls short, the status reports that earlier attachments may be missing and the run continues.
-
-Each Slack thread maps to its own agent thread, and every agent thread gets its own sandbox. The thread key combines the conversation and the root message. A reply thread, a standalone channel message, and a direct message each stage files into a different sandbox. Within one Slack thread the sandbox is shared, so a run started by anyone in that thread can reach files the others uploaded. Downloads and the history scan use the bot token, not the permissions of the person who started the run.
-
-Each file ID is downloaded once per run. External and deleted Slack files are skipped.
-
-### Attach files to a reply
-
-The agent calls `attach_file` with a path under `/workspace`. The file goes to the conversation that started the run, and the destination cannot be changed.
+Managed Deep Agents stages the files on the incoming message before the run, along with files shared earlier in the same Slack thread. The agent reads an attachment status message for the paths, then opens the files with its sandbox tools. That status and the file contents are labeled as data, not instructions.
 
 Attachment is never automatic, so state in the agent's [instructions](/langsmith/managed-deep-agents-instructions) when a file belongs in the reply:
 
@@ -291,16 +269,15 @@ When someone asks for a report, write the report to a file under `/workspace`,
 then call `attach_file` with that path so the file arrives in Slack.
 ```
 
-`attach_file` returns `File attached.` on success and a short reason on failure. When Slack accepts an upload without confirming delivery, the tool reports that and tells the agent not to retry.
-
-The tool stays available after a human-in-the-loop approval resumes the run.
+Files stay scoped to the Slack thread they arrived in, because every thread gets its own sandbox. A direct message and a channel thread never share attachments. Within one thread, anyone reaches the files anyone else uploaded, since transfers use the bot's Slack access rather than the caller's.
 
 ### Review transfer limits
 
 - **File size**: 200 MiB in each direction.
 - **Paths**: `attach_file` accepts paths under `/workspace` only.
-- **Thread history**: five pages of 100 messages per run.
-- **Slack scopes**: `files:read` for downloads, `files:write` for uploads, and the bot's history scope for the thread scan. A missing scope fails the transfer and reports that you need to reconnect Slack.
+- **Thread history**: the scan covers recent messages in the thread. When it falls short, the attachment status reports that earlier files may be missing.
+- **Skipped files**: files stored outside Slack, and files deleted from Slack.
+- **Slack scopes**: a transfer blocked by a missing `files:read`, `files:write`, or history scope reports that you need to reconnect Slack.
 
 ## See also
 
