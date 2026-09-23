@@ -1,6 +1,6 @@
 # LangChain Brand Guidelines
 
-Full brand color palette, typography, and visual identity reference. For the condensed mermaid diagram palette, see the "Mermaid diagram styling" section in `CLAUDE.md` / `AGENTS.md`.
+Full brand color palette, typography, and visual identity reference. For the condensed mermaid diagram palette, see the "Mermaid diagram styling" section in `AGENTS.md`.
 
 ## Colors
 
