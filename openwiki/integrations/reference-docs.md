@@ -3,9 +3,6 @@ type: integration
 title: Reference Documentation Integration
 description: Defines the boundary between externally operated SDK reference sites, scoped semantic links, and OpenAPI inputs that Mintlify turns into LangSmith endpoint documentation. Covers refresh ownership and validation limits for generated routes.
 tags: [api-reference, openapi, cross-references, mintlify, langsmith]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-18T08:20:50.944Z
 sources:
   - id: openwiki-source-759309714d08144a07e1b2e0
     resource: repo://.github/ISSUE_TEMPLATE/04-reference-docs.yml
@@ -37,7 +34,10 @@ sources:
     resource: repo://tests/unit_tests/test_check_cross_refs.py
   - id: openwiki-source-38d325b9c51f3c8dfd528917
     resource: repo://tests/unit_tests/test_filter_mint_broken_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-17T08:22:51.028Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-21T08:24:04.334Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
 ---
 
 # Reference Documentation Integration
@@ -159,7 +159,6 @@ Change this repository when the issue is an authored semantic marker, a scoped m
 ## Related documentation
 
 - [Source map](/openwiki/architecture/source-map.md) — documentation-source and navigation ownership.
-- [GitHub Actions](/openwiki/integrations/github-actions.md) — scheduled automation and CI checks.
 - [Mintlify](/openwiki/integrations/mintlify.md) — renderer and deployment boundary.
-- [Cross-reference operations](/openwiki/operations/cross-references.md) — diagnosing and maintaining semantic links.
-- [Test overview](/openwiki/testing/test-overview.md) — choosing focused validation.
+- [Adding pages](/openwiki/operations/adding-pages.md) — placing authored guides beside generated navigation entries.
+- [Quickstart](/openwiki/quickstart.md) — local setup and documentation-preview entrypoints.
