@@ -1,0 +1,37 @@
+```python
+import httpx2
+from fastmcp.client import Client
+from fastmcp.client.group import ClientGroup
+from fastmcp.client.transports import StreamableHttpTransport
+from langchain.mcp import MCPAdapter
+
+# One connection pool, shared by every server the deployment talks to.
+_POOL = httpx2.AsyncHTTPTransport()
+
+
+class _SharedPool(httpx2.AsyncBaseTransport):
+    """Lend `_POOL` to each client without letting any client close it."""
+
+    handle_async_request = _POOL.handle_async_request
+
+    async def aclose(self) -> None: ...
+
+
+def _client_factory(**kwargs: object) -> httpx2.AsyncClient:
+    return httpx2.AsyncClient(transport=_SharedPool(), **kwargs)
+
+
+async def load_over_shared_pool(servers: dict[str, str]) -> list:
+    # Every client draws HTTP connections from the same pool, so a fleet of
+    # servers does not each open its own.
+    group = ClientGroup(
+        {
+            name: Client(
+                StreamableHttpTransport(url, httpx_client_factory=_client_factory)
+            )
+            for name, url in servers.items()
+        }
+    )
+    async with MCPAdapter(group) as adapter:
+        return await adapter.list_tools()
+```
