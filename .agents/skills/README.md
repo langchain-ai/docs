@@ -59,8 +59,8 @@ for the full discovery order.
 
 ## What belongs in a skill, and what belongs in AGENTS.md
 
-`AGENTS.md` and `CLAUDE.md` are always-on context: every rule in them costs
-tokens on every task, whether or not the task is related. A skill's
+`AGENTS.md` is always-on context: every rule in it costs tokens on every task,
+whether or not the task is related. A skill's
 `description` is the only part loaded up front, and the body loads when the
 skill is invoked.
 
@@ -72,9 +72,8 @@ So the split is:
   decision points, tool calls, and verification steps.
 
 Skills **link into** `AGENTS.md` rather than restating it. The guidelines
-already fan out into four derived files kept in sync by hand, with a CI job
-enforcing that `AGENTS.md` and `CLAUDE.md` stay byte-identical. A skill that
-copies the style guide becomes a fifth copy that drifts silently.
+already fan out into four derived files kept in sync by hand. A skill that
+copies the style guide becomes another copy that drifts silently.
 
 ## Adding a skill
 
