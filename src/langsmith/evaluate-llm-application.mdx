@@ -9,12 +9,14 @@ This guide shows you how to run an evaluation on an agent using the LangSmith SD
 [Evaluations](/langsmith/evaluation-concepts#evaluation-lifecycle) | [Evaluators](/langsmith/evaluation-concepts#evaluators) | [Datasets](/langsmith/evaluation-concepts#datasets)
 </Info>
 
-In this guide we'll go over how to evaluate an application using the [evaluate()](https://docs.smith.langchain.com/reference/python/evaluation/langsmith.evaluation._runner.evaluate) method in the LangSmith SDK.
+In this guide we'll go over how to evaluate an application using the LangSmith SDK. For API reference, see the [Python](https://reference.langchain.com/python/langsmith/evaluation), [JavaScript/TypeScript](https://reference.langchain.com/javascript/langsmith/evaluation), or [Java](https://javadoc.io/doc/com.langchain.smith/langsmith-java/0.1.0-beta.11/com/langchain/smith/evaluation/package-summary.html) evaluation APIs.
 
 <Check>
 For larger evaluation jobs in Python we recommend using [aevaluate()](https://docs.smith.langchain.com/reference/python/evaluation/langsmith.evaluation._arunner.aevaluate), the asynchronous version of [evaluate()](https://docs.smith.langchain.com/reference/python/evaluation/langsmith.evaluation._runner.evaluate). It is still worthwhile to read this guide first, as the two have identical interfaces, before reading the how-to guide on [running an evaluation asynchronously](/langsmith/evaluation-async).
 
 In JS/TS evaluate() is already asynchronous so no separate method is needed.
+
+In Java use `Evaluation.evaluateAsync()` for non-blocking evaluation.
 
 It is also important to configure the `max_concurrency`/`maxConcurrency` arg when running large jobs. This parallelizes evaluation by effectively splitting the dataset across threads.
 </Check>
@@ -79,9 +81,18 @@ const toxicityClassifier = traceable(
 );
 ```
 
+```java Java
+import java.util.Map;
+import java.util.function.Function;
+
+// Evaluation.evaluate() traces this automatically when uploadResults is true (the default).
+Function<Map<String, Object>, Map<String, Object>> toxicityClassifier =
+    inputs -> Map.of("class", "Not toxic");
+```
+
 </CodeGroup>
 
-We've optionally enabled tracing to capture the inputs and outputs of each step in the pipeline. To understand how to annotate your code for tracing, please refer to [Custom instrumentation](/langsmith/annotate-code).
+We've optionally enabled tracing to capture the inputs and outputs of each step in the pipeline. In Java, `Evaluation.evaluate()` does this for the target automatically — use [`Tracing.traceFunction`](/langsmith/annotate-code) only if you need a custom run name or nested traces inside your app. For Python and TypeScript, see [Custom instrumentation](/langsmith/annotate-code).
 
 ## Create or select a dataset
 
@@ -160,6 +171,45 @@ const toxicDataset = await langsmith.createDataset(datasetName);
 await langsmith.createExamples({ inputs, outputs, datasetId: toxicDataset.id });
 ```
 
+```java Java
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.core.JsonValue;
+import com.langchain.smith.models.datasets.Dataset;
+import com.langchain.smith.models.datasets.DatasetCreateParams;
+import com.langchain.smith.models.examples.ExampleCreateParams;
+
+LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+
+Dataset dataset =
+    client.datasets().create(
+        DatasetCreateParams.builder().name("Toxic Queries").build());
+
+String[][] labeledTexts = {
+  {"Shut up, idiot", "Toxic"},
+  {"You're a wonderful person", "Not toxic"},
+  {"This is the worst thing ever", "Toxic"},
+  {"I had a great day today", "Not toxic"},
+  {"Nobody likes you", "Toxic"},
+  {"This is unacceptable. I want to speak to the manager.", "Not toxic"},
+};
+
+for (String[] row : labeledTexts) {
+  client.examples().create(
+      ExampleCreateParams.builder()
+          .datasetId(dataset.id())
+          .inputs(
+              ExampleCreateParams.Inputs.builder()
+                  .putAdditionalProperty("text", JsonValue.from(row[0]))
+                  .build())
+          .outputs(
+              ExampleCreateParams.Outputs.builder()
+                  .putAdditionalProperty("label", JsonValue.from(row[1]))
+                  .build())
+          .build());
+}
+```
+
 </CodeGroup>
 
 For more details on datasets, refer to the [Manage datasets](/langsmith/manage-datasets) page.
@@ -201,7 +251,22 @@ function correct({
 }
 ```
 
+```java Java
+import com.langchain.smith.evaluation.DynamicRunEvaluatorKt;
+import com.langchain.smith.evaluation.RunEvaluator;
+import java.util.Objects;
+
+RunEvaluator correct =
+    DynamicRunEvaluatorKt.runEvaluatorFromOutputsReference(
+        (outputs, reference) ->
+            Objects.equals(outputs.get("class"), reference.get("label")) ? 1.0 : 0.0);
+```
+
 </CodeGroup>
+
+<Note>
+If you build a custom `RunEvaluator` that returns `EvaluationResult` directly (for example via `DynamicRunEvaluatorKt.runEvaluator(...)`), pass `Map.of()` for `evaluatorInfo` when constructing the result from Java. Kotlin default arguments are not applied from Java callers.
+</Note>
 
 ### In LangSmith UI
 
@@ -299,6 +364,29 @@ await evaluate((inputs) => toxicityClassifier(inputs["input"]), {
 });
 ```
 
+```java Java
+import com.langchain.smith.evaluation.Evaluation;
+import com.langchain.smith.evaluation.EvaluateParams;
+import com.langchain.smith.evaluation.ExperimentResults;
+import java.util.List;
+import java.util.Map;
+
+EvaluateParams params =
+    EvaluateParams.builder()
+        .data(dataset.name())
+        .experimentPrefix("gpt-5.4-mini, baseline")
+        .description("Testing the baseline system.")
+        .maxConcurrency(4)
+        .metadata(
+            Map.of(
+                "models", List.of("openai:gpt-5.4-mini"),
+                "prompts", List.of("my-org/my-eval-prompt:abc12345")))
+        .addEvaluator(correct)
+        .build();
+
+ExperimentResults results = Evaluation.evaluate(client, toxicityClassifier, params);
+```
+
 </CodeGroup>
 
 ## Add metadata to an experiment
@@ -390,6 +478,84 @@ Click an example to open its details panel, which includes inputs, outputs, refe
   alt="Experiment view details panel showing the inputs, outputs, reference outputs, and trace for a single example."
 />
 
+
+## Java options
+
+The Java SDK uses `EvaluateParams.builder()` to configure an evaluation. Common options:
+
+| Option | What it does |
+| ------ | ------------ |
+| `data(...)` | **Required.** Dataset name, dataset id, or a list of in-memory examples. |
+| `addEvaluator(...)` | Score each row. You can add more than one. |
+| `addSummaryEvaluator(...)` | Score the whole experiment after all rows finish. |
+| `experimentPrefix(...)` | Short label for the experiment name. LangSmith adds a unique suffix. |
+| `experimentName(...)` | Set the full experiment name. Do not use with `experimentId`. |
+| `experimentId(...)` | Add more runs to an existing experiment. |
+| `maxConcurrency(...)` | Rows to test at once. `0` runs one at a time. |
+| `numRepetitions(...)` | Run each test case multiple times. |
+| `uploadResults(false)` | Run locally without saving to LangSmith. |
+| `errorHandling(...)` | What to do when your app fails on a row (`LOG` or `IGNORE`). |
+
+<Note>
+To re-score runs from a prior experiment, prefer `Evaluation.evaluateExisting()` (see below). The `Evaluation.evaluate(client, experimentId, params)` overload also exists, but `EvaluateParams` still requires `.data(...)` even when you are not re-running your app.
+</Note>
+
+### Run in the background
+
+Use `Evaluation.evaluateAsync()` when you do not want to wait for every row to finish:
+
+```java
+import com.langchain.smith.evaluation.Evaluation;
+import com.langchain.smith.evaluation.ExperimentResults;
+import java.util.concurrent.CompletableFuture;
+
+CompletableFuture<ExperimentResults> future =
+    Evaluation.evaluateAsync(client, toxicityClassifier, params);
+ExperimentResults results = future.join();
+```
+
+### Re-score an existing experiment
+
+Add new scores without re-running your app:
+
+```java
+import com.langchain.smith.evaluation.EvaluateExistingParams;
+
+Evaluation.evaluateExisting(
+    client,
+    "your-experiment-id",
+    EvaluateExistingParams.builder().addEvaluator(correct).build());
+```
+
+See [Evaluate an existing experiment](/langsmith/evaluate-existing-experiment) for more.
+
+### Compare two experiments
+
+Pick a winner between two versions side by side:
+
+```java
+import com.langchain.smith.evaluation.EvaluateComparativeParams;
+import java.util.List;
+
+Evaluation.evaluateComparative(
+    client,
+    List.of(experimentAId, experimentBId),
+    EvaluateComparativeParams.builder().addEvaluator(myComparativeEvaluator).build());
+```
+
+See [Run a pairwise evaluation](/langsmith/evaluate-pairwise) for more.
+
+### Test without uploading
+
+Set `uploadResults(false)` for quick local smoke tests. Nothing is saved to LangSmith.
+
+```java
+EvaluateParams.builder()
+    .data("Toxic Queries")
+    .uploadResults(false)
+    .addEvaluator(correct)
+    .build();
+```
 
 ## Reference code
 
@@ -594,6 +760,72 @@ await evaluate((inputs) => toxicityClassifier(inputs["input"]), {
   maxConcurrency: 4, // optional, add concurrency
   metadata: EXPERIMENT_METADATA,  // optional, used to populate model/prompt/tool columns in UI
 });
+```
+
+```java Java
+import com.langchain.smith.client.LangsmithClient;
+import com.langchain.smith.client.okhttp.LangsmithOkHttpClient;
+import com.langchain.smith.core.JsonValue;
+import com.langchain.smith.evaluation.DynamicRunEvaluatorKt;
+import com.langchain.smith.evaluation.Evaluation;
+import com.langchain.smith.evaluation.EvaluateParams;
+import com.langchain.smith.evaluation.ExperimentResults;
+import com.langchain.smith.evaluation.RunEvaluator;
+import com.langchain.smith.models.datasets.Dataset;
+import com.langchain.smith.models.datasets.DatasetCreateParams;
+import com.langchain.smith.models.examples.ExampleCreateParams;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+
+LangsmithClient client = LangsmithOkHttpClient.fromEnv();
+
+// Step 1. Define an application
+Function<Map<String, Object>, Map<String, Object>> toxicityClassifier =
+    inputs -> Map.of("class", "Not toxic");
+
+// Step 2. Create a dataset
+Dataset dataset =
+    client.datasets().create(
+        DatasetCreateParams.builder().name("Toxic Queries").build());
+
+String[][] labeledTexts = {
+  {"Shut up, idiot", "Toxic"},
+  {"You're a wonderful person", "Not toxic"},
+};
+
+for (String[] row : labeledTexts) {
+  client.examples().create(
+      ExampleCreateParams.builder()
+          .datasetId(dataset.id())
+          .inputs(
+              ExampleCreateParams.Inputs.builder()
+                  .putAdditionalProperty("text", JsonValue.from(row[0]))
+                  .build())
+          .outputs(
+              ExampleCreateParams.Outputs.builder()
+                  .putAdditionalProperty("label", JsonValue.from(row[1]))
+                  .build())
+          .build());
+}
+
+// Step 3. Define an evaluator
+RunEvaluator correct =
+    DynamicRunEvaluatorKt.runEvaluatorFromOutputsReference(
+        (outputs, reference) ->
+            Objects.equals(outputs.get("class"), reference.get("label")) ? 1.0 : 0.0);
+
+// Step 4. Run the evaluation
+EvaluateParams params =
+    EvaluateParams.builder()
+        .data(dataset.name())
+        .experimentPrefix("gpt-5.4-mini, simple")
+        .description("Testing the baseline system.")
+        .maxConcurrency(4)
+        .addEvaluator(correct)
+        .build();
+
+ExperimentResults results = Evaluation.evaluate(client, toxicityClassifier, params);
 ```
 
 </CodeGroup>
