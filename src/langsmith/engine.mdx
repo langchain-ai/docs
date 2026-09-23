@@ -249,6 +249,77 @@ For either outcome, you can optionally provide a reason, which feeds back into E
 
 You can reopen a closed issue at any time. Click **Reopen** to clear any fix in progress and stop watching the issue if it was being watched. Engine also reopens an issue automatically when it detects the same problem recurring in a later trace.
 
+## Validate issues and fixes with experiments
+
+<Note>
+Issue validation is in private [beta](/langsmith/release-stages#beta). It is available only on LangSmith Cloud, for organizations where it has been enabled.
+</Note>
+
+Issue validation replays an issue's traces against a deployment of your agent to confirm that the issue reproduces. It then replays the same traces against a preview deployment of Engine's fix to confirm that the fix resolves it. Engine records each validation as an [experiment](/langsmith/evaluation-concepts#experiment) on a dataset built from the issue's traces, so you can compare the baseline and the fix trace by trace.
+
+### Set up validation
+
+Validation requires a baseline deployment: a ready, non-preview [LangSmith Cloud deployment](/langsmith/deploy-to-cloud) of your agent in the same workspace. Selecting it requires `deployments:update` on that deployment.
+
+To set up validation:
+
+1. On the **Engine** page, click **Configure Engine**.
+2. In the **Preview deployments** section, find the **Baseline deployment** field. Search for a deployment, or paste its LangSmith URL or deployment ID. Preview deployments and deployments that are not ready cannot be selected from the list.
+3. Click **Save**.
+4. (Optional) To verify fixes, select **Verify fixes with preview deployments**.
+
+Fix verification also requires:
+
+- **A connected repository**: Engine opens its fix as a pull request in the repository connected in [Connect Engine to GitHub](/langsmith/engine-github).
+- **Label-triggered preview builds**: Enable [preview builds](/langsmith/preview-builds) on the baseline deployment with the **Label only** trigger. Engine adds the configured label to its fix pull request to start a preview build.
+
+<Warning>
+Validation sends the inputs from an issue's traces to the baseline deployment, and to the preview deployment when it verifies a fix. Each replay creates a thread and a run on that deployment, and your agent can call its tools while it responds.
+</Warning>
+
+### Test an issue
+
+When a baseline deployment is set, Engine validates each new issue automatically when it creates the issue. To validate an issue again, open it and click **Test issue**.
+
+**Test issue** is unavailable when no baseline deployment is set, when the issue has no linked traces, or when the monthly LCU spend limit is reached.
+
+For each validation, Engine:
+
+1. Selects up to five distinct traces linked to the issue, in the order they were linked.
+2. Replays each trace's input against the baseline deployment. For a trace from a multi-turn thread, Engine includes the earlier turns of the conversation, so a follow-up failure is judged in the same context.
+3. Judges whether each replay shows the issue's reported behavior again. Each trace is **Reproduced**, **Not reproduced**, or **Inconclusive**.
+
+The issue as a whole is reproduced when at least one trace reproduces. It is not reproduced only when every replay completed without the reported behavior. Otherwise, the result is inconclusive. When validation does not reproduce an open issue, Engine closes the issue.
+
+### Verify a fix
+
+When **Verify fixes with preview deployments** is selected, Engine verifies each fix it generates:
+
+1. When a fix run completes, Engine opens a pull request for the fix if one is not already open, then adds the preview build label to it.
+2. LangSmith builds a preview deployment from the pull request.
+3. When the preview revision is live, Engine replays the traces from the issue's validation against the preview deployment.
+4. If the issue still occurs on the preview, Engine revises the fix on the same pull request and verifies it again, for up to three attempts in total.
+
+### Review validation experiments
+
+Engine stores each issue's validation evidence in your workspace:
+
+- **Dataset**: One per issue, described as `Engine validation evidence`, with one example per replayed trace.
+- **Baseline experiment**: The replays against the baseline deployment.
+- **Fix experiment**: The replays against a fix's preview deployment, one experiment per verification attempt.
+
+Engine records its verdict on each conclusive replay as feedback with the key `engine_issue_validation`. The value is `reproduced` or `not_reproduced`, and the feedback comment explains the verdict.
+
+When Engine verifies a fix against a preview deployment, the issue's **Evidence** section shows the overall verdict and one row per trace:
+
+- **Flagged traces**: What Engine saw in the original trace. Click **Original trace** to open it.
+- **Reproduced on prod**: The baseline result, **Reproduced**, **Not reproduced**, or **Inconclusive**. Click **Repro trace** to open the replay.
+- **After PR #\<number\>**: The result on the fix's preview, **Fix verified**, **Recurred**, or **Inconclusive**. Click the trace link to open the replay.
+
+Each column header counts how many traces reproduced on the baseline or were resolved by the fix. Click **View Experiment** to open the baseline and fix experiments side by side in the dataset's comparison view. For more information, see [Compare experiment results](/langsmith/compare-experiment-results).
+
+Until fix verification runs, the issue shows a validation summary instead: the baseline result, the fix's verification status, and links to each replayed example.
+
 ## List issues via the CLI
 
 You can list issues programmatically using the [LangSmith CLI](/langsmith/cli).
@@ -301,6 +372,7 @@ On the **Engine** page, click **Configure Engine** to open the **Edit Engine Set
 - **Focus on specific traces**: Narrow Engine's attention to a subset of runs by run name or metadata. Edits save automatically and take effect on the next scan. Scope conditions accept only run name and metadata; you cannot filter by feedback key or score. See [Focus on specific traces](#focus-on-specific-traces).
 - **Notifications**: Click **Add destination** to add a Slack channel or webhook destination that receives a notification when Engine detects a new issue. Set a minimum priority level per destination to control which issues trigger a notification. See [Get notified about new issues](#get-notified-about-new-issues).
 - **Code repository**: Connect or update a GitHub repository so the agent can reference source code when diagnosing issues. Optionally set a **Subfolder** and a **Branch** (defaults to the repository default). For setup, see [Connect Engine to GitHub](/langsmith/engine-github).
+- **Preview deployments**: Set the baseline deployment Engine replays issue traces against, and turn on fix verification with preview deployments. See [Validate issues and fixes with experiments](#validate-issues-and-fixes-with-experiments).
 - **Context repository**: Connect a Context Hub repository so Engine can propose fixes to instructions, docs, and linked skills.
 - **Linear**: Connect Linear, then select a team and optional project for new issues. Engine retains durable links to the issues it creates, but does not synchronize later edits from Linear. Deleting all Engine issues does not delete existing Linear tickets. See [Create a Linear issue](#create-a-linear-issue).
 - **Pause**: Engine scans your traces on a dynamic schedule tuned to balance cost and performance. Click **Pause** to stop scanning without deleting the existing issues, or **Resume** to resume scanning.
