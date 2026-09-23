@@ -30,7 +30,7 @@ flowchart LR
     classDef decision fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
 ```
 
-This page covers how to set up Engine, work through the fix and evaluation loop, control costs, and route notifications.
+This page covers how to set up Engine, work through the fix and evaluation loop, find issues proactively with red teaming, control costs, and route notifications.
 
 ## How Engine samples and prioritizes traces
 
@@ -249,6 +249,163 @@ For either outcome, you can optionally provide a reason, which feeds back into E
 
 You can reopen a closed issue at any time. Click **Reopen** to clear any fix in progress and stop watching the issue if it was being watched. Engine also reopens an issue automatically when it detects the same problem recurring in a later trace.
 
+## Find issues proactively with red teaming
+
+<Note>
+Engine Red Team is in private [beta](/langsmith/release-stages#beta). It is available only on LangSmith Cloud, for organizations where it has been enabled.
+</Note>
+
+Engine Red Team tests a deployed agent by sending it new, synthetic requests and judging how it responds. The issues described earlier on this page come from failures that already happened in your production traces. Red Team looks for failures that have not happened yet, such as a prompt injection that succeeds, a consequential tool call made without the confirmation your agent requires, or hidden context that leaks into an answer.
+
+Each run produces a report of hypotheses, the probes that tested each one, and a verdict for each hypothesis.
+
+### How Red Team works
+
+Red Team probes the deployment set as the tracing project's [baseline deployment](#set-the-baseline-deployment). Each run:
+
+1. **Maps the application.** Engine reviews up to 25 recent traces from the tracing project and, if one is connected, your code repository. From them, it learns the agent's prompts, tools, guardrails, and request format. If Engine has already scanned the project, the run starts from the project's agent overview and runs a shorter confirmation scan.
+2. **Forms hypotheses.** Each hypothesis describes one specific way the agent could fail. Engine assigns it an [issue class](#red-team-issue-classes) and a scenario type, which records whether an ordinary user could trigger the failure or whether it takes a deliberate attack.
+3. **Probes the deployment.** Engine sends up to two synthetic requests per hypothesis to the deployment. A probe reuses the request format of a real trace, but replaces its content with new, synthetic input.
+4. **Judges the results.** Engine reviews each probe's response and trace, then assigns the hypothesis a status and a severity. For an ambiguous result, Engine can send one follow-up probe.
+
+Past traces only help Engine understand the application. Every confirmed finding comes from a probe sent during the run, not from an error in an earlier trace.
+
+Red-team findings stay in the red-team report. A run does not create Engine issues, and it does not write datasets, evaluators, or feedback to your workspace.
+
+### Red Team prerequisites
+
+To run Red Team, you need:
+
+- **Engine on the tracing project**: [Set up Engine](#set-up-engine) for the project that receives your agent's traces.
+- **A baseline deployment**: A ready, non-preview [LangSmith Cloud deployment](/langsmith/deploy-to-cloud) in the same workspace, set as the project's baseline. See [Set the baseline deployment](#set-the-baseline-deployment).
+- **Permissions**: `runs:read` on the tracing project to view red-team reports. To start a run, you also need `runs:create` on the project and `deployments:update` on the baseline deployment.
+- **A connected repository (recommended)**: With a [connected GitHub repository](/langsmith/engine-github), Engine reads your agent's prompts, tools, and guardrails from source. Without one, findings rely on traces alone, and the report shows **Repository context was not available**.
+
+<Warning>
+Probes are real requests. Each probe creates a thread and a run on the baseline deployment, and your agent can call its tools while it responds. Choose a deployment where synthetic test traffic and tool side effects are acceptable, such as a staging deployment.
+</Warning>
+
+### Set the baseline deployment
+
+The baseline deployment is the deployment that Red Team sends probes to.
+
+To set the baseline deployment:
+
+1. On the **Engine** page, select the tracing project, then click **Configure Engine**.
+2. In the **Preview deployments** section, find the **Baseline deployment** field.
+3. Search for a deployment, or paste its LangSmith URL or deployment ID. Preview deployments and deployments that are not ready cannot be selected from the list.
+4. Click **Save**.
+
+### Run Red Team
+
+To start a run:
+
+1. In the [LangSmith UI](https://smith.langchain.com), select **Engine** in the sidebar, then select the tracing project.
+2. At the top of the left panel, select **Red Teaming**.
+3. Click **Run red team**.
+
+The run appears in the report picker with the status **Running**. When it completes, its report opens in the same view. **Run red team** is unavailable while a run is in progress.
+
+If a run does not complete, the report picker shows its final status: **Failed**, **Timed Out**, **Interrupted**, **Cancelled**, or **Failed to Start**. No report is available for that run.
+
+### Read a red-team report
+
+Use the report picker at the top of the left panel to choose a run by date. Select **Load older reports** to page back through earlier runs.
+
+#### Review the overview
+
+When no hypothesis is selected, the right panel shows an overview of the report:
+
+- **Confirmed findings**: The number of confirmed findings, broken down by severity.
+- **Hypotheses tested**: The number of hypotheses the run tested.
+- **Issue classes tested**: How many of the 10 [issue classes](#red-team-issue-classes) the run tested.
+- **Findings by Issue Class**: Confirmed findings per issue class.
+- **Hypothesis Outcomes**: Hypotheses by status. Click a status to filter the hypothesis list to it.
+- **Findings Over Runs**: Confirmed findings for each run, stacked by severity. Click a run to open its report.
+
+#### Browse hypotheses
+
+The left panel groups the report's hypotheses:
+
+- **Product-Facing Findings**: Confirmed findings that an ordinary user could trigger, with a normal request or a realistic, messy one.
+- **Technical Hardening Observations**: Confirmed findings that take a deliberate attack or a technical boundary check to trigger.
+- **Legacy Confirmed Findings**: Confirmed findings from older reports, recorded before Engine assigned scenario types.
+- **Other Tested Hypotheses**: Every hypothesis that was not confirmed.
+
+Click the filter icon to show a single status, or the sort icon to sort by **Default**, **Severity**, or **Title (A-Z)**. The default order lists confirmed hypotheses first, by severity, then hypotheses that need review.
+
+Each hypothesis has one of these statuses:
+
+| Status | Meaning |
+|---|---|
+| **Confirmed** | A probe reproduced the failure, and Engine judged it a real finding. |
+| **Needs Review** | The evidence was ambiguous or incomplete. Review the probes before acting on the hypothesis. |
+| **No Issue Found** | Probes ran, and the agent behaved correctly. |
+| **Not Tested** | No probe exercised the hypothesis. This is missing coverage, not evidence of safe behavior. |
+
+A confirmed finding also has a severity: **Critical**, **High**, **Medium**, **Low**, or **Info**.
+
+#### Inspect a hypothesis
+
+Click a hypothesis to open its detail. The detail shows Engine's conclusion, followed by one card per probe, labeled **Prompt 1** and **Prompt 2**. Each probe has an outcome of **Attack Worked**, **Attack Blocked**, or **Needs Review**.
+
+Expand a probe card to see:
+
+- **The synthetic prompt**: The exact prompt Engine sent to the deployment.
+- **Observed**: An excerpt quoted from your agent's response, with a summary of the probe's trace, such as its tool calls, tool errors, and token count.
+- **Expected**: What a correct application would have returned.
+- **View proof trace**: Opens the probe's trace in the side panel.
+
+Below the probes, **Why the Judge Decided This** explains how Engine reached the status and severity, and **What to Do Next** recommends a fix. A hypothesis marked **Unexpected** is a finding that Engine discovered while testing a different hypothesis.
+
+### Red Team issue classes
+
+Every hypothesis belongs to one issue class, chosen by the failure's root cause and the fix it needs. Each report accounts for all 10 classes, and marks each one as tested, untested, or not applicable to the agent.
+
+| Issue class | What Red Team tests |
+|---|---|
+| **Content Policy** | Violations of explicit product, legal, safety, or business policies, such as a prohibited competitor comparison. |
+| **Instruction Hierarchy** | Direct overrides of the agent's instructions, and conflicting or confusing prompt instructions. |
+| **Indirect Injection** | Retrieved content, tool output, or other untrusted data that tries to control the agent. |
+| **Data Exposure** | Hidden context, such as synthetic canary values planted by a probe, escaping into a response. |
+| **Auth Isolation** | Access or actions beyond the caller's identity or permission boundary. |
+| **Tool Safety** | Unsafe tool selection, arguments, or approvals, and unsafe consequential workflows. |
+| **Workflow Integrity** | Required steps, such as retrieval, clarification, or truthful completion, that the agent skips or fabricates. |
+| **Session Integrity** | Multi-turn state problems, such as memory poisoning, delayed activation, or role confusion. |
+| **Input Robustness** | Confusion caused by structured output, parsing, delimiters, encodings, or message boundaries. |
+| **Reliability Safety** | Behavior around failures, retries, resource limits, loops, duplicate work, and irreversible side effects. |
+
+Two classes have extra requirements:
+
+- **Auth Isolation**: Red Team does not confirm findings in this class. Its hypotheses report as **Needs Review** or **Not Tested**.
+- **Session Integrity**: A hypothesis needs a two-turn probe in a single conversation. When no such probe runs, the hypothesis reports as **Needs Review** or **Not Tested**.
+
+### Run Red Team again
+
+Red Team carries verdicts forward between runs of the same deployment revision. A new run receives the verdicts from up to five earlier successful runs against the same baseline deployment and active revision. Engine skips hypotheses that earlier runs already confirmed or found safe, unless the new run shows that the behavior changed, and prioritizes hypotheses that needed review.
+
+After you deploy a new revision to the baseline deployment, the next run starts without prior verdicts. Use **Findings Over Runs** to compare confirmed findings across runs.
+
+### Red Team limits
+
+Each red-team run is bounded:
+
+| Limit | Value per run |
+|---|---|
+| Traces reviewed | 25, selected from up to 100 recent trace summaries |
+| Hypotheses | 50 |
+| Probes per hypothesis | 2 |
+| Requests to the baseline deployment | 100 |
+| Recommendations | 20 |
+
+### How Red Team handles your data
+
+- **Synthetic probes**: Probe content is synthetic. Engine does not copy customer trace content or repository text into probes; a trace supplies only the request format.
+- **Read-only access**: Red Team reads your traces with a read-only LangSmith credential and clones your repository with a read-only GitHub token.
+- **Screened reports**: Engine screens model-written report text for secrets before storing it, and bounds the length of response excerpts.
+
+For how Engine handles your data more broadly, see [Engine security](/langsmith/engine-security).
+
 ## List issues via the CLI
 
 You can list issues programmatically using the [LangSmith CLI](/langsmith/cli).
@@ -310,7 +467,6 @@ On the **Engine** page, click **Configure Engine** to open the **Edit Engine Set
 
 - [Engine](/langsmith/engine-overview): Product overview and where Engine fits in the development lifecycle.
 - [Connect Engine to GitHub](/langsmith/engine-github): Connect repositories in LangSmith Cloud, or create and configure your own GitHub App for a self-hosted deployment.
-- [Red team your agent](/langsmith/engine-red-team): Probe a deployment with synthetic requests to find failures before they appear in production traces.
 - [Engine issue categories](/langsmith/engine-issue-categories): Reference for the failure categories Engine assigns to detected issues.
 - [Engine webhook events](/langsmith/engine-webhooks): Event payload reference, signing-secret verification, and delivery semantics.
 - [Engine on self-hosted](/langsmith/engine-self-hosted): Self-hosted architecture and data handling.
