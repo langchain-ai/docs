@@ -5,7 +5,7 @@ description: A practical procedure for authoring documentation that emits Python
 tags: [versioning, conditional-rendering, markdown, snippets, package-validation, navigation]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-21T08:24:04.334Z
+    at: 2026-09-23T08:21:36.095Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
