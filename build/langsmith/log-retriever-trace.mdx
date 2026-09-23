@@ -106,7 +106,7 @@ In the LangSmith UI, you'll find each retrieved document with its contents and m
 
 <div className="source-links">
 <Callout icon="terminal-2">
-    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
 </Callout>
 <Callout icon="edit">
     [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/log-retriever-trace.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).

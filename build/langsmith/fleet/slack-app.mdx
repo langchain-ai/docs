@@ -330,7 +330,7 @@ On Self-hosted, the **Add Slack App** button in the **Slack Apps** section is di
 
 <div className="source-links">
 <Callout icon="terminal-2">
-    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
 </Callout>
 <Callout icon="edit">
     [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/fleet/slack-app.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
