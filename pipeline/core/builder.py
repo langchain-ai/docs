@@ -272,7 +272,7 @@ class DocumentationBuilder:
                 "\n\n---\n\n"
                 '<div className="source-links">\n'
                 '<Callout icon="terminal-2">\n'
-                "    [Connect these docs](/use-these-docs) to Claude, VSCode, and more via MCP for real-time answers.\n"  # noqa: E501
+                "    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.\n"
                 "</Callout>\n"
                 '<Callout icon="edit">\n'
                 f"    [Edit this page on GitHub]({edit_url}) "
@@ -1148,6 +1148,7 @@ class DocumentationBuilder:
         "contributing": "Contributing",
         "deepagents": "Deep Agents",
         "integrations": "Integrations",
+        "javascript": "TypeScript",
         "langchain": "LangChain",
         "langgraph": "LangGraph",
         "mcp": "MCP",
@@ -1734,7 +1735,10 @@ class DocumentationBuilder:
         ordered = [label for label in ordered if sections.get(label)]
 
         inline: list[tuple[str, list[str]]] = []
-        linked: list[tuple[str, str, int]] = []  # (label, section path, page count)
+        # Section label -> its indexes, as (directory prefix, path, own label,
+        # page count). Grouped per label so the root file can list them under
+        # the product they belong to.
+        linked: list[tuple[str, list[tuple[str, str, str, int]]]] = []
 
         for label in ordered:
             entries = sections[label]
@@ -1750,34 +1754,49 @@ class DocumentationBuilder:
                     (label, [described_lines.get(line, line) for line in lines])
                 )
             else:
+                indexes: list[tuple[str, str, str, int]] = []
                 for section_prefix, chunk in self._chunk_section(prefix, entries):
                     if not chunk:
                         continue
                     path = f"{section_prefix}/llms.txt"
+                    own_label = self._section_label(section_prefix, prefix, label)
                     self._write_section_index(
                         path,
                         title,
-                        self._section_label(section_prefix, prefix, label),
+                        own_label,
                         [line for _, line in chunk],
                     )
-                    linked.append((section_prefix, path, len(chunk)))
+                    indexes.append((section_prefix, path, own_label, len(chunk)))
+                if indexes:
+                    linked.append((label, sorted(indexes)))
 
         out = [f"# {title}", ""]
         if description:
             out += [f"> {description}", ""]
         if linked:
+            # Grouped under the product each index belongs to, and labeled, so
+            # one read is enough to choose a section. A flat alphabetical list
+            # of paths buried the dozen indexes that answer most questions
+            # among 46 REST API tag indexes, and agents responded by re-reading
+            # this file several times per task instead of committing to one
+            # section.
             out += [
-                "Each section index below lists the markdown version of every "
-                "page in that section.",
+                "Every page is listed in exactly one index below. Pick the "
+                "section that matches your question and fetch that index: it "
+                "names every page in the section, so this file does not need "
+                "to be read again.",
                 "",
                 "## Section indexes",
                 "",
             ]
-            for section_prefix, path, count in sorted(linked):
-                out.append(
-                    f"- [/{section_prefix}]({self._SITE_URL}/{path}): {count} pages"
-                )
-            out.append("")
+            for label, indexes in linked:
+                out += [f"### {label}", ""]
+                for section_prefix, path, own_label, count in indexes:
+                    out.append(
+                        f"- [{own_label}]({self._SITE_URL}/{path}): "
+                        f"/{section_prefix}, {count} pages"
+                    )
+                out.append("")
         for label, lines in inline:
             out += [f"## {label}", "", *lines, ""]
 
@@ -1787,7 +1806,7 @@ class DocumentationBuilder:
             "✅ llms.txt written: %d pages, %d characters in root, %d section indexes",
             page_count,
             len(content),
-            len(linked),
+            sum(len(indexes) for _, indexes in linked),
         )
         self._validate_llms_indexes(page_count)
 

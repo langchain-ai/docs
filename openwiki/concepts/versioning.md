@@ -3,9 +3,6 @@ type: versioning strategy
 title: Language Versioning Strategy
 description: Explains independent language-route rendering and version-claim validation for Python and npm documentation, published package versions, and upstream-owned mirrored requirements.
 tags: [versioning, documentation-pipeline, routes, package-validation, dependency-management]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-18T08:20:50.944Z
 sources:
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
@@ -13,6 +10,10 @@ sources:
     resource: repo://.github/workflows/refresh-external-versions.yml
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-17f3856bce97f37118963062
+    resource: repo://pipeline/preprocessors/handle_auto_links.py
+  - id: openwiki-source-dca59d03b9433eea9242c2e4
+    resource: repo://pipeline/preprocessors/link_map.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-6b3ad04031a04803eb901844
@@ -25,13 +26,18 @@ sources:
     resource: repo://scripts/version_claims_ignore.txt
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
+  - id: openwiki-source-243c6e17a513bece229a34b9
+    resource: repo://src/language-toggle.js
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-a10b62517b8302a8d4cf3b31
     resource: repo://tests/unit_tests/test_check_external_versions.py
   - id: openwiki-source-607673c5c40214b511f9e0a7
     resource: repo://tests/unit_tests/test_check_version_claims.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-17T08:22:51.028Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-23T08:21:36.095Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-23T08:21:36.095Z
 ---
 
 # Language Versioning Strategy
@@ -45,14 +51,14 @@ They use some of the same language signals (`:::python`, `:::js`, and source pat
 
 ## Language-route rendering
 
-`DocumentationBuilder` owns emitted documentation artifacts beneath `build/`; `src/docs.json` independently exposes those routes in navigation and redirects retired URLs. Source placement selects the builder behavior, while navigation entries must name routes that the builder actually emits.
+`DocumentationBuilder` owns emitted documentation artifacts beneath `build/`; `src/docs.json` separately declares navigation and redirects retired URLs. Source placement selects the builder behavior, while every configured navigation entry must name a route that the builder emits.
 
 | Authored source domain | Emitted route family | Navigation consequence |
 | --- | --- | --- |
 | Most `src/oss/` content, including LangChain, LangGraph, and Deep Agents outside `code/` | `/oss/python/...` and `/oss/javascript/...` | Add the emitted route to the corresponding Python or TypeScript Build dropdown. |
 | `src/oss/python/` or `src/oss/javascript/` | Only the matching route, with the source-language directory removed | Put the route only in its matching dropdown. |
 | `src/oss/deepagents/code/` | `/oss/deepagents/code/...` | Keep the product route unprefixed. |
-| `src/oss/openwiki/` | `/oss/openwiki/...` | Keep one unprefixed artifact family; the same routes appear in both Build dropdowns. |
+| `src/oss/openwiki/` | `/oss/openwiki/...` | Keep one unprefixed artifact family. The same unprefixed OpenWiki tab is listed in both Python and TypeScript Build dropdowns; the language switcher is suppressed on this route family. |
 | Ordinary `src/langsmith/` content | `/langsmith/...` | Place it in its applicable LangSmith navigation group. |
 | A direct `src/langsmith/managed-deep-agents*.mdx` page | `/langsmith/python/...` and `/langsmith/javascript/...` | List both emitted routes in the corresponding Managed Deep Agents tabs. |
 
@@ -69,9 +75,8 @@ flowchart TD
     Domain --> Managed["Managed Deep Agents source"]
     Managed --> ManagedPy["LangSmith python route"]
     Managed --> ManagedJs["LangSmith javascript route"]
-    OssPy --> Nav["docs.json navigation"]
+    OssPy --> Nav["configured docs.json navigation"]
     OssJs --> Nav
-    OneOss --> Nav
     OneSmith --> Nav
     ManagedPy --> Nav
     ManagedJs --> Nav
@@ -108,9 +113,11 @@ This diagram shows the ordered transforms applied to one emitted Markdown artifa
 
 Ordinary OSS pages are the dual-route case: a shared source produces `/oss/python/...` and `/oss/javascript/...`. Within that domain, a file below `src/oss/python/` or `src/oss/javascript/` participates only in its matching pass; the leading source-language directory is removed from the emitted route. Use those directories for genuinely language-specific material, not duplicate copies of shared pages.
 
-OpenWiki and Deep Agents Code are deliberate exceptions. They build once at `/oss/openwiki/...` and `/oss/deepagents/code/...`; conditional rendering uses the Python branch as a deterministic fallback. That fallback does **not** make either product Python documentation. Links within these product roots remain unprefixed, while an unqualified link from an unversioned product to ordinary OSS is rendered with the Python target.
+OpenWiki and Deep Agents Code are deliberate exceptions. They build once at `/oss/openwiki/...` and `/oss/deepagents/code/...`; conditional rendering uses the Python branch as a deterministic fallback. That fallback does **not** make either product Python documentation. Links within these product roots remain unprefixed, while an unqualified link from an unversioned product to ordinary OSS is rendered with the Python target. `docs.json` places the same unprefixed OpenWiki tab in both the Python and TypeScript Build dropdowns; it is not a duplicated route family.
 
 ### Conditional blocks, links, and snippets
+
+Standard preprocessing first resolves `@[name]` and `@[title][name]` autolinks through the Python or JavaScript map. The selected build target is the default scope, while a `:::python` or `:::js` fence temporarily selects that scope. The autolink pass skips fenced code, leaves an unknown reference unchanged, and turns `\@[...]` into literal text. It runs before conditional rendering removes supported conditional fences, so a retained branch already contains its target-scoped reference URL.
 
 Use `:::python` and `:::js` only where one shared source needs distinct content:
 
@@ -134,7 +141,7 @@ Versioned MDX pages should import Markdown snippets from `/snippets/...`. The bu
 
 Managed Deep Agents is a LangSmith exception: a direct file under `src/langsmith/` whose name begins `managed-deep-agents` and extension is `.md` or `.mdx` is classified as a language-variant page. Ordinary LangSmith emission excludes it, avoiding an unversioned artifact. The full-build discovery pass, however, glob-matches only `managed-deep-agents*.mdx`; an individually built `.md` is recognized and emitted, but it is absent from a normal full build. Use `.mdx` for these pages.
 
-Each emitted variant gets matching conditional content, language-scoped snippet imports, rewritten OSS links, and Managed Deep Agents links pointing at its own route. `docs.json` redirects unversioned and historical Managed Deep Agents URLs to Python routes, while its Python and TypeScript Build dropdowns list their distinct variant routes. Keep the naming rule, both navigation routes, and applicable legacy redirects synchronized when changing these pages.
+Each emitted variant gets matching conditional content, language-scoped snippet imports, rewritten OSS links, and Managed Deep Agents links pointing at its own route. `docs.json` has a Managed Deep Agents tab in each Build dropdown and lists distinct Python and TypeScript routes; it also redirects unversioned and historical Managed Deep Agents URLs to the Python routes. Keep the naming rule, both navigation route families, and applicable legacy redirects synchronized when changing these pages.
 
 ## Package-version claims: availability, not feature policy
 
@@ -233,7 +240,7 @@ Builder tests cover unversioned OSS output and link behavior, scoped snippet imp
 ## See also
 
 - [Build system](/openwiki/architecture/build-system.md)
-- [GitHub Actions](/openwiki/integrations/github-actions.md)
+- [Source map](/openwiki/architecture/source-map.md)
 - [Adding pages](/openwiki/operations/adding-pages.md)
-- [Test overview](/openwiki/testing/test-overview.md)
+- [Builder tests](/openwiki/testing/builder-tests.md)
 - [Writing versioned content](/openwiki/workflows/versioned-content.md)

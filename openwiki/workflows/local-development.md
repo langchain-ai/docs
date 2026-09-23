@@ -3,9 +3,6 @@ type: workflow guide
 title: Local Development Workflow
 description: Set up and operate the local documentation build and Mintlify preview loop. Covers full and incremental builds, skill linking, recovery from generated-output drift, and focused validation.
 tags: [local-development, documentation, mintlify, build-system, workflow]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-14T08:24:18.469Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -25,7 +22,10 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-16b92823fdcb07d686f2e27f
     resource: repo://tests/unit_tests/test_watcher.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-14T08:24:18.469Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-21T08:24:04.334Z
 ---
 
 # Local Development Workflow
@@ -140,7 +140,7 @@ cd build
 mint broken-links
 ```
 
-Both link-check targets filter known deployment-generated and standalone-snippet reports before failing on remaining link lines; the anchor target adds `--check-anchors`. The same working-directory rule applies to raw export and OpenAPI commands. If Mint reports compatibility errors, update it with `mint update` or `npm install -g mint@latest`.
+Both link-check targets run after a full build, validate redirect destinations with `--check-redirects`, and filter known deployment-generated and standalone-snippet reports before failing on remaining link lines; the anchor target additionally passes `--check-anchors`. The same working-directory rule applies to raw export and OpenAPI commands. If Mint reports compatibility errors, update it with `mint update` or `npm install -g mint@latest`.
 
 When Mint warns that a new navigation page does not exist, ensure `src/docs.json` lists the root `index` route without an extension:
 

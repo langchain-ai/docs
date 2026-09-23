@@ -5,7 +5,7 @@ description: How the Python documentation builder turns authored src content int
 tags: [build-system, documentation-pipeline, mintlify, preprocessing, content-routing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-15T08:21:56.110Z
+    at: 2026-09-21T08:24:04.334Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -25,7 +25,7 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-15T08:21:56.110Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
 ---
 
 # Build System Architecture
@@ -48,7 +48,7 @@ flowchart TD
     Src --> Watch["Dev watcher"]
     Watch --> Debounce["Batch changes for 0.2 seconds"]
     Debounce --> Incremental["Rebuild changed files"]
-    Incremental --> Touch["Touch emitted files"]
+    Incremental --> Touch["Touch conventional emitted files"]
     Touch --> Mint
 ```
 
@@ -104,12 +104,13 @@ There are boundaries to account for when operating it:
 - The watcher ignores editor backup files and selected hidden temporary files.
 - A deletion removes only the source-relative output path. It does not apply the full routing map, so deletion of a versioned or special-routed source can leave generated variants behind until the next full build.
 - An incremental rebuild does not rerun shared-file collection, npm overlays, or LLM artifact generation. In particular, a `docs.json` edit is copied but does not refresh indexes derived later by `build_all()`.
+- Managed Deep Agents is an additional hot-reload edge case. `build_file()` correctly regenerates its Python and JavaScript routes, but the watcher's touch step treats every LangSmith file as unversioned and looks only for `build/langsmith/managed-deep-agents…`. Those files are intentionally absent, so it does not touch the regenerated language routes. A full build remains the reliable preview refresh path for those pages.
 
 Treat `make build` as the recovery and release path whenever these derived or cross-file effects matter.
 
 ## LLM-oriented generated artifacts
 
-After the final output tree is ready, the builder writes two related artifact families at its root.
+After the final output tree is ready, the builder writes root LLM artifacts and, when needed, section or language-specific companion files beneath the generated tree.
 
 `llms.txt` is an index of every eligible MDX page plus Mintlify-generated OpenAPI operation pages inferred from `build/docs.json` and the referenced specifications. It omits snippets and pages with `noindex: true`. To avoid truncation, small sections are listed in the root, while large sections are partitioned by directory into `llms.txt` files linked directly from the root. The builder validates that the root and each section remain below 50,000 characters, that section indexes do not link to another index level, and that every eligible page is listed exactly once. A violation raises `ValueError` and fails the full build.
 
