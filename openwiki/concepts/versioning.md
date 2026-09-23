@@ -3,9 +3,6 @@ type: versioning strategy
 title: Language Versioning Strategy
 description: Explains independent language-route rendering and version-claim validation for Python and npm documentation, published package versions, and upstream-owned mirrored requirements.
 tags: [versioning, documentation-pipeline, routes, package-validation, dependency-management]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-21T08:24:04.334Z
 sources:
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
@@ -13,6 +10,10 @@ sources:
     resource: repo://.github/workflows/refresh-external-versions.yml
   - id: openwiki-source-d0cdf44431684bdedf34705a
     resource: repo://pipeline/core/builder.py
+  - id: openwiki-source-17f3856bce97f37118963062
+    resource: repo://pipeline/preprocessors/handle_auto_links.py
+  - id: openwiki-source-dca59d03b9433eea9242c2e4
+    resource: repo://pipeline/preprocessors/link_map.py
   - id: openwiki-source-06a4c757b1153b7de4f47a0e
     resource: repo://pipeline/preprocessors/markdown_preprocessor.py
   - id: openwiki-source-6b3ad04031a04803eb901844
@@ -33,7 +34,10 @@ sources:
     resource: repo://tests/unit_tests/test_check_external_versions.py
   - id: openwiki-source-607673c5c40214b511f9e0a7
     resource: repo://tests/unit_tests/test_check_version_claims.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-23T08:21:36.095Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-23T08:21:36.095Z
 ---
 
 # Language Versioning Strategy
@@ -54,7 +58,7 @@ They use some of the same language signals (`:::python`, `:::js`, and source pat
 | Most `src/oss/` content, including LangChain, LangGraph, and Deep Agents outside `code/` | `/oss/python/...` and `/oss/javascript/...` | Add the emitted route to the corresponding Python or TypeScript Build dropdown. |
 | `src/oss/python/` or `src/oss/javascript/` | Only the matching route, with the source-language directory removed | Put the route only in its matching dropdown. |
 | `src/oss/deepagents/code/` | `/oss/deepagents/code/...` | Keep the product route unprefixed. |
-| `src/oss/openwiki/` | `/oss/openwiki/...` | Keep one unprefixed artifact family. It is not currently listed in either Build dropdown; the language switcher is suppressed on this route family. |
+| `src/oss/openwiki/` | `/oss/openwiki/...` | Keep one unprefixed artifact family. The same unprefixed OpenWiki tab is listed in both Python and TypeScript Build dropdowns; the language switcher is suppressed on this route family. |
 | Ordinary `src/langsmith/` content | `/langsmith/...` | Place it in its applicable LangSmith navigation group. |
 | A direct `src/langsmith/managed-deep-agents*.mdx` page | `/langsmith/python/...` and `/langsmith/javascript/...` | List both emitted routes in the corresponding Managed Deep Agents tabs. |
 
@@ -109,9 +113,11 @@ This diagram shows the ordered transforms applied to one emitted Markdown artifa
 
 Ordinary OSS pages are the dual-route case: a shared source produces `/oss/python/...` and `/oss/javascript/...`. Within that domain, a file below `src/oss/python/` or `src/oss/javascript/` participates only in its matching pass; the leading source-language directory is removed from the emitted route. Use those directories for genuinely language-specific material, not duplicate copies of shared pages.
 
-OpenWiki and Deep Agents Code are deliberate exceptions. They build once at `/oss/openwiki/...` and `/oss/deepagents/code/...`; conditional rendering uses the Python branch as a deterministic fallback. That fallback does **not** make either product Python documentation. Links within these product roots remain unprefixed, while an unqualified link from an unversioned product to ordinary OSS is rendered with the Python target.
+OpenWiki and Deep Agents Code are deliberate exceptions. They build once at `/oss/openwiki/...` and `/oss/deepagents/code/...`; conditional rendering uses the Python branch as a deterministic fallback. That fallback does **not** make either product Python documentation. Links within these product roots remain unprefixed, while an unqualified link from an unversioned product to ordinary OSS is rendered with the Python target. `docs.json` places the same unprefixed OpenWiki tab in both the Python and TypeScript Build dropdowns; it is not a duplicated route family.
 
 ### Conditional blocks, links, and snippets
+
+Standard preprocessing first resolves `@[name]` and `@[title][name]` autolinks through the Python or JavaScript map. The selected build target is the default scope, while a `:::python` or `:::js` fence temporarily selects that scope. The autolink pass skips fenced code, leaves an unknown reference unchanged, and turns `\@[...]` into literal text. It runs before conditional rendering removes supported conditional fences, so a retained branch already contains its target-scoped reference URL.
 
 Use `:::python` and `:::js` only where one shared source needs distinct content:
 

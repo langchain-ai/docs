@@ -4,6 +4,8 @@ title: Adding and Maintaining Documentation Pages
 description: Safely add, move, retire, or regenerate documentation by choosing the owning input, maintaining docs.json navigation and redirects, and running focused validation.
 tags: [documentation, operations, navigation, redirects, build-system]
 sources:
+  - id: openwiki-source-18732c72f962c06354cb62db
+    resource: repo://.agents/skills/add-docs-page/SKILL.md
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-a2371d6362e5db4bc834ad03
@@ -34,15 +36,15 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-a39cb5ba9006abfe6280b6f8
     resource: repo://src/oss/openwiki/cli-reference.mdx
+generated: { by: "openwiki/0.4.3", at: "2026-09-23T08:21:36.095Z" }
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-21T08:24:04.334Z
-generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
+    at: 2026-09-23T08:21:36.095Z
 ---
 
 # Adding and Maintaining Documentation Pages
 
-A safe documentation change starts at the input that owns it. `src/` contains authored pages and configuration; `build/` is cleared and recreated by the builder. `src/docs.json` is the public site contract for navigation and redirects. Therefore, every new authored page must be navigated, while a moved or removed public route must retain a redirect to its maintained successor.
+A safe documentation change starts at the input that owns it. `AGENTS.md` is the repository's current authoring guidance; `CLAUDE.md` points readers to it. `src/` contains authored pages and configuration, while `build/` is cleared and recreated by the builder. `src/docs.json` is the public site contract for navigation and redirects. Therefore, every new authored page must be added to `src/docs.json`, while a moved or removed public route must retain a redirect to its maintained successor.
 
 ```mermaid
 flowchart TD
@@ -132,7 +134,11 @@ python3 scripts/check_removed_pages_redirects.py --base-ref origin/main src/docs
 
 Generated files are outputs, not alternate authoring surfaces. Change the input, run its generator, and review the derivative diff.
 
-### Code samples and snippets
+### Reusable page snippets
+
+For content reused across pages, author one component under `src/snippets/` and import it from the consuming page with an absolute import such as `import Name from '/snippets/product/name.mdx';`, then render `<Name />`. Do not use Mintlify's `<Snippet file="..." />` form: the build only rewrites the import form into language-specific snippet copies. When the same block appears on three or more pages, extract it instead of maintaining copies. Confirm that an added snippet has Python and JavaScript outputs when it is consumed by versioned OSS content.
+
+### Code samples and generated snippets
 
 Runnable samples belong in `src/code-samples/`. `make code-snippets` extracts marked regions to `src/code-samples-generated/` and produces derivative MDX in `src/snippets/code-samples/`. The MDX generator supports Python, TypeScript, Java, Kotlin, Go, and shell intermediates; it can emit language fences or eligible Deep Agents provider CodeGroups and add trace links from the trace manifest. Do not hand-edit the derived snippets.
 
