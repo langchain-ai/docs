@@ -1024,6 +1024,134 @@ console.log(JSON.stringify(resWithSplits.content, null, 2));
 ]
 ```
 
+## Mid-conversation system messages
+
+<Note>
+    Mid-conversation system messages require `@langchain/anthropic>=1.5.11`.
+</Note>
+
+Supported Claude models accept a [system message partway through a conversation](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages). Its instructions apply from that point onward. Adding one leaves the earlier turns unchanged, so it does not invalidate the [prompt cache](#prompt-caching) for them.
+
+`ChatAnthropic` sends leading system messages in the top-level `system` field, and every later @[`SystemMessage`] at its own position in the conversation. Place a later `SystemMessage` after a human or tool message, either last or followed by an AI message.
+
+Claude Opus 4.8, Opus 5, Opus 5.5, Fable 5, Fable 5.1, Mythos 5, and Mythos 5.1 support mid-conversation system messages. Claude Sonnet 5 does not. `ChatAnthropic` does not check the model or the message's position, so the API returns a 400 error when either is invalid.
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+
+const llm = new ChatAnthropic({ model: "claude-opus-5-5" });
+
+const response = await llm.invoke([
+  new SystemMessage("You are a travel assistant."),
+  new HumanMessage("Suggest a day trip from Lisbon."),
+  new AIMessage("Sintra is a good choice: palaces, gardens, and a short train ride."),
+  new HumanMessage("How do I get there?"),
+  new SystemMessage("The user has switched to the mobile app. Keep answers under 50 words."), // [!code highlight]
+]);
+```
+
+For wording guidance and the full placement rules, see the [Claude documentation](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages).
+
+### Change tools mid-conversation
+
+{/* TODO: Set the version once langchain-ai/langchainjs#11707 is released. */}
+<Note>
+    Mid-conversation tool changes require `@langchain/anthropic>=TODO`.
+</Note>
+
+A mid-conversation `SystemMessage` can also add or remove tools with Anthropic's [`tool_addition` and `tool_removal`](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages#mid-conversation-tool-changes) content blocks. Editing `tools` on the request invalidates the prompt cache for the whole conversation. These blocks leave `tools` unchanged, so the cached prefix still matches.
+
+The [placement and model rules](#mid-conversation-system-messages) above apply.
+
+`ChatAnthropic` adds the required beta header, so you do not need to set `betas`. It uses `inline-tools-2026-09-15` when a block defines a tool inline, and `mid-conversation-tool-changes-2026-07-01` otherwise.
+
+To add a tool partway through, bind it with `extras: { defer_loading: true }` so Claude does not see it at first. Then reference it by name in a `tool_addition` block:
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
+import * as z from "zod";
+
+const getTime = tool(async () => "12:00", {
+  name: "get_time",
+  description: "Get the current time.",
+  schema: z.object({}),
+});
+
+const getWeather = tool(async ({ location }) => `It is sunny in ${location}.`, {
+  name: "get_weather",
+  description: "Get the current weather for a location.",
+  schema: z.object({ location: z.string() }),
+  extras: { defer_loading: true }, // [!code highlight]
+});
+
+const llm = new ChatAnthropic({ model: "claude-opus-5-5" });
+const llmWithTools = llm.bindTools([getTime, getWeather]);
+
+const response = await llmWithTools.invoke([
+  new HumanMessage("What's the weather in San Francisco?"),
+  new SystemMessage({
+    content: [
+      {
+        type: "tool_addition", // [!code highlight]
+        tool: { type: "tool_reference", name: "get_weather" }, // [!code highlight]
+      },
+    ],
+  }),
+]);
+```
+
+The API rejects a request in which every tool is deferred, so bind at least one tool without `defer_loading`.
+
+To withdraw a tool, reference it in a `tool_removal` block. A later `tool_addition` can offer it again.
+
+```typescript
+new SystemMessage({
+  content: [
+    {
+      type: "tool_removal",
+      tool: { type: "tool_reference", name: "get_weather" },
+    },
+  ],
+});
+```
+
+To add a tool that you did not bind up front, [define it inline](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages#define-tools-in-a-message-beta) with a `tool_definition`. Inline definitions are in beta and available only on the Claude API.
+
+```typescript
+import { ChatAnthropic } from "@langchain/anthropic";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+
+const llm = new ChatAnthropic({ model: "claude-opus-5-5" });
+
+const response = await llm.invoke([
+  new HumanMessage("How many orders did we get yesterday?"),
+  new SystemMessage({
+    content: [
+      {
+        type: "tool_addition",
+        tool: {
+          type: "tool_definition", // [!code highlight]
+          definition: { // [!code highlight]
+            name: "db_query",
+            description: "Run a read-only SQL query against the analytics database.",
+            input_schema: {
+              type: "object",
+              properties: { sql: { type: "string" } },
+              required: ["sql"],
+            },
+          },
+        },
+      },
+    ],
+  }),
+]);
+```
+
+You can also write these blocks wrapped in a `non_standard` block, in `content` or `contentBlocks`. `ChatAnthropic` sends the same request for either form.
+
 ## Context management
 
 Anthropic supports a context editing feature that will automatically manage the model's context window (e.g., by clearing tool results).
