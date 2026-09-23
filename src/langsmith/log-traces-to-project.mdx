@@ -23,7 +23,7 @@ export LANGSMITH_PROJECT=my-custom-project
 ```
 
 <Warning>
-The `LANGSMITH_PROJECT` flag is only supported in JS SDK versions >= 0.2.16, use `LANGCHAIN_PROJECT` instead if you are using an older version.
+The `LANGSMITH_PROJECT` flag is only supported in JS SDK 0.2.16 or later, use `LANGCHAIN_PROJECT` instead if you are using an older version.
 </Warning>
 
 If the project specified does not exist, LangSmith will automatically create it when the first trace is ingested.
@@ -836,7 +836,7 @@ if (primaryRunId) {
 </CodeGroup>
 
 <Note>
-The `compute_run_id_for_secondary_replica` / `computeRunIdForSecondaryReplica` helper is available in Python SDK >= 0.10.8 and JS SDK >= 0.8.5. If you are using an earlier SDK version, upgrade to use this feature.
+The `compute_run_id_for_secondary_replica` / `computeRunIdForSecondaryReplica` helper is available in Python SDK 0.10.8 or later and JS SDK 0.8.5 or later. If you are using an earlier SDK version, upgrade to use this feature.
 </Note>
 
 ### Route between LangSmith and OpenTelemetry destinations

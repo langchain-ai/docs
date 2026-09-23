@@ -247,7 +247,7 @@ export E2B_API_KEY="..."
 dcode --sandbox e2b
 ```
 
-If you pass a `--sandbox` name that isn't installed or declared, Deep Agents Code lists the available providers and explains how to install or configure the missing one.
+If you pass a `--sandbox` name that is not installed or declared, Deep Agents Code lists the available providers and explains how to install or configure the missing one.
 
 <Accordion title="Publishing a sandbox provider" icon="package">
     To distribute a provider so users can run `dcode --sandbox <name>` after installing your package, implement a `SandboxProvider` subclass and register it under the `deepagents_code.sandbox_providers` entry-point group.
@@ -292,7 +292,7 @@ If you pass a `--sandbox` name that isn't installed or declared, Deep Agents Cod
 
 ### Config-declared providers
 
-For an in-house or local provider you don't want to package, declare it under `[sandboxes.providers]` in `~/.deepagents/config.toml`. This parallels [arbitrary model providers](/oss/deepagents/code/config-file#arbitrary-providers) and uses the same `class_path` trust model.
+For an in-house or local provider you do not want to package, declare it under `[sandboxes.providers]` in `~/.deepagents/config.toml`. This parallels [arbitrary model providers](/oss/deepagents/code/config-file#arbitrary-providers) and uses the same `class_path` trust model.
 
 ```toml
 [sandboxes]

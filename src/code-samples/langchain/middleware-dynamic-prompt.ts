@@ -19,6 +19,11 @@ const agent = createAgent({
 // :snippet-end:
 
 // :remove-start:
+// Fake model harness: disable tracing so LangSmith serialization does not
+// interfere with canned FakeListChatModel responses.
+process.env.LANGSMITH_TRACING = "false";
+process.env.LANGCHAIN_TRACING_V2 = "false";
+
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import type { BaseMessage } from "langchain";
 

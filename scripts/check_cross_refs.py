@@ -98,7 +98,13 @@ def check_cross_refs(src_dir: Path) -> list[tuple[str, int, str, list[str]]]:
         refs = _extract_refs(content, default_scopes)
 
         for line_number, ref_name, scopes in refs:
-            resolved = any(
+            # A reference outside a :::python/:::js fence renders unchanged
+            # for every scope in `scopes` (no per-scope branching happens),
+            # so it must resolve in ALL of those scopes, not just one.
+            # Using any() here would let a ref that only exists for one
+            # scope silently pass for shared, unfenced content -- exactly
+            # the class of bug this script exists to catch.
+            resolved = all(
                 ref_name in SCOPE_LINK_MAPS.get(scope, {}) for scope in scopes
             )
             if not resolved:

@@ -109,7 +109,7 @@ Audio files can be large. For high-volume production workloads, consider downsam
 
 ### Mark the trace as audio
 
-Set the `ls_modality` metadata field to `"audio"` on the root run. This flags the trace as a voice trace so LangSmith can render it appropriately and so you can [filter](/langsmith/filter-traces-in-application) for voice traces in your project.
+Set the `ls_modality` metadata field to `"audio"` on the root run. This flags the trace as a voice trace so LangSmith can render it appropriately and so you can [filter](/langsmith/filter-traces) for voice traces in your project.
 
 ```python Python
 from langsmith import traceable

@@ -1,0 +1,81 @@
+---
+name: Htmltest Mint Export
+
+permissions:
+  contents: read
+
+# Weekly external-URL check of the Mintlify offline export (make export-htmltest).
+# Linear tickets for schedule failures are filed by htmltest-linear.yml.
+on:
+  schedule:
+    # Monday 08:00 UTC
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  htmltest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure Python with uv
+        uses: ./.github/actions/uv_setup
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: uv sync --group test
+
+      - name: Configure Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Resolve npm global prefix
+        id: npm-paths
+        run: |
+          PREFIX="$(npm prefix -g)"
+          echo "root=${PREFIX}/lib/node_modules" >> "$GITHUB_OUTPUT"
+          echo "bin=${PREFIX}/bin" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Mintlify CLI
+        id: cache-mint
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ steps.npm-paths.outputs.root }}/mint
+            ${{ steps.npm-paths.outputs.bin }}/mint
+          key: mintlify-${{ runner.os }}-node-22-${{ hashFiles('.github/workflows/htmltest.yml') }}
+          restore-keys: |
+            mintlify-${{ runner.os }}-node-22-
+
+      - name: Install Mintlify CLI
+        if: steps.cache-mint.outputs.cache-hit != 'true'
+        run: npm i -g mint@latest
+
+      - name: Patch KaTeX __VERSION__ bug
+        if: steps.cache-mint.outputs.cache-hit != 'true'
+        run: |
+          KATEX_DIR="$(npm root -g)/mint/node_modules/katex"
+          KATEX_MJS="$KATEX_DIR/dist/katex.mjs"
+          if [ -f "$KATEX_MJS" ]; then
+            VERSION=$(node -e "console.log(require('$KATEX_DIR/package.json').version)")
+            sed -i "s/__VERSION__/\"$VERSION\"/g" "$KATEX_MJS"
+          fi
+
+      - name: Install htmltest
+        run: |
+          curl -sSfL https://htmltest.wjdp.uk | bash -s -- -b "$HOME/bin"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Export docs and run htmltest
+        run: make export-htmltest

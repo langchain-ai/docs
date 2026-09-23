@@ -32,12 +32,15 @@ Provide credentials as repository secrets or CI variables. Typical values includ
 - `OPENWIKI_PROVIDER`
 - `OPENWIKI_MODEL_ID`
 - Optional `LANGSMITH_API_KEY` for tracing
+- Optional `OPENWIKI_LANGSMITH_API_KEY` when the repository uses the [LangSmith connector](/oss/openwiki/code-mode#langsmith-connector)
 
-The scheduled workflow includes generated wiki files, `AGENTS.md`, `CLAUDE.md`, and the workflow itself in the documentation pull request when those files change.
+The scheduled workflow includes generated wiki files, Claims under `openwiki/.claims/`, `AGENTS.md`, `CLAUDE.md`, and the workflow itself in the documentation pull request when those files change.
+
+Repository generation is resumable on persistent workspaces through `openwiki/.run.json` and `openwiki/.page-manifest.json`. Ephemeral CI runners start fresh after failure unless their workspace is preserved, and OpenWiki can still publish partial progress when a run fails after some pages complete.
 
 ## Empty updates
 
-OpenWiki automatically tracks wiki content in `openwiki/.last-update.json` and only rewrites that file when the wiki actually changed. If a scheduled `--update` run does not result in changes, the wiki files stay the same, and the CI does not open a pull request.
+A clean `--update` run skips model work and leaves wiki content untouched while refreshing `openwiki/.last-update.json` so freshness checks reflect that the check ran. If the wiki Markdown and Claims do not change, CI does not open a pull request.
 
 ## Telemetry in CI
 

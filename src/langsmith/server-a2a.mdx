@@ -8,13 +8,124 @@ description: Use the A2A protocol to enable agent-to-agent communication with di
 
 The A2A endpoint is available in [Agent Server](/langsmith/agent-server) at `/a2a/{assistant_id}`.
 
+## Protocol version
+
+Agent Server speaks the A2A **v1.0** JSON-RPC binding and also accepts the v0.3 method names, so
+existing v0.3 clients keep working. The agent card declares one interface:
+
+```json
+"supportedInterfaces": [
+  {
+    "url": "https://your-deployment/a2a/{assistant_id}",
+    "protocolBinding": "JSONRPC",
+    "protocolVersion": "1.0"
+  }
+]
+```
+
+<Warning>
+The method name you send also selects the enum case in the response. A v1.0 name returns
+SCREAMING_SNAKE_CASE (`TASK_STATE_WORKING`, `ROLE_AGENT`); a v0.3 name returns lowercase
+(`working`, `agent`). Pick one family per client and stay on it.
+
+The envelope varies by method, not by family: `SendMessage` wraps the task in `result.task`, while
+`GetTask` and all v0.3 methods return it directly on `result`. `ListTasks` returns `result.tasks`.
+</Warning>
+
 ## Supported methods
 
-Agent Server supports the following A2A RPC methods:
+| v1.0 name | v0.3 name | Supported |
+|---|---|---|
+| `SendMessage` | `message/send` | Yes |
+| `SendStreamingMessage` | `message/stream` | Yes — Server-Sent Events |
+| `GetTask` | `tasks/get` | Yes |
+| `CancelTask` | `tasks/cancel` | Yes |
+| `ListTasks` | — | Yes |
+| `GetExtendedAgentCard` | — | Yes, under the v1.0 name only |
+| `SubscribeToTask` | — | Not yet — returns `-32601` |
+| `*TaskPushNotificationConfig` | — | Not yet — returns `-32601` |
 
-- **message/send**: Send a message to an assistant and receive a complete response
-- **message/stream**: Send a message and stream responses in real-time using Server-Sent Events (SSE)
-- **tasks/get**: Retrieve the status and results of a previously created task
+Exactly four v0.3 names are accepted: `message/send`, `message/stream`, `tasks/get` and
+`tasks/cancel`. Anything else — including `agent/getAuthenticatedExtendedCard` and
+`tasks/resubscribe` — returns `-32601 Method not found`.
+
+Only the JSON-RPC binding is available. gRPC and HTTP+JSON are not implemented.
+
+### Task history in responses
+
+A context holds many tasks. By default `SendMessage`, `GetTask` and `ListTasks` return the history
+of the **whole context**, not just the task you asked about. The second task in a context replays
+the first task's messages, so a client that renders every history entry shows earlier turns again —
+including earlier tool results and A2UI payloads.
+
+Set `historyScope` to `task` to get back only the messages that belong to the task you asked about.
+The default stays `context`, so existing integrations are unaffected.
+
+Where the option goes depends on the method. `SendMessage` reads it from `configuration`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "1",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "role": "ROLE_USER",
+      "parts": [{"text": "Second request"}],
+      "messageId": "message-2",
+      "contextId": "8b1f0e5c-9a3d-4f27-b0c8-2e6a5d4c1b7a"
+    },
+    "configuration": {"historyScope": "task"}
+  }
+}
+```
+
+`GetTask` and `ListTasks` read it directly from `params`:
+
+```json
+{"jsonrpc": "2.0", "id": "2", "method": "GetTask",
+ "params": {"id": "<taskId>", "historyScope": "task"}}
+```
+
+If your client cannot add fields to the request body, send the header instead. An explicit value in
+the request wins over the header.
+
+```
+LangGraph-A2A-History-Scope: task
+```
+
+The agent card advertises this under `capabilities.extensions`, so you can detect support rather
+than assume it:
+
+```json
+{
+  "uri": "https://langchain.com/a2a/extensions/history-scope/v1",
+  "description": "Choose task-only or full-context response history",
+  "required": false,
+  "params": {
+    "header": "LangGraph-A2A-History-Scope",
+    "values": ["context", "task"],
+    "default": "context",
+    "methods": ["SendMessage", "GetTask", "ListTasks"]
+  }
+}
+```
+
+Three limits worth knowing:
+
+- Streaming ignores both history options. `SendStreamingMessage` reads neither `historyScope` nor `historyLength`, and returns no error if you send them — so do not rely on either over SSE.
+- `historyLength` caps at 10. A larger value returns `-32602` with `historyLength cannot exceed 10`.
+- Scope is applied before `historyLength`, so you get the last N messages *of that task*.
+
+An unrecognized value returns `-32602` with `historyScope must be 'context' or 'task'`. A mis-cased
+key such as `historyscope` is not an error — it is ignored, and you silently get full-context
+history, so check the spelling if filtering appears not to work.
+
+<Warning>
+Do not resend a `taskId` from a completed task. Each new turn starts a new task inside the same
+context — send the `contextId` alone. A message naming a terminal task is rejected with `-32004`,
+and a `taskId` minted by another agent is rejected with `-32001`.
+</Warning>
 
 ## Agent card discovery
 
@@ -26,25 +137,102 @@ GET /.well-known/agent-card.json?assistant_id={assistant_id}
 
 The agent card includes the assistant's name, description, available skills, supported input/output modes, and the A2A endpoint URL for communication.
 
-## Requirements
+## Optional capabilities
 
-To use A2A, ensure you have the following dependencies installed:
+These are configured per assistant through `metadata.a2a` on the Assistants API. `langgraph.json`
+cannot set assistant metadata, so patch the assistant after deploy.
 
-* `langgraph-api >= 0.4.21`
+### Declare input and output modes
 
-Install with:
-
-```bash
-pip install "langgraph-api>=0.4.21"
+```json
+{
+  "metadata": {
+    "a2a": {
+      "input_modes": ["text/plain", "application/pdf"],
+      "output_modes": ["text/plain", "application/pdf"]
+    }
+  }
+}
 ```
 
-## Usage overview
+The values feed both the card's `defaultInputModes`/`defaultOutputModes` and the generated skill's
+modes. They are advertisement only — an undeclared mode is still accepted. Replacement is per
+field, so send both if you want both overridden, and note that an empty list is rejected.
 
-To enable A2A:
+### File parts
 
-* Upgrade to use langgraph-api>=0.4.21.
-* Deploy your agent with message-based state structure.
-* Connect with other A2A-compatible agents using the endpoint.
+`FilePart` works in both directions. Inbound file, image, audio and video parts become LangChain
+content blocks. Outbound content blocks map back to `FilePart`, in task history and in the final
+streamed artifact. MIME types, URIs and filenames pass through unchanged; inline data is
+re-encoded as standard base64.
+
+### A2UI v0.9
+
+Opt in per assistant:
+
+```json
+{ "metadata": { "a2a": { "a2ui": true } } }
+```
+
+The card then advertises the extension and appends the canonical MIME type to both mode lists:
+
+```json
+"capabilities": {
+  "extensions": [
+    {
+      "uri": "https://a2ui.org/a2a-extension/a2ui/v0.9",
+      "description": "Ability to render A2UI v0.9",
+      "required": false,
+      "params": {
+        "v0.9": {
+          "supportedCatalogIds": [],
+          "acceptsInlineCatalogs": false
+        }
+      }
+    }
+  ]
+}
+```
+
+A client activates it by listing the URI in `message.extensions`. Payloads are validated in both
+directions against the v0.9 schemas, and A2UI parts are preserved in `message/send`, `tasks/get`
+and the final `message/stream` artifact. Responses carry
+`metadata.mimeType: "application/a2ui+json"`. `application/json+a2ui` is accepted as an alias on
+input.
+
+### Filter tool results
+
+By default every correlated tool result is published as a `DataPart`. To publish only some, set an
+allowlist of tool names on the deployment:
+
+```bash
+A2A_ALLOWED_TOOL_CALL_RESULTS=generative_ui_tool,another_tool
+```
+
+Unset means all tool results are published. The filter applies to both task history and streaming.
+
+## Requirements
+
+| Feature | Minimum version |
+|---|---|
+| A2A endpoint | `langgraph-api >= 0.4.21` |
+| Inbound `FilePart` | `0.12.0` |
+| Tool-result `DataPart`s | `0.12.2` |
+| `A2A_ALLOWED_TOOL_CALL_RESULTS` | `0.12.4` |
+| Outbound `FilePart`, configurable card modes | `0.13.0` |
+| A2UI v0.9 | `0.15.0` |
+| `historyScope` | `0.15.0` |
+
+```bash
+pip install "langgraph-api>=0.13.0"
+```
+
+A2UI v0.9 and `historyScope` landed after the `0.14.0` release candidates were cut, so they arrive
+in `0.15.0`. That version is not published as a stable release yet — check
+`capabilities.extensions` on the agent card before relying on `historyScope`.
+
+Your graph's state must include a `messages` key to accept A2A text and file parts. An assistant
+whose input schema has no `messages` field is rejected with an explanatory error.
 
 ## Creating an A2A-compatible agent
 
@@ -56,7 +244,7 @@ The A2A protocol uses two identifiers to maintain conversational continuity:
 * `contextId`: Groups messages into a conversation thread (like a session ID)
 * `taskId`: Identifies each individual request within that conversation
 
-On the first message, omit `contextId` and `taskId` - the agent will generate and return them. For all subsequent messages in the conversation, include the `contextId` and `taskId` from the prior response to maintain thread continuity.
+On the first message, omit both - the agent generates and returns them. For all subsequent messages in the conversation, send back the `contextId` from the prior response and omit `taskId`, so each turn opens a new task inside the same conversation. Send a `taskId` only to add to a task that is still running, such as one waiting on input.
 
 **LangSmith Tracing:** The Langsmith Deployment A2A endpoint automatically converts the A2A `contextId` to `thread_id` for LangSmith tracing, grouping all messages in the conversation under a single thread.
 
@@ -166,6 +354,9 @@ import uuid
 
 def extract_text(result: dict) -> str:
     """Best-effort extraction of response text from an A2A result."""
+    if "error" in result:
+        raise RuntimeError(f"A2A error {result['error']['code']}: {result['error']['message']}")
+
     for art in result.get("result", {}).get("artifacts", []) or []:
         for part in art.get("parts", []) or []:
             if part.get("kind") == "text" and part.get("text"):
@@ -179,8 +370,8 @@ def extract_text(result: dict) -> str:
     return "(no text found)"
 
 
-async def send_message(session, port, assistant_id, text, context_id=None, task_id=None):
-    """Send an A2A message. Returns (response_text, returned_context_id, returned_task_id)."""
+async def send_message(session, port, assistant_id, text, context_id=None):
+    """Send an A2A message. Returns (response_text, returned_context_id)."""
     url = f"http://127.0.0.1:{port}/a2a/{assistant_id}"
 
     message = {
@@ -189,11 +380,10 @@ async def send_message(session, port, assistant_id, text, context_id=None, task_
         "messageId": str(uuid.uuid4()),
     }
 
-    # A2A multi-turn continuity: reuse contextId and taskId across turns/agents
+    # A2A multi-turn continuity: reuse contextId across turns and agents.
+    # Do not reuse taskId — each turn starts a new task within the same context.
     if context_id:
         message["contextId"] = context_id
-    if task_id:
-        message["taskId"] = task_id
 
     payload = {
         "jsonrpc": "2.0",
@@ -206,9 +396,9 @@ async def send_message(session, port, assistant_id, text, context_id=None, task_
     async with session.post(url, json=payload, headers=headers) as response:
         result = await response.json()
 
+    text = extract_text(result)
     returned_context_id = result.get("result", {}).get("contextId") or context_id
-    returned_task_id = result.get("result", {}).get("id")
-    return extract_text(result), returned_context_id, returned_task_id
+    return text, returned_context_id
 
 
 async def simulate_conversation():
@@ -224,23 +414,18 @@ async def simulate_conversation():
 
     message = "Hello! Let's have a conversation."
     context_id = None
-    task_id = None
 
     async with aiohttp.ClientSession() as session:
         for i in range(3):
             print(f"--- Round {i + 1} ---")
 
-            message, context_id, task_id = await send_message(
-                session, 2024, agent_a_id, message,
-                context_id=context_id,
-                task_id=task_id,
+            message, context_id = await send_message(
+                session, 2024, agent_a_id, message, context_id=context_id
             )
             print(f"🔵 Agent A: {message}")
 
-            message, context_id, task_id = await send_message(
-                session, 2025, agent_b_id, message,
-                context_id=context_id,
-                task_id=task_id,
+            message, context_id = await send_message(
+                session, 2025, agent_b_id, message, context_id=context_id
             )
             print(f"🔴 Agent B: {message}\n")
 
@@ -267,9 +452,19 @@ The flow works as follows:
 1. The client passes the `contextId` in all subsequent messages to maintain conversation continuity.
 1. Agent Server maps the `contextId` to `thread_id` in LangSmith [metadata](/langsmith/add-metadata-tags), so all turns appear in the same thread.
 
+<Warning>
+The `contextId` is used directly as the LangGraph `thread_id`, so it must be a UUID. Echo back the
+one the server returned rather than minting your own identifier. A `contextId` such as
+`session-42` is rejected with `-32602` and the message `Failed to create run: Invalid thread ID`.
+</Warning>
+
 ### Tracing across multiple agents
 
-When agents from different frameworks communicate over A2A, you can unify their traces in LangSmith by sharing the same `thread_id` across all agents. Use the `contextId` returned by the first agent as the `thread_id` for all subsequent requests.
+When agents from different frameworks communicate over A2A, `contextId` is what unifies their traces. Reuse the `contextId` returned by the first agent on every later request, to that agent and to the others.
+
+<Warning>
+Agent Server does not read a top-level `metadata` field on the JSON-RPC payload. There is no way for a client to set the LangGraph `thread_id` directly — it is always the `contextId`. Sending `metadata.thread_id` to an Agent Server deployment has no effect.
+</Warning>
 
 The following code snippet demonstrates the key concepts. For a complete runnable implementation with two agents, refer to the [Google ADK + LangChain example](https://github.com/langchain-samples/A2A-google-adk/blob/main/test_agent_conversation.py).
 
@@ -279,12 +474,13 @@ import aiohttp
 import uuid
 
 
-async def send_message(session, url, text, context_id=None, task_id=None, thread_id=None):
-    """Send an A2A message and return (response_text, context_id, task_id)."""
+async def send_message(session, url, text, context_id=None):
+    """Send an A2A message and return (response_text, context_id)."""
 
     # --- 1. Build the message ---
-    # On follow-up turns, include contextId and taskId inside the message object
-    # so the server associates them with the ongoing conversation.
+    # On follow-up turns, include contextId inside the message object so the server
+    # associates them with the ongoing conversation. Do not resend taskId: each turn
+    # opens a new task within that conversation.
     message = {
         "role": "user",
         "parts": [{"kind": "text", "text": text}],
@@ -292,17 +488,15 @@ async def send_message(session, url, text, context_id=None, task_id=None, thread
     }
     if context_id:
         message["contextId"] = context_id
-    if task_id:
-        message["taskId"] = task_id
 
-    # --- 2. Set thread_id in metadata ---
-    # thread_id goes at the top level of the JSON-RPC payload, not inside params.
+    # --- 2. Send it ---
+    # contextId travels inside the message. Agent Server turns it into the
+    # LangGraph thread_id, so no separate tracing field is needed.
     payload = {
         "jsonrpc": "2.0",
         "id": str(uuid.uuid4()),
         "method": "message/send",
         "params": {"message": message},
-        "metadata": {"thread_id": thread_id},
     }
 
     async with session.post(url, json=payload, headers={"Accept": "application/json"}) as response:
@@ -315,7 +509,6 @@ async def send_message(session, url, text, context_id=None, task_id=None, thread
 
     result_obj = result.get("result", {})
     returned_context_id = result_obj.get("contextId") or context_id
-    returned_task_id = result_obj.get("id")
     text_out = next(
         (
             part.get("text", "")
@@ -325,31 +518,24 @@ async def send_message(session, url, text, context_id=None, task_id=None, thread
         ),
         "(no text)",
     )
-    return text_out, returned_context_id, returned_task_id
+    return text_out, returned_context_id
 
 
 async def run_conversation(agent_a_url, agent_b_url):
-    # --- 3. Share thread_id across agents ---
-    # Generate a shared thread_id upfront. Once the server returns a contextId,
-    # use that instead — this keeps the A2A context and LangSmith thread in sync.
-    thread_id = str(uuid.uuid4())
+    # --- 3. Share the context across agents ---
+    # The first response carries a contextId. Pass it to every agent from then
+    # on, and all their traces land in one LangSmith thread.
     context_id = None
-    task_id = None
     message = "Hello! Let's collaborate."
 
     async with aiohttp.ClientSession() as session:
         for _ in range(3):
-            message, context_id, task_id = await send_message(
-                session, agent_a_url, message,
-                context_id=context_id, task_id=task_id,
-                thread_id=context_id or thread_id,
+            message, context_id = await send_message(
+                session, agent_a_url, message, context_id=context_id
             )
 
-            # Passing the same thread_id to every agent groups all traces in LangSmith
-            message, context_id, task_id = await send_message(
-                session, agent_b_url, message,
-                context_id=context_id, task_id=task_id,
-                thread_id=context_id or thread_id,
+            message, context_id = await send_message(
+                session, agent_b_url, message, context_id=context_id
             )
 
 
@@ -359,15 +545,15 @@ asyncio.run(run_conversation(
 ))
 ```
 
-**1. Build the message**: Include `contextId` and `taskId` inside the `message` object on follow-up turns so the server can associate them with the ongoing conversation. Omit them on the first message, because the server generates a `contextId` and returns it in the response.
+**1. Build the message**: Include `contextId` inside the `message` object on follow-up turns so the server can associate them with the ongoing conversation. Omit it on the first message, because the server generates a `contextId` and returns it in the response. Do not resend `taskId` from a finished turn.
 
-**2. Set thread_id in metadata**: Pass `thread_id` in the top-level `metadata` field of the JSON-RPC payload, not inside `params`.
+**2. Send it**: The `contextId` travels inside `params.message`. Agent Server uses it as the LangGraph `thread_id`, so there is no separate tracing field to set.
 
-**3. Share thread_id across agents**: Generate a random `thread_id` before the first message. Once the server returns a `contextId`, use it as the `thread_id` for all subsequent requests, which keeps the A2A conversation context and the LangSmith thread in sync. Pass the same `thread_id` to every agent so all traces are grouped into one thread.
+**3. Share the context across agents**: Let the first agent mint the `contextId`, then pass that same value to every agent for the rest of the conversation. That is what groups their traces into one thread.
 
 ### Receive thread_id in non-LangGraph agents
 
-The [previous section](#tracing-across-multiple-agents) covers the client side—propagating `thread_id` when sending messages. If one of your agents is not built on LangGraph, it also needs to extract and attach the `thread_id` on the receiving end so its traces land in the same LangSmith thread. Use `langsmith.integrations.otel.configure()` to set up automatic tracing, and extract the `thread_id` from incoming A2A request metadata to group traces in the same thread.
+The [previous section](#tracing-across-multiple-agents) covers the client side — propagating `contextId` when sending messages. If one of your agents is not built on LangGraph, it also needs to read that `contextId` on the receiving end and attach it as the thread identifier, so its traces land in the same LangSmith thread. Use `langsmith.integrations.otel.configure()` to set up automatic tracing, and read `params.message.contextId` from the incoming A2A request.
 
 ```python
 from fastapi import FastAPI, Request
@@ -388,11 +574,11 @@ async def set_thread_id_middleware(request: Request, call_next):
     if request.method == "POST":
         body_bytes = await request.body()
         if body_bytes:
-            # --- 2. Extract thread_id from incoming A2A metadata ---
+            # --- 2. Extract contextId from the incoming A2A message ---
             try:
                 body = json.loads(body_bytes)
-                thread_id = body.get("metadata", {}).get("thread_id")
-            except Exception:
+                thread_id = body["params"]["message"].get("contextId")
+            except (ValueError, KeyError, TypeError):
                 pass
             # Re-inject the body so downstream handlers can still read it
             async def receive():
@@ -416,6 +602,77 @@ Set `LANGSMITH_API_KEY` and optionally `LANGSMITH_PROJECT` in your environment t
 ### View traces in LangSmith
 
 After running a multi-agent conversation, open the [LangSmith UI](https://smith.langchain.com) and navigate to **Threads**. All turns from all participating agents will appear under a single thread, identified by the shared `thread_id`.
+
+## Test your integration
+
+### Against your own deployment
+
+Fetch the card, then send a message:
+
+```bash
+curl "https://your-deployment/a2a/{assistant_id}/.well-known/agent-card.json"
+```
+
+```bash
+curl -X POST "https://your-deployment/a2a/{assistant_id}" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "SendMessage",
+    "params": {
+      "message": {
+        "role": "ROLE_USER",
+        "parts": [{"text": "hello"}],
+        "messageId": "test-1"
+      }
+    }
+  }'
+```
+
+The response contains `result.task.id` and `result.task.contextId`. Reuse the `contextId` on the
+next message to continue the conversation.
+
+For streaming, send `Accept: text/event-stream` and use `SendStreamingMessage`. The first event is
+the `Task`; status and artifact updates follow.
+
+### Against the official conformance suite
+
+A2A publishes a Technology Compatibility Kit at
+[a2aproject/a2a-tck](https://github.com/a2aproject/a2a-tck). It grades an implementation by
+RFC 2119 level and works against any A2A endpoint, including yours.
+
+```bash
+./run_tck.py --sut-host https://your-deployment/a2a/{assistant_id} --transport jsonrpc
+```
+
+<Note>
+The TCK drives some scenarios through `messageId` prefixes such as `tck-input-required`, described
+in its `docs/SUT_REQUIREMENTS.md`. A graph that does not implement those prefixes will report those
+requirements as skipped rather than failed.
+</Note>
+
+### What Agent Server currently fails
+
+Agent Server runs the TCK on every CI build as a required check, gated against a checked-in list of
+known failures. CI fails if a new failure appears, and also if a listed requirement starts passing,
+so the list cannot drift from what the server actually does.
+
+Read this before you build against a capability:
+
+| Gap | What you observe |
+|---|---|
+| Response wire shape is still v0.3 | Tasks, messages and parts carry `kind` and `mimeType` instead of v1.0 member-presence discrimination |
+| Streaming events are flat | SSE emits v0.3 objects with `final`, not `statusUpdate` / `artifactUpdate` wrappers |
+| `tool_results` is snake_case | v1.0 expects `toolResults`. Kept deliberately, because live A2UI clients read this key |
+| Timestamps | Serialized as `+00:00` rather than an ISO 8601 `Z` suffix |
+| `SubscribeToTask` | Returns `-32601` where the spec requires `-32001` |
+| Push notification config | Returns `-32601` where the spec requires `-32003` |
+| Errors carry no `data` | No `google.rpc.ErrorInfo` reason or domain is attached |
+| `A2A-Version` request header | Not read, so an unsupported version is processed instead of returning `-32009` |
+| Agent card caching | No `Cache-Control`, `ETag` or `Last-Modified` headers |
+| `GetExtendedAgentCard` | Served, but never advertised via `capabilities.extendedAgentCard` |
 
 ## Disable A2A
 

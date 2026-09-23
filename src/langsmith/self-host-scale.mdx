@@ -19,10 +19,10 @@ The table below provides an overview comparing different LangSmith configuration
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | <Tooltip tip="Number of users actively viewing traces on the frontend">Concurrent frontend users</Tooltip> | 5 | 5 | 50 | 20 | 50 |
 | <Tooltip tip="Number of traces being ingested via SDKs or API endpoints">Traces submitted per second</Tooltip> | 10 | 1000 | 10 | 100 | 1000 |
-| **Frontend replicas**<br />(500m CPU, 1Gi per replica) | 1 (default) | 4 | 2 | 2 | 4 |
-| **Platform backend replicas**<br />(1 CPU, 2Gi per replica) | 3 (default) | 20 | 3 (default) | 3 (default) | 20 |
-| **Ingest queue replicas**<br />(1 CPU, 2Gi per replica) | 3 (default) | 24 | 3 (default) | 6 | 24 |
-| **Backend replicas**<br />(1 CPU, 2Gi per replica) | 2 (default) | 5 | 40 | 16 | 50 |
+| **Frontend replicas**<br />(500m CPU, 1Gi requested per replica) | 1 (default) | 4 | 2 | 2 | 4 |
+| **Platform backend replicas**<br />(1 CPU, 2Gi requested per replica) | 3 (default) | 20 | 3 (default) | 3 (default) | 20 |
+| **Ingest queue replicas**<br />(1 CPU, 2Gi requested per replica) | 3 (default) | 24 | 3 (default) | 6 | 24 |
+| **Backend replicas**<br />(1 CPU, 2Gi requested per replica) | 2 (default) | 5 | 40 | 16 | 50 |
 | **Redis resources** | 8 Gi (default) | 26 Gi external | 8 Gi (default) | 13Gi external | 26 Gi external |
 | **ClickHouse resources** | 4 CPU<br />16 Gi (default) | 10 CPU<br />32Gi memory | 8 CPU<br />16 Gi per replica | 16 CPU<br />24Gi memory | 14 CPU<br />24 Gi per replica |
 | **ClickHouse setup** | Single instance | Single instance | 3-node <Tooltip tip="Recommended for high read loads to prevent degraded performance. Another option would be [managed clickhouse](/langsmith/self-host-external-clickhouse#langsmith-managed-clickhouse).">replicated cluster</Tooltip> | Single instance | 3-node <Tooltip tip="Recommended for high read loads to prevent degraded performance. Another option would be [managed clickhouse](/langsmith/self-host-external-clickhouse#langsmith-managed-clickhouse).">replicated cluster</Tooltip> |
@@ -30,7 +30,84 @@ The table below provides an overview comparing different LangSmith configuration
 | **Blob storage** | Disabled | Enabled | Enabled | Enabled | Enabled |
 
 
+<Note>
+The per-replica figures above are resource requests, what the Kubernetes scheduler reserves.
+The limits are higher in every case. For the defaults the chart ships, see
+[Default resource requests and limits](#default-resource-requests-and-limits).
+
+A container that exceeds its memory limit is OOM-killed, and one that exceeds its CPU limit is
+throttled. Do not lower either below the shipped default without load-testing the result.
+</Note>
+
 Below we go into more details about the read and write paths as well as provide a `values.yaml` snippet for you to start with for your self-hosted LangSmith instance.
+
+## Default resource requests and limits
+
+The Helm chart ships these requests and limits for the LangSmith application services. The
+[summary table](#summary) above covers Postgres, Redis, and ClickHouse, along with the replica
+counts to run for each load pattern.
+
+| `values.yaml` key | Requests (CPU / memory) | Limits (CPU / memory) | Default replicas |
+| :--- | :--- | :--- | :--- |
+| `frontend` | 500m / 1Gi | 1000m / 2Gi | 1 |
+| `backend` | 1000m / 2Gi | 2000m / 4Gi | 2 |
+| `platformBackend` | 1000m / 2Gi | 2000m / 4Gi | 3 |
+| `ingestQueue` | 1000m / 2Gi | 2000m / 4Gi | 3 |
+| `queue` | 1000m / 2Gi | 2000m / 4Gi | 1 |
+| `playground` | 500m / 1Gi | 1000m / 8Gi | 1 |
+| `aceBackend` | 1000m / 2000Mi | 2000m / 4000Mi | 1 |
+| `hostBackend` | 200m / 1000Mi | 1000m / 2Gi | 1 |
+| `listener` | 1000m / 2Gi | 2000m / 4Gi | 1 |
+| `operator` | 1000m / 2Gi | 2000m / 4Gi | 1 |
+
+Each key nests its resources under `deployment`, so the backend's requests are at
+`backend.deployment.resources.requests`. `playground` is the one service whose memory limit
+sits far above its request, 8Gi against 1Gi, so size the nodes it schedules onto for the
+limit. To confirm the defaults for your chart version, run
+`helm show values langchain/langsmith`.
+
+## Default autoscaling ranges
+
+Autoscaling is disabled by default on every service in the table below. Each one ships two
+blocks with the same replica range: `autoscaling.hpa`, for a Kubernetes
+HorizontalPodAutoscaler (HPA), and `autoscaling.keda`, for
+[KEDA](https://keda.sh/) (Kubernetes Event-driven Autoscaling). Enable one or the other, not
+both.
+
+| `values.yaml` key | Min replicas | Max replicas |
+| :--- | :--- | :--- |
+| `frontend` | 1 | 5 |
+| `backend` | 2 | 6 |
+| `platformBackend` | 3 | 10 |
+| `ingestQueue` | 3 | 10 |
+| `queue` | 1 | 10 |
+| `playground` | 1 | 5 |
+| `aceBackend` | 1 | 5 |
+| `hostBackend` | 1 | 5 |
+| `listener` | 1 | 10 |
+
+The HPA keys are `minReplicas` and `maxReplicas`; the KEDA equivalents are `minReplicaCount`
+and `maxReplicaCount`. `operator` has no autoscaling block and always runs at its configured
+replica count. For the queue services, prefer KEDA, which scales on queue backlog rather than
+on CPU and memory alone. For more information, see
+[KEDA autoscaling for LangSmith queues](#keda-autoscaling-for-langsmith-queues).
+
+<Warning>
+Enabling autoscaling overrides your replica count. When either block is enabled for a
+service, the chart stops setting `replicas` on that deployment and the autoscaler owns it, so
+the `deployment.replicas` value you configured is no longer applied.
+
+The shipped maximums are generic starting points, not values matched to the load patterns in
+the [summary table](#summary). [High reads, high writes](#high-reads-high-writes) calls for
+50 `backend` replicas, 24 `ingestQueue`, and 20 `platformBackend`, against shipped maximums
+of 6, 10, and 10. A deployment sized for that load and then switched to autoscaling runs at a
+fraction of the capacity you configured.
+</Warning>
+
+Set `maxReplicas` at or above the replica count for your load pattern, and `minReplicas` to
+the steady-state count you want to hold. The
+[example configurations](#example-langsmith-configurations-for-scale) give both a fixed
+replica count and a commented autoscaling range for each service.
 
 ## Trace ingestion (write path)
 
@@ -81,7 +158,7 @@ For more precise guidance on how this translates to helm chart values, refer to 
 Available in LangSmith v0.13.0 and later.
 </Note>
 
-We highly recommend installing [KEDA](https://keda.sh/) (Kubernetes Event-driven Autoscaling) on your cluster. KEDA enables the `queue` and `ingest-queue` services to scale automatically based on their queue backlog size, as well as CPU and memory. This results in more efficient resource utilization and better handling of traffic spikes.
+We highly recommend installing KEDA on your cluster. KEDA enables the `queue` and `ingest-queue` services to scale automatically based on their queue backlog size, as well as CPU and memory. This results in more efficient resource utilization and better handling of traffic spikes.
 
 ### Install KEDA
 

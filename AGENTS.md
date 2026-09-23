@@ -12,11 +12,11 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 ## Critical rules
 
 1. **Always ask for clarification** rather than making assumptions
-2. **Never fabricate** examples, JSON snippets, policy details, or use case descriptions — use only content from the user or existing source files
-3. **Never use markdown in frontmatter `description`** — breaks SEO
-4. **Never edit `build/`** — Mintlify build output (regenerate with `make build` or `make dev`)
+2. **Never fabricate** examples, JSON snippets, policy details, or use case descriptions: use only content from the user or existing source files
+3. **Never use markdown in frontmatter `description`**: breaks SEO
+4. **Never edit `build/`**: Mintlify build output (regenerate with `make build` or `make dev`)
 5. **Always update `src/docs.json`** when adding new pages
-6. **Use Tabler icons only** — not FontAwesome
+6. **Use Tabler icons only**, not FontAwesome
 7. **Test code examples** before including them
 
 ## Quick reference
@@ -32,10 +32,39 @@ Documentation for LangChain products hosted on Mintlify. These guidelines apply 
 | Provider icons | `src/images/providers/` |
 | Navigation config | `src/docs.json` |
 | Build system | `pipeline/` |
-| Icon library | Tabler — <https://tabler.io/icons> |
+| Icon library | Tabler: <https://tabler.io/icons> |
 | Mintlify components | <https://mintlify.com/docs/components> |
-| API reference site | [reference.langchain.com](https://reference.langchain.com/python/) — built outside this repo; [report reference docs issues](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
+| API reference site | [reference.langchain.com](https://reference.langchain.com/python/). Built outside this repo. [Report reference docs issues](https://github.com/langchain-ai/docs/issues/new?template=04-reference-docs.yml) |
 | Mintlify MCP server | `npx add-mcp https://www.mintlify.com/docs/mcp` |
+| Authoring skills | `.agents/skills/` (run `make skills` for Claude Code) |
+
+## Skills
+
+Task-specific procedures live in `.agents/skills/`, one directory per skill.
+Cursor, Codex, GitHub Copilot, Gemini CLI, OpenCode, and Deep Agents read that
+path directly. Claude Code reads `.claude/skills/` only, so run `make skills`
+once to link the tree.
+
+| Skill | Use it for |
+|-------|-----------|
+| `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
+| `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff. |
+| `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
+| `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
+| `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |
+| `docs-tooling-notion` | Recording new or changed tooling on the internal Notion pages: which page owns the topic, and how to edit safely. Required whenever a PR adds or changes a script, workflow, or check. |
+| `docs-code-samples` | Moving inline MDX code blocks into external, testable sample files. |
+| `verify-against-source` | Checking that a code sample, signature, default, or behavior claim is true: which repository owns each product, how to reach the private ones, and naming what stayed unverified. |
+| `submit-integration` | Turning a structured integration issue submission into a listing. Invoked by CI. |
+| `update-integrations-prs` | Processing open integration PRs against the featuring policy. |
+
+Invoke a skill when the task matches it. Adding or changing tooling (a script,
+a workflow, a Makefile target, a PR check, a scheduled job, or a skill) also
+carries a documentation step: invoke `docs-tooling-notion` before handing off
+the pull request, whether or not anyone asked for it. This file holds the rules
+that apply to every task; a skill holds the procedure that only some tasks need,
+so skills link back here rather than restating these rules. See
+[`.agents/skills/README.md`](.agents/skills/README.md) for how to add one.
 
 ## Project structure
 
@@ -48,10 +77,13 @@ docs/
 │   ├── index.mdx               # Home page
 │   ├── style.css               # Custom CSS
 │   ├── langsmith/              # LangSmith product docs
+│   │   └── fleet/              #   Fleet (nav label: "No-code agents")
 │   ├── oss/                    # Open source docs
 │   │   ├── langchain/          #   LangChain framework
 │   │   ├── langgraph/          #   LangGraph framework
 │   │   ├── deepagents/         #   Deep Agents
+│   │   │   └── code/           #     Deep Agents Code (unversioned, no language split)
+│   │   ├── openwiki/           #   OpenWiki (unversioned, no language split)
 │   │   ├── python/             #   Python-specific (integrations, migrations, releases)
 │   │   ├── javascript/         #   TypeScript-specific (integrations, migrations, releases)
 │   │   ├── integrations/       #   Shared integration content
@@ -65,60 +97,154 @@ docs/
 │   ├── images/                 # Documentation images
 │   │   ├── brand/              #   Logos, favicons
 │   │   └── providers/          #   Provider icons (dark/ and light/ variants)
+│   ├── code-samples/           # Testable standalone code samples (see make test-code-samples)
 │   └── fonts/                  # TWK Lausanne font files
 ├── pipeline/                   # Python build system & preprocessors
-├── build/                      # Build output — do not edit
-├── scripts/                    # Helper utilities
+├── build/                      # Build output, do not edit
+├── scripts/                    # Helper utilities and automation scripts
 └── tests/                      # Pipeline tests
 ```
 
 ## Navigation map
 
-Navigation is defined in `src/docs.json`. The site has 4 products (Home, LangSmith, LangSmith Fleet, Open source). When adding pages, find the correct product/tab/group below, then update the matching section in `docs.json`.
+Navigation is defined in `src/docs.json`. The site has 2 products, each a `menu` of items rather than a flat tab list. When adding pages, find the correct product → menu item → tab → group below, then update the matching section in `docs.json`.
 
-### Home
+Product and menu names in `docs.json` do not match source directory names. Lifecycle stages mix LangSmith and OSS content: the Build menu draws from both `src/oss/` and `src/langsmith/`, and Test, Deploy, and Monitor all draw from `src/langsmith/`. Locate pages by directory, not by product name.
 
-Single page (`src/index.mdx`). No tabs.
+### AGENT DEVELOPMENT LIFECYCLE
 
-### LangSmith (`src/langsmith/`)
+Five menu items: Home, Build, Test, Deploy, Monitor.
 
-7 tabs, all files in `src/langsmith/`:
+#### Home
+
+Single page (`src/index.mdx`).
+
+#### Build
+
+Two language dropdowns (Python, TypeScript) with the same 10 tabs each. Most content is language-versioned from `src/oss/`; two tabs are exceptions.
+
+| Tab | Source | Groups |
+|-----|--------|--------|
+| Overview | `src/build-overview.mdx` | Single page |
+| Deep Agents | `src/oss/deepagents/` | Get started, Deployment (Going to production), Execution environment, Context management, Delegation, Steering, Frontend (Patterns), Protocols |
+| Managed Deep Agents | `src/langsmith/managed-deep-agents*.mdx` | Get started, Agent definition (Channels), Build and deploy |
+| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend (Patterns → Generative UI, Integrations), Advanced usage (Multi-agent), Agent development (Test), Production |
+| LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs (Graph API, Functional API) |
+| OpenWiki | `src/oss/openwiki/` | Modes, Integrations, Visualize, CLI reference, Customize, Providers, Automate updates, Changelog |
+| Integrations | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Python: Popular Providers, Integrations by component. TypeScript: Popular Providers (OpenAI, Anthropic, Google, AWS, Microsoft), General integrations, RAG integrations |
+| Learn | `src/oss/` (various) | Tutorials (Deep Agents, LangChain, Multi-agent, LangGraph), Conceptual overviews, Additional resources. TypeScript adds LangChain Academy |
+| Reference | `src/oss/reference/` | Reference, Releases (Releases, Migration guides), Policies; short entry pages linking to reference.langchain.com |
+| Contribute | `src/oss/contributing/` | Contribute (Integrations) |
+
+Two Build tabs are not language-versioned in the usual way:
+
+- **Managed Deep Agents** lives in `src/langsmith/`, not `src/oss/`. Files named `managed-deep-agents*.mdx` emit only language-prefixed routes (`/langsmith/python/...` and `/langsmith/javascript/...`). The unversioned `/langsmith/managed-deep-agents*` URLs redirect to the Python routes via `docs.json`.
+- **OpenWiki** ships one set of pages at `/oss/openwiki/...` with no language split. Conditional fences resolve against the Python branch.
+
+#### Test
+
+Six tabs, all files flat in `src/langsmith/`:
 
 | Tab | Groups |
 |-----|--------|
-| Get started | Account administration (Workspace setup, Users & access control, Billing & usage), Tools, Additional resources |
-| Observability | Tracing setup, Configuration & troubleshooting, Viewing & managing traces, Automations, Feedback & evaluation, Monitoring & alerting, Data type reference |
-| Evaluation | Datasets, Set up evaluations, Analyze experiment results, Annotation & human feedback, Common data types |
-| Prompt engineering | Create and update prompts, Tutorials |
-| Agent deployment | Agent server, Core capabilities, Develop agents, Deployment guides, Studio, Auth & access control, Server customization |
-| Platform setup | Overview, Hybrid, Self-hosted (by cloud provider, Setup guides, Enable features, Configuration, External services, Auth, Observability, Scripts) |
-| Reference | LangSmith Deployment (Agent Server API, Control Plane API), Releases |
+| Get started | No groups |
+| Datasets & Experiments | Datasets (Create a dataset), Run an evaluation, Evaluation techniques (Define evaluation target, Scoring methods, Experiment configuration, Multimodal evaluations), Analyze experiment results, Tutorials, Common data types |
+| Evaluators | Evaluator types (UI, SDK), Frameworks & integrations, Improve evaluators |
+| Annotation Queues | Feedback |
+| Test from Playground | No groups |
+| Test from Studio | No groups |
 
-All LangSmith files are flat in `src/langsmith/` (no per-tab subdirectories except `fleet/` and `images/`).
+#### Deploy
 
-### LangSmith Fleet (`src/langsmith/fleet/`)
+Six tabs, all files flat in `src/langsmith/`:
 
-Flat groups (no tabs):
+| Tab | Groups |
+|-----|--------|
+| Get started | Deployment components, Develop & test, Frameworks and platforms (Full-stack web apps), Reference (Agent Server API, Control Plane API, Related) |
+| Agent Server | Develop your application (Set up dependencies, Persistence), Capabilities (Assistants, Runs, Double-texting), How to build, Auth & access control (Custom auth tutorial), Server customization (Replace built-in backends, Extend the HTTP server, Headers and logging) |
+| Deploy to Cloud | Deployment guide, Reference |
+| Deploy to Self-hosted | Configure, Reference |
+| Prompt & Context Hub | Prompts (Create and manage prompts, Connect to models), Context Hub, Tutorials |
+| Sandboxes | No groups |
 
-- Get started
-- Configure
-- Tools and automation
-- Advanced
-- Additional resources
+The Get started tab's Reference group holds two OpenAPI-generated sections. See [Reference docs](#reference-docs) below.
 
-### Open source (`src/oss/`)
+#### Monitor
 
-2 language dropdowns (Python, TypeScript), each with 7 tabs sharing the same names. Groups listed below are for the Python dropdown; TypeScript groups differ in some tabs (noted with *).
+Five tabs, all files flat in `src/langsmith/`:
 
-| Tab | Directory | Groups |
-|-----|-----------|--------|
-| Deep Agents | `src/oss/deepagents/` | Get started, Deployment, Core capabilities, Frontend, Protocols, Code |
-| LangChain | `src/oss/langchain/` | Get started, Core components, Middleware, Frontend, Advanced usage, Agent development, Production |
-| LangGraph | `src/oss/langgraph/` | Get started, Capabilities, Production, Frontend, LangGraph APIs |
-| Integrations* | `src/oss/python/integrations/` or `src/oss/javascript/integrations/` | Popular Providers, Integrations by component (TS: "General integrations, RAG integrations") |
-| Learn* | `src/oss/` (various) | Tutorials, Conceptual overviews, Additional resources (TS adds: "LangChain Academy") |
-| Reference | `src/oss/reference/` | Reference, Errors, Releases, Policies — short entry pages linking to reference.langchain.com |
-| Contribute | `src/oss/contributing/` | Contribution guides, integration authoring |
+| Tab | Groups |
+|-----|--------|
+| Overview | Single page |
+| Trace | Tracing setup (Integrations → LLM providers, Agent frameworks, Voice AI frameworks, Developer tools; Manual instrumentation), Configuration & troubleshooting (Project & environment settings, Advanced tracing techniques, Data & privacy, Troubleshooting guides) |
+| Debug | Viewing & managing traces, Bulk export trace data, Trajectory view, Data type reference |
+| Observe | Monitoring & alerting, Online evaluators, Automations |
+| Reference | SmithDB SDK migration, LangSmith REST API |
+
+The Reference tab's LangSmith REST API group is OpenAPI-generated. See [Reference docs](#reference-docs) below.
+
+### PRODUCTS AND SETUP
+
+Five menu items. Only LangSmith setup has tabs; the rest are flat group lists.
+
+#### LangSmith setup
+
+Six tabs, all files flat in `src/langsmith/`:
+
+| Tab | Groups |
+|-----|--------|
+| Overview | Single page |
+| Account | Billing & usage |
+| Cloud | Reference |
+| BYOC | No groups |
+| Self-hosted | Get started by cloud provider, Deploy with Terraform (AWS, GCP, Azure), Setup guides (Manage an installation), Configuration, Connect external services, Platform auth & access control, SmithDB, Self-hosted observability, Hybrid, Scripts, Reference |
+| Govern | Organization (Workspace setup), Users & access control, Tools, Auditing, Data & compliance, Additional resources (FAQ) |
+
+#### Other menu items
+
+| Menu item | Source | Groups |
+|-----------|--------|--------|
+| LLM Gateway | `src/langsmith/llm-gateway*.mdx` | Core capabilities, Administration and governance, Advanced |
+| No-code agents | `src/langsmith/fleet/` | Get started, Configure, Tools and automation, Advanced, Additional resources |
+| Engine | `src/langsmith/engine*.mdx` | No groups |
+| Deep Agents Code | `src/oss/deepagents/code/` | Configuration |
+
+"No-code agents" is the nav label for Fleet. The source directory and URLs still use `fleet`.
+
+"Deep Agents Code" ships one set of pages at `/oss/deepagents/code/...` with no language split, even though it sits under `src/oss/deepagents/`. Conditional fences resolve against the Python branch.
+
+### Source directory summary
+
+Because nav names and directories diverge, use this to go from a file to its place in the nav:
+
+| Source | Appears under |
+|--------|---------------|
+| `src/index.mdx` | Lifecycle → Home |
+| `src/oss/deepagents/` (except `code/`) | Build → Deep Agents |
+| `src/oss/deepagents/code/` | Products and setup → Deep Agents Code |
+| `src/oss/langchain/` | Build → LangChain |
+| `src/oss/langgraph/` | Build → LangGraph |
+| `src/oss/openwiki/` | Build → OpenWiki |
+| `src/oss/{python,javascript}/integrations/` | Build → Integrations |
+| `src/oss/reference/` | Build → Reference |
+| `src/oss/contributing/` | Build → Contribute |
+| `src/langsmith/managed-deep-agents*.mdx` | Build → Managed Deep Agents |
+| `src/langsmith/fleet/` | Products and setup → No-code agents |
+| `src/langsmith/*.mdx` (everything else) | Test, Deploy, Monitor, or LangSmith setup, depending on subject |
+
+### Reference docs
+
+Three OpenAPI-generated sections. Mintlify generates the endpoint pages at deploy time, so they do not exist in the local `build/` output. `make broken-links` filters them as false positives.
+
+| Section | Nav location | Spec source | Generated under |
+|---------|--------------|-------------|-----------------|
+| Agent Server API | Deploy → Get started → Reference | `src/langsmith/agent-server-openapi.json` (committed) | `/langsmith/agent-server-api/` |
+| Control Plane API | Deploy → Get started → Reference | `https://api.host.langchain.com/openapi.json` (fetched at deploy time, no local file) | `/api-reference/` |
+| LangSmith REST API | Monitor → Reference | `src/langsmith/langsmith-platform-openapi.json` (committed) | `/langsmith/smith-api/` |
+
+`src/langsmith/langsmith-platform-openapi.json` is refreshed daily by `.github/workflows/refresh-langsmith-openapi.yml`, which runs `scripts/process_langsmith_openapi.py` and opens or appends to a standing `chore/refresh-langsmith-openapi` PR. Do not edit it by hand.
+
+`src/langsmith/agent-server-openapi.json` is updated by PRs from the `langgraph-api` repository, titled `Update Agent ServerOpenAPI spec for API version X.Y.Z`. Validate either spec with `make check-openapi`.
 
 ## Local development
 
@@ -138,7 +264,7 @@ Every MDX file requires:
 ```yaml
 ---
 title: Clear, concise page title
-description: SEO summary — no markdown allowed (no links, backticks, formatting)
+description: SEO summary, no markdown allowed (no links, backticks, formatting)
 ---
 ```
 
@@ -192,10 +318,36 @@ Common Tabler names: `home` (not house), `tool` (not wrench), `player-play` (not
 | `<CodeGroup>` | Tabbed code blocks |
 | `<Card>` / `<CardGroup>` | Navigation/overview links only (not for highlighting points) |
 | `<Note>`, `<Tip>`, `<Warning>`, `<Info>` | Callouts |
+| `<Prompt>` | Copyable AI-assistant prompt. **Required at the top of every migration guide** |
+
+### Migration guide convention
+
+Every migration guide (any page under `src/oss/python/migrate/` or `src/oss/javascript/migrate/`) **must** include a `<Prompt>` component as the very first element after the frontmatter and any import statements. The prompt should be a complete, paste-ready instruction that an AI coding assistant can use to perform the migration automatically.
+
+Minimal template:
+
+```mdx
+<Prompt
+    description="Short one-line description of the migration."
+    icon="arrow-right"
+    actions={["copy"]}
+>
+Migrate this codebase from `old-package` to `new-package` (requires `new-package>=x.y.z`).
+
+Key changes:
+
+1. ...
+2. ...
+
+Search the codebase for all usages of `OldClass`, `old_function`, and imports from `old_module`, and apply the necessary changes. Flag anything that cannot be migrated automatically.
+</Prompt>
+```
+
+The prompt must cover every API rename, import path change, behavioral difference, and removed feature that the page documents. End with an explicit instruction to search and flag.
 
 ### Version-added admonitions
 
-When documenting new features, APIs, or behavior that requires a minimum package or CLI version, add a version-added admonition near the first mention of the feature. Use a `<Note>` callout with a concise requirement, for example: `Feature name requires \`package>=x.y.z\`.`
+When documenting new features, APIs, or behavior that requires a minimum package or CLI version, add a version-added admonition near the first mention of the feature. Use a `<Note>` callout with a concise requirement, for example: `Feature name requires \`package>=x.y.z\`.` For a CLI, runtime, or chart version, use the prose form instead ("Feature name requires Codex CLI v0.153.4 or later."). See [Version requirements](#version-requirements).
 
 For language-specific requirements, wrap the note in the relevant `:::python` or `:::js` fence. Include separate notes when Python and TypeScript packages have different minimum versions.
 
@@ -222,9 +374,9 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 
 **Do:**
 
-- Match existing conventions in the file you are editing — do not restructure, combine, or split pages unless explicitly asked
+- Match existing conventions in the file you are editing: do not restructure, combine, or split pages unless explicitly asked
 - Reference existing pages for style patterns when creating new content
-- Be concise — cut filler words and wordy phrases ("to" not "in order to", "because" not "due to the fact that", "can" not "has the ability to")
+- Be concise: cut filler words and wordy phrases ("to" not "in order to", "because" not "due to the fact that", "can" not "has the ability to")
 - Second-person imperative present tense ("Run the following code…")
 - Active voice ("The function returns a list" not "A list is returned by the function")
 - Sentence-case headings starting with active verb, not gerund ("Add a tool" not "Adding a tool")
@@ -245,40 +397,59 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use absolute URLs for internal links
 - Use markdown in description fields
 - Use `/python/` or `/javascript/` in links (resolved by build pipeline)
-- Use model aliases — use full identifiers (e.g., `claude-sonnet-4-6`)
+- Use model aliases: use full identifiers (e.g., `claude-sonnet-4-6`)
+- Use `>=` in prose for version minimums: write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
+- Use "→" to separate UI navigation steps: write "Go to **Settings** > **API Keys**"
 - Use FontAwesome icon names
-- Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
+- Use nested double quotes in component attributes: use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
-- Use first person ("we", "I", "our", "let's") — write in second person or use the product name as subject
+- Use first person ("we", "I", "our", "let's"): write in second person or use the product name as subject
 - Use future tense ("The function returns X" not "The function will return X")
 - Use weasel words or filler (avoid "simply", "easily", "just", "very", "basically", "obviously")
 - Use H5 or H6 headings
 - Start headings with articles ("Add a tool" not "The tool setup guide")
-- Use em dashes — prefer commas, colons, or separate sentences instead. Only use an em dash when no alternative reads naturally
-- Add spaces around em dashes — write `word—word` not `word — word` (`make lint_prose` enforces this)
+- Use em dashes: prefer commas, colons, or separate sentences instead. Only use an em dash when no alternative reads naturally
+- Add spaces around em dashes: write `word—word` not `word — word` (`make lint_prose` enforces this)
 - Use excessive bold/italics in body text
-- Start bulleted list items with a lowercase letter — always capitalize the first word
+- Start bulleted list items with a lowercase letter: always capitalize the first word
 - Include "key features" lists
-- Use horizontal lines (`---`) to separate sections — use headings instead
+- Use horizontal lines (`---`) to separate sections: use headings instead
 - Apply bold to UI element names unless existing docs already do so
-- Misspell product names — use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
-- Skip `make lint_prose` — always run it on changed files before committing and fix all violations
+- Misspell product names: use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
+- Skip `make lint_prose`: always run it on changed files before committing and fix all violations
 
 ### Structure conventions
 
 Match these patterns, drawn from established pages, when authoring new content:
 
-- **Open with definition, then benefit, then task** — start a section (and the page) with a one-sentence statement of what the feature is or does, follow with a sentence on what it enables for the reader, then give the procedure or detail. When a page has a sibling variant (for example, a paid or self-hosted version), link it in the opening lines.
-- **Introduce procedures with a colon lead-in** — precede steps with a phrase such as "To add a channel:", then a numbered list (or the `<Steps>` component) of imperative steps. State a step's result as a follow-on line when it matters ("The Add User modal displays."). Flag optional steps inline with "(Optional)". For long, multi-stage tasks, use `### Step N. <verb>` headings.
-- **Use bold-led definition lists for options** — for parameters, permissions, secrets, or enumerated types, write `- **Term**: Explanation.` and end each explanation with a period.
-- **Link on first mention, and point forward at section ends** — link a feature, class, or term on first mention only, not on repeats. Two pointer forms are established, and neither is canonical, so do not mass-convert one into the other. Use the long form ("For more information, see [Page](/path)") at section ends and for standalone pointers. Use the short form ("See [Page](/path)") where the pointer trails an already-complete thought, such as an FAQ answer or a table cell, and especially in a run where nearly every item ends in a pointer. Close substantial pages with a `## See also` list of related links.
-- **State requirements and constraints up front** — put permission, plan tier, or preview requirements before the steps they govern ("Adding MCP servers requires admin permissions."). Write hard constraints as plain facts ("Once an agent identity is set, it cannot be changed.").
+- **Open with definition, then benefit, then task**: start a section (and the page) with a one-sentence statement of what the feature is or does, follow with a sentence on what it enables for the reader, then give the procedure or detail. When a page has a sibling variant (for example, a paid or self-hosted version), link it in the opening lines.
+- **Introduce procedures with a colon lead-in**: precede steps with a phrase such as "To add a channel:", then a numbered list (or the `<Steps>` component) of imperative steps. State a step's result as a follow-on line when it matters ("The Add User modal displays."). Flag optional steps inline with "(Optional)". For long, multi-stage tasks, use `### Step N. <verb>` headings.
+- **Use bold-led definition lists for options**: for parameters, permissions, secrets, or enumerated types, write `- **Term**: Explanation.` and end each explanation with a period.
+- **Link on first mention, and point forward at section ends**: link a feature, class, or term on first mention only, not on repeats. Two pointer forms are established, and neither is canonical, so do not mass-convert one into the other. Use the long form ("For more information, see [Page](/path)") at section ends and for standalone pointers. Use the short form ("See [Page](/path)") where the pointer trails an already-complete thought, such as an FAQ answer or a table cell, and especially in a run where nearly every item ends in a pointer. Close substantial pages with a `## See also` list of related links.
+- **State requirements and constraints up front**: put permission, plan tier, or preview requirements before the steps they govern ("Adding MCP servers requires admin permissions."). Write hard constraints as plain facts ("Once an agent identity is set, it cannot be changed.").
 
 ### Model references
 
 Always use the latest generally available (GA) models when referencing LLMs in docstrings and illustrative code snippets. Avoid preview or beta identifiers unless the model has no GA equivalent. Outdated model names signal stale code and confuse users.
 
-Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names — they go stale quickly.
+Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names. They go stale quickly.
+
+### Version requirements
+
+Write version minimums as "<version> or later" in prose. Reserve `>=` for package specifiers, where it is literal install syntax and belongs in backticks.
+
+- Tools, CLIs, runtimes, servers, and Helm charts: "Codex CLI v0.153.4 or later", "Node.js 22.x or later", "Helm chart version 0.12.33 or later".
+- Package specifiers: `langsmith>=0.3.13`, `langchain>=1.0.0`. Readers paste these into an install command, so keep the operator.
+
+Keep a `v` prefix when the page or the upstream project already uses one. Do not add one to a package specifier. When another requirement follows the version, set it off with a comma so it does not read as part of the constraint ("v0.153.4 or later, with plugin hooks enabled").
+
+This rule covers version numbers only. Leave `>=` as is in numeric parameter constraints ("Must be >= 0") and in comparison-operator reference tables.
+
+### Navigation paths
+
+Separate UI navigation steps with a greater-than sign surrounded by spaces, not an arrow: "Go to **Settings** > **API Keys**". Bold the UI labels, either individually (`**Settings** > **API Keys**`) or as a single span (`**Settings > API Keys**`), and match whichever form the page already uses. Vale enforces this as `LangChain.NavPathArrows`.
+
+The arrow character stays where it does not mark navigation: mermaid diagrams, data flow (`browser or client → data plane`), API renames in migration guides (`create_react_agent` → `create_agent`), state progressions, and UI labels that literally contain an arrow ("Manage app access →").
 
 ### Release stage names
 
@@ -294,7 +465,7 @@ These are common nouns, not proper nouns. Write them lowercase in prose, includi
 
 ### Product and feature name capitalization
 
-Capitalize a word when it refers to a **product or brand name**. Use lowercase when it refers to a **common noun** — a thing you build, an instance, or a type.
+Capitalize a word when it refers to a **product or brand name**. Use lowercase when it refers to a **common noun**: a thing you build, an instance, or a type.
 
 **Capitalize** product and brand names:
 
@@ -305,8 +476,14 @@ Capitalize a word when it refers to a **product or brand name**. Use lowercase w
 - "Create a dashboard" (dashboard = a thing you build, not a product name)
 - "a deep agent created using Deep Agents" (the first "deep agent" is a common noun; "Deep Agents" is the product name)
 - "Run an experiment", "View your traces", "Manage your projects"
+- "Build agents across the agent development lifecycle" (the lifecycle is a process, not a product; marketing materials capitalize it, docs do not)
+- "LangChain provides the open agent engineering platform" (the phrase describes what LangChain provides; it is not a product name)
 
 When in doubt, ask: is this word the product's proper name, or is it describing a thing the user creates or works with? If the latter, use lowercase.
+
+Spell out "agent development lifecycle" in prose. Do not use the "ADLC" acronym, which appears in marketing materials but not in the documentation.
+
+Reserve "the platform" for LangSmith. LangChain is the open agent engineering ecosystem, not a platform. Marketing's short blurb ("an open agent engineering platform") compresses the whole company into a single noun to fit the character limits of a search result. Docs have the room to be precise, so do not carry that phrasing onto pages.
 
 ## Adding pages
 
@@ -319,8 +496,8 @@ When in doubt, ask: is this word the product's proper name, or is it describing 
 **Add a new LangSmith doc:**
 
 1. Create `src/langsmith/<name>.mdx` with frontmatter
-2. Find the correct tab and group in `src/docs.json` under `navigation.products[1]` (LangSmith)
-3. Add the page path (e.g., `"langsmith/<name>"`) to that group's `pages` array
+2. Decide which lifecycle stage the page belongs to, then find the matching menu item in `src/docs.json`: `navigation.products[0].menu` holds Home, Build, Test, Deploy, and Monitor; `navigation.products[1].menu` holds LangSmith setup, LLM Gateway, No-code agents, Engine, and Deep Agents Code
+3. Add the page path (e.g., `"langsmith/<name>"`) to the correct group's `pages` array
 
 **Add a new integration page (Python):**
 
@@ -345,7 +522,7 @@ Use the import form, not Mintlify's `<Snippet file="..." />`. The build pipeline
 
 ## Debugging
 
-When investigating a bug or unexpected behavior, always start by reading the relevant code and logs before forming a hypothesis. Do not assume something is working or ask the user to confirm — verify it yourself first.
+When investigating a bug or unexpected behavior, always start by reading the relevant code and logs before forming a hypothesis. Do not assume something is working or ask the user to confirm. Verify it yourself first.
 
 ### CI broken-links failures
 
@@ -360,7 +537,7 @@ some-file.mdx                    ← file header (always printed)
 another-file.mdx                 ← no indented lines = all its links were filtered out (false positive)
 ```
 
-**Shortcut:** Skip straight to `⎿` lines — those are the only real failures. File headers without `⎿` lines beneath them are OpenAPI pages that exist at deploy time but not locally.
+**Shortcut:** Skip straight to `⎿` lines: those are the only real failures. File headers without `⎿` lines beneath them are OpenAPI pages that exist at deploy time but not locally.
 
 **Common cause:** Page renamed/deleted but link and/or `src/docs.json` nav entry still references old name. Fix both the link in the MDX file AND the corresponding entry in `docs.json`.
 
@@ -387,11 +564,34 @@ Notes:
 - Without `--write`, the script prints the table to stdout for inspection.
 - After regenerating, commit only `src/snippets/deepagents-eval-category-matrix.mdx`. Do not edit that snippet by hand.
 
+### Refresh the MDA OAuth catalog
+
+The OAuth service table on `/langsmith/managed-deep-agents-connections` is generated by
+`scripts/refresh_mda_oauth_catalog.py`. The catalog is compiled into the `mda` binary, so the
+script reads it from the installed CLI and writes
+`src/snippets/langsmith/mda-oauth-catalog.mdx` (imported by
+`src/langsmith/managed-deep-agents-connections.mdx`).
+
+```bash
+uv tool upgrade --pre managed-deepagents   # output reflects the locally installed version
+uv run python scripts/refresh_mda_oauth_catalog.py --write
+```
+
+Notes:
+
+- `mda connections catalog --json` reads a compiled-in catalog, so no LangSmith API key or
+  workspace ID is needed.
+- Without `--write`, the script prints the table to stdout for inspection.
+- After regenerating, commit only `src/snippets/langsmith/mda-oauth-catalog.mdx`. Do not edit
+  that snippet by hand.
+
 ## Pre-commit linting
 
 Always run `make lint_prose` (Vale) before handing off or committing doc changes. CI blocks on it. Common offenders: em-dashes with surrounding spaces (` — ` → `—`, enforced by `LangChain.DashesSpaces`), terminology, style.
 
 Scope to changed files for speed: `make lint_prose FILES="src/path/to/file.mdx"` (or pass space-separated paths). Run with no `FILES` arg to lint all of `src/`.
+
+The Vale version is pinned once, in `.mise.toml`. The `Makefile`, `scripts/install-vale.sh`, and the `lint-prose` workflow all read it from there, so local runs use the same engine as CI. Bump it only in `.mise.toml`. Do not hardcode a version in any of the three call sites.
 
 Also run `make broken-links` when adding or renaming links, pages, or nav entries.
 
@@ -404,3 +604,16 @@ When extracting data from PRs or changelogs, use the "Release Note:" section in 
 - Explain the "why" of changes
 - Highlight areas needing careful review
 - Disclose AI agent involvement in description
+
+<!-- OPENWIKI:START -->
+
+## OpenWiki
+
+This repository has a generated `openwiki/` evidence index. It is optional just-in-time context, not required startup reading.
+
+- Treat source code and tests as authoritative. A brief's unknowns and review items are verification gaps, not automatic requirements.
+- Prefer the narrowest quiet validation that proves the changed behavior. Preserve complete failure output.
+
+The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
+
+<!-- OPENWIKI:END -->

@@ -14,27 +14,64 @@ openwiki code --update
 openwiki code --update --print
 ```
 
+Running `openwiki --init` again replaces the existing generated repository wiki and Claims with a new generation while preserving the user-authored `openwiki/INSTRUCTIONS.md` brief. On a persistent checkout, OpenWiki records in-progress generation in `openwiki/.run.json`, so rerunning the same command after an interruption resumes the durable page queue. Ephemeral CI runners start fresh after failure unless their workspace is preserved. A setup failure before the new run state is durable restores the previous wiki.
+
+To generate wiki pages in another language, pass a BCP-47 locale such as `ko`, `zh-CN`, or `pt-BR`:
+
+```bash
+openwiki --init --language ko
+```
+
+You can also run OpenWiki inside Codex, Claude Code, OpenCode, or Cursor. See [Coding-agent integrations](/oss/openwiki/integrations).
+
 ## What code mode produces
 
 After a successful init or update, the repository typically includes:
 
 - **`openwiki/`**: Generated Markdown wiki (quickstart, architecture, operations, and related topics)
 - **`openwiki/INSTRUCTIONS.md`**: User-authored brief for scope and priorities. OpenWiki reads it on init and update. Edit it yourself, or ask OpenWiki in chat to change it; normal `--init` and `--update` runs do not rewrite it
-- **`openwiki/.last-update.json`**: Metadata for the last successful documentation change (used to avoid no-op update loops)
+- **`openwiki/.claims/`**: Structured Claim sidecars that ground factual pages in versioned repository evidence
+- **`openwiki/.page-manifest.json`**: Per-page progress and source checkpoints for resumable generation
+- **`openwiki/.last-update.json`**: Metadata for the last successful documentation check (including no-op updates)
 - **`AGENTS.md` / `CLAUDE.md`**: OpenWiki inserts or refreshes an `<!-- OPENWIKI:START -->` … `<!-- OPENWIKI:END -->` block that tells coding agents when to consult the wiki. Existing content outside that block is left untouched
+
+During an active run, `openwiki/.run.json` checkpoints the ordered page queue. OpenWiki deletes that file after a successful finish.
+
+## Grounded Claims
+
+OpenWiki makes code wikis self-correcting by tracking the material propositions behind factual pages, not only when a Markdown file was last generated. Claims cover truths future agents rely on: behavior, responsibilities, architecture, data flow, invariants, failure semantics, configuration, and security boundaries. Each Claim points to exact repository evidence such as `repo://src/server.ts#L40-L82`, with the evidence version OpenWiki observed when the Claim was established.
+
+The Markdown stays clean. Structured Claim state lives under `openwiki/.claims/`. Page completion persists reconciled Claims, projects verification into OKF front matter, and proves the complete result before marking that page job complete. Grounded Claims apply to repository code wikis and repository evidence. Connector-derived facts, including LangSmith-only observations, are not included as Claims.
 
 ## Markdown output
 
-OpenWiki's durable output is Markdown (OKF), not a static HTML site. To explore the wiki in a browser, run [`openwiki visualize`](/oss/openwiki/visualize). The command serves a viewer only on your local machine (`127.0.0.1`). To host a human-readable site, render the Markdown with another tool (for example GitHub Pages, MkDocs, or an OKF-compatible viewer).
+OpenWiki's durable output is Markdown (OKF), not a static HTML site. To explore the wiki in a browser, run [`openwiki visualize`](/oss/openwiki/visualize). The command serves a viewer only on your local machine (`127.0.0.1`), or you can [export a static visualizer](/oss/openwiki/visualize#export-a-static-site) for hosting.
 
 ## Open Knowledge Format
 
-OpenWiki emits [Google Open Knowledge Format (OKF)](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing) v0.1 bundles in both code and personal modes:
+OpenWiki emits [Google Open Knowledge Format (OKF)](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) v0.2 bundles in both code and personal modes:
 
 - A **concept** is an ordinary wiki Markdown page (one topic file). Every concept has YAML front matter with a non-empty `type`; other standard fields are optional
-- `index.md` and `log.md` are **reserved** scaffolding files, not concepts: `index.md` is a directory listing, and `log.md` is update history. Nested indexes contain no front matter, while the root index declares `okf_version: "0.1"`
-- Valid `timestamp` values and producer-defined extension fields are accepted and preserved during updates and migrations
+- New and freshly initialized pages receive `generated: {by, at}`. During updates, any body change, including whitespace, advances the stamp; an unchanged body retains its prior event, and front-matter-only changes do not advance it. The producer is stamped as `openwiki/<version>` (or the coding-agent host)
+- Repository pages project grounded Claims evidence into `sources`. OpenWiki reconciles its deterministically identified entries while preserving independently authored sources
+- Repository pages receive `verified: {by: openwiki/<version>, at: ...}` only after a successful page submission reconciles a non-empty complete Claims set, passes the final evidence recheck, and persists the Claims sidecar
+- `index.md` and `log.md` are **reserved** scaffolding files, not concepts. The root index declares `okf_version: "0.2"`
+- The optional v0.2 provenance, trust, and lifecycle families (`sources`, `verified`, `status`, `stale_after`) are validated when present. Producer-defined extension fields are preserved across updates and migrations
 - Standard Markdown links between concept documents express relationships
+
+## LangSmith connector
+
+The **LangSmith** connector enriches a code wiki: it pulls recent LangSmith traces (tool calls, outcomes, and latency) for the projects you choose, so repository docs reflect how the code behaves at runtime, not only what the source says.
+
+Configure it during `openwiki --init` in code mode. From the source menu, add LangSmith, pick your workspace region (US, EU, or APAC), and list the projects to document. OpenWiki writes a committed `openwiki/.langsmith.json` that names the workspaces and projects (never the key itself). The API key is read from the environment:
+
+```bash
+OPENWIKI_LANGSMITH_API_KEY="<your-langsmith-key>"
+```
+
+Locally the setup wizard can save this to `~/.openwiki/.env`. In CI, set it as a repository secret and export it for the run.
+
+A LangSmith key is workspace- and region-bound. To document projects across more than one workspace, add an entry per workspace, each with its own key named `OPENWIKI_LANGSMITH_API_KEY_2`, `OPENWIKI_LANGSMITH_API_KEY_3`, and so on. The connector talks to the official US (`api.smith.langchain.com`), EU (`eu.api.smith.langchain.com`), and APAC (`apac.api.smith.langchain.com`) hosts.
 
 ## Ignore paths
 
@@ -76,6 +113,7 @@ Normal `--init` and `--update` runs do not rewrite this file.
 
 ## See also
 
+- [Coding-agent integrations](/oss/openwiki/integrations)
 - [Visualize your wiki](/oss/openwiki/visualize)
 - [Automate updates](/oss/openwiki/automate-updates)
 - [Customize OpenWiki](/oss/openwiki/customize)

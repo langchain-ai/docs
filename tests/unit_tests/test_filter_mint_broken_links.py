@@ -4,6 +4,7 @@ from scripts.filter_mint_broken_links import filter_broken_links
 
 
 def test_drops_snippet_sections_keeps_real_failures() -> None:
+    """Drop snippet-only failures while preserving real broken links."""
     raw = """found 3 broken links in 3 files
 
 langsmith/api-ref-control-plane.mdx
@@ -22,6 +23,7 @@ oss/python/langchain/frontend/time-travel.mdx
 
 
 def test_check_anchors_filters_smithdb_false_positives() -> None:
+    """Filter known SmithDB anchor false positives when requested."""
     raw = """page.mdx
  ⎿  /langsmith/smithdb-sdk-migration#traces-query
  ⎿  /langsmith/smithdb-sdk-migration#real-anchor
@@ -32,6 +34,7 @@ def test_check_anchors_filters_smithdb_false_positives() -> None:
 
 
 def test_excludes_openapi_and_legacy_relative_paths() -> None:
+    """Filter OpenAPI and legacy relative paths from broken-link output."""
     raw = """page.mdx
  ⎿  /langsmith/agent-server-api/foo
  ⎿  ../integrations/chat/openai

@@ -18,6 +18,340 @@ If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/sel
 <Tabs>
 <Tab title="LangSmith Cloud">
 
+<Update label="September 14-21, 2026" rss={{ title: "2026-09-14 - LangSmith Cloud update" }}>
+
+## Observability and evaluations
+
+### Datasets and experiments
+
+- The completed items list in an annotation queue now offers Add to Dataset for selected thread items, importing each thread as a multi-turn example.
+- Edit and delete in the experiments table now check project permission, to match BE.
+- Charts now show shape-aware loading skeletons instead of temporary zero values while data loads. Evaluator spend charts use bar and metric placeholders that preserve the final layout.
+- Downloading experiment results with "Include annotator name and comment per row" now keeps automated evaluator scores in every feedback column, alongside human annotations.
+- The evaluators list API accepts an agent_id filter to return evaluators attached to the agent's environments or tagged datasets.
+- An evaluator using an organization-scoped model configuration that authenticates with an API key no longer attempts a per-model OAuth token exchange. Amazon Bedrock models configured this way are no longer rejected as unsupported.
+- Categorical evaluator fields resize with the editor pane, keeping descriptions and remove-category buttons inside the feedback configuration card.
+- Evaluator side panels disable Save while the configuration is invalid and display the reasons. Correcting the configuration enables saving again.
+- Evaluator forms explain validation errors in the Save tooltip instead of a banner. Save remains disabled until the configuration is valid.
+- Evaluator side panels show mapping errors and prevent saving when run evaluators use thread or trajectory sources, or thread and trajectory evaluators use run sources. Validation updates when the evaluator target changes.
+- Evaluator variable mapping now explains clearly that trajectory and non-trajectory variables cannot be used together.
+- Trajectory evaluation selects the latest trace by its root run's start time rather than a child LLM run's start time. Trajectory metadata reports each trace's actual root start time and marks scopes with missing root timestamps as incomplete.
+- The evaluator configuration form now displays the complete sampling-rate percentage at every supported input size.
+
+### Feedback
+
+- The header count and the delete confirmation on the annotation queue "View all items" page now reflect the active time range instead of the whole queue. The item count endpoint accepts min_start_time and max_start_time.
+- Changing a feedback score on a completed queue item previously raised a "Failed to update review time" error even though the score saved. The toast is gone; the score still saves as before.
+- The annotation queue size endpoint now counts queue entries whose runs were deleted, matching the queue's run list instead of silently dropping them.
+
+### Tracing
+
+- Publicly shared thread pages no longer show a share action that cannot succeed.
+- Insights no longer warns that it is optimized only for OpenAI or Anthropic when both selected models use another provider.
+- Insights report jobs now retry with a smaller page size when a trace scan times out, instead of failing the whole report.
+- Alerts using input, output, or error text filters match runs regardless of the blob storage and ClickHouse search settings. Search tokens are still written to ClickHouse only when both blob storage and ClickHouse search are enabled.
+- Starting a new conversation immediately after a reply, then sending a message, no longer loses that message. LangSmith Chat now streams it into the new conversation instead of dispatching it against the previous one.
+- When a tracing batch takes longer to upload than the server will wait, /runs/multipart and /runs/batch now stop reading and return 408 Request Timeout instead of a 503. A timeout caused by the server rather than the upload returns 504.
+- Insights now recommends a capable thinking model and a fast summarization model with a large context window, without warning against mixing providers.
+- The LangSmith Go and Java SDKs can now save Insights report configurations, enabling clients to create UI-visible Insights reports programmatically.
+- The Columns menu on a tracing project's traces and runs table now lets you deselect Status and Name, and drag them into any order alongside the other columns.
+- Dashboard chart feedback key suggestions now include keys from both run-level and thread-level feedback.
+- The project stats sidebar shows Cache Hit % above streaming rate, helping you see the share of input tokens served from the prompt cache.
+- Select TURN_NUMBER when listing thread traces to return each trace's chronological position across pages. Turn numbers are also available for public shared threads.
+- The LangSmith Go and Java SDKs can now list, update, and delete saved Insights report configurations, including their recurring schedules.
+- LangChain trajectories use message IDs from root runs to identify the main conversation, falling back to the existing selection when no unique match is available or optional root enrichment fails. Other formats do not fetch this enrichment. Processing runs and optional roots share one byte budget, and the default message-view and trajectory contribution limits are 200 MB.
+- The thread traces API now accepts `trace_filter` and `tree_filter` query parameters for filtering root runs and matching runs anywhere in a trace tree.
+- The disclosure header of the linked-issues section in the trace detail pane now renders at its intended height instead of clipping its content.
+
+### Engine
+
+- Engine issue descriptions preserve their concise prose while rendering mentioned file paths, functions, classes, tools, and code identifiers as inline code.
+- The issue detail header read its timestamp from the issue's last-modified time, so routine updates, such as Engine linking new evidence and refreshing the description, made a closed issue appear to have just been marked done. The header now reads "Updated `<when>`"; who closed the issue and when is shown in the history below it.
+- Engine now scans projects whose names contain punctuation, Unicode, or other special characters instead of leaving their boards stuck while analysis starts.
+- An Engine scan no longer fails outright when its project-stats request does not come back. It proceeds with the errored and baseline traces it can still select, tells the agent which selections are missing, and records why the stats call failed.
+- The LangSmith Chat composer now accepts focus when a side pane such as Edit Engine Settings is open, so you can ask questions without closing your settings first.
+- LangSmith Chat keeps your conversation as you navigate and reload within a browser tab, and starts a new one in a new tab or after you restart the browser. Earlier conversations are still available from the conversation history.
+- Opening a past LangSmith Chat conversation no longer fails with "Unable to connect to LangGraph server" when the workspace's model credential can no longer be resolved. Reading a conversation only needs its stored history; sending a new message still reports the underlying credential error.
+- Run local production-parity red-team checks against supported Dev targets with their configured trace project and repository context.
+- The LangSmith Chat icon and suggested question now share one continuous background, so the launcher reads as a single pill in light and dark mode.
+- Engine now reads the contents of successful tool results rather than only their status, so it files issues where a call returned less data than its own result claims or where a value arrived truncated. Defects that never surface as an error are no longer passed over.
+- The Home page no longer shows the Engine announcement banner. Engine remains accessible through its Home card and issues section.
+- Engine issue boards now show a spinning “Generating fix” action instead of “Open PR” while a fix is still being generated.
+- An Engine Red Team run on a project that Engine has already scanned now starts from that project's Agent Overview and runs a shorter confirmation scan, instead of re-deriving the application map every time.
+
+### Automations
+
+- Automations grouped by thread can now send webhook payloads with matched conversations and their runs.
+- A backfill that finds every run on a page already processed now continues to the next page instead of ending the window early, so the runs behind that page are still evaluated.
+- A thread or trajectory automation batch that fails its last retry no longer leaves a partial page cursor behind, so the next scheduled window starts from the beginning of the window instead of mid-page. An automation whose trajectory service URL is not configured now records one failed rule-log entry instead of retrying until the attempt limit.
+- A trajectory evaluator's retention upgrade no longer bounds the trace by an approximate start time, so the root run and its earliest children are upgraded along with the rest. The evaluated-run link on a trajectory evaluator's trace is withheld until it can point at the right run.
+
+### Monitoring and alerting
+
+- Choosing a Slack channel for alert notifications now works in workspaces large enough that the channel list had stopped loading altogether.
+- Charts now show loading placeholders that match their final visualization, including bar, line, donut, metric, and sparkline charts.
+
+## Deployment
+
+- Scale-to-zero deployments reject rollbacks to revisions below LangGraph API 0.13.0 or without a known compatible version. The rollback dialog directs you to rebuild the target commit with a supported version.
+- Your plan's included free Serverless deployment is now assigned automatically no matter how you create it. Previously only deployments created through the web app took the free slot, so a first deployment created via the CLI or API was billed even when a free one was available.
+- Newly created Slack apps in mention mode respond to explicit mentions in group DMs and their threads, preventing duplicate runs from overlapping events. One-to-one DMs and all-messages mode continue to receive ordinary messages.
+- Section dividers in agent overview cards and Gateway connection panels have stronger contrast in light and dark mode.
+- The Studio memory editor keeps its close button visible while you scroll through long memory items.
+- Filter the custom apps list by creator and preserve the selection in the page URL.
+- Creating a dev deployment now shows how many free deployments your organization has left and uses an available free slot automatically. The separate free deployment option has been removed.
+- Self-hosted upgrades can rerun the usage metering migration without duplicate-trigger errors or replacing existing model pricing with default rates.
+- Managed Deep Agents can discover OAuth settings from an MCP server's authentication challenge when well-known metadata lookup fails.
+
+## Sandboxes
+
+- View compute and storage cost estimates for individual sandboxes and snapshots in Granular usage. Filter by workspace, date, and resource type, and export the breakdown as CSV.
+- New custom apps open the preview panel when Polly starts writing files. The unfinished first draft stays covered until generation completes and the preview is ready.
+- Custom app previews show an animated loading illustration while starting, with a static version for reduced motion. Published previews fade in when ready.
+- Pasting an ECR repository or image URL keeps AWS IAM role authentication available. Registry forms explain that the registry hostname is saved and repositories are selected when creating a snapshot.
+- Create sandboxes from a shared, read-only catalog of system snapshots: system/default:latest, system/custom-apps:latest with Smith Apps tooling, and system/code-evaluators:latest with NumPy preinstalled. Choose system or workspace snapshots from the same sandbox and Fleet selectors.
+- The system/code-evaluators:latest snapshot includes pandas, jsonschema, SciPy, and scikit-learn alongside NumPy, so evaluators can use ACE's supported Python packages without installing them.
+- A sandbox calling the API under an access-delegation grant can still create sandboxes, but can no longer give one a grant of its own. Audit entries for a delegated call now name the sandbox that made it.
+- A sandbox's service URLs can now be listed, showing which ports are shared and how, and sharing can be turned off for one port or all of them. Previously a service URL could be created but never inspected or withdrawn.
+- An app served behind a LangSmith-login service URL now receives the signed-in user's id and email as X-Langsmith-User-Id and X-Langsmith-User-Email. The signed X-Langsmith-User-Token carrying the same identity is unchanged, and remains the right choice for an app that needs to verify it.
+
+## Administration
+
+- You can revoke and reinstate personal access tokens directly from the API Keys table in Settings. Reinstatement preserves the token's expiry date, and expired tokens show a disabled Reinstate key action with an explanation.
+- Revoking a personal access token preserves its original expiry. Reinstating the token restores access only while that expiry remains valid.
+- Adds a reusable ThinkingState component for AI activity, with three animation variants, an opt-in elapsed timer, and reduced-motion support.
+- Agent Auth automatically registers MCP OAuth clients that require client-secret authentication, storing their credentials securely alongside existing public-client support.
+- Managed Parallel tools require a paid workspace plan. Tool calls returning HTTP 200 record usage at 1,000 calls per LangSmith Unit.
+- Agent-auth principal creation accepts provider and subject without an issuer. Omitted or null issuers use an empty namespace, while supplied issuers retain their existing validation.
+- Browser Back retains navigation guards when returning to the initially loaded page, including cleanup of empty, undeployed custom apps.
+- Open Notifications in the sidebar to view platform announcements and account notices without interrupting your work. Incident alerts remain at the top of the page.
+
+### LLM Gateway
+
+- Group LLM Gateway usage by Model Provider within an API key or user to compare spend across providers and filter to specific providers.
+- The Gateway provider search field now uses a more comfortable height while remaining aligned with standard component sizes.
+- Gateway requests now log traces only to the shared gateway project instead of also creating duplicates in API-key or user-specific projects. Existing caller-specific projects and their historical traces remain unchanged.
+- The LLM Gateway now supports direct passthrough requests to TypeSafe's System One API using workspace credentials.
+- LangSmith applies configured LLM Gateway guard policies to TypeSafe System One prompt state before forwarding requests.
+- LLM Gateway traces for TypeSafe Jev calls now include token usage and calculate costs at TypeSafe's published rate.
+- LangSmith now supports TypeSafe in model access policies and provides System One examples for direct Gateway requests.
+- Gateway data protection now scans string values throughout nested TypeSafe System One state objects and arrays, including fields such as name, id, and instructions. Redaction preserves the native payload structure for both Gateway Credits and bring-your-own-key requests.
+
+</Update>
+
+<Update label="September 7-14, 2026" rss={{ title: "2026-09-07 - LangSmith Cloud update" }}>
+
+## Observability and evaluations
+
+### Feedback
+
+- Feedback in annotation queues are now attributed by whichever identity the request resolves, so a reviewer's own answers count toward required fields.
+- When a score sent through the SDK violates the workspace feedback key configuration, multipart ingest now accepts the request and records error feedback on the run with the rejection reason in the comment, instead of returning a 400 that dropped the run and every other feedback sent with it.
+- The annotations pane notes now work when the session_id is invalid, but a valid trace_session_id is provided.
+
+### Engine
+
+- Engine issue validation now reconstructs prior thread turns before replaying a trace, so follow-up failures are judged in the same conversation context.
+- Engine issue validation now retries when preparing replay traces hits a Runs API rate limit, instead of treating that as a permanent failure and leaving the result inconclusive.
+
+### Tracing
+
+- Starting September 14, 2026, traces ingested into LangSmith SaaS with extended retention are kept for at most 180 days. Existing extended retention settings above 180 days are applied as 180 days for new traces, and new settings above 180 days are rejected. Self-hosted and BYOC deployments are unchanged. [Learn more](/langsmith/usage-and-billing#data-retention).
+- Chat on a tracing project now reads the filters, view, time window and selection you have on screen, names runs and threads by what was asked rather than by the app that served them, and says what it is working through while it reasons.
+- Interacting with LangSmith Chat in the sidebar, including conversation history and model selection, keeps the peeked run or thread pane open. Clicking outside the pane and chat still dismisses the pane.
+- Model configurations that set a Vertex AI multi-region location such as `us` or `eu` now reach the correct Google endpoint instead of failing with a 400. Configurations using a single region or `global` are unaffected.
+- LangSmith MCP now includes a `list_model_price_maps` tool for searching and paginating model pricing rules in a workspace.
+- Trace tree connector lines now join smoothly between rows.
+
+### Prompts and playground
+
+- Switching between files in Context Hub now keeps the selected Preview or Source view.
+- Organizations with the LLM auth proxy enabled can select Google Vertex AI models in the playground and Agent Builder without storing a Vertex service account key in the workspace.
+- Context Hub repositories now support up to 1,500 files, allowing agents with larger skill collections to sync successfully.
+- OpenAI model configuration dropdowns now suggest gpt-6-astra.
+
+### Datasets and experiments
+
+- Trajectory online evaluators now route to the correct applier and receive trajectory input. Malformed configurations surface as visible errors instead of silently producing empty evaluations. When trace retention is enabled, trajectory rules extend retention for the latest trace in each resolved trajectory.
+
+## Deployment
+
+- Find custom apps by name or creator from the custom apps list.
+- Updating install or build commands through the deployment API now creates a new revision. Docker sources reject these commands because they deploy prebuilt images.
+- After a Managed Deep Agent run paused for credentials resumes, the Slack connect card is removed instead of being replaced with a confirmation, so the agent's reply is the next thing in the thread.
+- Managed Deep Agent runs paused on a Slack credential prompt now resume once the last connection completes, instead of stalling after all integrations are connected.
+
+## Sandboxes
+
+- LangSmith Cloud can now assume tagged customer IAM roles for ECR repository discovery and snapshot image pulls.
+- Sandboxes now use the guest kernel's maximum open-file limit, allowing highly concurrent agents and subprocesses to run without exhausting the default descriptor ceiling.
+- Sandboxes now pass raw TCP connections to literal public IP addresses when the destination IP and port are explicitly allow-listed. This supports clients that resolve a service and dial its public IP directly. [Learn more](/langsmith/sandbox-auth-proxy).
+
+## Administration
+
+- Authenticated service startup checks now use endpoint authentication when the deployment info endpoint is protected.
+- LangSmith Cloud now warns organization admins in the days before an enterprise contract or a cancelled plan expires, so they can renew before losing access.
+- Workspace administrators can view workspace-level Agent Auth connections from the Integrations settings page, including authentication type and update details.
+- Workspace administrators can select an Agent Auth connection to inspect its associated credential metadata without exposing secret or token material.
+- Built-in workspace roles stop returning the retired repos:* and run-rules:* permissions, which were renamed to prompts:* and rules:* and are rejected when creating a custom role. Copying a built-in role's permission list into a new custom role now works. [Learn more](/langsmith/organization-workspace-operations).
+- The organization SSO login URL now accepts a `redirect_to` path, so a link like `/sso/login/<slug>?redirect_to=/o/<org>/projects/p/<project>/r/<run>` lands on that page after SAML sign-in instead of the workspace root.
+- Organization Operators can no longer grant the Organization Admin role to a service key, or change the roles of a service key that already holds it. A service key also can no longer change its own roles; another credential must make the change.
+
+### LLM Gateway
+
+- GET /v1/models now returns only the models your model access policies allow, so the gateway no longer advertises models that would be rejected when called.
+- New model access policies now include a generated policy name that you can keep or edit before creation.
+- The LLM Gateway uses each saved model configuration's provider and API preference when selecting a fallback, so Bedrock Claude models use the Messages API instead of an OpenAI-compatible endpoint.
+- Data policy dialogs now show a Personally Identifiable Information (PII) option under Data protection for every organization. Organizations without the PII entitlement see it locked, with a link to request access.
+- The LLM Gateway returns resolved model names and cost-tracking provider identities in the `x-langsmith-gateway-metadata` response header for unified requests, including configured models and fallbacks. Client-side tracing can use these values as `ls_model_name` and `ls_provider` for accurate pricing, while preserving normalized pricing model names across fallbacks.
+- Model Access policies can now allow a workspace's saved model configurations, either all of them or a chosen few, by enabling the new "Model configurations" provider. Requests that reach a configuration, including fallback candidates that resolve to one, are permitted for the calling credential's workspace, where previously any Model Access policy blocked them.
+
+</Update>
+
+<Update label="August 31-September 7, 2026" rss={{ title: "2026-08-31 - LangSmith Cloud update" }}>
+
+## Observability and evaluations
+
+### Automations
+
+- Configuring an evaluator with a trace or tree filter no longer times out while loading the sample run shown in the preview.
+
+### Datasets and experiments
+
+- The add-to-dataset popup for threads now offers New Dataset, which creates the dataset empty and adds the selected threads to it.
+- Requesting dataset runs with a limit above 100 now returns a 422 naming the cap instead of a generic internal error.
+- Mapping an evaluator prompt variable to a single message, such as `output.messages[0]`, now renders that message instead of an empty value.
+- Validating examples with unsupported completion outputs now reports a schema validation error instead of failing with an internal error.
+- Passing a malformed share token to the shared-dataset projects endpoint now returns a validation error naming the bad value instead of an internal error.
+- Trajectory batch reads now run on a dedicated in-cluster gRPC service instead of the `smith-go` monolith, so load and memory pressure from trajectory evaluations no longer competes with UI and API traffic.
+- Dataset CSV and JSONL exports now require both dataset read and download permissions. Direct API requests without download permission return a forbidden response.
+- IssueBench now includes a benchmark task that compares pre- and post-Opus 5 agent traces for cost and trajectory regressions.
+- Dataset experiments launched from edited Hub prompts save portable Gateway model configurations while preserving the variable mappings used for execution. Saved drafts exclude runtime credentials and remain compatible with standard LangChain SDKs.
+- Editing surfaces such as evaluator forms, playground prompts, and dataset examples no longer error out when the editor unmounts while its content is still refreshing.
+
+### Engine
+
+- When Engine marks an issue as a duplicate, the issue header now shows a Duplicate link to the original instead of a history note that included the other issue's id.
+
+### Prompts and playground
+
+- Requesting, updating, or deleting a playground model configuration with a malformed ID now returns a validation error naming the bad value instead of an internal error.
+- Sending a null artifact to the prompt canvas now returns a 422 naming the missing field instead of a generic internal error.
+- Context Hub now opens markdown files in Source mode on the exact bytes stored in the repo, and saving a change no longer rewrites files you did not edit. Previously, the rich-text editor reserialized every markdown file in the directory on load, which could strip XML-style delimiters and add backslash escapes to untouched content.
+- Claude Fable 5.1 is now available in the Anthropic, Bedrock, and Vertex AI model selectors in the playground.
+- Prompts saved with a LangSmith Gateway model now use a standard ChatOpenAI manifest with the unified Gateway URL and a `LANGSMITH_GATEWAY_API_KEY` secret reference, so they can be pulled and run with standard LangChain SDKs.
+- Amazon Bedrock models in the Playground now expose the same request timeout and max retries options as other providers, so long-running agent calls are no longer cut off at the AWS client default of 60 seconds.
+- Gateway presets retain their model settings and stay selected when reopened without changes. You can explicitly clear a model selection, and new Gateway configurations no longer preselect a model or impose a default output-token limit.
+- The Playground now runs saved LangSmith Gateway models, including models with bound settings, through the configured Gateway using the authenticated request context. Ordinary OpenAI and custom-endpoint models keep their existing routing.
+
+### Tracing
+
+- The thread header now has Add to dataset and Add to annotation queue buttons in every thread view, including Messages, Turns, and Details, so a whole thread can be added without selecting a run.
+- Use the new `/v2/threads/stats` endpoint to retrieve thread and trace counts, latency, token, cost, and feedback statistics for a tracing project.
+- Thread query clients can request server-sent events to receive results progressively while preserving cursor pagination.
+- Use `/v2/threads/stats` on self-hosted deployments backed by ClickHouse, including when SmithDB queries are disabled. Scoped trace and thread filters still require SmithDB and are ignored otherwise; tree filters are best-effort.
+
+## Deployment
+
+- When a Slack channel event fails before reaching your Managed Deep Agent, for example a dropped delivery, a missing bot token, an interrupt that cannot be shown, or an ambiguous route, it now surfaces in `mda logs` and the deployment logs UI instead of failing silently.
+- LangSmith MCP connectors use Client ID Metadata Documents when supported, with dynamic client registration retained as a compatibility fallback.
+- Agent OAuth connections now show a provider-branded result page after authorization, making successful and failed connection attempts clearer.
+- Managed Deep Agent channel replies now name a missing workspace connection and show how an agent developer can configure it, instead of reporting only a generic run failure.
+
+## Sandboxes
+
+- Commercial private ECR registries can now assume an AWS IAM role on demand, enabling repository and tag search while avoiding expiring saved authorization tokens.
+
+## Administration
+
+- Self-hosted LangSmith operators can configure how many days before license expiration the warning banner appears with `LICENSE_EXPIRATION_WARNING_DAYS`. The default remains seven days.
+- OAuth authorization sessions now accept `owner_type` and `owner_id`, so a human can authorize a managed credential for either a user or an agent.
+- Workspace editors can now assign resources to an Application tag value from Settings > Resource Tags instead of hitting a permission error. [Learn more](/langsmith/set-up-resource-tags)
+- The workspace switcher now accepts workspace IDs in addition to workspace names, making it easier to locate a workspace when only its ID is known.
+- OAuth authorization sessions now accept workspace owners, allowing one managed OAuth credential to be shared across a workspace.
+
+### LLM Gateway
+
+- Set `ls_provider` on OpenAI-compatible model configurations to populate trace metadata and match custom models to provider-specific pricing through the LLM Gateway. [Learn more](/langsmith/ls-metadata-parameters#ls_provider)
+- LLM Gateway fallback chains can now advance to the next model when a candidate does not return response headers within a configured timeout. Active response streams continue after headers arrive.
+- Gateway requests authenticated with a session or OAuth bearer token retain their authentication and workspace context across internal routing, including model fallbacks. This prevents authentication failures when a request requires another Gateway hop.
+
+</Update>
+
+<Update label="August 24-31, 2026" rss={{ title: "2026-08-24 - LangSmith Cloud update" }}>
+
+## Observability and evaluations
+
+### Tracing
+
+- ABAC policies can grant access to matching project traces.
+- Open deployment threads directly in tracing.
+- Clearer Engine issue actions now appear on traces.
+- You can read shared threads through the public API.
+- Trace and tree filters now apply to thread evaluations.
+- Unsupported run filters now return clearer errors.
+- Studio Trace nested run selection now works correctly.
+- The Gateway usage view can open filtered traces.
+
+### Datasets and experiments
+
+- Experiment evaluator column names now use the full column width.
+- You can clone model configurations.
+- Tuned Evaluators are easier to find in tracing projects.
+- Data grids now adapt to enlarged browser fonts.
+- Form errors are announced consistently.
+- The dashboard crosshair stays synchronized across charts.
+- The Engine chat launcher now suggests questions.
+
+### Engine
+
+- Engine now uses application-scoped project counts.
+- Create existing Engine issues in Linear.
+- You can open a pull request for an Engine issue straight from the toolbar.
+- Engine issues stay in sync with Linear.
+- Engine now shows a release announcement in the sidebar.
+- Engine now distinguishes a missing capability from an errored or partially wired tool, reducing false-positive Feature Gap issues.
+- Pull requests for Engine fixes now open automatically.
+- Opening a second linked trace from an Engine issue now works reliably.
+- Open PR also works for fixes that have fallen behind the base branch.
+- Engine usage now costs 40% fewer Usage Credits.
+
+### Gateway
+
+- Newer OpenAI models now route through Amazon Bedrock.
+- Trailing slashes now work on LLM Gateway routes.
+- Recursive LLM Gateway configurations are now prevented.
+- PII redaction is now a separate LLM Gateway entitlement.
+- Claude Max OAuth traffic is now excluded from Gateway spend.
+- Saved model configurations now work on the unified LLM Gateway endpoint.
+- Custom providers now work on the unified LLM Gateway endpoint.
+- Gateway data policies are available by default.
+- You can use saved model configurations in LLM Gateway routing.
+- Gemini Enterprise Agent Platform gateway now supports existing web credentials.
+- OpenAI-compatible API base paths are now respected.
+- Custom provider configurations become available faster.
+- LLM gateway traces no longer capture request and response content by default.
+- Long-lived API keys are now available in the Gateway quickstart.
+
+### Platform and deployment
+
+- Dedicated deployments now run at least two replicas.
+- Run rules now support Redis cluster-safe mode.
+- Thread annotation queues are now available in self-hosted deployments.
+- Thread automations can add to annotation queues in self-hosted deployments.
+- Sandbox execution timeout errors are clearer.
+- Updating a sandbox's proxy config no longer conflicts with a start.
+
+### Fleet
+
+- Fleet sandbox APIs now work with external OIDC auth.
+- Fleet computers keep uploaded Excel workbooks locally.
+- Check Outlook calendar availability.
+
+</Update>
+
+
+
 <Update label="August 17-24, 2026" rss={{ title: "2026-08-17 - LangSmith Cloud update" }}>
 
 ## Observability and evaluations
@@ -294,7 +628,7 @@ If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/sel
 - Self-hosted Playground and evaluator outbound model calls now honor proxy environment variables while preserving SSRF validation on every request.
 - When you save a prompt to an application from the playground, LangSmith keeps the workspace application filter on All Applications instead of switching the rest of the UI to that application.
 - Typing a workspace member's name or email in the Context Hub search box now also returns the prompts and resources they created.
-- The playground now includes Claude Sonnet 5, Claude Fable 5, and Claude Opus 4.8 in the Anthropic, Bedrock, and Vertex AI model selectors. New Anthropic playground sessions default to Claude Sonnet 5.
+- The playground now includes Claude Sonnet 5, Claude Fable 5, and Claude Opus 4.8 in the Anthropic, Bedrock, and Gemini Enterprise Agent Platform model selectors. New Anthropic playground sessions default to Claude Sonnet 5.
 - Playground and evaluator calls to Amazon Bedrock using IAM Trusted Entity now resolve the correct LangSmith AWS credentials before assuming customer roles in AWS-hosted LangSmith. This fixes failures that reported "Failed to assume role" before the customer role was assumed.
 - Playground runs now retain evaluator scores and reasoning while backend feedback updates are polled, preventing completed results from appearing blank.
 - Outbound model calls that route through a forward proxy now send the original hostname in the proxy CONNECT tunnel instead of a resolved IP, so proxies that allowlist tunnel targets by domain no longer reject them. This fixes self-hosted Playground and evaluator calls to internal OpenAI-compatible endpoints reachable only through such a proxy.
@@ -318,9 +652,9 @@ If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/sel
 - Disabled Create Agent and Create Skill buttons now explain which required details need to be added.
 - Playground batch and invoke endpoints now sanitize buffered run trees into JSON-safe payloads before responding, so online evaluations no longer fail with opaque 500s when a run graph cannot be serialized.
 - The prompts list no longer displays a persistent LangChain Hub banner at the bottom of the page.
-- Claude models on Vertex AI now load successfully in the Playground when no credentials secret is configured, matching existing Gemini behavior under GCP Workload Identity or AWS IRSA.
+- Claude models on Gemini Enterprise Agent Platform now load successfully in the Playground when no credentials secret is configured, matching existing Gemini behavior under GCP Workload Identity or AWS IRSA.
 - The Prompts page now supports filtering by prompt type, prompt tags, and commit tags, so you can quickly narrow the list down to the prompts you're looking for.
-- Model configurations now show an inline error, instead of a silent save, when a required Bedrock, Azure OpenAI, or Vertex AI provider field is left blank.
+- Model configurations now show an inline error, instead of a silent save, when a required Bedrock, Azure OpenAI, or Gemini Enterprise Agent Platform provider field is left blank.
 - The Playground now reports missing AWS credentials and other Bedrock rejections as request errors with the provider's own message, instead of a generic server error.
 - Context Hub and Fleet now reject noncanonical, nonportable, or conflicting file trees before saving changes. Existing malformed repositories remain readable and accept only changes that repair the complete resulting tree; they may also be deleted as a whole.
 - Context Hub repositories containing legacy files beneath linked directories can now be read, materialized, cloned, and edited. Reads use the linked directory contents, and the next successful edit removes conflicting legacy entries without changing linked repositories.
@@ -784,9 +1118,9 @@ If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/sel
 
 ## Prompts and playground
 
-- Claude models on Vertex AI now load successfully in the Playground when no credentials secret is configured, matching existing Gemini behavior under GCP Workload Identity or AWS IRSA.
+- Claude models on Gemini Enterprise Agent Platform now load successfully in the Playground when no credentials secret is configured, matching existing Gemini behavior under GCP Workload Identity or AWS IRSA.
 - The Prompts page now supports filtering by prompt type, prompt tags, and commit tags, so you can quickly narrow the list down to the prompts you're looking for.
-- Model configurations now show an inline error, instead of a silent save, when a required Bedrock, Azure OpenAI, or Vertex AI provider field is left blank.
+- Model configurations now show an inline error, instead of a silent save, when a required Bedrock, Azure OpenAI, or Gemini Enterprise Agent Platform provider field is left blank.
 - Studio's chat pane no longer shows a 'No data' placeholder between sending a message and the first streamed token. The assistant message now appears once it has content to show.
 - The Playground now reports missing AWS credentials and other Bedrock rejections as request errors with the provider's own message, instead of a generic server error.
 - Studio chat now shows elapsed response status, preserves complete streamed responses, and follows new output without interrupting readers who scroll up.
@@ -1151,7 +1485,7 @@ If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/sel
 - Self-hosted Playground and evaluator outbound model calls now honor proxy environment variables while preserving SSRF validation on every request.
 - When you save a prompt to an application from the playground, LangSmith keeps the workspace application filter on All Applications instead of switching the rest of the UI to that application.
 - Typing a workspace member's name or email in the [Context Hub](/langsmith/prompt-context-hub#context-hub) search box now also returns the prompts and resources they created.
-- The playground now includes Claude Sonnet 5, Claude Fable 5, and Claude Opus 4.8 in the Anthropic, Bedrock, and Vertex AI model selectors. New Anthropic playground sessions default to Claude Sonnet 5.
+- The playground now includes Claude Sonnet 5, Claude Fable 5, and Claude Opus 4.8 in the Anthropic, Bedrock, and Gemini Enterprise Agent Platform model selectors. New Anthropic playground sessions default to Claude Sonnet 5.
 - Playground and evaluator calls to Amazon Bedrock using IAM Trusted Entity now resolve the correct LangSmith AWS credentials before assuming customer roles in AWS-hosted LangSmith. This fixes failures that reported "Failed to assume role" before the customer role was assumed.
 - Playground runs now retain evaluator scores and reasoning while backend feedback updates are polled, preventing completed results from appearing blank.
 - Outbound model calls that route through a forward proxy now send the original hostname in the proxy CONNECT tunnel instead of a resolved IP, so proxies that allowlist tunnel targets by domain no longer reject them. This fixes self-hosted Playground and evaluator calls to internal OpenAI-compatible endpoints reachable only through such a proxy.
@@ -1359,7 +1693,7 @@ If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/sel
 - Self-hosted Playground and evaluator outbound model calls now honor proxy environment variables while preserving SSRF validation on every request.
 - When you save a prompt to an application from the playground, LangSmith keeps the workspace application filter on All Applications instead of switching the rest of the UI to that application.
 - Typing a workspace member's name or email in the Context Hub search box now also returns the prompts and resources they created.
-- The playground now includes Claude Sonnet 5, Claude Fable 5, and Claude Opus 4.8 in the Anthropic, Bedrock, and Vertex AI model selectors. New Anthropic playground sessions default to Claude Sonnet 5.
+- The playground now includes Claude Sonnet 5, Claude Fable 5, and Claude Opus 4.8 in the Anthropic, Bedrock, and Gemini Enterprise Agent Platform model selectors. New Anthropic playground sessions default to Claude Sonnet 5.
 - Playground and evaluator calls to Amazon Bedrock using IAM Trusted Entity now resolve the correct LangSmith AWS credentials before assuming customer roles in AWS-hosted LangSmith. This fixes failures that reported "Failed to assume role" before the customer role was assumed.
 - Outbound model calls that route through a forward proxy now send the original hostname in the proxy CONNECT tunnel instead of a resolved IP, so proxies that allowlist tunnel targets by domain no longer reject them. This fixes self-hosted Playground and evaluator calls to internal OpenAI-compatible endpoints reachable only through such a proxy.
 - Reviewing a prompt commit now displays every extra parameter (such as verbosity) set on the model, not just a fixed subset.
@@ -1511,7 +1845,7 @@ If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/sel
 - Self-hosted [Playground](/langsmith/playground-model-providers) and evaluator outbound model calls now honor proxy environment variables while preserving SSRF validation on every request.
 - When you save a prompt to an application from the playground, LangSmith keeps the workspace application filter on All Applications instead of switching the rest of the UI to that application.
 - Typing a workspace member's name or email in the [Context Hub](/langsmith/prompt-context-hub#context-hub) search box now also returns the prompts and resources they created.
-- The playground now includes Claude Sonnet 5, Claude Fable 5, and Claude Opus 4.8 in the Anthropic, Bedrock, and Vertex AI model selectors. New Anthropic playground sessions default to Claude Sonnet 5.
+- The playground now includes Claude Sonnet 5, Claude Fable 5, and Claude Opus 4.8 in the Anthropic, Bedrock, and Gemini Enterprise Agent Platform model selectors. New Anthropic playground sessions default to Claude Sonnet 5.
 
 ### Feedback
 
@@ -1637,7 +1971,7 @@ If you use self-hosted LangSmith, see the [self-hosted changelog](/langsmith/sel
 
 ### LLM Gateway
 
-- The [LLM gateway](/langsmith/llm-gateway) now supports native Gemini routes for Vertex AI and the OpenAI embeddings endpoint.
+- The [LLM gateway](/langsmith/llm-gateway) now supports native Gemini routes for Gemini Enterprise Agent Platform and the OpenAI embeddings endpoint.
 - [Gateway guard](/langsmith/llm-gateway) policies now accept a granular PII configuration and a configurable timeout action.
 
 ### Usage and billing
