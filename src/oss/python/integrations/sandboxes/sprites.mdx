@@ -1,0 +1,99 @@
+---
+title: SpritesSandbox integration
+description: Integrate with the SpritesSandbox sandbox backend using LangChain Python.
+integration:
+  name: SpritesSandbox
+  pypi: langchain-sprites
+---
+
+[Fly.io Sprites](https://fly.io/sprites) provides persistent, named Linux VMs that start in 1-2 seconds, suspend automatically when idle, and support fast checkpoint and restore of the full machine state. See the [Sprites docs](https://docs.sprites.dev) for signup, authentication, and platform details.
+
+## Installation
+
+<CodeGroup>
+```bash pip
+pip install langchain-sprites
+```
+
+```bash uv
+uv add langchain-sprites
+```
+</CodeGroup>
+
+## Create a sandbox backend
+
+In Python, you create the Sprite using the provider SDK, then wrap it with the [deepagents backend](/oss/deepagents/backends).
+
+```python
+import os
+
+from sprites import SpritesClient
+
+from langchain_sprites import SpritesSandbox
+
+client = SpritesClient(os.environ["SPRITES_TOKEN"])
+sprite = client.create_sprite("my-agent-sandbox")
+backend = SpritesSandbox(sprite=sprite)
+
+result = backend.execute("echo hello")
+print(result.output)
+```
+
+## Use with Deep Agents
+
+```python
+import os
+
+from langchain_anthropic import ChatAnthropic
+from sprites import SpritesClient
+
+from deepagents import create_deep_agent
+from langchain_sprites import SpritesSandbox
+
+client = SpritesClient(os.environ["SPRITES_TOKEN"])
+sprite = client.create_sprite("my-agent-sandbox")
+backend = SpritesSandbox(sprite=sprite)
+
+agent = create_deep_agent(
+    model=ChatAnthropic(model="claude-sonnet-4-5"),
+    system_prompt="You are a coding assistant with sandbox access.",
+    backend=backend,
+)
+
+result = agent.invoke(
+    {
+        "messages": [
+            {"role": "user", "content": "Create a hello world Python script and run it"}
+        ]
+    }
+)
+```
+
+## Persistence and checkpoints
+
+Sprites are named and persistent. If you do not destroy the Sprite, it suspends when idle and resumes with all files and installed packages intact:
+
+```python
+# Reconnect to an existing Sprite by name
+sprite = client.sprite("my-agent-sandbox")
+backend = SpritesSandbox(sprite=sprite)
+```
+
+Use the `sprite` property to access the SDK for checkpoint and restore:
+
+```python
+backend.sprite.create_checkpoint("before agent run")
+checkpoints = backend.sprite.list_checkpoints()
+
+# Roll back the full machine state
+backend.sprite.restore_checkpoint(checkpoints[0].id)
+```
+
+## Cleanup
+
+You are responsible for managing the sandbox lifecycle via the Sprites SDK.
+A suspended Sprite has no cost. When you no longer need the Sprite, destroy it:
+
+```python
+sprite.destroy()
+```
