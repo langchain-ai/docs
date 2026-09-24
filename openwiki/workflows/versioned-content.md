@@ -1,14 +1,13 @@
 ---
 type: authoring workflow
-title: Versioned Content Workflow
-description: A practical procedure for authoring documentation that emits Python and JavaScript variants. Covers source ownership, conditional blocks, language-aware links and snippets, navigation, redirects, and output checks.
+title: Changing versioned content
+description: A safe procedure for changing documentation that emits Python and JavaScript variants. Covers source ownership, conditional blocks, language-aware links and snippets, navigation, redirects, and output inspection.
 tags: [versioning, conditional-rendering, markdown, snippets, package-validation, navigation]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-23T08:21:36.095Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
+  - id: openwiki-source-8037e2358a2c4f9b2c722a11
+    resource: repo://AGENTS.md
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
   - id: openwiki-source-d0cdf44431684bdedf34705a
@@ -27,10 +26,13 @@ sources:
     resource: repo://tests/unit_tests/test_builder.py
   - id: openwiki-source-607673c5c40214b511f9e0a7
     resource: repo://tests/unit_tests/test_check_version_claims.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-24T08:22:38.580Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
 ---
 
-# Versioned Content Workflow
+# Changing versioned content
 
 Versioned documentation keeps shared prose in one source while the builder emits language-specific artifacts. Make three independent decisions: **source ownership** determines where an authored file belongs, **emitted routes** determine what the builder writes, and **navigation and redirects** determine how readers discover or reach routes. Work in `src/`, not `build/`: a full build clears and recreates generated output.
 
@@ -127,7 +129,7 @@ This is displayed literally.
 \:::
 ````
 
-Opening and closing markers need matching indentation. The first eligible closing marker ends a regex match, so use ordinary prose or a separate escaped example rather than trying to express nesting.
+Use matching indentation for readable source, but do not depend on indentation as a structural guard: the regex can retry from the opening marker and accept a differently indented close. The first eligible closing marker ends a match, so use ordinary prose or a separate escaped example rather than trying to express nesting.
 
 ## 3. Author links and reusable snippets for the active variant
 

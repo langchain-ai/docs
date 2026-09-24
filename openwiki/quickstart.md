@@ -3,9 +3,6 @@ type: contributor guide
 title: Quickstart
 description: Set up a local documentation preview, choose the authored owner for a change, respect generated-content boundaries, and run the smallest relevant validation.
 tags: [quickstart, documentation, development, validation, mintlify]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-23T08:21:36.095Z
 sources:
   - id: openwiki-source-4d9cccca7700db7220ec055e
     resource: repo://.github/workflows/_test.yml
@@ -27,7 +24,10 @@ sources:
     resource: repo://scripts/test_code_samples.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
-generated: { by: "openwiki/0.4.3", at: "2026-09-23T08:21:36.095Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-24T08:22:38.580Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
 ---
 
 # Quickstart
@@ -126,10 +126,13 @@ Core CI runs on pushes to `main`, pull requests, and manual dispatch. It invokes
 
 ## Task-routing map
 
-- [Source Directory Map](/openwiki/architecture/source-map.md) — source ownership, routes, navigation, redirects, and generated API surfaces.
-- [Adding and Maintaining Documentation Pages](/openwiki/operations/adding-pages.md) — page lifecycle, frontmatter, navigation, redirects, and generated-content procedures.
-- [Agent Authoring Skills](/openwiki/operations/agent-skills.md) — choose, distribute, or change task-specific agent procedures.
 - [Local Development Workflow](/openwiki/workflows/local-development.md) — preview lifecycle, rebuild recovery, and route inspection.
-- [Testing Overview](/openwiki/testing/test-overview.md) — focused test commands, toolchain, and CI triage.
+- [Source Directory Map](/openwiki/architecture/source-map.md) — source ownership, emitted routes, navigation, redirects, and deployment-generated API surfaces.
+- [Adding and Maintaining Documentation Pages](/openwiki/operations/adding-pages.md) — add, move, retire, or regroup a page without losing navigation or public routes.
+- [Changing Versioned Content](/openwiki/workflows/versioned-content.md) — shared versus language-specific changes and output-variant inspection.
+- [Build System Architecture](/openwiki/architecture/build-system.md) and [Preprocessing](/openwiki/concepts/preprocessing.md) — builder orchestration, copied inputs, and transformations.
+- [Testing Overview](/openwiki/testing/test-overview.md) and [Builder Tests](/openwiki/testing/builder-tests.md) — choose a validation boundary or change pipeline behavior safely.
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md) — CI gates, scheduled writers, secrets, and automation changes.
+- [Agent Authoring Skills](/openwiki/operations/agent-skills.md) — select, distribute, or change task-specific procedures.
 - [Code Sample Lifecycle](/openwiki/workflows/code-sample-lifecycle.md) — runnable samples, snippet extraction, tracing, and generated sample output.
+- [Integration Listing Automation](/openwiki/workflows/integration-listing-automation.md) — integration metadata, generated listings, and review automation.
