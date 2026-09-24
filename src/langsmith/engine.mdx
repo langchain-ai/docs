@@ -8,6 +8,8 @@ LangSmith Engine helps you ship more reliable agents without manually searching 
 
 ## How Engine works
 
+### The issue lifecycle
+
 Each issue moves through a closed loop in which Engine:
 
 1. Detects a recurring issue in your traces.
@@ -30,9 +32,7 @@ flowchart LR
     classDef decision fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
 ```
 
-This page covers how to set up and configure Engine, control costs, and work through the fix and evaluation loop.
-
-## How Engine samples and prioritizes traces
+### How Engine selects traces
 
 Engine analyzes both trace content and run feedback when selecting and ranking traces for each scan. It treats feedback—including online evaluator scores, annotation queue scores, and user feedback submitted via the SDK—as a high-priority signal, not supplementary data.
 
@@ -44,9 +44,9 @@ To apply this signal, Engine:
 
 Any source that writes feedback to a run contributes to this prioritization automatically. Engine requires no setup beyond evaluators or annotation queues.
 
-## Set up and configure Engine
+## Set up Engine
 
-Setting up Engine is a two-step process: an [Organization Admin](/langsmith/rbac#organization-admin) first enables Engine for the [workspace](/langsmith/administration-overview#workspaces), then any user can configure Engine for each tracing project.
+Setting up Engine is a two-step process: an [Organization Admin](/langsmith/rbac#organization-admin) first enables Engine for the [workspace](/langsmith/administration-overview#workspaces), then any user can turn on Engine for each tracing project.
 
 <Note>
 On Self-hosted LangSmith, an operator must enable Engine in the LangSmith Helm chart before either step is available. Refer to [Engine on Self-hosted](/langsmith/engine-self-hosted).
@@ -74,7 +74,7 @@ Once Engine is enabled, any team member in your organization can set it up for t
   If you want to turn off Engine, toggle the same setting to off. This will stop all automatic runs of Engine and discontinue future billing in your account.
 </Tip>
 
-### Set up Engine for a tracing project
+### Turn on Engine for a tracing project
 
 <Steps>
   <Step title="Open Engine and select a project">
@@ -110,9 +110,9 @@ Once Engine is enabled, any team member in your organization can set it up for t
   />
 </Frame>
 
-You can change any of these choices later from the [**Engine Settings**](#configure-engine) panel.
+You can change any of these choices later in [Configure Engine](#configure-engine). To connect GitHub, see [Connect Engine to GitHub](/langsmith/engine-github). To get alerted in Slack or through a webhook when Engine finds issues, see [Engine notifications](/langsmith/engine-notifications).
 
-### Configure Engine
+## Configure Engine
 
 <Note>
 Engine uses **LangChain-managed inference** exclusively. Bring Your Own Key (BYOK) is not supported; you cannot supply your own provider API keys for Engine.
@@ -149,7 +149,7 @@ Add scope conditions with the filter editor. You can add one condition of each k
 To add a condition, choose its kind from the field selector, fill in the values, then click **Add**. Each condition appears as a chip, for example `Run Name is chatbot` or `env is prod`. Click the **×** on a chip to remove that condition.
 
 <Note>
-**Scope limitation:** The scope filter only accepts run name and metadata conditions. You cannot scope Engine's scan by feedback key, evaluator name, or score threshold. To focus Engine on traces with a specific evaluator's low scores, use the [**Preferences** and **Agent overview** settings](#configure-engine) to tell Engine what to prioritize. Engine already factors in all feedback signals automatically. See [How Engine samples and prioritizes traces](#how-engine-samples-and-prioritizes-traces).
+**Scope limitation:** The scope filter only accepts run name and metadata conditions. You cannot scope Engine's scan by feedback key, evaluator name, or score threshold. To focus Engine on traces with a specific evaluator's low scores, use the [**Preferences** and **Agent overview** settings](#configure-engine) to tell Engine what to prioritize. Engine already factors in all feedback signals automatically. See [How Engine samples and prioritizes traces](#how-engine-selects-traces).
 </Note>
 
 Scope determines which traces Engine analyzes to detect issues and build the agent overview document. Scope set during initial setup applies to Engine's first scan. Scope changed later in the [**Engine Settings**](#configure-engine) panel does not re-run Engine immediately; it applies on the next scan.
@@ -187,7 +187,9 @@ To stop Engine entirely, use the **Enable Engine** toggle in **Settings > Engine
 
 To monitor usage, you can view your organization's monthly LCU spend on the **Engine enablement** page in **Settings**, or view per-project spend in the [**Engine Settings**](#configure-engine) panel for each tracing project.
 
-## Browse and filter issues
+## Filter and sort issues
+
+### In the UI
 
 Once setup is complete, the **Engine** page displays a list of automatically detected issues in the left panel. Each entry shows a title, a short description, the number of contributing traces, and how recently the issue was observed. Each issue is tagged with a failure category, such as **Silent tool error** or **Hallucination**. For the full list of categories Engine assigns, with descriptions and detection methods, see [Engine issue categories](/langsmith/engine-issue-categories).
 
@@ -197,15 +199,24 @@ At the top of the list, you can click:
 - **Sort issues** icon to sort by **Severity**, **Last Updated**, and **Created**.
 - **Configure Engine** to [configure Engine](#configure-engine).
 
-Click any issue to display its details in the right panel.
-
 Open [LangSmith Chat](/langsmith/chat#engine) to ask questions across your issues, for example, which issues need the most attention or how many new issues are open.
 
 If no issues appear after setup completes, Engine found no recurring patterns in the analyzed traces. Try checking back after more traces have been collected.
 
-## Review an issue
+### With the CLI
 
-Click any issue in the list to open its detail panel. At the top, a diagnosis describes the problem and its impact.
+Use `langsmith project issues list` in the [LangSmith CLI](/langsmith/cli) to list a project's issues. Filter with `--status` (`open`, `fixing`, `watching`, `completed`, or `ignored`) and `--priority` (`urgent`, `high`, `medium`, or `low`), and page with `--limit` and `--offset`.
+
+```bash
+# List open, high-priority issues for a project
+langsmith project issues list --project <project-name> --status open --priority high
+```
+
+## Investigate and fix an issue
+
+Click any issue in the list to open its detail panel. At the top, a diagnosis describes the problem and its impact. Each issue has a toolbar for setting its priority, closing or reopening it, opening a pull request, creating a Linear issue, and watching it.
+
+### Review evidence
 
 The **Evidence** section contains traces that support a diagnosis, including a snippet from each trace. From this section, you can:
 
@@ -219,15 +230,20 @@ Engine keeps tracking an issue after it is filed. On later scans, any new trace 
 
 The **Proposed Fix** section describes the issue and suggests how to address it, which may include specific code or prompt changes if a repository is connected.
 
-## Take action on an issue
-
-Each issue has a toolbar for opening or viewing a pull request, creating a Linear issue, watching the issue, closing it (resolve or mark as incorrectly flagged), and setting its priority.
-
-### Change priority
+### Change priority and status
 
 Select **Low**, **Medium**, or **High** from the priority dropdown to update an issue's priority. You can optionally provide a reason, which feeds back into Engine to help improve its analysis over time.
 
-### Open or view a pull request
+Closing records the outcome of your review. Click:
+
+- **Close** to mark the issue as resolved.
+- **Incorrectly Flagged** to dismiss the issue as not real or not worth fixing.
+
+For either outcome, you can optionally provide a reason, which feeds back into Engine's analysis.
+
+You can reopen a closed issue at any time. Click **Reopen** to clear any fix in progress and stop watching the issue if it was being watched. Engine also reopens an issue automatically when it detects the same problem recurring in a later trace.
+
+### Open a pull request
 
 Click **Open PR** to open a GitHub pull request with the proposed code change in your connected repository. Connect a repository first if you haven't. Once a pull request exists, Engine replaces **Open PR** with **View PR #\<number\>**. Click **View PR #\<number\>** to open the pull request in GitHub. Engine reflects the PR's status (open, merged, or closed) throughout the issue. You can also copy the issue's fix context to your clipboard for use with an LLM or coding assistant. Engine can propose code changes to any connected repository, including agents built with [Deep Agents](/oss/deepagents/overview), [LangChain](/oss/langchain/overview), and [LangGraph](/oss/langgraph/overview).
 
@@ -241,7 +257,7 @@ The Linear issue includes the Engine issue title and description, severity, cate
 
 ### Add offline examples
 
-This step captures the traces that surfaced the issue as ground-truth [dataset examples](/langsmith/manage-datasets), so you can evaluate the fix offline before it reaches production. You can also start this from the **Evidence** section further down the page.
+This step captures the traces that surfaced the issue as ground-truth [dataset examples](/langsmith/manage-datasets), so you can evaluate the fix offline before it reaches production.
 
 1. Click **Add offline examples** at the top right of the **Evidence** list to open the **Add as offline example** dialog.
 2. Review each trace. The dialog shows the input, the wrong output the agent produced, and the proposed expected output as a custom ground truth example.
@@ -250,41 +266,17 @@ This step captures the traces that surfaced the issue as ground-truth [dataset e
 
 For more information, refer to [Manage datasets](/langsmith/manage-datasets), [Use annotation queues](/langsmith/annotation-queues), and [Use assertions](/langsmith/assertions).
 
-### Watch: keep an eye on an issue
+### Watch an issue
 
 Watching keeps an issue open for monitoring without resolving it or marking it as incorrectly flagged. Click **Watch** when you are not ready to fix an issue but still want to know if it keeps happening.
 
-To be alerted when a watched issue recurs, click **Alert me via Slack**, which opens the **Notifications** section of the [Engine Settings](#configure-engine) panel.
+To be alerted when a watched issue recurs, click **Alert me via Slack**, which opens the **Notifications** section of the [Engine Settings](#configure-engine) panel. See [Engine notifications](/langsmith/engine-notifications).
 
 When new traces link to a watched issue, Engine moves it to the top of your list and shows how many new traces arrived, so you can pick up the fix or keep watching.
 
 <Note>
 Watching is only available for open issues without a pull request in flight: discard the fix to watch an issue again. Resolving a watched issue, or marking it as incorrectly flagged, automatically stops watching it.
 </Note>
-
-### Close or reopen an issue
-
-Closing records the outcome of your review. Click:
-
-- **Close** to mark the issue as resolved.
-- **Incorrectly Flagged** to dismiss the issue as not real or not worth fixing.
-
-For either outcome, you can optionally provide a reason, which feeds back into Engine's analysis.
-
-You can reopen a closed issue at any time. Click **Reopen** to clear any fix in progress and stop watching the issue if it was being watched. Engine also reopens an issue automatically when it detects the same problem recurring in a later trace.
-
-## List issues via the CLI
-
-You can list issues programmatically using the [LangSmith CLI](/langsmith/cli).
-
-```bash
-# List issues for a project
-langsmith project issues list --project <project-name>
-```
-
-## Get notified about new issues
-
-Engine can notify a Slack channel or an HTTP webhook endpoint when it opens a new issue, links a new trace to an existing issue, or fails to complete a run. Add destinations under **Notifications** in the [**Engine Settings**](#configure-engine) panel. For Slack setup, webhook delivery and signing, and the event payload reference, see [Engine notifications](/langsmith/engine-notifications).
 
 ## See also
 
