@@ -210,7 +210,48 @@ When the `when` predicate returns `False`, the call runs without interrupting. W
 :::
 
 :::js
-Conditional interrupts are currently available in Python only.
+<Note>
+Conditional interrupts require `langchain>=1.5.11`.
+</Note>
+
+```typescript
+import { createAgent, humanInTheLoopMiddleware } from "langchain";
+import type { ToolCallRequest } from "langchain";
+import { MemorySaver } from "@langchain/langgraph-checkpoint";
+
+// Pause writes to paths outside the workspace directory.
+const writesOutsideWorkspace = (request: ToolCallRequest) =>
+  !String(request.toolCall.args.path ?? "").startsWith("/workspace/");
+
+// Pause SQL that isn't a read-only SELECT.
+const isWriteQuery = (request: ToolCallRequest) =>
+  !String(request.toolCall.args.query ?? "")
+    .trimStart()
+    .toUpperCase()
+    .startsWith("SELECT");
+
+const agent = createAgent({
+  model: "gpt-5.5",
+  tools: [writeFile, executeSql, readData],
+  middleware: [
+    humanInTheLoopMiddleware({
+      interruptOn: {
+        write_file: {
+          allowedDecisions: ["approve", "edit", "reject"],
+          when: writesOutsideWorkspace,
+        },
+        execute_sql: {
+          allowedDecisions: ["approve", "reject"],
+          when: isWriteQuery,
+        },
+      },
+    }),
+  ],
+  checkpointer: new MemorySaver(),
+});
+```
+
+When the `when` predicate returns `false`, the call runs without interrupting. When it returns `true`, or when you omit `when`, the call pauses as usual. Calls that evaluate to `false` are never added to the interrupt batch, so a reviewer only sees the actions that need a decision.
 :::
 
 ## Responding to interrupts
