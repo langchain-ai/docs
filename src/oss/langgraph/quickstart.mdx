@@ -7,6 +7,11 @@ import InstallLangchainSkillsPrompt from '/snippets/install-langchain-skills-pro
 
 This quickstart demonstrates how to build a calculator agent using the LangGraph Graph API or the Functional API.
 
+- [Use the Graph API](#use-the-graph-api) if you prefer to define your agent as a graph of nodes and edges.
+- [Use the Functional API](#use-the-functional-api) if you prefer to define your agent as a single function.
+
+Not sure which to pick? See [Choosing between Graph and Functional APIs](/oss/langgraph/choosing-apis). For conceptual information, see [Graph API overview](/oss/langgraph/graph-api) and [Functional API overview](/oss/langgraph/functional-api).
+
 <Prompt
     description="Build the LangGraph calculator quickstart"
     icon="sparkles"
@@ -33,7 +38,9 @@ This quickstart uses Anthropic by default. Check whether `ANTHROPIC_API_KEY` is 
 
 ## Step 4: Implement the calculator agent
 
-Implement the selected quickstart path end to end: tools for add, multiply, and divide; the agent graph or functional workflow; and a sample invocation that exercises tool calling. Print the final result so the user can verify the run.
+Define tools and model, then the Graph API nodes/edges or Functional API tasks and agent.
+2. Optionally enable LangSmith tracing by asking the user to set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` themselves.
+3. Invoke the agent on a sample arithmetic query from the guide and print the final result.
 
 ## Rules
 
@@ -53,14 +60,34 @@ Implement the selected quickstart path end to end: tools for add, multiply, and 
       <InstallLangchainSkillsPrompt />
 </Tip>
 
-- [Use the Graph API](#use-the-graph-api) if you prefer to define your agent as a graph of nodes and edges.
-- [Use the Functional API](#use-the-functional-api) if you prefer to define your agent as a single function.
+## Prerequisites
 
-For conceptual information, see [Graph API overview](/oss/langgraph/graph-api) and [Functional API overview](/oss/langgraph/functional-api).
+Before you begin, make sure you have an API key from a model provider (e.g., Gemini, Anthropic, OpenAI).
+See [chat model integrations](/oss/integrations/chat) for all available providers. If you use [LangSmith Gateway](/langsmith/llm-gateway), you can [bring your own provider keys](/langsmith/llm-gateway-quickstart) or use [Gateway Credits](/langsmith/llm-gateway-credits) to access models without a provider key.
 
-<Info>
-For this example, you will need to set up a [Claude (Anthropic)](https://www.anthropic.com/) account and get an API key. Then, set the `ANTHROPIC_API_KEY` environment variable in your terminal. See [chat model integrations](/oss/integrations/chat) for all available providers. If you use [LangSmith Gateway](/langsmith/llm-gateway), you can [bring your own provider keys](/langsmith/llm-gateway-quickstart) or use [Gateway Credits](/langsmith/llm-gateway-credits) to access models without a provider key.
-</Info>
+## Setup
+
+:::python
+Install `langgraph` and `langchain`:
+
+<CodeGroup>
+```bash pip
+pip install -U langgraph langchain
+```
+
+```bash uv
+uv add langgraph langchain
+```
+</CodeGroup>
+:::
+
+:::js
+Install `@langchain/langgraph`, `@langchain/core`, and `langchain`:
+
+```bash
+npm install @langchain/langgraph @langchain/core langchain
+```
+:::
 
 <Tabs>
 <Tab title="Use the Graph API">
@@ -379,7 +406,7 @@ const shouldContinue: ConditionalEdgeRouter<{ InputSchema: typeof MessagesState;
 
 ## 6. Build and compile the agent
 
-The agent is built using the @[`StateGraph`] class and compiled using the @[`compile`][StateGraph.compile] method.
+Build the agent with @[`StateGraph`] and compile it with @[`compile`][StateGraph.compile]:
 
 :::python
 
@@ -402,17 +429,6 @@ agent_builder.add_edge("tool_node", "llm_call")
 
 # Compile the agent
 agent = agent_builder.compile()
-
-# Show the agent
-from IPython.display import Image, display
-display(Image(agent.get_graph(xray=True).draw_mermaid_png()))
-
-# Invoke
-from langchain.messages import HumanMessage
-messages = [HumanMessage(content="Add 3 and 4.")]
-messages = agent.invoke({"messages": messages})
-for m in messages["messages"]:
-    m.pretty_print()
 ```
 :::
 
@@ -426,9 +442,39 @@ const agent = new StateGraph(MessagesState)
   .addConditionalEdges("llmCall", shouldContinue, ["toolNode", END])
   .addEdge("toolNode", "llmCall")
   .compile();
+```
+:::
 
-// Invoke
+## 7. Set up LangSmith tracing
+
+[LangSmith](https://smith.langchain.com) shows tool calls and model responses as the agent runs.
+
+Sign up at [smith.langchain.com](https://smith.langchain.com), create an API key, and set these environment variables:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY="your-langsmith-api-key"
+```
+
+## 8. Run the agent
+
+:::python
+
+```python
+from langchain.messages import HumanMessage
+
+messages = [HumanMessage(content="Add 3 and 4.")]
+messages = agent.invoke({"messages": messages})
+for m in messages["messages"]:
+    m.pretty_print()
+```
+:::
+
+:::js
+
+```typescript
 import { HumanMessage } from "@langchain/core/messages";
+
 const result = await agent.invoke({
   messages: [new HumanMessage("Add 3 and 4.")],
 });
@@ -438,14 +484,6 @@ for (const message of result.messages) {
 }
 ```
 :::
-
-<Tip>
-Trace and debug your agent with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to get set up. When ready for production, see [Deploy](/langsmith/deployment) for hosting options.
-
-We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
-</Tip>
-
-Congratulations! You've built your first agent using the LangGraph Graph API.
 
 <Accordion title="Full code example">
 :::python
@@ -592,11 +630,11 @@ agent_builder.add_edge("tool_node", "llm_call")
 agent = agent_builder.compile()
 
 
-from IPython.display import Image, display
-# Show the agent
-display(Image(agent.get_graph(xray=True).draw_mermaid_png()))
+# Step 7: Set up LangSmith tracing
+# export LANGSMITH_TRACING=true
+# export LANGSMITH_API_KEY="your-langsmith-api-key"
 
-# Invoke
+# Step 8: Run the agent
 from langchain.messages import HumanMessage
 messages = [HumanMessage(content="Add 3 and 4.")]
 messages = agent.invoke({"messages": messages})
@@ -749,7 +787,11 @@ const agent = new StateGraph(MessagesState)
   .addEdge("toolNode", "llmCall")
   .compile();
 
-// Invoke
+// Step 7: Set up LangSmith tracing
+// export LANGSMITH_TRACING=true
+// export LANGSMITH_API_KEY="your-langsmith-api-key"
+
+// Step 8: Run the agent
 const result = await agent.invoke({
   messages: [new HumanMessage("Add 3 and 4.")],
 });
@@ -954,7 +996,7 @@ const callTool = task({ name: "callTool" }, async (toolCall: ToolCall) => {
 
 :::python
 
-The agent is built using the @[`@entrypoint`] function.
+Define the agent with @[`@entrypoint`].
 
 <Note>
     In the Functional API, instead of defining nodes and edges explicitly, you write standard control flow logic (loops, conditionals) within a single function.
@@ -979,13 +1021,6 @@ def agent(messages: list[BaseMessage]):
 
     messages = add_messages(messages, model_response)
     return messages
-
-# Invoke
-messages = [HumanMessage(content="Add 3 and 4.")]
-stream = agent.stream_events(messages, version="v3")
-for snapshot in stream.values:
-    print(snapshot)
-    print("\n")
 ```
 :::
 
@@ -1012,8 +1047,38 @@ const agent = entrypoint({ name: "agent" }, async (messages: BaseMessage[]) => {
 
   return messages;
 });
+```
+:::
 
-// Invoke
+## 5. Set up LangSmith tracing
+
+[LangSmith](https://smith.langchain.com) shows tool calls and model responses as the agent runs.
+
+Sign up at [smith.langchain.com](https://smith.langchain.com), create an API key, and set these environment variables:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY="your-langsmith-api-key"
+```
+
+## 6. Run the agent
+
+:::python
+
+```python
+from langchain.messages import HumanMessage
+
+messages = [HumanMessage(content="Add 3 and 4.")]
+stream = agent.stream_events(messages, version="v3")
+for snapshot in stream.values:
+    print(snapshot)
+    print("\n")
+```
+:::
+
+:::js
+
+```typescript
 import { HumanMessage } from "@langchain/core/messages";
 
 const result = await agent.invoke([new HumanMessage("Add 3 and 4.")]);
@@ -1023,14 +1088,6 @@ for (const message of result) {
 }
 ```
 :::
-
-<Tip>
-Trace and debug your agent with [LangSmith](https://smith.langchain.com). Follow the [tracing quickstart](/langsmith/trace-with-langgraph) to get set up. When ready for production, see [Deploy](/langsmith/deployment) for hosting options.
-
-We recommend you also set up [LangSmith Engine](/langsmith/engine) which monitors your traces, detects issues, and proposes fixes.
-</Tip>
-
-Congratulations! You've built your first agent using the LangGraph Functional API.
 
 <Accordion title="Full code example" icon="code">
 :::python
@@ -1142,7 +1199,11 @@ def agent(messages: list[BaseMessage]):
     messages = add_messages(messages, model_response)
     return messages
 
-# Invoke
+# Step 5: Set up LangSmith tracing
+# export LANGSMITH_TRACING=true
+# export LANGSMITH_API_KEY="your-langsmith-api-key"
+
+# Step 6: Run the agent
 messages = [HumanMessage(content="Add 3 and 4.")]
 stream = agent.stream_events(messages, version="v3")
 for snapshot in stream.values:
@@ -1251,8 +1312,11 @@ const agent = entrypoint({ name: "agent" }, async (messages: BaseMessage[]) => {
   return messages;
 });
 
-// Invoke
+// Step 5: Set up LangSmith tracing
+// export LANGSMITH_TRACING=true
+// export LANGSMITH_API_KEY="your-langsmith-api-key"
 
+// Step 6: Run the agent
 const result = await agent.invoke([new HumanMessage("Add 3 and 4.")]);
 
 for (const message of result) {
@@ -1264,4 +1328,15 @@ for (const message of result) {
 </Tab>
 </Tabs>
 
+## Next steps
+
+You now have a working calculator agent. Continue with one of the following subjects:
+
+- **Learn the APIs**: [Choosing between Graph and Functional APIs](/oss/langgraph/choosing-apis), then [Build with the Graph API](/oss/langgraph/use-graph-api) for state and control-flow decisions, or the [Functional API overview](/oss/langgraph/functional-api) for the imperative path.
+- **Add persistence**: Use a [checkpointer](/oss/langgraph/persistence) so runs can pause and resume across sessions.
+- **Add human-in-the-loop**: Pause with [interrupts](/oss/langgraph/interrupts) for approval or edits.
+- **Stream results**: Follow [streaming](/oss/langgraph/streaming) for tokens and state updates.
+- **Go deeper**: [Thinking in LangGraph](/oss/langgraph/thinking-in-langgraph) and [Workflows and agents](/oss/langgraph/workflows-agents).
+- **Deploy**: Host the agent with [LangSmith Deployment](/langsmith/deployment).
+- **Evaluate**: Test behavior with [LangSmith evaluation](/langsmith/evaluation-quickstart).
 
