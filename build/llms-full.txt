@@ -35916,22 +35916,141 @@ Choose a deployment that mirrors the configuration of the agent you want to test
 
 #### Make replayed runs side-effect free
 
-Engine marks every replay in the run's configuration, so your agent can recognize one and respond more conservatively:
+Engine sets `config.configurable.__engine_validation_replay__ = true` on every replay, so your agent can recognize one and respond more conservatively. At the HTTP boundary, validation requests also include `X-LangSmith-Source: engine`. Use the configurable marker in graph code and the header in request middleware.
+
+Use the marker to skip or block tools whose effects leave your agent, such as sending email or messages, charging customers, filing tickets, writing to production data stores, scheduling work, and calling partner APIs.
+
+<Accordion title="Copy-paste allowlist middleware">
+Add the following middleware to your agent project:
 
 ```python
-def is_validation_replay(config: dict) -> bool:
-    return config.get("configurable", {}).get("__engine_validation_replay__") is True
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable, Collection, Mapping
+from typing import Any, cast
+
+from langchain.agents.middleware import AgentMiddleware
+from langchain.messages import ToolMessage
+from langchain.tools.tool_node import ToolCallRequest
+from langchain_core.runnables import RunnableConfig
+from langgraph.types import Command
+
+ENGINE_VALIDATION_CONFIG_KEY = "__engine_validation_replay__"
+LANGGRAPH_AUTH_USER_ID_CONFIG_KEY = "langgraph_auth_user_id"
+
+
+def _configurable(config: RunnableConfig | None) -> Mapping[str, object]:
+    configurable = (config or {}).get("configurable")
+    return configurable if isinstance(configurable, Mapping) else {}
+
+
+def is_engine_validation(config: RunnableConfig | None) -> bool:
+    """Return whether the caller requested reduced-privilege validation mode."""
+    return _configurable(config).get(ENGINE_VALIDATION_CONFIG_KEY) is True
+
+
+def is_trusted_engine_validation(
+    config: RunnableConfig | None,
+    *,
+    expected_user_id: str,
+) -> bool:
+    """Verify the validation marker and authenticated Engine identity."""
+    configurable = _configurable(config)
+    return (
+        bool(expected_user_id)
+        and configurable.get(ENGINE_VALIDATION_CONFIG_KEY) is True
+        and configurable.get(LANGGRAPH_AUTH_USER_ID_CONFIG_KEY) == expected_user_id
+    )
+
+
+def _request_config(request: ToolCallRequest) -> RunnableConfig | None:
+    runtime = getattr(request, "runtime", None)
+    config = getattr(runtime, "config", None)
+    return cast(RunnableConfig, config) if isinstance(config, dict) else None
+
+
+class EngineValidationSafetyMiddleware(AgentMiddleware):
+    """Allow only explicitly safe tools during Engine validation."""
+
+    def __init__(self, *, safe_tools: Collection[str]) -> None:
+        self._safe_tools = frozenset(safe_tools)
+
+    def _rejection(self, request: ToolCallRequest) -> ToolMessage | None:
+        if not is_engine_validation(_request_config(request)):
+            return None
+        call = request.tool_call
+        name = call.get("name") or "tool"
+        if name in self._safe_tools:
+            return None
+        return ToolMessage(
+            content=f"{name} is blocked during Engine validation.",
+            tool_call_id=call["id"],
+            name=name,
+            status="error",
+        )
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
+    ) -> ToolMessage | Command[Any]:
+        rejection = self._rejection(request)
+        return rejection if rejection is not None else handler(request)
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[
+            [ToolCallRequest],
+            Awaitable[ToolMessage | Command[Any]],
+        ],
+    ) -> ToolMessage | Command[Any]:
+        rejection = self._rejection(request)
+        return rejection if rejection is not None else await handler(request)
 ```
 
-At the HTTP boundary, validation requests also include
-`X-LangSmith-Source: engine`. Use the configurable marker in graph code and the
-header in request middleware.
+Register it on every run and allow only tools that are read-only and isolated:
 
-Use the marker to skip or stub the tools whose effects leave your agent, such as sending email or messages, charging customers, filing tickets, writing to production data stores, scheduling work, and calling partner APIs. Return a realistic placeholder result so the rest of the run still exercises the behavior Engine is testing.
+```python
+from langchain.agents import create_agent
+
+from engine_validation import EngineValidationSafetyMiddleware
+
+agent = create_agent(
+    model=model,
+    tools=[search_catalog, lookup_order, send_message],
+    middleware=[
+        EngineValidationSafetyMiddleware(
+            safe_tools={"search_catalog", "lookup_order"},
+        )
+    ],
+)
+```
+
+Without the replay marker, the middleware passes tool calls through unchanged. During validation, it invokes only tools in `safe_tools` and returns an error `ToolMessage` for every other tool. An empty allowlist blocks all tools.
+</Accordion>
+
+Only allow tools that are read-only and isolated. Do not allow tools that send messages, deliver notifications, schedule or queue work, persist data, or write to external systems.
 
 <Warning>
 Treat the marker and source header as untrusted hints that can only reduce what a run may do. Anything that can reach your deployment can set them, so never use them to grant access, skip authentication, or widen permissions.
 </Warning>
+
+##### Verify trusted Engine context
+
+The replay marker is not proof of identity because any caller can set configurable values. If your deployment reconstructs user context or accesses protected data during validation, verify the authenticated Engine identity first:
+
+```python
+if is_trusted_engine_validation(
+    config,
+    expected_user_id=settings.engine_user_id,
+):
+    context = load_context_from_checkpoint()
+```
+
+Read identity and application context from authenticated runtime configuration and the copied checkpoint. Do not read them from replay input or metadata.
+
+For deployments with [custom authentication](/langsmith/custom-auth), map the authenticated Engine service principal to `langgraph_auth_user_id` in your authentication handler before applying the same check. Authentication headers establish caller identity, while the replay marker activates the reduced-privilege tool policy.
 
 #### Expect a burst of traffic
 
