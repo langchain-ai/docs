@@ -7,7 +7,7 @@ groups them by the category map (which also routes each component to Cloud or
 Fleet), and renders a Mintlify ``<Update>`` block ready to paste into
 ``src/langsmith/changelog.mdx``.
 
-The weekly agent (see ``.claude/skills/changelog-weekly``) runs this, reviews the
+The weekly changelog agent, which runs on Fleet, invokes this, reviews the
 rendered block, and opens a docs PR for human approval.
 
 Readiness:

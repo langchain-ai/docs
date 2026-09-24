@@ -13,7 +13,7 @@ const store = PostgresStore.fromConnString(DB_URI);
 await (
   store as { core: { pool: { query: (q: string) => Promise<unknown> } } }
 ).core.pool.query(
-  "DROP TABLE IF EXISTS public.store_vectors CASCADE; DROP TABLE IF EXISTS public.store CASCADE; DROP TABLE IF EXISTS public.store_migrations CASCADE;",
+  "DROP TABLE IF EXISTS public.store_vectors CASCADE; DROP TABLE IF EXISTS public.store CASCADE; DROP TABLE IF EXISTS public.store_migrations CASCADE; DROP TABLE IF EXISTS public.vector_migrations CASCADE;",
 );
 // :remove-end:
 await store.setup();

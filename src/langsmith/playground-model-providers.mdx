@@ -44,10 +44,10 @@ Use this page for a list of the available providers and their configuration opti
         <span className="font-semibold">Google Gemini</span>
     </a>
 
-    <a href="#google-vertex-ai" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
+    <a href="#gemini-enterprise-agent-platform" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
         <img className="block dark:hidden w-5 h-5" src="/images/providers/light/gemini.svg" alt="" noZoom />
         <img className="hidden dark:block w-5 h-5" src="/images/providers/dark/gemini.svg" alt="" noZoom />
-        <span className="font-semibold">Google Vertex AI</span>
+        <span className="font-semibold">Gemini Enterprise Agent Platform</span>
     </a>
 
     <a href="#groq" className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 no-underline">
@@ -86,16 +86,16 @@ For details on creating and managing model configurations, refer to the [Configu
 
 ## Amazon Bedrock
 
-Before you use this model, ensure you have [AWS credentials or IAM role](https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam.html).
+Before you use this model, ensure you have AWS credentials, an [IAM role](https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam.html), or an [Amazon Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html).
 
 ### Authentication
 
-Amazon Bedrock supports two authentication methods. **IAM trusted entity is the recommended approach** because it avoids sharing long-lived AWS access keys with LangSmith.
+Amazon Bedrock supports three authentication methods. **IAM trusted entity is the recommended approach** because it avoids sharing long-lived AWS access keys with LangSmith.
 
 #### IAM trusted entity (recommended)
 
 <Note>
-**Not applicable for [self-hosted LangSmith](/langsmith/self-hosted).** Use Access Keys (or the Bedrock API Key) instead.
+**Not available for [self-hosted LangSmith](/langsmith/self-hosted) or [BYOC](/langsmith/byoc).** Use access keys or the Bedrock API key instead.
 </Note>
 
 With IAM trusted entity authentication, you create an IAM role in your AWS account and allow LangSmith to assume it. No access keys are stored in LangSmith. Instead, LangSmith uses [AWS STS](https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html) to assume the role on each request.
@@ -138,6 +138,17 @@ For more details on trust policies, see the [AWS documentation](https://aws.amaz
 #### Access keys
 
 Alternatively, you can authenticate with AWS access keys (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`). Enter these in the Bedrock provider configuration in the Playground. This method is simpler to set up but less secure because it requires storing long-lived credentials.
+
+#### Bedrock API key
+
+Bedrock API keys authenticate requests with a bearer token instead of AWS credentials. To configure a Bedrock API key:
+
+1. [Generate an API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) in the Amazon Bedrock console.
+2. In LangSmith, go to **Settings** > **Provider Secrets**, add a new secret, and select **Amazon Bedrock** as the provider.
+3. Select **Bearer token** under **Authentication**.
+4. Enter the API key as `AWS_BEARER_TOKEN_BEDROCK`.
+5. (Optional) Set `AWS_BEDROCK_REGION`. The default is `us-east-1`.
+6. Select **Save**.
 
 ### Available models
 
@@ -229,7 +240,45 @@ When enabled, responses include:
 
 ## Azure OpenAI
 
-Before you use this model, ensure you have [Azure OpenAI credentials](https://learn.microsoft.com/en-us/azure/ai-services/openai/quickstart) (endpoint + API key).
+Before you use this model, create an [Azure OpenAI resource and model deployment](https://learn.microsoft.com/en-us/azure/ai-services/openai/quickstart).
+
+### Authentication
+
+#### API key
+
+In the Azure OpenAI provider configuration, enter your endpoint, deployment name, API version, and API key.
+
+#### Workload identity for self-hosted LangSmith
+
+<Note>
+Azure OpenAI workload identity requires self-hosted LangSmith `0.16.58` or later on Azure Kubernetes Service (AKS).
+</Note>
+
+Use [AKS workload identity](https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview) to authenticate without storing an API key:
+
+1. Enable the OIDC issuer and workload identity on your AKS cluster.
+2. Create or select a user-assigned managed identity.
+3. Add a [federated identity credential](https://learn.microsoft.com/en-us/azure/aks/workload-identity-deploy-cluster#create-the-federated-identity-credential) to the managed identity. Use the AKS OIDC issuer and audience `api://AzureADTokenExchange`. Set its subject to `system:serviceaccount:<namespace>:<playground-service-account-name>`.
+4. Assign the managed identity the least-privilege `Cognitive Services OpenAI User` role. Scope the role to the Azure OpenAI resource. See [Azure OpenAI role-based access control](https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/role-based-access-control).
+5. Add the following values to your LangSmith Helm configuration:
+
+```yaml Helm
+playground:
+  serviceAccount:
+    annotations:
+      azure.workload.identity/client-id: "<managed-identity-client-id>"
+  deployment:
+    labels:
+      azure.workload.identity/use: "true"
+```
+
+In the Azure OpenAI provider configuration, enter the endpoint, deployment name, and API version. Leave the API key empty.
+
+When no explicit API key or token provider is supplied, LangSmith automatically uses the Playground workload identity. It obtains short-lived tokens for Playground invocations and evaluator batch calls. Explicit credentials take precedence over workload identity.
+
+Workload identity tokens are restricted to HTTPS Azure AI and Azure OpenAI endpoints on port `443`. Each configuration must use one supported Azure cloud: public, US Government, or China. LangSmith rejects invalid endpoints and configurations that mix Azure clouds.
+
+For broader AKS deployment guidance, see [Self-host LangSmith on Azure](/langsmith/azure-self-hosted).
 
 ### Available models
 
@@ -354,17 +403,17 @@ For the current list of available models, refer to [Google's Gemini documentatio
 - **Supported Tool Choices:** `auto`, `any`, `none`.
 - **Parallel Execution:** No.
 
-## Google Vertex AI
+## Gemini Enterprise Agent Platform
 
-Before you use this model, ensure you have a [Google Cloud project](https://cloud.google.com/resource-manager/docs/creating-managing-projects) with the [Vertex AI API enabled](https://cloud.google.com/vertex-ai/docs/start/client-libraries).
+Before you use this model, ensure you have a [Google Cloud project](https://cloud.google.com/resource-manager/docs/creating-managing-projects) with the [Gemini Enterprise Agent Platform API enabled](https://docs.cloud.google.com/gemini-enterprise-agent-platform/machine-learning/start/client-libraries).
 
 ### Authentication
 
-Google Vertex AI uses a **service account JSON key** for authentication in the LangSmith Playground. This is a JSON file you download from the Google Cloud Console that contains credentials for a service account with Vertex AI access.
+Gemini Enterprise Agent Platform uses a **service account JSON key** for authentication in the LangSmith Playground. This is a JSON file you download from the Google Cloud Console that contains credentials for a service account with Gemini Enterprise Agent Platform access.
 
 #### Step 1: Create a service account
 
-1. Go to the [Google Cloud Console → IAM & Admin → Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts).
+1. Go to the [Google Cloud Console > IAM & Admin > Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts).
 2. Select your project and click **Create Service Account**.
 3. Give it a name (e.g., `langsmith-vertex-ai`) and click **Create and Continue**.
 4. Assign the role **Vertex AI User** (`roles/aiplatform.user`) and click **Done**.
@@ -372,7 +421,7 @@ Google Vertex AI uses a **service account JSON key** for authentication in the L
 #### Step 2: Download the JSON key
 
 1. Click on the service account you just created.
-2. Go to the **Keys** tab and click **Add Key → Create new key**.
+2. Go to the **Keys** tab and click **Add Key > Create new key**.
 3. Choose **JSON** and click **Create**. A `.json` file will download to your machine.
 
 The downloaded file looks like this:
@@ -392,7 +441,7 @@ The downloaded file looks like this:
 
 #### Step 3: Configure in the LangSmith Playground
 
-In the LangSmith Playground, open the Google Vertex AI provider configuration and paste the **entire contents** of the downloaded JSON key file into the **Service Account JSON** field.
+In the LangSmith Playground, open the Gemini Enterprise Agent Platform provider configuration and paste the **entire contents** of the downloaded JSON key file into the **Service Account JSON** field.
 
 <Warning>
 Treat your service account JSON key like a password. Do not share it or commit it to source control. If a key is compromised, revoke it immediately from the [Google Cloud Console](https://console.cloud.google.com/iam-admin/serviceaccounts) and create a new one.
@@ -400,9 +449,9 @@ Treat your service account JSON key like a password. Do not share it or commit i
 
 ### Available models
 
-Google offers Gemini models in multiple tiers (Ultra, Pro, Flash) optimized for different use cases, plus other models available through Vertex AI.
+Google offers Gemini models in multiple tiers (Ultra, Pro, Flash) optimized for different use cases, plus other models available through Gemini Enterprise Agent Platform.
 
-For the current list of available models, refer to the [Vertex AI documentation](https://cloud.google.com/vertex-ai/docs/generative-ai/models).
+For the current list of available models, refer to the [Gemini Enterprise Agent Platform documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/google-models).
 
 ### Configuration parameters
 

@@ -70,7 +70,7 @@ Catch exceptions raised during tool execution and convert them into error `ToolM
 - Preventing unexpected tool exceptions from crashing the agent.
 
 <Note>
-Tool error middleware does not automatically retry failed calls. For retries, compose with [Tool retry](#tool-retry) middleware placed *inner* (earlier in the `middleware` list) and configured with `on_failure="error"` so that exceptions reach the tool error middleware. See the [full example](#tool-error-full-example) below.
+Tool error middleware does not automatically retry failed calls. For retries, compose with [Tool retry](#tool-retry) middleware placed *inner* (later in the `middleware` list) and configured with `on_failure="error"` so that exceptions reach the tool error middleware. See the [full example](#tool-error-full-example) below.
 </Note>
 
 **API reference:** @[`ToolErrorMiddleware`]
@@ -142,8 +142,8 @@ agent = create_agent(
     tools=[search_tool, database_tool],
     middleware=[
         # Place retry inner so exceptions reach ToolErrorMiddleware after retries are exhausted
-        ToolRetryMiddleware(max_retries=3, on_failure="error"),
         ToolErrorMiddleware(on_error=on_error, tools=["search_tool"]),
+        ToolRetryMiddleware(max_retries=3, on_failure="error"),
     ],
 )
 
@@ -222,8 +222,8 @@ const agent = createAgent({
     Optional list of tools or tool names to apply retry logic to. If `None`, applies to all tools.
 </ParamField>
 
-<ParamField body="retry_on" type="tuple[type[Exception], ...] | callable" default="(Exception,)">
-    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried. By default, all exceptions are retried. Exceptions that do not match propagate immediately and are not handled by `on_failure`.
+<ParamField body="retry_on" type="tuple[type[Exception], ...] | callable" default="default_retry_on">
+    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried. With `langchain>=1.3.16`, the default retries retryable [model errors](/oss/langchain/models#model-exceptions) and all unclassified exceptions, and no longer retries model errors marked non-retryable.
 </ParamField>
 
 <ParamField body="on_failure" type="string | callable" default="continue">
@@ -261,8 +261,8 @@ const agent = createAgent({
     Optional array of tools or tool names to apply retry logic to. Can be a list of `BaseTool` instances or tool name strings. If `undefined`, applies to all tools.
 </ParamField>
 
-<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
-    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
+<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="(error) => getRetryable(error) ?? true">
+    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. With `langchain>=1.5.9`, the default no longer retries errors that are marked non-retryable. Every other error is retried.
 </ParamField>
 
 <ParamField body="onFailure" type="'error' | 'continue' | ((error: Error) => string)" default="continue">
@@ -429,6 +429,62 @@ const strictRetry = toolRetryMiddleware({
 
 </Accordion>
 
+:::js
+#### Mark an error as retryable
+
+<Note>
+Requires `@langchain/core>=1.2.8` and `langchain>=1.5.9`.
+</Note>
+
+Mark an error before throwing it and the retry middleware honors that verdict. This keeps retries from being spent on a failure that repeats identically, such as invalid input or a rejected credential.
+
+Use `stampRetryable` from `@langchain/core/errors`:
+
+```typescript
+import { stampRetryable } from "@langchain/core/errors";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+
+const lookupRecord = tool(
+  async ({ id }) => {
+    const response = await fetch(`https://api.example.com/records/${id}`);
+
+    if (response.status === 422) {
+      // Retrying the same identifier fails the same way
+      throw stampRetryable(new Error("Malformed record identifier"), false);
+    }
+    if (response.status === 503) {
+      throw stampRetryable(new Error("Record service unavailable"), true);
+    }
+
+    return response.json();
+  },
+  {
+    name: "lookup_record",
+    description: "Look up a record by identifier",
+    schema: z.object({ id: z.string() }),
+  }
+);
+```
+
+Pass `false` for a failure that cannot succeed on another attempt, and `true` for a transient one. Errors that you do not mark are retried, so existing tools keep their current behavior.
+
+Marking an error does not change its type or shape, so `instanceof` checks against it continue to work. To read a mark back, call `getRetryable(error)`, which returns `true`, `false`, or `undefined` when the error was never marked.
+
+Chat model integrations already mark the failures they recognize, so you do not need to mark these yourself. The following fail on the first attempt rather than consuming retries:
+
+- **Authentication failures**: A missing, invalid, or expired API key.
+- **Permission denied**: Valid credentials without access to the requested resource.
+- **Unknown model**: A model identifier the provider does not recognize.
+- **Context window overflow**: Input longer than the model accepts.
+- **Invalid tool results**: A malformed tool result block.
+- **Payload too large**: A request body the provider rejects on size.
+- **Exhausted quota**: A billing or usage limit, as opposed to a rate limit.
+- **Cancelled calls**: A request stopped through an abort signal.
+
+Rate limits, timeouts, and server errors stay retryable. Anything a provider does not recognize is left unmarked and retries as before.
+:::
+
 ### Model retry
 
 Automatically retry failed model calls with configurable exponential backoff. Model retry is useful for the following:
@@ -485,8 +541,8 @@ const agent = createAgent({
     Maximum number of retry attempts after the initial call (3 total attempts with default)
 </ParamField>
 
-<ParamField body="retry_on" type="tuple[type[Exception], ...] | callable" default="(Exception,)">
-    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried.
+<ParamField body="retry_on" type="tuple[type[Exception], ...] | callable" default="default_retry_on">
+    Either a tuple of exception types to retry on, or a callable that takes an exception and returns `True` if it should be retried. With `langchain>=1.3.16`, the default retries retryable [model errors](/oss/langchain/models#model-exceptions) and all unclassified exceptions, and no longer retries model errors marked non-retryable.
 </ParamField>
 
 <ParamField body="on_failure" type="string | callable" default="continue">
@@ -518,8 +574,8 @@ const agent = createAgent({
     Maximum number of retry attempts after the initial call (3 total attempts with default). Must be >= 0.
 </ParamField>
 
-<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="() => true">
-    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. Default is to retry on all errors.
+<ParamField body="retryOn" type="((error: Error) => boolean) | (new (...args: any[]) => Error)[]" default="(error) => getRetryable(error) ?? true">
+    Either an array of error constructors to retry on, or a function that takes an error and returns `true` if it should be retried. With `langchain>=1.5.9`, the default no longer retries errors that are marked non-retryable. Every other error is retried.
 </ParamField>
 
 <ParamField body="onFailure" type="'error' | 'continue' | ((error: Error) => string)" default="continue">
@@ -931,8 +987,19 @@ const agent = createAgent({
 <ParamField body="trigger" type="object | object[]">
     Conditions for triggering summarization. Can be:
 
-    - A single condition object (all properties must be met - AND logic)
-    - An array of condition objects (any condition must be met - OR logic)
+    - **Single condition (AND logic):** a single object where all properties must be met simultaneously.
+
+        ```typescript
+        // Trigger when tokens >= 4000 AND messages >= 10
+        trigger: { tokens: 4000, messages: 10 }
+        ```
+
+    - **Multiple conditions (OR logic):** an array of condition objects. Summarization triggers when any object's conditions are met.
+
+        ```typescript
+        // Trigger when tokens >= 3000 OR messages >= 6
+        trigger: [{ tokens: 3000 }, { messages: 6 }]
+        ```
 
     Each condition can include:
     - `fraction` (number): Fraction of model's context size (0-1)
@@ -1076,7 +1143,7 @@ agent5 = create_agent(
 ```typescript
 import { createAgent, summarizationMiddleware } from "langchain";
 
-// Single condition
+// Single condition (AND logic): trigger if tokens >= 4000 AND messages >= 10
 const agent = createAgent({
   model: "gpt-5.5",
   tools: [weatherTool, calculatorTool],
@@ -1089,7 +1156,7 @@ const agent = createAgent({
   ],
 });
 
-// Multiple conditions
+// Multiple conditions (OR logic): trigger if tokens >= 3000 OR messages >= 6
 const agent2 = createAgent({
   model: "gpt-5.5",
   tools: [weatherTool, calculatorTool],
@@ -1097,7 +1164,8 @@ const agent2 = createAgent({
     summarizationMiddleware({
       model: "gpt-5.4-mini",
       trigger: [
-        { tokens: 3000, messages: 6 },
+        { tokens: 3000 },
+        { messages: 6 },
       ],
       keep: { messages: 20 },
     }),
@@ -1538,9 +1606,10 @@ You can create custom PII types by providing a `detector` parameter. This allows
 
 :::python
 ```python
-from langchain.agents import create_agent
-from langchain.agents.middleware import PIIMiddleware
 import re
+
+from langchain.agents import create_agent
+from langchain.agents.middleware import PIIMatch, PIIMiddleware
 
 
 # Method 1: Regex pattern string
@@ -1570,13 +1639,9 @@ agent2 = create_agent(
 )
 
 # Method 3: Custom detector function
-def detect_ssn(content: str) -> list[dict[str, str | int]]:
-    """Detect SSN with validation.
-
-    Returns a list of dictionaries with 'text', 'start', and 'end' keys.
-    """
-    import re
-    matches = []
+def detect_ssn(content: str) -> list[PIIMatch]:
+    """Detect SSNs with validation."""
+    matches: list[PIIMatch] = []
     pattern = r"\d{3}-\d{2}-\d{4}"
     for match in re.finditer(pattern, content):
         ssn = match.group(0)
@@ -1584,7 +1649,8 @@ def detect_ssn(content: str) -> list[dict[str, str | int]]:
         first_three = int(ssn[:3])
         if first_three not in [0, 666] and not (900 <= first_three <= 999):
             matches.append({
-                "text": ssn,
+                "type": "ssn",
+                "value": ssn,
                 "start": match.start(),
                 "end": match.end(),
             })
@@ -1671,11 +1737,19 @@ const agent3 = createAgent({
 The detector function must accept a string (content) and return matches:
 
 :::python
-Returns a list of dictionaries with `text`, `start`, and `end` keys:
+Returns a list of `PIIMatch` objects:
 ```python
-def detector(content: str) -> list[dict[str, str | int]]:
+from langchain.agents.middleware import PIIMatch
+
+
+def detector(content: str) -> list[PIIMatch]:
     return [
-        {"text": "matched_text", "start": 0, "end": 12},
+        {
+            "type": "custom_type",
+            "value": "matched_text",
+            "start": 0,
+            "end": 12,
+        },
         # ... more matches
     ]
 ```

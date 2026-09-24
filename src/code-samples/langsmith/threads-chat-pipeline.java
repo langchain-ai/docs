@@ -1,6 +1,6 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //DEPS com.langchain.smith:langsmith-java:0.1.0-alpha.25
-//DEPS com.openai:openai-java:4.30.0
+//DEPS com.openai:openai-java:4.61.0
 
 // :snippet-start: threads-chat-pipeline-java
 // :codegroup-tab: Java
@@ -66,7 +66,7 @@ class ThreadsChatPipeline {
                       .completions()
                       .create(
                           ChatCompletionCreateParams.builder()
-                              .model(ChatModel.GPT_5_CHAT_LATEST)
+                              .model(ChatModel.GPT_5_5)
                               .messages(allMessages)
                               .build());
 

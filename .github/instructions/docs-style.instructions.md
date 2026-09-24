@@ -8,9 +8,9 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 
 **Do:**
 
-- Match existing conventions in the file you are editing — do not restructure, combine, or split pages unless explicitly asked
+- Match existing conventions in the file you are editing: do not restructure, combine, or split pages unless explicitly asked
 - Reference existing pages for style patterns when creating new content
-- Be concise — cut filler words and wordy phrases ("to" not "in order to", "because" not "due to the fact that", "can" not "has the ability to")
+- Be concise: cut filler words and wordy phrases ("to" not "in order to", "because" not "due to the fact that", "can" not "has the ability to")
 - Second-person imperative present tense ("Run the following code…")
 - Active voice ("The function returns a list" not "A list is returned by the function")
 - Sentence-case headings starting with active verb, not gerund ("Add a tool" not "Adding a tool")
@@ -31,40 +31,59 @@ Follow [Google Developer Documentation Style Guide](https://developers.google.co
 - Use absolute URLs for internal links
 - Use markdown in description fields
 - Use `/python/` or `/javascript/` in links (resolved by build pipeline)
-- Use model aliases — use full identifiers (e.g., `claude-sonnet-4-6`)
+- Use model aliases: use full identifiers (e.g., `claude-sonnet-4-6`)
+- Use `>=` in prose for version minimums: write "v0.153.4 or later"; reserve `>=` for package specifiers in code (`langsmith>=0.3.13`)
+- Use "→" to separate UI navigation steps: write "Go to **Settings** > **API Keys**"
 - Use FontAwesome icon names
-- Use nested double quotes in component attributes — use `default="['a', 'b']"` not `default='["a", "b"]'`
+- Use nested double quotes in component attributes: use `default="['a', 'b']"` not `default='["a", "b"]'`
 - Use contractions ("do not" not "don't", "cannot" not "can't", "it is" not "it's")
-- Use first person ("we", "I", "our", "let's") — write in second person or use the product name as subject
+- Use first person ("we", "I", "our", "let's"): write in second person or use the product name as subject
 - Use future tense ("The function returns X" not "The function will return X")
 - Use weasel words or filler (avoid "simply", "easily", "just", "very", "basically", "obviously")
 - Use H5 or H6 headings
 - Start headings with articles ("Add a tool" not "The tool setup guide")
-- Use em dashes — prefer commas, colons, or separate sentences instead. Only use an em dash when no alternative reads naturally
-- Add spaces around em dashes — write `word—word` not `word — word` (`make lint_prose` enforces this)
+- Use em dashes: prefer commas, colons, or separate sentences instead. Only use an em dash when no alternative reads naturally
+- Add spaces around em dashes: write `word—word` not `word — word` (`make lint_prose` enforces this)
 - Use excessive bold/italics in body text
-- Start bulleted list items with a lowercase letter — always capitalize the first word
+- Start bulleted list items with a lowercase letter: always capitalize the first word
 - Include "key features" lists
-- Use horizontal lines (`---`) to separate sections — use headings instead
+- Use horizontal lines (`---`) to separate sections: use headings instead
 - Apply bold to UI element names unless existing docs already do so
-- Misspell product names — use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
-- Skip `make lint_prose` — always run it on changed files before committing and fix all violations
+- Misspell product names: use "prebuilt" (not "pre-built"), "Deep Agents" (not "DeepAgents"), "PyPI" (not "PyPi"), "URL" (not "url")
+- Skip `make lint_prose`: always run it on changed files before committing and fix all violations
 
 ### Structure conventions
 
 Match these patterns, drawn from established pages, when authoring new content:
 
-- **Open with definition, then benefit, then task** — start a section (and the page) with a one-sentence statement of what the feature is or does, follow with a sentence on what it enables for the reader, then give the procedure or detail. When a page has a sibling variant (for example, a paid or self-hosted version), link it in the opening lines.
-- **Introduce procedures with a colon lead-in** — precede steps with a phrase such as "To add a channel:", then a numbered list (or the `<Steps>` component) of imperative steps. State a step's result as a follow-on line when it matters ("The Add User modal displays."). Flag optional steps inline with "(Optional)". For long, multi-stage tasks, use `### Step N. <verb>` headings.
-- **Use bold-led definition lists for options** — for parameters, permissions, secrets, or enumerated types, write `- **Term**: Explanation.` and end each explanation with a period.
-- **Link on first mention, and point forward at section ends** — link a feature, class, or term on first mention only, not on repeats. Use the pointer phrasing "For more information, see [Page](/path)". Close substantial pages with a `## See also` list of related links.
-- **State requirements and constraints up front** — put permission, plan tier, or preview requirements before the steps they govern ("Adding MCP servers requires admin permissions."). Write hard constraints as plain facts ("Once an agent identity is set, it cannot be changed.").
+- **Open with definition, then benefit, then task**: start a section (and the page) with a one-sentence statement of what the feature is or does, follow with a sentence on what it enables for the reader, then give the procedure or detail. When a page has a sibling variant (for example, a paid or self-hosted version), link it in the opening lines.
+- **Introduce procedures with a colon lead-in**: precede steps with a phrase such as "To add a channel:", then a numbered list (or the `<Steps>` component) of imperative steps. State a step's result as a follow-on line when it matters ("The Add User modal displays."). Flag optional steps inline with "(Optional)". For long, multi-stage tasks, use `### Step N. <verb>` headings.
+- **Use bold-led definition lists for options**: for parameters, permissions, secrets, or enumerated types, write `- **Term**: Explanation.` and end each explanation with a period.
+- **Link on first mention, and point forward at section ends**: link a feature, class, or term on first mention only, not on repeats. Two pointer forms are established, and neither is canonical, so do not mass-convert one into the other. Use the long form ("For more information, see [Page](/path)") at section ends and for standalone pointers. Use the short form ("See [Page](/path)") where the pointer trails an already-complete thought, such as an FAQ answer or a table cell, and especially in a run where nearly every item ends in a pointer. Close substantial pages with a `## See also` list of related links.
+- **State requirements and constraints up front**: put permission, plan tier, or preview requirements before the steps they govern ("Adding MCP servers requires admin permissions."). Write hard constraints as plain facts ("Once an agent identity is set, it cannot be changed.").
 
 ### Model references
 
 Always use the latest generally available (GA) models when referencing LLMs in docstrings and illustrative code snippets. Avoid preview or beta identifiers unless the model has no GA equivalent. Outdated model names signal stale code and confuse users.
 
-Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names — they go stale quickly.
+Before writing or updating model references, verify current model IDs against the provider's official docs. Do not rely on memorized or cached model names. They go stale quickly.
+
+### Version requirements
+
+Write version minimums as "<version> or later" in prose. Reserve `>=` for package specifiers, where it is literal install syntax and belongs in backticks.
+
+- Tools, CLIs, runtimes, servers, and Helm charts: "Codex CLI v0.153.4 or later", "Node.js 22.x or later", "Helm chart version 0.12.33 or later".
+- Package specifiers: `langsmith>=0.3.13`, `langchain>=1.0.0`. Readers paste these into an install command, so keep the operator.
+
+Keep a `v` prefix when the page or the upstream project already uses one. Do not add one to a package specifier. When another requirement follows the version, set it off with a comma so it does not read as part of the constraint ("v0.153.4 or later, with plugin hooks enabled").
+
+This rule covers version numbers only. Leave `>=` as is in numeric parameter constraints ("Must be >= 0") and in comparison-operator reference tables.
+
+### Navigation paths
+
+Separate UI navigation steps with a greater-than sign surrounded by spaces, not an arrow: "Go to **Settings** > **API Keys**". Bold the UI labels, either individually (`**Settings** > **API Keys**`) or as a single span (`**Settings > API Keys**`), and match whichever form the page already uses. Vale enforces this as `LangChain.NavPathArrows`.
+
+The arrow character stays where it does not mark navigation: mermaid diagrams, data flow (`browser or client → data plane`), API renames in migration guides (`create_react_agent` → `create_agent`), state progressions, and UI labels that literally contain an arrow ("Manage app access →").
 
 ### Release stage names
 
@@ -80,7 +99,7 @@ These are common nouns, not proper nouns. Write them lowercase in prose, includi
 
 ### Product and feature name capitalization
 
-Capitalize a word when it refers to a **product or brand name**. Use lowercase when it refers to a **common noun** — a thing you build, an instance, or a type.
+Capitalize a word when it refers to a **product or brand name**. Use lowercase when it refers to a **common noun**: a thing you build, an instance, or a type.
 
 **Capitalize** product and brand names:
 
@@ -91,5 +110,11 @@ Capitalize a word when it refers to a **product or brand name**. Use lowercase w
 - "Create a dashboard" (dashboard = a thing you build, not a product name)
 - "a deep agent created using Deep Agents" (the first "deep agent" is a common noun; "Deep Agents" is the product name)
 - "Run an experiment", "View your traces", "Manage your projects"
+- "Build agents across the agent development lifecycle" (the lifecycle is a process, not a product; marketing materials capitalize it, docs do not)
+- "LangChain provides the open agent engineering platform" (the phrase describes what LangChain provides; it is not a product name)
 
 When in doubt, ask: is this word the product's proper name, or is it describing a thing the user creates or works with? If the latter, use lowercase.
+
+Spell out "agent development lifecycle" in prose. Do not use the "ADLC" acronym, which appears in marketing materials but not in the documentation.
+
+Reserve "the platform" for LangSmith. LangChain is the open agent engineering ecosystem, not a platform. Marketing's short blurb ("an open agent engineering platform") compresses the whole company into a single noun to fit the character limits of a search result. Docs have the room to be precise, so do not carry that phrasing onto pages.
