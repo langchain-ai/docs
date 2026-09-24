@@ -3,10 +3,9 @@ type: testing guidance
 title: Builder Tests
 description: Focused offline pytest guidance for documentation-builder route classes, ordered Markdown transforms, source containment, OpenAPI-derived indexes, and LLM corpus invariants.
 tags: [testing, pytest, builder, watcher, incremental-build, versioning]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-21T08:24:04.334Z
 sources:
+  - id: openwiki-source-012f2c78e3b1446dfc35803f
+    resource: repo://Makefile
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
     resource: repo://pipeline/commands/build.py
   - id: openwiki-source-d0cdf44431684bdedf34705a
@@ -21,7 +20,10 @@ sources:
     resource: repo://tests/unit_tests/test_watcher.py
   - id: openwiki-source-0d0e77eb273a56717af74faa
     resource: repo://tests/unit_tests/utils.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-24T08:22:38.580Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
 ---
 
 ## Scope and test boundary
@@ -34,7 +36,7 @@ Run the focused builder tests without network sockets:
 make test TEST_FILE=tests/unit_tests/test_builder.py
 ```
 
-`make test` runs pytest with sockets disabled. The test dependency group supplies `pytest`, `pytest-asyncio`, and `pytest-socket`; pytest discovers `test_*.py` under `tests/` and uses automatic asyncio mode. Builder and watcher unit tests should use temporary files, mocks, and controlled event-loop seams rather than Mintlify, npm registry, or other network services.
+`make test` invokes pytest with sockets disabled except for Unix sockets. Builder and watcher unit tests should use temporary files, mocks, and controlled event-loop seams rather than Mintlify, npm registry, or other network services.
 
 ## Fixture harness and assertion style
 
@@ -95,6 +97,14 @@ Use [Conditional Rendering Tests](/openwiki/testing/conditional-rendering.md) fo
 - A normal Markdown page receives the generated source-links footer except root `index.mdx` and paths containing `snippets`.
 
 When changing a rewriter, retain helper tests for syntax edges and an end-to-end `build_all()` or `build_file()` fixture for the consuming route. See [npm Snippets](/openwiki/integrations/npm-snippets.md) when changing the component integration.
+
+## When unit fixtures must give way to a built-route check
+
+A helper test proves only local substitution; it cannot prove that the full build selected the right source set, emitted all dependent routes in its ordered lifecycle, or that Mintlify accepts the resulting URL graph. Add a full built-route check when a change affects `docs.json` navigation or redirects, route classification or a route exception, links across language or snippet boundaries, OpenAPI-derived pages, npm overlays, or a derived LLM artifact. These are integration contracts between independently tested builder stages or between the generated tree and Mintlify.
+
+Start with the focused unit module, then run `make build` to exercise the complete builder lifecycle. For a route, redirect, or anchor change, run `make broken-links-with-anchors`: it depends on `build`, invokes Mint from `build/`, and checks both anchors and redirect destinations. Its filtering intentionally excludes standalone snippet reports because their absolute versioned links are valid only after Mintlify inlines a snippet into a consuming page; test that relationship with the builder fixture instead of treating the standalone report as a failure.
+
+A full check supplements rather than replaces focused tests: keep the small fixture that makes a failure diagnostic, and use the built-route check to catch output-tree composition, redirect resolution, and renderer-facing failures.
 
 ## Source safety and generated artifacts
 
