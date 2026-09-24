@@ -54,6 +54,69 @@ export const sandbox = defineSandbox({
 | `defaultTimeout` | `600` | Seconds allowed for each command. |
 
 
+## Configure the sandbox proxy
+
+The sandbox proxy injects headers into matching outbound requests and controls which destinations the sandbox can reach. The proxy runs outside the sandbox, so sandbox code can call authenticated APIs without handling the credentials.
+
+For example, to call the OpenAI API from the sandbox, store `OPENAI_API_KEY` in your LangSmith workspace secrets and configure this proxy rule:
+
+
+
+```ts sandbox/index.ts
+import { defineSandbox } from "managed-deepagents";
+
+export const sandbox = defineSandbox({
+  proxyConfig: {
+    rules: [
+      {
+        name: "openai-api",
+        match_hosts: ["api.openai.com"],
+        headers: [
+          {
+            name: "Authorization",
+            type: "workspace_secret",
+            value: "Bearer {OPENAI_API_KEY}",
+          },
+        ],
+      },
+    ],
+  },
+});
+```
+
+
+For configuration options and network restrictions, see [Sandbox auth proxy](/langsmith/sandbox-auth-proxy).
+
+### Use connections in proxy headers
+
+Use [Connections](/langsmith/javascript/managed-deep-agents-connections) in sandboxes to authenticate CLI commands and API requests.
+
+For example, to call the GitHub API from the sandbox as the current user, create the `github` connection first, then configure the proxy:
+
+
+
+```ts sandbox/index.ts
+import { bearer, connections, defineSandbox } from "managed-deepagents";
+
+const github = connections.get("github", { type: "user" });
+
+export const sandbox = defineSandbox({
+  proxyConfig: {
+    rules: [
+      {
+        name: "github-api",
+        match_hosts: ["api.github.com"],
+        headers: [{ name: "Authorization", value: bearer(github) }],
+      },
+    ],
+    access_control: { allow_list: ["api.github.com"] },
+  },
+});
+```
+
+
+Use a connection reference as the header value, or format it with `bearer(ref)` or `basic(username, ref)`. Omit the header's `type` for connection values. Managed Deep Agents sets it to `opaque`.
+
 ## Provision a snapshot
 
 If `sandbox/setup.sh` exists, `mda deploy` and `mda dev` run the script once and save the resulting environment as a snapshot. Modifications from that run, such as cloned repositories and installed packages, persist in the snapshot. New threads clone that snapshot instead of running `setup.sh`. The snapshot is reused until `setup.sh` changes, at which point it is rebuilt.
@@ -119,6 +182,135 @@ Put `GHCR_TOKEN` in the project `.env` or the process environment. After bake, M
 ## How the agent uses the sandbox
 
 The agent uses built-in filesystem tools such as [`ls`](/oss/javascript/deepagents/tools#built-in-harness-tools), [`read_file`](/oss/javascript/deepagents/tools#built-in-harness-tools), [`write_file`](/oss/javascript/deepagents/tools#built-in-harness-tools), [`edit_file`](/oss/javascript/deepagents/tools#built-in-harness-tools), [`delete`](/oss/javascript/deepagents/tools#built-in-harness-tools), [`glob`](/oss/javascript/deepagents/tools#built-in-harness-tools), and [`grep`](/oss/javascript/deepagents/tools#built-in-harness-tools), and runs shell commands with [`execute`](/oss/javascript/deepagents/tools#built-in-harness-tools). Use [instructions](/langsmith/javascript/managed-deep-agents-instructions) to specify where the agent should work and what it must not modify.
+
+## Read and write sandbox files from code
+
+[Authored tools](/langsmith/javascript/managed-deep-agents-tools) and [middleware](/langsmith/javascript/managed-deep-agents-middleware) reach the sandbox filesystem through `runtime.backend`. Use it when your own code needs a file, rather than prompting the agent to fetch one for you.
+
+<Note>
+`runtime.backend` requires `managed-deepagents>=0.8.0`.
+</Note>
+
+Annotate the `runtime` parameter to receive the typed surface:
+
+
+
+```ts tools/report.ts
+import { tool } from "langchain";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
+import { z } from "zod";
+
+export const writeReport = tool(
+  async ({ summary }, runtime: ManagedDeepAgentRuntime) => {
+    if (!runtime.backend) {
+      throw new Error("write_report requires a sandbox");
+    }
+    const result = await runtime.backend.write("/workspace/report.txt", summary);
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    return "/workspace/report.txt";
+  },
+  {
+    name: "write_report",
+    description: "Write a summary to the sandbox and return its path.",
+    schema: z.object({
+      summary: z.string().describe("Report body to store."),
+    }),
+  },
+);
+```
+
+
+Each operation binds to the sandbox of the thread handling the current run, so two threads reading `/workspace/report.txt` see their own copy. The backend resolves lazily, and a tool that never touches it never provisions a sandbox.
+
+### Available operations
+
+
+
+| Method | Purpose |
+| --- | --- |
+| `ls(path)` | List a directory. |
+| `read(filePath, offset, limit)` | Read text, 2000 lines by default. |
+| `readRaw(filePath)` | Read a file without line formatting. |
+| `write(filePath, content)` | Write text, replacing any existing file. |
+| `edit(filePath, oldString, newString, replaceAll)` | Replace a substring in place. |
+| `delete(filePath)` | Remove a file. |
+| `grep(pattern, path, glob, maxCount)` | Search file contents. |
+| `glob(pattern, path)` | Match paths. |
+| `execute(command)` | Run a shell command. |
+| `uploadFiles(files)` | Write `Uint8Array` content from `[path, content]` pairs. |
+| `downloadFiles(paths)` | Read each path as a `Uint8Array`. |
+
+Every method returns a promise.
+
+
+Arguments and return types come from the Deep Agents backend contract. See [Backends](/oss/javascript/deepagents/backends).
+
+### Transfer binary files
+
+`upload_files` and `download_files` move raw bytes, so they suit images, archives, and any other file that text operations would corrupt. Download returns the bytes for each requested path:
+
+
+
+```ts tools/checksum.ts
+import { createHash } from "node:crypto";
+
+import { tool } from "langchain";
+import type { ManagedDeepAgentRuntime } from "managed-deepagents";
+import { z } from "zod";
+
+export const checksumFile = tool(
+  async ({ filePath }, runtime: ManagedDeepAgentRuntime) => {
+    if (!runtime.backend) {
+      throw new Error("checksum_file requires a sandbox");
+    }
+    const [result] = await runtime.backend.downloadFiles([filePath]);
+    if (result.error || !result.content) {
+      throw new Error(result.error ?? "file_not_found");
+    }
+    return createHash("sha256").update(result.content).digest("hex");
+  },
+  {
+    name: "checksum_file",
+    description: "Return the SHA-256 checksum of a sandbox file.",
+    schema: z.object({
+      filePath: z.string().describe("Absolute path inside the sandbox."),
+    }),
+  },
+);
+```
+
+
+Upload takes path and content pairs, one per file:
+
+
+
+```ts
+const [uploaded] = await runtime.backend.uploadFiles([
+  ["/workspace/logo.png", payload],
+]);
+if (uploaded.error) {
+  throw new Error(uploaded.error);
+}
+```
+
+
+Each result carries `path` and `error`, and a download also carries `content`. On failure, `error` is one of `file_not_found`, `permission_denied`, `is_directory`, or `invalid_path`, and the downloaded `content` is empty. Check `error` rather than assuming the transfer succeeded.
+
+### Limits
+
+`runtime.backend` covers the sandbox only. It has no route to [Context Hub](/langsmith/javascript/managed-deep-agents-context-hub), so [skills](/langsmith/javascript/managed-deep-agents-skills), [instructions](/langsmith/javascript/managed-deep-agents-instructions), and [memory](/langsmith/javascript/managed-deep-agents-memory) are not reachable through it.
+
+
+
+Without a sandbox, `runtime.backend` is `undefined`. Guard on it before every call, because a project can remove `sandbox/` after the tool ships.
+
+
+
+
+`delete`, `uploadFiles`, and `downloadFiles` depend on the installed backend and throw when it does not implement them. A root `glob` returns an error instead of provisioning a sandbox.
+
 
 ## Disable the sandbox
 

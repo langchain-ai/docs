@@ -54,6 +54,69 @@ sandbox = define_sandbox(
 
 
 
+## Configure the sandbox proxy
+
+The sandbox proxy injects headers into matching outbound requests and controls which destinations the sandbox can reach. The proxy runs outside the sandbox, so sandbox code can call authenticated APIs without handling the credentials.
+
+For example, to call the OpenAI API from the sandbox, store `OPENAI_API_KEY` in your LangSmith workspace secrets and configure this proxy rule:
+
+```python sandbox/__init__.py
+from managed_deepagents import define_sandbox
+
+sandbox = define_sandbox(
+    proxy_config={
+        "rules": [
+            {
+                "name": "openai-api",
+                "match_hosts": ["api.openai.com"],
+                "headers": [
+                    {
+                        "name": "Authorization",
+                        "type": "workspace_secret",
+                        "value": "Bearer {OPENAI_API_KEY}",
+                    },
+                ],
+            },
+        ],
+    },
+)
+```
+
+
+
+
+For configuration options and network restrictions, see [Sandbox auth proxy](/langsmith/sandbox-auth-proxy).
+
+### Use connections in proxy headers
+
+Use [Connections](/langsmith/python/managed-deep-agents-connections) in sandboxes to authenticate CLI commands and API requests.
+
+For example, to call the GitHub API from the sandbox as the current user, create the `github` connection first, then configure the proxy:
+
+```python sandbox/__init__.py
+from managed_deepagents import bearer, connections, define_sandbox
+
+github = connections.get("github", {"type": "user"})
+
+sandbox = define_sandbox(
+    proxy_config={
+        "rules": [
+            {
+                "name": "github-api",
+                "match_hosts": ["api.github.com"],
+                "headers": [{"name": "Authorization", "value": bearer(github)}],
+            },
+        ],
+        "access_control": {"allow_list": ["api.github.com"]},
+    },
+)
+```
+
+
+
+
+Use a connection reference as the header value, or format it with `bearer(ref)` or `basic(username, ref)`. Omit the header's `type` for connection values. Managed Deep Agents sets it to `opaque`.
+
 ## Provision a snapshot
 
 If `sandbox/setup.sh` exists, `mda deploy` and `mda dev` run the script once and save the resulting environment as a snapshot. Modifications from that run, such as cloned repositories and installed packages, persist in the snapshot. New threads clone that snapshot instead of running `setup.sh`. The snapshot is reused until `setup.sh` changes, at which point it is rebuilt.
@@ -119,6 +182,119 @@ Put `GHCR_TOKEN` in the project `.env` or the process environment. After bake, M
 ## How the agent uses the sandbox
 
 The agent uses built-in filesystem tools such as [`ls`](/oss/python/deepagents/tools#built-in-harness-tools), [`read_file`](/oss/python/deepagents/tools#built-in-harness-tools), [`write_file`](/oss/python/deepagents/tools#built-in-harness-tools), [`edit_file`](/oss/python/deepagents/tools#built-in-harness-tools), [`delete`](/oss/python/deepagents/tools#built-in-harness-tools), [`glob`](/oss/python/deepagents/tools#built-in-harness-tools), and [`grep`](/oss/python/deepagents/tools#built-in-harness-tools), and runs shell commands with [`execute`](/oss/python/deepagents/tools#built-in-harness-tools). Use [instructions](/langsmith/python/managed-deep-agents-instructions) to specify where the agent should work and what it must not modify.
+
+## Read and write sandbox files from code
+
+[Authored tools](/langsmith/python/managed-deep-agents-tools) and [middleware](/langsmith/python/managed-deep-agents-middleware) reach the sandbox filesystem through `runtime.backend`. Use it when your own code needs a file, rather than prompting the agent to fetch one for you.
+
+<Note>
+`runtime.backend` requires `managed-deepagents>=0.8.0`.
+</Note>
+
+Annotate the `runtime` parameter to receive the typed surface:
+
+```python tools/report.py
+from langchain.tools import tool
+from managed_deepagents import ManagedDeepAgentRuntime
+
+
+@tool(parse_docstring=True)
+def write_report(summary: str, runtime: ManagedDeepAgentRuntime) -> str:
+    """Write a summary to the sandbox and return its path.
+
+    Args:
+        summary: Report body to store.
+    """
+    if runtime.backend is None:
+        raise RuntimeError("write_report requires a sandbox")
+    result = runtime.backend.write("/workspace/report.txt", summary)
+    if result.error:
+        raise RuntimeError(result.error)
+    return "/workspace/report.txt"
+```
+
+
+
+
+Each operation binds to the sandbox of the thread handling the current run, so two threads reading `/workspace/report.txt` see their own copy. The backend resolves lazily, and a tool that never touches it never provisions a sandbox.
+
+### Available operations
+
+| Method | Purpose |
+| --- | --- |
+| `ls(path)` | List a directory. |
+| `read(file_path, offset, limit)` | Read text, 2000 lines by default. |
+| `write(file_path, content)` | Write text, replacing any existing file. |
+| `edit(file_path, old_string, new_string, replace_all)` | Replace a substring in place. |
+| `delete(file_path)` | Remove a file. |
+| `grep(pattern, path, glob, max_count)` | Search file contents. |
+| `glob(pattern, path)` | Match paths. |
+| `execute(command, timeout)` | Run a shell command. |
+| `upload_files(files)` | Write raw bytes from `(path, bytes)` pairs. |
+| `download_files(paths)` | Read raw bytes for the given paths. |
+
+Every method has an async counterpart prefixed with `a`, such as `aread`, `awrite`, and `adownload_files`.
+
+
+
+
+Arguments and return types come from the Deep Agents backend contract. See [Backends](/oss/python/deepagents/backends).
+
+### Transfer binary files
+
+`upload_files` and `download_files` move raw bytes, so they suit images, archives, and any other file that text operations would corrupt. Download returns the bytes for each requested path:
+
+```python tools/checksum.py
+import hashlib
+
+from langchain.tools import tool
+from managed_deepagents import ManagedDeepAgentRuntime
+
+
+@tool(parse_docstring=True)
+def checksum_file(file_path: str, runtime: ManagedDeepAgentRuntime) -> str:
+    """Return the SHA-256 checksum of a sandbox file.
+
+    Args:
+        file_path: Absolute path inside the sandbox.
+    """
+    if runtime.backend is None:
+        raise RuntimeError("checksum_file requires a sandbox")
+    result = runtime.backend.download_files([file_path])[0]
+    if result.error or result.content is None:
+        raise RuntimeError(result.error or "file_not_found")
+    return hashlib.sha256(result.content).hexdigest()
+```
+
+
+
+
+Upload takes path and content pairs, one per file:
+
+```python
+uploaded = runtime.backend.upload_files([("/workspace/logo.png", payload)])
+if uploaded[0].error:
+    raise RuntimeError(uploaded[0].error)
+```
+
+
+
+
+Each result carries `path` and `error`, and a download also carries `content`. On failure, `error` is one of `file_not_found`, `permission_denied`, `is_directory`, or `invalid_path`, and the downloaded `content` is empty. Check `error` rather than assuming the transfer succeeded.
+
+### Limits
+
+`runtime.backend` covers the sandbox only. It has no route to [Context Hub](/langsmith/python/managed-deep-agents-context-hub), so [skills](/langsmith/python/managed-deep-agents-skills), [instructions](/langsmith/python/managed-deep-agents-instructions), and [memory](/langsmith/python/managed-deep-agents-memory) are not reachable through it.
+
+Without a sandbox, `runtime.backend` is `None`. Guard on it before every call, because a project can remove `sandbox/` after the tool ships.
+
+
+
+
+`delete`, `upload_files`, and `download_files` depend on the installed backend and raise when it does not implement them. A root `glob` returns an error instead of provisioning a sandbox.
+
+
+
 
 ## Disable the sandbox
 

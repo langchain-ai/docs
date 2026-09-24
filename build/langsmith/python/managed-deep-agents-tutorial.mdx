@@ -120,9 +120,9 @@ keep notes, and return concise answers with citations.
 Durable memory is opt-in. Before asking the agent to remember anything, add a memory declaration at the project root:
 
 ```python memory.py
-from managed_deepagents import define_memory
+from managed_deepagents import MemoryLayer, define_memory
 
-memory = define_memory(scope="agent")
+memory = define_memory(agent=MemoryLayer())
 ```
 
 

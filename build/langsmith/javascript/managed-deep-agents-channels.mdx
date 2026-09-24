@@ -91,6 +91,9 @@ A channel receives messages that start agent runs and delivers responses. An [MC
   <Card title="Slack" icon="brand-slack" href="/langsmith/javascript/managed-deep-agents-channels-slack">
     Start runs from Slack mentions, direct messages, and thread replies.
   </Card>
+  <Card title="HTTP" icon="webhook" href="/langsmith/javascript/managed-deep-agents-channels-http">
+    Start runs from any service that can send a JSON webhook.
+  </Card>
 </CardGroup>
 
 ## See also

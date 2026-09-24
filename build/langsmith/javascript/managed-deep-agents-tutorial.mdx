@@ -133,9 +133,9 @@ Durable memory is opt-in. Before asking the agent to remember anything, add a me
 
 
 ```ts memory.ts
-import { defineMemory } from "managed-deepagents";
+import { defineMemory, memoryLayer } from "managed-deepagents";
 
-export const memory = defineMemory({ scope: "agent" });
+export const memory = defineMemory({ agent: memoryLayer() });
 ```
 
 

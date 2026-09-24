@@ -119,6 +119,8 @@ For decision types (approve, edit, reject), conditional interrupts, and permissi
 
 To resume a paused run, see [Respond to an interrupt](#respond-to-an-interrupt).
 
+To pause on a form your own tool posts in Slack instead, see [Agent-owned interrupts](/langsmith/python/managed-deep-agents-agent-owned-interrupts).
+
   </Step>
 </Steps>
 
@@ -165,6 +167,8 @@ If a tool requires an API key or OAuth token, use a connection to resolve the cr
 ## Access runtime context
 
 For per-run values such as request metadata or feature flags, use the normal LangChain runtime context patterns for tools. See [how to access context from within your tools](/oss/python/langchain/tools#access-context).
+
+To read or write files in the thread's sandbox from a tool, use `runtime.backend`. See [Read and write sandbox files from code](/langsmith/python/managed-deep-agents-sandboxes#read-and-write-sandbox-files-from-code).
 
 ---
 
