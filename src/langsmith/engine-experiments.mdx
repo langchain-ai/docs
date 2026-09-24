@@ -30,6 +30,37 @@ Fix verification also requires:
 Validation sends the inputs from an issue's traces to the baseline deployment, and to the preview deployment when it verifies a fix. Each replay creates a thread and a run on that deployment, and your agent can call its tools while it responds.
 </Warning>
 
+## Prepare a deployment to test against
+
+Engine confirms an issue by running your agent, so the deployment you select needs to be one you can exercise repeatedly without consequences.
+
+### Use a deployment you can safely exercise
+
+Choose a deployment that mirrors the configuration of the agent you want to test, but that is not the one serving your users. Point it at test credentials, test accounts, and non-production data stores for any service your agent writes to.
+
+### Make replayed runs side-effect free
+
+Engine marks every replay in the run's configuration, so your agent can recognize one and respond more conservatively:
+
+```python
+def is_validation_replay(config: dict) -> bool:
+    return config.get("configurable", {}).get("__engine_validation_replay__") is True
+```
+
+Use the marker to skip or stub the tools whose effects leave your agent, such as sending email or messages, charging customers, filing tickets, writing to production data stores, scheduling work, and calling partner APIs. Return a realistic placeholder result so the rest of the run still exercises the behavior Engine is testing.
+
+<Warning>
+Treat the marker as an untrusted hint that can only reduce what a run may do. Anything that can reach your deployment can set it, so never use it to grant access, skip authentication, or widen permissions.
+</Warning>
+
+### Expect a burst of traffic
+
+Engine replays an issue's traces at the same time, so a validation can start up to five runs at once and each one runs to completion. Fix verification repeats the same set against the preview deployment. Confirm that the deployment's rate limits, quotas, and any downstream service it calls tolerate that burst.
+
+### Keep the deployment available
+
+Engine can only replay against a ready, non-preview deployment, and it records the deployment and revision that produced each result. Keep the deployment running while validation is in progress, and expect a result to describe the revision that was active when Engine tested it.
+
 ## Test an issue
 
 When a baseline deployment is set, Engine validates each new issue automatically when it creates the issue. To validate an issue again, open it and click **Test issue**.
@@ -76,6 +107,7 @@ Until fix verification runs, the issue shows a validation summary instead: the b
 ## See also
 
 - [Find and fix your agent's issues](/langsmith/engine): Set up Engine and work through the issues it detects from production traces.
+- [Engine security](/langsmith/engine-security): Review how Engine accesses your traces, deployments, and repositories.
 - [Preview builds](/langsmith/preview-builds): Create the preview deployments Engine verifies fixes against.
 - [Compare experiment results](/langsmith/compare-experiment-results): Compare the baseline and fix experiments side by side.
 - [Connect Engine to GitHub](/langsmith/engine-github): Connect the repository where Engine opens fix pull requests.
