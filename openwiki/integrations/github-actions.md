@@ -3,14 +3,17 @@ type: CI and privileged automation topology
 title: GitHub Actions and CI/CD
 description: Repository automation separates untrusted pull-request validation from metadata-only pull-request-target automation and trusted secret-backed or repository-writing maintenance. This page maps the CI gates, generated documentation refreshes, integration intake, and review-PR lifecycle.
 tags: [github-actions, ci-cd, automation, security, testing, versioning]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-23T08:21:36.095Z
 sources:
   - id: openwiki-source-dea5cd08ee99ad0f836ba18b
     resource: repo://.github/labeler.yml
   - id: openwiki-source-c4f328e2e1685f1c7e2bc076
     resource: repo://.github/OWNERS
+  - id: openwiki-source-5c124605ed6e394bffee862c
+    resource: repo://.github/workflows/_check-links.yml
+  - id: openwiki-source-f35e7c44cc1805709393a581
+    resource: repo://.github/workflows/_lint.yml
+  - id: openwiki-source-4d9cccca7700db7220ec055e
+    resource: repo://.github/workflows/_test.yml
   - id: openwiki-source-21617d8a6b2b570989a7c900
     resource: repo://.github/workflows/check-version-claims.yml
   - id: openwiki-source-164e2da859b5277df81c7d94
@@ -55,7 +58,10 @@ sources:
     resource: repo://scripts/test_code_samples.py
   - id: openwiki-source-a10b62517b8302a8d4cf3b31
     resource: repo://tests/unit_tests/test_check_external_versions.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-23T08:21:36.095Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-24T08:22:38.580Z
 ---
 
 ## Topology and trust boundary
@@ -79,13 +85,15 @@ flowchart TD
   AgentChanged -->|"yes"| ListingPR["Integration review PR"]
 ```
 
+This diagram maps the trust boundary from pull-request input through validation, gated automation, and review PRs.
+
 This topology prevents untrusted input from becoming secret-backed execution or an uncontrolled write. A trusted writer still publishes only a non-empty candidate diff for review, except the package-download workflow which also enables its generated PR for squash auto-merge.
 
 ## Core CI and documentation gates
 
 `ci.yml` runs for pull requests, pushes to `main`, and manual dispatch. It calls reusable test, lint, and documentation-link workflows on Python 3.13, and also checks unresolved merge markers, source cross-references, external-listing URL schemes, and the generated provider overview. Its concurrency group is the workflow plus ref and cancels a superseded in-progress run, prioritizing feedback for the latest commit.
 
-The reusable test and lint workflows check out the requested directory, synchronize the `test` dependency group, and run `make test` or `make lint`. The link workflow has read-only contents permission, uses Python 3.13 plus Node 22 and Mintlify, then runs `make broken-links-with-anchors` and `make check-openapi`.
+The reusable test and lint workflows each use the requested Python version, make a shallow checkout, synchronize the `test` dependency group, and run `make test` or `make lint` in the requested working directory. The link workflow has read-only `contents` permission and a 20-minute limit; it uses Python 3.13 plus Node 22 and Mintlify, then runs `make broken-links-with-anchors` and `make check-openapi`. None of these reusable workflows receives a secret through its declared call interface.
 
 ### Generated overview and external URLs
 
@@ -133,6 +141,8 @@ flowchart TD
   Compare -->|"yes"| Standing["Append or create trace refresh PR"]
 ```
 
+This diagram shows the full-run ordering that prevents a trace refresh PR from representing a failed test run.
+
 The trace refresh is ordered: successful test, trace collection, snippet generation, artifact comparison, then PR creation. It restores a clean checkout before applying artifacts to `chore/refresh-code-sample-traces`, appends to that PR while it is open, and exits without a write when the trace manifest and generated snippets are unchanged. Thus a refresh PR cannot represent a failed test run.
 
 ```bash
@@ -175,6 +185,8 @@ flowchart TD
   Wiki["Daily OpenWiki update"] --> WikiPR["OpenWiki update PR"]
 ```
 
+This diagram shows scheduled generation and the review-PR boundary for each writer.
+
 The scheduled topology separates candidate generation from publishing where practical and relies on no-change exits. Standing branches prevent repetitive refresh jobs from stacking review PRs.
 
 ### Package downloads and Linear candidates
@@ -201,7 +213,9 @@ This external-URL check of the Mint export is distinct from CI's build/link chec
 
 `sync-deepagents-signatures.yml` is a trusted weekday 09:00 UTC or manual writer. It runs `scripts/sync_deepagents_signatures.py`, checks exactly the Python and JavaScript Deep Agents configuration-option snippet files, and creates a timestamped PR only when either changed. Unlike the standing refresh workflows, each changed run uses a new timestamped branch.
 
-`openwiki-update.yml` is a separate daily 08:00 UTC or manual writer. It uses a full-history checkout because `openwiki code --update --print` compares HEAD to the last documented commit, runs OpenWiki with its configured provider and connector secrets, copies `AGENTS.md` to `CLAUDE.md`, and maintains an `openwiki/update` PR containing those documentation and workflow surfaces.
+`openwiki-update.yml` is a separate daily 08:00 UTC or manual writer with repository-wide `contents: write` and `pull-requests: write` permissions. It uses a full-history checkout because `openwiki code --update --print` compares HEAD to the last documented commit. The command receives the configured OpenAI provider credential, the LangSmith connector credential, and optional LangSmith tracing credential through secret references; the workflow file contains no secret values.
+
+The pull-request action maintains the `openwiki/update` branch and is restricted to `openwiki`, `AGENTS.md`, and `.github/workflows/openwiki-update.yml`. Review this allowlist as a security and ownership boundary: an OpenWiki run cannot place its automated PR changes elsewhere. In particular, the current workflow does not copy `AGENTS.md` to `CLAUDE.md`; keep any required guide synchronization explicit outside this workflow.
 
 ## Safe-change checklist
 

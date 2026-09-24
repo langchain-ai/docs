@@ -1,7 +1,7 @@
 ---
 type: architecture reference
-title: Source Directory Map
-description: Maps authored documentation domains and generator inputs to emitted routes, Mintlify navigation ownership, redirects, generated API references, and current product surfaces.
+title: Source directory map
+description: Maps authored documentation, metadata, assets, snippets, and API specifications to emitted routes and Mintlify navigation. Explains why source folders are inputs to route generation rather than the site map.
 tags: [documentation, routing, navigation, mintlify]
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
@@ -12,108 +12,106 @@ sources:
     resource: repo://pipeline/core/builder.py
   - id: openwiki-source-a9a8730b7e43a5ad2d0af4f1
     resource: repo://src/docs.json
-  - id: openwiki-source-651e100e8525b3523e8a09dd
-    resource: repo://src/langsmith/byoc-architecture.mdx
-  - id: openwiki-source-e7897baa342e2d4696c14f22
-    resource: repo://src/langsmith/byoc-onboarding.mdx
-  - id: openwiki-source-6ee73af37434175c0178fc98
-    resource: repo://src/langsmith/engine.mdx
-  - id: openwiki-source-b4200d8c71c910e082d4d1e4
-    resource: repo://src/langsmith/managed-deep-agents-project-structure.mdx
   - id: openwiki-source-222b22691fa5b319ecd2ae6f
     resource: repo://src/oss/deepagents/code/configuration.mdx
-  - id: openwiki-source-ff503c3e9a6576fbca868676
-    resource: repo://src/oss/deepagents/subagents.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-23T08:21:36.095Z
-generated: { by: "openwiki/0.4.3", at: "2026-09-23T08:21:36.095Z" }
+    at: 2026-09-24T08:22:38.580Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
 ---
 
-`src/` is the authored documentation tree, but it is not the site map. `pipeline/core/builder.py` produces the local `build/` route tree, while `src/docs.json` owns Mintlify presentation: product/menu placement, tabs and groups, redirects, and OpenAPI reference configuration. A generated route can be absent from the intended navigation, and a visible label can differ from both its source directory and URL. For example, `src/langsmith/fleet/` routes below `/langsmith/fleet/` but is presented as **No-code agents**.
+`src/` is the authored documentation tree, not the site map. `DocumentationBuilder` turns supported source files into the local `build/` tree; `src/docs.json` independently defines Mintlify navigation, redirects, and OpenAPI reference configuration. Consequently, a route may be unlisted, a menu label may not match its folder or URL, and one emitted route can deliberately appear in more than one navigation location. For example, `src/langsmith/fleet/` emits below `/langsmith/fleet/` but is presented as **No-code agents**.
 
 ```mermaid
 flowchart TD
-    Authored["Authored files under src"] --> Builder["DocumentationBuilder"]
-    Builder --> Routes["Emitted route files in build"]
-    Config["src/docs.json"] --> Mintlify["Navigation redirects and OpenAPI"]
-    Routes --> Site["Published site"]
-    Mintlify --> Site
+    Authored["Authored inputs under src"] --> Builder["DocumentationBuilder"]
+    Builder --> Routes["Local build routes and shared assets"]
+    Config["src/docs.json"] --> Navigation["Mintlify navigation and redirects"]
+    Config --> OpenAPI["Deployment generated OpenAPI surfaces"]
+    Routes --> Published["Published documentation"]
+    Navigation --> Published
+    OpenAPI --> Published
 ```
 
-This separates builder-owned route emission from Mintlify-owned presentation and generated API surfaces.
+This diagram separates repository-owned route emission from Mintlify presentation and deployment-generated API surfaces.
 
-## Source-to-route map
+## Ownership boundaries
 
-| Authored domain or input | Emitted route family | Presentation ownership |
+| Concern | Owner | Safe change rule |
 | --- | --- | --- |
-| Root pages, including `src/index.mdx` and `src/build-overview.mdx` | Matching root routes, such as `/` and `/build-overview` | Lifecycle **Home** and shared **Build → Overview** |
-| Shared `src/oss/` content, such as `langchain/`, `langgraph/`, `deepagents/`, concepts, contribution, and reference material | `/oss/python/...` and `/oss/javascript/...` | Corresponding Build-language dropdown |
-| `src/oss/python/` and `src/oss/javascript/` | Only their matching language tree; the source language segment is removed | Corresponding Build-language dropdown |
-| `src/oss/openwiki/` | `/oss/openwiki/...` once | The same unversioned **OpenWiki** tab is listed in both Build dropdowns |
-| `src/oss/deepagents/code/` | `/oss/deepagents/code/...` once | **Products and setup → Deep Agents Code** |
-| Direct `src/langsmith/*.mdx`, except `managed-deep-agents*.mdx` | `/langsmith/...` | Test, Deploy, Monitor, or Products and setup, as declared in `docs.json` |
-| Direct `src/langsmith/managed-deep-agents*.mdx` | `/langsmith/python/...` and `/langsmith/javascript/...` | **Build → Managed Deep Agents** in each language dropdown |
-| `src/langsmith/fleet/` | `/langsmith/fleet/...` | **Products and setup → No-code agents** |
-| `src/oss/{python,javascript}/integrations/` | Matching language route tree | **Build → Integrations**, whose provider and component groups differ by language |
-| `src/snippets/` | Importable MDX/components rather than public navigation pages | Reusable source; language-specific copies are produced when required by versioned content |
-| `src/code-samples/` | Standalone sample inputs rather than route pages | Testable samples, not Mintlify navigation |
-| `src/images/`, `src/fonts/`, `.well-known/`, root CSS/JS, and `src/docs.json` | Copied shared paths | Static/site configuration inputs |
-| OpenAPI JSON and remote OpenAPI URLs named in `docs.json` | Mintlify endpoint routes at deployment | Generated API reference, not authored MDX endpoint pages |
+| Authored pages and route transformation | `src/` plus `pipeline/core/builder.py` | Choose the source family by route behavior, then verify the emitted path. |
+| Visible product, menu, dropdown, tab, group, and ordering | `src/docs.json` | Add the emitted route explicitly; folder placement does not add navigation. |
+| Historical and compatibility URLs | `src/docs.json` redirects | Redirect old URLs instead of retaining duplicate authored pages. |
+| Reusable content and static inputs | `src/snippets/`, images, fonts, root CSS/JS, `.well-known`, and `docs.json` | Treat these as imports or copied site inputs, not normal navigation pages. |
+| API endpoints | OpenAPI configuration in `docs.json` and Mintlify at deployment | Change the specification or configuration; do not author endpoint MDX. |
 
-## Builder-owned route rules
+## Route-emission families
 
-`DocumentationBuilder.build_all()` clears `build/`, emits Python and JavaScript OSS trees, emits Deep Agents Code and OpenWiki once, emits ordinary LangSmith content, then emits Managed Deep Agents variants and copies shared assets. Shared OSS files are built twice with `:::python`/`:::js` fences resolved for the target. Files in `oss/python/` and `oss/javascript/` only participate in their respective outputs.
+The builder clears `build/`, emits the two language OSS trees, emits the two unversioned OSS products, emits LangSmith content and Managed Deep Agents variants, then copies shared inputs. `TEMPLATE.mdx` is skipped and only supported extensions are copied.
 
-OpenWiki and Deep Agents Code are deliberate unversioned exceptions. Each uses the Python conditional-content branch, so a bare ordinary OSS link from one of those pages resolves to the Python route. Their own roots are excluded from language-prefix rewriting.
+| Authored input | Emitted route or artifact | Notes |
+| --- | --- | --- |
+| Root pages such as `src/index.mdx` and `src/build-overview.mdx` | Matching root paths | These are shared files, not language copies. |
+| Shared `src/oss/` content, including `langchain/`, `langgraph/`, and `deepagents/` except `code/` | `/oss/python/...` and `/oss/javascript/...` | Conditional `:::python` and `:::js` content resolves per target. |
+| `src/oss/python/` and `src/oss/javascript/` | Only the matching language route tree, without that source-language segment | A file in the other language subtree is skipped for that build. |
+| `src/oss/openwiki/` | `/oss/openwiki/...` once | Uses the Python conditional-content branch. |
+| `src/oss/deepagents/code/` | `/oss/deepagents/code/...` once | Uses the Python conditional-content branch. |
+| Ordinary `src/langsmith/` files, including `fleet/` | `/langsmith/...` | Built as the Python target, so language fences resolve consistently. |
+| Direct `src/langsmith/managed-deep-agents*.mdx` files | `/langsmith/python/...` and `/langsmith/javascript/...` | Excluded from ordinary LangSmith emission. |
+| `src/snippets/` | Importable MDX and component inputs | Versioned consumers receive language-scoped MDX snippet imports. |
+| Images, fonts, `.well-known`, root CSS/JS, and `docs.json` | Copied shared paths | `docs.json` remains site configuration in the build output. |
 
-For a language-targeted MDX file, the builder preprocesses autolinks, UTM links, and conditional content before it scopes unqualified snippet imports to `/snippets/python/` or `/snippets/javascript/`, prefixes eligible absolute `/oss/` links, and maps bare Managed Deep Agents links to the target-language URL. It does not re-prefix already-qualified links, image paths, or the two unversioned product roots.
+### Language-aware transformation
 
-Source discovery is also a containment boundary: the builder skips symlinks and files that resolve outside the collection root. Builder tests cover dual versus one-time emission, link and snippet rewriting, Managed Deep Agents variants, and source containment.
+For a language-targeted MDX file, preprocessing runs before link rewrites. The builder scopes MDX snippet imports to `/snippets/python/` or `/snippets/javascript/`, prefixes eligible absolute `/oss/` links, and maps unversioned Managed Deep Agents links to the target-language route. It preserves already language-qualified URLs, image paths, and the unversioned Deep Agents Code and OpenWiki roots.
 
-## Build navigation: language trees and duplicated placement
+This makes a shared page portable across the two OSS route trees, but it also means authored absolute links have semantics: use an explicit `/oss/python/` or `/oss/javascript/` path only when deliberately targeting one language; use an unqualified eligible `/oss/` path when the builder should select the current target.
 
-The **AGENT DEVELOPMENT LIFECYCLE** product has **Home**, **Build**, **Test**, **Deploy**, and **Monitor**. Build exposes Python and TypeScript dropdowns with ten tabs each; Test, Deploy, and Monitor use direct flat `src/langsmith/` route families whose grouping is configured rather than inferred from folders.
+OpenWiki and Deep Agents Code are exceptions to the usual OSS duplication. They emit once, yet their conditional fences resolve with the Python target. Thus links from either product to ordinary shared OSS content resolve to the Python route, while links inside their own product roots remain unprefixed. Builder tests cover both one-time emission and this link behavior.
 
-The two Build dropdowns both reference the *same* unversioned OpenWiki routes. This duplication is navigation presentation, not evidence of two emitted OpenWiki trees. The OpenWiki tab lists its overview and quickstart, the **Modes** subgroup, integrations, visualization, CLI reference, customization, providers, update automation, and changelog in each dropdown.
+## Navigation is a separate projection
 
-The language-specific **Integrations** tab is different: it points to `oss/python/integrations/...` or `oss/javascript/integrations/...` routes. Python navigation has **Popular Providers** and **Integrations by component**; TypeScript has **Popular Providers**, **General integrations**, and **RAG integrations**. Add an integration in the matching authored tree, then explicitly place its emitted route in the matching `docs.json` group.
+`docs.json` has two products. The **AGENT DEVELOPMENT LIFECYCLE** menu has Home, Build, Test, Deploy, and Monitor. Build has Python and TypeScript dropdowns, while the LangSmith-oriented stages point at routes from `src/langsmith/`; the source directory alone does not tell a reader which product surface displays a page.
 
-### Managed Deep Agents and shared Deep Agents
+Important deliberate projections include:
 
-A direct `src/langsmith/managed-deep-agents*.mdx` page is excluded from ordinary LangSmith emission and generated at both language-prefixed locations. The unversioned and legacy URLs are redirects to Python; they are not duplicate authored pages. Both Build dropdowns use **Get started** (Beta), **Agent capabilities** (with a nested Channels group), and **Build and deploy**.
+- **No-code agents** presents the `/langsmith/fleet/` route family, demonstrating that menu labels and path segments are independent.
+- The two Build dropdowns list the same unversioned `/oss/openwiki/...` routes in their **OpenWiki** tab. This is duplicated presentation, not two route trees. The tab includes overview, quickstart, Modes, integrations, visualization, CLI reference, customization, providers, update automation, and changelog.
+- **Integrations** is genuinely language-specific. Python uses **Popular Providers** and **Integrations by component**; TypeScript uses **Popular Providers**, **General integrations**, and **RAG integrations**. An integration needs both the correct language source family and explicit navigation placement.
+- **Deep Agents Code** is an unversioned **Products and setup** surface. Its Configuration group is rooted at `oss/deepagents/code/configuration` and lists credentials, config file, hooks, and MCP tools. The authored configuration page distinguishes general-setting precedence, provider-key resolution, dotenv loading, and paired provider endpoints.
 
-The source is authored once with language fences. Its project-structure page requires a root named `agent`: `agent.py` with `define_deep_agent` for Python, or `agent.ts`/`agent.tsx` with `defineDeepAgent` for TypeScript. Managed paths enable capabilities, while ordinary application modules must be imported by the agent entry; `.env` and generated `.mda/evals/` content are excluded from the deployment archive.
+### Managed Deep Agents redirects and variants
 
-Shared Deep Agents content emits below both language trees. `src/oss/deepagents/subagents.mdx` is in **Delegation** in both: synchronous delegation blocks the coordinator, and disabling both the default and caller-provided synchronous subagents removes `SubAgentMiddleware` and the `task` tool. Async subagents use distinct middleware and tools.
+A direct `managed-deep-agents*.mdx` source has two emitted variants. `docs.json` places those variants under the Build **Managed Deep Agents** tab and redirects unversioned legacy routes to the Python variant. Do not add an unversioned MDX duplicate: it would contradict the builder's deliberate exclusion and can create an orphaned route.
 
-## LangSmith and Products and setup surfaces
+## OpenAPI and generated inputs
 
-**Test**, **Deploy**, and **Monitor** are flat-source LangSmith navigation surfaces. Deploy includes Sandboxes as direct routes for the landing page, snapshots, service URLs, download links, auth proxy, mounts, permissions, CLI, SDK, and Harbor integrations. Monitor keeps `langsmith/observability` as its Overview landing page, separate from Trace, Debug, Observe, and Reference; the Trace developer-tools group includes the Claude Code tracing guide.
+`docs.json` configures three OpenAPI reference surfaces:
 
-**PRODUCTS AND SETUP** has **LangSmith setup**, **LLM Gateway**, **No-code agents**, **Engine**, and **Deep Agents Code**. LangSmith setup alone is tabbed: Overview, Account, Cloud, BYOC, Self-hosted, and Govern.
+| Surface | Specification source | Route directory when configured |
+| --- | --- | --- |
+| Agent Server API | Committed `src/langsmith/agent-server-openapi.json` | `/langsmith/agent-server-api/` |
+| Control Plane API | Remote `https://api.host.langchain.com/openapi.json` | Mintlify default reference surface |
+| LangSmith REST API | Committed `src/langsmith/langsmith-platform-openapi.json` | `/langsmith/smith-api/` |
 
-- **LLM Gateway** is the Beta, flat `src/langsmith/llm-gateway*.mdx` family. Navigation separates Core capabilities, Administration and governance, and Advanced; credits are in Core capabilities and model-access policies are in Administration and governance.
-- **No-code agents** is the label for the `fleet/` source and route prefix.
-- **Engine** is the flat `engine*.mdx` family. Its workflow detects recurring trace issues, diagnoses them against traces and connected source, proposes a PR, tracks matching traces and dataset examples, and reopens a resurfacing issue.
-- **Deep Agents Code** is the unversioned terminal-agent surface. Its expanded Configuration group uses `oss/deepagents/code/configuration` as root and includes credentials, config file, hooks, and MCP tools. Its configuration documentation distinguishes precedence for general options, provider keys, dotenv files, and provider endpoints; `DEEPAGENTS_HOME` is captured before dotenv loading and config inspection reports origin without revealing secrets.
-- BYOC separates the LangChain cloud control plane from customer-AWS data-plane resources. Onboarding assumes a cross-account IAM role; a data plane progresses Requested → Provisioning → Active, and a workspace cannot later move to another data plane.
-- The Self-hosted tab places direct `/langsmith/self-host...` routes in its groups. Its SmithDB group is hidden, but its metrics route is visible in Reference.
+Mintlify generates endpoint pages during deployment; they are not authored MDX pages and do not appear as local route files merely because this repository copies a committed specification. The builder can inspect locally configured OpenAPI specifications when generating its `llms` indexes, but that does not make this repository the producer of the deployed API reference pages.
 
-## OpenAPI, redirects, and verification
+## Operational invariants and checks
 
-`docs.json` configures three OpenAPI-generated sections. Agent Server API uses committed `langsmith/agent-server-openapi.json` under `/langsmith/agent-server-api/`; Control Plane API obtains a remote specification; and LangSmith REST API uses committed `langsmith/langsmith-platform-openapi.json` under `/langsmith/smith-api/`. Mintlify generates endpoint pages during deployment rather than from authored MDX, so do not add endpoint files to `src/` or expect them in local `build/` output.
+- Source traversal rejects symlinks and any resolved file outside the collection root. This prevents a committed path from pulling host files into build artifacts.
+- Changes to source placement, language routing, snippet imports, or link rewriting should extend `tests/unit_tests/test_builder.py`; the focused tests cover unversioned product emission, link preservation, language-scoped snippets, and source containment.
+- Run `make build` to inspect emitted paths. Then run `make broken-links`: it builds first, invokes Mintlify with redirect validation, and filters deployment-only OpenAPI routes and standalone snippet reports that would otherwise be local false positives.
 
-When changing a page or surface:
+## Change checklist
 
-1. Identify the authored domain and expected emitted route; do not infer either from a menu label.
-2. Update the source and the exact `docs.json` product/menu/dropdown-or-tab/group placement as separate operations. For OpenWiki, keep the two Build-tab references aligned while retaining one route tree.
-3. Preserve public URLs with redirects rather than authored duplicates. Keep unversioned Managed Deep Agents URLs aimed at the Python route.
-4. Inspect both language outputs for shared OSS, language-specific integrations, and Managed Deep Agents; inspect only the unversioned tree for OpenWiki and Deep Agents Code.
-5. Validate OpenAPI changes through their specifications, not invented endpoint MDX.
-6. Run `make build` and `make broken-links`. The latter builds first, validates redirects with Mintlify, and filters deployment-only OpenAPI and standalone-snippet false positives. Extend `tests/unit_tests/test_builder.py` when changing route emission, rewriting, or containment.
+1. Start from the intended public route, then identify its source family; do not infer it from a navigation label.
+2. For shared OSS content, inspect both `/oss/python/` and `/oss/javascript/` output. For OpenWiki and Deep Agents Code, inspect only their unversioned output.
+3. Make `docs.json` placement and route-emission changes separately. Keep both OpenWiki tab references aligned.
+4. Preserve URLs with redirects. For Managed Deep Agents, target the language-prefixed route and retain Python as the unversioned redirect destination.
+5. For an API reference change, update or validate the specification and OpenAPI configuration rather than creating an endpoint page.
+6. Run the focused builder tests and link checks before relying on navigation or redirect behavior.
 
 ## Related pages
 

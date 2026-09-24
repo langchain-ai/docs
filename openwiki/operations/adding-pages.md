@@ -1,8 +1,11 @@
 ---
 type: operations guide
-title: Adding and Maintaining Documentation Pages
-description: Safely add, move, retire, or regenerate documentation by choosing the owning input, maintaining docs.json navigation and redirects, and running focused validation.
+title: Adding and maintaining documentation pages
+description: Safely add, move, retire, or regenerate documentation pages by choosing the source owner, maintaining navigation and redirects, and validating the rendered site.
 tags: [documentation, operations, navigation, redirects, build-system]
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-24T08:22:38.580Z
 sources:
   - id: openwiki-source-18732c72f962c06354cb62db
     resource: repo://.agents/skills/add-docs-page/SKILL.md
@@ -36,84 +39,85 @@ sources:
     resource: repo://src/docs.json
   - id: openwiki-source-a39cb5ba9006abfe6280b6f8
     resource: repo://src/oss/openwiki/cli-reference.mdx
-generated: { by: "openwiki/0.4.3", at: "2026-09-23T08:21:36.095Z" }
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-23T08:21:36.095Z
+generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
 ---
 
-# Adding and Maintaining Documentation Pages
+# Adding and maintaining documentation pages
 
-A safe documentation change starts at the input that owns it. `AGENTS.md` is the repository's current authoring guidance; `CLAUDE.md` points readers to it. `src/` contains authored pages and configuration, while `build/` is cleared and recreated by the builder. `src/docs.json` is the public site contract for navigation and redirects. Therefore, every new authored page must be added to `src/docs.json`, while a moved or removed public route must retain a redirect to its maintained successor.
+A documentation change is complete only when its owning input, public route, and validation are correct. `AGENTS.md` is the active repository guidance, and `CLAUDE.md` points to it. Author manually maintained content in `src/`; **never edit generated files**, including `build/`, generated snippets, generated tables, or generated OpenAPI output. The builder clears and recreates `build/`, so a durable fix belongs in an authored source or a generator input.
+
+Every new authored page requires a `src/docs.json` navigation entry. Every moved or retired public route requires a redirect in `src/docs.json` to the closest maintained destination. Navigation labels are not a reliable directory map, so select the source owner before selecting the nav location.
 
 ```mermaid
 flowchart TD
-    Start["Classify the requested change"] --> Owner{"Choose an owning input"}
-    Owner --> Authored["Author page or navigation input"]
-    Owner --> Generated["Change generator input"]
-    Authored --> Route["Update docs.json route contract"]
-    Route --> Retired{"Public route moved or removed"}
-    Retired -->|"Yes"| Redirect["Add redirect"]
-    Retired -->|"No"| Gates["Run focused checks"]
-    Redirect --> Gates
-    Generated --> Regenerate["Regenerate derived files"]
-    Regenerate --> Gates
-    Gates --> Review["Review source and configuration diff"]
+    Start["Classify the requested change"] --> Owner{"Is the desired result authored or generator-owned"}
+    Owner -->|"Authored"| Author["Change a source page under src"]
+    Owner -->|"Generator-owned"| Input["Change the generator input or metadata"]
+    Author --> Nav["Add or update docs.json navigation"]
+    Input --> RunGenerator["Run the owning generator"]
+    Nav --> Retire{"Does a public route move or retire"}
+    Retire -->|"Yes"| Redirect["Add a docs.json redirect"]
+    Retire -->|"No"| Validate["Run focused validation"]
+    Redirect --> Validate
+    RunGenerator --> Validate
+    Validate --> Review["Review source, config, and derived diff"]
     classDef process fill:#E5F4FF,stroke:#006DDD,stroke-width:2px,color:#030710
     classDef trigger fill:#F6FFDB,stroke:#6E8900,stroke-width:2px,color:#2E3900
     classDef decision fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
     classDef output fill:#EBD0F0,stroke:#885270,stroke-width:2px,color:#441E33
     class Start trigger
-    class Owner,Retired decision
-    class Authored,Generated,Route,Redirect,Regenerate,Gates process
+    class Owner,Retire decision
+    class Author,Input,Nav,RunGenerator,Redirect,Validate process
     class Review output
 ```
 
-This change flow separates authored inputs from derived output and makes URL compatibility an explicit decision.
+This flow distinguishes a durable authored change from a regeneration and makes route compatibility an explicit release decision.
 
-## Choose the source and route model
+## Select the owner and route model
 
-The builder has three route models:
+The build produces several route families. Choose the source directory based on subject ownership, then add the route to the matching `docs.json` location.
 
-| Content | Authoring location | Emitted routes |
+| Content | Source owner | Resulting route model |
 | --- | --- | --- |
-| Shared OSS content, including LangChain, LangGraph, and most Deep Agents content | `src/oss/` | One source produces `/oss/python/...` and `/oss/javascript/...`. Use `:::python` and `:::js` blocks only for language-specific material. |
-| Language-specific integration content | `src/oss/python/` or `src/oss/javascript/` | Only that language's route. |
-| OpenWiki and Deep Agents Code | `src/oss/openwiki/` or `src/oss/deepagents/code/` | A single unversioned `/oss/openwiki/...` or `/oss/deepagents/code/...` route. |
-| Ordinary LangSmith documentation | `src/langsmith/` | A single `/langsmith/...` route. |
-| Managed Deep Agents | Direct `src/langsmith/managed-deep-agents*.mdx` files | Both `/langsmith/python/...` and `/langsmith/javascript/...` routes. |
+| Most OSS content, such as LangChain, LangGraph, and Deep Agents | `src/oss/` | One source builds to `/oss/python/...` and `/oss/javascript/...`. Use `:::python` and `:::js` only for language-specific material. |
+| Language-specific integrations and similar material | `src/oss/python/` or `src/oss/javascript/` | One language route. |
+| OpenWiki and Deep Agents Code | `src/oss/openwiki/` or `src/oss/deepagents/code/` | One unversioned route: `/oss/openwiki/...` or `/oss/deepagents/code/...`. |
+| Ordinary LangSmith pages | `src/langsmith/` | One unversioned `/langsmith/...` route. |
+| Managed Deep Agents pages | Direct `src/langsmith/managed-deep-agents*.mdx` files | Python and JavaScript routes under `/langsmith/python/...` and `/langsmith/javascript/...`. |
 
-The full builder clears `build/`, renders both versioned OSS variants, renders the two language-agnostic OSS products once, then renders LangSmith and Managed Deep Agents. Conditional fences retain only their matching language; language-agnostic OSS pages resolve them as Python. During versioned output, unprefixed ordinary `/oss/...` links are rewritten to the selected language route. Links to OpenWiki and Deep Agents Code are exceptions: use `/oss/openwiki/...` and `/oss/deepagents/code/...` without a language prefix.
+For versioned OSS output, preprocessing keeps the matching conditional fence, resolves `@[...]` cross-references in the target language, rewrites snippet imports, and rewrites ordinary unprefixed `/oss/...` links for that language. Do not manually prefix ordinary versioned OSS links with `/python/` or `/javascript/`. OpenWiki and Deep Agents Code are intentional exceptions: link to `/oss/openwiki/...` and `/oss/deepagents/code/...` without a language prefix, because the builder does not duplicate them.
 
-Managed Deep Agents is the LangSmith exception. Its direct files do not produce ordinary unversioned LangSmith output; legacy unversioned URLs redirect to the Python routes through `docs.json`. Do not create an unversioned duplicate to preserve an old URL.
+Unversioned products resolve conditional blocks as Python. Managed Deep Agents is a different exception: its direct source files do not emit ordinary unversioned LangSmith pages. Existing unversioned Managed Deep Agents URLs redirect to the Python route; do not create a duplicate unversioned page to preserve an old URL.
 
-## Place every authored page in current navigation
+## Add an authored page to navigation
 
-`src/docs.json` is authoritative for navigation, routing, redirects, and configured generated API references. The current top-level navigation contains two products: **AGENT DEVELOPMENT LIFECYCLE**, whose menu has Home, Build, Test, Deploy, and Monitor; and **PRODUCTS AND SETUP**, whose menu includes LangSmith setup, LLM Gateway, No-code agents, Engine, and Deep Agents Code. A Build menu item has Python and TypeScript dropdowns with tabs and nested groups; other menu items can use their own page or group structure. Labels are not directory names: Build combines `src/oss/` and `src/langsmith/`, while No-code agents is sourced from `src/langsmith/fleet/`.
+`src/docs.json` is the authoritative navigation and route configuration. Its navigation hierarchy is product → menu item → dropdown or tab → nested `pages` group. Find a neighboring entry in the target `pages` array; do not infer placement from a menu label. For example, lifecycle menus can mix `src/oss/` and `src/langsmith/`, and Fleet appears in navigation as “No-code agents.”
 
-Before adding a route, locate a neighboring entry in the relevant `docs.json` `pages` array rather than deriving placement from its label. Use an extensionless path relative to `src`; for example, `src/langsmith/sandboxes.mdx` is `"langsmith/sandboxes"`. A shared OSS source is valid for the matching Python and JavaScript entries. For a new group, put its index route first.
+For an authored page:
 
-For a standard authored page:
+1. Select the source owner and inspect a neighboring page. Create an `.md` or `.mdx` file under `src/` with required frontmatter. Keep `description` plain text: Markdown in that field breaks SEO.
+2. Add the extensionless route, relative to `src`, to the exact `src/docs.json` `pages` array. For example, `src/langsmith/sandboxes.mdx` becomes `langsmith/sandboxes`.
+3. Add all emitted routes: normally both Python and JavaScript entries for shared versioned OSS content, one entry for a language-specific page, and one unversioned entry for OpenWiki or Deep Agents Code. Add both entries for Managed Deep Agents.
+4. If adding a group, place its index route first. Integration pages within an existing component normally belong in that component’s `index.mdx`; alter `docs.json` only when creating a component group.
+5. Before changing a heading, search for inbound fragment links. A changed heading changes its generated anchor.
 
-1. Inspect neighboring source pages and the target `docs.json` group. Create a `.md` or `.mdx` file under the chosen owner with frontmatter. Keep `description` plain text: repository guidance prohibits Markdown there.
-2. Add the emitted route or routes to the exact product, menu item, dropdown, tab, and group. A source file alone is not navigated.
-3. For a shared OSS page, add both language routes; for language-specific content, add the applicable route; for OpenWiki or Deep Agents Code, add its one unversioned route. Add both Managed Deep Agents routes to their respective language navigation.
-4. An integration guide inside an existing component is normally added to that component's `index.mdx`; update `docs.json` only when creating a new component group.
-5. Use root-relative internal routes. Do not manually add `/python/` or `/javascript/` to ordinary versioned OSS links, because preprocessing adds the target prefix. Check inbound fragment links before changing a heading.
+The removed-pages checker enforces that every navigation page resolves to an existing `.mdx` or `.md` source. A source file that lacks navigation is therefore not a complete new public page.
 
-The removed-pages checker also requires every navigation page to resolve to an existing `.mdx` or `.md` source. That makes navigation an integrity constraint, not merely a sidebar preference.
+## Move or retire a page safely
 
-## Move or retire a route without breaking it
-
-Use the mover for the filesystem move and qualifying relative-link maintenance, then make navigation and redirect changes explicitly:
+Use the documentation mover for a filesystem move, then explicitly update navigation, route links, and redirects. Start with a preview:
 
 ```bash
 uv run docs mv src/langsmith/evaluation.mdx src/langsmith/deploy/evaluation.mdx --dry-run
 ```
 
-The installed `docs` command routes to `pipeline.cli:main`. `--dry-run` reports changes without moving or rewriting files. A real move appends the operation to `link_changes.jsonl`, scans Markdown, MDX, and notebook Markdown cells under `src/`, moves the file, and recalculates relative links within the moved file. It does **not** update `docs.json`, public root-relative route strings, or redirects. Review the preview, perform the move, and search for the old public route.
+The installed `docs` console script invokes `pipeline.cli:main`. The mover scans Markdown, MDX, and notebook Markdown cells beneath `src/` and updates links that resolve to the moved file; if the directory changes, it also recalculates relative links inside the moved document. `--dry-run` reports these changes without moving or rewriting anything. A real move records the operation in `link_changes.jsonl` before moving the file and applying internal-link changes.
 
-Update the navigation entry in the same change. If a published route changes or disappears, add a redirect in `docs.json` to the closest maintained destination:
+The mover does not make the public route decision for you. After reviewing the preview:
+
+1. Run the move without `--dry-run`.
+2. Update the affected `docs.json` navigation entries and search for root-relative links containing the old public URL.
+3. Add a redirect for every published route that changed or was retired. Shared OSS and Managed Deep Agents changes can need one redirect per language route.
 
 ```json
 {
@@ -122,82 +126,75 @@ Update the navigation entry in the same change. If a published route changes or 
 }
 ```
 
-A shared OSS or Managed Deep Agents move can require redirects for each retired language route. The removed-pages check compares base and proposed navigation. If a route disappears from navigation **and** no corresponding source remains, it requires a redirect; a `:path*` source can cover a route family. Retaining source while removing navigation avoids that particular checker failure, but remains a deliberate reachability decision rather than a substitute for preserving a published URL.
+Redirect sources are site paths and normally start with `/`. The removal checker compares base and proposed navigation. When a navigation page disappears and its source file no longer exists, it requires a matching redirect; a `:path*` redirect source may cover a route family. Keeping a source file while removing it from navigation avoids that specific check, but it does not replace an intentional compatibility decision for a published URL.
 
-Run the checker against the comparison ref when changing navigation or redirects:
+Run the check whenever navigation or redirects change:
 
 ```bash
 python3 scripts/check_removed_pages_redirects.py --base-ref origin/main src/docs.json
 ```
 
-## Change generated surfaces through their owners
+## Regenerate derived surfaces through their inputs
 
-Generated files are outputs, not alternate authoring surfaces. Change the input, run its generator, and review the derivative diff.
+Do not edit generated files. Change their owning source, metadata, or processor, then run the generator and review its output.
 
-### Reusable page snippets
+### Reusable snippets
 
-For content reused across pages, author one component under `src/snippets/` and import it from the consuming page with an absolute import such as `import Name from '/snippets/product/name.mdx';`, then render `<Name />`. Do not use Mintlify's `<Snippet file="..." />` form: the build only rewrites the import form into language-specific snippet copies. When the same block appears on three or more pages, extract it instead of maintaining copies. Confirm that an added snippet has Python and JavaScript outputs when it is consumed by versioned OSS content.
+Put reusable MDX in `src/snippets/` and import it with `from '/snippets/...'`. This import form is significant: versioned builds rewrite it to a language-specific snippet copy, whereas Mintlify’s `<Snippet file="..." />` form is not rewritten. Extract a block repeated across several pages rather than maintaining copies, and confirm both language outputs when versioned OSS content consumes it.
 
-### Code samples and generated snippets
+### Testable code samples
 
-Runnable samples belong in `src/code-samples/`. `make code-snippets` extracts marked regions to `src/code-samples-generated/` and produces derivative MDX in `src/snippets/code-samples/`. The MDX generator supports Python, TypeScript, Java, Kotlin, Go, and shell intermediates; it can emit language fences or eligible Deep Agents provider CodeGroups and add trace links from the trace manifest. Do not hand-edit the derived snippets.
+Author runnable samples in `src/code-samples/`, test a changed sample, then generate its display artifacts:
 
 ```bash
 make test-code-samples FILES="src/code-samples/path/to/sample.py"
 make code-snippets
 ```
 
-Test a changed source sample before publishing it. If credentials or an unavailable dependency prevent local execution, report that limitation rather than editing generated display code.
+`make code-snippets` extracts marked sample regions into `src/code-samples-generated/` and renders MDX into `src/snippets/code-samples/`. The renderer supports Python, TypeScript, Java, Kotlin, Go, and shell snippets, can create Deep Agents provider CodeGroups, and appends trace links from the trace manifest. Do not hand-edit either derived surface. If a local sample cannot run because of unavailable credentials or dependencies, report that limitation instead of modifying generated display code.
 
-### Integration discovery tables
+### Integration tables and OpenAPI references
 
-A hosted integration guide's `integration:` frontmatter and `scripts/data/integration_external_docs.yaml` own generated component tables. Hosted guides provide internal links; external records link through `docs_url`. Change that metadata rather than `src/snippets/oss/*-downloads.mdx`, then validate and refresh:
+Integration component tables derive from hosted guide `integration:` frontmatter and `scripts/data/integration_external_docs.yaml`. External entries use `docs_url`; the refresh process rejects unsafe schemes. Update those inputs, then validate and regenerate rather than editing the rendered table:
 
 ```bash
 uv run python scripts/refresh_integration_downloads.py --check-docs-urls
 uv run python scripts/refresh_integration_downloads.py --write
 ```
 
-The refresh script permits `https://`, `http://`, and single-slash site-relative URLs, and rejects protocol-relative and unsafe schemes before it renders external links.
-
-### OpenAPI reference configuration
-
-`docs.json` OpenAPI entries are Mintlify configuration, not authored endpoint MDX. Mintlify creates endpoint pages at deployment, so those routes are not normal local source pages. The committed Agent Server spec, configured remote Control Plane source, and committed LangSmith REST spec have separate lifecycles; do not hand-author their endpoint output.
-
-For a LangSmith REST specification refresh, use the processor rather than editing the transformed spec:
+OpenAPI entries in `docs.json` configure Mintlify-generated endpoint pages, not authored endpoint MDX. The LangSmith REST processor only fetches the allow-listed LangSmith API host by default, hides selected operations, standardizes operation titles, groups and orders tags, and writes the transformed spec only with `--write`:
 
 ```bash
 uv run python scripts/process_langsmith_openapi.py --write
 ```
 
-With its default input, the processor fetches only its allow-listed LangSmith API host, hides selected operations, normalizes titles, groups and orders sidebar tags, and writes only with `--write`. For an Agent Server spec change, use `make check-openapi`; this currently validates `langsmith/agent-server-openapi.json` from `build/`.
+For the Agent Server specification, use `make check-openapi`. It builds first and validates `langsmith/agent-server-openapi.json` in `build/`. Never hand-author deployment-generated endpoint pages or edit transformed specifications as if they were the source.
 
-## Run focused checks
+## Validate the change
 
-Select checks based on the changed owner, then add rendering and link checks for routes, navigation, preprocessing, moves, removals, or generated inputs:
+Choose focused checks for the owner changed, then run rendering and link checks for pages, navigation, links, redirects, or route changes:
 
-1. Run `make lint_prose FILES="src/path/to/page.mdx"` for prose. It installs the repository-pinned Vale binary; without `FILES`, it lints `src/`.
+1. Run `make lint_prose FILES="src/path/to/page.mdx"`. The target installs the pinned Vale binary; omit `FILES` to lint `src/`.
 2. Run `make check-cross-refs` after adding or changing `@[...]` references.
-3. Run focused sample, generator, integration URL, or OpenAPI checks for the owner you changed.
-4. Run `make dev` to inspect rendered output. It builds first, watches `src/`, and starts `mint dev` from `build/` on port 3000. Inspect both language variants for versioned content.
-5. Run `make build` for a clean result, then `make broken-links` after route or link work. Use `make broken-links-with-anchors` when fragments changed. These targets invoke Mint's redirect validation and filter expected reports from deployment-time OpenAPI pages and standalone snippets.
-6. Review the completed source and `docs.json` diff; never accept a `build/` edit as the durable fix.
+3. Run the relevant sample, generator, integration URL, or OpenAPI validation after changing an input to a derived surface.
+4. Run `make dev` to inspect output. It performs an initial build, watches `src/`, and serves `build/` through `mint dev` on port 3000. Check both versions of versioned OSS pages.
+5. Run `make build` for a clean generated result. Run `make broken-links` after route or link changes, and `make broken-links-with-anchors` after fragment changes. These invoke Mint link and redirect checks, filtering known deployment-time OpenAPI and standalone-snippet reports before failing on remaining broken links.
+6. Review the final authored source, `src/docs.json`, and generated diff. A `build/` change is evidence of output, never the durable fix.
 
 ## Completion checklist
 
-- [ ] The page, metadata, sample, listing input, or specification changed at its actual owner.
-- [ ] Every new authored page has plain-text frontmatter and the correct extensionless `docs.json` navigation entry.
-- [ ] The selected route model has every required language-specific or unversioned navigation entry.
-- [ ] A move or removal updates navigation and preserves each retired public route with an appropriate redirect.
-- [ ] Derived snippets, integration tables, and OpenAPI specifications were regenerated rather than hand-edited.
-- [ ] Focused lint, cross-reference, generator, source-sample, OpenAPI, build, and link checks ran where applicable.
-- [ ] The rendered route and final source/configuration diff were reviewed.
+- [ ] The change was made at its actual authored owner or generator input.
+- [ ] Every new authored page has valid frontmatter and a `src/docs.json` navigation entry.
+- [ ] Navigation includes every route emitted by the selected versioning model.
+- [ ] Every moved or retired public route has a redirect to a maintained destination.
+- [ ] Generated snippets, tables, and OpenAPI artifacts were regenerated, not hand-edited.
+- [ ] Focused lint, cross-reference, generator, sample, build, and link checks ran where applicable.
+- [ ] Rendered output and the final source/configuration diff were reviewed.
 
 ## See also
 
 - [Source directory map](/openwiki/architecture/source-map.md)
-- [Versioned content](/openwiki/concepts/versioning.md)
+- [Versioning](/openwiki/concepts/versioning.md)
 - [Mintlify integration](/openwiki/integrations/mintlify.md)
-- [Cross-references](/openwiki/operations/cross-references.md)
+- [Quickstart](/openwiki/quickstart.md)
 - [Testing overview](/openwiki/testing/test-overview.md)
-- [Versioned content workflow](/openwiki/workflows/versioned-content.md)
