@@ -1,0 +1,40 @@
+```python
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+from langchain.agents.middleware.human_in_the_loop import InterruptOnConfig
+from langchain.tools import BaseTool
+from langchain.tools.tool_node import ToolCallRequest
+
+
+def is_destructive(tool: BaseTool) -> bool:
+    """Read the MCP destructive hint off the adapter's tool metadata."""
+    annotations = (
+        (tool.metadata or {}).get("mcp", {}).get("tool", {}).get("annotations", {})
+    )
+    return annotations.get("destructive_hint", False)
+
+
+async def gate_destructive_tools(server):
+    async with MCPAdapter(server) as adapter:
+        tools = await adapter.list_tools()
+
+        # Read the destructive hint from metadata once, then let a callable
+        # decide per call. One config covers whatever destructive tools a
+        # server exposes, without hardcoding tool names.
+        destructive = {tool.name for tool in tools if is_destructive(tool)}
+
+        def needs_approval(request: ToolCallRequest) -> bool:
+            return request.tool_call["name"] in destructive
+
+        gate = InterruptOnConfig(
+            allowed_decisions=["approve", "reject"], when=needs_approval
+        )
+        interrupt_on: dict[str, bool | InterruptOnConfig] = {
+            tool.name: gate for tool in tools
+        }
+        return create_agent(
+            "claude-sonnet-5",
+            tools,
+            middleware=[HumanInTheLoopMiddleware(interrupt_on=interrupt_on)],
+            checkpointer=InMemorySaver(),
+        )
+```
