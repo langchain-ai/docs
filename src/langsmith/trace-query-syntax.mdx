@@ -46,9 +46,22 @@ The filtering grammar is based on comparator functions applied to fields of the 
 | `gte`      | Greater than or equal to                                 | `gte(latency, 1.5)` |
 | `lt`       | Less than                                                | `lt(start_time, "2024-01-01T00:00:00Z")` |
 | `lte`      | Less than or equal to                                    | `lte(feedback_score, 0.5)` |
+| `like`     | Pattern match (case-sensitive); `%` matches any sequence | `like(metadata_value, "%prod%")` |
+| `notlike`  | Inverse pattern match; `%` matches any sequence          | `notlike(metadata_value, "%staging%")` |
 | `has`      | Check if the run contains a tag or metadata key-value    | `has(tags, "production")` |
 | `search`   | Search for a substring across all string fields          | `search("invoice")` |
 | `in`       | Check if a field value is in a list                      | `in(metadata_key, ["session_id", "thread_id"])` |
+
+### Wildcard pattern matching
+
+`like` and `notlike` match a field value against a pattern. Use `%` as a wildcard that matches any sequence of characters, including an empty sequence.
+
+- `like(metadata_value, "%prod%")` matches any value that contains `prod`, such as `production` or `eu-prod-1`.
+- `notlike(metadata_value, "%staging%")` matches any value that does not contain `staging`.
+
+Patterns are case-sensitive. Wrap the pattern in double quotes and place `%` inside the quotes where you want the wildcard, for example `"%staging%"`. Without `%`, `like` behaves like `eq`.
+
+`like` and `notlike` are the API equivalents of the UI's **contains** and **does not contain** operators. Refer to the [UI-to-API operator map](#ui-to-api-operator-map) for a full mapping.
 
 ### Logical operators
 
@@ -82,6 +95,39 @@ or(eq(status, "error"), and(eq(feedback_key, "score"), lt(feedback_score, 0.5)))
 - **Timestamps**: ISO 8601 format, `"2024-06-01T00:00:00Z"`.
 - **Durations**: seconds, as either a number or a string with the `s` suffix, `"5s"`, `"1.5s"`, `"90s"`, or `1.5`. Other unit suffixes (`m`, `h`) are not supported.
 - **Lists**: JSON array syntax, `["session_id", "thread_id"]`.
+
+## UI-to-API operator map
+
+The LangSmith UI offers named operators in its filter builder. The table below shows the API comparator that corresponds to each UI operator.
+
+| UI operator | API comparator | Notes |
+| ----------- | -------------- | ----- |
+| is | `eq` | Exact match. |
+| is not | `neq` | Inverts `eq`. |
+| contains | `like` | Use `%` as a wildcard: `like(metadata_value, "%staging%")`. |
+| does not contain | `notlike` | Use `%` as a wildcard: `notlike(metadata_value, "%staging%")`. |
+| greater than | `gt` | Numeric and timestamp fields. |
+| greater than or equal | `gte` | Numeric and timestamp fields. |
+| less than | `lt` | Numeric and timestamp fields. |
+| less than or equal | `lte` | Numeric and timestamp fields. |
+| has tag | `has` | `has(tags, "value")`. |
+| in list | `in` | `in(metadata_key, ["a", "b"])`. |
+
+Refer to [Filter traces](/langsmith/filter-traces) for the full UI filter reference.
+
+## Alert filters
+
+Alert rules in LangSmith accept the same filter query language in their `filter` and `denominator_filter` fields. A few behaviors are specific to alerts:
+
+- **Runs without the metadata key** match `neq` and `notlike` conditions. A run with no `env` metadata key satisfies `notlike(metadata_value, "%staging%")`.
+- **Error, inputs, and outputs** are matched token-by-token, not as a full phrase. Use `like` with `%` to match a substring reliably.
+- The `filter` field narrows which runs count toward the alert numerator. The `denominator_filter` field narrows the baseline population.
+
+Example alert filter that excludes staging runs:
+
+```text
+and(eq(metadata_key, "env"), notlike(metadata_value, "%staging%"))
+```
 
 ## Quick reference examples
 
@@ -143,6 +189,12 @@ and(eq(metadata_key, "user_id"), eq(metadata_value, "usr_abc123"))
 
 # Runs from the production environment
 and(eq(metadata_key, "environment"), eq(metadata_value, "production"))
+
+# Runs whose "env" metadata value contains "prod" (like: contains)
+and(eq(metadata_key, "env"), like(metadata_value, "%prod%"))
+
+# Runs whose "env" metadata value does not contain "staging" (notlike: does not contain)
+and(eq(metadata_key, "env"), notlike(metadata_value, "%staging%"))
 ```
 
 ### Filter by thread ID
