@@ -602,6 +602,26 @@ The durability modes, from least to most durable, are as follows:
 * `"async"`: LangGraph persists changes asynchronously while the next step executes. This provides good performance and durability, but there is a small risk that LangGraph does not write checkpoints if the process crashes during execution.
 * `"sync"`: LangGraph persists changes synchronously before the next step starts. This ensures that LangGraph writes every checkpoint before continuing execution, providing high durability at the cost of some performance overhead.
 
+### What exists before the first node runs
+
+For a new thread, the durability mode also determines which checkpoints are committed before the first node executes:
+
+* `"exit"`: No checkpoint exists until the run ends. A crash during the run leaves no record of the thread.
+* `"async"`: LangGraph starts writing the input checkpoint before the first node executes, but does not wait for the write to finish. The first node can run before any checkpoint is committed.
+* `"sync"`: LangGraph commits the input checkpoint (step `-1`) and the step `0` checkpoint before the first node executes.
+
+In every mode, a crash before the first checkpoint becomes durable leaves the thread indistinguishable from a thread that was never invoked:
+
+:::python
+`get_tuple()` returns `None` in both cases, and `invoke(None, config)` raises `EmptyInputError`.
+:::
+
+:::js
+`getTuple()` returns `undefined` in both cases, and `invoke(null, config)` raises `EmptyInputError`.
+:::
+
+If you need to distinguish "never accepted" from "accepted but lost", record admission outside the checkpointer, for example by committing an outbox row to your own store before you call `invoke`.
+
 ## Optimize checkpoint storage
 
 :::python
