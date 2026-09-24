@@ -1,0 +1,43 @@
+```typescript
+import { MemorySaver } from "@langchain/langgraph";
+import { MCPAdapter } from "@langchain/mcp-adapters";
+import {
+  createAgent,
+  humanInTheLoopMiddleware,
+  type InterruptOnConfig,
+  type WhenPredicate,
+} from "langchain";
+
+async function createGuardedAgent() {
+  const adapter = new MCPAdapter(...);
+  const tools = await adapter.listTools();
+
+  // Read the hint once, then apply the same predicate to every tool call.
+  const destructive = new Set(
+    tools
+      .filter(
+        (tool) =>
+          tool.metadata?.mcp?.tool?.annotations?.destructiveHint ?? false
+      )
+      .map((tool) => tool.name)
+  );
+
+  const needsApproval: WhenPredicate = (request) =>
+    destructive.has(request.toolCall.name);
+
+  const gate: InterruptOnConfig = {
+    allowedDecisions: ["approve", "reject"],
+    when: needsApproval,
+  };
+  const interruptOn = Object.fromEntries(
+    tools.map((tool) => [tool.name, gate])
+  );
+
+  return createAgent({
+    model: "claude-sonnet-5",
+    tools,
+    middleware: [humanInTheLoopMiddleware({ interruptOn })],
+    checkpointer: new MemorySaver(),
+  });
+}
+```

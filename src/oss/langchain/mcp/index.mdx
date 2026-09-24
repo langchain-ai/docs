@@ -5,8 +5,11 @@ description: Connect LangChain agents to MCP servers with the MCPAdapter, built 
 ---
 
 import McpQuickstartPy from '/snippets/code-samples/mcp-quickstart-py.mdx';
+import McpQuickstartJs from '/snippets/code-samples/mcp-quickstart-js.mdx';
 import McpDocsServerPy from '/snippets/code-samples/mcp-docs-server-py.mdx';
+import McpDocsServerJs from '/snippets/code-samples/mcp-docs-server-js.mdx';
 import McpTransportsPy from '/snippets/code-samples/mcp-transports-py.mdx';
+import McpTransportsJs from '/snippets/code-samples/mcp-transports-js.mdx';
 
 :::python
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open protocol that standardizes how applications provide tools and context to language models. LangChain agents call tools defined on MCP servers through @[`MCPAdapter`], which discovers a server's tools and adapts them into LangChain tools you can pass straight to @[`create_agent`].
@@ -18,9 +21,19 @@ The `langchain.mcp` namespace requires `langchain[mcp]>=1.4.0` and is in beta. I
 
 If you used MCP before v1.4.0, see [Migrate from `langchain-mcp-adapters`](/oss/migrate/langchain-mcp-adapters).
 </Note>
+:::
+
+:::js
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io) is an open protocol that standardizes how applications provide tools and context to language models. LangChain agents call tools defined on MCP servers through @[`MCPAdapter`], which discovers a server's tools and adapts them into LangChain tools you can pass straight to @[`create_agent`].
+
+<Note>
+This guide assumes you're using `@langchain/mcp-adapters>=2`. If you're using an older version of `@langchain/mcp-adapters`, you can either read the pre-v1 docs or read the [migration guide](/oss/migrate/langchain-mcp-adapters).
+</Note>
+:::
 
 ## Install
 
+:::python
 Install LangChain with the `mcp` extra, which pulls in FastMCP:
 
 <CodeGroup>
@@ -32,18 +45,55 @@ pip install "langchain[mcp]"
 uv add "langchain[mcp]"
 ```
 </CodeGroup>
+:::
+
+:::js
+LangChain's mcp utilities are exported in the `@langchain/mcp-adapters` package.
+
+<CodeGroup>
+```bash npm
+npm install @langchain/mcp-adapters
+```
+
+```bash pnpm
+pnpm add @langchain/mcp-adapters
+```
+
+```bash yarn
+yarn add @langchain/mcp-adapters
+```
+
+```bash bun
+bun add @langchain/mcp-adapters
+```
+</CodeGroup>
+:::
 
 ## Quickstart
 
+:::python
 Open an @[`MCPAdapter`], discover the server's tools with `list_tools()`, and build the agent inside the context. The tools hold the client, so the agent stays usable after the context exits:
 
 <McpQuickstartPy />
+:::
+
+:::js
+Open an @[`MCPAdapter`], discover the server's tools with `listTools()`, and build the agent with the tools attached.
+
+<McpQuickstartJs />
+:::
 
 <Accordion title="Example: Query LangChain docs">
 
 The [LangChain docs MCP server](/use-these-docs) is a public HTTP endpoint at `https://docs.langchain.com/mcp`. Connect an agent to it to search and read documentation without writing custom tools:
 
+:::python
 <McpDocsServerPy />
+:::
+
+:::js
+<McpDocsServerJs />
+:::
 
 <Note>
 The docs MCP server is public and does not require an API key. For IDE and coding-agent setup (Claude Code, Cursor, and others), see [Use docs programmatically](/use-these-docs).
@@ -61,22 +111,50 @@ The server exposes these tools:
 
 ## Transports
 
-@[`MCPAdapter`] infers the transport from the target you hand it, so the only thing that changes between an in-process server, a local script over stdio, and a remote URL is the target itself:
+:::python
+
+@[`MCPAdapter`] infers the transport from the target you provide. The target is the only difference between an in-process server, a local script over stdio, and a remote URL:
 
 <McpTransportsPy />
 
 A target can be any of the following:
 
-- **An `http`/`https` URL** (`str`): reached over streamable HTTP.
+- **An `http`/`https` URL** (`str`): reached over Streamable HTTP.
 - **A script path** (`Path`): launched as a subprocess over stdio.
-- **A transport object** (`StreamableTransport`): a pre-configured transport object. See [Client Transports](https://gofastmcp.com/clients/transports).
-- **An in-process `FastMCP` server**: connected in-memory, with no subprocess or socket.
+- **A transport object** (`StreamableTransport`): a preconfigured transport object. See [Client Transports](https://gofastmcp.com/clients/transports).
+- **An in-process `FastMCP` server**: connected in memory, without a subprocess or socket.
 - **An `MCPConfig` dict** (`{"mcpServers": {...}}`): several servers behind one adapter. See [Connections](/oss/langchain/mcp/connections#multiple-servers).
 - **A prebuilt `fastmcp.Client`**: for full control over transport, [caching](https://gofastmcp.com/clients/client#response-caching), and [protocol negotiation](https://gofastmcp.com/clients/client#protocol-negotiation).
 
 <Warning>
-A `str` target must be an `http` or `https` URL. FastMCP resolves a string by testing it as a filesystem path before testing it as a URL, so a string naming an existing `.py` or `.js` file would launch that file as a subprocess. Because strings are the form a target most often arrives in from configuration or from a model, @[`MCPAdapter`] rejects strings that don't match the shape of a URL.
+A `str` target must be an `http` or `https` URL. FastMCP resolves a string by testing it as a filesystem path before testing it as a URL, so a string naming an existing `.py` or `.js` file would launch that file as a subprocess. Because strings are the form a target most often arrives in from configuration or from a model, @[`MCPAdapter`] rejects strings that do not match the shape of a URL.
 </Warning>
+
+:::
+
+:::js
+
+@[`MCPAdapter`] accepts a map of named server definitions. It selects the transport from each definition, so one adapter can connect to local stdio servers and remote HTTP servers at the same time:
+
+<McpTransportsJs />
+
+Each server definition can use one of these transports:
+
+- **stdio**: Provide `command` and `args`. The adapter starts the command as a child process and communicates over standard input and output.
+- **Streamable HTTP**: Provide `url`. This is the default transport for URL-based servers, so `transport: "http"` is optional.
+- **SSE**: Provide `url` and set `transport: "sse"`. Use this transport only for legacy servers that expose an SSE endpoint.
+
+Transport selection and protocol negotiation are separate. The optional `mode` setting controls which MCP protocol era the client accepts:
+
+- **`"auto"`** (default): Try the current protocol and fall back when the server only supports the legacy protocol.
+- **`"modern"`**: Require the current protocol and fail instead of connecting to a legacy server.
+- **`"legacy"`**: Use the legacy client interface without protocol auto-negotiation.
+
+<Note>
+For new remote servers, omit both `transport` and `mode`. The adapter uses Streamable HTTP with automatic protocol negotiation. Specify these settings only when connecting to a server with known legacy requirements.
+</Note>
+
+:::
 
 ## Next steps
 

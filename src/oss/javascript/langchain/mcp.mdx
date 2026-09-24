@@ -873,7 +873,43 @@ This allows you to handle multimodal tool responses in a provider-agnostic way, 
 
 MCP tools can return [multimodal content](https://modelcontextprotocol.io/specification/2025-03-26/server/tools#tool-result) (images, text, etc.) in their responses. When an MCP server returns content with multiple parts (e.g., text and images), the adapter converts them to LangChain's [standard content blocks](/oss/langchain/messages#standard-content-blocks). You can access the standardized representation via the `contentBlocks` property on the `ToolMessage`:
 
-<McpMultimodalToolContentJs />
+```ts
+import { createAgent } from "langchain";
+import { MCPAdapter } from "@langchain/mcp-adapters";
+
+async function accessMultimodalToolContent(): Promise<void> {
+  const client = new MultiServerMCPClient({});
+  const tools = await client.getTools();
+  const agent = createAgent({ model: "claude-sonnet-5", tools });
+
+  const result = await agent.invoke({
+    messages: [
+      { role: "user", content: "Take a screenshot of the current page" },
+    ],
+  });
+
+  // Access multimodal content from tool messages
+  for (const message of result.messages) {
+    if (message.type === "tool") {
+      // Raw content in provider-native format
+      console.log(`Raw content: ${message.content}`);
+
+      // Standardized content blocks  // [!code highlight]
+      for (const block of message.contentBlocks) {
+        // [!code highlight]
+        if (block.type === "text") {
+          // [!code highlight]
+          console.log(`Text: ${block.text}`); // [!code highlight]
+        } else if (block.type === "image") {
+          // [!code highlight]
+          console.log(`Image URL: ${block.url}`); // [!code highlight]
+          console.log(`Image base64: ${block.base64?.slice(0, 50)}...`); // [!code highlight]
+        }
+      }
+    }
+  }
+}
+```
 
 This allows you to handle multimodal tool responses in a provider-agnostic way, regardless of how the underlying MCP server formats its content.
 
