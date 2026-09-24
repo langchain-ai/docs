@@ -1,6 +1,4 @@
-> **Keep in sync:** `AGENTS.md` and `CLAUDE.md` contain identical guidelines. If you update one, update the other.
->
-> Four files derive from this one, for agents that do not read `CLAUDE.md` or `AGENTS.md`. When you change a section listed below, update its copies in the same PR:
+> Four files derive from this one, for agents that do not read `AGENTS.md`. When you change a section listed below, update its copies in the same PR:
 >
 > - **Style guide** (through Product and feature name capitalization) is mirrored verbatim in `.cursor/rules/docs-style.mdc` and `.github/instructions/docs-style.instructions.md`. Both are path-scoped to `src/**/*.mdx`, so they load only when a page is edited.
 > - **Critical rules, Repository structure, Quick reference, Frontmatter, and Syntax** are summarized in `.cursorrules` and `.github/copilot-instructions.md`.
@@ -48,7 +46,7 @@ once to link the tree.
 | Skill | Use it for |
 |-------|-----------|
 | `add-docs-page` | Adding, moving, renaming, or deleting a page: directory choice, frontmatter, `src/docs.json` navigation, redirects, verification. |
-| `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff. |
+| `docs-edit` | Editing a page that already has an open PR: checking out that PR's own branch, forked PRs, reading the real diff, checking the edit against related pages. |
 | `docs-restructure` | Splitting a page that grew too long, moving sections between pages, retiring a page, or a topic documented in two places: the duplication map, choosing one owner, cutting rather than relocating. |
 | `docs-team-voice` | Drafting or revising prose in the house voice: sentence length, cross-link density, stating defaults, the revision pass. |
 | `docs-review` | Reviewing changed prose against Vale and the style guide, reporting the rule each finding breaks. `add-docs-page` invokes it before committing. |

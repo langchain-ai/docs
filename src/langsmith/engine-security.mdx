@@ -63,7 +63,7 @@ Engine adds the following controls on top of LangSmith's baseline:
 - **Auditability**: Engine surfaces its work as GitHub pull requests, with supporting context in the issue list on the [Engine tab](/langsmith/engine). Code changes flow through your branch-protection, review, and automated build controls, so your software development lifecycle remains the system of record for what ships.
 - **Client-side PII scrubbing**: LangSmith's [client libraries](/langsmith/mask-inputs-outputs) can remove sensitive content from traces before they are sent to LangSmith. Recommended for customers handling regulated data.
 - **Model selection managed by LangChain**: LangChain selects the specific model used for each Engine task across these subprocessors, and may change selections within that set without separate notification. Adding any new subprocessor follows the standard subprocessor-change notification process.
-- **Revocation and deletion**: You can revoke GitHub access at any time by uninstalling the App, and remove Engine's findings with **Delete all issues** in [Engine settings](/langsmith/engine#configure-engine). Trace data follows your LangSmith [retention and purging](/langsmith/data-purging-compliance) settings.
+- **Revocation and deletion**: You can revoke GitHub access at any time by uninstalling the App, and remove Engine's findings with **Delete all issues** in [Engine settings](/langsmith/engine#pause-engine-or-delete-its-issues). Trace data follows your LangSmith [retention and purging](/langsmith/data-purging-compliance) settings.
 
 ## Compliance posture
 
@@ -82,7 +82,7 @@ The following risks are inherent to AI-assisted code generation. LangChain mitig
 - [Engine](/langsmith/engine-overview)
 - [Configure Engine](/langsmith/engine)
 - [Engine on self-hosted](/langsmith/engine-self-hosted)
-- [Engine webhooks](/langsmith/engine-webhooks)
+- [Engine notifications](/langsmith/engine-notifications)
 - [Prevent logging of sensitive data in traces](/langsmith/mask-inputs-outputs)
 - [Data purging for compliance](/langsmith/data-purging-compliance)
 - [Audit logs](/langsmith/audit-logs)
