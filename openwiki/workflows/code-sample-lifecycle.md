@@ -1,11 +1,11 @@
 ---
 type: documentation workflow
 title: Code Sample Lifecycle
-description: How runnable documentation programs are validated, extracted into generated MDX, and optionally published as public LangSmith traces. Covers marker rules, Go module ownership, Deep Agents model CodeGroups, failure behavior, and focused checks.
+description: How runnable documentation samples are tested, extracted into generated MDX, and selectively refreshed with public LangSmith trace links. Covers marker and module-scope constraints, shared Python and TypeScript dependencies, regeneration, and trusted CI publication.
 tags: [code-samples, documentation, mdx, testing, tracing, github-actions]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-18T08:20:50.944Z
+    at: 2026-09-23T08:21:36.095Z
 sources:
   - id: openwiki-source-ddbddbe474c8dc57119458d7
     resource: repo://.agents/skills/docs-code-samples/SKILL.md
@@ -17,6 +17,8 @@ sources:
     resource: repo://.gitignore
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
+  - id: openwiki-source-05ccef8d4cf1698187f20464
+    resource: repo://pyproject.toml
   - id: openwiki-source-2654e40275744504b4ca7e2b
     resource: repo://scripts/code_sample_tracing.py
   - id: openwiki-source-fd0cb9d6fca56bf4963559e9
@@ -25,140 +27,122 @@ sources:
     resource: repo://scripts/generate_code_snippet_mdx.py
   - id: openwiki-source-2b15ecffacad911ef9db112f
     resource: repo://scripts/test_code_samples.py
-  - id: openwiki-source-71e977f60add0174c28f3e6b
-    resource: repo://src/code-samples/deepagents/skills-approval.ts
-  - id: openwiki-source-057f6d66b4febbf885983b22
-    resource: repo://src/code-samples/deepagents/skills-compose-sources.ts
-  - id: openwiki-source-6fcb16d581e331b5e3cdb5f9
-    resource: repo://src/code-samples/deepagents/skills-writable.ts
+  - id: openwiki-source-9d72c8bc710ff66237962f82
+    resource: repo://src/code-samples/deepagents/skills-reload.ts
   - id: openwiki-source-b0deb1022f38d6591d1ee3af
     resource: repo://src/code-samples/deepagents/skills.py
   - id: openwiki-source-2b3973f7b179794fb4534f89
     resource: repo://src/code-samples/go.mod
   - id: openwiki-source-4da1d93ce5e2fa6e9d44047c
     resource: repo://src/code-samples/go.sum
-  - id: openwiki-source-c131291505f6c5b8e4a3eb29
-    resource: repo://src/code-samples/langgraph/langgraph-graph-api-multiple-schemas.ts
-  - id: openwiki-source-4676455906eb0588a9444974
-    resource: repo://src/code-samples/trace-links.json
-  - id: openwiki-source-6f3dd78552e4a8bf387dd731
-    resource: repo://src/snippets/code-samples/langgraph-graph-api-multiple-schemas-js.mdx
+  - id: openwiki-source-2d6fb565fec243c560da8729
+    resource: repo://src/code-samples/package-lock.json
+  - id: openwiki-source-e0401fc6d5f2a13d30455bd9
+    resource: repo://src/code-samples/package.json
   - id: openwiki-source-b68d7bad2afd9a38e8c331d5
     resource: repo://tests/unit_tests/test_generate_code_snippet_mdx.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-18T08:20:50.944Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-23T08:21:36.095Z" }
 ---
 
 ## Ownership and lifecycle
 
-Runnable examples under `src/code-samples/` are the editable source of truth. They are programs containing one or more marked documentation regions, so the code readers see is exercised by its language toolchain. `src/code-samples-generated/` is a gitignored extraction intermediate; `src/snippets/code-samples/` is the committed generated MDX consumed by documentation. Edit and review the runnable source and the regenerated MDX diff—never treat generated snippets as hand-authored content.
+Runnable programs in `src/code-samples/` are the editable source of truth. `src/code-samples-generated/` is a gitignored extraction intermediate, while committed MDX below `src/snippets/code-samples/` is a derivative consumed by documentation. Edit the runnable program, execute it, regenerate the derivative, and review its diff; do not hand-author generated snippet MDX.
 
 ```mermaid
 flowchart TD
-  Source["Editable runnable sample"] --> Check["Run selected sample"]
-  Check --> Passed{"Sample passed"}
-  Passed -->|"yes"| Extract["Extract marked regions"]
+  Source["Runnable source with markers"] --> Run["Run sample in language toolchain"]
+  Run --> Passed{"Sample passed"}
+  Passed -->|"yes"| Extract["Extract visible regions"]
   Extract --> Intermediate["Gitignored intermediate files"]
-  Intermediate --> MDX["Generate snippet MDX"]
-  Passed -->|"tracing enabled"| Eligibility{"Exactly one marker"}
-  Eligibility -->|"yes"| Share["Find and share public trace"]
-  Share --> Manifest["Trace manifest"]
-  Manifest --> MDX
-  MDX --> Review["Review committed MDX derivative"]
-  Eligibility -->|"no"| Skip["Record multi-snippet exclusion"]
+  Intermediate --> Generate["Generate snippet MDX"]
+  Generate --> Review["Review committed derivative"]
+  Passed -->|"trusted tracing run"| Eligible{"One snippet marker"}
+  Eligible -->|"yes"| Share["Share selected public trace"]
+  Share --> Manifest["trace-links manifest"]
+  Manifest --> Generate
+  Eligible -->|"no"| Skip["Record multi-snippet exclusion"]
 ```
 
-This flow separates executable authorship from presentation derivatives; trace sharing is a separately gated public-publication branch.
+This flow distinguishes normal executable-documentation generation from the credentialed publication branch that shares a public trace.
 
-## Author marked, executable source
+## Author an executable sample
 
-Supported source extensions are `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh`. Delimit visible code using matched `:snippet-start: <id>` and `:snippet-end:` comment lines: Python and shell use `#`; TypeScript, Java, Kotlin, and Go use `//`. The extractor is deliberately line based rather than a TypeScript parser, avoiding failures from comment-like text such as `/**` in a string. It permits indented markers, removes matched `:remove-start:` / `:remove-end:` regions from the emitted body, dedents and normalizes it, and rejects unclosed snippet or remove regions.
+Supported sample extensions are `.py`, `.ts`, `.java`, `.kt`, `.go`, and `.sh`. Put matched `:snippet-start: <id>` and `:snippet-end:` lines around the code readers should see: Python and shell markers use `#`; TypeScript, Java, Kotlin, and Go use `//`. The extractor is line based, accepts indented marker lines, strips matched `:remove-start:` / `:remove-end:` regions from the displayed body, dedents output, and rejects unclosed snippet or remove regions.
 
-Every ID must use the output-language suffix: `-py`, `-js`, `-java`, `-kt`, `-go`, or `-sh`. The generator uses that suffix to select the fence language and silently skips an intermediate whose ID does not match its source language. Use unique, descriptive kebab-case IDs because the ID determines the MDX filename.
+A snippet ID must have the suffix for its source language: `-py`, `-js`, `-java`, `-kt`, `-go`, or `-sh`. Generation uses this suffix to choose a fence language and skips an extracted file whose ID does not have the expected suffix. The ID also determines the MDX filename, so make it unique and descriptive.
 
-Keep the visible region executable. A remove block is appropriate for assertions, credentials-only setup, or an execution tail that should not be displayed, but it must not let the process exit before the visible imports, construction, and invocation have run. An early successful `SystemExit`, `process.exit`, or `exit 0` proves little beyond parsing.
+A remove block is for non-display harness logic, such as an assertion or a blocking execution tail. The program must execute the visible imports, construction, and invocation before it exits; an early `SystemExit`, `process.exit`, or `exit 0` only establishes parsing, not that the documented path works.
 
-### File scope and Deep Agents expansion
+### Scope, dependencies, and the skills-reload samples
 
-One source file can own related snippets and one shared harness. This is particularly useful for Python. TypeScript instead runs as a single module: all visible regions and remove blocks share its imports and top-level bindings. Split independently runnable TypeScript snippets into separate files when imports or `const`, `let`, class, function, or setup names would collide.
+A file can hold related snippets and shared setup. This works especially well in Python, where the skills source contains setup, other skills examples, and the three new reload snippets: invocation with `skills_metadata` reset, explicit state update, and middleware that requests a later reload. Because it has many markers, `skills.py` cannot receive a single-snippet public trace.
 
-The Deep Agents skills expansion demonstrates the tradeoff. `skills.py` contains eight related Python regions and is intentionally ineligible for a single snippet trace. The approval, source-composition, and writable-store TypeScript samples each contain one visible marker followed by a remove-block assertion. The single-marker LangGraph multiple-schemas TypeScript sample similarly keeps its assertion harness hidden and has a generated trace card.
+TypeScript is executed as one module, so every visible region and remove block shares top-level imports and bindings. Split independently runnable TypeScript snippets into separate files when imports or `const`, `let`, class, or function names would collide. Keep an import that readers need inside the visible snippet; do not duplicate it in a remove block.
 
-Optional presentation directives must be the first lines inside the extracted body: `:codegroup-tab:` provides a Mintlify tab title, and `:codegroup-fence-mods:` supplies fence modifiers either after the tab directive or as the first line by itself. Both are stripped from emitted code.
+`skills-reload.ts` currently takes the opposite colocation tradeoff: shared agent setup and `agentEditedSkills` are in an initial remove block, followed by three marked JavaScript snippets (`skills-reload-invoke-js`, `skills-reload-update-state-js`, and `skills-reload-middleware-js`). Its `process.exit(0)` occurs before those regions, so the sample runner does **not** execute those visible reload statements. Treat that as a validation gap when changing this example: move the harness after the documented code or otherwise exercise the visible paths before claiming runtime validation. Its multiple markers also make it ineligible for a public trace until split.
 
-For Python and TypeScript, the generator can expand a qualifying routable `model` string into a seven-provider Deep Agents `<CodeGroup>`. `# KEEP MODEL` or `// KEEP MODEL` immediately before a model occurrence strips the directive but pins that occurrence. Expansion intentionally excludes a model argument in an embeddings constructor, a model ID containing `embedding`, and provider-specific constructor calls such as `ChatOpenAI`: these require provider-specific values and substituting a `provider:model` string would make output invalid. When a RAG snippet contains both an embeddings model and an eligible agent model, the embedding value remains identical in every generated tab and the agent model is varied; a snippet with only excluded or kept models remains one fence.
+Python dependencies are supplied by the repository `pyproject.toml` and locked environment; it includes `deepagents[quickjs]`, LangGraph, LangSmith, provider integrations, and `deepagents-acp`. TypeScript samples instead resolve from the shared `src/code-samples/package.json`, whose lockfile records the install graph; `make test-code-samples` installs that package before running samples. Add runtime dependencies at these shared owners rather than per-sample setup.
 
-### Go module boundary
+All Go examples similarly share `src/code-samples/go.mod` and `go.sum`. The runner invokes `go run` from `src/code-samples/`, and CI selects Go from that module file. Update the shared module and checksums rather than creating a module per example.
 
-All Go examples share the module rooted at `src/code-samples/go.mod`; its `go 1.25.0` directive is both the local module's toolchain declaration and the value used by CI setup. Add or update direct Go sample dependencies there and commit the corresponding checksums in `src/code-samples/go.sum`, rather than creating per-example modules. The runner invokes `go run` from `src/code-samples/`, which makes that module resolve imports for nested examples such as the LangSmith SmithDB migration samples.
+### Presentation directives and model variants
 
-## Execute samples and handle failure
+The first extracted line may be `:codegroup-tab:` to name a Mintlify tab; `:codegroup-fence-mods:` may be the next line or the first line itself to supply fence modifiers. Generation removes these directives from the emitted code.
 
-During authoring, use a narrow check first, then broaden when shared dependencies or execution behavior changed:
+For eligible Python and TypeScript model strings, the generator creates a seven-provider Deep Agents `<CodeGroup>`. `# KEEP MODEL` or `// KEEP MODEL` immediately before an occurrence pins it and removes the directive. It deliberately does not vary embeddings-model arguments, model IDs containing `embedding`, or provider-specific constructor models such as `ChatOpenAI`, because inserting a routable `provider:model` value would make those examples invalid. The focused generator tests verify that RAG examples retain their embeddings model while varying the agent model, and that kept or provider-specific models remain single-fence output.
+
+## Run and regenerate
+
+Start with the changed program, then broaden when shared dependencies or execution behavior changed:
 
 ```bash
-make test-code-samples FILES="src/code-samples/langchain/return-a-string.py"
+make test-code-samples FILES="src/code-samples/deepagents/skills-reload.ts"
 make test-code-samples
 make test TEST_FILE=tests/unit_tests/test_generate_code_snippet_mdx.py
-```
-
-`FILES` is a space-separated explicit list. Invalid, missing, unsupported, or out-of-tree entries are warned about and skipped. Without it, the runner recursively selects eligible files under `src/code-samples/`—excluding `node_modules` and `__pycache__`—in Python, TypeScript, Java, Kotlin, Go, then shell order.
-
-Python runs through `uv run python`; TypeScript uses `npx tsx`; Go uses `go run`; shell uses `bash`; Java and Kotlin use JBang pinned to Java 21. TypeScript, Go, and shell run with `src/code-samples/` as their working directory, while Python and JBang run from the repository root. Processes inherit the environment, including provider credentials and `POSTGRES_URI`, and may exercise live APIs or PostgreSQL. The default per-sample timeout is 1,200 seconds and can be changed with `CODE_SAMPLE_TIMEOUT_SECONDS`.
-
-An ordinary nonzero exit, timeout, missing executable, or trace-collection exception makes the runner fail. The narrow operational exception is a LangSmith HTTP 429 recognized in process output: the runner retries up to three total attempts with 15-second waits, then records the sample as skipped rather than failed. A skipped sample is not validated and cannot publish a trace.
-
-## Extract and regenerate MDX
-
-After a source passes, generate its derivatives with:
-
-```bash
 make code-snippets
 ```
 
-The target runs extraction before MDX generation. Extraction writes `<source-stem>.snippet.<snippet-id>.<extension>` below `src/code-samples-generated/`, retaining a product subdirectory based on the source layout. Generation scans all supported intermediates, formats each valid-suffix body as a fence or CodeGroup, applies a trace CTA from the manifest when present, and writes `<snippet-id>.mdx` under `src/snippets/code-samples/`.
+`FILES` is an explicit space-separated list. The runner warns and skips missing, unsupported, or out-of-tree paths; without it, it recursively selects eligible samples, excluding `node_modules` and `__pycache__`, in Python, TypeScript, Java, Kotlin, Go, then shell order. It uses `uv run python`, `npx tsx`, JBang with Java 21, `go run`, and `bash` respectively. TypeScript, Go, and shell run from `src/code-samples/`; Python and JBang run from the repository root. Processes inherit environment variables, so samples can require provider credentials or `POSTGRES_URI` and can call live services. The default timeout is 1,200 seconds and `CODE_SAMPLE_TIMEOUT_SECONDS` overrides it.
 
-For rapid local iteration, limit **extraction** with:
+Ordinary nonzero exits, timeouts, missing executables, and trace-collection failures fail the runner. LangSmith HTTP 429 is the limited exception: it is retried three total times with 15-second delays and then reported as skipped, rather than failed. A skipped sample has not been validated and cannot publish a trace.
+
+`make code-snippets` first runs the extractor, then the MDX generator. Extraction writes files named `<source-stem>.snippet.<snippet-id>.<extension>` under `src/code-samples-generated/`; generation scans those intermediates, writes the corresponding `<snippet-id>.mdx`, and adds a trace CTA only when the manifest has a URL.
+
+For local iteration, limit extraction only:
 
 ```bash
-CODE_SNIPPET_SOURCES="src/code-samples/langsmith/trace.java" make code-snippets
+CODE_SNIPPET_SOURCES="src/code-samples/deepagents/skills-reload.ts" make code-snippets
 ```
 
-`CODE_SNIPPET_SOURCES` accepts only existing supported files beneath `src/code-samples/`. A full extraction deletes every supported intermediate then rebuilds all of them. A partial extraction replaces intermediates only for selected source stems, but generation still scans every intermediate left behind. It is therefore an iteration optimization, not a complete regeneration; use a full run before relying on repository-wide generated state.
+`CODE_SNIPPET_SOURCES` accepts existing supported files below `src/code-samples/`. A full extraction clears supported intermediates and rebuilds them; a partial extraction replaces only selected source stems. MDX generation still scans all remaining intermediates, so use a full run before relying on repository-wide generated output.
 
-## Intentional public trace publication
+## Public traces are trusted publication
 
-`make update-code-sample-traces` is not ordinary sample validation. It requires `LANGSMITH_API_KEY`, enables `CODE_SAMPLE_TRACING=1`, selects `LANGSMITH_PROJECT` or the default `docs-code-samples`, runs samples with LangSmith tracing, then regenerates MDX. It calls the sharing API and publishes a public LangSmith link, so use authorized credentials and only inputs, outputs, and run metadata appropriate for public visibility.
+`make update-code-sample-traces` is not routine validation. It requires `LANGSMITH_API_KEY`, enables tracing, chooses `LANGSMITH_PROJECT` or `docs-code-samples`, runs the samples, and regenerates MDX. It calls LangSmith's sharing API to produce a public URL. Use authorized credentials and only inputs, outputs, and run metadata safe for public exposure.
 
-For each successful source, the collector counts snippet markers:
+For a successful source with exactly one marker, the collector flushes and polls for a recent agent-like root run in the configured project, shares the selected run, and records its URL and run metadata in `src/code-samples/trace-links.json`. It prefers agent, Deep Agent, LangGraph, or `create_agent`-like roots, with a chain-plus-LLM-child fallback. Files with multiple markers are recorded in `skipped_multi_snippet`; their stale per-snippet links are removed. During regeneration, a manifest URL appends or replaces the `View example trace` card, and no URL removes a stale trailing card.
 
-- No markers produces no link.
-- Exactly one marker is eligible. The collector flushes and polls six times with two-second waits, querying roots from a two-second buffered start time in the configured project. It prefers agent, Deep Agent, LangGraph, or `create_agent`-like roots; otherwise it accepts a chain root only if that trace has an LLM child. It shares the selected run and records URL, source, run ID, trace ID, run name, and update time under the snippet ID.
-- More than one marker is explicitly excluded. The file and IDs are recorded in `skipped_multi_snippet`, and prior single-snippet entries for those IDs are removed. Split the file to make a trace CTA possible.
+## CI trust boundary and refresh
 
-`src/code-samples/trace-links.json` owns this association. During MDX generation a manifest URL adds or replaces the `View example trace` Card; absent URLs remove a stale trailing CTA. The LangGraph multiple-schemas JavaScript entry illustrates the resulting public card.
+The **Test Code Samples** workflow runs for relevant pull requests, manual dispatch, and at 00:00 UTC on the first day of each month. It skips fork pull requests because samples may need secrets. Internal pull requests compute a merge base and run only changed eligible sample files; manual and scheduled events run all samples. CI provisions Python and uv, Node 20, Java 21 and JBang, Go, and pgvector PostgreSQL.
 
-## CI trust and refresh behavior
-
-The **Test Code Samples** workflow runs for relevant pull requests, manual dispatch, and monthly scheduled runs at 00:00 UTC on the first day. It skips fork PRs because samples can require secrets. Internal PRs compute the merge-base and run changed eligible sample files; manual and scheduled runs test all samples. CI supplies Python and uv, Node 20, Java 21 and JBang, Go from `src/code-samples/go.mod`, and pgvector PostgreSQL.
-
-Only trusted manual and scheduled full runs enable trace collection. Once a full run succeeds, CI regenerates snippets, preserves the refreshed trace manifest and generated MDX while resetting the checkout, and compares just those publication artifacts. A nonempty difference updates an existing or creates a new `chore/refresh-code-sample-traces` PR targeting `main`; no difference produces no repository write. Pull-request checks neither collect public traces nor publish generated artifacts.
-
-A separate observer creates a Linear issue only when a scheduled sample workflow fails or is cancelled. When responding, distinguish a sample/toolchain failure, a rate-limit skip, no qualifying root run, and a trace-collection or publication failure.
+Only manual and scheduled full runs enable tracing and public sharing. After a successful traced full run, CI regenerates the trace manifest and snippet MDX, compares only those artifacts, and updates or creates the deterministic `chore/refresh-code-sample-traces` pull request when there is a diff. Pull-request validation neither shares traces nor writes refresh artifacts. A separate workflow opens a Linear issue only when a scheduled sample run fails or is cancelled.
 
 ## Change checklist
 
-1. Change the runnable source in `src/code-samples/`, not the generated MDX.
-2. Use matched, language-correct markers and a unique ID with the required suffix.
-3. Run the visible path; reserve trailing remove blocks for non-display harness logic.
-4. Keep Go dependency ownership in the shared module and checksum file; split TypeScript where module scope collides.
-5. Run the focused sample and, for CodeGroup behavior, `tests/unit_tests/test_generate_code_snippet_mdx.py`; regenerate with `make code-snippets` and review the derivative diff.
-6. Treat partial extraction as local iteration only; run full extraction before relying on complete output.
-7. Treat `make update-code-sample-traces` and the trusted CI refresh as deliberate credentialed public-publication actions.
+1. Change the runnable source, not `src/snippets/code-samples/` directly.
+2. Use matched language-correct markers and a unique ID with its required suffix.
+3. Make the runner execute the visible path before any terminating or blocking harness behavior.
+4. Respect TypeScript module scope; use the shared Python environment, TypeScript package and lockfile, or Go module for new dependencies.
+5. Run the focused sample, run the generator unit test when model CodeGroup behavior changes, then run `make code-snippets` and review generated MDX.
+6. Use partial extraction only for iteration; run a full extraction for complete generated state.
+7. Treat local trace refresh and trusted CI refresh as deliberate, credentialed, public-publication actions.
 
 ## Related pages
 
 - [Build System Architecture](/openwiki/architecture/build-system.md)
 - [GitHub Actions and CI/CD](/openwiki/integrations/github-actions.md)
 - [Adding and Maintaining Documentation Pages](/openwiki/operations/adding-pages.md)
-- [Builder Test Guidance](/openwiki/testing/builder-tests.md)
+- [Agent Authoring Skills](/openwiki/operations/agent-skills.md)
 - [Testing Overview](/openwiki/testing/test-overview.md)
+- [Versioned Content](/openwiki/workflows/versioned-content.md)
