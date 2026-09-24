@@ -1,11 +1,10 @@
 ---
-type: architectural reference
-title: Source Directory Map
-description: Maps authored documentation domains to emitted route families and the Mintlify product, menu, tab, and group configuration that exposes them. Covers language-versioned OSS content, Managed Deep Agents, and LangSmith setup including BYOC.
-tags: [documentation, navigation, source-map, mintlify, content-routing]
+type: "Reference"
+title: "Source map"
+openwiki_generated: true
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-14T08:24:18.469Z
+    at: 2026-09-15T08:21:56.110Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -33,12 +32,19 @@ sources:
     resource: repo://src/langsmith/llm-gateway.mdx
   - id: openwiki-source-b4200d8c71c910e082d4d1e4
     resource: repo://src/langsmith/managed-deep-agents-project-structure.mdx
+  - id: openwiki-source-64bcd09aa388b45f25ea6da5
+    resource: repo://src/langsmith/self-host-smithdb.mdx
   - id: openwiki-source-222b22691fa5b319ecd2ae6f
     resource: repo://src/oss/deepagents/code/configuration.mdx
+  - id: openwiki-source-bc7bdc5b7919c25e973a0854
+    resource: repo://src/oss/javascript/integrations/providers/all_providers.mdx
+  - id: openwiki-source-7bfe816fdba0201671040464
+    resource: repo://src/oss/python/integrations/providers/all_providers.mdx
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-14T08:24:18.469Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-15T08:21:56.110Z" }
 ---
+
 
 `src/` is the authored documentation tree. Route emission and visible navigation are separate contracts: `pipeline/core/builder.py` selects files, writes their output locations, and applies language-sensitive transformations; `src/docs.json` is the Mintlify configuration that places emitted routes in products, menu items, dropdowns, tabs, groups, and redirects. Directory names therefore do not determine the label a reader sees. For example, `src/langsmith/fleet/` is presented as **No-code agents**.
 
@@ -65,7 +71,9 @@ The diagram shows the ownership boundary: the builder emits routes, while `docs.
 | `src/oss/deepagents/code/` | `/oss/deepagents/code/...` once | Products and setup → Deep Agents Code |
 | Direct `src/langsmith/*.mdx` other than Managed Deep Agents | `/langsmith/...` | Lifecycle or Products and setup according to `docs.json` |
 | Direct `src/langsmith/managed-deep-agents*.mdx` | `/langsmith/python/...` and `/langsmith/javascript/...` | Build → Managed Deep Agents |
+| Direct `src/langsmith/self-host*.mdx` | `/langsmith/self-host...` | Products and setup → LangSmith setup → Self-hosted |
 | `src/langsmith/fleet/` | `/langsmith/fleet/...` | Products and setup → No-code agents |
+| `src/oss/python/integrations/` and `src/oss/javascript/integrations/` | Matching `/oss/python/integrations/...` and `/oss/javascript/integrations/...` families | Build → Integrations in the matching language dropdown |
 | `src/snippets/` | Imported components, not public page routes | Referenced by MDX |
 | `src/docs.json`, images, fonts, root CSS and JavaScript | Shared build inputs copied once | `docs.json` owns Mintlify configuration |
 
@@ -95,6 +103,16 @@ LangSmith setup has **Overview**, **Account**, **Cloud**, **BYOC**, **Self-hoste
 BYOC architecture assigns authentication, organization configuration, billing, provisioning, monitoring, and orchestration to LangChain's cloud control plane; sensitive application data and the VPC, EKS, databases, and related resources belong to the customer AWS data plane. The customer creates a cross-account IAM role during onboarding; the role's external ID must match the value supplied by LangChain, and it is infrastructure-scoped rather than granted data-reading APIs. The data-plane lifecycle is `Requested` → `Provisioning` → `Active`; `Provisioning Failed` requires contacting LangChain, and a workspace cannot later move to another data plane.
 
 The operations page belongs beside those setup sources, not in self-hosted content: LangChain operates the BYOC data plane after provisioning, including scaling, monitoring, patching, and rolling daily LangSmith upgrades. Potentially disruptive maintenance is coordinated in a scheduled window; troubleshooting data access is either customer-run or explicitly granted break-glass access.
+
+### Self-hosted and SmithDB
+
+Self-hosted pages remain direct `src/langsmith/` sources and are placed by the **Self-hosted** tab rather than by a dedicated source directory. The configuration explicitly nests provider quickstarts, Terraform guides, installation management, configuration, external services, platform access control, observability, hybrid, scripts, and reference pages. Its **SmithDB** group is marked `hidden`, although the routes remain configured; the metrics page is instead in the visible Reference group.
+
+`self-host-smithdb.mdx` is the SmithDB landing source. It documents SmithDB as an opt-in trace datastore that serves ingestion and queries alongside ClickHouse, using durable object storage and a per-pod disk cache. This is an operational route family, not a new navigation product: related install, infrastructure, scale, observability, migration, troubleshooting, and metrics pages are all LangSmith self-hosted routes.
+
+### Integration route families
+
+The **Integrations** Build tab is a language-dropdown surface, not a shared directory inferred from its label. `docs.json` names separate `oss/python/integrations/...` and `oss/javascript/integrations/...` pages, including each language's `providers/all_providers` route. The corresponding authored provider indexes differ in scope—Python describes a collection of 1000+ integrations, while JavaScript/TypeScript describes hundreds—so edits belong in the matching source tree. Their unqualified `/oss/integrations/...` links are transformed by the builder when the language-specific pages are emitted.
 
 ### Other Products and setup surfaces
 

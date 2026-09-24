@@ -98,6 +98,39 @@ page leaves the navigation and its source file is gone with no redirect. The
 same script fails when `docs.json` names a page whose file does not exist, so a
 typo in a page path is caught there rather than at build time.
 
+## Step 4b. Two traps that fail silently
+
+### Extract a snippet once a block appears on three pages
+
+`AGENTS.md` covers how to add a snippet. The rule for **when**: the same block
+repeated on three or more pages becomes one file under `src/snippets/`. A status
+callout duplicated across a page family means the wording change that retires it
+is an edit to every page in the family, and one will be missed.
+
+Verify a new snippet reaches the build. The pipeline rewrites snippet imports to
+language-specific paths, so `/snippets/langsmith/x.mdx` becomes
+`/snippets/python/langsmith/x.mdx` in the output, and a missing target renders as
+nothing at all rather than as an error:
+
+```bash
+ls build/snippets/python/langsmith/<name>.mdx build/snippets/javascript/langsmith/<name>.mdx
+```
+
+### Editing a heading moves its anchor
+
+A heading's slug is derived from its text, so rewording one silently breaks every
+`#anchor` link pointing at it, including links from other pages and entries in
+`src/docs.json`. Grep before editing:
+
+```bash
+grep -rn 'use-with-the-langsmith-gateway' src/ --include=*.mdx --include=*.json
+```
+
+Changing only capitalization is safe, because slugs are lowercased. Changing a
+word is not, and needs either a reworded inbound link or a redirect.
+`<Step>` and `<Accordion>` accept an explicit `id`, which is how to keep a
+landing spot that is no longer a heading.
+
 ## Step 5. Verify
 
 Run all three, in this order:
@@ -106,6 +139,22 @@ Run all three, in this order:
 make lint_prose FILES="src/path/to/page.mdx"
 make build
 make broken-links-with-anchors
+```
+
+When `make build` fails with `Required uv version >=0.9.26 does not match the
+running version`, the local `uv` has drifted from the one `pyproject.toml`
+expects. Run the pipeline directly rather than working around the build:
+
+```bash
+PYTHONPATH="$(pwd)" .venv/bin/python -m pipeline build
+```
+
+`make broken-links-with-anchors` depends on `build`, so it fails the same way.
+Its link-check half runs on its own once the build output exists:
+
+```bash
+cd build && mint broken-links --check-anchors | tee /tmp/bl.txt
+cd .. && python3 scripts/filter_mint_broken_links.py --check-anchors --input /tmp/bl.txt
 ```
 
 Read `make broken-links-with-anchors` output by skipping to the `⎿` lines. Those are the only
@@ -137,5 +186,8 @@ Skip this step for a change too small to have prose in it, such as a pure
 - [ ] Both language entries added if the page is language-versioned.
 - [ ] Index page first if a new group was created.
 - [ ] Redirect added for every moved, renamed, or deleted path.
+- [ ] Inbound `#anchor` links checked before any heading was reworded.
+- [ ] A block now on three or more pages extracted to `src/snippets/`, and its
+      built `python/` and `javascript/` targets confirmed to exist.
 - [ ] `make lint_prose` clean, `make broken-links-with-anchors` shows no new `⎿` lines.
 - [ ] `docs-review` run on the changed files, findings addressed.

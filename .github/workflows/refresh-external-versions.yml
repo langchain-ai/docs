@@ -1,0 +1,142 @@
+---
+name: Refresh external version requirements
+
+on:
+  schedule:
+    # Mondays at 08:00 UTC, before the week's docs work starts.
+    - cron: "0 8 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    name: Sync mirrored version requirements
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python 3.13 + uv
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      - name: Update versions the docs mirror from upstream repos
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          uv run python scripts/check_external_versions.py --write
+
+      - name: Open or update the refresh PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          BRANCH_NAME="chore/refresh-external-versions"
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- src/; then
+            echo "Every mirrored version is in sync" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Stash the rewrites, then restore the tree so the checkout is clean.
+          git diff -- src/ > "$RUNNER_TEMP/versions.patch"
+          git checkout -- src/
+
+          # Reuse the standing branch while its PR is open, so weekly runs
+          # append a commit instead of stacking duplicate PRs.
+          PR_NUMBER="$(gh pr list --head "$BRANCH_NAME" --state open \
+            --json number --jq '.[0].number // empty')"
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Found open PR #$PR_NUMBER on $BRANCH_NAME; appending to it"
+            git fetch --depth=1 origin \
+              "$BRANCH_NAME:refs/remotes/origin/$BRANCH_NAME"
+            git checkout -B "$BRANCH_NAME" "origin/$BRANCH_NAME"
+          else
+            echo "No open PR on $BRANCH_NAME; starting a new one from main"
+            git checkout -B "$BRANCH_NAME"
+          fi
+
+          git apply "$RUNNER_TEMP/versions.patch"
+
+          if git diff --quiet -- src/; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git add src/
+          git commit -m "$(cat <<EOF
+          chore: sync version requirements mirrored from upstream repos
+
+          Automated refresh from the sources in
+          scripts/data/external_versions.yaml.
+
+          Refreshed $(date -u +"%Y-%m-%d %H:%M UTC").
+          EOF
+          )"
+
+          if [ -n "$PR_NUMBER" ]; then
+            git push origin "$BRANCH_NAME"
+            echo "Appended a commit to PR #$PR_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # No open PR, so the branch is absent or left over from a merged one.
+          git push --force origin "$BRANCH_NAME"
+
+          gh pr create \
+            --title "chore: sync version requirements mirrored from upstream repos" \
+            --body "$(cat <<'EOF'
+          ## Summary
+          A docs page restates a version requirement that another project owns,
+          and that project has since changed it. This updates the page to match.
+
+          ## Review carefully
+          Only the version number was rewritten. The prose around it was not
+          checked, so confirm against the upstream source that the rest of the
+          requirement still holds: a new peer dependency, a renamed flag, or an
+          added prerequisite will not show up in this diff.
+
+          Sources are registered in `scripts/data/external_versions.yaml`.
+          EOF
+          )"
+
+  sweep:
+    name: Full sweep for unpublished versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python 3.13 + uv
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      # The pull request gate only sees changed pages, so this catches versions
+      # that stopped resolving on pages nobody has touched. Advisory: a yanked
+      # release upstream should not turn the schedule red.
+      - name: Check every page
+        run: |
+          uv run python scripts/check_version_claims.py --advisory-only |
+            tee "$RUNNER_TEMP/sweep.txt"
+          {
+            echo '## Version claim sweep'
+            echo '```'
+            cat "$RUNNER_TEMP/sweep.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
