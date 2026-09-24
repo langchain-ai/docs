@@ -34625,6 +34625,362 @@ Using your existing [secret-management workflow](/langsmith/self-host-using-an-e
 </div>
 
 
+# LangSmith Engine notifications
+Source: https://docs.langchain.com/langsmith/engine-notifications
+
+[LangSmith Engine](/langsmith/engine) can notify you when it opens a new issue, links a new trace to an existing issue, or fails to complete a run. Deliver these notifications to a **Slack channel**, an **HTTP webhook endpoint**, or both. Each destination has its own event types and minimum priority, so you can route urgent issues to a paging webhook while sending every issue to a Slack channel.
+
+## Add a destination
+
+Notification destinations are configured per tracing project. On the **Engine** page, click **Configure Engine**, then under **Notifications** click **+ Add destination**. For each destination, choose:
+
+- **Deliver to**: **Slack** or **Webhook**. See [Notify a Slack channel](#notify-a-slack-channel) and [Send to a webhook](#send-to-a-webhook).
+- **Notify when**: The [event types](#event-types) that trigger a notification.
+- **Minimum priority**: The lowest issue [severity](#severity-filtering) that triggers a notification.
+
+To be alerted when a [watched issue](/langsmith/engine#watch-an-issue) recurs, click **Alert me via Slack** on the issue, which opens the same **Notifications** section.
+
+## Event types
+
+| Event | Sent when |
+| --- | --- |
+| [`issue.created`](#issue-created) | Engine opens a new issue. |
+| [`issue.trace.added`](#issue-trace-added) | Engine links a new trace to an existing issue. |
+| [`issue.agent_run.failed`](#issue-agent_run-failed) | An Engine run fails to complete. |
+
+This is the complete set of event types Engine sends today. New types may be added in the future. A destination created without an explicit list of event types receives only `issue.created`.
+
+## Severity filtering
+
+The **Minimum priority** setting is stored as a `severity_threshold` from `0` to `3`. For issue events, a notification is delivered only when the issue's `severity` is less than or equal to the threshold. Lower numbers are more urgent.
+
+| Severity | Meaning |
+| --- | --- |
+| `0` | Urgent |
+| `1` | High |
+| `2` | Medium |
+| `3` | Low |
+
+For example, a destination with `severity_threshold: 1` receives events for `URGENT` (0) and `HIGH` (1) issues only.
+
+Severity thresholds do not apply to [`issue.agent_run.failed`](#issue-agent_run-failed), because run-failure events are scoped to an Engine session rather than to a specific issue.
+
+## Notify a Slack channel
+
+<Steps>
+  <Step title="Connect a Slack workspace">
+    Connecting a Slack workspace is an organization-level action you perform once, not per project. Connecting or disconnecting a workspace requires the `organization:manage` permission. In the [LangSmith console](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-engine-notifications), open **Settings**, go to your organization's **General** settings, and under **Slack** click **Connect Slack**. Authorize the LangSmith app in Slack. You can connect more than one Slack workspace to an organization.
+  </Step>
+  <Step title="Add a Slack destination">
+    On the **Engine** page, click **Configure Engine**, then click **Add destination**. Set the **Deliver to** field to **Slack**, then choose the workspace and channel under **Channel**.
+  </Step>
+  <Step title="Choose events and priority">
+    Under **Notify when**, select which [event types](#event-types) post a message to the channel. Under **Minimum priority**, choose the lowest [severity](#severity-filtering) that triggers a notification. Click **Add destination** to save.
+  </Step>
+</Steps>
+
+LangSmith automatically joins the public channel you select. To post to a private channel, invite the LangSmith app to that channel in Slack first.
+
+Each Slack message includes the issue title, description, and severity, a **View issue** link back to LangSmith, and (for issue events) a chart of the issue's recurrence over time. If a workspace's connection becomes invalid, for example, the app is removed from Slack, its destinations stop delivering until you reconnect it from your organization's **General** settings.
+
+Slack destinations post through LangSmith's managed Slack app instead of sending the [webhook payload](#webhook-payload-reference), so signing secrets and custom headers do not apply.
+
+## Send to a webhook
+
+Forward Engine events to your own incident-management, paging, or chat tooling. Add a destination and set the **Deliver to** field to **Webhook**. Enter a URL and, optionally, [custom headers](#custom-headers). Each delivery is [signed](#signing-secret) so you can verify its authenticity.
+
+### Delivery
+
+LangSmith sends a `POST` request with a JSON body to your webhook URL. The request uses `Content-Type: application/json` and includes any custom headers you attached to the destination.
+
+| Property | Value |
+| --- | --- |
+| Method | `POST` |
+| Body | JSON, [common envelope](#event-envelope) below |
+| Scheme | `http://` and `https://` are accepted. `https://` is strongly recommended |
+| Signature | `X-LangSmith-Signature` header, signed with the destination's signing secret |
+| Timeout | 20 seconds per attempt |
+| Attempts | Up to 4 attempts (1 initial plus 3 retries with exponential backoff) on transport errors, HTTP `408`, `425`, `429`, and any HTTP `5xx`. Other `4xx` responses are treated as permanent and are not retried |
+| Response | Success is determined from the status code alone. Response bodies are ignored. |
+
+<Note>
+Retries deliver a byte-identical payload, including the same `id`. Dedupe on `id` so a retried delivery does not produce a duplicate downstream effect.
+</Note>
+
+### Custom headers
+
+You can attach arbitrary headers to each destination (for example, `Authorization: Bearer …`) to authenticate the caller at your endpoint. `Content-Type` is always set by LangSmith and cannot be overridden.
+
+### Signing secret
+
+Each destination has a signing secret. LangSmith uses this secret to sign the raw webhook request body and sends the result in the `X-LangSmith-Signature` header.
+
+The header value has this format:
+
+```text
+sha256=<hex-encoded HMAC-SHA256 digest>
+```
+
+Verify the signature before parsing or acting on the payload. The HMAC input is the exact raw request body bytes, and the HMAC key is the destination's signing secret. Do not parse and reserialize the JSON body before verification.
+
+<CodeGroup>
+
+```python Python
+import hashlib
+import hmac
+from typing import Optional
+
+
+def verify_langsmith_signature(
+    *,
+    body: bytes,
+    signing_secret: str,
+    signature_header: Optional[str],
+) -> bool:
+    if not signature_header or not signature_header.startswith("sha256="):
+        return False
+
+    expected = "sha256=" + hmac.new(
+        signing_secret.encode("utf-8"),
+        body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    return hmac.compare_digest(expected, signature_header)
+```
+
+```typescript TypeScript
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+export function verifyLangSmithSignature({
+  body,
+  signingSecret,
+  signatureHeader,
+}: {
+  body: Buffer;
+  signingSecret: string;
+  signatureHeader: string | undefined;
+}) {
+  if (!signatureHeader?.startsWith("sha256=")) {
+    return false;
+  }
+
+  const expected = `sha256=${createHmac("sha256", signingSecret)
+    .update(body)
+    .digest("hex")}`;
+
+  const expectedBytes = Buffer.from(expected);
+  const actualBytes = Buffer.from(signatureHeader);
+
+  return (
+    expectedBytes.length === actualBytes.length &&
+    timingSafeEqual(expectedBytes, actualBytes)
+  );
+}
+```
+
+</CodeGroup>
+
+### Roll a signing secret
+
+Roll a signing secret when it may have been exposed, or when your organization's credential rotation policy requires a new secret.
+
+To roll a secret, open the destination row in **Engine Settings**, click **Roll signing secret**, and confirm. LangSmith generates a new signing secret and uses it for future webhook deliveries immediately. The previous secret stops signing deliveries as soon as the roll completes.
+
+After rolling the secret, update every consumer that verifies `X-LangSmith-Signature` with the new value.
+
+### Test your endpoint
+
+Before pointing a real destination at your endpoint, send a sample payload to verify it accepts and acknowledges within the 20-second timeout:
+
+```bash
+curl -X POST https://your-endpoint.example.com/webhook \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WEBHOOK_SECRET" \
+  -d @sample-issue-created.json
+```
+
+Use the example body from [`issue.created`](#issue-created) as `sample-issue-created.json`. Verify that:
+
+- The custom `Authorization` header arrives and matches the secret you configured on the destination.
+- The handler persists the event keyed by its `id` so retries are deduped.
+- The handler returns `2xx` before kicking off slow downstream work.
+
+### Security
+
+- Webhook URLs are validated when the destination is created and again at delivery time. Private and metadata IP ranges are blocked in SaaS. Both `http://` and `https://` are accepted; use `https://` so the payload and any custom headers are not sent in cleartext.
+- LangSmith signs webhook bodies with the destination's signing secret. Verify `X-LangSmith-Signature` before processing the payload.
+- You can also set custom headers on the destination, such as `Authorization: Bearer …`, for routing or additional authentication at your endpoint.
+- Dedupe on the event `id` so that a retried delivery does not cause a duplicate notification.
+
+### Best practices
+
+- **Acknowledge fast.** Respond with `2xx` as soon as you have persisted the event. Move slow work (fan-out, paging, downstream API calls) onto a queue so your handler stays within the 20-second timeout.
+- **Tolerate unknown event types.** Ignore `type` values your handler does not recognize. New event types may be added without notice.
+- **Tolerate new fields.** Parse payloads with a permissive schema. New fields may be added to existing event types without notice.
+
+## Webhook payload reference
+
+Webhook destinations receive the JSON payloads below. Slack destinations do not.
+
+### Event envelope
+
+Every event delivered to your endpoint uses the same outer JSON shape.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | UUID | Unique identifier for this delivery. Stable across retries. Use it to dedupe. |
+| `type` | string | Event type. One of [`issue.created`](#issue-created), [`issue.trace.added`](#issue-trace-added), or [`issue.agent_run.failed`](#issue-agent_run-failed). |
+| `created` | integer | Unix seconds (UTC) when the event was enqueued. |
+| `request_id` | UUID | Shared by every event fired from the same upstream action. See [Batch coalescing](#batch-coalescing). |
+| `data` | object | Event payload. Always contains `data.object`. Contains [`data.trace`](#data-trace) only on [`issue.trace.added`](#issue-trace-added) events. |
+
+### Issue `data.object`
+
+For [`issue.created`](#issue-created) and [`issue.trace.added`](#issue-trace-added), `data.object` is a snapshot of the issue. Treat it as the authoritative state of the issue at the time the event was generated.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | UUID | Issue ID. |
+| `name` | string | Short title of the issue. |
+| `description` | string | Human-readable description. |
+| `severity` | integer | `0` (urgent) through `3` (low). See [Severity filtering](#severity-filtering). |
+| `tenant_id` | UUID | Workspace the issue belongs to. |
+| `tenant_name` | string | Workspace display name. |
+| `session_id` | UUID | Tracing project the issue belongs to. |
+| `session_name` | string | Tracing project name. |
+| `url` | string | Deep link to the issue in the LangSmith UI. |
+
+### Run failure `data.object`
+
+For [`issue.agent_run.failed`](#issue-agent_run-failed), `data.object` describes the Engine run that failed.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `tenant_id` | UUID | Workspace the run belongs to. |
+| `tenant_name` | string | Workspace display name. |
+| `session_id` | UUID | Tracing project the run belongs to. |
+| `session_name` | string | Tracing project name. |
+| `url` | string | Deep link to the LangSmith project in the UI. |
+| `thread_id` | string | Engine thread ID. |
+| `run_id` | string | Engine run ID. Omitted when unavailable. |
+| `status` | string | Final run status. |
+| `error_message` | string | Error text from the failed run. Omitted when unavailable. |
+| `occurred_at` | string | RFC 3339 timestamp of when the failure occurred. |
+
+### `data.trace`
+
+`data.trace` is included only on [`issue.trace.added`](#issue-trace-added) events.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `run_id` | UUID | ID of the run that was linked to the issue. |
+| `trace_id` | UUID | ID of the trace that contains the run. |
+| `start_time` | string | RFC 3339 timestamp of when the run started. |
+| `comment` | string \| null | Optional note recorded when the trace was linked. Omitted when empty. |
+
+### Batch coalescing
+
+A single upstream action can produce multiple webhook events. When Engine opens a new issue and attaches five traces to it, you receive one [`issue.created`](#issue-created) event and five [`issue.trace.added`](#issue-trace-added) events, all sharing the same `request_id`. Use `request_id` to group these into a single downstream notification.
+
+
+### `issue.created`
+
+Sent when LangSmith Engine creates a new issue. `data.trace` is omitted.
+
+```json
+{
+  "id": "b91c1f0e-7c4a-4f53-9d3e-9f1c8e7a2b10",
+  "type": "issue.created",
+  "created": 1747238400,
+  "request_id": "0d2f4f6a-2a3a-4b6e-9b87-5d5b6e8c9a01",
+  "data": {
+    "object": {
+      "id": "9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
+      "name": "Tool selection inconsistency",
+      "description": "Agent repeatedly calls the search tool with identical arguments before terminating.",
+      "severity": 1,
+      "tenant_id": "11111111-2222-3333-4444-555555555555",
+      "tenant_name": "Acme Workspace",
+      "session_id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+      "session_name": "prod-api",
+      "url": "https://smith.langchain.com/o/11111111-2222-3333-4444-555555555555/projects/p/66666666-7777-8888-9999-aaaaaaaaaaaa?tab=5&issue=9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d"
+    }
+  }
+}
+```
+
+### `issue.trace.added`
+
+Sent when a new trace is linked to an existing issue. `data.trace` describes the linked trace.
+
+```json
+{
+  "id": "c02e3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+  "type": "issue.trace.added",
+  "created": 1747238410,
+  "request_id": "0d2f4f6a-2a3a-4b6e-9b87-5d5b6e8c9a01",
+  "data": {
+    "object": {
+      "id": "9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
+      "name": "Tool selection inconsistency",
+      "description": "Agent repeatedly calls the search tool with identical arguments before terminating.",
+      "severity": 1,
+      "tenant_id": "11111111-2222-3333-4444-555555555555",
+      "tenant_name": "Acme Workspace",
+      "session_id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+      "session_name": "prod-api",
+      "url": "https://smith.langchain.com/o/11111111-2222-3333-4444-555555555555/projects/p/66666666-7777-8888-9999-aaaaaaaaaaaa?tab=5&issue=9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d"
+    },
+    "trace": {
+      "run_id": "f1e2d3c4-b5a6-9788-6655-44332211ffee",
+      "trace_id": "abcdefab-1234-5678-9abc-def012345678",
+      "start_time": "2026-05-14T12:30:00Z",
+      "comment": "Reproduces the same tool-loop pattern."
+    }
+  }
+}
+```
+
+### `issue.agent_run.failed`
+
+Sent when LangSmith Engine fails to complete a run. This event is session-scoped, so it does not include `data.trace` and does not use severity filtering.
+
+```json
+{
+  "id": "4d0e8db2-81e6-4491-b8e5-b13a8f5afc0d",
+  "type": "issue.agent_run.failed",
+  "created": 1747238500,
+  "request_id": "f6bbd48a-0386-403d-9344-31051264b45f",
+  "data": {
+    "object": {
+      "tenant_id": "11111111-2222-3333-4444-555555555555",
+      "tenant_name": "Acme Workspace",
+      "session_id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+      "session_name": "prod-api",
+      "url": "https://smith.langchain.com/o/11111111-2222-3333-4444-555555555555/projects/p/66666666-7777-8888-9999-aaaaaaaaaaaa",
+      "thread_id": "thread-123",
+      "run_id": "run-456",
+      "status": "error",
+      "error_message": "RuntimeError: missing API key",
+      "occurred_at": "2026-05-14T12:45:00Z"
+    }
+  }
+}
+```
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/engine-notifications.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
 # LangSmith Engine
 Source: https://docs.langchain.com/langsmith/engine-overview
 
@@ -34637,13 +34993,13 @@ Each issue moves through a closed loop: a recurring issue is detected in your tr
 For each issue, Engine surfaces the contributing traces, proposes a fix, keeps the issue current by attaching new traces that match the same failure pattern, and creates ground truth dataset examples from the production trace inputs.
 
 <CardGroup cols={3}>
-  <Card title="Build: Open a pull request" icon="git-pull-request" href="/langsmith/engine#open-or-view-a-pull-request">
+  <Card title="Build: Open a pull request" icon="git-pull-request" href="/langsmith/engine#open-a-pull-request">
     Apply the proposed fix by opening a pull request in your connected repository. Engine can propose code changes to agents built with Deep Agents, LangChain, and LangGraph.
   </Card>
   <Card title="Test: Generate datasets" icon="database" href="/langsmith/engine#add-offline-examples">
     Create ground truth dataset examples from production traces for offline evaluation, so you can verify a fix before it ships.
   </Card>
-  <Card title="Monitor: Track recurring issues" icon="chart-line" href="/langsmith/engine#browse-and-filter-issues">
+  <Card title="Monitor: Track recurring issues" icon="chart-line" href="/langsmith/engine#filter-and-sort-issues">
     Scan your tracing projects on a schedule to surface, prioritize, and diagnose recurring issues, and add new matching traces to each issue as they appear.
   </Card>
 </CardGroup>
@@ -34658,8 +35014,8 @@ Engine scans each connected tracing project on a dynamic schedule tuned to balan
   <Card title="Set up Engine" icon="settings" href="/langsmith/engine#set-up-engine">
     Enable Engine for your organization and configure it for a tracing project.
   </Card>
-  <Card title="Engine webhook events" icon="webhook" href="/langsmith/engine-webhooks">
-    Forward detected issues into your incident-management, paging, or chat tools.
+  <Card title="Engine notifications" icon="bell" href="/langsmith/engine-notifications">
+    Send detected issues to Slack or to your incident-management, paging, or chat tools through webhooks.
   </Card>
 </CardGroup>
 
@@ -34737,7 +35093,7 @@ Engine adds the following controls on top of LangSmith's baseline:
 - **Auditability**: Engine surfaces its work as GitHub pull requests, with supporting context in the issue list on the [Engine tab](/langsmith/engine). Code changes flow through your branch-protection, review, and automated build controls, so your software development lifecycle remains the system of record for what ships.
 - **Client-side PII scrubbing**: LangSmith's [client libraries](/langsmith/mask-inputs-outputs) can remove sensitive content from traces before they are sent to LangSmith. Recommended for customers handling regulated data.
 - **Model selection managed by LangChain**: LangChain selects the specific model used for each Engine task across these subprocessors, and may change selections within that set without separate notification. Adding any new subprocessor follows the standard subprocessor-change notification process.
-- **Revocation and deletion**: You can revoke GitHub access at any time by uninstalling the App, and remove Engine's findings with **Delete all issues** in [Engine settings](/langsmith/engine#configure-engine). Trace data follows your LangSmith [retention and purging](/langsmith/data-purging-compliance) settings.
+- **Revocation and deletion**: You can revoke GitHub access at any time by uninstalling the App, and remove Engine's findings with **Delete all issues** in [Engine settings](/langsmith/engine#pause-engine-or-delete-its-issues). Trace data follows your LangSmith [retention and purging](/langsmith/data-purging-compliance) settings.
 
 ## Compliance posture
 
@@ -34756,7 +35112,7 @@ The following risks are inherent to AI-assisted code generation. LangChain mitig
 - [Engine](/langsmith/engine-overview)
 - [Configure Engine](/langsmith/engine)
 - [Engine on self-hosted](/langsmith/engine-self-hosted)
-- [Engine webhooks](/langsmith/engine-webhooks)
+- [Engine notifications](/langsmith/engine-notifications)
 - [Prevent logging of sensitive data in traces](/langsmith/mask-inputs-outputs)
 - [Data purging for compliance](/langsmith/data-purging-compliance)
 - [Audit logs](/langsmith/audit-logs)
@@ -35156,7 +35512,7 @@ If the analysis does not complete, check that Engine pods are running, the sandb
 Enabling Engine in Helm makes the feature available; it does not start any scans. After enabling the chart values, finish setup in LangSmith:
 
 1. An [Organization Admin](/langsmith/rbac#organization-admin) turns Engine on for the organization under **Settings > Engine enablement**. For more information, see [Find and fix issues](/langsmith/engine#enable-engine-for-your-organization).
-1. Any user sets Engine up for a tracing project from the project's **Engine** tab. For more information, see [Set up Engine for a tracing project](/langsmith/engine#set-up-engine-for-a-tracing-project).
+1. Any user turns on Engine for a tracing project from the project's **Engine** tab. For more information, see [Turn on Engine for a tracing project](/langsmith/engine#turn-on-engine-for-a-tracing-project).
 
 Connecting a GitHub repository is optional and improves Engine's diagnosis and fixes. Without one, Engine cannot read your source code or open pull requests. To create the GitHub App and configure `host-backend`, see [Connect Engine to GitHub](/langsmith/engine-github#self-hosted).
 
@@ -35177,7 +35533,7 @@ Engine stops dispatching runs. Insights shares the same deployment, so the `stan
 - [Configure Engine](/langsmith/engine)
 - [Connect Engine to GitHub](/langsmith/engine-github)
 - [Engine security](/langsmith/engine-security)
-- [Engine webhooks](/langsmith/engine-webhooks)
+- [Engine notifications](/langsmith/engine-notifications)
 - [Enable additional LangSmith features](/langsmith/deploy-self-hosted-full-platform)
 
 ---
@@ -35192,335 +35548,14 @@ Engine stops dispatching runs. Insights shares the same deployment, so the `stan
 </div>
 
 
-# LangSmith Engine webhook events
-Source: https://docs.langchain.com/langsmith/engine-webhooks
-
-Forward LangSmith-detected agent issues into your incident-management, paging, or chat tools. [LangSmith Engine](/langsmith/engine) sends a webhook event to your endpoint when it opens a new issue, or when it links a new trace to an issue it has already opened.
-
-To configure webhook subscriptions, open the **Engine Settings** panel on the **Engine** tab of a tracing project. See [Configure Engine](/langsmith/engine#configure-engine).
-
-<Note>
-A destination delivers to either a webhook URL or a **Slack channel**. Both use the same [event types](#event-types) and [minimum-priority filtering](#severity-filtering) described on this page. Slack destinations post through LangSmith's managed Slack app instead of sending the [JSON payload](#event-envelope) below, so the [signing secret](#signing-secret) and [custom headers](#custom-headers) do not apply.
-
-To set up Slack delivery, see [Notify a Slack channel](/langsmith/engine#notify-a-slack-channel). The rest of this page documents **webhook URL** destinations.
-</Note>
-
-## Delivery
-
-LangSmith sends a `POST` request with a JSON body to your webhook URL. The request uses `Content-Type: application/json` and includes any custom headers you attached to the subscription.
-
-| Property | Value |
-| --- | --- |
-| Method | `POST` |
-| Body | JSON, [common envelope](#event-envelope) below |
-| Scheme | `http://` and `https://` are accepted. `https://` is strongly recommended |
-| Signature | `X-LangSmith-Signature` header, signed with the subscription's signing secret |
-| Timeout | 20 seconds per attempt |
-| Attempts | Up to 4 attempts (1 initial plus 3 retries with exponential backoff) on transport errors, HTTP `408`, `425`, `429`, and any HTTP `5xx`. Other `4xx` responses are treated as permanent and are not retried |
-| Response | Success is determined from the status code alone. Response bodies are ignored. |
-
-<Note>
-Retries deliver a byte-identical payload, including the same `id`. Dedupe on `id` so a retried delivery does not produce a duplicate downstream effect.
-</Note>
-
-### Custom headers
-
-You can attach arbitrary headers to each subscription (for example, `Authorization: Bearer …`) to authenticate the caller at your endpoint. `Content-Type` is always set by LangSmith and cannot be overridden.
-
-### Signing secret
-
-Each subscription has a signing secret. LangSmith uses this secret to sign the raw webhook request body and sends the result in the `X-LangSmith-Signature` header.
-
-The header value has this format:
-
-```text
-sha256=<hex-encoded HMAC-SHA256 digest>
-```
-
-Verify the signature before parsing or acting on the payload. The HMAC input is the exact raw request body bytes, and the HMAC key is the subscription's signing secret. Do not parse and reserialize the JSON body before verification.
-
-<CodeGroup>
-
-```python Python
-import hashlib
-import hmac
-from typing import Optional
-
-
-def verify_langsmith_signature(
-    *,
-    body: bytes,
-    signing_secret: str,
-    signature_header: Optional[str],
-) -> bool:
-    if not signature_header or not signature_header.startswith("sha256="):
-        return False
-
-    expected = "sha256=" + hmac.new(
-        signing_secret.encode("utf-8"),
-        body,
-        hashlib.sha256,
-    ).hexdigest()
-
-    return hmac.compare_digest(expected, signature_header)
-```
-
-```typescript TypeScript
-import { createHmac, timingSafeEqual } from "node:crypto";
-
-export function verifyLangSmithSignature({
-  body,
-  signingSecret,
-  signatureHeader,
-}: {
-  body: Buffer;
-  signingSecret: string;
-  signatureHeader: string | undefined;
-}) {
-  if (!signatureHeader?.startsWith("sha256=")) {
-    return false;
-  }
-
-  const expected = `sha256=${createHmac("sha256", signingSecret)
-    .update(body)
-    .digest("hex")}`;
-
-  const expectedBytes = Buffer.from(expected);
-  const actualBytes = Buffer.from(signatureHeader);
-
-  return (
-    expectedBytes.length === actualBytes.length &&
-    timingSafeEqual(expectedBytes, actualBytes)
-  );
-}
-```
-
-</CodeGroup>
-
-### Roll a signing secret
-
-Roll a signing secret when it may have been exposed, or when your organization's credential rotation policy requires a new secret.
-
-To roll a secret, open the subscription row in **Engine Settings**, click **Roll signing secret**, and confirm. LangSmith generates a new signing secret and uses it for future webhook deliveries immediately. The previous secret stops signing deliveries as soon as the roll completes.
-
-After rolling the secret, update every consumer that verifies `X-LangSmith-Signature` with the new value.
-
-### Severity filtering
-
-Each subscription has a `severity_threshold` from `0` to `3`. For issue events, an event is delivered only when the issue's `severity` is less than or equal to the threshold. Lower numbers are more urgent.
-
-| Severity | Meaning |
-| --- | --- |
-| `0` | Urgent |
-| `1` | High |
-| `2` | Medium |
-| `3` | Low |
-
-For example, a subscription with `severity_threshold: 1` receives events for `URGENT` (0) and `HIGH` (1) issues only.
-
-Severity thresholds do not apply to [`issue.agent_run.failed`](#issue-agent_run-failed), because run-failure events are scoped to an Engine session rather than to a specific issue.
-
-### Event-type filtering
-
-Each subscription specifies the [event types](#event-types) it wants to receive. Subscriptions created without an explicit list default to `["issue.created"]`.
-
-## Event envelope
-
-Every event delivered to your endpoint uses the same outer JSON shape.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | UUID | Unique identifier for this delivery. Stable across retries. Use it to dedupe. |
-| `type` | string | Event type. One of [`issue.created`](#issue-created), [`issue.trace.added`](#issue-trace-added), or [`issue.agent_run.failed`](#issue-agent_run-failed). |
-| `created` | integer | Unix seconds (UTC) when the event was enqueued. |
-| `request_id` | UUID | Shared by every event fired from the same upstream action. See [Batch coalescing](#batch-coalescing). |
-| `data` | object | Event payload. Always contains `data.object`. Contains [`data.trace`](#data-trace) only on [`issue.trace.added`](#issue-trace-added) events. |
-
-### Issue `data.object`
-
-For [`issue.created`](#issue-created) and [`issue.trace.added`](#issue-trace-added), `data.object` is a snapshot of the issue. Treat it as the authoritative state of the issue at the time the event was generated.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | UUID | Issue ID. |
-| `name` | string | Short title of the issue. |
-| `description` | string | Human-readable description. |
-| `severity` | integer | `0` (urgent) through `3` (low). See [Severity filtering](#severity-filtering). |
-| `tenant_id` | UUID | Workspace the issue belongs to. |
-| `tenant_name` | string | Workspace display name. |
-| `session_id` | UUID | Tracing project the issue belongs to. |
-| `session_name` | string | Tracing project name. |
-| `url` | string | Deep link to the issue in the LangSmith UI. |
-
-### Run failure `data.object`
-
-For [`issue.agent_run.failed`](#issue-agent_run-failed), `data.object` describes the Engine run that failed.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `tenant_id` | UUID | Workspace the run belongs to. |
-| `tenant_name` | string | Workspace display name. |
-| `session_id` | UUID | Tracing project the run belongs to. |
-| `session_name` | string | Tracing project name. |
-| `url` | string | Deep link to the LangSmith project in the UI. |
-| `thread_id` | string | Engine thread ID. |
-| `run_id` | string | Engine run ID. Omitted when unavailable. |
-| `status` | string | Final run status. |
-| `error_message` | string | Error text from the failed run. Omitted when unavailable. |
-| `occurred_at` | string | RFC 3339 timestamp of when the failure occurred. |
-
-### `data.trace`
-
-`data.trace` is included only on [`issue.trace.added`](#issue-trace-added) events.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `run_id` | UUID | ID of the run that was linked to the issue. |
-| `trace_id` | UUID | ID of the trace that contains the run. |
-| `start_time` | string | RFC 3339 timestamp of when the run started. |
-| `comment` | string \| null | Optional note recorded when the trace was linked. Omitted when empty. |
-
-### Batch coalescing
-
-A single upstream action can produce multiple webhook events. When Engine opens a new issue and attaches five traces to it, you receive one [`issue.created`](#issue-created) event and five [`issue.trace.added`](#issue-trace-added) events, all sharing the same `request_id`. Use `request_id` to group these into a single downstream notification.
-
-## Event types
-
-The event types below are the complete set LangSmith Engine sends today. New types may be added in the future, so handlers should ignore unknown `type` values rather than failing.
-
-### `issue.created`
-
-Sent when LangSmith Engine creates a new issue. `data.trace` is omitted.
-
-```json
-{
-  "id": "b91c1f0e-7c4a-4f53-9d3e-9f1c8e7a2b10",
-  "type": "issue.created",
-  "created": 1747238400,
-  "request_id": "0d2f4f6a-2a3a-4b6e-9b87-5d5b6e8c9a01",
-  "data": {
-    "object": {
-      "id": "9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
-      "name": "Tool selection inconsistency",
-      "description": "Agent repeatedly calls the search tool with identical arguments before terminating.",
-      "severity": 1,
-      "tenant_id": "11111111-2222-3333-4444-555555555555",
-      "tenant_name": "Acme Workspace",
-      "session_id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
-      "session_name": "prod-api",
-      "url": "https://smith.langchain.com/o/11111111-2222-3333-4444-555555555555/projects/p/66666666-7777-8888-9999-aaaaaaaaaaaa?tab=5&issue=9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d"
-    }
-  }
-}
-```
-
-### `issue.trace.added`
-
-Sent when a new trace is linked to an existing issue. `data.trace` describes the linked trace.
-
-```json
-{
-  "id": "c02e3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
-  "type": "issue.trace.added",
-  "created": 1747238410,
-  "request_id": "0d2f4f6a-2a3a-4b6e-9b87-5d5b6e8c9a01",
-  "data": {
-    "object": {
-      "id": "9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d",
-      "name": "Tool selection inconsistency",
-      "description": "Agent repeatedly calls the search tool with identical arguments before terminating.",
-      "severity": 1,
-      "tenant_id": "11111111-2222-3333-4444-555555555555",
-      "tenant_name": "Acme Workspace",
-      "session_id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
-      "session_name": "prod-api",
-      "url": "https://smith.langchain.com/o/11111111-2222-3333-4444-555555555555/projects/p/66666666-7777-8888-9999-aaaaaaaaaaaa?tab=5&issue=9a8b7c6d-5e4f-3a2b-1c0d-9e8f7a6b5c4d"
-    },
-    "trace": {
-      "run_id": "f1e2d3c4-b5a6-9788-6655-44332211ffee",
-      "trace_id": "abcdefab-1234-5678-9abc-def012345678",
-      "start_time": "2026-05-14T12:30:00Z",
-      "comment": "Reproduces the same tool-loop pattern."
-    }
-  }
-}
-```
-
-### `issue.agent_run.failed`
-
-Sent when LangSmith Engine fails to complete a run. This event is session-scoped, so it does not include `data.trace` and does not use severity filtering.
-
-```json
-{
-  "id": "4d0e8db2-81e6-4491-b8e5-b13a8f5afc0d",
-  "type": "issue.agent_run.failed",
-  "created": 1747238500,
-  "request_id": "f6bbd48a-0386-403d-9344-31051264b45f",
-  "data": {
-    "object": {
-      "tenant_id": "11111111-2222-3333-4444-555555555555",
-      "tenant_name": "Acme Workspace",
-      "session_id": "66666666-7777-8888-9999-aaaaaaaaaaaa",
-      "session_name": "prod-api",
-      "url": "https://smith.langchain.com/o/11111111-2222-3333-4444-555555555555/projects/p/66666666-7777-8888-9999-aaaaaaaaaaaa",
-      "thread_id": "thread-123",
-      "run_id": "run-456",
-      "status": "error",
-      "error_message": "RuntimeError: missing API key",
-      "occurred_at": "2026-05-14T12:45:00Z"
-    }
-  }
-}
-```
-
-## Test your endpoint
-
-Before pointing a real subscription at your endpoint, send a sample payload to verify it accepts and acknowledges within the 20-second timeout:
-
-```bash
-curl -X POST https://your-endpoint.example.com/webhook \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $WEBHOOK_SECRET" \
-  -d @sample-issue-created.json
-```
-
-Use the example body from [`issue.created`](#issue-created) as `sample-issue-created.json`. Verify that:
-
-- The custom `Authorization` header arrives and matches the secret you configured on the subscription.
-- The handler persists the event keyed by its `id` so retries are deduped.
-- The handler returns `2xx` before kicking off slow downstream work.
-
-## Security
-
-- Webhook URLs are validated when the subscription is created and again at delivery time. Private and metadata IP ranges are blocked in SaaS. Both `http://` and `https://` are accepted; use `https://` so the payload and any custom headers are not sent in cleartext.
-- LangSmith signs webhook bodies with the subscription's signing secret. Verify `X-LangSmith-Signature` before processing the payload.
-- You can also set custom headers on the subscription, such as `Authorization: Bearer …`, for routing or additional authentication at your endpoint.
-- Dedupe on the event `id` so that a retried delivery does not cause a duplicate notification.
-
-## Best practices
-
-- **Acknowledge fast.** Respond with `2xx` as soon as you have persisted the event. Move slow work (fan-out, paging, downstream API calls) onto a queue so your handler stays within the 20-second timeout.
-- **Tolerate unknown event types.** Ignore `type` values your handler does not recognize. New event types may be added without notice.
-- **Tolerate new fields.** Parse payloads with a permissive schema. New fields may be added to existing event types without notice.
-
----
-
-<div className="source-links">
-<Callout icon="terminal-2">
-    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
-</Callout>
-<Callout icon="edit">
-    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/engine-webhooks.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
-</Callout>
-</div>
-
-
 # Find and fix your agent's issues with LangSmith Engine
 Source: https://docs.langchain.com/langsmith/engine
 
-LangSmith Engine helps you ship more reliable agents without manually searching through traces. It is the LangSmith Agent for agent engineering: working from your production traces, it surfaces recurring issues, diagnoses their root cause, and drives the fix across every stage of the development lifecycle. For a product overview, see [Engine](/langsmith/engine-overview).
+LangSmith Engine helps you ship more reliable agents without manually searching through traces. It is the LangSmith agent for agent engineering: working from your production traces, it surfaces recurring issues, diagnoses their root cause, and drives the fix across every stage of the development lifecycle. For a product overview, see [Engine](/langsmith/engine-overview).
 
 ## How Engine works
+
+### The issue lifecycle
 
 Each issue moves through a closed loop in which Engine:
 
@@ -35544,9 +35579,7 @@ flowchart LR
     classDef decision fill:#FDF3FF,stroke:#7E65AE,stroke-width:2px,color:#504B5F
 ```
 
-This page covers how to set up Engine, work through the fix and evaluation loop, control costs, and route notifications.
-
-## How Engine samples and prioritizes traces
+### How Engine selects traces
 
 Engine analyzes both trace content and run feedback when selecting and ranking traces for each scan. It treats feedback—including online evaluator scores, annotation queue scores, and user feedback submitted via the SDK—as a high-priority signal, not supplementary data.
 
@@ -35560,7 +35593,7 @@ Any source that writes feedback to a run contributes to this prioritization auto
 
 ## Set up Engine
 
-Setting up Engine is a two-step process: an [Organization Admin](/langsmith/rbac#organization-admin) first enables Engine for the [workspace](/langsmith/administration-overview#workspaces), then any user can configure Engine for each tracing project.
+Setting up Engine is a two-step process: an [Organization Admin](/langsmith/rbac#organization-admin) first enables Engine for the [workspace](/langsmith/administration-overview#workspaces), then any user can turn on Engine for each tracing project.
 
 <Note>
 On Self-hosted LangSmith, an operator must enable Engine in the LangSmith Helm chart before either step is available. Refer to [Engine on Self-hosted](/langsmith/engine-self-hosted).
@@ -35588,7 +35621,106 @@ Once Engine is enabled, any team member in your organization can set it up for t
   If you want to turn off Engine, toggle the same setting to off. This will stop all automatic runs of Engine and discontinue future billing in your account.
 </Tip>
 
+### Turn on Engine for a tracing project
+
+<Steps>
+  <Step title="Open Engine and select a project">
+    In the [LangSmith console](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-engine), select **Engine** in the UI sidebar. The project selector lists projects that are already configured. To set up a project that is not listed, click **+ Set up another project**, then choose it under **Choose a project to analyze**. The **Engine** tab in a tracing project is also available.
+  </Step>
+  <Step title="Connect a code repository (optional)">
+    Although optional, connecting a code repository is recommended. Engine reads your source code to locate the code path behind a failing trace, ground its proposed fixes in the actual implementation, and open pull requests directly from issues. Under **Connect your agent's code repository**, select a repository in the **GitHub Repository** field. Only repositories the GitHub app can access are shown. Click **Manage app access →** to update permissions. For GitHub App setup and organization approval, see [Connect Engine to GitHub](/langsmith/engine-github). To give Engine additional project context, select a repository in the **Context Hub repository** field.
+  </Step>
+  <Step title="Select preference categories (optional)">
+    Under **What matters most to you?**, select categories to prioritize for your review (for example, **Tool Call Failures** or **Latency**). Click **+ Add something specific** to describe a custom concern. See [Tell Engine what kinds of issues to focus on](#tell-engine-what-kinds-of-issues-to-focus-on).
+  </Step>
+  <Step title="Choose an analysis level">
+    Under **Analysis level**, choose **Reduced**, **Standard** (the default), or **Expanded**. Higher levels analyze more traces and cost more. See [Set the analysis level](#set-the-analysis-level).
+  </Step>
+  <Step title="Focus on specific traces (optional)">
+    Under **Focus on specific traces**, narrow Engine's attention to a subset of runs by run name or metadata. Leave it empty to analyze all traces. See [Tell Engine which traces to focus on](#tell-engine-which-traces-to-focus-on).
+  </Step>
+  <Step title="Start analyzing">
+    Click **Start Analyzing**. The dialog may show an estimated monthly cost range based on your project's usage. Engine can take up to 20 minutes to analyze your project’s traces and begin making suggestions. While you wait, you can [set up notifications](/langsmith/engine-notifications) to be alerted in Slack or via webhook when issues of different priority levels are found.
+  </Step>
+  <Step title="Review the agent overview document">
+    Before surfacing issues, Engine generates an agent overview document describing your project's purpose, architecture, and key metrics based on your traces. Review and edit the document, then click **Accept & Continue** to proceed. If the overview is inaccurate, edit it before continuing, since Engine uses it as context for all analysis, so accuracy here affects the quality of detected issues.
+  </Step>
+</Steps>
+
+<Frame caption="Setup dialog">
+  <img
+    className="block dark:hidden"
+    src="/langsmith/images/langsmith-engine-setup-light.png"
+    alt="Setup dialog showing the code repository field and category selections for prioritizing issue types"
+  />
+  <img
+    className="hidden dark:block"
+    src="/langsmith/images/langsmith-engine-setup-dark.png"
+    alt="Setup dialog showing the code repository field and category selections for prioritizing issue types"
+  />
+</Frame>
+
+You can change any of these choices later in [Configure Engine](#configure-engine). To connect GitHub, see [Connect Engine to GitHub](/langsmith/engine-github). To get alerted in Slack or through a webhook when Engine finds issues, see [Engine notifications](/langsmith/engine-notifications).
+
+### Pause Engine or delete its issues
+
+Engine scans your traces on a dynamic schedule tuned to balance cost and performance. To stop scanning a project without deleting its existing issues, click **Pause** in the [**Engine Settings**](#configure-engine) panel. Click **Resume** to start scanning again.
+
+Click **Delete all issues** in the same panel to permanently remove the project's issues and Engine settings. This cannot be undone.
+
+To turn off Engine for the whole organization, see [Enable Engine for your organization](#enable-engine-for-your-organization).
+
+## Configure Engine
+
+On the **Engine** page, click **Configure Engine** to open the **Edit Engine Settings** panel. Use it to give Engine context on your agent, tell it what to focus on, and connect Linear. The panel also holds settings covered elsewhere:
+
+- **Code repository** and **Context repository**: Connect or update the GitHub repository Engine reads when diagnosing issues, optionally with a **Subfolder** and a **Branch** (defaults to the repository default). A Context Hub repository lets Engine propose fixes to instructions, docs, and linked skills. See [Connect Engine to GitHub](/langsmith/engine-github).
+- **Notifications**: See [Engine notifications](/langsmith/engine-notifications).
+- **Analysis level**: See [Set the analysis level](#set-the-analysis-level).
+- **Engine spend**: See [Set spend limits and monitor usage](#set-spend-limits-and-monitor-usage).
+- **Pause** and **Delete all issues**: See [Pause Engine or delete its issues](#pause-engine-or-delete-its-issues).
+
+### Give context on your agent
+
+During setup, Engine generates an agent overview document describing your project's purpose, architecture, and key metrics. Engine uses it as context for all analysis, so its accuracy affects the quality of detected issues. Under **Agent overview**, edit the document to keep it accurate as your agent changes.
+
+### Tell Engine what kinds of issues to focus on
+
+Under **Preferences**, list the areas Engine should focus on, prioritize, or ignore. Select category chips such as **Cost & Tokens**, **Latency**, or **Tool Call Failures**, or click **+ Add something specific** to describe a custom concern. Engine treats preferences as authoritative and folds them into the agent overview document. Changes take effect on the next scan.
+
+### Tell Engine which traces to focus on
+
+Focus Engine on the traces that matter to keep analysis precise and reduce wasted LCU spend. Use trace scope (the **Focus on specific traces** control) when a project mixes several agents or workloads and you want Engine to analyze only some of them. For example, if a project runs both a production chatbot and a nightly batch job, scope to `Run Name is chatbot` so Engine ignores the batch runs. By default, Engine analyzes all of a project's traces.
+
+Set the scope in either of two places, using the same control:
+
+- **Engine setup**: In the **Find and fix your agent's issues** panel, under **Focus on specific traces**.
+- **Engine Settings**: In the **Focus on specific traces** section of the [**Engine Settings**](#configure-engine) panel. Edits here save automatically.
+
+Add scope conditions with the filter editor. You can add one condition of each kind, **up to two**:
+
+- **Run Name**: Pick a run or agent name. The value field autocompletes from the run names in your project's recent traces.
+- **Metadata**: Pick a metadata key, then a value. Both autocomplete from the metadata present on your project's recent runs.
+
+To add a condition, choose its kind from the field selector, fill in the values, then click **Add**. Each condition appears as a chip, for example `Run Name is chatbot` or `env is prod`. Click the **×** on a chip to remove that condition.
+
+<Note>
+**Scope limitation:** The scope filter only accepts run name and metadata conditions. You cannot scope Engine's scan by feedback key, evaluator name, or score threshold. To focus Engine on traces with a specific evaluator's low scores, describe that in your [preferences](#tell-engine-what-kinds-of-issues-to-focus-on) or [agent overview](#give-context-on-your-agent). Engine already factors in all feedback signals automatically. See [How Engine selects traces](#how-engine-selects-traces).
+</Note>
+
+Scope determines which traces Engine analyzes to detect issues and build the agent overview document. Scope set during initial setup applies to Engine's first scan. Scope changed later in the [**Engine Settings**](#configure-engine) panel does not re-run Engine immediately; it applies on the next scan.
+
+### Connect to Linear
+
+Under **Linear**, click **Connect**, select a team, optionally select a project for new issues, then click **Save changes**. Engine retains durable links to the issues it creates, but does not synchronize later edits from Linear. Deleting all Engine issues does not delete existing Linear tickets. See [Create a Linear issue](#create-a-linear-issue).
+
+## Manage Engine costs
+
 ### Understand LCU costs
+
+<Note>
+Engine uses **LangChain-managed inference** exclusively. Bring Your Own Key (BYOK) is not supported; you cannot supply your own provider API keys for Engine.
+</Note>
 
 Engine charges in **LangChain Compute Units (LCUs)**, a normalized unit of work combining compute, storage, memory, and LLM spend. LCU consumption scales with the number of traces analyzed, the number and complexity of the LLM calls Engine makes to diagnose and fix issues, and the size of any connected repository. LCUs cost **$1.50 USD each**. For an estimate of your expected LCU usage, see the [LangSmith Usage Calculator](https://www.langchain.com/pricing#pricing-calc).
 
@@ -35600,6 +35732,16 @@ Engine runs in two phases:
 | **Recurring scans** | Automatically, on a dynamic schedule | 10-15 LCUs |
 
 On initialization, Engine audits past traces, clusters and prioritizes issues by severity, and proposes fixes to your prompts or code (if a repository is connected). Recurring scans run on a dynamic schedule tuned to balance cost and performance, whether or not new issues are found, and surface new issues not previously detected.
+
+### Set the analysis level
+
+The analysis level controls how many of your project's traces Engine analyzes, and so how many LCUs it uses. Choose it when you [turn on Engine for a project](#turn-on-engine-for-a-tracing-project), and change it later under **Analysis level** in the [**Engine Settings**](#configure-engine) panel:
+
+- **Reduced**: Monitors fewer traces at a lower cost.
+- **Standard** (default): Analyzes more of your eligible traces for fuller coverage.
+- **Expanded**: Maximum coverage for high-volume projects. Available only for projects with enough tracing volume.
+
+The setup dialog shows an estimated monthly cost range that updates with the level you choose.
 
 ### Set spend limits and monitor usage
 
@@ -35619,83 +35761,11 @@ To stop Engine entirely, use the **Enable Engine** toggle in **Settings > Engine
 
 To monitor usage, you can view your organization's monthly LCU spend on the **Engine enablement** page in **Settings**, or view per-project spend in the [**Engine Settings**](#configure-engine) panel for each tracing project.
 
-### Set up Engine for a tracing project
+## Investigate and fix an issue
 
-<Steps>
-  <Step title="Open Engine and select a project">
-    In the [LangSmith console](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-engine), select **Engine** in the UI sidebar. The project selector lists projects that are already configured. To set up a project that is not listed, click **+ Set up another project**, then choose it under **Choose a project to analyze**. The **Engine** tab in a tracing project is also available.
-  </Step>
-  <Step title="Connect a code repository (optional)">
-    Although optional, connecting a code repository is recommended. Engine reads your source code to locate the code path behind a failing trace, ground its proposed fixes in the actual implementation, and open pull requests directly from issues. Under **Connect your agent's code repository**, select a repository in the **GitHub Repository** field. Only repositories the GitHub app can access are shown. Click **Manage app access →** to update permissions. For GitHub App setup and organization approval, see [Connect Engine to GitHub](/langsmith/engine-github). To give Engine additional project context, select a repository in the **Context Hub repository** field. You can update either repository at any time from the [**Engine Settings**](#configure-engine) panel.
-  </Step>
-  <Step title="Select preference categories (optional)">
-    Under **What matters most to you?**, select categories to prioritize for your review (for example, **Tool Call Failures** or **Latency**). Click **+ Add something specific** to describe a custom concern. You can update **Preferences** at any time from the [**Engine Settings**](#configure-engine) panel.
-  </Step>
-  <Step title="Focus on specific traces (optional)">
-    Under **Focus on specific traces**, narrow Engine's attention to a subset of runs by run name or metadata. Leave it empty to analyze all traces. You can update the scope at any time from the [**Engine Settings**](#configure-engine) panel. For more information, see [Focus on specific traces](#focus-on-specific-traces).
-  </Step>
-  <Step title="Start analyzing">
-    Click **Start Analyzing**. The dialog may show an estimated monthly cost range based on your project's usage. Engine can take up to 20 minutes to analyze your project’s traces and begin making suggestions. While you wait, you can [set up notifications](#get-notified-about-new-issues) in the settings panel to be alerted in Slack or via webhook when issues of different priority levels are found.
-  </Step>
-  <Step title="Review the agent overview document">
-    Before surfacing issues, Engine generates an agent overview document describing your project's purpose, architecture, and key metrics based on your traces. Review and edit the document, then click **Accept & Continue** to proceed. If the overview is inaccurate, edit it before continuing, since Engine uses it as context for all analysis, so accuracy here affects the quality of detected issues. You can update it at any time from the [**Engine Settings**](#configure-engine) panel.
-  </Step>
-</Steps>
+Once setup is complete, the **Engine** page lists the issues Engine has detected. Click any issue to open its detail panel. At the top, a diagnosis describes the problem and its impact. Each issue has a toolbar for setting its priority, closing or reopening it, opening a pull request, creating a Linear issue, and watching it.
 
-<Frame caption="Setup dialog">
-  <img
-    className="block dark:hidden"
-    src="/langsmith/images/langsmith-engine-setup-light.png"
-    alt="Setup dialog showing the code repository field and category selections for prioritizing issue types"
-  />
-  <img
-    className="hidden dark:block"
-    src="/langsmith/images/langsmith-engine-setup-dark.png"
-    alt="Setup dialog showing the code repository field and category selections for prioritizing issue types"
-  />
-</Frame>
-
-### Focus on specific traces
-
-Focus Engine on the traces that matter to keep analysis precise and reduce wasted LCU spend. Use trace scope (the **Focus on specific traces** control) when a project mixes several agents or workloads and you want Engine to analyze only some of them. For example, if a project runs both a production chatbot and a nightly batch job, scope to `Run Name is chatbot` so Engine ignores the batch runs. By default, Engine analyzes all of a project's traces.
-
-Set the scope in either of two places, using the same control:
-
-- **Engine setup**: In the **Find and fix your agent's issues** panel, under **Focus on specific traces**.
-- **Engine Settings**: In the **Focus on specific traces** section of the [**Engine Settings**](#configure-engine) panel. Edits here save automatically.
-
-Add scope conditions with the filter editor. You can add one condition of each kind, **up to two**:
-
-- **Run Name**: Pick a run or agent name. The value field autocompletes from the run names in your project's recent traces.
-- **Metadata**: Pick a metadata key, then a value. Both autocomplete from the metadata present on your project's recent runs.
-
-To add a condition, choose its kind from the field selector, fill in the values, then click **Add**. Each condition appears as a chip, for example `Run Name is chatbot` or `env is prod`. Click the **×** on a chip to remove that condition.
-
-<Note>
-**Scope limitation:** The scope filter only accepts run name and metadata conditions. You cannot scope Engine's scan by feedback key, evaluator name, or score threshold. To focus Engine on traces with a specific evaluator's low scores, use the [**Preferences** and **Agent overview** settings](#configure-engine) to tell Engine what to prioritize. Engine already factors in all feedback signals automatically. See [How Engine samples and prioritizes traces](#how-engine-samples-and-prioritizes-traces).
-</Note>
-
-Scope determines which traces Engine analyzes to detect issues and build the agent overview document. Scope set during initial setup applies to Engine's first scan. Scope changed later in the [**Engine Settings**](#configure-engine) panel does not re-run Engine immediately; it applies on the next scan.
-
-## Browse and filter issues
-
-Once setup is complete, the **Engine** page displays a list of automatically detected issues in the left panel. Each entry shows a title, a short description, the number of contributing traces, and how recently the issue was observed. Each issue is tagged with a failure category, such as **Silent tool error** or **Hallucination**.
-
-At the top of the list, you can click:
-
-- **Filter issues** icon to filter by **Priority**, **Status** and **Tags**.
-- **Sort issues** icon to sort by **Severity**, **Last Updated**, and **Created**.
-- **Configure Engine** to [configure Engine](#configure-engine).
-
-Click any issue to display its details in the right panel.
-
-Open [LangSmith Chat](/langsmith/chat#engine) to ask questions across your issues, for example, which issues need the most attention or how many new issues are open.
-
-If no issues appear after setup completes, Engine found no recurring patterns in the analyzed traces. Try checking back after more traces have been collected.
-
-## Review an issue
-
-Click any issue in the list to open its detail panel. At the top, a diagnosis describes the problem and its impact.
+### Review evidence
 
 The **Evidence** section contains traces that support a diagnosis, including a snippet from each trace. From this section, you can:
 
@@ -35709,50 +35779,9 @@ Engine keeps tracking an issue after it is filed. On later scans, any new trace 
 
 The **Proposed Fix** section describes the issue and suggests how to address it, which may include specific code or prompt changes if a repository is connected.
 
-## Take action on an issue
-
-Each issue has a toolbar for opening or viewing a pull request, creating a Linear issue, watching the issue, closing it (resolve or mark as incorrectly flagged), and setting its priority.
-
-### Change priority
+### Change priority and status
 
 Select **Low**, **Medium**, or **High** from the priority dropdown to update an issue's priority. You can optionally provide a reason, which feeds back into Engine to help improve its analysis over time.
-
-### Open or view a pull request
-
-Click **Open PR** to open a GitHub pull request with the proposed code change in your connected repository. Connect a repository first if you haven't. Once a pull request exists, Engine replaces **Open PR** with **View PR #\<number\>**. Click **View PR #\<number\>** to open the pull request in GitHub. Engine reflects the PR's status (open, merged, or closed) throughout the issue. You can also copy the issue's fix context to your clipboard for use with an LLM or coding assistant. Engine can propose code changes to any connected repository, including agents built with [Deep Agents](/oss/python/deepagents/overview), [LangChain](/oss/python/langchain/overview), and [LangGraph](/oss/python/langgraph/overview).
-
-### Create a Linear issue
-
-Before creating Linear issues, configure a Linear connection from **Configure Engine**. Under **Linear**, click **Connect**, select a team, optionally select a project, then click **Save changes**.
-
-To create an issue, click **Create in Linear** on an Engine issue. Engine shows **Linear creation pending** while it creates the issue. When creation completes, Engine displays the linked Linear issue identifier in the Engine issue and issue list.
-
-The Linear issue includes the Engine issue title and description, severity, category, tags, a **View issue in LangSmith** link, and evidence trace IDs. Engine retains the link to the Linear issue. If you close the Linear ticket, Engine closes the corresponding issue. If you cancel the Linear ticket, Engine marks the corresponding issue as incorrectly flagged. Engine also tracks a pull request linked to the Linear ticket on the corresponding Engine issue.
-
-### Add offline examples
-
-This step captures the traces that surfaced the issue as ground-truth [dataset examples](/langsmith/manage-datasets), so you can evaluate the fix offline before it reaches production. You can also start this from the **Evidence** section further down the page.
-
-1. Click **Add offline examples** at the top right of the **Evidence** list to open the **Add as offline example** dialog.
-2. Review each trace. The dialog shows the input, the wrong output the agent produced, and the proposed expected output as a custom ground truth example.
-3. Click **Add to Dataset** to add them directly, or click **Edit in annotation queue** to review them first.
-4. In the annotation queue, each example shows the run inputs alongside reference outputs proposed by Engine, structured as named [assertions](/langsmith/assertions) generated from trace analysis. Each assertion is a short claim describing what a correct answer should or shouldn't include. Edit the assertions as needed, add new ones with **+ Add assertion**, then click **Add to Dataset & Continue** to work through each example.
-
-For more information, refer to [Manage datasets](/langsmith/manage-datasets), [Use annotation queues](/langsmith/annotation-queues), and [Use assertions](/langsmith/assertions).
-
-### Watch: keep an eye on an issue
-
-Watching keeps an issue open for monitoring without resolving it or marking it as incorrectly flagged. Click **Watch** when you are not ready to fix an issue but still want to know if it keeps happening.
-
-To be alerted when a watched issue recurs, click **Alert me via Slack**, which opens the **Notifications** section of the [Engine Settings](#configure-engine) panel.
-
-When new traces link to a watched issue, Engine moves it to the top of your list and shows how many new traces arrived, so you can pick up the fix or keep watching.
-
-<Note>
-Watching is only available for open issues without a pull request in flight: discard the fix to watch an issue again. Resolving a watched issue, or marking it as incorrectly flagged, automatically stops watching it.
-</Note>
-
-### Close or reopen an issue
 
 Closing records the outcome of your review. Click:
 
@@ -35763,68 +35792,69 @@ For either outcome, you can optionally provide a reason, which feeds back into E
 
 You can reopen a closed issue at any time. Click **Reopen** to clear any fix in progress and stop watching the issue if it was being watched. Engine also reopens an issue automatically when it detects the same problem recurring in a later trace.
 
-## List issues via the CLI
+### Open a pull request
 
-You can list issues programmatically using the [LangSmith CLI](/langsmith/cli).
+Click **Open PR** to open a GitHub pull request with the proposed code change in your connected repository. Connect a repository first if you haven't. Once a pull request exists, Engine replaces **Open PR** with **View PR #\<number\>**. Click **View PR #\<number\>** to open the pull request in GitHub. Engine reflects the PR's status (open, merged, or closed) throughout the issue. You can also copy the issue's fix context to your clipboard for use with an LLM or coding assistant. Engine can propose code changes to any connected repository, including agents built with [Deep Agents](/oss/python/deepagents/overview), [LangChain](/oss/python/langchain/overview), and [LangGraph](/oss/python/langgraph/overview).
 
-```bash
-# List issues for a project
-langsmith project issues list --project <project-name>
-```
+### Create a Linear issue
 
-## Get notified about new issues
+To create an issue, first [connect Linear](#configure-engine), then click **Create in Linear** on an Engine issue. Engine shows **Linear creation pending** while it creates the issue. When creation completes, Engine displays the linked Linear issue identifier in the Engine issue and issue list.
 
-Engine can notify you when it opens a new issue, links a new trace to an existing issue, or fails to complete a run. Deliver these notifications to a **Slack channel**, an **HTTP webhook endpoint**, or both. Each destination has its own event types and minimum priority level, so you can route urgent issues to a paging webhook while sending every issue to a Slack channel.
+The Linear issue includes the Engine issue title and description, severity, category, tags, a **View issue in LangSmith** link, and evidence trace IDs. Engine retains the link to the Linear issue. If you close the Linear ticket, Engine closes the corresponding issue. If you cancel the Linear ticket, Engine marks the corresponding issue as incorrectly flagged. Engine also tracks a pull request linked to the Linear ticket on the corresponding Engine issue.
 
-Manage notification destinations from the [**Engine Settings**](#configure-engine) panel: on the **Engine** page, click **Configure Engine**, then under **Notifications** click **+ Add destination**.
+### Add offline examples
 
-### Notify a Slack channel
+This step captures the traces that surfaced the issue as ground-truth [dataset examples](/langsmith/manage-datasets), so you can evaluate the fix offline before it reaches production.
 
-<Steps>
-  <Step title="Connect a Slack workspace">
-    Connecting a Slack workspace is an organization-level action you perform once, not per project. Connecting or disconnecting a workspace requires the `organization:manage` permission. In the [LangSmith console](https://smith.langchain.com?utm_source=docs&utm_medium=cta&utm_campaign=langsmith-signup&utm_content=langsmith-engine), open **Settings**, go to your organization's **General** settings, and under **Slack** click **Connect Slack**. Authorize the LangSmith app in Slack. You can connect more than one Slack workspace to an organization.
-  </Step>
-  <Step title="Add a Slack destination">
-    On the **Engine** page, click **Configure Engine**, then click **Add destination**. Set the **Deliver to** field to **Slack**, then choose the workspace and channel under **Channel**.
-  </Step>
-  <Step title="Choose events and priority">
-    Under **Notify when**, select which [event types](/langsmith/engine-webhooks#event-types) post a message to the channel. Under **Minimum priority**, choose the lowest [severity](/langsmith/engine-webhooks#severity-filtering) that triggers a notification. Click **Add destination** to save.
-  </Step>
-</Steps>
+1. Click **Add offline examples** at the top right of the **Evidence** list to open the **Add as offline example** dialog.
+2. Review each trace. The dialog shows the input, the wrong output the agent produced, and the proposed expected output as a custom ground truth example.
+3. Click **Add to Dataset** to add them directly, or click **Edit in annotation queue** to review them first.
+4. In the annotation queue, each example shows the run inputs alongside reference outputs proposed by Engine, structured as named [assertions](/langsmith/assertions) generated from trace analysis. Each assertion is a short claim describing what a correct answer should or shouldn't include. Edit the assertions as needed, add new ones with **+ Add assertion**, then click **Add to Dataset & Continue** to work through each example.
 
-LangSmith automatically joins the public channel you select. To post to a private channel, invite the LangSmith app to that channel in Slack first.
+For more information, refer to [Manage datasets](/langsmith/manage-datasets), [Use annotation queues](/langsmith/annotation-queues), and [Use assertions](/langsmith/assertions).
 
-Each Slack message includes the issue title, description, and severity, a **View issue** link back to LangSmith, and (for issue events) a chart of the issue's recurrence over time. If a workspace's connection becomes invalid, for example, the app is removed from Slack, its destinations stop delivering until you reconnect it from your organization's **General** settings.
+### Watch an issue
 
-### Send to a webhook
+Watching keeps an issue open for monitoring without resolving it or marking it as incorrectly flagged. Click **Watch** when you are not ready to fix an issue but still want to know if it keeps happening.
 
-To forward Engine events to your own incident-management, paging, or chat tooling, add a destination and set the **Deliver to** field to **Webhook**. Enter a URL and, optionally, custom headers. Webhook deliveries are signed so you can verify their authenticity. For the full event payload reference, signing-secret verification, and delivery semantics, see [Engine webhook events](/langsmith/engine-webhooks).
+To be alerted when a watched issue recurs, click **Alert me via Slack**, which opens the **Notifications** section of the [Engine Settings](#configure-engine) panel. See [Engine notifications](/langsmith/engine-notifications).
 
-## Configure Engine
+When new traces link to a watched issue, Engine moves it to the top of your list and shows how many new traces arrived, so you can pick up the fix or keep watching.
 
 <Note>
-Engine uses **LangChain-managed inference** exclusively. Bring Your Own Key (BYOK) is not supported; you cannot supply your own provider API keys for Engine.
+Watching is only available for open issues without a pull request in flight: discard the fix to watch an issue again. Resolving a watched issue, or marking it as incorrectly flagged, automatically stops watching it.
 </Note>
 
-On the **Engine** page, click **Configure Engine** to open the **Edit Engine Settings** panel. From here you can configure:
+## Filter and sort issues
 
-- **Agent overview**: Edit your agent overview document to keep Engine's understanding of your project accurate as your application evolves.
-- **Preferences**: Areas Engine should focus on, prioritize, or ignore. Engine treats these as authoritative and folds them into the agent overview document on the next scan. Select category chips such as **Cost & Tokens**, **Latency**, or **Tool Call Failures**, or click **+ Add something specific** to describe a custom concern. Changes take effect on the next scan.
-- **Engine spend**: View the month-to-date Engine LCU spend for this project. Click **Set limit** to cap monthly spend. New runs pause when the monthly limit is reached.
-- **Analysis level**: Choose **Standard** or **Reduced**. Use **Reduced** to have Engine review fewer traces at a lower cost.
-- **Focus on specific traces**: Narrow Engine's attention to a subset of runs by run name or metadata. Edits save automatically and take effect on the next scan. Scope conditions accept only run name and metadata; you cannot filter by feedback key or score. See [Focus on specific traces](#focus-on-specific-traces).
-- **Notifications**: Click **Add destination** to add a Slack channel or webhook destination that receives a notification when Engine detects a new issue. Set a minimum priority level per destination to control which issues trigger a notification. See [Get notified about new issues](#get-notified-about-new-issues).
-- **Code repository**: Connect or update a GitHub repository so the agent can reference source code when diagnosing issues. Optionally set a **Subfolder** and a **Branch** (defaults to the repository default). For setup, see [Connect Engine to GitHub](/langsmith/engine-github).
-- **Context repository**: Connect a Context Hub repository so Engine can propose fixes to instructions, docs, and linked skills.
-- **Linear**: Connect Linear, then select a team and optional project for new issues. Engine retains durable links to the issues it creates, but does not synchronize later edits from Linear. Deleting all Engine issues does not delete existing Linear tickets. See [Create a Linear issue](#create-a-linear-issue).
-- **Pause**: Engine scans your traces on a dynamic schedule tuned to balance cost and performance. Click **Pause** to stop scanning without deleting the existing issues, or **Resume** to resume scanning.
-- **Delete all issues**: This action cannot be undone. All issues and settings will be permanently removed.
+### In the UI
+
+The **Engine** page lists detected issues in the left panel. Each entry shows a title, a short description, the number of contributing traces, and how recently the issue was observed. Each issue is tagged with a failure category, such as **Silent tool error** or **Hallucination**.
+
+At the top of the list, you can click:
+
+- **Filter issues** icon to filter by **Priority**, **Status** and **Tags**.
+- **Sort issues** icon to sort by **Severity**, **Last Updated**, and **Created**.
+- **Configure Engine** to [configure Engine](#configure-engine).
+
+Open [LangSmith Chat](/langsmith/chat#engine) to ask questions across your issues, for example, which issues need the most attention or how many new issues are open.
+
+If no issues appear after setup completes, Engine found no recurring patterns in the analyzed traces. Try checking back after more traces have been collected.
+
+### With the CLI
+
+Use `langsmith project issues list` in the [LangSmith CLI](/langsmith/cli) to list a project's issues. Filter with `--status` (`open`, `fixing`, `watching`, `completed`, or `ignored`) and `--priority` (`urgent`, `high`, `medium`, or `low`), and page with `--limit` and `--offset`.
+
+```bash
+# List open, high-priority issues for a project
+langsmith project issues list --project <project-name> --status open --priority high
+```
 
 ## See also
 
 - [Engine](/langsmith/engine-overview): Product overview and where Engine fits in the development lifecycle.
 - [Connect Engine to GitHub](/langsmith/engine-github): Connect repositories in LangSmith Cloud, or create and configure your own GitHub App for a self-hosted deployment.
-- [Engine webhook events](/langsmith/engine-webhooks): Event payload reference, signing-secret verification, and delivery semantics.
+- [Engine notifications](/langsmith/engine-notifications): Slack and webhook destinations, event payload reference, and signing-secret verification.
 - [Engine on self-hosted](/langsmith/engine-self-hosted): Self-hosted architecture and data handling.
 - [Manage datasets](/langsmith/manage-datasets), [Use annotation queues](/langsmith/annotation-queues), and [Use assertions](/langsmith/assertions): Work with the offline examples Engine generates.
 - [LangSmith CLI](/langsmith/cli): List and manage issues programmatically.
