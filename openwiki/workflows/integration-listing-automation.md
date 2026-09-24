@@ -1,11 +1,11 @@
 ---
 type: maintainer-gated automation workflow
 title: Integration Listing Automation
-description: Maintainer-approved issue intake and scheduled refresh for hosted and third-party integration listings. Covers metadata ownership, generated discovery tables, URL safety, and CI and maintainer handoffs.
+description: Maintainer-approved issue intake and scheduled refresh for hosted and third-party integration listings. Covers metadata ownership, generated discovery outputs, URL safety, and CI and maintainer handoffs.
 tags: [integrations, github-actions, automation, documentation, security]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-18T08:20:50.944Z
+    at: 2026-09-24T08:22:38.580Z
 sources:
   - id: openwiki-source-9361c44d74c0e18006d0d76f
     resource: repo://.agents/skills/README.md
@@ -39,19 +39,19 @@ sources:
     resource: repo://tests/unit_tests/test_parse_integration_submission_issue.py
   - id: openwiki-source-7be0fdefc402d868b9f2fdca
     resource: repo://tests/unit_tests/test_refresh_integration_downloads.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-18T08:20:50.944Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
 ---
 
 ## Purpose and ownership
 
 An **Integration listing** issue is the intake path for a published third-party LangChain package. Its form collects a display or class name, language, component, language-specific registry package name, documentation URL, repository, provider description, optional capability notes, and published-package confirmation. It applies `integration-submission` and `integration`; opening the issue does not start privileged automation.
 
-The result is a reviewable documentation PR, not automatic acceptance. Providers own their packages and usage documentation; this repository owns discovery surfaces. Treat form values and external-listing metadata—including URLs, descriptions, and capability notes—as untrusted data. The trusted workflow, rather than the submitter or agent, owns GitHub mutations such as labels, issue comments, branches, and pull requests.
+The result is a reviewable documentation PR, not automatic acceptance. Providers own their packages and usage documentation; this repository owns discovery surfaces. Treat issue-submitted values and third-party listing metadata—including URLs, descriptions, and capability notes—as untrusted data. The trusted workflow, rather than the submitter or agent, owns GitHub mutations such as labels, issue comments, branches, and pull requests.
 
 There are two distinct kinds of content:
 
-- **Editable metadata:** hosted-guide `integration:` frontmatter, `scripts/data/integration_external_docs.yaml`, and, where applicable, authored provider cards and `packages.yml` records. External YAML is organized by language and component; every row needs a `name`, the applicable `pypi` or `npm` package, and `docs_url`.
-- **Generated listing output:** `src/snippets/oss/*-downloads.mdx`, `*-featured.mdx`, and the Python providers `overview.mdx`. Change their sources and regenerate; do not hand-edit generator-owned output. CI regenerates the provider overview to detect manual changes.
+- **Editable metadata:** hosted-guide `integration:` frontmatter, `scripts/data/integration_external_docs.yaml`, and, where applicable, authored provider cards and `packages.yml` records. External YAML is organized by language and component. The contribution flow expects a display `name`, language-appropriate `pypi` or `npm` package, and `docs_url`; the generator can retain a row without usable package/download data as `N/A`.
+- **Generated discovery output:** `src/snippets/oss/*-downloads.mdx`, `*-featured.mdx`, and the Python providers `overview.mdx`. These tables and overview page are outputs, not editing surfaces: change their inputs and regenerate. CI regenerates the provider overview to detect manual changes.
 
 For external rows, prefer partner documentation, then a public GitHub repository, then the registry page. A hosted guide is not a prerequisite for appearing in the component discovery tables.
 
@@ -92,9 +92,9 @@ To retry after parsing, agent, or no-change failure, correct the submission as a
 
 Hosted guides require either at least 50,000 monthly downloads on PyPI or npm, or an explicit maintainer featured decision. An eligible guide starts from the matching component `TEMPLATE.mdx`, uses factual `integration:` frontmatter, and removes any duplicate external YAML row. Do not set `featured: true` merely because a guide meets the threshold. Under the threshold and without that decision, the result is an external listing—not a new hosted MDX page.
 
-The agent treats a registry package that cannot be found, or a language/package/component combination that cannot be mapped, as a hard blocker. It should leave ordinary uncertainty for PR review. A new external listing normally also needs applicable authored provider-card and package records, while generated component snippets and provider overview are refreshed from their owning inputs.
+The agent treats a registry package that cannot be found, or a language/package/component combination that cannot be mapped, as a hard blocker. It should leave ordinary uncertainty for PR review. A new external listing normally also needs applicable authored provider-card and package records; generated component snippets and the provider overview remain generator-owned outputs.
 
-`packages.yml` is the source of truth for LangChain package and repository records used by the package index and partner-package table. Its maintainer-only `highlight` override bypasses the normal table download filter and places highlighted records before other records. `scripts/packages_yml_get_downloads.py` rejects duplicate names, avoids refetching records updated in the preceding 24 hours, records an absent Pepy badge as zero downloads, and writes a new timestamp for fetched records.
+`packages.yml` is the source of truth for LangChain package and repository records used by the package index and partner-package table. Its maintainer-only `highlight` override bypasses the normal table download filter and places highlighted records before other records. `scripts/packages_yml_get_downloads.py` rejects duplicate names, avoids refetching records updated in the preceding 24 hours, records an absent Pepy badge as zero downloads, and writes a new timestamp for fetched package records.
 
 ## External rows, rendering, and URL invariant
 
@@ -102,13 +102,15 @@ The agent treats a registry package that cannot be found, or a language/package/
 
 The renderer selects columns by component: chat capability flags; middleware availability and source; retriever hosting, cloud-offering, and package fields; and vectorstore capability columns only when at least one row supplies each capability. It escapes table-cell pipes and normalizes prose around dashes. Download cells provide initial numeric `data-sort-value` values for first paint and offline ordering; the client-side table can refresh badge values and sorting later.
 
-`docs_url` is a pre-emission safety boundary. The generator allows `https://`, `http://`, or a site-relative path beginning with one `/`; it rejects protocol-relative `//` URLs and unsafe schemes such as `javascript:`, `data:`, and `vbscript:`. Missing external URLs cause a row to be skipped during collection; an unsafe external URL raises an error rather than emitting a link. The dedicated validation mode reports both missing and unsafe YAML values without network requests or writes:
+`docs_url` is the pre-emission safety boundary. The generator allows `https://`, `http://`, or a site-relative path beginning with one `/`; it rejects protocol-relative `//` URLs and unsafe schemes such as `javascript:`, `data:`, and `vbscript:`. Missing external URLs cause a row to be skipped during collection; an unsafe external URL raises an error rather than emitting a link. The dedicated validation mode reports both missing and unsafe YAML values without network requests or writes:
 
 ```bash
 uv run python scripts/refresh_integration_downloads.py --check-docs-urls
 ```
 
 Run that command before changing external metadata. CI runs the same read-only check on repository changes, and focused tests cover scheme acceptance/rejection, safe rendered-link fallback, repository-YAML validation, and table-text normalization.
+
+The hosted-docs candidate flagger is an eligibility signal, not a URL sanitizer: when called directly, it requires only a nonempty `docs_url` before including its value in Linear issue context. In the scheduled workflow, generation and its validation boundary run before candidate flagging; nevertheless, preserve the URL check and do not reuse candidate collection as evidence that an external link is safe to render.
 
 ## Scheduled refresh and operational behavior
 
@@ -132,14 +134,14 @@ This flow separates read-only generation from the job that writes the refresh br
 
 `refresh_integration_downloads.py --write` writes an all-rows snippet for each nonempty supported component and a featured snippet for chat or for components with featured rows. Outputs include a generator marker. It retries npm and PyPI requests that receive HTTP 429 up to six times with capped exponential backoff. Other request, parsing, or missing-data failures make that row’s download data unavailable instead of aborting collection.
 
-The candidate flagger reuses those download helpers and considers external entries with a valid language-specific package and documentation URL. It flags entries at the 50,000-download threshold (or a supplied `--threshold`), includes component curation-bar context, and sorts candidates by downloads then name. Without `--create` it is a dry run; creation requires both `LINEAR_API_KEY` and `LINEAR_TEAM_KEY`. Before creating a Linear issue it searches for a matching open issue using a stable title fragment, so a later download-count change does not defeat deduplication.
+The candidate flagger reuses those download helpers and considers external entries with a language-specific package and a nonempty documentation URL. It flags entries at the 50,000-download threshold (or a supplied `--threshold`), includes component curation-bar context, and sorts candidates by downloads then name. Without `--create` it is a dry run; creation requires both `LINEAR_API_KEY` and `LINEAR_TEAM_KEY`. Before creating a Linear issue it searches for a matching open issue using a stable title fragment, so a later download-count change does not defeat deduplication.
 
 ## Maintainer change checklist
 
 1. Decide hosted versus external from measured downloads and a maintainer featured decision; do not invent counts.
-2. Edit the appropriate source metadata, not a generated snippet or `overview.mdx`; remove external metadata when promoting the same package to a hosted guide.
+2. Edit the appropriate metadata or authored card, not a generated snippet or `overview.mdx`; remove external metadata when promoting the same package to a hosted guide.
 3. Preserve the `docs_url` scheme invariant and run `uv run python scripts/refresh_integration_downloads.py --check-docs-urls`.
-4. Regenerate relevant listing output with `uv run python scripts/refresh_integration_downloads.py --write` and, when `packages.yml` changes, `uv run python pipeline/tools/partner_pkg_table.py`.
+4. Regenerate relevant discovery output with `uv run python scripts/refresh_integration_downloads.py --write` and, when `packages.yml` changes, `uv run python pipeline/tools/partner_pkg_table.py`.
 5. Keep the issue workflow’s authorization gate, untrusted-data boundary, and workflow-owned GitHub writes intact; use the PR review checklist for eligibility and listing accuracy.
 
 ## Related pages

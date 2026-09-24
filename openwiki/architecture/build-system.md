@@ -1,14 +1,12 @@
 ---
 type: architecture
-title: Build System Architecture
+title: Build system architecture
 description: How the Python documentation builder turns authored src content into disposable Mintlify output, including language routing, incremental rebuilds, shared artifacts, preprocessing, and LLM-oriented artifacts.
 tags: [build-system, documentation-pipeline, mintlify, preprocessing, content-routing]
 verified:
   - by: openwiki/0.4.3
-    at: 2026-09-21T08:24:04.334Z
+    at: 2026-09-24T08:22:38.580Z
 sources:
-  - id: openwiki-source-8037e2358a2c4f9b2c722a11
-    resource: repo://AGENTS.md
   - id: openwiki-source-41f7c907e42a5efd3b3405cd
     resource: repo://pipeline/commands/build.py
   - id: openwiki-source-b481a230af378c0c50ed9994
@@ -25,10 +23,10 @@ sources:
     resource: repo://README.md
   - id: openwiki-source-24e5f74f0f40e9bfd381871f
     resource: repo://tests/unit_tests/test_builder.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
 ---
 
-# Build System Architecture
+# Build system architecture
 
 `DocumentationBuilder` is the boundary between the authored `src/` tree and the Mintlify deployment tree, `build/`. Mintlify deploys the generated directory, but it is disposable: contributors edit `src/`, run a build, and never patch `build/` directly. A full build deletes and recreates `build/`, so any manual output change will be lost.
 

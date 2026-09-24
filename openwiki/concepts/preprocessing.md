@@ -1,11 +1,8 @@
 ---
 type: documentation pipeline
-title: Documentation Preprocessing
+title: Preprocessing
 description: Build-time transformations that turn authored Markdown and MDX into language-specific documentation artifacts. Covers scoped cross-references, CTA attribution, conditional content, and output-time route and snippet rewrites.
 tags: [build, markdown, preprocessing, cross-references, language-versioning, api-reference]
-verified:
-  - by: openwiki/0.4.3
-    at: 2026-09-21T08:24:04.334Z
 sources:
   - id: openwiki-source-012f2c78e3b1446dfc35803f
     resource: repo://Makefile
@@ -29,7 +26,10 @@ sources:
     resource: repo://tests/unit_tests/test_handle_auto_links.py
   - id: openwiki-source-5255204fc494ae04cd6ba685
     resource: repo://tests/unit_tests/test_utm_links.py
-generated: { by: "openwiki/0.4.3", at: "2026-09-21T08:24:04.334Z" }
+generated: { by: "openwiki/0.4.3", at: "2026-09-24T08:22:38.580Z" }
+verified:
+  - by: openwiki/0.4.3
+    at: 2026-09-24T08:22:38.580Z
 ---
 
 ## Overview
@@ -40,15 +40,27 @@ For a regular Markdown file, `preprocess_markdown()` resolves scoped cross-refer
 
 ```mermaid
 flowchart TD
-    Source["Markdown or MDX source"] --> References["Resolve scoped references"]
-    References --> Cta["Decorate CTA links"]
-    Cta --> Conditional["Render language blocks"]
+    Source["Markdown or MDX source"] --> Select["Select build target"]
+    Select --> Python["Python target"]
+    Select --> JavaScript["JavaScript target"]
+    Python --> References["Resolve scoped references"]
+    JavaScript --> References
+    References --> Cta["Decorate LangSmith CTA links"]
+    Cta --> Conditional["Render conditional blocks"]
     Conditional --> Snippets["Scope snippet imports"]
     Snippets --> Oss["Rewrite OSS routes"]
     Oss --> Managed["Rewrite Managed Deep Agents routes"]
     Managed --> Footer["Append eligible footer"]
-    Footer --> Output["Build artifact"]
+    Footer --> Output["Regular page artifact"]
+    Source --> SnippetSource["Shared Markdown snippet"]
+    SnippetSource --> SnippetPython["Python snippet copy"]
+    SnippetSource --> SnippetJavaScript["JavaScript snippet copy"]
+    SnippetPython --> SnippetProcess["Preprocess and rewrite routes"]
+    SnippetJavaScript --> SnippetProcess
+    SnippetProcess --> SnippetOutput["Language-prefixed snippet artifacts"]
 ```
+
+The diagram shows the regular-page sequence and the separate Python and JavaScript branches used for shared snippets.
 
 This is the ordered regular-file path. Snippet Markdown uses a dedicated path that emits language-specific copies and bypasses footer generation.
 
