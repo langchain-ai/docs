@@ -34452,6 +34452,199 @@ A deprecated field is removed at a version boundary, not on a date:
 </div>
 
 
+# Validate issues and fixes with experiments
+Source: https://docs.langchain.com/langsmith/engine-experiments
+
+<Note>
+Issue validation is in private [beta](/langsmith/release-stages#beta). It is available only on LangSmith Cloud, for organizations where it has been enabled. To request access, [join the waitlist](https://www.langchain.com/langsmith-engine-v2-new-feature-access).
+</Note>
+
+Issue validation replays the traces linked to an [Engine issue](/langsmith/engine#investigate-and-fix-an-issue) against a deployment of your agent to confirm that the issue reproduces. It then replays the same traces against a preview deployment of Engine's fix to confirm that the fix resolves it. Engine records each validation as an [experiment](/langsmith/evaluation-concepts#experiment) on a dataset built from the issue's traces, so you can compare the baseline and the fix trace by trace.
+
+## Set up validation
+
+Validation requires a baseline deployment: a ready, non-preview [LangSmith Cloud deployment](/langsmith/deploy-to-cloud) of your agent in the same workspace. Selecting it requires `deployments:update` on that deployment.
+
+To set up validation:
+
+1. On the **Engine** page, click **Configure Engine**.
+2. (Optional) [Connect the GitHub repository](/langsmith/engine-github) Engine should modify. In the repository settings, select the base branch for Engine's fixes, or leave it blank to use the repository's default branch.
+3. In the **Preview deployments** section, find the **Baseline deployment** field. Search for a deployment, or paste its LangSmith URL or deployment ID. Preview deployments and deployments that are not ready cannot be selected from the list. The baseline can be a production or staging deployment, but use staging when possible so validation does not exercise production credentials and services.
+4. Select **Verify fixes with preview deployments**.
+5. Click **Save**.
+
+Fix verification also requires:
+
+- **A connected repository**: Engine opens its fix as a pull request in the repository connected in [Connect Engine to GitHub](/langsmith/engine-github).
+- **Label-triggered preview builds**: [Enable preview builds](/langsmith/preview-builds#enable-preview-builds) on the baseline deployment. Use the following starting configuration:
+  - Set **Preview base branch** to the same branch configured for Engine.
+  - Select **Label only** and set **Trigger label** to `preview`. Engine applies this label to its fix pull request.
+  - Set **Idle TTL** to 6 hours.
+  - Set **Max concurrent previews** to 20.
+
+With this setup, Engine applies the preview label, waits for LangSmith to build a temporary deployment from the proposed fix, replays the validation against it, and shows the verdict and replay traces on the issue.
+
+<Warning>
+Validation sends the inputs from an issue's traces to the baseline deployment, and to the preview deployment when it verifies a fix. Each replay creates a thread and a run on that deployment, and your agent can call its tools while it responds.
+
+[Preview deployments inherit the baseline deployment's secrets](/langsmith/preview-builds#manage-secrets) when LangSmith creates them. Confirm that every inherited secret is appropriate for temporary deployments before enabling fix verification. Changes to the baseline's secrets do not propagate to previews that already exist.
+</Warning>
+
+### Authenticate with your deployment
+
+By default, Engine calls your deployment with a LangSmith credential, and the deployment sees the caller as a Studio user. Deployments that accept LangSmith platform authentication need no further setup.
+
+If your deployment authenticates callers itself, give Engine the headers it expects:
+
+1. In the **Preview deployments** section, under **Deployment authentication**, click **Add custom headers**.
+2. Enter every header your deployment requires, then click **Save**.
+3. In your deployment's authentication handler, map those headers to an identity with the least access validation needs.
+
+Header values are encrypted and write-only: LangSmith shows only their names, so replacing them means entering every value again. Headers that LangSmith manages itself cannot be overridden. To go back to the default, click **Use platform authentication**.
+
+<Note>
+Custom headers only decide whether your deployment accepts the request. They do not tell your agent that a run is a validation replay, which is a separate signal described in [Make replayed runs side-effect free](#make-replayed-runs-side-effect-free).
+</Note>
+
+## Prepare a deployment to test against
+
+Engine confirms an issue by running your agent, so the deployment you select needs to be one you can exercise repeatedly without consequences.
+
+### Use a deployment you can safely exercise
+
+Choose a deployment that mirrors the configuration of the agent you want to test, but that is not the one serving your users. Point it at test credentials, test accounts, and non-production data stores for any service your agent writes to.
+
+### Make replayed runs side-effect free
+
+Engine marks every replay in the run's configuration, so your agent can recognize one and respond more conservatively:
+
+```python
+def is_validation_replay(config: dict) -> bool:
+    return config.get("configurable", {}).get("__engine_validation_replay__") is True
+```
+
+At the HTTP boundary, validation requests also include
+`X-LangSmith-Source: engine`. Use the configurable marker in graph code and the
+header in request middleware.
+
+Use the marker to skip or stub the tools whose effects leave your agent, such as sending email or messages, charging customers, filing tickets, writing to production data stores, scheduling work, and calling partner APIs. Return a realistic placeholder result so the rest of the run still exercises the behavior Engine is testing.
+
+<Warning>
+Treat the marker and source header as untrusted hints that can only reduce what a run may do. Anything that can reach your deployment can set them, so never use them to grant access, skip authentication, or widen permissions.
+</Warning>
+
+### Expect a burst of traffic
+
+Engine replays an issue's traces at the same time, so a validation can start up to five runs at once and each one runs to completion. Fix verification repeats the same set against the preview deployment. Confirm that the deployment's rate limits, quotas, and any downstream service it calls tolerate that burst.
+
+### Keep the deployment available
+
+Engine can only replay against a ready, non-preview deployment, and it records the deployment and revision that produced each result. Keep the deployment running while validation is in progress, and expect a result to describe the revision that was active when Engine tested it.
+
+## Test an issue
+
+When a baseline deployment is set, Engine validates each new issue automatically when it creates the issue. To validate an issue again, open it and click **Test issue**.
+
+**Test issue** is unavailable when no baseline deployment is set, when the issue has no linked traces, or when the monthly LCU spend limit is reached.
+
+For each validation, Engine:
+
+1. Selects up to five distinct traces linked to the issue, in the order they were linked.
+2. Replays each trace's input against the baseline deployment. For a trace from a multi-turn thread, Engine includes the earlier turns of the conversation, so a follow-up failure is judged in the same context.
+3. Judges whether each replay shows the issue's reported behavior again. Each trace is **Reproduced**, **Not reproduced**, or **Inconclusive**.
+
+The issue as a whole is reproduced when at least one trace reproduces. It is not reproduced only when every replay completed without the reported behavior. Otherwise, the result is inconclusive. When validation does not reproduce an open issue, Engine closes the issue.
+
+## Verify a fix
+
+When **Verify fixes with preview deployments** is selected, Engine verifies each fix it generates:
+
+1. When a fix run completes, Engine opens a pull request for the fix if one is not already open, then adds the preview build label to it.
+2. LangSmith builds a preview deployment from the pull request.
+3. When the preview revision is live, Engine replays the traces from the issue's validation against the preview deployment.
+4. If the issue still occurs on the preview, Engine revises the fix on the same pull request and verifies it again, for up to three attempts in total.
+
+## Read a validation result
+
+Each issue reports a baseline result and, once a fix exists, a verification result.
+
+The baseline result answers whether the issue still happens on your deployment:
+
+| Status | Meaning |
+| --- | --- |
+| **Awaiting test** | Engine has not recorded a baseline result yet. |
+| **Reproduced** | At least one replay showed the reported behavior again. |
+| **Not reproduced** | Every replay finished without the reported behavior, so Engine closes an open issue. |
+| **Inconclusive** | Engine could not judge the replays confidently. |
+| **Error** | Validation could not complete. |
+
+The verification result answers whether Engine's fix resolved it:
+
+| Status | Meaning |
+| --- | --- |
+| **Not run** | The issue did not reproduce, so there is nothing to verify. |
+| **Generating fix** or **Awaiting fix** | Engine is still producing a fix to verify. |
+| **Awaiting preview** or **Running** | A preview deployment is building, or replays are in progress. |
+| **Verified** | The issue no longer occurred on the fix's preview deployment. |
+| **Not fixed** | The issue still occurred, so Engine revises the fix and tries again. |
+| **Inconclusive**, **Timed out**, or **Error** | Engine could not establish a verdict for this attempt. |
+
+<Warning>
+**Inconclusive** means Engine could not gather trustworthy evidence, not that the issue is absent or fixed. Treat it as a signal to re-test rather than as a passing result.
+</Warning>
+
+## Review validation experiments
+
+Engine stores each issue's validation evidence in your workspace:
+
+- **Dataset**: One per issue, described as `Engine validation evidence`, with one example per replayed trace.
+- **Baseline experiment**: The replays against the baseline deployment.
+- **Fix experiment**: The replays against a fix's preview deployment, one experiment per verification attempt.
+
+Engine records its verdict on each conclusive replay as feedback with the key `engine_issue_validation`. The value is `reproduced` or `not_reproduced`, and the feedback comment explains the verdict.
+
+When Engine verifies a fix against a preview deployment, the issue's **Evidence** section shows the overall verdict and one row per trace:
+
+- **Flagged traces**: What Engine saw in the original trace. Click **Original trace** to open it.
+- **Reproduced on prod**: The baseline result, **Reproduced**, **Not reproduced**, or **Inconclusive**. Click **Repro trace** to open the replay.
+- **After PR #\<number\>**: The result on the fix's preview, **Fix verified**, **Recurred**, or **Inconclusive**. Click the trace link to open the replay.
+
+Each column header counts how many traces reproduced on the baseline or were resolved by the fix. Click **View Experiment** to open the baseline and fix experiments side by side in the dataset's comparison view. For more information, see [Compare experiment results](/langsmith/compare-experiment-results).
+
+Until fix verification runs, the issue shows a validation summary instead: the baseline result, the fix's verification status, and links to each replayed example.
+
+## Troubleshooting
+
+If an issue stays on **Awaiting test**, or a result comes back inconclusive, check the following before testing it again:
+
+- **The baseline deployment**: Confirm it is still ready, is not a preview, and is in the same workspace as the tracing project.
+- **Authentication**: If your deployment authenticates callers itself, confirm the saved headers are current. Replacing a credential requires re-entering every header value.
+- **The replays themselves**: Open the replayed runs from the issue's **Evidence** section or validation summary and read what your agent returned.
+- **Deployment limits**: Look for rate limiting, quota exhaustion, or timeouts caused by the concurrent replays, and for very large responses, which Engine may not be able to judge.
+- **Restricted tools**: If your agent blocks tools during a replay, confirm the stubbed tools still return a usable result rather than an error that ends the run.
+
+After correcting the deployment or its settings, open the issue and click **Test issue** to run validation again.
+
+## See also
+
+- [Find and fix your agent's issues](/langsmith/engine): Set up Engine and work through the issues it detects from production traces.
+- [Engine security](/langsmith/engine-security): Review how Engine accesses your traces, deployments, and repositories.
+- [Preview builds](/langsmith/preview-builds): Create the preview deployments Engine verifies fixes against.
+- [Compare experiment results](/langsmith/compare-experiment-results): Compare the baseline and fix experiments side by side.
+- [Connect Engine to GitHub](/langsmith/engine-github): Connect the repository where Engine opens fix pull requests.
+
+---
+
+<div className="source-links">
+<Callout icon="terminal-2">
+    [Connect these docs](/use-these-docs) to your agent of choice via MCP for real-time answers.
+</Callout>
+<Callout icon="edit">
+    [Edit this page on GitHub](https://github.com/langchain-ai/docs/edit/main/src/langsmith/engine-experiments.mdx) or [file an issue](https://github.com/langchain-ai/docs/issues/new/choose).
+</Callout>
+</div>
+
+
 # Connect LangSmith Engine to GitHub
 Source: https://docs.langchain.com/langsmith/engine-github
 
@@ -35676,6 +35869,7 @@ On the **Engine** page, click the **Configure Engine** <Icon icon="settings"/> (
 
 - **Code repository** and **Context repository**: Connect or update the GitHub repository Engine reads when diagnosing issues, optionally with a **Subfolder** and a **Branch** (defaults to the repository default). A Context Hub repository lets Engine propose fixes to instructions, docs, and linked skills. See [Connect Engine to GitHub](/langsmith/engine-github).
 - **Notifications**: See [Engine notifications](/langsmith/engine-notifications).
+- **Preview deployments**: Set the baseline deployment Engine replays issue traces against, and turn on fix verification with preview deployments. See [Validate issues and fixes with experiments](/langsmith/engine-experiments).
 - **Analysis level**: See [Set the analysis level](#set-the-analysis-level).
 - **Engine spend**: See [Set spend limits and monitor usage](#set-spend-limits-and-monitor-usage).
 - **Pause** and **Delete all issues**: See [Pause Engine or delete its issues](#pause-engine-or-delete-its-issues).
@@ -35857,6 +36051,7 @@ langsmith project issues list --project <project-name> --status open --priority 
 - [Engine](/langsmith/engine-overview): Product overview and where Engine fits in the development lifecycle.
 - [Connect Engine to GitHub](/langsmith/engine-github): Connect repositories in LangSmith Cloud, or create and configure your own GitHub App for a self-hosted deployment.
 - [Engine notifications](/langsmith/engine-notifications): Slack and webhook destinations, event payload reference, and signing-secret verification.
+- [Validate issues and fixes with experiments](/langsmith/engine-experiments): Replay an issue's traces against your deployment and verify Engine's fix on a preview deployment.
 - [Engine on self-hosted](/langsmith/engine-self-hosted): Self-hosted architecture and data handling.
 - [Manage datasets](/langsmith/manage-datasets), [Use annotation queues](/langsmith/annotation-queues), and [Use assertions](/langsmith/assertions): Work with the offline examples Engine generates.
 - [LangSmith CLI](/langsmith/cli): List and manage issues programmatically.
