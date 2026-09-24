@@ -99,7 +99,7 @@ Ownership decides what the agent does with a credential. The create mode decides
 | Mode | Use when | Create with | Credential owner |
 | --- | --- | --- | --- |
 | **Opaque secret** | The service uses a fixed API key or other static secret. | `--secret-from-env`, `--secret-from-file`, stdin, or an interactive prompt | The agent |
-| **General OAuth** | You register your own OAuth app (BYOT), such as with GitHub or Google. | `--oauth <service>` from the catalog, or `--authorize-url` and `--token-url` for a custom provider | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) |
+| **General OAuth** | You register your own OAuth app (BYOT), such as with GitHub or Google. | `--oauth <service>` from the catalog, or `--authorize-url` and `--token-url` for a custom provider | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) or [client credentials](#create-a-client-credentials-connection) |
 | **MCP OAuth** | An MCP server advertises OAuth and registers a client automatically. | `--mcp <url>`, or the slug alone when the project already declares that user-owned MCP server | Each caller, or the agent with [`--authorize`](#authorize-an-agent-owned-oauth-account) |
 
 For example:
@@ -407,9 +407,85 @@ uv run mda connections create acme \
 
 Most providers reject an authorization request with no `scope` parameter. Pass `--scope` for manual registrations, or use `--oauth <service>` when the catalog covers the provider.
 
+### Create a client credentials connection
+
+The OAuth client credentials grant authenticates the agent as an application rather than as a person. Pass `--grant-type client_credentials` and the CLI requests the token as it creates the connection. No one signs in through a browser, and no caller sees an authorization prompt.
+
+Use this mode when the provider issues machine-to-machine OAuth credentials. When the provider's API authenticates only as a person, [authorize an agent-owned account](#authorize-an-agent-owned-oauth-account) instead.
+
+A client credentials connection needs a token URL, a client ID, and a client secret. Set `ACME_CLIENT_SECRET`, then create the connection. Replace `********` with the client ID:
+
+:::python
+```bash
+uv run mda connections create acme-api \
+  --grant-type client_credentials \
+  --token-url https://auth.acme.com/oauth/token \
+  --client-id "********" \
+  --secret-from-env ACME_CLIENT_SECRET \
+  --scope read
+```
+:::
+
+:::js
+<CodeGroup>
+    ```bash npm
+    npx mda connections create acme-api \
+      --grant-type client_credentials \
+      --token-url https://auth.acme.com/oauth/token \
+      --client-id "********" \
+      --secret-from-env ACME_CLIENT_SECRET \
+      --scope read
+    ```
+
+    ```bash pnpm
+    pnpm exec mda connections create acme-api \
+      --grant-type client_credentials \
+      --token-url https://auth.acme.com/oauth/token \
+      --client-id "********" \
+      --secret-from-env ACME_CLIENT_SECRET \
+      --scope read
+    ```
+
+    ```bash bun
+    bunx mda connections create acme-api \
+      --grant-type client_credentials \
+      --token-url https://auth.acme.com/oauth/token \
+      --client-id "********" \
+      --secret-from-env ACME_CLIENT_SECRET \
+      --scope read
+    ```
+</CodeGroup>
+:::
+
+The CLI prints the slug, the grant type, and the scopes it stored. Run it from the project directory, because the token belongs to that project's deployment. When the token request fails, the CLI deletes the connection rather than leaving an unusable one behind.
+
+`--oauth <service>` also works, for a catalog entry that carries a token URL. The catalog's default scopes and authorization parameters do not apply to this grant, so pass `--scope` for a provider that requires scopes.
+
+Optional flags:
+
+- **`--scope SCOPE`**: Request a scope. Repeat for each scope.
+- **`--auth-method METHOD`**: Send the client secret as `client_secret_basic` or `client_secret_post`. Defaults to `client_secret_basic`. A public client (`none`) cannot use this grant.
+- **`--token-param KEY=VALUE`**: Add a parameter to the token request, such as `--token-param audience=https://api.acme.com`. Repeat for each parameter. The grant sets `grant_type`, `client_id`, `client_secret`, and `scope` itself, so those four keys are rejected.
+
+This grant rejects the authorization code flags `--authorize-url`, `--authorization-param`, and `--allowed-scope`.
+
+A client credentials connection is always agent-owned, so every caller acts as the application. Runtime code resolves it like any other agent-owned credential:
+
+:::python
+```python
+access_token = await connections.get("acme-api", {"type": "agent"})
+```
+:::
+
+:::js
+```typescript
+const accessToken = await connections.get("acme-api", { type: "agent" });
+```
+:::
+
 ### Authorize an agent-owned OAuth account
 
-When a provider issues its own application credential, such as a Slack bot token, a GitHub App installation token, or a Notion internal integration token, prefer that credential stored as an [agent-owned secret](#create-an-opaque-secret). An application credential is scoped to the application, is revocable on its own, and does not depend on any person's account.
+When a provider issues its own application credential, such as a Slack bot token, a GitHub App installation token, or a Notion internal integration token, prefer that credential stored as an [agent-owned secret](#create-an-opaque-secret). An application credential is scoped to the application, is revocable on its own, and does not depend on any person's account. When the provider issues that application identity through OAuth, create a [client credentials connection](#create-a-client-credentials-connection).
 
 Use `--authorize` when the provider offers no application identity and its API authenticates only as a person.
 
