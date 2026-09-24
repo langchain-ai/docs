@@ -80,6 +80,112 @@ export const sandbox = defineSandbox({
 | `defaultTimeout` | `600` | Seconds allowed for each command. |
 :::
 
+## Configure the sandbox proxy
+
+The sandbox proxy injects headers into matching outbound requests and controls which destinations the sandbox can reach. The proxy runs outside the sandbox, so sandbox code can call authenticated APIs without handling the credentials.
+
+For example, to call the OpenAI API from the sandbox, store `OPENAI_API_KEY` in your LangSmith workspace secrets and configure this proxy rule:
+
+:::python
+```python sandbox/__init__.py
+from managed_deepagents import define_sandbox
+
+sandbox = define_sandbox(
+    proxy_config={
+        "rules": [
+            {
+                "name": "openai-api",
+                "match_hosts": ["api.openai.com"],
+                "headers": [
+                    {
+                        "name": "Authorization",
+                        "type": "workspace_secret",
+                        "value": "Bearer {OPENAI_API_KEY}",
+                    },
+                ],
+            },
+        ],
+    },
+)
+```
+:::
+
+:::js
+```ts sandbox/index.ts
+import { defineSandbox } from "managed-deepagents";
+
+export const sandbox = defineSandbox({
+  proxyConfig: {
+    rules: [
+      {
+        name: "openai-api",
+        match_hosts: ["api.openai.com"],
+        headers: [
+          {
+            name: "Authorization",
+            type: "workspace_secret",
+            value: "Bearer {OPENAI_API_KEY}",
+          },
+        ],
+      },
+    ],
+  },
+});
+```
+:::
+
+For configuration options and network restrictions, see [Sandbox auth proxy](/langsmith/sandbox-auth-proxy).
+
+### Use connections in proxy headers
+
+Use [Connections](/langsmith/managed-deep-agents-connections) in sandboxes to authenticate CLI commands and API requests.
+
+For example, to call the GitHub API from the sandbox as the current user, create the `github` connection first, then configure the proxy:
+
+:::python
+```python sandbox/__init__.py
+from managed_deepagents import bearer, connections, define_sandbox
+
+github = connections.get("github", {"type": "user"})
+
+sandbox = define_sandbox(
+    proxy_config={
+        "rules": [
+            {
+                "name": "github-api",
+                "match_hosts": ["api.github.com"],
+                "headers": [{"name": "Authorization", "value": bearer(github)}],
+            },
+        ],
+        "access_control": {"allow_list": ["api.github.com"]},
+    },
+)
+```
+:::
+
+:::js
+```ts sandbox/index.ts
+import { bearer, connections, defineSandbox } from "managed-deepagents";
+
+const github = connections.get("github", { type: "user" });
+
+export const sandbox = defineSandbox({
+  proxyConfig: {
+    rules: [
+      {
+        name: "github-api",
+        match_hosts: ["api.github.com"],
+        headers: [{ name: "Authorization", value: bearer(github) }],
+      },
+    ],
+    access_control: { allow_list: ["api.github.com"] },
+  },
+});
+```
+:::
+
+Use a connection reference as the header value, or format it with `bearer(ref)` or `basic(username, ref)`. Omit the header's `type` for connection values. Managed Deep Agents sets it to `opaque`.
+
 ## Provision a snapshot
 
 If `sandbox/setup.sh` exists, `mda deploy` and `mda dev` run the script once and save the resulting environment as a snapshot. Modifications from that run, such as cloned repositories and installed packages, persist in the snapshot. New threads clone that snapshot instead of running `setup.sh`. The snapshot is reused until `setup.sh` changes, at which point it is rebuilt.
